@@ -5,8 +5,8 @@ operator workbench for OpenStack Swift / SwiftStack**: it makes Swift's control-
 understandable and safe, and uses rclone + native Swift to move bulk data as fast as the target
 cluster can safely handle.
 
-**Status: design locked, implementation not started.** This repo currently holds only the design.
-Your job is to build it — phase by phase, following the design.
+**Status: implementation in progress.** The design is locked. Your job is to build it — commit by
+commit, phase by phase, following the design.
 
 ## Read these first (authoritative)
 

@@ -1,7 +1,7 @@
 # Aeronautes
 
-> **Status: design locked, implementation not started.** This repository currently contains only the
-> product/engineering design and visual direction — no application code yet.
+> **Status: implementation in progress.** The design is locked; code is built one component per
+> commit, following the sequence in [`docs/DESIGN.md`](docs/DESIGN.md) §65.
 
 **Aeronautes** (a living genus of swifts; “air sailor”) is a beautiful, performance-first
 **desktop operator workbench for OpenStack Swift / SwiftStack**.
