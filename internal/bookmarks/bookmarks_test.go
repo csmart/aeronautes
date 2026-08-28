@@ -1,0 +1,214 @@
+package bookmarks
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/csmart/aeronautes/internal/db"
+	"github.com/csmart/aeronautes/internal/secrets"
+	"github.com/csmart/aeronautes/internal/swiftcontrol"
+)
+
+func newTestStore(t *testing.T) (*Store, *db.DB, string) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "state.sqlite")
+	d, err := db.Open(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { d.Close() })
+	return NewStore(d, secrets.NewSessionStore()), d, path
+}
+
+func sample() Bookmark {
+	return Bookmark{
+		DisplayName: "Prod AU",
+		AuthURL:     "https://swift.example/auth/v1.0",
+		Username:    "acct:user",
+	}
+}
+
+func TestSaveGetRoundTrip(t *testing.T) {
+	st, _, _ := newTestStore(t)
+	ctx := context.Background()
+
+	saved, err := st.Save(ctx, sample(), []byte("swift-key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.ID == "" || saved.CreatedAt.IsZero() || saved.UpdatedAt.IsZero() {
+		t.Fatalf("saved bookmark missing id/timestamps: %+v", saved)
+	}
+	if !saved.HasCredential {
+		t.Fatal("saved bookmark should report a credential on record")
+	}
+	if saved.TLSMode != swiftcontrol.TLSModeSystem || saved.SegmentPlacement != PlacementRcloneDefault {
+		t.Fatalf("defaults not applied: %+v", saved)
+	}
+
+	got, err := st.Get(ctx, saved.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != saved {
+		t.Fatalf("Get = %+v, want %+v", got, saved)
+	}
+
+	key, err := st.Credential(ctx, saved.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(key, []byte("swift-key")) {
+		t.Fatalf("Credential = %q", key)
+	}
+}
+
+func TestUpdateKeepsCredentialAndCreatedAt(t *testing.T) {
+	st, _, _ := newTestStore(t)
+	ctx := context.Background()
+
+	saved, err := st.Save(ctx, sample(), []byte("swift-key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	saved.DisplayName = "Prod AU (renamed)"
+	updated, err := st.Save(ctx, saved, nil) // nil secret: keep existing
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.DisplayName != "Prod AU (renamed)" {
+		t.Fatalf("DisplayName = %q", updated.DisplayName)
+	}
+	if !updated.CreatedAt.Equal(saved.CreatedAt) {
+		t.Fatal("update must not change created_at")
+	}
+	if !updated.HasCredential {
+		t.Fatal("update with nil secret must keep the credential")
+	}
+	key, err := st.Credential(ctx, updated.ID)
+	if err != nil || !bytes.Equal(key, []byte("swift-key")) {
+		t.Fatalf("credential lost on update: %q, %v", key, err)
+	}
+
+	if _, err := st.Save(ctx, updated, []byte("rotated")); err != nil {
+		t.Fatal(err)
+	}
+	key, err = st.Credential(ctx, updated.ID)
+	if err != nil || !bytes.Equal(key, []byte("rotated")) {
+		t.Fatalf("credential not rotated: %q, %v", key, err)
+	}
+}
+
+func TestListOrdersByDisplayName(t *testing.T) {
+	st, _, _ := newTestStore(t)
+	ctx := context.Background()
+	for _, name := range []string{"zeta", "Alpha", "midd"} {
+		b := sample()
+		b.DisplayName = name
+		if _, err := st.Save(ctx, b, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	list, err := st.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 3 || list[0].DisplayName != "Alpha" || list[1].DisplayName != "midd" || list[2].DisplayName != "zeta" {
+		t.Fatalf("List order = %v", list)
+	}
+	if list[0].HasCredential {
+		t.Fatal("bookmark saved without a secret must report no credential")
+	}
+}
+
+func TestDeleteRemovesCredential(t *testing.T) {
+	st, _, _ := newTestStore(t)
+	ctx := context.Background()
+	saved, err := st.Save(ctx, sample(), []byte("swift-key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Delete(ctx, saved.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Get(ctx, saved.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Get after delete: %v, want ErrNotFound", err)
+	}
+	if _, err := st.Credential(ctx, saved.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Credential after delete: %v, want ErrNotFound", err)
+	}
+	if err := st.Delete(ctx, saved.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("second Delete: %v, want ErrNotFound", err)
+	}
+}
+
+func TestValidation(t *testing.T) {
+	st, _, _ := newTestStore(t)
+	ctx := context.Background()
+
+	cases := []func(*Bookmark){
+		func(b *Bookmark) { b.DisplayName = "" },
+		func(b *Bookmark) { b.AuthURL = "" },
+		func(b *Bookmark) { b.Username = "" },
+		func(b *Bookmark) { b.TLSMode = "yolo" },
+		func(b *Bookmark) { b.SegmentPlacement = "wherever" },
+	}
+	for i, mutate := range cases {
+		b := sample()
+		mutate(&b)
+		if _, err := st.Save(ctx, b, nil); err == nil {
+			t.Errorf("case %d: invalid bookmark saved", i)
+		}
+	}
+}
+
+// TestSecretNeverTouchesDatabaseFile is K-SEC-003 behaviourally: after
+// saving a bookmark with a known credential, the raw database file must
+// not contain the secret bytes.
+func TestSecretNeverTouchesDatabaseFile(t *testing.T) {
+	st, d, path := newTestStore(t)
+	ctx := context.Background()
+
+	const secret = "SUPERSECRET-swift-key-983127"
+	if _, err := st.Save(ctx, sample(), []byte(secret)); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Close(); err != nil { // checkpoint WAL into the main file
+		t.Fatal(err)
+	}
+
+	for _, file := range []string{path, path + "-wal"} {
+		raw, err := os.ReadFile(file)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Contains(raw, []byte(secret)) {
+			t.Fatalf("%s contains the credential — secrets must never reach SQLite (K-SEC-003)", file)
+		}
+	}
+}
+
+func TestSwiftConfig(t *testing.T) {
+	b := Bookmark{
+		AuthURL:            "https://swift.example/auth/v1.0",
+		Username:           "acct:user",
+		StorageURLOverride: "https://swift.example/v1/AUTH_other",
+		TLSMode:            swiftcontrol.TLSModeCustomCA,
+	}
+	cfg := b.SwiftConfig([]byte("key"), []byte("pem"))
+	if cfg.AuthURL != b.AuthURL || cfg.Username != b.Username ||
+		cfg.APIKey != "key" || cfg.StorageURLOverride != b.StorageURLOverride {
+		t.Fatalf("SwiftConfig = %+v", cfg)
+	}
+	if cfg.TLS.Mode != swiftcontrol.TLSModeCustomCA || string(cfg.TLS.CACertPEM) != "pem" {
+		t.Fatalf("TLS config = %+v", cfg.TLS)
+	}
+}
