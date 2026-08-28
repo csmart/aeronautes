@@ -1,0 +1,3233 @@
+# Aeronautes — product and engineering design
+
+**Status:** locked implementation design  
+**Date:** 2026-08-28  
+**Audience:** human maintainers + coding agents  
+**Product:** Aeronautes (living swift genus; “air sailor”)  
+**Binary / repo id:** `aeronautes`  
+**App ID:** `io.csmart.aeronautes`  
+**GitHub:** `csmart/aeronautes`  
+**Primary target:** OpenStack Swift / SwiftStack operators  
+**Primary platform:** Linux (reference/first-polish)  
+**Required targets:** Linux, Windows, macOS — each on **x86_64 and aarch64** (six targets, all required; see §61.0)
+
+> This document is the authoritative design for the project.
+>
+> If implementation experience requires a change to a locked decision, update this document (and, for architectural decisions, add an ADR) before changing the code.
+>
+> The mockup images in `assets/` are **visual direction**, not protocol specifications. Where text or values shown in a generated mockup disagree with this document, **this document wins**. The current mockups were AI-generated and contain several S3-flavoured terminology errors; **§4.5 lists the normative corrections**. Do not copy labels, header names, field names, or default values from the images without checking them against this document.
+
+---
+
+## 1. One-sentence product
+
+**Aeronautes is a beautiful, performance-first desktop operator workbench for OpenStack Swift that makes Swift's control-plane semantics understandable and safe, while using rclone and native Swift features to execute bulk data operations as fast as the target cluster can safely handle.**
+
+---
+
+## 2. Product thesis
+
+Generic transfer tools are already good at moving bytes.
+
+What is missing is an operator UI that understands the things that make Swift operationally powerful, subtle, and occasionally dangerous:
+
+- account, container, and object metadata;
+- SwiftStack / TempAuth v1 authentication;
+- container ACLs;
+- storage policies;
+- quotas;
+- CORS;
+- staticweb;
+- TempURL keys;
+- versioning;
+- virtual folders as markers versus implied prefixes;
+- DLO and SLO manifests;
+- hidden/backstage segment storage;
+- destructive namespace operations;
+- cross-account and cross-cluster replication;
+- the performance characteristics of very large Swift namespaces.
+
+Aeronautes should not hide those semantics behind a generic file-manager metaphor.
+
+It should **explain them, surface them, protect them, and make them pleasant to operate**.
+
+### Product mantra
+
+> **The inspector is the product. Transfers are a first-class superpower. Performance and beauty are features.**
+
+---
+
+## 3. Core product principles
+
+### 3.1 Pretty is a feature
+
+This is an operator tool people may stare at for hours.
+
+It should feel crafted, calm, responsive, and desirable to use.
+
+Do not accept generic admin-tool aesthetics merely because the software is technical.
+
+### 3.2 Never hide Swift semantics
+
+Aeronautes may translate raw headers into understandable concepts, but the underlying Swift model must remain visible.
+
+An expert must always be able to answer:
+
+- what Swift resource is this?
+- which headers represent this state?
+- is this a marker or only an implied prefix?
+- is this a DLO or SLO?
+- where are its segments?
+- what exactly will be deleted?
+- which engine will execute the operation?
+
+### 3.3 Fastest safe path wins
+
+The application owns:
+
+- intent;
+- semantic interpretation;
+- safety;
+- execution planning;
+- verification;
+- audit.
+
+It does **not** require every operation to be executed by the same code path.
+
+For a bulk operation, the planner may choose:
+
+- native Swift API calls;
+- Swift bulk-delete;
+- Swift async/SLO-native operations;
+- bounded parallel native requests;
+- rclone copy — to planned-new or uniquely-staged destination names only (§28.6, §36);
+- a future proven server-side fast path.
+
+rclone never overwrites or deletes an existing object; every overwrite, deletion, and manifest
+commit is Aeronautes-native (§28.6, §36).
+
+Architectural purity must not force a materially slower implementation when an equally safe faster path exists.
+
+### 3.4 Explain before deleting
+
+Destructive actions should explain scope and consequences before execution.
+
+For high-impact operations:
+
+1. establish semantic scope;
+2. classify risk;
+3. preview or analyse where practical;
+4. ask for appropriate confirmation;
+5. execute using the fastest safe engine;
+6. verify the resulting namespace;
+7. report partial failures precisely.
+
+### 3.5 Advanced, not intimidating
+
+Aeronautes should work excellently on `Auto`.
+
+Experts should also be able to tune:
+
+- workers;
+- checkers;
+- transfer concurrency;
+- API concurrency;
+- listing page sizes;
+- delete strategy;
+- bulk-delete batching;
+- buffers;
+- memory budgets;
+- rate limits;
+- retries;
+- large-object behaviour;
+- compatibility workarounds.
+
+Power belongs behind well-designed advanced controls, not behind an arbitrary free-form command-line textbox.
+
+---
+
+## 4. Visual direction
+
+![Browser and inspector](assets/draft/browser-inspector.png)
+
+> ⚠ Draft mockup — the pixels contain S3-flavoured errors. See §4.5 and `assets/draft/README.md`; the corrections there are normative.
+
+### 4.1 Visual system
+
+The intended look is:
+
+- warm cream / stone backgrounds;
+- graphite / ink text;
+- a restrained champagne / brass accent;
+- subtle depth rather than heavy shadows;
+- carefully rounded cards and controls;
+- high-quality typography;
+- dense information where operators need it;
+- breathing room around major panes rather than excessive row height;
+- extremely limited use of bright colour;
+- colour reserved for state, danger, success, selection, and semantic badges;
+- light and dark themes, both warm;
+- animation around 120–160 ms for small transitions;
+- no bounce or gimmicky motion.
+
+Avoid:
+
+- Horizon-style blue admin tables;
+- Cyberduck utility chrome;
+- Electron/VS Code visual language;
+- generic purple gradients;
+- stock shadcn appearance;
+- cartoon mascots;
+- excessive toolbar icons;
+- giant whitespace that reduces scan speed.
+
+### 4.2 Typography
+
+Use:
+
+- a highly legible modern UI face for dense object/container listings;
+- a more characterful display treatment for headings and selected resource names;
+- narrow mono for ETags, tokens, object paths, request IDs, and raw headers;
+- tabular figures for sizes, rates, worker counts, timestamps, and progress.
+
+Do **not** use a decorative display face for every row in a million-object browser.
+
+### 4.3 Window/layout model
+
+Wide layout:
+
+```text
+┌──────────┬────────────────┬──────────────────────────────┬─────────────────────┐
+│ Bookmark │ Containers     │ Working list / prefixes      │ Inspector           │
+│ rail     │                │                              │ always visible      │
+│          │                │                              │                     │
+├──────────┴────────────────┴──────────────────────────────┴─────────────────────┤
+│ Transfer / jobs drawer                                                        │
+└────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Medium layout:
+
+```text
+rail | containers | working list | inspector ~320px
+```
+
+Narrow/laptop layout:
+
+```text
+rail | working list
+              ↳ inspector slide-over
+```
+
+Panes should be resizable.
+
+### 4.4 Keyboard model
+
+Initial keyboard targets:
+
+- `↑` / `↓` — move selection;
+- `Enter` — open prefix/resource;
+- `Backspace` or `Alt+↑` / `Cmd+↑` — parent prefix (offer the modifier form too; `Backspace` sitting next to a destructive `Delete` is a classic file-manager footgun);
+- `/` — focus prefix field;
+- `Cmd/Ctrl+K` — command palette;
+- `Cmd/Ctrl+I` — focus/toggle inspector;
+- `Delete` — open safe delete flow, never immediate deletion.
+
+### 4.5 Mockup terminology corrections (normative)
+
+The four images in `assets/draft/` convey the intended look, density, and layout. They were AI-generated and, in several places, use S3-flavoured terminology and invented fields that are **wrong for Swift**. The look is direction; the following corrections are normative and override the pixels.
+
+| In the mockup | Correct for Aeronautes/Swift | Where |
+|---|---|---|
+| "Stacked Large Object", "STACKED OBJECT" | **Static Large Object (SLO)** | browser-inspector |
+| `x-amz-meta-shoot`, `x-amz-meta-location`, `x-amz-meta-camera` | `X-Object-Meta-*` (Swift object metadata) | browser-inspector |
+| Large-object `Redundancy EC:4+2` | Not a manifest field. Erasure coding is a **storage-policy** attribute shown on the container, not per object. Remove from the object inspector. | browser-inspector, transfer-planner |
+| Large-object `Checksum CRC32C` | Swift segment integrity is the segment **ETag (MD5)**. There is no per-segment CRC32C. | browser-inspector, transfer-planner |
+| `Multipart threshold`, `Upload/Download part size`, `Max in-flight parts` | A **single "large-object chunk size"** (rclone's `--swift-chunk-size` is both threshold and segment size — §25). Not two controls; Swift has segments, not "parts". | performance-settings |
+| `Auto (64 MB)` large-object defaults | **5 GiB** default chunk size, capped at the cluster's `max_file_size` (§25). 64 MiB is explicitly forbidden as a production default (§64). | performance-settings |
+| Clusters labelled "S3-compatible object stores" | Swift is **not** S3. Some clusters run an S3 middleware, but Aeronautes speaks the **native Swift API**; the S3 framing contradicts the product thesis. | architecture-overview |
+| `Maximum active jobs 256` | The example ceiling is small (order of 4, §38.1). Do not imply hundreds of concurrent jobs. | performance-settings |
+
+When these mockups are regenerated, use Swift-native vocabulary throughout: containers, objects, prefixes, segments, DLO/SLO manifests, storage policies, ACLs, `X-*-Meta-*` headers, ETags. Never `x-amz-*`, "multipart", "part", "bucket", or "S3-compatible".
+
+---
+
+## 5. Major screens
+
+### 5.1 Browser + inspector
+
+Primary shell:
+
+- bookmark rail;
+- container column;
+- Logical / All / Backstage modes;
+- breadcrumb;
+- server prefix field;
+- page-local filter;
+- explicit **Find in container**;
+- object/prefix working list;
+- always-visible inspector;
+- transfer/job drawer.
+
+The inspector, not the file list, is the conceptual centre of the application.
+
+### 5.2 Transfer planner
+
+![Transfer planner](assets/draft/transfer-planner.png)
+
+Cross-account/cross-cluster replication is a first-class workflow.
+
+The transfer planner must make source, destination, mode, large-object policy, predicted impact, performance profile, and destructive consequences obvious.
+
+### 5.3 Performance settings
+
+![Performance settings](assets/draft/performance-settings.png)
+
+Performance settings are a deliberate product surface, not a hidden debug panel.
+
+Normal users should succeed with `Auto`.
+
+Experienced operators must be able to control the machine and endpoint budgets precisely.
+
+### 5.4 Architecture overview
+
+![Architecture overview](assets/draft/architecture-overview.png)
+
+This image is a visual summary only. The normative architecture is specified below.
+
+---
+
+## 6. Technology decision
+
+### 6.1 Locked stack
+
+| Layer | Choice | Notes |
+|---|---|---|
+| UI | Svelte 5 + TypeScript | Custom design system |
+| Desktop shell | Wails v3 (beta) | Go-native desktop shell; GTK4/WebKitGTK 6 on Linux; chosen greenfield to avoid a later v2→v3 rewrite (§6.6) |
+| App core | Go | Orchestration, jobs, scheduling, semantics, persistence |
+| Swift wire foundation | `github.com/ncw/swift/v2` | Reuse mature Go Swift implementation |
+| Swift semantic layer | Aeronautes-owned Go packages | The product's real domain logic |
+| Bulk movement | pinned rclone subprocess | One process per logical transfer job initially |
+| Local state | SQLite | Durable non-secret state |
+| Secrets | OS keychain | Session-only fallback if keychain unavailable |
+| Frontend/backend bridge | Wails bindings | Typed application services; no generic shell API |
+
+### 6.2 Why Go
+
+Go fits this project unusually well:
+
+- Aeronautes is overwhelmingly network/I/O bound;
+- goroutines/channels/context cancellation suit high-concurrency Swift operations;
+- `ncw/swift/v2` already implements a large fraction of the required Swift wire behaviour;
+- rclone is itself Go and uses the same Swift ecosystem;
+- Wails preserves the desired Svelte/native-webview UI model;
+- packaging remains a native desktop application rather than a Python runtime bundle.
+
+### 6.3 Why not Python
+
+Python remains an excellent reference implementation ecosystem because `python-swiftclient` is mature and canonical.
+
+It should be used as:
+
+- behavioural reference;
+- fixture generator;
+- integration-test oracle where useful.
+
+It should **not** be the application runtime.
+
+Reasons:
+
+- poorer desktop packaging story for this architecture;
+- runtime/dependency distribution overhead;
+- unnecessary process boundary if combined with Svelte/Wails;
+- PySide would compromise the chosen custom web-UI direction.
+
+### 6.4 Do not port python-swiftclient
+
+This is a hard rule.
+
+Aeronautes is not a project to rewrite `python-swiftclient` in Go or Rust.
+
+Do not seek:
+
+- API compatibility;
+- CLI compatibility;
+- SwiftService parity;
+- line-for-line porting;
+- full test parity.
+
+The normative hierarchy is:
+
+1. OpenStack Swift protocol/API behaviour;
+2. proven target-cluster behaviour;
+3. `python-swiftclient` as behavioural reference;
+4. `ncw/swift/v2` as low-level Go implementation;
+5. Aeronautes' own semantic layer.
+
+### 6.5 Do not fork `ncw/swift/v2` pre-emptively
+
+Wrap it.
+
+If a missing capability is needed:
+
+1. use its lower-level request facility where appropriate;
+2. add a narrow Aeronautes adapter;
+3. consider an upstream contribution;
+4. fork only if there is a concrete, sustained reason.
+
+### 6.6 Webview reality (affects the "beautiful" pillar)
+
+Wails renders in the host's **system webview**: WebKitGTK on Linux, WebView2 on Windows, WKWebView on macOS. The product's first pillar is *beauty*, and the Tier-1 platform is Linux, so the design depends on how WebKitGTK actually renders — where font rendering, compositing, and some CSS features diverge from a development Chromium, and where certain GPU/driver combinations have known glitches. This is a real risk to the core pillar, not a detail.
+
+Mitigations:
+
+- prove the design system under WebKitGTK early (Phase 0 gate, §60);
+- keep the visual system within features that render consistently across all three webviews;
+- choose fonts with robust fallbacks;
+- avoid effects that only look right in Chromium.
+
+**Shell version: Wails v3 (beta), chosen deliberately.** Because this is itself a greenfield beta app with a multi-month build horizon, we start on **Wails v3** rather than v2: it avoids a v2→v3 rewrite later, and on Linux it uses GTK4 / WebKitGTK 6 — a much better base for the Linux-first "beautiful" goal than v2's older WebKitGTK. The cost is that v3's API is still stabilising, so: pin a specific v3 version and upgrade deliberately; keep the Go↔frontend bridge decoupled (typed services, §55) so falling back to v2 stays cheap if v3 blocks. The Phase-0 spike (§60) *validates v3* on the named Tier-1 Linux baseline and is the trigger for the v2 fallback. Recorded in ADR `0010-webview-wails-v3`.
+
+**Tier-1 Linux baseline (named — this resolves K-PLAT-002).** Aeronautes targets **modern distributions only**:
+
+- **Fedora Workstation, current stable release** — first-class: the primary development and first-polish platform (at design lock: Fedora 44);
+- **Ubuntu, current LTS** — native Tier-1 (at design lock: Ubuntu 26.04 LTS; Ubuntu 24.04 LTS, which also ships WebKitGTK 6.0, is a compatibility-test target);
+- **EL9 and other GTK3-era distributions: no native support.** EL9 ships only the GTK3-era WebKit (the webkit2gtk-4.1 API), and Red Hat has deprecated WebKitGTK in RHEL 9, so Wails v3 cannot run there natively. The EL-family answer is **Flatpak** (the runtime bundles WebKitGTK 6.0), gated as before on proving keychain + rclone-sidecar + portal behaviour (§61.1). EL8 is unsupported.
+- **"Static binary that runs on any Linux" was considered and rejected**: Wails renders in the system webview through CGO, and WebKitGTK cannot sensibly be statically linked or bundled outside a runtime, so a run-anywhere static binary would mean abandoning the chosen shell. Modern-distros-native plus Flatpak-for-the-rest is the policy.
+
+---
+
+## 7. Repository layout
+
+Recommended monorepo:
+
+```text
+/
+├── AGENTS.md
+├── README.md
+├── LICENSE
+├── go.mod
+├── wails.json
+│
+├── frontend/
+│   ├── src/
+│   │   ├── components/
+│   │   ├── features/
+│   │   │   ├── bookmarks/
+│   │   │   ├── browser/
+│   │   │   ├── inspector/
+│   │   │   ├── transfer/
+│   │   │   ├── jobs/
+│   │   │   ├── settings/
+│   │   │   └── diagnostics/
+│   │   ├── design/
+│   │   │   ├── tokens.ts
+│   │   │   ├── typography.css
+│   │   │   └── motion.css
+│   │   └── lib/
+│   └── ...
+│
+├── internal/
+│   ├── app/
+│   ├── bookmarks/
+│   ├── capabilities/
+│   ├── swiftcontrol/
+│   │   ├── listing/
+│   │   ├── metadata/
+│   │   ├── acl/
+│   │   ├── versioning/
+│   │   ├── largeobjects/
+│   │   └── deletion/
+│   ├── transfer/
+│   │   ├── rclone/
+│   │   ├── planner/
+│   │   └── scheduler/
+│   ├── jobs/
+│   ├── performance/
+│   ├── secrets/
+│   ├── audit/
+│   ├── db/
+│   └── diagnostics/
+│
+├── docs/
+│   ├── DESIGN.md               # this document (authoritative)
+│   ├── REQUIREMENTS.md         # normative K-* IDs (phase gates)
+│   ├── assets/
+│   │   ├── REGENERATION.md
+│   │   └── draft/              # stale S3-flavoured mockups — do not copy
+│   │       ├── browser-inspector.png
+│   │       ├── transfer-planner.png
+│   │       ├── performance-settings.png
+│   │       └── architecture-overview.png
+│   ├── swift-semantics.md
+│   ├── performance.md
+│   ├── rclone.md
+│   ├── security.md
+│   ├── ux.md
+│   └── adr/
+│       ├── 0001-go-wails.md
+│       ├── 0002-swift-semantic-layer.md
+│       ├── 0003-rclone-subprocess-boundary.md
+│       ├── 0004-delete-strategy-engine.md
+│       ├── 0005-large-object-safety.md
+│       ├── 0006-secret-storage-linux.md
+│       ├── 0007-rclone-flag-surface.md
+│       ├── 0008-copy-data-path.md
+│       ├── 0009-token-refresh.md
+│       └── 0010-webview-wails-v3.md
+│
+├── test-fixtures/
+└── scripts/
+```
+
+The tree above is the target shape. At design lock, `docs/swift-semantics.md`, `performance.md`,
+`rclone.md`, `security.md`, and `ux.md` do **not** exist yet — each is created by the phase that
+needs it (e.g. `rclone.md` before Phase 5, §44.1). ADRs `0001–0005` record decisions already made
+in this document; `0006–0010` exist as **Proposed** stubs naming their open question and the phase
+that must resolve it. A referenced-but-missing satellite document is not an error; this document is
+authoritative until the satellite exists.
+
+---
+
+## 8. Architectural split
+
+### 8.1 Governing rule
+
+> **Aeronautes owns semantics, intent, safety, scheduling and verification.  
+> Execution uses the fastest safe engine.**
+
+```text
+Svelte UI
+   │
+   │ typed Wails bindings
+   ▼
+Go application core
+   │
+   ├── swiftcontrol
+   │     ├── listings
+   │     ├── metadata / ACL / configuration
+   │     ├── DLO / SLO interpretation
+   │     ├── segment classification
+   │     └── destructive operation planning
+   │
+   ├── jobs / scheduler
+   │
+   ├── transfer planner
+   │     └── rclone subprocesses
+   │
+   ├── performance profiler
+   │
+   ├── SQLite
+   └── SecretStore
+```
+
+### 8.2 Control plane versus execution
+
+The old simplistic boundary:
+
+> "rclone moves bytes; Swift code deletes"
+
+is **not** the final design.
+
+The final design is:
+
+> **The control plane decides what may happen and verifies what happened.  
+> The execution engine may be Swift-native or rclone.**
+
+This allows Aeronautes to be both safe and extremely fast.
+
+---
+
+## 9. Swift protocol foundation
+
+Use `github.com/ncw/swift/v2` underneath an Aeronautes-owned semantic layer.
+
+The frontend must never call the low-level client directly.
+
+**Shared wire library, duplicated behaviour — know which is which.** rclone's own Swift backend is also built on `github.com/ncw/swift/v2`. That is a deliberate advantage: object-name encoding, URL construction, and v1 auth are the *same implementation* on both the native path and the rclone path, so they are unlikely to disagree at the wire level. However, the layers **above** the wire library — listing strategy, pagination tuning, retry/backoff policy, adaptive concurrency, and provider-compatibility workarounds — are implemented and configured **twice** (once in Aeronautes' semantic layer, once inside rclone). Aeronautes can only influence rclone's copies of these through the curated flag surface it chooses to set at spawn time (§26, §44). Two consequences follow: (1) a provider quirk may need solving in both places; (2) Aeronautes' adaptive concurrency and endpoint budgets (§38, §41) apply directly to the native client but only *approximately* to a running rclone subprocess, which manages its own worker pools. Design the scheduler with this asymmetry explicit rather than pretending one controller governs both.
+
+### 9.1 Aeronautes semantic service responsibilities
+
+`internal/swiftcontrol` owns:
+
+- auth/session abstraction;
+- capability discovery;
+- typed listings;
+- header categorisation;
+- resource snapshots;
+- safe metadata mutation;
+- ACL model;
+- versioning model;
+- storage-policy display/create semantics;
+- DLO/SLO interpretation;
+- segment evidence;
+- destructive-operation planning;
+- normalized errors;
+- request IDs and diagnostics.
+
+### 9.2 Initial auth
+
+v1 first:
+
+```http
+GET {auth_url}
+X-Auth-User: account:user
+X-Auth-Key: secret
+```
+
+Use returned token + storage URL.
+
+On 401:
+
+1. invalidate session token;
+2. authenticate once;
+3. replay once;
+4. then fail.
+
+Keystone v2/v3 is not a v1 UI goal even if the underlying library supports it.
+
+**Pin the auth target to a real cluster.** "SwiftStack" as a commercial product was discontinued after Nvidia's 2020 acquisition; "SwiftStack-compatible" here means the legacy/OpenStack Swift lineage those deployments run, and "SwiftStack v1 auth" is TempAuth-v1-style auth. Because there is no shipping SwiftStack release to certify against, the concrete auth flow, `/info` behaviour, and versioning model (§21) must be pinned to the **actual cluster the user operates**, and the "SwiftStack release gate" in §57.4 means "a representative instance of that real deployment", not a vendor product.
+
+**Auth variants still live inside "v1".** Even TempAuth-v1 has sharp edges to handle explicitly: `account:user` identities (not email addresses), reseller/admin identities, a returned storage URL that differs from any `storage_url_override`, and http/https or hostname mismatches between the auth response and the configured endpoint (a classic SwiftStack footgun). Treat these as first-class bookmark/auth cases, not surprises.
+
+---
+
+## 10. Capability discovery
+
+`GET /info` is foundational.
+
+It is not an optional later enhancement.
+
+A bookmark maintains:
+
+```text
+Capabilities
+  source: Advertised | Unknown
+  fetched_at
+
+  bulk_delete
+  slo
+  tempurl
+  staticweb
+  versioned_writes
+  container_quotas
+  storage_policies[]
+  ...
+```
+
+The UI must distinguish:
+
+- **unsupported/absent**;
+- **unknown because `/info` is disabled/unavailable**.
+
+Capabilities should drive the inspector and available operations.
+
+Examples:
+
+- only show a storage policy chooser when multiple usable policies exist;
+- gate bulk-delete strategies;
+- gate TempURL features;
+- gate SLO-native operations;
+- expose capability status in Diagnostics.
+
+**When `/info` is unavailable.** `GET /info` is served at the cluster root, not under `/v1/AUTH_account`, and **may be disabled, filtered, unavailable, or unreachable through provider-specific endpoint layouts**; a bookmark may only have a storage URL + token and no authorised path to `/info`. Aeronautes derives the info endpoint from the storage URL (strip the account path) as a best effort, and when it cannot read `/info` it enters an **Unknown-capabilities** mode: features are not hard-disabled purely because `/info` is missing, but are offered with a clearly labelled "capability unknown" state and validated by attempting the operation and handling the result, rather than pretending the feature is absent. The degraded experience with no `/info` must remain usable for the core browse/inspect/mutate flows; do not gate so much on `/info` that a tenant without it cannot operate.
+
+Model capability provenance explicitly rather than a bare Advertised/Unknown split:
+
+```text
+CapabilityState   { Supported, Unsupported, Unknown }
+CapabilitySource  { Advertised, Observed, SafelyProbed, OperatorDeclared }
+```
+
+`SafelyProbed` may only use **non-destructive** probes, or destructive-capability probes (e.g. bulk-delete) confined to an Aeronautes-owned test/benchmark container — never against real user data.
+
+---
+
+## 11. Bookmark model
+
+```text
+Bookmark
+  id
+  display_name
+
+  protocol_profile
+    SwiftStackV1
+
+  auth_url
+  username
+  storage_url_override?
+
+  secret_ref
+
+  tls
+    System
+    CustomCa(ca_id)
+    Insecure
+
+  performance_profile
+    Inherit
+    Auto
+    Balanced
+    Aggressive
+    Custom
+
+  upload_policy
+    segment_placement          # rclone honours container-vs-sidecar,
+      RcloneDefault            # not an arbitrary per-upload prefix (§26.4)
+      Sidecar                  # <container>_segments
+      InContainer              # segments in-container under a prefix
+
+    chunk_size
+      Default                  # 5 GiB, capped at the cluster max_file_size (§25)
+      Custom
+
+  ui_preferences
+```
+
+Secret values never live in this structure.
+
+---
+
+## 12. Secrets and TLS
+
+### 12.1 SecretStore abstraction
+
+```go
+type SecretStore interface {
+    Get(...)
+    Put(...)
+    Delete(...)
+}
+```
+
+Preferred implementation:
+
+- the operating-system secret store, per OS: **Secret Service** (libsecret) on Linux, **Keychain** on macOS, **Credential Manager / DPAPI** on Windows. (Architecture makes no difference here; the OS does.)
+
+If unavailable:
+
+- offer **session-only** credentials;
+- do not silently store plaintext in SQLite;
+- offer an explicit, opt-in, passphrase-encrypted local vault (see below).
+
+**Linux reality (the Tier-1 platform).** "OS keychain" on Linux means the Secret Service API (libsecret / gnome-keyring / kwallet) over D-Bus. On minimal window managers (e.g. sway), headless or SSH-only operator hosts, and inside a Flatpak sandbox, Secret Service is frequently absent or locked. Because Linux is the priority platform, the keychain-absent path is a **common** case, not an edge case, and "retype every credential on each launch" is an unacceptable default for a tool holding many bookmarks. Therefore v1 provides, in priority order:
+
+1. OS Secret Service when present and unlocked;
+2. an explicit, opt-in, **passphrase-encrypted local vault** built on an *established, reviewed* Go keyring / encrypted-file implementation or format — **do not invent an Aeronautes-specific crypto construction**. Required properties: authenticated encryption; a memory-hard password KDF; atomic writes; strict filesystem permissions; a versioned on-disk format; a password-change / migration path; no plaintext secrets in SQLite; no custom cryptographic primitives. Unlocked once per session; never silent; always clearly labelled; never the default when a real keychain exists. The implementation is chosen in ADR `0006-secret-storage-linux`;
+3. session-only credentials as the last resort.
+
+The earlier "no home-grown vault in v1" rule is replaced by "no *silent* or *ad-hoc* vault": the encrypted-vault option is a deliberate, documented, opt-in feature, not an invisible fallback. **This reverses a previously locked decision; it needs ADR `0006-secret-storage-linux`.**
+
+### 12.2 Custom CA
+
+Prefer importing/copying a selected CA into application-private storage and recording its fingerprint.
+
+Do not rely indefinitely on a user's arbitrary filesystem path.
+
+### 12.3 Insecure TLS
+
+Must be:
+
+- explicit;
+- visually identified;
+- bookmark-specific;
+- never enabled by default.
+
+When a Swift→Swift child holds two remotes, TLS policy MUST be applied **per-remote**, never as a process-global flag — a global `--no-check-certificate` or `--ca-cert` would weaken or alter trust for the *other* bookmark too. rclone documents remote-scoped overrides of global flags for exactly this case (`override.no_check_certificate`, `override.ca_cert`, applied only while that remote is in use); the Phase-0 seam spike (§60) must verify that the env-configured configless remotes (§26.2) honour `override.*`. If the pinned rclone cannot honour a per-remote override, run the job as **two single-remote children** — download under one TLS policy, then upload under the other (already a client-side hairpin, §28.5) — or reject the pairing; never broaden trust process-wide. (K-SEC-008.)
+
+---
+
+## 13. Resource model
+
+```text
+ResourceRef
+  Account
+  Container(name)
+  Object(container, name)
+  Prefix(container, prefix)
+```
+
+### 13.1 Resource snapshot
+
+```text
+ResourceSnapshot
+  resource
+  fetched_at
+
+  last_modified?
+  etag?
+
+  derived
+  editable_system
+  user_meta
+  raw_headers
+
+  editable_fingerprint
+```
+
+Do not call ETag alone a concurrency token.
+
+Aeronautes' stale-write protection is **best-effort conflict detection**, not a transactional guarantee.
+
+---
+
+## 14. Listing model
+
+Delimiter listings are typed:
+
+```go
+type ListingEntry interface { ... }
+
+type ObjectEntry struct { ... }
+type PrefixEntry struct { ... }
+```
+
+Do not flatten both into a fake filesystem inode model.
+
+### 14.1 Folder/prefix model
+
+```text
+PrefixId { container, prefix }
+```
+
+`prefix` includes trailing `/` while inside a virtual folder.
+
+A prefix may be:
+
+- marker-backed;
+- implied by children only.
+
+Marker convention created by Aeronautes:
+
+```text
+name: {prefix}{leaf}/
+body: 0 bytes
+Content-Type: application/directory
+```
+
+UI:
+
+- visually distinguish marker-backed versus implied;
+- both remain valid navigable prefixes.
+
+### 14.2 Do not HEAD every row
+
+Listing is cheap classification.
+
+Selection triggers authoritative HEAD/inspection.
+
+This is a hard performance rule.
+
+### 14.3 Object-name encoding tests
+
+Test names including:
+
+```text
+a b
+a+b
+a%b
+a?b
+a#b
+日本語
+foo//bar
+/foo
+foo/
+foo%2Fbar
+```
+
+Never trust generic filesystem/path helpers to preserve Swift object identity automatically.
+
+Run this encoding suite against **both** execution paths — Aeronautes' native client *and* the rclone transfer path. Careful encoding in Aeronautes' own client does not protect names that flow through rclone; a "logical" copy of a namespace containing `foo//bar`, a leading `/foo`, or an object literally named `foo/` must be shown to round-trip through the transfer engine, not only through native listing. Extend the set with a newline inside a name, `.` and `..` path segments, and names that are only spaces.
+
+**This is a go/no-go gate with a required native fallback, not just an observation.** The pinned rclone Swift backend *will* mangle some identities — it trims leading/trailing `/` and runs Go `path.Join`, which collapses repeated separators and `.`/`..` segments; rclone's open [#5673](https://github.com/rclone/rclone/issues/5673) has `copy`/`sync` ignoring objects below a repeated-slash component; and `--files-from` is newline-delimited and strips surrounding whitespace (use `--files-from0` for NUL-delimited lists, which fixes the list serialization but not backend normalization). So the Phase-0 encoding experiment must classify each name as rclone-safe or not, and any identity rclone cannot preserve is routed through a native byte-preserving Swift transfer path. Aeronautes must **never silently skip or normalize** an object name. (K-TEST-001 means the suite must *pass* end-to-end — including the forced-copy and Mirror-planned paths — with native fallback where needed, not merely "run".)
+
+---
+
+## 15. Listing performance
+
+High-volume namespace operations are streaming pipelines.
+
+Never:
+
+```text
+list 10 million objects
+store 10 million objects
+then act
+```
+
+Prefer:
+
+```text
+LIST page
+   │
+   ├── render / inspect / enqueue
+   ▼
+LIST next page
+```
+
+### 15.1 Page size
+
+Default mode: `Auto`.
+
+For compatible Swift deployments, start by trying a high page size (up to 10,000) and adapt/fallback if provider behaviour requires it.
+
+This is intentionally independent of rclone's own listing implementation.
+
+Aeronautes should outperform generic tooling where Swift-specific optimisation allows it.
+
+### 15.2 Comparison at scale is a streaming merge-join
+
+Swift listings are returned **sorted by object name** and paginated by `marker`. Comparing two
+namespaces (Copy/Mirror preview and planning, §28.4) is therefore a **bounded-memory streaming
+merge-join** of two paginated listing streams — never "load both sides into a map" (the first thing
+a naive implementation reaches for, and a violation of K-PERF-001 at exactly the scale where
+Mirror matters).
+
+Rules:
+
+- advance two paged iterators in lock-step, comparing on **raw name bytes** (Swift orders by name;
+  never compare with locale-aware collation);
+- emit New / Changed / Unchanged / Destination-only verdicts as the join advances, so preview
+  counts and the forced transfer set stream out with bounded memory;
+- neither side is a snapshot: both namespaces can mutate while the join runs (§15.3); the result
+  is advisory, and execution-time behaviour must stay safe regardless (§28.6).
+
+### 15.3 Consistency model
+
+Swift is eventually consistent, and the design says so once rather than rediscovering it per
+feature: **container listings can lag object PUT/DELETE** (container-DB updates are asynchronous
+under load), while **HEAD/GET of a named object is authoritative**.
+
+Consequences, wired through the rest of this document:
+
+- listing-based verification (§32) uses **bounded retries** before concluding anything;
+- stage-and-commit verification (§28.6 step 5) MUST confirm **segment-listing completeness**
+  (expected segment count/bytes) before declaring success — a freshly-committed DLO read through a
+  stale listing can assemble a **short object**;
+- Copy/Mirror preflight comparisons (§15.2, §28.4) are advisory, not snapshots;
+- crash reconciliation (§26.4) may not yet see just-written segments; treat "not listed" as "not
+  proven absent";
+- a DLO's reads depend on listing consistency **forever**, which is part of why the planner must
+  disclose that a replicated SLO becomes a DLO at the destination (§28.6).
+
+(K-CON-001.)
+
+---
+
+## 16. Filtering/search
+
+Three distinct operations:
+
+### Prefix
+
+Server-side Swift `prefix=`.
+
+Primary navigation/filtering mechanism.
+
+### Page filter
+
+Substring/client-side filter over currently loaded rows only.
+
+Must be labelled clearly as local/current-page scope.
+
+### Find in container
+
+Explicit cancellable job:
+
+- page through the namespace;
+- stream matching results;
+- do not run on every keystroke;
+- bounded memory;
+- expose scanned count and throughput.
+
+---
+
+## 17. Metadata mutation
+
+Object metadata is one of Aeronautes' signature correctness features.
+
+### 17.1 Object user metadata
+
+Object POST semantics can replace the custom metadata set.
+
+Therefore:
+
+1. load snapshot;
+2. user edits working copy;
+3. preflight HEAD;
+4. detect meaningful changes since original snapshot;
+5. if changed, show conflict/reload flow;
+6. assemble the **complete remaining object user-metadata set**;
+7. replay the mandatory preserved-header set (enumerated below);
+8. show diff;
+9. POST;
+10. HEAD again;
+11. verify resulting state.
+
+**Preserved-header replay set (normative).** Swift object POST leaves a header untouched when it is omitted, so the planner replays exactly:
+
+| Header | Metadata-edit POST | Copy (§27.4) |
+|---|---|---|
+| `X-Object-Manifest` (DLO) | **always replay when present** (omitting it turns a DLO into a plain object) | destination keeps its **own** generated manifest, never the source's |
+| `X-Symlink-Target` / `X-Symlink-Target-Account` | replay when present | carry when present |
+| `X-Object-Meta-*` | full remaining user-meta set (replace-all) | carry the source set |
+| `Content-Type` / `Content-Encoding` / `Content-Disposition` | **do not re-send** unless the user edited it (Swift leaves it untouched) | carry from source |
+| `X-Delete-At` (absolute) / `X-Delete-After` (relative) | do not re-send unless edited; store/display as absolute | carry as absolute |
+
+Object CORS headers do **not** exist — CORS is container-level, so never invent object CORS headers. Never replay read-only/system response headers, or (on Copy) the source's SLO/DLO control headers. Cover this exact matrix in the §57.2 mock-HTTP fixtures.
+
+### 17.2 Container/account metadata
+
+Use per-key set/remove semantics where Swift supports it.
+
+### 17.3 DLO preservation
+
+Metadata changes to a DLO must not accidentally destroy manifest semantics.
+
+The mutation planner, not ad-hoc UI code, owns the required preserved-header set.
+
+### 17.4 Diff UI
+
+Significant mutations should show:
+
+```text
+Before                   After
+
+X-Object-Meta-Owner      X-Object-Meta-Owner
+alice                    bob
+
+X-Object-Meta-Project    X-Object-Meta-Project
+kept                     kept
+```
+
+Diff is semantic first; raw header view remains available.
+
+---
+
+## 18. Best-effort stale-write protection
+
+Flow:
+
+```text
+Inspector HEAD
+    ↓
+user edits
+    ↓
+save requested
+    ↓
+preflight HEAD
+    ↓
+compare editable fields / Last-Modified / fingerprints
+    ├── changed → conflict UI
+    └── unchanged → POST
+                      ↓
+                   verify HEAD
+```
+
+Aeronautes must not imply this is an atomic compare-and-swap guarantee.
+
+---
+
+## 19. ACL model
+
+v1 UI targets SwiftStack/Auth-v1 semantics first.
+
+Use:
+
+```text
+AclDialect
+  SwiftStackV1
+  GenericRaw
+```
+
+Structured editor should understand useful SwiftStack-style principals and public read/listing semantics, while always showing the exact generated header value.
+
+### 19.1 Presets
+
+Useful presets may include:
+
+- Private;
+- Public read;
+- Public list + read;
+- explicit authenticated principal(s).
+
+Dangerous public settings require clear confirmation.
+
+### 19.2 Raw escape hatch
+
+Always available to experts.
+
+Structured mode and raw mode must round-trip without silently changing semantics.
+
+---
+
+## 20. Storage policies
+
+Container storage policy is chosen at creation time and treated as read-only thereafter.
+
+Container creation:
+
+- one/default policy → don't clutter UI unnecessarily;
+- multiple advertised policies → selector;
+- unknown capabilities → use server default unless expert override is explicitly supported later.
+
+Existing container inspector:
+
+- display storage policy;
+- no fake edit affordance.
+
+---
+
+## 21. Versioning
+
+Initial UI supports the versioning model relevant to the target SwiftStack environment.
+
+Represent it as a typed capability/profile, not as assumptions scattered through UI code.
+
+UI should explain behaviour rather than simply exposing header names.
+
+Potential options:
+
+- Off;
+- Versions Location;
+- History Location.
+
+Archive-container references must be validated as far as practical.
+
+Large-object/versioning caveats should be shown when relevant.
+
+**Pin the concrete v1 target.** "The versioning model relevant to the target environment" must be resolved to a specific mechanism before Phase 2 and recorded here: the older container-based `X-Versions-Location` / `X-History-Location`, `versioned_writes` object versioning, and S3-style object versioning are different models with different UX. Do not build all of them speculatively. Pin the one the **actual target cluster runs** (see §9.2) and represent it as one typed capability/profile; add others only when a real cluster requires them.
+
+---
+
+## 22. TempURL
+
+v1 priorities:
+
+- show whether key slots are present;
+- replace/rotate;
+- clear;
+- redact values;
+- never log secret material.
+
+Never expose existing secret values casually.
+
+TempURL URL/signature generation may be a follow-up feature; key management belongs in the inspector.
+
+---
+
+## 23. Large-object model
+
+**DLO** (Dynamic Large Object) and **SLO** (Static Large Object) are distinct domain objects.
+
+Do not reduce both to a generic `SegmentHome`.
+
+```go
+type LargeObject interface { ... }
+
+type DLOManifest struct {
+    SegmentContainer string
+    SegmentPrefix    string
+}
+
+type SLOManifest struct {
+    // ONE ordered list preserves the original position of every entry,
+    // including unknown/future entries interleaved between recognised ones.
+    Entries []SLOEntry
+}
+
+// Tagged union. Each variant keeps RawFields so unknown fields on an
+// otherwise-recognised entry survive an exact round-trip.
+type SLOEntry interface{ isSLOEntry() }
+
+type ObjectSegment struct {
+    Path      ObjectRef
+    ETag      *string
+    Size      uint64
+    Range     *ByteRange       // ranged entries contribute `etag:range;` to the ETag input
+    NestedSLO bool
+    RawFields map[string]any
+}
+
+type InlineDataSegment struct {
+    Data      []byte           // decoded base64; contributes MD5(decoded bytes) to the ETag input
+    RawFields map[string]any
+}
+
+type RawEntry struct {          // unrecognised/future entry, retained verbatim in place
+    Fields map[string]any
+}
+```
+
+### 23.1 DLO
+
+DLO has a segment container + prefix.
+
+Inspector shows:
+
+- manifest header;
+- logical object size where known;
+- segment location;
+- segment listing;
+- backstage navigation.
+
+### 23.2 SLO
+
+SLO owns an authoritative exact manifest.
+
+Inspector shows:
+
+- exact segment paths;
+- sizes;
+- hashes;
+- ranges;
+- nested-SLO state where relevant;
+- derived grouping by container/prefix only as presentation.
+
+Never replace the exact segment list with a lossy grouping.
+
+Inline `data` segments are part of the exact manifest: include them in display and in equality/ETag logic, and never drop one or invent a path for it. If the pinned target cluster cannot create inline segments, model that as a tested capability — but still parse and display an externally-encountered manifest that contains them. The SLO ETag input is **not** simply the MD5 of concatenated segment ETags: a ranged entry contributes `etag:range;` and an inline entry contributes the MD5 of its decoded bytes. Compute equality and ETag by Swift's documented rules, and preserve unknown entries in their **original order** (the single ordered `SLOManifest.Entries` above).
+
+---
+
+## 24. Segment evidence and backstage classification
+
+```text
+SegmentEvidence
+  location
+
+  confidence
+    Confirmed
+    Declared
+    Suspected
+
+  reason
+    ObservedDLO
+    ObservedSLO
+    AppUpload
+    UserPin
+    NamingHeuristic
+
+  source_object?
+  first_seen
+  last_seen
+```
+
+### 24.1 Confirmed
+
+Examples:
+
+- observed directly from a manifest;
+- created by an Aeronautes-controlled upload with recorded ownership.
+
+**`Confirmed` proves a segment is *referenced*, not that it is *unshared*.** Do not treat it as authorization to delete: a destructive segment operation needs the separate `ExclusiveOwnershipProof` defined in §28.6(b) (a unique Aeronautes-recorded prefix), which `Confirmed` alone never satisfies for an externally-created object.
+
+### 24.2 Declared
+
+Explicit operator pin/mark.
+
+### 24.3 Suspected
+
+Naming heuristics only:
+
+- `*_segments`;
+- `.segments`;
+- `segments`;
+- known in-container segment-looking prefixes.
+
+### 24.4 Critical safety rule
+
+> **A heuristic alone may never authorize a destructive segment operation.**
+
+### 24.5 Logical view
+
+Hide:
+
+- Confirmed;
+- Declared.
+
+Do not truly hide Suspected.
+
+Show them in a subdued section such as:
+
+> Possible backstage · 2
+
+with an operator action to classify them.
+
+### 24.6 Backstage view
+
+Backstage mode explicitly reveals:
+
+- segment containers;
+- in-container segment prefixes;
+- raw marker/segment objects;
+- more dangerous operations.
+
+It should visually feel like entering an advanced operational context.
+
+---
+
+## 25. Large-object upload policy
+
+Default production chunk size:
+
+> **5 GiB** — matching Swift's canonical large-object segment size and rclone's own `--swift-chunk-size` default, capped at the cluster's advertised `max_file_size`.
+
+Notes:
+
+- **One control, not two.** rclone's Swift backend has a single `--swift-chunk-size` that governs *both* the threshold at which an object becomes segmented *and* the size of each uploaded segment. Until Aeronautes ships its own uploader, do not present independent "threshold" and "segment size" settings the engine cannot honour — expose a single "large-object chunk size".
+- **5 GiB is safe against standard Swift.** Swift's default `max_file_size` is `5368709122` bytes — 2 bytes *above* 5 GiB — so a 5 GiB object/segment is under the limit and does **not** 413 (rclone ships the same 5 GiB default for exactly this reason). The rule is simply that the chunk size must not exceed the cluster's advertised `max_file_size`: read it from `/info` when available and lower the chunk size only if a particular cluster reports a smaller maximum.
+- **Never tiny.** 64 MiB (or similar) remains forbidden as a production default (§64); small chunk sizes may be used intentionally for tests.
+- **rclone uploads DLOs.** rclone's Swift backend creates **Dynamic** Large Objects (`X-Object-Manifest`) by default, not SLOs; SLO creation is a non-goal (§62). So the default large-object upload path is a DLO under an Aeronautes-tracked segment location; the inspector must still *read* both DLO and SLO because clusters contain both.
+
+Default replication semantics are **logical**, not physical.
+
+When copying:
+
+```text
+source logical object
+      ↓
+destination logical object
+```
+
+The destination may use:
+
+- a different segment container;
+- a different generated prefix;
+- a different storage policy;
+- a different provider configuration.
+
+Do not attempt to reproduce source segment layout by default.
+
+---
+
+## 26. Transfer engine
+
+rclone is bundled as a pinned external binary.
+
+### 26.1 Initial process model
+
+One subprocess per logical transfer job.
+
+Advantages:
+
+- no broad RC listener;
+- no persistent RC credentials;
+- simple cancellation;
+- independent failure boundaries;
+- explicit per-job tuning;
+- easy version pinning.
+
+Do not embed rclone's internal Go packages in v1.
+
+Do not expose a generic shell interface to the frontend.
+
+### 26.2 Credentials/config
+
+Prefer ephemeral environment-based remote configuration.
+
+Do not use a persistent `rclone.conf` as credential storage.
+
+Secrets are injected only into the child process environment.
+
+Sanitized diagnostics must omit them.
+
+**Hand rclone a token, not the key.** Aeronautes authenticates once with its own client and passes rclone pre-authenticated storage URLs + auth tokens via **named-remote** environment config (see below), never the long-lived `X-Auth-Key`. This matches the "authenticate once" model, keeps the durable secret out of the subprocess, and bounds exposure if the child's environment is read — on Linux the child environment is readable at `/proc/<pid>/environ` by the same user (and root). **Token expiry does not refresh inside a running rclone child**, so plan for it two ways. *Preferred — bounded batches:* stock one-shot rclone has **no drain** (`--max-duration HARD` kills active transfers; `SOFT` only stops *starting* new transfers after the deadline, so an in-flight large object can still run past expiry; signalling the child is a cancel, not a drain). So for long jobs Aeronautes splits work into bounded file batches and starts a **fresh child per batch** with a fresh token, and/or requires the remaining token lifetime to exceed the time to move the batch's largest object at a conservative throughput floor. Token lifetime is established in priority order: **(1)** a server-provided expiry — stock TempAuth returns `X-Auth-Token-Expires`, but the target cluster's auth may not (verifying this is seam-spike item 1, §60); **(2)** a conservative per-bookmark configured lifetime; **(3)** a bounded maximum child duration plus the failure-driven reauth→reconcile fallback below. One consequence must be surfaced honestly: a **single object too large to move within the assumed lifetime at the floor rate** (multi-TiB over a slow link) is outside the supported envelope — the planner MUST fail such a job at preflight with a clear explanation (object size × measured link speed vs token lifetime), never mid-flight. *Fallback — failure-driven:* if a token does expire in flight, the child's requests fail with an auth error and, after a **small** bounded retry budget (so control returns quickly rather than looping), the child exits; Aeronautes then re-authenticates with the durable key it still holds, reconciles partial destination state, and spawns a new rclone process. On restart, Aeronautes rebuilds the work set from **unverified** objects only (§28.4): a *completed, verified* object is simply absent from the new set — Aeronautes does **not** rely on rclone's skip-identical, which is unsafe for `Unknown` objects and is bypassed by the `--ignore-times` selected-set contract. A **partially-uploaded large object** has no destination manifest yet (only segments Aeronautes may not be able to name), so its resume behaviour is **unknown** until the Phase-0 spike (§60) settles it and must not be promised in the UI; its orphaned segments are handled by §26.4 reconciliation. Keep the failure-driven reauth/reconcile path as a fallback, not a guaranteed happy path. The durable key never enters the subprocess. (See ADR `0009-token-refresh`.)
+
+**Two bookmarks need two named remotes, and the child must be isolated.** A Swift→Swift job configures two remotes in one process, which the backend-wide `RCLONE_SWIFT_*` defaults cannot express. Use fixed internal remote names via rclone's configless form — `RCLONE_CONFIG_AERONAUTES_SRC_TYPE=swift`, `RCLONE_CONFIG_AERONAUTES_SRC_STORAGE_URL`, `RCLONE_CONFIG_AERONAUTES_SRC_AUTH_TOKEN`, and the `AERONAUTES_DST_*` equivalents — addressing `aeronautes_src:`/`aeronautes_dst:`. Requirements: tokens go in the child **environment only, never in argv** (argv is readable by the same user at `/proc/<pid>/cmdline` and leaks through "Show sanitized command"); every spawn uses a job-scoped **empty** config (`--config` a temp file, or `RCLONE_CONFIG` pointing at a dummy) so the operator's own `rclone.conf` — a stray remote, extra flags, `leave_parts_on_error` — cannot silently change semantics; the inherited environment is whitelisted, not passed through; the sanitized command shows remote names and non-secret flags only. This is why §44.1's flag surface must **not** carry `--swift-storage-url`/`--swift-auth-token`: they would put the token in argv.
+
+### 26.3 Initial pin
+
+Pin an exact rclone release in the repository, including checksum.
+
+The pin is upgraded only by an explicit compatibility change.
+
+At the time this design was written, the project discussion targeted rclone `1.75.0`; verify the exact desired pin when scaffolding the repo.
+
+### 26.4 Cancellation, crash recovery, and orphaned segments
+
+Cancelling a transfer — or the process dying — while a large object is uploading can leave **orphaned segments** at the destination: segment objects with no manifest, i.e. exactly the backstage mess the product exists to prevent. This is a first-class flow, not a setting. Graceful cancellation and hard interruption are **not** the same and must be handled differently.
+
+**Graceful cancellation (preferred).** Cancel by signalling the child (context cancel / interrupt) so rclone can abort the upload and clean up its own uploaded segments — rclone does this by default unless told to leave parts on error, so Aeronautes must **not** set `--swift-leave-parts-on-error`. Then Aeronautes reconciles destination state and reports `Cancelled` / `Partial`.
+
+**Hard interruption (kill / crash / power loss) is not a safe boundary.** rclone had no chance to clean up, so orphaned segments may exist. Crucially, for rclone-executed uploads **Aeronautes does not choose the segment prefix** — rclone generates the segment namespace itself (under `<container>_segments` or `.file-segments/`), so Aeronautes cannot simply record "its" prefix before spawning. Automatic cleanup after a hard interruption is therefore permitted **only** when Aeronautes has Confirmed ownership evidence of the *actual generated prefix* (captured from rclone's structured output for that job). If ownership cannot be proven:
+
+```text
+possible orphaned segments detected
+        ↓
+classify as suspected backstage / orphan
+        ↓
+record in segment_evidence / segment_ownership, surface to operator
+        ↓
+DO NOT auto-delete
+```
+
+Reconciliation only ever deletes segments Aeronautes can prove it created for that job; it must never heuristically purge a shared or externally-created prefix.
+
+**Learning the generated prefix is a Phase-0 investigation** (§60): determine whether the actual segment prefix is reliably obtainable from rclone structured/JSON output or another supported interface. Do not depend permanently on parsing unstable human-readable log strings unless that behaviour is explicitly tested and pinned. A future upstream rclone enhancement (caller-specified segment prefix, or machine-readable reporting of the generated namespace) would make this materially cleaner.
+
+For a **future Aeronautes-native uploader** (out of v1, §62) Aeronautes would control the segment prefix directly and this ambiguity disappears; note also that rclone-executed large-object uploads are **DLOs** (§25), so an orphan is a DLO segment set.
+
+---
+
+## 27. Transfer modes
+
+### 27.1 Copy — default
+
+Semantics:
+
+> Add missing objects and update changed objects.  
+> Keep destination-only objects.
+
+**Copy is not "non-destructive".** It preserves *destination-only* objects, but it **overwrites same-name changed objects**, and an overwrite irreversibly destroys the prior logical value unless destination versioning is enabled and proven. Overwriting a *large* object is worse: rclone's own Update path bulk-deletes the old object's referenced segments (§28.6), which can corrupt another manifest when segments are shared. So the impact preview must show overwrite counts/bytes, apply confirmation thresholds to high-impact updates, and never call Copy "non-destructive" — say "Copy preserves destination-only objects" instead.
+
+Conceptually:
+
+```text
+SOURCE        DEST BEFORE       DEST AFTER
+
+A             A                 A
+B             B                 B
+C                               C
+              X                 X
+              Y                 Y
+```
+
+### 27.2 Mirror — destructive
+
+User-facing term: **Mirror**.
+
+Do not make Mirror a tiny checkbox.
+
+Semantics:
+
+> Make the destination's logical namespace match the source.  
+> Delete destination-only objects.
+
+```text
+SOURCE        DEST BEFORE       DEST AFTER
+
+A             A                 A
+B             B                 B
+C                               C
+              X                 deleted
+              Y                 deleted
+```
+
+Internally, Mirror is executed as an Aeronautes-planned copy — rclone `copy` of the forced selected set (§28.4) — plus Aeronautes-native destination-only deletion. rclone `sync` is not used (§28.6a, §36).
+
+### 27.3 Cross-account/cross-cluster
+
+All saved bookmarks can be source or destination.
+
+Examples:
+
+```text
+SwiftStack Prod → SwiftStack DR
+Swift cluster A → Swift cluster B
+Swift account A → Swift account B
+local → Swift
+Swift → local
+```
+
+Cross-account copy/mirror is a **v1 feature**, not a distant add-on.
+
+### 27.4 Object metadata on copy
+
+rclone's Swift backend does **not** carry arbitrary object metadata across a manual download/upload (its `Object` implements `MimeTyper`, not rclone's `Metadataer`; `Object.Update` sets a fresh mtime + content type and streams bytes). So a cross-bookmark Copy that relied on rclone alone would silently drop `X-Object-Meta-*`, `Content-Encoding`, `Content-Disposition`, and expiry even when the bytes verify.
+
+v1 Copy therefore **preserves object metadata explicitly**: after rclone moves the bytes, Aeronautes HEADs the source and applies a defined **writable** header set to the destination (a Swift POST, or the manifest PUT in the stage-and-commit path, §17.1's preserved-header table). The destination large object keeps its **own** generated `X-Object-Manifest`, never the source's; read-only/system headers and the source's DLO/SLO control headers are not copied. This is a per-object extra round-trip; the planner shows it. If a deployment intentionally chooses data-only copy, the planner MUST **preview every metadata category that will be dropped**. (K-XFER-010; plain/DLO/SLO cross-account fixtures for user metadata, content headers, expiry, and re-segmentation.)
+
+### 27.5 Swift→local materialization
+
+A Swift namespace does not map injectively onto a local filesystem, and this bites across the six targets: `file`/`FILE` collide on default Windows/macOS volumes; NFC/NFD-equivalent names collide on macOS; Windows rejects reserved device names, some characters, and trailing spaces/dots; an object `foo` conflicts with children under `foo/bar`; and rclone's own restricted-character encoding is non-injective when the substitute character already occurs. A byte-preserving fallback cannot invent a distinct local name where the filesystem has none.
+
+So define a **per-target local materialization policy** before enabling download or local Mirror, and run a **complete collision preflight first** — never start writing and discover collisions incrementally. Acceptable policies: reject the whole operation after the preflight reports a collision; use a reversible escaped namespace plus a sidecar mapping manifest; or download an archive. Tests cover case, Unicode normalization, reserved names, full-width-substitute pairs, file-vs-prefix conflicts, and the §14.3 suite on representative filesystems for all three OS families. (K-XFER-011.)
+
+---
+
+## 28. Transfer planning
+
+The transfer planner owns:
+
+- source bookmark/path;
+- destination bookmark/path;
+- mode;
+- destination large-object placement;
+- performance profile;
+- semantic risk classification;
+- optional analysis/preflight;
+- execution-engine selection;
+- verification.
+
+### 28.1 Copy preview
+
+Where analysis is practical:
+
+```text
+New                 1,248     12.4 GiB
+Changed               368      6.1 GiB
+Unchanged            6,386    23.7 GiB
+Destination-only     1,114     4.3 GiB  (kept)
+```
+
+### 28.2 Mirror preview
+
+Destination-only becomes a destructive category.
+
+Large/destructive jobs should support:
+
+- review;
+- counts;
+- size estimates;
+- search/filter of changed names where practical;
+- typed confirmation above thresholds.
+
+### 28.3 Smart preflight
+
+A full dry-run on extremely large namespaces may nearly double scan work.
+
+Default:
+
+> **Smart**
+
+Aeronautes may:
+
+- fully analyse smaller jobs;
+- sample/estimate or use single-pass execution for huge jobs;
+- always preserve safety thresholds and clear destructive semantics.
+
+Settings may offer:
+
+- Smart;
+- Always analyse;
+- Single-pass/expert.
+
+### 28.4 Large-object change detection
+
+Copy/Mirror previews ("New / Changed / Unchanged / Destination-only") depend on deciding whether two objects are equal. For plain objects this is size + ETag (MD5). **For large objects it is not**:
+
+- an **SLO** ETag is the MD5 of the concatenated segment ETags (an "ETag of ETags"), not the MD5 of the logical content;
+- a **DLO** manifest object is zero bytes; its ETag does not describe the logical content at all.
+
+Therefore a naive MD5 comparison — including whatever an execution engine does internally — can report a large object as "changed" when it is not, or miss a real change. Aeronautes owns the change-detection verdict for the preview and must not simply surface an engine's plain-hash comparison for DLO/SLO. Minimum v1 behaviour:
+
+- compare logical size and, for SLOs, the manifest (segment set / sizes / ETags) rather than the top-level content hash;
+- treat DLOs conservatively (size + manifest header + segment listing where cheap);
+- where the verdict is uncertain, classify as **Changed/uncertain** rather than silently **Unchanged**, and say so in the preview;
+- never let a Mirror **delete** a destination object on the basis of an ambiguous large-object equality result.
+
+This section governs both the preview counts and any decision to delegate execution.
+
+**Comparison model.** Represent every object comparison as a typed result plus evidence, not a boolean:
+
+```text
+ComparisonResult
+  EqualStrong     # proven equal
+  Different       # proven different
+  Unknown         # cannot prove either — treat conservatively
+
+ComparisonEvidence
+  PlainContentETag           # plain object MD5 match
+  IdenticalSLOManifest       # identical segment set / sizes / ETags
+  IdenticalDLOFingerprint    # same segment container+prefix, listing fingerprint
+  AeronautesTransferRecord         # Aeronautes itself performed/verified this copy
+  DestinationFingerprint     # Aeronautes-written destination metadata proves source identity
+  SizeOnly
+  Unknown
+```
+
+**Different manifests do not prove different content.** Because Aeronautes does *logical* replication, the destination is allowed to re-segment (a 2×5 GiB source may legitimately become 10×1 GiB at the destination). So an *identical* SLO manifest is strong proof of equality, but an *unequal* manifest is **not** proof of difference — it is `Unknown`, and Aeronautes falls back to size and, if it still cannot prove equality, transfers conservatively. Never map "manifest differs" to "delete/overwrite" on that basis alone.
+
+**`AeronautesTransferRecord` is machine-local — persist equality on the destination too.** The
+transfer-verification record lives in one workstation's SQLite, so on its own it makes
+re-segmented large-object equality re-derivable only on that machine: lose the database, run from
+a second workstation, or have a colleague run the same Mirror, and every such object compares
+`Unknown` and re-copies conservatively — terabytes through the client hairpin (§28.5). Therefore,
+by default (per-job opt-out), Aeronautes also records a **verification fingerprint on the
+destination object itself**: an `X-Object-Meta-Aeronautes-*` header carrying the source logical
+identity (logical size + source content fingerprint), written only where Aeronautes is already
+writing destination metadata — the §27.4 metadata apply and the §28.6 manifest commit. It is never
+a mutation of an object Aeronautes did not write. Any Aeronautes instance can then re-derive
+`EqualStrong` from a destination HEAD plus current source state (evidence:
+`DestinationFingerprint`). The exact header name/format is fixed at implementation and covered by
+the §57.2 contract fixtures.
+
+**Execution model: Aeronautes always plans; rclone never decides.** Earlier drafts allowed raw
+`rclone sync` (delete phase disabled) to execute the copy half of a Mirror on a scan-proven
+plain-only scope (`PlainOnlyProven`). That carve-out is **removed** (ADR 0004): Swift offers no
+namespace snapshot or lock, so no point-in-time scan can make a later rclone `Update`/`Remove`
+safe (§28.6a) — and the proof itself required HEAD-classifying every object in scope, an enormous
+cost paid precisely at the scale where `sync` was supposed to help. Therefore, for every Copy and
+Mirror:
+
+- Aeronautes computes the transfer set itself (streaming merge-join, §15.2, with the comparison
+  model above);
+- the copy half is `rclone copy` of the forced selected set (below), writing only planned-new or
+  uniquely-staged names (§28.6, §36); overwrites of changed objects — plain and large — commit
+  natively via stage-and-commit;
+- **destination-only deletion in a Mirror is always Aeronautes-native** (§28.6a) and manifest-only;
+- `Unknown` equality → classify as Changed/uncertain and transfer; **never delete on `Unknown`**.
+
+**A generated file list does not override rclone's own comparison.** `--files-from` only *filters the source namespace*; rclone still applies its destination equality test and will skip an object it considers identical — including one Aeronautes classified `Unknown` and needs transferred. So an Aeronautes-selected transfer set must be forced with a pinned, tested force-transfer mode (`--ignore-times`, or an equivalent per-object path), then the result **verified** before any Mirror deletion. Note the flag reality: rclone skips identical objects by default; `--ignore-existing` skips *changed* objects (wrong for Copy — never use it for the selected set). On restart, Aeronautes rebuilds the forced list from **unverified** objects only — subtract any destination object that already has a current Aeronautes verification record — so a verified object is never pointlessly re-staged and re-committed. rclone's default skip-identical is not sufficient for `Unknown` objects, so this subtraction is Aeronautes' job, not a flag. Every flag the planner depends on here goes into the Phase-0 seam experiment and the `docs/rclone.md` allowlist (§44.1).
+
+The preview must be honest about the conservative set, e.g.:
+
+```text
+6,386  Unchanged
+1,248  New
+  368  Changed
+   14  Large objects compared conservatively
+    3  Unable to prove unchanged
+```
+
+### 28.5 Data path — where the bytes actually flow
+
+A desktop-spawned rclone `copy`/`sync` between two *different* Swift bookmarks **streams every byte down to the workstation and back up again**; rclone only performs a server-side Swift COPY within the *same* remote configuration. So a cross-account or cross-cluster transfer is bounded by the operator's own link, not by cluster bandwidth — copying a 12 TB prefix "Prod → DR" through a laptop is an ISP/egress event, not a tuning parameter. This must be a visible, normative part of the planner, not an implicit assumption:
+
+- **Client-side (default):** bytes transit Aeronautes. Label it, and show an estimated duration and egress based on the operator's measured link, not cluster throughput.
+- **Server-side COPY:** capability-gated and only within a proven same-cluster/same-config path (§30); not a v1 requirement. Two Aeronautes bookmarks are two rclone remotes even when their storage URLs share a host, so the planner must **not** advertise "Server-side COPY" merely because source and destination look like the same cluster — prove it per §30 or label the job client-side.
+- **Cluster-side rclone (jump host / sidecar):** out of scope for v1, but state it as the future answer for real bulk replication.
+
+The transfer planner's Impact rail must show the **data path**, not only object counts. "Estimated data to transfer 18.5 GB" is misleading if those bytes hairpin through Wi-Fi; show the path and the real bottleneck. (See ADR `0008-copy-data-path`.)
+
+### 28.6 rclone `Update` and `Remove` are segment-destructive
+
+The pinned rclone Swift backend does **not** leave large-object segment cleanup to Aeronautes. When it *overwrites* an existing destination object that is a DLO/SLO, `Object.Update` snapshots the old manifest's segments, uploads the replacement, and then **bulk-deletes the old referenced segments** (unless container versioning is enabled). When it *removes* a large object, `Object.Remove` deletes the manifest and then **bulk-deletes its referenced segments**. (Verified in rclone v1.75.0's `backend/swift`.)
+
+Swift explicitly allows a segment object to be referenced by more than one SLO manifest, and DLO prefixes may be shared (§35). So letting rclone overwrite or delete a destination large object can delete segments still used by **another** logical object — unrelated-data corruption, not orphan leakage. This is exactly where the "control plane owns safety, engine executes" boundary breaks if taken naïvely.
+
+Two consequences, both locked for v1:
+
+**(a) The rclone boundary is absolute: rclone writes only planned-new or uniquely-staged names; Aeronautes performs every overwrite, deletion, manifest commit, bulk deletion, segment reclamation, and container deletion natively.** No raw `rclone sync` delete phase, no `rclone purge`, no `rclone delete`, no rclone write to an existing live name — ever, on any scope (§36). The reasoning: Swift offers no namespace snapshot or lock, so **no point-in-time scan can make a later rclone `Remove`/`Update` safe** — an object can become a shared-segment DLO/SLO between the scan and rclone's operation, and rclone would then bulk-delete whatever segments it references *at that moment*. The native path is immune by construction: a native DELETE (or bulk-delete entry) on a name removes **only the manifest/object at that name** and never follows segments, so the same race costs at most an orphaned segment set (recoverable), never shared-segment corruption. A residual, honestly-stated race remains on *planned-new* names: a concurrent external writer can create the name between planning and rclone's PUT, and last-write-wins applies as it would between any two Swift clients; execution-time verification detects the anomaly.
+
+**HEAD-immediately-before-mutation is scoped to where identity matters, not a blanket rule.** An authoritative HEAD directly before the operation is REQUIRED wherever semantics depend on the object's current identity: the stage-and-commit re-HEAD before commit (below); any operation that will follow segments (SLO manifest+segments delete under `ExclusiveOwnershipProof`, §34); single-object destructive actions taken from the inspector (so the confirmation reflects reality); and evidence recording. Mass **manifest-only** deletion (recursive delete, Empty Container, Mirror destination-only deletes) does NOT require a per-object safety HEAD — native deletion cannot follow segments, so the HEAD would buy audit fidelity, not safety, at roughly double the request cost (§42). The job's effective configuration states the audit/verification sampling policy it ran with (§32, §45).
+
+**(b) Exclusive ownership is a distinct positive proof, not a confidence level.** `Confirmed` evidence (§24.1) proves a segment is *referenced*, not that it is *unshared* — §35 says exactly this for DLO prefixes. So define, separately:
+
+> **ExclusiveOwnershipProof** — the segments were written by Aeronautes/rclone for *this* job under a **unique, Aeronautes-recorded prefix** (rclone's generated `timestamp + 128-bit random` namespace, captured into `segment_ownership`), and no other *recorded* Aeronautes manifest references that prefix.
+
+This is the **only** tractable v1 exclusivity proof: an account-wide manifest scan is not required and is forbidden by the performance rules; `Confirmed` MUST NOT be promoted to exclusive; and an external SLO/DLO is **never** exclusive on single-manifest inspection — only a deliberate Backstage flow (with an explicit "sharing cannot be disproved" warning) may purge its segments. Old destination segments are reclaimed only when `ExclusiveOwnershipProof` holds — normally *never* for an externally-created object; the safe default leaves them (a recoverable orphan beats irreversible shared-segment corruption).
+
+**Stage-and-commit protocol for overwriting a changed large object** (rclone moves the bytes; Aeronautes commits the tiny manifest — a DLO-header PUT, not an SLO composer, so it stays inside K-XFER-007):
+
+1. HEAD/GET the live destination and persist the old manifest for reconciliation;
+2. `rclone copy` the source to a **new** unique staging name under an Aeronautes staging prefix, so rclone's `Update` never runs against the live name;
+3. verify the staged object (size / manifest / ETag per §28.4);
+4. native PUT of the destination `X-Object-Manifest` (DLO header) onto the live name, pointing at the new unique prefix, plus the §27.4 metadata set and the destination verification fingerprint (§28.4) — the destination may become a DLO even if the source was an SLO (logical replication, §25);
+5. verify the final logical object, including segment-listing completeness with bounded retries (§15.3);
+6. native DELETE of the **staging manifest only** (never `rclone Remove`);
+7. reclaim old destination segments only under `ExclusiveOwnershipProof` (normally never).
+
+**Overwriting a changed *plain* object stages the same way.** rclone uploads the replacement to a unique staging name; Aeronautes verifies it, then commits with a **native server-side COPY** (single-remote, same account — not the §30 cross-config path) onto the live name, applying the §27.4 metadata set and fingerprint, verifies, and natively deletes the staging object. rclone therefore never `Update`s a live name even for plain objects, so a plan-time "plain" classification cannot be invalidated by a concurrent plain→DLO conversion (the (a) race).
+
+Durable states `before-stage → staged → committed → cleaned`; restart is idempotent and must distinguish a safe retry from a second overwrite; handle a versioned destination and an intervening external write (re-HEAD before commit). This state machine is built and crash-tested in the Phase-0 seam experiment (§60) before the Phase-5 transfer abstraction is frozen. The same native DLO-manifest PUT is the large-object half of the §14.3 native-name fallback.
+
+The planner MUST disclose in the plan/Impact rail when a destination object will be committed as a **DLO** (including SLO sources — logical replication, §25): a DLO's reads depend on container-listing consistency (§15.3), a real fidelity difference the operator must see before execution, not discover after.
+
+This governs Copy (overwrite of changed objects — plain and large, §27.1), Mirror (destination-only deletion, §28.4), Empty Container / recursive delete (§33, §32), and SLO/DLO delete (§34, §35).
+
+Acceptance fixtures: two DLOs sharing a prefix and two SLOs sharing a (direct and nested) segment — overwriting or deleting either manifest through any engine must leave the other fully downloadable and hash-correct; plus a **race** fixture that turns a plain destination object into a shared-prefix DLO after preflight but before deletion, proving the Aeronautes-native manifest-only delete path never bulk-deletes the shared segments. (Requirements K-XFER-008, K-XFER-014, K-SEG-004.)
+
+---
+
+## 29. Future clone-container workflow
+
+Post-v1 candidate:
+
+> **Clone Container**
+
+This is not identical to copying objects.
+
+Potential clone categories:
+
+- objects;
+- object metadata;
+- container metadata;
+- ACL;
+- CORS;
+- staticweb;
+- versioning;
+- quota;
+- storage-policy mapping;
+- TempURL key handling.
+
+Rules:
+
+- TempURL secrets are never silently copied;
+- storage policy must map to a destination policy;
+- versioning references must be reviewed;
+- ACL identity semantics may differ between clusters;
+- quotas should not blindly copy.
+
+---
+
+## 30. Same-cluster server-side copy
+
+Potential optimisation, not a v1 requirement.
+
+Cross-account Swift may sometimes support server-side copy paths.
+
+This must not be enabled blindly.
+
+Large-object semantics make naive server-side copying risky.
+
+Before enabling:
+
+- prove plain-object behaviour;
+- prove DLO behaviour;
+- prove SLO behaviour;
+- verify permission requirements;
+- benchmark against normal rclone transfer;
+- gate behind capability/compatibility evidence.
+
+The generic rclone `--server-side-across-configs` flag MUST NEVER be enabled for two independently-authenticated bookmarks: rclone's Swift `Fs.Copy` addresses the source path through the *destination* client and does not prove same-account/same-cluster, so it can read the wrong account or hit a same-named destination object. A future fast path is selected only from a typed §30 capability result, never from an expert toggle. (K-XFER-015.)
+
+---
+
+## 31. Destructive-operation architecture
+
+### 31.1 Governing principle
+
+The control plane owns deletion **planning and authorization**.
+
+It does not necessarily issue each DELETE itself.
+
+### 31.2 Strategy engine
+
+Conceptual interface:
+
+```go
+type DeleteExecutor interface {
+    Execute(ctx context.Context, plan DeletePlan) (*DeleteResult, error)
+}
+```
+
+Possible executors:
+
+```text
+SingleSwiftDelete
+SLODelete           # manifest-only default; +segments only under ExclusiveOwnershipProof (§28.6)
+AsyncSLODelete
+BulkDelete          # manifests only; never follows segments without ExclusiveOwnershipProof
+ParallelSwiftDelete
+ContainerDelete     # Delete Container: native empty (above), then native container DELETE (§33)
+```
+
+There are no rclone executors: the rclone boundary is absolute (§28.6a, §36).
+
+Planner chooses based on:
+
+- operation semantics;
+- scope;
+- large-object state;
+- backstage classification;
+- target capabilities;
+- performance profile;
+- benchmark/history;
+- safety constraints.
+
+---
+
+## 32. Recursive prefix deletion
+
+Pipeline:
+
+```text
+semantic scope
+    ↓
+risk/classification
+    ↓
+optional count/preview
+    ↓
+strategy selection
+    ↓
+stream listing / execute batches
+    ↓
+progress
+    ↓
+verify/re-list
+```
+
+Native implementation must be bounded/streaming:
+
+```text
+LIST page
+   ↓
+bounded queue
+   ↓
+N delete workers
+```
+
+or:
+
+```text
+LIST batch
+   ↓
+bulk delete
+```
+
+**Verification at scale is not free.** "Verify/re-list" after deleting millions of objects is itself a full namespace scan and can cost as much as the delete. Aeronautes must have an explicit, bounded verification policy rather than always re-listing everything: for large jobs, verify by sampling and by confirming the specific deleted keys/prefix are absent, escalating to a full re-list only when the sample or the operation's partial-failure record indicates a problem. State the chosen policy in the job's effective configuration so it is never a silent shortcut.
+
+Verification should be **operation-specific**, not one generic re-list:
+
+- recursive prefix delete → a low-cost postcondition such as `GET {container}?prefix={p}&limit=1` returning empty (after bounded retries) is strong evidence the prefix is gone without rescanning the container;
+- Empty Container → the same `limit=1` listing check;
+- single-object mutation → HEAD the exact object;
+- SLO delete → HEAD the manifest, plus targeted segment-state checks as needed;
+- large Copy/Mirror → execution-time verification plus targeted spot checks by default, with a full scan only on demand.
+
+### 32.1 Cancellation
+
+Cancellation should occur at safe boundaries.
+
+Result states:
+
+- Complete;
+- Cancelled;
+- Partial;
+- Failed.
+
+Partial failure must retain exact failed object names where practical.
+
+---
+
+## 33. Empty container versus delete container
+
+These are different operations.
+
+### Empty Container
+
+Remove contents while preserving:
+
+- container itself;
+- metadata;
+- ACL;
+- policy;
+- versioning configuration;
+- quotas;
+- other container configuration.
+
+Execution may use:
+
+- Aeronautes-native **bulk-delete** of the container's objects (default);
+- bounded parallel Aeronautes-native DELETE.
+
+Both are **manifest-only by construction** (§28.6a) and MUST NOT follow DLO/SLO segments into other containers unless `ExclusiveOwnershipProof` holds (§28.6). rclone is not an Empty Container engine at all — not `purge` (stock rclone `Purge` deletes every object **then** `Rmdir`s, and at a container root `Rmdir` issues a Swift `ContainerDelete`, losing the container and its metadata/ACL/policy/versioning/quota/identity — K-DEL-001), and not `delete` (its per-object `Remove` bulk-deletes any large object's segments, and no point-in-time scan makes that safe — §28.6a, ADR 0004). The acceptance test compares pre/post container HEAD state (config preserved), not merely that a same-named container still exists.
+
+Do **not** delete/recreate the container as an optimisation.
+
+### Delete Container
+
+Empty contents first if explicitly requested (same native engines as Empty Container), then issue a native Swift container DELETE.
+
+`rclone purge` is not used here either (ADR 0004): purge's per-object `Remove` follows manifests and bulk-deletes referenced segments, and a manifest inside the doomed container can reference segments in **other** containers — a sidecar or shared store — that surviving manifests still use. Destroying the container does not make its manifests' segments fair game.
+
+---
+
+## 34. SLO deletion
+
+**Manifest-only is the default.** Swift's native `?multipart-manifest=delete` deletes the manifest **and all referenced segments**, and Swift explicitly allows a segment to be referenced by more than one SLO manifest (nested SLOs enlarge the blast radius further). So "exact referenced segments" proves *which* objects would be deleted, not that *only this manifest* uses them — the same shared-segment hazard the DLO section already guards (§35), which the SLO path must match.
+
+Offer:
+
+- **Manifest only** — the normal, default action (delete just the manifest object);
+- **Manifest + segments** — permitted to auto-delete segments **only** under `ExclusiveOwnershipProof` (§28.6(b)) for every referenced segment, including nested and ranged segments; for external SLOs, single-manifest inspection cannot in general disprove sharing, so require a deliberately destructive Backstage flow with appropriate confirmation.
+
+Use Swift-native SLO deletion (`?multipart-manifest=delete`, async where capability and manifest constraints make it valid) once exclusivity is established — Aeronautes should not hand-issue thousands of segment deletes when Swift can do the correct server-native operation faster. But native deletion does not relax the exclusivity requirement; it is faster, not safer. (Requirement K-SEG-003; fixtures for direct, ranged, repeated, shared, and nested SLO segments.)
+
+---
+
+## 35. DLO deletion
+
+DLO cleanup is intentionally conservative.
+
+Normal option:
+
+> **Delete manifest only**
+
+Automatic manifest + segment-prefix cleanup is allowed when Aeronautes has sufficiently strong ownership evidence, for example:
+
+- Aeronautes/rclone created the DLO under an app-controlled unique prefix;
+- ownership was recorded.
+
+For externally-created DLOs with uncertain sharing:
+
+- do not claim segment cleanup is proven safe;
+- require explicit Backstage action and appropriate confirmation to purge an exact prefix.
+
+A DLO prefix observed from one manifest does **not** prove that no other manifest references it.
+
+---
+
+## 36. The rclone boundary is absolute
+
+rclone executes exactly two kinds of write:
+
+- **uploads/copies to planned-new destination names** — names the plan verified absent (with the honestly-stated residual race of §28.6a);
+- **uploads/copies to uniquely-staged names** under an Aeronautes staging prefix (§28.6).
+
+Plus reads: downloads, and the source half of every copy.
+
+rclone is **never** used to overwrite a live name, delete an object, run a `sync` delete phase, `purge`, or delete a container. Earlier drafts allowed `rclone delete` (Empty Container) and `rclone purge` (Delete Container) on scan-proven plain-only scopes; ADR 0004 removed those carve-outs — the §28.6a race argument applies to them exactly as it applies to `sync`, and the §42 example numbers showed native bulk-delete outperforming purge anyway. The fastest safe path for destruction is the native one.
+
+This makes "rclone moves bytes; Aeronautes destroys" literally true — which is also what keeps the UI's claims about any job honest (§44).
+
+---
+
+## 37. Performance is a hard product requirement
+
+All high-volume operations must:
+
+- use bounded concurrency;
+- stream rather than accumulate whole namespaces;
+- exploit server-side batch/async operations where faster;
+- avoid unnecessary HEADs;
+- use high, proven-safe listing page sizes;
+- expose throughput and progress;
+- respond to 429 / Retry-After;
+- adapt to latency/failures;
+- be benchmarked against representative SwiftStack infrastructure;
+- prefer the fastest safe execution engine.
+
+Performance work is not deferred until "after correctness".
+
+Correctness and performance are designed together.
+
+---
+
+## 38. Scheduler and resource budgets
+
+Settings have three layers:
+
+```text
+Application-wide budgets
+        ↓
+Bookmark / endpoint overrides
+        ↓
+Per-job requested overrides
+```
+
+The scheduler reconciles all three.
+
+### 38.1 Global application budgets
+
+Example settings:
+
+```text
+Maximum active jobs                 4
+Total transfer workers             32
+Total checker workers              64
+Total native Swift API workers     64
+Transfer memory budget             8 GiB
+```
+
+These are **whole-application ceilings**, not copied independently to every job.
+
+### 38.2 Bookmark/endpoint budgets
+
+Each Swift endpoint may override:
+
+- API pressure;
+- transfer/checker preference;
+- delete concurrency;
+- bulk-delete behaviour;
+- listing compatibility;
+- bandwidth/TPS limits.
+
+Two jobs hitting the same endpoint compete inside the endpoint's budget.
+
+A source→destination job consumes relevant budget at both endpoints.
+
+### 38.3 Per-job overrides
+
+Transfer/dialog:
+
+```text
+Performance      Auto
+
+Advanced:
+  Transfers      Auto (16)
+  Checkers       Auto (32)
+  API workers    Auto
+```
+
+Manual job settings request capacity but do not silently violate hard application/endpoint ceilings.
+
+### 38.4 Borrow unused capacity
+
+Default on.
+
+If only one job is active, it may borrow unused worker budget instead of being artificially limited to an equal-share allocation intended for multiple jobs.
+
+---
+
+## 39. Worker terminology
+
+Do not expose one vague setting called "workers".
+
+### Transfer workers
+
+Concurrent object/file transfers.
+
+Maps approximately to rclone `--transfers`.
+
+### Checkers
+
+rclone backend/check parallelism.
+
+Maps approximately to `--checkers`.
+
+### Swift API workers
+
+Aeronautes-native concurrent Swift requests.
+
+### Delete workers
+
+Parallel individual DELETE operations.
+
+May be a specialized limit under native API workers.
+
+### Bulk-delete batches
+
+Entire bulk-delete requests in flight.
+
+This number should normally be much smaller than individual DELETE worker concurrency.
+
+---
+
+## 40. Performance profiles
+
+User-facing modes:
+
+```text
+Auto
+Balanced
+Aggressive
+Custom
+```
+
+### Auto
+
+Default.
+
+Uses:
+
+- known safe initial values;
+- bookmark capability/profile;
+- prior measurements;
+- 429/backoff signals;
+- latency trend;
+- error rate;
+- available memory;
+- endpoint budgets.
+
+### Balanced
+
+Conservative general operation.
+
+### Aggressive
+
+Higher initial concurrency and faster ramp.
+
+Still obeys correctness/safety and hard bounds.
+
+### Custom
+
+Exposes explicit values.
+
+---
+
+## 41. Adaptive concurrency
+
+Auto may gradually raise native concurrency while:
+
+- throughput improves;
+- latency stays reasonable;
+- errors remain low.
+
+Back off on:
+
+- HTTP 429;
+- `Retry-After`;
+- rising latency with no throughput gain;
+- transport failures;
+- timeout growth;
+- memory pressure.
+
+Do not treat adaptive tuning as an uncontrolled benchmark.
+
+It should learn from normal operation.
+
+---
+
+## 42. Benchmarking
+
+Settings → Diagnostics / Benchmark.
+
+Benchmark can create a clearly named temporary Aeronautes-owned test container after explicit operator consent.
+
+Measure:
+
+- listing throughput;
+- HEAD throughput;
+- native DELETE throughput at multiple concurrency levels;
+- bulk-delete throughput;
+- upload/download throughput;
+- Swift→Swift copy throughput;
+- checker/transfer combinations;
+- latency/error behaviour.
+
+Persist recommendations per bookmark.
+
+Example:
+
+```text
+Observed optimum
+
+Listing           182,400 objects/s
+HEAD               17,980 req/s
+Bulk delete        21,440 objects/s
+
+Recommended
+API workers              48
+Delete engine    bulk-delete
+Checkers                 64
+```
+
+Always clean up the benchmark container and report cleanup failures.
+
+A benchmark writes real objects, so it must not run casually against a production bookmark on the strength of a special container name alone: require either a dedicated benchmark bookmark or a typed confirmation of the cluster name before it runs.
+
+---
+
+## 43. Performance settings page
+
+Required sections:
+
+```text
+General
+Performance
+Swift API
+Transfers
+Large Objects
+Copy & Mirror
+Safety
+Network
+Storage
+Diagnostics
+Experimental
+```
+
+### 43.1 Performance
+
+- Profile;
+- max active jobs;
+- global transfer/checker/API budgets;
+- memory budget;
+- adaptive concurrency.
+
+### 43.2 Swift API
+
+- listing page size;
+- HEAD concurrency;
+- mutation concurrency;
+- delete engine;
+- individual delete workers;
+- bulk-delete batch size;
+- bulk batches in flight;
+- retry policy;
+- timeouts.
+
+### 43.3 Transfers
+
+- transfers;
+- checkers;
+- calculated connection limits;
+- buffer memory;
+- bandwidth limits;
+- TPS limits;
+- retry parameters;
+- backlog;
+- multi-stream settings where actually useful.
+
+### 43.4 Large Objects
+
+- large-object chunk size (one control, ≤ cluster `max_file_size`, default 5 GiB — §25);
+- segment placement (sidecar vs in-container; Aeronautes does not choose the per-upload prefix — §26.4);
+- `no-large-objects` is **not** a user/bookmark toggle and MUST NOT be exposed as "disable large-object detection": it makes rclone's hashes wrong, disables chunking, fails >5 GiB uploads, and lets `Remove` skip segment cleanup. It MUST NOT be an authorization or eligibility input for anything, and MUST be refused for any destructive scope. It may be used only as an internal checksum-path optimisation on a scope Aeronautes itself has currently classified fully plain (K-XFER-012);
+- failed-upload/segment cleanup behaviour.
+
+### 43.5 Swift compatibility
+
+Expert controls for known non-standard pagination/provider behaviour.
+
+These should be typed settings, not raw rclone flags.
+
+---
+
+## 44. Do not expose arbitrary rclone arguments
+
+No generic:
+
+```text
+Extra rclone args:
+[................................]
+```
+
+in normal or expert UI.
+
+Why:
+
+- flags can silently alter semantics;
+- UI could lie about what is being executed;
+- dangerous options can bypass safety assumptions;
+- diagnostics become ambiguous.
+
+Expose supported settings explicitly.
+
+A developer/debug build may have deeper tooling, but it is not a normal product feature.
+
+### 44.1 Enumerate the depended-upon rclone flag surface
+
+"No arbitrary args" only works if every behaviour Aeronautes needs is reachable through a specific, supported rclone flag. Before Phase 5, produce and maintain (in `docs/rclone.md`) the **exact list of rclone flags Aeronautes sets**, mapped to the product setting that drives each one, covering at minimum: v1 auth via pre-authenticated **named-remote environment** config (`RCLONE_CONFIG_AERONAUTES_SRC_*` / `RCLONE_CONFIG_AERONAUTES_DST_*`; **never** `--swift-storage-url`/`--swift-auth-token`, which would put the token in argv — §26.2), the large-object chunk size (`--swift-chunk-size`), destination segment placement (segment container / in-container behaviour), storage policy, **per-remote** TLS overrides (remote-scoped `override.*` global-flag overrides — `override.no_check_certificate`/`override.ca_cert` on `aeronautes_src`/`aeronautes_dst` — **not** the process-global `--ca-cert`/`--no-check-certificate`, which would change trust for both remotes in a Swift→Swift child; two-child fallback if `override.*` is not honoured — §12.3), and concurrency/pacing (`--transfers`, `--checkers`, `--tpslimit`, `--bwlimit`). If a required behaviour (e.g. a specific segment-placement mode) has **no** supported flag, that is a concrete gap to resolve deliberately — narrow adapter, upstream contribution, or an explicit compatibility decision — not a reason to open a free-form argument box.
+
+A **narrow, typed, per-bookmark compatibility allowlist** for known provider quirks (pagination style, non-standard behaviours) is permitted where it is enumerated, documented, audited in the job's effective configuration, and shown in "Show sanitized command". The hard rule remains: no free-form arbitrary-argument textbox that can silently change semantics or invalidate the UI's claims. (Consider ADR `0007-rclone-flag-surface`.)
+
+---
+
+## 45. Effective configuration
+
+Every job should be able to show its resolved settings:
+
+```text
+Application profile       Auto
+Source bookmark           Production / Aggressive
+Destination bookmark      DR / Auto
+Job override              None
+
+rclone:
+  transfers               24
+  checkers                64
+  max connections         calculated
+  buffer size (--buffer-size)  256 MiB   # per-transfer; NOT the app memory budget
+
+Swift source:
+  listing page size       10,000
+
+Destination:
+  chunk size              5 GiB
+  segment placement       sidecar (resolved: <dest-container>_segments)
+```
+
+Add:
+
+> **Show sanitized command**
+
+No secrets.
+
+This is important for diagnostics and reproducibility.
+
+---
+
+## 46. Job model
+
+All long operations are first-class jobs.
+
+Examples:
+
+- find;
+- copy;
+- mirror;
+- upload;
+- download;
+- recursive delete;
+- empty container;
+- benchmark;
+- future orphan scan.
+
+```text
+Job
+  id
+  type
+  state
+  source?
+  destination?
+  created_at
+  started_at?
+  finished_at?
+
+  execution_engine
+  effective_configuration
+
+  counters
+  throughput
+  errors
+
+  cancellable
+```
+
+States:
+
+```text
+Queued
+Planning
+Analysing
+Running
+Verifying
+Complete
+Partial
+Cancelled
+Failed
+```
+
+---
+
+## 47. Transfer/job drawer
+
+Always available from the main shell.
+
+For active jobs show:
+
+- operation;
+- source → destination;
+- mode;
+- percent where meaningful;
+- transferred bytes;
+- objects complete/total where known;
+- current throughput;
+- object rate;
+- active transfer/checker/API workers;
+- elapsed time;
+- failure count;
+- pause/cancel where supported;
+- expandable diagnostics.
+
+Do not show a spinner and hide the interesting data.
+
+---
+
+## 48. Strategy selection
+
+Conceptual decision table:
+
+| Operation | Preferred planner behaviour |
+|---|---|
+| Browse/list | Aeronautes Swift client |
+| Inspector HEAD | Aeronautes Swift client |
+| Metadata/ACL/config | Aeronautes Swift client |
+| Small marker PUT | Aeronautes Swift client |
+| Upload/download | rclone |
+| Swift→Swift Copy | rclone copy to planned-new names; every overwrite via stage-and-commit (§28.6) |
+| Ordinary Mirror | Aeronautes-planned rclone copy of the forced set; destination-only delete always Aeronautes-native (§28.6a) |
+| Single object delete | Aeronautes-native, manifest-only; HEAD first (inspector-initiated, §28.6a) |
+| SLO delete | manifest-only default; +segments only under `ExclusiveOwnershipProof` (§34) |
+| Recursive prefix delete | Aeronautes-native bulk/parallel delete; manifest-only (§28.6a) |
+| Empty container | Aeronautes-native bulk/parallel delete only (§33) |
+| Delete container | native empty, then native container DELETE; never `purge` (§33) |
+| Segment cleanup | semantics-driven specialized path |
+
+---
+
+## 49. Errors and retries
+
+### Read operations
+
+May retry boundedly:
+
+- network reset;
+- timeout;
+- 408;
+- 429;
+- selected 5xx.
+
+Use exponential backoff + jitter.
+
+Respect `Retry-After`.
+
+### Mutations
+
+Do not blindly retry an ambiguous POST/PUT/DELETE if the request may already have been applied.
+
+Prefer reconciliation:
+
+```text
+ambiguous failure
+     ↓
+HEAD / list / inspect
+     ↓
+observe current state
+     ↓
+retry only if safe
+```
+
+Normalized error:
+
+```go
+type SwiftError struct {
+    Kind            ErrorKind
+    HTTPStatus      int
+    Message         string
+    TransID         string
+    Retryable       bool
+    ResponseExcerpt string
+}
+```
+
+Use Swift transaction IDs throughout diagnostics.
+
+---
+
+## 50. Audit log
+
+Audit events record:
+
+- bookmark;
+- operation;
+- resource;
+- semantic diff summary;
+- timestamp;
+- execution engine;
+- result;
+- request/transaction IDs.
+
+Do not log:
+
+- passwords;
+- auth keys;
+- auth tokens;
+- TempURL secret values;
+- rclone credential environment.
+
+Sensitive fields should be typed/redacted at the domain layer, not cleaned up with fragile regex after logging.
+
+---
+
+## 51. SQLite
+
+SQLite is required from day one.
+
+Suggested tables:
+
+```text
+bookmarks
+capability_snapshots
+segment_evidence
+segment_ownership
+performance_profiles
+jobs
+audit_events
+ui_preferences
+schema_migrations
+```
+
+Never store secret credentials.
+
+Use migrations immediately.
+
+Enable WAL mode and serialise writes (single writer, many readers); Aeronautes is highly concurrent and the DB layer must be safe under many goroutines. Keep long-running scans/streams out of write transactions. Set a `busy_timeout` and funnel writes through a single writer goroutine (record both in the DB ADR). Give `segment_evidence` a retention/compaction policy so Backstage state does not grow into a second, unbounded object store inside SQLite. Give `audit_events` the same treatment: a size/age cap with compaction and an export path — the audit trail is a product feature, not an unbounded log, and an operator must be able to archive it before compaction discards anything.
+
+Choose the SQLite driver with the six-target build matrix (§61.0) in mind: a pure-Go driver (e.g. `modernc.org/sqlite`) keeps the database CGO-free, so the arch dimension needs no extra C toolchain, whereas a CGO driver (`mattn/go-sqlite3`) needs a matching C compiler for every target. Wails already forces CGO for the webview, so builds run on per-OS runners regardless; the driver choice mainly decides how painful cross-*arch* builds are. Pin the choice in the DB ADR (pure-Go recommended).
+
+---
+
+## 52. UI detail: container modes
+
+### Logical — default
+
+Shows operator-facing logical storage.
+
+Hide Confirmed/Declared segment stores.
+
+Group Suspected stores separately.
+
+### All
+
+Show all containers without the extra Backstage affordances.
+
+### Backstage
+
+Purposefully expose segment storage and expert controls.
+
+Footer examples:
+
+```text
+3 confirmed segment containers hidden
+2 possible backstage containers
+1 in-container segment prefix hidden
+```
+
+---
+
+## 53. Inspector design
+
+Inspector sections are capability/resource driven.
+
+### Account
+
+- containers;
+- objects;
+- bytes;
+- policy totals where available;
+- TempURL-key presence;
+- account metadata;
+- raw headers.
+
+### Container
+
+- object count;
+- bytes;
+- storage policy;
+- read ACL;
+- write ACL;
+- metadata;
+- versioning;
+- quota;
+- CORS;
+- staticweb;
+- TempURL keys;
+- segment classification;
+- raw headers.
+
+### Object
+
+- logical size;
+- listing/stored size where meaningful;
+- content type;
+- ETag;
+- Last-Modified;
+- delete-at;
+- user metadata;
+- DLO/SLO state;
+- manifest;
+- segment table;
+- raw headers.
+
+### Prefix
+
+- marker-backed or implied;
+- current known/scanned count;
+- transfer destination actions;
+- recursive delete;
+- marker create/remove.
+
+---
+
+## 54. Empty states teach Swift
+
+Examples:
+
+### No containers
+
+> A container is a namespace with its own policy and access controls.
+
+### Implied prefix
+
+> This prefix exists because objects live beneath it; no explicit marker object is required.
+
+### Segment store
+
+> You are backstage. These objects may be parts of larger logical objects.
+
+The product should teach the model without sounding patronising.
+
+---
+
+## 55. Frontend security boundary
+
+The Svelte/webview layer is unprivileged presentation code.
+
+It must not receive:
+
+- password/key;
+- auth token;
+- raw keychain handles;
+- rclone credential environment;
+- unrestricted arbitrary process execution.
+
+Expose specific typed services through Wails.
+
+No remote JS/CDN dependency at runtime for core UI.
+
+Use a restrictive application content policy appropriate to Wails/webview packaging.
+
+Two release-hardening checks are explicit, not assumed (verified in the Phase-0 spike and again on the shipped binary in Phase 7):
+
+- **DevTools/inspector disabled in release builds** — Wails gates this behind its production build configuration; set it explicitly and test the release binary rather than trusting the default;
+- **the Go↔frontend bindings transport must not be a reachable localhost HTTP/WebSocket listener** in production (desktop webview shells have shipped this bug before); verify the transport is in-process/custom-scheme, or bound such that no other local process can drive it.
+
+Define the typed Wails service surface (e.g. `BookmarkService`, `BrowseService`, `InspectorService`, `TransferService`, `JobService`) in an ADR so the bridge stays a small set of purpose-specific services rather than growing into a single god-object the frontend can drive arbitrarily. This decoupled boundary is also what keeps a Wails v2 fallback cheap (§6.6).
+
+---
+
+## 56. Telemetry/privacy
+
+No telemetry on by default.
+
+Performance profiling is local.
+
+Audit history is local.
+
+If telemetry is ever introduced:
+
+- explicit opt-in;
+- clearly documented payload;
+- no secrets/object names by default.
+
+---
+
+## 57. Testing strategy
+
+Aeronautes moves and deletes people's data, so the test suite is a first-class, non-negotiable deliverable: untested destructive, classification, or encoding code does not ship, and CI (`.github/workflows/ci.yml`) must be green.
+
+Four required layers.
+
+### 57.1 Pure unit tests
+
+Cover:
+
+- URL/path encoding;
+- header categorisation;
+- metadata assembly;
+- case-insensitive metadata handling;
+- ACL parsing/serialisation;
+- listing parser;
+- pagination;
+- DLO parser;
+- SLO parser;
+- capability parser;
+- segment evidence;
+- mutation planner;
+- delete planner;
+- settings inheritance;
+- scheduler allocation;
+- redaction.
+
+### 57.2 Mock HTTP contract tests
+
+Exact Swift HTTP exchanges.
+
+Especially:
+
+- object metadata replacement;
+- DLO-preserving POST;
+- stale-write preflight;
+- bulk-delete partial failures;
+- SLO deletion;
+- 401 reauth;
+- 429/Retry-After.
+
+### 57.3 Local real Swift
+
+SAIO/containerized Swift where practical.
+
+Exercise:
+
+- auth;
+- container CRUD;
+- object CRUD;
+- delimiter listings;
+- metadata;
+- ACLs where configured;
+- bulk delete;
+- DLO;
+- SLO;
+- versioning/middleware where configured.
+
+Use tiny large-object thresholds in tests.
+
+A containerized-Swift (SAIO-style) integration job is added to `.github/workflows/ci.yml` when Phase 1 starts, so this layer runs in CI and not only on developer machines.
+
+### 57.4 Real SwiftStack release gate
+
+Because the product claims SwiftStack/Auth-v1-first support, a release smoke test should hit a representative SwiftStack-compatible environment.
+
+Local Swift proves Swift semantics.
+
+It does not fully prove the target deployment.
+
+---
+
+## 58. Canonical fixture namespace
+
+Create fixtures including:
+
+```text
+normal/
+  hello.txt
+
+empty-object
+
+folder-marker/
+
+implied/
+  child.txt
+
+unicode/
+  日本語.txt
+
+weird/
+  a+b.txt
+  percent%name
+  repeated//slash
+
+external-dlo
+external-dlo-segments/...
+
+external-slo
+slo-parts/...
+
+photos_segments
+  # intentionally a LEGITIMATE normal container for heuristic tests
+
+confirmed_segments
+
+.file-segments/...
+```
+
+This fixture is required because many of Aeronautes' most dangerous bugs are classification bugs.
+
+---
+
+## 59. Performance test suite
+
+Performance is a release concern.
+
+Representative fixtures:
+
+```text
+100,000 × 1 KiB objects
+100,000 × 1 MiB objects
+10,000  × 100 MiB objects
+DLO/SLO populations
+deep prefixes
+flat prefixes
+```
+
+Measure:
+
+| Operation | Metric |
+|---|---|
+| Browse first page | time to first results |
+| Scan 1M objects | objects/sec |
+| Find over 1M | objects/sec |
+| Delete 100k | objects/sec |
+| Empty large container | objects/sec |
+| Swift→Swift Copy | GiB/s + objects/sec |
+| Mirror no changes | objects/sec checked |
+| Mirror changed population | GiB/s + objects/sec |
+| Cancel large job | cancellation latency |
+
+Compare where relevant:
+
+- Aeronautes native implementation;
+- rclone strategy;
+- python-swiftclient CLI/reference tools.
+
+If rclone wins materially and can be delegated safely, use rclone.
+
+If Aeronautes/native Swift wins, use native.
+
+---
+
+## 60. Delivery plan
+
+Do not skip semantic foundations in order to make a flashy file list functional first.
+
+Static UI work may proceed in parallel against fixtures.
+
+Accessibility, keyboard model, and large-list virtualisation are hardened in Phase 7, but because UX is a core pillar they are **constraints from Phase 0**, not retrofits: build the design system with focus states, keyboard operability, and a virtualised list primitive from the start, so Phase 7 is verification and polish rather than rework.
+
+Each phase **Gate** below verifies, in addition to its prose criteria, the requirement IDs mapped to that phase in the `REQUIREMENTS.md` phase-gate table (that table is the authoritative first-gate assignment; it is not duplicated here).
+
+Every phase is implemented as a sequence of **small single-feature commits** — one component or behaviour per commit, each building green with its tests. §65 defines the concrete sequence for Phase 0–1 and the pattern every later phase follows: expand the phase's deliverable list into a commit sequence before starting it. A phase is a gate, not a commit.
+
+### Phase 0 — architecture, shell, semantics
+
+Deliver:
+
+- Go module;
+- Wails v3 + Svelte 5 shell;
+- design tokens;
+- four-pane static UI;
+- Settings shell;
+- SQLite migrations;
+- SecretStore abstraction;
+- `ncw/swift/v2` adapter;
+- domain types;
+- ADRs;
+- test fixture framework;
+- a **Wails v3** rendering/packaging spike of the design system on the named Tier-1 Linux baseline (§6.6), with v2 identified as the fallback;
+- a disposable **rclone-seam spike** (see below).
+
+Gate:
+
+The design system renders and packages acceptably on Wails v3 on the named Linux baseline (not only a development browser); the v3-with-v2-fallback decision is recorded in ADR `0010`; and the rclone-seam spike's observations have updated §26 as needed.
+
+A contributor can explain:
+
+- who owns semantics;
+- what rclone is allowed to execute;
+- why DLO and SLO differ;
+- why object metadata POST is special;
+- how secrets are kept out of the frontend/database.
+
+**Phase-0 rclone-seam experiment (disposable).** Before the real transfer subsystem exists, run a throwaway experiment whose only goal is to replace assumptions with observations. With the exact pinned rclone and a tiny chunk size *in the test environment only*:
+
+1. confirm how token lifetime is learned: does the auth response carry `X-Auth-Token-Expires`? Observe the real TTL and 401 behaviour (drives §26.2's priority order);
+2. give rclone only `storage_url` + `token` (never the key) and upload an object above the large-object threshold;
+3. record the **actual generated segment names/prefix** and capture rclone's structured/JSON output;
+4. gracefully cancel mid-segmentation; inspect what rclone cleaned up;
+5. hard-kill mid-segmentation; inspect what remains;
+6. use an expired/invalid token; observe retry/failure timing and how control returns to Aeronautes;
+7. restart with a fresh token and confirm a Copy resumes from the **unverified** set only, never re-staging a verified object (§28.4);
+8. round-trip strange names (`foo//bar`, `foo/`, `foo%2Fbar`, a newline, `.`/`..` prefixes, all-spaces, Unicode) through a Swift→Swift copy and verify exact destination names;
+9. run the **stage-and-commit** protocol (§28.6) end to end — both the large-object manifest commit and the plain-object server-side-COPY commit — and crash-test it at every durable boundary (`before-stage`, `staged`, `committed`, `cleaned`) on versioned and unversioned destinations;
+10. prove the **race**: turn a plain destination object into a shared-prefix DLO between preflight and deletion; confirm the Aeronautes-native manifest-only delete path never touches the shared segments;
+11. confirm remote-scoped **`override.*` TLS** overrides (`override.no_check_certificate`, `override.ca_cert`; strict source + insecure destination, and the reverse) work with the env-configured configless remotes and affect only the intended endpoint; if not honoured, validate the two-child fallback (§12.3);
+12. measure whether cross-bookmark Copy preserves object metadata, and confirm the destination keeps its own `X-Object-Manifest` (§27.4);
+13. drive a throttled object whose transfer spans token expiry; prove forward progress via bounded batches without leaking or heuristically deleting segments;
+14. run the Swift→local collision matrix (§27.5) on a representative Windows, macOS, and Linux filesystem.
+
+**Sequencing:** the webview/packaging spike gates Phase 1; this rclone-seam list does **not**. Items 1–13 run in parallel during Phases 1–4 (start with 1 and 11 — they are the cheapest assumptions to falsify) and must be complete before the Phase-5 transfer abstraction freezes; item 14 may trail until §27.5 work starts.
+
+Feed the results back into §25, §26.2, §26.4, §27.4, §27.5, and §28.4/§28.6 before the production transfer abstraction is finalised. This is the highest-value pre-implementation experiment.
+
+### Phase 1 — auth + browse
+
+Deliver:
+
+- SwiftStack v1 auth;
+- `/info`;
+- account HEAD;
+- container listing;
+- object listing;
+- typed prefix/object entries;
+- prefix + delimiter;
+- pagination;
+- bookmark save/session credentials;
+- basic account portrait.
+
+Gate:
+
+Real target cluster can be browsed without rclone.
+
+### Phase 2 — read-only inspector
+
+Deliver:
+
+- account/container/object HEAD;
+- derived/system/user/raw header views;
+- storage policy;
+- ACL display;
+- versioning display;
+- CORS/staticweb/quota/tempurl presence as capabilities permit;
+- DLO detection;
+- SLO detection + manifest;
+- segment evidence;
+- Logical / All / Backstage.
+
+Gate:
+
+Fixture namespace is classified correctly, including a legitimate `photos_segments` container that must not be hidden/destructively classified from name alone.
+
+### Phase 3 — safe mutation
+
+Deliver:
+
+- metadata working copy;
+- preflight conflict detection;
+- semantic diff;
+- DLO-preserving metadata update;
+- post-write verification;
+- structured SwiftStack ACL editor + raw mode;
+- create container;
+- storage-policy picker;
+- marker create/delete;
+- capability-gated container configuration;
+- audit events.
+
+Gate:
+
+Editing one object metadata key cannot silently erase another.
+
+DLO remains a DLO after metadata edit.
+
+### Phase 4 — large-object read semantics
+
+Deliver (read, inspect, classify — **not** the hardest destructive cleanup, which moves to Phase 6 so the rclone seam is exercised first):
+
+- rich DLO inspector;
+- rich SLO inspector;
+- exact SLO segments;
+- segment ownership model and evidence;
+- Backstage navigation and guards;
+- SLO manifest-only delete and DLO manifest-only delete (low-risk: they remove only the manifest object).
+
+Defer to Phase 6: SLO manifest+segments delete, and owned-prefix DLO segment cleanup — these depend on the transfer-seam and reconciliation experience gained in Phase 5.
+
+Gate:
+
+Unknown/shared DLO prefix cannot be automatically purged.
+
+Heuristic segment classification cannot authorize destruction.
+
+### Phase 5 — transfers + cross-account Copy
+
+Deliver:
+
+- pinned rclone process manager;
+- local→Swift upload;
+- Swift→local download;
+- multi-file/directory upload;
+- Swift bookmark→Swift bookmark Copy (planned-new names + stage-and-commit overwrites, §28.6);
+- comparison model + streaming merge-join preview (§15.2, §28.4);
+- Smart preflight;
+- staging, verification, post-job reconciliation;
+- **Mirror preview (read-only)** — the full destructive plan, counts, and warnings, with execution disabled until Phase 6;
+- progress;
+- cancellation;
+- per-job settings;
+- scheduler budgets;
+- 5 GiB production large-object default;
+- destination segment placement.
+
+Executable Mirror moves to Phase 6: its delete half is Aeronautes-native destruction, which is Phase 6's machinery — shipping it earlier would mean shipping ungated destruction.
+
+Gate:
+
+Cross-account Copy works on real test accounts, including changed-object overwrites via stage-and-commit. Mirror preview shows correct destructive plans without executing them.
+
+No persistent rclone credential file.
+
+No credentials in logs.
+
+The first rclone-integrated release contains zero destruction paths.
+
+### Phase 6 — destructive jobs + performance system
+
+Deliver:
+
+- Find in container;
+- delete strategy engine (all-native, §31–§36);
+- bulk-delete path;
+- bounded native DELETE path;
+- **executable Mirror** (destination-only deletion, Aeronautes-native — preview shipped in Phase 5);
+- Empty Container;
+- Delete Container (native empty + native container DELETE, §33);
+- recursive prefix delete;
+- SLO manifest+segments delete and owned-prefix DLO segment cleanup (deferred from Phase 4, now that the transfer seam and reconciliation exist);
+- performance profiles;
+- application/bookmark/job budgets;
+- benchmark page;
+- effective-config diagnostics;
+- throughput display.
+
+Gate:
+
+Large synthetic destructive jobs are bounded, cancellable, observable, and recoverable after partial failure.
+
+Mirror executes correctly against the shared-segment and race fixtures (§28.6, §58).
+
+### Phase 7 — release hardening
+
+Deliver:
+
+- keyboard navigation;
+- accessibility;
+- responsive layouts;
+- large-list virtualisation;
+- database migration tests;
+- crash/error recovery;
+- audit viewer;
+- CSP/webview hardening;
+- package/signing pipeline (all six OS×arch targets, §61.0);
+- licences/About;
+- documentation;
+- release smoke tests.
+
+---
+
+## 61. Packaging
+
+### 61.0 Supported targets (all required)
+
+Aeronautes must build and run on **three operating systems × two CPU architectures — six targets**:
+
+| OS | x86_64 | aarch64 |
+|---|---|---|
+| Linux | required | required |
+| Windows | required | required |
+| macOS | required (Intel) | required (Apple Silicon) |
+
+All six are release targets, not aspirations. The tiers below are **polish/priority ordering** (which target gets first release-quality attention), not the support scope.
+
+Build strategy: because Wails links the OS-native webview via CGO, builds happen **on a matched runner per OS** (a CI matrix: Linux / Windows / macOS), with the arch dimension handled by native-arch runners or a matched cross-toolchain per OS. Verify each target's webview + Wails v3 support in the Phase-0 spike — WebView2 on Windows ARM64, WebKitGTK on Linux arm64, WKWebView on Apple Silicon. Keep `GOOS`/`GOARCH`-specific assumptions out of the codebase except in the `secrets` and packaging layers.
+
+### Tier 1 — Linux
+
+Release quality first.
+
+Initial packaging candidates:
+
+- native packaged executable/bundle;
+- AppImage if appropriate;
+- Flatpak once keychain/sidecar behaviour is proven.
+
+### Tier 2 — macOS
+
+Continuously build from early development.
+
+Notarize when release/signing infrastructure is ready.
+
+### Tier 2 — Windows
+
+Continuously build from early development.
+
+Sign release artifacts when ready.
+
+Do not let signing/notarisation block proving the product on Linux.
+
+### 61.1 Bundling the pinned rclone binary
+
+The pinned rclone (§26.3) is a per-**target** native binary — one for each of the six OS×arch combinations (rclone publishes all six: linux/windows/darwin × amd64/arm64). Each must ship with the matching build and be integrity-checked. Decide and document, per target:
+
+- how the binary is obtained and where it lives in the bundle;
+- that the bundled binary's OS and arch match the app build (never ship an amd64 rclone in an arm64 bundle);
+- checksum verification at build time and again at runtime before first spawn (refuse to run an unexpected binary);
+- the hardest case is **Flatpak**: a bundled subprocess plus Secret Service access plus filesystem portals interact awkwardly — this is why Flatpak is gated on "keychain/sidecar behaviour proven" above. The Flatpak manifest must account for the rclone sidecar, the encrypted-vault fallback (§12.1), and portal-mediated local filesystem access for upload/download.
+
+---
+
+## 62. Non-goals for v1
+
+Not v1 (or not ever):
+
+- Keystone UI;
+- S3 inspector;
+- S3-first browser;
+- mount/FUSE;
+- raw `rclone sync`/`purge`/`delete` as execution engines (ADR 0004);
+- embedding rclone libraries;
+- native Go replacement for rclone transfer engine;
+- SLO creation/uploader;
+- arbitrary external DLO auto-cleanup;
+- global orphan scanner;
+- raw physical segment replication;
+- scheduled replication;
+- automatic cross-config server-side copy optimisation;
+- full object version-history browser;
+- crate/library publication project;
+- plugin framework;
+- telemetry by default.
+
+Potential v1.x/v2 features:
+
+- Clone Container;
+- scheduled Copy/Mirror;
+- server-side same-cluster copy fast path;
+- TempURL generator;
+- orphan analysis;
+- Keystone;
+- deeper version-history UX.
+
+---
+
+## 63. Definition of done — v1
+
+> This is the **north-star** v1 — the complete product, not a sprint board. The first shippable slice is §65 (treat it as **v0.1**): auth, browse, and a live inspector HEAD, before any rclone in the app. Ship §65 before Mirror, the benchmark system, or the delete strategy engine. Do not read this section as the initial backlog.
+
+### Browse
+
+An operator can:
+
+1. save multiple SwiftStack v1 bookmarks;
+2. browse containers without loading the whole account namespace;
+3. browse very large containers page by page;
+4. navigate marker-backed and implied prefixes;
+5. switch between Logical / All / Backstage.
+
+### Inspect
+
+The operator can:
+
+1. inspect account/container/object headers;
+2. understand derived, system and user metadata separately;
+3. inspect ACLs/configuration;
+4. identify DLOs and SLOs;
+5. see exact SLO segments;
+6. jump from a logical object to confirmed backstage storage;
+7. distinguish confirmed/declared/suspected segment stores.
+
+### Mutate
+
+The operator can:
+
+1. edit object metadata without dropping unrelated keys;
+2. edit DLO metadata without breaking its manifest;
+3. edit container/account metadata as supported;
+4. edit container ACLs;
+5. create containers with the correct policy selection;
+6. configure supported container features;
+7. see meaningful diffs and conflicts.
+
+### Transfer
+
+The operator can:
+
+1. upload;
+2. download;
+3. upload directories/multiple files;
+4. Copy Swift→Swift across bookmarks;
+5. Mirror Swift→Swift;
+6. see progress, throughput and worker allocation;
+7. cancel;
+8. understand destination large-object placement.
+
+### Delete
+
+The operator can:
+
+1. delete ordinary objects;
+2. remove markers;
+3. recursively delete normal prefixes;
+4. empty containers;
+5. delete SLO manifests;
+6. delete SLOs with exact segments;
+7. delete DLO manifests;
+8. clean known-owned DLO segments;
+9. deliberately perform Backstage cleanup when required.
+
+### Performance
+
+The application:
+
+1. has global resource budgets;
+2. has bookmark overrides;
+3. has per-job overrides;
+4. exposes Auto/Balanced/Aggressive/Custom;
+5. can benchmark a bookmark;
+6. reports throughput and effective configuration;
+7. chooses among native Swift and rclone execution strategies.
+
+### Safety
+
+Normal UI must not allow:
+
+- heuristic-only segment classification to authorize destructive cleanup;
+- accidental recursive purge of a confirmed segment store;
+- rclone overwriting or deleting any existing object (§28.6, §36);
+- silent loss of object metadata;
+- silent DLO-manifest breakage during metadata edits;
+- TempURL/auth credentials in logs or SQLite;
+- raw rclone options that invalidate UI semantics;
+- destructive Mirror semantics disguised as an innocuous checkbox.
+
+If any of the safety or semantic requirements above are missing, it is not v1.
+
+---
+
+## 64. Instructions for coding agents
+
+### Always
+
+- treat this document as authoritative;
+- update this document before changing a locked decision;
+- add ADRs for major architectural changes;
+- preserve the Svelte visual direction;
+- keep Swift semantics in Go domain packages, not UI components;
+- keep secrets out of the frontend;
+- test object-name encoding;
+- stream large namespaces;
+- benchmark performance-sensitive paths;
+- surface transaction IDs;
+- make destructive plans explicit;
+- prefer the fastest **safe** engine.
+
+### Never
+
+- port python-swiftclient wholesale;
+- write a second generic Swift SDK without a proven need;
+- list the primary UI through rclone;
+- make rclone the source of Swift semantics;
+- HEAD every row in a listing;
+- classify a segment store as destructive-safe from its name alone;
+- default large-object chunking to tiny values such as 64 MiB;
+- silently store credentials in SQLite;
+- expose arbitrary rclone command-line arguments as a normal feature;
+- use rclone `sync`, `purge`, or `delete` at all (§36, ADR 0004);
+- call best-effort stale-write detection atomic concurrency;
+- generate a generic VS Code/Electron-looking UI.
+
+---
+
+## 65. First implementation milestone — the commit sequence
+
+This milestone covers **Phase 0 plus the browse portion of Phase 1** (§60); follow the phase gates
+for acceptance. The unit of work is the **commit**: one component or behaviour each, building
+green with its tests, small enough for a human to review in one sitting. Do not batch "Phase 0"
+into one commit; do not split one component across many.
+
+The first milestone deliberately avoids transfer complexity: **no Keystone, S3, rclone,
+large-object uploading, or destructive jobs here.**
+
+Ordered commit sequence (deviate only where a real dependency forces it):
+
+1. **Go module + repo scaffold** — `go.mod`, directory skeleton, README status update.
+2. **SQLite layer** — pure-Go driver, migration runner, schema v1 (§51 tables), WAL /
+   busy-timeout / single-writer. Tests: migrate-from-empty, idempotent re-run, and a static
+   check that the schema has no secret-shaped columns (K-SEC-003).
+3. **SecretStore** — interface + session-only store; tests. (The OS Secret Service backend and
+   the opt-in vault are separate later commits; the vault needs ADR 0006 resolved first.)
+4. **Swift adapter: session + v1 auth + errors** — wrap `ncw/swift/v2`; normalized `SwiftError`
+   with transaction IDs; authenticate-once / replay-once-on-401; mock-HTTP contract tests (§57.2).
+5. **Capability discovery** — `/info` fetch/parse, Unknown-capabilities mode, provenance types
+   (§10). Tests: advertised / disabled / unreachable.
+6. **Account portrait** — account HEAD, header categorisation (derived/system/user/raw),
+   editable fingerprint (§13.1). Tests include case-insensitive metadata handling.
+7. **Container listing** — typed, paginated, streaming (§14, §15). Tests: pagination markers,
+   bounded memory.
+8. **Object listing** — delimiter/prefix listing, typed Object/Prefix entries, marker-backed vs
+   implied prefixes; the §14.3 encoding suite through the native path. Tests.
+9. **Wails v3 + Svelte 5 shell** — hello-window app, typed service bindings skeleton (§55); CI
+   gains the GTK4/WebKitGTK system dependencies. This commit is the webview-spike vehicle (§6.6).
+10. **Design tokens + typography/motion** — the §4 visual system as tokens; both warm themes.
+11. **Static browser/inspector** — four-pane layout against the §58 fixtures; the virtualised
+    list primitive from the start (§60).
+12. **Bookmarks** — model + SQLite persistence + SecretStore wiring + session credentials; tests.
+13. **Live wiring: browse a real cluster** — bookmark → auth → containers → objects → inspector
+    HEAD in the polished UI. This is the v0.1 vertical proof.
+
+Commits 2–8 are pure Go and independent of the GUI toolchain; 9–11 need the Wails/webview stack.
+Within each group the order is a dependency chain; the two groups may interleave.
+
+Later phases follow the same pattern: before starting a phase, expand its §60 deliverable list
+into a commit sequence like this one (each commit with its tests named), and update this document
+in the same commit whenever implementation experience changes a design decision.
+
+The first real vertical proof is:
+
+> Launch Aeronautes on Linux → choose a saved SwiftStack v1 bookmark → authenticate → browse containers and prefixes in the intended UI → select an object → inspect a real HEAD response.
+
+Once that is stable, proceed phase-by-phase.
+
+---
+
+## 66. Final project statement
+
+Aeronautes should feel like the Swift operator tool that should already exist:
+
+- technically honest;
+- unusually fast;
+- very hard to misuse accidentally;
+- excellent at enormous namespaces;
+- capable of cross-account migration and replication;
+- comfortable exposing low-level Swift truth;
+- visually polished enough that the interface itself builds confidence.
+
+The goal is not merely to wrap Swift and rclone.
+
+The goal is to combine:
+
+> **Swift-aware semantics + rclone-class movement + operator-grade safety + a genuinely beautiful desktop experience.**

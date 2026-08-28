@@ -1,0 +1,37 @@
+# Build output
+/build/
+/bin/
+/dist/
+*.exe
+*.app
+
+# Wails
+/frontend/dist/
+/frontend/wailsjs/
+
+# Go
+*.test
+*.out
+/vendor/
+
+# Node / frontend
+node_modules/
+.svelte-kit/
+*.tsbuildinfo
+
+# Local state / secrets (never commit)
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.db
+*.vault
+
+# Pinned rclone binary (bundled at build time, not committed)
+/third_party/rclone/rclone
+/third_party/rclone/rclone.exe
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
