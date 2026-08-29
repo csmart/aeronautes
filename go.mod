@@ -3,13 +3,13 @@ module github.com/csmart/aeronautes
 go 1.27.0
 
 require (
+	github.com/adrg/xdg v0.5.3
 	github.com/ncw/swift/v2 v2.0.5
 	github.com/wailsapp/wails/v3 v3.0.0-beta.15
 	modernc.org/sqlite v1.57.0
 )
 
 require (
-	github.com/adrg/xdg v0.5.3 // indirect
 	github.com/coder/websocket v1.8.14 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect

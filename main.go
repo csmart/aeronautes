@@ -4,10 +4,17 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"log"
+	"os"
+	"path/filepath"
 
+	"github.com/adrg/xdg"
 	"github.com/csmart/aeronautes/internal/app"
+	"github.com/csmart/aeronautes/internal/bookmarks"
+	"github.com/csmart/aeronautes/internal/db"
+	"github.com/csmart/aeronautes/internal/secrets"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -18,11 +25,33 @@ var assets embed.FS
 var version = "dev"
 
 func main() {
+	statePath, err := xdg.StateFile("aeronautes/state.sqlite")
+	if err != nil {
+		log.Fatalf("resolve state dir: %v", err)
+	}
+	if dev := os.Getenv("AERONAUTES_STATE_DIR"); dev != "" {
+		// Dev/test override so scratch runs never touch real state.
+		statePath = filepath.Join(dev, "state.sqlite")
+	}
+	database, err := db.Open(context.Background(), statePath)
+	if err != nil {
+		log.Fatalf("open state database %s: %v", statePath, err)
+	}
+	defer database.Close()
+
+	// Session-only secrets for now: credentials die with the process. The
+	// OS Secret Service backend is its own later commit (§65 note, ADR 0006).
+	bookmarkStore := bookmarks.NewStore(database, secrets.NewSessionStore())
+	connections := app.NewConnections(bookmarkStore)
+
 	a := application.New(application.Options{
 		Name:        "Aeronautes",
 		Description: "Desktop operator workbench for OpenStack Swift",
 		Services: []application.Service{
 			application.NewService(app.NewAppService(version)),
+			application.NewService(app.NewBookmarkService(bookmarkStore)),
+			application.NewService(app.NewBrowseService(connections)),
+			application.NewService(app.NewInspectorService(connections)),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),

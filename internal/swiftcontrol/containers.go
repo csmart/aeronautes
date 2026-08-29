@@ -24,6 +24,9 @@ type ListOptions struct {
 	PageSize int
 	// Prefix limits results to names beginning with it (server-side).
 	Prefix string
+	// Marker resumes the listing after this name — the last row of a
+	// previously consumed page.
+	Marker string
 }
 
 // Containers streams the account's containers page by page (§15): each
@@ -37,7 +40,7 @@ func (s *Session) Containers(ctx context.Context, opts ListOptions) iter.Seq2[Co
 		pageSize = defaultPageSize
 	}
 	return func(yield func(ContainerEntry, error) bool) {
-		marker := ""
+		marker := opts.Marker
 		for {
 			page, err := s.conn.Containers(ctx, &swift.ContainersOpts{
 				Limit:  pageSize,

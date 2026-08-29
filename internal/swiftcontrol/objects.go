@@ -47,6 +47,10 @@ type ObjectListOptions struct {
 	Prefix string
 	// PageSize is the server page size; 0 means the §15.1 default.
 	PageSize int
+	// Marker resumes the listing after this name — the last row of a
+	// previously consumed page (for a PrefixEntry, its Prefix value; the
+	// server then skips the whole group).
+	Marker string
 	// Deep lists the flat namespace with no delimiter: every real object
 	// including folder markers, no PrefixEntry rows. This is the stream
 	// jobs consume; the browse UI uses the default delimiter view.
@@ -85,7 +89,7 @@ func (s *Session) Objects(ctx context.Context, container string, opts ObjectList
 			return yield(entry, nil)
 		}
 
-		marker := ""
+		marker := opts.Marker
 		for {
 			page, err := s.conn.Objects(ctx, container, &swift.ObjectsOpts{
 				Limit:     pageSize,

@@ -282,6 +282,12 @@ func (s *Server) writeObjectListing(w http.ResponseWriter, r *http.Request, cont
 		if name <= marker || !strings.HasPrefix(name, prefix) {
 			continue
 		}
+		// Real Swift treats a marker that names a subdir group as "skip the
+		// whole group": names inside it never re-emit the subdir row.
+		if delimiter != "" && marker != "" && strings.HasSuffix(marker, delimiter) &&
+			strings.HasPrefix(name, marker) {
+			continue
+		}
 		if delimiter != "" {
 			rest := name[len(prefix):]
 			if idx := strings.Index(rest, delimiter); idx >= 0 {
