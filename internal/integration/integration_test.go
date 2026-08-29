@@ -1693,3 +1693,146 @@ func TestTLSRealSwift(t *testing.T) {
 		t.Fatalf("insecure rclone over TLS: %v %+v", err, result)
 	}
 }
+
+// TestFeatureSurfacesRealSwift closes the README-claim loop for the
+// display-grade features (§53): TempURL key slots, CORS, and staticweb
+// configured on REAL Swift must parse into the container detail the
+// inspector shows — mock parsing alone does not earn the claim. Values
+// of TempURL keys are withheld by design; only slot names surface.
+func TestFeatureSurfacesRealSwift(t *testing.T) {
+	h := harness(t)
+	ctx := context.Background()
+	capabilities, err := h.Session.FetchCapabilities(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, feature := range []string{"tempurl", "staticweb"} {
+		if capabilities.Feature(feature) == nil {
+			t.Fatalf("SAIO should advertise %s", feature)
+		}
+	}
+
+	container := h.Container("features")
+	if err := h.conn.ContainerCreate(ctx, container, swift.Headers{
+		"X-Container-Meta-Temp-URL-Key":                "smoke-secret-one",
+		"X-Container-Meta-Temp-URL-Key-2":              "smoke-secret-two",
+		"X-Container-Meta-Access-Control-Allow-Origin": "https://ops.example",
+		"X-Container-Meta-Web-Index":                   "index.html",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	d, err := h.Session.ContainerDetail(ctx, container)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.TempURLKeySlots) != 2 {
+		t.Fatalf("TempURL key slots = %v, want both slots", d.TempURLKeySlots)
+	}
+	if !d.CORS || !d.StaticWeb {
+		t.Fatalf("CORS=%v StaticWeb=%v, want both configured", d.CORS, d.StaticWeb)
+	}
+	// The special families never leak into plain user metadata, and no
+	// secret value ever appears anywhere in the detail (K-SEC-002).
+	for k := range d.Meta {
+		if strings.Contains(strings.ToLower(k), "temp-url") ||
+			strings.Contains(strings.ToLower(k), "access-control") ||
+			strings.Contains(strings.ToLower(k), "web-") {
+			t.Fatalf("special-family key %q leaked into plain metadata", k)
+		}
+	}
+	for _, raw := range d.RawHeaders {
+		if strings.Contains(raw, "smoke-secret") {
+			t.Fatal("TempURL key value leaked into the raw header view")
+		}
+	}
+
+	// Storage policy on real Swift: the detail reports the cluster's
+	// actual policy for the created container (the SAIO carries one
+	// policy; multi-policy selection is covered by the mock's picker
+	// tests and gated by /info capabilities either way, §10/§20).
+	if d.StoragePolicy == "" {
+		t.Fatal("storage policy missing from container detail")
+	}
+	policies := capabilities.StoragePolicies()
+	found := false
+	for _, p := range policies {
+		if p.Name == d.StoragePolicy {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("detail policy %q not among advertised %v", d.StoragePolicy, policies)
+	}
+}
+
+// TestVersionedOverwriteArchivesRealSwift turns the §28.6 seam-spike
+// note — "on a versioned_writes destination each commit-overwrite
+// archives the previous object" — into an automated behavioural test:
+// the executor's stage-and-commit overwrite of a changed object on a
+// versioned container must leave the prior version in the archive.
+func TestVersionedOverwriteArchivesRealSwift(t *testing.T) {
+	if _, err := exec.LookPath("rclone"); err != nil {
+		t.Skip("pinned rclone not installed")
+	}
+	h := harness(t)
+	if h.Session2() == nil {
+		t.Skip("no second account on this cluster")
+	}
+	ctx := context.Background()
+
+	src := h.Container("ver-src")
+	if err := h.conn.ContainerCreate(ctx, src, nil); err != nil {
+		t.Fatal(err)
+	}
+	// Versioned destination on account 2: archive container + live
+	// container pointing at it.
+	archive := h.Prefix + "ver-archive"
+	dst := h.Prefix + "ver-dst"
+	if err := h.rawPut2(ctx, archive, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPut, h.Conn2().StorageUrl+"/"+dst, nil)
+	req.Header.Set("X-Auth-Token", h.Conn2().AuthToken)
+	req.Header.Set("X-Versions-Location", archive)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil || resp.StatusCode >= 300 {
+		t.Fatalf("versioned container: %v %v", err, resp.Status)
+	}
+	resp.Body.Close()
+
+	if err := h.put(ctx, src, "doc.txt", []byte("version TWO"), "text/plain", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.rawPut2(ctx, dst+"/doc.txt", []byte("version one"), "text/plain"); err != nil {
+		t.Fatal(err)
+	}
+
+	executor := executorFixture(t, h, src, dst, "job-versioned")
+	report := planInto(ctx, t, h, executor, src, dst)
+	if len(report.Failures) != 0 || report.Overwrites != 1 {
+		t.Fatalf("report = %+v (failures %+v)", report, report.Failures)
+	}
+	// The live object is the new content; the archive holds the old.
+	live, _, err := h.Session2().OpenObject(ctx, dst, "doc.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	liveBytes, _ := io.ReadAll(live)
+	live.Close()
+	if string(liveBytes) != "version TWO" {
+		t.Fatalf("live = %q", liveBytes)
+	}
+	archived := 0
+	for entry, err := range h.Session2().Objects(ctx, archive, swiftcontrol.ObjectListOptions{Deep: true}) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := entry.(swiftcontrol.ObjectEntry); ok {
+			archived++
+		}
+	}
+	if archived == 0 {
+		t.Fatal("versioned overwrite archived nothing — the §28.6 disclosure would be a lie")
+	}
+	t.Logf("archive holds %d version(s) after stage-and-commit overwrite", archived)
+}
