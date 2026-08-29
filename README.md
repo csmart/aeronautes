@@ -4,17 +4,6 @@
 ![Go coverage](.github/badges/coverage-go.svg)
 ![UI coverage](.github/badges/coverage-frontend.svg)
 
-> **Status: implementation in progress — Phases 0–6 complete, Phase 7 (release hardening)
-> under way.** The design is locked; code is built one component per commit, following the
-> sequences in [`docs/DESIGN.md`](docs/DESIGN.md) §65. Live today, all proven against real
-> containerized Swift: the four-pane browser and inspector with evidence-driven backstage
-> classification; safe metadata/ACL/container mutation; cross-account Copy through the pinned
-> rclone with stage-and-commit overwrites and independent verification; executable Mirror;
-> upload/download with collision preflight; recursive/empty/delete-container jobs and gated
-> SLO/DLO segment cleanup over ownership proofs; the live job drawer with budgets, profiles,
-> and a consent-gated benchmark; and per-bookmark TLS trust (system / custom CA / insecure)
-> exercised against HTTPS Swift.
-
 **Aeronautes** (a living genus of swifts; “air sailor”) is a beautiful, performance-first
 **desktop operator workbench for OpenStack Swift / SwiftStack**.
 It makes Swift's control-plane semantics understandable and safe, and uses rclone and native Swift
@@ -22,6 +11,11 @@ features to move bulk data as fast as the target cluster can safely handle.
 
 The mantra: **the inspector is the product; transfers are a first-class superpower; performance and
 beauty are features.**
+
+![Browser and inspector](docs/assets/screenshots/02-inspector-dlo.png)
+
+*The DLO inspector against real Swift: logical vs listed size, the exact manifest, its segment
+table, and the manifest-only delete. More in [`docs/assets/screenshots/`](docs/assets/screenshots/).*
 
 ## What it is
 
@@ -48,9 +42,7 @@ vault for secrets.
 - [`docs/DESIGN.md`](docs/DESIGN.md) — authoritative product + engineering design (66 sections).
 - [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) — compact normative requirement IDs for phase gates.
 - [`docs/adr/`](docs/adr/) — architecture decision records (0001–0012; 0006 still proposed).
-- [`docs/assets/REGENERATION.md`](docs/assets/REGENERATION.md) — Swift-correct specs for regenerating the mockups.
-- `docs/assets/draft/*.png` — visual direction only. ⚠ The current AI-generated PNGs contain S3-flavoured
-  terminology errors; `DESIGN.md` §4.5 and the regeneration specs are authoritative until they are redone.
+- [`docs/assets/screenshots/`](docs/assets/screenshots/) — real captures of the app against containerized Swift.
 - [`docs/rclone.md`](docs/rclone.md) — the exact pinned-rclone flag surface and measured behaviours.
 - [`docs/RELEASING.md`](docs/RELEASING.md) — the six-target release pipeline (unsigned for now, on purpose).
 - [`AGENTS.md`](AGENTS.md) — start-here guide for coding agents.

@@ -129,11 +129,11 @@ gates can reference stable IDs instead of re-reading ~11k words of prose.
 - **K-UI-001** — SLO MUST be displayed as **Static Large Object**. (§4.5)
 - **K-UI-002** — Swift large-object UI MUST use segment/chunk vocabulary, not S3 multipart/part
   vocabulary, and MUST NOT use `x-amz-*` headers or "S3-compatible". (§4.5)
-- **K-UI-003** — Object inspectors MUST NOT present an ACL tab (Swift ACLs are container-level). (§19, assets/REGENERATION.md)
+- **K-UI-003** — Object inspectors MUST NOT present an ACL tab (Swift ACLs are container-level). (§19; the retired mockup-correction specs, now embodied in §4.5)
 - **K-UI-004** — The shell MUST NOT display cluster-capacity telemetry a tenant cannot obtain; show
-  account usage/quota only. (assets/REGENERATION.md)
+  account usage/quota only. (§4.5)
 - **K-UI-005** — The shell MUST NOT display an unsubstantiated health status (e.g. "All systems
-  nominal") without an actual probe; show real app/connection/job state. (assets/REGENERATION.md)
+  nominal") without an actual probe; show real app/connection/job state. (§4.5)
 - **K-PLAT-001** — The Go↔frontend bridge MUST be a set of typed services, not a generic shell/exec
   interface, keeping a Wails v2 fallback cheap. (§55, §6.6)
 - **K-PLAT-002** — The Tier-1 Linux baseline MUST be named before the Svelte design system starts.

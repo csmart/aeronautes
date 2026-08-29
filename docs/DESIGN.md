@@ -148,9 +148,9 @@ Power belongs behind well-designed advanced controls, not behind an arbitrary fr
 
 ## 4. Visual direction
 
-![Browser and inspector](assets/draft/browser-inspector.png)
+![Browser and inspector](assets/screenshots/01-browser.png)
 
-> ⚠ Draft mockup — the pixels contain S3-flavoured errors. See §4.5 and `assets/draft/README.md`; the corrections there are normative.
+> Real capture of the built application against containerized Swift (draft mockups retired 2026-08-30; §4.5's corrections are now embodied in the product).
 
 ### 4.1 Visual system
 
@@ -235,7 +235,10 @@ Initial keyboard targets:
 
 ### 4.5 Mockup terminology corrections (normative)
 
-The four images in `assets/draft/` convey the intended look, density, and layout. They were AI-generated and, in several places, use S3-flavoured terminology and invented fields that are **wrong for Swift**. The look is direction; the following corrections are normative and override the pixels.
+This section originally corrected AI-generated draft mockups whose pixels carried S3-flavoured
+errors. The drafts are retired — `assets/screenshots/` holds real captures of the built
+application against real Swift — but the corrections below remain normative as a record of the
+Swift-semantics rules the UI embodies (several were the seeds of shipped behaviour).
 
 | In the mockup | Correct for Aeronautes/Swift | Where |
 |---|---|---|
@@ -273,7 +276,7 @@ The inspector, not the file list, is the conceptual centre of the application.
 
 ### 5.2 Transfer planner
 
-![Transfer planner](assets/draft/transfer-planner.png)
+![Copy preview](assets/screenshots/03-copy-preview.png)
 
 Cross-account/cross-cluster replication is a first-class workflow.
 
@@ -281,7 +284,7 @@ The transfer planner must make source, destination, mode, large-object policy, p
 
 ### 5.3 Performance settings
 
-![Performance settings](assets/draft/performance-settings.png)
+![Jobs drawer](assets/screenshots/05-jobs-drawer.png)
 
 Performance settings are a deliberate product surface, not a hidden debug panel.
 
@@ -291,7 +294,7 @@ Experienced operators must be able to control the machine and endpoint budgets p
 
 ### 5.4 Architecture overview
 
-![Architecture overview](assets/draft/architecture-overview.png)
+![DLO inspector](assets/screenshots/02-inspector-dlo.png)
 
 This image is a visual summary only. The normative architecture is specified below.
 
@@ -457,7 +460,7 @@ Recommended monorepo:
 │   ├── DESIGN.md               # this document (authoritative)
 │   ├── REQUIREMENTS.md         # normative K-* IDs (phase gates)
 │   ├── assets/
-│   │   ├── REGENERATION.md
+│   │   ├── screenshots/
 │   │   └── draft/              # stale S3-flavoured mockups — do not copy
 │   │       ├── browser-inspector.png
 │   │       ├── transfer-planner.png

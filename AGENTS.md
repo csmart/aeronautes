@@ -15,8 +15,8 @@ commit, phase by phase, following the design.
    an ADR) before changing code**.
 2. [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) — the hard constraints as stable IDs (`K-*`) with a
    phase→ID gate table. Phase gates verify these.
-3. [`docs/assets/REGENERATION.md`](docs/assets/REGENERATION.md) — specs to regenerate the mockups.
-   ⚠ The PNGs in `docs/assets/draft/` are AI-generated and **wrong for Swift** (S3-flavoured terms).
+3. [`docs/assets/screenshots/`](docs/assets/screenshots/) — real captures of the built app
+   against containerized Swift (the retired draft mockups' §4.5 corrections remain normative).
    Do **not** copy labels/fields from them; §4.5 is authoritative. They are visual direction only.
 
 ## Non-negotiable invariants (see the sections for the full rules)
