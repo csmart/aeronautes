@@ -326,6 +326,22 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request, container,
 	if ok {
 		o, ok = c.objects[name]
 	}
+	length := o.Bytes
+	if ok && o.Manifest != "" {
+		// A DLO manifest HEAD reports the assembled logical size (§20):
+		// the summed bytes of everything under container/prefix right now.
+		if slash := strings.Index(o.Manifest, "/"); slash > 0 {
+			segContainer, segPrefix := o.Manifest[:slash], o.Manifest[slash+1:]
+			if sc, scOK := s.containers[segContainer]; scOK {
+				length = 0
+				for segName, seg := range sc.objects {
+					if strings.HasPrefix(segName, segPrefix) {
+						length += seg.Bytes
+					}
+				}
+			}
+		}
+	}
 	s.mu.Unlock()
 	if !ok {
 		w.WriteHeader(http.StatusNotFound)
@@ -335,7 +351,7 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request, container,
 	h := w.Header()
 	h.Set("Content-Type", o.ContentType)
 	h.Set("Etag", o.ETag)
-	h.Set("Content-Length", strconv.FormatInt(o.Bytes, 10))
+	h.Set("Content-Length", strconv.FormatInt(length, 10))
 	h.Set("Last-Modified", "Fri, 28 Aug 2026 10:00:00 GMT")
 	if o.Manifest != "" {
 		h.Set("X-Object-Manifest", o.Manifest)

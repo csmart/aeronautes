@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { BrowserState, ContainerMode } from "./browserState.svelte";
-  import type { ContainerEntry } from "../../lib/types";
+  import type { ContainerRowDTO } from "../../lib/api";
   import { formatBytes, formatCount } from "../../lib/format";
 
   let { browser }: { browser: BrowserState } = $props();
@@ -12,7 +12,7 @@
   ];
 </script>
 
-{#snippet containerRow(container: ContainerEntry)}
+{#snippet containerRow(container: ContainerRowDTO)}
   <button
     class="container-row"
     class:selected={browser.containerName === container.name}
@@ -20,7 +20,7 @@
   >
     <span class="container-name">{container.name}</span>
     <span class="container-detail num">
-      {formatBytes(container.bytes)} · {formatCount(container.objectCount)} objects
+      {formatBytes(container.bytes)} · {formatCount(container.count)} objects
     </span>
   </button>
 {/snippet}
@@ -43,21 +43,35 @@
   </header>
 
   <div class="rows">
-    {#each browser.containerGroups.main as container (container.name)}
-      {@render containerRow(container)}
-    {/each}
-
-    {#if browser.containerGroups.suspected.length > 0}
-      <h3 class="group-label">Possible backstage · {browser.containerGroups.suspected.length}</h3>
-      {#each browser.containerGroups.suspected as container (container.name)}
+    {#if !browser.account}
+      <p class="disconnected">Not connected.</p>
+    {:else if browser.containersError}
+      <p class="error">{browser.containersError}</p>
+    {:else}
+      {#each browser.containerGroups.main as container (container.name)}
         {@render containerRow(container)}
       {/each}
+
+      {#if browser.containerGroups.suspected.length > 0}
+        <h3 class="group-label">
+          Possible backstage · {browser.containerGroups.suspected.length}
+        </h3>
+        {#each browser.containerGroups.suspected as container (container.name)}
+          {@render containerRow(container)}
+        {/each}
+      {/if}
+
+      {#if browser.containersMarker !== ""}
+        <button class="load-more" onclick={() => browser.loadMoreContainers()}>
+          Load more…
+        </button>
+      {/if}
     {/if}
   </div>
 
-  {#if browser.mode === "logical" && browser.containerGroups.hiddenConfirmed > 0}
+  {#if browser.account && browser.mode === "logical" && browser.containerGroups.suspected.length > 0}
     <footer class="pane-foot">
-      {browser.containerGroups.hiddenConfirmed} confirmed segment containers hidden
+      {browser.containerGroups.suspected.length} possible backstage containers
     </footer>
   {/if}
 </section>
@@ -116,6 +130,17 @@
     gap: 2px;
   }
 
+  .disconnected,
+  .error {
+    margin: var(--space-3) var(--space-2);
+    font-size: var(--text-sm);
+    color: var(--color-text-faint);
+  }
+
+  .error {
+    color: var(--color-danger);
+  }
+
   .container-row {
     display: flex;
     flex-direction: column;
@@ -161,6 +186,18 @@
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--color-text-faint);
+  }
+
+  .load-more {
+    margin-top: var(--space-2);
+    padding: var(--space-1);
+    font: inherit;
+    font-size: var(--text-sm);
+    color: var(--color-accent-strong);
+    background: none;
+    border: 1px dashed var(--color-border-strong);
+    border-radius: var(--radius-control);
+    cursor: pointer;
   }
 
   .pane-foot {

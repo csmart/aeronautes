@@ -1,27 +1,33 @@
-<!-- The four-pane primary shell (§4.3, §5.1): bookmark rail, container
-  column, working list, always-visible inspector; transfer drawer and
-  status footer beneath. Static against the §58 fixtures until the live
-  wiring commit. -->
+<!-- The four-pane primary shell (§4.3, §5.1), live: bookmark → auth →
+  containers → objects → selection-triggered inspector HEAD — the v0.1
+  vertical proof (§65 commit 13). -->
 <script lang="ts">
   import { onMount } from "svelte";
-  import { AppService } from "../../../bindings/github.com/csmart/aeronautes/internal/app";
+  import { liveApi } from "../../lib/api";
   import BookmarkRail from "./BookmarkRail.svelte";
+  import BookmarkEditor from "./BookmarkEditor.svelte";
   import ContainerColumn from "./ContainerColumn.svelte";
   import WorkingList from "./WorkingList.svelte";
   import Inspector from "../inspector/Inspector.svelte";
   import { BrowserState } from "./browserState.svelte";
 
-  const browser = new BrowserState();
+  const browser = new BrowserState(liveApi);
 
   let workingList: WorkingList | undefined = $state();
+  let editorOpen = $state(false);
   let shellInfo = $state("connecting…");
 
   onMount(async () => {
     try {
-      const info = await AppService.Info();
+      const info = await liveApi.info();
       shellInfo = `shell ${info.version} · Wails ${info.wails}`;
     } catch {
       shellInfo = "service bridge unavailable";
+    }
+    try {
+      await browser.loadBookmarks();
+    } catch {
+      // Surfaced through the empty states; nothing to do here.
     }
   });
 
@@ -36,6 +42,12 @@
   // §4.4: Backspace or Alt+↑ goes to the parent prefix; "/" focuses the
   // server prefix field. Never while typing in a field.
   function handleKeydown(event: KeyboardEvent) {
+    if (editorOpen) {
+      if (event.key === "Escape") {
+        editorOpen = false;
+      }
+      return;
+    }
     if (isEditing(event.target)) {
       return;
     }
@@ -52,21 +64,33 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <div class="screen">
-  <BookmarkRail />
+  <BookmarkRail {browser} onAddBookmark={() => (editorOpen = true)} />
   <ContainerColumn {browser} />
   <WorkingList bind:this={workingList} {browser} />
-  <Inspector target={browser.inspectorTarget} account={browser.account} />
+  <Inspector {browser} />
 
   <div class="drawer num">
-    <span>No active transfers</span>
+    <span>
+      {#if browser.connectError}
+        <span class="connect-error">connect failed: {browser.connectError}</span>
+      {:else}
+        No active transfers
+      {/if}
+    </span>
     <span class="drawer-hint">transfer &amp; job drawer · Phase 5</span>
   </div>
 
   <footer class="status num">
-    <span>static §58 fixture namespace</span>
+    <span>
+      {browser.account ? `connected · ${browser.account.name}` : "not connected"}
+    </span>
     <span>{shellInfo}</span>
   </footer>
 </div>
+
+{#if editorOpen}
+  <BookmarkEditor {browser} onClose={() => (editorOpen = false)} />
+{/if}
 
 <style>
   .screen {
@@ -91,6 +115,10 @@
     color: var(--color-text-secondary);
     background: var(--color-bg-pane);
     border-top: 1px solid var(--color-border);
+  }
+
+  .connect-error {
+    color: var(--color-danger);
   }
 
   .drawer-hint {

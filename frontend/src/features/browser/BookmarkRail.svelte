@@ -1,6 +1,9 @@
 <script lang="ts">
-  import { bookmarksFixture } from "../../lib/fixtures";
   import { getTheme, setTheme, type Theme } from "../../design/tokens";
+  import type { BrowserState } from "./browserState.svelte";
+
+  let { browser, onAddBookmark }: { browser: BrowserState; onAddBookmark: () => void } =
+    $props();
 
   let theme: Theme = $state(getTheme());
 
@@ -23,17 +26,24 @@
 
 <nav class="rail" aria-label="Bookmarks">
   <div class="bookmarks">
-    {#each bookmarksFixture as bookmark (bookmark.id)}
+    {#each browser.bookmarks as bookmark (bookmark.id)}
       <button
         class="bookmark"
-        class:active={bookmark.active}
-        title={bookmark.label}
-        aria-pressed={bookmark.active}
+        class:active={browser.connectedBookmarkId === bookmark.id}
+        title={bookmark.displayName}
+        aria-pressed={browser.connectedBookmarkId === bookmark.id}
+        disabled={browser.connecting}
+        onclick={() => browser.connect(bookmark.id).catch(() => {})}
       >
-        <span class="badge">{initials(bookmark.label)}</span>
-        <span class="label">{bookmark.label}</span>
+        <span class="badge">{initials(bookmark.displayName)}</span>
+        <span class="label">{bookmark.displayName}</span>
       </button>
     {/each}
+
+    <button class="bookmark add" title="Add bookmark" onclick={onAddBookmark}>
+      <span class="badge plus">+</span>
+      <span class="label">Add</span>
+    </button>
   </div>
 
   <div class="rail-foot">
@@ -90,6 +100,11 @@
     border-color: var(--color-selection-border);
   }
 
+  .bookmark:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+
   .badge {
     display: grid;
     place-items: center;
@@ -101,6 +116,14 @@
     background: var(--color-accent-soft);
     border: 1px solid var(--color-accent-border);
     border-radius: var(--radius-control);
+  }
+
+  .badge.plus {
+    color: var(--color-text-faint);
+    background: none;
+    border-style: dashed;
+    border-color: var(--color-border-strong);
+    font-size: var(--text-lg);
   }
 
   .label {

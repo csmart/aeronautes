@@ -1,7 +1,9 @@
 # Aeronautes
 
 > **Status: implementation in progress.** The design is locked; code is built one component per
-> commit, following the sequence in [`docs/DESIGN.md`](docs/DESIGN.md) §65.
+> commit, following the sequence in [`docs/DESIGN.md`](docs/DESIGN.md) §65. The v0.1 vertical
+> proof — bookmark → auth → containers → objects → inspector HEAD in the four-pane UI — runs
+> end to end (against the bundled mock cluster; SAIO integration lands with Phase 1).
 
 **Aeronautes** (a living genus of swifts; “air sailor”) is a beautiful, performance-first
 **desktop operator workbench for OpenStack Swift / SwiftStack**.

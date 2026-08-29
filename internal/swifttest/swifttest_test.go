@@ -79,6 +79,10 @@ func TestAdapterRoundTrip(t *testing.T) {
 	if d.Class != swiftcontrol.ClassDLO || d.Manifest != "external-dlo-segments/wedding-video/" {
 		t.Errorf("DLO detail = %+v", d)
 	}
+	// A DLO manifest HEAD reports the assembled logical size (§20).
+	if d.ContentLength != 3_000_000_000 {
+		t.Errorf("DLO ContentLength = %d, want assembled 3 GB", d.ContentLength)
+	}
 	if d.Meta["Shoot"] != "wedding" {
 		t.Errorf("Meta = %v", d.Meta)
 	}

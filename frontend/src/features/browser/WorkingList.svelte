@@ -2,8 +2,8 @@
   import VirtualList from "../../components/VirtualList.svelte";
   import { breadcrumbs } from "../../lib/listing";
   import { formatBytes } from "../../lib/format";
-  import type { ListingEntry } from "../../lib/types";
-  import type { BrowserState } from "./browserState.svelte";
+  import type { ListingRowDTO } from "../../lib/api";
+  import { suspectedSegmentStore, type BrowserState } from "./browserState.svelte";
 
   let { browser }: { browser: BrowserState } = $props();
 
@@ -15,9 +15,8 @@
 
   const crumbs = $derived(breadcrumbs(browser.prefix));
 
-  function entryName(entry: ListingEntry): string {
-    const full = entry.kind === "object" ? entry.name : entry.prefix;
-    return full.slice(browser.prefix.length);
+  function shortName(entry: ListingRowDTO): string {
+    return entry.name.slice(browser.prefix.length);
   }
 
   function applyPrefix() {
@@ -26,7 +25,7 @@
   }
 
   function timestamp(iso: string): string {
-    return iso.replace("T", " ").replace(/:\d\dZ$/, "");
+    return iso === "" ? "—" : iso.replace("T", " ").replace(/(:\d\d)?Z$/, "");
   }
 </script>
 
@@ -58,7 +57,7 @@
       </label>
       <label class="field">
         <span class="field-label">Filter</span>
-        <input bind:value={browser.filter} placeholder="filter this page…" />
+        <input bind:value={browser.filter} placeholder="filter loaded rows…" />
       </label>
       <button class="find" title="Search the whole container server-side (Phase 1)">
         Find in container
@@ -75,22 +74,34 @@
   <div class="list">
     {#if !browser.containerName}
       <div class="empty">
-        <p class="empty-title">Select a container</p>
-        <p class="empty-teach">
-          A container is a namespace with its own storage policy and access controls.
-        </p>
+        {#if !browser.account}
+          <p class="empty-title">Not connected</p>
+          <p class="empty-teach">Choose a bookmark on the rail, or add one, to browse.</p>
+        {:else}
+          <p class="empty-title">Select a container</p>
+          <p class="empty-teach">
+            A container is a namespace with its own storage policy and access controls.
+          </p>
+        {/if}
       </div>
-    {:else if browser.entries.length === 0}
+    {:else if browser.entriesLoading}
+      <div class="empty"><p class="empty-title">Listing…</p></div>
+    {:else if browser.entriesError}
+      <div class="empty">
+        <p class="empty-title">Listing failed</p>
+        <p class="empty-teach error-text">{browser.entriesError}</p>
+      </div>
+    {:else if browser.visibleEntries.length === 0}
       <div class="empty">
         {#if browser.filter !== ""}
-          <p class="empty-title">No rows match the filter</p>
+          <p class="empty-title">No loaded rows match the filter</p>
         {:else if browser.prefix !== ""}
           <p class="empty-title">Nothing under this prefix</p>
           <p class="empty-teach">
             A prefix exists because objects live beneath it — or because an explicit
             marker object was created. No directory is required.
           </p>
-        {:else if browser.container?.segmentRole !== "normal"}
+        {:else if suspectedSegmentStore(browser.containerName)}
           <p class="empty-title">Empty segment store</p>
           <p class="empty-teach">
             You are backstage. Objects here may be parts of larger logical objects.
@@ -101,13 +112,13 @@
       </div>
     {:else}
       <VirtualList
-        items={browser.entries}
+        items={browser.visibleEntries}
         rowHeight={36}
         selected={browser.selectedIndex}
-        onSelect={(i) => (browser.selectedIndex = i)}
+        onSelect={(i) => browser.select(i)}
         onActivate={(entry) => browser.activate(entry)}
       >
-        {#snippet row(entry: ListingEntry, _index: number, isSelected: boolean)}
+        {#snippet row(entry: ListingRowDTO, _index: number, isSelected: boolean)}
           <div class="entry" class:selected={isSelected}>
             {#if entry.kind === "prefix"}
               <svg class="icon folder" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
@@ -118,7 +129,7 @@
                   stroke-width="1.3"
                 />
               </svg>
-              <span class="name">{entryName(entry)}</span>
+              <span class="name">{shortName(entry)}</span>
               <span class="size num">—</span>
               <span class="modified num">—</span>
             {:else}
@@ -131,9 +142,9 @@
                 />
               </svg>
               <span class="name">
-                {entryName(entry)}
-                {#if entry.largeObject}
-                  <span class="badge">{entry.largeObject === "slo" ? "SLO" : "DLO"}</span>
+                {shortName(entry)}
+                {#if entry.sloListed}
+                  <span class="badge">SLO</span>
                 {/if}
               </span>
               <span class="size num">{formatBytes(entry.bytes)}</span>
@@ -146,10 +157,16 @@
   </div>
 
   <footer class="pane-foot num">
-    {#if browser.containerName}
-      {browser.entries.length} rows · {browser.selectedIndex >= 0 ? "1 selected" : "none selected"}
+    {#if browser.containerName && !browser.entriesLoading}
+      <span>
+        {browser.visibleEntries.length} rows{browser.entriesMarker !== "" ? " (more on server)" : ""}
+        · {browser.selectedIndex >= 0 ? "1 selected" : "none selected"}
+      </span>
+      {#if browser.entriesMarker !== ""}
+        <button class="more" onclick={() => browser.loadMoreEntries()}>Load more</button>
+      {/if}
     {:else}
-      no container open
+      <span>{browser.containerName ? "listing…" : "no container open"}</span>
     {/if}
   </footer>
 </section>
@@ -349,10 +366,28 @@
     color: var(--color-text-faint);
   }
 
+  .error-text {
+    color: var(--color-danger);
+  }
+
   .pane-foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     padding: var(--space-1) var(--space-3);
     font-size: var(--text-xs);
     color: var(--color-text-faint);
     border-top: 1px solid var(--color-border);
+  }
+
+  .more {
+    padding: 0 var(--space-2);
+    font: inherit;
+    font-size: var(--text-xs);
+    color: var(--color-accent-strong);
+    background: none;
+    border: 1px solid var(--color-accent-border);
+    border-radius: var(--radius-pill);
+    cursor: pointer;
   }
 </style>

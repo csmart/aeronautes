@@ -1,89 +1,120 @@
-import { describe, expect, it } from "vitest";
-import { BrowserState } from "./browserState.svelte";
+import { describe, expect, it, vi } from "vitest";
+import { BrowserState, suspectedSegmentStore } from "./browserState.svelte";
+import { newFakeApi } from "./fakeApi";
+import type { BookmarkDTO } from "../../lib/api";
 
-describe("container modes (§52)", () => {
-  it("logical hides confirmed stores and groups suspected ones", () => {
-    const s = new BrowserState();
-    const groups = s.containerGroups;
-    expect(groups.main.map((c) => c.name)).toEqual(["fixtures"]);
-    expect(groups.suspected.map((c) => c.name)).toEqual([
-      "photos_segments",
-      ".file-segments",
-    ]);
-    expect(groups.hiddenConfirmed).toBe(3);
+function bookmark(): BookmarkDTO {
+  return {
+    id: "",
+    displayName: "Mock",
+    authUrl: "http://mock/auth/v1.0",
+    username: "test:tester",
+    storageUrlOverride: "",
+    tlsMode: "system",
+    hasCredential: false,
+  };
+}
+
+async function connected(): Promise<BrowserState> {
+  const s = new BrowserState(newFakeApi());
+  const saved = await s.saveBookmark(bookmark(), "testing");
+  await s.connect(saved.id);
+  return s;
+}
+
+describe("bookmarks and connect", () => {
+  it("saves, lists, and connects", async () => {
+    const s = await connected();
+    expect(s.bookmarks).toHaveLength(1);
+    expect(s.account?.name).toBe("AUTH_demo");
+    expect(s.containers.length).toBe(6);
+    expect(s.connectedBookmarkId).not.toBeNull();
   });
 
-  it("all and backstage show every container", () => {
-    const s = new BrowserState();
-    for (const mode of ["all", "backstage"] as const) {
-      s.mode = mode;
-      expect(s.containerGroups.main).toHaveLength(6);
-      expect(s.containerGroups.suspected).toHaveLength(0);
-      expect(s.containerGroups.hiddenConfirmed).toBe(0);
-    }
+  it("connect failure surfaces the error and stays disconnected", async () => {
+    const s = new BrowserState(newFakeApi());
+    const saved = await s.saveBookmark(bookmark(), ""); // no credential
+    await expect(s.connect(saved.id)).rejects.toThrow(/credential/);
+    expect(s.connectError).toMatch(/credential/);
+    expect(s.account).toBeNull();
+  });
+});
+
+describe("container modes with the name heuristic", () => {
+  it("logical groups suspected stores, hides nothing", async () => {
+    const s = await connected();
+    const groups = s.containerGroups;
+    expect(groups.main.map((c) => c.name)).toEqual(["fixtures", "slo-parts"]);
+    expect(groups.suspected.map((c) => c.name)).toEqual([
+      ".file-segments",
+      "confirmed_segments",
+      "external-dlo-segments",
+      "photos_segments",
+    ]);
+  });
+
+  it("all mode shows one flat list", async () => {
+    const s = await connected();
+    s.mode = "all";
+    expect(s.containerGroups.main).toHaveLength(6);
+    expect(s.containerGroups.suspected).toHaveLength(0);
   });
 });
 
 describe("navigation", () => {
-  it("drills into prefixes and back up to the account", () => {
-    const s = new BrowserState();
-    s.openContainer("fixtures");
-    expect(s.inspectorTarget.kind).toBe("container");
+  it("opens a container and drills prefixes", async () => {
+    const s = await connected();
+    await s.openContainer("fixtures");
+    expect(s.entries.length).toBeGreaterThan(0);
 
-    const implied = s.entries.find((e) => e.kind === "prefix" && e.prefix === "implied/");
-    expect(implied).toBeDefined();
-    s.activate(implied!);
+    const implied = s.entries.find((e) => e.kind === "prefix" && e.name === "implied/");
+    await s.activate(implied!);
     expect(s.prefix).toBe("implied/");
-    expect(s.entries.map((e) => (e.kind === "object" ? e.name : e.prefix))).toEqual([
-      "implied/child.txt",
-    ]);
+    expect(s.entries.map((e) => e.name)).toEqual(["implied/child.txt"]);
 
-    s.up();
+    await s.up();
     expect(s.prefix).toBe("");
-    expect(s.containerName).toBe("fixtures");
-    s.up();
+    await s.up();
     expect(s.containerName).toBeNull();
-    expect(s.inspectorTarget.kind).toBe("account");
   });
 
-  it("activating an object does not navigate", () => {
-    const s = new BrowserState();
-    s.openContainer("fixtures");
-    const obj = s.entries.find((e) => e.kind === "object" && e.name === "empty-object");
-    s.activate(obj!);
-    expect(s.prefix).toBe("");
+  it("selecting an object fetches its HEAD detail", async () => {
+    const s = await connected();
+    await s.openContainer("fixtures");
+    const idx = s.entries.findIndex((e) => e.name === "external-dlo");
+    s.select(idx);
+    expect(s.detailLoading).toBe(true);
+    await vi.waitFor(() => expect(s.detailLoading).toBe(false));
+    expect(s.objectDetail?.class).toBe("dlo");
+    expect(s.objectDetail?.manifest).toBe("external-dlo-segments/wedding-video/");
   });
 
-  it("selection drives the inspector target", () => {
-    const s = new BrowserState();
-    s.openContainer("fixtures");
-    const idx = s.entries.findIndex((e) => e.kind === "object" && e.name === "external-dlo");
-    s.selectedIndex = idx;
-    const target = s.inspectorTarget;
-    expect(target.kind).toBe("object");
-    if (target.kind === "object") {
-      expect(target.object.largeObject).toBe("dlo");
-    }
-
-    const pfx = s.entries.findIndex((e) => e.kind === "prefix" && e.prefix === "folder-marker/");
-    s.selectedIndex = pfx;
-    const prefixTarget = s.inspectorTarget;
-    expect(prefixTarget.kind).toBe("prefix");
-    if (prefixTarget.kind === "prefix") {
-      expect(prefixTarget.prefix.markerBacked).toBe(true);
-    }
+  it("selecting a prefix clears the object detail", async () => {
+    const s = await connected();
+    await s.openContainer("fixtures");
+    s.select(s.entries.findIndex((e) => e.name === "external-dlo"));
+    await vi.waitFor(() => expect(s.objectDetail).not.toBeNull());
+    s.select(s.entries.findIndex((e) => e.kind === "prefix"));
+    expect(s.objectDetail).toBeNull();
+    expect(s.detailLoading).toBe(false);
   });
 
-  it("filter narrows the working list and resets on navigation", () => {
-    const s = new BrowserState();
-    s.openContainer("fixtures");
+  it("filter narrows visible entries without refetching", async () => {
+    const s = await connected();
+    await s.openContainer("fixtures");
     s.filter = "external";
-    expect(s.entries.map((e) => (e.kind === "object" ? e.name : e.prefix))).toEqual([
-      "external-dlo",
-      "external-slo",
-    ]);
-    s.goTo("weird/");
-    expect(s.filter).toBe("");
-    expect(s.entries).toHaveLength(3);
+    expect(s.visibleEntries.map((e) => e.name)).toEqual(["external-dlo", "external-slo"]);
+    s.filter = "";
+    expect(s.visibleEntries.length).toBe(s.entries.length);
+  });
+});
+
+describe("suspectedSegmentStore heuristic", () => {
+  it("matches sidecar and dotted names, not lookalikes", () => {
+    expect(suspectedSegmentStore("photos_segments")).toBe(true);
+    expect(suspectedSegmentStore(".file-segments")).toBe(true);
+    expect(suspectedSegmentStore("my-segments")).toBe(true);
+    expect(suspectedSegmentStore("segments-of-society")).toBe(false);
+    expect(suspectedSegmentStore("fixtures")).toBe(false);
   });
 });

@@ -39,10 +39,3 @@ export interface PrefixEntry {
 }
 
 export type ListingEntry = ObjectEntry | PrefixEntry;
-
-/** What the inspector is looking at (§53). */
-export type InspectorTarget =
-  | { kind: "account" }
-  | { kind: "container"; container: ContainerEntry }
-  | { kind: "object"; container: ContainerEntry; object: ObjectEntry }
-  | { kind: "prefix"; container: ContainerEntry; prefix: PrefixEntry };

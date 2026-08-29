@@ -1,116 +1,259 @@
-// Central UI state for the static browser (§65 commit 11): container
-// modes (§52), prefix navigation over the fixture namespace, selection,
-// and what the inspector looks at (§53). The live wiring swaps the
-// fixture reads for BrowseService pages; navigation semantics stay.
+// Central UI state for live browsing (§65 commit 13): bookmarks →
+// connect → containers → delimiter pages → selection-triggered HEAD.
+// All data flows through the Api seam so this logic is tested against a
+// fixture-backed fake; loading and error state live per pane.
 
-import { accountFixture, containersFixture, fixtureObjects } from "../../lib/fixtures";
-import { delimiterView, parentPrefix } from "../../lib/listing";
-import type { ContainerEntry, InspectorTarget, ListingEntry } from "../../lib/types";
+import type {
+  AccountDTO,
+  Api,
+  BookmarkDTO,
+  ContainerRowDTO,
+  ListingRowDTO,
+  ObjectDetailDTO,
+} from "../../lib/api";
+import { parentPrefix } from "../../lib/listing";
 
 export type ContainerMode = "logical" | "all" | "backstage";
 
+/** Bridge page size for both listing levels. */
+const pageLimit = 1000;
+
+/**
+ * Name-heuristic segment-store suspicion (§12.2 backstage-lite): rclone
+ * sidecar naming (<container>_segments) and dotted stores. Confirmed
+ * classification needs manifest evidence — the Phase 2 evidence engine —
+ * so Logical mode groups suspects and hides nothing yet.
+ */
+export function suspectedSegmentStore(name: string): boolean {
+  return name.endsWith("_segments") || name.endsWith("-segments") || name.startsWith(".");
+}
+
 export interface ContainerGroups {
-  /** Containers shown in the main list. */
-  main: ContainerEntry[];
-  /** Suspected segment stores, grouped separately in Logical mode (§52). */
-  suspected: ContainerEntry[];
-  /** Confirmed segment containers hidden by Logical mode. */
-  hiddenConfirmed: number;
+  main: ContainerRowDTO[];
+  suspected: ContainerRowDTO[];
 }
 
 export class BrowserState {
+  #api: Api;
+
+  constructor(api: Api) {
+    this.#api = api;
+  }
+
+  // Bookmarks and connection.
+  bookmarks: BookmarkDTO[] = $state([]);
+  connectedBookmarkId: string | null = $state(null);
+  connecting = $state(false);
+  connectError: string | null = $state(null);
+  account: AccountDTO | null = $state(null);
+
+  // Containers pane.
   mode: ContainerMode = $state("logical");
+  containers: ContainerRowDTO[] = $state([]);
+  containersMarker = $state("");
+  containersError: string | null = $state(null);
+
+  // Working list.
   containerName: string | null = $state(null);
   prefix = $state("");
-  /** Page-local filter (§5.1) — narrows loaded rows, never a server query. */
   filter = $state("");
+  entries: ListingRowDTO[] = $state([]);
+  entriesMarker = $state("");
+  entriesLoading = $state(false);
+  entriesError: string | null = $state(null);
   selectedIndex = $state(-1);
 
-  readonly account = accountFixture;
+  // Inspector detail (selection-triggered HEAD, §14.2).
+  objectDetail: ObjectDetailDTO | null = $state(null);
+  detailLoading = $state(false);
+  detailError: string | null = $state(null);
+  #detailSeq = 0;
+  #listSeq = 0;
 
-  get container(): ContainerEntry | null {
-    return containersFixture.find((c) => c.name === this.containerName) ?? null;
+  async loadBookmarks() {
+    this.bookmarks = await this.#api.listBookmarks();
+  }
+
+  async saveBookmark(bookmark: BookmarkDTO, secret: string): Promise<BookmarkDTO> {
+    const saved = await this.#api.saveBookmark(bookmark, secret);
+    await this.loadBookmarks();
+    return saved;
+  }
+
+  async connect(bookmarkId: string) {
+    this.connecting = true;
+    this.connectError = null;
+    try {
+      this.account = await this.#api.connect(bookmarkId);
+      this.connectedBookmarkId = bookmarkId;
+      this.containerName = null;
+      this.prefix = "";
+      this.entries = [];
+      this.selectedIndex = -1;
+      await this.loadContainers();
+    } catch (err) {
+      this.connectError = messageOf(err);
+      throw err;
+    } finally {
+      this.connecting = false;
+    }
+  }
+
+  async loadContainers() {
+    this.containersError = null;
+    try {
+      const page = await this.#api.containers("", pageLimit);
+      this.containers = page.rows;
+      this.containersMarker = page.nextMarker;
+    } catch (err) {
+      this.containersError = messageOf(err);
+    }
+  }
+
+  async loadMoreContainers() {
+    if (this.containersMarker === "") {
+      return;
+    }
+    const page = await this.#api.containers(this.containersMarker, pageLimit);
+    this.containers = [...this.containers, ...page.rows];
+    this.containersMarker = page.nextMarker;
   }
 
   get containerGroups(): ContainerGroups {
     if (this.mode === "logical") {
       return {
-        main: containersFixture.filter((c) => c.segmentRole === "normal"),
-        suspected: containersFixture.filter((c) => c.segmentRole === "suspected"),
-        hiddenConfirmed: containersFixture.filter((c) => c.segmentRole === "confirmed").length,
+        main: this.containers.filter((c) => !suspectedSegmentStore(c.name)),
+        suspected: this.containers.filter((c) => suspectedSegmentStore(c.name)),
       };
     }
-    return { main: containersFixture, suspected: [], hiddenConfirmed: 0 };
+    return { main: this.containers, suspected: [] };
   }
 
-  /** The working list: one delimiter page under the current prefix. */
-  get entries(): ListingEntry[] {
-    if (!this.containerName) {
-      return [];
-    }
-    const view = delimiterView(fixtureObjects[this.containerName] ?? [], this.prefix);
+  get container(): ContainerRowDTO | null {
+    return this.containers.find((c) => c.name === this.containerName) ?? null;
+  }
+
+  get visibleEntries(): ListingRowDTO[] {
     if (this.filter === "") {
-      return view;
+      return this.entries;
     }
     const needle = this.filter.toLowerCase();
-    return view.filter((e) =>
-      (e.kind === "object" ? e.name : e.prefix).toLowerCase().includes(needle),
-    );
+    return this.entries.filter((e) => e.name.toLowerCase().includes(needle));
   }
 
-  get selectedEntry(): ListingEntry | null {
-    return this.entries[this.selectedIndex] ?? null;
+  get selectedEntry(): ListingRowDTO | null {
+    return this.visibleEntries[this.selectedIndex] ?? null;
   }
 
-  /** The inspector follows selection; with none it shows the container,
-   * and with no container open, the account (§53). */
-  get inspectorTarget(): InspectorTarget {
-    const container = this.container;
-    if (!container) {
-      return { kind: "account" };
-    }
-    const entry = this.selectedEntry;
-    if (entry?.kind === "object") {
-      return { kind: "object", container, object: entry };
-    }
-    if (entry?.kind === "prefix") {
-      return { kind: "prefix", container, prefix: entry };
-    }
-    return { kind: "container", container };
-  }
-
-  openContainer(name: string) {
+  async openContainer(name: string) {
     this.containerName = name;
-    this.prefix = "";
-    this.filter = "";
-    this.selectedIndex = -1;
+    await this.#loadEntries("");
   }
 
   /** Enter/double-click: prefixes drill in, objects just stay selected. */
-  activate(entry: ListingEntry) {
+  async activate(entry: ListingRowDTO) {
     if (entry.kind === "prefix") {
-      this.goTo(entry.prefix);
+      await this.goTo(entry.name);
     }
   }
 
-  /** Jump to a prefix within the current container (breadcrumb, drill). */
-  goTo(prefix: string) {
-    this.prefix = prefix;
-    this.filter = "";
-    this.selectedIndex = -1;
+  async goTo(prefix: string) {
+    if (!this.containerName) {
+      return;
+    }
+    await this.#loadEntries(prefix);
   }
 
   /** Backspace / Alt+↑ (§4.4): parent prefix, then out of the container. */
-  up() {
+  async up() {
     if (!this.containerName) {
       return;
     }
     if (this.prefix === "") {
       this.containerName = null;
-    } else {
-      this.prefix = parentPrefix(this.prefix);
+      this.entries = [];
+      this.filter = "";
+      this.select(-1);
+      return;
     }
-    this.filter = "";
-    this.selectedIndex = -1;
+    await this.#loadEntries(parentPrefix(this.prefix));
   }
+
+  async #loadEntries(prefix: string) {
+    const seq = ++this.#listSeq;
+    this.prefix = prefix;
+    this.filter = "";
+    this.select(-1);
+    this.entriesLoading = true;
+    this.entriesError = null;
+    try {
+      const page = await this.#api.objects(this.containerName ?? "", prefix, "", pageLimit);
+      if (seq !== this.#listSeq) {
+        return; // a newer navigation superseded this load
+      }
+      this.entries = page.rows;
+      this.entriesMarker = page.nextMarker;
+    } catch (err) {
+      if (seq === this.#listSeq) {
+        this.entries = [];
+        this.entriesError = messageOf(err);
+      }
+    } finally {
+      if (seq === this.#listSeq) {
+        this.entriesLoading = false;
+      }
+    }
+  }
+
+  async loadMoreEntries() {
+    if (this.entriesMarker === "" || !this.containerName) {
+      return;
+    }
+    const page = await this.#api.objects(
+      this.containerName,
+      this.prefix,
+      this.entriesMarker,
+      pageLimit,
+    );
+    this.entries = [...this.entries, ...page.rows];
+    this.entriesMarker = page.nextMarker;
+  }
+
+  /** Selection moves; an object row triggers its authoritative HEAD. */
+  select(index: number) {
+    this.selectedIndex = index;
+    const entry = this.selectedEntry;
+    const seq = ++this.#detailSeq;
+    this.objectDetail = null;
+    this.detailError = null;
+    if (!entry || entry.kind !== "object" || !this.containerName) {
+      this.detailLoading = false;
+      return;
+    }
+    this.detailLoading = true;
+    this.#api
+      .objectDetail(this.containerName, entry.name)
+      .then((detail) => {
+        if (seq === this.#detailSeq) {
+          this.objectDetail = detail;
+        }
+      })
+      .catch((err) => {
+        if (seq === this.#detailSeq) {
+          this.detailError = messageOf(err);
+        }
+      })
+      .finally(() => {
+        if (seq === this.#detailSeq) {
+          this.detailLoading = false;
+        }
+      });
+  }
+}
+
+function messageOf(err: unknown): string {
+  if (err instanceof Error) {
+    return err.message;
+  }
+  return String(err);
 }

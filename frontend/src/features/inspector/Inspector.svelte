@@ -1,43 +1,25 @@
 <script lang="ts">
-  import { largeObjectDetail, objectMetaFixture } from "../../lib/fixtures";
   import { formatBytes, formatCount } from "../../lib/format";
-  import type { InspectorTarget } from "../../lib/types";
+  import { suspectedSegmentStore, type BrowserState } from "../browser/browserState.svelte";
 
-  let { target, account }: {
-    target: InspectorTarget;
-    account: { name: string; containers: number; objects: number; bytes: number; meta: Record<string, string>; tempURLKeys: number };
-  } = $props();
+  let { browser }: { browser: BrowserState } = $props();
 
-  const objectDetail = $derived(
-    target.kind === "object" ? (largeObjectDetail[target.object.name] ?? null) : null,
-  );
-  const objectMeta = $derived(
-    target.kind === "object" ? (objectMetaFixture[target.object.name] ?? {}) : {},
-  );
+  // The inspector follows selection (§53): object/prefix row if selected,
+  // else the open container, else the account.
+  const entry = $derived(browser.selectedEntry);
+  const detail = $derived(browser.objectDetail);
 
-  function rawHeaders(): string {
-    if (target.kind !== "object") {
-      return "";
-    }
-    const o = target.object;
-    const lines = [
-      `Content-Length: ${objectDetail?.logicalBytes ?? o.bytes}`,
-      `Content-Type: ${o.contentType}`,
-      `Etag: ${objectDetail ? '"' + o.etag + '"' : o.etag}`,
-      `Last-Modified: ${o.lastModified}`,
-    ];
-    if (objectDetail?.kind === "dlo") {
-      lines.push(`X-Object-Manifest: ${objectDetail.manifest}`);
-    }
-    if (objectDetail?.kind === "slo") {
-      lines.push("X-Static-Large-Object: True");
-    }
-    for (const [k, v] of Object.entries(objectMeta)) {
-      lines.push(`${k}: ${v}`);
-    }
-    lines.push("X-Trans-Id: txfixture-0000000000static");
-    return lines.join("\n");
+  function sortedEntries(record: { [key: string]: string | undefined } | null): [string, string][] {
+    return Object.entries(record ?? {})
+      .filter((kv): kv is [string, string] => kv[1] !== undefined)
+      .sort(([a], [b]) => a.localeCompare(b));
   }
+
+  const rawHeaderText = $derived(
+    sortedEntries(detail?.rawHeaders ?? null)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join("\n"),
+  );
 </script>
 
 {#snippet kv(label: string, value: string, mono?: boolean)}
@@ -48,61 +30,82 @@
 {/snippet}
 
 <aside class="pane" aria-label="Inspector">
-  {#if target.kind === "account"}
+  {#if entry && entry.kind === "object"}
     <header class="head">
-      <h2 class="title type-display">{account.name}</h2>
-      <p class="subtitle">Account</p>
+      <h2 class="title type-mono object-title">{entry.name}</h2>
+      <p class="subtitle">
+        {#if browser.detailLoading}Object · HEAD…
+        {:else if detail?.class === "slo"}Static Large Object (SLO)
+        {:else if detail?.class === "dlo"}Dynamic Large Object (DLO)
+        {:else}Object{/if}
+      </p>
     </header>
+
     <section class="card">
-      {@render kv("Containers", formatCount(account.containers))}
-      {@render kv("Objects", formatCount(account.objects))}
-      {@render kv("Bytes used", formatBytes(account.bytes))}
-      {@render kv("TempURL keys", account.tempURLKeys > 0 ? `${account.tempURLKeys} set` : "none")}
-    </section>
-    <section class="card">
-      <h3 class="card-title">Account metadata</h3>
-      {#each Object.entries(account.meta) as [key, value] (key)}
-        {@render kv(key, value)}
-      {/each}
-    </section>
-  {:else if target.kind === "container"}
-    <header class="head">
-      <h2 class="title type-display">{target.container.name}</h2>
-      <p class="subtitle">Container · policy {target.container.policy}</p>
-    </header>
-    <section class="card">
-      {@render kv("Objects", formatCount(target.container.objectCount))}
-      {@render kv("Bytes", formatBytes(target.container.bytes))}
-      {@render kv("Storage policy", target.container.policy)}
-      {@render kv("Read ACL", "—")}
-      {@render kv("Write ACL", "—")}
-      {@render kv("Versioning", "off")}
-      {@render kv("Quota", "none")}
-    </section>
-    <section class="card">
-      <h3 class="card-title">Segment classification</h3>
-      {#if target.container.segmentRole === "confirmed"}
-        <p class="teach">
-          Confirmed segment store: manifests elsewhere reference objects in this
-          container. Deleting here breaks the logical objects they assemble.
-        </p>
-      {:else if target.container.segmentRole === "suspected"}
-        <p class="teach">
-          Named like a segment store, but nothing confirms it yet. Treated as
-          possible backstage — shown, never hidden.
-        </p>
+      {#if detail && detail.class !== "plain"}
+        {@render kv("Logical size", formatBytes(detail.contentLength))}
+        {@render kv("Listed size", formatBytes(entry.bytes))}
       {:else}
-        <p class="teach">Ordinary logical container.</p>
+        {@render kv("Size", formatBytes(detail?.contentLength ?? entry.bytes))}
+      {/if}
+      {@render kv("Content type", detail?.contentType ?? entry.contentType)}
+      {@render kv("ETag", detail?.etag ?? entry.etag, true)}
+      {@render kv("Last modified", detail?.lastModified ?? entry.lastModified, true)}
+      {#if detail?.deleteAt}
+        {@render kv("Delete at", detail.deleteAt, true)}
+      {/if}
+      {#if detail?.transId}
+        {@render kv("Trans id", detail.transId, true)}
       {/if}
     </section>
-  {:else if target.kind === "prefix"}
-    {@const label = target.prefix.prefix}
+
+    {#if browser.detailError}
+      <section class="card">
+        <p class="error">HEAD failed: {browser.detailError}</p>
+      </section>
+    {/if}
+
+    {#if detail && detail.class === "dlo"}
+      <section class="card">
+        <h3 class="card-title">Large object</h3>
+        {@render kv("Manifest", detail.manifest, true)}
+        <p class="teach">
+          Segments live under this prefix; the manifest assembles whatever is
+          there at read time. The segment table arrives in Phase 4.
+        </p>
+      </section>
+    {:else if detail && detail.class === "slo"}
+      <section class="card">
+        <h3 class="card-title">Large object</h3>
+        <p class="teach">
+          Static manifest with a fixed segment list. The segment table arrives
+          in Phase 4 (multipart-manifest=get).
+        </p>
+      </section>
+    {/if}
+
+    {#if detail && sortedEntries(detail.meta).length > 0}
+      <section class="card">
+        <h3 class="card-title">User metadata</h3>
+        {#each sortedEntries(detail.meta) as [key, value] (key)}
+          {@render kv(key, value)}
+        {/each}
+      </section>
+    {/if}
+
+    {#if detail}
+      <section class="card">
+        <h3 class="card-title">Raw headers</h3>
+        <pre class="raw type-mono">{rawHeaderText}</pre>
+      </section>
+    {/if}
+  {:else if entry && entry.kind === "prefix"}
     <header class="head">
-      <h2 class="title type-mono prefix-title">{label}</h2>
-      <p class="subtitle">Prefix · {target.prefix.markerBacked ? "marker-backed" : "implied"}</p>
+      <h2 class="title type-mono prefix-title">{entry.name}</h2>
+      <p class="subtitle">Prefix · {entry.markerBacked ? "marker-backed" : "implied"}</p>
     </header>
     <section class="card">
-      {#if target.prefix.markerBacked}
+      {#if entry.markerBacked}
         <p class="teach">
           An explicit zero-byte <span class="type-mono">application/directory</span>
           marker object exists at this name. The prefix survives even with no
@@ -115,63 +118,64 @@
         </p>
       {/if}
     </section>
-  {:else}
-    {@const o = target.object}
+  {:else if browser.container}
     <header class="head">
-      <h2 class="title type-mono object-title">{o.name}</h2>
-      <p class="subtitle">
-        {#if objectDetail?.kind === "slo"}Static Large Object (SLO)
-        {:else if objectDetail?.kind === "dlo"}Dynamic Large Object (DLO)
-        {:else}Object{/if}
-      </p>
+      <h2 class="title type-display">{browser.container.name}</h2>
+      <p class="subtitle">Container</p>
     </header>
-
     <section class="card">
-      {#if objectDetail}
-        {@render kv("Logical size", formatBytes(objectDetail.logicalBytes))}
-        {@render kv("Listed size", formatBytes(o.bytes))}
-      {:else}
-        {@render kv("Size", formatBytes(o.bytes))}
-      {/if}
-      {@render kv("Content type", o.contentType)}
-      {@render kv("ETag", o.etag, true)}
-      {@render kv("Last modified", o.lastModified, true)}
+      {@render kv("Objects", formatCount(browser.container.count))}
+      {@render kv("Bytes", formatBytes(browser.container.bytes))}
     </section>
-
-    {#if objectDetail}
+    <section class="card">
+      <h3 class="card-title">Segment classification</h3>
+      {#if suspectedSegmentStore(browser.container.name)}
+        <p class="teach">
+          Named like a segment store, but nothing confirms it yet. Treated as
+          possible backstage — shown, never hidden. Manifest evidence arrives
+          with Phase 2.
+        </p>
+      {:else}
+        <p class="teach">Ordinary logical container.</p>
+      {/if}
+    </section>
+  {:else if browser.account}
+    <header class="head">
+      <h2 class="title type-display">{browser.account.name}</h2>
+      <p class="subtitle">Account</p>
+    </header>
+    <section class="card">
+      {@render kv("Containers", formatCount(browser.account.containers))}
+      {@render kv("Objects", formatCount(browser.account.objects))}
+      {@render kv("Bytes used", formatBytes(browser.account.bytesUsed))}
+      {#if browser.account.quotaBytes > 0}
+        {@render kv("Quota", formatBytes(browser.account.quotaBytes))}
+      {/if}
+      {@render kv(
+        "TempURL keys",
+        (browser.account.tempUrlKeySlots?.length ?? 0) > 0
+          ? `${browser.account.tempUrlKeySlots?.length} set`
+          : "none",
+      )}
+    </section>
+    {#if sortedEntries(browser.account.meta).length > 0}
       <section class="card">
-        <h3 class="card-title">Large object</h3>
-        {@render kv("Manifest", objectDetail.manifest, true)}
-        {@render kv("Segments", String(objectDetail.segments.length))}
-        <table class="segments num">
-          <thead>
-            <tr><th>#</th><th>Segment</th><th class="right">Size</th></tr>
-          </thead>
-          <tbody>
-            {#each objectDetail.segments as segment, i (segment.name)}
-              <tr>
-                <td>{i + 1}</td>
-                <td class="type-mono seg-name">{segment.name}</td>
-                <td class="right">{formatBytes(segment.bytes)}</td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </section>
-    {/if}
-
-    {#if Object.keys(objectMeta).length > 0}
-      <section class="card">
-        <h3 class="card-title">User metadata</h3>
-        {#each Object.entries(objectMeta) as [key, value] (key)}
-          {@render kv(key.replace("X-Object-Meta-", ""), value)}
+        <h3 class="card-title">Account metadata</h3>
+        {#each sortedEntries(browser.account.meta) as [key, value] (key)}
+          {@render kv(key, value)}
         {/each}
       </section>
     {/if}
-
+  {:else}
+    <header class="head">
+      <h2 class="title type-display">Aeronautes</h2>
+      <p class="subtitle">Not connected</p>
+    </header>
     <section class="card">
-      <h3 class="card-title">Raw headers</h3>
-      <pre class="raw type-mono">{rawHeaders()}</pre>
+      <p class="teach">
+        Connect a bookmark to inspect an account. The inspector — not the file
+        list — is the centre of this application.
+      </p>
     </section>
   {/if}
 </aside>
@@ -248,33 +252,10 @@
     color: var(--color-text-secondary);
   }
 
-  .segments {
-    width: 100%;
-    margin-top: var(--space-2);
-    border-collapse: collapse;
-    font-size: var(--text-xs);
-  }
-
-  .segments th {
-    text-align: left;
-    font-weight: var(--weight-medium);
-    color: var(--color-text-faint);
-    padding: var(--space-1) var(--space-1);
-    border-bottom: 1px solid var(--color-border);
-  }
-
-  .segments td {
-    padding: var(--space-1) var(--space-1);
-    border-bottom: 1px solid var(--color-border);
-    color: var(--color-text-secondary);
-  }
-
-  .seg-name {
-    overflow-wrap: anywhere;
-  }
-
-  .right {
-    text-align: right;
+  .error {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--color-danger);
   }
 
   .raw {
