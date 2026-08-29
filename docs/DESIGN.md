@@ -3596,6 +3596,15 @@ Gate: TLS works against real Swift under both trust modes with per-bookmark scop
 clone builds unsigned artifacts for the six targets in CI configuration; migrations upgrade
 every historical schema; the smoke script passes headless.
 
+**Status: complete (2026-08-30).** All eight commits landed and the gate held: the TLS suite
+runs against real Swift behind a self-signed HTTPS terminator under system trust (refused),
+custom CA (native client and real rclone child), and per-bookmark insecure; the six-target
+unsigned CI matrix is in place with the local Linux rpm path verified; the stepwise migration
+suite upgrades every historical schema; and `scripts/smoke.sh` passes headless — the real
+binary against the in-repo mock cluster, ending with a real engine copy proven landed
+server-side. Signing remains skipped and labelled per the owner decision. The §57.4 smoke
+against real SwiftStack infrastructure remains the owner's manual step.
+
 ---
 
 ## 66. Final project statement

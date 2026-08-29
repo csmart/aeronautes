@@ -242,7 +242,7 @@ func (s *Server) handleAccount(w http.ResponseWriter, r *http.Request) {
 	if limit <= 0 {
 		limit = 10000
 	}
-	paged := rows[:0:0]
+	paged := make([]row, 0)
 	for _, row := range rows {
 		if len(paged) == limit {
 			break
@@ -590,7 +590,7 @@ func (s *Server) writeObjectListing(w http.ResponseWriter, r *http.Request, cont
 	prefix := q.Get("prefix")
 	delimiter := q.Get("delimiter")
 
-	var rows []listingRow
+	rows := []listingRow{}
 	emittedSubdir := map[string]bool{}
 	for _, name := range names {
 		if len(rows) == limit {

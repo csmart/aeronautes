@@ -1,14 +1,10 @@
-// Command mockswift runs the in-process mock Swift cluster (§57.2) as a
-// standalone dev server loaded with the §58 canonical fixtures, so the
-// desktop app can be exercised end to end with no real cluster. Dev
-// tooling only — never part of the shipped application.
-//
-// Usage: mockswift [-addr 127.0.0.1:8899] [-user test:tester] [-key testing]
+// mockswift serves the in-process mock cluster (internal/swifttest)
+// over HTTP for headless smoke runs (§65.6): TempAuth v1 at
+// /auth/v1.0, canonical fixtures loaded, test:tester/testing.
 package main
 
 import (
 	"flag"
-	"fmt"
 	"log"
 	"net/http"
 
@@ -17,15 +13,12 @@ import (
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:8899", "listen address")
-	user := flag.String("user", "test:tester", "accepted X-Auth-User")
-	key := flag.String("key", "testing", "accepted X-Auth-Key")
+	fixtures := flag.Bool("fixtures", true, "load the §58 canonical fixture namespace")
 	flag.Parse()
-
-	server := swifttest.New(*user, *key)
-	server.LoadCanonicalFixtures()
-
-	fmt.Printf("mock swift cluster on http://%s\n", *addr)
-	fmt.Printf("  auth URL: http://%s/auth/v1.0\n", *addr)
-	fmt.Printf("  user:     %s\n", *user)
+	server := swifttest.New("test:tester", "testing")
+	if *fixtures {
+		server.LoadCanonicalFixtures()
+	}
+	log.Printf("mockswift on http://%s (auth /auth/v1.0, test:tester/testing)", *addr)
 	log.Fatal(http.ListenAndServe(*addr, server))
 }
