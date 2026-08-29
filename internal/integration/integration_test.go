@@ -656,12 +656,18 @@ func TestRcloneRunnerRealSwift(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A disposable big object in the fixtures container.
-	big := bytes.Repeat([]byte{0xBB}, 3*1024*1024)
-	if err := h.put(ctx, h.Container("fixtures"), "runner/big.bin", big, "application/octet-stream", nil); err != nil {
+	// A dedicated source container: rclone traverses the WHOLE source
+	// namespace even under --files-from, and other tests seed deliberate
+	// traps (dangling manifests) into the shared fixtures container.
+	srcName := h.Container("runner-src")
+	if err := h.conn.ContainerCreate(ctx, srcName, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.put(ctx, h.Container("fixtures"), "runner/small.txt", []byte("small"), "text/plain", nil); err != nil {
+	big := bytes.Repeat([]byte{0xBB}, 3*1024*1024)
+	if err := h.put(ctx, srcName, "runner/big.bin", big, "application/octet-stream", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.put(ctx, srcName, "runner/small.txt", []byte("small"), "text/plain", nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -676,7 +682,7 @@ func TestRcloneRunnerRealSwift(t *testing.T) {
 		{Name: "aeronautes_dst", StorageURL: h.Conn2().StorageUrl, Token: h.Conn2().AuthToken},
 	}
 	result, err := runner.Copy(ctx, remotes,
-		"aeronautes_src:"+h.Container("fixtures"), "aeronautes_dst:"+dstName,
+		"aeronautes_src:"+srcName, "aeronautes_dst:"+dstName,
 		[]string{"runner/big.bin", "runner/small.txt"}, nil)
 	if err != nil {
 		t.Fatal(err)
