@@ -1,12 +1,15 @@
 package swifttest_test
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	"github.com/csmart/aeronautes/internal/swifttest"
+	"github.com/ncw/swift/v2"
 )
 
 // The mock's contract is "the real adapter can speak to it": auth,
@@ -89,5 +92,128 @@ func TestAdapterRoundTrip(t *testing.T) {
 
 	if _, err := s.ObjectDetail(ctx, "fixtures", "weird/repeated//slash"); err != nil {
 		t.Errorf("hostile-name HEAD failed: %v", err)
+	}
+}
+
+// TestWriteSemantics drives the mock's mutation surface through the wire
+// library and reads back through the adapter, pinning the semantics the
+// Phase 3 work builds on: create-time-only policy, ADDITIVE container
+// POST, REPLACE-ALL object POST (the DLO trap included), and delete
+// behaviour.
+func TestWriteSemantics(t *testing.T) {
+	mock := swifttest.New("test:tester", "testing")
+	srv := httptest.NewServer(mock)
+	defer srv.Close()
+	ctx := context.Background()
+
+	conn := &swift.Connection{
+		AuthUrl: srv.URL + "/auth/v1.0", UserName: "test:tester",
+		ApiKey: "testing", AuthVersion: 1,
+	}
+	session, err := swiftcontrol.New(swiftcontrol.Config{
+		AuthURL: srv.URL + "/auth/v1.0", Username: "test:tester", APIKey: "testing",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Container create with policy; a second PUT must not change policy.
+	if err := conn.ContainerCreate(ctx, "mut", swift.Headers{"X-Storage-Policy": "gold"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.ContainerCreate(ctx, "mut", swift.Headers{"X-Storage-Policy": "other"}); err != nil {
+		t.Fatal(err)
+	}
+	detail, err := session.ContainerDetail(ctx, "mut")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.StoragePolicy != "gold" {
+		t.Errorf("policy = %q, want create-time gold kept (§20)", detail.StoragePolicy)
+	}
+
+	// Container POST is ADDITIVE per key.
+	if err := conn.ContainerUpdate(ctx, "mut", swift.Headers{"X-Container-Meta-A": "1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.ContainerUpdate(ctx, "mut", swift.Headers{
+		"X-Container-Meta-B":  "2",
+		"X-Container-Read":    ".r:*",
+		"X-Versions-Location": "mut-versions",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	detail, err = session.ContainerDetail(ctx, "mut")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.Meta["A"] != "1" || detail.Meta["B"] != "2" {
+		t.Errorf("container POST must be additive: %v", detail.Meta)
+	}
+	if detail.ReadACL != ".r:*" {
+		t.Errorf("ReadACL = %q", detail.ReadACL)
+	}
+	if detail.Versioning.Mode != swiftcontrol.VersioningVersionsLocation || detail.Versioning.Archive != "mut-versions" {
+		t.Errorf("Versioning = %+v", detail.Versioning)
+	}
+	if err := conn.ContainerUpdate(ctx, "mut", swift.Headers{
+		"X-Remove-Container-Meta-A":  "x",
+		"X-Remove-Versions-Location": "x",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	detail, _ = session.ContainerDetail(ctx, "mut")
+	if _, still := detail.Meta["A"]; still || detail.Versioning.Mode != swiftcontrol.VersioningOff {
+		t.Errorf("removals did not apply: %v %+v", detail.Meta, detail.Versioning)
+	}
+
+	// Object PUT with metadata, then REPLACE-ALL POST: the unsent key and
+	// the unsent manifest header are gone afterwards.
+	if _, err := conn.ObjectPut(ctx, "mut", "video", bytes.NewReader(nil), true, "", "video/mp4",
+		swift.Headers{"X-Object-Meta-Shoot": "wedding", "X-Object-Manifest": "segs/video/"}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := session.ObjectDetail(ctx, "mut", "video")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before.Class != swiftcontrol.ClassDLO || before.Meta["Shoot"] != "wedding" {
+		t.Fatalf("setup detail = %+v", before)
+	}
+	if err := conn.ObjectUpdate(ctx, "mut", "video", swift.Headers{"X-Object-Meta-New": "yes"}); err != nil {
+		t.Fatal(err)
+	}
+	after, err := session.ObjectDetail(ctx, "mut", "video")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, kept := after.Meta["Shoot"]; kept {
+		t.Error("object POST must replace all user metadata (naive POST loses keys — the trap)")
+	}
+	if after.Meta["New"] != "yes" {
+		t.Errorf("Meta = %v", after.Meta)
+	}
+	if after.Class != swiftcontrol.ClassPlain {
+		t.Error("object POST without X-Object-Manifest must clear DLO-ness (the gate trap)")
+	}
+	if after.ContentType != "video/mp4" {
+		t.Errorf("ContentType = %q, want preserved when not posted", after.ContentType)
+	}
+
+	// Deletes: object goes, non-empty container refuses, empty deletes.
+	if err := conn.ContainerDelete(ctx, "mut"); !errors.Is(err, swift.ContainerNotEmpty) {
+		t.Errorf("non-empty container delete = %v, want ContainerNotEmpty", err)
+	}
+	if err := conn.ObjectDelete(ctx, "mut", "video"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.ObjectDetail(ctx, "mut", "video"); err == nil {
+		t.Error("deleted object still HEADs")
+	}
+	if err := conn.ContainerDelete(ctx, "mut"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.ContainerDetail(ctx, "mut"); err == nil {
+		t.Error("deleted container still HEADs")
 	}
 }

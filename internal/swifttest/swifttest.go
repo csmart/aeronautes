@@ -11,7 +11,10 @@
 package swifttest
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -43,7 +46,14 @@ type Object struct {
 type Container struct {
 	Policy  string
 	Meta    map[string]string
-	objects map[string]Object
+	ReadACL string
+	// WriteACL is the X-Container-Write value.
+	WriteACL string
+	// VersionsLocation / HistoryLocation are the §21 container-versioning
+	// headers (at most one is meaningful on a real server).
+	VersionsLocation string
+	HistoryLocation  string
+	objects          map[string]Object
 }
 
 // Server is the mock cluster; it implements http.Handler.
@@ -217,6 +227,18 @@ func (s *Server) handleAccount(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleContainer(w http.ResponseWriter, r *http.Request, name string) {
+	switch r.Method {
+	case http.MethodPut:
+		s.createContainer(w, r, name)
+		return
+	case http.MethodPost:
+		s.updateContainer(w, r, name)
+		return
+	case http.MethodDelete:
+		s.deleteContainer(w, name)
+		return
+	}
+
 	s.mu.Lock()
 	c, ok := s.containers[name]
 	if !ok {
@@ -230,8 +252,7 @@ func (s *Server) handleContainer(w http.ResponseWriter, r *http.Request, name st
 		objectNames = append(objectNames, n)
 		bytes += o.Bytes
 	}
-	policy := c.Policy
-	meta := c.Meta
+	snapshot := *c
 	count := len(c.objects)
 	s.mu.Unlock()
 	sort.Strings(objectNames)
@@ -239,9 +260,21 @@ func (s *Server) handleContainer(w http.ResponseWriter, r *http.Request, name st
 	h := w.Header()
 	h.Set("X-Container-Object-Count", strconv.Itoa(count))
 	h.Set("X-Container-Bytes-Used", strconv.FormatInt(bytes, 10))
-	h.Set("X-Storage-Policy", policy)
-	for k, v := range meta {
+	h.Set("X-Storage-Policy", snapshot.Policy)
+	for k, v := range snapshot.Meta {
 		h.Set("X-Container-Meta-"+k, v)
+	}
+	if snapshot.ReadACL != "" {
+		h.Set("X-Container-Read", snapshot.ReadACL)
+	}
+	if snapshot.WriteACL != "" {
+		h.Set("X-Container-Write", snapshot.WriteACL)
+	}
+	if snapshot.VersionsLocation != "" {
+		h.Set("X-Versions-Location", snapshot.VersionsLocation)
+	}
+	if snapshot.HistoryLocation != "" {
+		h.Set("X-History-Location", snapshot.HistoryLocation)
 	}
 	h.Set("X-Trans-Id", "txswifttest-container")
 
@@ -250,6 +283,198 @@ func (s *Server) handleContainer(w http.ResponseWriter, r *http.Request, name st
 		return
 	}
 	s.writeObjectListing(w, r, name, objectNames)
+}
+
+// createContainer implements container PUT: create with storage policy
+// and initial metadata; a PUT on an existing container is accepted and
+// its policy is NOT changed (policy is create-time only, §20).
+func (s *Server) createContainer(w http.ResponseWriter, r *http.Request, name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, exists := s.containers[name]
+	if !exists {
+		policy := r.Header.Get("X-Storage-Policy")
+		if policy == "" {
+			policy = "standard"
+		}
+		c = &Container{Policy: policy, objects: map[string]Object{}}
+		s.containers[name] = c
+	}
+	applyContainerHeaders(c, r)
+	if exists {
+		w.WriteHeader(http.StatusAccepted)
+	} else {
+		w.WriteHeader(http.StatusCreated)
+	}
+}
+
+// updateContainer implements container POST: per-key ADDITIVE metadata
+// (unlike object POST's replace-all), X-Remove-* deletions, ACL and
+// versioning header updates.
+func (s *Server) updateContainer(w http.ResponseWriter, r *http.Request, name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.containers[name]
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	applyContainerHeaders(c, r)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func applyContainerHeaders(c *Container, r *http.Request) {
+	for key, values := range r.Header {
+		if len(values) == 0 {
+			continue
+		}
+		value := values[0]
+		switch {
+		case strings.HasPrefix(key, "X-Container-Meta-"):
+			metaKey := strings.TrimPrefix(key, "X-Container-Meta-")
+			if c.Meta == nil {
+				c.Meta = map[string]string{}
+			}
+			if value == "" {
+				delete(c.Meta, metaKey)
+			} else {
+				c.Meta[metaKey] = value
+			}
+		case strings.HasPrefix(key, "X-Remove-Container-Meta-"):
+			delete(c.Meta, strings.TrimPrefix(key, "X-Remove-Container-Meta-"))
+		case key == "X-Container-Read":
+			c.ReadACL = value
+		case key == "X-Container-Write":
+			c.WriteACL = value
+		case key == "X-Versions-Location":
+			c.VersionsLocation = value
+			c.HistoryLocation = ""
+		case key == "X-History-Location":
+			c.HistoryLocation = value
+			c.VersionsLocation = ""
+		case key == "X-Remove-Versions-Location":
+			c.VersionsLocation = ""
+		case key == "X-Remove-History-Location":
+			c.HistoryLocation = ""
+		}
+	}
+}
+
+// putObject implements object PUT: create/replace with body, content
+// type, user metadata, DLO manifest, and delete-at headers.
+func (s *Server) putObject(w http.ResponseWriter, r *http.Request, container, name string) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	sum := md5.Sum(body)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.containers[container]
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	o := Object{
+		Bytes:       int64(len(body)),
+		ETag:        hex.EncodeToString(sum[:]),
+		ContentType: r.Header.Get("Content-Type"),
+		Manifest:    r.Header.Get("X-Object-Manifest"),
+		Meta:        objectMetaFromHeaders(r),
+	}
+	if o.ContentType == "" {
+		o.ContentType = "application/octet-stream"
+	}
+	if deleteAt := r.Header.Get("X-Delete-At"); deleteAt != "" {
+		if epoch, err := strconv.ParseInt(deleteAt, 10, 64); err == nil {
+			o.DeleteAt = epoch
+		}
+	}
+	c.objects[name] = o
+	w.Header().Set("Etag", o.ETag)
+	w.WriteHeader(http.StatusCreated)
+}
+
+// postObject implements fast-POST metadata update with real Swift's
+// replace-all semantics: user metadata, the DLO X-Object-Manifest, and
+// X-Delete-At are REPLACED by exactly what the POST carries — omitting
+// one clears it (this is the trap the Phase 3 gate exists for).
+// Content-Type is preserved unless supplied; SLO-ness is sysmeta and
+// survives untouched.
+func (s *Server) postObject(w http.ResponseWriter, r *http.Request, container, name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.containers[container]
+	var o Object
+	if ok {
+		o, ok = c.objects[name]
+	}
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	o.Meta = objectMetaFromHeaders(r)
+	o.Manifest = r.Header.Get("X-Object-Manifest")
+	o.DeleteAt = 0
+	if deleteAt := r.Header.Get("X-Delete-At"); deleteAt != "" {
+		if epoch, err := strconv.ParseInt(deleteAt, 10, 64); err == nil {
+			o.DeleteAt = epoch
+		}
+	}
+	if contentType := r.Header.Get("Content-Type"); contentType != "" {
+		o.ContentType = contentType
+	}
+	c.objects[name] = o
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func objectMetaFromHeaders(r *http.Request) map[string]string {
+	var meta map[string]string
+	for key, values := range r.Header {
+		if strings.HasPrefix(key, "X-Object-Meta-") && len(values) > 0 {
+			if meta == nil {
+				meta = map[string]string{}
+			}
+			meta[strings.TrimPrefix(key, "X-Object-Meta-")] = values[0]
+		}
+	}
+	return meta
+}
+
+// deleteObject implements object DELETE.
+func (s *Server) deleteObject(w http.ResponseWriter, container, name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.containers[container]
+	if ok {
+		_, ok = c.objects[name]
+	}
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	delete(c.objects, name)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// deleteContainer implements container DELETE: 409 while not empty.
+func (s *Server) deleteContainer(w http.ResponseWriter, name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.containers[name]
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	if len(c.objects) > 0 {
+		w.WriteHeader(http.StatusConflict)
+		return
+	}
+	delete(s.containers, name)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type listingRow struct {
@@ -322,6 +547,18 @@ func (s *Server) writeObjectListing(w http.ResponseWriter, r *http.Request, cont
 }
 
 func (s *Server) handleObject(w http.ResponseWriter, r *http.Request, container, name string) {
+	switch r.Method {
+	case http.MethodPut:
+		s.putObject(w, r, container, name)
+		return
+	case http.MethodPost:
+		s.postObject(w, r, container, name)
+		return
+	case http.MethodDelete:
+		s.deleteObject(w, container, name)
+		return
+	}
+
 	s.mu.Lock()
 	c, ok := s.containers[container]
 	var o Object
