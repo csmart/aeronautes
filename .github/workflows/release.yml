@@ -88,9 +88,9 @@ jobs:
         with:
           node-version: "22"
       - run: make tools
+      # go install puts wails3 in ~/go/bin, which the runner image has
+      # on PATH already.
       - run: wails3 task package
-        env:
-          PATH: ${{ env.PATH }}:/Users/runner/go/bin
       - name: bundle (unsigned)
         run: |
           mkdir -p dist

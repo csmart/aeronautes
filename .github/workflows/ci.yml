@@ -65,6 +65,12 @@ jobs:
       - name: go build
         if: steps.detect.outputs.present == 'true'
         run: go build ./...
+      # ADR 0011: internal/ is plain Go — no webview/CGO imports. This
+      # is what lets the saio job compile the integration tests without
+      # webview headers; keep it pinned.
+      - name: internal/ builds without CGO
+        if: steps.detect.outputs.present == 'true'
+        run: CGO_ENABLED=0 go build ./internal/...
       - name: go test -race
         if: steps.detect.outputs.present == 'true'
         run: go test -race -count=1 ./...

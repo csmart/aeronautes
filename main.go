@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"embed"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -62,6 +63,7 @@ func main() {
 	jobRunner := app.NewJobRunner(jobStore, auditStore)
 	transferService := app.NewTransferServiceWithRunner(connections, jobStore, jobRunner)
 	transferService.SetEvidenceStore(evidenceStore)
+	transferService.SetFilePicker(wailsPicker{})
 	benchmarkService := app.NewBenchmarkService(connections, jobStore, jobRunner, database)
 	transferService.SetRecommendationSource(benchmarkService.RecommendationFor)
 
@@ -110,4 +112,25 @@ func main() {
 	if err := a.Run(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// wailsPicker implements app.FilePicker over the Wails dialog manager —
+// the only place dialogs touch the webview layer (ADR 0011: internal/app
+// stays plain Go).
+type wailsPicker struct{}
+
+func (wailsPicker) PickFiles(title string) ([]string, error) {
+	shell := application.Get()
+	if shell == nil {
+		return nil, fmt.Errorf("application shell not running")
+	}
+	return shell.Dialog.OpenFile().CanChooseFiles(true).SetTitle(title).PromptForMultipleSelection()
+}
+
+func (wailsPicker) PickDirectory(title string) (string, error) {
+	shell := application.Get()
+	if shell == nil {
+		return "", fmt.Errorf("application shell not running")
+	}
+	return shell.Dialog.OpenFile().CanChooseDirectories(true).CanChooseFiles(false).SetTitle(title).PromptForSingleSelection()
 }

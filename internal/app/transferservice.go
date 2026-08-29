@@ -63,6 +63,8 @@ type TransferService struct {
 
 	// recommendations is the §42 per-bookmark lookup feeding Auto.
 	recommendations func(bookmarkID string) *TransferSettingsDTO
+	// picker is the injected native-dialog seam (nil when headless).
+	picker FilePicker
 }
 
 // defaultMaxActiveJobs is the §38 v1 budget: small and bounded.

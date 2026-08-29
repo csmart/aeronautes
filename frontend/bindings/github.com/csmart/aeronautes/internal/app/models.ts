@@ -382,6 +382,14 @@ export interface DownloadRequestDTO {
 }
 
 /**
+ * FilePicker opens native file dialogs. It is an injected seam so
+ * internal/app stays plain Go with no webview/CGO imports (ADR 0011):
+ * main.go supplies the Wails implementation; headless contexts have
+ * none and the pick methods say so instead of linking a webview.
+ */
+export type FilePicker = any;
+
+/**
  * FindMatchDTO is one matching object row.
  */
 export interface FindMatchDTO {

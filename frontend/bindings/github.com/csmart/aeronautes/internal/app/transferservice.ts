@@ -86,6 +86,13 @@ export function SetEvidenceStore(store: evidence$0.Store | null): $CancellablePr
 }
 
 /**
+ * SetFilePicker wires the shell's dialog implementation.
+ */
+export function SetFilePicker(picker: $models.FilePicker): $CancellablePromise<void> {
+    return $Call.ByID(3085170222, picker);
+}
+
+/**
  * SetMaxActiveJobs resizes the §38 budget (the settings surface will
  * drive this; tests too). Applies to jobs started afterwards.
  */

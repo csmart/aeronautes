@@ -54,6 +54,7 @@ export type {
     DeletePreviewDTO,
     DeleteRequestDTO,
     DownloadRequestDTO,
+    FilePicker,
     FindMatchDTO,
     FindStatusDTO,
     Info,

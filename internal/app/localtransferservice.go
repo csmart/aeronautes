@@ -11,7 +11,6 @@ import (
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	"github.com/csmart/aeronautes/internal/transfer/local"
 	"github.com/csmart/aeronautes/internal/transfer/rclone"
-	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 // The local↔Swift half of TransferService (§27.5): preflight is a
@@ -38,34 +37,35 @@ type DownloadRequestDTO struct {
 	Settings TransferSettingsDTO `json:"settings"`
 }
 
+// FilePicker opens native file dialogs. It is an injected seam so
+// internal/app stays plain Go with no webview/CGO imports (ADR 0011):
+// main.go supplies the Wails implementation; headless contexts have
+// none and the pick methods say so instead of linking a webview.
+type FilePicker interface {
+	PickFiles(title string) ([]string, error)
+	PickDirectory(title string) (string, error)
+}
+
+// SetFilePicker wires the shell's dialog implementation.
+func (s *TransferService) SetFilePicker(picker FilePicker) {
+	s.picker = picker
+}
+
 // PickUploadFiles opens the OS multi-file picker (Go side: the webview
 // never sees filesystem paths otherwise). Empty when cancelled.
 func (s *TransferService) PickUploadFiles(ctx context.Context) ([]string, error) {
-	app := application.Get()
-	if app == nil {
-		return nil, errors.New("no application shell (headless)")
+	if s.picker == nil {
+		return nil, errors.New("no file picker available (headless shell)")
 	}
-	paths, err := app.Dialog.OpenFile().
-		CanChooseFiles(true).
-		SetTitle("Choose files to upload").
-		PromptForMultipleSelection()
-	if err != nil {
-		return nil, err
-	}
-	return paths, nil
+	return s.picker.PickFiles("Choose files to upload")
 }
 
 // PickDownloadDir opens the OS directory picker. "" when cancelled.
 func (s *TransferService) PickDownloadDir(ctx context.Context) (string, error) {
-	app := application.Get()
-	if app == nil {
-		return "", errors.New("no application shell (headless)")
+	if s.picker == nil {
+		return "", errors.New("no file picker available (headless shell)")
 	}
-	return app.Dialog.OpenFile().
-		CanChooseDirectories(true).
-		CanChooseFiles(false).
-		SetTitle("Choose a destination directory").
-		PromptForSingleSelection()
+	return s.picker.PickDirectory("Choose a destination directory")
 }
 
 // PreflightUpload runs the complete §27.5 pre-write report.
