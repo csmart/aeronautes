@@ -737,7 +737,25 @@ Must be:
 - bookmark-specific;
 - never enabled by default.
 
-When a Swift→Swift child holds two remotes, TLS policy MUST be applied **per-remote**, never as a process-global flag — a global `--no-check-certificate` or `--ca-cert` would weaken or alter trust for the *other* bookmark too. rclone documents remote-scoped overrides of global flags for exactly this case (`override.no_check_certificate`, `override.ca_cert`, applied only while that remote is in use); the Phase-0 seam spike (§60) must verify that the env-configured configless remotes (§26.2) honour `override.*`. If the pinned rclone cannot honour a per-remote override, run the job as **two single-remote children** — download under one TLS policy, then upload under the other (already a client-side hairpin, §28.5) — or reject the pairing; never broaden trust process-wide. (K-SEC-008.)
+When a Swift→Swift child holds two remotes, TLS policy MUST be applied **per-remote**, never as
+a process-global flag — a global `--no-check-certificate` or `--ca-cert` would weaken or alter
+trust for the *other* bookmark too. **Seam-spike verdict (rclone v1.74.3, self-signed TLS front
+on containerized Swift, 2026-08-29):** `override.no_check_certificate` / `override.ca_cert` are
+honoured **only in a config file** — the env-variable forms
+(`RCLONE_CONFIG_<R>_OVERRIDE_*`) are silently ignored — and, worse, the override's trust
+**leaks across remotes within one child**: with `override.ca_cert` on the source only, the
+strict-TLS destination accepted the self-signed certificate too (order-dependent; the
+no-override control failed as expected). So `override.*` is NOT per-remote isolation in
+practice. The rule is therefore:
+
+- endpoints with **identical TLS trust** may share one child, with the trust expressed via
+  `override.*` in the job-scoped config file (which also means: when a TLS override is needed,
+  the job config file carries the remote's *non-secret* keys — the auth token stays in the
+  environment, which rclone merges with file-defined remotes, verified in the spike);
+- endpoints with **different TLS trust** MUST run as **two single-remote children** — download
+  under one policy, upload under the other (already a client-side hairpin, §28.5) — or the
+  pairing is rejected. Never broaden trust process-wide, and never rely on `override.*` to
+  isolate it. (K-SEC-008.)
 
 ---
 
@@ -856,7 +874,30 @@ Never trust generic filesystem/path helpers to preserve Swift object identity au
 
 Run this encoding suite against **both** execution paths — Aeronautes' native client *and* the rclone transfer path. Careful encoding in Aeronautes' own client does not protect names that flow through rclone; a "logical" copy of a namespace containing `foo//bar`, a leading `/foo`, or an object literally named `foo/` must be shown to round-trip through the transfer engine, not only through native listing. Extend the set with a newline inside a name, `.` and `..` path segments, and names that are only spaces.
 
-**This is a go/no-go gate with a required native fallback, not just an observation.** The pinned rclone Swift backend *will* mangle some identities — it trims leading/trailing `/` and runs Go `path.Join`, which collapses repeated separators and `.`/`..` segments; rclone's open [#5673](https://github.com/rclone/rclone/issues/5673) has `copy`/`sync` ignoring objects below a repeated-slash component; and `--files-from` is newline-delimited and strips surrounding whitespace (use `--files-from0` for NUL-delimited lists, which fixes the list serialization but not backend normalization). So the Phase-0 encoding experiment must classify each name as rclone-safe or not, and any identity rclone cannot preserve is routed through a native byte-preserving Swift transfer path. Aeronautes must **never silently skip or normalize** an object name. (K-TEST-001 means the suite must *pass* end-to-end — including the forced-copy and Mirror-planned paths — with native fallback where needed, not merely "run".)
+**This is a go/no-go gate with a required native fallback, not just an observation.** The seam
+spike ran this suite through the pinned rclone (v1.74.3, Swift→Swift cross-account,
+2026-08-29) and the measured classification is:
+
+- **rclone-unsafe identities** (silently dropped by `copy` — "Entry doesn't belong in
+  directory … ignoring"): a **leading `/`**, a **trailing `/`**, and a **repeated `//`**
+  component (rclone [#5673](https://github.com/rclone/rclone/issues/5673)). These MUST route
+  through the native byte-preserving path.
+- **Un-listable identity**: a **newline** inside a name cannot be expressed in any rclone file
+  list — `--files-from0` **does not exist** in 1.74.3; `--files-from-raw` is the unprocessed
+  variant but is still newline-delimited. Newline-bearing names route native regardless of copy
+  support.
+- **rclone-safe on 1.74.3** (round-tripped byte-exact): spaces (leading, trailing,
+  all-spaces — via `--files-from-raw`, which does not trim), `+`, `%`, `?`, `#`, `%2F`,
+  Unicode, and — better than this section previously feared — **`.` and `..` path segments
+  survived**. Dot-segment safety is pin-specific: re-run the suite on any rclone upgrade.
+- **The worst finding**: rclone dropped the three unsafe identities and still **exited 0**.
+  Exit codes are useless for completeness; per-object verification of the planned set against
+  destination listings (§28.4) is mandatory, not prudent.
+
+Any identity rclone cannot preserve is routed through the native path. Aeronautes must **never
+silently skip or normalize** an object name. (K-TEST-001 means the suite must *pass*
+end-to-end — including the forced-copy and Mirror-planned paths — with native fallback where
+needed, not merely "run".)
 
 ---
 
@@ -1387,9 +1428,9 @@ than a hope.
 
 Cancelling a transfer — or the process dying — while a large object is uploading can leave **orphaned segments** at the destination: segment objects with no manifest, i.e. exactly the backstage mess the product exists to prevent. This is a first-class flow, not a setting. Graceful cancellation and hard interruption are **not** the same and must be handled differently.
 
-**Graceful cancellation (preferred).** Cancel by signalling the child (context cancel / interrupt) so rclone can abort the upload and clean up its own uploaded segments — rclone does this by default unless told to leave parts on error, so Aeronautes must **not** set `--swift-leave-parts-on-error`. Then Aeronautes reconciles destination state and reports `Cancelled` / `Partial`.
+**Graceful cancellation (preferred).** Cancel by signalling the child (context cancel / interrupt) so rclone can abort the upload and clean up its own uploaded segments — rclone does this by default unless told to leave parts on error, so Aeronautes must **not** set `--swift-leave-parts-on-error`. Then Aeronautes reconciles destination state and reports `Cancelled` / `Partial`. **Seam-spike measurement (v1.74.3): cleanup is best-effort, not perfect** — a SIGINT mid-segmentation cleaned the manifest and all but **one residual segment** (an in-flight PUT completing after cleanup), and a SIGKILL left nine orphaned segments and no manifest, exactly as this section predicts. Reconciliation therefore runs after *graceful* cancellation too, never only after hard interruption.
 
-**Hard interruption (kill / crash / power loss) is not a safe boundary.** rclone had no chance to clean up, so orphaned segments may exist. Crucially, for rclone-executed uploads **Aeronautes does not choose the segment prefix** — rclone generates the segment namespace itself (under `<container>_segments` or `.file-segments/`), so Aeronautes cannot simply record "its" prefix before spawning. Automatic cleanup after a hard interruption is therefore permitted **only** when Aeronautes has Confirmed ownership evidence of the *actual generated prefix* (captured from rclone's structured output for that job). If ownership cannot be proven:
+**Hard interruption (kill / crash / power loss) is not a safe boundary.** rclone had no chance to clean up, so orphaned segments may exist. Crucially, for rclone-executed uploads **Aeronautes does not choose the segment prefix** — rclone generates the segment namespace itself (under `<container>_segments` or `.file-segments/`), so Aeronautes cannot simply record "its" prefix before spawning. **Seam-spike confirmation (v1.74.3):** the generated prefix is `<object>/<date>-<time>-<22-char-random>/<seq>` under the auto-created `<container>_segments` sidecar — the random component makes each upload's prefix effectively unique (good for §28.6(b) ownership), and it is capturable in real time from the child's `--use-json-log -vv` stream (`"Uploading segment file \"<prefix>/<seq>\" into \"<container>_segments\""` debug messages). Automatic cleanup after a hard interruption is therefore permitted **only** when Aeronautes has Confirmed ownership evidence of the *actual generated prefix* (captured from that stream for that job). If ownership cannot be proven:
 
 ```text
 possible orphaned segments detected
@@ -1473,7 +1514,7 @@ Cross-account copy/mirror is a **v1 feature**, not a distant add-on.
 
 ### 27.4 Object metadata on copy
 
-rclone's Swift backend does **not** carry arbitrary object metadata across a manual download/upload (its `Object` implements `MimeTyper`, not rclone's `Metadataer`; `Object.Update` sets a fresh mtime + content type and streams bytes). So a cross-bookmark Copy that relied on rclone alone would silently drop `X-Object-Meta-*`, `Content-Encoding`, `Content-Disposition`, and expiry even when the bytes verify.
+rclone's Swift backend does **not** carry arbitrary object metadata across a manual download/upload (its `Object` implements `MimeTyper`, not rclone's `Metadataer`; `Object.Update` sets a fresh mtime + content type and streams bytes). **Seam-spike confirmation (v1.74.3, cross-account):** a copied object arrived with only `Content-Type` and rclone's own `X-Object-Meta-Mtime` — custom `X-Object-Meta-*` was dropped, `-M`/`--metadata` changed nothing; and a copied DLO correctly received its **own** freshly generated destination manifest. So a cross-bookmark Copy that relied on rclone alone would silently drop `X-Object-Meta-*`, `Content-Encoding`, `Content-Disposition`, and expiry even when the bytes verify.
 
 v1 Copy therefore **preserves object metadata explicitly**: after rclone moves the bytes, Aeronautes HEADs the source and applies a defined **writable** header set to the destination (a Swift POST, or the manifest PUT in the stage-and-commit path, §17.1's preserved-header table). The destination large object keeps its **own** generated `X-Object-Manifest`, never the source's; read-only/system headers and the source's DLO/SLO control headers are not copied. This is a per-object extra round-trip; the planner shows it. If a deployment intentionally chooses data-only copy, the planner MUST **preview every metadata category that will be dropped**. (K-XFER-010; plain/DLO/SLO cross-account fixtures for user metadata, content headers, expiry, and re-segmentation.)
 
@@ -1641,6 +1682,13 @@ Two consequences, both locked for v1:
 **(a) The rclone boundary is absolute: rclone writes only planned-new or uniquely-staged names; Aeronautes performs every overwrite, deletion, manifest commit, bulk deletion, segment reclamation, and container deletion natively.** No raw `rclone sync` delete phase, no `rclone purge`, no `rclone delete`, no rclone write to an existing live name — ever, on any scope (§36). The reasoning: Swift offers no namespace snapshot or lock, so **no point-in-time scan can make a later rclone `Remove`/`Update` safe** — an object can become a shared-segment DLO/SLO between the scan and rclone's operation, and rclone would then bulk-delete whatever segments it references *at that moment*. The native path is immune by construction: a native DELETE (or bulk-delete entry) on a name removes **only the manifest/object at that name** and never follows segments, so the same race costs at most an orphaned segment set (recoverable), never shared-segment corruption. A residual, honestly-stated race remains on *planned-new* names: a concurrent external writer can create the name between planning and rclone's PUT, and last-write-wins applies as it would between any two Swift clients; execution-time verification detects the anomaly.
 
 **HEAD-immediately-before-mutation is scoped to where identity matters, not a blanket rule.** An authoritative HEAD directly before the operation is REQUIRED wherever semantics depend on the object's current identity: the stage-and-commit re-HEAD before commit (below); any operation that will follow segments (SLO manifest+segments delete under `ExclusiveOwnershipProof`, §34); single-object destructive actions taken from the inspector (so the confirmation reflects reality); and evidence recording. Mass **manifest-only** deletion (recursive delete, Empty Container, Mirror destination-only deletes) does NOT require a per-object safety HEAD — native deletion cannot follow segments, so the HEAD would buy audit fidelity, not safety, at roughly double the request cost (§42). The job's effective configuration states the audit/verification sampling policy it ran with (§32, §45).
+
+**Seam-spike validation of the commit primitives (2026-08-29):** server-side `COPY` returns
+201 and carries user metadata with it; a zero-byte `PUT` with `X-Object-Manifest` over an
+existing plain object converts it to a DLO in one write (no delete-first window); and on a
+`versioned_writes` destination each commit-overwrite archives the previous object — stage-and-
+commit on versioned containers therefore *accumulates versions by design*, which the planner
+must disclose.
 
 **(b) Exclusive ownership is a distinct positive proof, not a confidence level.** `Confirmed` evidence (§24.1) proves a segment is *referenced*, not that it is *unshared* — §35 says exactly this for DLO prefixes. So define, separately:
 
@@ -2838,6 +2886,19 @@ A contributor can explain:
 14. run the Swift→local collision matrix (§27.5) on a representative Windows, macOS, and Linux filesystem.
 
 **Sequencing:** the webview/packaging spike gates Phase 1; this rclone-seam list does **not**. Items 1–13 run in parallel during Phases 1–4 (start with 1 and 11 — they are the cheapest assumptions to falsify) and must be complete before the Phase-5 transfer abstraction freezes; item 14 may trail until §27.5 work starts.
+
+**Status (2026-08-29, rclone v1.74.3 against upstream containerized Swift):** items **1–12
+answered**; findings recorded in §14.3 (encoding classification: leading/trailing/`//` slashes
+and newline route native; silent-skip-with-exit-0 makes listing-diff verification mandatory),
+§12.3 (`override.*` is config-file-only and leaks trust across remotes in one child → two-child
+rule for mixed trust), §26.2/§26.4 (token expiry header, retry timing ~2.6s default / 50ms
+tuned, segment prefix `<object>/<ts>-<random>/<seq>` capturable from `-vv` JSON, cancel
+best-effort with residual-segment evidence, kill orphans reproduced), §27.4 (metadata not
+carried; destination DLO gets own manifest), §28.6 (COPY-commit preserves metadata,
+manifest-swap over a plain object works, versioned destinations archive a version per commit).
+Item **13** is covered by design (bounded batches) plus item 6's failure-timing measurement —
+a short-TTL live run remains nice-to-have; item **14** trails until §27.5. ADR 0007 is resolved
+from this evidence.
 
 Feed the results back into §25, §26.2, §26.4, §27.4, §27.5, and §28.4/§28.6 before the production transfer abstraction is finalised. This is the highest-value pre-implementation experiment.
 

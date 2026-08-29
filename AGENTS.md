@@ -87,8 +87,8 @@ the reference/first-polish platform. App id: `io.csmart.aeronautes`.
   confirms it.
 - **Owner decisions**: the versioning model is pinned (§21 — upstream Swift master;
   `versioned_writes` container versioning is the behavioural target, `object_versioning`
-  display-only) and so is rclone (§26.3 — `v1.74.3`, Fedora current). Still open: the Proposed
-  ADRs (0006 vault before bookmarks persist secrets to a vault; 0007 flag surface before Phase 5).
+  display-only) and so is rclone (§26.3 — `v1.74.3`, Fedora current). Still open: ADR 0006 (vault, before
+  bookmarks persist secrets to a vault); 0007 is Accepted from seam-spike evidence (docs/rclone.md).
 
 ## Code style — plain and simple
 

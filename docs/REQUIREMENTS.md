@@ -51,10 +51,12 @@ gates can reference stable IDs instead of re-reading ~11k words of prose.
   selected set. (§28.4)
 - **K-SEC-007** — rclone tokens MUST be passed by environment named-remote config only, never in argv;
   the child MUST run with a job-scoped empty config, never inheriting the user's `rclone.conf`. (§26.2)
-- **K-SEC-008** — Per-bookmark TLS policy MUST be applied per-remote (`override.no_check_certificate` /
-  `override.ca_cert` on `aeronautes_src`/`aeronautes_dst`), never as a process-global flag when two
-  remotes are present. If the pinned rclone does not honour the per-remote override, split the job
-  into two single-remote children or reject the pairing — never broaden trust process-wide. (§12.3, §44.1)
+- **K-SEC-008** — Per-bookmark TLS policy MUST be applied per-remote, never process-globally.
+  Seam-spike verdict (rclone 1.74.3): `override.*` is honoured only via config file AND its trust
+  leaks across remotes within one child — so endpoints sharing identical TLS trust may share a
+  child (override in the job-scoped config, token still env-only); endpoints with **different**
+  trust MUST split into two single-remote children or the pairing is rejected. Never broaden
+  trust process-wide. (§12.3, §44.1)
 - **K-XFER-010** — Cross-bookmark Copy MUST preserve object metadata explicitly (rclone's Swift path
   drops it): HEAD source, apply the §17.1 writable-header set; the destination keeps its own
   `X-Object-Manifest`; if data-only, the planner MUST preview every dropped category. (§27.4)
