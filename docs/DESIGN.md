@@ -1113,7 +1113,22 @@ Archive-container references must be validated as far as practical.
 
 Large-object/versioning caveats should be shown when relevant.
 
-**Pin the concrete v1 target.** "The versioning model relevant to the target environment" must be resolved to a specific mechanism before Phase 2 and recorded here: the older container-based `X-Versions-Location` / `X-History-Location`, `versioned_writes` object versioning, and S3-style object versioning are different models with different UX. Do not build all of them speculatively. Pin the one the **actual target cluster runs** (see §9.2) and represent it as one typed capability/profile; add others only when a real cluster requires them.
+**Pinned (owner decision, 2026-08-29).** The target environment is **upstream OpenStack Swift
+master**, whose `/info` advertises `versioned_writes` (both `x-versions-location` and
+`x-history-location` in `allowed_flags`) *and* the modern `object_versioning` middleware — no
+proxy-node inspection needed; `/info` is authoritative and is what capability discovery (§10)
+already fetches per bookmark. The v1 pin:
+
+- **Behavioural model: container-based `versioned_writes`** (`X-Versions-Location` /
+  `X-History-Location`), resolved per bookmark from `/info` `allowed_flags` as a typed profile.
+  This is what the container inspector already displays and what Phase 3's capability-gated
+  container configuration edits.
+- **`object_versioning` (`X-Versions-Enabled`) is detected and displayed** (its `/info` key and
+  the container header) but its full UX — version listings, restore — is deferred until a real
+  workflow requires it. Do not build it speculatively.
+
+The older paragraph's warning stands: these are different models with different UX; add depth
+only when a real cluster requires it.
 
 ---
 
@@ -1359,7 +1374,13 @@ Pin an exact rclone release in the repository, including checksum.
 
 The pin is upgraded only by an explicit compatibility change.
 
-At the time this design was written, the project discussion targeted rclone `1.75.0`; verify the exact desired pin when scaffolding the repo.
+**Pinned (owner decision, 2026-08-29): rclone `v1.74.3`** — the current Fedora stable package,
+so development and the seam spike run the same binary the primary platform ships. The §61.1
+question (bundled checksum-verified binary per target vs a distro dependency on Fedora) is a
+packaging decision finalised in Phase 5/7; the design default remains bundling. The owner also
+wants a **compatibility matrix** eventually: the pinned version plus latest upstream, run through
+the §14.3 encoding suite and the seam-spike checks, so a pin upgrade is a tested event rather
+than a hope.
 
 ### 26.4 Cancellation, crash recovery, and orphaned segments
 

@@ -85,9 +85,10 @@ the reference/first-polish platform. App id: `io.csmart.aeronautes`.
 - **The Tier-1 Linux baseline is named** (§6.6, K-PLAT-002): Fedora current stable (first-class) +
   Ubuntu current LTS native; EL-family via Flatpak; EL8 unsupported. The Phase-0 webview spike
   confirms it.
-- **Pin these owner decisions before the relevant phase**: the target cluster's concrete versioning
-  model (§21); the exact rclone version for all six targets (§26.3); and resolve the Proposed ADRs
-  (0006 vault before bookmarks persist secrets to a vault; 0007 flag surface before Phase 5).
+- **Owner decisions**: the versioning model is pinned (§21 — upstream Swift master;
+  `versioned_writes` container versioning is the behavioural target, `object_versioning`
+  display-only) and so is rclone (§26.3 — `v1.74.3`, Fedora current). Still open: the Proposed
+  ADRs (0006 vault before bookmarks persist secrets to a vault; 0007 flag surface before Phase 5).
 
 ## Code style — plain and simple
 
