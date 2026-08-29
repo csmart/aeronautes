@@ -29,6 +29,10 @@ export {
 };
 
 export {
+    DeleteMode
+} from "./models.js";
+
+export type {
     AccountDTO,
     AppSettingsDTO,
     AuditEventDTO,
@@ -46,7 +50,6 @@ export {
     CopyPlanDTO,
     CopyRequestDTO,
     DLOSegmentsDTO,
-    DeleteMode,
     DeletePreviewDTO,
     DeleteRequestDTO,
     DownloadRequestDTO,

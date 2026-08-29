@@ -3,6 +3,7 @@
   typed confirmation unlocks Start. Deletion is Aeronautes-native and
   manifest-only; the Go side re-validates everything. -->
 <script lang="ts">
+  import { trapFocus } from "../../lib/trapFocus";
   import type { BrowserState } from "../browser/browserState.svelte";
   import type { DeletePreviewDTO, DeleteRequestDTO } from "../../lib/api";
   import { formatBytes } from "../../lib/format";
@@ -55,7 +56,7 @@
 </script>
 
 <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && onClose()}>
-  <div class="dialog" role="dialog" aria-label="Delete" tabindex="-1">
+  <div class="dialog" role="dialog" aria-label="Delete" tabindex="-1" use:trapFocus>
     <header>
       <h2>Destructive operation</h2>
       <button class="close" onclick={onClose} aria-label="Close">✕</button>

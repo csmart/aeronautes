@@ -16,9 +16,12 @@
     selected?: number;
     /** Viewport height override in px (tests, fixed panes); otherwise measured. */
     viewport?: number;
+    /** Accessible name for the listbox. */
+    ariaLabel?: string;
     row: Snippet<[T, number, boolean]>;
     onSelect?: (index: number) => void;
     onActivate?: (item: T, index: number) => void;
+  riaLabel?: string;
   }
 
   let {
@@ -27,10 +30,16 @@
     overscan = 6,
     selected = -1,
     viewport,
+    ariaLabel,
     row,
     onSelect,
     onActivate,
   }: Props = $props();
+
+  // focus() moves keyboard focus into the listbox (screen shortcuts).
+  export function focus() {
+    el?.focus();
+  }
 
   // Focus stays on the listbox; the selected option is announced through
   // aria-activedescendant, so rows themselves are never tab stops.
@@ -103,6 +112,7 @@
   onkeydown={handleKeydown}
   tabindex="0"
   role="listbox"
+  aria-label={ariaLabel}
   aria-activedescendant={selected >= 0 ? `${uid}-row-${selected}` : undefined}
 >
   <div class="spacer" style:height="{totalHeight}px">

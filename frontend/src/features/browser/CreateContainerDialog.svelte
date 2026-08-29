@@ -3,6 +3,7 @@
   chrome, several offer a select with the default marked (§20's rule
   about not cluttering the UI unnecessarily). -->
 <script lang="ts">
+  import { trapFocus } from "../../lib/trapFocus";
   import type { BrowserState } from "./browserState.svelte";
 
   let { browser, onClose }: { browser: BrowserState; onClose: () => void } = $props();
@@ -32,6 +33,7 @@
 <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && onClose()}>
   <form
     class="dialog"
+    use:trapFocus
     aria-label="Create container"
     onsubmit={(e) => {
       e.preventDefault();

@@ -1,6 +1,7 @@
 <!-- Bookmark create/edit modal (§11). The API key field is write-only:
   it crosses the bridge once at save and is never readable back (§55). -->
 <script lang="ts">
+  import { trapFocus } from "../../lib/trapFocus";
   import type { BookmarkDTO } from "../../lib/api";
   import type { BrowserState } from "./browserState.svelte";
 
@@ -62,6 +63,7 @@
 <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && onClose()}>
   <form
     class="editor"
+    use:trapFocus
     aria-label={existing ? "Edit bookmark" : "Add bookmark"}
     onsubmit={(e) => {
       e.preventDefault();

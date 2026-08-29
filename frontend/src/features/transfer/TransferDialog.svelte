@@ -6,6 +6,7 @@
   half is native, manifest-only, and only runs after the copy half
   verifies (§65.5 item 4). -->
 <script lang="ts">
+  import { trapFocus } from "../../lib/trapFocus";
   import type { BrowserState } from "../browser/browserState.svelte";
   import type { CopyPlanDTO, CopyRequestDTO } from "../../lib/api";
   import { formatBytes } from "../../lib/format";
@@ -90,7 +91,7 @@
 </script>
 
 <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && onClose()}>
-  <div class="dialog" role="dialog" aria-label="Transfer" tabindex="-1">
+  <div class="dialog" role="dialog" aria-label="Transfer" tabindex="-1" use:trapFocus>
     <header>
       <div class="modes" role="tablist">
         <button

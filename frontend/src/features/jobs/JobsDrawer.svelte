@@ -97,7 +97,7 @@
 
 <div class="drawer num">
   <button class="bar" onclick={() => (open = !open)} aria-expanded={open}>
-    <span>
+    <span aria-live="polite">
       {#if browser.activeJobs.length > 0}
         {browser.activeJobs.length} active
         {browser.activeJobs.length === 1 ? "job" : "jobs"}

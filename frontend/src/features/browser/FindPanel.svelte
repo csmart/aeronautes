@@ -46,7 +46,7 @@
 
   {#if browser.findStatus}
     {@const status = browser.findStatus}
-    <p class="stats">
+    <p class="stats" aria-live="polite">
       {status.scanned} scanned
       {#if status.objectsPerSecond > 0}
         · {Math.round(status.objectsPerSecond)}/s

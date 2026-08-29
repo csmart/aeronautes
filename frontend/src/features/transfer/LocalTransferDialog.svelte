@@ -3,6 +3,7 @@
   Start only exists for a clean report. Warnings (portability hazards)
   show but do not block on this target. -->
 <script lang="ts">
+  import { trapFocus } from "../../lib/trapFocus";
   import type { BrowserState } from "../browser/browserState.svelte";
   import { formatBytes } from "../../lib/format";
 
@@ -78,7 +79,7 @@
 </script>
 
 <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && onClose()}>
-  <div class="dialog" role="dialog" aria-label={mode === "upload" ? "Upload" : "Download"} tabindex="-1">
+  <div class="dialog" role="dialog" aria-label={mode === "upload" ? "Upload" : "Download"} tabindex="-1" use:trapFocus>
     <header>
       <h2>
         {mode === "upload"

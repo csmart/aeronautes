@@ -74,6 +74,9 @@
     } else if (event.key === "/") {
       event.preventDefault();
       workingList?.focusPrefixField();
+    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      // Arrows anywhere outside a field drive the working list (§4.4).
+      workingList?.focusList();
     }
   }
 </script>

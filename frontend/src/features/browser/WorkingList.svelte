@@ -9,6 +9,16 @@
   let { browser }: { browser: BrowserState } = $props();
 
   let prefixInput: HTMLInputElement | undefined = $state();
+  let virtualList: { focus: () => void } | undefined = $state();
+
+  // focusList moves keyboard focus into the object list (screen-level
+  // arrow shortcut, §4.4).
+  export function focusList() {
+    virtualList?.focus();
+    if (browser.selectedIndex < 0 && browser.visibleEntries.length > 0) {
+      browser.select(0);
+    }
+  }
 
   export function focusPrefixField() {
     prefixInput?.focus();
@@ -161,6 +171,8 @@
       </div>
     {:else}
       <VirtualList
+        bind:this={virtualList}
+        ariaLabel="Objects"
         items={browser.visibleEntries}
         rowHeight={36}
         selected={browser.selectedIndex}

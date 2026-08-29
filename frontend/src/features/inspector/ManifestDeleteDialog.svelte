@@ -1,6 +1,7 @@
 <!-- The manifest-only delete confirm (§60 Phase 4, §30 honesty): says
   exactly what dies and exactly what survives, and where. -->
 <script lang="ts">
+  import { trapFocus } from "../../lib/trapFocus";
   import { onMount } from "svelte";
   import type { BrowserState } from "../browser/browserState.svelte";
   import type { ObjectDetailDTO, SegmentOwnershipDTO } from "../../lib/api";
@@ -70,7 +71,8 @@
 </script>
 
 <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && onClose()}>
-  <div class="dialog" role="alertdialog" aria-label="Delete manifest">
+  <div class="dialog" role="alertdialog" aria-label="Delete manifest"
+    use:trapFocus>
     <h2 class="title">Delete {detail.class.toUpperCase()} manifest</h2>
     <p class="what">
       <span class="type-mono">{detail.name}</span> will be deleted. The logical object stops
