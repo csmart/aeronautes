@@ -561,23 +561,27 @@ export function newFakeApi(): Api {
     },
     pickUploadFiles: async () => ["/tmp/fake-a.txt", "/tmp/fake-b.txt"],
     pickDownloadDir: async () => "/tmp/fake-dest",
-    preflightUpload: async (req) => ({
-      items: req.paths.map((path) => ({
-        path,
-        name: req.prefix + path.split("/").pop(),
-        size: 1024,
-        route: "rclone",
-      })),
-      problems: [],
-      totalBytes: 1024 * req.paths.length,
-    }),
+    preflightUpload: async (req) => {
+      const paths = req.paths ?? [];
+      return {
+        items: paths.map((path) => ({
+          path,
+          name: req.prefix + path.split("/").pop(),
+          size: 1024,
+          route: "rclone",
+        })),
+        problems: [],
+        totalBytes: 1024 * paths.length,
+      };
+    },
     startUpload: async (req) => {
+      const paths = req.paths ?? [];
       const id = `job-${jobs.length + 1}`;
       jobs.push({
         id,
         type: "upload",
         state: "running",
-        source: `${req.paths.length} local files`,
+        source: `${paths.length} local files`,
         destination: `${req.container}/${req.prefix}`,
         sourceBookmarkId: "",
         destBookmarkId: req.bookmarkId,
@@ -587,11 +591,11 @@ export function newFakeApi(): Api {
         engine: "rclone+native",
         settings: "",
         counters: {
-          objectsPlanned: req.paths.length,
+          objectsPlanned: paths.length,
           objectsCopied: 0,
           objectsVerified: 0,
           objectsFailed: 0,
-          bytesPlanned: 1024 * req.paths.length,
+          bytesPlanned: 1024 * paths.length,
           bytesCopied: 0,
           overwrites: 0,
           nativeRouted: 0,
