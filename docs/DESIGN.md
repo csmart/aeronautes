@@ -3493,6 +3493,57 @@ only deletes in the phase are job-created staging names and captured-orphan segm
 One §14.3 correction came out of the build (dot-segment names are rclone-unsafe both ways) and
 is recorded in that section and docs/rclone.md.
 
+### 65.5 Sixth milestone — Phase 6 (destructive jobs + performance system)
+
+Everything here deletes only what a typed, previewed plan named, through Aeronautes-native
+engines — the rclone boundary stays absolute (§36) — and every destructive test runs against
+the SAIO or the mock, never a real endpoint. Deletion is manifest-only by construction except
+under `ExclusiveOwnershipProof` (§28.6(b)); the §28.6 acceptance fixtures (shared segments,
+plan-to-delete race) gate the phase.
+
+1. **Delete strategy engine** — `internal/deletion`: DeletePlan/DeleteResult and the §31.2
+   executors — SingleDelete, BoundedParallelDelete (LIST page → bounded queue → N workers),
+   BulkDelete (`POST ?bulk-delete`, capability-gated via §10, text/plain body, per-item error
+   parsing) — all manifest-only; strategy selection by scope/capability/profile; the §32
+   operation-specific verification policy (prefix `limit=1` postcondition with bounded retries,
+   sampling, stated in effective config). swiftcontrol grows the bulk-delete wire op; the mock
+   grows the endpoint. Contract tests: shared-segment and race fixtures prove manifests-only.
+2. **Recursive prefix delete, Empty Container, Delete Container** — the §32 pipeline as §46
+   jobs behind TransferService-style bridge methods (preview count/bytes → typed confirmation
+   scope → stream execute → verify → audit): recursive delete scoped to container+prefix;
+   Empty Container preserving every piece of container config (§33 acceptance: pre/post HEAD
+   compare); Delete Container = explicit empty + native container DELETE. Drawer rows,
+   cancellation mid-stream, SAIO integration on synthetic namespaces (thousands of objects,
+   hostile names, manifests with shared segments left intact).
+3. **SLO manifest+segments delete and DLO owned-prefix cleanup** (deferred from Phase 4) —
+   §34/§35 over the Phase-3 evidence store: manifest-only stays the inspector default;
+   manifest+segments requires `ExclusiveOwnershipProof` for every referenced segment (then
+   Swift-native `?multipart-manifest=delete`); externally-created manifests get the deliberate
+   Backstage flow with the "sharing cannot be disproved" warning; DLO prefix purge only under
+   recorded ownership. Fixtures: direct/ranged/nested/shared SLO segments — the sibling
+   manifest stays fully downloadable, hash-correct.
+4. **Executable Mirror** — the §27.2 delete half on top of the Phase-5 copy executor: after
+   the copy half verifies, destination-only deletion (Aeronautes-native, manifest-only, never
+   on `Unknown` equality, §28.4); typed confirmation above thresholds (§28.2); the §28.6
+   acceptance fixtures run on the SAIO — shared-prefix DLO overwrite and the plain→DLO race —
+   proving the native path never bulk-deletes shared segments.
+5. **Find in container** — the §16 explicit cancellable job: server-side paging, streamed
+   matches, scanned count and throughput, never per-keystroke; results panel wired to the
+   existing button.
+6. **Performance profiles, budgets, throughput** — §40 Auto/Balanced/Aggressive/Custom
+   resolving into the typed §44.1 settings (per-job overrides win, §38 layering); minimal
+   application/bookmark budget settings surface; throughput and ETA in the drawer from counter
+   deltas; the §45 effective-configuration view on a job (settings, engines, verification
+   policy).
+7. **Benchmark page** — §42: consent-gated benchmark job against a clearly-named temporary
+   Aeronautes-owned container (dedicated bookmark or typed cluster-name confirmation), fixed
+   spread of listing/HEAD/DELETE/bulk-delete/upload throughput at a few concurrency levels,
+   per-bookmark persisted recommendations feeding Auto.
+
+Gate: large synthetic destructive jobs are bounded, cancellable, observable, and recoverable
+after partial failure; Mirror executes correctly against the shared-segment and race fixtures;
+Empty Container provably preserves container configuration.
+
 ---
 
 ## 66. Final project statement
