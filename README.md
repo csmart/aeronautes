@@ -45,6 +45,43 @@ vault for secrets.
   terminology errors; `DESIGN.md` §4.5 and the regeneration specs are authoritative until they are redone.
 - [`AGENTS.md`](AGENTS.md) — start-here guide for coding agents.
 
+## Building on Fedora
+
+Fedora (current stable) is the first-class Tier-1 platform (§6.6). One-time setup:
+
+```sh
+sudo dnf install golang gcc gcc-c++ pkgconf gtk4-devel webkitgtk6.0-devel nodejs npm
+go env -w GOTOOLCHAIN=auto   # Fedora defaults to 'local'; go.mod pins a newer toolchain
+make tools                   # installs the pinned wails3 CLI into ~/go/bin
+```
+
+Then:
+
+```sh
+make build   # production binary -> bin/aeronautes
+make run     # build + launch
+make dev     # hot-reload development mode
+make test    # go (race) + frontend suites, no cluster needed
+make rpm     # bin/aeronautes.rpm -> sudo dnf install ./bin/aeronautes.rpm
+```
+
+The Makefile is a thin directory over the real build system, the Wails v3 Taskfiles
+(`Taskfile.yml` + `build/`); `wails3 task --list` shows everything. The RPM (and deb/AppImage via
+`make package`) is built by [nfpm](https://nfpm.goreleaser.com) from `build/linux/nfpm/nfpm.yaml`
+— a convenience package of the built binary, not a Fedora-guidelines source build; a review-grade
+`.spec` (vendored sources through `rpmbuild`) is release-packaging work (§61, Phase 7).
+
+To exercise the app or the integration suite against a real local Swift:
+
+```sh
+sudo podman run -d --name saio -p 127.0.0.1:8080:8080 docker.io/openstackswift/saio:latest
+make test-integration        # or add a bookmark in the app:
+                             # auth URL http://127.0.0.1:8080/auth/v1.0, test:tester / testing
+```
+
+Ubuntu current LTS works the same with `libgtk-4-dev libwebkitgtk-6.0-dev`; EL9 has no native
+WebKitGTK 6 and is served via Flatpak later (§6.6).
+
 ## Who it's for
 
 OpenStack Swift / SwiftStack operators managing large namespaces: browsing, inspecting, safely mutating
