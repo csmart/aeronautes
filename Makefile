@@ -12,7 +12,7 @@ export PATH := $(HOME)/go/bin:$(PATH)
 WAILS3_VERSION := v3.0.0-beta.15
 
 .PHONY: all tools build run dev test test-go test-frontend test-integration \
-	rpm deb package spike clean
+	rpm deb package spike rclone-matrix clean
 
 all: build
 
@@ -59,6 +59,10 @@ deb:
 ## package: rpm + deb + AppImage
 package:
 	wails3 task package
+
+## rclone-matrix: §65.7 compatibility matrix (pin + latest) against the SAIO
+rclone-matrix:
+	./scripts/rclone-matrix.sh
 
 ## spike: §55 release-hardening check on the production binary
 spike:

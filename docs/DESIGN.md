@@ -3638,6 +3638,14 @@ carrying a wrong or tampered rclone refuses to spawn it with a clear error; the 
 records at least the pin and one newer upstream version with any behavioural differences
 written down.
 
+**Status: complete (2026-08-30).** The picker seam restored the plain-Go app package with a
+CGO_ENABLED=0 CI step pinning it (the saio job compiles again with no webview deps); the
+sidecar manifest covers all six targets with the tampered-refusal proven against the real
+official binary, Linux packages depend on distro rclone, and the release jobs bundle the
+verified official build; the recorded matrix run (docs/rclone.md) covers v1.74.3 and v1.75.0 —
+behaviourally identical on every measured hazard, with v1.75.0's new --files-from0 noted as
+the future path for newline-bearing names.
+
 ---
 
 ## 66. Final project statement

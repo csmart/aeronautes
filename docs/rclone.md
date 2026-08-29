@@ -57,7 +57,29 @@ Remote names are fixed: `aeronautes_src:` / `aeronautes_dst:` (§26.2).
   metadata natively (§27.4). Destination DLOs get their own manifest.
 
 Re-run the seam spike suite on any pin upgrade; the unsafe-name classification (dot
-segments included) is verified for 1.74.3 only.
+segments included) is verified per version by the compatibility matrix below.
+
+## Compatibility matrix
+
+`make rclone-matrix` fetches official builds (zips verified against their published
+SHA256SUMS), drives each through the §14.3 suite and the runner's load-bearing behaviours on
+the SAIO, and reports findings. **A pin change is gated on a recorded run here.**
+
+Recorded run 2026-08-30 (linux-amd64, SAIO):
+
+| behaviour | v1.74.3 (pin) | v1.75.0 (latest) |
+|---|---|---|
+| `--files-from-raw` | yes | yes |
+| `--files-from0` (NUL-delimited) | **no** | **yes** |
+| silently dropped at exit 0: leading `/`, trailing `/`, `//`, `.`/`..` segments | yes (5/16 suite names) | yes (identical set) |
+| newline names in any list | impossible | untested via files-from0 (future §14.3 path) |
+| 3 MiB at 1 Mi chunks → destination class | DLO | DLO |
+| segment-prefix capture (§26.4 log regex) | works | works |
+| custom `X-Object-Meta-*` carried | no | no |
+
+v1.75.0 is behaviourally identical on every measured hazard; its `--files-from0` is the first
+concrete improvement path for newline-bearing names (they currently route native), to be
+validated end-to-end before any pin change relies on it.
 
 ## copyto
 
