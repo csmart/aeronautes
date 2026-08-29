@@ -54,6 +54,11 @@ func main() {
 	evidenceStore := evidence.NewStore(database)
 	auditStore := audit.NewStore(database)
 	jobStore := jobs.NewStore(database)
+	if interrupted, err := jobStore.FailInterrupted(context.Background()); err != nil {
+		log.Printf("job crash recovery: %v", err)
+	} else if interrupted > 0 {
+		log.Printf("job crash recovery: %d interrupted job(s) marked failed", interrupted)
+	}
 	jobRunner := app.NewJobRunner(jobStore, auditStore)
 	transferService := app.NewTransferServiceWithRunner(connections, jobStore, jobRunner)
 	transferService.SetEvidenceStore(evidenceStore)

@@ -192,3 +192,67 @@ func TestNoSecretShapedColumns(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// TestStepwiseUpgradeFromEveryHistoricalSchema simulates a database
+// left at every prior schema version and proves Open brings each one to
+// head — the §65.6 upgrade guarantee, not just the fresh-create path.
+func TestStepwiseUpgradeFromEveryHistoricalSchema(t *testing.T) {
+	ctx := context.Background()
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(migrations) < 2 {
+		t.Fatalf("expected several migrations, have %d", len(migrations))
+	}
+
+	for cut := 1; cut < len(migrations); cut++ {
+		path := filepath.Join(t.TempDir(), "state.sqlite")
+
+		// Build the historical database: raw handle, first `cut`
+		// migrations, schema_migrations rows exactly as Open would leave
+		// them at that point in history.
+		raw, err := sql.Open("sqlite", "file:"+path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := raw.ExecContext(ctx, `
+			CREATE TABLE schema_migrations (
+				version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL
+			)`); err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range migrations[:cut] {
+			if _, err := raw.ExecContext(ctx, m.sql); err != nil {
+				t.Fatalf("historical %04d: %v", m.version, err)
+			}
+			if _, err := raw.ExecContext(ctx,
+				`INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, 'x')`,
+				m.version, m.name); err != nil {
+				t.Fatal(err)
+			}
+		}
+		raw.Close()
+
+		d, err := Open(ctx, path)
+		if err != nil {
+			t.Fatalf("upgrade from version %04d: %v", migrations[cut-1].version, err)
+		}
+		var head int
+		if err := d.Reader().QueryRowContext(ctx, `SELECT MAX(version) FROM schema_migrations`).Scan(&head); err != nil {
+			t.Fatal(err)
+		}
+		if head != migrations[len(migrations)-1].version {
+			t.Fatalf("from %04d: head = %04d", migrations[cut-1].version, head)
+		}
+		// Every expected table exists after the upgrade.
+		for _, table := range []string{"bookmarks", "jobs", "audit_events", "segment_ownership", "app_settings", "benchmark_results", "ca_certs"} {
+			var n int
+			if err := d.Reader().QueryRowContext(ctx,
+				`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&n); err != nil || n != 1 {
+				t.Fatalf("from %04d: table %s missing (%v)", migrations[cut-1].version, table, err)
+			}
+		}
+		d.Close()
+	}
+}

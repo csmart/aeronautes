@@ -159,3 +159,35 @@ func TestListFilters(t *testing.T) {
 	}
 	_ = b
 }
+
+func TestFailInterrupted(t *testing.T) {
+	s, _ := newStore(t)
+	ctx := context.Background()
+
+	running, _ := s.Create(ctx, Job{Type: TypeCopy})
+	_ = s.Transition(ctx, running.ID, StatePlanning)
+	_ = s.Transition(ctx, running.ID, StateRunning)
+	queued, _ := s.Create(ctx, Job{Type: TypeUpload})
+	done, _ := s.Create(ctx, Job{Type: TypeCopy})
+	_ = s.Transition(ctx, done.ID, StateCancelled)
+
+	count, err := s.FailInterrupted(ctx)
+	if err != nil || count != 2 {
+		t.Fatalf("interrupted = %d, %v", count, err)
+	}
+	for _, id := range []string{running.ID, queued.ID} {
+		j, _ := s.Get(ctx, id)
+		if j.State != StateFailed || !strings.Contains(j.Error, "interrupted by shutdown") || j.FinishedAt.IsZero() {
+			t.Fatalf("job %s = %+v", id, j)
+		}
+	}
+	// Terminal jobs untouched.
+	j, _ := s.Get(ctx, done.ID)
+	if j.State != StateCancelled || j.Error != "" {
+		t.Fatalf("terminal job touched: %+v", j)
+	}
+	// A clean database sweeps zero.
+	if count, _ := s.FailInterrupted(ctx); count != 0 {
+		t.Fatalf("second sweep = %d", count)
+	}
+}
