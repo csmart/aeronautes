@@ -13,6 +13,8 @@
 
   let open = $state(false);
   let tab: "jobs" | "changes" = $state("jobs");
+  let expanded: string | null = $state(null);
+  let budgetSaving = $state(false);
 
   const TERMINAL = ["complete", "partial", "cancelled", "failed"];
 
@@ -42,12 +44,48 @@
 
   onMount(() => {
     void browser.loadJobs();
+    void browser.loadAppSettings();
     const tick = setInterval(
       () => void browser.loadJobs(),
       1500,
     );
     return () => clearInterval(tick);
   });
+
+  // ETA from the live rate and the remaining planned bytes.
+  function etaOf(job: JobDTO): string {
+    const rate = browser.jobRates[job.id] ?? 0;
+    const remaining = job.counters.bytesPlanned - job.counters.bytesCopied;
+    if (!isActive(job) || rate <= 0 || remaining <= 0) {
+      return "";
+    }
+    const seconds = Math.round(remaining / rate);
+    if (seconds < 90) {
+      return `~${seconds}s`;
+    }
+    return `~${Math.round(seconds / 60)}m`;
+  }
+
+  async function saveBudget(value: number) {
+    if (!browser.appSettings) return;
+    budgetSaving = true;
+    try {
+      await browser.saveAppSettings({ ...browser.appSettings, maxActiveJobs: value });
+    } finally {
+      budgetSaving = false;
+    }
+  }
+
+  function settingsRows(job: JobDTO): [string, string][] {
+    try {
+      const parsed = JSON.parse(job.settings);
+      return Object.entries(parsed)
+        .filter(([, v]) => v !== "" && v !== 0)
+        .map(([k, v]) => [k, String(v)]);
+    } catch {
+      return [];
+    }
+  }
 
   const bookmarkName = (id: string) =>
     browser.bookmarks.find((b) => b.id === id)?.displayName ?? "…";
@@ -85,6 +123,20 @@
           onclick={() => (tab = "changes")}>Recent changes</button
         >
         {#if tab === "jobs"}
+          {#if browser.appSettings}
+            <label class="filter" title="§38 whole-application active-job ceiling">
+              <span>Active-job budget</span>
+              <select
+                value={String(browser.appSettings.maxActiveJobs)}
+                disabled={budgetSaving}
+                onchange={(e) => void saveBudget(Number(e.currentTarget.value))}
+              >
+                {#each [1, 2, 4, 8] as n (n)}
+                  <option value={String(n)}>{n}</option>
+                {/each}
+              </select>
+            </label>
+          {/if}
           <label class="filter">
             <span>Account</span>
             <select
@@ -130,17 +182,42 @@
                     · <em class="bad">{job.counters.objectsFailed} failed</em>
                   {/if}
                 </span>
-                <span class="when">{timeOf(job.finishedAt) || timeOf(job.startedAt)}</span>
+                <span class="when">
+                  {#if browser.jobRates[job.id] > 0 && isActive(job)}
+                    {formatBytes(browser.jobRates[job.id])}/s
+                    {#if etaOf(job)}· {etaOf(job)}{/if}
+                  {:else}
+                    {timeOf(job.finishedAt) || timeOf(job.startedAt)}
+                  {/if}
+                </span>
                 {#if isActive(job)}
                   <button class="cancel" onclick={() => cancel(job)}>Cancel</button>
                 {:else}
-                  <span></span>
+                  <button
+                    class="details"
+                    onclick={() => (expanded = expanded === job.id ? null : job.id)}
+                    aria-expanded={expanded === job.id}
+                  >
+                    {expanded === job.id ? "▾" : "▸"}
+                  </button>
                 {/if}
                 {#if progressOf(job) !== null}
                   <div class="progress" style="--p: {(progressOf(job) ?? 0) * 100}%"></div>
                 {/if}
                 {#if job.error}
                   <p class="error">{job.error}</p>
+                {/if}
+                {#if expanded === job.id}
+                  <div class="config num">
+                    <span class="config-row"><span class="k">engine</span><span class="type-mono">{job.engine}</span></span>
+                    <span class="config-row"><span class="k">verified</span><span>{job.counters.objectsVerified}</span></span>
+                    {#each settingsRows(job) as [key, value] (key)}
+                      <span class="config-row"><span class="k">{key}</span><span class="type-mono">{value}</span></span>
+                    {/each}
+                    {#if settingsRows(job).length === 0}
+                      <span class="config-row"><span class="k">settings</span><span>defaults</span></span>
+                    {/if}
+                  </div>
                 {/if}
               </div>
             {/each}
@@ -284,6 +361,35 @@
   .bad {
     color: var(--color-danger);
     font-style: normal;
+  }
+
+  .details {
+    font: inherit;
+    font-size: var(--text-xs);
+    padding: 0 var(--space-1);
+    border: none;
+    background: none;
+    color: var(--color-text-faint);
+    cursor: pointer;
+  }
+
+  .config {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    padding: 2px var(--space-2) var(--space-1);
+    font-size: var(--text-xs);
+    color: var(--color-text-secondary);
+  }
+
+  .config-row {
+    display: flex;
+    gap: var(--space-1);
+  }
+
+  .config-row .k {
+    color: var(--color-text-faint);
   }
 
   .cancel {

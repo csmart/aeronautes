@@ -674,6 +674,8 @@ export function newFakeApi(): Api {
       });
       return id;
     },
+    appSettings: async () => ({ maxActiveJobs: 2, defaultProfile: "auto" }),
+    saveAppSettings: async (settings) => settings,
     startFind: async (container, prefix, query) => "find-1",
     findStatus: async (id) => ({
       scanned: 1234,

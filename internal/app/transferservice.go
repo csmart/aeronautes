@@ -27,7 +27,10 @@ type CopyRequestDTO struct {
 	DestBookmarkID   string `json:"destBookmarkId"`
 	DestContainer    string `json:"destContainer"`
 	DestPrefix       string `json:"destPrefix"`
-	// Settings are the per-job §44.1 overrides (zero values = defaults).
+	// Profile is the §40 performance mode ("" = balanced).
+	Profile string `json:"profile"`
+	// Settings are the per-job §44.1 overrides layered over the profile
+	// (§38); with Profile "custom" they are the whole configuration.
 	Settings TransferSettingsDTO `json:"settings"`
 }
 
@@ -57,6 +60,9 @@ type TransferService struct {
 	// engineFactory builds the byte-moving engine for a job; nil uses
 	// the pinned rclone. Tests inject fakes here.
 	engineFactory func(remotes []rclone.Remote, opts rclone.Options) (transfercopy.Engine, error)
+
+	// recommendations is the §42 per-bookmark lookup feeding Auto.
+	recommendations func(bookmarkID string) *TransferSettingsDTO
 }
 
 // defaultMaxActiveJobs is the §38 v1 budget: small and bounded.
@@ -121,6 +127,9 @@ func validateCopyRequest(req CopyRequestDTO) error {
 			return fmt.Errorf("prefix %q must be empty or end with '/'", p)
 		}
 	}
+	if _, err := profileBase(Profile(req.Profile)); err != nil && req.Profile != string(ProfileCustom) {
+		return err
+	}
 	return req.Settings.Validate()
 }
 
@@ -173,6 +182,27 @@ func (s *TransferService) PlanCopy(ctx context.Context, req CopyRequestDTO) (*Co
 	}, nil
 }
 
+// effectiveSettings resolves profile + overrides (§40/§38);
+// recommendations arrive with the benchmark page.
+func (s *TransferService) effectiveSettings(req CopyRequestDTO) (TransferSettingsDTO, error) {
+	return ResolveSettings(Profile(req.Profile), req.Settings, s.recommendationFor(req.SourceBookmarkID))
+}
+
+// recommendationFor returns the §42 persisted recommendation, nil when
+// none is recorded.
+func (s *TransferService) recommendationFor(bookmarkID string) *TransferSettingsDTO {
+	if s.recommendations == nil {
+		return nil
+	}
+	return s.recommendations(bookmarkID)
+}
+
+// SetRecommendationSource wires the benchmark store's per-bookmark
+// recommendation lookup into Auto (§40/§42).
+func (s *TransferService) SetRecommendationSource(f func(bookmarkID string) *TransferSettingsDTO) {
+	s.recommendations = f
+}
+
 // buildEngine constructs the pinned rclone engine for both endpoints
 // with the job's effective options.
 func (s *TransferService) buildEngine(ctx context.Context, req CopyRequestDTO, src, dst *swiftcontrol.Session) (transfercopy.Engine, error) {
@@ -188,10 +218,14 @@ func (s *TransferService) buildEngine(ctx context.Context, req CopyRequestDTO, s
 		{Name: "aeronautes_src", StorageURL: src.StorageURL(), Token: src.AuthToken(), InsecureTLS: srcInsecure},
 		{Name: "aeronautes_dst", StorageURL: dst.StorageURL(), Token: dst.AuthToken(), InsecureTLS: dstInsecure},
 	}
-	if s.engineFactory != nil {
-		return s.engineFactory(remotes, req.Settings.options())
+	effective, err := s.effectiveSettings(req)
+	if err != nil {
+		return nil, err
 	}
-	runner, err := rclone.NewRunner(req.Settings.options())
+	if s.engineFactory != nil {
+		return s.engineFactory(remotes, effective.options())
+	}
+	runner, err := rclone.NewRunner(effective.options())
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +251,7 @@ func (s *TransferService) StartCopy(ctx context.Context, req CopyRequestDTO) (st
 		SourceBookmarkID: req.SourceBookmarkID,
 		DestBookmarkID:   req.DestBookmarkID,
 		Engine:           "rclone+native",
-		Settings:         req.Settings.effectiveJSON(),
+		Settings:         s.effectiveConfigJSON(req),
 	})
 	if err != nil {
 		return "", err
@@ -383,6 +417,20 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 	default:
 		finish(jobs.StateComplete, "")
 	}
+}
+
+// effectiveConfigJSON is the §45 record for a request: the resolved
+// profile plus the effective settings.
+func (s *TransferService) effectiveConfigJSON(req CopyRequestDTO) string {
+	effective, err := s.effectiveSettings(req)
+	if err != nil {
+		return ""
+	}
+	profile := Profile(req.Profile)
+	if profile == "" {
+		profile = ProfileBalanced
+	}
+	return effectiveJSONWithProfile(profile, effective)
 }
 
 func terminalAuditResult(state jobs.State) audit.Result {

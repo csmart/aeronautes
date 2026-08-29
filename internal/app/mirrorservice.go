@@ -59,7 +59,7 @@ func (s *TransferService) StartMirror(ctx context.Context, req MirrorRequestDTO)
 		SourceBookmarkID: req.SourceBookmarkID,
 		DestBookmarkID:   req.DestBookmarkID,
 		Engine:           "rclone+native",
-		Settings:         req.Settings.effectiveJSON(),
+		Settings:         s.effectiveConfigJSON(req.CopyRequestDTO),
 	})
 	if err != nil {
 		return "", err
@@ -227,7 +227,7 @@ func (s *TransferService) runMirror(ctx context.Context, jobID string, req Mirro
 		}
 		return
 	}
-	settings := req.Settings.effectiveJSON()
+	settings := s.effectiveConfigJSON(req.CopyRequestDTO)
 	settings = strings.TrimSuffix(settings, "}") + fmt.Sprintf(`,"deleteStrategy":%q,"deleteVerify":%q}`, deleteResult.Strategy, deleteResult.VerifyPolicy)
 	_ = s.jobs.SetSettings(background, jobID, settings)
 

@@ -16,6 +16,9 @@
   // The dialog remounts per open, so the initial value is the intent.
   // svelte-ignore state_referenced_locally
   let destBookmarkId = $state(browser.connectedBookmarkId ?? "");
+  // §40 performance profile, seeded from the application default.
+  // svelte-ignore state_referenced_locally
+  let profile = $state(browser.appSettings?.defaultProfile ?? "auto");
   let destContainer = $state("");
   let destPrefix = $state("");
   let preview: CopyPlanDTO | null = $state(null);
@@ -38,6 +41,7 @@
       destBookmarkId,
       destContainer: destContainer.trim(),
       destPrefix: destPrefix.trim(),
+      profile,
       settings: {
         chunkSize: chunkSize.trim(),
         transfers: Number.parseInt(transfers, 10) || 0,
@@ -148,6 +152,15 @@
     <details class="advanced">
       <summary>Per-job settings</summary>
       <div class="advanced-fields num">
+        <label>
+          <span>Profile</span>
+          <select bind:value={profile} onchange={invalidate}>
+            <option value="auto">Auto</option>
+            <option value="balanced">Balanced</option>
+            <option value="aggressive">Aggressive</option>
+            <option value="custom">Custom</option>
+          </select>
+        </label>
         <label>
           <span>Chunk size</span>
           <input class="type-mono" placeholder="5Gi (default)" bind:value={chunkSize} onchange={invalidate} />
@@ -379,6 +392,16 @@
     gap: 2px;
     font-size: var(--text-xs);
     color: var(--color-text-faint);
+  }
+
+  .advanced-fields select {
+    font: inherit;
+    font-size: var(--text-sm);
+    background: var(--color-bg-card);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+    padding: 2px var(--space-2);
   }
 
   .advanced-fields input {

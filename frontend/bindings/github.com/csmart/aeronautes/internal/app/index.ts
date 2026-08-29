@@ -10,6 +10,7 @@ import * as FindService from "./findservice.js";
 import * as InspectorService from "./inspectorservice.js";
 import * as JobService from "./jobservice.js";
 import * as MutateService from "./mutateservice.js";
+import * as SettingsService from "./settingsservice.js";
 import * as TransferService from "./transferservice.js";
 export {
     AppService,
@@ -21,15 +22,13 @@ export {
     InspectorService,
     JobService,
     MutateService,
+    SettingsService,
     TransferService
 };
 
 export {
-    DeleteMode
-} from "./models.js";
-
-export type {
     AccountDTO,
+    AppSettingsDTO,
     AuditEventDTO,
     BookmarkDTO,
     CapabilitiesDTO,
@@ -41,6 +40,7 @@ export type {
     CopyPlanDTO,
     CopyRequestDTO,
     DLOSegmentsDTO,
+    DeleteMode,
     DeletePreviewDTO,
     DeleteRequestDTO,
     DownloadRequestDTO,

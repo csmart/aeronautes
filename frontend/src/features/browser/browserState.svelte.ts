@@ -5,6 +5,7 @@
 
 import type {
   AccountDTO,
+  AppSettingsDTO,
   CopyPlanDTO,
   CopyRequestDTO,
   DeletePreviewDTO,
@@ -80,6 +81,12 @@ export class BrowserState {
   localTransfer: "upload" | "download" | null = $state(null);
   // Destructive-jobs dialog (§31–§33).
   deleteOpen = $state(false);
+  // Application settings (§38/§40).
+  appSettings: AppSettingsDTO | null = $state(null);
+  // Per-job throughput (bytes/s) computed from successive poll deltas.
+  jobRates: Record<string, number> = $state({});
+  #lastPoll: Record<string, { bytes: number; at: number }> = {};
+
   // Find in container (§16): explicit scan, never per-keystroke.
   findOpen = $state(false);
   findStatus: FindStatusDTO | null = $state(null);
@@ -352,11 +359,31 @@ export class BrowserState {
 
   async loadJobs() {
     try {
-      this.jobs = await this.#api.jobs(this.jobsFilter, false, 50);
+      const jobs = await this.#api.jobs(this.jobsFilter, false, 50);
+      const now = Date.now();
+      const rates: Record<string, number> = {};
+      for (const job of jobs) {
+        const moved = job.counters.bytesCopied;
+        const last = this.#lastPoll[job.id];
+        if (last && now > last.at && moved >= last.bytes) {
+          rates[job.id] = ((moved - last.bytes) * 1000) / (now - last.at);
+        }
+        this.#lastPoll[job.id] = { bytes: moved, at: now };
+      }
+      this.jobs = jobs;
+      this.jobRates = rates;
       this.jobsError = null;
     } catch (error) {
       this.jobsError = messageOf(error);
     }
+  }
+
+  async loadAppSettings() {
+    this.appSettings = await this.#api.appSettings().catch(() => this.appSettings);
+  }
+
+  async saveAppSettings(settings: AppSettingsDTO) {
+    this.appSettings = await this.#api.saveAppSettings(settings);
   }
 
   /** Active (non-terminal) jobs — the drawer badge. */

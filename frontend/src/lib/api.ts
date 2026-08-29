@@ -10,6 +10,7 @@ import {
   BrowseService,
   DeleteService,
   FindService,
+  SettingsService,
   InspectorService,
   JobService,
   MutateService,
@@ -67,6 +68,7 @@ export type {
   DeletePreviewDTO,
   DeleteRequestDTO,
   DownloadRequestDTO,
+  AppSettingsDTO,
   FindStatusDTO,
   MirrorRequestDTO,
   SegmentOwnershipDTO,
@@ -75,6 +77,7 @@ export type {
   UploadRequestDTO,
 } from "../../bindings/github.com/csmart/aeronautes/internal/app";
 import type {
+  AppSettingsDTO,
   DeletePreviewDTO,
   DeleteRequestDTO,
   DownloadRequestDTO,
@@ -144,6 +147,8 @@ export interface Api {
   startDownload(req: DownloadRequestDTO): Promise<string>;
   previewDelete(req: DeleteRequestDTO): Promise<DeletePreviewDTO>;
   startDelete(req: DeleteRequestDTO): Promise<string>;
+  appSettings(): Promise<AppSettingsDTO>;
+  saveAppSettings(settings: AppSettingsDTO): Promise<AppSettingsDTO>;
   startFind(container: string, prefix: string, query: string): Promise<string>;
   findStatus(id: string): Promise<FindStatusDTO>;
   cancelFind(id: string): Promise<void>;
@@ -211,6 +216,16 @@ export const liveApi: Api = {
     return preview;
   },
   startDelete: (req) => DeleteService.StartDelete(req),
+  appSettings: async () => {
+    const settings = await SettingsService.Get();
+    if (!settings) throw new Error("empty settings");
+    return settings;
+  },
+  saveAppSettings: async (settings) => {
+    const saved = await SettingsService.Set(settings);
+    if (!saved) throw new Error("empty settings");
+    return saved;
+  },
   startFind: (container, prefix, query) => FindService.StartFind(container, prefix, query),
   findStatus: async (id) => {
     const status = await FindService.FindStatus(id);

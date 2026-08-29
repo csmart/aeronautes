@@ -67,3 +67,17 @@ func (s TransferSettingsDTO) effectiveJSON() string {
 	}
 	return string(encoded)
 }
+
+// effectiveJSONWithProfile prepends the resolved §40 profile to the
+// record.
+func effectiveJSONWithProfile(profile Profile, s TransferSettingsDTO) string {
+	encoded := s.effectiveJSON()
+	if encoded == "" {
+		return ""
+	}
+	name := profile
+	if name == "" {
+		name = ProfileBalanced
+	}
+	return `{"profile":` + fmt.Sprintf("%q", string(name)) + `,` + encoded[1:]
+}

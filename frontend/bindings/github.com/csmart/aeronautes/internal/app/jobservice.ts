@@ -8,7 +8,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
+import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -18,13 +18,22 @@ import * as $models from "./models.js";
  * Get returns one job.
  */
 export function Get(jobID: string): $CancellablePromise<$models.JobDTO | null> {
-    return $Call.ByID(3943386922, jobID);
+    return $Call.ByID(3943386922, jobID).then(($result: any) => {
+        return $$createType1($result);
+    });
 }
 
 /**
  * List returns jobs newest first; bookmarkID "" means all, matching
  * either end otherwise (§47 owner input: filter by account).
  */
-export function List(bookmarkID: string, activeOnly: boolean, limit: number): $CancellablePromise<$models.JobDTO[] | null> {
-    return $Call.ByID(3601380106, bookmarkID, activeOnly, limit);
+export function List(bookmarkID: string, activeOnly: boolean, limit: number): $CancellablePromise<$models.JobDTO[]> {
+    return $Call.ByID(3601380106, bookmarkID, activeOnly, limit).then(($result: any) => {
+        return $$createType2($result);
+    });
 }
+
+// Private type creation functions
+const $$createType0 = $models.JobDTO.createFrom;
+const $$createType1 = $Create.Nullable($$createType0);
+const $$createType2 = $Create.Array($$createType0);

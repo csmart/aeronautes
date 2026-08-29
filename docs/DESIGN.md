@@ -3531,10 +3531,12 @@ plan-to-delete race) gate the phase.
    matches, scanned count and throughput, never per-keystroke; results panel wired to the
    existing button.
 6. **Performance profiles, budgets, throughput** — §40 Auto/Balanced/Aggressive/Custom
-   resolving into the typed §44.1 settings (per-job overrides win, §38 layering); minimal
-   application/bookmark budget settings surface; throughput and ETA in the drawer from counter
-   deltas; the §45 effective-configuration view on a job (settings, engines, verification
-   policy).
+   resolving into the typed §44.1 settings (per-job overrides win, §38 layering; Auto consumes
+   the §42 recommendation when one is recorded); the application budget surface (persisted
+   active-job ceiling + default profile — bookmark-level budgets are deferred to the full §44
+   settings screen, stated here rather than silently missing); throughput and ETA in the
+   drawer from counter deltas; the §45 effective-configuration view on a job (settings,
+   engines, verification policy).
 7. **Benchmark page** — §42: consent-gated benchmark job against a clearly-named temporary
    Aeronautes-owned container (dedicated bookmark or typed cluster-name confirmation), fixed
    spread of listing/HEAD/DELETE/bulk-delete/upload throughput at a few concurrency levels,

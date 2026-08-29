@@ -294,6 +294,7 @@ describe("jobs drawer state", () => {
       destBookmarkId: "bm-2",
       destContainer: "backup",
       destPrefix: "",
+      profile: "balanced",
       settings: { chunkSize: "", transfers: 0, checkers: 0, tpsLimit: 0, bwLimit: "" },
     });
     expect(s.jobs.length).toBe(1);
@@ -323,6 +324,7 @@ describe("jobs drawer state", () => {
       destBookmarkId: "bm-2",
       destContainer: "versioned",
       destPrefix: "",
+      profile: "balanced",
       settings: { chunkSize: "", transfers: 0, checkers: 0, tpsLimit: 0, bwLimit: "" },
     });
     expect(plan.summary.new).toBe(3);
