@@ -408,7 +408,10 @@ Recommended monorepo:
 ├── README.md
 ├── LICENSE
 ├── go.mod
-├── wails.json
+├── main.go                     # the only file touching the webview/CGO layer
+├── Taskfile.yml                # wails3 build orchestration (v3 has no wails.json)
+│
+├── build/                      # build *inputs*: config.yml, icons, per-OS packaging
 │
 ├── frontend/
 │   ├── src/
@@ -2758,7 +2761,7 @@ Deliver:
 - domain types;
 - ADRs;
 - test fixture framework;
-- a **Wails v3** rendering/packaging spike of the design system on the named Tier-1 Linux baseline (§6.6), with v2 identified as the fallback;
+- a **Wails v3** rendering/packaging spike of the design system on the named Tier-1 Linux baseline (§6.6), with v2 identified as the fallback (`scripts/webview-spike.sh` builds the production binary and verifies the §55 runtime properties; the design-system rendering half completes with the tokens/static-UI commits);
 - a disposable **rclone-seam spike** (see below).
 
 Gate:

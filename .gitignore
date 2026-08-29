@@ -1,13 +1,14 @@
-# Build output
-/build/
+# Build output (build/ itself holds build *inputs* — Wails v3 assets/tasks)
 /bin/
 /dist/
 *.exe
 *.app
+.task/
+/build/linux/appimage/build/
+/build/linux/aeronautes.desktop
 
 # Wails
 /frontend/dist/
-/frontend/wailsjs/
 
 # Go
 *.test

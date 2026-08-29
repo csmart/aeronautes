@@ -5,8 +5,7 @@
 #
 # This is NOT the release pipeline. The full six-target build/sign matrix
 # ({Linux,Windows,macOS} x {x86_64,aarch64}, per-OS runners + system webview deps)
-# is added in Phase 0/7 — see docs/DESIGN.md §61.0. When the Wails GUI package needs
-# system libraries (GTK / WebKitGTK), add an apt-get step here per the Wails v3 docs.
+# is added in Phase 0/7 — see docs/DESIGN.md §61.0.
 # A containerized-Swift (SAIO) integration job is added when Phase 1 starts (§57.3).
 
 name: CI
@@ -36,6 +35,26 @@ jobs:
           else
             echo "No go.mod yet — skipping Go checks."
           fi
+      # The Wails shell binds the system webview via CGO (§6.6, ADR 0010).
+      - name: Install webview system dependencies (GTK4/WebKitGTK 6.0)
+        if: steps.detect.outputs.present == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libwebkitgtk-6.0-dev
+      # go:embed all:frontend/dist needs the built frontend before any Go
+      # compile step; the committed frontend/bindings are used as-is.
+      - uses: actions/setup-node@v4
+        if: steps.detect.outputs.present == 'true'
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build frontend for embedding
+        if: steps.detect.outputs.present == 'true'
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
       - name: gofmt (no diffs)
         if: steps.detect.outputs.present == 'true'
         run: |
@@ -78,6 +97,10 @@ jobs:
         if: steps.detect.outputs.present == 'true'
         working-directory: frontend
         run: npm run lint --if-present
+      - name: typecheck (svelte-check)
+        if: steps.detect.outputs.present == 'true'
+        working-directory: frontend
+        run: npm run check --if-present
       - name: build
         if: steps.detect.outputs.present == 'true'
         working-directory: frontend

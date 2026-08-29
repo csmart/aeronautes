@@ -35,7 +35,7 @@ vault for secrets.
 
 - [`docs/DESIGN.md`](docs/DESIGN.md) — authoritative product + engineering design (66 sections).
 - [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) — compact normative requirement IDs for phase gates.
-- [`docs/adr/`](docs/adr/) — architecture decision records (0001–0005 recorded; 0006–0010 proposed).
+- [`docs/adr/`](docs/adr/) — architecture decision records (0001–0011; 0006 and 0007 still proposed).
 - [`docs/assets/REGENERATION.md`](docs/assets/REGENERATION.md) — Swift-correct specs for regenerating the mockups.
 - `docs/assets/draft/*.png` — visual direction only. ⚠ The current AI-generated PNGs contain S3-flavoured
   terminology errors; `DESIGN.md` §4.5 and the regeneration specs are authoritative until they are redone.

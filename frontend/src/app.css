@@ -1,0 +1,28 @@
+/* Shell-only styling. The real §4 design system (tokens, typography,
+   motion, both warm themes) lands as its own commit — keep this file
+   minimal until then. */
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: #201b17;
+  color: #e9e1d8;
+  font:
+    15px/1.5 system-ui,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  height: 100%;
+  display: grid;
+  place-items: center;
+}
