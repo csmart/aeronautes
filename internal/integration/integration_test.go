@@ -3,6 +3,7 @@ package integration
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/csmart/aeronautes/internal/deletion"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
 	localtransfer "github.com/csmart/aeronautes/internal/transfer/local"
@@ -1147,5 +1149,117 @@ func TestLocalTransferRealSwift(t *testing.T) {
 	entries, _ := os.ReadDir(rejectDir)
 	if len(entries) != 0 {
 		t.Errorf("preflight wrote files: %v", entries)
+	}
+}
+
+// TestDeletionEngineRealSwift drives both §31.2 executors against the
+// real bulk middleware: a synthetic namespace with hostile names dies
+// completely, shared-segment manifests die manifest-only, and Empty
+// Container preserves every piece of container configuration (§33).
+func TestDeletionEngineRealSwift(t *testing.T) {
+	h := harness(t)
+	ctx := context.Background()
+	capabilities, err := h.Session.FetchCapabilities(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if capabilities.BulkDeleteMaxDeletes() == 0 {
+		t.Fatal("SAIO should advertise bulk_delete")
+	}
+
+	container := h.Container("del-scope")
+	if err := h.conn.ContainerCreate(ctx, container, swift.Headers{
+		"X-Container-Meta-Team": "ops",
+		"X-Container-Read":      ".r:*",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 120; i++ {
+		if err := h.put(ctx, container, fmt.Sprintf("doomed/obj-%04d", i), []byte("x"), "text/plain", nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"doomed/a b", "doomed/line\nbreak", "doomed/日本語", "doomed//lead", "doomed/trail/"} {
+		if err := h.put(ctx, container, name, []byte("hostile"), "text/plain", nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := h.put(ctx, container, "kept.txt", []byte("survivor"), "text/plain", nil); err != nil {
+		t.Fatal(err)
+	}
+	// Shared segments: the doomed manifest and a kept sibling reference
+	// the same prefix in the fixtures segment store.
+	segStore := h.Container("external-dlo-segments")
+	for _, name := range []string{"doomed/shared-video", "kept-video"} {
+		if err := h.put(ctx, container, name, nil, "video/mp4", swift.Headers{
+			"X-Object-Manifest": segStore + "/wedding-video/",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Bulk path.
+	result, err := deletion.DeletePrefix(ctx, h.Session, capabilities, container, "doomed/", deletion.Options{BulkSize: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Strategy != deletion.StrategyBulk || result.Remaining != 0 || len(result.Failures) != 0 {
+		t.Fatalf("bulk result = %+v (failures %+v)", result, result.Failures)
+	}
+	if result.Deleted != 126 {
+		t.Errorf("deleted = %d, want 126", result.Deleted)
+	}
+	// The sibling manifest still assembles: 3000 logical bytes.
+	d, err := h.Session.ObjectDetail(ctx, container, "kept-video")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.ContentLength != 3000 {
+		t.Fatalf("shared segments harmed: sibling = %d bytes", d.ContentLength)
+	}
+
+	// Parallel path empties what remains ("" prefix = Empty Container's
+	// engine); container config must be untouched (§33).
+	before, err := h.Session.ContainerDetail(ctx, container)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err = deletion.DeletePrefix(ctx, h.Session, capabilities, container, "", deletion.Options{ForceParallel: true, Workers: 8})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Strategy != deletion.StrategyParallel || result.Remaining != 0 {
+		t.Fatalf("parallel result = %+v", result)
+	}
+	after, err := h.Session.ContainerDetail(ctx, container)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := deletion.SnapshotConfig(before).Diff(deletion.SnapshotConfig(after)); diff != "" {
+		t.Fatalf("Empty Container changed config: %s", diff)
+	}
+	if after.Meta["Team"] != "ops" || after.ReadACL != ".r:*" {
+		t.Fatalf("config survived wrong: %+v", after)
+	}
+
+	// Delete Container: now-empty container DELETEs natively.
+	if err := h.Session.DeleteContainer(ctx, container); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Session.ContainerDetail(ctx, container); !swiftcontrol.IsNotFound(err) {
+		t.Fatalf("container survived: %v", err)
+	}
+	// The shared segment store is fully intact.
+	segments := 0
+	for entry, err := range h.Session.Objects(ctx, segStore, swiftcontrol.ObjectListOptions{Deep: true, Prefix: "wedding-video/"}) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := entry.(swiftcontrol.ObjectEntry); ok {
+			segments++
+		}
+	}
+	if segments != 3 {
+		t.Fatalf("segment store = %d segments, want 3", segments)
 	}
 }

@@ -157,6 +157,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case ep == accountPath:
+		if r.Method == http.MethodPost && r.URL.Query().Has("bulk-delete") {
+			s.handleBulkDelete(w, r)
+			return
+		}
 		s.handleAccount(w, r)
 	case strings.HasPrefix(ep, accountPath+"/"):
 		rest := strings.TrimPrefix(ep, accountPath+"/")
@@ -471,6 +475,59 @@ func objectMetaFromHeaders(r *http.Request) map[string]string {
 		}
 	}
 	return meta
+}
+
+// handleBulkDelete implements the bulk middleware's account POST
+// ?bulk-delete: a text/plain body of URL-encoded /container/object
+// lines, JSON accounting back. Deletion is manifest-only — exactly the
+// named object rows go, segments are never followed.
+func (s *Server) handleBulkDelete(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	var deleted, notFound int64
+	errorsList := [][2]string{}
+	s.mu.Lock()
+	for _, line := range strings.Split(string(body), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		trimmed := strings.TrimPrefix(line, "/")
+		slash := strings.Index(trimmed, "/")
+		if slash <= 0 {
+			errorsList = append(errorsList, [2]string{line, "400 Bad Request"})
+			continue
+		}
+		container, _ := url.PathUnescape(trimmed[:slash])
+		name, unescapeErr := url.PathUnescape(trimmed[slash+1:])
+		if unescapeErr != nil {
+			errorsList = append(errorsList, [2]string{line, "400 Bad Request"})
+			continue
+		}
+		c, ok := s.containers[container]
+		if ok {
+			_, ok = c.objects[name]
+		}
+		if !ok {
+			notFound++
+			continue
+		}
+		delete(c.objects, name)
+		deleted++
+	}
+	s.mu.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"Number Deleted":   deleted,
+		"Number Not Found": notFound,
+		"Response Status":  "200 OK",
+		"Response Body":    "",
+		"Errors":           errorsList,
+	})
 }
 
 // deleteObject implements object DELETE.
