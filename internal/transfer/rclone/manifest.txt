@@ -1,0 +1,13 @@
+# Pinned rclone v1.74.3 sidecar manifest (§61.1): sha256 of the rclone
+# BINARY inside each official release zip, one per OS×arch target.
+# Provenance: downloads.rclone.org/v1.74.3/, zips verified against the
+# release's published SHA256SUMS, inner binaries hashed 2026-08-30.
+# Both the runtime integrity check (this package embeds it) and the CI
+# bundling script (scripts/fetch-rclone.sh) read THIS file — one source
+# of truth. A pin upgrade regenerates every line together.
+linux-amd64 9700aa1273ac73d6d0833c43ba63fe830516422cb131960b8c1a24ced789cba0
+linux-arm64 646d2db7e701a4d41d39ed38a71f63373ab051b270ee5f0d6ae14b24cc17c923
+darwin-amd64 830416be0a57ccab22970ea58afe92f491547989c24bc587afc5ed7322a73b72
+darwin-arm64 9a156afbdd0a6ade42b0b40e7c30240119e2c82914bc8d7059a94dd9242ca2ed
+windows-amd64 3ac0dba3a883555f0c0daabc8a87c8f78e531f339780335e07beadf77734b5bc
+windows-arm64 2f33f5256966448b929e925c6b19be9e3746e3e55d42e643ac957ee10f98472b

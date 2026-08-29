@@ -17,6 +17,20 @@ The workflow marks exactly where `rpm --addsign`/`debsigs`,
 `codesign` + `notarytool`, and `signtool` slot in once release keys
 exist.
 
+## The transfer engine in bundles (§61.1)
+
+macOS and Windows artifacts carry the official pinned rclone beside the
+app executable: CI fetches it per target with
+`scripts/fetch-rclone.sh`, which verifies the release zip against
+rclone's published SHA256SUMS **and** the extracted binary against
+`internal/transfer/rclone/manifest.txt` — the same manifest the app
+embeds and re-checks at runtime before the first spawn. A bundle whose
+sidecar fails verification refuses to spawn it (no silent fallback).
+Linux packages instead **depend on the distribution's rclone** — the
+version pin tracks Fedora's build — and PATH binaries are verified by
+version pin, not hash. A pin upgrade regenerates every manifest line
+together and re-runs the §14.3 suite (docs/rclone.md).
+
 ## Local builds (Fedora)
 
 ```

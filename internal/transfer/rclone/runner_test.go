@@ -233,3 +233,53 @@ sleep 30 & wait $!`, marker)
 		t.Errorf("cancel took %v", elapsed)
 	}
 }
+
+// withExecutableDir points sidecar resolution at a test directory.
+func withExecutableDir(t *testing.T, dir string) {
+	t.Helper()
+	previous := executableDir
+	executableDir = func() (string, error) { return dir, nil }
+	t.Cleanup(func() { executableDir = previous })
+}
+
+func TestSidecarIntegrity(t *testing.T) {
+	// A tampered sidecar refuses loudly and never falls back to PATH.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "rclone"), []byte("#!/bin/sh\necho tampered\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	withExecutableDir(t, dir)
+	_, err := NewRunner(Options{})
+	if err == nil || !strings.Contains(err.Error(), "integrity") {
+		t.Fatalf("tampered sidecar accepted: %v", err)
+	}
+
+	// No sidecar: resolution falls through (to PATH or an explicit
+	// binary; here the stub proves the explicit path still works).
+	withExecutableDir(t, t.TempDir())
+	if _, err := NewRunner(Options{Binary: stub(t, "v1.74.3", "exit 0")}); err != nil {
+		t.Fatalf("no-sidecar fallback: %v", err)
+	}
+}
+
+// TestSidecarOfficialBinary runs only when the verified official build
+// is present (fetched by scripts/fetch-rclone.sh in CI or locally):
+// the sidecar must be selected over PATH and pass both checksum and
+// version pin.
+func TestSidecarOfficialBinary(t *testing.T) {
+	official := os.Getenv("AERONAUTES_OFFICIAL_RCLONE_DIR")
+	if official == "" {
+		t.Skip("AERONAUTES_OFFICIAL_RCLONE_DIR not set")
+	}
+	withExecutableDir(t, official)
+	runner, err := NewRunner(Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runner.Version() != PinnedVersion {
+		t.Fatalf("sidecar version = %s", runner.Version())
+	}
+	if !strings.HasPrefix(runner.binary, official) {
+		t.Fatalf("sidecar not selected: %s", runner.binary)
+	}
+}

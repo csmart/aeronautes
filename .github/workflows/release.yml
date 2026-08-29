@@ -88,6 +88,10 @@ jobs:
         with:
           node-version: "22"
       - run: make tools
+      # §61.1: bundle the checksummed official pinned rclone beside the
+      # app binary; the runtime re-verifies it before first spawn.
+      - name: bundle pinned rclone
+        run: ./scripts/fetch-rclone.sh darwin ${{ matrix.arch }} bin
       # go install puts wails3 in ~/go/bin, which the runner image has
       # on PATH already.
       - run: wails3 task package
@@ -95,6 +99,8 @@ jobs:
         run: |
           mkdir -p dist
           if [ -d bin/Aeronautes.app ]; then
+            # The sidecar sits beside the app executable inside the bundle.
+            cp bin/rclone bin/Aeronautes.app/Contents/MacOS/rclone
             ditto -c -k --keepParent bin/Aeronautes.app "dist/aeronautes-macos-${{ matrix.arch }}-UNSIGNED.zip"
           else
             ditto -c -k bin "dist/aeronautes-macos-${{ matrix.arch }}-UNSIGNED.zip"
@@ -127,6 +133,10 @@ jobs:
           node-version: "22"
       - run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.15
       - run: wails3 task build
+      # §61.1: the checksummed official pinned rclone rides the bundle.
+      - name: bundle pinned rclone
+        shell: bash
+        run: ./scripts/fetch-rclone.sh windows ${{ matrix.arch }} bin
       - name: bundle (unsigned)
         shell: pwsh
         run: |

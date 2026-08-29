@@ -75,9 +75,22 @@ type Runner struct {
 
 var versionPattern = regexp.MustCompile(`rclone (v[0-9][^\s]*)`)
 
-// NewRunner resolves and pin-checks the binary.
+// NewRunner resolves and pin-checks the binary. Resolution order
+// (§61.1): an explicit Options.Binary; else a bundled sidecar next to
+// the executable, integrity-verified against the embedded manifest (a
+// failing sidecar is an error, never a silent fallback); else PATH
+// under the version pin.
 func NewRunner(opts Options) (*Runner, error) {
 	binary := opts.Binary
+	if binary == "" {
+		if dir, err := executableDir(); err == nil {
+			sidecar, err := resolveSidecar(dir)
+			if err != nil {
+				return nil, err
+			}
+			binary = sidecar
+		}
+	}
 	if binary == "" {
 		found, err := exec.LookPath("rclone")
 		if err != nil {

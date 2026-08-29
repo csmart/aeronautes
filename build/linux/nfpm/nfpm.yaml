@@ -20,11 +20,15 @@ contents:
   - src: "./build/linux/aeronautes.desktop"
     dst: "/usr/share/applications/aeronautes.desktop"
 
-# Runtime dependencies for the GTK4 + WebKitGTK 6.0 stack (ADR 0010):
+# Runtime dependencies for the GTK4 + WebKitGTK 6.0 stack (ADR 0010),
+# plus the transfer engine: Linux packages depend on the DISTRO rclone
+# (§61.1 — the version pin tracks Fedora's build; macOS/Windows bundles
+# carry the checksummed official binary instead).
 # Debian-family names first, distro overrides below.
 depends:
   - libgtk-4-1
   - libwebkitgtk-6.0-4
+  - rclone
 
 overrides:
   # Fedora is the first-class Tier-1 target (K-PLAT-002).
@@ -32,6 +36,7 @@ overrides:
     depends:
       - gtk4
       - webkitgtk6.0
+      - rclone
 
 scripts:
   postinstall: "./build/linux/nfpm/scripts/postinstall.sh"
