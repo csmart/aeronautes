@@ -420,6 +420,45 @@ export function newFakeApi(): Api {
       record("marker.delete", `${container}/${prefix}`, "applied");
     },
 
+    dloSegments: async (manifest) => {
+      const slash = manifest.indexOf("/");
+      const container = manifest.slice(0, slash);
+      const prefix = manifest.slice(slash + 1);
+      const limit = 50;
+      const all = (objects[container] ?? [])
+        .filter((o) => o.name.startsWith(prefix))
+        .sort((a, b) => (a.name < b.name ? -1 : 1));
+      const segments = all.slice(0, limit).map(
+        (o): ListingRowDTO => ({
+          kind: "object",
+          name: o.name,
+          bytes: o.bytes,
+          etag: o.etag,
+          lastModified: o.lastModified,
+          contentType: o.contentType,
+          sloListed: false,
+        }),
+      );
+      return {
+        container,
+        prefix,
+        segments,
+        hasMore: all.length > limit,
+        previewBytes: segments.reduce((sum, s) => sum + s.bytes, 0),
+      };
+    },
+
+    deleteManifest: async (container, name) => {
+      const detail = objectDetailOf(container, name);
+      if (detail.class === "plain") {
+        record("manifest.delete", `${container}/${name}`, "failed");
+        throw new Error("plain object; the manifest-only delete refuses it");
+      }
+      objects[container] = (objects[container] ?? []).filter((o) => o.name !== name);
+      record("manifest.delete", `${container}/${name}`, "applied");
+      return detail;
+    },
+
     auditRecent: async (limit) => [...audit].reverse().slice(0, limit),
   };
 }

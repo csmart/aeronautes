@@ -20,6 +20,7 @@ import type {
   ContainerDetailDTO,
   ContainerEditDTO,
   ContainerRowDTO,
+  DLOSegmentsDTO,
   Info,
   ListingRowDTO,
   MutationResultDTO,
@@ -38,6 +39,7 @@ export type {
   ContainerDetailDTO,
   ContainerEditDTO,
   ContainerRowDTO,
+  DLOSegmentsDTO,
   Info,
   ListingRowDTO,
   MutationResultDTO,
@@ -74,6 +76,8 @@ export interface Api {
   prefixDetail(container: string, prefix: string): Promise<PrefixDetailDTO>;
   containerDetail(name: string): Promise<ContainerDetailDTO>;
   sloManifest(container: string, name: string): Promise<SLOManifestDTO>;
+  dloSegments(manifest: string): Promise<DLOSegmentsDTO>;
+  deleteManifest(container: string, name: string): Promise<ObjectDetailDTO>;
   capabilities(): Promise<CapabilitiesDTO>;
   updateObjectMetadata(
     container: string,
@@ -111,6 +115,8 @@ export const liveApi: Api = {
   prefixDetail: (container, prefix) => InspectorService.Prefix(container, prefix),
   containerDetail: (name) => InspectorService.Container(name),
   sloManifest: (container, name) => InspectorService.SLOManifest(container, name),
+  dloSegments: (manifest) => InspectorService.DLOSegments(manifest),
+  deleteManifest: (container, name) => MutateService.DeleteManifest(container, name),
   capabilities: () => BrowseService.Capabilities(),
   updateObjectMetadata: (container, name, baseFingerprint, edit) =>
     MutateService.UpdateObjectMetadata(container, name, baseFingerprint, edit),

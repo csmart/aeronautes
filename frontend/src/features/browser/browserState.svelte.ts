@@ -13,6 +13,7 @@ import type {
   ContainerDetailDTO,
   ContainerEditDTO,
   ContainerRowDTO,
+  DLOSegmentsDTO,
   ListingRowDTO,
   MutationResultDTO,
   ObjectDetailDTO,
@@ -67,6 +68,9 @@ export class BrowserState {
   containerName: string | null = $state(null);
   /** The open container's §53 HEAD detail; null while loading/closed. */
   containerDetail: ContainerDetailDTO | null = $state(null);
+  /** Set while viewing a manifest's segment location (§23.1 backstage
+   * jump): the label of where we came from; null in normal browsing. */
+  backstageFrom: string | null = $state(null);
   prefix = $state("");
   filter = $state("");
   entries: ListingRowDTO[] = $state([]);
@@ -81,6 +85,7 @@ export class BrowserState {
   objectDetail: ObjectDetailDTO | null = $state(null);
   prefixDetail: PrefixDetailDTO | null = $state(null);
   sloManifest: SLOManifestDTO | null = $state(null);
+  dloSegments: DLOSegmentsDTO | null = $state(null);
   detailLoading = $state(false);
   detailError: string | null = $state(null);
   #detailSeq = 0;
@@ -170,6 +175,7 @@ export class BrowserState {
   async openContainer(name: string) {
     this.containerName = name;
     this.containerDetail = null;
+    this.backstageFrom = null;
     // §14.2: opening IS selecting the container — one HEAD for the
     // inspector; failure falls back to the listing row's fields.
     this.#api
@@ -265,6 +271,7 @@ export class BrowserState {
     this.objectDetail = null;
     this.prefixDetail = null;
     this.sloManifest = null;
+    this.dloSegments = null;
     this.detailError = null;
     const container = this.containerName;
     if (!entry || !container) {
@@ -284,6 +291,12 @@ export class BrowserState {
               const manifest = await this.#api.sloManifest(container, entry.name);
               if (seq === this.#detailSeq) {
                 this.sloManifest = manifest;
+              }
+            } else if (detail.class === "dlo" && detail.manifest !== "") {
+              // The bounded §23.1 preview.
+              const preview = await this.#api.dloSegments(detail.manifest);
+              if (seq === this.#detailSeq) {
+                this.dloSegments = preview;
               }
             }
           })
@@ -376,6 +389,30 @@ export class BrowserState {
     }
     this.prefixDetail = await this.#api.createMarker(container, prefix);
     await this.loadAudit();
+  }
+
+  /** Jump backstage to a manifest's segment location (§23.1): browse
+   * the segment container under its prefix, with a banner naming the
+   * manifest we came from. */
+  async openBackstage(container: string, prefix: string, fromLabel: string) {
+    await this.openContainer(container);
+    if (prefix !== "") {
+      await this.goTo(prefix);
+    }
+    this.backstageFrom = fromLabel;
+  }
+
+  /** Delete ONLY the selected manifest object (§60 Phase 4's low-risk
+   * delete): segments survive; the working list refreshes. */
+  async deleteManifest(): Promise<void> {
+    const entry = this.selectedEntry;
+    const container = this.containerName;
+    if (!entry || entry.kind !== "object" || !container) {
+      throw new Error("no object selected");
+    }
+    await this.#api.deleteManifest(container, entry.name);
+    await this.loadAudit();
+    await this.goTo(this.prefix);
   }
 
   /** Delete ONLY a verified marker; the working list refreshes. */

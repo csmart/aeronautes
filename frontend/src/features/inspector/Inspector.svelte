@@ -3,6 +3,7 @@
   import type { BrowserState } from "../browser/browserState.svelte";
   import ObjectEditPanel from "./ObjectEditPanel.svelte";
   import ContainerEditPanel from "./ContainerEditPanel.svelte";
+  import ManifestDeleteDialog from "./ManifestDeleteDialog.svelte";
 
   let { browser }: { browser: BrowserState } = $props();
 
@@ -13,6 +14,7 @@
 
   let editingObject = $state(false);
   let editingContainer = $state(false);
+  let deleteManifestOpen = $state(false);
   let markerBusy = $state(false);
   let markerError: string | null = $state(null);
 
@@ -22,8 +24,34 @@
     void browser.containerName;
     editingObject = false;
     editingContainer = false;
+    deleteManifestOpen = false;
     markerError = null;
   });
+
+  // Where a manifest's segments live, for the backstage jump and the
+  // delete dialog's honesty line.
+  const segmentsAt = $derived.by(() => {
+    if (detail?.class === "dlo" && detail.manifest !== "") {
+      return detail.manifest;
+    }
+    const first = browser.sloManifest?.entries?.find((e) => e.kind === "object");
+    if (first) {
+      const dir = first.object?.includes("/")
+        ? first.object.slice(0, first.object.lastIndexOf("/") + 1)
+        : "";
+      return `${first.container}/${dir}`;
+    }
+    return "";
+  });
+
+  function openBackstage() {
+    const at = segmentsAt;
+    if (at === "" || !detail) {
+      return;
+    }
+    const slash = at.indexOf("/");
+    browser.openBackstage(at.slice(0, slash), at.slice(slash + 1), detail.name);
+  }
 
   async function markerAction(action: () => Promise<void>) {
     markerBusy = true;
@@ -99,15 +127,54 @@
       <ObjectEditPanel {browser} {detail} onDone={() => (editingObject = false)} />
     {/if}
 
+    {#if deleteManifestOpen && detail}
+      <ManifestDeleteDialog
+        {browser}
+        {detail}
+        {segmentsAt}
+        onClose={() => (deleteManifestOpen = false)}
+      />
+    {/if}
+
     {#if detail && detail.class === "dlo"}
       <section class="card">
-        <h3 class="card-title">Large object</h3>
+        <h3 class="card-title">Large object · dynamic</h3>
         {@render kv("Manifest", detail.manifest, true)}
         <p class="teach">
-          Dynamic manifest: segments live under this prefix, and a read
-          assembles whatever is there at that moment. The segment listing
-          view arrives in Phase 4.
+          A read assembles every object under this prefix, in name order, as
+          it exists at that moment.
         </p>
+        {#if browser.dloSegments}
+          {@const preview = browser.dloSegments}
+          <table class="segments num">
+            <thead>
+              <tr><th>#</th><th>Segment</th><th class="right">Size</th></tr>
+            </thead>
+            <tbody>
+              {#each preview.segments ?? [] as segment, i (segment.name)}
+                <tr>
+                  <td>{i + 1}</td>
+                  <td class="type-mono seg-name">{segment.name}</td>
+                  <td class="right">{formatBytes(segment.bytes)}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+          <p class="teach num">
+            {#if preview.hasMore}
+              first {preview.segments?.length} segments ({formatBytes(preview.previewBytes)} shown);
+              more exist — logical size {formatBytes(detail.contentLength)}
+            {:else}
+              {preview.segments?.length} segments · {formatBytes(preview.previewBytes)}
+            {/if}
+          </p>
+        {/if}
+        <div class="lo-actions">
+          <button class="edit-btn inline" onclick={openBackstage}>Open segments backstage</button>
+          <button class="edit-btn inline danger" onclick={() => (deleteManifestOpen = true)}>
+            Delete manifest…
+          </button>
+        </div>
       </section>
     {:else if detail && detail.class === "slo"}
       <section class="card">
@@ -139,9 +206,25 @@
               {/each}
             </tbody>
           </table>
+          {@const declared = (browser.sloManifest.entries ?? []).reduce(
+            (sum, e) => sum + (e.kind === "object" ? e.size : e.dataSize),
+            0,
+          )}
+          <p class="teach num">
+            {browser.sloManifest.entries?.length} entries · declared
+            {formatBytes(declared)} · HEAD reports {formatBytes(detail.contentLength)}
+          </p>
         {:else}
           <p class="teach">fetching exact manifest…</p>
         {/if}
+        <div class="lo-actions">
+          {#if segmentsAt !== ""}
+            <button class="edit-btn inline" onclick={openBackstage}>Open segments backstage</button>
+          {/if}
+          <button class="edit-btn inline danger" onclick={() => (deleteManifestOpen = true)}>
+            Delete manifest…
+          </button>
+        </div>
       </section>
     {/if}
 
@@ -463,6 +546,13 @@
   .edit-btn:disabled {
     opacity: 0.6;
     cursor: default;
+  }
+
+  .lo-actions {
+    margin-top: var(--space-2);
+    display: flex;
+    gap: var(--space-2);
+    flex-wrap: wrap;
   }
 
   .segments {

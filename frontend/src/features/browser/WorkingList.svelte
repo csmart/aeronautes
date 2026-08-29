@@ -31,6 +31,13 @@
 
 <section class="pane">
   <header class="pane-head">
+    {#if browser.backstageFrom}
+      <div class="backstage-banner">
+        <strong>Backstage:</strong> segments of
+        <span class="type-mono">{browser.backstageFrom}</span> — objects here may be parts of
+        larger logical objects; classification never authorizes deleting them.
+      </div>
+    {/if}
     <nav class="breadcrumb num" aria-label="Path">
       <button class="crumb" onclick={() => browser.up()} title="Up" aria-label="Up one level">↑</button>
       <button class="crumb root" onclick={() => browser.goTo("")}>
@@ -182,6 +189,17 @@
 
   .pane-head {
     padding: var(--space-3) var(--space-3) 0;
+  }
+
+  .backstage-banner {
+    margin-bottom: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--color-warning);
+    background: var(--color-warning-soft);
+    border: 1px solid var(--color-warning);
+    border-radius: var(--radius-control);
+    overflow-wrap: anywhere;
   }
 
   .breadcrumb {

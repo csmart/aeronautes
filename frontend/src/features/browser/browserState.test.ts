@@ -231,3 +231,51 @@ describe("mutations (§65.2)", () => {
     expect(s.auditEvents[0]?.operation).toBe("marker.delete");
   });
 });
+
+describe("large-object read semantics (§65.3)", () => {
+  it("selecting a DLO fetches the bounded segment preview", async () => {
+    const s = await connected();
+    await s.openContainer("fixtures");
+    s.select(s.entries.findIndex((e) => e.name === "external-dlo"));
+    await vi.waitFor(() => expect(s.dloSegments).not.toBeNull());
+    expect(s.dloSegments?.container).toBe("external-dlo-segments");
+    expect(s.dloSegments?.segments).toHaveLength(3);
+    expect(s.dloSegments?.hasMore).toBe(false);
+  });
+
+  it("jumps backstage with a banner and returns clean", async () => {
+    const s = await connected();
+    await s.openBackstage("external-dlo-segments", "wedding-video/", "fixtures/external-dlo");
+    expect(s.containerName).toBe("external-dlo-segments");
+    expect(s.prefix).toBe("wedding-video/");
+    expect(s.backstageFrom).toBe("fixtures/external-dlo");
+    expect(s.entries).toHaveLength(3);
+
+    await s.openContainer("fixtures");
+    expect(s.backstageFrom).toBeNull();
+  });
+
+  it("deletes only the manifest and refreshes the list", async () => {
+    const s = await connected();
+    await s.openContainer("fixtures");
+    s.select(s.entries.findIndex((e) => e.name === "external-dlo"));
+    await vi.waitFor(() => expect(s.objectDetail).not.toBeNull());
+
+    await s.deleteManifest();
+    expect(s.entries.some((e) => e.name === "external-dlo")).toBe(false);
+    expect(s.auditEvents[0]?.operation).toBe("manifest.delete");
+
+    // Segments survive in the store.
+    await s.openBackstage("external-dlo-segments", "wedding-video/", "gone");
+    expect(s.entries).toHaveLength(3);
+  });
+
+  it("refuses to manifest-delete a plain object", async () => {
+    const s = await connected();
+    await s.openContainer("fixtures");
+    s.select(s.entries.findIndex((e) => e.name === "empty-object"));
+    await vi.waitFor(() => expect(s.objectDetail).not.toBeNull());
+    await expect(s.deleteManifest()).rejects.toThrow(/plain/);
+    expect(s.entries.some((e) => e.name === "empty-object")).toBe(true);
+  });
+});
