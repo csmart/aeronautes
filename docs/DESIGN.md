@@ -3605,6 +3605,39 @@ binary against the in-repo mock cluster, ending with a real engine copy proven l
 server-side. Signing remains skipped and labelled per the owner decision. The §57.4 smoke
 against real SwiftStack infrastructure remains the owner's manual step.
 
+### 65.7 Eighth milestone — post-release engineering
+
+The phases are done; this milestone is the follow-through the release exposed, in priority
+order: a CI regression fixed at its root, the unbuilt half of §61.1, and the owner-signaled
+multi-rclone verification (2026-08-29: "we prob need to test against multiple rclones though,
+including latest upstream at some point").
+
+1. **Headless app package restored + CI repair** — Phase 7's file dialogs made internal/app
+   import the Wails application package, breaking ADR 0011's stated "plain Go — no
+   webview/CGO imports" property and with it the CI saio job (it compiles the integration
+   tests, which import internal/app, without webview headers). Fix at the root: dialogs move
+   behind a small injected FilePicker seam that main.go implements with Wails; internal/…
+   compiles with CGO_ENABLED=0 again and a test pins that property. The release workflow's
+   broken macOS PATH expression is corrected in the same commit.
+2. **Bundled pinned rclone (§61.1)** — the runner grows integrity verification: an embedded
+   per-target manifest (sha256 of the pinned official build for each of the six OS×arch
+   targets), resolution order bundled-sidecar-next-to-the-executable first then PATH, and a
+   refusal to spawn a sidecar whose checksum does not match — verified at runtime before
+   first spawn, not just at build time. Packaging: macOS/Windows CI jobs download the
+   official pinned build for their target, verify against the manifest, and place it in the
+   bundle; Linux packages depend on the distribution's rclone instead (the pin tracks
+   Fedora's), stated in RELEASING.md. Flatpak remains gated as §61.1 says.
+3. **rclone compatibility matrix** — a harness (make rclone-matrix) that fetches an
+   enumerated set of official rclone builds (the pin plus latest stable), runs the §14.3
+   encoding suite and the runner contract against each on the SAIO, and writes a per-version
+   findings table into docs/rclone.md; the pin-upgrade rule becomes concrete: a version may
+   only join the runtime allowlist with a recorded matrix run.
+
+Gate: CI green including the saio job with no webview dependencies added to it; a bundle
+carrying a wrong or tampered rclone refuses to spawn it with a clear error; the matrix run
+records at least the pin and one newer upstream version with any behavioural differences
+written down.
+
 ---
 
 ## 66. Final project statement
