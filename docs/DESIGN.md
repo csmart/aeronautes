@@ -3555,6 +3555,47 @@ pre/post HEAD compare shows configuration untouched; and the benchmark job measu
 cluster and feeds its recommendation into Auto. Bookmark-level budgets remain deferred to the
 §44 settings screen as stated in item 6.
 
+### 65.6 Seventh milestone — Phase 7 (release hardening)
+
+Owner inputs (2026-08-29): test TLS against the SAIO with self-signed certificates; the
+signing/notarisation half of the pipeline is explicitly skipped for now and said so out loud —
+packaging must not misrepresent artifacts as signed.
+
+1. **Custom-CA trust + TLS proven against real HTTPS Swift** — the bookmark CA store the
+   Phase-2 editor stubbed: per-bookmark PEM bundles persisted (never per-process trust), wired
+   through Connect (§12.3), the browse/mutate surfaces, AND the transfer engine (the runner
+   already carries override.ca_cert; the service materialises the bookmark's bundle as a
+   job-scoped file). Insecure mode stays per-bookmark and loud. Integration: a TLS terminator
+   with a self-signed CA in front of the SAIO; connect, browse, and a cross-account copy
+   through HTTPS under custom-CA and insecure modes, plus the refusal when trust is absent.
+2. **Migration tests + crash recovery** — the migration suite (fresh create, stepwise upgrade
+   from every prior schema, re-open idempotency); startup job recovery: rows left non-terminal
+   by a crash are failed loudly at open ("interrupted by shutdown") so the drawer never shows
+   phantom running jobs; staged-litter note in the failure text points at reconciliation.
+3. **Audit viewer** — the §50 trail beyond the drawer's recent slice: filterable (operation
+   prefix, result, bookmark) and paginated reads on AuditService, and the drawer tab grows the
+   filter row and a load-more.
+4. **Keyboard navigation + accessibility + virtualisation audit** — §4.4 completion: roving
+   selection in the working list (arrows/Enter/Escape), dialog focus traps, aria labelling
+   pass, and confirmation that every unbounded list rides the virtual list.
+5. **CSP/webview hardening** — a strict CSP on the shell page (self-only, no remote origins —
+   the webview talks only to the Wails bridge), plus the §55 statement of what the webview can
+   reach.
+6. **Packaging pipeline (unsigned)** — the §61.0 six-target matrix as CI: native Linux builds
+   wired for real (rpm/tarball via the existing Makefile), macOS/Windows matrix jobs building
+   unsigned bundles, arch dimension per runner; signing/notarisation steps stubbed with an
+   explicit "unsigned pre-release" marker per owner decision, never a fake signature.
+7. **Licences/About + documentation** — an About surface (version, Wails, pinned rclone,
+   dependency licences) and the operator-facing docs refresh (README quickstart, TLS setup,
+   the §57.4 real-endpoint smoke checklist that remains the owner's to run).
+8. **Release smoke script** — the scripted end-to-end pass against the mock cluster (launch,
+   connect, browse, copy, mirror preview, destructive preview) as `scripts/smoke.sh`, runnable
+   headless; §57.4 against real SwiftStack stays a manual owner step, stated in the docs.
+
+Gate: TLS works against real Swift under both trust modes with per-bookmark scoping; a fresh
+clone builds unsigned artifacts for the six targets in CI configuration; migrations upgrade
+every historical schema; the smoke script passes headless.
+
 ---
 
 ## 66. Final project statement
