@@ -1117,7 +1117,8 @@ Large-object/versioning caveats should be shown when relevant.
 master**, whose `/info` advertises `versioned_writes` (both `x-versions-location` and
 `x-history-location` in `allowed_flags`) *and* the modern `object_versioning` middleware — no
 proxy-node inspection needed; `/info` is authoritative and is what capability discovery (§10)
-already fetches per bookmark. The v1 pin:
+already fetches per bookmark. The owner confirmed the same middlewares on the production
+cluster's `/info` (2026-08-29), so the pin matches the real deployment, not only the SAIO. The v1 pin:
 
 - **Behavioural model: container-based `versioned_writes`** (`X-Versions-Location` /
   `X-History-Location`), resolved per bookmark from `/info` `allowed_flags` as a typed profile.
