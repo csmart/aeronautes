@@ -15,7 +15,7 @@
 >
 > If implementation experience requires a change to a locked decision, update this document (and, for architectural decisions, add an ADR) before changing the code.
 >
-> The mockup images in `assets/` are **visual direction**, not protocol specifications. Where text or values shown in a generated mockup disagree with this document, **this document wins**. The current mockups were AI-generated and contain several S3-flavoured terminology errors; **§4.5 lists the normative corrections**. Do not copy labels, header names, field names, or default values from the images without checking them against this document.
+> The images in `assets/` began as draft mockups (visual direction, not protocol specifications) and are now real captures of the built application. Where any image disagrees with this document, **this document wins**; §4.5 records the normative corrections the drafts needed. Do not copy labels, header names, field names, or default values from images without checking them against this document.
 
 ---
 
@@ -235,10 +235,10 @@ Initial keyboard targets:
 
 ### 4.5 Mockup terminology corrections (normative)
 
-This section originally corrected AI-generated draft mockups whose pixels carried S3-flavoured
-errors. The drafts are retired — `assets/screenshots/` holds real captures of the built
-application against real Swift — but the corrections below remain normative as a record of the
-Swift-semantics rules the UI embodies (several were the seeds of shipped behaviour).
+This section originally corrected draft mockups whose pixels carried S3-flavoured errors. The
+drafts are retired — `assets/screenshots/` holds real captures of the built application against
+real Swift — but the corrections below remain normative as a record of the Swift-semantics
+rules the UI embodies (several were the seeds of shipped behaviour).
 
 | In the mockup | Correct for Aeronautes/Swift | Where |
 |---|---|---|

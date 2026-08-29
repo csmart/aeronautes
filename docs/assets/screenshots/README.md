@@ -2,8 +2,8 @@
 
 Real captures of the built application against real containerized Swift
 (the SAIO, two accounts), taken headless at 1280×800 with the E2E rig.
-These replace the retired AI-generated draft mockups — the pixels here
-are the product, not direction.
+These replace the retired draft mockups — the pixels here are the
+product, not direction.
 
 - `01-browser.png` — four-pane browser: bookmarks, containers with
   backstage classification, working list, object HEAD detail.
