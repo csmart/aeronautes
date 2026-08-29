@@ -87,6 +87,16 @@ type SLOManifestDTO struct {
 	Entries []SLOSegmentDTO `json:"entries"`
 }
 
+// DLOSegmentsDTO is the bounded §23.1 segment preview: the first rows a
+// DLO manifest would assemble, never all of them.
+type DLOSegmentsDTO struct {
+	Container    string          `json:"container"`
+	Prefix       string          `json:"prefix"`
+	Segments     []ListingRowDTO `json:"segments"`
+	HasMore      bool            `json:"hasMore"`
+	PreviewBytes int64           `json:"previewBytes"`
+}
+
 // ContainerPageDTO is one page of containers; an empty NextMarker means
 // the listing is exhausted.
 type ContainerPageDTO struct {

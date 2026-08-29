@@ -180,3 +180,35 @@ func toObjectDetailDTO(d *swiftcontrol.ObjectDetail) ObjectDetailDTO {
 	}
 	return dto
 }
+
+// DLOSegments returns the bounded §23.1 segment preview for a DLO
+// manifest value ("container/prefix").
+func (s *InspectorService) DLOSegments(ctx context.Context, manifest string) (DLOSegmentsDTO, error) {
+	session, err := s.connections.Session()
+	if err != nil {
+		return DLOSegmentsDTO{}, err
+	}
+	preview, err := session.DLOSegmentPreview(ctx, manifest, 50)
+	if err != nil {
+		return DLOSegmentsDTO{}, err
+	}
+	dto := DLOSegmentsDTO{
+		Container:    preview.Container,
+		Prefix:       preview.Prefix,
+		Segments:     make([]ListingRowDTO, 0, len(preview.Segments)),
+		HasMore:      preview.HasMore,
+		PreviewBytes: preview.PreviewBytes,
+	}
+	for _, segment := range preview.Segments {
+		dto.Segments = append(dto.Segments, ListingRowDTO{
+			Kind:         "object",
+			Name:         segment.Name,
+			Bytes:        segment.Bytes,
+			ETag:         segment.ETag,
+			LastModified: segment.LastModified.UTC().Format(time.RFC3339),
+			ContentType:  segment.ContentType,
+			SLOListed:    segment.SLOListed,
+		})
+	}
+	return dto, nil
+}

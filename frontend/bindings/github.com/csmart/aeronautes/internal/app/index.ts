@@ -26,6 +26,7 @@ export type {
     ContainerEditDTO,
     ContainerPageDTO,
     ContainerRowDTO,
+    DLOSegmentsDTO,
     Info,
     ListingRowDTO,
     MutationResultDTO,

@@ -242,3 +242,25 @@ func (s *AuditService) Recent(ctx context.Context, limit int) ([]AuditEventDTO, 
 	}
 	return out, nil
 }
+
+// DeleteManifest removes ONLY a DLO/SLO manifest object (§60 Phase 4's
+// low-risk delete): segments survive by construction, a plain object
+// refuses, and the outcome is audited either way.
+func (s *MutateService) DeleteManifest(ctx context.Context, container, name string) (ObjectDetailDTO, error) {
+	session, err := s.connections.Session()
+	if err != nil {
+		return ObjectDetailDTO{}, err
+	}
+	resource := container + "/" + name
+	before, err := session.DeleteManifestObject(ctx, container, name)
+	if err != nil {
+		s.record(ctx, "manifest.delete", resource, "manifest delete failed or refused", audit.ResultFailed, nil)
+		return ObjectDetailDTO{}, err
+	}
+	summary := fmt.Sprintf("deleted %s manifest; segments remain", before.Class)
+	if before.Manifest != "" {
+		summary = fmt.Sprintf("deleted %s manifest; segments remain at %s", before.Class, before.Manifest)
+	}
+	s.record(ctx, "manifest.delete", resource, summary, audit.ResultApplied, []string{before.TransID})
+	return toObjectDetailDTO(before), nil
+}

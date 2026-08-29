@@ -26,6 +26,14 @@ export function Container(name: string): $CancellablePromise<$models.ContainerDe
 }
 
 /**
+ * DLOSegments returns the bounded §23.1 segment preview for a DLO
+ * manifest value ("container/prefix").
+ */
+export function DLOSegments(manifest: string): $CancellablePromise<$models.DLOSegmentsDTO> {
+    return $Call.ByID(751654327, manifest);
+}
+
+/**
  * Object HEADs one object and returns its inspector detail; a DLO's
  * manifest reference becomes Confirmed evidence.
  */

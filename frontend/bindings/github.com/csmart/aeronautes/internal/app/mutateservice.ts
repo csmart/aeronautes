@@ -34,6 +34,15 @@ export function CreateMarker(container: string, prefix: string): $CancellablePro
 }
 
 /**
+ * DeleteManifest removes ONLY a DLO/SLO manifest object (§60 Phase 4's
+ * low-risk delete): segments survive by construction, a plain object
+ * refuses, and the outcome is audited either way.
+ */
+export function DeleteManifest(container: string, name: string): $CancellablePromise<$models.ObjectDetailDTO> {
+    return $Call.ByID(4014894181, container, name);
+}
+
+/**
  * DeleteMarker deletes ONLY a verified directory marker (§14.1) — the
  * one Phase 3 delete.
  */

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/csmart/aeronautes/internal/audit"
@@ -529,5 +530,63 @@ func TestMarkerServiceWithAudit(t *testing.T) {
 	}
 	if events[2].Operation != "marker.create" || events[2].Result != "applied" {
 		t.Errorf("create audit = %+v", events[2])
+	}
+}
+
+func TestDLOSegmentsService(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+
+	preview, err := h.inspector.DLOSegments(context.Background(), "external-dlo-segments/wedding-video/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(preview.Segments) != 3 || preview.HasMore {
+		t.Fatalf("preview = %d segments, hasMore=%v", len(preview.Segments), preview.HasMore)
+	}
+	if preview.Container != "external-dlo-segments" || preview.Segments[0].Kind != "object" {
+		t.Errorf("preview = %+v", preview)
+	}
+}
+
+func TestDeleteManifestService(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+	ctx := context.Background()
+
+	// A plain object refuses and audits as failed.
+	if _, err := h.mutate.DeleteManifest(ctx, "fixtures", "empty-object"); err == nil {
+		t.Fatal("plain object accepted")
+	}
+
+	deleted, err := h.mutate.DeleteManifest(ctx, "fixtures", "external-dlo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted.Class != "dlo" {
+		t.Errorf("deleted = %+v", deleted)
+	}
+
+	// Segments survive: the store still lists all three under the prefix.
+	inner, err := h.browse.Objects(ctx, "external-dlo-segments", "wedding-video/", "", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inner.Rows) != 3 {
+		t.Errorf("segments after manifest delete = %d, want 3", len(inner.Rows))
+	}
+
+	events, err := h.auditSvc.Recent(ctx, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if events[0].Operation != "manifest.delete" || events[0].Result != "applied" {
+		t.Errorf("audit[0] = %+v", events[0])
+	}
+	if events[1].Operation != "manifest.delete" || events[1].Result != "failed" {
+		t.Errorf("audit[1] = %+v", events[1])
+	}
+	if !strings.Contains(events[0].Summary, "segments remain at external-dlo-segments/wedding-video/") {
+		t.Errorf("summary = %q", events[0].Summary)
 	}
 }

@@ -151,6 +151,18 @@ export interface ContainerRowDTO {
 }
 
 /**
+ * DLOSegmentsDTO is the bounded §23.1 segment preview: the first rows a
+ * DLO manifest would assemble, never all of them.
+ */
+export interface DLOSegmentsDTO {
+    "container": string;
+    "prefix": string;
+    "segments": ListingRowDTO[] | null;
+    "hasMore": boolean;
+    "previewBytes": number;
+}
+
+/**
  * Info is the shell identity the frontend shows at startup; fetching it
  * over the bindings bridge is the hello-window proof that the typed
  * service transport works.
