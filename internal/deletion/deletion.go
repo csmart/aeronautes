@@ -315,3 +315,116 @@ func (c ContainerConfig) Diff(after ContainerConfig) string {
 	}
 	return strings.Join(diffs, "; ")
 }
+
+// DeleteNames removes an explicit, already-decided name list (the
+// Mirror delete half, §27.2): same native executors, manifest-only by
+// construction, no listing pass — the caller's plan IS the scope.
+// Verification is a bounded sample of HEADs expecting 404 (§32:
+// operation-specific, never a namespace rescan).
+func DeleteNames(ctx context.Context, session *swiftcontrol.Session, capabilities *swiftcontrol.Capabilities,
+	container string, names []string, opts Options) (*Result, error) {
+
+	workers := opts.Workers
+	if workers <= 0 {
+		workers = 8
+	}
+	if workers > 64 {
+		workers = 64
+	}
+	result := &Result{Strategy: StrategyParallel, VerifyPolicy: "sampled HEAD=404 (≤10 names)"}
+	bulkSize := 0
+	if !opts.ForceParallel && capabilities != nil {
+		if max := capabilities.BulkDeleteMaxDeletes(); max > 0 {
+			bulkSize = opts.BulkSize
+			if bulkSize <= 0 || bulkSize > 1000 {
+				bulkSize = 1000
+			}
+			if bulkSize > max {
+				bulkSize = max
+			}
+			result.Strategy = StrategyBulk
+		}
+	}
+	var mu sync.Mutex
+	progress := func() {
+		if opts.OnProgress != nil {
+			mu.Lock()
+			deleted, failed := result.Deleted, int64(len(result.Failures))
+			mu.Unlock()
+			opts.OnProgress(deleted, failed)
+		}
+	}
+
+	if bulkSize > 0 {
+		for start := 0; start < len(names); start += bulkSize {
+			if err := ctx.Err(); err != nil {
+				return result, err
+			}
+			end := min(start+bulkSize, len(names))
+			bulk, err := session.BulkDelete(ctx, container, names[start:end])
+			if err != nil {
+				return result, err
+			}
+			mu.Lock()
+			result.Deleted += bulk.Deleted
+			result.NotFound += bulk.NotFound
+			for _, item := range bulk.Errors {
+				result.fail(item[0], fmt.Errorf("%s", item[1]))
+			}
+			mu.Unlock()
+			progress()
+		}
+	} else {
+		queue := make(chan string, workers*2)
+		var wg sync.WaitGroup
+		for i := 0; i < workers; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for name := range queue {
+					err := session.DeleteObject(ctx, container, name)
+					mu.Lock()
+					switch {
+					case err == nil:
+						result.Deleted++
+					case swiftcontrol.IsNotFound(err):
+						result.NotFound++
+					default:
+						result.fail(name, err)
+					}
+					mu.Unlock()
+					progress()
+				}
+			}()
+		}
+		var queueErr error
+		for _, name := range names {
+			select {
+			case queue <- name:
+			case <-ctx.Done():
+				queueErr = ctx.Err()
+			}
+			if queueErr != nil {
+				break
+			}
+		}
+		close(queue)
+		wg.Wait()
+		if queueErr != nil {
+			return result, queueErr
+		}
+	}
+
+	// Sampled postcondition.
+	for i, name := range names {
+		if i >= 10 {
+			break
+		}
+		if _, err := session.ObjectDetail(ctx, container, name); err == nil {
+			result.Remaining++
+		} else if !swiftcontrol.IsNotFound(err) && ctx.Err() == nil {
+			return result, fmt.Errorf("verification HEAD %s: %w", name, err)
+		}
+	}
+	return result, nil
+}

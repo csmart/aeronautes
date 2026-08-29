@@ -23,6 +23,11 @@ export class Counters {
     "overwrites": number;
     "nativeRouted": number;
 
+    /**
+     * ObjectsDeleted counts a Mirror's destination-only deletions.
+     */
+    "objectsDeleted": number;
+
     /** Creates a new Counters instance. */
     constructor($$source: Partial<Counters> = {}) {
         if (!("objectsPlanned" in $$source)) {
@@ -48,6 +53,9 @@ export class Counters {
         }
         if (!("nativeRouted" in $$source)) {
             this["nativeRouted"] = 0;
+        }
+        if (!("objectsDeleted" in $$source)) {
+            this["objectsDeleted"] = 0;
         }
 
         Object.assign(this, $$source);

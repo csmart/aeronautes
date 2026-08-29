@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1322,5 +1323,157 @@ func TestSLOSegmentsDeleteRealSwift(t *testing.T) {
 	}
 	if _, err := h.Session.ObjectDetail(ctx, parts, "neighbour"); err != nil {
 		t.Fatal("uninvolved neighbour deleted")
+	}
+}
+
+// TestMirrorAcceptanceRealSwift runs the §28.6 acceptance fixtures on
+// real Swift: a full mirror (copy half through the real rclone, then
+// native destination-only deletion) where a deleted dest-only DLO
+// shares segments with an out-of-scope manifest that must keep
+// assembling; plus the plan-to-delete race where a planned dest-only
+// plain object becomes a shared-prefix DLO before the delete executes.
+func TestMirrorAcceptanceRealSwift(t *testing.T) {
+	if _, err := exec.LookPath("rclone"); err != nil {
+		t.Skip("pinned rclone not installed")
+	}
+	h := harness(t)
+	if h.Session2() == nil {
+		t.Skip("no second account on this cluster")
+	}
+	ctx := context.Background()
+	capabilities, err := h.Session2().FetchCapabilities(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	src := h.Container("mirror-src")
+	dst := h.Prefix + "mirror-dst"
+	if err := h.conn.ContainerCreate(ctx, src, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.rawPut2(ctx, dst, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	seed2 := func(name string, data []byte, headers map[string]string) {
+		t.Helper()
+		req, err := http.NewRequestWithContext(ctx, http.MethodPut,
+			h.Conn2().StorageUrl+"/"+dst+"/"+name, bytes.NewReader(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("X-Auth-Token", h.Conn2().AuthToken)
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode >= 300 {
+			t.Fatalf("seed %s: %s", name, resp.Status)
+		}
+	}
+
+	// Source scope: two objects. Dest scope: one converged, two
+	// obsolete, and a dest-only DLO sharing segments with an
+	// out-of-scope manifest.
+	if err := h.put(ctx, src, "scope/keep.txt", []byte("kept bytes"), "text/plain", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.put(ctx, src, "scope/new.txt", []byte("fresh"), "text/plain", nil); err != nil {
+		t.Fatal(err)
+	}
+	seed2("scope/keep.txt", []byte("kept bytes"), nil)
+	seed2("scope/obsolete.txt", []byte("stale"), nil)
+	segStore := dst + "_segments"
+	if err := h.rawPut2(ctx, segStore, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	req2, _ := http.NewRequestWithContext(ctx, http.MethodPut,
+		h.Conn2().StorageUrl+"/"+segStore+"/shared/000", bytes.NewReader(bytes.Repeat([]byte{0xAB}, 500)))
+	req2.Header.Set("X-Auth-Token", h.Conn2().AuthToken)
+	if resp, err := http.DefaultClient.Do(req2); err != nil || resp.StatusCode >= 300 {
+		t.Fatalf("segment seed: %v %v", err, resp)
+	}
+	seed2("scope/obsolete-dlo.bin", nil, map[string]string{"X-Object-Manifest": segStore + "/shared/"})
+	seed2("outside-kept-dlo.bin", nil, map[string]string{"X-Object-Manifest": segStore + "/shared/"})
+
+	// Copy half through the real engine, scoped to the prefixes.
+	runner, err := rclone.NewRunner(rclone.Options{Retries: 1, LowLevelRetries: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	remotes := []rclone.Remote{
+		{Name: "aeronautes_src", StorageURL: h.conn.StorageUrl, Token: h.conn.AuthToken},
+		{Name: "aeronautes_dst", StorageURL: h.Conn2().StorageUrl, Token: h.Conn2().AuthToken},
+	}
+	executor, err := transfercopy.New(transfercopy.Config{
+		Source: h.Session, Dest: h.Session2(),
+		Engine:  transfercopy.BindRunner(runner, remotes),
+		SrcSpec: "aeronautes_src:" + src, DstSpec: "aeronautes_dst:" + dst,
+		SrcContainer: src, DstContainer: dst,
+		SrcPrefix: "scope/", DstPrefix: "scope/",
+		JobID: "job-mirror",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var destOnly []string
+	_, err = plan.Copy(ctx,
+		h.Session.Objects(ctx, src, swiftcontrol.ObjectListOptions{Deep: true, Prefix: "scope/"}),
+		h.Session2().Objects(ctx, dst, swiftcontrol.ObjectListOptions{Deep: true, Prefix: "scope/"}),
+		"scope/", "scope/", func(item plan.Item) error {
+			if item.Verdict == plan.VerdictDestOnly {
+				destOnly = append(destOnly, "scope/"+item.Name)
+				return nil
+			}
+			return executor.Handle(ctx, item)
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := executor.Finish(ctx)
+	if err != nil || len(report.Failures) != 0 {
+		t.Fatalf("copy half: %v %+v", err, report.Failures)
+	}
+	verify, err := executor.Verify(ctx,
+		h.Session.Objects(ctx, src, swiftcontrol.ObjectListOptions{Deep: true, Prefix: "scope/"}),
+		h.Session2().Objects(ctx, dst, swiftcontrol.ObjectListOptions{Deep: true, Prefix: "scope/"}))
+	if err != nil || len(verify.Failures) != 0 {
+		t.Fatalf("copy verify: %v %+v", err, verify)
+	}
+
+	// THE RACE (§28.6): one planned dest-only plain object becomes a
+	// DLO over the SHARED prefix before the delete half runs.
+	seed2("scope/obsolete.txt", nil, map[string]string{"X-Object-Manifest": segStore + "/shared/"})
+
+	result, err := deletion.DeleteNames(ctx, h.Session2(), capabilities, dst, destOnly, deletion.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Deleted != int64(len(destOnly)) || result.Remaining != 0 {
+		t.Fatalf("delete half = %+v (destOnly %v)", result, destOnly)
+	}
+	// Both fixtures hold: the out-of-scope manifest still assembles at
+	// full size — neither the shared-segment deletion nor the race
+	// followed segments.
+	d, err := h.Session2().ObjectDetail(ctx, dst, "outside-kept-dlo.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.ContentLength != 500 {
+		t.Fatalf("out-of-scope manifest = %d bytes: segments were followed", d.ContentLength)
+	}
+	// The mirror converged: dest scope now matches source exactly.
+	summary, err := plan.Copy(ctx,
+		h.Session.Objects(ctx, src, swiftcontrol.ObjectListOptions{Deep: true, Prefix: "scope/"}),
+		h.Session2().Objects(ctx, dst, swiftcontrol.ObjectListOptions{Deep: true, Prefix: "scope/"}),
+		"scope/", "scope/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.DestOnly != 0 || summary.New != 0 || summary.Changed != 0 {
+		t.Fatalf("post-mirror join = %+v, want converged", summary)
 	}
 }

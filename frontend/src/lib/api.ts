@@ -66,6 +66,7 @@ export type {
   DeletePreviewDTO,
   DeleteRequestDTO,
   DownloadRequestDTO,
+  MirrorRequestDTO,
   SegmentOwnershipDTO,
   SegmentsDeleteRequestDTO,
   SegmentsDeleteResultDTO,
@@ -75,6 +76,7 @@ import type {
   DeletePreviewDTO,
   DeleteRequestDTO,
   DownloadRequestDTO,
+  MirrorRequestDTO,
   SegmentOwnershipDTO,
   SegmentsDeleteRequestDTO,
   SegmentsDeleteResultDTO,
@@ -128,6 +130,7 @@ export interface Api {
   auditRecent(limit: number): Promise<AuditEventDTO[]>;
   planCopy(req: CopyRequestDTO): Promise<CopyPlanDTO>;
   startCopy(req: CopyRequestDTO): Promise<string>;
+  startMirror(req: MirrorRequestDTO): Promise<string>;
   cancelJob(jobId: string): Promise<void>;
   jobs(bookmarkId: string, activeOnly: boolean, limit: number): Promise<JobDTO[]>;
   pickUploadFiles(): Promise<string[]>;
@@ -178,6 +181,7 @@ export const liveApi: Api = {
     return dto;
   },
   startCopy: (req) => TransferService.StartCopy(req),
+  startMirror: (req) => TransferService.StartMirror(req),
   cancelJob: (jobId) => TransferService.CancelJob(jobId),
   jobs: async (bookmarkId, activeOnly, limit) =>
     (await JobService.List(bookmarkId, activeOnly, limit)) ?? [],

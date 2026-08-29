@@ -1004,6 +1004,70 @@ export class ListingRowDTO {
 }
 
 /**
+ * MirrorRequestDTO is a copy request plus the §28.2 typed confirmation.
+ */
+export class MirrorRequestDTO {
+    "sourceBookmarkId": string;
+    "sourceContainer": string;
+    "sourcePrefix": string;
+    "destBookmarkId": string;
+    "destContainer": string;
+    "destPrefix": string;
+
+    /**
+     * Settings are the per-job §44.1 overrides (zero values = defaults).
+     */
+    "settings": TransferSettingsDTO;
+
+    /**
+     * Confirm must equal the DESTINATION container name.
+     */
+    "confirm": string;
+
+    /** Creates a new MirrorRequestDTO instance. */
+    constructor($$source: Partial<MirrorRequestDTO> = {}) {
+        if (!("sourceBookmarkId" in $$source)) {
+            this["sourceBookmarkId"] = "";
+        }
+        if (!("sourceContainer" in $$source)) {
+            this["sourceContainer"] = "";
+        }
+        if (!("sourcePrefix" in $$source)) {
+            this["sourcePrefix"] = "";
+        }
+        if (!("destBookmarkId" in $$source)) {
+            this["destBookmarkId"] = "";
+        }
+        if (!("destContainer" in $$source)) {
+            this["destContainer"] = "";
+        }
+        if (!("destPrefix" in $$source)) {
+            this["destPrefix"] = "";
+        }
+        if (!("settings" in $$source)) {
+            this["settings"] = (new TransferSettingsDTO());
+        }
+        if (!("confirm" in $$source)) {
+            this["confirm"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new MirrorRequestDTO instance from a string or object.
+     */
+    static createFrom($$source: any = {}): MirrorRequestDTO {
+        const $$createField6_0 = $$createType7;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("settings" in $$parsedSource) {
+            $$parsedSource["settings"] = $$createField6_0($$parsedSource["settings"]);
+        }
+        return new MirrorRequestDTO($$parsedSource as Partial<MirrorRequestDTO>);
+    }
+}
+
+/**
  * MutationResultDTO reports one mutation: outcome applied | conflict |
  * verify_mismatch, the mismatch description when relevant, the refreshed
  * detail, and the transaction ids for the audit trail.

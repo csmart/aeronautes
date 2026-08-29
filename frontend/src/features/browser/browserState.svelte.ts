@@ -8,6 +8,7 @@ import type {
   CopyPlanDTO,
   CopyRequestDTO,
   DeletePreviewDTO,
+  MirrorRequestDTO,
   DeleteRequestDTO,
   SegmentOwnershipDTO,
   DownloadPreflight,
@@ -365,6 +366,12 @@ export class BrowserState {
 
   async startCopy(req: CopyRequestDTO): Promise<string> {
     const id = await this.#api.startCopy(req);
+    await this.loadJobs();
+    return id;
+  }
+
+  async startMirror(req: MirrorRequestDTO): Promise<string> {
+    const id = await this.#api.startMirror(req);
     await this.loadJobs();
     return id;
   }

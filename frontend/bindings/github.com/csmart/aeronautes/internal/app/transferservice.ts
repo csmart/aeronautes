@@ -117,6 +117,13 @@ export function StartDownload(req: $models.DownloadRequestDTO): $CancellableProm
 }
 
 /**
+ * StartMirror validates the typed confirmation and launches the job.
+ */
+export function StartMirror(req: $models.MirrorRequestDTO): $CancellablePromise<string> {
+    return $Call.ByID(1210013037, req);
+}
+
+/**
  * StartUpload re-runs the preflight (state may have moved since the UI
  * showed it), rejects on any collision, and launches the job.
  */

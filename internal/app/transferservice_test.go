@@ -552,3 +552,120 @@ func TestSchedulerBudgetQueues(t *testing.T) {
 		t.Fatalf("second = %+v", got)
 	}
 }
+
+func TestMirrorExecutes(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	h.connect(t)
+	srcBookmark := h.transfer.connections.ActiveBookmarkID()
+	dstBookmark, dstMock := secondCluster(t, h)
+	h.installEngine(nil)
+
+	h.mock.AddContainer("media", "standard")
+	seedObject(h.mock, "media", "scope/keep-a.txt", "alpha", nil)
+	seedObject(h.mock, "media", "scope/keep-b.txt", "bravo", nil)
+	dstMock.AddContainer("backup", "standard")
+	seedObject(dstMock, "backup", "scope/keep-a.txt", "alpha", nil)
+	seedObject(dstMock, "backup", "scope/obsolete-1.txt", "old", nil)
+	seedObject(dstMock, "backup", "scope/obsolete-2.txt", "older", nil)
+	// The §28.6 fixture: a dest-only DLO INSIDE the mirror scope shares
+	// its segments with a manifest OUTSIDE it; the mirror deletes the
+	// manifest in scope and the outside sibling must keep assembling.
+	dstMock.AddContainer("backup_segments", "standard")
+	seedObject(dstMock, "backup_segments", "shared/0", strings.Repeat("s", 40), nil)
+	dstMock.PutObject("backup", "scope/obsolete-dlo.bin", swifttest.Object{Manifest: "backup_segments/shared/"})
+	dstMock.PutObject("backup", "outside/kept-dlo.bin", swifttest.Object{Manifest: "backup_segments/shared/"})
+
+	req := MirrorRequestDTO{
+		CopyRequestDTO: CopyRequestDTO{
+			SourceBookmarkID: srcBookmark, SourceContainer: "media", SourcePrefix: "scope/",
+			DestBookmarkID: dstBookmark, DestContainer: "backup", DestPrefix: "scope/",
+		},
+	}
+	// Refused without the typed confirmation.
+	if _, err := h.transfer.StartMirror(ctx, req); err == nil || !strings.Contains(err.Error(), "confirmation") {
+		t.Fatalf("unconfirmed mirror = %v", err)
+	}
+	req.Confirm = "backup"
+	jobID, err := h.transfer.StartMirror(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, h, jobID)
+	if job.State != "complete" || job.Type != "mirror" {
+		t.Fatalf("job = %+v", job)
+	}
+	if job.Counters.ObjectsDeleted != 3 { // two plain + the dest-only DLO manifest
+		t.Fatalf("deleted = %d, want 3 (counters %+v)", job.Counters.ObjectsDeleted, job.Counters)
+	}
+
+	session := h.transfer.connections.sessions[dstBookmark]
+	for _, gone := range []string{"scope/obsolete-1.txt", "scope/obsolete-2.txt", "scope/obsolete-dlo.bin"} {
+		if _, err := session.ObjectDetail(ctx, "backup", gone); err == nil {
+			t.Errorf("%s survived the mirror", gone)
+		}
+	}
+	// The out-of-scope manifest still assembles: shared segments were
+	// never followed (manifest-only deletion).
+	d, err := session.ObjectDetail(ctx, "backup", "outside/kept-dlo.bin")
+	if err != nil || d.ContentLength != 40 {
+		t.Fatalf("kept-dlo = %+v %v (shared segments must survive)", d, err)
+	}
+	// And the copy half converged.
+	if _, err := session.ObjectDetail(ctx, "backup", "scope/keep-b.txt"); err != nil {
+		t.Error("copy half missed keep-b.txt")
+	}
+	if !strings.Contains(job.Settings, "deleteStrategy") {
+		t.Errorf("delete strategy not in effective config: %q", job.Settings)
+	}
+}
+
+func TestMirrorSkipsDeletionsWhenCopyFails(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	h.connect(t)
+	srcBookmark := h.transfer.connections.ActiveBookmarkID()
+	dstBookmark, dstMock := secondCluster(t, h)
+	// An engine that silently drops one name: the copy half will fail
+	// verification, so the delete half must not run.
+	h.transfer.SetEngineFactory(func(remotes []rclone.Remote, opts rclone.Options) (transfercopy.Engine, error) {
+		byName := map[string]rclone.Remote{}
+		for _, r := range remotes {
+			byName[r.Name] = r
+		}
+		return &droppingEngine{httpEngine{remotes: byName}}, nil
+	})
+	h.mock.AddContainer("media", "standard")
+	seedObject(h.mock, "media", "dropped.txt", "never arrives", nil)
+	dstMock.AddContainer("backup", "standard")
+	seedObject(dstMock, "backup", "obsolete.txt", "must survive", nil)
+
+	jobID, err := h.transfer.StartMirror(ctx, MirrorRequestDTO{
+		CopyRequestDTO: CopyRequestDTO{
+			SourceBookmarkID: srcBookmark, SourceContainer: "media",
+			DestBookmarkID: dstBookmark, DestContainer: "backup",
+		},
+		Confirm: "backup",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, h, jobID)
+	if job.State != "partial" || !strings.Contains(job.Error, "NOT run") {
+		t.Fatalf("job = %+v", job)
+	}
+	if job.Counters.ObjectsDeleted != 0 {
+		t.Fatalf("deletions ran despite failed copy half: %+v", job.Counters)
+	}
+	session := h.transfer.connections.sessions[dstBookmark]
+	if _, err := session.ObjectDetail(ctx, "backup", "obsolete.txt"); err != nil {
+		t.Fatal("dest-only object deleted despite unverified copy half")
+	}
+}
+
+// droppingEngine claims success while copying nothing.
+type droppingEngine struct{ httpEngine }
+
+func (e *droppingEngine) Copy(ctx context.Context, src, dst string, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
+	return &rclone.Result{}, nil
+}

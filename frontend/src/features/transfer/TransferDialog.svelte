@@ -1,9 +1,10 @@
-<!-- Copy / Mirror-preview dialog (§27.1, §27.2). Both modes share the
+<!-- Copy / Mirror dialog (§27.1, §27.2). Both modes share the
   §15.2/§28.4 preview with its honest conservative counts and
-  disclosures; Copy can execute, Mirror renders the full destructive
-  plan — copy set AND would-delete set — with execution structurally
-  absent until Phase 6 (§65.4: inert by construction, there is no
-  button to omit a handler from). -->
+  disclosures. Copy starts from a preview; Mirror (destructive) shows
+  the full plan — copy set AND would-delete set — and arms only when
+  the destination container name is typed back (§28.2). The delete
+  half is native, manifest-only, and only runs after the copy half
+  verifies (§65.5 item 4). -->
 <script lang="ts">
   import type { BrowserState } from "../browser/browserState.svelte";
   import type { CopyPlanDTO, CopyRequestDTO } from "../../lib/api";
@@ -26,6 +27,8 @@
   let starting = $state(false);
   let error: string | null = $state(null);
   let startedJobId: string | null = $state(null);
+  // Mirror arming (§28.2): type the destination container name.
+  let mirrorConfirm = $state("");
 
   function request(): CopyRequestDTO {
     return {
@@ -70,7 +73,10 @@
     starting = true;
     error = null;
     try {
-      startedJobId = await browser.startCopy(request());
+      startedJobId =
+        mode === "mirror"
+          ? await browser.startMirror({ ...request(), confirm: mirrorConfirm })
+          : await browser.startCopy(request());
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
@@ -93,7 +99,7 @@
           role="tab"
           class:active={mode === "mirror"}
           aria-selected={mode === "mirror"}
-          onclick={() => (mode = "mirror")}>Mirror preview</button
+          onclick={() => (mode = "mirror")}>Mirror</button
         >
       </div>
       <button class="close" onclick={onClose} aria-label="Close">✕</button>
@@ -208,11 +214,21 @@
               · {formatBytes(s.destOnlyBytes)}
             </p>
             <p class="warn">
-              A Mirror would remove these after the copy half verifies. Deletion is
-              Aeronautes-native and manifest-only, and never acts on unprovable equality — but
-              <strong>Mirror execution does not exist yet</strong>: this preview is the whole
-              feature until the destructive-jobs phase.
+              The mirror removes these only after the copy half fully verifies. Deletion is
+              Aeronautes-native and manifest-only — segments are never followed — and an
+              unprovable equality is transferred, never deleted.
             </p>
+            <label class="mirror-confirm">
+              <span>
+                Type the destination container
+                <span class="type-mono">{destContainer.trim()}</span> to arm the mirror:
+              </span>
+              <input
+                class="type-mono"
+                bind:value={mirrorConfirm}
+                placeholder={destContainer.trim()}
+              />
+            </label>
           </div>
         {/if}
       </div>
@@ -229,6 +245,14 @@
         {#if mode === "copy"}
           <button class="primary" onclick={start} disabled={!preview || starting}>
             {starting ? "Starting…" : "Start copy"}
+          </button>
+        {:else}
+          <button
+            class="primary mirror-start"
+            onclick={start}
+            disabled={!preview || starting || mirrorConfirm !== destContainer.trim() || destContainer.trim() === ""}
+          >
+            {starting ? "Starting…" : "Start mirror"}
           </button>
         {/if}
       {/if}
@@ -415,6 +439,29 @@
   .would-delete {
     margin: 0 0 var(--space-1);
     font-size: var(--text-sm);
+  }
+
+  .mirror-confirm {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    font-size: var(--text-xs);
+    margin-top: var(--space-2);
+  }
+
+  .mirror-confirm input {
+    font: inherit;
+    font-size: var(--text-sm);
+    background: var(--color-bg-card);
+    color: var(--color-text);
+    border: 1px solid var(--color-danger);
+    border-radius: var(--radius-control);
+    padding: 2px var(--space-2);
+  }
+
+  footer .mirror-start {
+    background: var(--color-danger);
+    border-color: var(--color-danger);
   }
 
   footer {

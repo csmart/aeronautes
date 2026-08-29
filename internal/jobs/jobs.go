@@ -25,6 +25,7 @@ const (
 	TypeMirrorPreview Type = "mirror_preview"
 	TypeUpload        Type = "upload"
 	TypeDownload      Type = "download"
+	TypeMirror        Type = "mirror"
 	TypeDeletePrefix  Type = "delete_prefix"
 	TypeEmpty         Type = "empty_container"
 	TypeDeleteCont    Type = "delete_container"
@@ -69,6 +70,8 @@ type Counters struct {
 	// names the §14.3 classification sent down the native path.
 	Overwrites   int64 `json:"overwrites"`
 	NativeRouted int64 `json:"nativeRouted"`
+	// ObjectsDeleted counts a Mirror's destination-only deletions.
+	ObjectsDeleted int64 `json:"objectsDeleted"`
 }
 
 // Job is one persistent job row.

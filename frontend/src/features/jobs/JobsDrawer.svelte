@@ -123,6 +123,9 @@
                   {job.counters.objectsCopied}{#if job.counters.objectsPlanned > 0}/{job.counters
                       .objectsPlanned}{/if}
                   obj · {formatBytes(job.counters.bytesCopied)}
+                  {#if job.counters.objectsDeleted > 0}
+                    · {job.counters.objectsDeleted} deleted
+                  {/if}
                   {#if job.counters.objectsFailed > 0}
                     · <em class="bad">{job.counters.objectsFailed} failed</em>
                   {/if}

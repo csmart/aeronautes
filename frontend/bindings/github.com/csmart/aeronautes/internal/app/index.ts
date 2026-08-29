@@ -42,6 +42,7 @@ export {
     Info,
     JobDTO,
     ListingRowDTO,
+    MirrorRequestDTO,
     MutationResultDTO,
     ObjectDetailDTO,
     ObjectMetadataEditDTO,
