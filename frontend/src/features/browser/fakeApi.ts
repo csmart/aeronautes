@@ -22,7 +22,12 @@ export function newFakeApi(): Api {
   const bookmarks: BookmarkDTO[] = [];
 
   return {
-    info: async () => ({ name: "Aeronautes", version: "test", wails: "test" }),
+    info: async () => ({
+      name: "Aeronautes",
+      version: "test",
+      wails: "test",
+      secretBackend: "session",
+    }),
 
     listBookmarks: async () => [...bookmarks],
 

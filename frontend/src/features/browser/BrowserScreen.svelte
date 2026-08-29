@@ -20,7 +20,8 @@
   onMount(async () => {
     try {
       const info = await liveApi.info();
-      shellInfo = `shell ${info.version} · Wails ${info.wails}`;
+      shellInfo = `shell ${info.version} · Wails ${info.wails} · secrets: ${info.secretBackend}`;
+      browser.secretBackend = info.secretBackend;
     } catch {
       shellInfo = "service bridge unavailable";
     }

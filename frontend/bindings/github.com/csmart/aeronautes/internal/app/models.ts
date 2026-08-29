@@ -61,6 +61,12 @@ export interface Info {
     "name": string;
     "version": string;
     "wails": string;
+
+    /**
+     * SecretBackend is "keychain" or "session" (§12.1): the UI must say
+     * visibly when credentials are session-only.
+     */
+    "secretBackend": string;
 }
 
 /**

@@ -39,16 +39,20 @@ func main() {
 	}
 	defer database.Close()
 
-	// Session-only secrets for now: credentials die with the process. The
-	// OS Secret Service backend is its own later commit (§65 note, ADR 0006).
-	bookmarkStore := bookmarks.NewStore(database, secrets.NewSessionStore())
+	// OS keychain when reachable; otherwise session-only, surfaced in the
+	// UI — never a silent downgrade (§12.1, ADR 0012).
+	secretStore, secretBackend := secrets.OpenDefault()
+	if secretBackend == secrets.BackendSession {
+		log.Print("no OS keychain reachable: credentials are session-only and die with the process")
+	}
+	bookmarkStore := bookmarks.NewStore(database, secretStore)
 	connections := app.NewConnections(bookmarkStore)
 
 	a := application.New(application.Options{
 		Name:        "Aeronautes",
 		Description: "Desktop operator workbench for OpenStack Swift",
 		Services: []application.Service{
-			application.NewService(app.NewAppService(version)),
+			application.NewService(app.NewAppService(version, string(secretBackend))),
 			application.NewService(app.NewBookmarkService(bookmarkStore)),
 			application.NewService(app.NewBrowseService(connections)),
 			application.NewService(app.NewInspectorService(connections)),

@@ -103,6 +103,13 @@
       </select>
     </label>
 
+    {#if browser.secretBackend === "session"}
+      <p class="warning">
+        No OS keychain is reachable: the API key is kept in memory only and
+        must be re-entered after a restart.
+      </p>
+    {/if}
+
     {#if error}
       <p class="error" role="alert">{error}</p>
     {/if}
@@ -183,6 +190,15 @@
     background: var(--color-danger-soft);
     border-radius: var(--radius-control);
     overflow-wrap: anywhere;
+  }
+
+  .warning {
+    margin: 0;
+    padding: var(--space-2);
+    font-size: var(--text-sm);
+    color: var(--color-warning);
+    background: var(--color-warning-soft);
+    border-radius: var(--radius-control);
   }
 
   .actions {

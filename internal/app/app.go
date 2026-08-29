@@ -13,6 +13,9 @@ type Info struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
 	Wails   string `json:"wails"`
+	// SecretBackend is "keychain" or "session" (§12.1): the UI must say
+	// visibly when credentials are session-only.
+	SecretBackend string `json:"secretBackend"`
 }
 
 // AppService is the first bound service: shell identity and environment.
@@ -22,12 +25,14 @@ type AppService struct {
 }
 
 // NewAppService builds the service. version is the application version
-// stamped into the binary by the release build ("dev" otherwise).
-func NewAppService(version string) *AppService {
+// stamped into the binary by the release build ("dev" otherwise);
+// secretBackend names the active SecretStore.
+func NewAppService(version, secretBackend string) *AppService {
 	return &AppService{info: Info{
-		Name:    "Aeronautes",
-		Version: version,
-		Wails:   wailsVersion(),
+		Name:          "Aeronautes",
+		Version:       version,
+		Wails:         wailsVersion(),
+		SecretBackend: secretBackend,
 	}}
 }
 

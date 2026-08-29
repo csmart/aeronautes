@@ -41,6 +41,10 @@ export class BrowserState {
     this.#api = api;
   }
 
+  // Shell environment.
+  /** "keychain" or "session" (§12.1) — "" until Info arrives. */
+  secretBackend = $state("");
+
   // Bookmarks and connection.
   bookmarks: BookmarkDTO[] = $state([]);
   connectedBookmarkId: string | null = $state(null);
