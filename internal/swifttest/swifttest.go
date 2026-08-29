@@ -237,6 +237,7 @@ func (s *Server) handleAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	marker := q.Get("marker")
+	prefix := q.Get("prefix")
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	if limit <= 0 {
 		limit = 10000
@@ -246,7 +247,7 @@ func (s *Server) handleAccount(w http.ResponseWriter, r *http.Request) {
 		if len(paged) == limit {
 			break
 		}
-		if row.Name > marker {
+		if row.Name > marker && strings.HasPrefix(row.Name, prefix) {
 			paged = append(paged, row)
 		}
 	}

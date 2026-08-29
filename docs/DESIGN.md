@@ -3546,6 +3546,15 @@ Gate: large synthetic destructive jobs are bounded, cancellable, observable, and
 after partial failure; Mirror executes correctly against the shared-segment and race fixtures;
 Empty Container provably preserves container configuration.
 
+**Status: complete (2026-08-30).** All seven commits landed and the gate held on real Swift:
+the deletion engine's SAIO suite bulk-deletes synthetic namespaces (hostile names included)
+with cancellation mid-stream and honest Remaining accounting; the §28.6 acceptance run
+executes a full Mirror — real rclone copy half, native delete half — with the shared-segment
+and plan-to-delete-race fixtures both proving manifest-only deletion; Empty Container's
+pre/post HEAD compare shows configuration untouched; and the benchmark job measures a real
+cluster and feeds its recommendation into Auto. Bookmark-level budgets remain deferred to the
+§44 settings screen as stated in item 6.
+
 ---
 
 ## 66. Final project statement

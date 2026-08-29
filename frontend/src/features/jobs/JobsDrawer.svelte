@@ -15,6 +15,10 @@
   let tab: "jobs" | "changes" = $state("jobs");
   let expanded: string | null = $state(null);
   let budgetSaving = $state(false);
+  // §42 benchmark: typed-account consent inline.
+  let benchOpen = $state(false);
+  let benchConfirm = $state("");
+  let benchError: string | null = $state(null);
 
   const TERMINAL = ["complete", "partial", "cancelled", "failed"];
 
@@ -137,6 +141,14 @@
               </select>
             </label>
           {/if}
+          <button
+            class="bench"
+            title="Measure this cluster (§42): writes real objects to a temporary Aeronautes-owned container"
+            disabled={browser.connectedBookmarkId === null}
+            onclick={() => (benchOpen = !benchOpen)}
+          >
+            Benchmark…
+          </button>
           <label class="filter">
             <span>Account</span>
             <select
@@ -156,6 +168,35 @@
       </div>
 
       {#if tab === "jobs"}
+        {#if benchOpen}
+          <form
+            class="bench-form num"
+            onsubmit={async (e) => {
+              e.preventDefault();
+              benchError = null;
+              try {
+                await browser.startBenchmark(benchConfirm);
+                benchOpen = false;
+                benchConfirm = "";
+              } catch (err) {
+                benchError = err instanceof Error ? err.message : String(err);
+              }
+            }}
+          >
+            <span>
+              A benchmark writes real objects to a temporary container on
+              <span class="type-mono">{browser.account?.name}</span>. Type the account name to
+              run:
+            </span>
+            <input class="type-mono" bind:value={benchConfirm} placeholder={browser.account?.name} />
+            <button type="submit" disabled={benchConfirm !== (browser.account?.name ?? "")}>
+              Run benchmark
+            </button>
+            {#if benchError}
+              <em class="bad">{benchError}</em>
+            {/if}
+          </form>
+        {/if}
         {#if browser.jobsError}
           <p class="empty">jobs unavailable: {browser.jobsError}</p>
         {:else if browser.jobs.length === 0}
@@ -390,6 +431,54 @@
 
   .config-row .k {
     color: var(--color-text-faint);
+  }
+
+  .bench {
+    font: inherit;
+    font-size: var(--text-xs);
+    padding: 2px var(--space-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-pill);
+    background: none;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+  }
+
+  .bench-form {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--color-text-secondary);
+    padding: var(--space-1) var(--space-2);
+    border: 1px dashed var(--color-border);
+    border-radius: var(--radius-control);
+    margin-bottom: var(--space-2);
+  }
+
+  .bench-form input {
+    font: inherit;
+    font-size: var(--text-xs);
+    background: var(--color-bg-card);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+    padding: 1px var(--space-1);
+  }
+
+  .bench-form button {
+    font: inherit;
+    font-size: var(--text-xs);
+    padding: 1px var(--space-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+    background: var(--color-bg-card);
+    color: var(--color-text);
+    cursor: pointer;
+  }
+
+  .bench-form button:disabled {
+    opacity: 0.5;
   }
 
   .cancel {

@@ -56,6 +56,8 @@ func main() {
 	jobRunner := app.NewJobRunner(jobStore, auditStore)
 	transferService := app.NewTransferServiceWithRunner(connections, jobStore, jobRunner)
 	transferService.SetEvidenceStore(evidenceStore)
+	benchmarkService := app.NewBenchmarkService(connections, jobStore, jobRunner, database)
+	transferService.SetRecommendationSource(benchmarkService.RecommendationFor)
 
 	a := application.New(application.Options{
 		Name:        "Aeronautes",
@@ -72,6 +74,7 @@ func main() {
 			application.NewService(app.NewJobService(jobStore)),
 			application.NewService(app.NewFindService(connections)),
 			application.NewService(app.NewSettingsService(database, jobRunner)),
+			application.NewService(benchmarkService),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),

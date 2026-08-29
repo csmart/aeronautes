@@ -28,6 +28,7 @@ type harness struct {
 	transfer  *TransferService
 	jobsSvc   *JobService
 	evidence  *evidence.Store
+	db        *db.DB
 	mock      *swifttest.Server
 	authURL   string
 }
@@ -74,6 +75,7 @@ func newHarnessWithInfo(t *testing.T, infoJSON string) *harness {
 		transfer:  transferService(connections, jobStore, auditStore, ev),
 		jobsSvc:   NewJobService(jobStore),
 		evidence:  ev,
+		db:        d,
 		mock:      mock,
 		authURL:   srv.URL + "/auth/v1.0",
 	}

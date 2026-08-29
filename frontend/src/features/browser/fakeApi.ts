@@ -674,6 +674,11 @@ export function newFakeApi(): Api {
       });
       return id;
     },
+    startBenchmark: async (req) => {
+      if (!req.confirm) throw new Error("confirmation does not match the target account");
+      return "job-bench";
+    },
+    latestBenchmark: async (bookmarkId) => null,
     appSettings: async () => ({ maxActiveJobs: 2, defaultProfile: "auto" }),
     saveAppSettings: async (settings) => settings,
     startFind: async (container, prefix, query) => "find-1",

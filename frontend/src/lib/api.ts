@@ -8,6 +8,7 @@ import {
   AuditService,
   BookmarkService,
   BrowseService,
+  BenchmarkService,
   DeleteService,
   FindService,
   SettingsService,
@@ -69,6 +70,8 @@ export type {
   DeleteRequestDTO,
   DownloadRequestDTO,
   AppSettingsDTO,
+  BenchmarkRequestDTO,
+  BenchmarkResultDTO,
   FindStatusDTO,
   MirrorRequestDTO,
   SegmentOwnershipDTO,
@@ -78,6 +81,8 @@ export type {
 } from "../../bindings/github.com/csmart/aeronautes/internal/app";
 import type {
   AppSettingsDTO,
+  BenchmarkRequestDTO,
+  BenchmarkResultDTO,
   DeletePreviewDTO,
   DeleteRequestDTO,
   DownloadRequestDTO,
@@ -147,6 +152,8 @@ export interface Api {
   startDownload(req: DownloadRequestDTO): Promise<string>;
   previewDelete(req: DeleteRequestDTO): Promise<DeletePreviewDTO>;
   startDelete(req: DeleteRequestDTO): Promise<string>;
+  startBenchmark(req: BenchmarkRequestDTO): Promise<string>;
+  latestBenchmark(bookmarkId: string): Promise<BenchmarkResultDTO | null>;
   appSettings(): Promise<AppSettingsDTO>;
   saveAppSettings(settings: AppSettingsDTO): Promise<AppSettingsDTO>;
   startFind(container: string, prefix: string, query: string): Promise<string>;
@@ -216,6 +223,8 @@ export const liveApi: Api = {
     return preview;
   },
   startDelete: (req) => DeleteService.StartDelete(req),
+  startBenchmark: (req) => BenchmarkService.StartBenchmark(req),
+  latestBenchmark: (bookmarkId) => BenchmarkService.Latest(bookmarkId),
   appSettings: async () => {
     const settings = await SettingsService.Get();
     if (!settings) throw new Error("empty settings");

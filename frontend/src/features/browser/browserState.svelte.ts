@@ -378,6 +378,15 @@ export class BrowserState {
     }
   }
 
+  async startBenchmark(confirm: string): Promise<string> {
+    const id = await this.#api.startBenchmark({
+      bookmarkId: this.connectedBookmarkId ?? "",
+      confirm,
+    });
+    await this.loadJobs();
+    return id;
+  }
+
   async loadAppSettings() {
     this.appSettings = await this.#api.appSettings().catch(() => this.appSettings);
   }

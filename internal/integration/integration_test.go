@@ -13,11 +13,18 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/csmart/aeronautes/internal/app"
+	"github.com/csmart/aeronautes/internal/audit"
+	"github.com/csmart/aeronautes/internal/bookmarks"
+	"github.com/csmart/aeronautes/internal/db"
 	"github.com/csmart/aeronautes/internal/deletion"
+	"github.com/csmart/aeronautes/internal/jobs"
+	"github.com/csmart/aeronautes/internal/secrets"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
 	localtransfer "github.com/csmart/aeronautes/internal/transfer/local"
@@ -1475,5 +1482,64 @@ func TestMirrorAcceptanceRealSwift(t *testing.T) {
 	}
 	if summary.DestOnly != 0 || summary.New != 0 || summary.Changed != 0 {
 		t.Fatalf("post-mirror join = %+v, want converged", summary)
+	}
+}
+
+// TestBenchmarkRealSwift runs the §42 benchmark job against the real
+// cluster through the app stack: consent-gated, measured phases, the
+// recommendation persisted, and the temporary container removed.
+func TestBenchmarkRealSwift(t *testing.T) {
+	h := harness(t)
+	ctx := context.Background()
+
+	d, err := db.Open(ctx, filepath.Join(t.TempDir(), "state.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	bookmarkStore := bookmarks.NewStore(d, secrets.NewSessionStore())
+	saved, err := bookmarkStore.Save(ctx, bookmarks.Bookmark{
+		DisplayName: "SAIO", AuthURL: envOr("AERONAUTES_SAIO_AUTH_URL", ""), Username: envOr("AERONAUTES_SAIO_USER", "test:tester"),
+	}, []byte(envOr("AERONAUTES_SAIO_KEY", "testing")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	connections := app.NewConnections(bookmarkStore)
+	jobStore := jobs.NewStore(d)
+	runner := app.NewJobRunner(jobStore, audit.NewStore(d))
+	service := app.NewBenchmarkService(connections, jobStore, runner, d)
+	service.SetScale(40, []int{2, 8})
+
+	account := "AUTH_" + strings.SplitN(envOr("AERONAUTES_SAIO_USER", "test:tester"), ":", 2)[0]
+	jobID, err := service.StartBenchmark(ctx, app.BenchmarkRequestDTO{BookmarkID: saved.ID, Confirm: account})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(60 * time.Second)
+	var job jobs.Job
+	for time.Now().Before(deadline) {
+		job, err = jobStore.Get(ctx, jobID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if jobs.Terminal(job.State) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if job.State != jobs.StateComplete {
+		t.Fatalf("job = %+v", job)
+	}
+	latest, err := service.Latest(ctx, saved.ID)
+	if err != nil || latest == nil || len(latest.Phases) < 4 {
+		t.Fatalf("latest = %+v %v", latest, err)
+	}
+	t.Logf("benchmark phases: %+v recommendation: %+v", latest.Phases, latest.Recommendation)
+	// The temporary container is gone from the real account.
+	for entry, err := range h.Session.Containers(ctx, swiftcontrol.ListOptions{Prefix: "aeronautes-benchmark-"}) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Fatalf("benchmark container survived: %+v", entry)
 	}
 }

@@ -159,6 +159,111 @@ export class AuditEventDTO {
 }
 
 /**
+ * BenchmarkPhaseDTO is one measured phase.
+ */
+export class BenchmarkPhaseDTO {
+    "phase": string;
+    "concurrency": number;
+    "opsPerSec": number;
+
+    /** Creates a new BenchmarkPhaseDTO instance. */
+    constructor($$source: Partial<BenchmarkPhaseDTO> = {}) {
+        if (!("phase" in $$source)) {
+            this["phase"] = "";
+        }
+        if (!("concurrency" in $$source)) {
+            this["concurrency"] = 0;
+        }
+        if (!("opsPerSec" in $$source)) {
+            this["opsPerSec"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new BenchmarkPhaseDTO instance from a string or object.
+     */
+    static createFrom($$source: any = {}): BenchmarkPhaseDTO {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new BenchmarkPhaseDTO($$parsedSource as Partial<BenchmarkPhaseDTO>);
+    }
+}
+
+/**
+ * BenchmarkRequestDTO names the target and carries the typed consent.
+ */
+export class BenchmarkRequestDTO {
+    "bookmarkId": string;
+
+    /**
+     * Confirm must equal the target account name (the storage-URL
+     * suffix shown in the UI) — the §42 typed cluster confirmation.
+     */
+    "confirm": string;
+
+    /** Creates a new BenchmarkRequestDTO instance. */
+    constructor($$source: Partial<BenchmarkRequestDTO> = {}) {
+        if (!("bookmarkId" in $$source)) {
+            this["bookmarkId"] = "";
+        }
+        if (!("confirm" in $$source)) {
+            this["confirm"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new BenchmarkRequestDTO instance from a string or object.
+     */
+    static createFrom($$source: any = {}): BenchmarkRequestDTO {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new BenchmarkRequestDTO($$parsedSource as Partial<BenchmarkRequestDTO>);
+    }
+}
+
+/**
+ * BenchmarkResultDTO is the persisted document.
+ */
+export class BenchmarkResultDTO {
+    "ranAt": string;
+    "phases": BenchmarkPhaseDTO[];
+    "recommendation": TransferSettingsDTO;
+
+    /** Creates a new BenchmarkResultDTO instance. */
+    constructor($$source: Partial<BenchmarkResultDTO> = {}) {
+        if (!("ranAt" in $$source)) {
+            this["ranAt"] = "";
+        }
+        if (!("phases" in $$source)) {
+            this["phases"] = [];
+        }
+        if (!("recommendation" in $$source)) {
+            this["recommendation"] = (new TransferSettingsDTO());
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new BenchmarkResultDTO instance from a string or object.
+     */
+    static createFrom($$source: any = {}): BenchmarkResultDTO {
+        const $$createField1_0 = $$createType3;
+        const $$createField2_0 = $$createType4;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("phases" in $$parsedSource) {
+            $$parsedSource["phases"] = $$createField1_0($$parsedSource["phases"]);
+        }
+        if ("recommendation" in $$parsedSource) {
+            $$parsedSource["recommendation"] = $$createField2_0($$parsedSource["recommendation"]);
+        }
+        return new BenchmarkResultDTO($$parsedSource as Partial<BenchmarkResultDTO>);
+    }
+}
+
+/**
  * BookmarkDTO is the frontend's view of a saved endpoint.
  */
 export class BookmarkDTO {
@@ -251,7 +356,7 @@ export class CapabilitiesDTO {
      * Creates a new CapabilitiesDTO instance from a string or object.
      */
     static createFrom($$source: any = {}): CapabilitiesDTO {
-        const $$createField2_0 = $$createType3;
+        const $$createField2_0 = $$createType6;
         const $$createField3_0 = $$createType1;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("storagePolicies" in $$parsedSource) {
@@ -499,7 +604,7 @@ export class ContainerPageDTO {
      * Creates a new ContainerPageDTO instance from a string or object.
      */
     static createFrom($$source: any = {}): ContainerPageDTO {
-        const $$createField0_0 = $$createType5;
+        const $$createField0_0 = $$createType8;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("rows" in $$parsedSource) {
             $$parsedSource["rows"] = $$createField0_0($$parsedSource["rows"]);
@@ -585,7 +690,7 @@ export class CopyPlanDTO {
      * Creates a new CopyPlanDTO instance from a string or object.
      */
     static createFrom($$source: any = {}): CopyPlanDTO {
-        const $$createField0_0 = $$createType6;
+        const $$createField0_0 = $$createType9;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("summary" in $$parsedSource) {
             $$parsedSource["summary"] = $$createField0_0($$parsedSource["summary"]);
@@ -651,7 +756,7 @@ export class CopyRequestDTO {
      * Creates a new CopyRequestDTO instance from a string or object.
      */
     static createFrom($$source: any = {}): CopyRequestDTO {
-        const $$createField7_0 = $$createType7;
+        const $$createField7_0 = $$createType4;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("settings" in $$parsedSource) {
             $$parsedSource["settings"] = $$createField7_0($$parsedSource["settings"]);
@@ -696,7 +801,7 @@ export class DLOSegmentsDTO {
      * Creates a new DLOSegmentsDTO instance from a string or object.
      */
     static createFrom($$source: any = {}): DLOSegmentsDTO {
-        const $$createField2_0 = $$createType9;
+        const $$createField2_0 = $$createType11;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("segments" in $$parsedSource) {
             $$parsedSource["segments"] = $$createField2_0($$parsedSource["segments"]);
@@ -860,7 +965,7 @@ export class DownloadRequestDTO {
      * Creates a new DownloadRequestDTO instance from a string or object.
      */
     static createFrom($$source: any = {}): DownloadRequestDTO {
-        const $$createField4_0 = $$createType7;
+        const $$createField4_0 = $$createType4;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("settings" in $$parsedSource) {
             $$parsedSource["settings"] = $$createField4_0($$parsedSource["settings"]);
@@ -945,7 +1050,7 @@ export class FindStatusDTO {
      * Creates a new FindStatusDTO instance from a string or object.
      */
     static createFrom($$source: any = {}): FindStatusDTO {
-        const $$createField1_0 = $$createType11;
+        const $$createField1_0 = $$createType13;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("matches" in $$parsedSource) {
             $$parsedSource["matches"] = $$createField1_0($$parsedSource["matches"]);
@@ -1072,7 +1177,7 @@ export class JobDTO {
      * Creates a new JobDTO instance from a string or object.
      */
     static createFrom($$source: any = {}): JobDTO {
-        const $$createField11_0 = $$createType12;
+        const $$createField11_0 = $$createType14;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("counters" in $$parsedSource) {
             $$parsedSource["counters"] = $$createField11_0($$parsedSource["counters"]);
@@ -1196,7 +1301,7 @@ export class MirrorRequestDTO {
      * Creates a new MirrorRequestDTO instance from a string or object.
      */
     static createFrom($$source: any = {}): MirrorRequestDTO {
-        const $$createField7_0 = $$createType7;
+        const $$createField7_0 = $$createType4;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("settings" in $$parsedSource) {
             $$parsedSource["settings"] = $$createField7_0($$parsedSource["settings"]);
@@ -1249,8 +1354,8 @@ export class MutationResultDTO {
      */
     static createFrom($$source: any = {}): MutationResultDTO {
         const $$createField2_0 = $$createType1;
-        const $$createField3_0 = $$createType14;
-        const $$createField4_0 = $$createType16;
+        const $$createField3_0 = $$createType16;
+        const $$createField4_0 = $$createType18;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("transIds" in $$parsedSource) {
             $$parsedSource["transIds"] = $$createField2_0($$parsedSource["transIds"]);
@@ -1416,7 +1521,7 @@ export class ObjectPageDTO {
      * Creates a new ObjectPageDTO instance from a string or object.
      */
     static createFrom($$source: any = {}): ObjectPageDTO {
-        const $$createField0_0 = $$createType9;
+        const $$createField0_0 = $$createType11;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("rows" in $$parsedSource) {
             $$parsedSource["rows"] = $$createField0_0($$parsedSource["rows"]);
@@ -1458,7 +1563,7 @@ export class PrefixDetailDTO {
      * Creates a new PrefixDetailDTO instance from a string or object.
      */
     static createFrom($$source: any = {}): PrefixDetailDTO {
-        const $$createField2_0 = $$createType14;
+        const $$createField2_0 = $$createType16;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("selfObject" in $$parsedSource) {
             $$parsedSource["selfObject"] = $$createField2_0($$parsedSource["selfObject"]);
@@ -1486,7 +1591,7 @@ export class SLOManifestDTO {
      * Creates a new SLOManifestDTO instance from a string or object.
      */
     static createFrom($$source: any = {}): SLOManifestDTO {
-        const $$createField0_0 = $$createType18;
+        const $$createField0_0 = $$createType20;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("entries" in $$parsedSource) {
             $$parsedSource["entries"] = $$createField0_0($$parsedSource["entries"]);
@@ -1820,7 +1925,7 @@ export class UploadRequestDTO {
      */
     static createFrom($$source: any = {}): UploadRequestDTO {
         const $$createField3_0 = $$createType1;
-        const $$createField4_0 = $$createType7;
+        const $$createField4_0 = $$createType4;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("paths" in $$parsedSource) {
             $$parsedSource["paths"] = $$createField3_0($$parsedSource["paths"]);
@@ -1835,20 +1940,22 @@ export class UploadRequestDTO {
 // Private type creation functions
 const $$createType0 = $Create.Map($Create.Any, $Create.Any);
 const $$createType1 = $Create.Array($Create.Any);
-const $$createType2 = StoragePolicyDTO.createFrom;
+const $$createType2 = BenchmarkPhaseDTO.createFrom;
 const $$createType3 = $Create.Array($$createType2);
-const $$createType4 = ContainerRowDTO.createFrom;
-const $$createType5 = $Create.Array($$createType4);
-const $$createType6 = plan$0.Summary.createFrom;
-const $$createType7 = TransferSettingsDTO.createFrom;
-const $$createType8 = ListingRowDTO.createFrom;
-const $$createType9 = $Create.Array($$createType8);
-const $$createType10 = FindMatchDTO.createFrom;
+const $$createType4 = TransferSettingsDTO.createFrom;
+const $$createType5 = StoragePolicyDTO.createFrom;
+const $$createType6 = $Create.Array($$createType5);
+const $$createType7 = ContainerRowDTO.createFrom;
+const $$createType8 = $Create.Array($$createType7);
+const $$createType9 = plan$0.Summary.createFrom;
+const $$createType10 = ListingRowDTO.createFrom;
 const $$createType11 = $Create.Array($$createType10);
-const $$createType12 = jobs$0.Counters.createFrom;
-const $$createType13 = ObjectDetailDTO.createFrom;
-const $$createType14 = $Create.Nullable($$createType13);
-const $$createType15 = ContainerDetailDTO.createFrom;
+const $$createType12 = FindMatchDTO.createFrom;
+const $$createType13 = $Create.Array($$createType12);
+const $$createType14 = jobs$0.Counters.createFrom;
+const $$createType15 = ObjectDetailDTO.createFrom;
 const $$createType16 = $Create.Nullable($$createType15);
-const $$createType17 = SLOSegmentDTO.createFrom;
-const $$createType18 = $Create.Array($$createType17);
+const $$createType17 = ContainerDetailDTO.createFrom;
+const $$createType18 = $Create.Nullable($$createType17);
+const $$createType19 = SLOSegmentDTO.createFrom;
+const $$createType20 = $Create.Array($$createType19);
