@@ -54,6 +54,12 @@ func (e *SwiftError) Unwrap() error {
 	return e.err
 }
 
+// IsNotFound reports whether an error is a normalized 404.
+func IsNotFound(err error) bool {
+	var se *SwiftError
+	return errors.As(err, &se) && se.Kind == KindNotFound
+}
+
 // Normalize converts any error coming out of the wire library into a
 // *SwiftError. nil stays nil; context cancellation passes through
 // untouched so callers can keep using errors.Is(err, context.Canceled).

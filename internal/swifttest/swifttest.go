@@ -40,6 +40,9 @@ type Object struct {
 	Meta map[string]string
 	// DeleteAt sets X-Delete-At (unix seconds) when non-zero.
 	DeleteAt int64
+	// Data is the stored body, served on GET (fixtures may omit it and
+	// set Bytes/ETag directly — HEAD-only fidelity).
+	Data []byte
 }
 
 // Container holds objects and container-level state.
@@ -408,6 +411,7 @@ func (s *Server) putObject(w http.ResponseWriter, r *http.Request, container, na
 		ContentType: r.Header.Get("Content-Type"),
 		Manifest:    r.Header.Get("X-Object-Manifest"),
 		Meta:        objectMetaFromHeaders(r),
+		Data:        body,
 	}
 	if o.ContentType == "" {
 		o.ContentType = "application/octet-stream"
@@ -582,6 +586,9 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request, container,
 	case http.MethodDelete:
 		s.deleteObject(w, container, name)
 		return
+	case "COPY":
+		s.copyObject(w, r, container, name)
+		return
 	}
 
 	s.mu.Lock()
@@ -591,17 +598,29 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request, container,
 		o, ok = c.objects[name]
 	}
 	length := o.Bytes
+	var logical []byte
+	if ok && o.Manifest == "" {
+		logical = o.Data
+	}
 	if ok && o.Manifest != "" {
 		// A DLO manifest HEAD reports the assembled logical size (§20):
 		// the summed bytes of everything under container/prefix right now.
 		if slash := strings.Index(o.Manifest, "/"); slash > 0 {
 			segContainer, segPrefix := o.Manifest[:slash], o.Manifest[slash+1:]
 			if sc, scOK := s.containers[segContainer]; scOK {
-				length = 0
-				for segName, seg := range sc.objects {
+				var segNames []string
+				for segName := range sc.objects {
 					if strings.HasPrefix(segName, segPrefix) {
-						length += seg.Bytes
+						segNames = append(segNames, segName)
 					}
+				}
+				sort.Strings(segNames)
+				length = 0
+				logical = nil
+				for _, segName := range segNames {
+					seg := sc.objects[segName]
+					length += seg.Bytes
+					logical = append(logical, seg.Data...)
 				}
 			}
 		}
@@ -637,4 +656,66 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request, container,
 	}
 	h.Set("X-Trans-Id", "txswifttest-object")
 	w.WriteHeader(http.StatusOK)
+	if r.Method == http.MethodGet {
+		_, _ = w.Write(logical)
+	}
+}
+
+// copyObject implements server-side COPY for PLAIN sources only: the
+// stage-and-commit path never copies a manifest (a manifest COPY on
+// real Swift assembles the logical object — a different operation the
+// executor must never reach for). Source metadata is carried; headers
+// on the request are applied on top (real COPY semantics).
+func (s *Server) copyObject(w http.ResponseWriter, r *http.Request, container, name string) {
+	destination := r.Header.Get("Destination")
+	slash := strings.Index(strings.TrimPrefix(destination, "/"), "/")
+	if destination == "" || slash <= 0 {
+		w.WriteHeader(http.StatusPreconditionFailed)
+		return
+	}
+	trimmed := strings.TrimPrefix(destination, "/")
+	dstContainer, dstName := trimmed[:slash], trimmed[slash+1:]
+	if unescaped, err := url.PathUnescape(dstName); err == nil {
+		dstName = unescaped
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.containers[container]
+	var src Object
+	if ok {
+		src, ok = c.objects[name]
+	}
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	if src.Manifest != "" || src.SLO {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	dc, ok := s.containers[dstContainer]
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	dst := src
+	dst.Meta = map[string]string{}
+	for k, v := range src.Meta {
+		dst.Meta[k] = v
+	}
+	for k, v := range objectMetaFromHeaders(r) {
+		dst.Meta[k] = v
+	}
+	if contentType := r.Header.Get("Content-Type"); contentType != "" {
+		dst.ContentType = contentType
+	}
+	if deleteAt := r.Header.Get("X-Delete-At"); deleteAt != "" {
+		if epoch, err := strconv.ParseInt(deleteAt, 10, 64); err == nil {
+			dst.DeleteAt = epoch
+		}
+	}
+	dc.objects[dstName] = dst
+	w.Header().Set("X-Copied-From", container+"/"+name)
+	w.WriteHeader(http.StatusCreated)
 }

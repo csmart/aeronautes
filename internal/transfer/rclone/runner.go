@@ -176,6 +176,29 @@ func (r *Runner) Copy(ctx context.Context, remotes []Remote, src, dst string, na
 	return r.run(ctx, args, env, onEvent)
 }
 
+// CopyTo runs `rclone copyto src dst` for ONE object under a different
+// destination name — the §28.6 staging write (the staged name is always
+// Aeronautes-generated and unique, so rclone's Update never runs against
+// a live name). Same hygiene surface as Copy.
+func (r *Runner) CopyTo(ctx context.Context, remotes []Remote, src, dst string, onEvent func(Event)) (*Result, error) {
+	if strings.ContainsAny(src+dst, "\n\r") {
+		return nil, fmt.Errorf("newline-bearing path cannot ride rclone argv; route it natively (§14.3)")
+	}
+	workDir, err := os.MkdirTemp("", "aeronautes-job-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(workDir)
+
+	configPath, env, err := buildEnvironment(workDir, remotes)
+	if err != nil {
+		return nil, err
+	}
+	args := []string{"copyto", src, dst, "--ignore-times", "--use-json-log", "-vv", "--stats", "1s", "--config", configPath}
+	args = append(args, r.pacingArgs()...)
+	return r.run(ctx, args, env, onEvent)
+}
+
 func (r *Runner) pacingArgs() []string {
 	o := r.opts
 	retries, lowLevel := o.Retries, o.LowLevelRetries

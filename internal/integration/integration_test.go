@@ -3,6 +3,7 @@ package integration
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"os/exec"
 	"sort"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
+	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
 	"github.com/csmart/aeronautes/internal/transfer/plan"
 	"github.com/csmart/aeronautes/internal/transfer/rclone"
 	"github.com/ncw/swift/v2"
@@ -786,4 +788,268 @@ func TestCopyPlannerRealSwift(t *testing.T) {
 	if summary.Overwrites != 1 || summary.TransferObjects != 2 {
 		t.Errorf("summary = %+v", summary)
 	}
+}
+
+// executorFixture builds a real-Swift executor over the two SAIO
+// accounts with the pinned rclone bound as the engine.
+func executorFixture(t *testing.T, h *Harness, srcContainer, dstContainer, jobID string) *transfercopy.Executor {
+	t.Helper()
+	runner, err := rclone.NewRunner(rclone.Options{ChunkSize: "1Mi", Retries: 1, LowLevelRetries: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	remotes := []rclone.Remote{
+		{Name: "aeronautes_src", StorageURL: h.conn.StorageUrl, Token: h.conn.AuthToken},
+		{Name: "aeronautes_dst", StorageURL: h.Conn2().StorageUrl, Token: h.Conn2().AuthToken},
+	}
+	executor, err := transfercopy.New(transfercopy.Config{
+		Source: h.Session, Dest: h.Session2(),
+		Engine:  transfercopy.BindRunner(runner, remotes),
+		SrcSpec: "aeronautes_src:" + srcContainer, DstSpec: "aeronautes_dst:" + dstContainer,
+		SrcContainer: srcContainer, DstContainer: dstContainer,
+		JobID: jobID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return executor
+}
+
+// planInto streams a fresh plan straight into the executor (the
+// production wiring) and returns the reports.
+func planInto(ctx context.Context, t *testing.T, h *Harness, executor *transfercopy.Executor, srcContainer, dstContainer string) *transfercopy.Report {
+	t.Helper()
+	_, err := plan.Copy(ctx,
+		h.Session.Objects(ctx, srcContainer, swiftcontrol.ObjectListOptions{Deep: true}),
+		h.Session2().Objects(ctx, dstContainer, swiftcontrol.ObjectListOptions{Deep: true}),
+		"", "", func(i plan.Item) error { return executor.Handle(ctx, i) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := executor.Finish(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return report
+}
+
+// TestCopyExecutorRealSwift is the K-TEST-001 copy gate on real Swift:
+// the full §58 hostile-name suite crosses accounts byte-exact through
+// the real pinned rclone with native fallback, large objects survive as
+// logical copies, overwrites commit via stage-and-commit, and
+// cancellation leaves no unswept staging.
+func TestCopyExecutorRealSwift(t *testing.T) {
+	if _, err := exec.LookPath("rclone"); err != nil {
+		t.Skip("pinned rclone not installed")
+	}
+	h := harness(t)
+	if h.Session2() == nil {
+		t.Skip("no second account on this cluster")
+	}
+	ctx := context.Background()
+
+	t.Run("hostile-suite", func(t *testing.T) {
+		src := h.Container("encoding")
+		dst := h.Prefix + "exec-encoding"
+		if err := h.rawPut2(ctx, dst, nil, ""); err != nil {
+			t.Fatal(err)
+		}
+		executor := executorFixture(t, h, src, dst, "job-enc")
+		report := planInto(ctx, t, h, executor, src, dst)
+		if len(report.Failures) != 0 {
+			t.Fatalf("failures: %+v", report.Failures)
+		}
+		if report.Copied != int64(len(EncodingNames)) {
+			t.Errorf("copied %d of %d", report.Copied, len(EncodingNames))
+		}
+		if report.NativeRouted == 0 {
+			t.Error("no names went native — the unsafe identities must have")
+		}
+
+		// Independent verification: fresh listings prove Same for every
+		// name (§28.4), then raw byte compares on the worst identities.
+		verify, err := executor.Verify(ctx,
+			h.Session.Objects(ctx, src, swiftcontrol.ObjectListOptions{Deep: true}),
+			h.Session2().Objects(ctx, dst, swiftcontrol.ObjectListOptions{Deep: true}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(verify.Failures) != 0 || verify.Verified != int64(len(EncodingNames)) {
+			t.Fatalf("verify = %+v", verify)
+		}
+		for _, name := range []string{"/foo", "foo/", "foo//bar", "line\nbreak", "   ", "a/./b"} {
+			body, _, err := h.Session2().OpenObject(ctx, dst, name)
+			if err != nil {
+				t.Fatalf("GET dest %q: %v", name, err)
+			}
+			data, _ := io.ReadAll(body)
+			body.Close()
+			if string(data) != "payload:"+name {
+				t.Errorf("%q arrived as %q", name, data)
+			}
+		}
+	})
+
+	t.Run("large-and-metadata", func(t *testing.T) {
+		src := h.Container("exec-src")
+		dst := h.Prefix + "exec-dst"
+		if err := h.conn.ContainerCreate(ctx, src, nil); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.rawPut2(ctx, dst, nil, ""); err != nil {
+			t.Fatal(err)
+		}
+		big := bytes.Repeat([]byte{0xCD}, 3*1024*1024)
+		if err := h.put(ctx, src, "big.bin", big, "application/octet-stream",
+			swift.Headers{"X-Object-Meta-Shoot": "launch"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.put(ctx, src, "small.txt", []byte("v1 bytes"), "text/plain", nil); err != nil {
+			t.Fatal(err)
+		}
+
+		executor := executorFixture(t, h, src, dst, "job-big")
+		report := planInto(ctx, t, h, executor, src, dst)
+		if len(report.Failures) != 0 || report.Copied != 2 {
+			t.Fatalf("report: copied=%d failures=%+v", report.Copied, report.Failures)
+		}
+		// The 3MiB object crossed at 1Mi chunks: the destination is the
+		// engine's own DLO, logical size preserved, metadata re-applied
+		// (rclone drops it), fingerprint stamped.
+		d, err := h.Session2().ObjectDetail(ctx, dst, "big.bin")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d.Class != swiftcontrol.ClassDLO || d.ContentLength != int64(len(big)) {
+			t.Fatalf("big.bin = class %s length %d", d.Class, d.ContentLength)
+		}
+		if d.Meta["Shoot"] != "launch" || d.Meta["Aeronautes-Fingerprint"] == "" {
+			t.Errorf("metadata = %v", d.Meta)
+		}
+		if len(report.CapturedPrefixes) == 0 || len(report.CommittedPrefixes) == 0 {
+			t.Errorf("prefixes: %+v / %+v", report.CapturedPrefixes, report.CommittedPrefixes)
+		}
+
+		// Overwrite both (one plain, one large) via stage-and-commit.
+		if err := h.put(ctx, src, "small.txt", []byte("v2 BYTES"), "text/plain", nil); err != nil {
+			t.Fatal(err)
+		}
+		big2 := bytes.Repeat([]byte{0xEE}, 2*1024*1024+512)
+		if err := h.put(ctx, src, "big.bin", big2, "application/octet-stream", nil); err != nil {
+			t.Fatal(err)
+		}
+		executor2 := executorFixture(t, h, src, dst, "job-big2")
+		report2 := planInto(ctx, t, h, executor2, src, dst)
+		if len(report2.Failures) != 0 || report2.Overwrites != 2 {
+			t.Fatalf("overwrite report: %+v (failures %+v)", report2, report2.Failures)
+		}
+		d2, err := h.Session2().ObjectDetail(ctx, dst, "big.bin")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d2.Class != swiftcontrol.ClassDLO || d2.ContentLength != int64(len(big2)) {
+			t.Fatalf("big.bin after overwrite = class %s length %d", d2.Class, d2.ContentLength)
+		}
+		if d2.Manifest == d.Manifest {
+			t.Error("manifest not swapped on overwrite")
+		}
+		small, _, err := h.Session2().OpenObject(ctx, dst, "small.txt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		smallBytes, _ := io.ReadAll(small)
+		small.Close()
+		if string(smallBytes) != "v2 BYTES" {
+			t.Errorf("small.txt = %q", smallBytes)
+		}
+		// No staging litter under either job's prefix.
+		for _, ex := range []*transfercopy.Executor{executor, executor2} {
+			for entry, err := range h.Session2().Objects(ctx, dst, swiftcontrol.ObjectListOptions{Deep: true, Prefix: ex.StagingPrefix()}) {
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Errorf("staging litter: %+v", entry)
+			}
+		}
+
+		// A fresh third plan must find nothing to do: Same for the plain
+		// object, fingerprint-proven equality for the DLO.
+		executor3 := executorFixture(t, h, src, dst, "job-noop")
+		report3 := planInto(ctx, t, h, executor3, src, dst)
+		if report3.Copied != 0 || len(report3.Failures) != 0 || report3.SkippedEqual == 0 {
+			t.Errorf("idempotent re-plan: %+v (failures %+v)", report3, report3.Failures)
+		}
+	})
+
+	t.Run("cancel-reconcile", func(t *testing.T) {
+		src := h.Container("exec-cancel-src")
+		dst := h.Prefix + "exec-cancel-dst"
+		if err := h.conn.ContainerCreate(ctx, src, nil); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.rawPut2(ctx, dst, nil, ""); err != nil {
+			t.Fatal(err)
+		}
+		huge := bytes.Repeat([]byte{0x5A}, 24*1024*1024)
+		if err := h.put(ctx, src, "huge.bin", huge, "application/octet-stream", nil); err != nil {
+			t.Fatal(err)
+		}
+
+		runner, err := rclone.NewRunner(rclone.Options{ChunkSize: "1Mi", BWLimit: "2M", Retries: 1, LowLevelRetries: 2})
+		if err != nil {
+			t.Fatal(err)
+		}
+		remotes := []rclone.Remote{
+			{Name: "aeronautes_src", StorageURL: h.conn.StorageUrl, Token: h.conn.AuthToken},
+			{Name: "aeronautes_dst", StorageURL: h.Conn2().StorageUrl, Token: h.Conn2().AuthToken},
+		}
+		executor, err := transfercopy.New(transfercopy.Config{
+			Source: h.Session, Dest: h.Session2(),
+			Engine:  transfercopy.BindRunner(runner, remotes),
+			SrcSpec: "aeronautes_src:" + src, DstSpec: "aeronautes_dst:" + dst,
+			SrcContainer: src, DstContainer: dst,
+			JobID: "job-cancel",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Cancel a few seconds into the throttled upload.
+		cancelCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+		defer cancel()
+		_ = executor.Handle(cancelCtx, plan.Item{Name: "huge.bin", Verdict: plan.VerdictNew, Route: plan.RouteRclone, SourceBytes: int64(len(huge))})
+		report, _ := executor.Finish(cancelCtx)
+
+		reconcile, err := executor.Reconcile(ctx, report)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// After reconciliation: no staging litter, and any captured
+		// prefix either belongs to a live manifest or holds no segments.
+		for entry, err := range h.Session2().Objects(ctx, dst, swiftcontrol.ObjectListOptions{Deep: true, Prefix: executor.StagingPrefix()}) {
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Errorf("staging litter after reconcile: %+v", entry)
+		}
+		for _, captured := range report.CapturedPrefixes {
+			kept := false
+			for _, k := range reconcile.KeptPrefixes {
+				if k == captured.Container+"/"+captured.Prefix {
+					kept = true
+				}
+			}
+			if kept {
+				continue
+			}
+			for entry, err := range h.Session2().Objects(ctx, captured.Container, swiftcontrol.ObjectListOptions{Deep: true, Prefix: captured.Prefix}) {
+				if err != nil {
+					break // segment container may not even exist
+				}
+				t.Errorf("orphan segment survived reconcile: %+v", entry)
+			}
+		}
+		t.Logf("cancel: captured=%d swept=%d kept=%v notes=%v",
+			len(report.CapturedPrefixes), reconcile.SweptSegments, reconcile.KeptPrefixes, reconcile.Notes)
+	})
 }

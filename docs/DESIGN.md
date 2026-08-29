@@ -881,15 +881,21 @@ spike ran this suite through the pinned rclone (v1.74.3, Swift→Swift cross-acc
 - **rclone-unsafe identities** (silently dropped by `copy` — "Entry doesn't belong in
   directory … ignoring"): a **leading `/`**, a **trailing `/`**, and a **repeated `//`**
   component (rclone [#5673](https://github.com/rclone/rclone/issues/5673)). These MUST route
-  through the native byte-preserving path.
+  through the native byte-preserving path, as must dot-segment names (next bullet).
 - **Un-listable identity**: a **newline** inside a name cannot be expressed in any rclone file
   list — `--files-from0` **does not exist** in 1.74.3; `--files-from-raw` is the unprocessed
   variant but is still newline-delimited. Newline-bearing names route native regardless of copy
   support.
+- **Dot-segment identities are unsafe both ways** (measured again 2026-08-29 during executor
+  integration, superseding this section's earlier "survived" note — that spike run measured the
+  traversal path and mistook a renamed arrival for survival): a `.` or `..` **path segment**
+  (`a/./b`, `a/../b`) is **silently skipped** by `--files-from-raw` (exit 0) and, on a
+  traversal copy, **silently renamed** — rclone substitutes fullwidth dots (U+FF0E:
+  `a/．/b`) — which is an identity mutation, not a round-trip. Both route native. Dots inside
+  a segment (`a. b.`, `v1.2/x`) are safe.
 - **rclone-safe on 1.74.3** (round-tripped byte-exact): spaces (leading, trailing,
-  all-spaces — via `--files-from-raw`, which does not trim), `+`, `%`, `?`, `#`, `%2F`,
-  Unicode, and — better than this section previously feared — **`.` and `..` path segments
-  survived**. Dot-segment safety is pin-specific: re-run the suite on any rclone upgrade.
+  all-spaces — via `--files-from-raw`, which does not trim), `+`, `%`, `?`, `#`, `%2F`, and
+  Unicode. This classification is pin-specific: re-run the suite on any rclone upgrade.
 - **The worst finding**: rclone dropped the three unsafe identities and still **exited 0**.
   Exit codes are useless for completeness; per-object verification of the planned set against
   destination listings (§28.4) is mandatory, not prudent.

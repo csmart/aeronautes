@@ -46,10 +46,23 @@ Remote names are fixed: `aeronautes_src:` / `aeronautes_dst:` (§26.2).
   `<container>_segments` sidecar; unique per upload; unknowable in advance.
 - `copy` **exits 0 while silently skipping** rclone-unsafe names (leading `/`, trailing `/`,
   `//`) — completeness is verified by listing diff, never exit codes.
+- **Dot-segment names** (`a/./b`, `a/../b`): `--files-from-raw` **silently skips** them
+  (exit 0); a traversal copy **silently renames** them to fullwidth dots (U+FF0E, `a/．/b`).
+  Measured 2026-08-29 against real Swift; both are identity violations → routed native.
+  (Supersedes the first spike run's "dot segments survived", which measured the traversal
+  path and mistook the renamed arrival for a round-trip.)
 - SIGINT: cleans manifest + segments best-effort (one residual observed). SIGKILL: orphans
   remain, no manifest. Both paths end in reconciliation.
 - Custom `X-Object-Meta-*` is not copied (with or without `-M`); Aeronautes re-applies
   metadata natively (§27.4). Destination DLOs get their own manifest.
 
-Re-run the seam spike suite on any pin upgrade; dot-segment name safety in particular is
-verified for 1.74.3 only.
+Re-run the seam spike suite on any pin upgrade; the unsafe-name classification (dot
+segments included) is verified for 1.74.3 only.
+
+## copyto
+
+The §28.6 staging path uses `rclone copyto <src-remote:container/name> <dst-remote:container/staged-name>`
+for single-object copies under a different (always Aeronautes-generated, unique, rclone-safe)
+destination name — batch `copy` cannot rename. Same flag surface as `copy` minus
+`--files-from-raw`; validated against real Swift in the executor integration suite
+(stage-and-commit overwrites, segment-prefix capture on staged large objects).

@@ -36,6 +36,10 @@ type ObjectDetail struct {
 	Manifest string
 	// DeleteAt is the scheduled expiry (X-Delete-At), zero when none.
 	DeleteAt time.Time
+	// ContentEncoding/ContentDisposition are part of the §27.4 preserved
+	// set on copies.
+	ContentEncoding    string
+	ContentDisposition string
 	// Meta is the user metadata (X-Object-Meta-*).
 	Meta map[string]string
 	// RawHeaders is the full header set, secret-shaped values redacted.
@@ -93,6 +97,10 @@ func buildObjectDetail(headers map[string]string, now time.Time) *ObjectDetail {
 			editable[k] = v
 		case "Content-Type":
 			editable[k] = v
+		case "Content-Encoding":
+			d.ContentEncoding = v
+		case "Content-Disposition":
+			d.ContentDisposition = v
 		case "X-Trans-Id":
 			d.TransID = v
 		case "X-Openstack-Request-Id":

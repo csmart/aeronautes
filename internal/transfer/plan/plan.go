@@ -78,6 +78,9 @@ type Item struct {
 	SourceBytes int64
 	SourceETag  string
 	DestBytes   int64
+	// DestETag lets the executor detect an intervening external write
+	// before committing an overwrite (§28.6 re-HEAD).
+	DestETag string
 }
 
 // Summary is the §65.4 preflight surface: honest conservative counts
@@ -106,13 +109,24 @@ type Summary struct {
 }
 
 // RcloneUnsafe reports whether the pinned rclone (docs/rclone.md) would
-// silently drop this full object name (leading "/", trailing "/", "//"
-// component — all measured, all exit 0) or cannot carry it in a file
-// list at all (a newline: --files-from0 does not exist). Evaluate full
-// names — a prefix can make a safe relative name unsafe.
+// violate this full object name's identity: leading "/", trailing "/",
+// and "//" components are silently dropped (exit 0); "." or ".." path
+// segments are silently skipped by --files-from-raw and silently
+// RENAMED to fullwidth dots (U+FF0E) by traversal — both measured on
+// v1.74.3 against real Swift; and a newline cannot ride any rclone list
+// (--files-from0 does not exist). Evaluate full names — a prefix can
+// make a safe relative name unsafe.
 func RcloneUnsafe(name string) bool {
-	return strings.HasPrefix(name, "/") || strings.HasSuffix(name, "/") ||
-		strings.Contains(name, "//") || strings.Contains(name, "\n")
+	if strings.HasPrefix(name, "/") || strings.HasSuffix(name, "/") ||
+		strings.Contains(name, "//") || strings.Contains(name, "\n") {
+		return true
+	}
+	for _, segment := range strings.Split(name, "/") {
+		if segment == "." || segment == ".." {
+			return true
+		}
+	}
+	return false
 }
 
 // Copy merge-joins two deep listing streams (source and destination,
@@ -238,7 +252,8 @@ func classifyNew(s swiftcontrol.ObjectEntry, rel, srcPrefix, dstPrefix string) I
 func classifyPair(s, d swiftcontrol.ObjectEntry, rel, srcPrefix, dstPrefix string) Item {
 	item := Item{
 		Name:        rel,
-		SourceBytes: s.Bytes, SourceETag: s.ETag, DestBytes: d.Bytes,
+		SourceBytes: s.Bytes, SourceETag: s.ETag,
+		DestBytes: d.Bytes, DestETag: d.ETag,
 	}
 	switch {
 	case s.SLOListed || d.SLOListed:
