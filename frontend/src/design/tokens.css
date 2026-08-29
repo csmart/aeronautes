@@ -1,0 +1,159 @@
+/* Aeronautes design tokens — the §4 visual system as CSS custom properties.
+ *
+ * Two warm themes. Light (warm cream / stone, graphite ink, champagne/brass
+ * accent) is the canonical look and the bare :root values; dark restates the
+ * same roles warm, never cool. Theme resolution:
+ *   - no data-theme attribute  → follow the OS (prefers-color-scheme);
+ *   - data-theme="light|dark"  → explicit choice (set via design/tokens.ts).
+ *
+ * Colour is reserved for state, danger, success, selection, and semantic
+ * badges (§4.1) — everything else runs on the neutral ramps below.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* Neutral ground: app chrome → pane → card, warm cream/stone. */
+  --color-bg: #f2eee6;
+  --color-bg-pane: #faf8f3;
+  --color-bg-card: #fffdf9;
+  --color-bg-inset: #ece7dc; /* wells, track backgrounds, code blocks */
+
+  /* Ink. */
+  --color-text: #201d18;
+  --color-text-secondary: #6e675b;
+  --color-text-faint: #98907f;
+  --color-text-invert: #f8f5ef;
+
+  /* Lines and depth. */
+  --color-border: #e3ddd0;
+  --color-border-strong: #cfc7b6;
+  --shadow-card: 0 1px 2px rgb(32 27 20 / 0.05), 0 2px 8px rgb(32 27 20 / 0.05);
+  --shadow-raised: 0 2px 6px rgb(32 27 20 / 0.08), 0 8px 24px rgb(32 27 20 / 0.10);
+
+  /* Champagne / brass accent — restrained. */
+  --color-accent: #a2792c;
+  --color-accent-strong: #8a6420;
+  --color-accent-soft: #f3e7cd; /* badge fills, soft highlights */
+  --color-accent-border: #d9c69a;
+
+  /* Selection (rows, cards) — warm amber tint, brass edge. */
+  --color-selection-bg: #f8efdc;
+  --color-selection-border: #e0cf9f;
+
+  /* Semantic state. Danger is the destructive-flow colour (§30). */
+  --color-danger: #b3402f;
+  --color-danger-soft: #f7e4de;
+  --color-success: #3d7a44;
+  --color-success-soft: #e3efe0;
+  --color-warning: #9a6a1a;
+  --color-warning-soft: #f7ecd2;
+  --color-info: #5a6a83;
+  --color-info-soft: #e7ebf1;
+
+  /* Focus ring (keyboard model §4.4 makes this load-bearing). */
+  --color-focus: #a2792c;
+  --focus-ring: 0 0 0 2px var(--color-bg-card), 0 0 0 4px var(--color-focus);
+
+  /* Spacing scale — dense where operators need it (§4.1). */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+
+  /* Radii — carefully rounded cards and controls. */
+  --radius-control: 7px;
+  --radius-card: 11px;
+  --radius-pill: 999px;
+
+  /* Component metrics. */
+  --row-height: 2.25rem; /* listing rows: dense but scannable */
+  --pane-gap: 1px; /* major panes separate by hairline, not gutter */
+}
+
+/* Dark theme — same roles, still warm (stone/ink, never blue-grey). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --color-bg: #191612;
+    --color-bg-pane: #201c17;
+    --color-bg-card: #272219;
+    --color-bg-inset: #14110d;
+
+    --color-text: #ece5d8;
+    --color-text-secondary: #a89e8c;
+    --color-text-faint: #7d7464;
+    --color-text-invert: #201d18;
+
+    --color-border: #353027;
+    --color-border-strong: #4a4335;
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.35), 0 2px 8px rgb(0 0 0 / 0.25);
+    --shadow-raised: 0 2px 6px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.35);
+
+    --color-accent: #cfa859;
+    --color-accent-strong: #e0bd74;
+    --color-accent-soft: #3a3122;
+    --color-accent-border: #5c4c2c;
+
+    --color-selection-bg: #332c1d;
+    --color-selection-border: #55482c;
+
+    --color-danger: #d3705e;
+    --color-danger-soft: #3c221c;
+    --color-success: #7fb283;
+    --color-success-soft: #22301f;
+    --color-warning: #d0a24e;
+    --color-warning-soft: #362a14;
+    --color-info: #93a4bd;
+    --color-info-soft: #242a34;
+
+    --color-focus: #cfa859;
+    --focus-ring: 0 0 0 2px var(--color-bg-card), 0 0 0 4px var(--color-focus);
+  }
+}
+
+/* Explicit dark choice — MUST stay value-identical to the media-query block
+ * above (plain CSS cannot share a declaration block across the two selector
+ * contexts; keep them in sync when editing). */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-bg: #191612;
+  --color-bg-pane: #201c17;
+  --color-bg-card: #272219;
+  --color-bg-inset: #14110d;
+
+  --color-text: #ece5d8;
+  --color-text-secondary: #a89e8c;
+  --color-text-faint: #7d7464;
+  --color-text-invert: #201d18;
+
+  --color-border: #353027;
+  --color-border-strong: #4a4335;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.35), 0 2px 8px rgb(0 0 0 / 0.25);
+  --shadow-raised: 0 2px 6px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.35);
+
+  --color-accent: #cfa859;
+  --color-accent-strong: #e0bd74;
+  --color-accent-soft: #3a3122;
+  --color-accent-border: #5c4c2c;
+
+  --color-selection-bg: #332c1d;
+  --color-selection-border: #55482c;
+
+  --color-danger: #d3705e;
+  --color-danger-soft: #3c221c;
+  --color-success: #7fb283;
+  --color-success-soft: #22301f;
+  --color-warning: #d0a24e;
+  --color-warning-soft: #362a14;
+  --color-info: #93a4bd;
+  --color-info-soft: #242a34;
+
+  --color-focus: #cfa859;
+  --focus-ring: 0 0 0 2px var(--color-bg-card), 0 0 0 4px var(--color-focus);
+}

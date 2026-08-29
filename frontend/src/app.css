@@ -1,10 +1,10 @@
-/* Shell-only styling. The real §4 design system (tokens, typography,
-   motion, both warm themes) lands as its own commit — keep this file
-   minimal until then. */
+/* Global base: the §4 design system (tokens, typography, motion) plus the
+   few element defaults every pane shares. Feature styling stays scoped in
+   components. */
 
-:root {
-  color-scheme: dark;
-}
+@import "./design/tokens.css";
+@import "./design/typography.css";
+@import "./design/motion.css";
 
 html,
 body {
@@ -13,16 +13,24 @@ body {
 }
 
 body {
-  background: #201b17;
-  color: #e9e1d8;
-  font:
-    15px/1.5 system-ui,
-    sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-ui);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
   -webkit-font-smoothing: antialiased;
 }
 
 #app {
   height: 100%;
-  display: grid;
-  place-items: center;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-control);
+}
+
+::selection {
+  background: var(--color-selection-bg);
 }

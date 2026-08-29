@@ -1,0 +1,28 @@
+/* Aeronautes motion (§4.1): 120–160 ms for small transitions, a touch longer
+ * for surfaces sliding in; decelerate easing; no bounce, no gimmicks. */
+
+:root {
+  --motion-fast: 120ms; /* hovers, toggles, selection tint */
+  --motion-base: 160ms; /* small movement: rows, badges, focus */
+  --motion-surface: 220ms; /* drawers, slide-overs, inspector panes */
+
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Respect the OS setting: motion collapses to instant state changes. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-base: 0ms;
+    --motion-surface: 0ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

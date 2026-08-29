@@ -1,0 +1,72 @@
+/* Aeronautes typography (§4.2).
+ *
+ * Roles, not fonts, are the contract:
+ *   --font-ui       highly legible modern UI face — dense listings run on this;
+ *   --font-display  headings and selected resource names (a *treatment* today:
+ *                   weight + tracking on the UI stack; swapping in a
+ *                   characterful face later only changes this token);
+ *   --font-mono     narrow mono — ETags, tokens, object paths, request IDs,
+ *                   raw headers.
+ *
+ * Stacks are system faces so nothing is fetched at runtime (§55); bundling
+ * specific faces is a Phase-7 polish decision. Numbers that align in columns
+ * (sizes, rates, worker counts, timestamps, progress) use .num/tabular-nums.
+ */
+
+:root {
+  --font-ui:
+    system-ui,
+    "Adwaita Sans",
+    "Segoe UI",
+    "SF Pro Text",
+    Cantarell,
+    "Noto Sans",
+    sans-serif;
+  --font-display: var(--font-ui);
+  --font-mono:
+    ui-monospace,
+    "Adwaita Mono",
+    "SF Mono",
+    "Cascadia Code",
+    "JetBrains Mono",
+    Consolas,
+    "Noto Sans Mono",
+    monospace;
+
+  /* Type scale — compact; operators scan, they don't read essays. */
+  --text-xs: 0.71rem; /* badges, table captions, footers */
+  --text-sm: 0.82rem; /* secondary detail, inspector labels */
+  --text-md: 0.9rem; /* listing rows, controls — the workhorse size */
+  --text-lg: 1.05rem; /* pane titles */
+  --text-xl: 1.35rem; /* selected resource names, page headings */
+  --text-2xl: 1.9rem; /* rare: empty states, first-run */
+
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-display: 650;
+}
+
+/* Display treatment: weight and slight negative tracking, never a decorative
+ * face on every row of a million-object browser (§4.2). */
+.type-display {
+  font-family: var(--font-display);
+  font-weight: var(--weight-display);
+  letter-spacing: -0.015em;
+  line-height: var(--leading-tight);
+}
+
+/* Machine text: ETags, paths, request IDs, raw headers. */
+.type-mono {
+  font-family: var(--font-mono);
+  font-size: 0.92em; /* optical match against the UI face */
+  letter-spacing: -0.01em;
+}
+
+/* Columns of figures line up: sizes, rates, counts, timestamps. */
+.num {
+  font-variant-numeric: tabular-nums;
+}
