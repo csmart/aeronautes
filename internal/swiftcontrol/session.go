@@ -87,3 +87,10 @@ func (s *Session) StorageURL() string {
 func (s *Session) TokenExpires() time.Time {
 	return s.conn.Expires
 }
+
+// AuthToken returns the current auth token — for handing to the rclone
+// child's environment (§26.2) ONLY. It must never cross the frontend
+// bridge or reach a log or database (K-SEC-002/003).
+func (s *Session) AuthToken() string {
+	return s.conn.AuthToken
+}

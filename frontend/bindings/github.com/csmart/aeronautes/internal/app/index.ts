@@ -6,17 +6,21 @@ import * as AuditService from "./auditservice.js";
 import * as BookmarkService from "./bookmarkservice.js";
 import * as BrowseService from "./browseservice.js";
 import * as InspectorService from "./inspectorservice.js";
+import * as JobService from "./jobservice.js";
 import * as MutateService from "./mutateservice.js";
+import * as TransferService from "./transferservice.js";
 export {
     AppService,
     AuditService,
     BookmarkService,
     BrowseService,
     InspectorService,
-    MutateService
+    JobService,
+    MutateService,
+    TransferService
 };
 
-export type {
+export {
     AccountDTO,
     AuditEventDTO,
     BookmarkDTO,
@@ -26,8 +30,11 @@ export type {
     ContainerEditDTO,
     ContainerPageDTO,
     ContainerRowDTO,
+    CopyPlanDTO,
+    CopyRequestDTO,
     DLOSegmentsDTO,
     Info,
+    JobDTO,
     ListingRowDTO,
     MutationResultDTO,
     ObjectDetailDTO,

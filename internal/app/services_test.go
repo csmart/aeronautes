@@ -12,6 +12,7 @@ import (
 	"github.com/csmart/aeronautes/internal/bookmarks"
 	"github.com/csmart/aeronautes/internal/db"
 	"github.com/csmart/aeronautes/internal/evidence"
+	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/secrets"
 	"github.com/csmart/aeronautes/internal/swifttest"
 )
@@ -24,6 +25,8 @@ type harness struct {
 	inspector *InspectorService
 	mutate    *MutateService
 	auditSvc  *AuditService
+	transfer  *TransferService
+	jobsSvc   *JobService
 	mock      *swifttest.Server
 	authURL   string
 }
@@ -52,12 +55,15 @@ func newHarnessWithInfo(t *testing.T, infoJSON string) *harness {
 	connections := NewConnections(store)
 	ev := evidence.NewStore(d)
 	auditStore := audit.NewStore(d)
+	jobStore := jobs.NewStore(d)
 	return &harness{
 		bookmarks: NewBookmarkService(store),
 		browse:    NewBrowseService(connections, ev),
 		inspector: NewInspectorService(connections, ev),
 		mutate:    NewMutateService(connections, auditStore, ev),
 		auditSvc:  NewAuditService(auditStore),
+		transfer:  NewTransferService(connections, jobStore, auditStore),
+		jobsSvc:   NewJobService(jobStore),
 		mock:      mock,
 		authURL:   srv.URL + "/auth/v1.0",
 	}

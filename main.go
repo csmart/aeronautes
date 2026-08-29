@@ -16,6 +16,7 @@ import (
 	"github.com/csmart/aeronautes/internal/bookmarks"
 	"github.com/csmart/aeronautes/internal/db"
 	"github.com/csmart/aeronautes/internal/evidence"
+	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/secrets"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -51,6 +52,7 @@ func main() {
 	connections := app.NewConnections(bookmarkStore)
 	evidenceStore := evidence.NewStore(database)
 	auditStore := audit.NewStore(database)
+	jobStore := jobs.NewStore(database)
 
 	a := application.New(application.Options{
 		Name:        "Aeronautes",
@@ -62,6 +64,8 @@ func main() {
 			application.NewService(app.NewInspectorService(connections, evidenceStore)),
 			application.NewService(app.NewMutateService(connections, auditStore, evidenceStore)),
 			application.NewService(app.NewAuditService(auditStore)),
+			application.NewService(app.NewTransferService(connections, jobStore, auditStore)),
+			application.NewService(app.NewJobService(jobStore)),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
