@@ -210,6 +210,9 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     needs: [go, frontend, saio]
     runs-on: ubuntu-latest
+    # Badges are cosmetic: if the push is refused (branch protection, a
+    # restricted workflow token), this must never redden the pipeline.
+    continue-on-error: true
     permissions:
       contents: write
     steps:
