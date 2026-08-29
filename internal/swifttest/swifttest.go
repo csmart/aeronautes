@@ -346,6 +346,10 @@ func applyContainerHeaders(c *Container, r *http.Request) {
 			c.ReadACL = value
 		case key == "X-Container-Write":
 			c.WriteACL = value
+		case key == "X-Remove-Container-Read":
+			c.ReadACL = ""
+		case key == "X-Remove-Container-Write":
+			c.WriteACL = ""
 		case key == "X-Versions-Location":
 			c.VersionsLocation = value
 			c.HistoryLocation = ""

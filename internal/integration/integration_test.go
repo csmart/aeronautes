@@ -431,3 +431,101 @@ func trapHeaders(h *Harness) swift.Headers {
 		"X-Object-Manifest":      h.Container("external-dlo-segments") + "/wedding-video/",
 	}
 }
+
+// TestContainerMutationRealSwift drives create, the working-copy update
+// delta, and markers against real Swift.
+func TestContainerMutationRealSwift(t *testing.T) {
+	h := harness(t)
+	ctx := context.Background()
+	name := h.Container("mutable")
+
+	created, err := h.Session.CreateContainer(ctx, swiftcontrol.ContainerCreateRequest{
+		Name: name, Meta: map[string]string{"Owner": "ops"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Meta["Owner"] != "ops" || created.StoragePolicy == "" {
+		t.Errorf("created = %+v", created)
+	}
+	if _, err := h.Session.CreateContainer(ctx, swiftcontrol.ContainerCreateRequest{Name: name}); err == nil {
+		t.Error("recreate must fail, not silently accept")
+	}
+
+	// Update: set ACLs, quota, versioning; then verify a second edit
+	// removes them — all against real middleware.
+	versions := h.Container("mutable-versions")
+	if _, err := h.Session.CreateContainer(ctx, swiftcontrol.ContainerCreateRequest{Name: versions}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := h.Session.UpdateContainer(ctx, name, created.EditableFingerprint, swiftcontrol.ContainerEdit{
+		Meta:       map[string]string{"Owner": "ops", "Tier": "gold"},
+		ReadACL:    ".r:*,.rlistings",
+		Versioning: swiftcontrol.ContainerVersioning{Mode: swiftcontrol.VersioningVersionsLocation, Archive: versions},
+		QuotaBytes: 5000000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != swiftcontrol.UpdateApplied {
+		t.Fatalf("Outcome = %q (%s)", result.Outcome, result.Mismatch)
+	}
+	after := result.After
+	if after.ReadACL != ".r:*,.rlistings" || after.QuotaBytes != 5000000 {
+		t.Errorf("after = %+v", after)
+	}
+	if after.Versioning.Mode != swiftcontrol.VersioningVersionsLocation || after.Versioning.Archive != versions {
+		t.Errorf("Versioning = %+v", after.Versioning)
+	}
+
+	result2, err := h.Session.UpdateContainer(ctx, name, after.EditableFingerprint, swiftcontrol.ContainerEdit{
+		Meta: map[string]string{"Owner": "ops"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result2.Outcome != swiftcontrol.UpdateApplied {
+		t.Fatalf("Outcome = %q (%s)", result2.Outcome, result2.Mismatch)
+	}
+	cleared := result2.After
+	if cleared.ReadACL != "" || cleared.QuotaBytes != 0 || cleared.Versioning.Mode != swiftcontrol.VersioningOff {
+		t.Errorf("clear edit left state behind: %+v", cleared)
+	}
+	if _, still := cleared.Meta["Tier"]; still {
+		t.Error("removed metadata key survived")
+	}
+
+	// Stale fingerprint refuses against real Swift: `after` (the fully
+	// configured state) is stale now that the clearing edit landed.
+	conflict, err := h.Session.UpdateContainer(ctx, name, after.EditableFingerprint, swiftcontrol.ContainerEdit{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conflict.Outcome != swiftcontrol.UpdateConflict {
+		t.Errorf("stale update = %q, want conflict", conflict.Outcome)
+	}
+
+	// Markers on real Swift: create, folder-suit refusal, delete keeps
+	// children.
+	if _, err := h.Session.CreateMarker(ctx, name, "photos/"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.put(ctx, name, "photos/a.jpg", []byte("x"), "image/jpeg", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.put(ctx, name, "suit/", []byte("real data"), "text/plain", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Session.CreateMarker(ctx, name, "suit/"); err == nil {
+		t.Error("CreateMarker over a real object must refuse")
+	}
+	if err := h.Session.DeleteMarker(ctx, name, "suit/"); err == nil {
+		t.Error("DeleteMarker over a real object must refuse")
+	}
+	if err := h.Session.DeleteMarker(ctx, name, "photos/"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Session.ObjectDetail(ctx, name, "photos/a.jpg"); err != nil {
+		t.Errorf("child lost with marker: %v", err)
+	}
+}

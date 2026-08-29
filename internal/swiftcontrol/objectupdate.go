@@ -75,7 +75,7 @@ func (s *Session) UpdateObjectMetadata(ctx context.Context, container, name, bas
 	}
 
 	headers := buildObjectPostHeaders(before, edit)
-	writeTransID, err := s.postObject(ctx, container, name, headers)
+	writeTransID, err := s.post(ctx, container, name, headers)
 	if err != nil {
 		return nil, err
 	}
@@ -120,34 +120,6 @@ func buildObjectPostHeaders(before *ObjectDetail, edit ObjectMetadataEdit) swift
 		headers["X-Delete-At"] = strconv.FormatInt(edit.DeleteAt.Unix(), 10)
 	}
 	return headers
-}
-
-// postObject POSTs the headers and returns the write's transaction id.
-func (s *Session) postObject(ctx context.Context, container, name string, headers swift.Headers) (string, error) {
-	if !s.conn.Authenticated() {
-		if err := s.Authenticate(ctx); err != nil {
-			return "", err
-		}
-	}
-	resp, respHeaders, err := s.conn.Call(ctx, s.conn.StorageUrl, swift.RequestOpts{
-		Container:  container,
-		ObjectName: name,
-		Operation:  "POST",
-		Headers:    headers,
-		NoResponse: true,
-		OnReAuth:   func() (string, error) { return s.conn.StorageUrl, nil },
-	})
-	if err != nil {
-		return "", Normalize(err)
-	}
-	if resp != nil && resp.Body != nil {
-		resp.Body.Close()
-	}
-	transID := respHeaders["X-Trans-Id"]
-	if transID == "" {
-		transID = respHeaders["X-Openstack-Request-Id"]
-	}
-	return transID, nil
 }
 
 // verifyObjectOutcome compares the verify HEAD against the intent; ""
