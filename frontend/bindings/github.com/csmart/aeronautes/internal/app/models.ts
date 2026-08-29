@@ -9,6 +9,27 @@ import * as jobs$0 from "../jobs/models.js";
 import * as plan$0 from "../transfer/plan/models.js";
 
 /**
+ * About is the §65.6 About document: identity, the pinned engine, and
+ * the direct dependencies with their licences. The list is curated with
+ * the go.mod requirements — a new direct dependency updates it in the
+ * same commit.
+ */
+export interface About {
+    "name": string;
+    "version": string;
+    "wails": string;
+
+    /**
+     * SecretBackend is "keychain" or "session" (§12.1): the UI must say
+     * visibly when credentials are session-only.
+     */
+    "secretBackend": string;
+    "rclonePin": string;
+    "license": string;
+    "licenses": LicenseEntry[] | null;
+}
+
+/**
  * AccountDTO is the connected account's portrait (§53).
  */
 export interface AccountDTO {
@@ -428,6 +449,15 @@ export interface JobDTO {
      * Settings is the §45 effective-configuration JSON ("" when none).
      */
     "settings": string;
+}
+
+/**
+ * LicenseEntry is one dependency's licence, for the About surface.
+ */
+export interface LicenseEntry {
+    "name": string;
+    "license": string;
+    "url": string;
 }
 
 /**

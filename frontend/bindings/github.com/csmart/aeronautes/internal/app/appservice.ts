@@ -16,6 +16,13 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as $models from "./models.js";
 
 /**
+ * About returns the About document.
+ */
+export function About(): $CancellablePromise<$models.About> {
+    return $Call.ByID(2601997667);
+}
+
+/**
  * Info returns the shell identity.
  */
 export function Info(): $CancellablePromise<$models.Info> {

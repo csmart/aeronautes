@@ -69,6 +69,7 @@ export type {
   DeletePreviewDTO,
   DeleteRequestDTO,
   DownloadRequestDTO,
+  About,
   AppSettingsDTO,
   AuditQueryDTO,
   BenchmarkRequestDTO,
@@ -81,6 +82,7 @@ export type {
   UploadRequestDTO,
 } from "../../bindings/github.com/csmart/aeronautes/internal/app";
 import type {
+  About,
   AppSettingsDTO,
   AuditQueryDTO,
   BenchmarkRequestDTO,
@@ -108,6 +110,7 @@ export interface ObjectPage {
 
 export interface Api {
   info(): Promise<Info>;
+  about(): Promise<About>;
   listBookmarks(): Promise<BookmarkDTO[]>;
   saveBookmark(bookmark: BookmarkDTO, secret: string): Promise<BookmarkDTO>;
   deleteBookmark(id: string): Promise<void>;
@@ -169,6 +172,11 @@ export interface Api {
 /** The live bridge. */
 export const liveApi: Api = {
   info: () => AppService.Info(),
+  about: async () => {
+    const about = await AppService.About();
+    if (!about) throw new Error("empty about");
+    return about;
+  },
   listBookmarks: async () => (await BookmarkService.List()) ?? [],
   saveBookmark: (bookmark, secret) => BookmarkService.Save(bookmark, secret),
   deleteBookmark: (id) => BookmarkService.Delete(id),

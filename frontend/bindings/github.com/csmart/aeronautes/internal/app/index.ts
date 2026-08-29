@@ -33,6 +33,7 @@ export {
 } from "./models.js";
 
 export type {
+    About,
     AccountDTO,
     AppSettingsDTO,
     AuditEventDTO,
@@ -57,6 +58,7 @@ export type {
     FindStatusDTO,
     Info,
     JobDTO,
+    LicenseEntry,
     ListingRowDTO,
     MirrorRequestDTO,
     MutationResultDTO,

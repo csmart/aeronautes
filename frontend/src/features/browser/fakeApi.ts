@@ -686,6 +686,15 @@ export function newFakeApi(): Api {
       return "job-bench";
     },
     latestBenchmark: async (bookmarkId) => null,
+    about: async () => ({
+      name: "Aeronautes",
+      version: "test",
+      wails: "v3",
+      secretBackend: "session",
+      rclonePin: "v1.74.3",
+      license: "Apache-2.0 (this application)",
+      licenses: [{ name: "example", license: "MIT", url: "https://example.com" }],
+    }),
     appSettings: async () => ({ maxActiveJobs: 2, defaultProfile: "auto" }),
     saveAppSettings: async (settings) => settings,
     startFind: async (container, prefix, query) => "find-1",

@@ -1,11 +1,15 @@
 # Aeronautes
 
-> **Status: implementation in progress.** The design is locked; code is built one component per
-> commit, following the sequences in [`docs/DESIGN.md`](docs/DESIGN.md) §65. The v0.1 vertical
-> proof — bookmark → auth → containers → objects → inspector HEAD in the four-pane UI — runs end
-> to end, the adapter passes an integration suite against real containerized Swift in CI (§57.3),
-> and the Phase 2 read-only inspector is live: container detail, exact SLO manifests, and
-> evidence-driven backstage classification (§24) learned from ordinary browsing.
+> **Status: implementation in progress — Phases 0–6 complete, Phase 7 (release hardening)
+> under way.** The design is locked; code is built one component per commit, following the
+> sequences in [`docs/DESIGN.md`](docs/DESIGN.md) §65. Live today, all proven against real
+> containerized Swift: the four-pane browser and inspector with evidence-driven backstage
+> classification; safe metadata/ACL/container mutation; cross-account Copy through the pinned
+> rclone with stage-and-commit overwrites and independent verification; executable Mirror;
+> upload/download with collision preflight; recursive/empty/delete-container jobs and gated
+> SLO/DLO segment cleanup over ownership proofs; the live job drawer with budgets, profiles,
+> and a consent-gated benchmark; and per-bookmark TLS trust (system / custom CA / insecure)
+> exercised against HTTPS Swift.
 
 **Aeronautes** (a living genus of swifts; “air sailor”) is a beautiful, performance-first
 **desktop operator workbench for OpenStack Swift / SwiftStack**.
@@ -43,6 +47,8 @@ vault for secrets.
 - [`docs/assets/REGENERATION.md`](docs/assets/REGENERATION.md) — Swift-correct specs for regenerating the mockups.
 - `docs/assets/draft/*.png` — visual direction only. ⚠ The current AI-generated PNGs contain S3-flavoured
   terminology errors; `DESIGN.md` §4.5 and the regeneration specs are authoritative until they are redone.
+- [`docs/rclone.md`](docs/rclone.md) — the exact pinned-rclone flag surface and measured behaviours.
+- [`docs/RELEASING.md`](docs/RELEASING.md) — the six-target release pipeline (unsigned for now, on purpose).
 - [`AGENTS.md`](AGENTS.md) — start-here guide for coding agents.
 
 ## Building on Fedora
@@ -70,6 +76,34 @@ The Makefile is a thin directory over the real build system, the Wails v3 Taskfi
 `make package`) is built by [nfpm](https://nfpm.goreleaser.com) from `build/linux/nfpm/nfpm.yaml`
 — a convenience package of the built binary, not a Fedora-guidelines source build; a review-grade
 `.spec` (vendored sources through `rpmbuild`) is release-packaging work (§61, Phase 7).
+
+## Quickstart
+
+1. Install the pinned transfer engine: `sudo dnf install rclone` (the app pins **v1.74.3** and
+   refuses others — transfers are disabled, browsing still works, if the pin is absent).
+2. Launch `bin/aeronautes`, click **Add**, and create a bookmark: display name, TempAuth v1 auth
+   URL (`https://cluster/auth/v1.0`), `account:user`, API key. The key goes to the OS keychain;
+   if none is reachable the app says so and keeps it for the session only.
+3. **TLS**: the default verifies against the system trust store. For a cluster with a private
+   CA choose **Custom CA** and paste the PEM bundle — trust is per-bookmark, applies to both
+   the native client and the rclone child, and never changes another endpoint's verification.
+   **Insecure** exists for labs and is flagged loudly.
+4. Browse: containers on the left (with backstage classification), objects in the middle
+   (server-side prefix + Find in container), authoritative HEAD detail on the right.
+5. Transfers: open a container and use **Copy to…** (preview first, then start), **Upload…**/
+   **Download…** (complete collision preflight before any write), or the **Mirror** tab
+   (destructive: typed confirmation, delete half runs only after the copy half verifies).
+   Follow everything in the jobs drawer — progress, throughput, cancel, audit trail.
+6. Destructive cleanup: **Delete…** for prefix/empty/delete-container (typed confirmation),
+   and manifest deletion from the inspector — segments die only under recorded ownership
+   proof or an explicit Backstage override.
+
+### Before trusting a release against production
+
+The §57.4 smoke against real SwiftStack infrastructure is a **manual operator step**:
+connect to a real endpoint over TLS, browse a large container, run a small cross-account copy
+into a scratch container, verify counts in the drawer, and check `/info`-gated features match
+the cluster. `scripts/smoke.sh` covers the automated half against a local mock.
 
 To exercise the app or the integration suite against a real local Swift:
 

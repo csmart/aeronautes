@@ -13,6 +13,7 @@
   import JobsDrawer from "../jobs/JobsDrawer.svelte";
   import TransferDialog from "../transfer/TransferDialog.svelte";
   import LocalTransferDialog from "../transfer/LocalTransferDialog.svelte";
+  import AboutDialog from "./AboutDialog.svelte";
   import DeleteDialog from "../transfer/DeleteDialog.svelte";
   import { BrowserState } from "./browserState.svelte";
 
@@ -22,6 +23,7 @@
   let editorOpen = $state(false);
   let createOpen = $state(false);
   let shellInfo = $state("connecting…");
+  let aboutOpen = $state(false);
 
   onMount(async () => {
     try {
@@ -52,6 +54,7 @@
     if (
       editorOpen ||
       createOpen ||
+      aboutOpen ||
       browser.transferOpen ||
       browser.localTransfer !== null ||
       browser.deleteOpen
@@ -59,6 +62,7 @@
       if (event.key === "Escape") {
         editorOpen = false;
         createOpen = false;
+        aboutOpen = false;
         browser.transferOpen = false;
         browser.localTransfer = null;
         browser.deleteOpen = false;
@@ -101,7 +105,7 @@
         {browser.account ? `connected · ${browser.account.name}` : "not connected"}
       {/if}
     </span>
-    <span>{shellInfo}</span>
+    <button class="about-link" onclick={() => (aboutOpen = true)}>{shellInfo}</button>
   </footer>
 </div>
 
@@ -128,6 +132,10 @@
   <DeleteDialog {browser} onClose={() => (browser.deleteOpen = false)} />
 {/if}
 
+{#if aboutOpen}
+  <AboutDialog onClose={() => (aboutOpen = false)} />
+{/if}
+
 <style>
   .screen {
     height: 100%;
@@ -141,6 +149,19 @@
   }
 
   /* Declared after the catch-all so the tie-break lands here. */
+  .about-link {
+    font: inherit;
+    background: none;
+    border: none;
+    padding: 0;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  .about-link:hover {
+    color: var(--color-text);
+  }
+
   .drawer-slot {
     grid-row: 2;
     grid-column: 1 / -1;
