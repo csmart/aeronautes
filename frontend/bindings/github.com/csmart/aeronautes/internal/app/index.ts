@@ -20,5 +20,6 @@ export type {
     Info,
     ListingRowDTO,
     ObjectDetailDTO,
-    ObjectPageDTO
+    ObjectPageDTO,
+    PrefixDetailDTO
 } from "./models.js";

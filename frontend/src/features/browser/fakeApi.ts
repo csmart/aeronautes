@@ -95,7 +95,6 @@ export function newFakeApi(): Api {
                 lastModified: e.lastModified,
                 contentType: e.contentType,
                 sloListed: e.largeObject === "slo",
-                markerBacked: false,
               }
             : {
                 kind: "prefix",
@@ -105,13 +104,36 @@ export function newFakeApi(): Api {
                 lastModified: "",
                 contentType: "",
                 sloListed: false,
-                markerBacked: e.markerBacked,
               },
         )
         .filter((r) => r.name > marker)
         .slice(0, limit);
       const full = rows.length === limit;
       return { rows, nextMarker: full ? rows[rows.length - 1].name : "" };
+    },
+
+    prefixDetail: async (container, prefix) => {
+      const self = (fixtureObjects[container] ?? []).find((o) => o.name === prefix);
+      if (!self) {
+        return { prefix, markerBacked: false, selfObject: null };
+      }
+      return {
+        prefix,
+        markerBacked: self.bytes === 0 && self.contentType === "application/directory",
+        selfObject: {
+          name: self.name,
+          class: "plain",
+          contentLength: self.bytes,
+          contentType: self.contentType,
+          etag: self.etag,
+          lastModified: self.lastModified,
+          manifest: "",
+          deleteAt: "",
+          meta: {},
+          rawHeaders: {},
+          transId: "txfake",
+        },
+      };
     },
 
     objectDetail: async (container, name) => {

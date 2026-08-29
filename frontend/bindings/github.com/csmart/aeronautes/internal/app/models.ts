@@ -65,7 +65,9 @@ export interface Info {
 
 /**
  * ListingRowDTO is one working-list row: kind "object" or "prefix".
- * Prefix rows use Name for the prefix (with trailing delimiter).
+ * Prefix rows use Name for the prefix (with trailing delimiter); whether
+ * a marker object backs a prefix is not knowable from a listing (§14.1)
+ * — InspectorService.Prefix answers on selection.
  */
 export interface ListingRowDTO {
     "kind": string;
@@ -75,7 +77,6 @@ export interface ListingRowDTO {
     "lastModified": string;
     "contentType": string;
     "sloListed": boolean;
-    "markerBacked": boolean;
 }
 
 /**
@@ -106,4 +107,19 @@ export interface ObjectDetailDTO {
 export interface ObjectPageDTO {
     "rows": ListingRowDTO[] | null;
     "nextMarker": string;
+}
+
+/**
+ * PrefixDetailDTO is the selection-triggered prefix classification
+ * (§14.1): marker-backed vs implied, and any real object sitting at the
+ * prefix name that the delimiter view folded away.
+ */
+export interface PrefixDetailDTO {
+    "prefix": string;
+    "markerBacked": boolean;
+
+    /**
+     * SelfObject is nil for an implied prefix.
+     */
+    "selfObject": ObjectDetailDTO | null;
 }

@@ -1,11 +1,9 @@
-// Client-side delimiter view over fixture objects, mirroring the Swift
-// semantics the Go layer implements (§14): name-sorted rows, subdirectory
-// grouping at "/", a zero-byte application/directory object whose name ends
-// in the delimiter merges with its subdir row into one marker-backed
-// prefix, and an object that merely *looks* folder-ish stays an object.
-// The live wiring replaces calls to this with BrowseService pages; the
-// function exists so the static UI browses with correct semantics, not a
-// fake filesystem.
+// Client-side delimiter view over fixture objects, mirroring real Swift's
+// semantics as the Go layer implements them (§14, verified via §57.3):
+// name-sorted rows; every name below a child prefix — boundary objects,
+// markers, folder-ish real objects included — folds into one subdir row;
+// the object at the query prefix's own name is not a child row. Used by
+// the test fake so navigation logic is exercised with correct semantics.
 
 import type { ListingEntry, ObjectEntry } from "./types";
 
@@ -17,14 +15,6 @@ export interface FixtureObject {
   lastModified: string;
   contentType: string;
   largeObject?: "dlo" | "slo";
-}
-
-function isFolderMarker(o: FixtureObject): boolean {
-  return (
-    o.name.endsWith("/") &&
-    o.bytes === 0 &&
-    o.contentType === "application/directory"
-  );
 }
 
 function toObjectEntry(o: FixtureObject): ObjectEntry {
@@ -53,41 +43,24 @@ export function delimiterView(
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 
   const out: ListingEntry[] = [];
-  const prefixIndex = new Map<string, number>();
+  const emitted = new Set<string>();
 
   for (const o of sorted) {
+    if (o.name === prefix) {
+      // This level's own marker/self object: PrefixDetail's business.
+      continue;
+    }
     const rest = o.name.slice(prefix.length);
     const slash = rest.indexOf("/");
-
     if (slash === -1) {
       out.push(toObjectEntry(o));
       continue;
     }
-
-    const trailing = slash === rest.length - 1;
-    const marker = trailing && isFolderMarker(o);
-
-    if (trailing && !marker) {
-      // Folder-ish name but a real object (§14.1): stays an object row;
-      // any children independently imply the prefix row.
-      out.push(toObjectEntry(o));
-      continue;
-    }
-
     const childPrefix = prefix + rest.slice(0, slash + 1);
-    const existing = prefixIndex.get(childPrefix);
-    if (existing !== undefined) {
-      if (marker) {
-        const entry = out[existing];
-        if (entry.kind === "prefix") {
-          entry.markerBacked = true;
-        }
-      }
-      continue;
+    if (!emitted.has(childPrefix)) {
+      emitted.add(childPrefix);
+      out.push({ kind: "prefix", prefix: childPrefix });
     }
-
-    prefixIndex.set(childPrefix, out.length);
-    out.push({ kind: "prefix", prefix: childPrefix, markerBacked: marker });
   }
 
   return out;

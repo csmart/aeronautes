@@ -45,7 +45,9 @@ type ContainerPageDTO struct {
 }
 
 // ListingRowDTO is one working-list row: kind "object" or "prefix".
-// Prefix rows use Name for the prefix (with trailing delimiter).
+// Prefix rows use Name for the prefix (with trailing delimiter); whether
+// a marker object backs a prefix is not knowable from a listing (§14.1)
+// — InspectorService.Prefix answers on selection.
 type ListingRowDTO struct {
 	Kind         string `json:"kind"`
 	Name         string `json:"name"`
@@ -54,7 +56,6 @@ type ListingRowDTO struct {
 	LastModified string `json:"lastModified"`
 	ContentType  string `json:"contentType"`
 	SLOListed    bool   `json:"sloListed"`
-	MarkerBacked bool   `json:"markerBacked"`
 }
 
 // ObjectPageDTO is one page of the working list; an empty NextMarker
@@ -62,6 +63,16 @@ type ListingRowDTO struct {
 type ObjectPageDTO struct {
 	Rows       []ListingRowDTO `json:"rows"`
 	NextMarker string          `json:"nextMarker"`
+}
+
+// PrefixDetailDTO is the selection-triggered prefix classification
+// (§14.1): marker-backed vs implied, and any real object sitting at the
+// prefix name that the delimiter view folded away.
+type PrefixDetailDTO struct {
+	Prefix       string `json:"prefix"`
+	MarkerBacked bool   `json:"markerBacked"`
+	// SelfObject is nil for an implied prefix.
+	SelfObject *ObjectDetailDTO `json:"selfObject"`
 }
 
 // ObjectDetailDTO is the authoritative HEAD detail (§53).

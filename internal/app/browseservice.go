@@ -111,7 +111,7 @@ func (s *BrowseService) Objects(ctx context.Context, container, prefix, marker s
 				SLOListed:    v.SLOListed,
 			}
 		case swiftcontrol.PrefixEntry:
-			row = ListingRowDTO{Kind: "prefix", Name: v.Prefix, MarkerBacked: v.MarkerBacked}
+			row = ListingRowDTO{Kind: "prefix", Name: v.Prefix}
 		default:
 			continue
 		}

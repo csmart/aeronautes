@@ -10,6 +10,7 @@ import type {
   ContainerRowDTO,
   ListingRowDTO,
   ObjectDetailDTO,
+  PrefixDetailDTO,
 } from "../../lib/api";
 import { parentPrefix } from "../../lib/listing";
 
@@ -63,8 +64,10 @@ export class BrowserState {
   entriesError: string | null = $state(null);
   selectedIndex = $state(-1);
 
-  // Inspector detail (selection-triggered HEAD, §14.2).
+  // Inspector detail (selection-triggered HEAD, §14.2): an object row
+  // fetches its HEAD, a prefix row its PrefixDetail classification.
   objectDetail: ObjectDetailDTO | null = $state(null);
+  prefixDetail: PrefixDetailDTO | null = $state(null);
   detailLoading = $state(false);
   detailError: string | null = $state(null);
   #detailSeq = 0;
@@ -219,25 +222,36 @@ export class BrowserState {
     this.entriesMarker = page.nextMarker;
   }
 
-  /** Selection moves; an object row triggers its authoritative HEAD. */
+  /** Selection moves; the selected row triggers its authoritative HEAD
+   * (§14.2) — object detail or prefix classification. */
   select(index: number) {
     this.selectedIndex = index;
     const entry = this.selectedEntry;
     const seq = ++this.#detailSeq;
     this.objectDetail = null;
+    this.prefixDetail = null;
     this.detailError = null;
-    if (!entry || entry.kind !== "object" || !this.containerName) {
+    const container = this.containerName;
+    if (!entry || !container) {
       this.detailLoading = false;
       return;
     }
     this.detailLoading = true;
-    this.#api
-      .objectDetail(this.containerName, entry.name)
-      .then((detail) => {
-        if (seq === this.#detailSeq) {
-          this.objectDetail = detail;
-        }
-      })
+    const fetch =
+      entry.kind === "object"
+        ? this.#api
+            .objectDetail(container, entry.name)
+            .then((detail) => {
+              if (seq === this.#detailSeq) {
+                this.objectDetail = detail;
+              }
+            })
+        : this.#api.prefixDetail(container, entry.name).then((detail) => {
+            if (seq === this.#detailSeq) {
+              this.prefixDetail = detail;
+            }
+          });
+    fetch
       .catch((err) => {
         if (seq === this.#detailSeq) {
           this.detailError = messageOf(err);

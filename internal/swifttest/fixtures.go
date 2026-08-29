@@ -12,6 +12,10 @@ func (s *Server) LoadCanonicalFixtures() {
 	put("fixtures", "empty-object", Object{Bytes: 0, ContentType: "application/octet-stream"})
 	put("fixtures", "folder-marker/", Object{Bytes: 0, ContentType: "application/directory"})
 	put("fixtures", "implied/child.txt", Object{Bytes: 2048, ContentType: "text/plain"})
+	// A real object wearing a folder suit, plus a child implying the same
+	// prefix — the §14.1 trap PrefixDetail must surface.
+	put("fixtures", "fake/", Object{Bytes: 21, ContentType: "text/plain"})
+	put("fixtures", "fake/child.txt", Object{Bytes: 5, ContentType: "text/plain"})
 	put("fixtures", "unicode/日本語.txt", Object{Bytes: 512, ContentType: "text/plain"})
 	put("fixtures", "weird/a+b.txt", Object{Bytes: 64, ContentType: "text/plain"})
 	put("fixtures", "weird/percent%name", Object{Bytes: 96})

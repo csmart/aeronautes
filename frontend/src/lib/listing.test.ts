@@ -12,7 +12,7 @@ function obj(name: string, bytes = 10, contentType = "text/plain"): FixtureObjec
 
 const marker = (name: string): FixtureObject => obj(name, 0, "application/directory");
 
-describe("delimiterView", () => {
+describe("delimiterView (real-Swift grouping, §14.1)", () => {
   it("splits objects and child prefixes at the delimiter", () => {
     const rows = delimiterView(
       [obj("empty-object", 0), obj("normal/hello.txt"), obj("implied/child.txt")],
@@ -20,45 +20,46 @@ describe("delimiterView", () => {
     );
     expect(rows).toEqual([
       expect.objectContaining({ kind: "object", name: "empty-object" }),
-      expect.objectContaining({ kind: "prefix", prefix: "implied/", markerBacked: false }),
-      expect.objectContaining({ kind: "prefix", prefix: "normal/", markerBacked: false }),
+      { kind: "prefix", prefix: "implied/" },
+      { kind: "prefix", prefix: "normal/" },
     ]);
   });
 
-  it("marks a lone folder marker as a marker-backed prefix", () => {
-    const rows = delimiterView([marker("folder-marker/")], "");
+  it("folds every boundary object into one prefix row", () => {
+    // A lone marker, a marker with children, and a folder-ish real
+    // object all look identical in the listing; PrefixDetail tells
+    // them apart on selection.
+    const rows = delimiterView(
+      [
+        marker("folder-marker/"),
+        marker("both/"),
+        obj("both/x.txt"),
+        obj("fake/", 120),
+        obj("fake/child.txt"),
+      ],
+      "",
+    );
     expect(rows).toEqual([
-      { kind: "prefix", prefix: "folder-marker/", markerBacked: true },
+      { kind: "prefix", prefix: "both/" },
+      { kind: "prefix", prefix: "fake/" },
+      { kind: "prefix", prefix: "folder-marker/" },
     ]);
   });
 
-  it("merges a marker with its children into one row", () => {
-    const rows = delimiterView([marker("both/"), obj("both/x.txt")], "");
-    expect(rows).toEqual([{ kind: "prefix", prefix: "both/", markerBacked: true }]);
-  });
-
-  it("keeps a folder-ish real object as an object row", () => {
-    const rows = delimiterView([obj("fake-folder/", 120)], "");
-    expect(rows).toEqual([
-      expect.objectContaining({ kind: "object", name: "fake-folder/", bytes: 120 }),
-    ]);
-  });
-
-  it("lists a folder-ish object alongside the prefix its children imply", () => {
-    const rows = delimiterView([obj("fake/", 120), obj("fake/child.txt")], "");
-    expect(rows).toEqual([
-      expect.objectContaining({ kind: "object", name: "fake/" }),
-      expect.objectContaining({ kind: "prefix", prefix: "fake/", markerBacked: false }),
+  it("skips the query prefix's own self object", () => {
+    const objects = [obj("fake/", 120), obj("fake/child.txt")];
+    expect(delimiterView(objects, "fake/")).toEqual([
+      expect.objectContaining({ kind: "object", name: "fake/child.txt" }),
     ]);
   });
 
   it("walks repeated slashes one level at a time", () => {
     const objects = [obj("weird/repeated//slash")];
     expect(delimiterView(objects, "weird/")).toEqual([
-      { kind: "prefix", prefix: "weird/repeated/", markerBacked: false },
+      { kind: "prefix", prefix: "weird/repeated/" },
     ]);
     expect(delimiterView(objects, "weird/repeated/")).toEqual([
-      { kind: "prefix", prefix: "weird/repeated//", markerBacked: false },
+      { kind: "prefix", prefix: "weird/repeated//" },
     ]);
     expect(delimiterView(objects, "weird/repeated//")).toEqual([
       expect.objectContaining({ kind: "object", name: "weird/repeated//slash" }),

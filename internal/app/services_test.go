@@ -183,14 +183,8 @@ func TestObjectsDelimiterPage(t *testing.T) {
 		t.Errorf("rows = %v", kinds)
 	}
 
-	marked := false
-	for _, row := range page.Rows {
-		if row.Name == "folder-marker/" && row.Kind == "prefix" && row.MarkerBacked {
-			marked = true
-		}
-	}
-	if !marked {
-		t.Error("folder-marker/ must be a marker-backed prefix row")
+	if kinds["folder-marker/"] != "prefix" {
+		t.Error("folder-marker/ must group into a prefix row (§14.1)")
 	}
 
 	// Paging across the namespace with a small limit walks to exhaustion
@@ -217,6 +211,28 @@ func TestObjectsDelimiterPage(t *testing.T) {
 		if count != 1 {
 			t.Errorf("row %s repeated %d times", name, count)
 		}
+	}
+}
+
+func TestInspectorPrefixDetail(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+	ctx := context.Background()
+
+	marker, err := h.inspector.Prefix(ctx, "fixtures", "folder-marker/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !marker.MarkerBacked || marker.SelfObject == nil {
+		t.Errorf("folder-marker/ = %+v, want marker-backed with self object", marker)
+	}
+
+	implied, err := h.inspector.Prefix(ctx, "fixtures", "implied/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if implied.MarkerBacked || implied.SelfObject != nil {
+		t.Errorf("implied/ = %+v, want implied", implied)
 	}
 }
 

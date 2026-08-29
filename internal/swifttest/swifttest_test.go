@@ -60,8 +60,8 @@ func TestAdapterRoundTrip(t *testing.T) {
 	}
 	want := []string{
 		"obj:empty-object", "obj:external-dlo", "obj:external-slo",
-		"pfx:folder-marker/", "pfx:implied/", "pfx:normal/",
-		"pfx:unicode/", "pfx:weird/",
+		"pfx:fake/", "pfx:folder-marker/", "pfx:implied/",
+		"pfx:normal/", "pfx:unicode/", "pfx:weird/",
 	}
 	if len(names) != len(want) {
 		t.Fatalf("root rows = %v, want %v", names, want)

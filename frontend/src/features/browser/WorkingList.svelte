@@ -124,7 +124,7 @@
               <svg class="icon folder" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
                 <path
                   d="M1.75 3.5 h4 l1.5 1.75 h7 v7.25 h-12.5 Z"
-                  fill={entry.markerBacked ? "currentColor" : "none"}
+                  fill="none"
                   stroke="currentColor"
                   stroke-width="1.3"
                 />

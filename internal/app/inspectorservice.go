@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"time"
+
+	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
 
 // InspectorService serves selection-triggered detail (§14.2, §53): the
@@ -26,6 +28,29 @@ func (s *InspectorService) Object(ctx context.Context, container, name string) (
 	if err != nil {
 		return ObjectDetailDTO{}, err
 	}
+	return toObjectDetailDTO(d), nil
+}
+
+// Prefix classifies a prefix on selection (§14.1): marker-backed vs
+// implied, surfacing any folder-ish real object at the name.
+func (s *InspectorService) Prefix(ctx context.Context, container, prefix string) (PrefixDetailDTO, error) {
+	session, err := s.connections.Session()
+	if err != nil {
+		return PrefixDetailDTO{}, err
+	}
+	d, err := session.PrefixDetail(ctx, container, prefix)
+	if err != nil {
+		return PrefixDetailDTO{}, err
+	}
+	dto := PrefixDetailDTO{Prefix: d.Prefix, MarkerBacked: d.MarkerBacked}
+	if d.SelfObject != nil {
+		self := toObjectDetailDTO(d.SelfObject)
+		dto.SelfObject = &self
+	}
+	return dto, nil
+}
+
+func toObjectDetailDTO(d *swiftcontrol.ObjectDetail) ObjectDetailDTO {
 	dto := ObjectDetailDTO{
 		Name:          d.Name,
 		Class:         string(d.Class),
@@ -41,5 +66,5 @@ func (s *InspectorService) Object(ctx context.Context, container, name string) (
 	if !d.DeleteAt.IsZero() {
 		dto.DeleteAt = d.DeleteAt.UTC().Format(time.RFC3339)
 	}
-	return dto, nil
+	return dto
 }

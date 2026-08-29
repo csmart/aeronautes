@@ -38,6 +38,10 @@ export const fixtureObjects: Record<string, FixtureObject[]> = {
     { name: "empty-object", bytes: 0, etag: "d41d8cd98f00b204e9800998ecf8427e", lastModified: `${AUG}1:30Z`, contentType: "application/octet-stream" },
     { name: "folder-marker/", bytes: 0, etag: "d41d8cd98f00b204e9800998ecf8427e", lastModified: `${AUG}2:00Z`, contentType: "application/directory" },
     { name: "implied/child.txt", bytes: 2_048, etag: "9a0364b9e99bb480dd25e1f0284c8555", lastModified: `${AUG}2:10Z`, contentType: "text/plain" },
+    // A real object wearing a folder suit + a child implying the same
+    // prefix (§14.1 trap: the listing folds both into one prefix row).
+    { name: "fake/", bytes: 21, etag: "6f1ed002ab5595859014ebf0951522d9", lastModified: `${AUG}2:15Z`, contentType: "text/plain" },
+    { name: "fake/child.txt", bytes: 5, etag: "6f1ed002ab5595859014ebf0951522d8", lastModified: `${AUG}2:16Z`, contentType: "text/plain" },
     { name: "unicode/日本語.txt", bytes: 512, etag: "0d5cb1cbf5ec1e5c6f6cbba6c92b02d4", lastModified: `${AUG}2:20Z`, contentType: "text/plain" },
     { name: "weird/a+b.txt", bytes: 64, etag: "1a79a4d60de6718e8e5b326e338ae533", lastModified: `${AUG}3:00Z`, contentType: "text/plain" },
     { name: "weird/percent%name", bytes: 96, etag: "2b00042f7481c7b056c4b410d28f33cf", lastModified: `${AUG}3:10Z`, contentType: "application/octet-stream" },

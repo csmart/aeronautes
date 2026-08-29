@@ -29,13 +29,13 @@ export interface ObjectEntry {
   largeObject?: "dlo" | "slo";
 }
 
-/** A virtual-folder row from a delimiter view (§14.1). */
+/** A virtual-folder row from a delimiter view (§14.1). Whether a marker
+ * object backs it is not knowable from a listing — the server folds any
+ * boundary object into this row; PrefixDetail answers on selection. */
 export interface PrefixEntry {
   kind: "prefix";
   /** Includes the trailing delimiter. */
   prefix: string;
-  /** An explicit zero-byte application/directory marker object exists. */
-  markerBacked: boolean;
 }
 
 export type ListingEntry = ObjectEntry | PrefixEntry;

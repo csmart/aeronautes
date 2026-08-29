@@ -260,9 +260,12 @@ type listingRow struct {
 	SubDir       string `json:"subdir,omitempty"`
 }
 
-// writeObjectListing emulates Swift's delimiter grouping: an object named
-// exactly at a delimiter boundary is emitted as an object row, and one
-// subdir row per group is emitted when strictly-deeper names exist.
+// writeObjectListing emulates real Swift's delimiter grouping (verified
+// via §57.3): every name below a child prefix — an object named exactly
+// at the boundary included — folds into one subdir row, and a marker
+// naming a subdir group skips the whole group. Only an object named
+// exactly at the *query* prefix (no delimiter left in its remainder)
+// lists as an object row.
 func (s *Server) writeObjectListing(w http.ResponseWriter, r *http.Request, container string, names []string) {
 	q := r.URL.Query()
 	limit, _ := strconv.Atoi(q.Get("limit"))
@@ -292,14 +295,11 @@ func (s *Server) writeObjectListing(w http.ResponseWriter, r *http.Request, cont
 			rest := name[len(prefix):]
 			if idx := strings.Index(rest, delimiter); idx >= 0 {
 				subdir := prefix + rest[:idx+len(delimiter)]
-				if name != subdir {
-					if !emittedSubdir[subdir] {
-						emittedSubdir[subdir] = true
-						rows = append(rows, listingRow{SubDir: subdir})
-					}
-					continue
+				if !emittedSubdir[subdir] {
+					emittedSubdir[subdir] = true
+					rows = append(rows, listingRow{SubDir: subdir})
 				}
-				// Exact marker-boundary name: falls through as object row.
+				continue
 			}
 		}
 		s.mu.Lock()

@@ -809,16 +809,29 @@ body: 0 bytes
 Content-Type: application/directory
 ```
 
+**What a delimiter listing can and cannot say (verified against real Swift, §57.3):** the server
+folds *every* name below a child prefix into one subdir row — including an object named exactly at
+the boundary, whether it is a marker or a real object wearing a folder suit. So a delimiter
+listing alone cannot distinguish marker-backed from implied, and a folder-ish real object is
+invisible at its own level. The answer is a **selection-triggered `PrefixDetail`** (one HEAD of the
+exact prefix name, §14.2): it reports marker-backed vs implied and surfaces any real self-object.
+Inside a prefix, the object at the prefix's own name is not shown as a child row (it belongs to
+that prefix's detail); Deep listings report every real object verbatim for jobs.
+
 UI:
 
-- visually distinguish marker-backed versus implied;
-- both remain valid navigable prefixes.
+- distinguish marker-backed versus implied in the inspector (from `PrefixDetail`, not from
+  listing rows, which cannot know);
+- both remain valid navigable prefixes;
+- when a prefix's self-object is a *real* object rather than a marker, say so explicitly — data
+  is hiding behind a folder row.
 
 ### 14.2 Do not HEAD every row
 
 Listing is cheap classification.
 
-Selection triggers authoritative HEAD/inspection.
+Selection triggers authoritative HEAD/inspection — `PrefixDetail` for prefixes, the object HEAD
+for objects.
 
 This is a hard performance rule.
 

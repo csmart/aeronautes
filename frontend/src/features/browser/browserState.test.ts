@@ -89,14 +89,27 @@ describe("navigation", () => {
     expect(s.objectDetail?.manifest).toBe("external-dlo-segments/wedding-video/");
   });
 
-  it("selecting a prefix clears the object detail", async () => {
+  it("selecting a prefix clears object detail and classifies it", async () => {
     const s = await connected();
     await s.openContainer("fixtures");
     s.select(s.entries.findIndex((e) => e.name === "external-dlo"));
     await vi.waitFor(() => expect(s.objectDetail).not.toBeNull());
-    s.select(s.entries.findIndex((e) => e.kind === "prefix"));
+
+    s.select(s.entries.findIndex((e) => e.name === "folder-marker/"));
     expect(s.objectDetail).toBeNull();
-    expect(s.detailLoading).toBe(false);
+    await vi.waitFor(() => expect(s.prefixDetail).not.toBeNull());
+    expect(s.prefixDetail?.markerBacked).toBe(true);
+
+    s.select(s.entries.findIndex((e) => e.name === "implied/"));
+    await vi.waitFor(() => expect(s.prefixDetail).not.toBeNull());
+    expect(s.prefixDetail?.markerBacked).toBe(false);
+    expect(s.prefixDetail?.selfObject).toBeNull();
+
+    // The folder-suit trap: a real object at the prefix name surfaces.
+    s.select(s.entries.findIndex((e) => e.name === "fake/"));
+    await vi.waitFor(() => expect(s.prefixDetail).not.toBeNull());
+    expect(s.prefixDetail?.markerBacked).toBe(false);
+    expect(s.prefixDetail?.selfObject?.contentLength).toBe(21);
   });
 
   it("filter narrows visible entries without refetching", async () => {

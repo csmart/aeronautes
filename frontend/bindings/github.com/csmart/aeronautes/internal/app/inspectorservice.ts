@@ -21,3 +21,11 @@ import * as $models from "./models.js";
 export function Object(container: string, name: string): $CancellablePromise<$models.ObjectDetailDTO> {
     return $Call.ByID(3225180167, container, name);
 }
+
+/**
+ * Prefix classifies a prefix on selection (§14.1): marker-backed vs
+ * implied, surfacing any folder-ish real object at the name.
+ */
+export function Prefix(container: string, prefix: string): $CancellablePromise<$models.PrefixDetailDTO> {
+    return $Call.ByID(3304830540, container, prefix);
+}

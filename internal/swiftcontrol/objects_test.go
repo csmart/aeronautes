@@ -114,9 +114,10 @@ type listingRow struct {
 	SubDir       string `json:"subdir,omitempty"`
 }
 
-// handleListing emulates Swift's delimiter grouping: an object named
-// exactly at a delimiter boundary is emitted as an object row, and one
-// subdir row per group is emitted when strictly-deeper names exist.
+// handleListing emulates real Swift's delimiter grouping (verified via
+// §57.3): every name below a child prefix — an object named exactly at
+// the boundary included — folds into one subdir row, and a marker naming
+// a subdir group skips the whole group.
 func (f *fakeSwift) handleListing(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	limit, _ := strconv.Atoi(q.Get("limit"))
@@ -145,17 +146,12 @@ func (f *fakeSwift) handleListing(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if delimiter != "" {
+			if marker != "" && strings.HasSuffix(marker, delimiter) && strings.HasPrefix(name, marker) {
+				continue
+			}
 			rest := name[len(prefix):]
 			if idx := strings.Index(rest, delimiter); idx >= 0 {
 				subdir := prefix + rest[:idx+len(delimiter)]
-				if name == subdir {
-					// Exact marker-boundary name: a real object row.
-					f.mu.Lock()
-					o := f.objects[name]
-					f.mu.Unlock()
-					rows = append(rows, objectRow(name, o))
-					continue
-				}
 				if !emittedSubdir[subdir] {
 					emittedSubdir[subdir] = true
 					rows = append(rows, listingRow{SubDir: subdir})
@@ -225,29 +221,16 @@ func TestObjectsDelimiterListing(t *testing.T) {
 		}
 	}
 
-	// A lone marker object is a marker-backed prefix.
-	if p, ok := byName["pfx:folder-marker/"].(PrefixEntry); !ok || !p.MarkerBacked {
-		t.Errorf("folder-marker/ = %#v, want marker-backed PrefixEntry", byName["pfx:folder-marker/"])
-	}
-	// Children only: an implied prefix.
-	if p, ok := byName["pfx:implied/"].(PrefixEntry); !ok || p.MarkerBacked {
-		t.Errorf("implied/ = %#v, want implied PrefixEntry", byName["pfx:implied/"])
-	}
-	// Marker + children: one merged marker-backed prefix, no stray rows.
-	if p, ok := byName["pfx:both/"].(PrefixEntry); !ok || !p.MarkerBacked {
-		t.Errorf("both/ = %#v, want merged marker-backed PrefixEntry", byName["pfx:both/"])
-	}
-	if _, stray := byName["obj:both/"]; stray {
-		t.Error("marker object both/ leaked as a separate ObjectEntry")
-	}
-	// An object that merely looks folder-ish stays an object (K-SEG-002
-	// spirit: classification never by name alone), beside its children's
-	// implied prefix.
-	if o, ok := byName["obj:weird/"].(ObjectEntry); !ok || o.Bytes != 7 {
-		t.Errorf("weird/ = %#v, want ObjectEntry with 7 bytes", byName["obj:weird/"])
-	}
-	if p, ok := byName["pfx:weird/"].(PrefixEntry); !ok || p.MarkerBacked {
-		t.Errorf("weird/ prefix = %#v, want implied PrefixEntry", byName["pfx:weird/"])
+	// Real-server grouping (§14.1): every boundary object — a lone marker,
+	// a marker with children, even a folder-ish real object — folds into
+	// exactly one prefix row; PrefixDetail tells them apart on selection.
+	for _, prefix := range []string{"folder-marker/", "implied/", "both/", "weird/"} {
+		if _, ok := byName["pfx:"+prefix].(PrefixEntry); !ok {
+			t.Errorf("%s: missing PrefixEntry", prefix)
+		}
+		if _, stray := byName["obj:"+prefix]; stray {
+			t.Errorf("boundary object %s leaked as a separate ObjectEntry", prefix)
+		}
 	}
 	// Plain object fields and the SLO listing hint.
 	if o, ok := byName["obj:hello.txt"].(ObjectEntry); !ok || o.Bytes != 5 || o.ContentType != "text/plain" || o.SLOListed {
@@ -255,6 +238,67 @@ func TestObjectsDelimiterListing(t *testing.T) {
 	}
 	if o, ok := byName["obj:video.mp4"].(ObjectEntry); !ok || !o.SLOListed {
 		t.Errorf("video.mp4 = %#v, want SLOListed", byName["obj:video.mp4"])
+	}
+}
+
+// TestPrefixDetail covers the selection-triggered HEAD that a delimiter
+// listing cannot answer (§14.1/§14.2): marker-backed vs implied vs a
+// folder-ish real object hiding behind the group row.
+func TestPrefixDetail(t *testing.T) {
+	f, s := newFakeSwift(t, "browse")
+	f.put("folder-marker/", fakeObject{bytes: 0, contentType: "application/directory"})
+	f.put("implied/child.txt", fakeObject{bytes: 2, contentType: "text/plain"})
+	f.put("weird/", fakeObject{bytes: 7, contentType: "text/plain"})
+	f.put("weird/x", fakeObject{bytes: 1, contentType: "text/plain"})
+	ctx := context.Background()
+
+	marker, err := s.PrefixDetail(ctx, "browse", "folder-marker/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !marker.MarkerBacked || marker.SelfObject == nil {
+		t.Errorf("folder-marker/ = %+v, want marker-backed with self object", marker)
+	}
+
+	implied, err := s.PrefixDetail(ctx, "browse", "implied/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if implied.MarkerBacked || implied.SelfObject != nil {
+		t.Errorf("implied/ = %+v, want implied (no self object)", implied)
+	}
+
+	folderish, err := s.PrefixDetail(ctx, "browse", "weird/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if folderish.MarkerBacked {
+		t.Error("weird/ must not classify as marker-backed from name alone")
+	}
+	if folderish.SelfObject == nil || folderish.SelfObject.ContentLength != 7 {
+		t.Errorf("weird/ self object = %+v, want the 7-byte folder-ish object surfaced", folderish.SelfObject)
+	}
+}
+
+// TestObjectsSelfRowSkipped pins the self-object rule: inside a prefix,
+// the object at the prefix's own name is not a child row (it belongs to
+// PrefixDetail), while Deep mode reports it verbatim for jobs.
+func TestObjectsSelfRowSkipped(t *testing.T) {
+	f, s := newFakeSwift(t, "browse")
+	f.put("photos/", fakeObject{bytes: 0, contentType: "application/directory"})
+	f.put("photos/a.jpg", fakeObject{bytes: 1, contentType: "image/jpeg"})
+
+	entries := collectEntries(t, s, "browse", ObjectListOptions{Prefix: "photos/"})
+	if len(entries) != 1 {
+		t.Fatalf("delimiter view inside photos/ = %#v, want just the child", entries)
+	}
+	if o, ok := entries[0].(ObjectEntry); !ok || o.Name != "photos/a.jpg" {
+		t.Fatalf("entry = %#v, want photos/a.jpg", entries[0])
+	}
+
+	deep := collectEntries(t, s, "browse", ObjectListOptions{Prefix: "photos/", Deep: true})
+	if len(deep) != 2 || deep[0].(ObjectEntry).Name != "photos/" {
+		t.Fatalf("deep view = %#v, want the marker object kept", deep)
 	}
 }
 

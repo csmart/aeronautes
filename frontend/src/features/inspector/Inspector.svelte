@@ -100,18 +100,34 @@
       </section>
     {/if}
   {:else if entry && entry.kind === "prefix"}
+    {@const pd = browser.prefixDetail}
     <header class="head">
       <h2 class="title type-mono prefix-title">{entry.name}</h2>
-      <p class="subtitle">Prefix · {entry.markerBacked ? "marker-backed" : "implied"}</p>
+      <p class="subtitle">
+        {#if browser.detailLoading}Prefix · classifying…
+        {:else if pd?.markerBacked}Prefix · marker-backed
+        {:else if pd?.selfObject}Prefix · object at this name
+        {:else if pd}Prefix · implied
+        {:else}Prefix{/if}
+      </p>
     </header>
     <section class="card">
-      {#if entry.markerBacked}
+      {#if browser.detailError}
+        <p class="error">classification failed: {browser.detailError}</p>
+      {:else if pd?.markerBacked}
         <p class="teach">
           An explicit zero-byte <span class="type-mono">application/directory</span>
           marker object exists at this name. The prefix survives even with no
           children.
         </p>
-      {:else}
+      {:else if pd?.selfObject}
+        <p class="teach">
+          A <strong>real object</strong> ({pd.selfObject.contentType},
+          {pd.selfObject.contentLength} bytes) is stored at this exact name —
+          data wearing a folder suit. The listing folds it into this row;
+          it is not a directory marker.
+        </p>
+      {:else if pd}
         <p class="teach">
           This prefix exists because objects live beneath it; no explicit marker
           object is required.
