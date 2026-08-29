@@ -2344,6 +2344,15 @@ For active jobs show:
 
 Do not show a spinner and hide the interesting data.
 
+**Jobs are bookmark-scoped and the drawer filters on it (owner input, 2026-08-29).** A job records
+the bookmark(s) it acts for — source and destination separately for cross-account work — and the
+drawer offers an account/bookmark filter so an operator working to/from/with several clusters can
+isolate one endpoint's in-flight activity. The §50 audit view carries the same filter. When Phase
+5 materialises jobs, the `jobs` table gains explicit source/destination bookmark references to
+make this queryable rather than parsed out of display strings. (Phase 3's mutations are
+synchronous single requests — button-level progress plus an audit event; the drawer fills when
+long-running jobs exist.)
+
 ---
 
 ## 48. Strategy selection
