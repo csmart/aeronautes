@@ -517,6 +517,85 @@ export function newFakeApi(): Api {
       job.state = "cancelled";
       job.finishedAt = "2026-08-29T10:05:00Z";
     },
+    pickUploadFiles: async () => ["/tmp/fake-a.txt", "/tmp/fake-b.txt"],
+    pickDownloadDir: async () => "/tmp/fake-dest",
+    preflightUpload: async (req) => ({
+      items: req.paths.map((path) => ({
+        path,
+        name: req.prefix + path.split("/").pop(),
+        size: 1024,
+        route: "rclone",
+      })),
+      problems: [],
+      totalBytes: 1024 * req.paths.length,
+    }),
+    startUpload: async (req) => {
+      const id = `job-${jobs.length + 1}`;
+      jobs.push({
+        id,
+        type: "upload",
+        state: "running",
+        source: `${req.paths.length} local files`,
+        destination: `${req.container}/${req.prefix}`,
+        sourceBookmarkId: "",
+        destBookmarkId: req.bookmarkId,
+        createdAt: "2026-08-29T10:00:00Z",
+        startedAt: "2026-08-29T10:00:01Z",
+        finishedAt: "",
+        engine: "rclone+native",
+        counters: {
+          objectsPlanned: req.paths.length,
+          objectsCopied: 0,
+          objectsVerified: 0,
+          objectsFailed: 0,
+          bytesPlanned: 1024 * req.paths.length,
+          bytesCopied: 0,
+          overwrites: 0,
+          nativeRouted: 0,
+        },
+        error: "",
+      });
+      return id;
+    },
+    preflightDownload: async (req) => ({
+      items: [
+        { name: req.prefix + "a.txt", relPath: "a.txt", size: 512, route: "rclone", dir: false },
+      ],
+      problems:
+        req.destDir === "/tmp/collides"
+          ? [{ name: "a.txt", kind: "local-exists", detail: "already there", reject: true }]
+          : [],
+      totalBytes: 512,
+      objects: 1,
+    }),
+    startDownload: async (req) => {
+      const id = `job-${jobs.length + 1}`;
+      jobs.push({
+        id,
+        type: "download",
+        state: "running",
+        source: `${req.container}/${req.prefix}`,
+        destination: req.destDir,
+        sourceBookmarkId: req.bookmarkId,
+        destBookmarkId: "",
+        createdAt: "2026-08-29T10:00:00Z",
+        startedAt: "2026-08-29T10:00:01Z",
+        finishedAt: "",
+        engine: "rclone+native",
+        counters: {
+          objectsPlanned: 1,
+          objectsCopied: 0,
+          objectsVerified: 0,
+          objectsFailed: 0,
+          bytesPlanned: 512,
+          bytesCopied: 0,
+          overwrites: 0,
+          nativeRouted: 0,
+        },
+        error: "",
+      });
+      return id;
+    },
     jobs: async (bookmarkId, activeOnly, limit) =>
       jobs
         .filter(

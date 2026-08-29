@@ -33,6 +33,7 @@ export type {
     CopyPlanDTO,
     CopyRequestDTO,
     DLOSegmentsDTO,
+    DownloadRequestDTO,
     Info,
     JobDTO,
     ListingRowDTO,
@@ -43,5 +44,6 @@ export type {
     PrefixDetailDTO,
     SLOManifestDTO,
     SLOSegmentDTO,
-    StoragePolicyDTO
+    StoragePolicyDTO,
+    UploadRequestDTO
 } from "./models.js";

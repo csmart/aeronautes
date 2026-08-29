@@ -7,7 +7,9 @@ import type {
   AccountDTO,
   CopyPlanDTO,
   CopyRequestDTO,
+  DownloadPreflight,
   JobDTO,
+  UploadPreflight,
   Api,
   AuditEventDTO,
   BookmarkDTO,
@@ -69,6 +71,8 @@ export class BrowserState {
 
   // Transfer dialog (§27.1 Copy / §27.2 Mirror preview).
   transferOpen = $state(false);
+  // Local transfer dialog (§27.5); null = closed.
+  localTransfer: "upload" | "download" | null = $state(null);
 
   // Containers pane.
   mode: ContainerMode = $state("logical");
@@ -363,6 +367,42 @@ export class BrowserState {
   async cancelJob(jobId: string) {
     await this.#api.cancelJob(jobId);
     await this.loadJobs();
+  }
+
+  async pickUploadFiles(): Promise<string[]> {
+    return await this.#api.pickUploadFiles();
+  }
+
+  async pickDownloadDir(): Promise<string> {
+    return await this.#api.pickDownloadDir();
+  }
+
+  #localScope() {
+    return {
+      bookmarkId: this.connectedBookmarkId ?? "",
+      container: this.containerName ?? "",
+      prefix: this.prefix,
+    };
+  }
+
+  async preflightUpload(paths: string[]): Promise<UploadPreflight> {
+    return await this.#api.preflightUpload({ ...this.#localScope(), paths });
+  }
+
+  async startUpload(paths: string[]): Promise<string> {
+    const id = await this.#api.startUpload({ ...this.#localScope(), paths });
+    await this.loadJobs();
+    return id;
+  }
+
+  async preflightDownload(destDir: string): Promise<DownloadPreflight> {
+    return await this.#api.preflightDownload({ ...this.#localScope(), destDir });
+  }
+
+  async startDownload(destDir: string): Promise<string> {
+    const id = await this.#api.startDownload({ ...this.#localScope(), destDir });
+    await this.loadJobs();
+    return id;
   }
 
   async loadAudit() {

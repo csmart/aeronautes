@@ -12,6 +12,7 @@
   import Inspector from "../inspector/Inspector.svelte";
   import JobsDrawer from "../jobs/JobsDrawer.svelte";
   import TransferDialog from "../transfer/TransferDialog.svelte";
+  import LocalTransferDialog from "../transfer/LocalTransferDialog.svelte";
   import { BrowserState } from "./browserState.svelte";
 
   const browser = new BrowserState(liveApi);
@@ -47,11 +48,12 @@
   // §4.4: Backspace or Alt+↑ goes to the parent prefix; "/" focuses the
   // server prefix field. Never while typing in a field.
   function handleKeydown(event: KeyboardEvent) {
-    if (editorOpen || createOpen || browser.transferOpen) {
+    if (editorOpen || createOpen || browser.transferOpen || browser.localTransfer !== null) {
       if (event.key === "Escape") {
         editorOpen = false;
         createOpen = false;
         browser.transferOpen = false;
+        browser.localTransfer = null;
       }
       return;
     }
@@ -101,6 +103,14 @@
 
 {#if browser.transferOpen}
   <TransferDialog {browser} onClose={() => (browser.transferOpen = false)} />
+{/if}
+
+{#if browser.localTransfer !== null}
+  <LocalTransferDialog
+    {browser}
+    mode={browser.localTransfer}
+    onClose={() => (browser.localTransfer = null)}
+  />
 {/if}
 
 <style>

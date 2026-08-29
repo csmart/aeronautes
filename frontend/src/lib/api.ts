@@ -14,6 +14,10 @@ import {
   TransferService,
 } from "../../bindings/github.com/csmart/aeronautes/internal/app";
 import type {
+  DownloadPreflight,
+  UploadPreflight,
+} from "../../bindings/github.com/csmart/aeronautes/internal/transfer/local";
+import type {
   AccountDTO,
   AuditEventDTO,
   BookmarkDTO,
@@ -56,6 +60,15 @@ export type {
   PrefixDetailDTO,
   SLOManifestDTO,
 };
+export type { DownloadPreflight, UploadPreflight };
+export type {
+  DownloadRequestDTO,
+  UploadRequestDTO,
+} from "../../bindings/github.com/csmart/aeronautes/internal/app";
+import type {
+  DownloadRequestDTO,
+  UploadRequestDTO,
+} from "../../bindings/github.com/csmart/aeronautes/internal/app";
 
 export interface ContainerPage {
   rows: ContainerRowDTO[];
@@ -106,6 +119,12 @@ export interface Api {
   startCopy(req: CopyRequestDTO): Promise<string>;
   cancelJob(jobId: string): Promise<void>;
   jobs(bookmarkId: string, activeOnly: boolean, limit: number): Promise<JobDTO[]>;
+  pickUploadFiles(): Promise<string[]>;
+  pickDownloadDir(): Promise<string>;
+  preflightUpload(req: UploadRequestDTO): Promise<UploadPreflight>;
+  startUpload(req: UploadRequestDTO): Promise<string>;
+  preflightDownload(req: DownloadRequestDTO): Promise<DownloadPreflight>;
+  startDownload(req: DownloadRequestDTO): Promise<string>;
 }
 
 /** The live bridge. */
@@ -147,4 +166,18 @@ export const liveApi: Api = {
   cancelJob: (jobId) => TransferService.CancelJob(jobId),
   jobs: async (bookmarkId, activeOnly, limit) =>
     (await JobService.List(bookmarkId, activeOnly, limit)) ?? [],
+  pickUploadFiles: async () => (await TransferService.PickUploadFiles()) ?? [],
+  pickDownloadDir: () => TransferService.PickDownloadDir(),
+  preflightUpload: async (req) => {
+    const report = await TransferService.PreflightUpload(req);
+    if (!report) throw new Error("empty preflight");
+    return report;
+  },
+  startUpload: (req) => TransferService.StartUpload(req),
+  preflightDownload: async (req) => {
+    const report = await TransferService.PreflightDownload(req);
+    if (!report) throw new Error("empty preflight");
+    return report;
+  },
+  startDownload: (req) => TransferService.StartDownload(req),
 };

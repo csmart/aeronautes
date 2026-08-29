@@ -204,6 +204,16 @@ export interface DLOSegmentsDTO {
 }
 
 /**
+ * DownloadRequestDTO scopes a prefix download.
+ */
+export interface DownloadRequestDTO {
+    "bookmarkId": string;
+    "container": string;
+    "prefix": string;
+    "destDir": string;
+}
+
+/**
  * Info is the shell identity the frontend shows at startup; fetching it
  * over the bindings bridge is the hello-window proof that the typed
  * service transport works.
@@ -376,4 +386,14 @@ export interface SLOSegmentDTO {
 export interface StoragePolicyDTO {
     "name": string;
     "default": boolean;
+}
+
+/**
+ * UploadRequestDTO scopes a multi-file upload.
+ */
+export interface UploadRequestDTO {
+    "bookmarkId": string;
+    "container": string;
+    "prefix": string;
+    "paths": string[] | null;
 }

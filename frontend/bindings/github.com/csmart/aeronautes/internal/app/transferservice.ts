@@ -15,6 +15,10 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as local$0 from "../transfer/local/models.js";
+
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
 /**
@@ -26,11 +30,40 @@ export function CancelJob(jobID: string): $CancellablePromise<void> {
 }
 
 /**
+ * PickDownloadDir opens the OS directory picker. "" when cancelled.
+ */
+export function PickDownloadDir(): $CancellablePromise<string> {
+    return $Call.ByID(1743209014);
+}
+
+/**
+ * PickUploadFiles opens the OS multi-file picker (Go side: the webview
+ * never sees filesystem paths otherwise). Empty when cancelled.
+ */
+export function PickUploadFiles(): $CancellablePromise<string[] | null> {
+    return $Call.ByID(24924697);
+}
+
+/**
  * PlanCopy runs the §15.2 merge-join for the preview — counts only, no
  * writes, no audit (planning is a read).
  */
 export function PlanCopy(req: $models.CopyRequestDTO): $CancellablePromise<$models.CopyPlanDTO | null> {
     return $Call.ByID(1671032032, req);
+}
+
+/**
+ * PreflightDownload runs the complete §27.5 materialization report.
+ */
+export function PreflightDownload(req: $models.DownloadRequestDTO): $CancellablePromise<local$0.DownloadPreflight | null> {
+    return $Call.ByID(2765768397, req);
+}
+
+/**
+ * PreflightUpload runs the complete §27.5 pre-write report.
+ */
+export function PreflightUpload(req: $models.UploadRequestDTO): $CancellablePromise<local$0.UploadPreflight | null> {
+    return $Call.ByID(1873223240, req);
 }
 
 /**
@@ -47,4 +80,19 @@ export function SetEngineFactory(f: any): $CancellablePromise<void> {
  */
 export function StartCopy(req: $models.CopyRequestDTO): $CancellablePromise<string> {
     return $Call.ByID(2313820503, req);
+}
+
+/**
+ * StartDownload mirrors StartUpload for materialization.
+ */
+export function StartDownload(req: $models.DownloadRequestDTO): $CancellablePromise<string> {
+    return $Call.ByID(447568890, req);
+}
+
+/**
+ * StartUpload re-runs the preflight (state may have moved since the UI
+ * showed it), rejects on any collision, and launches the job.
+ */
+export function StartUpload(req: $models.UploadRequestDTO): $CancellablePromise<string> {
+    return $Call.ByID(1096678111, req);
 }

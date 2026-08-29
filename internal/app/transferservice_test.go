@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -50,29 +52,45 @@ func (e *httpEngine) endpoint(spec string) (base string, token string, path stri
 }
 
 func (e *httpEngine) transfer(ctx context.Context, srcSpec, dstSpec string) error {
-	srcBase, srcTok, srcPath := e.endpoint(srcSpec)
+	var body []byte
+	var contentType string
+	if localPath(srcSpec) {
+		data, err := os.ReadFile(srcSpec)
+		if err != nil {
+			return err
+		}
+		body, contentType = data, "application/octet-stream"
+	} else {
+		srcBase, srcTok, srcPath := e.endpoint(srcSpec)
+		get, err := http.NewRequestWithContext(ctx, http.MethodGet, srcBase+"/"+escapePath(srcPath), nil)
+		if err != nil {
+			return err
+		}
+		get.Header.Set("X-Auth-Token", srcTok)
+		resp, err := http.DefaultClient.Do(get)
+		if err != nil {
+			return err
+		}
+		body, _ = io.ReadAll(resp.Body)
+		contentType = resp.Header.Get("Content-Type")
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			return fmt.Errorf("GET %s: %s", srcPath, resp.Status)
+		}
+	}
+	if localPath(dstSpec) {
+		if err := os.MkdirAll(filepath.Dir(dstSpec), 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(dstSpec, body, 0o644)
+	}
 	dstBase, dstTok, dstPath := e.endpoint(dstSpec)
-
-	get, err := http.NewRequestWithContext(ctx, http.MethodGet, srcBase+"/"+escapePath(srcPath), nil)
-	if err != nil {
-		return err
-	}
-	get.Header.Set("X-Auth-Token", srcTok)
-	resp, err := http.DefaultClient.Do(get)
-	if err != nil {
-		return err
-	}
-	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("GET %s: %s", srcPath, resp.Status)
-	}
 	put, err := http.NewRequestWithContext(ctx, http.MethodPut, dstBase+"/"+escapePath(dstPath), bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
 	put.Header.Set("X-Auth-Token", dstTok)
-	put.Header.Set("Content-Type", resp.Header.Get("Content-Type"))
+	put.Header.Set("Content-Type", contentType)
 	putResp, err := http.DefaultClient.Do(put)
 	if err != nil {
 		return err
@@ -107,6 +125,10 @@ func (e *httpEngine) Copy(ctx context.Context, src, dst string, names []string, 
 	}
 	return &rclone.Result{}, nil
 }
+
+// localPath reports whether a spec is a plain filesystem path (upload
+// source / download destination) rather than a remote spec.
+func localPath(spec string) bool { return strings.HasPrefix(spec, "/") }
 
 func (e *httpEngine) CopyTo(ctx context.Context, src, dst string, onEvent func(rclone.Event)) (*rclone.Result, error) {
 	if err := e.transfer(ctx, src, dst); err != nil {
@@ -301,5 +323,61 @@ func TestCancelCopyJob(t *testing.T) {
 	// Cancelling a finished job is refused.
 	if err := h.transfer.CancelJob(ctx, jobID); err == nil {
 		t.Error("cancel of a terminal job accepted")
+	}
+}
+
+func TestUploadAndDownloadJobs(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	h.connect(t)
+	bookmark := h.transfer.connections.ActiveBookmarkID()
+	h.installEngine(nil)
+	h.mock.AddContainer("media", "standard")
+
+	// Upload two files; a collision on the second run is rejected whole.
+	dir := t.TempDir()
+	for name, content := range map[string]string{"a.txt": "alpha", "b.txt": "bravo!"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	upload := UploadRequestDTO{
+		BookmarkID: bookmark, Container: "media", Prefix: "up/",
+		Paths: []string{filepath.Join(dir, "a.txt"), filepath.Join(dir, "b.txt")},
+	}
+	preflight, err := h.transfer.PreflightUpload(ctx, upload)
+	if err != nil || preflight.Rejected() {
+		t.Fatalf("preflight: %v %+v", err, preflight)
+	}
+	jobID, err := h.transfer.StartUpload(ctx, upload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, h, jobID)
+	if job.State != "complete" || job.Counters.ObjectsCopied != 2 || job.Type != "upload" {
+		t.Fatalf("upload job = %+v", job)
+	}
+	if _, err := h.transfer.StartUpload(ctx, upload); err == nil || !strings.Contains(err.Error(), "collisions") {
+		t.Errorf("second upload should hit exists-collisions: %v", err)
+	}
+
+	// Download the uploaded prefix into a fresh directory.
+	destDir := t.TempDir()
+	download := DownloadRequestDTO{BookmarkID: bookmark, Container: "media", Prefix: "up/", DestDir: destDir}
+	jobID, err = h.transfer.StartDownload(ctx, download)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job = awaitTerminal(t, h, jobID)
+	if job.State != "complete" || job.Counters.ObjectsCopied != 2 || job.Type != "download" {
+		t.Fatalf("download job = %+v", job)
+	}
+	data, err := os.ReadFile(filepath.Join(destDir, "a.txt"))
+	if err != nil || string(data) != "alpha" {
+		t.Errorf("a.txt = %q %v", data, err)
+	}
+	// Re-running rejects on local-exists — nothing overwritten.
+	if _, err := h.transfer.StartDownload(ctx, download); err == nil || !strings.Contains(err.Error(), "collisions") {
+		t.Errorf("second download should hit local-exists: %v", err)
 	}
 }

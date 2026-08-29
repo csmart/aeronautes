@@ -77,6 +77,22 @@
       >
         Copy to…
       </button>
+      <button
+        class="find"
+        title="Upload local files to this prefix (§27.5 collision preflight first)"
+        disabled={browser.containerName === null || browser.backstageFrom !== null}
+        onclick={() => (browser.localTransfer = "upload")}
+      >
+        Upload…
+      </button>
+      <button
+        class="find"
+        title="Download this prefix to a local directory (§27.5 collision preflight first)"
+        disabled={browser.containerName === null || browser.backstageFrom !== null}
+        onclick={() => (browser.localTransfer = "download")}
+      >
+        Download…
+      </button>
     </div>
 
     <div class="columns num" aria-hidden="true">

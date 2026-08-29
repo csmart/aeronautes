@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"sync"
 	"testing"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
+	localtransfer "github.com/csmart/aeronautes/internal/transfer/local"
 	"github.com/csmart/aeronautes/internal/transfer/plan"
 	"github.com/csmart/aeronautes/internal/transfer/rclone"
 	"github.com/ncw/swift/v2"
@@ -1052,4 +1054,98 @@ func TestCopyExecutorRealSwift(t *testing.T) {
 		t.Logf("cancel: captured=%d swept=%d kept=%v notes=%v",
 			len(report.CapturedPrefixes), reconcile.SweptSegments, reconcile.KeptPrefixes, reconcile.Notes)
 	})
+}
+
+// TestLocalTransferRealSwift drives upload and download through the
+// real pinned rclone with native fallback: a chunked upload lands as a
+// DLO, hostile names ride the native path both ways, and the §27.5
+// preflight rejects unmaterializable namespaces completely.
+func TestLocalTransferRealSwift(t *testing.T) {
+	if _, err := exec.LookPath("rclone"); err != nil {
+		t.Skip("pinned rclone not installed")
+	}
+	h := harness(t)
+	ctx := context.Background()
+
+	runner, err := rclone.NewRunner(rclone.Options{ChunkSize: "1Mi", Retries: 1, LowLevelRetries: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := transfercopy.BindRunner(runner, []rclone.Remote{
+		{Name: "aeronautes_dst", StorageURL: h.conn.StorageUrl, Token: h.conn.AuthToken},
+	})
+
+	container := h.Container("local-up")
+	if err := h.conn.ContainerCreate(ctx, container, nil); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	big := bytes.Repeat([]byte{0x7E}, 3*1024*1024)
+	for name, content := range map[string][]byte{
+		"small.txt": []byte("small upload"), "big.bin": big, "line\nname": []byte("hostile upload"),
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), content, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	preflight, err := localtransfer.PreflightUpload(ctx, h.Session, container, "up/",
+		[]string{filepath.Join(dir, "small.txt"), filepath.Join(dir, "big.bin"), filepath.Join(dir, "line\nname")})
+	if err != nil || preflight.Rejected() {
+		t.Fatalf("preflight: %v %+v", err, preflight)
+	}
+	report, err := localtransfer.Upload(ctx, h.Session, engine, "aeronautes_dst:"+container, container, "up/", preflight, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Done != 3 || len(report.Failures) != 0 || report.NativeRouted != 1 {
+		t.Fatalf("upload report = %+v (failures %+v)", report, report.Failures)
+	}
+	d, err := h.Session.ObjectDetail(ctx, container, "up/big.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Class != swiftcontrol.ClassDLO || d.ContentLength != int64(len(big)) {
+		t.Errorf("big.bin = class %s length %d, want chunked DLO", d.Class, d.ContentLength)
+	}
+	if len(report.CapturedPrefixes) == 0 {
+		t.Error("no segment prefixes captured on the chunked upload")
+	}
+
+	// Download it back byte-exact (the DLO materializes logically).
+	destDir := t.TempDir()
+	srcEngine := transfercopy.BindRunner(runner, []rclone.Remote{
+		{Name: "aeronautes_src", StorageURL: h.conn.StorageUrl, Token: h.conn.AuthToken},
+	})
+	downPre, err := localtransfer.PreflightDownload(ctx, h.Session, container, "up/", destDir)
+	if err != nil || downPre.Rejected() {
+		t.Fatalf("download preflight: %v %+v", err, downPre)
+	}
+	downReport, err := localtransfer.Download(ctx, h.Session, srcEngine, "aeronautes_src:"+container, container, "up/", destDir, downPre, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if downReport.Done != 3 || len(downReport.Failures) != 0 {
+		t.Fatalf("download report = %+v (failures %+v)", downReport, downReport.Failures)
+	}
+	for name, want := range map[string][]byte{"small.txt": []byte("small upload"), "big.bin": big, "line\nname": []byte("hostile upload")} {
+		got, err := os.ReadFile(filepath.Join(destDir, name))
+		if err != nil || !bytes.Equal(got, want) {
+			t.Errorf("%q: err %v, %d bytes (want %d)", name, err, len(got), len(want))
+		}
+	}
+
+	// The encoding container carries dot-segment names: materializing it
+	// must be rejected COMPLETELY before any write (§27.5).
+	rejectDir := t.TempDir()
+	rejected, err := localtransfer.PreflightDownload(ctx, h.Session, h.Container("encoding"), "", rejectDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rejected.Rejected() {
+		t.Fatal("dot-segment namespace not rejected")
+	}
+	entries, _ := os.ReadDir(rejectDir)
+	if len(entries) != 0 {
+		t.Errorf("preflight wrote files: %v", entries)
+	}
 }
