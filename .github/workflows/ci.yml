@@ -6,7 +6,6 @@
 # This is NOT the release pipeline. The full six-target build/sign matrix
 # ({Linux,Windows,macOS} x {x86_64,aarch64}, per-OS runners + system webview deps)
 # is added in Phase 0/7 — see docs/DESIGN.md §61.0.
-# A containerized-Swift (SAIO) integration job is added when Phase 1 starts (§57.3).
 
 name: CI
 
@@ -109,3 +108,43 @@ jobs:
         if: steps.detect.outputs.present == 'true'
         working-directory: frontend
         run: npm test --if-present
+
+  # Integration against a real containerized Swift (§57.3): the adapter is
+  # driven end to end over the §58 canonical fixtures — auth, listings, the
+  # §14.3 encoding suite, HEAD/DLO/SLO semantics. This is the Phase 1 gate
+  # artifact; the real SwiftStack target remains the §57.4 release check.
+  saio:
+    name: Integration — containerized Swift (SAIO)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: Detect Go module
+        id: detect
+        run: |
+          if [ -f go.mod ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No go.mod yet — skipping."
+          fi
+      - name: Start SAIO
+        if: steps.detect.outputs.present == 'true'
+        run: docker run -d --name saio -p 127.0.0.1:8080:8080 docker.io/openstackswift/saio:latest
+      - name: Wait for Swift
+        if: steps.detect.outputs.present == 'true'
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf -m 2 http://127.0.0.1:8080/info > /dev/null; then
+              echo "Swift is up after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Swift never came up"; docker logs saio | tail -50; exit 1
+      - name: Run integration suite
+        if: steps.detect.outputs.present == 'true'
+        env:
+          AERONAUTES_SAIO_AUTH_URL: http://127.0.0.1:8080/auth/v1.0
+        run: go test -race -count=1 -v ./internal/integration
