@@ -27,7 +27,14 @@ type Harness struct {
 	Prefix string
 
 	conn *swift.Connection
+	// conn2 is the SECOND account (SAIO's test2), for cross-account
+	// transfer tests; nil when its default credentials do not work.
+	conn2 *swift.Connection
 }
+
+// Conn2 returns the second account's raw connection, or skips the
+// calling test when the environment has no second account.
+func (h *Harness) Conn2() *swift.Connection { return h.conn2 }
 
 // Container maps a canonical fixture container name into this run.
 func (h *Harness) Container(base string) string {
@@ -67,6 +74,16 @@ func newHarness(ctx context.Context) (*Harness, string, error) {
 	}
 	if err := h.conn.Authenticate(ctx); err != nil {
 		return nil, "", fmt.Errorf("fixture connection auth: %w", err)
+	}
+	conn2 := &swift.Connection{
+		AuthUrl:     authURL,
+		UserName:    envOr("AERONAUTES_SAIO_USER2", "test2:tester2"),
+		ApiKey:      envOr("AERONAUTES_SAIO_KEY2", "testing2"),
+		AuthVersion: 1,
+		UserAgent:   "aeronautes-integration",
+	}
+	if err := conn2.Authenticate(ctx); err == nil {
+		h.conn2 = conn2
 	}
 
 	session, err := swiftcontrol.New(swiftcontrol.Config{
@@ -230,9 +247,38 @@ func (h *Harness) rawPut(ctx context.Context, pathAndQuery string, body []byte, 
 	return nil
 }
 
+// rawPut2 PUTs a container (empty body) or object on the second account.
+func (h *Harness) rawPut2(ctx context.Context, pathAndQuery string, body []byte, contentType string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut,
+		h.conn2.StorageUrl+"/"+pathAndQuery, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("X-Auth-Token", h.conn2.AuthToken)
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("PUT %s: %s", pathAndQuery, resp.Status)
+	}
+	return nil
+}
+
 // teardown removes every container this run created, best effort.
 func (h *Harness) teardown(ctx context.Context) {
-	names, err := h.conn.ContainerNamesAll(ctx, &swift.ContainersOpts{Prefix: h.Prefix})
+	h.teardownAccount(ctx, h.conn)
+	if h.conn2 != nil {
+		h.teardownAccount(ctx, h.conn2)
+	}
+}
+
+func (h *Harness) teardownAccount(ctx context.Context, conn *swift.Connection) {
+	names, err := conn.ContainerNamesAll(ctx, &swift.ContainersOpts{Prefix: h.Prefix})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "integration teardown: list containers: %v\n", err)
 		return
@@ -240,17 +286,17 @@ func (h *Harness) teardown(ctx context.Context) {
 	for _, container := range names {
 		// JSON listing, never the plain-text one: a newline inside an
 		// object name (the §14.3 suite has one) corrupts text listings.
-		objects, err := h.conn.ObjectsAll(ctx, container, nil)
+		objects, err := conn.ObjectsAll(ctx, container, nil)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "integration teardown: list %s: %v\n", container, err)
 			continue
 		}
 		for _, object := range objects {
-			if err := h.conn.ObjectDelete(ctx, container, object.Name); err != nil {
+			if err := conn.ObjectDelete(ctx, container, object.Name); err != nil {
 				fmt.Fprintf(os.Stderr, "integration teardown: delete %s/%s: %v\n", container, object.Name, err)
 			}
 		}
-		if err := h.conn.ContainerDelete(ctx, container); err != nil {
+		if err := conn.ContainerDelete(ctx, container); err != nil {
 			fmt.Fprintf(os.Stderr, "integration teardown: delete container %s: %v\n", container, err)
 		}
 	}

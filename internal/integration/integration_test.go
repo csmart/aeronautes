@@ -1,14 +1,17 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"os"
+	"os/exec"
 	"sort"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
+	"github.com/csmart/aeronautes/internal/transfer/rclone"
 	"github.com/ncw/swift/v2"
 )
 
@@ -610,5 +613,78 @@ func TestManifestOnlyDeleteRealSwift(t *testing.T) {
 	}
 	if _, err := h.Session.ObjectDetail(ctx, fixtures, "tagged.txt"); err != nil {
 		t.Errorf("refused object was deleted: %v", err)
+	}
+}
+
+// TestRcloneRunnerRealSwift drives the pinned rclone through the runner
+// against real Swift: a cross-account batch with a large object, the
+// captured segment prefix matching reality, and env-only credentials.
+func TestRcloneRunnerRealSwift(t *testing.T) {
+	if _, err := exec.LookPath("rclone"); err != nil {
+		t.Skip("pinned rclone not installed")
+	}
+	h := harness(t)
+	if h.Conn2() == nil {
+		t.Skip("no second account on this cluster")
+	}
+	ctx := context.Background()
+
+	runner, err := rclone.NewRunner(rclone.Options{ChunkSize: "1Mi", Retries: 1, LowLevelRetries: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A disposable big object in the fixtures container.
+	big := bytes.Repeat([]byte{0xBB}, 3*1024*1024)
+	if err := h.put(ctx, h.Container("fixtures"), "runner/big.bin", big, "application/octet-stream", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.put(ctx, h.Container("fixtures"), "runner/small.txt", []byte("small"), "text/plain", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// Destination container on the SECOND account.
+	dstName := h.Prefix + "runner-out"
+	if err := h.rawPut2(ctx, dstName, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	remotes := []rclone.Remote{
+		{Name: "aeronautes_src", StorageURL: h.conn.StorageUrl, Token: h.conn.AuthToken},
+		{Name: "aeronautes_dst", StorageURL: h.Conn2().StorageUrl, Token: h.Conn2().AuthToken},
+	}
+	result, err := runner.Copy(ctx, remotes,
+		"aeronautes_src:"+h.Container("fixtures"), "aeronautes_dst:"+dstName,
+		[]string{"runner/big.bin", "runner/small.txt"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ExitCode != 0 || len(result.Errors) != 0 {
+		t.Fatalf("result = %+v", result)
+	}
+
+	// The captured prefix matches the real segment namespace.
+	if len(result.SegmentPrefixes) != 1 {
+		t.Fatalf("prefixes = %+v, want the one large object", result.SegmentPrefixes)
+	}
+	captured := result.SegmentPrefixes[0]
+	if captured.Container != dstName+"_segments" {
+		t.Errorf("segment container = %q", captured.Container)
+	}
+	segments, err := h.Conn2().ObjectsAll(ctx, captured.Container, &swift.ObjectsOpts{Prefix: captured.Prefix})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(segments) != 3 {
+		t.Errorf("captured prefix lists %d segments, want 3", len(segments))
+	}
+
+	// Both objects landed with the right sizes.
+	obj, _, err := h.Conn2().Object(ctx, dstName, "runner/big.bin")
+	if err != nil || obj.Bytes != int64(len(big)) {
+		t.Errorf("big.bin at dest: %v bytes=%d", err, obj.Bytes)
+	}
+	if _, _, err := h.Conn2().Object(ctx, dstName, "runner/small.txt"); err != nil {
+		t.Errorf("small.txt at dest: %v", err)
 	}
 }
