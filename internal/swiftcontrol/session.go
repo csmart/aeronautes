@@ -32,56 +32,47 @@ type Config struct {
 // Session is an authenticated (or authenticatable) connection to one Swift
 // account. It is safe for concurrent use after Authenticate.
 type Session struct {
-	conn     *swift.Connection
-	override string
+	conn *swift.Connection
 }
 
 // New builds a Session for cfg. It does not touch the network; call
-// Authenticate (or any operation, which authenticates lazily).
+// Authenticate (or any operation, which authenticates lazily). The
+// connection is preset with Aeronautes' own v1 authenticator so token
+// expiry is captured and the storage-URL override holds across re-auths.
 func New(cfg Config) (*Session, error) {
 	transport, err := cfg.TLS.transport()
 	if err != nil {
 		return nil, err
 	}
+	const userAgent = "aeronautes"
 	return &Session{
 		conn: &swift.Connection{
 			AuthUrl:     cfg.AuthURL,
 			UserName:    cfg.Username,
 			ApiKey:      cfg.APIKey,
 			AuthVersion: 1,
-			UserAgent:   "aeronautes",
+			UserAgent:   userAgent,
 			Transport:   transport,
+			Auth: &v1Auth{
+				authURL:   cfg.AuthURL,
+				username:  cfg.Username,
+				apiKey:    cfg.APIKey,
+				userAgent: userAgent,
+				override:  cfg.StorageURLOverride,
+			},
 		},
-		override: cfg.StorageURLOverride,
 	}, nil
 }
 
 // Authenticate performs v1 auth: GET AuthURL with X-Auth-User/X-Auth-Key,
 // keeping the returned token and storage URL. The wire library also
-// re-authenticates once and replays when a request meets 401 (§9.2), and
-// the storage-URL override is preserved across those re-auths.
+// re-authenticates once and replays when a request meets 401 (§9.2); the
+// authenticator preserves the storage-URL override across those re-auths.
 func (s *Session) Authenticate(ctx context.Context) error {
 	if err := s.conn.Authenticate(ctx); err != nil {
 		return Normalize(err)
 	}
-	s.applyStorageURLOverride()
 	return nil
-}
-
-// applyStorageURLOverride pins the storage URL to the configured override.
-// Authenticate (initial and internal re-auth) sets Connection.StorageUrl
-// from the authenticator, so the override lives in a wrapping
-// Authenticator rather than a one-shot field write. Called after the
-// first successful Authenticate, before the connection is used
-// concurrently.
-func (s *Session) applyStorageURLOverride() {
-	if s.override == "" {
-		return
-	}
-	if _, wrapped := s.conn.Auth.(storageURLOverrideAuth); !wrapped {
-		s.conn.Auth = storageURLOverrideAuth{Authenticator: s.conn.Auth, storageURL: s.override}
-	}
-	s.conn.StorageUrl = s.override
 }
 
 // StorageURL returns the storage URL in effect (override included), or ""
@@ -91,28 +82,8 @@ func (s *Session) StorageURL() string {
 }
 
 // TokenExpires returns when the current token expires, or the zero time
-// when the auth backend does not say — common for v1 auth, and exactly the
-// uncertainty DESIGN.md §26.2's lifetime priority order exists for.
+// when the auth backend does not say (§26.2 falls through its priority
+// order: configured per-bookmark lifetime, then failure-driven reauth).
 func (s *Session) TokenExpires() time.Time {
 	return s.conn.Expires
-}
-
-// storageURLOverrideAuth wraps the real authenticator and pins the storage
-// URL, so a mid-call re-authentication cannot silently undo the override.
-type storageURLOverrideAuth struct {
-	swift.Authenticator
-	storageURL string
-}
-
-func (a storageURLOverrideAuth) StorageUrl(bool) string {
-	return a.storageURL
-}
-
-// Expires passes through the inner authenticator's expiry, since embedding
-// only promotes Authenticator methods.
-func (a storageURLOverrideAuth) Expires() time.Time {
-	if e, ok := a.Authenticator.(swift.Expireser); ok {
-		return e.Expires()
-	}
-	return time.Time{}
 }

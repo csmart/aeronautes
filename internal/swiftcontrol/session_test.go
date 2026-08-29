@@ -20,6 +20,8 @@ type fakeAuth struct {
 	storagePath string
 	authCalls   int
 	serverURL   string
+	// expiresHeader, when set, is sent as X-Auth-Token-Expires.
+	expiresHeader string
 }
 
 func (f *fakeAuth) currentToken() string {
@@ -39,6 +41,9 @@ func (f *fakeAuth) handle(w http.ResponseWriter, r *http.Request) {
 	f.mu.Unlock()
 	w.Header().Set("X-Storage-Url", f.serverURL+f.storagePath)
 	w.Header().Set("X-Auth-Token", token)
+	if f.expiresHeader != "" {
+		w.Header().Set("X-Auth-Token-Expires", f.expiresHeader)
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
