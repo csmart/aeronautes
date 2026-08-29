@@ -100,6 +100,12 @@ export interface ContainerDetailDTO {
     "transId": string;
 
     /**
+     * EditableFingerprint is the working-copy base for §18 conflict
+     * detection: hand it back with the edit.
+     */
+    "editableFingerprint": string;
+
+    /**
      * Class is the §24 classification (with this HEAD folded in).
      */
     "class": string;
@@ -215,6 +221,12 @@ export interface ObjectDetailDTO {
     "meta": { [_ in string]?: string } | null;
     "rawHeaders": { [_ in string]?: string } | null;
     "transId": string;
+
+    /**
+     * EditableFingerprint is the working-copy base for §18 conflict
+     * detection: hand it back with the edit.
+     */
+    "editableFingerprint": string;
 }
 
 /**

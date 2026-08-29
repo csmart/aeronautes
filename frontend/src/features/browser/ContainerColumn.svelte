@@ -3,7 +3,7 @@
   import type { ContainerRowDTO } from "../../lib/api";
   import { formatBytes, formatCount } from "../../lib/format";
 
-  let { browser }: { browser: BrowserState } = $props();
+  let { browser, onCreate }: { browser: BrowserState; onCreate: () => void } = $props();
 
   const modes: { id: ContainerMode; label: string }[] = [
     { id: "logical", label: "Logical" },
@@ -32,7 +32,12 @@
 
 <section class="pane">
   <header class="pane-head">
-    <h2 class="pane-title">Containers</h2>
+    <div class="title-row">
+      <h2 class="pane-title">Containers</h2>
+      {#if browser.account}
+        <button class="create" title="Create container" onclick={onCreate}>+</button>
+      {/if}
+    </div>
     <div class="modes" role="tablist" aria-label="Container mode">
       {#each modes as mode (mode.id)}
         <button
@@ -99,10 +104,30 @@
     padding: var(--space-3) var(--space-3) var(--space-2);
   }
 
+  .title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-2);
+  }
+
   .pane-title {
-    margin: 0 0 var(--space-2);
+    margin: 0;
     font-size: var(--text-lg);
     font-weight: var(--weight-semibold);
+  }
+
+  .create {
+    width: 1.6rem;
+    height: 1.6rem;
+    font: inherit;
+    font-size: var(--text-lg);
+    line-height: 1;
+    color: var(--color-accent-strong);
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-accent-border);
+    border-radius: var(--radius-control);
+    cursor: pointer;
   }
 
   .modes {

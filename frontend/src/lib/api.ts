@@ -5,30 +5,44 @@
 
 import {
   AppService,
+  AuditService,
   BookmarkService,
   BrowseService,
   InspectorService,
+  MutateService,
 } from "../../bindings/github.com/csmart/aeronautes/internal/app";
 import type {
   AccountDTO,
+  AuditEventDTO,
   BookmarkDTO,
+  CapabilitiesDTO,
+  ContainerCreateDTO,
   ContainerDetailDTO,
+  ContainerEditDTO,
   ContainerRowDTO,
   Info,
   ListingRowDTO,
+  MutationResultDTO,
   ObjectDetailDTO,
+  ObjectMetadataEditDTO,
   PrefixDetailDTO,
   SLOManifestDTO,
 } from "../../bindings/github.com/csmart/aeronautes/internal/app";
 
 export type {
   AccountDTO,
+  AuditEventDTO,
   BookmarkDTO,
+  CapabilitiesDTO,
+  ContainerCreateDTO,
   ContainerDetailDTO,
+  ContainerEditDTO,
   ContainerRowDTO,
   Info,
   ListingRowDTO,
+  MutationResultDTO,
   ObjectDetailDTO,
+  ObjectMetadataEditDTO,
   PrefixDetailDTO,
   SLOManifestDTO,
 };
@@ -60,6 +74,22 @@ export interface Api {
   prefixDetail(container: string, prefix: string): Promise<PrefixDetailDTO>;
   containerDetail(name: string): Promise<ContainerDetailDTO>;
   sloManifest(container: string, name: string): Promise<SLOManifestDTO>;
+  capabilities(): Promise<CapabilitiesDTO>;
+  updateObjectMetadata(
+    container: string,
+    name: string,
+    baseFingerprint: string,
+    edit: ObjectMetadataEditDTO,
+  ): Promise<MutationResultDTO>;
+  updateContainer(
+    name: string,
+    baseFingerprint: string,
+    edit: ContainerEditDTO,
+  ): Promise<MutationResultDTO>;
+  createContainer(create: ContainerCreateDTO): Promise<ContainerDetailDTO>;
+  createMarker(container: string, prefix: string): Promise<PrefixDetailDTO>;
+  deleteMarker(container: string, prefix: string): Promise<void>;
+  auditRecent(limit: number): Promise<AuditEventDTO[]>;
 }
 
 /** The live bridge. */
@@ -81,4 +111,13 @@ export const liveApi: Api = {
   prefixDetail: (container, prefix) => InspectorService.Prefix(container, prefix),
   containerDetail: (name) => InspectorService.Container(name),
   sloManifest: (container, name) => InspectorService.SLOManifest(container, name),
+  capabilities: () => BrowseService.Capabilities(),
+  updateObjectMetadata: (container, name, baseFingerprint, edit) =>
+    MutateService.UpdateObjectMetadata(container, name, baseFingerprint, edit),
+  updateContainer: (name, baseFingerprint, edit) =>
+    MutateService.UpdateContainer(name, baseFingerprint, edit),
+  createContainer: (create) => MutateService.CreateContainer(create),
+  createMarker: (container, prefix) => MutateService.CreateMarker(container, prefix),
+  deleteMarker: (container, prefix) => MutateService.DeleteMarker(container, prefix),
+  auditRecent: async (limit) => (await AuditService.Recent(limit)) ?? [],
 };

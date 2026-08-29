@@ -1,6 +1,8 @@
 <script lang="ts">
   import { formatBytes, formatCount } from "../../lib/format";
   import type { BrowserState } from "../browser/browserState.svelte";
+  import ObjectEditPanel from "./ObjectEditPanel.svelte";
+  import ContainerEditPanel from "./ContainerEditPanel.svelte";
 
   let { browser }: { browser: BrowserState } = $props();
 
@@ -8,6 +10,32 @@
   // else the open container, else the account.
   const entry = $derived(browser.selectedEntry);
   const detail = $derived(browser.objectDetail);
+
+  let editingObject = $state(false);
+  let editingContainer = $state(false);
+  let markerBusy = $state(false);
+  let markerError: string | null = $state(null);
+
+  // Selection or container changes end any edit in progress.
+  $effect(() => {
+    void browser.selectedIndex;
+    void browser.containerName;
+    editingObject = false;
+    editingContainer = false;
+    markerError = null;
+  });
+
+  async function markerAction(action: () => Promise<void>) {
+    markerBusy = true;
+    markerError = null;
+    try {
+      await action();
+    } catch (err) {
+      markerError = err instanceof Error ? err.message : String(err);
+    } finally {
+      markerBusy = false;
+    }
+  }
 
   function sortedEntries(record: { [key: string]: string | undefined } | null): [string, string][] {
     return Object.entries(record ?? {})
@@ -63,6 +91,12 @@
       <section class="card">
         <p class="error">HEAD failed: {browser.detailError}</p>
       </section>
+    {/if}
+
+    {#if detail && !editingObject}
+      <button class="edit-btn" onclick={() => (editingObject = true)}>Edit metadata</button>
+    {:else if detail && editingObject}
+      <ObjectEditPanel {browser} {detail} onDone={() => (editingObject = false)} />
     {/if}
 
     {#if detail && detail.class === "dlo"}
@@ -161,6 +195,37 @@
         </p>
       {/if}
     </section>
+    {#if pd && !browser.detailLoading}
+      <section class="card">
+        <h3 class="card-title">Marker</h3>
+        {#if !pd.selfObject}
+          <button
+            class="edit-btn inline"
+            disabled={markerBusy}
+            onclick={() => markerAction(() => browser.createMarker(entry.name))}
+          >
+            Create marker object
+          </button>
+          <p class="teach">
+            An explicit marker keeps this prefix visible even with no children.
+          </p>
+        {:else if pd.markerBacked}
+          <button
+            class="edit-btn inline danger"
+            disabled={markerBusy}
+            onclick={() => markerAction(() => browser.deleteMarker(entry.name))}
+          >
+            Delete marker object
+          </button>
+          <p class="teach">Removes only the zero-byte marker; children are untouched.</p>
+        {:else}
+          <p class="teach">No marker action: a real object occupies this name.</p>
+        {/if}
+        {#if markerError}
+          <p class="error">{markerError}</p>
+        {/if}
+      </section>
+    {/if}
   {:else if browser.container}
     {@const cd = browser.containerDetail}
     <header class="head">
@@ -225,6 +290,11 @@
           {@render kv(key, value)}
         {/each}
       </section>
+    {/if}
+    {#if cd && !editingContainer}
+      <button class="edit-btn" onclick={() => (editingContainer = true)}>Configure container</button>
+    {:else if cd && editingContainer}
+      <ContainerEditPanel {browser} detail={cd} onDone={() => (editingContainer = false)} />
     {/if}
     {#if cd}
       <section class="card">
@@ -362,6 +432,37 @@
     background: var(--color-bg-inset);
     border-radius: var(--radius-control);
     overflow-x: auto;
+  }
+
+  .edit-btn {
+    align-self: flex-start;
+    padding: 2px var(--space-3);
+    font: inherit;
+    font-size: var(--text-sm);
+    color: var(--color-accent-strong);
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-accent-border);
+    border-radius: var(--radius-control);
+    cursor: pointer;
+    transition: border-color var(--motion-fast) var(--ease-out);
+  }
+
+  .edit-btn:hover {
+    border-color: var(--color-accent);
+  }
+
+  .edit-btn.inline {
+    margin-bottom: var(--space-1);
+  }
+
+  .edit-btn.danger {
+    color: var(--color-danger);
+    border-color: var(--color-danger);
+  }
+
+  .edit-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
   }
 
   .segments {

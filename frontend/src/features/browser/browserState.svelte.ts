@@ -6,11 +6,17 @@
 import type {
   AccountDTO,
   Api,
+  AuditEventDTO,
   BookmarkDTO,
+  CapabilitiesDTO,
+  ContainerCreateDTO,
   ContainerDetailDTO,
+  ContainerEditDTO,
   ContainerRowDTO,
   ListingRowDTO,
+  MutationResultDTO,
   ObjectDetailDTO,
+  ObjectMetadataEditDTO,
   PrefixDetailDTO,
   SLOManifestDTO,
 } from "../../lib/api";
@@ -46,6 +52,10 @@ export class BrowserState {
   connecting = $state(false);
   connectError: string | null = $state(null);
   account: AccountDTO | null = $state(null);
+  /** Connect-time §10 capability snapshot; null until connected. */
+  capabilities: CapabilitiesDTO | null = $state(null);
+  /** Recent §50 audit events for the drawer, newest first. */
+  auditEvents: AuditEventDTO[] = $state([]);
 
   // Containers pane.
   mode: ContainerMode = $state("logical");
@@ -96,7 +106,9 @@ export class BrowserState {
       this.prefix = "";
       this.entries = [];
       this.selectedIndex = -1;
+      this.capabilities = await this.#api.capabilities().catch(() => null);
       await this.loadContainers();
+      await this.loadAudit();
     } catch (err) {
       this.connectError = messageOf(err);
       throw err;
@@ -291,6 +303,90 @@ export class BrowserState {
           this.detailLoading = false;
         }
       });
+  }
+
+  // ---- Mutations (§65.2 items 6/7): thin, state-refreshing wrappers
+  // over MutateService. Outcome handling — conflict banners, overwrite
+  // choices — belongs to the editors; state here only stays coherent.
+
+  async loadAudit() {
+    this.auditEvents = await this.#api.auditRecent(50).catch(() => this.auditEvents);
+  }
+
+  /** Save an object metadata working copy. force skips the fingerprint
+   * check — the deliberate "apply mine anyway" after a shown conflict. */
+  async saveObjectMetadata(edit: ObjectMetadataEditDTO, force = false): Promise<MutationResultDTO> {
+    const entry = this.selectedEntry;
+    const container = this.containerName;
+    const detail = this.objectDetail;
+    if (!entry || entry.kind !== "object" || !container || !detail) {
+      throw new Error("no object selected");
+    }
+    const base = force ? "" : detail.editableFingerprint;
+    const result = await this.#api.updateObjectMetadata(container, entry.name, base, edit);
+    if (result.outcome === "applied" && result.objectAfter) {
+      this.objectDetail = result.objectAfter;
+    }
+    await this.loadAudit();
+    return result;
+  }
+
+  /** Re-fetch the selected row's detail (after a conflict, say). */
+  refreshDetail() {
+    this.select(this.selectedIndex);
+  }
+
+  /** Save a container edit for the open container. */
+  async saveContainer(edit: ContainerEditDTO, force = false): Promise<MutationResultDTO> {
+    const name = this.containerName;
+    const detail = this.containerDetail;
+    if (!name || !detail) {
+      throw new Error("no container open");
+    }
+    const base = force ? "" : detail.editableFingerprint;
+    const result = await this.#api.updateContainer(name, base, edit);
+    if (result.outcome === "applied" && result.containerAfter) {
+      this.containerDetail = result.containerAfter;
+    }
+    await this.loadAudit();
+    return result;
+  }
+
+  async refreshContainerDetail() {
+    const name = this.containerName;
+    if (!name) {
+      return;
+    }
+    this.containerDetail = await this.#api.containerDetail(name).catch(() => null);
+  }
+
+  /** Create a container and open it. */
+  async createContainer(create: ContainerCreateDTO) {
+    await this.#api.createContainer(create);
+    await this.loadContainers();
+    await this.loadAudit();
+    await this.openContainer(create.name);
+  }
+
+  /** Create the explicit marker for the selected implied prefix. */
+  async createMarker(prefix: string) {
+    const container = this.containerName;
+    if (!container) {
+      throw new Error("no container open");
+    }
+    this.prefixDetail = await this.#api.createMarker(container, prefix);
+    await this.loadAudit();
+  }
+
+  /** Delete ONLY a verified marker; the working list refreshes. */
+  async deleteMarker(prefix: string) {
+    const container = this.containerName;
+    if (!container) {
+      throw new Error("no container open");
+    }
+    await this.#api.deleteMarker(container, prefix);
+    await this.loadAudit();
+    await this.goTo(this.prefix);
   }
 }
 

@@ -144,3 +144,90 @@ describe("selection-triggered detail (§14.2)", () => {
     expect(s.sloManifest).toBeNull();
   });
 });
+
+describe("mutations (§65.2)", () => {
+  it("saves an object metadata working copy and refreshes state", async () => {
+    const s = await connected();
+    await s.openContainer("fixtures");
+    await s.goTo("normal/");
+    s.select(s.entries.findIndex((e) => e.name === "normal/hello.txt"));
+    await vi.waitFor(() => expect(s.objectDetail).not.toBeNull());
+
+    const edit = {
+      meta: { ...s.objectDetail!.meta, Camera: "fx6" },
+      contentType: "",
+      deleteAt: "",
+    };
+    const result = await s.saveObjectMetadata(edit);
+    expect(result.outcome).toBe("applied");
+    expect(s.objectDetail?.meta?.Camera).toBe("fx6");
+    expect(s.objectDetail?.meta?.Origin).toBe("fixture");
+    expect(s.auditEvents[0]?.operation).toBe("object.metadata.update");
+  });
+
+  it("conflicts on a stale fingerprint and applies with force", async () => {
+    const s = await connected();
+    await s.openContainer("fixtures");
+    await s.goTo("normal/");
+    s.select(s.entries.findIndex((e) => e.name === "normal/hello.txt"));
+    await vi.waitFor(() => expect(s.objectDetail).not.toBeNull());
+
+    s.objectDetail = { ...s.objectDetail!, editableFingerprint: "stale" };
+    const edit = { meta: { Only: "mine" }, contentType: "", deleteAt: "" };
+
+    const refused = await s.saveObjectMetadata(edit);
+    expect(refused.outcome).toBe("conflict");
+    expect(s.objectDetail?.meta?.Only).toBeUndefined();
+
+    const forced = await s.saveObjectMetadata(edit, true);
+    expect(forced.outcome).toBe("applied");
+    expect(s.objectDetail?.meta?.Only).toBe("mine");
+  });
+
+  it("saves a container edit and rejects a gated versioning mode", async () => {
+    const s = await connected();
+    await s.openContainer("fixtures");
+    await vi.waitFor(() => expect(s.containerDetail).not.toBeNull());
+
+    const result = await s.saveContainer({
+      meta: { Team: "ops" },
+      readAcl: ".r:*",
+      writeAcl: "",
+      versioningMode: "history_location",
+      versioningArchive: "arch",
+      quotaBytes: 0,
+      quotaCount: 0,
+    });
+    expect(result.outcome).toBe("applied");
+    expect(s.containerDetail?.readAcl).toBe(".r:*");
+    expect(s.containerDetail?.versioningMode).toBe("history_location");
+  });
+
+  it("creates a container gated by advertised policies and opens it", async () => {
+    const s = await connected();
+    await expect(
+      s.createContainer({ name: "newbox", policy: "nope", meta: {} }),
+    ).rejects.toThrow(/policy/);
+
+    await s.createContainer({ name: "newbox", policy: "gold", meta: {} });
+    expect(s.containerName).toBe("newbox");
+    expect(s.containers.some((c) => c.name === "newbox")).toBe(true);
+    expect(s.containerDetail?.storagePolicy).toBe("gold");
+  });
+
+  it("creates and deletes markers with refreshed classification", async () => {
+    const s = await connected();
+    await s.openContainer("fixtures");
+    s.select(s.entries.findIndex((e) => e.name === "implied/"));
+    await vi.waitFor(() => expect(s.prefixDetail).not.toBeNull());
+    expect(s.prefixDetail?.markerBacked).toBe(false);
+
+    await s.createMarker("implied/");
+    expect(s.prefixDetail?.markerBacked).toBe(true);
+
+    await s.deleteMarker("implied/");
+    // Children keep the prefix alive as implied.
+    expect(s.entries.some((e) => e.kind === "prefix" && e.name === "implied/")).toBe(true);
+    expect(s.auditEvents[0]?.operation).toBe("marker.delete");
+  });
+});

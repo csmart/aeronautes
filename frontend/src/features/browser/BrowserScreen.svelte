@@ -7,14 +7,17 @@
   import BookmarkRail from "./BookmarkRail.svelte";
   import BookmarkEditor from "./BookmarkEditor.svelte";
   import ContainerColumn from "./ContainerColumn.svelte";
+  import CreateContainerDialog from "./CreateContainerDialog.svelte";
   import WorkingList from "./WorkingList.svelte";
   import Inspector from "../inspector/Inspector.svelte";
+  import AuditDrawer from "../audit/AuditDrawer.svelte";
   import { BrowserState } from "./browserState.svelte";
 
   const browser = new BrowserState(liveApi);
 
   let workingList: WorkingList | undefined = $state();
   let editorOpen = $state(false);
+  let createOpen = $state(false);
   let shellInfo = $state("connecting…");
 
   onMount(async () => {
@@ -43,9 +46,10 @@
   // §4.4: Backspace or Alt+↑ goes to the parent prefix; "/" focuses the
   // server prefix field. Never while typing in a field.
   function handleKeydown(event: KeyboardEvent) {
-    if (editorOpen) {
+    if (editorOpen || createOpen) {
       if (event.key === "Escape") {
         editorOpen = false;
+        createOpen = false;
       }
       return;
     }
@@ -66,24 +70,21 @@
 
 <div class="screen">
   <BookmarkRail {browser} onAddBookmark={() => (editorOpen = true)} />
-  <ContainerColumn {browser} />
+  <ContainerColumn {browser} onCreate={() => (createOpen = true)} />
   <WorkingList bind:this={workingList} {browser} />
   <Inspector {browser} />
 
-  <div class="drawer num">
-    <span>
-      {#if browser.connectError}
-        <span class="connect-error">connect failed: {browser.connectError}</span>
-      {:else}
-        No active transfers
-      {/if}
-    </span>
-    <span class="drawer-hint">transfer &amp; job drawer · Phase 5</span>
+  <div class="drawer-slot">
+    <AuditDrawer {browser} />
   </div>
 
   <footer class="status num">
     <span>
-      {browser.account ? `connected · ${browser.account.name}` : "not connected"}
+      {#if browser.connectError}
+        <span class="connect-error">connect failed: {browser.connectError}</span>
+      {:else}
+        {browser.account ? `connected · ${browser.account.name}` : "not connected"}
+      {/if}
     </span>
     <span>{shellInfo}</span>
   </footer>
@@ -91,6 +92,9 @@
 
 {#if editorOpen}
   <BookmarkEditor {browser} onClose={() => (editorOpen = false)} />
+{/if}
+{#if createOpen}
+  <CreateContainerDialog {browser} onClose={() => (createOpen = false)} />
 {/if}
 
 <style>
@@ -105,26 +109,14 @@
     grid-row: 1;
   }
 
-  .drawer {
+  /* Declared after the catch-all so the tie-break lands here. */
+  .drawer-slot {
     grid-row: 2;
     grid-column: 1 / -1;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: var(--space-2) var(--space-4);
-    font-size: var(--text-sm);
-    color: var(--color-text-secondary);
-    background: var(--color-bg-pane);
-    border-top: 1px solid var(--color-border);
   }
 
   .connect-error {
     color: var(--color-danger);
-  }
-
-  .drawer-hint {
-    font-size: var(--text-xs);
-    color: var(--color-text-faint);
   }
 
   .status {

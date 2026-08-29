@@ -103,14 +103,15 @@ export const largeObjectDetail: Record<
   },
 };
 
-/** Static user metadata per object name, Swift-native headers (§4.5). */
+/** Static user metadata per object name — bare metadata names, as the
+ * live DTOs report them (the X-Object-Meta- prefix is wire detail). */
 export const objectMetaFixture: Record<string, Record<string, string>> = {
   "external-dlo": {
-    "X-Object-Meta-Shoot": "wedding",
-    "X-Object-Meta-Location": "sydney",
-    "X-Object-Meta-Camera": "sony-fx6",
+    Shoot: "wedding",
+    Location: "sydney",
+    Camera: "sony-fx6",
   },
-  "normal/hello.txt": { "X-Object-Meta-Origin": "fixture" },
+  "normal/hello.txt": { Origin: "fixture" },
 };
 
 /** The three saved endpoints on the rail. */

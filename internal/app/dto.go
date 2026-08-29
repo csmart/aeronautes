@@ -60,6 +60,9 @@ type ContainerDetailDTO struct {
 	Meta              map[string]string `json:"meta"`
 	RawHeaders        map[string]string `json:"rawHeaders"`
 	TransID           string            `json:"transId"`
+	// EditableFingerprint is the working-copy base for §18 conflict
+	// detection: hand it back with the edit.
+	EditableFingerprint string `json:"editableFingerprint"`
 	// Class is the §24 classification (with this HEAD folded in).
 	Class string `json:"class"`
 }
@@ -207,4 +210,7 @@ type ObjectDetailDTO struct {
 	Meta          map[string]string `json:"meta"`
 	RawHeaders    map[string]string `json:"rawHeaders"`
 	TransID       string            `json:"transId"`
+	// EditableFingerprint is the working-copy base for §18 conflict
+	// detection: hand it back with the edit.
+	EditableFingerprint string `json:"editableFingerprint"`
 }
