@@ -3424,6 +3424,60 @@ segment-touching delete path exists at all, and the manifest-only path refuses a
 not a manifest; heuristic classification authorizes nothing (existing §24 tests plus the delete
 guard's refusal-by-classification tests).
 
+### 65.4 Fifth milestone — Phase 5 (transfers + cross-account Copy)
+
+Sequenced on the seam-spike findings (§60 status block; `docs/rclone.md`); every mutating commit
+carries mock contract tests and an integration run against real containerized Swift, and the
+phase-long invariant is the §60 gate: **zero destruction paths** — nothing in this milestone
+deletes user data (staging artifacts Aeronautes itself created under unique names are cleaned;
+that is litter control, not destruction).
+
+1. **Jobs store** — `internal/jobs` over the `jobs` table plus migration 0002 adding
+   source/destination bookmark references (§47 owner input: the drawer filters by account). The
+   §46 state machine (Queued → Planning → Running → Verifying → Complete/Partial/Cancelled/
+   Failed) with legal-transition enforcement, counters as JSON, and list/filter queries. Tests.
+2. **rclone runner** — `internal/transfer/rclone`: resolve and verify the pinned binary, spawn
+   with the exact `docs/rclone.md` surface (env remotes, job-scoped config, token env-only),
+   stream `--use-json-log -vv` (progress stats, errors, and generated segment-prefix capture
+   feeding ownership evidence §26.4), graceful cancel (SIGINT, escalating), bounded retries.
+   Unit tests against a stub rclone executable (canned JSON, signal behaviour); integration
+   against SAIO with the real pin.
+3. **Copy planner** — `internal/transfer/plan`: the §15.2 streaming merge-join over
+   name-sorted deep listings → New / Changed / Same / Unknown (§28.4 semantics: Same only for
+   plain objects with matching size+ETag; large objects without comparable ETags are copied),
+   §14.3 routing (rclone-safe vs native-only names, newline names always native), and the
+   preflight summary (counts, bytes, overwrites, routed-native count, versioned-destination
+   disclosure §28.6). Pure logic tests plus SAIO.
+4. **Copy executor** — `internal/transfer/copy`: planned-new via rclone batches
+   (`--files-from-raw` + `--ignore-times`) with the native byte-preserving path for unsafe
+   names; **stage-and-commit overwrites** (§28.6(a)): plain objects staged under a unique
+   Aeronautes name then committed by server-side COPY, large objects staged then committed by
+   manifest-swap PUT at the target referencing the captured staged prefix, staged manifests
+   cleaned after commit; §27.4 metadata re-application from the source HEAD; verification by
+   listing-diff plus per-object HEAD (never rclone exit codes) with the §28.4 destination
+   fingerprint; post-job reconciliation sweeping staged names and captured prefixes on
+   cancel/failure. Integration: the full §58 namespace — hostile names included — copies
+   cross-account byte-exact (K-TEST-001's copy half), overwrites commit atomically, cancel
+   leaves no unswept staging.
+5. **Multi-bookmark connections + TransferService/JobService** — Connections grows per-bookmark
+   sessions (Copy needs two); the bridge gains PlanCopy (preview), StartCopy, job list/status/
+   cancel, all audited; ADR 0011 updated.
+6. **Job drawer live + Mirror preview** — the §47 drawer shows running jobs (progress, rates,
+   counts, cancel) with the bookmark filter, audit history behind a tab; Mirror preview
+   (read-only) renders the full §27.2 destructive plan — copy set plus would-delete set with
+   counts and warnings — with execution structurally absent until Phase 6.
+7. **Local→Swift upload and Swift→local download** — runner-driven, multi-file upload, the
+   §27.5 collision preflight in its minimal v1 policy (reject the operation on any collision,
+   reported completely before any write), large-object defaults per §25.
+8. **Per-job settings + scheduler budgets** — per-job overrides of chunk size/concurrency
+   within §44.1's typed surface; the §38 job scheduler with a small bounded active-job budget
+   and queueing.
+
+Gate (§60): cross-account Copy on real test accounts including stage-and-commit overwrites;
+Mirror preview correct and inert; no persistent rclone credential file (config files carry no
+secrets — tokens are env-only, verified in the spike); no credentials in logs; zero destruction
+paths.
+
 ---
 
 ## 66. Final project statement
