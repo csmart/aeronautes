@@ -11,7 +11,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
+import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -30,9 +30,7 @@ export function CancelJob(jobID: string): $CancellablePromise<void> {
  * writes, no audit (planning is a read).
  */
 export function PlanCopy(req: $models.CopyRequestDTO): $CancellablePromise<$models.CopyPlanDTO | null> {
-    return $Call.ByID(1671032032, req).then(($result: any) => {
-        return $$createType1($result);
-    });
+    return $Call.ByID(1671032032, req);
 }
 
 /**
@@ -50,7 +48,3 @@ export function SetEngineFactory(f: any): $CancellablePromise<void> {
 export function StartCopy(req: $models.CopyRequestDTO): $CancellablePromise<string> {
     return $Call.ByID(2313820503, req);
 }
-
-// Private type creation functions
-const $$createType0 = $models.CopyPlanDTO.createFrom;
-const $$createType1 = $Create.Nullable($$createType0);

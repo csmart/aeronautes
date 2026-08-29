@@ -20,7 +20,7 @@ export {
     TransferService
 };
 
-export {
+export type {
     AccountDTO,
     AuditEventDTO,
     BookmarkDTO,

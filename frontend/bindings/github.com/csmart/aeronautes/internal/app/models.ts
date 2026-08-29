@@ -3,10 +3,6 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Create as $Create } from "@wailsio/runtime";
-
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
 import * as jobs$0 from "../jobs/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -15,7 +11,7 @@ import * as plan$0 from "../transfer/plan/models.js";
 /**
  * AccountDTO is the connected account's portrait (§53).
  */
-export class AccountDTO {
+export interface AccountDTO {
     /**
      * Name is the storage-URL account suffix (e.g. AUTH_demo).
      */
@@ -24,109 +20,27 @@ export class AccountDTO {
     "objects": number;
     "bytesUsed": number;
     "quotaBytes": number;
-    "meta": { [_ in string]?: string };
-    "tempUrlKeySlots": string[];
-
-    /** Creates a new AccountDTO instance. */
-    constructor($$source: Partial<AccountDTO> = {}) {
-        if (!("name" in $$source)) {
-            this["name"] = "";
-        }
-        if (!("containers" in $$source)) {
-            this["containers"] = 0;
-        }
-        if (!("objects" in $$source)) {
-            this["objects"] = 0;
-        }
-        if (!("bytesUsed" in $$source)) {
-            this["bytesUsed"] = 0;
-        }
-        if (!("quotaBytes" in $$source)) {
-            this["quotaBytes"] = 0;
-        }
-        if (!("meta" in $$source)) {
-            this["meta"] = {};
-        }
-        if (!("tempUrlKeySlots" in $$source)) {
-            this["tempUrlKeySlots"] = [];
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new AccountDTO instance from a string or object.
-     */
-    static createFrom($$source: any = {}): AccountDTO {
-        const $$createField5_0 = $$createType0;
-        const $$createField6_0 = $$createType1;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("meta" in $$parsedSource) {
-            $$parsedSource["meta"] = $$createField5_0($$parsedSource["meta"]);
-        }
-        if ("tempUrlKeySlots" in $$parsedSource) {
-            $$parsedSource["tempUrlKeySlots"] = $$createField6_0($$parsedSource["tempUrlKeySlots"]);
-        }
-        return new AccountDTO($$parsedSource as Partial<AccountDTO>);
-    }
+    "meta": { [_ in string]?: string } | null;
+    "tempUrlKeySlots": string[] | null;
 }
 
 /**
  * AuditEventDTO is one §50 audit-trail row.
  */
-export class AuditEventDTO {
+export interface AuditEventDTO {
     "id": number;
     "at": string;
     "operation": string;
     "resource": string;
     "summary": string;
     "result": string;
-    "transIds": string[];
-
-    /** Creates a new AuditEventDTO instance. */
-    constructor($$source: Partial<AuditEventDTO> = {}) {
-        if (!("id" in $$source)) {
-            this["id"] = 0;
-        }
-        if (!("at" in $$source)) {
-            this["at"] = "";
-        }
-        if (!("operation" in $$source)) {
-            this["operation"] = "";
-        }
-        if (!("resource" in $$source)) {
-            this["resource"] = "";
-        }
-        if (!("summary" in $$source)) {
-            this["summary"] = "";
-        }
-        if (!("result" in $$source)) {
-            this["result"] = "";
-        }
-        if (!("transIds" in $$source)) {
-            this["transIds"] = [];
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new AuditEventDTO instance from a string or object.
-     */
-    static createFrom($$source: any = {}): AuditEventDTO {
-        const $$createField6_0 = $$createType1;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("transIds" in $$parsedSource) {
-            $$parsedSource["transIds"] = $$createField6_0($$parsedSource["transIds"]);
-        }
-        return new AuditEventDTO($$parsedSource as Partial<AuditEventDTO>);
-    }
+    "transIds": string[] | null;
 }
 
 /**
  * BookmarkDTO is the frontend's view of a saved endpoint.
  */
-export class BookmarkDTO {
+export interface BookmarkDTO {
     "id": string;
     "displayName": string;
     "authUrl": string;
@@ -138,41 +52,6 @@ export class BookmarkDTO {
      */
     "tlsMode": string;
     "hasCredential": boolean;
-
-    /** Creates a new BookmarkDTO instance. */
-    constructor($$source: Partial<BookmarkDTO> = {}) {
-        if (!("id" in $$source)) {
-            this["id"] = "";
-        }
-        if (!("displayName" in $$source)) {
-            this["displayName"] = "";
-        }
-        if (!("authUrl" in $$source)) {
-            this["authUrl"] = "";
-        }
-        if (!("username" in $$source)) {
-            this["username"] = "";
-        }
-        if (!("storageUrlOverride" in $$source)) {
-            this["storageUrlOverride"] = "";
-        }
-        if (!("tlsMode" in $$source)) {
-            this["tlsMode"] = "";
-        }
-        if (!("hasCredential" in $$source)) {
-            this["hasCredential"] = false;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new BookmarkDTO instance from a string or object.
-     */
-    static createFrom($$source: any = {}): BookmarkDTO {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new BookmarkDTO($$parsedSource as Partial<BookmarkDTO>);
-    }
 }
 
 /**
@@ -180,95 +59,31 @@ export class BookmarkDTO {
  * gates on. Source "advertised" means /info answered; "unknown" means it
  * could not be read — and Unknown is never treated as Unsupported.
  */
-export class CapabilitiesDTO {
+export interface CapabilitiesDTO {
     "source": string;
     "maxFileSize": number;
-    "storagePolicies": StoragePolicyDTO[];
+    "storagePolicies": StoragePolicyDTO[] | null;
 
     /**
      * VersioningFlags is versioned_writes.allowed_flags (§21).
      */
-    "versioningFlags": string[];
+    "versioningFlags": string[] | null;
     "sloSupported": boolean;
-
-    /** Creates a new CapabilitiesDTO instance. */
-    constructor($$source: Partial<CapabilitiesDTO> = {}) {
-        if (!("source" in $$source)) {
-            this["source"] = "";
-        }
-        if (!("maxFileSize" in $$source)) {
-            this["maxFileSize"] = 0;
-        }
-        if (!("storagePolicies" in $$source)) {
-            this["storagePolicies"] = [];
-        }
-        if (!("versioningFlags" in $$source)) {
-            this["versioningFlags"] = [];
-        }
-        if (!("sloSupported" in $$source)) {
-            this["sloSupported"] = false;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new CapabilitiesDTO instance from a string or object.
-     */
-    static createFrom($$source: any = {}): CapabilitiesDTO {
-        const $$createField2_0 = $$createType3;
-        const $$createField3_0 = $$createType1;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("storagePolicies" in $$parsedSource) {
-            $$parsedSource["storagePolicies"] = $$createField2_0($$parsedSource["storagePolicies"]);
-        }
-        if ("versioningFlags" in $$parsedSource) {
-            $$parsedSource["versioningFlags"] = $$createField3_0($$parsedSource["versioningFlags"]);
-        }
-        return new CapabilitiesDTO($$parsedSource as Partial<CapabilitiesDTO>);
-    }
 }
 
 /**
  * ContainerCreateDTO describes a new container (§20).
  */
-export class ContainerCreateDTO {
+export interface ContainerCreateDTO {
     "name": string;
     "policy": string;
-    "meta": { [_ in string]?: string };
-
-    /** Creates a new ContainerCreateDTO instance. */
-    constructor($$source: Partial<ContainerCreateDTO> = {}) {
-        if (!("name" in $$source)) {
-            this["name"] = "";
-        }
-        if (!("policy" in $$source)) {
-            this["policy"] = "";
-        }
-        if (!("meta" in $$source)) {
-            this["meta"] = {};
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new ContainerCreateDTO instance from a string or object.
-     */
-    static createFrom($$source: any = {}): ContainerCreateDTO {
-        const $$createField2_0 = $$createType0;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("meta" in $$parsedSource) {
-            $$parsedSource["meta"] = $$createField2_0($$parsedSource["meta"]);
-        }
-        return new ContainerCreateDTO($$parsedSource as Partial<ContainerCreateDTO>);
-    }
+    "meta": { [_ in string]?: string } | null;
 }
 
 /**
  * ContainerDetailDTO is the container inspector's §53 section.
  */
-export class ContainerDetailDTO {
+export interface ContainerDetailDTO {
     "name": string;
     "objectCount": number;
     "bytesUsed": number;
@@ -286,9 +101,9 @@ export class ContainerDetailDTO {
     "quotaCount": number;
     "cors": boolean;
     "staticWeb": boolean;
-    "tempUrlKeySlots": string[];
-    "meta": { [_ in string]?: string };
-    "rawHeaders": { [_ in string]?: string };
+    "tempUrlKeySlots": string[] | null;
+    "meta": { [_ in string]?: string } | null;
+    "rawHeaders": { [_ in string]?: string } | null;
     "transId": string;
 
     /**
@@ -301,94 +116,14 @@ export class ContainerDetailDTO {
      * Class is the §24 classification (with this HEAD folded in).
      */
     "class": string;
-
-    /** Creates a new ContainerDetailDTO instance. */
-    constructor($$source: Partial<ContainerDetailDTO> = {}) {
-        if (!("name" in $$source)) {
-            this["name"] = "";
-        }
-        if (!("objectCount" in $$source)) {
-            this["objectCount"] = 0;
-        }
-        if (!("bytesUsed" in $$source)) {
-            this["bytesUsed"] = 0;
-        }
-        if (!("storagePolicy" in $$source)) {
-            this["storagePolicy"] = "";
-        }
-        if (!("readAcl" in $$source)) {
-            this["readAcl"] = "";
-        }
-        if (!("writeAcl" in $$source)) {
-            this["writeAcl"] = "";
-        }
-        if (!("versioningMode" in $$source)) {
-            this["versioningMode"] = "";
-        }
-        if (!("versioningArchive" in $$source)) {
-            this["versioningArchive"] = "";
-        }
-        if (!("quotaBytes" in $$source)) {
-            this["quotaBytes"] = 0;
-        }
-        if (!("quotaCount" in $$source)) {
-            this["quotaCount"] = 0;
-        }
-        if (!("cors" in $$source)) {
-            this["cors"] = false;
-        }
-        if (!("staticWeb" in $$source)) {
-            this["staticWeb"] = false;
-        }
-        if (!("tempUrlKeySlots" in $$source)) {
-            this["tempUrlKeySlots"] = [];
-        }
-        if (!("meta" in $$source)) {
-            this["meta"] = {};
-        }
-        if (!("rawHeaders" in $$source)) {
-            this["rawHeaders"] = {};
-        }
-        if (!("transId" in $$source)) {
-            this["transId"] = "";
-        }
-        if (!("editableFingerprint" in $$source)) {
-            this["editableFingerprint"] = "";
-        }
-        if (!("class" in $$source)) {
-            this["class"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new ContainerDetailDTO instance from a string or object.
-     */
-    static createFrom($$source: any = {}): ContainerDetailDTO {
-        const $$createField12_0 = $$createType1;
-        const $$createField13_0 = $$createType0;
-        const $$createField14_0 = $$createType0;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("tempUrlKeySlots" in $$parsedSource) {
-            $$parsedSource["tempUrlKeySlots"] = $$createField12_0($$parsedSource["tempUrlKeySlots"]);
-        }
-        if ("meta" in $$parsedSource) {
-            $$parsedSource["meta"] = $$createField13_0($$parsedSource["meta"]);
-        }
-        if ("rawHeaders" in $$parsedSource) {
-            $$parsedSource["rawHeaders"] = $$createField14_0($$parsedSource["rawHeaders"]);
-        }
-        return new ContainerDetailDTO($$parsedSource as Partial<ContainerDetailDTO>);
-    }
 }
 
 /**
  * ContainerEditDTO states the complete intended editable surface of a
  * container (§18, §19, §21).
  */
-export class ContainerEditDTO {
-    "meta": { [_ in string]?: string };
+export interface ContainerEditDTO {
+    "meta": { [_ in string]?: string } | null;
     "readAcl": string;
     "writeAcl": string;
 
@@ -399,78 +134,15 @@ export class ContainerEditDTO {
     "versioningArchive": string;
     "quotaBytes": number;
     "quotaCount": number;
-
-    /** Creates a new ContainerEditDTO instance. */
-    constructor($$source: Partial<ContainerEditDTO> = {}) {
-        if (!("meta" in $$source)) {
-            this["meta"] = {};
-        }
-        if (!("readAcl" in $$source)) {
-            this["readAcl"] = "";
-        }
-        if (!("writeAcl" in $$source)) {
-            this["writeAcl"] = "";
-        }
-        if (!("versioningMode" in $$source)) {
-            this["versioningMode"] = "";
-        }
-        if (!("versioningArchive" in $$source)) {
-            this["versioningArchive"] = "";
-        }
-        if (!("quotaBytes" in $$source)) {
-            this["quotaBytes"] = 0;
-        }
-        if (!("quotaCount" in $$source)) {
-            this["quotaCount"] = 0;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new ContainerEditDTO instance from a string or object.
-     */
-    static createFrom($$source: any = {}): ContainerEditDTO {
-        const $$createField0_0 = $$createType0;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("meta" in $$parsedSource) {
-            $$parsedSource["meta"] = $$createField0_0($$parsedSource["meta"]);
-        }
-        return new ContainerEditDTO($$parsedSource as Partial<ContainerEditDTO>);
-    }
 }
 
 /**
  * ContainerPageDTO is one page of containers; an empty NextMarker means
  * the listing is exhausted.
  */
-export class ContainerPageDTO {
-    "rows": ContainerRowDTO[];
+export interface ContainerPageDTO {
+    "rows": ContainerRowDTO[] | null;
     "nextMarker": string;
-
-    /** Creates a new ContainerPageDTO instance. */
-    constructor($$source: Partial<ContainerPageDTO> = {}) {
-        if (!("rows" in $$source)) {
-            this["rows"] = [];
-        }
-        if (!("nextMarker" in $$source)) {
-            this["nextMarker"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new ContainerPageDTO instance from a string or object.
-     */
-    static createFrom($$source: any = {}): ContainerPageDTO {
-        const $$createField0_0 = $$createType5;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("rows" in $$parsedSource) {
-            $$parsedSource["rows"] = $$createField0_0($$parsedSource["rows"]);
-        }
-        return new ContainerPageDTO($$parsedSource as Partial<ContainerPageDTO>);
-    }
 }
 
 /**
@@ -478,37 +150,11 @@ export class ContainerPageDTO {
  * backstage classification driving the §52 modes: normal | suspected |
  * declared | confirmed.
  */
-export class ContainerRowDTO {
+export interface ContainerRowDTO {
     "name": string;
     "count": number;
     "bytes": number;
     "class": string;
-
-    /** Creates a new ContainerRowDTO instance. */
-    constructor($$source: Partial<ContainerRowDTO> = {}) {
-        if (!("name" in $$source)) {
-            this["name"] = "";
-        }
-        if (!("count" in $$source)) {
-            this["count"] = 0;
-        }
-        if (!("bytes" in $$source)) {
-            this["bytes"] = 0;
-        }
-        if (!("class" in $$source)) {
-            this["class"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new ContainerRowDTO instance from a string or object.
-     */
-    static createFrom($$source: any = {}): ContainerRowDTO {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new ContainerRowDTO($$parsedSource as Partial<ContainerRowDTO>);
-    }
 }
 
 /**
@@ -516,7 +162,7 @@ export class ContainerRowDTO {
  * counts (§28.4) plus the disclosures the operator must see before
  * execution.
  */
-export class CopyPlanDTO {
+export interface CopyPlanDTO {
     "summary": plan$0.Summary;
 
     /**
@@ -530,123 +176,31 @@ export class CopyPlanDTO {
      * reads depend on listing consistency (§28.6 disclosure).
      */
     "largeObjectsAsDlo": boolean;
-
-    /** Creates a new CopyPlanDTO instance. */
-    constructor($$source: Partial<CopyPlanDTO> = {}) {
-        if (!("summary" in $$source)) {
-            this["summary"] = (new plan$0.Summary());
-        }
-        if (!("versionedDestination" in $$source)) {
-            this["versionedDestination"] = false;
-        }
-        if (!("largeObjectsAsDlo" in $$source)) {
-            this["largeObjectsAsDlo"] = false;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new CopyPlanDTO instance from a string or object.
-     */
-    static createFrom($$source: any = {}): CopyPlanDTO {
-        const $$createField0_0 = $$createType6;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("summary" in $$parsedSource) {
-            $$parsedSource["summary"] = $$createField0_0($$parsedSource["summary"]);
-        }
-        return new CopyPlanDTO($$parsedSource as Partial<CopyPlanDTO>);
-    }
 }
 
 /**
  * CopyRequestDTO scopes one cross-account copy: bookmark + container +
  * prefix on each end. Prefixes are "" or end with "/".
  */
-export class CopyRequestDTO {
+export interface CopyRequestDTO {
     "sourceBookmarkId": string;
     "sourceContainer": string;
     "sourcePrefix": string;
     "destBookmarkId": string;
     "destContainer": string;
     "destPrefix": string;
-
-    /** Creates a new CopyRequestDTO instance. */
-    constructor($$source: Partial<CopyRequestDTO> = {}) {
-        if (!("sourceBookmarkId" in $$source)) {
-            this["sourceBookmarkId"] = "";
-        }
-        if (!("sourceContainer" in $$source)) {
-            this["sourceContainer"] = "";
-        }
-        if (!("sourcePrefix" in $$source)) {
-            this["sourcePrefix"] = "";
-        }
-        if (!("destBookmarkId" in $$source)) {
-            this["destBookmarkId"] = "";
-        }
-        if (!("destContainer" in $$source)) {
-            this["destContainer"] = "";
-        }
-        if (!("destPrefix" in $$source)) {
-            this["destPrefix"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new CopyRequestDTO instance from a string or object.
-     */
-    static createFrom($$source: any = {}): CopyRequestDTO {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new CopyRequestDTO($$parsedSource as Partial<CopyRequestDTO>);
-    }
 }
 
 /**
  * DLOSegmentsDTO is the bounded §23.1 segment preview: the first rows a
  * DLO manifest would assemble, never all of them.
  */
-export class DLOSegmentsDTO {
+export interface DLOSegmentsDTO {
     "container": string;
     "prefix": string;
-    "segments": ListingRowDTO[];
+    "segments": ListingRowDTO[] | null;
     "hasMore": boolean;
     "previewBytes": number;
-
-    /** Creates a new DLOSegmentsDTO instance. */
-    constructor($$source: Partial<DLOSegmentsDTO> = {}) {
-        if (!("container" in $$source)) {
-            this["container"] = "";
-        }
-        if (!("prefix" in $$source)) {
-            this["prefix"] = "";
-        }
-        if (!("segments" in $$source)) {
-            this["segments"] = [];
-        }
-        if (!("hasMore" in $$source)) {
-            this["hasMore"] = false;
-        }
-        if (!("previewBytes" in $$source)) {
-            this["previewBytes"] = 0;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new DLOSegmentsDTO instance from a string or object.
-     */
-    static createFrom($$source: any = {}): DLOSegmentsDTO {
-        const $$createField2_0 = $$createType8;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("segments" in $$parsedSource) {
-            $$parsedSource["segments"] = $$createField2_0($$parsedSource["segments"]);
-        }
-        return new DLOSegmentsDTO($$parsedSource as Partial<DLOSegmentsDTO>);
-    }
 }
 
 /**
@@ -654,7 +208,7 @@ export class DLOSegmentsDTO {
  * over the bindings bridge is the hello-window proof that the typed
  * service transport works.
  */
-export class Info {
+export interface Info {
     "name": string;
     "version": string;
     "wails": string;
@@ -664,38 +218,12 @@ export class Info {
      * visibly when credentials are session-only.
      */
     "secretBackend": string;
-
-    /** Creates a new Info instance. */
-    constructor($$source: Partial<Info> = {}) {
-        if (!("name" in $$source)) {
-            this["name"] = "";
-        }
-        if (!("version" in $$source)) {
-            this["version"] = "";
-        }
-        if (!("wails" in $$source)) {
-            this["wails"] = "";
-        }
-        if (!("secretBackend" in $$source)) {
-            this["secretBackend"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new Info instance from a string or object.
-     */
-    static createFrom($$source: any = {}): Info {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new Info($$parsedSource as Partial<Info>);
-    }
 }
 
 /**
  * JobDTO is one §46 job for the drawer.
  */
-export class JobDTO {
+export interface JobDTO {
     "id": string;
     "type": string;
     "state": string;
@@ -709,63 +237,6 @@ export class JobDTO {
     "engine": string;
     "counters": jobs$0.Counters;
     "error": string;
-
-    /** Creates a new JobDTO instance. */
-    constructor($$source: Partial<JobDTO> = {}) {
-        if (!("id" in $$source)) {
-            this["id"] = "";
-        }
-        if (!("type" in $$source)) {
-            this["type"] = "";
-        }
-        if (!("state" in $$source)) {
-            this["state"] = "";
-        }
-        if (!("source" in $$source)) {
-            this["source"] = "";
-        }
-        if (!("destination" in $$source)) {
-            this["destination"] = "";
-        }
-        if (!("sourceBookmarkId" in $$source)) {
-            this["sourceBookmarkId"] = "";
-        }
-        if (!("destBookmarkId" in $$source)) {
-            this["destBookmarkId"] = "";
-        }
-        if (!("createdAt" in $$source)) {
-            this["createdAt"] = "";
-        }
-        if (!("startedAt" in $$source)) {
-            this["startedAt"] = "";
-        }
-        if (!("finishedAt" in $$source)) {
-            this["finishedAt"] = "";
-        }
-        if (!("engine" in $$source)) {
-            this["engine"] = "";
-        }
-        if (!("counters" in $$source)) {
-            this["counters"] = (new jobs$0.Counters());
-        }
-        if (!("error" in $$source)) {
-            this["error"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new JobDTO instance from a string or object.
-     */
-    static createFrom($$source: any = {}): JobDTO {
-        const $$createField11_0 = $$createType9;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("counters" in $$parsedSource) {
-            $$parsedSource["counters"] = $$createField11_0($$parsedSource["counters"]);
-        }
-        return new JobDTO($$parsedSource as Partial<JobDTO>);
-    }
 }
 
 /**
@@ -774,7 +245,7 @@ export class JobDTO {
  * a marker object backs a prefix is not knowable from a listing (§14.1)
  * — InspectorService.Prefix answers on selection.
  */
-export class ListingRowDTO {
+export interface ListingRowDTO {
     "kind": string;
     "name": string;
     "bytes": number;
@@ -782,41 +253,6 @@ export class ListingRowDTO {
     "lastModified": string;
     "contentType": string;
     "sloListed": boolean;
-
-    /** Creates a new ListingRowDTO instance. */
-    constructor($$source: Partial<ListingRowDTO> = {}) {
-        if (!("kind" in $$source)) {
-            this["kind"] = "";
-        }
-        if (!("name" in $$source)) {
-            this["name"] = "";
-        }
-        if (!("bytes" in $$source)) {
-            this["bytes"] = 0;
-        }
-        if (!("etag" in $$source)) {
-            this["etag"] = "";
-        }
-        if (!("lastModified" in $$source)) {
-            this["lastModified"] = "";
-        }
-        if (!("contentType" in $$source)) {
-            this["contentType"] = "";
-        }
-        if (!("sloListed" in $$source)) {
-            this["sloListed"] = false;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new ListingRowDTO instance from a string or object.
-     */
-    static createFrom($$source: any = {}): ListingRowDTO {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new ListingRowDTO($$parsedSource as Partial<ListingRowDTO>);
-    }
 }
 
 /**
@@ -824,10 +260,10 @@ export class ListingRowDTO {
  * verify_mismatch, the mismatch description when relevant, the refreshed
  * detail, and the transaction ids for the audit trail.
  */
-export class MutationResultDTO {
+export interface MutationResultDTO {
     "outcome": string;
     "mismatch": string;
-    "transIds": string[];
+    "transIds": string[] | null;
 
     /**
      * ObjectAfter / ContainerAfter carry the verified post-write state
@@ -836,53 +272,12 @@ export class MutationResultDTO {
      */
     "objectAfter": ObjectDetailDTO | null;
     "containerAfter": ContainerDetailDTO | null;
-
-    /** Creates a new MutationResultDTO instance. */
-    constructor($$source: Partial<MutationResultDTO> = {}) {
-        if (!("outcome" in $$source)) {
-            this["outcome"] = "";
-        }
-        if (!("mismatch" in $$source)) {
-            this["mismatch"] = "";
-        }
-        if (!("transIds" in $$source)) {
-            this["transIds"] = [];
-        }
-        if (!("objectAfter" in $$source)) {
-            this["objectAfter"] = null;
-        }
-        if (!("containerAfter" in $$source)) {
-            this["containerAfter"] = null;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new MutationResultDTO instance from a string or object.
-     */
-    static createFrom($$source: any = {}): MutationResultDTO {
-        const $$createField2_0 = $$createType1;
-        const $$createField3_0 = $$createType11;
-        const $$createField4_0 = $$createType13;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("transIds" in $$parsedSource) {
-            $$parsedSource["transIds"] = $$createField2_0($$parsedSource["transIds"]);
-        }
-        if ("objectAfter" in $$parsedSource) {
-            $$parsedSource["objectAfter"] = $$createField3_0($$parsedSource["objectAfter"]);
-        }
-        if ("containerAfter" in $$parsedSource) {
-            $$parsedSource["containerAfter"] = $$createField4_0($$parsedSource["containerAfter"]);
-        }
-        return new MutationResultDTO($$parsedSource as Partial<MutationResultDTO>);
-    }
 }
 
 /**
  * ObjectDetailDTO is the authoritative HEAD detail (§53).
  */
-export class ObjectDetailDTO {
+export interface ObjectDetailDTO {
     "name": string;
 
     /**
@@ -895,8 +290,8 @@ export class ObjectDetailDTO {
     "lastModified": string;
     "manifest": string;
     "deleteAt": string;
-    "meta": { [_ in string]?: string };
-    "rawHeaders": { [_ in string]?: string };
+    "meta": { [_ in string]?: string } | null;
+    "rawHeaders": { [_ in string]?: string } | null;
     "transId": string;
 
     /**
@@ -904,64 +299,6 @@ export class ObjectDetailDTO {
      * detection: hand it back with the edit.
      */
     "editableFingerprint": string;
-
-    /** Creates a new ObjectDetailDTO instance. */
-    constructor($$source: Partial<ObjectDetailDTO> = {}) {
-        if (!("name" in $$source)) {
-            this["name"] = "";
-        }
-        if (!("class" in $$source)) {
-            this["class"] = "";
-        }
-        if (!("contentLength" in $$source)) {
-            this["contentLength"] = 0;
-        }
-        if (!("contentType" in $$source)) {
-            this["contentType"] = "";
-        }
-        if (!("etag" in $$source)) {
-            this["etag"] = "";
-        }
-        if (!("lastModified" in $$source)) {
-            this["lastModified"] = "";
-        }
-        if (!("manifest" in $$source)) {
-            this["manifest"] = "";
-        }
-        if (!("deleteAt" in $$source)) {
-            this["deleteAt"] = "";
-        }
-        if (!("meta" in $$source)) {
-            this["meta"] = {};
-        }
-        if (!("rawHeaders" in $$source)) {
-            this["rawHeaders"] = {};
-        }
-        if (!("transId" in $$source)) {
-            this["transId"] = "";
-        }
-        if (!("editableFingerprint" in $$source)) {
-            this["editableFingerprint"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new ObjectDetailDTO instance from a string or object.
-     */
-    static createFrom($$source: any = {}): ObjectDetailDTO {
-        const $$createField8_0 = $$createType0;
-        const $$createField9_0 = $$createType0;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("meta" in $$parsedSource) {
-            $$parsedSource["meta"] = $$createField8_0($$parsedSource["meta"]);
-        }
-        if ("rawHeaders" in $$parsedSource) {
-            $$parsedSource["rawHeaders"] = $$createField9_0($$parsedSource["rawHeaders"]);
-        }
-        return new ObjectDetailDTO($$parsedSource as Partial<ObjectDetailDTO>);
-    }
 }
 
 /**
@@ -969,74 +306,23 @@ export class ObjectDetailDTO {
  * for an object (§17: replace-all semantics — a working copy, never a
  * delta).
  */
-export class ObjectMetadataEditDTO {
-    "meta": { [_ in string]?: string };
+export interface ObjectMetadataEditDTO {
+    "meta": { [_ in string]?: string } | null;
     "contentType": string;
 
     /**
      * DeleteAt RFC3339, "" for no scheduled expiry.
      */
     "deleteAt": string;
-
-    /** Creates a new ObjectMetadataEditDTO instance. */
-    constructor($$source: Partial<ObjectMetadataEditDTO> = {}) {
-        if (!("meta" in $$source)) {
-            this["meta"] = {};
-        }
-        if (!("contentType" in $$source)) {
-            this["contentType"] = "";
-        }
-        if (!("deleteAt" in $$source)) {
-            this["deleteAt"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new ObjectMetadataEditDTO instance from a string or object.
-     */
-    static createFrom($$source: any = {}): ObjectMetadataEditDTO {
-        const $$createField0_0 = $$createType0;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("meta" in $$parsedSource) {
-            $$parsedSource["meta"] = $$createField0_0($$parsedSource["meta"]);
-        }
-        return new ObjectMetadataEditDTO($$parsedSource as Partial<ObjectMetadataEditDTO>);
-    }
 }
 
 /**
  * ObjectPageDTO is one page of the working list; an empty NextMarker
  * means the listing is exhausted.
  */
-export class ObjectPageDTO {
-    "rows": ListingRowDTO[];
+export interface ObjectPageDTO {
+    "rows": ListingRowDTO[] | null;
     "nextMarker": string;
-
-    /** Creates a new ObjectPageDTO instance. */
-    constructor($$source: Partial<ObjectPageDTO> = {}) {
-        if (!("rows" in $$source)) {
-            this["rows"] = [];
-        }
-        if (!("nextMarker" in $$source)) {
-            this["nextMarker"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new ObjectPageDTO instance from a string or object.
-     */
-    static createFrom($$source: any = {}): ObjectPageDTO {
-        const $$createField0_0 = $$createType8;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("rows" in $$parsedSource) {
-            $$parsedSource["rows"] = $$createField0_0($$parsedSource["rows"]);
-        }
-        return new ObjectPageDTO($$parsedSource as Partial<ObjectPageDTO>);
-    }
 }
 
 /**
@@ -1044,7 +330,7 @@ export class ObjectPageDTO {
  * (§14.1): marker-backed vs implied, and any real object sitting at the
  * prefix name that the delimiter view folded away.
  */
-export class PrefixDetailDTO {
+export interface PrefixDetailDTO {
     "prefix": string;
     "markerBacked": boolean;
 
@@ -1052,68 +338,20 @@ export class PrefixDetailDTO {
      * SelfObject is nil for an implied prefix.
      */
     "selfObject": ObjectDetailDTO | null;
-
-    /** Creates a new PrefixDetailDTO instance. */
-    constructor($$source: Partial<PrefixDetailDTO> = {}) {
-        if (!("prefix" in $$source)) {
-            this["prefix"] = "";
-        }
-        if (!("markerBacked" in $$source)) {
-            this["markerBacked"] = false;
-        }
-        if (!("selfObject" in $$source)) {
-            this["selfObject"] = null;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new PrefixDetailDTO instance from a string or object.
-     */
-    static createFrom($$source: any = {}): PrefixDetailDTO {
-        const $$createField2_0 = $$createType11;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("selfObject" in $$parsedSource) {
-            $$parsedSource["selfObject"] = $$createField2_0($$parsedSource["selfObject"]);
-        }
-        return new PrefixDetailDTO($$parsedSource as Partial<PrefixDetailDTO>);
-    }
 }
 
 /**
  * SLOManifestDTO is the exact manifest, order preserved (§23).
  */
-export class SLOManifestDTO {
-    "entries": SLOSegmentDTO[];
-
-    /** Creates a new SLOManifestDTO instance. */
-    constructor($$source: Partial<SLOManifestDTO> = {}) {
-        if (!("entries" in $$source)) {
-            this["entries"] = [];
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new SLOManifestDTO instance from a string or object.
-     */
-    static createFrom($$source: any = {}): SLOManifestDTO {
-        const $$createField0_0 = $$createType15;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("entries" in $$parsedSource) {
-            $$parsedSource["entries"] = $$createField0_0($$parsedSource["entries"]);
-        }
-        return new SLOManifestDTO($$parsedSource as Partial<SLOManifestDTO>);
-    }
+export interface SLOManifestDTO {
+    "entries": SLOSegmentDTO[] | null;
 }
 
 /**
  * SLOSegmentDTO is one row of the inspector's SLO segment table (§23.2):
  * kind "object" | "data" | "unknown".
  */
-export class SLOSegmentDTO {
+export interface SLOSegmentDTO {
     "kind": string;
     "container": string;
     "object": string;
@@ -1130,88 +368,12 @@ export class SLOSegmentDTO {
      * DataSize is the decoded inline-data length for kind "data".
      */
     "dataSize": number;
-
-    /** Creates a new SLOSegmentDTO instance. */
-    constructor($$source: Partial<SLOSegmentDTO> = {}) {
-        if (!("kind" in $$source)) {
-            this["kind"] = "";
-        }
-        if (!("container" in $$source)) {
-            this["container"] = "";
-        }
-        if (!("object" in $$source)) {
-            this["object"] = "";
-        }
-        if (!("etag" in $$source)) {
-            this["etag"] = "";
-        }
-        if (!("size" in $$source)) {
-            this["size"] = 0;
-        }
-        if (!("range" in $$source)) {
-            this["range"] = "";
-        }
-        if (!("nestedSlo" in $$source)) {
-            this["nestedSlo"] = false;
-        }
-        if (!("dataSize" in $$source)) {
-            this["dataSize"] = 0;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new SLOSegmentDTO instance from a string or object.
-     */
-    static createFrom($$source: any = {}): SLOSegmentDTO {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new SLOSegmentDTO($$parsedSource as Partial<SLOSegmentDTO>);
-    }
 }
 
 /**
  * StoragePolicyDTO is one advertised storage policy (§20).
  */
-export class StoragePolicyDTO {
+export interface StoragePolicyDTO {
     "name": string;
     "default": boolean;
-
-    /** Creates a new StoragePolicyDTO instance. */
-    constructor($$source: Partial<StoragePolicyDTO> = {}) {
-        if (!("name" in $$source)) {
-            this["name"] = "";
-        }
-        if (!("default" in $$source)) {
-            this["default"] = false;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new StoragePolicyDTO instance from a string or object.
-     */
-    static createFrom($$source: any = {}): StoragePolicyDTO {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new StoragePolicyDTO($$parsedSource as Partial<StoragePolicyDTO>);
-    }
 }
-
-// Private type creation functions
-const $$createType0 = $Create.Map($Create.Any, $Create.Any);
-const $$createType1 = $Create.Array($Create.Any);
-const $$createType2 = StoragePolicyDTO.createFrom;
-const $$createType3 = $Create.Array($$createType2);
-const $$createType4 = ContainerRowDTO.createFrom;
-const $$createType5 = $Create.Array($$createType4);
-const $$createType6 = plan$0.Summary.createFrom;
-const $$createType7 = ListingRowDTO.createFrom;
-const $$createType8 = $Create.Array($$createType7);
-const $$createType9 = jobs$0.Counters.createFrom;
-const $$createType10 = ObjectDetailDTO.createFrom;
-const $$createType11 = $Create.Nullable($$createType10);
-const $$createType12 = ContainerDetailDTO.createFrom;
-const $$createType13 = $Create.Nullable($$createType12);
-const $$createType14 = SLOSegmentDTO.createFrom;
-const $$createType15 = $Create.Array($$createType14);

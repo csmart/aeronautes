@@ -69,6 +69,14 @@
       <button class="find" title="Search the whole container server-side (Phase 1)">
         Find in container
       </button>
+      <button
+        class="find"
+        title="Copy this container/prefix to another account or container (§27.1)"
+        disabled={browser.containerName === null || browser.backstageFrom !== null}
+        onclick={() => (browser.transferOpen = true)}
+      >
+        Copy to…
+      </button>
     </div>
 
     <div class="columns num" aria-hidden="true">

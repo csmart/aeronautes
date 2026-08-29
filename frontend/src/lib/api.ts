@@ -9,7 +9,9 @@ import {
   BookmarkService,
   BrowseService,
   InspectorService,
+  JobService,
   MutateService,
+  TransferService,
 } from "../../bindings/github.com/csmart/aeronautes/internal/app";
 import type {
   AccountDTO,
@@ -20,8 +22,11 @@ import type {
   ContainerDetailDTO,
   ContainerEditDTO,
   ContainerRowDTO,
+  CopyPlanDTO,
+  CopyRequestDTO,
   DLOSegmentsDTO,
   Info,
+  JobDTO,
   ListingRowDTO,
   MutationResultDTO,
   ObjectDetailDTO,
@@ -39,8 +44,11 @@ export type {
   ContainerDetailDTO,
   ContainerEditDTO,
   ContainerRowDTO,
+  CopyPlanDTO,
+  CopyRequestDTO,
   DLOSegmentsDTO,
   Info,
+  JobDTO,
   ListingRowDTO,
   MutationResultDTO,
   ObjectDetailDTO,
@@ -94,6 +102,10 @@ export interface Api {
   createMarker(container: string, prefix: string): Promise<PrefixDetailDTO>;
   deleteMarker(container: string, prefix: string): Promise<void>;
   auditRecent(limit: number): Promise<AuditEventDTO[]>;
+  planCopy(req: CopyRequestDTO): Promise<CopyPlanDTO>;
+  startCopy(req: CopyRequestDTO): Promise<string>;
+  cancelJob(jobId: string): Promise<void>;
+  jobs(bookmarkId: string, activeOnly: boolean, limit: number): Promise<JobDTO[]>;
 }
 
 /** The live bridge. */
@@ -126,4 +138,13 @@ export const liveApi: Api = {
   createMarker: (container, prefix) => MutateService.CreateMarker(container, prefix),
   deleteMarker: (container, prefix) => MutateService.DeleteMarker(container, prefix),
   auditRecent: async (limit) => (await AuditService.Recent(limit)) ?? [],
+  planCopy: async (req) => {
+    const dto = await TransferService.PlanCopy(req);
+    if (!dto) throw new Error("empty plan");
+    return dto;
+  },
+  startCopy: (req) => TransferService.StartCopy(req),
+  cancelJob: (jobId) => TransferService.CancelJob(jobId),
+  jobs: async (bookmarkId, activeOnly, limit) =>
+    (await JobService.List(bookmarkId, activeOnly, limit)) ?? [],
 };

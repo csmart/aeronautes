@@ -279,3 +279,52 @@ describe("large-object read semantics (§65.3)", () => {
     expect(s.entries.some((e) => e.name === "empty-object")).toBe(true);
   });
 });
+
+describe("jobs drawer state", () => {
+  it("loads jobs, tracks active ones, and honours the bookmark filter", async () => {
+    const s = new BrowserState(newFakeApi());
+    await s.loadJobs();
+    expect(s.jobs).toEqual([]);
+    expect(s.activeJobs).toEqual([]);
+
+    const id = await s.startCopy({
+      sourceBookmarkId: "bm-1",
+      sourceContainer: "media",
+      sourcePrefix: "",
+      destBookmarkId: "bm-2",
+      destContainer: "backup",
+      destPrefix: "",
+    });
+    expect(s.jobs.length).toBe(1);
+    expect(s.activeJobs.length).toBe(1);
+    expect(s.jobs[0].id).toBe(id);
+
+    // Filtered to an uninvolved bookmark the job disappears; to either
+    // end it stays (§47).
+    s.jobsFilter = "bm-3";
+    await s.loadJobs();
+    expect(s.jobs).toEqual([]);
+    s.jobsFilter = "bm-2";
+    await s.loadJobs();
+    expect(s.jobs.length).toBe(1);
+
+    await s.cancelJob(id);
+    expect(s.activeJobs).toEqual([]);
+    expect(s.jobs[0].state).toBe("cancelled");
+  });
+
+  it("previews a copy plan with disclosures", async () => {
+    const s = new BrowserState(newFakeApi());
+    const plan = await s.planCopy({
+      sourceBookmarkId: "bm-1",
+      sourceContainer: "media",
+      sourcePrefix: "",
+      destBookmarkId: "bm-2",
+      destContainer: "versioned",
+      destPrefix: "",
+    });
+    expect(plan.summary.new).toBe(3);
+    expect(plan.summary.destOnly).toBe(2);
+    expect(plan.versionedDestination).toBe(true);
+  });
+});

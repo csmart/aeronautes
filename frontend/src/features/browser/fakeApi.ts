@@ -74,6 +74,7 @@ export function newFakeApi(): Api {
   const objectDeleteAt: Record<string, string> = {};
   const containerState: Record<string, ContainerState> = {};
   const audit: AuditEventDTO[] = [];
+  const jobs: import("../../lib/api").JobDTO[] = [];
   let auditId = 1;
 
   function stateOf(name: string): ContainerState {
@@ -460,5 +461,75 @@ export function newFakeApi(): Api {
     },
 
     auditRecent: async (limit) => [...audit].reverse().slice(0, limit),
+
+    // Transfers: the fake plans a canned preview and runs jobs through a
+    // tiny scripted lifecycle so drawer logic is testable.
+    planCopy: async (req) => ({
+      summary: {
+        new: 3,
+        same: 2,
+        changed: 1,
+        unknown: 1,
+        destOnly: 2,
+        transferObjects: 5,
+        transferBytes: 42_000_000,
+        overwrites: 2,
+        nativeRouted: 1,
+        destOnlyBytes: 7_000_000,
+      },
+      versionedDestination: req.destContainer === "versioned",
+      largeObjectsAsDlo: true,
+    }),
+    startCopy: async (req) => {
+      const id = `job-${jobs.length + 1}`;
+      jobs.push({
+        id,
+        type: "copy",
+        state: "running",
+        source: `${req.sourceContainer}/${req.sourcePrefix}`,
+        destination: `${req.destContainer}/${req.destPrefix}`,
+        sourceBookmarkId: req.sourceBookmarkId,
+        destBookmarkId: req.destBookmarkId,
+        createdAt: "2026-08-29T10:00:00Z",
+        startedAt: "2026-08-29T10:00:01Z",
+        finishedAt: "",
+        engine: "rclone+native",
+        counters: {
+          objectsPlanned: 5,
+          objectsCopied: 2,
+          objectsVerified: 0,
+          objectsFailed: 0,
+          bytesPlanned: 42_000_000,
+          bytesCopied: 12_000_000,
+          overwrites: 0,
+          nativeRouted: 1,
+        },
+        error: "",
+      });
+      record("transfer.copy.start", `${req.sourceContainer} → ${req.destContainer}`, "applied");
+      return id;
+    },
+    cancelJob: async (jobId) => {
+      const job = jobs.find((j) => j.id === jobId);
+      if (!job || job.finishedAt !== "") {
+        throw new Error(`job ${jobId} is not running`);
+      }
+      job.state = "cancelled";
+      job.finishedAt = "2026-08-29T10:05:00Z";
+    },
+    jobs: async (bookmarkId, activeOnly, limit) =>
+      jobs
+        .filter(
+          (j) =>
+            bookmarkId === "" ||
+            j.sourceBookmarkId === bookmarkId ||
+            j.destBookmarkId === bookmarkId,
+        )
+        .filter(
+          (j) =>
+            !activeOnly || !["complete", "partial", "cancelled", "failed"].includes(j.state),
+        )
+        .slice(0, limit)
+        .reverse(),
   };
 }

@@ -5,6 +5,9 @@
 
 import type {
   AccountDTO,
+  CopyPlanDTO,
+  CopyRequestDTO,
+  JobDTO,
   Api,
   AuditEventDTO,
   BookmarkDTO,
@@ -57,6 +60,15 @@ export class BrowserState {
   capabilities: CapabilitiesDTO | null = $state(null);
   /** Recent §50 audit events for the drawer, newest first. */
   auditEvents: AuditEventDTO[] = $state([]);
+
+  // Jobs drawer (§46/§47).
+  jobs: JobDTO[] = $state([]);
+  /** Bookmark filter for the drawer; "" = all accounts (§47 owner input). */
+  jobsFilter = $state("");
+  jobsError: string | null = $state(null);
+
+  // Transfer dialog (§27.1 Copy / §27.2 Mirror preview).
+  transferOpen = $state(false);
 
   // Containers pane.
   mode: ContainerMode = $state("logical");
@@ -321,6 +333,37 @@ export class BrowserState {
   // ---- Mutations (§65.2 items 6/7): thin, state-refreshing wrappers
   // over MutateService. Outcome handling — conflict banners, overwrite
   // choices — belongs to the editors; state here only stays coherent.
+
+  async loadJobs() {
+    try {
+      this.jobs = await this.#api.jobs(this.jobsFilter, false, 50);
+      this.jobsError = null;
+    } catch (error) {
+      this.jobsError = messageOf(error);
+    }
+  }
+
+  /** Active (non-terminal) jobs — the drawer badge. */
+  get activeJobs(): JobDTO[] {
+    return this.jobs.filter(
+      (j) => !["complete", "partial", "cancelled", "failed"].includes(j.state),
+    );
+  }
+
+  async planCopy(req: CopyRequestDTO): Promise<CopyPlanDTO> {
+    return await this.#api.planCopy(req);
+  }
+
+  async startCopy(req: CopyRequestDTO): Promise<string> {
+    const id = await this.#api.startCopy(req);
+    await this.loadJobs();
+    return id;
+  }
+
+  async cancelJob(jobId: string) {
+    await this.#api.cancelJob(jobId);
+    await this.loadJobs();
+  }
 
   async loadAudit() {
     this.auditEvents = await this.#api.auditRecent(50).catch(() => this.auditEvents);
