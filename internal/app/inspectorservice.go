@@ -2,23 +2,31 @@ package app
 
 import (
 	"context"
+	"log"
+	"strconv"
 	"time"
 
+	"github.com/csmart/aeronautes/internal/evidence"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
 
 // InspectorService serves selection-triggered detail (§14.2, §53): the
-// authoritative HEAD, fetched only when something is selected.
+// authoritative HEAD, fetched only when something is selected. Every
+// manifest reference it observes is recorded as segment evidence (§24)
+// so the container modes learn from ordinary inspection.
 type InspectorService struct {
 	connections *Connections
+	evidence    *evidence.Store
 }
 
-// NewInspectorService builds the service over the connection registry.
-func NewInspectorService(connections *Connections) *InspectorService {
-	return &InspectorService{connections: connections}
+// NewInspectorService builds the service over the connection registry
+// and the evidence store.
+func NewInspectorService(connections *Connections, ev *evidence.Store) *InspectorService {
+	return &InspectorService{connections: connections, evidence: ev}
 }
 
-// Object HEADs one object and returns its inspector detail.
+// Object HEADs one object and returns its inspector detail; a DLO's
+// manifest reference becomes Confirmed evidence.
 func (s *InspectorService) Object(ctx context.Context, container, name string) (ObjectDetailDTO, error) {
 	session, err := s.connections.Session()
 	if err != nil {
@@ -28,6 +36,7 @@ func (s *InspectorService) Object(ctx context.Context, container, name string) (
 	if err != nil {
 		return ObjectDetailDTO{}, err
 	}
+	s.record(ctx, evidence.FromObjectDetail(d))
 	return toObjectDetailDTO(d), nil
 }
 
@@ -48,6 +57,99 @@ func (s *InspectorService) Prefix(ctx context.Context, container, prefix string)
 		dto.SelfObject = &self
 	}
 	return dto, nil
+}
+
+// Container HEADs one container for the §53 inspector section, folding
+// in its §24 classification.
+func (s *InspectorService) Container(ctx context.Context, name string) (ContainerDetailDTO, error) {
+	session, err := s.connections.Session()
+	if err != nil {
+		return ContainerDetailDTO{}, err
+	}
+	d, err := session.ContainerDetail(ctx, name)
+	if err != nil {
+		return ContainerDetailDTO{}, err
+	}
+	classes, err := s.evidence.ClassifyContainers(ctx, s.connections.ActiveBookmarkID(), []string{name})
+	if err != nil {
+		return ContainerDetailDTO{}, err
+	}
+	return ContainerDetailDTO{
+		Name:              d.Name,
+		ObjectCount:       d.ObjectCount,
+		BytesUsed:         d.BytesUsed,
+		StoragePolicy:     d.StoragePolicy,
+		ReadACL:           d.ReadACL,
+		WriteACL:          d.WriteACL,
+		VersioningMode:    string(d.Versioning.Mode),
+		VersioningArchive: d.Versioning.Archive,
+		QuotaBytes:        d.QuotaBytes,
+		QuotaCount:        d.QuotaCount,
+		CORS:              d.CORS,
+		StaticWeb:         d.StaticWeb,
+		TempURLKeySlots:   d.TempURLKeySlots,
+		Meta:              d.Meta,
+		RawHeaders:        d.RawHeaders,
+		TransID:           d.TransID,
+		Class:             string(classes[name]),
+	}, nil
+}
+
+// SLOManifest fetches the exact manifest for the inspector's segment
+// table (§23.2); every referenced location becomes Confirmed evidence.
+func (s *InspectorService) SLOManifest(ctx context.Context, container, name string) (SLOManifestDTO, error) {
+	session, err := s.connections.Session()
+	if err != nil {
+		return SLOManifestDTO{}, err
+	}
+	m, err := session.SLOManifest(ctx, container, name)
+	if err != nil {
+		return SLOManifestDTO{}, err
+	}
+	s.record(ctx, evidence.FromSLOManifest(container+"/"+name, m))
+
+	dto := SLOManifestDTO{Entries: make([]SLOSegmentDTO, 0, len(m.Entries))}
+	for _, entry := range m.Entries {
+		switch v := entry.(type) {
+		case swiftcontrol.ObjectSegment:
+			row := SLOSegmentDTO{
+				Kind:      "object",
+				Container: v.Path.Container,
+				Object:    v.Path.Object,
+				Size:      int64(v.Size),
+				NestedSLO: v.NestedSLO,
+			}
+			if v.ETag != nil {
+				row.ETag = *v.ETag
+			}
+			if v.Range != nil {
+				row.Range = strconv.FormatInt(v.Range.Start, 10) + "-" + strconv.FormatInt(v.Range.End, 10)
+			}
+			dto.Entries = append(dto.Entries, row)
+		case swiftcontrol.InlineDataSegment:
+			dto.Entries = append(dto.Entries, SLOSegmentDTO{Kind: "data", DataSize: int64(len(v.Data))})
+		default:
+			dto.Entries = append(dto.Entries, SLOSegmentDTO{Kind: "unknown"})
+		}
+	}
+	return dto, nil
+}
+
+// record stores observations against the active bookmark; evidence is a
+// side effect of inspection and must never fail the inspection itself.
+func (s *InspectorService) record(ctx context.Context, observations []evidence.Observation) {
+	bookmarkID := s.connections.ActiveBookmarkID()
+	if bookmarkID == "" {
+		return
+	}
+	for _, obs := range observations {
+		if err := s.evidence.Record(ctx, bookmarkID, obs); err != nil {
+			// Diagnostic only: the HEAD/manifest the user asked for
+			// succeeded; a bookkeeping failure must not mask it.
+			log.Printf("evidence record failed: %v", err)
+			return
+		}
+	}
 }
 
 func toObjectDetailDTO(d *swiftcontrol.ObjectDetail) ObjectDetailDTO {

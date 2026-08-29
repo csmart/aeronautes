@@ -3,7 +3,9 @@
 
 /**
  * InspectorService serves selection-triggered detail (§14.2, §53): the
- * authoritative HEAD, fetched only when something is selected.
+ * authoritative HEAD, fetched only when something is selected. Every
+ * manifest reference it observes is recorded as segment evidence (§24)
+ * so the container modes learn from ordinary inspection.
  * @module
  */
 
@@ -16,7 +18,16 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as $models from "./models.js";
 
 /**
- * Object HEADs one object and returns its inspector detail.
+ * Container HEADs one container for the §53 inspector section, folding
+ * in its §24 classification.
+ */
+export function Container(name: string): $CancellablePromise<$models.ContainerDetailDTO> {
+    return $Call.ByID(63633335, name);
+}
+
+/**
+ * Object HEADs one object and returns its inspector detail; a DLO's
+ * manifest reference becomes Confirmed evidence.
  */
 export function Object(container: string, name: string): $CancellablePromise<$models.ObjectDetailDTO> {
     return $Call.ByID(3225180167, container, name);
@@ -28,4 +39,12 @@ export function Object(container: string, name: string): $CancellablePromise<$mo
  */
 export function Prefix(container: string, prefix: string): $CancellablePromise<$models.PrefixDetailDTO> {
     return $Call.ByID(3304830540, container, prefix);
+}
+
+/**
+ * SLOManifest fetches the exact manifest for the inspector's segment
+ * table (§23.2); every referenced location becomes Confirmed evidence.
+ */
+export function SLOManifest(container: string, name: string): $CancellablePromise<$models.SLOManifestDTO> {
+    return $Call.ByID(1601699845, container, name);
 }

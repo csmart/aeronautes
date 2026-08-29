@@ -14,6 +14,7 @@ import (
 	"github.com/csmart/aeronautes/internal/app"
 	"github.com/csmart/aeronautes/internal/bookmarks"
 	"github.com/csmart/aeronautes/internal/db"
+	"github.com/csmart/aeronautes/internal/evidence"
 	"github.com/csmart/aeronautes/internal/secrets"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -47,6 +48,7 @@ func main() {
 	}
 	bookmarkStore := bookmarks.NewStore(database, secretStore)
 	connections := app.NewConnections(bookmarkStore)
+	evidenceStore := evidence.NewStore(database)
 
 	a := application.New(application.Options{
 		Name:        "Aeronautes",
@@ -54,8 +56,8 @@ func main() {
 		Services: []application.Service{
 			application.NewService(app.NewAppService(version, string(secretBackend))),
 			application.NewService(app.NewBookmarkService(bookmarkStore)),
-			application.NewService(app.NewBrowseService(connections)),
-			application.NewService(app.NewInspectorService(connections)),
+			application.NewService(app.NewBrowseService(connections, evidenceStore)),
+			application.NewService(app.NewInspectorService(connections, evidenceStore)),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),

@@ -28,6 +28,11 @@ func (s *Server) LoadCanonicalFixtures() {
 	put("fixtures", "external-slo", Object{
 		Bytes: 1024, ContentType: "application/x-tar",
 		SLO: true, SLOEtag: "9f2b8c6e4d2a1f2b7e9d3c8a4b1f0e21",
+		SLOManifestJSON: `[
+			{"name": "/slo-parts/backup/part-000001", "hash": "f0e1d2c300000000000000000000ff01", "bytes": 1000000000, "content_type": "application/octet-stream"},
+			{"name": "/slo-parts/backup/part-000002", "hash": "f0e1d2c300000000000000000000ff02", "bytes": 1000000000, "content_type": "application/octet-stream"},
+			{"name": "/slo-parts/backup/part-000003", "hash": "f0e1d2c300000000000000000000ff03", "bytes": 1100000000, "content_type": "application/octet-stream"}
+		]`,
 	})
 
 	// Segment stores: confirmed by manifest reference…

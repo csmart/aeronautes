@@ -12,21 +12,25 @@ import {
 import type {
   AccountDTO,
   BookmarkDTO,
+  ContainerDetailDTO,
   ContainerRowDTO,
   Info,
   ListingRowDTO,
   ObjectDetailDTO,
   PrefixDetailDTO,
+  SLOManifestDTO,
 } from "../../bindings/github.com/csmart/aeronautes/internal/app";
 
 export type {
   AccountDTO,
   BookmarkDTO,
+  ContainerDetailDTO,
   ContainerRowDTO,
   Info,
   ListingRowDTO,
   ObjectDetailDTO,
   PrefixDetailDTO,
+  SLOManifestDTO,
 };
 
 export interface ContainerPage {
@@ -54,6 +58,8 @@ export interface Api {
   ): Promise<ObjectPage>;
   objectDetail(container: string, name: string): Promise<ObjectDetailDTO>;
   prefixDetail(container: string, prefix: string): Promise<PrefixDetailDTO>;
+  containerDetail(name: string): Promise<ContainerDetailDTO>;
+  sloManifest(container: string, name: string): Promise<SLOManifestDTO>;
 }
 
 /** The live bridge. */
@@ -73,4 +79,6 @@ export const liveApi: Api = {
   },
   objectDetail: (container, name) => InspectorService.Object(container, name),
   prefixDetail: (container, prefix) => InspectorService.Prefix(container, prefix),
+  containerDetail: (name) => InspectorService.Container(name),
+  sloManifest: (container, name) => InspectorService.SLOManifest(container, name),
 };

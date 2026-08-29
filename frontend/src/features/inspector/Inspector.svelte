@@ -1,6 +1,6 @@
 <script lang="ts">
   import { formatBytes, formatCount } from "../../lib/format";
-  import { suspectedSegmentStore, type BrowserState } from "../browser/browserState.svelte";
+  import type { BrowserState } from "../browser/browserState.svelte";
 
   let { browser }: { browser: BrowserState } = $props();
 
@@ -70,17 +70,44 @@
         <h3 class="card-title">Large object</h3>
         {@render kv("Manifest", detail.manifest, true)}
         <p class="teach">
-          Segments live under this prefix; the manifest assembles whatever is
-          there at read time. The segment table arrives in Phase 4.
+          Dynamic manifest: segments live under this prefix, and a read
+          assembles whatever is there at that moment. The segment listing
+          view arrives in Phase 4.
         </p>
       </section>
     {:else if detail && detail.class === "slo"}
       <section class="card">
-        <h3 class="card-title">Large object</h3>
-        <p class="teach">
-          Static manifest with a fixed segment list. The segment table arrives
-          in Phase 4 (multipart-manifest=get).
-        </p>
+        <h3 class="card-title">Large object · exact manifest</h3>
+        {#if browser.sloManifest}
+          <table class="segments num">
+            <thead>
+              <tr><th>#</th><th>Segment</th><th class="right">Size</th></tr>
+            </thead>
+            <tbody>
+              {#each browser.sloManifest.entries ?? [] as segment, i (i)}
+                <tr>
+                  <td>{i + 1}</td>
+                  {#if segment.kind === "object"}
+                    <td class="type-mono seg-name">
+                      {segment.container}/{segment.object}{segment.range
+                        ? ` [${segment.range}]`
+                        : ""}{segment.nestedSlo ? " (sub-SLO)" : ""}
+                    </td>
+                    <td class="right">{formatBytes(segment.size)}</td>
+                  {:else if segment.kind === "data"}
+                    <td class="type-mono seg-name">(inline data)</td>
+                    <td class="right">{formatBytes(segment.dataSize)}</td>
+                  {:else}
+                    <td class="type-mono seg-name">(unrecognised entry — preserved)</td>
+                    <td class="right">—</td>
+                  {/if}
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {:else}
+          <p class="teach">fetching exact manifest…</p>
+        {/if}
       </section>
     {/if}
 
@@ -135,26 +162,78 @@
       {/if}
     </section>
   {:else if browser.container}
+    {@const cd = browser.containerDetail}
     <header class="head">
       <h2 class="title type-display">{browser.container.name}</h2>
-      <p class="subtitle">Container</p>
+      <p class="subtitle">
+        Container{cd?.storagePolicy ? ` · policy ${cd.storagePolicy}` : ""}
+      </p>
     </header>
     <section class="card">
-      {@render kv("Objects", formatCount(browser.container.count))}
-      {@render kv("Bytes", formatBytes(browser.container.bytes))}
+      {@render kv("Objects", formatCount(cd?.objectCount ?? browser.container.count))}
+      {@render kv("Bytes", formatBytes(cd?.bytesUsed ?? browser.container.bytes))}
+      {#if cd}
+        {@render kv("Storage policy", cd.storagePolicy || "—")}
+        {@render kv("Read ACL", cd.readAcl || "—", cd.readAcl !== "")}
+        {@render kv("Write ACL", cd.writeAcl || "—", cd.writeAcl !== "")}
+        {#if cd.versioningMode === "off"}
+          {@render kv("Versioning", "off")}
+        {:else}
+          {@render kv(
+            "Versioning",
+            `${cd.versioningMode === "history_location" ? "history" : "versions"} → ${cd.versioningArchive}`,
+            true,
+          )}
+        {/if}
+        {@render kv("Quota", cd.quotaBytes > 0 ? formatBytes(cd.quotaBytes) : "none")}
+        {#if cd.quotaCount > 0}
+          {@render kv("Quota (objects)", formatCount(cd.quotaCount))}
+        {/if}
+        {@render kv("CORS", cd.cors ? "configured" : "—")}
+        {@render kv("Static web", cd.staticWeb ? "configured" : "—")}
+        {@render kv(
+          "TempURL keys",
+          (cd.tempUrlKeySlots?.length ?? 0) > 0 ? `${cd.tempUrlKeySlots?.length} set` : "none",
+        )}
+      {/if}
     </section>
     <section class="card">
       <h3 class="card-title">Segment classification</h3>
-      {#if suspectedSegmentStore(browser.container.name)}
+      {#if (cd?.class ?? browser.container.class) === "confirmed"}
         <p class="teach">
-          Named like a segment store, but nothing confirms it yet. Treated as
-          possible backstage — shown, never hidden. Manifest evidence arrives
-          with Phase 2.
+          Confirmed segment store: manifests observed during inspection
+          reference objects here. Deleting from it breaks the logical objects
+          they assemble — and confirmed proves <em>referenced</em>, never
+          <em>unshared</em>.
+        </p>
+      {:else if (cd?.class ?? browser.container.class) === "declared"}
+        <p class="teach">Pinned as a segment store by an operator.</p>
+      {:else if (cd?.class ?? browser.container.class) === "suspected"}
+        <p class="teach">
+          Named like a segment store, but nothing confirms it. Treated as
+          possible backstage — shown, never hidden, and never destructively
+          classified from the name alone.
         </p>
       {:else}
         <p class="teach">Ordinary logical container.</p>
       {/if}
     </section>
+    {#if cd && sortedEntries(cd.meta).length > 0}
+      <section class="card">
+        <h3 class="card-title">User metadata</h3>
+        {#each sortedEntries(cd.meta) as [key, value] (key)}
+          {@render kv(key, value)}
+        {/each}
+      </section>
+    {/if}
+    {#if cd}
+      <section class="card">
+        <h3 class="card-title">Raw headers</h3>
+        <pre class="raw type-mono">{sortedEntries(cd.rawHeaders)
+            .map(([k, v]) => `${k}: ${v}`)
+            .join("\n")}</pre>
+      </section>
+    {/if}
   {:else if browser.account}
     <header class="head">
       <h2 class="title type-display">{browser.account.name}</h2>
@@ -283,5 +362,33 @@
     background: var(--color-bg-inset);
     border-radius: var(--radius-control);
     overflow-x: auto;
+  }
+
+  .segments {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-xs);
+  }
+
+  .segments th {
+    text-align: left;
+    font-weight: var(--weight-medium);
+    color: var(--color-text-faint);
+    padding: var(--space-1);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .segments td {
+    padding: var(--space-1);
+    border-bottom: 1px solid var(--color-border);
+    color: var(--color-text-secondary);
+  }
+
+  .seg-name {
+    overflow-wrap: anywhere;
+  }
+
+  .right {
+    text-align: right;
   }
 </style>

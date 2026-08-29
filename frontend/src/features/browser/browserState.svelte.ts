@@ -7,10 +7,12 @@ import type {
   AccountDTO,
   Api,
   BookmarkDTO,
+  ContainerDetailDTO,
   ContainerRowDTO,
   ListingRowDTO,
   ObjectDetailDTO,
   PrefixDetailDTO,
+  SLOManifestDTO,
 } from "../../lib/api";
 import { parentPrefix } from "../../lib/listing";
 
@@ -19,19 +21,12 @@ export type ContainerMode = "logical" | "all" | "backstage";
 /** Bridge page size for both listing levels. */
 const pageLimit = 1000;
 
-/**
- * Name-heuristic segment-store suspicion (§12.2 backstage-lite): rclone
- * sidecar naming (<container>_segments) and dotted stores. Confirmed
- * classification needs manifest evidence — the Phase 2 evidence engine —
- * so Logical mode groups suspects and hides nothing yet.
- */
-export function suspectedSegmentStore(name: string): boolean {
-  return name.endsWith("_segments") || name.endsWith("-segments") || name.startsWith(".");
-}
-
 export interface ContainerGroups {
   main: ContainerRowDTO[];
+  /** Suspected stores, grouped but never hidden (§24.5). */
   suspected: ContainerRowDTO[];
+  /** Confirmed/Declared stores hidden by Logical mode (§24.5). */
+  hiddenBackstage: number;
 }
 
 export class BrowserState {
@@ -60,6 +55,8 @@ export class BrowserState {
 
   // Working list.
   containerName: string | null = $state(null);
+  /** The open container's §53 HEAD detail; null while loading/closed. */
+  containerDetail: ContainerDetailDTO | null = $state(null);
   prefix = $state("");
   filter = $state("");
   entries: ListingRowDTO[] = $state([]);
@@ -69,9 +66,11 @@ export class BrowserState {
   selectedIndex = $state(-1);
 
   // Inspector detail (selection-triggered HEAD, §14.2): an object row
-  // fetches its HEAD, a prefix row its PrefixDetail classification.
+  // fetches its HEAD (and, for an SLO, its exact manifest), a prefix row
+  // its PrefixDetail classification.
   objectDetail: ObjectDetailDTO | null = $state(null);
   prefixDetail: PrefixDetailDTO | null = $state(null);
+  sloManifest: SLOManifestDTO | null = $state(null);
   detailLoading = $state(false);
   detailError: string | null = $state(null);
   #detailSeq = 0;
@@ -126,14 +125,18 @@ export class BrowserState {
     this.containersMarker = page.nextMarker;
   }
 
+  /** The §52 modes over the service's §24 classification. */
   get containerGroups(): ContainerGroups {
     if (this.mode === "logical") {
       return {
-        main: this.containers.filter((c) => !suspectedSegmentStore(c.name)),
-        suspected: this.containers.filter((c) => suspectedSegmentStore(c.name)),
+        main: this.containers.filter((c) => c.class === "normal"),
+        suspected: this.containers.filter((c) => c.class === "suspected"),
+        hiddenBackstage: this.containers.filter(
+          (c) => c.class === "confirmed" || c.class === "declared",
+        ).length,
       };
     }
-    return { main: this.containers, suspected: [] };
+    return { main: this.containers, suspected: [], hiddenBackstage: 0 };
   }
 
   get container(): ContainerRowDTO | null {
@@ -154,6 +157,17 @@ export class BrowserState {
 
   async openContainer(name: string) {
     this.containerName = name;
+    this.containerDetail = null;
+    // §14.2: opening IS selecting the container — one HEAD for the
+    // inspector; failure falls back to the listing row's fields.
+    this.#api
+      .containerDetail(name)
+      .then((detail) => {
+        if (this.containerName === name) {
+          this.containerDetail = detail;
+        }
+      })
+      .catch(() => {});
     await this.#loadEntries("");
   }
 
@@ -178,9 +192,13 @@ export class BrowserState {
     }
     if (this.prefix === "") {
       this.containerName = null;
+      this.containerDetail = null;
       this.entries = [];
       this.filter = "";
       this.select(-1);
+      // Inspection may have taught the evidence engine (§24): returning
+      // to the account view re-reads classifications.
+      await this.loadContainers();
       return;
     }
     await this.#loadEntries(parentPrefix(this.prefix));
@@ -234,6 +252,7 @@ export class BrowserState {
     const seq = ++this.#detailSeq;
     this.objectDetail = null;
     this.prefixDetail = null;
+    this.sloManifest = null;
     this.detailError = null;
     const container = this.containerName;
     if (!entry || !container) {
@@ -243,13 +262,19 @@ export class BrowserState {
     this.detailLoading = true;
     const fetch =
       entry.kind === "object"
-        ? this.#api
-            .objectDetail(container, entry.name)
-            .then((detail) => {
+        ? this.#api.objectDetail(container, entry.name).then(async (detail) => {
+            if (seq !== this.#detailSeq) {
+              return;
+            }
+            this.objectDetail = detail;
+            if (detail.class === "slo") {
+              // The exact segment table (§23.2) — still one selection.
+              const manifest = await this.#api.sloManifest(container, entry.name);
               if (seq === this.#detailSeq) {
-                this.objectDetail = detail;
+                this.sloManifest = manifest;
               }
-            })
+            }
+          })
         : this.#api.prefixDetail(container, entry.name).then((detail) => {
             if (seq === this.#detailSeq) {
               this.prefixDetail = detail;

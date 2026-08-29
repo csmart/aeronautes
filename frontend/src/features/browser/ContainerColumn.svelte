@@ -18,7 +18,12 @@
     class:selected={browser.containerName === container.name}
     onclick={() => browser.openContainer(container.name)}
   >
-    <span class="container-name">{container.name}</span>
+    <span class="container-name">
+      {container.name}
+      {#if browser.mode === "backstage" && container.class !== "normal"}
+        <span class="class-chip">{container.class}</span>
+      {/if}
+    </span>
     <span class="container-detail num">
       {formatBytes(container.bytes)} · {formatCount(container.count)} objects
     </span>
@@ -69,9 +74,14 @@
     {/if}
   </div>
 
-  {#if browser.account && browser.mode === "logical" && browser.containerGroups.suspected.length > 0}
+  {#if browser.account && browser.mode === "logical" && (browser.containerGroups.hiddenBackstage > 0 || browser.containerGroups.suspected.length > 0)}
     <footer class="pane-foot">
-      {browser.containerGroups.suspected.length} possible backstage containers
+      {#if browser.containerGroups.hiddenBackstage > 0}
+        <div>{browser.containerGroups.hiddenBackstage} confirmed segment containers hidden</div>
+      {/if}
+      {#if browser.containerGroups.suspected.length > 0}
+        <div>{browser.containerGroups.suspected.length} possible backstage containers</div>
+      {/if}
     </footer>
   {/if}
 </section>
@@ -176,6 +186,17 @@
   .container-detail {
     font-size: var(--text-xs);
     color: var(--color-text-faint);
+  }
+
+  .class-chip {
+    margin-left: var(--space-1);
+    padding: 0 var(--space-1);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-semibold);
+    color: var(--color-accent-strong);
+    background: var(--color-accent-soft);
+    border: 1px solid var(--color-accent-border);
+    border-radius: var(--radius-pill);
   }
 
   .group-label {

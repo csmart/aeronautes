@@ -30,11 +30,58 @@ type AccountDTO struct {
 	TempURLKeySlots []string          `json:"tempUrlKeySlots"`
 }
 
-// ContainerRowDTO is one container listing row.
+// ContainerRowDTO is one container listing row. Class is the §24
+// backstage classification driving the §52 modes: normal | suspected |
+// declared | confirmed.
 type ContainerRowDTO struct {
 	Name  string `json:"name"`
 	Count int64  `json:"count"`
 	Bytes int64  `json:"bytes"`
+	Class string `json:"class"`
+}
+
+// ContainerDetailDTO is the container inspector's §53 section.
+type ContainerDetailDTO struct {
+	Name          string `json:"name"`
+	ObjectCount   int64  `json:"objectCount"`
+	BytesUsed     int64  `json:"bytesUsed"`
+	StoragePolicy string `json:"storagePolicy"`
+	ReadACL       string `json:"readAcl"`
+	WriteACL      string `json:"writeAcl"`
+	// VersioningMode: off | versions_location | history_location (§21
+	// display profile).
+	VersioningMode    string            `json:"versioningMode"`
+	VersioningArchive string            `json:"versioningArchive"`
+	QuotaBytes        int64             `json:"quotaBytes"`
+	QuotaCount        int64             `json:"quotaCount"`
+	CORS              bool              `json:"cors"`
+	StaticWeb         bool              `json:"staticWeb"`
+	TempURLKeySlots   []string          `json:"tempUrlKeySlots"`
+	Meta              map[string]string `json:"meta"`
+	RawHeaders        map[string]string `json:"rawHeaders"`
+	TransID           string            `json:"transId"`
+	// Class is the §24 classification (with this HEAD folded in).
+	Class string `json:"class"`
+}
+
+// SLOSegmentDTO is one row of the inspector's SLO segment table (§23.2):
+// kind "object" | "data" | "unknown".
+type SLOSegmentDTO struct {
+	Kind      string `json:"kind"`
+	Container string `json:"container"`
+	Object    string `json:"object"`
+	ETag      string `json:"etag"`
+	Size      int64  `json:"size"`
+	// Range is the raw inclusive byte range ("10-109"), "" for whole.
+	Range     string `json:"range"`
+	NestedSLO bool   `json:"nestedSlo"`
+	// DataSize is the decoded inline-data length for kind "data".
+	DataSize int64 `json:"dataSize"`
+}
+
+// SLOManifestDTO is the exact manifest, order preserved (§23).
+type SLOManifestDTO struct {
+	Entries []SLOSegmentDTO `json:"entries"`
 }
 
 // ContainerPageDTO is one page of containers; an empty NextMarker means

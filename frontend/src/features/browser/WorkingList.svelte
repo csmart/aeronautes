@@ -3,7 +3,7 @@
   import { breadcrumbs } from "../../lib/listing";
   import { formatBytes } from "../../lib/format";
   import type { ListingRowDTO } from "../../lib/api";
-  import { suspectedSegmentStore, type BrowserState } from "./browserState.svelte";
+  import type { BrowserState } from "./browserState.svelte";
 
   let { browser }: { browser: BrowserState } = $props();
 
@@ -101,7 +101,7 @@
             A prefix exists because objects live beneath it — or because an explicit
             marker object was created. No directory is required.
           </p>
-        {:else if suspectedSegmentStore(browser.containerName)}
+        {:else if (browser.containerDetail?.class ?? browser.container?.class) !== "normal"}
           <p class="empty-title">Empty segment store</p>
           <p class="empty-teach">
             You are backstage. Objects here may be parts of larger logical objects.

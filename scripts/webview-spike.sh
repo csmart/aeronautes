@@ -35,25 +35,49 @@ command -v Xvfb >/dev/null || {
 XVFB_DISPLAY=":97"
 Xvfb "$XVFB_DISPLAY" -screen 0 1280x800x24 &
 XVFB_PID=$!
+APP_LOG=$(mktemp -t aeronautes-spike.XXXXXX)
 cleanup() {
 	[ -n "${APP_PID:-}" ] && kill "$APP_PID" 2>/dev/null || true
+	# dbus-run-session's TERM handling can orphan the app; sweep it.
+	pkill -f "$PWD/bin/aeronautes" 2>/dev/null || true
 	kill "$XVFB_PID" 2>/dev/null || true
+	rm -f "$APP_LOG"
 }
 trap cleanup EXIT
-sleep 1
 
-# Run detached from Wayland so the spike exercises the Xvfb display; use a
-# private session bus when available so WebKit's portal chatter is isolated.
-if command -v dbus-run-session >/dev/null; then
-	env DISPLAY="$XVFB_DISPLAY" WAYLAND_DISPLAY="" dbus-run-session -- "$BIN" &
-else
-	env DISPLAY="$XVFB_DISPLAY" WAYLAND_DISPLAY="" "$BIN" &
-fi
+# Wait for the display socket instead of hoping — a stale lock or slow
+# start otherwise turns into a misleading "Failed to open display".
+for _ in $(seq 1 50); do
+	[ -S "/tmp/.X11-unix/X${XVFB_DISPLAY#:}" ] && break
+	kill -0 "$XVFB_PID" 2>/dev/null || {
+		echo "FAIL: Xvfb did not start (stale /tmp/.X${XVFB_DISPLAY#:}-lock?)"
+		exit 1
+	}
+	sleep 0.2
+done
+
+# Run detached from Wayland so the spike exercises the Xvfb display, and
+# under a PRIVATE session bus: WebKitGTK's bubblewrap sandbox aborts hard
+# without a usable bus, and with DISPLAY set but no bus address the
+# process would X11-autolaunch a dbus-daemon that inherits our stdio and
+# outlives the app (both observed). dbus-run-session reaps its daemon on
+# exit; the empty private bus has no Secret Service, so the app falls back
+# to the session secret store — the honest headless behaviour.
+command -v dbus-run-session >/dev/null || {
+	echo "FAIL: dbus-run-session not installed (dbus-tools); required for a leak-free headless run"
+	exit 1
+}
+# The app's stdio goes to a scratch log, never to this script's pipeline:
+# any straggling child inheriting our stdout would otherwise hold a
+# caller's pipe open long after the spike is done.
+env DISPLAY="$XVFB_DISPLAY" WAYLAND_DISPLAY="" dbus-run-session -- "$PWD/$BIN" \
+	>"$APP_LOG" 2>&1 &
 APP_PID=$!
 sleep 5
 
 kill -0 "$APP_PID" 2>/dev/null || {
-	echo "FAIL: shell exited within 5s of launch"
+	echo "FAIL: shell exited within 5s of launch; last app output:"
+	tail -5 "$APP_LOG"
 	exit 1
 }
 

@@ -71,6 +71,14 @@ func (c *Connections) Session() (*swiftcontrol.Session, error) {
 	return c.active, nil
 }
 
+// ActiveBookmarkID returns the connected bookmark's id, "" when none —
+// the scope key for evidence and other per-endpoint state.
+func (c *Connections) ActiveBookmarkID() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.activeID
+}
+
 // AccountName derives the display account name from the active session's
 // storage URL suffix (…/v1/AUTH_demo → AUTH_demo).
 func (c *Connections) AccountName() string {

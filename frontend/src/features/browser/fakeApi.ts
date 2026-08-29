@@ -79,12 +79,65 @@ export function newFakeApi(): Api {
 
     containers: async (marker, limit) => {
       const rows = containersFixture
-        .map((c) => ({ name: c.name, count: c.objectCount, bytes: c.bytes }))
+        .map((c) => ({
+          name: c.name,
+          count: c.objectCount,
+          bytes: c.bytes,
+          class: c.segmentRole,
+        }))
         .sort((a, b) => (a.name < b.name ? -1 : 1))
         .filter((c) => c.name > marker)
         .slice(0, limit);
       const full = rows.length === limit;
       return { rows, nextMarker: full ? rows[rows.length - 1].name : "" };
+    },
+
+    containerDetail: async (name) => {
+      const c = containersFixture.find((x) => x.name === name);
+      if (!c) {
+        throw new Error("container not found");
+      }
+      return {
+        name: c.name,
+        objectCount: c.objectCount,
+        bytesUsed: c.bytes,
+        storagePolicy: c.policy,
+        readAcl: "",
+        writeAcl: "",
+        versioningMode: "off",
+        versioningArchive: "",
+        quotaBytes: 0,
+        quotaCount: 0,
+        cors: false,
+        staticWeb: false,
+        tempUrlKeySlots: [],
+        meta: {},
+        rawHeaders: { "X-Trans-Id": "txfake" },
+        transId: "txfake",
+        class: c.segmentRole,
+      };
+    },
+
+    sloManifest: async (_container, name) => {
+      const large = largeObjectDetail[name];
+      if (!large || large.kind !== "slo") {
+        throw new Error("not an SLO");
+      }
+      return {
+        entries: large.segments.map((s) => {
+          const slash = s.name.indexOf("/");
+          return {
+            kind: "object",
+            container: s.name.slice(0, slash),
+            object: s.name.slice(slash + 1),
+            etag: s.etag,
+            size: s.bytes,
+            range: "",
+            nestedSlo: false,
+            dataSize: 0,
+          };
+        }),
+      };
     },
 
     objects: async (container, prefix, marker, limit) => {

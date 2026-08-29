@@ -31,6 +31,8 @@ type Object struct {
 	Manifest string
 	// SLO sets X-Static-Large-Object: True on HEAD responses.
 	SLO bool
+	// SLOManifestJSON is served verbatim for ?multipart-manifest=get.
+	SLOManifestJSON string
 	// Meta becomes X-Object-Meta-<key> headers on HEAD responses.
 	Meta map[string]string
 	// DeleteAt sets X-Delete-At (unix seconds) when non-zero.
@@ -345,6 +347,12 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request, container,
 	s.mu.Unlock()
 	if !ok {
 		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	if r.URL.Query().Get("multipart-manifest") == "get" && o.SLOManifestJSON != "" {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(o.SLOManifestJSON))
 		return
 	}
 

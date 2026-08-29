@@ -15,11 +15,14 @@ export {
 export type {
     AccountDTO,
     BookmarkDTO,
+    ContainerDetailDTO,
     ContainerPageDTO,
     ContainerRowDTO,
     Info,
     ListingRowDTO,
     ObjectDetailDTO,
     ObjectPageDTO,
-    PrefixDetailDTO
+    PrefixDetailDTO,
+    SLOManifestDTO,
+    SLOSegmentDTO
 } from "./models.js";

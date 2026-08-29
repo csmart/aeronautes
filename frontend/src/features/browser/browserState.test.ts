@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { BrowserState, suspectedSegmentStore } from "./browserState.svelte";
+import { BrowserState } from "./browserState.svelte";
 import { newFakeApi } from "./fakeApi";
 import type { BookmarkDTO } from "../../lib/api";
 
@@ -40,17 +40,16 @@ describe("bookmarks and connect", () => {
   });
 });
 
-describe("container modes with the name heuristic", () => {
-  it("logical groups suspected stores, hides nothing", async () => {
+describe("container modes over the service classification (§52/§24.5)", () => {
+  it("logical hides confirmed stores and groups suspected ones", async () => {
     const s = await connected();
     const groups = s.containerGroups;
-    expect(groups.main.map((c) => c.name)).toEqual(["fixtures", "slo-parts"]);
+    expect(groups.main.map((c) => c.name)).toEqual(["fixtures"]);
     expect(groups.suspected.map((c) => c.name)).toEqual([
       ".file-segments",
-      "confirmed_segments",
-      "external-dlo-segments",
       "photos_segments",
     ]);
+    expect(groups.hiddenBackstage).toBe(3);
   });
 
   it("all mode shows one flat list", async () => {
@@ -58,6 +57,7 @@ describe("container modes with the name heuristic", () => {
     s.mode = "all";
     expect(s.containerGroups.main).toHaveLength(6);
     expect(s.containerGroups.suspected).toHaveLength(0);
+    expect(s.containerGroups.hiddenBackstage).toBe(0);
   });
 });
 
@@ -122,12 +122,25 @@ describe("navigation", () => {
   });
 });
 
-describe("suspectedSegmentStore heuristic", () => {
-  it("matches sidecar and dotted names, not lookalikes", () => {
-    expect(suspectedSegmentStore("photos_segments")).toBe(true);
-    expect(suspectedSegmentStore(".file-segments")).toBe(true);
-    expect(suspectedSegmentStore("my-segments")).toBe(true);
-    expect(suspectedSegmentStore("segments-of-society")).toBe(false);
-    expect(suspectedSegmentStore("fixtures")).toBe(false);
+describe("selection-triggered detail (§14.2)", () => {
+  it("opening a container fetches its HEAD detail", async () => {
+    const s = await connected();
+    await s.openContainer("photos_segments");
+    await vi.waitFor(() => expect(s.containerDetail).not.toBeNull());
+    expect(s.containerDetail?.storagePolicy).toBe("ec42");
+    expect(s.containerDetail?.class).toBe("suspected");
+  });
+
+  it("selecting an SLO fetches its exact manifest for the segment table", async () => {
+    const s = await connected();
+    await s.openContainer("fixtures");
+    s.select(s.entries.findIndex((e) => e.name === "external-slo"));
+    await vi.waitFor(() => expect(s.sloManifest).not.toBeNull());
+    expect(s.sloManifest?.entries).toHaveLength(3);
+    expect(s.sloManifest?.entries?.[0].container).toBe("slo-parts");
+
+    // Moving selection clears the table with the rest of the detail.
+    s.select(s.entries.findIndex((e) => e.name === "empty-object"));
+    expect(s.sloManifest).toBeNull();
   });
 });

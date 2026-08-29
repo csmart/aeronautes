@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/csmart/aeronautes/internal/evidence"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
 
@@ -13,11 +14,13 @@ import (
 // marker, never for "everything" (§15, K-PERF-*).
 type BrowseService struct {
 	connections *Connections
+	evidence    *evidence.Store
 }
 
-// NewBrowseService builds the service over the connection registry.
-func NewBrowseService(connections *Connections) *BrowseService {
-	return &BrowseService{connections: connections}
+// NewBrowseService builds the service over the connection registry and
+// the evidence store (container rows carry their §24 classification).
+func NewBrowseService(connections *Connections, ev *evidence.Store) *BrowseService {
+	return &BrowseService{connections: connections, evidence: ev}
 }
 
 // Connect authenticates a bookmark and returns the account portrait.
@@ -79,6 +82,19 @@ func (s *BrowseService) Containers(ctx context.Context, marker string, limit int
 			page.NextMarker = entry.Name
 			break
 		}
+	}
+
+	// Fold in the §24 classification so the §52 modes are one page fetch.
+	names := make([]string, len(page.Rows))
+	for i, row := range page.Rows {
+		names[i] = row.Name
+	}
+	classes, err := s.evidence.ClassifyContainers(ctx, s.connections.ActiveBookmarkID(), names)
+	if err != nil {
+		return ContainerPageDTO{}, err
+	}
+	for i := range page.Rows {
+		page.Rows[i].Class = string(classes[page.Rows[i].Name])
 	}
 	return page, nil
 }

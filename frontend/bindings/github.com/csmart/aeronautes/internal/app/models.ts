@@ -35,6 +35,38 @@ export interface BookmarkDTO {
 }
 
 /**
+ * ContainerDetailDTO is the container inspector's §53 section.
+ */
+export interface ContainerDetailDTO {
+    "name": string;
+    "objectCount": number;
+    "bytesUsed": number;
+    "storagePolicy": string;
+    "readAcl": string;
+    "writeAcl": string;
+
+    /**
+     * VersioningMode: off | versions_location | history_location (§21
+     * display profile).
+     */
+    "versioningMode": string;
+    "versioningArchive": string;
+    "quotaBytes": number;
+    "quotaCount": number;
+    "cors": boolean;
+    "staticWeb": boolean;
+    "tempUrlKeySlots": string[] | null;
+    "meta": { [_ in string]?: string } | null;
+    "rawHeaders": { [_ in string]?: string } | null;
+    "transId": string;
+
+    /**
+     * Class is the §24 classification (with this HEAD folded in).
+     */
+    "class": string;
+}
+
+/**
  * ContainerPageDTO is one page of containers; an empty NextMarker means
  * the listing is exhausted.
  */
@@ -44,12 +76,15 @@ export interface ContainerPageDTO {
 }
 
 /**
- * ContainerRowDTO is one container listing row.
+ * ContainerRowDTO is one container listing row. Class is the §24
+ * backstage classification driving the §52 modes: normal | suspected |
+ * declared | confirmed.
  */
 export interface ContainerRowDTO {
     "name": string;
     "count": number;
     "bytes": number;
+    "class": string;
 }
 
 /**
@@ -128,4 +163,34 @@ export interface PrefixDetailDTO {
      * SelfObject is nil for an implied prefix.
      */
     "selfObject": ObjectDetailDTO | null;
+}
+
+/**
+ * SLOManifestDTO is the exact manifest, order preserved (§23).
+ */
+export interface SLOManifestDTO {
+    "entries": SLOSegmentDTO[] | null;
+}
+
+/**
+ * SLOSegmentDTO is one row of the inspector's SLO segment table (§23.2):
+ * kind "object" | "data" | "unknown".
+ */
+export interface SLOSegmentDTO {
+    "kind": string;
+    "container": string;
+    "object": string;
+    "etag": string;
+    "size": number;
+
+    /**
+     * Range is the raw inclusive byte range ("10-109"), "" for whole.
+     */
+    "range": string;
+    "nestedSlo": boolean;
+
+    /**
+     * DataSize is the decoded inline-data length for kind "data".
+     */
+    "dataSize": number;
 }

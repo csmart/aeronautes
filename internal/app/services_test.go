@@ -9,6 +9,7 @@ import (
 
 	"github.com/csmart/aeronautes/internal/bookmarks"
 	"github.com/csmart/aeronautes/internal/db"
+	"github.com/csmart/aeronautes/internal/evidence"
 	"github.com/csmart/aeronautes/internal/secrets"
 	"github.com/csmart/aeronautes/internal/swifttest"
 )
@@ -38,10 +39,11 @@ func newHarness(t *testing.T) *harness {
 
 	store := bookmarks.NewStore(d, secrets.NewSessionStore())
 	connections := NewConnections(store)
+	ev := evidence.NewStore(d)
 	return &harness{
 		bookmarks: NewBookmarkService(store),
-		browse:    NewBrowseService(connections),
-		inspector: NewInspectorService(connections),
+		browse:    NewBrowseService(connections, ev),
+		inspector: NewInspectorService(connections, ev),
 		mock:      mock,
 		authURL:   srv.URL + "/auth/v1.0",
 	}
@@ -233,6 +235,93 @@ func TestInspectorPrefixDetail(t *testing.T) {
 	}
 	if implied.MarkerBacked || implied.SelfObject != nil {
 		t.Errorf("implied/ = %+v, want implied", implied)
+	}
+}
+
+// TestClassificationLearnsFromInspection is the §65.1 Phase 2 gate at
+// service level: the §58 namespace classifies correctly, and ordinary
+// inspection upgrades classification through evidence (§24).
+func TestClassificationLearnsFromInspection(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+	ctx := context.Background()
+
+	classOf := func(name string) string {
+		t.Helper()
+		page, err := h.browse.Containers(ctx, "", 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, row := range page.Rows {
+			if row.Name == name {
+				return row.Class
+			}
+		}
+		t.Fatalf("container %s not listed", name)
+		return ""
+	}
+
+	// Before any inspection: name heuristics only. The photos_segments
+	// trap stays suspected — grouped, never hidden.
+	if got := classOf("external-dlo-segments"); got != "suspected" {
+		t.Errorf("external-dlo-segments before inspection = %q, want suspected", got)
+	}
+	if got := classOf("photos_segments"); got != "suspected" {
+		t.Errorf("photos_segments = %q, want suspected", got)
+	}
+	if got := classOf("slo-parts"); got != "normal" {
+		t.Errorf("slo-parts before inspection = %q, want normal (no evidence, no name match)", got)
+	}
+	if got := classOf("fixtures"); got != "normal" {
+		t.Errorf("fixtures = %q, want normal", got)
+	}
+
+	// Inspecting the DLO confirms its segment store.
+	if _, err := h.inspector.Object(ctx, "fixtures", "external-dlo"); err != nil {
+		t.Fatal(err)
+	}
+	if got := classOf("external-dlo-segments"); got != "confirmed" {
+		t.Errorf("external-dlo-segments after DLO HEAD = %q, want confirmed", got)
+	}
+
+	// Fetching the SLO manifest confirms slo-parts.
+	manifest, err := h.inspector.SLOManifest(ctx, "fixtures", "external-slo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.Entries) == 0 {
+		t.Fatal("manifest came back empty")
+	}
+	if got := classOf("slo-parts"); got != "confirmed" {
+		t.Errorf("slo-parts after manifest fetch = %q, want confirmed", got)
+	}
+
+	// photos_segments never upgrades from inspection of other things.
+	if got := classOf("photos_segments"); got != "suspected" {
+		t.Errorf("photos_segments after inspections = %q, must stay suspected", got)
+	}
+}
+
+func TestInspectorContainerDetail(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+	ctx := context.Background()
+
+	d, err := h.inspector.Container(ctx, "photos_segments")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Name != "photos_segments" || d.ObjectCount != 3 {
+		t.Errorf("detail = %+v", d)
+	}
+	if d.StoragePolicy != "ec42" {
+		t.Errorf("StoragePolicy = %q", d.StoragePolicy)
+	}
+	if d.VersioningMode != "off" {
+		t.Errorf("VersioningMode = %q", d.VersioningMode)
+	}
+	if d.Class != "suspected" {
+		t.Errorf("Class = %q, want suspected", d.Class)
 	}
 }
 
