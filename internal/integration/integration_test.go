@@ -313,6 +313,20 @@ func TestObjectHeadRealSwift(t *testing.T) {
 		t.Errorf("SLO logical size = %d, want 1000", slo.ContentLength)
 	}
 
+	// The exact manifest round-trips through ?multipart-manifest=get.
+	manifest, err := h.Session.SLOManifest(ctx, fixtures, "external-slo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.Entries) != 2 {
+		t.Fatalf("manifest entries = %d, want 2", len(manifest.Entries))
+	}
+	first, ok := manifest.Entries[0].(swiftcontrol.ObjectSegment)
+	if !ok || first.Path.Container != h.Container("slo-parts") ||
+		first.Path.Object != "backup/part-000001" || first.Size != 500 {
+		t.Errorf("manifest entry 0 = %#v", manifest.Entries[0])
+	}
+
 	// The listing hints SLO for the manifest row (§14.2: hint, not truth).
 	for e, err := range h.Session.Objects(ctx, fixtures, swiftcontrol.ObjectListOptions{}) {
 		if err != nil {
