@@ -1,0 +1,39 @@
+# Releasing Aeronautes
+
+## Targets (§61.0)
+
+Three operating systems × two architectures, all required: Linux, macOS,
+and Windows on x86_64 and aarch64. The CI matrix in
+`.github/workflows/release.yml` builds all six on matched native runners
+(the webview links via CGO, so there is no cross-OS compilation).
+
+## Signing status: UNSIGNED, on purpose
+
+Release signing and notarisation are **deliberately not implemented yet**
+(owner decision, 2026-08-29, recorded in DESIGN.md §65.6). Every artifact
+name carries the `-UNSIGNED` suffix, macOS Gatekeeper and Windows
+SmartScreen will warn, and nothing in the pipeline pretends otherwise.
+The workflow marks exactly where `rpm --addsign`/`debsigs`,
+`codesign` + `notarytool`, and `signtool` slot in once release keys
+exist.
+
+## Local builds (Fedora)
+
+```
+sudo dnf install golang gcc gcc-c++ pkgconf gtk4-devel webkitgtk6.0-devel nodejs npm rpm-build
+make tools     # pinned wails3 CLI
+make build     # bin/aeronautes
+make rpm       # bin/*.rpm via nfpm
+make package   # rpm + deb + AppImage
+```
+
+The binary is dynamically linked against the system WebKitGTK by design;
+a fully static binary is not possible (see README).
+
+## Release steps
+
+1. `make test` and `make test-integration` (SAIO running) are green.
+2. `scripts/smoke.sh` passes headless (release smoke, §65.6).
+3. Tag `vX.Y.Z` and push; CI produces the six unsigned artifacts.
+4. The §57.4 smoke against real SwiftStack infrastructure is a manual
+   owner step before announcing anything.

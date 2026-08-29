@@ -1,0 +1,140 @@
+# §61.0 release matrix: three OS × two architectures, every artifact
+# UNSIGNED for now — signing/notarisation is deliberately skipped (owner
+# decision, §65.6) and the artifact names say so; nothing here fakes a
+# signature. Each OS builds on a matched runner because Wails links the
+# native webview via CGO; the arch dimension rides native-arch runners.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: webview build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev pkg-config
+      - run: make tools
+      - run: go test -race -count=1 ./...
+      - run: cd frontend && npm install && npm run check && npm test
+
+  linux:
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: webview build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev pkg-config nfpm || \
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev pkg-config
+      - run: make tools
+      - run: make build
+      - name: packages (rpm + deb)
+        run: make rpm deb
+      - name: tarball
+        run: |
+          mkdir -p dist
+          tar -C bin -czf "dist/aeronautes-linux-${{ matrix.arch }}-UNSIGNED.tar.gz" aeronautes
+          cp bin/*.rpm "dist/aeronautes-linux-${{ matrix.arch }}-UNSIGNED.rpm" 2>/dev/null || true
+          cp bin/*.deb "dist/aeronautes-linux-${{ matrix.arch }}-UNSIGNED.deb" 2>/dev/null || true
+      # SIGNING (deliberately absent): rpm --addsign / debsigs would go
+      # here once release keys exist. Artifacts are honestly UNSIGNED.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}-unsigned
+          path: dist/*
+
+  macos:
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - runner: macos-15 # Apple Silicon
+            arch: arm64
+          - runner: macos-13 # Intel
+            arch: amd64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: make tools
+      - run: wails3 task package
+        env:
+          PATH: ${{ env.PATH }}:/Users/runner/go/bin
+      - name: bundle (unsigned)
+        run: |
+          mkdir -p dist
+          if [ -d bin/Aeronautes.app ]; then
+            ditto -c -k --keepParent bin/Aeronautes.app "dist/aeronautes-macos-${{ matrix.arch }}-UNSIGNED.zip"
+          else
+            ditto -c -k bin "dist/aeronautes-macos-${{ matrix.arch }}-UNSIGNED.zip"
+          fi
+      # SIGNING/NOTARISATION (deliberately absent): codesign + notarytool
+      # go here once an Apple Developer identity exists. Gatekeeper will
+      # warn on these artifacts — that is the honest current state.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}-unsigned
+          path: dist/*
+
+  windows:
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - runner: windows-2022
+            arch: amd64
+          - runner: windows-11-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.15
+      - run: wails3 task build
+      - name: bundle (unsigned)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path bin\* -DestinationPath "dist/aeronautes-windows-${{ matrix.arch }}-UNSIGNED.zip"
+      # SIGNING (deliberately absent): signtool goes here once a code-
+      # signing certificate exists. SmartScreen will warn — honestly.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.arch }}-unsigned
+          path: dist/*
