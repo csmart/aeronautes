@@ -70,6 +70,7 @@ func main() {
 			application.NewService(transferService),
 			application.NewService(app.NewDeleteService(connections, jobStore, jobRunner, evidenceStore)),
 			application.NewService(app.NewJobService(jobStore)),
+			application.NewService(app.NewFindService(connections)),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),

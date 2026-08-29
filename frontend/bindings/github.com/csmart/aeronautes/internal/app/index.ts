@@ -6,6 +6,7 @@ import * as AuditService from "./auditservice.js";
 import * as BookmarkService from "./bookmarkservice.js";
 import * as BrowseService from "./browseservice.js";
 import * as DeleteService from "./deleteservice.js";
+import * as FindService from "./findservice.js";
 import * as InspectorService from "./inspectorservice.js";
 import * as JobService from "./jobservice.js";
 import * as MutateService from "./mutateservice.js";
@@ -16,6 +17,7 @@ export {
     BookmarkService,
     BrowseService,
     DeleteService,
+    FindService,
     InspectorService,
     JobService,
     MutateService,
@@ -23,6 +25,10 @@ export {
 };
 
 export {
+    DeleteMode
+} from "./models.js";
+
+export type {
     AccountDTO,
     AuditEventDTO,
     BookmarkDTO,
@@ -35,10 +41,11 @@ export {
     CopyPlanDTO,
     CopyRequestDTO,
     DLOSegmentsDTO,
-    DeleteMode,
     DeletePreviewDTO,
     DeleteRequestDTO,
     DownloadRequestDTO,
+    FindMatchDTO,
+    FindStatusDTO,
     Info,
     JobDTO,
     ListingRowDTO,

@@ -674,6 +674,19 @@ export function newFakeApi(): Api {
       });
       return id;
     },
+    startFind: async (container, prefix, query) => "find-1",
+    findStatus: async (id) => ({
+      scanned: 1234,
+      matches: [
+        { name: "photos/report.jpg", bytes: 100 },
+        { name: "docs/report.pdf", bytes: 2048 },
+      ],
+      truncated: false,
+      done: true,
+      error: "",
+      objectsPerSecond: 5000,
+    }),
+    cancelFind: async (id) => {},
     checkSegmentOwnership: async (req) => ({
       class: "dlo",
       target: "media_segments/owned/",

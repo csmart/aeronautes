@@ -4,6 +4,7 @@
   import { formatBytes } from "../../lib/format";
   import type { ListingRowDTO } from "../../lib/api";
   import type { BrowserState } from "./browserState.svelte";
+  import FindPanel from "./FindPanel.svelte";
 
   let { browser }: { browser: BrowserState } = $props();
 
@@ -66,7 +67,12 @@
         <span class="field-label">Filter</span>
         <input bind:value={browser.filter} placeholder="filter loaded rows…" />
       </label>
-      <button class="find" title="Search the whole container server-side (Phase 1)">
+      <button
+        class="find"
+        title="Search the whole container server-side (§16: explicit cancellable scan)"
+        disabled={browser.containerName === null}
+        onclick={() => (browser.findOpen = !browser.findOpen)}
+      >
         Find in container
       </button>
       <button
@@ -102,6 +108,10 @@
         Delete…
       </button>
     </div>
+
+    {#if browser.findOpen}
+      <FindPanel {browser} onClose={() => (browser.findOpen = false)} />
+    {/if}
 
     <div class="columns num" aria-hidden="true">
       <span class="col-name">Name</span>

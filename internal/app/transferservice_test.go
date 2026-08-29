@@ -669,3 +669,49 @@ type droppingEngine struct{ httpEngine }
 func (e *droppingEngine) Copy(ctx context.Context, src, dst string, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
 	return &rclone.Result{}, nil
 }
+
+func TestFindInContainer(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	h.connect(t)
+	find := NewFindService(h.transfer.connections)
+	h.mock.AddContainer("media", "standard")
+	for i := 0; i < 40; i++ {
+		seedObject(h.mock, "media", fmt.Sprintf("photos/img-%04d.jpg", i), "x", nil)
+	}
+	seedObject(h.mock, "media", "docs/Report-Final.pdf", "pdf", nil)
+	seedObject(h.mock, "media", "docs/report-draft.pdf", "pdf", nil)
+
+	id, err := find.StartFind(ctx, "media", "", "REPORT")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var status *FindStatusDTO
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		status, err = find.FindStatus(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if status.Done {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !status.Done || status.Error != "" {
+		t.Fatalf("status = %+v", status)
+	}
+	// Case-insensitive, both reports, whole namespace scanned.
+	if len(status.Matches) != 2 || status.Scanned != 42 {
+		t.Fatalf("matches = %+v scanned = %d", status.Matches, status.Scanned)
+	}
+	if _, err := find.StartFind(ctx, "media", "", "   "); err == nil {
+		t.Error("blank query accepted")
+	}
+	if err := find.CancelFind(ctx, id); err != nil {
+		t.Error(err)
+	}
+	if _, err := find.FindStatus(ctx, id); err == nil {
+		t.Error("cancelled scan still answers")
+	}
+}

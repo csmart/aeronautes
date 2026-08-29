@@ -12,6 +12,7 @@ import type {
   DeleteRequestDTO,
   SegmentOwnershipDTO,
   DownloadPreflight,
+  FindStatusDTO,
   JobDTO,
   UploadPreflight,
   Api,
@@ -79,6 +80,11 @@ export class BrowserState {
   localTransfer: "upload" | "download" | null = $state(null);
   // Destructive-jobs dialog (§31–§33).
   deleteOpen = $state(false);
+  // Find in container (§16): explicit scan, never per-keystroke.
+  findOpen = $state(false);
+  findStatus: FindStatusDTO | null = $state(null);
+  findRunning = $state(false);
+  #findId: string | null = null;
 
   // Containers pane.
   mode: ContainerMode = $state("logical");
@@ -416,6 +422,45 @@ export class BrowserState {
     const id = await this.#api.startDownload({ ...this.#localScope(), destDir });
     await this.loadJobs();
     return id;
+  }
+
+  async startFind(query: string) {
+    if (this.containerName === null) {
+      return;
+    }
+    await this.cancelFind();
+    this.findStatus = null;
+    this.findRunning = true;
+    try {
+      this.#findId = await this.#api.startFind(this.containerName, this.prefix, query);
+      while (this.findRunning && this.#findId !== null) {
+        const status = await this.#api.findStatus(this.#findId);
+        this.findStatus = status;
+        if (status.done) {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 400));
+      }
+    } catch (error) {
+      this.findStatus = {
+        scanned: this.findStatus?.scanned ?? 0,
+        matches: this.findStatus?.matches ?? [],
+        truncated: false,
+        done: true,
+        error: messageOf(error),
+        objectsPerSecond: 0,
+      };
+    } finally {
+      this.findRunning = false;
+    }
+  }
+
+  async cancelFind() {
+    this.findRunning = false;
+    if (this.#findId !== null) {
+      await this.#api.cancelFind(this.#findId).catch(() => {});
+      this.#findId = null;
+    }
   }
 
   async previewDelete(req: DeleteRequestDTO): Promise<DeletePreviewDTO> {

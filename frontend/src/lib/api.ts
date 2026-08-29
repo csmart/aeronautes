@@ -9,6 +9,7 @@ import {
   BookmarkService,
   BrowseService,
   DeleteService,
+  FindService,
   InspectorService,
   JobService,
   MutateService,
@@ -66,6 +67,7 @@ export type {
   DeletePreviewDTO,
   DeleteRequestDTO,
   DownloadRequestDTO,
+  FindStatusDTO,
   MirrorRequestDTO,
   SegmentOwnershipDTO,
   SegmentsDeleteRequestDTO,
@@ -76,6 +78,7 @@ import type {
   DeletePreviewDTO,
   DeleteRequestDTO,
   DownloadRequestDTO,
+  FindStatusDTO,
   MirrorRequestDTO,
   SegmentOwnershipDTO,
   SegmentsDeleteRequestDTO,
@@ -141,6 +144,9 @@ export interface Api {
   startDownload(req: DownloadRequestDTO): Promise<string>;
   previewDelete(req: DeleteRequestDTO): Promise<DeletePreviewDTO>;
   startDelete(req: DeleteRequestDTO): Promise<string>;
+  startFind(container: string, prefix: string, query: string): Promise<string>;
+  findStatus(id: string): Promise<FindStatusDTO>;
+  cancelFind(id: string): Promise<void>;
   checkSegmentOwnership(req: SegmentsDeleteRequestDTO): Promise<SegmentOwnershipDTO>;
   deleteManifestWithSegments(req: SegmentsDeleteRequestDTO): Promise<SegmentsDeleteResultDTO>;
 }
@@ -205,6 +211,13 @@ export const liveApi: Api = {
     return preview;
   },
   startDelete: (req) => DeleteService.StartDelete(req),
+  startFind: (container, prefix, query) => FindService.StartFind(container, prefix, query),
+  findStatus: async (id) => {
+    const status = await FindService.FindStatus(id);
+    if (!status) throw new Error("scan vanished");
+    return status;
+  },
+  cancelFind: (id) => FindService.CancelFind(id),
   checkSegmentOwnership: async (req) => {
     const status = await DeleteService.CheckSegmentOwnership(req);
     if (!status) throw new Error("empty ownership status");
