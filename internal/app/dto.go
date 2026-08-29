@@ -14,7 +14,13 @@ type BookmarkDTO struct {
 	Username           string `json:"username"`
 	StorageURLOverride string `json:"storageUrlOverride"`
 	// TLSMode is "system", "custom_ca", or "insecure".
-	TLSMode       string `json:"tlsMode"`
+	TLSMode string `json:"tlsMode"`
+	// CAPem carries a custom CA bundle one way (frontend → Go) on save;
+	// reads report HasCA only. Certificates are public material — the
+	// one-way shape just keeps DTOs small and the update semantics
+	// explicit ("" keeps the stored bundle).
+	CAPem         string `json:"caPem"`
+	HasCA         bool   `json:"hasCa"`
 	HasCredential bool   `json:"hasCredential"`
 }
 

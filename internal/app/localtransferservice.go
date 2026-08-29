@@ -94,12 +94,12 @@ func (s *TransferService) PreflightDownload(ctx context.Context, req DownloadReq
 
 // localEngine builds the single-remote engine for the bookmark's end.
 func (s *TransferService) localEngine(ctx context.Context, bookmarkID string, session *swiftcontrol.Session, remoteName string, settings TransferSettingsDTO) (local.Engine, error) {
-	insecure, err := s.connections.TLSInsecure(ctx, bookmarkID)
+	insecure, caFile, err := s.connections.TLSRemote(ctx, bookmarkID)
 	if err != nil {
 		return nil, err
 	}
 	remotes := []rclone.Remote{{
-		Name: remoteName, StorageURL: session.StorageURL(), Token: session.AuthToken(), InsecureTLS: insecure,
+		Name: remoteName, StorageURL: session.StorageURL(), Token: session.AuthToken(), InsecureTLS: insecure, CACertFile: caFile,
 	}}
 	if s.engineFactory != nil {
 		return s.engineFactory(remotes, settings.options())

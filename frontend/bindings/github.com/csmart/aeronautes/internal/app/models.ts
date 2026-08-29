@@ -277,6 +277,15 @@ export class BookmarkDTO {
      * TLSMode is "system", "custom_ca", or "insecure".
      */
     "tlsMode": string;
+
+    /**
+     * CAPem carries a custom CA bundle one way (frontend → Go) on save;
+     * reads report HasCA only. Certificates are public material — the
+     * one-way shape just keeps DTOs small and the update semantics
+     * explicit ("" keeps the stored bundle).
+     */
+    "caPem": string;
+    "hasCa": boolean;
     "hasCredential": boolean;
 
     /** Creates a new BookmarkDTO instance. */
@@ -298,6 +307,12 @@ export class BookmarkDTO {
         }
         if (!("tlsMode" in $$source)) {
             this["tlsMode"] = "";
+        }
+        if (!("caPem" in $$source)) {
+            this["caPem"] = "";
+        }
+        if (!("hasCa" in $$source)) {
+            this["hasCa"] = false;
         }
         if (!("hasCredential" in $$source)) {
             this["hasCredential"] = false;

@@ -8,6 +8,7 @@ package bookmarks
 import (
 	"context"
 	"crypto/rand"
+	"crypto/x509"
 	"database/sql"
 	"encoding/hex"
 	"errors"
@@ -304,4 +305,39 @@ func nullableInt(n int64) *int64 {
 		return nil
 	}
 	return &n
+}
+
+// SaveCA stores a CA bundle after checking the PEM actually parses to
+// at least one certificate, returning its id for tls_ca_id.
+func (s *Store) SaveCA(ctx context.Context, pem []byte) (string, error) {
+	if !x509.NewCertPool().AppendCertsFromPEM(pem) {
+		return "", fmt.Errorf("custom CA: no certificates found in PEM data")
+	}
+	var raw [8]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", err
+	}
+	id := hex.EncodeToString(raw[:])
+	err := s.db.WriteTx(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `INSERT INTO ca_certs (id, pem, added_at) VALUES (?, ?, ?)`,
+			id, string(pem), time.Now().UTC().Format(time.RFC3339))
+		return err
+	})
+	if err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+// CAPem resolves a stored bundle.
+func (s *Store) CAPem(ctx context.Context, id string) ([]byte, error) {
+	var pem string
+	err := s.db.Reader().QueryRowContext(ctx, `SELECT pem FROM ca_certs WHERE id=?`, id).Scan(&pem)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("CA bundle %s not found", id)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return []byte(pem), nil
 }

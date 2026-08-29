@@ -50,6 +50,7 @@ func main() {
 	}
 	bookmarkStore := bookmarks.NewStore(database, secretStore)
 	connections := app.NewConnections(bookmarkStore)
+	connections.SetCADir(filepath.Join(filepath.Dir(statePath), "ca"))
 	evidenceStore := evidence.NewStore(database)
 	auditStore := audit.NewStore(database)
 	jobStore := jobs.NewStore(database)

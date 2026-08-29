@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/csmart/aeronautes/internal/bookmarks"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
@@ -50,6 +51,18 @@ func (s *BookmarkService) Save(ctx context.Context, dto BookmarkDTO, secret stri
 	b.Username = dto.Username
 	b.StorageURLOverride = dto.StorageURLOverride
 	b.TLSMode = swiftcontrol.TLSMode(dto.TLSMode)
+	if dto.CAPem != "" {
+		caID, err := s.store.SaveCA(ctx, []byte(dto.CAPem))
+		if err != nil {
+			return BookmarkDTO{}, err
+		}
+		b.TLSCAID = caID
+	}
+	if b.TLSMode != swiftcontrol.TLSModeCustomCA {
+		b.TLSCAID = ""
+	} else if b.TLSCAID == "" {
+		return BookmarkDTO{}, fmt.Errorf("custom-CA TLS needs a CA bundle (paste the PEM)")
+	}
 
 	var secretBytes []byte
 	if secret != "" {
@@ -75,6 +88,7 @@ func toBookmarkDTO(b bookmarks.Bookmark) BookmarkDTO {
 		Username:           b.Username,
 		StorageURLOverride: b.StorageURLOverride,
 		TLSMode:            string(b.TLSMode),
+		HasCA:              b.TLSCAID != "",
 		HasCredential:      b.HasCredential,
 	}
 }

@@ -206,17 +206,17 @@ func (s *TransferService) SetRecommendationSource(f func(bookmarkID string) *Tra
 // buildEngine constructs the pinned rclone engine for both endpoints
 // with the job's effective options.
 func (s *TransferService) buildEngine(ctx context.Context, req CopyRequestDTO, src, dst *swiftcontrol.Session) (transfercopy.Engine, error) {
-	srcInsecure, err := s.connections.TLSInsecure(ctx, req.SourceBookmarkID)
+	srcInsecure, srcCA, err := s.connections.TLSRemote(ctx, req.SourceBookmarkID)
 	if err != nil {
 		return nil, err
 	}
-	dstInsecure, err := s.connections.TLSInsecure(ctx, req.DestBookmarkID)
+	dstInsecure, dstCA, err := s.connections.TLSRemote(ctx, req.DestBookmarkID)
 	if err != nil {
 		return nil, err
 	}
 	remotes := []rclone.Remote{
-		{Name: "aeronautes_src", StorageURL: src.StorageURL(), Token: src.AuthToken(), InsecureTLS: srcInsecure},
-		{Name: "aeronautes_dst", StorageURL: dst.StorageURL(), Token: dst.AuthToken(), InsecureTLS: dstInsecure},
+		{Name: "aeronautes_src", StorageURL: src.StorageURL(), Token: src.AuthToken(), InsecureTLS: srcInsecure, CACertFile: srcCA},
+		{Name: "aeronautes_dst", StorageURL: dst.StorageURL(), Token: dst.AuthToken(), InsecureTLS: dstInsecure, CACertFile: dstCA},
 	}
 	effective, err := s.effectiveSettings(req)
 	if err != nil {

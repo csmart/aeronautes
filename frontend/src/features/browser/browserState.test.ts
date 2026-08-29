@@ -11,6 +11,8 @@ function bookmark(): BookmarkDTO {
     username: "test:tester",
     storageUrlOverride: "",
     tlsMode: "system",
+    caPem: "",
+    hasCa: false,
     hasCredential: false,
   };
 }

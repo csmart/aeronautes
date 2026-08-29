@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -26,6 +28,7 @@ type Connections struct {
 	activeID     string
 	capabilities *swiftcontrol.Capabilities
 	sessions     map[string]*swiftcontrol.Session
+	caDir        string
 }
 
 // NewConnections builds the registry over the bookmark store.
@@ -39,16 +42,18 @@ func (c *Connections) open(ctx context.Context, bookmarkID string) (*swiftcontro
 	if err != nil {
 		return nil, err
 	}
+	var caPEM []byte
 	if b.TLSMode == swiftcontrol.TLSModeCustomCA {
-		// The CA store arrives with the settings surface; refuse clearly
-		// rather than silently downgrading trust (§12.3).
-		return nil, errors.New("custom-CA bookmarks are not connectable yet: the CA store is not wired")
+		caPEM, err = c.store.CAPem(ctx, b.TLSCAID)
+		if err != nil {
+			return nil, fmt.Errorf("custom-CA bookmark: %w", err)
+		}
 	}
 	apiKey, err := c.store.Credential(ctx, bookmarkID)
 	if err != nil {
 		return nil, fmt.Errorf("no credential on record for this bookmark (session store is wiped on restart): %w", err)
 	}
-	session, err := swiftcontrol.New(b.SwiftConfig(apiKey, nil))
+	session, err := swiftcontrol.New(b.SwiftConfig(apiKey, caPEM))
 	if err != nil {
 		return nil, err
 	}
@@ -111,6 +116,50 @@ func (c *Connections) TLSInsecure(ctx context.Context, bookmarkID string) (bool,
 		return false, err
 	}
 	return b.TLSMode == swiftcontrol.TLSModeInsecure, nil
+}
+
+// SetCADir sets where CA bundles are materialised as files for the
+// rclone child (override.ca_cert needs a path). Default: a private dir
+// under the OS temp root.
+func (c *Connections) SetCADir(dir string) {
+	c.mu.Lock()
+	c.caDir = dir
+	c.mu.Unlock()
+}
+
+// TLSRemote resolves a bookmark's trust for the engine: the insecure
+// flag, and for custom-CA mode a filesystem path holding the PEM
+// (written once per CA id; certificates are public material).
+func (c *Connections) TLSRemote(ctx context.Context, bookmarkID string) (insecure bool, caFile string, err error) {
+	b, err := c.store.Get(ctx, bookmarkID)
+	if err != nil {
+		return false, "", err
+	}
+	switch b.TLSMode {
+	case swiftcontrol.TLSModeInsecure:
+		return true, "", nil
+	case swiftcontrol.TLSModeCustomCA:
+		pem, err := c.store.CAPem(ctx, b.TLSCAID)
+		if err != nil {
+			return false, "", err
+		}
+		c.mu.Lock()
+		dir := c.caDir
+		c.mu.Unlock()
+		if dir == "" {
+			dir = filepath.Join(os.TempDir(), "aeronautes-ca")
+		}
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return false, "", err
+		}
+		path := filepath.Join(dir, b.TLSCAID+".pem")
+		if err := os.WriteFile(path, pem, 0o600); err != nil {
+			return false, "", err
+		}
+		return false, path, nil
+	default:
+		return false, "", nil
+	}
 }
 
 // Capabilities returns the active connection's capability snapshot, nil

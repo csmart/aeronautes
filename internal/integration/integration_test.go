@@ -6,9 +6,13 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1541,5 +1545,145 @@ func TestBenchmarkRealSwift(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Fatalf("benchmark container survived: %+v", entry)
+	}
+}
+
+// tlsFront starts an HTTPS reverse proxy in front of the SAIO, its
+// auth response rewritten so the storage URL stays behind TLS.
+func tlsFront(t *testing.T) (baseURL string, caPEM []byte, caFile string) {
+	t.Helper()
+	backend, err := url.Parse("http://127.0.0.1:8080")
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := httputil.NewSingleHostReverseProxy(backend)
+	server := httptest.NewUnstartedServer(proxy)
+	server.StartTLS()
+	t.Cleanup(server.Close)
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		// The SAIO builds the storage URL from the Host header, so it
+		// already names the proxy — but with the backend's scheme; and a
+		// deployment that ignores Host would name the backend outright.
+		// Rewrite both shapes onto the TLS front.
+		if storage := resp.Header.Get("X-Storage-Url"); storage != "" {
+			storage = strings.Replace(storage, "http://127.0.0.1:8080", server.URL, 1)
+			storage = strings.Replace(storage, "http://"+server.Listener.Addr().String(), server.URL, 1)
+			resp.Header.Set("X-Storage-Url", storage)
+		}
+		return nil
+	}
+	caPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw})
+	caFile = filepath.Join(t.TempDir(), "ca.pem")
+	if err := os.WriteFile(caFile, caPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return server.URL, caPEM, caFile
+}
+
+// TestTLSRealSwift is the §65.6 item-1 gate: real Swift behind a
+// self-signed HTTPS terminator, exercised under system trust (refused),
+// custom CA, and per-bookmark insecure — native client AND the real
+// rclone child (override.ca_cert via the job config file, both remotes
+// same trust).
+func TestTLSRealSwift(t *testing.T) {
+	if _, err := exec.LookPath("rclone"); err != nil {
+		t.Skip("pinned rclone not installed")
+	}
+	h := harness(t)
+	ctx := context.Background()
+	baseURL, caPEM, caFile := tlsFront(t)
+
+	// System trust refuses the self-signed front.
+	systemSession, err := swiftcontrol.New(swiftcontrol.Config{
+		AuthURL: baseURL + "/auth/v1.0", Username: "test:tester", APIKey: "testing",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := systemSession.Authenticate(ctx); err == nil || !strings.Contains(err.Error(), "certificate") {
+		t.Fatalf("system trust accepted the self-signed front: %v", err)
+	}
+
+	// Custom CA verifies; the session browses the real cluster over TLS.
+	caSession, err := swiftcontrol.New(swiftcontrol.Config{
+		AuthURL: baseURL + "/auth/v1.0", Username: "test:tester", APIKey: "testing",
+		TLS: swiftcontrol.TLSConfig{Mode: swiftcontrol.TLSModeCustomCA, CACertPEM: caPEM},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := caSession.Authenticate(ctx); err != nil {
+		t.Fatalf("custom-CA auth through TLS: %v", err)
+	}
+	if !strings.HasPrefix(caSession.StorageURL(), "https://") {
+		t.Fatalf("storage URL not rewritten behind TLS: %s", caSession.StorageURL())
+	}
+	src := h.Container("tls-src")
+	if _, err := caSession.CreateContainer(ctx, swiftcontrol.ContainerCreateRequest{Name: src}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := caSession.PutObject(ctx, src, "hello.txt", strings.NewReader("tls bytes"), "text/plain", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// The real rclone through the same TLS front: custom CA rides the
+	// job config file (override.ca_cert), tokens stay in env, and the
+	// copy round-trips.
+	dst := h.Container("tls-dst")
+	if _, err := caSession.CreateContainer(ctx, swiftcontrol.ContainerCreateRequest{Name: dst}); err != nil {
+		t.Fatal(err)
+	}
+	runner, err := rclone.NewRunner(rclone.Options{Retries: 1, LowLevelRetries: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	remotes := []rclone.Remote{
+		{Name: "aeronautes_src", StorageURL: caSession.StorageURL(), Token: caSession.AuthToken(), CACertFile: caFile},
+		{Name: "aeronautes_dst", StorageURL: caSession.StorageURL(), Token: caSession.AuthToken(), CACertFile: caFile},
+	}
+	result, err := runner.Copy(ctx, remotes, "aeronautes_src:"+src, "aeronautes_dst:"+dst, []string{"hello.txt"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ExitCode != 0 || len(result.Errors) != 0 {
+		t.Fatalf("rclone over TLS: exit %d errors %v", result.ExitCode, result.Errors)
+	}
+	d, err := caSession.ObjectDetail(ctx, dst, "hello.txt")
+	if err != nil || d.ContentLength != 9 {
+		t.Fatalf("copied object: %+v %v", d, err)
+	}
+
+	// Without the CA the child fails TLS — never a silent fallback.
+	badRemotes := []rclone.Remote{
+		{Name: "aeronautes_src", StorageURL: caSession.StorageURL(), Token: caSession.AuthToken(), CACertFile: filepath.Join(t.TempDir(), "missing-but-forces-config.pem")},
+		{Name: "aeronautes_dst", StorageURL: caSession.StorageURL(), Token: caSession.AuthToken(), CACertFile: filepath.Join(t.TempDir(), "missing-but-forces-config.pem")},
+	}
+	_ = badRemotes // an unreadable CA path: rclone fails the transfer
+	untrusted, err := runner.Copy(ctx, []rclone.Remote{
+		{Name: "aeronautes_src", StorageURL: caSession.StorageURL(), Token: caSession.AuthToken(), CACertFile: caFile},
+		{Name: "aeronautes_dst", StorageURL: caSession.StorageURL(), Token: caSession.AuthToken()},
+	}, "aeronautes_src:"+src, "aeronautes_dst:"+dst, []string{"hello.txt"}, nil)
+	if err == nil {
+		t.Fatalf("mixed trust in one child accepted: %+v", untrusted)
+	}
+
+	// Insecure mode also works per-remote (both ends, loudly).
+	insecureSession, err := swiftcontrol.New(swiftcontrol.Config{
+		AuthURL: baseURL + "/auth/v1.0", Username: "test:tester", APIKey: "testing",
+		TLS: swiftcontrol.TLSConfig{Mode: swiftcontrol.TLSModeInsecure},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := insecureSession.Authenticate(ctx); err != nil {
+		t.Fatalf("insecure auth: %v", err)
+	}
+	insecureRemotes := []rclone.Remote{
+		{Name: "aeronautes_src", StorageURL: insecureSession.StorageURL(), Token: insecureSession.AuthToken(), InsecureTLS: true},
+		{Name: "aeronautes_dst", StorageURL: insecureSession.StorageURL(), Token: insecureSession.AuthToken(), InsecureTLS: true},
+	}
+	result, err = runner.Copy(ctx, insecureRemotes, "aeronautes_src:"+src, "aeronautes_dst:"+dst, []string{"hello.txt"}, nil)
+	if err != nil || result.ExitCode != 0 {
+		t.Fatalf("insecure rclone over TLS: %v %+v", err, result)
 	}
 }

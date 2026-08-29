@@ -25,6 +25,7 @@
   let apiKey = $state("");
   /* svelte-ignore state_referenced_locally */
   let tlsMode = $state(existing?.tlsMode ?? "system");
+  let caPem = $state("");
   let saving = $state(false);
   let error: string | null = $state(null);
 
@@ -40,6 +41,8 @@
           username,
           storageUrlOverride: existing?.storageUrlOverride ?? "",
           tlsMode,
+          caPem,
+          hasCa: existing?.hasCa ?? false,
           hasCredential: existing?.hasCredential ?? false,
         },
         apiKey,
@@ -99,9 +102,25 @@
       <span>TLS</span>
       <select bind:value={tlsMode}>
         <option value="system">System trust store</option>
+        <option value="custom_ca">Custom CA (verify against exactly this bundle)</option>
         <option value="insecure">Insecure (skip verification — labs only)</option>
       </select>
     </label>
+
+    {#if tlsMode === "custom_ca"}
+      <label class="field">
+        <span>
+          CA bundle (PEM){existing?.hasCa ? " — leave empty to keep the stored bundle" : ""}
+        </span>
+        <textarea
+          class="type-mono ca"
+          bind:value={caPem}
+          placeholder="-----BEGIN CERTIFICATE----- …"
+          rows="5"
+          required={!existing?.hasCa}
+        ></textarea>
+      </label>
+    {/if}
 
     {#if browser.secretBackend === "session"}
       <p class="warning">
@@ -169,6 +188,16 @@
   }
 
   .field input,
+  .field textarea.ca {
+    font-size: var(--text-xs);
+    background: var(--color-bg-card);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+    padding: var(--space-1) var(--space-2);
+    resize: vertical;
+  }
+
   .field select {
     padding: var(--space-1) var(--space-2);
     font: inherit;
