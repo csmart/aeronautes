@@ -3281,6 +3281,46 @@ dependency forces it.
    inspector, SLO segment table, and Logical/All/Backstage driven by the evidence engine instead
    of the name heuristic. Gate: the §58 fixture namespace classifies correctly end to end.
 
+### 65.2 Third milestone — Phase 3 (safe mutation)
+
+The first writes to real data. Same rules; every mutating commit carries mock contract tests
+*and* an integration assertion against real containerized Swift, because the §60 gate lines —
+"editing one metadata key cannot silently erase another" and "a DLO remains a DLO after a
+metadata edit" — are exactly the kind of claim only a real server settles.
+
+1. **Audit store** — `internal/audit` over the existing `audit_events` table (§50): append one
+   event per mutation (bookmark scope, action, target, non-secret parameters, transaction id,
+   outcome), list recent, and the §51 retention cap so the trail never becomes an unbounded log.
+   Tests: append/list, cap compaction, no secret-shaped values accepted.
+2. **Mock cluster writes** — `internal/swifttest` learns PUT/POST/DELETE for objects and
+   containers (create with policy, metadata/ACL/versioning POST semantics including the
+   replace-all metadata rule) so mutation services get honest contract tests. Tests via the
+   adapter round-trip.
+3. **Object metadata update (adapter)** — the §13.1 working copy: HEAD-based snapshot, edited
+   set, preflight fingerprint comparison (best-effort conflict *detection*, §18), a full
+   replace-all POST that re-sends everything the edit must not destroy (user meta, Content-Type,
+   `X-Delete-At`, and the DLO `X-Object-Manifest`), and post-write verification by re-HEAD.
+   Integration: the two gate lines, against real Swift.
+4. **Container mutation (adapter)** — create with storage-policy (picker data from §10
+   capabilities), metadata/quota POST, ACL set, versioning configuration per the §21 pin
+   (`X-Versions-Location`/`X-History-Location`, gated by `/info` `allowed_flags`), and marker
+   create/delete (a marker is a plain zero-byte object — creating and deleting *only it* is
+   Phase-3-safe). Integration coverage for each.
+5. **MutateService + audit wiring** — the bridge surface for all of the above (ADR 0011 updated
+   in the same commit): every method runs preflight → execute → verify → audit, returns typed
+   outcomes (applied / conflict / verify-mismatch), and never accepts a raw header grab-bag from
+   the frontend. Service tests over the writable mock.
+6. **Metadata editor UI** — inspector edit mode: working copy, semantic diff (added / changed /
+   removed keys), conflict surfacing with re-fetch, save + verify status. The §4.5 vocabulary
+   rules apply to every label. Verified live headless.
+7. **Container & ACL editor UI** — create-container dialog with policy picker, capability-gated
+   configuration (quotas, versioning per pin), the structured SwiftStack ACL editor with raw
+   mode, marker create/delete on prefixes, and a minimal audit-trail view (§50) so mutations are
+   visibly accounted for.
+
+Gate (§60): the two metadata gate lines hold against real Swift, every mutation lands an audit
+event, and no mutating path exists outside MutateService.
+
 ---
 
 ## 66. Final project statement
