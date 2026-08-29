@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/csmart/aeronautes/internal/audit"
+	"github.com/csmart/aeronautes/internal/evidence"
 	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
@@ -51,6 +52,7 @@ type TransferService struct {
 	connections *Connections
 	jobs        *jobs.Store
 	runner      *jobRunner
+	evidence    *evidence.Store
 
 	// engineFactory builds the byte-moving engine for a job; nil uses
 	// the pinned rclone. Tests inject fakes here.
@@ -71,6 +73,23 @@ func NewTransferServiceWithRunner(connections *Connections, jobStore *jobs.Store
 		connections: connections,
 		jobs:        jobStore,
 		runner:      runner,
+	}
+}
+
+// SetEvidenceStore wires §28.6(b) ownership recording: committed
+// segment prefixes a job wrote become ExclusiveOwnershipProof rows.
+func (s *TransferService) SetEvidenceStore(store *evidence.Store) {
+	s.evidence = store
+}
+
+func (s *TransferService) recordOwnership(ctx context.Context, bookmarkID, jobID string, prefixes []rclone.SegmentPrefix) {
+	if s.evidence == nil {
+		return
+	}
+	for _, p := range prefixes {
+		if err := s.evidence.RecordOwnership(ctx, bookmarkID, jobID, p.Container, p.Prefix); err != nil {
+			log.Printf("job %s: ownership record %s/%s: %v", jobID, p.Container, p.Prefix, err)
+		}
 	}
 }
 
@@ -311,6 +330,11 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 	counters.ObjectsFailed = int64(len(report.Failures))
 	countersMu.Unlock()
 	flush(true)
+
+	// §28.6(b): the segment prefixes this job's commits now reference
+	// are recorded as exclusive-ownership proofs on the DESTINATION
+	// bookmark — the basis for any future segment cleanup.
+	s.recordOwnership(background, req.DestBookmarkID, jobID, report.CommittedPrefixes)
 
 	// Reconciliation runs on EVERY exit path (§26.4: after graceful
 	// cancellation too, never only after hard interruption).

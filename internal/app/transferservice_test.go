@@ -43,6 +43,11 @@ func secondCluster(t *testing.T, h *harness) (string, *swifttest.Server) {
 type httpEngine struct {
 	remotes map[string]rclone.Remote
 	block   chan struct{} // non-nil: Copy blocks until ctx dies (cancel tests)
+	// chunk > 0: bodies over it are segmented into <container>_segments
+	// under a generated prefix with a DLO manifest — the rclone shape.
+	chunk    int
+	n        int
+	captured []rclone.SegmentPrefix
 }
 
 func (e *httpEngine) endpoint(spec string) (base string, token string, path string) {
@@ -84,6 +89,9 @@ func (e *httpEngine) transfer(ctx context.Context, srcSpec, dstSpec string) erro
 		}
 		return os.WriteFile(dstSpec, body, 0o644)
 	}
+	if e.chunk > 0 && len(body) > e.chunk {
+		return e.segmented(ctx, dstSpec, body, contentType)
+	}
 	dstBase, dstTok, dstPath := e.endpoint(dstSpec)
 	put, err := http.NewRequestWithContext(ctx, http.MethodPut, dstBase+"/"+escapePath(dstPath), bytes.NewReader(body))
 	if err != nil {
@@ -99,6 +107,55 @@ func (e *httpEngine) transfer(ctx context.Context, srcSpec, dstSpec string) erro
 	if putResp.StatusCode >= 300 {
 		return fmt.Errorf("PUT %s: %s", dstPath, putResp.Status)
 	}
+	return nil
+}
+
+// segmented writes rclone-style: chunks under <container>_segments and
+// a zero-byte DLO manifest at the destination name.
+func (e *httpEngine) segmented(ctx context.Context, dstSpec string, body []byte, contentType string) error {
+	dstBase, dstTok, dstPath := e.endpoint(dstSpec)
+	container, name, _ := strings.Cut(dstPath, "/")
+	e.n++
+	prefix := fmt.Sprintf("%s/2026-08-29-%022d/", name, e.n)
+	segContainer := container + "_segments"
+	put := func(path string, data []byte) error {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPut, dstBase+"/"+escapePath(path), bytes.NewReader(data))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("X-Auth-Token", dstTok)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return err
+		}
+		resp.Body.Close()
+		if resp.StatusCode >= 300 {
+			return fmt.Errorf("PUT %s: %s", path, resp.Status)
+		}
+		return nil
+	}
+	if err := put(segContainer, nil); err != nil { // ensure sidecar
+		return err
+	}
+	for i := 0; i*e.chunk < len(body); i++ {
+		end := min((i+1)*e.chunk, len(body))
+		if err := put(fmt.Sprintf("%s/%s%08d", segContainer, prefix, i), body[i*e.chunk:end]); err != nil {
+			return err
+		}
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, dstBase+"/"+escapePath(dstPath), nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("X-Auth-Token", dstTok)
+	req.Header.Set("X-Object-Manifest", segContainer+"/"+prefix)
+	req.Header.Set("Content-Type", contentType)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	e.captured = append(e.captured, rclone.SegmentPrefix{Container: segContainer, Prefix: prefix})
 	return nil
 }
 
@@ -123,7 +180,9 @@ func (e *httpEngine) Copy(ctx context.Context, src, dst string, names []string, 
 			return &rclone.Result{ExitCode: 1, Errors: []string{err.Error()}}, nil
 		}
 	}
-	return &rclone.Result{}, nil
+	result := &rclone.Result{SegmentPrefixes: e.captured}
+	e.captured = nil
+	return result, nil
 }
 
 // localPath reports whether a spec is a plain filesystem path (upload
@@ -134,10 +193,16 @@ func (e *httpEngine) CopyTo(ctx context.Context, src, dst string, onEvent func(r
 	if err := e.transfer(ctx, src, dst); err != nil {
 		return &rclone.Result{ExitCode: 1, Errors: []string{err.Error()}}, nil
 	}
-	return &rclone.Result{}, nil
+	result := &rclone.Result{SegmentPrefixes: e.captured}
+	e.captured = nil
+	return result, nil
 }
 
 func (h *harness) installEngine(block chan struct{}) *[]rclone.Options {
+	return h.installChunkingEngine(block, 0)
+}
+
+func (h *harness) installChunkingEngine(block chan struct{}, chunk int) *[]rclone.Options {
 	var seen []rclone.Options
 	h.transfer.SetEngineFactory(func(remotes []rclone.Remote, opts rclone.Options) (transfercopy.Engine, error) {
 		byName := map[string]rclone.Remote{}
@@ -145,7 +210,7 @@ func (h *harness) installEngine(block chan struct{}) *[]rclone.Options {
 			byName[r.Name] = r
 		}
 		seen = append(seen, opts)
-		return &httpEngine{remotes: byName, block: block}, nil
+		return &httpEngine{remotes: byName, block: block, chunk: chunk}, nil
 	})
 	return &seen
 }

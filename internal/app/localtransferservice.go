@@ -162,7 +162,13 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 
 	s.launch(jobCtx, job.ID, req.BookmarkID, func(runCtx context.Context) {
 		s.runLocal(runCtx, job.ID, req.BookmarkID, job.Counters, func(innerCtx context.Context, onProgress func(done, total int64)) (*local.Report, error) {
-			return local.Upload(innerCtx, session, engine, "aeronautes_dst:"+req.Container, req.Container, req.Prefix, preflight, onProgress)
+			report, err := local.Upload(innerCtx, session, engine, "aeronautes_dst:"+req.Container, req.Container, req.Prefix, preflight, onProgress)
+			if report != nil && err == nil && len(report.Failures) == 0 {
+				// Every upload verified: the captured segment prefixes
+				// are job-written and now referenced — record ownership.
+				s.recordOwnership(context.WithoutCancel(innerCtx), req.BookmarkID, job.ID, report.CapturedPrefixes)
+			}
+			return report, err
 		})
 	})
 	return job.ID, nil

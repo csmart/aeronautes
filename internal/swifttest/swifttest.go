@@ -641,6 +641,10 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request, container,
 		s.postObject(w, r, container, name)
 		return
 	case http.MethodDelete:
+		if r.URL.Query().Get("multipart-manifest") == "delete" {
+			s.deleteSLOWithSegments(w, container, name)
+			return
+		}
 		s.deleteObject(w, container, name)
 		return
 	case "COPY":
@@ -716,6 +720,53 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request, container,
 	if r.Method == http.MethodGet {
 		_, _ = w.Write(logical)
 	}
+}
+
+// deleteSLOWithSegments implements ?multipart-manifest=delete: the
+// manifest AND every referenced segment die — the §34 hazard the
+// callers must gate.
+func (s *Server) deleteSLOWithSegments(w http.ResponseWriter, container, name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.containers[container]
+	var o Object
+	if ok {
+		o, ok = c.objects[name]
+	}
+	if !ok || !o.SLO {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	var entries []map[string]any
+	_ = json.Unmarshal([]byte(o.SLOManifestJSON), &entries)
+	var deleted, notFound int64
+	for _, entry := range entries {
+		path, _ := entry["name"].(string)
+		if path == "" {
+			path, _ = entry["path"].(string)
+		}
+		trimmed := strings.TrimPrefix(path, "/")
+		slash := strings.Index(trimmed, "/")
+		if slash <= 0 {
+			continue
+		}
+		segContainer, segName := trimmed[:slash], trimmed[slash+1:]
+		if sc, scOK := s.containers[segContainer]; scOK {
+			if _, exists := sc.objects[segName]; exists {
+				delete(sc.objects, segName)
+				deleted++
+				continue
+			}
+		}
+		notFound++
+	}
+	delete(c.objects, name)
+	deleted++
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"Number Deleted": deleted, "Number Not Found": notFound,
+		"Response Status": "200 OK", "Errors": [][2]string{},
+	})
 }
 
 // copyObject implements server-side COPY for PLAIN sources only: the

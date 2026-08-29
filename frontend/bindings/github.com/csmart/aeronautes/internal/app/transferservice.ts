@@ -11,8 +11,11 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
+import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as evidence$0 from "../evidence/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as local$0 from "../transfer/local/models.js";
@@ -40,8 +43,10 @@ export function PickDownloadDir(): $CancellablePromise<string> {
  * PickUploadFiles opens the OS multi-file picker (Go side: the webview
  * never sees filesystem paths otherwise). Empty when cancelled.
  */
-export function PickUploadFiles(): $CancellablePromise<string[] | null> {
-    return $Call.ByID(24924697);
+export function PickUploadFiles(): $CancellablePromise<string[]> {
+    return $Call.ByID(24924697).then(($result: any) => {
+        return $$createType0($result);
+    });
 }
 
 /**
@@ -49,21 +54,27 @@ export function PickUploadFiles(): $CancellablePromise<string[] | null> {
  * writes, no audit (planning is a read).
  */
 export function PlanCopy(req: $models.CopyRequestDTO): $CancellablePromise<$models.CopyPlanDTO | null> {
-    return $Call.ByID(1671032032, req);
+    return $Call.ByID(1671032032, req).then(($result: any) => {
+        return $$createType2($result);
+    });
 }
 
 /**
  * PreflightDownload runs the complete §27.5 materialization report.
  */
 export function PreflightDownload(req: $models.DownloadRequestDTO): $CancellablePromise<local$0.DownloadPreflight | null> {
-    return $Call.ByID(2765768397, req);
+    return $Call.ByID(2765768397, req).then(($result: any) => {
+        return $$createType4($result);
+    });
 }
 
 /**
  * PreflightUpload runs the complete §27.5 pre-write report.
  */
 export function PreflightUpload(req: $models.UploadRequestDTO): $CancellablePromise<local$0.UploadPreflight | null> {
-    return $Call.ByID(1873223240, req);
+    return $Call.ByID(1873223240, req).then(($result: any) => {
+        return $$createType6($result);
+    });
 }
 
 /**
@@ -72,6 +83,14 @@ export function PreflightUpload(req: $models.UploadRequestDTO): $CancellableProm
  */
 export function SetEngineFactory(f: any): $CancellablePromise<void> {
     return $Call.ByID(3836005686, f);
+}
+
+/**
+ * SetEvidenceStore wires §28.6(b) ownership recording: committed
+ * segment prefixes a job wrote become ExclusiveOwnershipProof rows.
+ */
+export function SetEvidenceStore(store: evidence$0.Store | null): $CancellablePromise<void> {
+    return $Call.ByID(3408632412, store);
 }
 
 /**
@@ -104,3 +123,12 @@ export function StartDownload(req: $models.DownloadRequestDTO): $CancellableProm
 export function StartUpload(req: $models.UploadRequestDTO): $CancellablePromise<string> {
     return $Call.ByID(1096678111, req);
 }
+
+// Private type creation functions
+const $$createType0 = $Create.Array($Create.Any);
+const $$createType1 = $models.CopyPlanDTO.createFrom;
+const $$createType2 = $Create.Nullable($$createType1);
+const $$createType3 = local$0.DownloadPreflight.createFrom;
+const $$createType4 = $Create.Nullable($$createType3);
+const $$createType5 = local$0.UploadPreflight.createFrom;
+const $$createType6 = $Create.Nullable($$createType5);

@@ -9,7 +9,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
+import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -19,5 +19,10 @@ import * as $models from "./models.js";
  * Info returns the shell identity.
  */
 export function Info(): $CancellablePromise<$models.Info> {
-    return $Call.ByID(1303547794);
+    return $Call.ByID(1303547794).then(($result: any) => {
+        return $$createType0($result);
+    });
 }
+
+// Private type creation functions
+const $$createType0 = $models.Info.createFrom;

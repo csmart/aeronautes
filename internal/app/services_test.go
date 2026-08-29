@@ -27,8 +27,17 @@ type harness struct {
 	auditSvc  *AuditService
 	transfer  *TransferService
 	jobsSvc   *JobService
+	evidence  *evidence.Store
 	mock      *swifttest.Server
 	authURL   string
+}
+
+// transferService builds the transfer service with evidence wired the
+// way main.go does.
+func transferService(connections *Connections, jobStore *jobs.Store, auditStore *audit.Store, ev *evidence.Store) *TransferService {
+	service := NewTransferService(connections, jobStore, auditStore)
+	service.SetEvidenceStore(ev)
+	return service
 }
 
 func newHarness(t *testing.T) *harness {
@@ -62,8 +71,9 @@ func newHarnessWithInfo(t *testing.T, infoJSON string) *harness {
 		inspector: NewInspectorService(connections, ev),
 		mutate:    NewMutateService(connections, auditStore, ev),
 		auditSvc:  NewAuditService(auditStore),
-		transfer:  NewTransferService(connections, jobStore, auditStore),
+		transfer:  transferService(connections, jobStore, auditStore, ev),
 		jobsSvc:   NewJobService(jobStore),
+		evidence:  ev,
 		mock:      mock,
 		authURL:   srv.URL + "/auth/v1.0",
 	}

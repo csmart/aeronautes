@@ -9,6 +9,7 @@ import type {
   CopyRequestDTO,
   DeletePreviewDTO,
   DeleteRequestDTO,
+  SegmentOwnershipDTO,
   DownloadPreflight,
   JobDTO,
   UploadPreflight,
@@ -418,6 +419,29 @@ export class BrowserState {
     const id = await this.#api.startDelete(req);
     await this.loadJobs();
     return id;
+  }
+
+  async checkSegmentOwnership(container: string, name: string): Promise<SegmentOwnershipDTO> {
+    return await this.#api.checkSegmentOwnership({
+      bookmarkId: this.connectedBookmarkId ?? "",
+      container,
+      name,
+      force: false,
+      confirm: "",
+    });
+  }
+
+  async deleteManifestWithSegments(container: string, name: string, force: boolean, confirm: string) {
+    const result = await this.#api.deleteManifestWithSegments({
+      bookmarkId: this.connectedBookmarkId ?? "",
+      container,
+      name,
+      force,
+      confirm,
+    });
+    // The inspector's selection is gone; refresh like deleteManifest.
+    await this.loadAudit();
+    return result;
   }
 
   async loadAudit() {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/deletion"
+	"github.com/csmart/aeronautes/internal/evidence"
 	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
@@ -21,11 +22,12 @@ type DeleteService struct {
 	connections *Connections
 	jobs        *jobs.Store
 	runner      *jobRunner
+	evidence    *evidence.Store
 }
 
 // NewDeleteService wires the service over the shared runner.
-func NewDeleteService(connections *Connections, jobStore *jobs.Store, runner *jobRunner) *DeleteService {
-	return &DeleteService{connections: connections, jobs: jobStore, runner: runner}
+func NewDeleteService(connections *Connections, jobStore *jobs.Store, runner *jobRunner, evidenceStore *evidence.Store) *DeleteService {
+	return &DeleteService{connections: connections, jobs: jobStore, runner: runner, evidence: evidenceStore}
 }
 
 // DeleteMode selects the §65.5 item-2 operation.

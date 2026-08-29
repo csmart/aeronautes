@@ -93,3 +93,46 @@ func escapeObjectPath(name string) string {
 func (s *Session) DeleteContainer(ctx context.Context, name string) error {
 	return Normalize(s.conn.ContainerDelete(ctx, name))
 }
+
+// DeleteSLOWithSegments issues Swift's native SLO deletion
+// (?multipart-manifest=delete): the server deletes the manifest AND
+// every referenced segment. This is §34's fast path and it is exactly
+// as destructive as it sounds — callers gate it behind
+// ExclusiveOwnershipProof or the deliberate Backstage flow; this
+// method only does the wire work.
+func (s *Session) DeleteSLOWithSegments(ctx context.Context, container, name string) (*BulkDeleteResult, error) {
+	target := s.conn.StorageUrl + "/" + url.PathEscape(container) + "/" + escapeObjectPath(name) + "?multipart-manifest=delete"
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, target, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-Auth-Token", s.conn.AuthToken)
+	req.Header.Set("Accept", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, Normalize(err)
+	}
+	defer resp.Body.Close()
+	payload, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, Normalize(err)
+	}
+	if resp.StatusCode >= 300 {
+		return nil, &SwiftError{Kind: KindServer, HTTPStatus: resp.StatusCode,
+			Message: fmt.Sprintf("slo delete: %s", strings.TrimSpace(string(payload)))}
+	}
+	var decoded struct {
+		NumberDeleted  int64       `json:"Number Deleted"`
+		NumberNotFound int64       `json:"Number Not Found"`
+		ResponseStatus string      `json:"Response Status"`
+		Errors         [][2]string `json:"Errors"`
+	}
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		return nil, fmt.Errorf("slo delete response: %w", err)
+	}
+	result := &BulkDeleteResult{Deleted: decoded.NumberDeleted, NotFound: decoded.NumberNotFound, Errors: decoded.Errors}
+	if !strings.HasPrefix(decoded.ResponseStatus, "200") && len(decoded.Errors) == 0 {
+		return result, fmt.Errorf("slo delete: %s", decoded.ResponseStatus)
+	}
+	return result, nil
+}

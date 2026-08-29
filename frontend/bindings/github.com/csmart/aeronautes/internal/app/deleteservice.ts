@@ -11,18 +11,43 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
+import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
 /**
+ * CheckSegmentOwnership is the read-only status the dialog shows before
+ * the operator decides anything.
+ */
+export function CheckSegmentOwnership(req: $models.SegmentsDeleteRequestDTO): $CancellablePromise<$models.SegmentOwnershipDTO | null> {
+    return $Call.ByID(1732756848, req).then(($result: any) => {
+        return $$createType1($result);
+    });
+}
+
+/**
+ * DeleteManifestWithSegments removes a manifest AND its segments —
+ * automatically only under proof; otherwise only through the Backstage
+ * force with typed confirmation. The HEAD here is the §28.6 required
+ * authoritative re-check: the operation follows segments, so identity
+ * at execution time matters.
+ */
+export function DeleteManifestWithSegments(req: $models.SegmentsDeleteRequestDTO): $CancellablePromise<$models.SegmentsDeleteResultDTO | null> {
+    return $Call.ByID(1751193110, req).then(($result: any) => {
+        return $$createType3($result);
+    });
+}
+
+/**
  * PreviewDelete counts the scope (a full listing pass — §28.3's honest
  * cost) without writing anything.
  */
 export function PreviewDelete(req: $models.DeleteRequestDTO): $CancellablePromise<$models.DeletePreviewDTO | null> {
-    return $Call.ByID(1028639973, req);
+    return $Call.ByID(1028639973, req).then(($result: any) => {
+        return $$createType5($result);
+    });
 }
 
 /**
@@ -31,3 +56,11 @@ export function PreviewDelete(req: $models.DeleteRequestDTO): $CancellablePromis
 export function StartDelete(req: $models.DeleteRequestDTO): $CancellablePromise<string> {
     return $Call.ByID(1302339297, req);
 }
+
+// Private type creation functions
+const $$createType0 = $models.SegmentOwnershipDTO.createFrom;
+const $$createType1 = $Create.Nullable($$createType0);
+const $$createType2 = $models.SegmentsDeleteResultDTO.createFrom;
+const $$createType3 = $Create.Nullable($$createType2);
+const $$createType4 = $models.DeletePreviewDTO.createFrom;
+const $$createType5 = $Create.Nullable($$createType4);

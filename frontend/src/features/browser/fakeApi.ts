@@ -637,6 +637,19 @@ export function newFakeApi(): Api {
       });
       return id;
     },
+    checkSegmentOwnership: async (req) => ({
+      class: "dlo",
+      target: "media_segments/owned/",
+      proven: req.name === "owned.bin",
+      segments: 0,
+    }),
+    deleteManifestWithSegments: async (req) => {
+      if (req.confirm !== req.name) {
+        throw new Error("confirmation does not match the object name");
+      }
+      record("segments.delete", `${req.container}/${req.name}`, "applied");
+      return { manifestDeleted: true, segmentsDeleted: 3, basis: req.force ? "backstage-forced" : "exclusive-ownership" };
+    },
     jobs: async (bookmarkId, activeOnly, limit) =>
       jobs
         .filter(

@@ -3,6 +3,9 @@ package integration
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -1261,5 +1264,63 @@ func TestDeletionEngineRealSwift(t *testing.T) {
 	}
 	if segments != 3 {
 		t.Fatalf("segment store = %d segments, want 3", segments)
+	}
+}
+
+// TestSLOSegmentsDeleteRealSwift validates the ?multipart-manifest=delete
+// wire op against the real SLO middleware: the manifest AND exactly its
+// referenced segments die; unrelated neighbours survive.
+func TestSLOSegmentsDeleteRealSwift(t *testing.T) {
+	h := harness(t)
+	ctx := context.Background()
+
+	parts := h.Container("slo-del-parts")
+	manifests := h.Container("slo-del")
+	if err := h.conn.ContainerCreate(ctx, parts, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.conn.ContainerCreate(ctx, manifests, nil); err != nil {
+		t.Fatal(err)
+	}
+	type sloSeg struct {
+		Path      string `json:"path"`
+		ETag      string `json:"etag"`
+		SizeBytes int    `json:"size_bytes"`
+	}
+	var entries []sloSeg
+	for i := 1; i <= 3; i++ {
+		name := fmt.Sprintf("doomed/part-%02d", i)
+		data := bytes.Repeat([]byte{byte(i)}, 400)
+		if err := h.put(ctx, parts, name, data, "application/octet-stream", nil); err != nil {
+			t.Fatal(err)
+		}
+		sum := md5.Sum(data)
+		entries = append(entries, sloSeg{Path: "/" + parts + "/" + name, ETag: hex.EncodeToString(sum[:]), SizeBytes: 400})
+	}
+	if err := h.put(ctx, parts, "neighbour", []byte("uninvolved"), "text/plain", nil); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(entries)
+	if err := h.rawPut(ctx, manifests+"/doomed.slo?multipart-manifest=put", body, "application/octet-stream"); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := h.Session.DeleteSLOWithSegments(ctx, manifests, "doomed.slo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Deleted != 4 || len(result.Errors) != 0 { // 3 segments + manifest
+		t.Fatalf("result = %+v", result)
+	}
+	if _, err := h.Session.ObjectDetail(ctx, manifests, "doomed.slo"); !swiftcontrol.IsNotFound(err) {
+		t.Fatalf("manifest survived: %v", err)
+	}
+	for i := 1; i <= 3; i++ {
+		if _, err := h.Session.ObjectDetail(ctx, parts, fmt.Sprintf("doomed/part-%02d", i)); !swiftcontrol.IsNotFound(err) {
+			t.Fatalf("segment %d survived: %v", i, err)
+		}
+	}
+	if _, err := h.Session.ObjectDetail(ctx, parts, "neighbour"); err != nil {
+		t.Fatal("uninvolved neighbour deleted")
 	}
 }
