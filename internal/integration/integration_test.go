@@ -529,3 +529,26 @@ func TestContainerMutationRealSwift(t *testing.T) {
 		t.Errorf("child lost with marker: %v", err)
 	}
 }
+
+// TestDLOSegmentPreviewRealSwift: the bounded preview against real
+// listings, in assembly (name) order.
+func TestDLOSegmentPreviewRealSwift(t *testing.T) {
+	h := harness(t)
+	ctx := context.Background()
+	manifest := h.Container("external-dlo-segments") + "/wedding-video/"
+
+	full, err := h.Session.DLOSegmentPreview(ctx, manifest, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(full.Segments) != 3 || full.HasMore || full.PreviewBytes != 3000 {
+		t.Fatalf("preview = %d segments, hasMore=%v, bytes=%d", len(full.Segments), full.HasMore, full.PreviewBytes)
+	}
+	bounded, err := h.Session.DLOSegmentPreview(ctx, manifest, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bounded.Segments) != 2 || !bounded.HasMore {
+		t.Errorf("bounded = %d, hasMore=%v", len(bounded.Segments), bounded.HasMore)
+	}
+}
