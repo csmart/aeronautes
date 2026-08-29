@@ -3331,6 +3331,38 @@ metadata edit" — are exactly the kind of claim only a real server settles.
 Gate (§60): the two metadata gate lines hold against real Swift, every mutation lands an audit
 event, and no mutating path exists outside MutateService.
 
+### 65.3 Fourth milestone — Phase 4 (large-object read semantics)
+
+Read, inspect, classify — the hardest destructive cleanup stays in Phase 6 (§60). Much of Phase
+2 already reached here (exact SLO manifests, DLO/SLO detection, observed evidence); this
+milestone finishes the read story and adds the two *low-risk* deletes.
+
+1. **Segment ownership store** — the §28.6(b) `ExclusiveOwnershipProof` model over the existing
+   `segment_ownership` table: record a job-scoped unique prefix, query exclusivity. Tests pin the
+   §24.1 safety asymmetry: `Confirmed` evidence never promotes to ownership, an unrecorded prefix
+   is never exclusive, and ownership is bookmark- and prefix-exact. (Writers arrive with Phase 5
+   transfers; the model and queries land now so Phase 6 deletion planning has a settled seam.)
+2. **DLO segment preview (adapter + service)** — a bounded first page of the manifest prefix's
+   segments (name, size, etag) plus a has-more marker, reusing the streaming listing (§15 —
+   never "all segments"); InspectorService serves it for the §23.1 inspector.
+3. **Manifest-only delete (adapter)** — `DeleteManifestObject`: preflight HEAD must classify DLO
+   or SLO (a plain object refuses — this path deletes only manifests), plain DELETE (for an SLO
+   this removes the manifest alone; `?multipart-manifest=delete` is exactly what this path must
+   never send), verify-gone re-read. Integration proves on real Swift that the segments survive
+   both variants.
+4. **Manifest delete service + UI** — MutateService.DeleteManifest with audit; the inspector's
+   large-object card gains the danger flow with §30-grade honesty: the dialog states that
+   segments remain and become orphans unless referenced elsewhere, and links where they live.
+5. **Rich large-object inspectors + backstage navigation** — the DLO card grows the segment
+   preview table and totals; the SLO card gains manifest totals (declared bytes/segments vs HEAD
+   length); both gain "open segments backstage": a jump to the segment container/prefix with a
+   persistent backstage banner in the working list (§52, §54) carrying the guard context.
+
+Gate (§60): an unknown/shared DLO prefix cannot be automatically purged — in this phase no
+segment-touching delete path exists at all, and the manifest-only path refuses anything that is
+not a manifest; heuristic classification authorizes nothing (existing §24 tests plus the delete
+guard's refusal-by-classification tests).
+
 ---
 
 ## 66. Final project statement
