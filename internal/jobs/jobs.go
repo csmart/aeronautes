@@ -84,6 +84,9 @@ type Job struct {
 	Engine           string
 	Counters         Counters
 	Error            string
+	// Settings is the §45 effective-configuration JSON recorded at
+	// creation ("" when the job carries none).
+	Settings string
 }
 
 // Store persists jobs.
@@ -116,11 +119,11 @@ func (s *Store) Create(ctx context.Context, j Job) (Job, error) {
 	err = s.db.WriteTx(ctx, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, `
 			INSERT INTO jobs (id, type, state, source, destination, created_at,
-				execution_engine, counters_json, source_bookmark_id, dest_bookmark_id)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				execution_engine, counters_json, source_bookmark_id, dest_bookmark_id, settings_json)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			j.ID, string(j.Type), string(j.State), nullable(j.Source), nullable(j.Destination),
 			j.CreatedAt.Format(time.RFC3339), nullable(j.Engine), string(counters),
-			nullable(j.SourceBookmarkID), nullable(j.DestBookmarkID))
+			nullable(j.SourceBookmarkID), nullable(j.DestBookmarkID), nullable(j.Settings))
 		return err
 	})
 	if err != nil {
@@ -198,7 +201,8 @@ const selectJob = `
 	SELECT id, type, state, COALESCE(source,''), COALESCE(destination,''),
 		created_at, COALESCE(started_at,''), COALESCE(finished_at,''),
 		COALESCE(execution_engine,''), COALESCE(counters_json,'{}'),
-		COALESCE(error,''), COALESCE(source_bookmark_id,''), COALESCE(dest_bookmark_id,'')
+		COALESCE(error,''), COALESCE(source_bookmark_id,''), COALESCE(dest_bookmark_id,''),
+		COALESCE(settings_json,'')
 	FROM jobs`
 
 // Get returns one job.
@@ -259,7 +263,7 @@ func scanJob(scan func(...any) error) (Job, error) {
 	var typ, state, created, started, finished, counters string
 	err := scan(&j.ID, &typ, &state, &j.Source, &j.Destination,
 		&created, &started, &finished, &j.Engine, &counters,
-		&j.Error, &j.SourceBookmarkID, &j.DestBookmarkID)
+		&j.Error, &j.SourceBookmarkID, &j.DestBookmarkID, &j.Settings)
 	if err != nil {
 		return Job{}, err
 	}

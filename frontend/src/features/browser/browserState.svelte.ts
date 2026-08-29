@@ -382,6 +382,7 @@ export class BrowserState {
       bookmarkId: this.connectedBookmarkId ?? "",
       container: this.containerName ?? "",
       prefix: this.prefix,
+      settings: { chunkSize: "", transfers: 0, checkers: 0, tpsLimit: 0, bwLimit: "" },
     };
   }
 

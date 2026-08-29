@@ -18,6 +18,10 @@
   let destContainer = $state("");
   let destPrefix = $state("");
   let preview: CopyPlanDTO | null = $state(null);
+  // Per-job §44.1 overrides; empty/zero = defaults.
+  let chunkSize = $state("");
+  let transfers = $state("");
+  let bwLimit = $state("");
   let previewing = $state(false);
   let starting = $state(false);
   let error: string | null = $state(null);
@@ -31,6 +35,13 @@
       destBookmarkId,
       destContainer: destContainer.trim(),
       destPrefix: destPrefix.trim(),
+      settings: {
+        chunkSize: chunkSize.trim(),
+        transfers: Number.parseInt(transfers, 10) || 0,
+        checkers: 0,
+        tpsLimit: 0,
+        bwLimit: bwLimit.trim(),
+      },
     };
   }
 
@@ -127,6 +138,24 @@
         />
       </div>
     </div>
+
+    <details class="advanced">
+      <summary>Per-job settings</summary>
+      <div class="advanced-fields num">
+        <label>
+          <span>Chunk size</span>
+          <input class="type-mono" placeholder="5Gi (default)" bind:value={chunkSize} onchange={invalidate} />
+        </label>
+        <label>
+          <span>Transfers</span>
+          <input class="type-mono" placeholder="4 (default)" bind:value={transfers} onchange={invalidate} />
+        </label>
+        <label>
+          <span>Bandwidth</span>
+          <input class="type-mono" placeholder="unlimited" bind:value={bwLimit} onchange={invalidate} />
+        </label>
+      </div>
+    </details>
 
     {#if error}
       <p class="error">{error}</p>
@@ -306,6 +335,37 @@
     margin: 0;
     font-size: var(--text-sm);
     color: var(--color-danger);
+  }
+
+  .advanced summary {
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+    cursor: pointer;
+  }
+
+  .advanced-fields {
+    display: flex;
+    gap: var(--space-3);
+    padding-top: var(--space-2);
+  }
+
+  .advanced-fields label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+  }
+
+  .advanced-fields input {
+    width: 8rem;
+    font: inherit;
+    font-size: var(--text-sm);
+    background: var(--color-bg-card);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+    padding: 2px var(--space-2);
   }
 
   .preview {

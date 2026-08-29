@@ -20,7 +20,7 @@ export {
     TransferService
 };
 
-export type {
+export {
     AccountDTO,
     AuditEventDTO,
     BookmarkDTO,
@@ -45,5 +45,6 @@ export type {
     SLOManifestDTO,
     SLOSegmentDTO,
     StoragePolicyDTO,
+    TransferSettingsDTO,
     UploadRequestDTO
 } from "./models.js";

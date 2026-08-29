@@ -3484,6 +3484,15 @@ Mirror preview correct and inert; no persistent rclone credential file (config f
 secrets — tokens are env-only, verified in the spike); no credentials in logs; zero destruction
 paths.
 
+**Status: complete (2026-08-29).** All eight commits landed; the gate held: the executor's SAIO
+suite performs cross-account copies of the full hostile-name namespace byte-exact with
+stage-and-commit overwrites (plain via server-side COPY, large via manifest-swap) and
+cancel-reconciliation to zero staging litter; the Mirror preview renders the §27.2 plan with
+execution structurally absent; runner tests assert tokens never reach argv or config files; the
+only deletes in the phase are job-created staging names and captured-orphan segment sweeps.
+One §14.3 correction came out of the build (dot-segment names are rclone-unsafe both ways) and
+is recorded in that section and docs/rclone.md.
+
 ---
 
 ## 66. Final project statement

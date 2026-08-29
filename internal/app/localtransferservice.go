@@ -24,6 +24,8 @@ type UploadRequestDTO struct {
 	Container  string   `json:"container"`
 	Prefix     string   `json:"prefix"`
 	Paths      []string `json:"paths"`
+	// Settings are the per-job §44.1 overrides.
+	Settings TransferSettingsDTO `json:"settings"`
 }
 
 // DownloadRequestDTO scopes a prefix download.
@@ -32,6 +34,8 @@ type DownloadRequestDTO struct {
 	Container  string `json:"container"`
 	Prefix     string `json:"prefix"`
 	DestDir    string `json:"destDir"`
+	// Settings are the per-job §44.1 overrides.
+	Settings TransferSettingsDTO `json:"settings"`
 }
 
 // PickUploadFiles opens the OS multi-file picker (Go side: the webview
@@ -89,7 +93,7 @@ func (s *TransferService) PreflightDownload(ctx context.Context, req DownloadReq
 }
 
 // localEngine builds the single-remote engine for the bookmark's end.
-func (s *TransferService) localEngine(ctx context.Context, bookmarkID string, session *swiftcontrol.Session, remoteName string) (local.Engine, error) {
+func (s *TransferService) localEngine(ctx context.Context, bookmarkID string, session *swiftcontrol.Session, remoteName string, settings TransferSettingsDTO) (local.Engine, error) {
 	insecure, err := s.connections.TLSInsecure(ctx, bookmarkID)
 	if err != nil {
 		return nil, err
@@ -98,9 +102,9 @@ func (s *TransferService) localEngine(ctx context.Context, bookmarkID string, se
 		Name: remoteName, StorageURL: session.StorageURL(), Token: session.AuthToken(), InsecureTLS: insecure,
 	}}
 	if s.engineFactory != nil {
-		return s.engineFactory(remotes)
+		return s.engineFactory(remotes, settings.options())
 	}
-	runner, err := rclone.NewRunner(rclone.Options{})
+	runner, err := rclone.NewRunner(settings.options())
 	if err != nil {
 		return nil, err
 	}
@@ -131,12 +135,16 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 	if preflight.Rejected() {
 		return "", errors.New("preflight found collisions; resolve them and retry (nothing was written)")
 	}
-	engine, err := s.localEngine(ctx, req.BookmarkID, session, "aeronautes_dst")
+	if err := req.Settings.Validate(); err != nil {
+		return "", err
+	}
+	engine, err := s.localEngine(ctx, req.BookmarkID, session, "aeronautes_dst", req.Settings)
 	if err != nil {
 		return "", fmt.Errorf("transfer engine: %w", err)
 	}
 	job, err := s.jobs.Create(ctx, jobs.Job{
 		Type:           jobs.TypeUpload,
+		Settings:       req.Settings.effectiveJSON(),
 		Source:         fmt.Sprintf("%d local files", len(preflight.Items)),
 		Destination:    req.Container + "/" + req.Prefix,
 		DestBookmarkID: req.BookmarkID,
@@ -152,10 +160,12 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 	s.mu.Lock()
 	s.cancels[job.ID] = cancel
 	s.mu.Unlock()
-	s.record(ctx, req.BookmarkID, "transfer.upload.start", job.Source+" → "+job.Destination, "job "+job.ID, audit.ResultApplied)
+	s.record(ctx, req.BookmarkID, "transfer.upload.start", job.Source+" → "+job.Destination, "job "+job.ID+" · "+job.Settings, audit.ResultApplied)
 
-	go s.runLocal(jobCtx, job.ID, req.BookmarkID, job.Counters, func(runCtx context.Context, onProgress func(done, total int64)) (*local.Report, error) {
-		return local.Upload(runCtx, session, engine, "aeronautes_dst:"+req.Container, req.Container, req.Prefix, preflight, onProgress)
+	s.launch(jobCtx, job.ID, req.BookmarkID, func(runCtx context.Context) {
+		s.runLocal(runCtx, job.ID, req.BookmarkID, job.Counters, func(innerCtx context.Context, onProgress func(done, total int64)) (*local.Report, error) {
+			return local.Upload(innerCtx, session, engine, "aeronautes_dst:"+req.Container, req.Container, req.Prefix, preflight, onProgress)
+		})
 	})
 	return job.ID, nil
 }
@@ -173,12 +183,16 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 	if preflight.Rejected() {
 		return "", errors.New("preflight found collisions; resolve them and retry (nothing was written)")
 	}
-	engine, err := s.localEngine(ctx, req.BookmarkID, session, "aeronautes_src")
+	if err := req.Settings.Validate(); err != nil {
+		return "", err
+	}
+	engine, err := s.localEngine(ctx, req.BookmarkID, session, "aeronautes_src", req.Settings)
 	if err != nil {
 		return "", fmt.Errorf("transfer engine: %w", err)
 	}
 	job, err := s.jobs.Create(ctx, jobs.Job{
 		Type:             jobs.TypeDownload,
+		Settings:         req.Settings.effectiveJSON(),
 		Source:           req.Container + "/" + req.Prefix,
 		Destination:      req.DestDir,
 		SourceBookmarkID: req.BookmarkID,
@@ -194,10 +208,12 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 	s.mu.Lock()
 	s.cancels[job.ID] = cancel
 	s.mu.Unlock()
-	s.record(ctx, req.BookmarkID, "transfer.download.start", job.Source+" → "+job.Destination, "job "+job.ID, audit.ResultApplied)
+	s.record(ctx, req.BookmarkID, "transfer.download.start", job.Source+" → "+job.Destination, "job "+job.ID+" · "+job.Settings, audit.ResultApplied)
 
-	go s.runLocal(jobCtx, job.ID, req.BookmarkID, job.Counters, func(runCtx context.Context, onProgress func(done, total int64)) (*local.Report, error) {
-		return local.Download(runCtx, session, engine, "aeronautes_src:"+req.Container, req.Container, req.Prefix, req.DestDir, preflight, onProgress)
+	s.launch(jobCtx, job.ID, req.BookmarkID, func(runCtx context.Context) {
+		s.runLocal(runCtx, job.ID, req.BookmarkID, job.Counters, func(innerCtx context.Context, onProgress func(done, total int64)) (*local.Report, error) {
+			return local.Download(innerCtx, session, engine, "aeronautes_src:"+req.Container, req.Container, req.Prefix, req.DestDir, preflight, onProgress)
+		})
 	})
 	return job.ID, nil
 }

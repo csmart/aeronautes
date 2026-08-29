@@ -26,6 +26,8 @@ type CopyRequestDTO struct {
 	DestBookmarkID   string `json:"destBookmarkId"`
 	DestContainer    string `json:"destContainer"`
 	DestPrefix       string `json:"destPrefix"`
+	// Settings are the per-job §44.1 overrides (zero values = defaults).
+	Settings TransferSettingsDTO `json:"settings"`
 }
 
 // CopyPlanDTO is the §65.4 preflight surface: honest conservative
@@ -52,11 +54,18 @@ type TransferService struct {
 
 	// engineFactory builds the byte-moving engine for a job; nil uses
 	// the pinned rclone. Tests inject fakes here.
-	engineFactory func(remotes []rclone.Remote) (transfercopy.Engine, error)
+	engineFactory func(remotes []rclone.Remote, opts rclone.Options) (transfercopy.Engine, error)
+
+	// slots is the §38 active-job budget: a job holds one slot from
+	// Planning to its terminal state; the rest wait Queued, FIFO-ish.
+	slots chan struct{}
 
 	mu      sync.Mutex
 	cancels map[string]context.CancelFunc
 }
+
+// defaultMaxActiveJobs is the §38 v1 budget: small and bounded.
+const defaultMaxActiveJobs = 2
 
 // NewTransferService wires the service.
 func NewTransferService(connections *Connections, jobStore *jobs.Store, auditStore *audit.Store) *TransferService {
@@ -65,13 +74,44 @@ func NewTransferService(connections *Connections, jobStore *jobs.Store, auditSto
 		jobs:        jobStore,
 		audit:       auditStore,
 		cancels:     map[string]context.CancelFunc{},
+		slots:       make(chan struct{}, defaultMaxActiveJobs),
 	}
 }
 
 // SetEngineFactory overrides engine construction (tests; the future
 // compatibility matrix).
-func (s *TransferService) SetEngineFactory(f func(remotes []rclone.Remote) (transfercopy.Engine, error)) {
+func (s *TransferService) SetEngineFactory(f func(remotes []rclone.Remote, opts rclone.Options) (transfercopy.Engine, error)) {
 	s.engineFactory = f
+}
+
+// SetMaxActiveJobs resizes the §38 budget (the settings surface will
+// drive this; tests too). Applies to jobs started afterwards.
+func (s *TransferService) SetMaxActiveJobs(n int) {
+	if n <= 0 {
+		n = defaultMaxActiveJobs
+	}
+	s.slots = make(chan struct{}, n)
+}
+
+// launch runs a job body under the slot budget: the job stays Queued
+// until a slot frees; cancellation while queued is honoured without
+// ever starting.
+func (s *TransferService) launch(ctx context.Context, jobID, bookmarkID string, body func(ctx context.Context)) {
+	go func() {
+		background := context.WithoutCancel(ctx)
+		select {
+		case s.slots <- struct{}{}:
+		case <-ctx.Done():
+			_ = s.jobs.Transition(background, jobID, jobs.StateCancelled)
+			s.record(background, bookmarkID, "transfer.cancelled-queued", "job "+jobID, "cancelled before a job slot freed", audit.ResultApplied)
+			s.mu.Lock()
+			delete(s.cancels, jobID)
+			s.mu.Unlock()
+			return
+		}
+		defer func() { <-s.slots }()
+		body(ctx)
+	}()
 }
 
 func validateCopyRequest(req CopyRequestDTO) error {
@@ -86,7 +126,7 @@ func validateCopyRequest(req CopyRequestDTO) error {
 			return fmt.Errorf("prefix %q must be empty or end with '/'", p)
 		}
 	}
-	return nil
+	return req.Settings.Validate()
 }
 
 // resolve opens both sessions and fail-fast checks the destination
@@ -138,7 +178,8 @@ func (s *TransferService) PlanCopy(ctx context.Context, req CopyRequestDTO) (*Co
 	}, nil
 }
 
-// buildEngine constructs the pinned rclone engine for both endpoints.
+// buildEngine constructs the pinned rclone engine for both endpoints
+// with the job's effective options.
 func (s *TransferService) buildEngine(ctx context.Context, req CopyRequestDTO, src, dst *swiftcontrol.Session) (transfercopy.Engine, error) {
 	srcInsecure, err := s.connections.TLSInsecure(ctx, req.SourceBookmarkID)
 	if err != nil {
@@ -153,9 +194,9 @@ func (s *TransferService) buildEngine(ctx context.Context, req CopyRequestDTO, s
 		{Name: "aeronautes_dst", StorageURL: dst.StorageURL(), Token: dst.AuthToken(), InsecureTLS: dstInsecure},
 	}
 	if s.engineFactory != nil {
-		return s.engineFactory(remotes)
+		return s.engineFactory(remotes, req.Settings.options())
 	}
-	runner, err := rclone.NewRunner(rclone.Options{})
+	runner, err := rclone.NewRunner(req.Settings.options())
 	if err != nil {
 		return nil, err
 	}
@@ -181,6 +222,7 @@ func (s *TransferService) StartCopy(ctx context.Context, req CopyRequestDTO) (st
 		SourceBookmarkID: req.SourceBookmarkID,
 		DestBookmarkID:   req.DestBookmarkID,
 		Engine:           "rclone+native",
+		Settings:         req.Settings.effectiveJSON(),
 	})
 	if err != nil {
 		return "", err
@@ -192,8 +234,10 @@ func (s *TransferService) StartCopy(ctx context.Context, req CopyRequestDTO) (st
 	s.mu.Unlock()
 
 	s.record(ctx, req.SourceBookmarkID, "transfer.copy.start",
-		job.Source+" → "+job.Destination, "job "+job.ID, audit.ResultApplied)
-	go s.runCopy(jobCtx, job.ID, req, src, dst, engine)
+		job.Source+" → "+job.Destination, "job "+job.ID+" · "+job.Settings, audit.ResultApplied)
+	s.launch(jobCtx, job.ID, req.SourceBookmarkID, func(runCtx context.Context) {
+		s.runCopy(runCtx, job.ID, req, src, dst, engine)
+	})
 	return job.ID, nil
 }
 
@@ -400,6 +444,8 @@ type JobDTO struct {
 	Engine           string        `json:"engine"`
 	Counters         jobs.Counters `json:"counters"`
 	Error            string        `json:"error"`
+	// Settings is the §45 effective-configuration JSON ("" when none).
+	Settings string `json:"settings"`
 }
 
 // JobService is the read-only §47 drawer surface.
@@ -450,5 +496,6 @@ func jobDTO(j jobs.Job) JobDTO {
 		CreatedAt: formatTime(j.CreatedAt), StartedAt: formatTime(j.StartedAt),
 		FinishedAt: formatTime(j.FinishedAt),
 		Engine:     j.Engine, Counters: j.Counters, Error: j.Error,
+		Settings: j.Settings,
 	}
 }

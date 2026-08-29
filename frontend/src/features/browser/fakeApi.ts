@@ -494,6 +494,7 @@ export function newFakeApi(): Api {
         startedAt: "2026-08-29T10:00:01Z",
         finishedAt: "",
         engine: "rclone+native",
+        settings: "",
         counters: {
           objectsPlanned: 5,
           objectsCopied: 2,
@@ -543,6 +544,7 @@ export function newFakeApi(): Api {
         startedAt: "2026-08-29T10:00:01Z",
         finishedAt: "",
         engine: "rclone+native",
+        settings: "",
         counters: {
           objectsPlanned: req.paths.length,
           objectsCopied: 0,
@@ -582,6 +584,7 @@ export function newFakeApi(): Api {
         startedAt: "2026-08-29T10:00:01Z",
         finishedAt: "",
         engine: "rclone+native",
+        settings: "",
         counters: {
           objectsPlanned: 1,
           objectsCopied: 0,

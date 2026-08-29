@@ -137,14 +137,17 @@ func (e *httpEngine) CopyTo(ctx context.Context, src, dst string, onEvent func(r
 	return &rclone.Result{}, nil
 }
 
-func (h *harness) installEngine(block chan struct{}) {
-	h.transfer.SetEngineFactory(func(remotes []rclone.Remote) (transfercopy.Engine, error) {
+func (h *harness) installEngine(block chan struct{}) *[]rclone.Options {
+	var seen []rclone.Options
+	h.transfer.SetEngineFactory(func(remotes []rclone.Remote, opts rclone.Options) (transfercopy.Engine, error) {
 		byName := map[string]rclone.Remote{}
 		for _, r := range remotes {
 			byName[r.Name] = r
 		}
+		seen = append(seen, opts)
 		return &httpEngine{remotes: byName, block: block}, nil
 	})
+	return &seen
 }
 
 func seedObject(mock *swifttest.Server, container, name, content string, meta map[string]string) {
@@ -379,5 +382,108 @@ func TestUploadAndDownloadJobs(t *testing.T) {
 	// Re-running rejects on local-exists — nothing overwritten.
 	if _, err := h.transfer.StartDownload(ctx, download); err == nil || !strings.Contains(err.Error(), "collisions") {
 		t.Errorf("second download should hit local-exists: %v", err)
+	}
+}
+
+func TestPerJobSettings(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	h.connect(t)
+	srcBookmark := h.transfer.connections.ActiveBookmarkID()
+	dstBookmark, dstMock := secondCluster(t, h)
+	seenOptions := h.installEngine(nil)
+
+	h.mock.AddContainer("media", "standard")
+	seedObject(h.mock, "media", "one.txt", "payload", nil)
+	dstMock.AddContainer("backup", "standard")
+
+	// Hostile settings are refused before any job exists.
+	bad := CopyRequestDTO{
+		SourceBookmarkID: srcBookmark, SourceContainer: "media",
+		DestBookmarkID: dstBookmark, DestContainer: "backup",
+		Settings: TransferSettingsDTO{ChunkSize: "64Mi; rm -rf /"},
+	}
+	if _, err := h.transfer.StartCopy(ctx, bad); err == nil || !strings.Contains(err.Error(), "chunk size") {
+		t.Errorf("hostile chunk size accepted: %v", err)
+	}
+
+	// Typed overrides reach the engine and are recorded on the job.
+	req := CopyRequestDTO{
+		SourceBookmarkID: srcBookmark, SourceContainer: "media",
+		DestBookmarkID: dstBookmark, DestContainer: "backup",
+		Settings: TransferSettingsDTO{ChunkSize: "64Mi", Transfers: 8, BWLimit: "10M"},
+	}
+	jobID, err := h.transfer.StartCopy(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, h, jobID)
+	if job.State != "complete" {
+		t.Fatalf("job = %+v", job)
+	}
+	if len(*seenOptions) == 0 || (*seenOptions)[0].ChunkSize != "64Mi" || (*seenOptions)[0].Transfers != 8 {
+		t.Errorf("engine options = %+v", *seenOptions)
+	}
+	if !strings.Contains(job.Settings, `"chunkSize":"64Mi"`) {
+		t.Errorf("effective settings not recorded: %q", job.Settings)
+	}
+}
+
+func TestSchedulerBudgetQueues(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	h.connect(t)
+	srcBookmark := h.transfer.connections.ActiveBookmarkID()
+	dstBookmark, dstMock := secondCluster(t, h)
+	block := make(chan struct{})
+	h.installEngine(block)
+	h.transfer.SetMaxActiveJobs(1)
+
+	h.mock.AddContainer("media", "standard")
+	seedObject(h.mock, "media", "one.txt", "payload", nil)
+	dstMock.AddContainer("backup", "standard")
+	req := CopyRequestDTO{
+		SourceBookmarkID: srcBookmark, SourceContainer: "media",
+		DestBookmarkID: dstBookmark, DestContainer: "backup",
+	}
+
+	first, err := h.transfer.StartCopy(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := h.transfer.StartCopy(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	third, err := h.transfer.StartCopy(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The budget is 1: the first job runs (blocked in the engine), the
+	// others stay Queued.
+	time.Sleep(200 * time.Millisecond)
+	j1, _ := h.jobsSvc.Get(ctx, first)
+	j2, _ := h.jobsSvc.Get(ctx, second)
+	j3, _ := h.jobsSvc.Get(ctx, third)
+	if j1.State != "running" || j2.State != "queued" || j3.State != "queued" {
+		t.Fatalf("states = %s / %s / %s, want running / queued / queued", j1.State, j2.State, j3.State)
+	}
+
+	// A queued job cancels without ever starting.
+	if err := h.transfer.CancelJob(ctx, third); err != nil {
+		t.Fatal(err)
+	}
+	if got := awaitTerminal(t, h, third); got.State != "cancelled" || got.StartedAt != "" {
+		t.Fatalf("queued cancel = %+v (a queued job must never have started)", got)
+	}
+
+	// Freeing the slot lets the second run to completion.
+	close(block)
+	if got := awaitTerminal(t, h, first); got.State != "complete" {
+		t.Fatalf("first = %+v", got)
+	}
+	if got := awaitTerminal(t, h, second); got.State != "complete" {
+		t.Fatalf("second = %+v", got)
 	}
 }

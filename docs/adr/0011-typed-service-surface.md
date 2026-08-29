@@ -31,8 +31,14 @@ The frontend reaches Go **only** through these services (all in `internal/app`, 
 - **TransferService** — the transfer surface (Phase 5): `PlanCopy` (read-only §15.2/§28.4
   preview with versioned-destination and DLO-commit disclosures), `StartCopy` (creates the §46
   job, runs plan→execute→verify→reconcile in a background goroutine; start and terminal states
-  audited), `CancelJob` (graceful §26.4 cancellation; audited). Engine construction is
-  internal — remotes, storage URLs, and tokens never appear in any DTO.
+  audited), `CancelJob` (graceful §26.4 cancellation; audited), `PreflightUpload`/
+  `PreflightDownload` (the complete §27.5 collision reports, read-only), `StartUpload`/
+  `StartDownload` (reject-on-collision, §46 jobs), and `PickUploadFiles`/`PickDownloadDir`
+  (Go-side OS dialogs — filesystem paths never originate in the webview). Every Start accepts
+  the typed §44.1 per-job settings (chunk size, transfers, checkers, tps, bandwidth), validated
+  as hostile input and recorded on the job as §45 effective configuration; jobs run under the
+  §38 bounded active-job budget with FIFO queueing. Engine construction is internal — remotes,
+  storage URLs, and tokens never appear in any DTO.
 - **JobService** — read-only §46/§47 drawer surface: `List` (bookmark filter matching either
   end, active-only toggle, bounded) and `Get`; DTOs carry counters and display locators only.
 
