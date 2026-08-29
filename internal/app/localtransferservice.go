@@ -157,9 +157,7 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 		return "", err
 	}
 	jobCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	s.mu.Lock()
-	s.cancels[job.ID] = cancel
-	s.mu.Unlock()
+	s.runner.register(job.ID, cancel)
 	s.record(ctx, req.BookmarkID, "transfer.upload.start", job.Source+" → "+job.Destination, "job "+job.ID+" · "+job.Settings, audit.ResultApplied)
 
 	s.launch(jobCtx, job.ID, req.BookmarkID, func(runCtx context.Context) {
@@ -205,9 +203,7 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 		return "", err
 	}
 	jobCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	s.mu.Lock()
-	s.cancels[job.ID] = cancel
-	s.mu.Unlock()
+	s.runner.register(job.ID, cancel)
 	s.record(ctx, req.BookmarkID, "transfer.download.start", job.Source+" → "+job.Destination, "job "+job.ID+" · "+job.Settings, audit.ResultApplied)
 
 	s.launch(jobCtx, job.ID, req.BookmarkID, func(runCtx context.Context) {
@@ -255,9 +251,7 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 		}
 		transition(state)
 		s.record(background, bookmarkID, "transfer.local."+string(state), "job "+jobID, "", terminalAuditResult(state))
-		s.mu.Lock()
-		delete(s.cancels, jobID)
-		s.mu.Unlock()
+		s.runner.release(jobID)
 	}
 	switch {
 	case err != nil && errors.Is(err, context.Canceled):

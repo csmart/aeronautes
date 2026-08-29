@@ -53,6 +53,7 @@ func main() {
 	evidenceStore := evidence.NewStore(database)
 	auditStore := audit.NewStore(database)
 	jobStore := jobs.NewStore(database)
+	jobRunner := app.NewJobRunner(jobStore, auditStore)
 
 	a := application.New(application.Options{
 		Name:        "Aeronautes",
@@ -64,7 +65,8 @@ func main() {
 			application.NewService(app.NewInspectorService(connections, evidenceStore)),
 			application.NewService(app.NewMutateService(connections, auditStore, evidenceStore)),
 			application.NewService(app.NewAuditService(auditStore)),
-			application.NewService(app.NewTransferService(connections, jobStore, auditStore)),
+			application.NewService(app.NewTransferServiceWithRunner(connections, jobStore, jobRunner)),
+			application.NewService(app.NewDeleteService(connections, jobStore, jobRunner)),
 			application.NewService(app.NewJobService(jobStore)),
 		},
 		Assets: application.AssetOptions{

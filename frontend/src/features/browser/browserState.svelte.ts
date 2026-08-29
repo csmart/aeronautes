@@ -7,6 +7,8 @@ import type {
   AccountDTO,
   CopyPlanDTO,
   CopyRequestDTO,
+  DeletePreviewDTO,
+  DeleteRequestDTO,
   DownloadPreflight,
   JobDTO,
   UploadPreflight,
@@ -73,6 +75,8 @@ export class BrowserState {
   transferOpen = $state(false);
   // Local transfer dialog (§27.5); null = closed.
   localTransfer: "upload" | "download" | null = $state(null);
+  // Destructive-jobs dialog (§31–§33).
+  deleteOpen = $state(false);
 
   // Containers pane.
   mode: ContainerMode = $state("logical");
@@ -402,6 +406,16 @@ export class BrowserState {
 
   async startDownload(destDir: string): Promise<string> {
     const id = await this.#api.startDownload({ ...this.#localScope(), destDir });
+    await this.loadJobs();
+    return id;
+  }
+
+  async previewDelete(req: DeleteRequestDTO): Promise<DeletePreviewDTO> {
+    return await this.#api.previewDelete(req);
+  }
+
+  async startDelete(req: DeleteRequestDTO): Promise<string> {
+    const id = await this.#api.startDelete(req);
     await this.loadJobs();
     return id;
   }

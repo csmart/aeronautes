@@ -93,6 +93,14 @@
       >
         Download…
       </button>
+      <button
+        class="find danger"
+        title="Delete this prefix, empty the container, or delete the container (§31–§33: preview + typed confirmation)"
+        disabled={browser.containerName === null || browser.backstageFrom !== null}
+        onclick={() => (browser.deleteOpen = true)}
+      >
+        Delete…
+      </button>
     </div>
 
     <div class="columns num" aria-hidden="true">
@@ -261,9 +269,14 @@
 
   .fields {
     display: flex;
+    flex-wrap: wrap;
     gap: var(--space-2);
     align-items: end;
     margin: var(--space-2) 0 var(--space-3);
+  }
+
+  .field input {
+    min-width: 9rem;
   }
 
   .field {
@@ -299,6 +312,11 @@
 
   .field input.type-mono {
     font-family: var(--font-mono);
+  }
+
+  .find.danger {
+    color: var(--color-danger);
+    border-color: var(--color-danger);
   }
 
   .find {

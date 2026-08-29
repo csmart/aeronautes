@@ -599,6 +599,44 @@ export function newFakeApi(): Api {
       });
       return id;
     },
+    previewDelete: async (req) => ({
+      objects: 42,
+      bytes: 9_000_000,
+      possibleManifests: 2,
+      strategy: "bulk-delete",
+    }),
+    startDelete: async (req) => {
+      if (req.confirm !== req.container) {
+        throw new Error("confirmation does not match the container name");
+      }
+      const id = `job-${jobs.length + 1}`;
+      jobs.push({
+        id,
+        type: req.mode === "prefix" ? "delete_prefix" : req.mode === "empty" ? "empty_container" : "delete_container",
+        state: "running",
+        source: `${req.container}/${req.prefix}`,
+        destination: "(deleted)",
+        sourceBookmarkId: req.bookmarkId,
+        destBookmarkId: "",
+        createdAt: "2026-08-29T10:00:00Z",
+        startedAt: "2026-08-29T10:00:01Z",
+        finishedAt: "",
+        engine: "native",
+        settings: "",
+        counters: {
+          objectsPlanned: 42,
+          objectsCopied: 0,
+          objectsVerified: 0,
+          objectsFailed: 0,
+          bytesPlanned: 9_000_000,
+          bytesCopied: 0,
+          overwrites: 0,
+          nativeRouted: 0,
+        },
+        error: "",
+      });
+      return id;
+    },
     jobs: async (bookmarkId, activeOnly, limit) =>
       jobs
         .filter(

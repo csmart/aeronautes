@@ -50,31 +50,27 @@ type CopyPlanDTO struct {
 type TransferService struct {
 	connections *Connections
 	jobs        *jobs.Store
-	audit       *audit.Store
+	runner      *jobRunner
 
 	// engineFactory builds the byte-moving engine for a job; nil uses
 	// the pinned rclone. Tests inject fakes here.
 	engineFactory func(remotes []rclone.Remote, opts rclone.Options) (transfercopy.Engine, error)
-
-	// slots is the §38 active-job budget: a job holds one slot from
-	// Planning to its terminal state; the rest wait Queued, FIFO-ish.
-	slots chan struct{}
-
-	mu      sync.Mutex
-	cancels map[string]context.CancelFunc
 }
 
 // defaultMaxActiveJobs is the §38 v1 budget: small and bounded.
 const defaultMaxActiveJobs = 2
 
-// NewTransferService wires the service.
+// NewTransferService wires the service over the shared runner.
 func NewTransferService(connections *Connections, jobStore *jobs.Store, auditStore *audit.Store) *TransferService {
+	return NewTransferServiceWithRunner(connections, jobStore, newJobRunner(jobStore, auditStore))
+}
+
+// NewTransferServiceWithRunner shares a runner across services.
+func NewTransferServiceWithRunner(connections *Connections, jobStore *jobs.Store, runner *jobRunner) *TransferService {
 	return &TransferService{
 		connections: connections,
 		jobs:        jobStore,
-		audit:       auditStore,
-		cancels:     map[string]context.CancelFunc{},
-		slots:       make(chan struct{}, defaultMaxActiveJobs),
+		runner:      runner,
 	}
 }
 
@@ -87,31 +83,11 @@ func (s *TransferService) SetEngineFactory(f func(remotes []rclone.Remote, opts 
 // SetMaxActiveJobs resizes the §38 budget (the settings surface will
 // drive this; tests too). Applies to jobs started afterwards.
 func (s *TransferService) SetMaxActiveJobs(n int) {
-	if n <= 0 {
-		n = defaultMaxActiveJobs
-	}
-	s.slots = make(chan struct{}, n)
+	s.runner.setMaxActiveJobs(n)
 }
 
-// launch runs a job body under the slot budget: the job stays Queued
-// until a slot frees; cancellation while queued is honoured without
-// ever starting.
 func (s *TransferService) launch(ctx context.Context, jobID, bookmarkID string, body func(ctx context.Context)) {
-	go func() {
-		background := context.WithoutCancel(ctx)
-		select {
-		case s.slots <- struct{}{}:
-		case <-ctx.Done():
-			_ = s.jobs.Transition(background, jobID, jobs.StateCancelled)
-			s.record(background, bookmarkID, "transfer.cancelled-queued", "job "+jobID, "cancelled before a job slot freed", audit.ResultApplied)
-			s.mu.Lock()
-			delete(s.cancels, jobID)
-			s.mu.Unlock()
-			return
-		}
-		defer func() { <-s.slots }()
-		body(ctx)
-	}()
+	s.runner.launch(ctx, jobID, bookmarkID, body)
 }
 
 func validateCopyRequest(req CopyRequestDTO) error {
@@ -229,9 +205,7 @@ func (s *TransferService) StartCopy(ctx context.Context, req CopyRequestDTO) (st
 	}
 
 	jobCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	s.mu.Lock()
-	s.cancels[job.ID] = cancel
-	s.mu.Unlock()
+	s.runner.register(job.ID, cancel)
 
 	s.record(ctx, req.SourceBookmarkID, "transfer.copy.start",
 		job.Source+" → "+job.Destination, "job "+job.ID+" · "+job.Settings, audit.ResultApplied)
@@ -263,9 +237,7 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 		s.record(background, req.SourceBookmarkID, "transfer.copy."+string(state),
 			req.SourceContainer+"/"+req.SourcePrefix+" → "+req.DestContainer+"/"+req.DestPrefix,
 			"job "+jobID, terminalAuditResult(state))
-		s.mu.Lock()
-		delete(s.cancels, jobID)
-		s.mu.Unlock()
+		s.runner.release(jobID)
 	}
 
 	transition(jobs.StatePlanning)
@@ -403,9 +375,7 @@ func terminalAuditResult(state jobs.State) audit.Result {
 // CancelJob requests graceful cancellation (§26.4: the engine child gets
 // SIGINT and cleans up; reconciliation then sweeps).
 func (s *TransferService) CancelJob(ctx context.Context, jobID string) error {
-	s.mu.Lock()
-	cancel, ok := s.cancels[jobID]
-	s.mu.Unlock()
+	cancel, ok := s.runner.cancel(jobID)
 	if !ok {
 		return fmt.Errorf("job %s is not running in this process", jobID)
 	}
@@ -418,15 +388,7 @@ func (s *TransferService) record(ctx context.Context, bookmarkID, operation, res
 	if bookmarkID == "" {
 		bookmarkID = s.connections.ActiveBookmarkID()
 	}
-	if err := s.audit.Append(ctx, audit.Event{
-		BookmarkID: bookmarkID,
-		Operation:  operation,
-		Resource:   resource,
-		Summary:    summary,
-		Result:     result,
-	}); err != nil {
-		log.Printf("AUDIT WRITE FAILED for %s %s: %v", operation, resource, err)
-	}
+	s.runner.record(ctx, bookmarkID, operation, resource, summary, result)
 }
 
 // JobDTO is one §46 job for the drawer.

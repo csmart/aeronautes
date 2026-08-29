@@ -8,6 +8,7 @@ import {
   AuditService,
   BookmarkService,
   BrowseService,
+  DeleteService,
   InspectorService,
   JobService,
   MutateService,
@@ -62,10 +63,14 @@ export type {
 };
 export type { DownloadPreflight, UploadPreflight };
 export type {
+  DeletePreviewDTO,
+  DeleteRequestDTO,
   DownloadRequestDTO,
   UploadRequestDTO,
 } from "../../bindings/github.com/csmart/aeronautes/internal/app";
 import type {
+  DeletePreviewDTO,
+  DeleteRequestDTO,
   DownloadRequestDTO,
   UploadRequestDTO,
 } from "../../bindings/github.com/csmart/aeronautes/internal/app";
@@ -125,6 +130,8 @@ export interface Api {
   startUpload(req: UploadRequestDTO): Promise<string>;
   preflightDownload(req: DownloadRequestDTO): Promise<DownloadPreflight>;
   startDownload(req: DownloadRequestDTO): Promise<string>;
+  previewDelete(req: DeleteRequestDTO): Promise<DeletePreviewDTO>;
+  startDelete(req: DeleteRequestDTO): Promise<string>;
 }
 
 /** The live bridge. */
@@ -180,4 +187,10 @@ export const liveApi: Api = {
     return report;
   },
   startDownload: (req) => TransferService.StartDownload(req),
+  previewDelete: async (req) => {
+    const preview = await DeleteService.PreviewDelete(req);
+    if (!preview) throw new Error("empty preview");
+    return preview;
+  },
+  startDelete: (req) => DeleteService.StartDelete(req),
 };

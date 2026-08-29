@@ -25,6 +25,9 @@ const (
 	TypeMirrorPreview Type = "mirror_preview"
 	TypeUpload        Type = "upload"
 	TypeDownload      Type = "download"
+	TypeDeletePrefix  Type = "delete_prefix"
+	TypeEmpty         Type = "empty_container"
+	TypeDeleteCont    Type = "delete_container"
 )
 
 // State is the §46 lifecycle state.
@@ -185,6 +188,15 @@ func (s *Store) UpdateCounters(ctx context.Context, id string, c Counters) error
 			return fmt.Errorf("job %s not found", id)
 		}
 		return nil
+	})
+}
+
+// SetSettings records the §45 effective-configuration JSON (used when
+// the effective strategy is only known once execution selects it).
+func (s *Store) SetSettings(ctx context.Context, id, settingsJSON string) error {
+	return s.db.WriteTx(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `UPDATE jobs SET settings_json=? WHERE id=?`, nullable(settingsJSON), id)
+		return err
 	})
 }
 
