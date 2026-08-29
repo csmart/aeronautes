@@ -1,0 +1,24 @@
+# Dependency update PRs (weekly, batched): Go modules, the frontend npm
+# tree, and the Actions themselves. rclone is NOT here — its version is
+# a product pin (docs/rclone.md): changes go through the compatibility
+# matrix, never a bot PR.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      go-deps:
+        patterns: ["*"]
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    groups:
+      npm-deps:
+        patterns: ["*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

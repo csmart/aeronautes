@@ -17,6 +17,11 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same ref supersedes an in-flight run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   go:
     name: Go — fmt, vet, build, test (race)
