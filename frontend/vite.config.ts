@@ -9,6 +9,8 @@ export default defineConfig({
     strictPort: true,
   },
   plugins: [svelte(), wails("./bindings")],
+  // Component tests need svelte's client build, not the server one.
+  resolve: process.env.VITEST ? { conditions: ["browser"] } : undefined,
   test: {
     environment: "jsdom",
     include: ["src/**/*.test.ts"],
