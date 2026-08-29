@@ -35,6 +35,12 @@ dev:
 ## test: everything that runs without a cluster
 test: test-go test-frontend
 
+## coverage: combined Go coverage (SAIO up = full picture) + frontend coverage
+coverage:
+	go test -count=1 -coverprofile=cover.out -coverpkg=./internal/... ./... | grep -v "no test files" || true
+	@go tool cover -func=cover.out | awk '/^total:/ {print "Go combined:", $$3}'
+	cd frontend && npm run test:coverage | tail -8
+
 test-go:
 	go test -race -count=1 ./...
 

@@ -1,5 +1,9 @@
 # Aeronautes
 
+![CI](https://github.com/csmart/aeronautes/actions/workflows/ci.yml/badge.svg)
+![Go coverage](.github/badges/coverage-go.svg)
+![UI coverage](.github/badges/coverage-frontend.svg)
+
 > **Status: implementation in progress — Phases 0–6 complete, Phase 7 (release hardening)
 > under way.** The design is locked; code is built one component per commit, following the
 > sequences in [`docs/DESIGN.md`](docs/DESIGN.md) §65. Live today, all proven against real

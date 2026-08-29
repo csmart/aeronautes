@@ -110,10 +110,31 @@ jobs:
         if: steps.detect.outputs.present == 'true'
         working-directory: frontend
         run: npm run build --if-present
-      - name: test
+      - name: test (with coverage)
         if: steps.detect.outputs.present == 'true'
         working-directory: frontend
-        run: npm test --if-present
+        run: npm run test:coverage
+      # SOFT coverage floor: a drop below it turns this step red without
+      # failing the pipeline (continue-on-error) — a warning, not a wall.
+      - name: coverage floor (soft, 70%)
+        if: steps.detect.outputs.present == 'true'
+        continue-on-error: true
+        working-directory: frontend
+        run: |
+          pct=$(python3 -c "import json; print(json.load(open('coverage/coverage-summary.json'))['total']['statements']['pct'])")
+          echo "frontend statement coverage: ${pct}%"
+          echo "$pct" > coverage-pct.txt
+          python3 -c "import sys; sys.exit(0 if float('$pct') >= 70 else 1)"             || { echo '::warning::frontend coverage dropped below the 70% soft floor'; exit 1; }
+      - name: coverage badge
+        if: steps.detect.outputs.present == 'true'
+        run: |
+          pct=$(cat frontend/coverage-pct.txt 2>/dev/null || echo 0)
+          ./scripts/coverage-badge.sh "ui coverage" "$pct" 70 badges/coverage-frontend.svg
+      - uses: actions/upload-artifact@v4
+        if: steps.detect.outputs.present == 'true'
+        with:
+          name: badge-frontend
+          path: badges/
 
   # Integration against a real containerized Swift (§57.3): the adapter is
   # driven end to end over the §58 canonical fixtures — auth, listings, the
@@ -149,8 +170,63 @@ jobs:
             sleep 1
           done
           echo "Swift never came up"; docker logs saio | tail -50; exit 1
-      - name: Run integration suite
+      # The verified official pinned rclone joins PATH so the FULL suite
+      # runs in CI (rclone-dependent tests would otherwise skip) and the
+      # combined coverage number matches a developer machine.
+      - name: Fetch pinned rclone (verified)
+        if: steps.detect.outputs.present == 'true'
+        run: |
+          ./scripts/fetch-rclone.sh linux amd64 "$RUNNER_TEMP/rclone-pin"
+          echo "$RUNNER_TEMP/rclone-pin" >> "$GITHUB_PATH"
+      - name: Run full suite with combined coverage
         if: steps.detect.outputs.present == 'true'
         env:
           AERONAUTES_SAIO_AUTH_URL: http://127.0.0.1:8080/auth/v1.0
-        run: go test -race -count=1 -v ./internal/integration
+        run: |
+          go test -race -count=1 -coverprofile=cover.out -coverpkg=./internal/... ./... 2>&1 | grep -v "no test files"
+          pct=$(go tool cover -func=cover.out | awk '/^total:/ {gsub(/%/,"",$3); print $3}')
+          echo "combined Go statement coverage: ${pct}%"
+          echo "$pct" > coverage-pct.txt
+      # SOFT coverage floor: red step + warning on a drop, pipeline
+      # continues (continue-on-error).
+      - name: coverage floor (soft, 75%)
+        if: steps.detect.outputs.present == 'true'
+        continue-on-error: true
+        run: |
+          pct=$(cat coverage-pct.txt)
+          python3 -c "import sys; sys.exit(0 if float('$pct') >= 75 else 1)"             || { echo '::warning::Go combined coverage dropped below the 75% soft floor'; exit 1; }
+      - name: coverage badge
+        if: steps.detect.outputs.present == 'true'
+        run: |
+          ./scripts/coverage-badge.sh "go coverage" "$(cat coverage-pct.txt)" 75 badges/coverage-go.svg
+      - uses: actions/upload-artifact@v4
+        if: steps.detect.outputs.present == 'true'
+        with:
+          name: badge-go
+          path: badges/
+
+  badges:
+    name: Commit coverage badges
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: [go, frontend, saio]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: badge-*
+          path: .github/badges/
+          merge-multiple: true
+      - name: commit badges if changed
+        run: |
+          git config user.name "aeronautes-ci"
+          git config user.email "ci@invalid"
+          git add .github/badges/*.svg
+          if git diff --cached --quiet; then
+            echo "badges unchanged"
+          else
+            git commit -m "update coverage badges [ci]"
+            git push
+          fi
