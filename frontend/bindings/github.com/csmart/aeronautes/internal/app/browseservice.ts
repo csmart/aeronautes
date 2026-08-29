@@ -25,6 +25,15 @@ export function Account(): $CancellablePromise<$models.AccountDTO> {
 }
 
 /**
+ * Capabilities returns the connect-time capability snapshot (§10) the
+ * UI gates on: storage policies for the create picker, versioning flags
+ * for the configuration editor.
+ */
+export function Capabilities(): $CancellablePromise<$models.CapabilitiesDTO> {
+    return $Call.ByID(3780974669);
+}
+
+/**
  * Connect authenticates a bookmark and returns the account portrait.
  */
 export function Connect(bookmarkID: string): $CancellablePromise<$models.AccountDTO> {

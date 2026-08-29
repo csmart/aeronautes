@@ -21,7 +21,14 @@ The frontend reaches Go **only** through these services (all in `internal/app`, 
   never readable back; bookmark DTOs carry `HasCredential`, never the secret.
 - **BrowseService** — account portrait, container/object listing pages (typed entries, §14).
 - **InspectorService** — selection-triggered HEAD detail (redacted views only).
-- **TransferService**, **JobService** — Phase 3+; planning, execution, progress events.
+- **MutateService** — the ONLY mutating surface (Phase 3). Every method takes a complete
+  intended outcome (a working copy, never a raw header grab-bag), runs preflight → execute →
+  verify → audit, returns typed outcomes (applied / conflict / verify-mismatch), and gates on
+  connect-time capabilities only where the cluster is KNOWN to reject the request — Unknown never
+  gates (§10). Methods: object metadata update, container update, container create, marker
+  create/delete.
+- **AuditService** — read-only §50 trail (recent events).
+- **TransferService**, **JobService** — Phase 5+; planning, execution, progress events.
 
 Rules for every service: no secret, token, or keychain handle in any return type (K-SEC-002/003);
 inputs validated in Go as if hostile; errors cross as normalized `SwiftError`-derived shapes;

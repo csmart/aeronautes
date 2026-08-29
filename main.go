@@ -12,6 +12,7 @@ import (
 
 	"github.com/adrg/xdg"
 	"github.com/csmart/aeronautes/internal/app"
+	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/bookmarks"
 	"github.com/csmart/aeronautes/internal/db"
 	"github.com/csmart/aeronautes/internal/evidence"
@@ -49,6 +50,7 @@ func main() {
 	bookmarkStore := bookmarks.NewStore(database, secretStore)
 	connections := app.NewConnections(bookmarkStore)
 	evidenceStore := evidence.NewStore(database)
+	auditStore := audit.NewStore(database)
 
 	a := application.New(application.Options{
 		Name:        "Aeronautes",
@@ -58,6 +60,8 @@ func main() {
 			application.NewService(app.NewBookmarkService(bookmarkStore)),
 			application.NewService(app.NewBrowseService(connections, evidenceStore)),
 			application.NewService(app.NewInspectorService(connections, evidenceStore)),
+			application.NewService(app.NewMutateService(connections, auditStore, evidenceStore)),
+			application.NewService(app.NewAuditService(auditStore)),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),

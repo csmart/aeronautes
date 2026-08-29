@@ -3,6 +3,7 @@ package swiftcontrol
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -134,4 +135,56 @@ func (c *Capabilities) StoragePolicies() []StoragePolicy {
 		}
 	}
 	return out
+}
+
+// VersioningAllowedFlags returns versioned_writes.allowed_flags — which
+// container-versioning headers the cluster accepts (§21) — or nil when
+// unknown.
+func (c *Capabilities) VersioningAllowedFlags() []string {
+	raw, _ := c.Feature("versioned_writes")["allowed_flags"].([]any)
+	var out []string
+	for _, entry := range raw {
+		if flag, ok := entry.(string); ok {
+			out = append(out, flag)
+		}
+	}
+	return out
+}
+
+// AllowsVersioningMode answers whether the cluster is KNOWN to reject
+// the mode. Unknown capabilities never gate (§10: Unknown is not
+// Unsupported — the server gets to decide).
+func (c *Capabilities) AllowsVersioningMode(mode VersioningMode) bool {
+	if c.Source != SourceAdvertised || mode == VersioningOff {
+		return true
+	}
+	want := "x-versions-location"
+	if mode == VersioningHistoryLocation {
+		want = "x-history-location"
+	}
+	for _, flag := range c.VersioningAllowedFlags() {
+		if strings.EqualFold(flag, want) {
+			return true
+		}
+	}
+	return false
+}
+
+// AllowsStoragePolicy answers whether the cluster is KNOWN to reject the
+// policy name ("" — the server default — is always allowed).
+func (c *Capabilities) AllowsStoragePolicy(name string) bool {
+	if c.Source != SourceAdvertised || name == "" {
+		return true
+	}
+	for _, policy := range c.StoragePolicies() {
+		if strings.EqualFold(policy.Name, name) {
+			return true
+		}
+		for _, alias := range strings.Split(policy.Aliases, ",") {
+			if strings.EqualFold(strings.TrimSpace(alias), name) {
+				return true
+			}
+		}
+	}
+	return false
 }

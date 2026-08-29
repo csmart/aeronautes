@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/bookmarks"
 	"github.com/csmart/aeronautes/internal/db"
 	"github.com/csmart/aeronautes/internal/evidence"
@@ -20,11 +21,19 @@ type harness struct {
 	bookmarks *BookmarkService
 	browse    *BrowseService
 	inspector *InspectorService
+	mutate    *MutateService
+	auditSvc  *AuditService
 	mock      *swifttest.Server
 	authURL   string
 }
 
 func newHarness(t *testing.T) *harness {
+	return newHarnessWithInfo(t, "")
+}
+
+// newHarnessWithInfo lets a test serve a custom /info document — the
+// capability-gating tests need clusters that advertise less.
+func newHarnessWithInfo(t *testing.T, infoJSON string) *harness {
 	t.Helper()
 	d, err := db.Open(context.Background(), filepath.Join(t.TempDir(), "state.sqlite"))
 	if err != nil {
@@ -33,6 +42,7 @@ func newHarness(t *testing.T) *harness {
 	t.Cleanup(func() { d.Close() })
 
 	mock := swifttest.New("test:tester", "testing")
+	mock.InfoJSON = infoJSON
 	mock.LoadCanonicalFixtures()
 	srv := httptest.NewServer(mock)
 	t.Cleanup(srv.Close)
@@ -40,10 +50,13 @@ func newHarness(t *testing.T) *harness {
 	store := bookmarks.NewStore(d, secrets.NewSessionStore())
 	connections := NewConnections(store)
 	ev := evidence.NewStore(d)
+	auditStore := audit.NewStore(d)
 	return &harness{
 		bookmarks: NewBookmarkService(store),
 		browse:    NewBrowseService(connections, ev),
 		inspector: NewInspectorService(connections, ev),
+		mutate:    NewMutateService(connections, auditStore, ev),
+		auditSvc:  NewAuditService(auditStore),
 		mock:      mock,
 		authURL:   srv.URL + "/auth/v1.0",
 	}
@@ -343,5 +356,178 @@ func TestInspectorObjectDetail(t *testing.T) {
 
 	if _, err := h.inspector.Object(ctx, "fixtures", "does-not-exist"); err == nil {
 		t.Error("missing object must error")
+	}
+}
+
+func TestCapabilitiesAtConnect(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+
+	caps, err := h.browse.Capabilities(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if caps.Source != "advertised" {
+		t.Errorf("Source = %q", caps.Source)
+	}
+	names := map[string]bool{}
+	var hasDefault bool
+	for _, p := range caps.StoragePolicies {
+		names[p.Name] = true
+		hasDefault = hasDefault || p.Default
+	}
+	if !names["standard"] || !names["gold"] || !hasDefault {
+		t.Errorf("StoragePolicies = %+v", caps.StoragePolicies)
+	}
+	if len(caps.VersioningFlags) != 2 {
+		t.Errorf("VersioningFlags = %v", caps.VersioningFlags)
+	}
+	if !caps.SLOSupported || caps.MaxFileSize <= 0 {
+		t.Errorf("caps = %+v", caps)
+	}
+}
+
+func TestMutateObjectMetadataWithAudit(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+	ctx := context.Background()
+
+	before, err := h.inspector.Object(ctx, "fixtures", "normal/hello.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	edit := ObjectMetadataEditDTO{Meta: map[string]string{}}
+	for k, v := range before.Meta {
+		edit.Meta[k] = v
+	}
+	edit.Meta["Camera"] = "sony-fx6"
+
+	result, err := h.mutate.UpdateObjectMetadata(ctx, "fixtures", "normal/hello.txt", "", edit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != "applied" || result.ObjectAfter == nil {
+		t.Fatalf("result = %+v", result)
+	}
+	if result.ObjectAfter.Meta["Origin"] != "fixture" || result.ObjectAfter.Meta["Camera"] != "sony-fx6" {
+		t.Errorf("after = %v", result.ObjectAfter.Meta)
+	}
+	if len(result.TransIDs) != 3 {
+		t.Errorf("TransIDs = %v", result.TransIDs)
+	}
+
+	// A stale-fingerprint attempt records a conflict.
+	stale, err := h.mutate.UpdateObjectMetadata(ctx, "fixtures", "normal/hello.txt", "not-the-fingerprint", edit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stale.Outcome != "conflict" {
+		t.Errorf("stale outcome = %q", stale.Outcome)
+	}
+
+	events, err := h.auditSvc.Recent(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("audit events = %d, want 2", len(events))
+	}
+	if events[0].Result != "conflict" || events[1].Result != "applied" {
+		t.Errorf("audit results = %q, %q", events[0].Result, events[1].Result)
+	}
+	if events[1].Operation != "object.metadata.update" || events[1].Resource != "fixtures/normal/hello.txt" {
+		t.Errorf("audit event = %+v", events[1])
+	}
+	if len(events[1].TransIDs) != 3 {
+		t.Errorf("audit TransIDs = %v", events[1].TransIDs)
+	}
+}
+
+func TestCreateContainerPolicyGate(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+	ctx := context.Background()
+
+	if _, err := h.mutate.CreateContainer(ctx, ContainerCreateDTO{Name: "gated", Policy: "nope"}); err == nil {
+		t.Fatal("unadvertised policy must be refused before touching the cluster")
+	}
+
+	detail, err := h.mutate.CreateContainer(ctx, ContainerCreateDTO{Name: "gated", Policy: "gold"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.StoragePolicy != "gold" {
+		t.Errorf("policy = %q", detail.StoragePolicy)
+	}
+
+	events, _ := h.auditSvc.Recent(ctx, 5)
+	if len(events) == 0 || events[0].Operation != "container.create" || events[0].Result != "applied" {
+		t.Errorf("audit = %+v", events)
+	}
+}
+
+func TestVersioningGate(t *testing.T) {
+	// A cluster that advertises /info WITHOUT versioned_writes: the mode
+	// is KNOWN-unsupported and must refuse before the wire.
+	restricted := newHarnessWithInfo(t, `{"swift": {"max_file_size": 100}}`)
+	restricted.connect(t)
+	ctx := context.Background()
+
+	_, err := restricted.mutate.UpdateContainer(ctx, "fixtures", "", ContainerEditDTO{
+		VersioningMode: "history_location", VersioningArchive: "arch",
+	})
+	if err == nil {
+		t.Fatal("versioning on a known-unsupporting cluster must refuse")
+	}
+
+	// The default mock advertises both flags: allowed.
+	h := newHarness(t)
+	h.connect(t)
+	if _, err := h.mutate.CreateContainer(ctx, ContainerCreateDTO{Name: "arch"}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := h.mutate.UpdateContainer(ctx, "fixtures", "", ContainerEditDTO{
+		VersioningMode: "history_location", VersioningArchive: "arch",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != "applied" || result.ContainerAfter.VersioningMode != "history_location" {
+		t.Errorf("result = %+v", result)
+	}
+}
+
+func TestMarkerServiceWithAudit(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+	ctx := context.Background()
+
+	created, err := h.mutate.CreateMarker(ctx, "fixtures", "newdir/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created.MarkerBacked {
+		t.Errorf("created = %+v", created)
+	}
+	if err := h.mutate.DeleteMarker(ctx, "fixtures", "newdir/"); err != nil {
+		t.Fatal(err)
+	}
+	// Refusals are audited as failures too.
+	if err := h.mutate.DeleteMarker(ctx, "fixtures", "fake/"); err == nil {
+		t.Fatal("folder-suit delete must refuse")
+	}
+
+	events, _ := h.auditSvc.Recent(ctx, 5)
+	if len(events) != 3 {
+		t.Fatalf("audit events = %d, want 3", len(events))
+	}
+	if events[0].Operation != "marker.delete" || events[0].Result != "failed" {
+		t.Errorf("refusal audit = %+v", events[0])
+	}
+	if events[1].Operation != "marker.delete" || events[1].Result != "applied" {
+		t.Errorf("delete audit = %+v", events[1])
+	}
+	if events[2].Operation != "marker.create" || events[2].Result != "applied" {
+		t.Errorf("create audit = %+v", events[2])
 	}
 }

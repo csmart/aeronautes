@@ -52,6 +52,32 @@ func (s *BrowseService) Account(ctx context.Context) (AccountDTO, error) {
 	}, nil
 }
 
+// Capabilities returns the connect-time capability snapshot (§10) the
+// UI gates on: storage policies for the create picker, versioning flags
+// for the configuration editor.
+func (s *BrowseService) Capabilities(ctx context.Context) (CapabilitiesDTO, error) {
+	if _, err := s.connections.Session(); err != nil {
+		return CapabilitiesDTO{}, err
+	}
+	caps := s.connections.Capabilities()
+	if caps == nil {
+		return CapabilitiesDTO{Source: "unknown"}, nil
+	}
+	dto := CapabilitiesDTO{
+		Source:          string(caps.Source),
+		MaxFileSize:     caps.MaxFileSize(),
+		VersioningFlags: caps.VersioningAllowedFlags(),
+		SLOSupported:    caps.State("slo") == swiftcontrol.CapabilitySupported,
+	}
+	for _, policy := range caps.StoragePolicies() {
+		dto.StoragePolicies = append(dto.StoragePolicies, StoragePolicyDTO{
+			Name:    policy.Name,
+			Default: policy.Default,
+		})
+	}
+	return dto, nil
+}
+
 // maxPageRows caps a single bridge page regardless of what the frontend
 // asks for; larger requests page, they do not balloon.
 const maxPageRows = 5000

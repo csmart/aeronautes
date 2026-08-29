@@ -51,12 +51,7 @@ func (s *InspectorService) Prefix(ctx context.Context, container, prefix string)
 	if err != nil {
 		return PrefixDetailDTO{}, err
 	}
-	dto := PrefixDetailDTO{Prefix: d.Prefix, MarkerBacked: d.MarkerBacked}
-	if d.SelfObject != nil {
-		self := toObjectDetailDTO(d.SelfObject)
-		dto.SelfObject = &self
-	}
-	return dto, nil
+	return toPrefixDetailDTO(d), nil
 }
 
 // Container HEADs one container for the §53 inspector section, folding
@@ -74,25 +69,7 @@ func (s *InspectorService) Container(ctx context.Context, name string) (Containe
 	if err != nil {
 		return ContainerDetailDTO{}, err
 	}
-	return ContainerDetailDTO{
-		Name:              d.Name,
-		ObjectCount:       d.ObjectCount,
-		BytesUsed:         d.BytesUsed,
-		StoragePolicy:     d.StoragePolicy,
-		ReadACL:           d.ReadACL,
-		WriteACL:          d.WriteACL,
-		VersioningMode:    string(d.Versioning.Mode),
-		VersioningArchive: d.Versioning.Archive,
-		QuotaBytes:        d.QuotaBytes,
-		QuotaCount:        d.QuotaCount,
-		CORS:              d.CORS,
-		StaticWeb:         d.StaticWeb,
-		TempURLKeySlots:   d.TempURLKeySlots,
-		Meta:              d.Meta,
-		RawHeaders:        d.RawHeaders,
-		TransID:           d.TransID,
-		Class:             string(classes[name]),
-	}, nil
+	return containerDetailDTO(d, string(classes[name])), nil
 }
 
 // SLOManifest fetches the exact manifest for the inspector's segment
@@ -149,6 +126,37 @@ func (s *InspectorService) record(ctx context.Context, observations []evidence.O
 			log.Printf("evidence record failed: %v", err)
 			return
 		}
+	}
+}
+
+func toPrefixDetailDTO(d *swiftcontrol.PrefixDetail) PrefixDetailDTO {
+	dto := PrefixDetailDTO{Prefix: d.Prefix, MarkerBacked: d.MarkerBacked}
+	if d.SelfObject != nil {
+		self := toObjectDetailDTO(d.SelfObject)
+		dto.SelfObject = &self
+	}
+	return dto
+}
+
+func containerDetailDTO(d *swiftcontrol.ContainerDetail, class string) ContainerDetailDTO {
+	return ContainerDetailDTO{
+		Name:              d.Name,
+		ObjectCount:       d.ObjectCount,
+		BytesUsed:         d.BytesUsed,
+		StoragePolicy:     d.StoragePolicy,
+		ReadACL:           d.ReadACL,
+		WriteACL:          d.WriteACL,
+		VersioningMode:    string(d.Versioning.Mode),
+		VersioningArchive: d.Versioning.Archive,
+		QuotaBytes:        d.QuotaBytes,
+		QuotaCount:        d.QuotaCount,
+		CORS:              d.CORS,
+		StaticWeb:         d.StaticWeb,
+		TempURLKeySlots:   d.TempURLKeySlots,
+		Meta:              d.Meta,
+		RawHeaders:        d.RawHeaders,
+		TransID:           d.TransID,
+		Class:             class,
 	}
 }
 

@@ -112,6 +112,78 @@ type ObjectPageDTO struct {
 	NextMarker string          `json:"nextMarker"`
 }
 
+// StoragePolicyDTO is one advertised storage policy (§20).
+type StoragePolicyDTO struct {
+	Name    string `json:"name"`
+	Default bool   `json:"default"`
+}
+
+// CapabilitiesDTO is the connect-time capability snapshot (§10) the UI
+// gates on. Source "advertised" means /info answered; "unknown" means it
+// could not be read — and Unknown is never treated as Unsupported.
+type CapabilitiesDTO struct {
+	Source          string             `json:"source"`
+	MaxFileSize     int64              `json:"maxFileSize"`
+	StoragePolicies []StoragePolicyDTO `json:"storagePolicies"`
+	// VersioningFlags is versioned_writes.allowed_flags (§21).
+	VersioningFlags []string `json:"versioningFlags"`
+	SLOSupported    bool     `json:"sloSupported"`
+}
+
+// ObjectMetadataEditDTO states the COMPLETE intended editable outcome
+// for an object (§17: replace-all semantics — a working copy, never a
+// delta).
+type ObjectMetadataEditDTO struct {
+	Meta        map[string]string `json:"meta"`
+	ContentType string            `json:"contentType"`
+	// DeleteAt RFC3339, "" for no scheduled expiry.
+	DeleteAt string `json:"deleteAt"`
+}
+
+// ContainerEditDTO states the complete intended editable surface of a
+// container (§18, §19, §21).
+type ContainerEditDTO struct {
+	Meta              map[string]string `json:"meta"`
+	ReadACL           string            `json:"readAcl"`
+	WriteACL          string            `json:"writeAcl"`
+	VersioningMode    string            `json:"versioningMode"` // off | versions_location | history_location
+	VersioningArchive string            `json:"versioningArchive"`
+	QuotaBytes        int64             `json:"quotaBytes"`
+	QuotaCount        int64             `json:"quotaCount"`
+}
+
+// ContainerCreateDTO describes a new container (§20).
+type ContainerCreateDTO struct {
+	Name   string            `json:"name"`
+	Policy string            `json:"policy"`
+	Meta   map[string]string `json:"meta"`
+}
+
+// MutationResultDTO reports one mutation: outcome applied | conflict |
+// verify_mismatch, the mismatch description when relevant, the refreshed
+// detail, and the transaction ids for the audit trail.
+type MutationResultDTO struct {
+	Outcome  string   `json:"outcome"`
+	Mismatch string   `json:"mismatch"`
+	TransIDs []string `json:"transIds"`
+	// ObjectAfter / ContainerAfter carry the verified post-write state
+	// for whichever resource was edited (nil otherwise, and nil on
+	// conflict).
+	ObjectAfter    *ObjectDetailDTO    `json:"objectAfter"`
+	ContainerAfter *ContainerDetailDTO `json:"containerAfter"`
+}
+
+// AuditEventDTO is one §50 audit-trail row.
+type AuditEventDTO struct {
+	ID        int64    `json:"id"`
+	At        string   `json:"at"`
+	Operation string   `json:"operation"`
+	Resource  string   `json:"resource"`
+	Summary   string   `json:"summary"`
+	Result    string   `json:"result"`
+	TransIDs  []string `json:"transIds"`
+}
+
 // PrefixDetailDTO is the selection-triggered prefix classification
 // (§14.1): marker-backed vs implied, and any real object sitting at the
 // prefix name that the delimiter view folded away.

@@ -18,6 +18,19 @@ export interface AccountDTO {
 }
 
 /**
+ * AuditEventDTO is one §50 audit-trail row.
+ */
+export interface AuditEventDTO {
+    "id": number;
+    "at": string;
+    "operation": string;
+    "resource": string;
+    "summary": string;
+    "result": string;
+    "transIds": string[] | null;
+}
+
+/**
  * BookmarkDTO is the frontend's view of a saved endpoint.
  */
 export interface BookmarkDTO {
@@ -32,6 +45,32 @@ export interface BookmarkDTO {
      */
     "tlsMode": string;
     "hasCredential": boolean;
+}
+
+/**
+ * CapabilitiesDTO is the connect-time capability snapshot (§10) the UI
+ * gates on. Source "advertised" means /info answered; "unknown" means it
+ * could not be read — and Unknown is never treated as Unsupported.
+ */
+export interface CapabilitiesDTO {
+    "source": string;
+    "maxFileSize": number;
+    "storagePolicies": StoragePolicyDTO[] | null;
+
+    /**
+     * VersioningFlags is versioned_writes.allowed_flags (§21).
+     */
+    "versioningFlags": string[] | null;
+    "sloSupported": boolean;
+}
+
+/**
+ * ContainerCreateDTO describes a new container (§20).
+ */
+export interface ContainerCreateDTO {
+    "name": string;
+    "policy": string;
+    "meta": { [_ in string]?: string } | null;
 }
 
 /**
@@ -64,6 +103,24 @@ export interface ContainerDetailDTO {
      * Class is the §24 classification (with this HEAD folded in).
      */
     "class": string;
+}
+
+/**
+ * ContainerEditDTO states the complete intended editable surface of a
+ * container (§18, §19, §21).
+ */
+export interface ContainerEditDTO {
+    "meta": { [_ in string]?: string } | null;
+    "readAcl": string;
+    "writeAcl": string;
+
+    /**
+     * off | versions_location | history_location
+     */
+    "versioningMode": string;
+    "versioningArchive": string;
+    "quotaBytes": number;
+    "quotaCount": number;
 }
 
 /**
@@ -121,6 +178,25 @@ export interface ListingRowDTO {
 }
 
 /**
+ * MutationResultDTO reports one mutation: outcome applied | conflict |
+ * verify_mismatch, the mismatch description when relevant, the refreshed
+ * detail, and the transaction ids for the audit trail.
+ */
+export interface MutationResultDTO {
+    "outcome": string;
+    "mismatch": string;
+    "transIds": string[] | null;
+
+    /**
+     * ObjectAfter / ContainerAfter carry the verified post-write state
+     * for whichever resource was edited (nil otherwise, and nil on
+     * conflict).
+     */
+    "objectAfter": ObjectDetailDTO | null;
+    "containerAfter": ContainerDetailDTO | null;
+}
+
+/**
  * ObjectDetailDTO is the authoritative HEAD detail (§53).
  */
 export interface ObjectDetailDTO {
@@ -139,6 +215,21 @@ export interface ObjectDetailDTO {
     "meta": { [_ in string]?: string } | null;
     "rawHeaders": { [_ in string]?: string } | null;
     "transId": string;
+}
+
+/**
+ * ObjectMetadataEditDTO states the COMPLETE intended editable outcome
+ * for an object (§17: replace-all semantics — a working copy, never a
+ * delta).
+ */
+export interface ObjectMetadataEditDTO {
+    "meta": { [_ in string]?: string } | null;
+    "contentType": string;
+
+    /**
+     * DeleteAt RFC3339, "" for no scheduled expiry.
+     */
+    "deleteAt": string;
 }
 
 /**
@@ -193,4 +284,12 @@ export interface SLOSegmentDTO {
      * DataSize is the decoded inline-data length for kind "data".
      */
     "dataSize": number;
+}
+
+/**
+ * StoragePolicyDTO is one advertised storage policy (§20).
+ */
+export interface StoragePolicyDTO {
+    "name": string;
+    "default": boolean;
 }

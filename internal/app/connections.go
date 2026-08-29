@@ -20,9 +20,10 @@ var ErrNotConnected = errors.New("not connected — choose a bookmark first")
 type Connections struct {
 	store *bookmarks.Store
 
-	mu       sync.Mutex
-	active   *swiftcontrol.Session
-	activeID string
+	mu           sync.Mutex
+	active       *swiftcontrol.Session
+	activeID     string
+	capabilities *swiftcontrol.Capabilities
 }
 
 // NewConnections builds the registry over the bookmark store.
@@ -53,12 +54,28 @@ func (c *Connections) Connect(ctx context.Context, bookmarkID string) error {
 	if err := session.Authenticate(ctx); err != nil {
 		return err
 	}
+	// Capability discovery at connect (§10): what this cluster supports
+	// gates what the UI offers. An unreadable /info yields the Unknown
+	// mode, never an error — Unknown is not Unsupported.
+	capabilities, err := session.FetchCapabilities(ctx)
+	if err != nil {
+		return err
+	}
 
 	c.mu.Lock()
 	c.active = session
 	c.activeID = bookmarkID
+	c.capabilities = capabilities
 	c.mu.Unlock()
 	return nil
+}
+
+// Capabilities returns the active connection's capability snapshot, nil
+// when not connected.
+func (c *Connections) Capabilities() *swiftcontrol.Capabilities {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.capabilities
 }
 
 // Session returns the active session.

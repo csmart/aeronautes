@@ -56,11 +56,28 @@ type Container struct {
 	objects          map[string]Object
 }
 
+// defaultInfoJSON mirrors upstream master's shape: policies for the §20
+// picker, versioned_writes flags per the §21 pin, slo/tempurl/bulk_delete.
+const defaultInfoJSON = `{
+	"swift": {"max_file_size": 5368709122, "version": "2.36.0",
+		"policies": [{"name": "standard", "default": true, "aliases": "standard"},
+			{"name": "gold", "aliases": "gold, fast"}, {"name": "ec42", "aliases": "ec42"}]},
+	"slo": {"max_manifest_segments": 1000, "min_segment_size": 1},
+	"bulk_delete": {"max_deletes_per_request": 10000},
+	"tempurl": {"methods": ["GET", "HEAD", "PUT"]},
+	"versioned_writes": {"allowed_flags": ["x-versions-location", "x-history-location"]},
+	"object_versioning": {}
+}`
+
 // Server is the mock cluster; it implements http.Handler.
 type Server struct {
 	user  string
 	key   string
 	token string
+
+	// InfoJSON overrides the /info document (set before serving); ""
+	// serves defaultInfoJSON.
+	InfoJSON string
 
 	mu         sync.Mutex
 	containers map[string]*Container
@@ -119,7 +136,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if ep == "/info" {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"swift":{"max_file_size":5368709122,"version":"2.36.0"},"slo":{"max_manifest_segments":1000},"bulk_delete":{"max_deletes_per_request":10000},"tempurl":{"methods":["GET","HEAD","PUT"]}}`))
+		info := s.InfoJSON
+		if info == "" {
+			info = defaultInfoJSON
+		}
+		_, _ = w.Write([]byte(info))
 		return
 	}
 	if r.Header.Get("X-Auth-Token") != s.token {
