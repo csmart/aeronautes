@@ -552,3 +552,63 @@ func TestDLOSegmentPreviewRealSwift(t *testing.T) {
 		t.Errorf("bounded = %d, hasMore=%v", len(bounded.Segments), bounded.HasMore)
 	}
 }
+
+// TestManifestOnlyDeleteRealSwift proves the §60 low-risk property on
+// real Swift: deleting a DLO or SLO manifest with a plain DELETE leaves
+// every segment in place.
+func TestManifestOnlyDeleteRealSwift(t *testing.T) {
+	h := harness(t)
+	ctx := context.Background()
+	fixtures := h.Container("fixtures")
+	segStore := h.Container("external-dlo-segments")
+
+	countSegments := func(container string) int {
+		t.Helper()
+		n := 0
+		for e, err := range h.Session.Objects(ctx, container, swiftcontrol.ObjectListOptions{Deep: true}) {
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, ok := e.(swiftcontrol.ObjectEntry); ok {
+				n++
+			}
+		}
+		return n
+	}
+
+	// Disposable DLO manifest over the existing segments.
+	if err := h.put(ctx, fixtures, "del-dlo", nil, "video/mp4", swift.Headers{
+		"X-Object-Manifest": segStore + "/wedding-video/",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	dloSegments := countSegments(segStore)
+	if _, err := h.Session.DeleteManifestObject(ctx, fixtures, "del-dlo"); err != nil {
+		t.Fatal(err)
+	}
+	if got := countSegments(segStore); got != dloSegments {
+		t.Fatalf("DLO segments = %d after manifest delete, want %d", got, dloSegments)
+	}
+
+	// Disposable SLO manifest over the existing parts.
+	sloParts := h.Container("slo-parts")
+	manifest := `[{"path": "/` + sloParts + `/backup/part-000001"}]`
+	if err := h.rawPut(ctx, fixtures+"/del-slo?multipart-manifest=put", []byte(manifest), "application/x-tar"); err != nil {
+		t.Fatal(err)
+	}
+	sloSegments := countSegments(sloParts)
+	if _, err := h.Session.DeleteManifestObject(ctx, fixtures, "del-slo"); err != nil {
+		t.Fatal(err)
+	}
+	if got := countSegments(sloParts); got != sloSegments {
+		t.Fatalf("SLO segments = %d after manifest delete, want %d", got, sloSegments)
+	}
+
+	// A plain object refuses and survives.
+	if _, err := h.Session.DeleteManifestObject(ctx, fixtures, "tagged.txt"); err == nil {
+		t.Fatal("plain object accepted by manifest-only delete")
+	}
+	if _, err := h.Session.ObjectDetail(ctx, fixtures, "tagged.txt"); err != nil {
+		t.Errorf("refused object was deleted: %v", err)
+	}
+}
