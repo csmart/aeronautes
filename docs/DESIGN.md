@@ -3215,6 +3215,38 @@ The first real vertical proof is:
 
 Once that is stable, proceed phase-by-phase.
 
+### 65.1 Second milestone — Phase 1 gate + Phase 2 (read-only inspector)
+
+Same rules: one component per commit, each with its tests named, deviating only where a real
+dependency forces it.
+
+1. **SAIO integration suite + CI job** — env-gated integration tests
+   (`AERONAUTES_SAIO_AUTH_URL`) that load the §58 canonical fixtures into a real containerized
+   Swift and drive the adapter end to end: auth + 401 replay, account portrait, both listing
+   levels with pagination, the §14.3 encoding suite against real Swift, object HEAD, DLO logical
+   size, marker-at-subdir paging. `ci.yml` gains the containerized-Swift job (§57.3). This is the
+   Phase 1 gate artifact ("real cluster browsed without rclone"); §57.4 still applies to the real
+   SwiftStack target.
+2. **Container HEAD detail** — adapter: storage policy, read/write ACLs, container-versioning
+   headers surfaced as a typed *display* profile (Off / Versions-Location / History-Location —
+   the §21 behavioural pin remains an owner decision and is not built here), quota, CORS and
+   staticweb presence, TempURL key slots, categorised metadata, redacted raw view, editable
+   fingerprint (§13.1). Tests include case-insensitive categorisation and TempURL redaction.
+3. **OS Secret Service backend** — the §12.1 keychain-primary SecretStore on Linux (DBus Secret
+   Service), with explicit fallback to the session store when no keychain is reachable. Tests run
+   against a private bus + keyring daemon where available and are skipped, not faked, elsewhere.
+4. **SLO manifest fetch** — `?multipart-manifest=get` parsed into the §23 exact model: one
+   ordered entry list; ranged, inline-data, and unknown entries preserved verbatim. Tests pin
+   round-trip fidelity and ordering.
+5. **Segment evidence engine** — §24: inspection-observed DLO/SLO references recorded as
+   Confirmed evidence in `segment_evidence`; naming heuristics as Suspected; operator pins as
+   Declared (UI later). Classification queries feed the container modes. Tests include the
+   `photos_segments` trap: never hidden, never destructively classified from name alone.
+6. **Live inspector + container modes over evidence** — services and UI: §53 container section
+   (policy, ACLs, versioning display, quota, classification), the §13.1 four header views in the
+   inspector, SLO segment table, and Logical/All/Backstage driven by the evidence engine instead
+   of the name heuristic. Gate: the §58 fixture namespace classifies correctly end to end.
+
 ---
 
 ## 66. Final project statement
