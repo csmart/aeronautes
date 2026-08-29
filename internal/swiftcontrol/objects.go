@@ -24,6 +24,11 @@ type ObjectEntry struct {
 	// SLOListed is set when the listing itself carried an slo_etag for
 	// this row — a cheap hint, not authoritative classification.
 	SLOListed bool
+	// SLOETag is that slo_etag value: the MD5 of the concatenated
+	// segment ETags. Matching values (with matching logical Bytes) prove
+	// identical segmentation — the listing-grade §28.4
+	// IdenticalSLOManifest evidence.
+	SLOETag string
 }
 
 func (ObjectEntry) isListingEntry() {}
@@ -120,5 +125,6 @@ func objectEntry(o swift.Object) ObjectEntry {
 		LastModified: o.LastModified,
 		ContentType:  o.ContentType,
 		SLOListed:    o.SLOHash != "",
+		SLOETag:      o.SLOHash,
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
+	"github.com/csmart/aeronautes/internal/transfer/plan"
 	"github.com/csmart/aeronautes/internal/transfer/rclone"
 	"github.com/ncw/swift/v2"
 )
@@ -686,5 +687,103 @@ func TestRcloneRunnerRealSwift(t *testing.T) {
 	}
 	if _, _, err := h.Conn2().Object(ctx, dstName, "runner/small.txt"); err != nil {
 		t.Errorf("small.txt at dest: %v", err)
+	}
+}
+
+// TestCopyPlannerRealSwift merge-joins real deep listings across the two
+// SAIO accounts: the full fixtures namespace (hostile names, DLO, SLO)
+// against an empty destination, then a seeded pair for each verdict.
+func TestCopyPlannerRealSwift(t *testing.T) {
+	h := harness(t)
+	if h.Session2() == nil {
+		t.Skip("no second account on this cluster")
+	}
+	ctx := context.Background()
+
+	emptyDst := h.Prefix + "plan-empty"
+	if err := h.rawPut2(ctx, emptyDst, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	items := map[string]plan.Item{}
+	summary, err := plan.Copy(ctx,
+		h.Session.Objects(ctx, h.Container("fixtures"), swiftcontrol.ObjectListOptions{Deep: true}),
+		h.Session2().Objects(ctx, emptyDst, swiftcontrol.ObjectListOptions{Deep: true}),
+		"", "", func(i plan.Item) error { items[i.Name] = i; return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.New != int64(len(items)) || summary.New == 0 || summary.Same+summary.Changed+summary.Unknown+summary.DestOnly != 0 {
+		t.Fatalf("fixtures vs empty: %+v", summary)
+	}
+	// The real SLO listing must carry slo_etag → conservative flag.
+	if item := items["external-slo"]; item.Reason != plan.ReasonLargeObject {
+		t.Errorf("external-slo = %+v, want large_object", item)
+	}
+	// Zero-byte rows (the DLO manifest among them) flag for HEAD resolution.
+	for _, name := range []string{"external-dlo", "empty-object", "folder-marker/"} {
+		if item := items[name]; item.Reason != plan.ReasonPossibleManifest {
+			t.Errorf("%s = %+v, want possible_manifest", name, item)
+		}
+	}
+	// §14.3 unsafe identities route native; safe hostile names ride rclone.
+	for name, want := range map[string]plan.Route{
+		"weird/repeated//slash": plan.RouteNative,
+		"fake/":                 plan.RouteNative,
+		"weird/percent%name":    plan.RouteRclone,
+		"unicode/日本語.txt":       plan.RouteRclone,
+	} {
+		if item := items[name]; item.Route != want {
+			t.Errorf("%s routed %s, want %s", name, item.Route, want)
+		}
+	}
+
+	// Pair verdicts against a seeded destination.
+	srcName, dstName := h.Container("plan-src"), h.Prefix+"plan-dst"
+	if err := h.conn.ContainerCreate(ctx, srcName, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.rawPut2(ctx, dstName, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string][]byte{
+		"deep/changed.txt": []byte("source-version"),
+		"deep/same.txt":    []byte("identical bytes"),
+		"deep/newone.txt":  []byte("fresh"),
+	} {
+		if err := h.put(ctx, srcName, name, data, "text/plain", nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, data := range map[string][]byte{
+		"mirror/changed.txt":  []byte("older-version!"), // same length, different bytes
+		"mirror/same.txt":     []byte("identical bytes"),
+		"mirror/obsolete.txt": []byte("dest only"),
+	} {
+		if err := h.rawPut2(ctx, dstName+"/"+name, data, "text/plain"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	verdicts := map[string]plan.Verdict{}
+	summary, err = plan.Copy(ctx,
+		h.Session.Objects(ctx, srcName, swiftcontrol.ObjectListOptions{Deep: true, Prefix: "deep/"}),
+		h.Session2().Objects(ctx, dstName, swiftcontrol.ObjectListOptions{Deep: true, Prefix: "mirror/"}),
+		"deep/", "mirror/", func(i plan.Item) error { verdicts[i.Name] = i.Verdict; return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]plan.Verdict{
+		"changed.txt":  plan.VerdictChanged,
+		"same.txt":     plan.VerdictSame,
+		"newone.txt":   plan.VerdictNew,
+		"obsolete.txt": plan.VerdictDestOnly,
+	}
+	for name, v := range want {
+		if verdicts[name] != v {
+			t.Errorf("%s = %s, want %s", name, verdicts[name], v)
+		}
+	}
+	if summary.Overwrites != 1 || summary.TransferObjects != 2 {
+		t.Errorf("summary = %+v", summary)
 	}
 }

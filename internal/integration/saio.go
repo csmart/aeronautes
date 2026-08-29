@@ -29,12 +29,17 @@ type Harness struct {
 	conn *swift.Connection
 	// conn2 is the SECOND account (SAIO's test2), for cross-account
 	// transfer tests; nil when its default credentials do not work.
-	conn2 *swift.Connection
+	conn2    *swift.Connection
+	session2 *swiftcontrol.Session
 }
 
 // Conn2 returns the second account's raw connection, or skips the
 // calling test when the environment has no second account.
 func (h *Harness) Conn2() *swift.Connection { return h.conn2 }
+
+// Session2 returns an adapter session on the second account, or nil
+// without one.
+func (h *Harness) Session2() *swiftcontrol.Session { return h.session2 }
 
 // Container maps a canonical fixture container name into this run.
 func (h *Harness) Container(base string) string {
@@ -84,6 +89,12 @@ func newHarness(ctx context.Context) (*Harness, string, error) {
 	}
 	if err := conn2.Authenticate(ctx); err == nil {
 		h.conn2 = conn2
+		session2, err := swiftcontrol.New(swiftcontrol.Config{
+			AuthURL: authURL, Username: conn2.UserName, APIKey: conn2.ApiKey,
+		})
+		if err == nil && session2.Authenticate(ctx) == nil {
+			h.session2 = session2
+		}
 	}
 
 	session, err := swiftcontrol.New(swiftcontrol.Config{
