@@ -124,7 +124,10 @@
           role="tab"
           class:active={tab === "changes"}
           aria-selected={tab === "changes"}
-          onclick={() => (tab = "changes")}>Recent changes</button
+          onclick={() => {
+            tab = "changes";
+            void browser.searchAudit();
+          }}>Recent changes</button
         >
         {#if tab === "jobs"}
           {#if browser.appSettings}
@@ -265,9 +268,33 @@
           </div>
         {/if}
       {:else}
+        <div class="audit-filters num">
+          <input
+            class="type-mono"
+            placeholder="operation prefix (transfer., delete.…)"
+            value={browser.auditFilterOp}
+            onchange={(e) => {
+              browser.auditFilterOp = e.currentTarget.value;
+              void browser.searchAudit();
+            }}
+          />
+          <select
+            value={browser.auditFilterResult}
+            onchange={(e) => {
+              browser.auditFilterResult = e.currentTarget.value;
+              void browser.searchAudit();
+            }}
+          >
+            <option value="">any result</option>
+            <option value="applied">applied</option>
+            <option value="conflict">conflict</option>
+            <option value="verify_mismatch">verify_mismatch</option>
+            <option value="failed">failed</option>
+          </select>
+        </div>
         <div class="rows">
           {#if browser.auditEvents.length === 0}
-            <p class="empty">No mutations recorded yet.</p>
+            <p class="empty">No matching audit events.</p>
           {:else}
             {#each browser.auditEvents as event (event.id)}
               <div class="event">
@@ -278,6 +305,9 @@
                 <span class="when">{timeOf(event.at)}</span>
               </div>
             {/each}
+            {#if !browser.auditExhausted}
+              <button class="more" onclick={() => browser.searchAudit(true)}>Load more…</button>
+            {/if}
           {/if}
         </div>
       {/if}
@@ -431,6 +461,43 @@
 
   .config-row .k {
     color: var(--color-text-faint);
+  }
+
+  .audit-filters {
+    display: flex;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+  }
+
+  .audit-filters input {
+    flex: 1;
+    font: inherit;
+    font-size: var(--text-xs);
+    background: var(--color-bg-card);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+    padding: 1px var(--space-2);
+  }
+
+  .audit-filters select {
+    font: inherit;
+    font-size: var(--text-xs);
+    background: var(--color-bg-card);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+  }
+
+  .more {
+    font: inherit;
+    font-size: var(--text-xs);
+    padding: 2px;
+    border: none;
+    background: none;
+    color: var(--color-accent);
+    cursor: pointer;
+    text-align: left;
   }
 
   .bench {

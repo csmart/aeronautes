@@ -351,3 +351,51 @@ func TestCopyJobOwnershipRoundTrip(t *testing.T) {
 		t.Fatalf("cleanup = %+v", result)
 	}
 }
+
+func TestAuditSearch(t *testing.T) {
+	h, service, bookmark := deleteHarness(t)
+	ctx := context.Background()
+	h.mock.AddContainer("media", "standard")
+	seedObject(h.mock, "media", "scope/x.txt", "x", nil)
+
+	// Generate a mixed trail: a delete job plus a refused segments call.
+	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{
+		BookmarkID: bookmark, Container: "media", Prefix: "scope/", Mode: ModePrefix, Confirm: "media",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	awaitTerminal(t, h, jobID)
+	h.mock.PutObject("media", "ext.bin", swifttest.Object{Manifest: "media_segments/x/"})
+	_, _ = service.DeleteManifestWithSegments(ctx, SegmentsDeleteRequestDTO{
+		BookmarkID: bookmark, Container: "media", Name: "ext.bin", Confirm: "ext.bin",
+	})
+
+	all, err := h.auditSvc.Search(ctx, AuditQueryDTO{})
+	if err != nil || len(all) < 3 {
+		t.Fatalf("all = %d %v", len(all), err)
+	}
+	// Operation-prefix filter.
+	deletes, err := h.auditSvc.Search(ctx, AuditQueryDTO{OperationPrefix: "delete.prefix"})
+	if err != nil || len(deletes) != 2 { // start + terminal
+		t.Fatalf("delete.prefix = %d %v", len(deletes), err)
+	}
+	// Result filter catches the refusal.
+	failed, err := h.auditSvc.Search(ctx, AuditQueryDTO{Result: "failed"})
+	if err != nil || len(failed) != 1 || !strings.Contains(failed[0].Summary, "no exclusive-ownership") {
+		t.Fatalf("failed = %+v %v", failed, err)
+	}
+	// A LIKE metacharacter is literal, never a wildcard.
+	if rows, _ := h.auditSvc.Search(ctx, AuditQueryDTO{OperationPrefix: "%"}); len(rows) != 0 {
+		t.Fatalf("wildcard prefix matched %d rows", len(rows))
+	}
+	// Paging backwards.
+	page1, err := h.auditSvc.Search(ctx, AuditQueryDTO{Limit: 2})
+	if err != nil || len(page1) != 2 {
+		t.Fatal(err)
+	}
+	page2, err := h.auditSvc.Search(ctx, AuditQueryDTO{Limit: 2, BeforeID: page1[1].ID})
+	if err != nil || len(page2) == 0 || page2[0].ID >= page1[1].ID {
+		t.Fatalf("page2 = %+v %v", page2, err)
+	}
+}

@@ -159,6 +159,50 @@ export class AuditEventDTO {
 }
 
 /**
+ * AuditQueryDTO narrows a §50 viewer read; zero values mean "any".
+ */
+export class AuditQueryDTO {
+    "operationPrefix": string;
+    "result": string;
+    "bookmarkId": string;
+
+    /**
+     * BeforeID pages backwards from a previous page's last id.
+     */
+    "beforeId": number;
+    "limit": number;
+
+    /** Creates a new AuditQueryDTO instance. */
+    constructor($$source: Partial<AuditQueryDTO> = {}) {
+        if (!("operationPrefix" in $$source)) {
+            this["operationPrefix"] = "";
+        }
+        if (!("result" in $$source)) {
+            this["result"] = "";
+        }
+        if (!("bookmarkId" in $$source)) {
+            this["bookmarkId"] = "";
+        }
+        if (!("beforeId" in $$source)) {
+            this["beforeId"] = 0;
+        }
+        if (!("limit" in $$source)) {
+            this["limit"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new AuditQueryDTO instance from a string or object.
+     */
+    static createFrom($$source: any = {}): AuditQueryDTO {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new AuditQueryDTO($$parsedSource as Partial<AuditQueryDTO>);
+    }
+}
+
+/**
  * BenchmarkPhaseDTO is one measured phase.
  */
 export class BenchmarkPhaseDTO {

@@ -532,6 +532,26 @@ export class BrowserState {
     return result;
   }
 
+  // §50 viewer filters + paging over the drawer's Changes tab.
+  auditFilterOp = $state("");
+  auditFilterResult = $state("");
+  auditExhausted = $state(false);
+
+  async searchAudit(more = false) {
+    const beforeId = more && this.auditEvents.length > 0
+      ? this.auditEvents[this.auditEvents.length - 1].id
+      : 0;
+    const page = await this.#api.auditSearch({
+      operationPrefix: this.auditFilterOp,
+      result: this.auditFilterResult,
+      bookmarkId: "",
+      beforeId,
+      limit: 50,
+    });
+    this.auditExhausted = page.length < 50;
+    this.auditEvents = more ? [...this.auditEvents, ...page] : page;
+  }
+
   async loadAudit() {
     this.auditEvents = await this.#api.auditRecent(50).catch(() => this.auditEvents);
   }

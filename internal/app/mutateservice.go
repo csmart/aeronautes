@@ -222,6 +222,35 @@ func NewAuditService(auditStore *audit.Store) *AuditService {
 	return &AuditService{audit: auditStore}
 }
 
+// AuditQueryDTO narrows a §50 viewer read; zero values mean "any".
+type AuditQueryDTO struct {
+	OperationPrefix string `json:"operationPrefix"`
+	Result          string `json:"result"`
+	BookmarkID      string `json:"bookmarkId"`
+	// BeforeID pages backwards from a previous page's last id.
+	BeforeID int64 `json:"beforeId"`
+	Limit    int64 `json:"limit"`
+}
+
+// Search reads the trail under filters, newest first.
+func (s *AuditService) Search(ctx context.Context, q AuditQueryDTO) ([]AuditEventDTO, error) {
+	events, err := s.audit.List(ctx, audit.Query{
+		OperationPrefix: q.OperationPrefix,
+		Result:          q.Result,
+		BookmarkID:      q.BookmarkID,
+		BeforeID:        q.BeforeID,
+		Limit:           q.Limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]AuditEventDTO, 0, len(events))
+	for _, e := range events {
+		out = append(out, auditEventDTO(e))
+	}
+	return out, nil
+}
+
 // Recent returns the newest audit events, newest first.
 func (s *AuditService) Recent(ctx context.Context, limit int) ([]AuditEventDTO, error) {
 	events, err := s.audit.Recent(ctx, limit)
@@ -230,17 +259,21 @@ func (s *AuditService) Recent(ctx context.Context, limit int) ([]AuditEventDTO, 
 	}
 	out := make([]AuditEventDTO, 0, len(events))
 	for _, e := range events {
-		out = append(out, AuditEventDTO{
-			ID:        e.ID,
-			At:        e.At.UTC().Format(time.RFC3339),
-			Operation: e.Operation,
-			Resource:  e.Resource,
-			Summary:   e.Summary,
-			Result:    string(e.Result),
-			TransIDs:  e.TransIDs,
-		})
+		out = append(out, auditEventDTO(e))
 	}
 	return out, nil
+}
+
+func auditEventDTO(e audit.Event) AuditEventDTO {
+	return AuditEventDTO{
+		ID:        e.ID,
+		At:        e.At.UTC().Format(time.RFC3339),
+		Operation: e.Operation,
+		Resource:  e.Resource,
+		Summary:   e.Summary,
+		Result:    string(e.Result),
+		TransIDs:  e.TransIDs,
+	}
 }
 
 // DeleteManifest removes ONLY a DLO/SLO manifest object (§60 Phase 4's

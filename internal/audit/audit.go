@@ -162,3 +162,80 @@ func (s *Store) Recent(ctx context.Context, limit int) ([]Event, error) {
 	}
 	return out, rows.Err()
 }
+
+// Query narrows a trail read (§50 viewer): all filters AND together.
+type Query struct {
+	// OperationPrefix matches operations beginning with it ("transfer.",
+	// "delete.empty", …).
+	OperationPrefix string
+	// Result filters by exact result ("applied", "failed", …).
+	Result string
+	// BookmarkID filters by endpoint.
+	BookmarkID string
+	// BeforeID pages backwards: only events with id < BeforeID (0 = from
+	// the newest).
+	BeforeID int64
+	Limit    int64
+}
+
+// List reads the trail newest-first under the query.
+func (s *Store) List(ctx context.Context, q Query) ([]Event, error) {
+	limit := q.Limit
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	query := `
+		SELECT id, at, COALESCE(bookmark_id,''), operation, resource, summary, result, COALESCE(transaction_ids_json,'')
+		FROM audit_events WHERE 1=1`
+	var args []any
+	if q.OperationPrefix != "" {
+		query += ` AND operation LIKE ? ESCAPE '\'`
+		args = append(args, likePrefix(q.OperationPrefix))
+	}
+	if q.Result != "" {
+		query += ` AND result = ?`
+		args = append(args, q.Result)
+	}
+	if q.BookmarkID != "" {
+		query += ` AND bookmark_id = ?`
+		args = append(args, q.BookmarkID)
+	}
+	if q.BeforeID > 0 {
+		query += ` AND id < ?`
+		args = append(args, q.BeforeID)
+	}
+	query += ` ORDER BY id DESC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := s.db.Reader().QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Event
+	for rows.Next() {
+		var e Event
+		var at, result, transIDs string
+		if err := rows.Scan(&e.ID, &at, &e.BookmarkID, &e.Operation, &e.Resource, &e.Summary, &result, &transIDs); err != nil {
+			return nil, err
+		}
+		if e.At, err = time.Parse(time.RFC3339, at); err != nil {
+			return nil, fmt.Errorf("audit event %d: bad timestamp: %w", e.ID, err)
+		}
+		e.Result = Result(result)
+		if transIDs != "" {
+			if err := json.Unmarshal([]byte(transIDs), &e.TransIDs); err != nil {
+				return nil, fmt.Errorf("audit event %d: bad transaction ids: %w", e.ID, err)
+			}
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// likePrefix escapes LIKE metacharacters so a prefix filter is a
+// prefix filter, never a pattern (hostile input, ADR 0011).
+func likePrefix(prefix string) string {
+	escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(prefix)
+	return escaped + "%"
+}

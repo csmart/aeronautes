@@ -32,6 +32,7 @@ export {
     AccountDTO,
     AppSettingsDTO,
     AuditEventDTO,
+    AuditQueryDTO,
     BenchmarkPhaseDTO,
     BenchmarkRequestDTO,
     BenchmarkResultDTO,

@@ -23,6 +23,15 @@ export function Recent(limit: number): $CancellablePromise<$models.AuditEventDTO
     });
 }
 
+/**
+ * Search reads the trail under filters, newest first.
+ */
+export function Search(q: $models.AuditQueryDTO): $CancellablePromise<$models.AuditEventDTO[]> {
+    return $Call.ByID(3995158262, q).then(($result: any) => {
+        return $$createType1($result);
+    });
+}
+
 // Private type creation functions
 const $$createType0 = $models.AuditEventDTO.createFrom;
 const $$createType1 = $Create.Array($$createType0);

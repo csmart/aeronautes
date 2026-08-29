@@ -70,6 +70,7 @@ export type {
   DeleteRequestDTO,
   DownloadRequestDTO,
   AppSettingsDTO,
+  AuditQueryDTO,
   BenchmarkRequestDTO,
   BenchmarkResultDTO,
   FindStatusDTO,
@@ -81,6 +82,7 @@ export type {
 } from "../../bindings/github.com/csmart/aeronautes/internal/app";
 import type {
   AppSettingsDTO,
+  AuditQueryDTO,
   BenchmarkRequestDTO,
   BenchmarkResultDTO,
   DeletePreviewDTO,
@@ -139,6 +141,7 @@ export interface Api {
   createMarker(container: string, prefix: string): Promise<PrefixDetailDTO>;
   deleteMarker(container: string, prefix: string): Promise<void>;
   auditRecent(limit: number): Promise<AuditEventDTO[]>;
+  auditSearch(q: AuditQueryDTO): Promise<AuditEventDTO[]>;
   planCopy(req: CopyRequestDTO): Promise<CopyPlanDTO>;
   startCopy(req: CopyRequestDTO): Promise<string>;
   startMirror(req: MirrorRequestDTO): Promise<string>;
@@ -193,6 +196,7 @@ export const liveApi: Api = {
   createMarker: (container, prefix) => MutateService.CreateMarker(container, prefix),
   deleteMarker: (container, prefix) => MutateService.DeleteMarker(container, prefix),
   auditRecent: async (limit) => (await AuditService.Recent(limit)) ?? [],
+  auditSearch: async (q) => (await AuditService.Search(q)) ?? [],
   planCopy: async (req) => {
     const dto = await TransferService.PlanCopy(req);
     if (!dto) throw new Error("empty plan");

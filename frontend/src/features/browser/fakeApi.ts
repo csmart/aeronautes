@@ -461,6 +461,13 @@ export function newFakeApi(): Api {
     },
 
     auditRecent: async (limit) => [...audit].reverse().slice(0, limit),
+    auditSearch: async (q) =>
+      [...audit]
+        .reverse()
+        .filter((e) => q.operationPrefix === "" || e.operation.startsWith(q.operationPrefix))
+        .filter((e) => q.result === "" || e.result === q.result)
+        .filter((e) => q.beforeId === 0 || e.id < q.beforeId)
+        .slice(0, q.limit > 0 ? q.limit : 100),
 
     // Transfers: the fake plans a canned preview and runs jobs through a
     // tiny scripted lifecycle so drawer logic is testable.
