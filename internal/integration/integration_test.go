@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
+	"github.com/ncw/swift/v2"
 )
 
 var shared struct {
@@ -335,5 +336,98 @@ func TestObjectHeadRealSwift(t *testing.T) {
 		if o, ok := e.(swiftcontrol.ObjectEntry); ok && o.Name == "external-slo" && !o.SLOListed {
 			t.Error("listing row for external-slo should carry the slo_etag hint")
 		}
+	}
+}
+
+// TestMetadataUpdateGateRealSwift is the Phase 3 gate (§60) against real
+// Swift: editing one metadata key erases nothing else, a DLO stays a
+// DLO — and the underlying trap is demonstrated to be real, so the
+// preservation is provably doing work.
+func TestMetadataUpdateGateRealSwift(t *testing.T) {
+	h := harness(t)
+	ctx := context.Background()
+	fixtures := h.Container("fixtures")
+
+	// A discovered nuance, pinned: real Swift 404s a HEAD of a DLO
+	// manifest whose segment container does not exist — a dangling DLO
+	// looks *absent*, not broken.
+	if err := h.put(ctx, fixtures, "dangling-dlo", nil, "video/mp4", swift.Headers{
+		"X-Object-Manifest": "no-such-container/prefix/",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Session.ObjectDetail(ctx, fixtures, "dangling-dlo"); err == nil {
+		t.Error("expected real Swift to 404 a DLO HEAD with a missing segment container")
+	}
+
+	// First: prove the trap exists on real Swift. A naive POST that only
+	// sends the new key destroys the other keys and the DLO manifest.
+	if err := h.put(ctx, fixtures, "trap-dlo", nil, "video/mp4", trapHeaders(h)); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.conn.ObjectUpdate(ctx, fixtures, "trap-dlo", map[string]string{
+		"X-Object-Meta-Naive": "post",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	trapped, err := h.Session.ObjectDetail(ctx, fixtures, "trap-dlo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trapped.Class == swiftcontrol.ClassDLO {
+		t.Error("expected real Swift to drop the DLO manifest on a naive POST; it did not — mock semantics need revisiting")
+	}
+	if _, kept := trapped.Meta["Shoot"]; kept {
+		t.Error("expected real Swift to drop unsent metadata on POST; it did not")
+	}
+
+	// Now the adapter's update on a fresh DLO: one key added, everything
+	// else intact.
+	if err := h.put(ctx, fixtures, "safe-dlo", nil, "video/mp4", trapHeaders(h)); err != nil {
+		t.Fatal(err)
+	}
+	before, err := h.Session.ObjectDetail(ctx, fixtures, "safe-dlo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	edit := swiftcontrol.ObjectMetadataEdit{Meta: map[string]string{}}
+	for k, v := range before.Meta {
+		edit.Meta[k] = v
+	}
+	edit.Meta["Camera"] = "sony-fx6"
+
+	result, err := h.Session.UpdateObjectMetadata(ctx, fixtures, "safe-dlo", before.EditableFingerprint, edit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != swiftcontrol.UpdateApplied {
+		t.Fatalf("Outcome = %q (%s)", result.Outcome, result.Mismatch)
+	}
+	after := result.After
+	if after.Class != swiftcontrol.ClassDLO {
+		t.Error("GATE: DLO did not remain a DLO after metadata edit")
+	}
+	if after.Meta["Shoot"] != "wedding" || after.Meta["Location"] != "sydney" || after.Meta["Camera"] != "sony-fx6" {
+		t.Errorf("GATE: metadata edit erased keys: %v", after.Meta)
+	}
+	if after.ContentType != "video/mp4" {
+		t.Errorf("content type not preserved: %q", after.ContentType)
+	}
+
+	// Stale-fingerprint write refuses against real Swift too.
+	conflict, err := h.Session.UpdateObjectMetadata(ctx, fixtures, "safe-dlo", before.EditableFingerprint, edit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conflict.Outcome != swiftcontrol.UpdateConflict {
+		t.Errorf("stale write = %q, want conflict", conflict.Outcome)
+	}
+}
+
+func trapHeaders(h *Harness) swift.Headers {
+	return swift.Headers{
+		"X-Object-Meta-Shoot":    "wedding",
+		"X-Object-Meta-Location": "sydney",
+		"X-Object-Manifest":      h.Container("external-dlo-segments") + "/wedding-video/",
 	}
 }
