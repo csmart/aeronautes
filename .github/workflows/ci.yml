@@ -215,13 +215,17 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     needs: [go, frontend, saio]
     runs-on: ubuntu-latest
-    # Badges are cosmetic: if the push is refused (branch protection, a
-    # restricted workflow token), this must never redden the pipeline.
+    # Badges are cosmetic: a refused push must never redden the
+    # pipeline. master only accepts pull requests (ruleset), so this
+    # job pushes over the badge-bot DEPLOY KEY — the ruleset's one
+    # bypass actor.
     continue-on-error: true
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          ssh-key: ${{ secrets.BADGE_DEPLOY_KEY }}
       - uses: actions/download-artifact@v4
         with:
           pattern: badge-*
