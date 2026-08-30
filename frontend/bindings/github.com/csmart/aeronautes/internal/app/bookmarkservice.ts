@@ -17,7 +17,10 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as $models from "./models.js";
 
 /**
- * Delete removes a bookmark and its stored credential.
+ * Delete removes a bookmark. It refuses while any non-terminal job
+ * references the bookmark (a running transfer must not lose its
+ * endpoint identity mid-write), and invalidates any cached session so
+ * a deleted bookmark cannot keep operating (§65.9 item 15).
  */
 export function Delete(id: string): $CancellablePromise<void> {
     return $Call.ByID(92744810, id);

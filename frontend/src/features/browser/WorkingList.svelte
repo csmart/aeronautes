@@ -45,7 +45,7 @@
     {#if browser.backstageFrom}
       <div class="backstage-banner">
         <strong>Backstage:</strong> segments of
-        <span class="type-mono">{browser.backstageFrom}</span> — objects here may be parts of
+        <span class="type-mono">{browser.backstageFrom}</span> — objects here may be segments of
         larger logical objects; classification never authorizes deleting them.
       </div>
     {/if}
@@ -79,7 +79,7 @@
       </label>
       <button
         class="find"
-        title="Search the whole container server-side (§16: explicit cancellable scan)"
+        title="Search the whole container server-side"
         disabled={browser.containerName === null}
         onclick={() => (browser.findOpen = !browser.findOpen)}
       >
@@ -87,7 +87,7 @@
       </button>
       <button
         class="find"
-        title="Copy this container/prefix to another account or container (§27.1)"
+        title="Copy this container/prefix to another account or container"
         disabled={browser.containerName === null || browser.backstageFrom !== null}
         onclick={() => (browser.transferOpen = true)}
       >
@@ -95,7 +95,7 @@
       </button>
       <button
         class="find"
-        title="Upload local files to this prefix (§27.5 collision preflight first)"
+        title="Upload local files to this prefix"
         disabled={browser.containerName === null || browser.backstageFrom !== null}
         onclick={() => (browser.localTransfer = "upload")}
       >
@@ -103,7 +103,7 @@
       </button>
       <button
         class="find"
-        title="Download this prefix to a local directory (§27.5 collision preflight first)"
+        title="Download this prefix to a local directory"
         disabled={browser.containerName === null || browser.backstageFrom !== null}
         onclick={() => (browser.localTransfer = "download")}
       >
@@ -111,11 +111,11 @@
       </button>
       <button
         class="find danger"
-        title="Delete this prefix, empty the container, or delete the container (§31–§33: preview + typed confirmation)"
+        title="Bulk delete: empty this prefix or container, or delete the container — NOT the selected object"
         disabled={browser.containerName === null || browser.backstageFrom !== null}
         onclick={() => (browser.deleteOpen = true)}
       >
-        Delete…
+        Delete scope…
       </button>
     </div>
 
@@ -163,7 +163,7 @@
         {:else if (browser.containerDetail?.class ?? browser.container?.class) !== "normal"}
           <p class="empty-title">Empty segment store</p>
           <p class="empty-teach">
-            You are backstage. Objects here may be parts of larger logical objects.
+            You are backstage. Objects here may be segments of larger logical objects.
           </p>
         {:else}
           <p class="empty-title">Empty container</p>

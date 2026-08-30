@@ -1,10 +1,10 @@
 <!-- Copy / Mirror dialog (§27.1, §27.2). Both modes share the
-  §15.2/§28.4 preview with its honest conservative counts and
+  /preview with its honest conservative counts and
   disclosures. Copy starts from a preview; Mirror (destructive) shows
   the full plan — copy set AND would-delete set — and arms only when
-  the destination container name is typed back (§28.2). The delete
+  the destination container name is typed back. The delete
   half is native, manifest-only, and only runs after the copy half
-  verifies (§65.5 item 4). -->
+  verifies. -->
 <script lang="ts">
   import { trapFocus } from "../../lib/trapFocus";
   import type { BrowserState } from "../browser/browserState.svelte";
@@ -188,7 +188,7 @@
           <span class="count"><strong>{s.new}</strong> new</span>
           <span class="count"><strong>{s.changed}</strong> changed</span>
           <span class="count"><strong>{s.same}</strong> unchanged</span>
-          <span class="count conservative" title="Equality unprovable from listings (§28.4): transferred conservatively, resolved per object">
+          <span class="count conservative" title="Equality unprovable from listings: transferred conservatively, resolved per object">
             <strong>{s.unknown}</strong> unable to prove unchanged
           </span>
           <span class="count"><strong>{formatBytes(s.transferBytes)}</strong> to transfer</span>
@@ -218,6 +218,11 @@
               copy will accumulate versions by design.
             </p>
           {/if}
+          <p class="data-path">
+            {preview.dataPath}{preview.overwriteBytes > 0
+              ? ` · ${formatBytes(preview.overwriteBytes)} of the plan overwrites existing objects`
+              : ""}
+          </p>
         </div>
 
         {#if mode === "mirror"}
@@ -443,6 +448,12 @@
 
   .notes p {
     margin: 0 0 2px;
+  }
+
+  .data-path {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--color-text-secondary);
   }
 
   .warn {

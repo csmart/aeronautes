@@ -91,6 +91,7 @@
       <h2 class="title type-mono object-title">{entry.name}</h2>
       <p class="subtitle">
         {#if browser.detailLoading}Object · HEAD…
+        {:else if detail?.followedSymlink}Symlink → {detail.symlinkTarget}
         {:else if detail?.class === "slo"}Static Large Object (SLO)
         {:else if detail?.class === "dlo"}Dynamic Large Object (DLO)
         {:else}Object{/if}
@@ -329,7 +330,9 @@
         {:else}
           {@render kv(
             "Versioning",
-            `${cd.versioningMode === "history_location" ? "history" : "versions"} → ${cd.versioningArchive}`,
+            cd.versioningMode === "enabled"
+              ? "in-container versions (object_versioning)"
+              : `${cd.versioningMode === "history_location" ? "history" : "versions"} → ${cd.versioningArchive}`,
             true,
           )}
         {/if}

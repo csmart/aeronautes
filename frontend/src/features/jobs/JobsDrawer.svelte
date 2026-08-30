@@ -1,8 +1,8 @@
 <!-- The §47 drawer, live: in-flight jobs with progress, rates and
   cancel, filterable by account (owner input 2026-08-29: multiple
-  accounts in play need a filter), with the §50 audit trail behind a
-  second tab. Polls while the app runs — faster when open or anything
-  is active. -->
+  accounts in play need a filter), with the audit trail behind a
+  second tab. Polls on a fixed 1.5s interval while the app runs
+  (adaptive cadence is §65.10 scope). -->
 <script lang="ts">
   import { onMount } from "svelte";
   import type { BrowserState } from "../browser/browserState.svelte";
@@ -31,7 +31,13 @@
     if (planned <= 0 || !isActive(job)) {
       return null;
     }
-    return Math.min(1, job.counters.objectsCopied / planned);
+    // Operation-specific numerators: a delete job's progress is its
+    // deletions, not a repurposed copied counter.
+    const done =
+      job.type === "delete" || job.type === "mirror"
+        ? Math.max(job.counters.objectsCopied, job.counters.objectsDeleted)
+        : job.counters.objectsCopied;
+    return Math.min(1, done / planned);
   }
 
   function timeOf(iso: string): string {
@@ -142,7 +148,7 @@
         >
         {#if tab === "jobs"}
           {#if browser.appSettings}
-            <label class="filter" title="§38 whole-application active-job ceiling">
+            <label class="filter" title="whole-application active-job ceiling">
               <span>Active-job budget</span>
               <select
                 value={String(browser.appSettings.maxActiveJobs)}
@@ -157,7 +163,7 @@
           {/if}
           <button
             class="bench"
-            title="Measure this cluster (§42): writes real objects to a temporary Aeronautes-owned container"
+            title="Measure this cluster: writes real objects to a temporary Aeronautes-owned container"
             disabled={browser.connectedBookmarkId === null}
             onclick={() => (benchOpen = !benchOpen)}
           >
@@ -199,8 +205,9 @@
           >
             <span>
               A benchmark writes real objects to a temporary container on
-              <span class="type-mono">{browser.account?.name}</span>. Type the account name to
-              run:
+              <span class="type-mono">{browser.account?.name}</span>. It measures small native
+              PUT/HEAD/DELETE throughput — an endpoint microbenchmark, not a transfer-path
+              prediction. Type the account name to run:
             </span>
             <input class="type-mono" bind:value={benchConfirm} placeholder={browser.account?.name} />
             <button type="submit" disabled={benchConfirm !== (browser.account?.name ?? "")}>
@@ -255,7 +262,7 @@
                     {#if job.type === "copy"}
                       <button
                         class="rerun"
-                        title="Start a fresh run of this scope — already-verified objects are skipped"
+                        title="Start a fresh run of this scope: it replans from current listings; objects that prove equal are skipped"
                         onclick={() => rerun(job)}>Re-run</button
                       >
                     {/if}

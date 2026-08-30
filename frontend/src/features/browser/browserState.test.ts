@@ -199,6 +199,7 @@ describe("mutations (§65.2)", () => {
       versioningArchive: "arch",
       quotaBytes: 0,
       quotaCount: 0,
+      ackPublic: true,
     });
     expect(result.outcome).toBe("applied");
     expect(s.containerDetail?.readAcl).toBe(".r:*");
@@ -263,7 +264,7 @@ describe("large-object read semantics (§65.3)", () => {
     s.select(s.entries.findIndex((e) => e.name === "external-dlo"));
     await vi.waitFor(() => expect(s.objectDetail).not.toBeNull());
 
-    await s.deleteManifest();
+    await s.deleteManifest("fixtures", "external-dlo");
     expect(s.entries.some((e) => e.name === "external-dlo")).toBe(false);
     expect(s.auditEvents[0]?.operation).toBe("manifest.delete");
 
@@ -277,7 +278,7 @@ describe("large-object read semantics (§65.3)", () => {
     await s.openContainer("fixtures");
     s.select(s.entries.findIndex((e) => e.name === "empty-object"));
     await vi.waitFor(() => expect(s.objectDetail).not.toBeNull());
-    await expect(s.deleteManifest()).rejects.toThrow(/plain/);
+    await expect(s.deleteManifest("fixtures", "empty-object")).rejects.toThrow(/plain/);
     expect(s.entries.some((e) => e.name === "empty-object")).toBe(true);
   });
 });
@@ -332,5 +333,49 @@ describe("jobs drawer state", () => {
     expect(plan.summary.new).toBe(3);
     expect(plan.summary.destOnly).toBe(2);
     expect(plan.versionedDestination).toBe(true);
+  });
+});
+
+describe("mutation identity binding (review-wave C-04)", () => {
+  it("keeps the selection on the same identity across a filter change", async () => {
+    const s = await connected();
+    await s.openContainer("fixtures");
+    const idx = s.entries.findIndex((e) => e.name === "external-dlo");
+    s.select(idx);
+    await vi.waitFor(() => expect(s.objectDetail).not.toBeNull());
+
+    // Narrow the filter: the identity survives at its new index.
+    s.filter = "dlo";
+    expect(s.selectedEntry?.name).toBe("external-dlo");
+    expect(s.detailIdentity?.name).toBe("external-dlo");
+
+    // Filter it OUT: selection and identity clear — no silent retarget.
+    s.filter = "zzz-no-match";
+    expect(s.selectedEntry).toBeNull();
+    expect(s.detailIdentity).toBeNull();
+  });
+
+  it("metadata save binds the fetched identity, not the live index", async () => {
+    const api = newFakeApi();
+    const s = new BrowserState(api);
+    const saved = await s.saveBookmark(bookmark(), "testing");
+    await s.connect(saved.id);
+    await s.openContainer("fixtures");
+    s.select(s.entries.findIndex((e) => e.name === "empty-object"));
+    await vi.waitFor(() => expect(s.objectDetail).not.toBeNull());
+    const identity = s.detailIdentity;
+    expect(identity?.name).toBe("empty-object");
+
+    // Sabotage the index the old code would have read at submit time.
+    s.selectedIndex = s.entries.findIndex((e) => e.name === "external-dlo");
+    const result = await s.saveObjectMetadata({
+      meta: { Team: "ops" },
+      contentType: "",
+      deleteAt: "",
+    });
+    expect(result.outcome).toBe("applied");
+    // The edited object is the one the detail showed.
+    const detail = await api.objectDetail("fixtures", "empty-object");
+    expect(detail.meta?.["Team"]).toBe("ops");
   });
 });

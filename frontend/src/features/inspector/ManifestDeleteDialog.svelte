@@ -26,40 +26,49 @@
   let ownership = $state<SegmentOwnershipDTO | null>(null);
   let confirmText = $state("");
 
+  // The dialog binds the EXACT identity it was opened for: whatever
+  // the list, filter, or selection does afterwards, confirm acts on
+  // this and nothing else (C-04).
+  // svelte-ignore state_referenced_locally
+  const target = { container: browser.containerName ?? "", name: detail.name };
+
   onMount(async () => {
     try {
-      // svelte-ignore state_referenced_locally
-      ownership = await browser.checkSegmentOwnership(
-        browser.containerName ?? "",
-        detail.name,
-      );
+      ownership = await browser.checkSegmentOwnership(target.container, target.name);
     } catch {
       ownership = null; // segments option simply unavailable
     }
   });
 
-  const forceNeeded = $derived(withSegments && ownership !== null && !ownership.proven);
-  const armed = $derived(
-    !withSegments || (ownership !== null && (ownership.proven || confirmText === detail.name)),
-  );
+  function onKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      onClose();
+    }
+  }
+
+  // Segment deletion is ALWAYS force-gated now (R-02): ownership
+  // evidence is advisory until a live reference scan exists, so even a
+  // "proven" prefix requires the typed confirmation before its backing
+  // segments can be deleted.
+  const forceNeeded = $derived(withSegments);
+  const armed = $derived(!withSegments || confirmText === detail.name);
 
   async function confirm() {
     deleting = true;
     error = null;
     try {
       if (withSegments) {
-        // The proven path's confirmation is the armed dialog itself; the
-        // Go side still requires the exact name, so send it. The force
-        // path sends what the operator typed.
-        const confirm = ownership?.proven ? detail.name : confirmText;
+        // Force is always true for segment deletion; the confirmation is
+        // always what the operator typed.
         await browser.deleteManifestWithSegments(
-          browser.containerName ?? "",
-          detail.name,
-          forceNeeded,
-          confirm,
+          target.container,
+          target.name,
+          true,
+          confirmText,
         );
       } else {
-        await browser.deleteManifest();
+        await browser.deleteManifest(target.container, target.name);
       }
       onClose();
     } catch (err) {
@@ -69,6 +78,8 @@
     }
   }
 </script>
+
+<svelte:window onkeydown={onKeydown} />
 
 <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && onClose()}>
   <div class="dialog" role="alertdialog" aria-label="Delete manifest"
@@ -80,10 +91,19 @@
     </p>
     {#if !withSegments}
       <p class="keeps">
-        <strong>Every segment survives.</strong> The data remains at
+        <strong>{(ownership?.inlineEntries ?? 0) > 0
+          ? "Referenced segment objects survive; inline data does not."
+          : "Every referenced segment object survives."}</strong> The data remains at
         <span class="type-mono">{segmentsAt}</span> and becomes orphaned unless another manifest
         references it.
       </p>
+      {#if (ownership?.inlineEntries ?? 0) > 0}
+        <p class="keeps warn">
+          <strong>{ownership?.inlineEntries} inline data entr{(ownership?.inlineEntries ?? 0) === 1 ? "y" : "ies"}
+          will be destroyed:</strong> inline data lives only inside the manifest itself and
+          cannot survive its deletion.
+        </p>
+      {/if}
     {/if}
 
     {#if ownership}
@@ -92,16 +112,15 @@
         <span>
           Also delete the segments ({ownership.target})
           {#if ownership.proven}
-            — <strong class="proven">proven exclusively this app's</strong> (§28.6 ownership
-            record)
+            — evidence suggests <strong class="proven">likely this app's</strong> (ownership record)
           {/if}
         </span>
       </label>
       {#if forceNeeded}
         <p class="force-warn">
-          These segments are <strong>not proven exclusively ours</strong>: sharing cannot be
-          disproved from one manifest, and another manifest may still reference them. This is a
-          Backstage override. Type the object name to arm it:
+          Deleting backing segments is a <strong>Backstage override</strong>. Ownership evidence
+          can identify likely-owned segments but cannot yet prove that no other object references
+          them, so this always requires explicit confirmation. Type the object name to arm it:
         </p>
         <input
           class="force-confirm type-mono"
@@ -136,6 +155,13 @@
 
   .proven {
     color: var(--color-success);
+  }
+
+  .keeps.warn {
+    color: var(--color-danger);
+    background: var(--color-danger-soft);
+    border-radius: var(--radius-control);
+    padding: var(--space-2);
   }
 
   .force-warn {

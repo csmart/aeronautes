@@ -1,6 +1,6 @@
 <!-- The virtualised list primitive (§60 Phase 0: present from the start so
   million-object listings never render a row per object). Fixed row height,
-  windowed rendering with overscan, list-level keyboard selection (§4.4:
+  windowed rendering with overscan, list-level keyboard selection (
   arrows move, Enter activates). Selection state lives with the caller;
   this component only reports intents. -->
 <script lang="ts" generics="T">
@@ -21,7 +21,6 @@
     row: Snippet<[T, number, boolean]>;
     onSelect?: (index: number) => void;
     onActivate?: (item: T, index: number) => void;
-  riaLabel?: string;
   }
 
   let {

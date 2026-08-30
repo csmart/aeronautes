@@ -24,9 +24,3 @@ export interface Counters {
      */
     "objectsDeleted": number;
 }
-
-/**
- * Store persists jobs.
- */
-export interface Store {
-}
