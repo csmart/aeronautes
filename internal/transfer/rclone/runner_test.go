@@ -63,7 +63,7 @@ func TestCopyHygieneAndContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err := r.Copy(context.Background(), remotes(),
-		"aeronautes_src:media", "aeronautes_dst:media", []string{"a b", "photos/x.jpg"}, nil)
+		"aeronautes_src:media", "aeronautes_dst:media/.aeronautes/stage/t/batch", []string{"a b", "photos/x.jpg"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,17 +126,27 @@ func TestNewlineNamesRefused(t *testing.T) {
 }
 
 func TestTLSConfigFile(t *testing.T) {
+	// IDENTICAL trust on both remotes (the same CA bundle content at two
+	// paths) is the ONLY multi-remote TLS-override shape one child may
+	// carry (§12.3).
 	bin := stub(t, "v1.74.3",
 		`CONF=$(printf '%s\n' "$@" | grep -A1 -x -- --config | tail -1); cp "$CONF" "$(dirname "$0")/conf"`)
 	r, err := NewRunner(Options{Binary: bin})
 	if err != nil {
 		t.Fatal(err)
 	}
-	tlsRemotes := []Remote{
-		{Name: "aeronautes_src", StorageURL: "https://src/v1/AUTH_a", Token: "tok-src-SECRET", CACertFile: "/tmp/ca.pem"},
-		{Name: "aeronautes_dst", StorageURL: "https://dst/v1/AUTH_b", Token: "tok-dst-SECRET", InsecureTLS: true},
+	dir := t.TempDir()
+	caA, caB := filepath.Join(dir, "a.pem"), filepath.Join(dir, "b.pem")
+	for _, p := range []string{caA, caB} {
+		if err := os.WriteFile(p, []byte("-----BEGIN CERTIFICATE-----\nsame\n-----END CERTIFICATE-----\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if _, err := r.Copy(context.Background(), tlsRemotes, "aeronautes_src:c", "aeronautes_dst:c", nil, nil); err != nil {
+	tlsRemotes := []Remote{
+		{Name: "aeronautes_src", StorageURL: "https://src/v1/AUTH_a", Token: "tok-src-SECRET", CACertFile: caA},
+		{Name: "aeronautes_dst", StorageURL: "https://dst/v1/AUTH_b", Token: "tok-dst-SECRET", CACertFile: caB},
+	}
+	if _, err := r.Copy(context.Background(), tlsRemotes, "aeronautes_src:c", "aeronautes_dst:c/.aeronautes/stage/t/batch", []string{"x"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	conf, err := os.ReadFile(filepath.Join(dumpDir(bin), "conf"))
@@ -144,8 +154,8 @@ func TestTLSConfigFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := string(conf)
-	for _, want := range []string{"[aeronautes_src]", "override.ca_cert = /tmp/ca.pem",
-		"[aeronautes_dst]", "override.no_check_certificate = true", "storage_url = https://src/v1/AUTH_a"} {
+	for _, want := range []string{"[aeronautes_src]", "override.ca_cert = " + caA,
+		"[aeronautes_dst]", "override.ca_cert = " + caB, "storage_url = https://src/v1/AUTH_a"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("config missing %q:\n%s", want, body)
 		}
@@ -153,6 +163,51 @@ func TestTLSConfigFile(t *testing.T) {
 	// The config file carries NO secrets (§26.2): tokens stay in env.
 	if strings.Contains(body, "SECRET") || strings.Contains(body, "auth_token") {
 		t.Fatalf("secret material in the config file:\n%s", body)
+	}
+}
+
+func TestNonIdenticalTrustRefused(t *testing.T) {
+	// The §12.3 pairing matrix: overrides leak across remotes in one
+	// child, so ONLY equal trust identities may share it. These pairs
+	// blessed the leak before the review wave; they must refuse.
+	bin := stub(t, "v1.74.3", "exit 0")
+	r, err := NewRunner(Options{Binary: bin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	caOne, caTwo := filepath.Join(dir, "one.pem"), filepath.Join(dir, "two.pem")
+	os.WriteFile(caOne, []byte("bundle-one"), 0o600)
+	os.WriteFile(caTwo, []byte("bundle-two"), 0o600)
+	refuse := [][2]Remote{
+		{{Name: "aeronautes_src", StorageURL: "https://a", Token: "t1", CACertFile: caOne},
+			{Name: "aeronautes_dst", StorageURL: "https://b", Token: "t2", InsecureTLS: true}},
+		{{Name: "aeronautes_src", StorageURL: "https://a", Token: "t1", CACertFile: caOne},
+			{Name: "aeronautes_dst", StorageURL: "https://b", Token: "t2", CACertFile: caTwo}},
+		{{Name: "aeronautes_src", StorageURL: "https://a", Token: "t1", InsecureTLS: true},
+			{Name: "aeronautes_dst", StorageURL: "https://b", Token: "t2"}},
+	}
+	for i, pair := range refuse {
+		if _, err := r.Copy(context.Background(), pair[:], "aeronautes_src:c", "aeronautes_dst:c/.aeronautes/stage/t/batch", []string{"x"}, nil); err == nil {
+			t.Errorf("pair %d: non-identical trust accepted in one child (§12.3)", i)
+		}
+	}
+	// Equal identities pass: both insecure, and both system trust.
+	allow := [][2]Remote{
+		{{Name: "aeronautes_src", StorageURL: "https://a", Token: "t1", InsecureTLS: true},
+			{Name: "aeronautes_dst", StorageURL: "https://b", Token: "t2", InsecureTLS: true}},
+		{{Name: "aeronautes_src", StorageURL: "https://a", Token: "t1"},
+			{Name: "aeronautes_dst", StorageURL: "https://b", Token: "t2"}},
+	}
+	for i, pair := range allow {
+		if _, err := r.Copy(context.Background(), pair[:], "aeronautes_src:c", "aeronautes_dst:c/.aeronautes/stage/t/batch", []string{"x"}, nil); err != nil {
+			t.Errorf("pair %d: identical trust refused: %v", i, err)
+		}
+	}
+	// An unreadable CA bundle fails closed.
+	broken := []Remote{{Name: "aeronautes_src", StorageURL: "https://a", Token: "t1", CACertFile: filepath.Join(dir, "missing.pem")}}
+	if _, err := r.Copy(context.Background(), broken, "aeronautes_src:c", "aeronautes_dst:c/.aeronautes/stage/t/batch", []string{"x"}, nil); err == nil {
+		t.Error("unreadable CA bundle did not fail closed")
 	}
 }
 
@@ -165,7 +220,7 @@ func TestMixedTrustRefused(t *testing.T) {
 		{Name: "aeronautes_src", StorageURL: "https://a", Token: "t1", CACertFile: "/tmp/ca.pem"},
 		{Name: "aeronautes_dst", StorageURL: "https://b", Token: "t2"},
 	}
-	if _, err := r.Copy(context.Background(), mixed, "aeronautes_src:c", "aeronautes_dst:c", nil, nil); err == nil {
+	if _, err := r.Copy(context.Background(), mixed, "aeronautes_src:c", "aeronautes_dst:c/.aeronautes/stage/t/batch", []string{"x"}, nil); err == nil {
 		t.Fatal("mixed TLS trust in one child accepted (§12.3 forbids it)")
 	}
 }
@@ -184,7 +239,7 @@ exit 3`
 		t.Fatal(err)
 	}
 	var events []Event
-	result, err := r.Copy(context.Background(), remotes(), "aeronautes_src:m", "aeronautes_dst:m", nil,
+	result, err := r.Copy(context.Background(), remotes(), "aeronautes_src:m", "aeronautes_dst:m/.aeronautes/stage/t/batch", []string{"x"},
 		func(e Event) { events = append(events, e) })
 	if err != nil {
 		t.Fatal(err)
@@ -219,7 +274,7 @@ sleep 30 & wait $!`, marker)
 	go func() { time.Sleep(500 * time.Millisecond); cancel() }()
 
 	start := time.Now()
-	result, err := r.Copy(ctx, remotes(), "aeronautes_src:m", "aeronautes_dst:m", nil, nil)
+	result, err := r.Copy(ctx, remotes(), "aeronautes_src:m", "aeronautes_dst:m/.aeronautes/stage/t/batch", []string{"x"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,5 +336,106 @@ func TestSidecarOfficialBinary(t *testing.T) {
 	}
 	if !strings.HasPrefix(runner.binary, official) {
 		t.Fatalf("sidecar not selected: %s", runner.binary)
+	}
+}
+
+func TestArgvHygiene(t *testing.T) {
+	// The child argv closes flags with "--" before positionals, refuses
+	// an empty selected set, and refuses dash-leading paths outright.
+	bin := stub(t, "v1.74.3", `printf '%s\n' "$@" > "$(dirname "$0")/argv"`)
+	r, err := NewRunner(Options{Binary: bin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := r.Copy(ctx, remotes(), "aeronautes_src:c", "aeronautes_dst:c/.aeronautes/stage/t/batch", nil, nil); err == nil {
+		t.Error("empty selected set accepted: whole-scope copy possible")
+	}
+	if _, err := r.Copy(ctx, remotes(), "-aeronautes_src:c", "aeronautes_dst:c/.aeronautes/stage/t/batch", []string{"x"}, nil); err == nil {
+		t.Error("dash-leading source accepted")
+	}
+	if _, err := r.CopyTo(ctx, remotes(), "aeronautes_src:c/a", "--no-check-certificate", nil); err == nil {
+		t.Error("flag-shaped destination accepted")
+	}
+	if _, err := r.Copy(ctx, remotes(), "aeronautes_src:c", "aeronautes_dst:c/.aeronautes/stage/t/batch", []string{"x"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	argv, err := os.ReadFile(filepath.Join(dumpDir(bin), "argv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(argv)), "\n")
+	if len(lines) < 3 || lines[len(lines)-3] != "--" ||
+		lines[len(lines)-2] != "aeronautes_src:c" || lines[len(lines)-1] != "aeronautes_dst:c/.aeronautes/stage/t/batch" {
+		t.Errorf("argv does not end with -- src dst:\n%s", argv)
+	}
+	// The verb allowlist and the forbidden surface, locked (review
+	// K-XFER-001/009/012/014/015 test-gap note): the FIRST argv word is
+	// exactly the copy verb, and none of the destructive or
+	// semantics-changing flags may ever appear.
+	if lines[0] != "copy" {
+		t.Errorf("first argv word = %q, want copy", lines[0])
+	}
+	forbidden := []string{"sync", "purge", "delete", "deletefile", "move", "moveto",
+		"--ignore-existing", "--server-side-across-configs", "--swift-no-large-objects",
+		"--swift-leave-parts-on-error"}
+	for _, line := range lines {
+		for _, bad := range forbidden {
+			if line == bad {
+				t.Errorf("forbidden token %q in argv", bad)
+			}
+		}
+	}
+	// Control characters in remote values refuse before any INI write.
+	evil := []Remote{{Name: "aeronautes_src", StorageURL: "https://a/v1\nInjected = true", Token: "t"}}
+	if _, err := r.Copy(ctx, evil, "aeronautes_src:c", "aeronautes_dst:c/.aeronautes/stage/t/batch", []string{"x"}, nil); err == nil {
+		t.Error("control character in storage URL accepted")
+	}
+}
+
+func TestLiveRemoteDestinationRefused(t *testing.T) {
+	// The K-XFER-014 boundary is mechanized in the RUNNER: no caller can
+	// hand rclone a live Swift destination, whatever service grows next.
+	r, err := NewRunner(Options{Binary: stub(t, "v1.74.3", "exit 0")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := r.Copy(ctx, remotes(), "aeronautes_src:c", "aeronautes_dst:c/live-prefix", []string{"x"}, nil); err == nil {
+		t.Error("live remote destination accepted by Copy")
+	}
+	if _, err := r.CopyTo(ctx, remotes(), "aeronautes_src:c/a", "aeronautes_dst:c/video.bin", nil); err == nil {
+		t.Error("live remote destination accepted by CopyTo")
+	}
+	// Staging-scoped destinations pass; local dirs are exempt (their
+	// own stage-and-place path governs them).
+	if _, err := r.Copy(ctx, remotes(), "aeronautes_src:c", "aeronautes_dst:c/.aeronautes/stage/j/batch", []string{"x"}, nil); err != nil {
+		t.Errorf("staged remote destination refused: %v", err)
+	}
+	if _, err := r.Copy(ctx, remotes(), "aeronautes_src:c", t.TempDir(), []string{"x"}, nil); err != nil {
+		t.Errorf("local directory destination refused: %v", err)
+	}
+}
+
+func TestStagingShapeIsAPathSegment(t *testing.T) {
+	// grok follow-up 3 P2: the staging marker must be a real path
+	// SEGMENT, not a substring of a live user name, and must not smuggle
+	// a ".." escape.
+	r, err := NewRunner(Options{Binary: stub(t, "v1.74.3", "exit 0")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	// A live name that merely CONTAINS ".aeronautes" is refused.
+	if _, err := r.Copy(ctx, remotes(), "aeronautes_src:c", "aeronautes_dst:c/.aeronautes-backup/photos", []string{"x"}, nil); err == nil {
+		t.Error("'.aeronautes-backup' live name accepted as staged")
+	}
+	// A ".." inside a staging path is refused.
+	if _, err := r.Copy(ctx, remotes(), "aeronautes_src:c", "aeronautes_dst:c/.aeronautes/stage/../live", []string{"x"}, nil); err == nil {
+		t.Error("'..' escape inside staging accepted")
+	}
+	// A genuine staging path passes.
+	if _, err := r.Copy(ctx, remotes(), "aeronautes_src:c", "aeronautes_dst:c/.aeronautes/stage/job7/batch", []string{"x"}, nil); err != nil {
+		t.Errorf("genuine staging path refused: %v", err)
 	}
 }
