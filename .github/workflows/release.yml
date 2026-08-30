@@ -18,11 +18,11 @@ jobs:
   test:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: "22"
       - name: webview build deps
@@ -49,11 +49,11 @@ jobs:
             arch: arm64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: "22"
       - name: webview build deps
@@ -68,12 +68,13 @@ jobs:
       - name: tarball
         run: |
           mkdir -p dist
-          tar -C bin -czf "dist/aeronautes-linux-${{ matrix.arch }}-UNSIGNED.tar.gz" aeronautes
+          cp NOTICE bin/NOTICE
+          tar -C bin -czf "dist/aeronautes-linux-${{ matrix.arch }}-UNSIGNED.tar.gz" aeronautes NOTICE
           cp bin/*.rpm "dist/aeronautes-linux-${{ matrix.arch }}-UNSIGNED.rpm" 2>/dev/null || true
           cp bin/*.deb "dist/aeronautes-linux-${{ matrix.arch }}-UNSIGNED.deb" 2>/dev/null || true
       # SIGNING (deliberately absent): rpm --addsign / debsigs would go
       # here once release keys exist. Artifacts are honestly UNSIGNED.
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: linux-${{ matrix.arch }}-unsigned
           path: dist/*
@@ -92,11 +93,11 @@ jobs:
     # targets x86_64 with the same SDK.
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: "22"
       - run: make tools
@@ -113,6 +114,7 @@ jobs:
           if [ -d bin/aeronautes.app ]; then
             # The sidecar sits beside the app executable inside the bundle.
             cp bin/rclone bin/aeronautes.app/Contents/MacOS/rclone
+            cp NOTICE bin/aeronautes.app/Contents/Resources/NOTICE
             ditto -c -k --keepParent bin/aeronautes.app "dist/aeronautes-macos-${{ matrix.arch }}-UNSIGNED.zip"
           else
             ditto -c -k bin "dist/aeronautes-macos-${{ matrix.arch }}-UNSIGNED.zip"
@@ -120,7 +122,7 @@ jobs:
       # SIGNING/NOTARISATION (deliberately absent): codesign + notarytool
       # go here once an Apple Developer identity exists. Gatekeeper will
       # warn on these artifacts — that is the honest current state.
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: macos-${{ matrix.arch }}-unsigned
           path: dist/*
@@ -137,11 +139,11 @@ jobs:
             arch: arm64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: "22"
       - run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.15
@@ -154,10 +156,11 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item NOTICE bin\NOTICE
           Compress-Archive -Path bin\* -DestinationPath "dist/aeronautes-windows-${{ matrix.arch }}-UNSIGNED.zip"
       # SIGNING (deliberately absent): signtool goes here once a code-
       # signing certificate exists. SmartScreen will warn — honestly.
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: windows-${{ matrix.arch }}-unsigned
           path: dist/*

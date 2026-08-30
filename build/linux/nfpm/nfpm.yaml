@@ -9,7 +9,7 @@ maintainer: Chris Smart <distroguy@gmail.com>
 description: "Desktop operator workbench for OpenStack Swift"
 vendor: "Aeronautes"
 homepage: "https://github.com/csmart/aeronautes"
-license: "MIT"
+license: "Apache-2.0"
 release: "1"
 
 contents:
