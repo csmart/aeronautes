@@ -174,7 +174,7 @@ func (o *Oracle) snapshotContainer(name string) (ContainerState, bool, error) {
 func (o *Oracle) snapshotObject(container, name string) (ObjectState, error) {
 	// GET follows a symlink and assembles a large object — the LOGICAL
 	// bytes, which is what an operator reads.
-	resp, err := o.do(http.MethodGet, "/"+container+"/"+escape(name), "")
+	resp, err := o.do(http.MethodGet, "/"+container+"/"+Escape(name), "")
 	if err != nil {
 		return ObjectState{}, err
 	}
@@ -217,7 +217,7 @@ func (o *Oracle) snapshotObject(container, name string) (ObjectState, error) {
 	// IDENTITY is the target pointer + the link's own metadata, NOT the
 	// followed content — the target object is witnessed separately, so
 	// coupling the two would double-report a target change.
-	if link, err := o.do(http.MethodGet, "/"+container+"/"+escape(name), "symlink=get"); err == nil {
+	if link, err := o.do(http.MethodGet, "/"+container+"/"+Escape(name), "symlink=get"); err == nil {
 		if t := link.Header.Get("X-Symlink-Target"); t != "" {
 			os.Class = "symlink"
 			os.SymlinkTarget = t
@@ -263,7 +263,7 @@ func (o *Oracle) segmentInventory(manifest string) ([]SegmentState, error) {
 
 // sloInventory returns the raw manifest and digests each referenced leaf.
 func (o *Oracle) sloInventory(container, name string) (string, []SegmentState, error) {
-	resp, err := o.do(http.MethodGet, "/"+container+"/"+escape(name), "multipart-manifest=get")
+	resp, err := o.do(http.MethodGet, "/"+container+"/"+Escape(name), "multipart-manifest=get")
 	if err != nil {
 		return "", nil, err
 	}
@@ -290,7 +290,7 @@ func (o *Oracle) sloInventory(container, name string) (string, []SegmentState, e
 }
 
 func (o *Oracle) segment(container, name string) (SegmentState, error) {
-	resp, err := o.do(http.MethodGet, "/"+container+"/"+escape(name), "")
+	resp, err := o.do(http.MethodGet, "/"+container+"/"+Escape(name), "")
 	if err != nil {
 		return SegmentState{}, err
 	}
@@ -312,8 +312,8 @@ func metaFrom(h http.Header, prefix string) map[string]string {
 
 func isTrue(v string) bool { return strings.EqualFold(v, "true") }
 
-// escape percent-encodes an object name per path segment, keeping "/".
-func escape(name string) string {
+// Escape percent-encodes an object name per path segment, keeping "/".
+func Escape(name string) string {
 	segments := strings.Split(name, "/")
 	for i, seg := range segments {
 		segments[i] = pathEscape(seg)

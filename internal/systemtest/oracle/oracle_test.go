@@ -152,7 +152,7 @@ func purge(t *testing.T, seed *rawClient, oracle *Oracle, container string) {
 	resp.Body.Close()
 	for _, line := range strings.Split(string(body), `"name":"`)[1:] {
 		name := line[:strings.Index(line, `"`)]
-		req, _ := http.NewRequest(http.MethodDelete, seed.storageURL+"/"+container+"/"+escape(name), nil)
+		req, _ := http.NewRequest(http.MethodDelete, seed.storageURL+"/"+container+"/"+Escape(name), nil)
 		req.Header.Set("X-Auth-Token", seed.token)
 		seed.client.Do(req)
 	}
