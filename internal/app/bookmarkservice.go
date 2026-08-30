@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/csmart/aeronautes/internal/bookmarks"
+	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
 
@@ -12,12 +13,16 @@ import (
 // credential crosses the bridge only as the Save argument, straight into
 // the SecretStore; it is never readable back (K-SEC-002).
 type BookmarkService struct {
-	store *bookmarks.Store
+	store       *bookmarks.Store
+	connections *Connections
+	jobs        *jobs.Store
 }
 
-// NewBookmarkService builds the service over the store.
-func NewBookmarkService(store *bookmarks.Store) *BookmarkService {
-	return &BookmarkService{store: store}
+// NewBookmarkService builds the service over the store. connections
+// and jobStore may be nil in narrow tests; the lifecycle guards then
+// no-op.
+func NewBookmarkService(store *bookmarks.Store, connections *Connections, jobStore *jobs.Store) *BookmarkService {
+	return &BookmarkService{store: store, connections: connections, jobs: jobStore}
 }
 
 // List returns every bookmark, display-name ordered.
@@ -72,12 +77,36 @@ func (s *BookmarkService) Save(ctx context.Context, dto BookmarkDTO, secret stri
 	if err != nil {
 		return BookmarkDTO{}, err
 	}
+	if dto.ID != "" && s.connections != nil {
+		// An edited endpoint, credential, or TLS mode must not keep
+		// operating through the old cached session (review H-12 — the
+		// first fix for this anchored on the wrong line and no-oped).
+		s.connections.Invalidate(dto.ID)
+	}
 	return toBookmarkDTO(saved), nil
 }
 
-// Delete removes a bookmark and its stored credential.
+// Delete removes a bookmark. It refuses while any non-terminal job
+// references the bookmark (a running transfer must not lose its
+// endpoint identity mid-write), and invalidates any cached session so
+// a deleted bookmark cannot keep operating (§65.9 item 15).
 func (s *BookmarkService) Delete(ctx context.Context, id string) error {
-	return s.store.Delete(ctx, id)
+	if s.jobs != nil {
+		active, err := s.jobs.ActiveForBookmark(ctx, id)
+		if err != nil {
+			return err
+		}
+		if active > 0 {
+			return fmt.Errorf("%d running or queued job(s) still use this bookmark — cancel them first", active)
+		}
+	}
+	if err := s.store.Delete(ctx, id); err != nil {
+		return err
+	}
+	if s.connections != nil {
+		s.connections.Invalidate(id)
+	}
+	return nil
 }
 
 func toBookmarkDTO(b bookmarks.Bookmark) BookmarkDTO {

@@ -13,6 +13,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/csmart/aeronautes/internal/db"
@@ -250,6 +253,20 @@ func validate(b Bookmark) error {
 	case b.Username == "":
 		return errors.New("bookmark needs a username")
 	}
+	if err := validateEndpointURL("auth URL", b.AuthURL); err != nil {
+		return err
+	}
+	if err := requiresInsecureOptIn(b.AuthURL, b.TLSMode); err != nil {
+		return err
+	}
+	if b.StorageURLOverride != "" {
+		if err := validateEndpointURL("storage URL override", b.StorageURLOverride); err != nil {
+			return err
+		}
+		if err := requiresInsecureOptIn(b.StorageURLOverride, b.TLSMode); err != nil {
+			return err
+		}
+	}
 	switch b.TLSMode {
 	case "", swiftcontrol.TLSModeSystem, swiftcontrol.TLSModeInsecure, swiftcontrol.TLSModeCustomCA:
 	default:
@@ -340,4 +357,63 @@ func (s *Store) CAPem(ctx context.Context, id string) ([]byte, error) {
 		return nil, err
 	}
 	return []byte(pem), nil
+}
+
+// validateEndpointURL canonical-checks a bookmark endpoint (§65.9 item
+// 15): parseable http(s), no userinfo/fragment/query, no control
+// characters (they would split an rclone INI line downstream), and
+// https unless the host is loopback or the bookmark deliberately opts
+// into lab plaintext via the insecure TLS mode.
+func validateEndpointURL(what, raw string) error {
+	if strings.ContainsFunc(raw, func(c rune) bool { return c < 0x21 || c == 0x7f }) {
+		return fmt.Errorf("%s contains whitespace or control characters", what)
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("%s: %w", what, err)
+	}
+	switch {
+	case u.Scheme != "http" && u.Scheme != "https":
+		return fmt.Errorf("%s must be http(s), not %q", what, u.Scheme)
+	case u.User != nil:
+		return fmt.Errorf("%s must not embed credentials", what)
+	case u.Fragment != "" || u.RawQuery != "":
+		return fmt.Errorf("%s must not carry a query or fragment", what)
+	case u.Host == "":
+		return fmt.Errorf("%s has no host", what)
+	}
+	if u.Scheme == "http" && !loopbackOrPrivate(u.Hostname()) {
+		return fmt.Errorf("%s is plaintext http to a non-local host: the durable key would travel unencrypted — use https", what)
+	}
+	return nil
+}
+
+// requiresInsecureOptIn reports whether a plaintext-http endpoint needs
+// the bookmark's explicit insecure TLS mode: loopback is always fine
+// for local dev, but a private-network http endpoint still sends the
+// key in cleartext across a LAN and must be a deliberate opt-in.
+func requiresInsecureOptIn(rawURL string, mode swiftcontrol.TLSMode) error {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Scheme != "http" {
+		return nil
+	}
+	host := u.Hostname()
+	if host == "localhost" {
+		return nil
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return nil
+	}
+	if mode != swiftcontrol.TLSModeInsecure {
+		return fmt.Errorf("plaintext http to %s sends credentials in cleartext across the network; set the bookmark's TLS mode to insecure to opt in deliberately", host)
+	}
+	return nil
+}
+
+func loopbackOrPrivate(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && (ip.IsLoopback() || ip.IsPrivate())
 }
