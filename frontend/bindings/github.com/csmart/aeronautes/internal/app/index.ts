@@ -29,10 +29,6 @@ export {
 };
 
 export {
-    DeleteMode
-} from "./models.js";
-
-export type {
     About,
     AccountDTO,
     AppSettingsDTO,
@@ -51,10 +47,10 @@ export type {
     CopyPlanDTO,
     CopyRequestDTO,
     DLOSegmentsDTO,
+    DeleteMode,
     DeletePreviewDTO,
     DeleteRequestDTO,
     DownloadRequestDTO,
-    FilePicker,
     FindMatchDTO,
     FindStatusDTO,
     Info,
@@ -75,4 +71,8 @@ export type {
     StoragePolicyDTO,
     TransferSettingsDTO,
     UploadRequestDTO
+} from "./models.js";
+
+export type {
+    FilePicker
 } from "./models.js";

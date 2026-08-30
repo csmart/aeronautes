@@ -46,6 +46,17 @@
     }
   }
 
+  let rerunError: string | null = $state(null);
+
+  async function rerun(job: JobDTO) {
+    rerunError = null;
+    try {
+      await browser.rerunJob(job.id);
+    } catch (e) {
+      rerunError = e instanceof Error ? e.message : String(e);
+    }
+  }
+
   onMount(() => {
     void browser.loadJobs();
     void browser.loadAppSettings();
@@ -200,6 +211,9 @@
             {/if}
           </form>
         {/if}
+        {#if rerunError}
+          <p class="empty bad">{rerunError}</p>
+        {/if}
         {#if browser.jobsError}
           <p class="empty">jobs unavailable: {browser.jobsError}</p>
         {:else if browser.jobs.length === 0}
@@ -237,13 +251,22 @@
                 {#if isActive(job)}
                   <button class="cancel" onclick={() => cancel(job)}>Cancel</button>
                 {:else}
-                  <button
-                    class="details"
-                    onclick={() => (expanded = expanded === job.id ? null : job.id)}
-                    aria-expanded={expanded === job.id}
-                  >
-                    {expanded === job.id ? "▾" : "▸"}
-                  </button>
+                  <span class="row-actions">
+                    {#if job.type === "copy"}
+                      <button
+                        class="rerun"
+                        title="Start a fresh run of this scope — already-verified objects are skipped"
+                        onclick={() => rerun(job)}>Re-run</button
+                      >
+                    {/if}
+                    <button
+                      class="details"
+                      onclick={() => (expanded = expanded === job.id ? null : job.id)}
+                      aria-expanded={expanded === job.id}
+                    >
+                      {expanded === job.id ? "▾" : "▸"}
+                    </button>
+                  </span>
                 {/if}
                 {#if progressOf(job) !== null}
                   <div class="progress" style="--p: {(progressOf(job) ?? 0) * 100}%"></div>
@@ -432,6 +455,23 @@
   .bad {
     color: var(--color-danger);
     font-style: normal;
+  }
+
+  .row-actions {
+    display: flex;
+    gap: var(--space-1);
+    align-items: baseline;
+  }
+
+  .rerun {
+    font: inherit;
+    font-size: var(--text-xs);
+    padding: 0 var(--space-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+    background: none;
+    color: var(--color-accent);
+    cursor: pointer;
   }
 
   .details {

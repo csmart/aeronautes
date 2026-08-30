@@ -11,7 +11,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
+import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -43,8 +43,10 @@ export function PickDownloadDir(): $CancellablePromise<string> {
  * PickUploadFiles opens the OS multi-file picker (Go side: the webview
  * never sees filesystem paths otherwise). Empty when cancelled.
  */
-export function PickUploadFiles(): $CancellablePromise<string[] | null> {
-    return $Call.ByID(24924697);
+export function PickUploadFiles(): $CancellablePromise<string[]> {
+    return $Call.ByID(24924697).then(($result: any) => {
+        return $$createType0($result);
+    });
 }
 
 /**
@@ -52,21 +54,39 @@ export function PickUploadFiles(): $CancellablePromise<string[] | null> {
  * writes, no audit (planning is a read).
  */
 export function PlanCopy(req: $models.CopyRequestDTO): $CancellablePromise<$models.CopyPlanDTO | null> {
-    return $Call.ByID(1671032032, req);
+    return $Call.ByID(1671032032, req).then(($result: any) => {
+        return $$createType2($result);
+    });
 }
 
 /**
  * PreflightDownload runs the complete §27.5 materialization report.
  */
 export function PreflightDownload(req: $models.DownloadRequestDTO): $CancellablePromise<local$0.DownloadPreflight | null> {
-    return $Call.ByID(2765768397, req);
+    return $Call.ByID(2765768397, req).then(($result: any) => {
+        return $$createType4($result);
+    });
 }
 
 /**
  * PreflightUpload runs the complete §27.5 pre-write report.
  */
 export function PreflightUpload(req: $models.UploadRequestDTO): $CancellablePromise<local$0.UploadPreflight | null> {
-    return $Call.ByID(1873223240, req);
+    return $Call.ByID(1873223240, req).then(($result: any) => {
+        return $$createType6($result);
+    });
+}
+
+/**
+ * RerunJob starts a fresh copy of a TERMINAL copy job's scope. The
+ * §28.4 machinery makes this cheap-idempotent — Same verdicts and
+ * destination fingerprints skip everything already verified — so a
+ * re-run after a Partial finishes only the remainder. Mirror jobs are
+ * deliberately excluded: their delete half deserves the dialog's
+ * typed confirmation, not a one-click repeat.
+ */
+export function RerunJob(jobID: string): $CancellablePromise<string> {
+    return $Call.ByID(2171765979, jobID);
 }
 
 /**
@@ -137,3 +157,24 @@ export function StartMirror(req: $models.MirrorRequestDTO): $CancellablePromise<
 export function StartUpload(req: $models.UploadRequestDTO): $CancellablePromise<string> {
     return $Call.ByID(1096678111, req);
 }
+
+/**
+ * SweepCrashLitter replays reconciliation for jobs that died before
+ * their own could run (§65.8 item 2): every persisted staging prefix
+ * and captured-minus-committed segment prefix of a TERMINAL job, under
+ * the same live-manifest guard. Bookmarks that cannot authenticate
+ * right now are skipped and retried later; records clear only after a
+ * clean sweep.
+ */
+export function SweepCrashLitter(): $CancellablePromise<number> {
+    return $Call.ByID(531299429);
+}
+
+// Private type creation functions
+const $$createType0 = $Create.Array($Create.Any);
+const $$createType1 = $models.CopyPlanDTO.createFrom;
+const $$createType2 = $Create.Nullable($$createType1);
+const $$createType3 = local$0.DownloadPreflight.createFrom;
+const $$createType4 = $Create.Nullable($$createType3);
+const $$createType5 = local$0.UploadPreflight.createFrom;
+const $$createType6 = $Create.Nullable($$createType5);

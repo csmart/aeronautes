@@ -11,7 +11,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
+import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -21,7 +21,9 @@ import * as $models from "./models.js";
  * Account returns the active connection's account portrait.
  */
 export function Account(): $CancellablePromise<$models.AccountDTO> {
-    return $Call.ByID(1205417410);
+    return $Call.ByID(1205417410).then(($result: any) => {
+        return $$createType0($result);
+    });
 }
 
 /**
@@ -30,14 +32,18 @@ export function Account(): $CancellablePromise<$models.AccountDTO> {
  * for the configuration editor.
  */
 export function Capabilities(): $CancellablePromise<$models.CapabilitiesDTO> {
-    return $Call.ByID(3780974669);
+    return $Call.ByID(3780974669).then(($result: any) => {
+        return $$createType1($result);
+    });
 }
 
 /**
  * Connect authenticates a bookmark and returns the account portrait.
  */
 export function Connect(bookmarkID: string): $CancellablePromise<$models.AccountDTO> {
-    return $Call.ByID(407737035, bookmarkID);
+    return $Call.ByID(407737035, bookmarkID).then(($result: any) => {
+        return $$createType0($result);
+    });
 }
 
 /**
@@ -45,7 +51,9 @@ export function Connect(bookmarkID: string): $CancellablePromise<$models.Account
  * marker.
  */
 export function Containers(marker: string, limit: number): $CancellablePromise<$models.ContainerPageDTO> {
-    return $Call.ByID(3903276755, marker, limit);
+    return $Call.ByID(3903276755, marker, limit).then(($result: any) => {
+        return $$createType2($result);
+    });
 }
 
 /**
@@ -53,5 +61,13 @@ export function Containers(marker: string, limit: number): $CancellablePromise<$
  * starting after marker.
  */
 export function Objects(container: string, prefix: string, marker: string, limit: number): $CancellablePromise<$models.ObjectPageDTO> {
-    return $Call.ByID(1188006837, container, prefix, marker, limit);
+    return $Call.ByID(1188006837, container, prefix, marker, limit).then(($result: any) => {
+        return $$createType3($result);
+    });
 }
+
+// Private type creation functions
+const $$createType0 = $models.AccountDTO.createFrom;
+const $$createType1 = $models.CapabilitiesDTO.createFrom;
+const $$createType2 = $models.ContainerPageDTO.createFrom;
+const $$createType3 = $models.ObjectPageDTO.createFrom;

@@ -551,6 +551,18 @@ export function newFakeApi(): Api {
       record("transfer.copy.start", `${req.sourceContainer} → ${req.destContainer}`, "applied");
       return id;
     },
+    rerunJob: async (jobId) => {
+      const original = jobs.find((j) => j.id === jobId);
+      if (!original || !["complete", "partial", "cancelled", "failed"].includes(original.state)) {
+        throw new Error("job is not re-runnable");
+      }
+      if (original.type !== "copy") {
+        throw new Error("re-run supports copy jobs");
+      }
+      const id = `job-${jobs.length + 1}`;
+      jobs.push({ ...original, id, state: "running", finishedAt: "", error: "" });
+      return id;
+    },
     cancelJob: async (jobId) => {
       const job = jobs.find((j) => j.id === jobId);
       if (!job || job.finishedAt !== "") {
@@ -699,7 +711,7 @@ export function newFakeApi(): Api {
       license: "Apache-2.0 (this application)",
       licenses: [{ name: "example", license: "MIT", url: "https://example.com" }],
     }),
-    appSettings: async () => ({ maxActiveJobs: 2, defaultProfile: "auto" }),
+    appSettings: async () => ({ maxActiveJobs: 2, defaultProfile: "auto", auditRetentionDays: 90, jobRetentionDays: 30 }),
     saveAppSettings: async (settings) => settings,
     startFind: async (container, prefix, query) => "find-1",
     findStatus: async (id) => ({

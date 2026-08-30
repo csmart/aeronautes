@@ -818,3 +818,57 @@ func TestJobRecordsRecoveryDurably(t *testing.T) {
 		t.Fatalf("clean job left recovery records: %+v", pending)
 	}
 }
+
+func TestRerunJob(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	h.connect(t)
+	srcBookmark := h.transfer.connections.ActiveBookmarkID()
+	dstBookmark, dstMock := secondCluster(t, h)
+	seen := h.installEngine(nil)
+
+	h.mock.AddContainer("media", "standard")
+	seedObject(h.mock, "media", "scope/a.txt", "alpha", nil)
+	seedObject(h.mock, "media", "scope/b.txt", "bravo", nil)
+	dstMock.AddContainer("backup", "standard")
+
+	first, err := h.transfer.StartCopy(ctx, CopyRequestDTO{
+		SourceBookmarkID: srcBookmark, SourceContainer: "media", SourcePrefix: "scope/",
+		DestBookmarkID: dstBookmark, DestContainer: "backup", DestPrefix: "mirror/",
+		Settings: TransferSettingsDTO{Transfers: 9},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job := awaitTerminal(t, h, first); job.State != "complete" {
+		t.Fatalf("first = %+v", job)
+	}
+
+	// A running job refuses; a mirror refuses toward its dialog.
+	if _, err := h.transfer.RerunJob(ctx, "nonexistent"); err == nil {
+		t.Fatal("missing job accepted")
+	}
+
+	rerun, err := h.transfer.RerunJob(ctx, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, h, rerun)
+	if job.State != "complete" {
+		t.Fatalf("rerun = %+v", job)
+	}
+	// The idempotent machinery skipped the already-verified objects.
+	if job.Counters.ObjectsCopied != 0 || job.Counters.ObjectsPlanned != 0 {
+		t.Fatalf("rerun recopied: %+v", job.Counters)
+	}
+	// Scope and effective settings carried over exactly.
+	if job.Source != "media/scope/" || job.Destination != "backup/mirror/" {
+		t.Fatalf("scope = %s → %s", job.Source, job.Destination)
+	}
+	if !strings.Contains(job.Settings, `"transfers":9`) {
+		t.Fatalf("settings not carried: %s", job.Settings)
+	}
+	if len(*seen) < 1 || (*seen)[len(*seen)-1].Transfers != 9 {
+		t.Fatalf("engine options on rerun: %+v", *seen)
+	}
+}

@@ -149,6 +149,7 @@ export interface Api {
   startCopy(req: CopyRequestDTO): Promise<string>;
   startMirror(req: MirrorRequestDTO): Promise<string>;
   cancelJob(jobId: string): Promise<void>;
+  rerunJob(jobId: string): Promise<string>;
   jobs(bookmarkId: string, activeOnly: boolean, limit: number): Promise<JobDTO[]>;
   pickUploadFiles(): Promise<string[]>;
   pickDownloadDir(): Promise<string>;
@@ -213,6 +214,7 @@ export const liveApi: Api = {
   startCopy: (req) => TransferService.StartCopy(req),
   startMirror: (req) => TransferService.StartMirror(req),
   cancelJob: (jobId) => TransferService.CancelJob(jobId),
+  rerunJob: (jobId) => TransferService.RerunJob(jobId),
   jobs: async (bookmarkId, activeOnly, limit) =>
     (await JobService.List(bookmarkId, activeOnly, limit)) ?? [],
   pickUploadFiles: async () => (await TransferService.PickUploadFiles()) ?? [],

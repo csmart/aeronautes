@@ -172,7 +172,7 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 	s.record(ctx, req.BookmarkID, "transfer.upload.start", job.Source+" → "+job.Destination, "job "+job.ID+" · "+job.Settings, audit.ResultApplied)
 
 	s.launch(jobCtx, job.ID, req.BookmarkID, func(runCtx context.Context) {
-		s.runLocal(runCtx, job.ID, req.BookmarkID, job.Counters, func(innerCtx context.Context, onProgress func(done, total int64)) (*local.Report, error) {
+		s.runLocal(runCtx, job.ID, req.BookmarkID, job.Counters, func(innerCtx context.Context, onProgress func(done, total, bytes int64)) (*local.Report, error) {
 			report, err := local.Upload(innerCtx, session, engine, "aeronautes_dst:"+req.Container, req.Container, req.Prefix, preflight, onProgress)
 			if report != nil && err == nil && len(report.Failures) == 0 {
 				// Every upload verified: the captured segment prefixes
@@ -224,7 +224,7 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 	s.record(ctx, req.BookmarkID, "transfer.download.start", job.Source+" → "+job.Destination, "job "+job.ID+" · "+job.Settings, audit.ResultApplied)
 
 	s.launch(jobCtx, job.ID, req.BookmarkID, func(runCtx context.Context) {
-		s.runLocal(runCtx, job.ID, req.BookmarkID, job.Counters, func(innerCtx context.Context, onProgress func(done, total int64)) (*local.Report, error) {
+		s.runLocal(runCtx, job.ID, req.BookmarkID, job.Counters, func(innerCtx context.Context, onProgress func(done, total, bytes int64)) (*local.Report, error) {
 			return local.Download(innerCtx, session, engine, "aeronautes_src:"+req.Container, req.Container, req.Prefix, req.DestDir, preflight, onProgress)
 		})
 	})
@@ -236,7 +236,7 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 // so the lifecycle is Planning → Running → Verifying → terminal with
 // verification counted from the per-object checks.
 func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string, base jobs.Counters,
-	run func(ctx context.Context, onProgress func(done, total int64)) (*local.Report, error)) {
+	run func(ctx context.Context, onProgress func(done, total, bytes int64)) (*local.Report, error)) {
 
 	background := context.WithoutCancel(ctx)
 	transition := func(state jobs.State) {
@@ -248,9 +248,12 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 	transition(jobs.StateRunning)
 
 	counters := base
-	report, err := run(ctx, func(done, total int64) {
+	report, err := run(ctx, func(done, total, bytes int64) {
 		// Progress flushes are best-effort; the terminal flush is exact.
+		// Bytes stream live so the drawer's rate and ETA work for local
+		// transfers too (§65.8 item 5).
 		counters.ObjectsCopied = done
+		counters.BytesCopied = bytes
 		_ = s.jobs.UpdateCounters(background, jobID, counters)
 	})
 	if report != nil {

@@ -8,7 +8,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
+import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -17,13 +17,21 @@ import * as $models from "./models.js";
 /**
  * Recent returns the newest audit events, newest first.
  */
-export function Recent(limit: number): $CancellablePromise<$models.AuditEventDTO[] | null> {
-    return $Call.ByID(1655641421, limit);
+export function Recent(limit: number): $CancellablePromise<$models.AuditEventDTO[]> {
+    return $Call.ByID(1655641421, limit).then(($result: any) => {
+        return $$createType1($result);
+    });
 }
 
 /**
  * Search reads the trail under filters, newest first.
  */
-export function Search(q: $models.AuditQueryDTO): $CancellablePromise<$models.AuditEventDTO[] | null> {
-    return $Call.ByID(3995158262, q);
+export function Search(q: $models.AuditQueryDTO): $CancellablePromise<$models.AuditEventDTO[]> {
+    return $Call.ByID(3995158262, q).then(($result: any) => {
+        return $$createType1($result);
+    });
 }
+
+// Private type creation functions
+const $$createType0 = $models.AuditEventDTO.createFrom;
+const $$createType1 = $Create.Array($$createType0);
