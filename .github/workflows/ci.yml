@@ -47,7 +47,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends libgtk-4-dev libwebkitgtk-6.0-dev
       # go:embed all:frontend/dist needs the built frontend before any Go
       # compile step; the committed frontend/bindings are used as-is.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: steps.detect.outputs.present == 'true'
         with:
           node-version: lts/*
@@ -93,7 +93,7 @@ jobs:
           else
             echo "No frontend/ yet — skipping."
           fi
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: steps.detect.outputs.present == 'true'
         with:
           node-version: lts/*
@@ -222,7 +222,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
