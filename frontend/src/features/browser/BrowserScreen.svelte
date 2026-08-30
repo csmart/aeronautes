@@ -1,9 +1,9 @@
 <!-- The four-pane primary shell (§4.3, §5.1), live: bookmark → auth →
   containers → objects → selection-triggered inspector HEAD — the v0.1
-  vertical proof (§65 commit 13). -->
+  vertical proof. -->
 <script lang="ts">
   import { onMount } from "svelte";
-  import { liveApi } from "../../lib/api";
+  import { liveApi, type BookmarkDTO } from "../../lib/api";
   import BookmarkRail from "./BookmarkRail.svelte";
   import BookmarkEditor from "./BookmarkEditor.svelte";
   import ContainerColumn from "./ContainerColumn.svelte";
@@ -21,6 +21,7 @@
 
   let workingList: WorkingList | undefined = $state();
   let editorOpen = $state(false);
+  let editorExisting = $state<BookmarkDTO | null>(null);
   let createOpen = $state(false);
   let shellInfo = $state("connecting…");
   let aboutOpen = $state(false);
@@ -88,7 +89,17 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <div class="screen">
-  <BookmarkRail {browser} onAddBookmark={() => (editorOpen = true)} />
+  <BookmarkRail
+    {browser}
+    onAddBookmark={() => {
+      editorExisting = null;
+      editorOpen = true;
+    }}
+    onEditBookmark={(bookmark) => {
+      editorExisting = bookmark;
+      editorOpen = true;
+    }}
+  />
   <ContainerColumn {browser} onCreate={() => (createOpen = true)} />
   <WorkingList bind:this={workingList} {browser} />
   <Inspector {browser} />
@@ -110,7 +121,7 @@
 </div>
 
 {#if editorOpen}
-  <BookmarkEditor {browser} onClose={() => (editorOpen = false)} />
+  <BookmarkEditor {browser} existing={editorExisting} onClose={() => (editorOpen = false)} />
 {/if}
 {#if createOpen}
   <CreateContainerDialog {browser} onClose={() => (createOpen = false)} />
@@ -147,7 +158,8 @@
   /* §65.8 item 7: the four panes track narrower windows instead of
      jamming — tighter columns first, then the rail and side panes give
      up more ground. Below that the working list stays usable and the
-     window scrolls nothing horizontally. */
+     page body itself should not scroll horizontally; wide content
+     scrolls inside its own pane. */
   @media (max-width: 1100px) {
     .screen {
       grid-template-columns: 4.6rem 13rem minmax(19rem, 1fr) minmax(15rem, 18rem);

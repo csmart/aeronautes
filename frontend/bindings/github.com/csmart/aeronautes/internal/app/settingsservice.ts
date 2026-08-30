@@ -15,13 +15,6 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as audit$0 from "../audit/models.js";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
-import * as jobs$0 from "../jobs/models.js";
-
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
 /**
@@ -29,16 +22,6 @@ import * as $models from "./models.js";
  */
 export function Get(): $CancellablePromise<$models.AppSettingsDTO> {
     return $Call.ByID(3118058760);
-}
-
-/**
- * RunRetention applies the §51 prune per the persisted policy: audit
- * events and terminal jobs past their windows (0 disables either).
- * Non-terminal jobs and jobs holding crash-recovery records survive
- * regardless.
- */
-export function RunRetention(jobStore: jobs$0.Store | null, auditStore: audit$0.Store | null): $CancellablePromise<void> {
-    return $Call.ByID(2231695893, jobStore, auditStore);
 }
 
 /**

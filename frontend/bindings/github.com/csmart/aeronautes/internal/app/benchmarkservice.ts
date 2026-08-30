@@ -26,20 +26,6 @@ export function Latest(bookmarkID: string): $CancellablePromise<$models.Benchmar
 }
 
 /**
- * RecommendationFor is the §40 Auto hook (nil when no run recorded).
- */
-export function RecommendationFor(bookmarkID: string): $CancellablePromise<$models.TransferSettingsDTO | null> {
-    return $Call.ByID(3765016928, bookmarkID);
-}
-
-/**
- * SetScale overrides the workload for tests.
- */
-export function SetScale(objects: number, concurrencies: number[] | null): $CancellablePromise<void> {
-    return $Call.ByID(626885512, objects, concurrencies);
-}
-
-/**
  * StartBenchmark validates the typed consent and launches the job.
  */
 export function StartBenchmark(req: $models.BenchmarkRequestDTO): $CancellablePromise<string> {

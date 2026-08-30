@@ -41,10 +41,14 @@ import type {
   ObjectMetadataEditDTO,
   PrefixDetailDTO,
   SLOManifestDTO,
+  PickedDirDTO,
+  PickedFilesDTO,
 } from "../../bindings/github.com/csmart/aeronautes/internal/app";
 
 export type {
   AccountDTO,
+  PickedDirDTO,
+  PickedFilesDTO,
   AuditEventDTO,
   BookmarkDTO,
   CapabilitiesDTO,
@@ -151,8 +155,8 @@ export interface Api {
   cancelJob(jobId: string): Promise<void>;
   rerunJob(jobId: string): Promise<string>;
   jobs(bookmarkId: string, activeOnly: boolean, limit: number): Promise<JobDTO[]>;
-  pickUploadFiles(): Promise<string[]>;
-  pickDownloadDir(): Promise<string>;
+  pickUploadFiles(): Promise<PickedFilesDTO | null>;
+  pickDownloadDir(): Promise<PickedDirDTO | null>;
   preflightUpload(req: UploadRequestDTO): Promise<UploadPreflight>;
   startUpload(req: UploadRequestDTO): Promise<string>;
   preflightDownload(req: DownloadRequestDTO): Promise<DownloadPreflight>;
@@ -217,7 +221,7 @@ export const liveApi: Api = {
   rerunJob: (jobId) => TransferService.RerunJob(jobId),
   jobs: async (bookmarkId, activeOnly, limit) =>
     (await JobService.List(bookmarkId, activeOnly, limit)) ?? [],
-  pickUploadFiles: async () => (await TransferService.PickUploadFiles()) ?? [],
+  pickUploadFiles: () => TransferService.PickUploadFiles(),
   pickDownloadDir: () => TransferService.PickDownloadDir(),
   preflightUpload: async (req) => {
     const report = await TransferService.PreflightUpload(req);

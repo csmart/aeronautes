@@ -2,8 +2,17 @@
   import { getTheme, setTheme, type Theme } from "../../design/tokens";
   import type { BrowserState } from "./browserState.svelte";
 
-  let { browser, onAddBookmark }: { browser: BrowserState; onAddBookmark: () => void } =
-    $props();
+  import type { BookmarkDTO } from "../../lib/api";
+
+  let {
+    browser,
+    onAddBookmark,
+    onEditBookmark,
+  }: {
+    browser: BrowserState;
+    onAddBookmark: () => void;
+    onEditBookmark: (bookmark: BookmarkDTO) => void;
+  } = $props();
 
   let theme: Theme = $state(getTheme());
 
@@ -27,17 +36,33 @@
 <nav class="rail" aria-label="Bookmarks">
   <div class="bookmarks">
     {#each browser.bookmarks as bookmark (bookmark.id)}
-      <button
-        class="bookmark"
-        class:active={browser.connectedBookmarkId === bookmark.id}
-        title={bookmark.displayName}
-        aria-pressed={browser.connectedBookmarkId === bookmark.id}
-        disabled={browser.connecting}
-        onclick={() => browser.connect(bookmark.id).catch(() => {})}
-      >
-        <span class="badge">{initials(bookmark.displayName)}</span>
-        <span class="label">{bookmark.displayName}</span>
-      </button>
+      <div class="bookmark-row">
+        <button
+          class="bookmark"
+          class:active={browser.connectedBookmarkId === bookmark.id}
+          class:insecure={bookmark.tlsMode === "insecure"}
+          title={bookmark.tlsMode === "insecure"
+            ? `${bookmark.displayName} — TLS verification DISABLED`
+            : bookmark.displayName}
+          aria-pressed={browser.connectedBookmarkId === bookmark.id}
+          disabled={browser.connecting}
+          onclick={() => browser.connect(bookmark.id).catch(() => {})}
+        >
+          <span class="badge">{initials(bookmark.displayName)}</span>
+          <span class="label">{bookmark.displayName}</span>
+          {#if bookmark.tlsMode === "insecure"}
+            <!-- K-SEC-005: the warning is persistent chrome, not an
+              editor-only detail. -->
+            <span class="insecure-flag" role="img" aria-label="TLS verification disabled">⚠</span>
+          {/if}
+        </button>
+        <button
+          class="edit"
+          title="Edit {bookmark.displayName}"
+          aria-label="Edit {bookmark.displayName}"
+          onclick={() => onEditBookmark(bookmark)}
+        >✎</button>
+      </div>
     {/each}
 
     <button class="bookmark add" title="Add bookmark" onclick={onAddBookmark}>
@@ -57,6 +82,39 @@
 </nav>
 
 <style>
+  .bookmark-row {
+    position: relative;
+  }
+
+  .bookmark-row .edit {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    padding: 0 3px;
+    font-size: var(--text-xs);
+    line-height: 1.4;
+    color: var(--color-text-secondary);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-control);
+    cursor: pointer;
+    opacity: 0;
+  }
+
+  .bookmark-row:hover .edit,
+  .bookmark-row .edit:focus-visible {
+    opacity: 1;
+  }
+
+  .bookmark.insecure {
+    box-shadow: inset 0 0 0 1px var(--color-danger);
+  }
+
+  .insecure-flag {
+    font-size: var(--text-xs);
+    color: var(--color-danger);
+  }
+
   .rail {
     display: flex;
     flex-direction: column;

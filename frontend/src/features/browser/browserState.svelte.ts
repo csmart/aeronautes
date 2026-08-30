@@ -29,6 +29,8 @@ import type {
   MutationResultDTO,
   ObjectDetailDTO,
   ObjectMetadataEditDTO,
+  PickedDirDTO,
+  PickedFilesDTO,
   PrefixDetailDTO,
   SLOManifestDTO,
 } from "../../lib/api";
@@ -107,12 +109,43 @@ export class BrowserState {
    * jump): the label of where we came from; null in normal browsing. */
   backstageFrom: string | null = $state(null);
   prefix = $state("");
-  filter = $state("");
+  #filter = $state("");
+
+  /** Loaded-row filter. Setting it re-anchors the selection BY NAME:
+   * the selected identity survives a filter change, and when it is
+   * filtered out the selection (and dependent detail state) clears —
+   * an index can never silently point at a different object (the
+   * review wave's C-04). */
+  get filter(): string {
+    return this.#filter;
+  }
+
+  set filter(value: string) {
+    const selectedName = this.selectedEntry?.name ?? null;
+    this.#filter = value;
+    if (selectedName === null) {
+      return;
+    }
+    const idx = this.visibleEntries.findIndex((e) => e.name === selectedName);
+    if (idx === this.selectedIndex) {
+      return;
+    }
+    if (idx >= 0) {
+      // Same identity, new position: move the index WITHOUT re-running
+      // selection side effects.
+      this.selectedIndex = idx;
+    } else {
+      this.select(-1);
+    }
+  }
   entries: ListingRowDTO[] = $state([]);
   entriesMarker = $state("");
   entriesLoading = $state(false);
   entriesError: string | null = $state(null);
   selectedIndex = $state(-1);
+  /** The exact identity the current detail state was fetched for —
+   * every mutation binds THIS, never the live index. */
+  detailIdentity = $state<{ container: string; name: string } | null>(null);
 
   // Inspector detail (selection-triggered HEAD, §14.2): an object row
   // fetches its HEAD (and, for an SLO, its exact manifest), a prefix row
@@ -128,6 +161,16 @@ export class BrowserState {
 
   async loadBookmarks() {
     this.bookmarks = await this.#api.listBookmarks();
+  }
+
+  async deleteBookmark(id: string): Promise<void> {
+    await this.#api.deleteBookmark(id);
+    this.bookmarks = this.bookmarks.filter((b) => b.id !== id);
+    if (this.connectedBookmarkId === id) {
+      this.connectedBookmarkId = null;
+      this.containers = [];
+      this.containerName = null;
+    }
   }
 
   async saveBookmark(bookmark: BookmarkDTO, secret: string): Promise<BookmarkDTO> {
@@ -303,6 +346,10 @@ export class BrowserState {
     this.selectedIndex = index;
     const entry = this.selectedEntry;
     const seq = ++this.#detailSeq;
+    this.detailIdentity =
+      entry && this.containerName
+        ? { container: this.containerName, name: entry.name }
+        : null;
     this.objectDetail = null;
     this.prefixDetail = null;
     this.sloManifest = null;
@@ -429,11 +476,11 @@ export class BrowserState {
     return id;
   }
 
-  async pickUploadFiles(): Promise<string[]> {
+  async pickUploadFiles(): Promise<PickedFilesDTO | null> {
     return await this.#api.pickUploadFiles();
   }
 
-  async pickDownloadDir(): Promise<string> {
+  async pickDownloadDir(): Promise<PickedDirDTO | null> {
     return await this.#api.pickDownloadDir();
   }
 
@@ -446,22 +493,22 @@ export class BrowserState {
     };
   }
 
-  async preflightUpload(paths: string[]): Promise<UploadPreflight> {
-    return await this.#api.preflightUpload({ ...this.#localScope(), paths });
+  async preflightUpload(selectionToken: string): Promise<UploadPreflight> {
+    return await this.#api.preflightUpload({ ...this.#localScope(), selectionToken });
   }
 
-  async startUpload(paths: string[]): Promise<string> {
-    const id = await this.#api.startUpload({ ...this.#localScope(), paths });
+  async startUpload(selectionToken: string): Promise<string> {
+    const id = await this.#api.startUpload({ ...this.#localScope(), selectionToken });
     await this.loadJobs();
     return id;
   }
 
-  async preflightDownload(destDir: string): Promise<DownloadPreflight> {
-    return await this.#api.preflightDownload({ ...this.#localScope(), destDir });
+  async preflightDownload(destDirToken: string): Promise<DownloadPreflight> {
+    return await this.#api.preflightDownload({ ...this.#localScope(), destDirToken });
   }
 
-  async startDownload(destDir: string): Promise<string> {
-    const id = await this.#api.startDownload({ ...this.#localScope(), destDir });
+  async startDownload(destDirToken: string): Promise<string> {
+    const id = await this.#api.startDownload({ ...this.#localScope(), destDirToken });
     await this.loadJobs();
     return id;
   }
@@ -565,14 +612,13 @@ export class BrowserState {
   /** Save an object metadata working copy. force skips the fingerprint
    * check — the deliberate "apply mine anyway" after a shown conflict. */
   async saveObjectMetadata(edit: ObjectMetadataEditDTO, force = false): Promise<MutationResultDTO> {
-    const entry = this.selectedEntry;
-    const container = this.containerName;
+    const identity = this.detailIdentity;
     const detail = this.objectDetail;
-    if (!entry || entry.kind !== "object" || !container || !detail) {
+    if (!identity || !detail) {
       throw new Error("no object selected");
     }
     const base = force ? "" : detail.editableFingerprint;
-    const result = await this.#api.updateObjectMetadata(container, entry.name, base, edit);
+    const result = await this.#api.updateObjectMetadata(identity.container, identity.name, base, edit);
     if (result.outcome === "applied" && result.objectAfter) {
       this.objectDetail = result.objectAfter;
     }
@@ -638,15 +684,14 @@ export class BrowserState {
     this.backstageFrom = fromLabel;
   }
 
-  /** Delete ONLY the selected manifest object (§60 Phase 4's low-risk
-   * delete): segments survive; the working list refreshes. */
-  async deleteManifest(): Promise<void> {
-    const entry = this.selectedEntry;
-    const container = this.containerName;
-    if (!entry || entry.kind !== "object" || !container) {
-      throw new Error("no object selected");
+  /** Delete ONLY the named manifest object (§60 Phase 4's low-risk
+   * delete): segments survive; the working list refreshes. The dialog
+   * passes the exact identity it displayed — never the live index. */
+  async deleteManifest(container: string, name: string): Promise<void> {
+    if (!container || !name) {
+      throw new Error("no object identity");
     }
-    await this.#api.deleteManifest(container, entry.name);
+    await this.#api.deleteManifest(container, name);
     await this.loadAudit();
     await this.goTo(this.prefix);
   }

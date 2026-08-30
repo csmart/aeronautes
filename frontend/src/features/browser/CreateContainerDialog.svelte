@@ -1,6 +1,6 @@
 <!-- Create container (§20): name plus the storage-policy picker fed by
   connect-time capabilities — one advertised policy collapses to no
-  chrome, several offer a select with the default marked (§20's rule
+  chrome, several offer a select with the default marked ('s rule
   about not cluttering the UI unnecessarily). -->
 <script lang="ts">
   import { trapFocus } from "../../lib/trapFocus";

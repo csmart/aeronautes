@@ -134,6 +134,8 @@ export function newFakeApi(): Api {
       etag: stored.etag,
       lastModified: stored.lastModified,
       manifest: large?.kind === "dlo" ? large.manifest : "",
+      followedSymlink: false,
+      symlinkTarget: "",
       deleteAt: objectDeleteAt[`${container}/${name}`] ?? "",
       meta: { ...(objectMeta[`${container}/${name}`] ?? {}) },
       rawHeaders: { "X-Trans-Id": "txfake" },
@@ -484,6 +486,8 @@ export function newFakeApi(): Api {
         nativeRouted: 1,
         destOnlyBytes: 7_000_000,
       },
+      dataPath: "workstation hairpin: every byte downloads to this machine and uploads again (no server-side path in v1)",
+      overwriteBytes: 512,
       versionedDestination: req.destContainer === "versioned",
       largeObjectsAsDlo: true,
     }),
@@ -571,23 +575,29 @@ export function newFakeApi(): Api {
       job.state = "cancelled";
       job.finishedAt = "2026-08-29T10:05:00Z";
     },
-    pickUploadFiles: async () => ["/tmp/fake-a.txt", "/tmp/fake-b.txt"],
-    pickDownloadDir: async () => "/tmp/fake-dest",
+    pickUploadFiles: async () => ({ token: "fake-selection", files: ["fake-a.txt", "fake-b.txt"] }),
+    pickDownloadDir: async () => ({ token: "fake-dir", dir: "/tmp/fake-dest" }),
     preflightUpload: async (req) => {
-      const paths = req.paths ?? [];
+      if (req.selectionToken !== "fake-selection") {
+        throw new Error("unknown or expired file selection");
+      }
+      const names = ["fake-a.txt", "fake-b.txt"];
       return {
-        items: paths.map((path) => ({
-          path,
-          name: req.prefix + path.split("/").pop(),
+        items: names.map((name) => ({
+          path: "(picker-held)",
+          name: req.prefix + name,
           size: 1024,
           route: "rclone",
         })),
         problems: [],
-        totalBytes: 1024 * paths.length,
+        totalBytes: 1024 * names.length,
       };
     },
     startUpload: async (req) => {
-      const paths = req.paths ?? [];
+      if (req.selectionToken !== "fake-selection") {
+        throw new Error("unknown or expired file selection");
+      }
+      const paths = ["fake-a.txt", "fake-b.txt"];
       const id = `job-${jobs.length + 1}`;
       jobs.push({
         id,
@@ -622,7 +632,7 @@ export function newFakeApi(): Api {
         { name: req.prefix + "a.txt", relPath: "a.txt", size: 512, route: "rclone", dir: false },
       ],
       problems:
-        req.destDir === "/tmp/collides"
+        req.destDirToken === "collides"
           ? [{ name: "a.txt", kind: "local-exists", detail: "already there", reject: true }]
           : [],
       totalBytes: 512,
@@ -635,7 +645,7 @@ export function newFakeApi(): Api {
         type: "download",
         state: "running",
         source: `${req.container}/${req.prefix}`,
-        destination: req.destDir,
+        destination: "local directory (picker-selected)",
         sourceBookmarkId: req.bookmarkId,
         destBookmarkId: "",
         createdAt: "2026-08-29T10:00:00Z",
@@ -731,13 +741,14 @@ export function newFakeApi(): Api {
       target: "media_segments/owned/",
       proven: req.name === "owned.bin",
       segments: 0,
+      inlineEntries: 0,
     }),
     deleteManifestWithSegments: async (req) => {
       if (req.confirm !== req.name) {
         throw new Error("confirmation does not match the object name");
       }
       record("segments.delete", `${req.container}/${req.name}`, "applied");
-      return { manifestDeleted: true, segmentsDeleted: 3, basis: req.force ? "backstage-forced" : "exclusive-ownership" };
+      return { manifestDeleted: true, segmentsDeleted: 3, segmentsFailed: 0, basis: req.force ? "backstage-forced" : "exclusive-ownership" };
     },
     jobs: async (bookmarkId, activeOnly, limit) =>
       jobs

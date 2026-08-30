@@ -15,9 +15,6 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as evidence$0 from "../evidence/models.js";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
 import * as local$0 from "../transfer/local/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -33,17 +30,19 @@ export function CancelJob(jobID: string): $CancellablePromise<void> {
 }
 
 /**
- * PickDownloadDir opens the OS directory picker. "" when cancelled.
+ * PickDownloadDir opens the OS directory picker. Nil when cancelled.
  */
-export function PickDownloadDir(): $CancellablePromise<string> {
+export function PickDownloadDir(): $CancellablePromise<$models.PickedDirDTO | null> {
     return $Call.ByID(1743209014);
 }
 
 /**
- * PickUploadFiles opens the OS multi-file picker (Go side: the webview
- * never sees filesystem paths otherwise). Empty when cancelled.
+ * PickUploadFiles opens the OS multi-file picker and returns a token
+ * plus display names — the paths stay in Go (ADR 0011: a compromised
+ * page must not be able to name ~/.ssh/id_rsa). Nil token when
+ * cancelled.
  */
-export function PickUploadFiles(): $CancellablePromise<string[] | null> {
+export function PickUploadFiles(): $CancellablePromise<$models.PickedFilesDTO | null> {
     return $Call.ByID(24924697);
 }
 
@@ -63,7 +62,10 @@ export function PreflightDownload(req: $models.DownloadRequestDTO): $Cancellable
 }
 
 /**
- * PreflightUpload runs the complete §27.5 pre-write report.
+ * PreflightUpload is the BRIDGE-facing report: absolute local paths are
+ * blanked so they never cross to the webview (ADR 0011, review R-09) —
+ * the page shows destination NAMES. Execution uses uploadPreflight
+ * (below), which keeps the paths it needs.
  */
 export function PreflightUpload(req: $models.UploadRequestDTO): $CancellablePromise<local$0.UploadPreflight | null> {
     return $Call.ByID(1873223240, req);
@@ -79,45 +81,6 @@ export function PreflightUpload(req: $models.UploadRequestDTO): $CancellableProm
  */
 export function RerunJob(jobID: string): $CancellablePromise<string> {
     return $Call.ByID(2171765979, jobID);
-}
-
-/**
- * SetEngineFactory overrides engine construction (tests; the future
- * compatibility matrix).
- */
-export function SetEngineFactory(f: any): $CancellablePromise<void> {
-    return $Call.ByID(3836005686, f);
-}
-
-/**
- * SetEvidenceStore wires §28.6(b) ownership recording: committed
- * segment prefixes a job wrote become ExclusiveOwnershipProof rows.
- */
-export function SetEvidenceStore(store: evidence$0.Store | null): $CancellablePromise<void> {
-    return $Call.ByID(3408632412, store);
-}
-
-/**
- * SetFilePicker wires the shell's dialog implementation.
- */
-export function SetFilePicker(picker: $models.FilePicker): $CancellablePromise<void> {
-    return $Call.ByID(3085170222, picker);
-}
-
-/**
- * SetMaxActiveJobs resizes the §38 budget (the settings surface will
- * drive this; tests too). Applies to jobs started afterwards.
- */
-export function SetMaxActiveJobs(n: number): $CancellablePromise<void> {
-    return $Call.ByID(3318917422, n);
-}
-
-/**
- * SetRecommendationSource wires the benchmark store's per-bookmark
- * recommendation lookup into Auto (§40/§42).
- */
-export function SetRecommendationSource(f: any): $CancellablePromise<void> {
-    return $Call.ByID(1086801000, f);
 }
 
 /**
@@ -148,16 +111,4 @@ export function StartMirror(req: $models.MirrorRequestDTO): $CancellablePromise<
  */
 export function StartUpload(req: $models.UploadRequestDTO): $CancellablePromise<string> {
     return $Call.ByID(1096678111, req);
-}
-
-/**
- * SweepCrashLitter replays reconciliation for jobs that died before
- * their own could run (§65.8 item 2): every persisted staging prefix
- * and captured-minus-committed segment prefix of a TERMINAL job, under
- * the same live-manifest guard. Bookmarks that cannot authenticate
- * right now are skipped and retried later; records clear only after a
- * clean sweep.
- */
-export function SweepCrashLitter(): $CancellablePromise<number> {
-    return $Call.ByID(531299429);
 }

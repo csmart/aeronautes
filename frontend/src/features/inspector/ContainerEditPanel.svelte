@@ -1,5 +1,5 @@
 <!-- Container configuration edit mode (§65.2 item 7): metadata working
-  copy, ACL editors, quotas, and versioning per the §21 pin — the mode
+  copy, ACL editors, quotas, and versioning per the pin — the mode
   select is capability-gated: modes the cluster is KNOWN to reject are
   disabled; an unknown /info leaves everything enabled with a note. -->
 <script lang="ts">
@@ -22,6 +22,8 @@
   let writeAcl = $state(detail.writeAcl);
   /* svelte-ignore state_referenced_locally */
   let versioningMode = $state(detail.versioningMode || "off");
+  // svelte-ignore state_referenced_locally
+  const initialVersioningMode = detail.versioningMode || "off";
   /* svelte-ignore state_referenced_locally */
   let versioningArchive = $state(detail.versioningArchive);
   /* svelte-ignore state_referenced_locally */
@@ -40,10 +42,30 @@
     return !capsKnown || (caps?.versioningFlags ?? []).includes(flag);
   }
 
+  // A read ACL that grants the world (.r:* / .r:*,.rlistings) turns
+  // private data public in one Save; require an explicit acknowledgement
+  // first (DESIGN §19.1).
+  const grantsPublic = $derived(/(^|,)\s*\.r:\*/.test(readAcl));
+  let publicAck = $state(false);
+
+  // Modern object_versioning has no safe editable representation in v1
+  // (the header set differs from the legacy location modes); a
+  // container using it is read-only here rather than silently rewritten
+  // into a location shape (§65.10 tracks the edit path).
+  const modernVersioning = $derived(initialVersioningMode === "enabled");
+
   async function save(force: boolean) {
+    if (modernVersioning) {
+      error = "This container uses modern object versioning, which v1 cannot edit safely — manage it with swift/CLI for now.";
+      return;
+    }
     const { meta, duplicate } = editor!.value();
     if (duplicate !== "") {
       error = `duplicate key "${duplicate}"`;
+      return;
+    }
+    if (grantsPublic && !publicAck) {
+      error = "This read ACL makes the container publicly readable. Tick the box below to confirm.";
       return;
     }
     saving = true;
@@ -60,6 +82,7 @@
           versioningArchive: versioningMode === "off" ? "" : versioningArchive,
           quotaBytes: Number(quotaBytes) || 0,
           quotaCount: Number(quotaCount) || 0,
+          ackPublic: grantsPublic && publicAck,
         },
         force,
       );
@@ -98,6 +121,9 @@
         <option value="history_location" disabled={!modeAllowed("x-history-location")}>
           history location
         </option>
+        {#if versioningMode === "enabled"}
+          <option value="enabled" disabled selected>in-container versions (read-only in v1)</option>
+        {/if}
       </select>
     </label>
     {#if versioningMode !== "off"}
@@ -144,6 +170,12 @@
 
   <div class="actions">
     <button onclick={onDone} disabled={saving}>Cancel</button>
+    {#if grantsPublic}
+      <label class="public-ack">
+        <input type="checkbox" bind:checked={publicAck} />
+        I understand this makes <span class="type-mono">{browser.containerName}</span> publicly readable.
+      </label>
+    {/if}
     <button class="primary" onclick={() => save(false)} disabled={saving}>
       {saving ? "Saving…" : "Save"}
     </button>

@@ -35,6 +35,7 @@
 
   /* Type scale — compact; operators scan, they don't read essays. */
   --text-xs: 0.71rem; /* badges, table captions, footers */
+  --text-base: 0.875rem;
   --text-sm: 0.82rem; /* secondary detail, inspector labels */
   --text-md: 0.9rem; /* listing rows, controls — the workhorse size */
   --text-lg: 1.05rem; /* pane titles */

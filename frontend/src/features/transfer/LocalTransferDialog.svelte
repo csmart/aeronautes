@@ -1,7 +1,7 @@
-<!-- Upload / download dialog (§27.5): the COMPLETE collision preflight
-  renders before any write, and the v1 policy is reject-on-collision —
-  Start only exists for a clean report. Warnings (portability hazards)
-  show but do not block on this target. -->
+<!-- Upload / download dialog (§27.5): the collision preflight renders
+  before any write under one cross-platform namespace policy, and the
+  v1 rule is reject-on-collision — Start only exists for a clean
+  report. -->
 <script lang="ts">
   import { trapFocus } from "../../lib/trapFocus";
   import type { BrowserState } from "../browser/browserState.svelte";
@@ -22,8 +22,11 @@
     onClose,
   }: { browser: BrowserState; mode: "upload" | "download"; onClose: () => void } = $props();
 
-  let picked: string[] = $state([]);
-  let destDir = $state("");
+  // Opaque picker tokens: the webview shows names, never paths.
+  let selectionToken = $state("");
+  let pickedNames: string[] = $state([]);
+  let destDirToken = $state("");
+  let destDir = $state(""); // display only — the token is authoritative
   let report = $state<PreflightView | null>(null);
   let busy = $state(false);
   let error: string | null = $state(null);
@@ -39,19 +42,23 @@
     report = null;
     try {
       if (mode === "upload") {
-        picked = await browser.pickUploadFiles();
-        if (picked.length === 0) {
+        const picked = await browser.pickUploadFiles();
+        if (!picked || !picked.files || picked.files.length === 0) {
           busy = false;
           return;
         }
-        report = await browser.preflightUpload(picked);
+        selectionToken = picked.token;
+        pickedNames = picked.files ?? [];
+        report = await browser.preflightUpload(selectionToken);
       } else {
-        destDir = await browser.pickDownloadDir();
-        if (!destDir) {
+        const dir = await browser.pickDownloadDir();
+        if (!dir) {
           busy = false;
           return;
         }
-        report = await browser.preflightDownload(destDir);
+        destDirToken = dir.token;
+        destDir = dir.dir;
+        report = await browser.preflightDownload(destDirToken);
       }
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -66,8 +73,8 @@
     try {
       startedJobId =
         mode === "upload"
-          ? await browser.startUpload(picked)
-          : await browser.startDownload(destDir);
+          ? await browser.startUpload(selectionToken)
+          : await browser.startDownload(destDirToken);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {

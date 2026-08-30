@@ -232,6 +232,12 @@ export interface ContainerEditDTO {
     "versioningArchive": string;
     "quotaBytes": number;
     "quotaCount": number;
+
+    /**
+     * AckPublic must be true to set a world-readable (.r:*) read ACL
+     * — the operator explicitly acknowledged public exposure (§19.1).
+     */
+    "ackPublic": boolean;
 }
 
 /**
@@ -274,6 +280,19 @@ export interface CopyPlanDTO {
      * reads depend on listing consistency (§28.6 disclosure).
      */
     "largeObjectsAsDlo": boolean;
+
+    /**
+     * DataPath names where the bytes physically travel (K-XFER-005):
+     * v1 always hairpins through this workstation — stated, never
+     * implied.
+     */
+    "dataPath": string;
+
+    /**
+     * OverwriteBytes are the planned bytes that land on EXISTING names
+     * (the changed set) — the blast radius of the overwrite half.
+     */
+    "overwriteBytes": number;
 }
 
 /**
@@ -374,27 +393,24 @@ export interface DeleteRequestDTO {
 }
 
 /**
- * DownloadRequestDTO scopes a prefix download.
+ * DownloadRequestDTO scopes a prefix download; DestDirToken is the
+ * picker-issued directory handle (paths never cross the bridge).
  */
 export interface DownloadRequestDTO {
     "bookmarkId": string;
     "container": string;
     "prefix": string;
-    "destDir": string;
+
+    /**
+     * DestDirToken names a picker-issued destination directory.
+     */
+    "destDirToken": string;
 
     /**
      * Settings are the per-job §44.1 overrides.
      */
     "settings": TransferSettingsDTO;
 }
-
-/**
- * FilePicker opens native file dialogs. It is an injected seam so
- * internal/app stays plain Go with no webview/CGO imports (ADR 0011):
- * main.go supplies the Wails implementation; headless contexts have
- * none and the pick methods say so instead of linking a webview.
- */
-export type FilePicker = any;
 
 /**
  * FindMatchDTO is one matching object row.
@@ -553,6 +569,14 @@ export interface ObjectDetailDTO {
     "etag": string;
     "lastModified": string;
     "manifest": string;
+
+    /**
+     * FollowedSymlink reports the HEAD chased a Swift symlink — the
+     * inspector must show a symlink, not a plain object, and the editor
+     * refuses (§17.1, F-05).
+     */
+    "followedSymlink": boolean;
+    "symlinkTarget": string;
     "deleteAt": string;
     "meta": { [_ in string]?: string } | null;
     "rawHeaders": { [_ in string]?: string } | null;
@@ -587,6 +611,24 @@ export interface ObjectMetadataEditDTO {
 export interface ObjectPageDTO {
     "rows": ListingRowDTO[] | null;
     "nextMarker": string;
+}
+
+/**
+ * PickedDirDTO is the directory selection: a display path (shown to
+ * the operator, never trusted back) and the token the request carries.
+ */
+export interface PickedDirDTO {
+    "token": string;
+    "dir": string;
+}
+
+/**
+ * PickedFilesDTO is what the webview learns about a file selection:
+ * display names and a token — never the paths.
+ */
+export interface PickedFilesDTO {
+    "token": string;
+    "files": string[] | null;
 }
 
 /**
@@ -659,6 +701,13 @@ export interface SegmentOwnershipDTO {
      * Segments counted (SLO) or 0 (DLO — prefix-scoped).
      */
     "segments": number;
+
+    /**
+     * InlineEntries counts SLO `data` entries: they live ONLY in the
+     * manifest, so even a manifest-only delete destroys them (§34
+     * honesty — the dialog must not claim every segment survives).
+     */
+    "inlineEntries": number;
 }
 
 /**
@@ -687,6 +736,12 @@ export interface SegmentsDeleteRequestDTO {
 export interface SegmentsDeleteResultDTO {
     "manifestDeleted": boolean;
     "segmentsDeleted": number;
+
+    /**
+     * SegmentsFailed are proven identities whose delete failed — the
+     * result is then PARTIAL and says so, never silently "applied".
+     */
+    "segmentsFailed": number;
 
     /**
      * "exclusive-ownership" | "backstage-forced"
@@ -732,13 +787,19 @@ export interface TransferSettingsDTO {
 }
 
 /**
- * UploadRequestDTO scopes a multi-file upload.
+ * UploadRequestDTO scopes a multi-file upload. Filesystem paths NEVER
+ * cross the bridge (ADR 0011): the webview holds an opaque selection
+ * token from the Go-side picker and the service resolves it here.
  */
 export interface UploadRequestDTO {
     "bookmarkId": string;
     "container": string;
     "prefix": string;
-    "paths": string[] | null;
+
+    /**
+     * SelectionToken names a picker-issued file selection.
+     */
+    "selectionToken": string;
 
     /**
      * Settings are the per-job §44.1 overrides.

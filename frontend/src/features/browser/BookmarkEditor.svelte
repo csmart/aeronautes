@@ -1,5 +1,5 @@
 <!-- Bookmark create/edit modal (§11). The API key field is write-only:
-  it crosses the bridge once at save and is never readable back (§55). -->
+  it crosses the bridge once at save and is never readable back. -->
 <script lang="ts">
   import { trapFocus } from "../../lib/trapFocus";
   import type { BookmarkDTO } from "../../lib/api";
@@ -29,6 +29,24 @@
   let caPem = $state("");
   let saving = $state(false);
   let error: string | null = $state(null);
+  let confirmingDelete = $state(false);
+
+  async function remove() {
+    if (!existing) {
+      return;
+    }
+    saving = true;
+    error = null;
+    try {
+      await browser.deleteBookmark(existing.id);
+      onClose();
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+      confirmingDelete = false;
+    } finally {
+      saving = false;
+    }
+  }
 
   async function save(connect: boolean) {
     saving = true;
@@ -136,6 +154,18 @@
     {/if}
 
     <div class="actions">
+      {#if existing}
+        {#if confirmingDelete}
+          <button type="button" class="danger" onclick={remove} disabled={saving}>
+            Really delete
+          </button>
+        {:else}
+          <button type="button" class="danger-soft" onclick={() => (confirmingDelete = true)} disabled={saving}>
+            Delete…
+          </button>
+        {/if}
+      {/if}
+      <span class="spacer"></span>
       <button type="button" class="secondary" onclick={onClose} disabled={saving}>
         Cancel
       </button>
@@ -230,6 +260,22 @@
     color: var(--color-warning);
     background: var(--color-warning-soft);
     border-radius: var(--radius-control);
+  }
+
+  .actions .spacer {
+    flex: 1;
+  }
+
+  .actions .danger {
+    color: var(--color-text-invert);
+    background: var(--color-danger);
+    border: 1px solid var(--color-danger);
+  }
+
+  .actions .danger-soft {
+    color: var(--color-danger);
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border);
   }
 
   .actions {
