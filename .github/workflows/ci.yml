@@ -198,7 +198,14 @@ jobs:
           AERONAUTES_SAIO_AUTH_URL: http://127.0.0.1:8080/auth/v1.0
           AERONAUTES_REQUIRE_TWO_ACCOUNTS: "1"
         run: |
-          go test -race -count=1 -coverprofile=cover.out -coverpkg=./internal/... ./...
+          # Scope the run to ./internal/... — exactly the -coverpkg set.
+          # The root package has no tests, but -coverpkg forces it to
+          # compile, and its //go:embed frontend/dist is not built in this
+          # job (it is exercised by the Smoke and Frontend jobs). Its
+          # inclusion via ./... previously failed setup; that failure was
+          # masked only because the removed `| grep` swallowed go test's
+          # exit status under this job's non-pipefail shell.
+          go test -race -count=1 -coverprofile=cover.out -coverpkg=./internal/... ./internal/...
           pct=$(go tool cover -func=cover.out | awk '/^total:/ {gsub(/%/,"",$3); print $3}')
           echo "combined Go statement coverage: ${pct}%"
           echo "$pct" > coverage-pct.txt
