@@ -4056,11 +4056,33 @@ edit (surgical), cross-account copy (logical-content identity, source
 untouched, no staging leak), prefix delete (spares the adversarial near-miss),
 mirror (converges + deletes only dest-only), and the destructive refusal twins
 (refusals have zero effect). The suite auto-runs in the SAIO CI job (two
-accounts required). Reportable coverage today: 7/75 required scenarios, the
-rest enumerated as honest gaps by the report artifact. Remaining matrix rows
-(read/session happy paths, conflict/cancel/partial cases, upload/download,
-fault-injection/crash with real killed subprocesses, UI→bridge, platform) build
-on this foundation next.
+accounts required).
+
+**Foundation hardened (2026-08-30, post-review).** The first adversarial
+war-room review (grok) found real helper holes that could bless a lie; all are
+closed with catching tests: AssertNoCollateral now walks container-config
+changes (an ACL/quota/versioning flip that adds no object is caught), and its
+pure core is unit-tested without SAIO (a bare container name no longer
+blanket-allows object changes inside it). The oracle escapes control bytes
+correctly (`%09`, not the illegal `%9`) and follows Swift marker pagination on
+every listing, so a tab/newline object name and a container past the 10k page
+are both witnessed — proven by an offline httptest. The copy matrix now seeds a
+real SLO and asserts negative space over the WHOLE destination namespace (a
+sidecar/segment container the engine might create is no longer invisible); the
+refusal matrix snapshots after the DLO setup and asserts nothing moved anywhere,
+including the segment container. Seed PUTs fail closed on non-2xx; a missing
+second account skips locally but still fails CI. The inventory now distinguishes
+synchronous Destructive ops from asynchronous Jobs, whose required scenarios
+include the full DESIGN lifecycle (conflict, cancel, partial, retry) — so those
+appear as honest gaps rather than being silently dropped. The bound-service list
+is derived from a single source of truth in the app package, and an AST test
+proves main.go binds exactly those. Reportable coverage today: 7/99 required
+scenarios (the honest denominator, up from 7/75 once job lifecycles are
+counted), the rest enumerated as gaps by the report artifact. The suite is
+race-clean under `-race` against SAIO. Remaining matrix rows (read/session happy
+paths, conflict/cancel/partial cases, upload/download, fault-injection/crash
+with real killed subprocesses, UI→bridge, platform) build on this foundation
+next.
 
 
 ## 66. Final project statement

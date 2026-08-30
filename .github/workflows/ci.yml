@@ -198,7 +198,7 @@ jobs:
           AERONAUTES_SAIO_AUTH_URL: http://127.0.0.1:8080/auth/v1.0
           AERONAUTES_REQUIRE_TWO_ACCOUNTS: "1"
         run: |
-          go test -race -count=1 -coverprofile=cover.out -coverpkg=./internal/... ./... 2>&1 | grep -v "no test files"
+          go test -race -count=1 -coverprofile=cover.out -coverpkg=./internal/... ./...
           pct=$(go tool cover -func=cover.out | awk '/^total:/ {gsub(/%/,"",$3); print $3}')
           echo "combined Go statement coverage: ${pct}%"
           echo "$pct" > coverage-pct.txt

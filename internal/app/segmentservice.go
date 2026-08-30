@@ -12,11 +12,13 @@ import (
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
 
-// The §34/§35 segment-cleanup half of DeleteService: manifest-only
-// stays the default everywhere; manifest+segments requires
-// ExclusiveOwnershipProof, and without it only the deliberate Backstage
-// flow (force + typed confirmation) proceeds — with the honest §34
-// warning that sharing cannot be disproved from one manifest.
+// The §34/§35 segment-cleanup half of DeleteService: manifest-only stays
+// the default everywhere. Manifest+segments ALWAYS requires the
+// deliberate Backstage flow (force + typed confirmation) — ownership
+// evidence is advisory context in the dialog and never auto-authorizes
+// destruction, because no live reverse-reference scan exists yet to
+// prove exclusivity (review R-02). The honest §34 warning stands:
+// sharing cannot be disproved from one manifest.
 
 // SegmentsDeleteRequestDTO names one manifest and the operator's intent.
 type SegmentsDeleteRequestDTO struct {

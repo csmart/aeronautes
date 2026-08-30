@@ -8,6 +8,7 @@ package systemtest
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -96,13 +97,27 @@ func New(t *testing.T) *Harness {
 		Audit:     app.NewAuditService(auditStore),
 	}
 
-	h.Primary = h.account(authURL, envOr("AERONAUTES_SAIO_USER", "test:tester"), envOr("AERONAUTES_SAIO_KEY", "testing"), "primary")
-	h.Secondary = h.account(authURL, envOr("AERONAUTES_SAIO_USER2", "test2:tester2"), envOr("AERONAUTES_SAIO_KEY2", "testing2"), "secondary")
-	if err := h.secondaryReachable(); err != nil {
+	primary, err := h.account(authURL, envOr("AERONAUTES_SAIO_USER", "test:tester"), envOr("AERONAUTES_SAIO_KEY", "testing"), "primary")
+	if err != nil {
+		t.Fatalf("primary SAIO account unavailable: %v", err)
+	}
+	h.Primary = primary
+
+	// A missing/unreachable secondary is a Skip locally, a Fatal in CI
+	// (where AERONAUTES_REQUIRE_TWO_ACCOUNTS is set) — never an
+	// unconditional Fatal that would sink the whole package on a
+	// one-account laptop.
+	secondary, secErr := h.account(authURL, envOr("AERONAUTES_SAIO_USER2", "test2:tester2"), envOr("AERONAUTES_SAIO_KEY2", "testing2"), "secondary")
+	h.Secondary = secondary
+	reach := secErr
+	if reach == nil {
+		reach = h.secondaryReachable()
+	}
+	if reach != nil {
 		if os.Getenv("AERONAUTES_REQUIRE_TWO_ACCOUNTS") != "" {
-			t.Fatalf("second SAIO account unavailable but AERONAUTES_REQUIRE_TWO_ACCOUNTS is set: %v", err)
+			t.Fatalf("second SAIO account unavailable but AERONAUTES_REQUIRE_TWO_ACCOUNTS is set: %v", reach)
 		}
-		t.Skipf("second SAIO account unavailable (%v); cross-account matrix needs it", err)
+		t.Skipf("second SAIO account unavailable (%v); cross-account matrix needs it", reach)
 	}
 
 	// Primary is the active connection for browse/inspect/mutate.
@@ -112,40 +127,51 @@ func New(t *testing.T) *Harness {
 	return h
 }
 
-func (h *Harness) account(authURL, user, key, name string) *Account {
+// account provisions a test account. It returns an error rather than
+// Fatal-ing so the caller can decide: the primary must exist (Fatal),
+// but a missing secondary is a Skip on a one-account laptop unless
+// AERONAUTES_REQUIRE_TWO_ACCOUNTS is set (grok war-room P2 — a 401 on
+// the secondary auth used to fatal the whole package).
+func (h *Harness) account(authURL, user, key, name string) (*Account, error) {
 	h.T.Helper()
 	saved, err := h.Bookmarks.Save(h.ctx, app.BookmarkDTO{
 		DisplayName: name, AuthURL: authURL, Username: user,
 	}, key)
 	if err != nil {
-		h.T.Fatal(err)
+		return nil, err
 	}
 	ora, err := oracle.Connect(authURL, user, key)
 	if err != nil {
-		h.T.Fatal(err)
+		return nil, err
 	}
 	a := &Account{BookmarkID: saved.ID, Oracle: ora, authURL: authURL, user: user, key: key, rawClient: &http.Client{Timeout: 30 * time.Second}}
-	h.rawAuth(a)
-	return a
+	if err := h.rawAuth(a); err != nil {
+		return nil, err
+	}
+	return a, nil
 }
 
 // rawAuth gives the account a raw writer for test setup/teardown that
 // never touches the product.
-func (h *Harness) rawAuth(a *Account) {
+func (h *Harness) rawAuth(a *Account) error {
 	req, _ := http.NewRequest(http.MethodGet, a.authURL, nil)
 	req.Header.Set("X-Auth-User", a.user)
 	req.Header.Set("X-Auth-Key", a.key)
 	resp, err := a.rawClient.Do(req)
 	if err != nil {
-		h.T.Fatal(err)
+		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("raw auth %s as %s: HTTP %d", a.authURL, a.user, resp.StatusCode)
+	}
 	a.storageURL = resp.Header.Get("X-Storage-Url")
 	a.token = resp.Header.Get("X-Auth-Token")
+	return nil
 }
 
 func (h *Harness) secondaryReachable() error {
-	if h.Secondary.storageURL == "" || h.Secondary.storageURL == h.Primary.storageURL {
+	if h.Secondary == nil || h.Secondary.storageURL == "" || h.Secondary.storageURL == h.Primary.storageURL {
 		return fmt.Errorf("secondary resolves to the same account as primary")
 	}
 	return nil
@@ -163,8 +189,16 @@ func (h *Harness) Container(a *Account, label string) string {
 }
 
 func (h *Harness) rawPut(a *Account, path string, body []byte, headers map[string]string) {
+	h.rawPutQuery(a, path, "", body, headers)
+}
+
+func (h *Harness) rawPutQuery(a *Account, path, query string, body []byte, headers map[string]string) {
 	h.T.Helper()
-	req, _ := http.NewRequest(http.MethodPut, a.storageURL+path, strings.NewReader(string(body)))
+	url := a.storageURL + path
+	if query != "" {
+		url += "?" + query
+	}
+	req, _ := http.NewRequest(http.MethodPut, url, strings.NewReader(string(body)))
 	req.Header.Set("X-Auth-Token", a.token)
 	for k, v := range headers {
 		req.Header.Set(k, v)
@@ -173,12 +207,26 @@ func (h *Harness) rawPut(a *Account, path string, body []byte, headers map[strin
 	if err != nil {
 		h.T.Fatal(err)
 	}
+	// A non-2xx seed (typo'd path, 401, quota) leaves an empty container;
+	// the matrix would then assert "copy completed" against missing
+	// source objects. Fail closed and loud (grok war-room P1 SEED-404).
+	if resp.StatusCode/100 != 2 {
+		msg, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		h.T.Fatalf("seed PUT %s: HTTP %d %s", path, resp.StatusCode, strings.TrimSpace(string(msg)))
+	}
 	resp.Body.Close()
 }
 
 // Seed writes a raw object directly (test setup, bypassing the product).
 func (h *Harness) Seed(a *Account, container, name string, body []byte, headers map[string]string) {
 	h.rawPut(a, "/"+container+"/"+name, body, headers)
+}
+
+// SeedSLO writes a static-large-object manifest directly (test setup).
+// The referenced segments must already exist.
+func (h *Harness) SeedSLO(a *Account, container, name, manifestJSON string) {
+	h.rawPutQuery(a, "/"+container+"/"+name, "multipart-manifest=put", []byte(manifestJSON), nil)
 }
 
 func (h *Harness) purge(a *Account, container string) {
@@ -212,12 +260,41 @@ func (h *Harness) Snapshot(a *Account, containers ...string) *oracle.AccountSnap
 	return snap
 }
 
+// SnapshotNamespace witnesses EVERY container this harness created on the
+// account (all share the ns prefix), including any the engine created as
+// a side effect — a copy/mirror segment sidecar, a versions archive.
+// Naming only the primary container would leave such a sidecar invisible
+// to AssertNoCollateral (grok war-room P1: COPY-SIDECAR). Scoped to the
+// harness namespace so a parallel test's containers never look like
+// collateral here.
+func (h *Harness) SnapshotNamespace(a *Account) *oracle.AccountSnapshot {
+	h.T.Helper()
+	names, err := a.Oracle.ListContainers(h.ns)
+	if err != nil {
+		h.T.Fatal(err)
+	}
+	return h.Snapshot(a, names...)
+}
+
 // AssertNoCollateral fails the test if anything changed on the account
 // beyond the object/container names listed in allowed ("container/name"
 // or "container"). This is the negative-space invariant: nothing
 // outside the approved set moved.
 func (h *Harness) AssertNoCollateral(before, after *oracle.AccountSnapshot, allowed ...string) {
 	h.T.Helper()
+	if stray := collateral(before, after, allowed); len(stray) > 0 {
+		h.T.Fatalf("collateral change outside the approved set %v:\n  %s", allowed, strings.Join(stray, "\n  "))
+	}
+}
+
+// collateral returns every change from before to after that is NOT in
+// the approved set — the pure core of AssertNoCollateral, unit-testable
+// without SAIO. An allow entry is an object ref "container/name", a
+// change string "container/name: <what>", a bare container name (for
+// container add/remove/config only), or a "container: <what>" config
+// change. A bare container name does NOT blanket-allow object changes
+// inside it.
+func collateral(before, after *oracle.AccountSnapshot, allowed []string) []string {
 	ok := map[string]bool{}
 	for _, a := range allowed {
 		ok[a] = true
@@ -225,13 +302,12 @@ func (h *Harness) AssertNoCollateral(before, after *oracle.AccountSnapshot, allo
 	d := oracle.Diff(before, after)
 	var stray []string
 	for _, x := range append(append([]string{}, d.AddedObjects...), d.RemovedObjects...) {
-		if !ok[x] && !ok[containerOf(x)] {
+		if !ok[x] {
 			stray = append(stray, x)
 		}
 	}
 	for _, x := range d.ChangedObjects {
-		name := strings.SplitN(x, ":", 2)[0]
-		if !ok[name] && !ok[containerOf(name)] {
+		if name := strings.SplitN(x, ":", 2)[0]; !ok[name] {
 			stray = append(stray, x)
 		}
 	}
@@ -240,13 +316,15 @@ func (h *Harness) AssertNoCollateral(before, after *oracle.AccountSnapshot, allo
 			stray = append(stray, "container "+x)
 		}
 	}
-	if len(stray) > 0 {
-		h.T.Fatalf("collateral change outside the approved set %v:\n  %s", allowed, strings.Join(stray, "\n  "))
+	for _, x := range d.ChangedContainers {
+		name := strings.TrimSpace(strings.SplitN(x, ":", 2)[0])
+		if !ok[x] && !ok[name] {
+			stray = append(stray, "container-config "+x)
+		}
 	}
+	return stray
 }
 
-// AwaitJob polls JobService until the job reaches a terminal state or
-// the deadline passes, returning the terminal DTO.
 func (h *Harness) AwaitJob(jobID string) *app.JobDTO {
 	h.T.Helper()
 	deadline := time.Now().Add(90 * time.Second)
@@ -263,11 +341,6 @@ func (h *Harness) AwaitJob(jobID string) *app.JobDTO {
 	}
 	h.T.Fatalf("job %s never reached a terminal state", jobID)
 	return nil
-}
-
-func containerOf(objRef string) string {
-	c, _, _ := strings.Cut(objRef, "/")
-	return c
 }
 
 func envOr(k, d string) string {

@@ -18,9 +18,15 @@ const (
 	Session Kind = "session"
 	// Mutate: changes one object/container, needs happy + refusal.
 	Mutate Kind = "mutate"
-	// Destructive: deletes or moves data, or runs a job that can, needs
-	// happy + refusal + conflict + cancel/partial where a job.
+	// Destructive: a single synchronous op that deletes or moves data,
+	// needs happy + refusal + conflict.
 	Destructive Kind = "destructive"
+	// Job: an asynchronous transfer/delete that can partially apply, be
+	// cancelled mid-flight, or be retried — needs the full lifecycle
+	// (DESIGN §65.10: conflict, cancellation, partial-failure, retry).
+	// Kept distinct from Destructive so a bookmark delete is not asked
+	// for a nonsensical "partial" scenario (grok war-room P2).
+	Job Kind = "job"
 )
 
 // Action is one inventory row.
@@ -41,6 +47,8 @@ func (k Kind) requiredScenarios() []string {
 		return []string{"happy", "refusal"}
 	case Destructive:
 		return []string{"happy", "refusal", "conflict"}
+	case Job:
+		return []string{"happy", "refusal", "conflict", "cancel", "partial", "retry"}
 	default:
 		return nil
 	}
@@ -85,17 +93,17 @@ var Inventory = map[string]Action{
 	"TransferService.PreflightDownload": {Kind: Read},
 	"TransferService.PickUploadFiles":   {Kind: Session},
 	"TransferService.PickDownloadDir":   {Kind: Session},
-	"TransferService.StartCopy":         {Kind: Destructive},
-	"TransferService.StartMirror":       {Kind: Destructive},
-	"TransferService.StartUpload":       {Kind: Destructive},
-	"TransferService.StartDownload":     {Kind: Destructive},
-	"TransferService.RerunJob":          {Kind: Destructive},
+	"TransferService.StartCopy":         {Kind: Job},
+	"TransferService.StartMirror":       {Kind: Job},
+	"TransferService.StartUpload":       {Kind: Job},
+	"TransferService.StartDownload":     {Kind: Job},
+	"TransferService.RerunJob":          {Kind: Job},
 	"TransferService.CancelJob":         {Kind: Session},
 	// DeleteService
 	"DeleteService.PreviewDelete":              {Kind: Read},
 	"DeleteService.CheckSegmentOwnership":      {Kind: Read},
-	"DeleteService.StartDelete":                {Kind: Destructive},
-	"DeleteService.DeleteManifestWithSegments": {Kind: Destructive},
+	"DeleteService.StartDelete":                {Kind: Job},
+	"DeleteService.DeleteManifestWithSegments": {Kind: Job},
 	// JobService
 	"JobService.Get":  {Kind: Read},
 	"JobService.List": {Kind: Read},
@@ -108,7 +116,7 @@ var Inventory = map[string]Action{
 	"SettingsService.Set": {Kind: Mutate},
 	// BenchmarkService
 	"BenchmarkService.Latest":         {Kind: Read},
-	"BenchmarkService.StartBenchmark": {Kind: Destructive},
+	"BenchmarkService.StartBenchmark": {Kind: Job},
 }
 
 // Covered records which (action, scenario) pairs an actual system test

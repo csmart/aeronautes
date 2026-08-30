@@ -3,6 +3,7 @@ package systemtest
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/csmart/aeronautes/internal/app"
@@ -12,8 +13,9 @@ import (
 // cornerstone: a cross-account copy of plain, DLO, and SLO objects lands
 // byte-for-byte-identical LOGICAL content on the destination, leaves the
 // source account completely untouched, and touches nothing else on the
-// destination. The oracle compares logical GET digests, so re-chunking
-// by the engine is irrelevant — only the readable bytes must match.
+// destination (no sidecar/segment container, no staging residue). The
+// oracle compares logical GET digests, so re-chunking by the engine is
+// irrelevant — only the readable bytes must match.
 func TestCopyCrossAccountPreservesLogicalContent(t *testing.T) {
 	h := New(t)
 	ctx := context.Background()
@@ -21,17 +23,23 @@ func TestCopyCrossAccountPreservesLogicalContent(t *testing.T) {
 	srcSegs := h.Container(h.Primary, "copysrc-segs")
 	dstC := h.Container(h.Secondary, "copydst")
 
-	// A plain object, a DLO (two segments), and a sentinel on the source.
+	// A plain object, a DLO (two segments), an SLO (one leaf), and a
+	// sentinel on the source.
 	plain := []byte("cross-account plain payload")
 	h.Seed(h.Primary, srcC, "plain.txt", plain, map[string]string{"Content-Type": "text/plain", "X-Object-Meta-Team": "ops"})
 	segA, segB := bytes.Repeat([]byte("X"), 1024), bytes.Repeat([]byte("Y"), 512)
 	h.Seed(h.Primary, srcSegs, "dlo/0", segA, nil)
 	h.Seed(h.Primary, srcSegs, "dlo/1", segB, nil)
 	h.Seed(h.Primary, srcC, "big.bin", nil, map[string]string{"X-Object-Manifest": srcSegs + "/dlo/"})
+	leaf := bytes.Repeat([]byte("S"), 2048)
+	h.Seed(h.Primary, srcSegs, "slo/leaf", leaf, nil)
+	h.SeedSLO(h.Primary, srcC, "manifest.slo", fmt.Sprintf(`[{"path":"/%s/slo/leaf","size_bytes":2048}]`, srcSegs))
 	h.Seed(h.Primary, srcC, "sentinel.txt", []byte("must not change"), nil)
 
 	srcBefore := h.Snapshot(h.Primary, srcC, srcSegs)
-	dstBefore := h.Snapshot(h.Secondary, dstC)
+	// Witness the WHOLE destination namespace — dstC and any sidecar the
+	// engine might create — before and after.
+	dstBefore := h.SnapshotNamespace(h.Secondary)
 
 	jobID, err := h.Transfer.StartCopy(ctx, app.CopyRequestDTO{
 		SourceBookmarkID: h.Primary.BookmarkID, SourceContainer: srcC,
@@ -45,11 +53,12 @@ func TestCopyCrossAccountPreservesLogicalContent(t *testing.T) {
 	}
 
 	srcAfter := h.Snapshot(h.Primary, srcC, srcSegs)
-	dstAfter := h.Snapshot(h.Secondary, dstC)
+	dstAfter := h.SnapshotNamespace(h.Secondary)
 
 	// Destination logical content matches the source exactly.
+	copied := []string{"plain.txt", "big.bin", "manifest.slo", "sentinel.txt"}
 	sb, db := srcBefore.Containers[srcC].Objects, dstAfter.Containers[dstC].Objects
-	for _, name := range []string{"plain.txt", "big.bin", "sentinel.txt"} {
+	for _, name := range copied {
 		if db[name].Digest != sb[name].Digest || db[name].Size != sb[name].Size {
 			t.Fatalf("%s: dst digest %s (%d) != src %s (%d)", name, db[name].Digest, db[name].Size, sb[name].Digest, sb[name].Size)
 		}
@@ -63,12 +72,11 @@ func TestCopyCrossAccountPreservesLogicalContent(t *testing.T) {
 	if d := diffOf(srcBefore, srcAfter); !d.Empty() {
 		t.Fatalf("source account changed during a copy:\n%s", d)
 	}
-	// The destination gained ONLY the three copied names (plus whatever
-	// staging the engine cleaned up — assert no leftover staging).
-	for name := range dstAfter.Containers[dstC].Objects {
-		if name != "plain.txt" && name != "big.bin" && name != "sentinel.txt" {
-			t.Fatalf("unexpected object on destination after copy: %q (staging leak?)", name)
-		}
+	// The destination namespace gained ONLY the copied names — no sidecar
+	// container, no segment leak, no staging residue anywhere.
+	allowed := make([]string, len(copied))
+	for i, name := range copied {
+		allowed[i] = dstC + "/" + name
 	}
-	_ = dstBefore
+	h.AssertNoCollateral(dstBefore, dstAfter, allowed...)
 }

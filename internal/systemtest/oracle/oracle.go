@@ -15,7 +15,6 @@ import (
 	"io"
 	"net/http"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -109,6 +108,20 @@ func (o *Oracle) do(method, path string, query string) (*http.Response, error) {
 	return o.client.Do(req)
 }
 
+// ListContainers returns the account's container names beginning with
+// prefix (empty = all), following marker pagination. The harness uses it
+// to witness the WHOLE destination namespace after a copy/mirror,
+// including any sidecar/segment container the engine creates — naming
+// only the primary container would leave a sidecar leak invisible to the
+// negative-space invariant (grok war-room P1).
+func (o *Oracle) ListContainers(prefix string) ([]string, error) {
+	query := ""
+	if prefix != "" {
+		query = "prefix=" + Escape(prefix)
+	}
+	return o.listPaged("", query, nil)
+}
+
 // SnapshotContainers captures the exact state of the named containers.
 // A missing container is recorded as absent (not in the map).
 func (o *Oracle) SnapshotContainers(names ...string) (*AccountSnapshot, error) {
@@ -126,6 +139,7 @@ func (o *Oracle) SnapshotContainers(names ...string) (*AccountSnapshot, error) {
 }
 
 func (o *Oracle) snapshotContainer(name string) (ContainerState, bool, error) {
+	// First page also carries the container's headers and 404 signal.
 	resp, err := o.do(http.MethodGet, "/"+name, "format=json")
 	if err != nil {
 		return ContainerState{}, false, err
@@ -155,20 +169,66 @@ func (o *Oracle) snapshotContainer(name string) (ContainerState, bool, error) {
 	case resp.Header.Get("X-Versions-Location") != "":
 		cs.Versioning = "versions:" + resp.Header.Get("X-Versions-Location")
 	}
-	var rows []struct {
-		Name string `json:"name"`
-	}
-	if err := json.Unmarshal(body, &rows); err != nil {
+	names, err := o.listPaged("/"+name, "", body)
+	if err != nil {
 		return ContainerState{}, false, fmt.Errorf("oracle list %s: %w", name, err)
 	}
-	for _, row := range rows {
-		os, err := o.snapshotObject(name, row.Name)
+	for _, objName := range names {
+		os, err := o.snapshotObject(name, objName)
 		if err != nil {
 			return ContainerState{}, false, err
 		}
-		cs.Objects[row.Name] = os
+		cs.Objects[objName] = os
 	}
 	return cs, true, nil
+}
+
+// listPaged returns every object name under path, following Swift's
+// marker pagination to the end. The default page is 10k; a single GET
+// silently truncates a large container and would let AssertNoCollateral
+// miss a survivor or a stray in the unwitnessed tail (grok war-room).
+// firstPage, if non-nil, is the already-read body of page one (so the
+// caller's header GET is not repeated); query is an extra clause such as
+// "prefix=segs/".
+func (o *Oracle) listPaged(path, query string, firstPage []byte) ([]string, error) {
+	var names []string
+	marker := ""
+	for page := 0; ; page++ {
+		var body []byte
+		if page == 0 && firstPage != nil {
+			body = firstPage
+		} else {
+			q := "format=json"
+			if query != "" {
+				q += "&" + query
+			}
+			if marker != "" {
+				q += "&marker=" + Escape(marker)
+			}
+			resp, err := o.do(http.MethodGet, path, q)
+			if err != nil {
+				return nil, err
+			}
+			body, _ = io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if resp.StatusCode/100 != 2 {
+				return nil, fmt.Errorf("list %s page %d: HTTP %d", path, page, resp.StatusCode)
+			}
+		}
+		var rows []struct {
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(body, &rows); err != nil {
+			return nil, err
+		}
+		if len(rows) == 0 {
+			return names, nil
+		}
+		for _, row := range rows {
+			names = append(names, row.Name)
+		}
+		marker = rows[len(rows)-1].Name
+	}
 }
 
 func (o *Oracle) snapshotObject(container, name string) (ObjectState, error) {
@@ -217,19 +277,26 @@ func (o *Oracle) snapshotObject(container, name string) (ObjectState, error) {
 	// IDENTITY is the target pointer + the link's own metadata, NOT the
 	// followed content — the target object is witnessed separately, so
 	// coupling the two would double-report a target change.
-	if link, err := o.do(http.MethodGet, "/"+container+"/"+Escape(name), "symlink=get"); err == nil {
-		if t := link.Header.Get("X-Symlink-Target"); t != "" {
-			os.Class = "symlink"
-			os.SymlinkTarget = t
-			os.SymlinkAccount = link.Header.Get("X-Symlink-Target-Account")
-			os.Size = 0
-			os.Digest = "symlink->" + t
-			os.Segments = nil
-			os.Meta = metaFrom(link.Header, "X-Object-Meta-")
-		}
+	link, err := o.do(http.MethodGet, "/"+container+"/"+Escape(name), "symlink=get")
+	if err != nil {
+		return ObjectState{}, err
+	}
+	if link.StatusCode/100 != 2 {
 		io.Copy(io.Discard, link.Body)
 		link.Body.Close()
+		return ObjectState{}, fmt.Errorf("oracle symlink probe %s/%s: HTTP %d", container, name, link.StatusCode)
 	}
+	if t := link.Header.Get("X-Symlink-Target"); t != "" {
+		os.Class = "symlink"
+		os.SymlinkTarget = t
+		os.SymlinkAccount = link.Header.Get("X-Symlink-Target-Account")
+		os.Size = 0
+		os.Digest = "symlink->" + t
+		os.Segments = nil
+		os.Meta = metaFrom(link.Header, "X-Object-Meta-")
+	}
+	io.Copy(io.Discard, link.Body)
+	link.Body.Close()
 	return os, nil
 }
 
@@ -239,19 +306,13 @@ func (o *Oracle) segmentInventory(manifest string) ([]SegmentState, error) {
 	if !found {
 		return nil, fmt.Errorf("oracle: malformed manifest %q", manifest)
 	}
-	resp, err := o.do(http.MethodGet, "/"+container, "format=json&prefix="+prefix)
+	names, err := o.listPaged("/"+container, "prefix="+Escape(prefix), nil)
 	if err != nil {
 		return nil, err
 	}
-	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	var rows []struct {
-		Name string `json:"name"`
-	}
-	_ = json.Unmarshal(body, &rows)
 	var segs []SegmentState
-	for _, row := range rows {
-		seg, err := o.segment(container, row.Name)
+	for _, name := range names {
+		seg, err := o.segment(container, name)
 		if err != nil {
 			return nil, err
 		}
@@ -328,7 +389,7 @@ func pathEscape(s string) string {
 			(r >= '0' && r <= '9') || (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') {
 			b.WriteByte(r)
 		} else {
-			b.WriteString("%" + strings.ToUpper(strconv.FormatInt(int64(r), 16)))
+			fmt.Fprintf(&b, "%%%02X", r)
 		}
 	}
 	return b.String()

@@ -9,24 +9,16 @@ import (
 	"github.com/csmart/aeronautes/internal/app"
 )
 
-// boundServices mirrors the application.NewService list in main.go — the
-// exact set whose exported methods the Wails bridge surfaces to the
-// webview. If main.go binds a new service, add it here.
+// boundServices derives the bridge surface from the single source of
+// truth in the app package (app.BoundServices) rather than a second
+// handwritten copy that could drift from main.go. main_test.go proves
+// main.go binds exactly these constructors (grok war-room P2).
 func boundServices() map[string]any {
-	return map[string]any{
-		"AppService":       &app.AppService{},
-		"BookmarkService":  &app.BookmarkService{},
-		"BrowseService":    &app.BrowseService{},
-		"InspectorService": &app.InspectorService{},
-		"MutateService":    &app.MutateService{},
-		"AuditService":     &app.AuditService{},
-		"TransferService":  &app.TransferService{},
-		"DeleteService":    &app.DeleteService{},
-		"JobService":       &app.JobService{},
-		"FindService":      &app.FindService{},
-		"SettingsService":  &app.SettingsService{},
-		"BenchmarkService": &app.BenchmarkService{},
+	m := map[string]any{}
+	for _, b := range app.BoundServices() {
+		m[b.Name] = b.Prototype
 	}
+	return m
 }
 
 // TestInventoryCoversEveryBoundAction is the §65.10 auto-inventory gate:
@@ -65,8 +57,8 @@ func TestInventoryReportsCoverage(t *testing.T) {
 		rows = append(rows, key+" ["+string(action.Kind)+"] needs: "+strings.Join(action.Kind.requiredScenarios(), ","))
 	}
 	sort.Strings(rows)
-	t.Logf("ACTION INVENTORY (%d actions: %d read, %d session, %d mutate, %d destructive)\n%s",
-		len(Inventory), kinds[Read], kinds[Session], kinds[Mutate], kinds[Destructive], strings.Join(rows, "\n"))
+	t.Logf("ACTION INVENTORY (%d actions: %d read, %d session, %d mutate, %d destructive, %d job)\n%s",
+		len(Inventory), kinds[Read], kinds[Session], kinds[Mutate], kinds[Destructive], kinds[Job], strings.Join(rows, "\n"))
 
 	// The reportable coverage artifact (§65.10): required scenarios met
 	// vs. still open, per action.
