@@ -30,8 +30,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev pkg-config
       - run: make tools
+      # go:embed all:frontend/dist needs the built frontend before any Go
+      # package (main included) can even parse.
+      - name: frontend install + build
+        run: cd frontend && npm ci && npm run build
       - run: go test -race -count=1 ./...
-      - run: cd frontend && npm install && npm run check && npm test
+      - run: cd frontend && npm run check && npm test
 
   linux:
     needs: test
