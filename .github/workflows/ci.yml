@@ -219,7 +219,8 @@ jobs:
           pct=$(go tool cover -func=cover.out | awk '/^total:/ {gsub(/%/,"",$3); print $3}')
           echo "combined Go statement coverage: ${pct}%"
           echo "$pct" > coverage-pct.txt
-          echo "scenario coverage report:"; cat scenario-coverage.json | python3 -c 'import sys,json; d=json.load(sys.stdin); print(f"  {d[\"totalCovered\"]}/{d[\"totalRequired\"]} scenarios exercised; {d[\"actionsWithGaps\"]} actions with gaps")'
+          echo "scenario coverage (evidence-based, see uploaded artifact):"
+          grep -E '"total(Covered|Required)"|"actionsWithGaps"' scenario-coverage.json || true
       - name: upload scenario-coverage report
         if: steps.detect.outputs.present == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
