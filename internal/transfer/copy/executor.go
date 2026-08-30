@@ -58,6 +58,10 @@ type Config struct {
 	JobID string
 	// BatchSize caps names per engine invocation (default 500).
 	BatchSize int
+	// BatchBytes caps a batch's planned bytes (default 64 GiB): no
+	// single child should outlive a token on sheer transfer size —
+	// each spawn re-resolves fresh remotes (§26.2).
+	BatchBytes int64
 	// OnEvent receives engine events (progress streaming); optional.
 	OnEvent func(rclone.Event)
 	// OnItem is told each item's outcome as it happens; optional.
@@ -106,12 +110,13 @@ const maxFailures = 200
 
 // Executor runs one job's transfer phase.
 type Executor struct {
-	cfg     Config
-	report  *Report
-	stage   string // staging prefix inside DstContainer
-	stageN  int
-	batch   []string
-	printed map[rclone.SegmentPrefix]bool
+	cfg        Config
+	report     *Report
+	stage      string // staging prefix inside DstContainer
+	stageN     int
+	batch      []string
+	batchBytes int64
+	printed    map[rclone.SegmentPrefix]bool
 }
 
 // New validates the config and builds an executor.
@@ -129,6 +134,9 @@ func New(cfg Config) (*Executor, error) {
 	}
 	if cfg.BatchSize <= 0 {
 		cfg.BatchSize = 500
+	}
+	if cfg.BatchBytes <= 0 {
+		cfg.BatchBytes = 64 << 30
 	}
 	return &Executor{
 		cfg:     cfg,
@@ -243,7 +251,8 @@ func (e *Executor) runNew(ctx context.Context, item plan.Item) error {
 		return nil
 	}
 	e.batch = append(e.batch, item.Name)
-	if len(e.batch) >= e.cfg.BatchSize {
+	e.batchBytes += item.SourceBytes
+	if len(e.batch) >= e.cfg.BatchSize || e.batchBytes >= e.cfg.BatchBytes {
 		return e.flushBatch(ctx)
 	}
 	return nil
@@ -261,10 +270,12 @@ func (e *Executor) flushBatch(ctx context.Context) error {
 		// Cancelled before this batch started: the names are simply not
 		// copied — never spawn an engine child after cancellation.
 		e.batch = nil
+		e.batchBytes = 0
 		return err
 	}
 	names := e.batch
 	e.batch = nil
+	e.batchBytes = 0
 	if e.cfg.Engine == nil {
 		for _, name := range names {
 			e.fail(name, "engine", errors.New("no engine configured"))

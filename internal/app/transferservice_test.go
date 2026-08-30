@@ -204,7 +204,11 @@ func (h *harness) installEngine(block chan struct{}) *[]rclone.Options {
 
 func (h *harness) installChunkingEngine(block chan struct{}, chunk int) *[]rclone.Options {
 	var seen []rclone.Options
-	h.transfer.SetEngineFactory(func(remotes []rclone.Remote, opts rclone.Options) (transfercopy.Engine, error) {
+	h.transfer.SetEngineFactory(func(source transfercopy.RemoteSource, opts rclone.Options) (transfercopy.Engine, error) {
+		remotes, err := source(context.Background())
+		if err != nil {
+			return nil, err
+		}
 		byName := map[string]rclone.Remote{}
 		for _, r := range remotes {
 			byName[r.Name] = r
@@ -628,7 +632,11 @@ func TestMirrorSkipsDeletionsWhenCopyFails(t *testing.T) {
 	dstBookmark, dstMock := secondCluster(t, h)
 	// An engine that silently drops one name: the copy half will fail
 	// verification, so the delete half must not run.
-	h.transfer.SetEngineFactory(func(remotes []rclone.Remote, opts rclone.Options) (transfercopy.Engine, error) {
+	h.transfer.SetEngineFactory(func(source transfercopy.RemoteSource, opts rclone.Options) (transfercopy.Engine, error) {
+		remotes, err := source(context.Background())
+		if err != nil {
+			return nil, err
+		}
 		byName := map[string]rclone.Remote{}
 		for _, r := range remotes {
 			byName[r.Name] = r

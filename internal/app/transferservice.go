@@ -58,8 +58,10 @@ type TransferService struct {
 	evidence    *evidence.Store
 
 	// engineFactory builds the byte-moving engine for a job; nil uses
-	// the pinned rclone. Tests inject fakes here.
-	engineFactory func(remotes []rclone.Remote, opts rclone.Options) (transfercopy.Engine, error)
+	// the pinned rclone. Tests inject fakes here. The source yields
+	// remotes PER SPAWN — implementations must call it for every child
+	// so token refresh reaches long jobs (§26.2).
+	engineFactory func(source transfercopy.RemoteSource, opts rclone.Options) (transfercopy.Engine, error)
 
 	// recommendations is the §42 per-bookmark lookup feeding Auto.
 	recommendations func(bookmarkID string) *TransferSettingsDTO
@@ -103,9 +105,13 @@ func (s *TransferService) recordOwnership(ctx context.Context, bookmarkID, jobID
 
 // SetEngineFactory overrides engine construction (tests; the future
 // compatibility matrix).
-func (s *TransferService) SetEngineFactory(f func(remotes []rclone.Remote, opts rclone.Options) (transfercopy.Engine, error)) {
+func (s *TransferService) SetEngineFactory(f func(source transfercopy.RemoteSource, opts rclone.Options) (transfercopy.Engine, error)) {
 	s.engineFactory = f
 }
+
+// tokenRefreshMargin is how close to a known expiry a session may get
+// before an engine spawn forces re-authentication.
+const tokenRefreshMargin = 2 * time.Minute
 
 // SetMaxActiveJobs resizes the §38 budget (the settings surface will
 // drive this; tests too). Applies to jobs started afterwards.
@@ -206,7 +212,9 @@ func (s *TransferService) SetRecommendationSource(f func(bookmarkID string) *Tra
 }
 
 // buildEngine constructs the pinned rclone engine for both endpoints
-// with the job's effective options.
+// with the job's effective options. Remotes resolve PER SPAWN: each
+// child gets tokens refreshed against expiry first (§26.2 — the child
+// cannot re-authenticate itself).
 func (s *TransferService) buildEngine(ctx context.Context, req CopyRequestDTO, src, dst *swiftcontrol.Session) (transfercopy.Engine, error) {
 	srcInsecure, srcCA, err := s.connections.TLSRemote(ctx, req.SourceBookmarkID)
 	if err != nil {
@@ -216,22 +224,30 @@ func (s *TransferService) buildEngine(ctx context.Context, req CopyRequestDTO, s
 	if err != nil {
 		return nil, err
 	}
-	remotes := []rclone.Remote{
-		{Name: "aeronautes_src", StorageURL: src.StorageURL(), Token: src.AuthToken(), InsecureTLS: srcInsecure, CACertFile: srcCA},
-		{Name: "aeronautes_dst", StorageURL: dst.StorageURL(), Token: dst.AuthToken(), InsecureTLS: dstInsecure, CACertFile: dstCA},
+	source := func(spawnCtx context.Context) ([]rclone.Remote, error) {
+		if err := src.RefreshIfStale(spawnCtx, tokenRefreshMargin); err != nil {
+			return nil, fmt.Errorf("source token refresh: %w", err)
+		}
+		if err := dst.RefreshIfStale(spawnCtx, tokenRefreshMargin); err != nil {
+			return nil, fmt.Errorf("destination token refresh: %w", err)
+		}
+		return []rclone.Remote{
+			{Name: "aeronautes_src", StorageURL: src.StorageURL(), Token: src.AuthToken(), InsecureTLS: srcInsecure, CACertFile: srcCA},
+			{Name: "aeronautes_dst", StorageURL: dst.StorageURL(), Token: dst.AuthToken(), InsecureTLS: dstInsecure, CACertFile: dstCA},
+		}, nil
 	}
 	effective, err := s.effectiveSettings(req)
 	if err != nil {
 		return nil, err
 	}
 	if s.engineFactory != nil {
-		return s.engineFactory(remotes, effective.options())
+		return s.engineFactory(source, effective.options())
 	}
 	runner, err := rclone.NewRunner(effective.options())
 	if err != nil {
 		return nil, err
 	}
-	return transfercopy.BindRunner(runner, remotes), nil
+	return transfercopy.BindRunnerSource(runner, source), nil
 }
 
 // StartCopy creates the job and launches execution in the background;
