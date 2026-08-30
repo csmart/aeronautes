@@ -12,7 +12,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
+import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -22,20 +22,24 @@ import * as $models from "./models.js";
  * Latest returns the stored result for a bookmark, nil when none.
  */
 export function Latest(bookmarkID: string): $CancellablePromise<$models.BenchmarkResultDTO | null> {
-    return $Call.ByID(1338100521, bookmarkID);
+    return $Call.ByID(1338100521, bookmarkID).then(($result: any) => {
+        return $$createType1($result);
+    });
 }
 
 /**
  * RecommendationFor is the §40 Auto hook (nil when no run recorded).
  */
 export function RecommendationFor(bookmarkID: string): $CancellablePromise<$models.TransferSettingsDTO | null> {
-    return $Call.ByID(3765016928, bookmarkID);
+    return $Call.ByID(3765016928, bookmarkID).then(($result: any) => {
+        return $$createType3($result);
+    });
 }
 
 /**
  * SetScale overrides the workload for tests.
  */
-export function SetScale(objects: number, concurrencies: number[] | null): $CancellablePromise<void> {
+export function SetScale(objects: number, concurrencies: number[]): $CancellablePromise<void> {
     return $Call.ByID(626885512, objects, concurrencies);
 }
 
@@ -45,3 +49,9 @@ export function SetScale(objects: number, concurrencies: number[] | null): $Canc
 export function StartBenchmark(req: $models.BenchmarkRequestDTO): $CancellablePromise<string> {
     return $Call.ByID(3082927489, req);
 }
+
+// Private type creation functions
+const $$createType0 = $models.BenchmarkResultDTO.createFrom;
+const $$createType1 = $Create.Nullable($$createType0);
+const $$createType2 = $models.TransferSettingsDTO.createFrom;
+const $$createType3 = $Create.Nullable($$createType2);

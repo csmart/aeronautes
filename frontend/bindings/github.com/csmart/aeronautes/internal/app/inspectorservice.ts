@@ -11,7 +11,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
+import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -22,7 +22,9 @@ import * as $models from "./models.js";
  * in its §24 classification.
  */
 export function Container(name: string): $CancellablePromise<$models.ContainerDetailDTO> {
-    return $Call.ByID(63633335, name);
+    return $Call.ByID(63633335, name).then(($result: any) => {
+        return $$createType0($result);
+    });
 }
 
 /**
@@ -30,7 +32,9 @@ export function Container(name: string): $CancellablePromise<$models.ContainerDe
  * manifest value ("container/prefix").
  */
 export function DLOSegments(manifest: string): $CancellablePromise<$models.DLOSegmentsDTO> {
-    return $Call.ByID(751654327, manifest);
+    return $Call.ByID(751654327, manifest).then(($result: any) => {
+        return $$createType1($result);
+    });
 }
 
 /**
@@ -38,7 +42,9 @@ export function DLOSegments(manifest: string): $CancellablePromise<$models.DLOSe
  * manifest reference becomes Confirmed evidence.
  */
 export function Object(container: string, name: string): $CancellablePromise<$models.ObjectDetailDTO> {
-    return $Call.ByID(3225180167, container, name);
+    return $Call.ByID(3225180167, container, name).then(($result: any) => {
+        return $$createType2($result);
+    });
 }
 
 /**
@@ -46,7 +52,9 @@ export function Object(container: string, name: string): $CancellablePromise<$mo
  * implied, surfacing any folder-ish real object at the name.
  */
 export function Prefix(container: string, prefix: string): $CancellablePromise<$models.PrefixDetailDTO> {
-    return $Call.ByID(3304830540, container, prefix);
+    return $Call.ByID(3304830540, container, prefix).then(($result: any) => {
+        return $$createType3($result);
+    });
 }
 
 /**
@@ -54,5 +62,14 @@ export function Prefix(container: string, prefix: string): $CancellablePromise<$
  * table (§23.2); every referenced location becomes Confirmed evidence.
  */
 export function SLOManifest(container: string, name: string): $CancellablePromise<$models.SLOManifestDTO> {
-    return $Call.ByID(1601699845, container, name);
+    return $Call.ByID(1601699845, container, name).then(($result: any) => {
+        return $$createType4($result);
+    });
 }
+
+// Private type creation functions
+const $$createType0 = $models.ContainerDetailDTO.createFrom;
+const $$createType1 = $models.DLOSegmentsDTO.createFrom;
+const $$createType2 = $models.ObjectDetailDTO.createFrom;
+const $$createType3 = $models.PrefixDetailDTO.createFrom;
+const $$createType4 = $models.SLOManifestDTO.createFrom;

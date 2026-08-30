@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -633,4 +634,59 @@ func jobDTO(j jobs.Job) JobDTO {
 		Engine:     j.Engine, Counters: j.Counters, Error: j.Error,
 		Settings: j.Settings,
 	}
+}
+
+// RerunJob starts a fresh copy of a TERMINAL copy job's scope. The
+// §28.4 machinery makes this cheap-idempotent — Same verdicts and
+// destination fingerprints skip everything already verified — so a
+// re-run after a Partial finishes only the remainder. Mirror jobs are
+// deliberately excluded: their delete half deserves the dialog's
+// typed confirmation, not a one-click repeat.
+func (s *TransferService) RerunJob(ctx context.Context, jobID string) (string, error) {
+	job, err := s.jobs.Get(ctx, jobID)
+	if err != nil {
+		return "", err
+	}
+	if !jobs.Terminal(job.State) {
+		return "", fmt.Errorf("job %s is still %s — cancel it first if you want a fresh run", jobID, job.State)
+	}
+	if job.Type != jobs.TypeCopy {
+		return "", fmt.Errorf("re-run supports copy jobs; a %s needs its own dialog (destructive halves keep their typed confirmation)", job.Type)
+	}
+	srcContainer, srcPrefix, ok := splitLocator(job.Source)
+	if !ok {
+		return "", fmt.Errorf("job %s carries no re-runnable source locator", jobID)
+	}
+	dstContainer, dstPrefix, ok := splitLocator(job.Destination)
+	if !ok {
+		return "", fmt.Errorf("job %s carries no re-runnable destination locator", jobID)
+	}
+	request := CopyRequestDTO{
+		SourceBookmarkID: job.SourceBookmarkID, SourceContainer: srcContainer, SourcePrefix: srcPrefix,
+		DestBookmarkID: job.DestBookmarkID, DestContainer: dstContainer, DestPrefix: dstPrefix,
+	}
+	// The recorded effective configuration re-applies as Custom: the
+	// re-run uses exactly what the original ran with (§45).
+	if job.Settings != "" {
+		var recorded struct {
+			TransferSettingsDTO
+			Profile string `json:"profile"`
+		}
+		if err := json.Unmarshal([]byte(job.Settings), &recorded); err == nil {
+			request.Profile = string(ProfileCustom)
+			request.Settings = recorded.TransferSettingsDTO
+		}
+	}
+	return s.StartCopy(ctx, request)
+}
+
+// splitLocator parses the job row's "container/prefix" display locator.
+func splitLocator(locator string) (container, prefix string, ok bool) {
+	if locator == "" {
+		return "", "", false
+	}
+	if i := strings.Index(locator, "/"); i > 0 {
+		return locator[:i], locator[i+1:], true
+	}
+	return locator, "", true
 }

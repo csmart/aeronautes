@@ -10,7 +10,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
+import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -26,8 +26,10 @@ export function Delete(id: string): $CancellablePromise<void> {
 /**
  * List returns every bookmark, display-name ordered.
  */
-export function List(): $CancellablePromise<$models.BookmarkDTO[] | null> {
-    return $Call.ByID(983706017);
+export function List(): $CancellablePromise<$models.BookmarkDTO[]> {
+    return $Call.ByID(983706017).then(($result: any) => {
+        return $$createType1($result);
+    });
 }
 
 /**
@@ -35,5 +37,11 @@ export function List(): $CancellablePromise<$models.BookmarkDTO[] | null> {
  * replaces the stored credential; an empty one keeps whatever exists.
  */
 export function Save(dto: $models.BookmarkDTO, secret: string): $CancellablePromise<$models.BookmarkDTO> {
-    return $Call.ByID(4205203304, dto, secret);
+    return $Call.ByID(4205203304, dto, secret).then(($result: any) => {
+        return $$createType0($result);
+    });
 }
+
+// Private type creation functions
+const $$createType0 = $models.BookmarkDTO.createFrom;
+const $$createType1 = $Create.Array($$createType0);

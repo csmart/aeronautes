@@ -423,6 +423,12 @@ export class BrowserState {
     await this.loadJobs();
   }
 
+  async rerunJob(jobId: string): Promise<string> {
+    const id = await this.#api.rerunJob(jobId);
+    await this.loadJobs();
+    return id;
+  }
+
   async pickUploadFiles(): Promise<string[]> {
     return await this.#api.pickUploadFiles();
   }

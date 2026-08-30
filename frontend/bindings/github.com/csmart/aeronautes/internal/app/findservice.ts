@@ -12,7 +12,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
+import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -30,7 +30,9 @@ export function CancelFind(id: string): $CancellablePromise<void> {
  * FindStatus polls one scan.
  */
 export function FindStatus(id: string): $CancellablePromise<$models.FindStatusDTO | null> {
-    return $Call.ByID(1953031115, id);
+    return $Call.ByID(1953031115, id).then(($result: any) => {
+        return $$createType1($result);
+    });
 }
 
 /**
@@ -40,3 +42,7 @@ export function FindStatus(id: string): $CancellablePromise<$models.FindStatusDT
 export function StartFind(container: string, prefix: string, query: string): $CancellablePromise<string> {
     return $Call.ByID(3651149465, container, prefix, query);
 }
+
+// Private type creation functions
+const $$createType0 = $models.FindStatusDTO.createFrom;
+const $$createType1 = $Create.Nullable($$createType0);

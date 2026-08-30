@@ -268,7 +268,7 @@ const maxFailures = 200
 // every name is verified by destination HEAD — never the engine's exit
 // code.
 func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSpec, container, prefix string,
-	preflight *UploadPreflight, onProgress func(done, total int64)) (*Report, error) {
+	preflight *UploadPreflight, onProgress func(done, total, bytes int64)) (*Report, error) {
 	if preflight.Rejected() {
 		return nil, errors.New("preflight rejected the upload; nothing was written")
 	}
@@ -281,7 +281,7 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 	total := int64(len(preflight.Items))
 	progress := func() {
 		if onProgress != nil {
-			onProgress(report.Done+int64(len(report.Failures)), total)
+			onProgress(report.Done+int64(len(report.Failures)), total, report.Bytes)
 		}
 	}
 
@@ -352,7 +352,7 @@ func nativeUpload(ctx context.Context, dst *swiftcontrol.Session, container stri
 // batch for safe names, native streams for the rest, then a local stat
 // verify per file.
 func Download(ctx context.Context, src *swiftcontrol.Session, engine Engine, srcSpec, container, prefix, destDir string,
-	preflight *DownloadPreflight, onProgress func(done, total int64)) (*Report, error) {
+	preflight *DownloadPreflight, onProgress func(done, total, bytes int64)) (*Report, error) {
 	if preflight.Rejected() {
 		return nil, errors.New("preflight rejected the download; nothing was written")
 	}
@@ -365,7 +365,7 @@ func Download(ctx context.Context, src *swiftcontrol.Session, engine Engine, src
 	total := int64(len(preflight.Items))
 	progress := func() {
 		if onProgress != nil {
-			onProgress(report.Done+int64(len(report.Failures)), total)
+			onProgress(report.Done+int64(len(report.Failures)), total, report.Bytes)
 		}
 	}
 

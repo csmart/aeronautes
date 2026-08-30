@@ -11,7 +11,14 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
+import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
+
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as audit$0 from "../audit/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as jobs$0 from "../jobs/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -21,12 +28,29 @@ import * as $models from "./models.js";
  * Get returns the persisted settings with defaults filled in.
  */
 export function Get(): $CancellablePromise<$models.AppSettingsDTO> {
-    return $Call.ByID(3118058760);
+    return $Call.ByID(3118058760).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
+/**
+ * RunRetention applies the §51 prune per the persisted policy: audit
+ * events and terminal jobs past their windows (0 disables either).
+ * Non-terminal jobs and jobs holding crash-recovery records survive
+ * regardless.
+ */
+export function RunRetention(jobStore: jobs$0.Store | null, auditStore: audit$0.Store | null): $CancellablePromise<void> {
+    return $Call.ByID(2231695893, jobStore, auditStore);
 }
 
 /**
  * Set validates, persists, and applies the settings.
  */
 export function Set(settings: $models.AppSettingsDTO): $CancellablePromise<$models.AppSettingsDTO> {
-    return $Call.ByID(2666897108, settings);
+    return $Call.ByID(2666897108, settings).then(($result: any) => {
+        return $$createType0($result);
+    });
 }
+
+// Private type creation functions
+const $$createType0 = $models.AppSettingsDTO.createFrom;

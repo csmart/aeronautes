@@ -12,7 +12,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
+import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -23,14 +23,18 @@ import * as $models from "./models.js";
  * advertised list when it is known.
  */
 export function CreateContainer(create: $models.ContainerCreateDTO): $CancellablePromise<$models.ContainerDetailDTO> {
-    return $Call.ByID(2421495998, create);
+    return $Call.ByID(2421495998, create).then(($result: any) => {
+        return $$createType0($result);
+    });
 }
 
 /**
  * CreateMarker creates the explicit §14.1 marker object at a prefix.
  */
 export function CreateMarker(container: string, prefix: string): $CancellablePromise<$models.PrefixDetailDTO> {
-    return $Call.ByID(1848210993, container, prefix);
+    return $Call.ByID(1848210993, container, prefix).then(($result: any) => {
+        return $$createType1($result);
+    });
 }
 
 /**
@@ -39,7 +43,9 @@ export function CreateMarker(container: string, prefix: string): $CancellablePro
  * refuses, and the outcome is audited either way.
  */
 export function DeleteManifest(container: string, name: string): $CancellablePromise<$models.ObjectDetailDTO> {
-    return $Call.ByID(4014894181, container, name);
+    return $Call.ByID(4014894181, container, name).then(($result: any) => {
+        return $$createType2($result);
+    });
 }
 
 /**
@@ -54,7 +60,9 @@ export function DeleteMarker(container: string, prefix: string): $CancellablePro
  * UpdateContainer applies a complete container edit (§18, §19, §21).
  */
 export function UpdateContainer(name: string, baseFingerprint: string, edit: $models.ContainerEditDTO): $CancellablePromise<$models.MutationResultDTO> {
-    return $Call.ByID(3578252257, name, baseFingerprint, edit);
+    return $Call.ByID(3578252257, name, baseFingerprint, edit).then(($result: any) => {
+        return $$createType3($result);
+    });
 }
 
 /**
@@ -62,5 +70,13 @@ export function UpdateContainer(name: string, baseFingerprint: string, edit: $mo
  * object (§17, §18).
  */
 export function UpdateObjectMetadata(container: string, name: string, baseFingerprint: string, edit: $models.ObjectMetadataEditDTO): $CancellablePromise<$models.MutationResultDTO> {
-    return $Call.ByID(3652920316, container, name, baseFingerprint, edit);
+    return $Call.ByID(3652920316, container, name, baseFingerprint, edit).then(($result: any) => {
+        return $$createType3($result);
+    });
 }
+
+// Private type creation functions
+const $$createType0 = $models.ContainerDetailDTO.createFrom;
+const $$createType1 = $models.PrefixDetailDTO.createFrom;
+const $$createType2 = $models.ObjectDetailDTO.createFrom;
+const $$createType3 = $models.MutationResultDTO.createFrom;
