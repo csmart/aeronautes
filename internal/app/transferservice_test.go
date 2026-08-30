@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/swifttest"
 	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
 	"github.com/csmart/aeronautes/internal/transfer/rclone"
@@ -721,5 +722,99 @@ func TestFindInContainer(t *testing.T) {
 	}
 	if _, err := find.FindStatus(ctx, id); err == nil {
 		t.Error("cancelled scan still answers")
+	}
+}
+
+func TestCrashLitterSweep(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	h.connect(t)
+	bookmark := h.transfer.connections.ActiveBookmarkID()
+	h.mock.AddContainer("backup", "standard")
+	h.mock.AddContainer("backup_segments", "standard")
+
+	// Simulate a crashed copy job: terminal row + persisted recovery
+	// records + real litter on the cluster, with one captured prefix
+	// COMMITTED (its live manifest must survive) and one orphaned.
+	crashed, err := h.transfer.jobs.Create(ctx, jobs.Job{Type: jobs.TypeCopy, DestBookmarkID: bookmark})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = h.transfer.jobs.Transition(ctx, crashed.ID, jobs.StatePlanning)
+	_ = h.transfer.jobs.Transition(ctx, crashed.ID, jobs.StateCancelled)
+
+	staging := ".aeronautes/stage/" + crashed.ID + "/"
+	seedObject(h.mock, "backup", staging+"000001", "stranded staged bytes", nil)
+	committedPrefix := "kept.bin/2026-08-30-0000000000000000000001/"
+	orphanPrefix := "lost.bin/2026-08-30-0000000000000000000002/"
+	seedObject(h.mock, "backup_segments", committedPrefix+"00000000", "kept-seg", nil)
+	h.mock.PutObject("backup", "kept.bin", swifttest.Object{Manifest: "backup_segments/" + committedPrefix})
+	for i := 0; i < 2; i++ {
+		seedObject(h.mock, "backup_segments", fmt.Sprintf("%s%08d", orphanPrefix, i), "orphan-seg", nil)
+	}
+	for _, r := range []jobs.RecoveryRecord{
+		{JobID: crashed.ID, BookmarkID: bookmark, Kind: jobs.RecoveryStaging, Container: "backup", Prefix: staging},
+		{JobID: crashed.ID, BookmarkID: bookmark, Kind: jobs.RecoveryCaptured, Container: "backup_segments", Prefix: committedPrefix},
+		{JobID: crashed.ID, BookmarkID: bookmark, Kind: jobs.RecoveryCommitted, Container: "backup_segments", Prefix: committedPrefix},
+		{JobID: crashed.ID, BookmarkID: bookmark, Kind: jobs.RecoveryCaptured, Container: "backup_segments", Prefix: orphanPrefix},
+	} {
+		if err := h.transfer.jobs.RecoveryAdd(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	swept, err := h.transfer.SweepCrashLitter(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if swept != 3 { // 1 staged + 2 orphan segments
+		t.Fatalf("swept = %d, want 3", swept)
+	}
+	session := h.transfer.connections.sessions[bookmark]
+	if _, err := session.ObjectDetail(ctx, "backup", staging+"000001"); err == nil {
+		t.Fatal("stranded staged object survived")
+	}
+	if _, err := session.ObjectDetail(ctx, "backup_segments", orphanPrefix+"00000000"); err == nil {
+		t.Fatal("orphan segment survived")
+	}
+	// The committed manifest still assembles.
+	d, err := session.ObjectDetail(ctx, "backup", "kept.bin")
+	if err != nil || d.ContentLength != int64(len("kept-seg")) {
+		t.Fatalf("committed DLO harmed: %+v %v", d, err)
+	}
+	// Records cleared; a second sweep is a no-op.
+	if pending, _ := h.transfer.jobs.RecoveryPending(ctx); len(pending) != 0 {
+		t.Fatalf("records not cleared: %+v", pending)
+	}
+	if swept, _ := h.transfer.SweepCrashLitter(ctx); swept != 0 {
+		t.Fatalf("second sweep = %d", swept)
+	}
+}
+
+func TestJobRecordsRecoveryDurably(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	h.connect(t)
+	srcBookmark := h.transfer.connections.ActiveBookmarkID()
+	dstBookmark, dstMock := secondCluster(t, h)
+	h.installChunkingEngine(nil, 1024)
+	h.mock.AddContainer("media", "standard")
+	seedObject(h.mock, "media", "big.bin", strings.Repeat("b", 4000), nil)
+	dstMock.AddContainer("backup", "standard")
+
+	// During a healthy run the records exist mid-flight and are cleared
+	// by the job's own reconciliation at the end.
+	jobID, err := h.transfer.StartCopy(ctx, CopyRequestDTO{
+		SourceBookmarkID: srcBookmark, SourceContainer: "media",
+		DestBookmarkID: dstBookmark, DestContainer: "backup",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job := awaitTerminal(t, h, jobID); job.State != "complete" {
+		t.Fatalf("job = %+v", job)
+	}
+	if pending, _ := h.transfer.jobs.RecoveryPending(ctx); len(pending) != 0 {
+		t.Fatalf("clean job left recovery records: %+v", pending)
 	}
 }

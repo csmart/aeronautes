@@ -333,3 +333,85 @@ func (s *Store) FailInterrupted(ctx context.Context) (int64, error) {
 	})
 	return count, err
 }
+
+// RecoveryKind labels one crash-recovery record (§65.8 item 2).
+type RecoveryKind string
+
+const (
+	// RecoveryStaging is a job's staging namespace (container+prefix).
+	RecoveryStaging RecoveryKind = "staging"
+	// RecoveryCaptured is a generated segment prefix observed live.
+	RecoveryCaptured RecoveryKind = "captured"
+	// RecoveryCommitted marks a captured prefix now referenced by a
+	// committed manifest — never swept.
+	RecoveryCommitted RecoveryKind = "committed"
+)
+
+// RecoveryRecord is one persisted sweepable fact.
+type RecoveryRecord struct {
+	JobID      string
+	BookmarkID string
+	Kind       RecoveryKind
+	Container  string
+	Prefix     string
+}
+
+// RecoveryAdd persists one record; duplicates are fine (the sweep
+// dedupes) but avoided cheaply.
+func (s *Store) RecoveryAdd(ctx context.Context, r RecoveryRecord) error {
+	if r.JobID == "" || r.BookmarkID == "" || r.Container == "" || r.Prefix == "" {
+		return fmt.Errorf("recovery record needs job, bookmark, container, and prefix")
+	}
+	return s.db.WriteTx(ctx, func(tx *sql.Tx) error {
+		var exists int
+		if err := tx.QueryRowContext(ctx, `
+			SELECT COUNT(*) FROM job_recovery
+			WHERE job_id=? AND kind=? AND container=? AND prefix=?`,
+			r.JobID, string(r.Kind), r.Container, r.Prefix).Scan(&exists); err != nil {
+			return err
+		}
+		if exists > 0 {
+			return nil
+		}
+		_, err := tx.ExecContext(ctx, `
+			INSERT INTO job_recovery (job_id, bookmark_id, kind, container, prefix)
+			VALUES (?, ?, ?, ?, ?)`,
+			r.JobID, r.BookmarkID, string(r.Kind), r.Container, r.Prefix)
+		return err
+	})
+}
+
+// RecoveryClear removes a job's records — called when the job's OWN
+// reconciliation ran to completion (nothing left to recover).
+func (s *Store) RecoveryClear(ctx context.Context, jobID string) error {
+	return s.db.WriteTx(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `DELETE FROM job_recovery WHERE job_id=?`, jobID)
+		return err
+	})
+}
+
+// RecoveryPending lists records whose job is TERMINAL — a live run
+// still owns its records; a terminal job with records crashed before
+// its reconciliation could finish.
+func (s *Store) RecoveryPending(ctx context.Context) ([]RecoveryRecord, error) {
+	rows, err := s.db.Reader().QueryContext(ctx, `
+		SELECT r.job_id, r.bookmark_id, r.kind, r.container, r.prefix
+		FROM job_recovery r JOIN jobs j ON j.id = r.job_id
+		WHERE j.state IN ('complete','partial','cancelled','failed')
+		ORDER BY r.job_id, r.id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RecoveryRecord
+	for rows.Next() {
+		var r RecoveryRecord
+		var kind string
+		if err := rows.Scan(&r.JobID, &r.BookmarkID, &kind, &r.Container, &r.Prefix); err != nil {
+			return nil, err
+		}
+		r.Kind = RecoveryKind(kind)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}

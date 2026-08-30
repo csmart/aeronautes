@@ -91,8 +91,7 @@ type ReconcileReport struct {
 // orphan and says so.
 func (e *Executor) Reconcile(ctx context.Context, report *Report) (*ReconcileReport, error) {
 	out := &ReconcileReport{}
-
-	// 1. staged residue (unique job-scoped names — always ours).
+	// Staged residue first: unique job-scoped names — always ours.
 	for _, staged := range append([]string(nil), report.StagedResidue...) {
 		if err := e.cfg.Dest.DeleteObject(ctx, e.cfg.DstContainer, staged); err != nil {
 			if !swiftcontrol.IsNotFound(err) {
@@ -102,55 +101,74 @@ func (e *Executor) Reconcile(ctx context.Context, report *Report) (*ReconcileRep
 		}
 		out.SweptStaged++
 	}
-	// Anything else under the staging prefix (a staged upload whose name
-	// we lost to a crash) is still job-namespaced litter.
-	for entry, err := range e.cfg.Dest.Objects(ctx, e.cfg.DstContainer, swiftcontrol.ObjectListOptions{
-		Deep: true, Prefix: e.stage,
-	}) {
-		if err != nil {
-			out.Notes = append(out.Notes, fmt.Sprintf("staging listing: %v", err))
-			break
-		}
-		object, ok := entry.(swiftcontrol.ObjectEntry)
-		if !ok {
-			continue
-		}
-		if err := e.cfg.Dest.DeleteObject(ctx, e.cfg.DstContainer, object.Name); err == nil {
-			out.SweptStaged++
+	rest, err := SweepLitter(ctx, e.cfg.Dest, e.cfg.DstContainer, e.stage,
+		report.CapturedPrefixes, report.CommittedPrefixes)
+	out.SweptStaged += rest.SweptStaged
+	out.SweptSegments += rest.SweptSegments
+	out.KeptPrefixes = append(out.KeptPrefixes, rest.KeptPrefixes...)
+	out.Notes = append(out.Notes, rest.Notes...)
+	return out, err
+}
+
+// SweepLitter is the reconciliation core, callable WITHOUT a live
+// executor — the startup crash-recovery sweep replays it from
+// persisted records (§65.8 item 2). stagingPrefix "" skips the staging
+// half (upload jobs have none). The rules are the in-job ones: only
+// job-created staging names and captured prefixes; a prefix referenced
+// by a committed or live manifest is kept, and doubt keeps the orphan.
+func SweepLitter(ctx context.Context, dst *swiftcontrol.Session, dstContainer, stagingPrefix string,
+	captured, committed []rclone.SegmentPrefix) (*ReconcileReport, error) {
+
+	out := &ReconcileReport{}
+	if stagingPrefix != "" {
+		for entry, err := range dst.Objects(ctx, dstContainer, swiftcontrol.ObjectListOptions{
+			Deep: true, Prefix: stagingPrefix,
+		}) {
+			if err != nil {
+				if !swiftcontrol.IsNotFound(err) {
+					out.Notes = append(out.Notes, fmt.Sprintf("staging listing: %v", err))
+				}
+				break
+			}
+			object, ok := entry.(swiftcontrol.ObjectEntry)
+			if !ok {
+				continue
+			}
+			if err := dst.DeleteObject(ctx, dstContainer, object.Name); err == nil {
+				out.SweptStaged++
+			}
 		}
 	}
 
-	// 2. captured generated prefixes not referenced by any committed
-	// manifest: orphaned segment sets from interrupted uploads.
-	committed := map[rclone.SegmentPrefix]bool{}
-	for _, p := range report.CommittedPrefixes {
-		committed[p] = true
+	committedSet := map[rclone.SegmentPrefix]bool{}
+	for _, p := range committed {
+		committedSet[p] = true
 	}
-	for _, captured := range report.CapturedPrefixes {
-		if committed[captured] {
-			out.KeptPrefixes = append(out.KeptPrefixes, captured.Container+"/"+captured.Prefix)
+	for _, capturedPrefix := range captured {
+		if committedSet[capturedPrefix] {
+			out.KeptPrefixes = append(out.KeptPrefixes, capturedPrefix.Container+"/"+capturedPrefix.Prefix)
 			continue
 		}
-		// Guard: rclone may have completed this object before the
+		// Guard: the engine may have completed this object before the
 		// interruption — its live manifest then references the prefix.
-		if object, ok := objectFromGeneratedPrefix(captured.Prefix); ok {
-			live, err := e.cfg.Dest.ObjectDetail(ctx, e.cfg.DstContainer, object)
+		if object, ok := objectFromGeneratedPrefix(capturedPrefix.Prefix); ok && dstContainer != "" {
+			live, err := dst.ObjectDetail(ctx, dstContainer, object)
 			if err == nil && live.Class == swiftcontrol.ClassDLO &&
-				live.Manifest == captured.Container+"/"+captured.Prefix {
-				out.KeptPrefixes = append(out.KeptPrefixes, captured.Container+"/"+captured.Prefix)
+				live.Manifest == capturedPrefix.Container+"/"+capturedPrefix.Prefix {
+				out.KeptPrefixes = append(out.KeptPrefixes, capturedPrefix.Container+"/"+capturedPrefix.Prefix)
 				continue
 			}
 			if err != nil && !swiftcontrol.IsNotFound(err) {
 				out.Notes = append(out.Notes, fmt.Sprintf("prefix %s: cannot re-check %s: %v — keeping orphan",
-					captured.Prefix, object, err))
-				out.KeptPrefixes = append(out.KeptPrefixes, captured.Container+"/"+captured.Prefix)
+					capturedPrefix.Prefix, object, err))
+				out.KeptPrefixes = append(out.KeptPrefixes, capturedPrefix.Container+"/"+capturedPrefix.Prefix)
 				continue
 			}
 		}
-		swept, listErr := e.sweepPrefix(ctx, captured)
+		swept, listErr := sweepSegmentPrefix(ctx, dst, capturedPrefix)
 		out.SweptSegments += swept
 		if listErr != nil {
-			out.Notes = append(out.Notes, fmt.Sprintf("prefix %s: %v", captured.Prefix, listErr))
+			out.Notes = append(out.Notes, fmt.Sprintf("prefix %s: %v", capturedPrefix.Prefix, listErr))
 		}
 	}
 	return out, nil
@@ -169,10 +187,10 @@ func objectFromGeneratedPrefix(prefix string) (string, bool) {
 	return trimmed[:slash], true
 }
 
-func (e *Executor) sweepPrefix(ctx context.Context, p rclone.SegmentPrefix) (int, error) {
+func sweepSegmentPrefix(ctx context.Context, dst *swiftcontrol.Session, p rclone.SegmentPrefix) (int, error) {
 	swept := 0
 	var names []string
-	for entry, err := range e.cfg.Dest.Objects(ctx, p.Container, swiftcontrol.ObjectListOptions{
+	for entry, err := range dst.Objects(ctx, p.Container, swiftcontrol.ObjectListOptions{
 		Deep: true, Prefix: p.Prefix,
 	}) {
 		if err != nil {
@@ -186,7 +204,7 @@ func (e *Executor) sweepPrefix(ctx context.Context, p rclone.SegmentPrefix) (int
 		}
 	}
 	for _, name := range names {
-		if err := e.cfg.Dest.DeleteObject(ctx, p.Container, name); err == nil {
+		if err := dst.DeleteObject(ctx, p.Container, name); err == nil {
 			swept++
 		}
 	}

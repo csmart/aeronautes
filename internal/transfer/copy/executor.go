@@ -66,6 +66,10 @@ type Config struct {
 	OnEvent func(rclone.Event)
 	// OnItem is told each item's outcome as it happens; optional.
 	OnItem func(ItemOutcome)
+	// OnRecovery persists crash-recovery facts AS THEY HAPPEN (§65.8
+	// item 2): captured and committed segment prefixes. Optional; a
+	// dead process's litter is only sweepable if these were durable.
+	OnRecovery func(kind string, container, prefix string)
 }
 
 // ItemOutcome is one name's fate during execution.
@@ -321,6 +325,9 @@ func (e *Executor) capturePrefixes(prefixes []rclone.SegmentPrefix) {
 		if !e.printed[p] {
 			e.printed[p] = true
 			e.report.CapturedPrefixes = append(e.report.CapturedPrefixes, p)
+			if e.cfg.OnRecovery != nil {
+				e.cfg.OnRecovery("captured", p.Container, p.Prefix)
+			}
 		}
 	}
 }
@@ -596,6 +603,9 @@ func (e *Executor) markCommitted(manifest string) {
 	if slash := strings.Index(manifest, "/"); slash > 0 {
 		e.report.CommittedPrefixes = append(e.report.CommittedPrefixes,
 			rclone.SegmentPrefix{Container: manifest[:slash], Prefix: manifest[slash+1:]})
+		if e.cfg.OnRecovery != nil {
+			e.cfg.OnRecovery("committed", manifest[:slash], manifest[slash+1:])
+		}
 	}
 }
 
