@@ -239,3 +239,20 @@ func likePrefix(prefix string) string {
 	escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(prefix)
 	return escaped + "%"
 }
+
+// Prune deletes events older than the cutoff — §51 retention. The
+// trail is a local operational record, not an immutable ledger; the
+// policy is configurable and the prune itself is logged by the caller.
+func (s *Store) Prune(ctx context.Context, before time.Time) (int64, error) {
+	cutoff := before.UTC().Format(time.RFC3339)
+	var pruned int64
+	err := s.db.WriteTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `DELETE FROM audit_events WHERE at < ?`, cutoff)
+		if err != nil {
+			return err
+		}
+		pruned, err = res.RowsAffected()
+		return err
+	})
+	return pruned, err
+}

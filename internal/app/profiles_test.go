@@ -2,11 +2,15 @@ package app
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/db"
+	"github.com/csmart/aeronautes/internal/jobs"
 )
 
 func TestResolveSettings(t *testing.T) {
@@ -88,5 +92,99 @@ func TestSettingsServicePersistsAndApplies(t *testing.T) {
 	}
 	if cap(runner2.slots) != 4 {
 		t.Fatalf("budget not applied at construction: cap %d", cap(runner2.slots))
+	}
+}
+
+func TestRetentionPrunesExactly(t *testing.T) {
+	d, err := db.Open(context.Background(), filepath.Join(t.TempDir(), "state.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { d.Close() })
+	ctx := context.Background()
+	jobStore := jobs.NewStore(d)
+	auditStore := audit.NewStore(d)
+	runner := newJobRunner(jobStore, auditStore)
+	service := NewSettingsService(d, runner)
+
+	old := time.Now().AddDate(0, 0, -120).UTC().Format(time.RFC3339)
+	// Old terminal job; old terminal job WITH recovery records; old
+	// RUNNING job; fresh terminal job.
+	mk := func(state string) string {
+		j, _ := jobStore.Create(ctx, jobs.Job{Type: jobs.TypeCopy})
+		_ = jobStore.Transition(ctx, j.ID, jobs.StatePlanning)
+		_ = jobStore.Transition(ctx, j.ID, jobs.StateRunning)
+		if state != "running" {
+			_ = jobStore.Transition(ctx, j.ID, jobs.StateCancelled)
+		}
+		return j.ID
+	}
+	oldDone := mk("done")
+	oldWithRecovery := mk("done")
+	running := mk("running")
+	freshDone := mk("done")
+	// Backdate the two old terminal rows.
+	if err := d.WriteTx(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `UPDATE jobs SET finished_at=? WHERE id IN (?, ?)`, old, oldDone, oldWithRecovery)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := jobStore.RecoveryAdd(ctx, jobs.RecoveryRecord{
+		JobID: oldWithRecovery, BookmarkID: "bm", Kind: jobs.RecoveryStaging, Container: "c", Prefix: "p/",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Old and fresh audit events.
+	_ = auditStore.Append(ctx, audit.Event{BookmarkID: "bm", Operation: "x.old", Resource: "r", Summary: "s", Result: audit.ResultApplied})
+	_ = auditStore.Append(ctx, audit.Event{BookmarkID: "bm", Operation: "x.new", Resource: "r", Summary: "s", Result: audit.ResultApplied})
+	if err := d.WriteTx(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `UPDATE audit_events SET at=? WHERE operation='x.old'`, old)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	service.RunRetention(ctx, jobStore, auditStore)
+
+	if _, err := jobStore.Get(ctx, oldDone); err == nil {
+		t.Fatal("old terminal job survived the prune")
+	}
+	for name, id := range map[string]string{"recovery-held": oldWithRecovery, "running": running, "fresh": freshDone} {
+		if _, err := jobStore.Get(ctx, id); err != nil {
+			t.Fatalf("%s job wrongly pruned: %v", name, err)
+		}
+	}
+	events, _ := auditStore.Recent(ctx, 10)
+	for _, e := range events {
+		if e.Operation == "x.old" {
+			t.Fatal("old audit event survived")
+		}
+	}
+	saw := false
+	for _, e := range events {
+		if e.Operation == "x.new" {
+			saw = true
+		}
+	}
+	if !saw {
+		t.Fatal("fresh audit event pruned")
+	}
+
+	// Retention 0 disables: nothing further is pruned.
+	if _, err := service.Set(ctx, AppSettingsDTO{
+		MaxActiveJobs: 2, DefaultProfile: "auto", AuditRetentionDays: 0, JobRetentionDays: 0,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.WriteTx(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `UPDATE jobs SET finished_at=? WHERE id=?`, old, freshDone)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	service.RunRetention(ctx, jobStore, auditStore)
+	if _, err := jobStore.Get(ctx, freshDone); err != nil {
+		t.Fatal("prune ran with retention disabled")
 	}
 }

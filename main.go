@@ -83,6 +83,8 @@ func main() {
 		}
 	}()
 	transferService.SetFilePicker(wailsPicker{})
+	settingsService := app.NewSettingsService(database, jobRunner)
+	settingsService.RunRetention(context.Background(), jobStore, auditStore)
 	benchmarkService := app.NewBenchmarkService(connections, jobStore, jobRunner, database)
 	transferService.SetRecommendationSource(benchmarkService.RecommendationFor)
 
@@ -100,7 +102,7 @@ func main() {
 			application.NewService(app.NewDeleteService(connections, jobStore, jobRunner, evidenceStore)),
 			application.NewService(app.NewJobService(jobStore)),
 			application.NewService(app.NewFindService(connections)),
-			application.NewService(app.NewSettingsService(database, jobRunner)),
+			application.NewService(settingsService),
 			application.NewService(benchmarkService),
 		},
 		Assets: application.AssetOptions{
