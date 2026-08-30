@@ -76,14 +76,21 @@ the reference/first-polish platform. App id: `io.csmart.aeronautes`.
   tokens, static browser/inspector, bookmarks, live wiring). One component per commit, each with
   its tests.
 
-  **Current state (2026-08-30): Phases 0–7 are complete** — browse/inspect/mutate, cross-account
-  Copy with stage-and-commit, executable Mirror, local up/download, the destructive-job family,
-  gated segment cleanup, profiles/budgets/benchmark, TLS trust modes, and release hardening —
-  each phase's gate evidence is recorded in `DESIGN.md` §65.x status blocks. New work means a new
-  §65.x commit-sequence plan first, same discipline.
-- **CI is already wired** (`.github/workflows/ci.yml`); it activates the moment `go.mod` / `frontend/`
-  land — keep it green from the first code commit. The six-target build/sign matrix (§61.0) is added in
-  Phase 0/7; a containerized-Swift integration job is added when Phase 1 starts (§57.3).
+  **Current state (2026-08-30): Phases 0–7 are complete and the §65.9 adversarial-review fixes
+  are in** — browse/inspect/mutate, cross-account Copy with stage-only engine writes and a durable
+  commit protocol, executable Mirror with fresh delete membership, local up/download behind one
+  cross-platform namespace policy, the destructive-job family with exact accounting, evidence-gated
+  segment cleanup, TLS trust identities, and release hardening. Gate evidence lives in
+  `DESIGN.md` §65.x status blocks; items §65.9 defers are named in §65.10, not implied done.
+  Requirements not yet met are marked in `docs/REQUIREMENTS.md` context: adaptive concurrency
+  (K-PERF-003), plan tokens, the six-platform materialization matrix, vault (ADR 0006). New work
+  means a new §65.x commit-sequence plan first, same discipline — and the test rule is phased: until the
+  §65.10 behavioral harness lands, no merge without a regression test (unit/SAIO); once it
+  exists, every behavior-changing feature adds a system-matrix row and test, and every bug fix
+  carries the system-level reproduction that failed before it. No system test, no merge.
+- **CI is live** (`.github/workflows/ci.yml`): Go, frontend, containerized-Swift integration, and
+  headless smoke are required checks on master (PR-only). The six-target release matrix builds
+  unsigned artifacts on dispatch/tag (§61.0). Keep it green.
 - **Highest-value early task: the disposable Phase-0 rclone-seam experiment** (§60) — it runs in
   parallel with Phases 1–4 (start with token-lifetime and `override.*` TLS, the cheapest assumptions
   to falsify) and must finish before the Phase-5 transfer abstraction freezes. It will invalidate

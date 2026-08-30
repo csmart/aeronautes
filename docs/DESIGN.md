@@ -1930,7 +1930,7 @@ Offer:
 - **Manifest only** — the normal, default action (delete just the manifest object);
 - **Manifest + segments** — permitted to auto-delete segments **only** under `ExclusiveOwnershipProof` (§28.6(b)) for every referenced segment, including nested and ranged segments; for external SLOs, single-manifest inspection cannot in general disprove sharing, so require a deliberately destructive Backstage flow with appropriate confirmation.
 
-Use Swift-native SLO deletion (`?multipart-manifest=delete`, async where capability and manifest constraints make it valid) once exclusivity is established — Aeronautes should not hand-issue thousands of segment deletes when Swift can do the correct server-native operation faster. But native deletion does not relax the exclusivity requirement; it is faster, not safer. (Requirement K-SEG-003; fixtures for direct, ranged, repeated, shared, and nested SLO segments.)
+**Implementation note (2026-08-30, review wave):** the shipped code does NOT send `?multipart-manifest=delete` — it would follow whatever manifest occupies the live name at execution time (a proof/delete TOCTOU), so segment deletion is manifest-only DELETE plus native deletion of exactly the proven identities, with a pre-delete manifest re-HEAD that refuses on identity change. The server-native fast path stays desirable once a live exclusivity binding exists (§65.10); until then correctness beats speed. (Requirement K-SEG-003; fixtures for direct, ranged, repeated, shared, and nested SLO segments.)
 
 ---
 
@@ -3708,6 +3708,10 @@ bounded chunks, so Mirror holds O(chunk) names in memory at any scale and hostil
 remain tracked: the release matrix exists and its test-gate ordering was fixed after the
 first dispatch failed on the unbuilt go:embed frontend.
 
+Follow-up (2026-08-30, review wave): two independent adversarial audits (grok, codex —
+reports live outside the repo) reviewed master at c7f87fe. Their combined verified
+findings drive §65.9; their shared root-cause diagnosis is recorded there.
+
 Follow-up (2026-08-30, later): the smoke job was promoted to the fourth required status
 check on master after seven consecutive green runs. The first full release-matrix dispatch
 proved both Linux targets and exposed that the darwin/windows Taskfile includes (§61.0's
@@ -3719,7 +3723,291 @@ common task (wails3 always emits both platforms' icons; outputs are gitignored b
 products). The windows chain is validated by cross-build from Linux; the matrix (now
 fail-fast: false so sibling targets report independently) proves the native runners.
 
----
+
+### 65.9 Tenth milestone — adversarial-review fixes
+
+Two independent adversarial audits reviewed master at c7f87fe and converged on one
+root cause: **identities are inferred from mutable observations instead of carried
+explicitly** — the planned-new destination, the selected row, the live manifest, the
+TLS trust pair, prefix ownership, and recovery state. This milestone makes those
+identities explicit and locks each fix with a test that fails when the invariant
+breaks. Findings are cited as G# (grok) / C-##,H-##,M-## (codex).
+
+Commit sequence (one tested commit per component; every fix lands with its
+regression test in the same commit):
+
+1. **TLS trust identity** (G1/C-07) — normalize each remote's trust to an identity
+   (system / insecure / CA-bundle fingerprint); one child only when identities are
+   EQUAL; buildEngine refuses non-identical pairs before preview with a clear error
+   (no silent splitter exists and none is faked). TestTLSConfigFile inverted: the
+   custom-CA + insecure pairing must refuse; identical-CA pairing must pass.
+2. **Runner argv/boundary hygiene** (G6-part/H-09/M-11) — `--` before every
+   positional; refuse empty name sets; refuse remote paths starting with `-`;
+   storage URLs are rejected if they carry control characters before they can reach
+   the INI; `rclone version` probe runs with a timeout and minimal env; a stderr
+   scanner failure is surfaced, not swallowed.
+3. **Engine exit status honored** (H-02) — nonzero ExitCode, Cancelled, or child
+   error count becomes a typed engine failure for the batch (diagnostics and
+   captured prefixes retained). Auth-classified failures refresh both sessions and
+   retry the unfinished names once in a fresh child (K-XFER-001's lifecycle,
+   bounded).
+4. **rclone never receives a live destination name** (G2/C-02/K-XFER-014) — every
+   engine write stages: batches copy into the job staging prefix, then each name
+   commits natively (plain: server-side COPY + staged delete; large: manifest PUT
+   at the live name over the staged segments). The residual commit race is native
+   Swift last-write-wins on a manifest-only operation — never rclone Update's
+   segment bulk-delete. A hygiene test asserts no rclone argv ever contains the
+   live destination prefix.
+5. **Durable commit protocol + sweep rewrite** (G3/C-01/H-03/H-17-part/G23) —
+   migration 0008 adds `committing` recovery records carrying the LIVE identity
+   {container, name, staged prefix} persisted BEFORE the live manifest PUT; a
+   failed recovery write fails the job closed before the boundary. Segment-prefix
+   capture becomes durable at observation time (runner streams prefix events; the
+   recorder is synchronous). The startup sweep only ever deletes a captured prefix
+   whose recovery records prove job creation AND whose recorded live name's current
+   manifest does not reference it; on any doubt it keeps the data and surfaces a
+   suspected-orphan note, and records are cleared only after a zero-note sweep.
+   A single-instance flock guards the state directory; Linux children get
+   Setpgid + Pdeathsig (Windows/macOS containment tracked in §65.10).
+6. **Ownership promoted only from job-captured prefixes; nested/inline/unknown SLO
+   entries fail the proof** (H-01, G4/C-05) — markCommitted requires the prefix to
+   be one of this job's captured prefixes; an unobserved destination manifest is
+   never promoted. sloSegmentRefs refuses NestedSLO/inline/unknown entries, making
+   the code match its own comment.
+7. **SLO segment deletion without TOCTOU** (C-06) — the `?multipart-manifest=delete`
+   fast path is removed. Proven deletion is manifest-only DELETE followed by native
+   deletion of the exact proven segment identities, with partial results persisted.
+8. **Session-owned raw client** (G5/H-08) — bulk delete and manifest operations ride
+   the bookmark's transport with a no-cross-origin redirect policy, timeout,
+   response cap, and one 401 re-auth replay. http.DefaultClient leaves swiftcontrol.
+9. **Copy/Mirror scope overlap refused** (C-03) — same resolved endpoint + container
+   with equal-or-nested prefixes is rejected at validation (both directions tested:
+   the deterministic self-delete nesting and the recursive-ingestion nesting).
+10. **Mirror deletes only fresh members** (H-06) — each delete chunk re-checks
+    source absence immediately before deletion; any successful delete followed by
+    failure/cancel yields Partial with exact accounting.
+11. **Exact destructive accounting** (G15/H-07) — per-name failure records spill to
+    disk with no cap (the DTO carries a bounded view plus the spill reference);
+    bulk results are reconciled against request cardinality; progress snapshots are
+    serialized; the delete-service counter race gets its mutex; DLO/SLO cleanup
+    with any failure or remainder reports Partial and keeps its retry surface.
+12. **Immutable mutation identities in the UI** (G20/C-04) — dialogs capture
+    {container, name} at open and submit exactly that; state-layer mutations take
+    identity arguments instead of re-reading the selected index; filtering
+    preserves selection by identity or clears dependent state; Escape closes the
+    nested manifest dialog (minimal modal-stack fix).
+13. **Local transfer hardening, wave 1** (G6/H-10/H-18) — upload/download paths
+    come only from picker-issued handles resolved in Go; preflight rejects `..`
+    and `\` components on every platform, directories at file targets, case-fold
+    twins, and `//`-collapse collisions; downloads write a temp file and rename
+    without replace; byte counts are compared to preflight. The full six-platform
+    materialization contract is §65.10 scope.
+14. **Wiring methods off the bridge** (G19) — SetEngineFactory / SetEvidenceStore /
+    SetFilePicker / SetScale / RunRetention / SweepCrashLitter become unexported;
+    same-package tests keep their access.
+15. **Bookmark lifecycle** (H-09/H-12/M-01) — auth/override URLs are parsed and
+    canonicalized (no control chars, userinfo, or fragments; https required with an
+    explicit loopback/lab plaintext opt-in); Save/Delete invalidate cached sessions
+    and capabilities atomically; deletion is refused while jobs reference the
+    bookmark; the rail gains edit/delete and a persistent insecure-TLS badge.
+16. **Verification strength recorded** (H-04/K-CON-001) — before a staged large
+    object commits, its segment listing is enumerated with bounded retries and
+    compared (count + logical bytes) against the source; fingerprints record their
+    strength and manifest-class fingerprints are no longer sufficient to skip.
+17. **Symlink fidelity** (H-05-part) — X-Symlink-Target/-Account are modeled via
+    non-dereferencing HEAD and replayed on copy metadata.
+18. **Honesty batch** (G7/G8/G12/M-01/M-10/M-12/M-15 + comment-vs-code list) — the
+    preview names its data path (workstation hairpin) and overwrite bytes; chunk
+    size is parsed and capped against destination /info at preview and start;
+    X-Versions-Enabled is modeled and displayed; "parts" wording becomes segments;
+    the manifest dialog discloses inline-SLO data loss; comments that promise more
+    than the code does are corrected everywhere both reviews listed one; AGENTS.md
+    and README claims align with reality; nfpm license metadata says Apache-2.0 and
+    a NOTICE ships with bundled-rclone artifacts; jobs drawer uses
+    operation-specific counters and honest re-run wording.
+19. **CI honesty** (M-12/codex test-gap notes) — actions pinned by digest, SAIO
+    image pinned, a real frontend lint script, all-source frontend coverage
+    accounting.
+
+Deferred to §65.10 (the test war room) with owner visibility, not silently:
+adaptive concurrency (K-PERF-003), server-issued plan tokens (H-14), the full
+six-platform local materialization + cancellation matrix (H-10/H-17), metadata-only
+change replication (H-05), audit outbox/export (H-13/M-10), Backstage as a server
+capability (H-15), vault (ADR 0006, owner), directory upload, benchmark realism
+(M-09), provider short-page seam tests (M-13), the a11y/contrast/responsive program
+(M-06/07/08), and SLO DTO raw-field fidelity (M-04).
+
+Gate: every P0 from both reviews fixed with a regression test that fails on the
+old code; the staged-write hygiene test proves rclone argv never carries a live
+destination; the crash matrix covers process death on both sides of the commit
+boundary; the TLS pairing matrix refuses every non-identical combination; the full
+suite (unit + SAIO + smoke) green on the branch.
+
+**Status: complete (2026-08-30), on branch review-fixes awaiting re-review.** All
+nineteen planned commits landed plus the job-ceiling count fix and a tracked-file
+cleanup. Every P0 (G1-G6 / C-01..C-07) is fixed with its regression; the SLO
+integration test now proves the manifest-only + proven-set path on real Swift; the
+symlink work was measured on SAIO first (the middleware ignores a leading-slash
+target — the mock mimics the real contract and the first implementation's bug was
+caught by it). Deferred items are exactly the §65.10 list above, unchanged.
+
+**Follow-up wave (2026-08-30, after grok's re-review).** The re-review found the
+first wave's C-01 fix incomplete — durable committing/committed rows were written
+in rclone's unslashed header form while captured rows carried the slashed
+log-derived form, so a restart's lookup missed and the C01-slash sequence stayed
+reachable — plus local transfers still handing rclone live destinations, folder
+markers escaping ahead of the namespace checks, and a Save-invalidate patch that
+had silently no-oped. All fixed: prefixes have ONE canonical (slash-terminated)
+form across capture, records, loads, and sweep comparisons; local uploads stage
+and commit natively with full recovery records while downloads stage-and-place
+no-replace, and the RUNNER now refuses any remote destination outside an
+.aeronautes staging namespace (the K-XFER-014 boundary is mechanized below every
+caller); preflight policy checks precede directory markers and file-vs-prefix
+uses real ancestor lookups; bookmark edits invalidate the cached session AND the
+active pointer, with a regression this time; the bookmark transport strips
+Location off every 3xx so no client above it (the wire library's included) can
+resend credentials to a redirect target; and the P1 list landed — recursive-
+multipart wire lock, argv verb/flag locks, DataPath assertion, empty-chunk cap,
+canonical endpoint identity for the overlap gate (dual-bookmark tested),
+SetRecommendationSource unexported, honest object_versioning display, and every
+design-section reference swept from operator-facing copy (owner request). Still
+deferred with the §65.10 list: the second exclusivity clause ("no other recorded
+manifest references this prefix"), Backstage as a capability, plan tokens,
+HasCredential live probing, and the platform matrix.
+
+**Third wave (2026-08-30, after codex's follow-up and grok's second follow-up).** The two
+follow-up reviews (both pinned to moving snapshots) found new mutation-boundary races and
+one release blocker: Windows had a no-op instance lock. All addressed. Windows has a real
+exclusive-handle lock; Mirror binds deletions to the planned destination ETag and fails
+closed on an empty identity; ownership evidence canonicalizes at record AND query; planned-
+new commits are conditional (If-None-Match:*) on every PUT-committed shape — measured on
+SAIO, where server-side COPY answers 304 to the same header and DELETE ignores If-Match, so
+the plain-commit and manifest-delete residuals are ONE re-HEAD-to-write hop, pinned by
+barrier tests that plant the racer at the exact protocol point rather than implied closed;
+an auth-shaped retry force-invalidates the token so it cannot replay; the auth response
+refuses an https→http storage-URL downgrade and private-network plaintext requires the
+insecure opt-in; symlink metadata edits refuse (Swift POSTs the link then 307s — measured);
+local placement lands via os.Link (true no-replace) and HEAD-resolves zero-byte trailing-
+slash rows before treating them as folder markers; the delete state machine reaches Partial
+from Running; the failure spill reports its own write errors; the recovery goroutine is
+genuinely supervised (a testable step run for the process lifetime, backing off when quiet,
+never retiring on an empty pending set — the earlier claim shipped ahead of the code and
+grok follow-up 3 caught it); the bindings-drift CI gate, whole-source coverage, two-account SAIO requirement,
+and full-text NOTICE landed. Still deferred to §65.10 by name: the second exclusivity clause
+(live no-other-references scan) with auto-segment-delete gated on it, Backstage as a server
+capability, server-issued plan tokens, the six-platform local materialization/namespace
+matrix (reserved names, NFC/NFD, long paths), ordered-inventory large-object verification,
+HasCredential live probing, the modern-versioning edit path, and the whole-account snapshot
+system suite itself.
+
+**Fourth wave (2026-08-30, codex re-review — a NO-GO with four P0s).** Codex held a
+higher bar than grok and was right to: it caught a regression the recovery-loop fix
+introduced (RecoverySweepStep exported on a bound service → into the bindings; now
+unbound, and the bridge test is a verb-prefix guard that catches maintenance methods by
+SHAPE, not a denylist) and it rejected the plain-COPY "pinned residual" grok had accepted.
+Contained/fixed with tests: R-01 planned-new plain commits now use a CONDITIONAL live PUT
+(the racer survives — the test is inverted to prove it); R-02 segment deletion is
+FORCE-ONLY until a live reverse-reference scan exists (evidence is advisory, never
+auto-authorizes destruction); R-04 overlap identity is the account segment (AUTH_xxx)
+compared fail-closed so host aliases can't bypass it; R-06 credentials are read from an
+atomic snapshot published in v1Auth.Response (no race with the library's implicit reauth,
+proven under -race); R-07 the returned storage URL gets the full endpoint policy; R-08
+symlink edits refuse any link form (cross-account included); R-09 partial (absolute paths
+no longer cross the bridge, native upload verifies its landing); R-12 partial (the
+public-ACL ack is honestly documented as an accident control, not a hostile-webview one).
+
+Codex's remaining items are genuine ARCHITECTURE, not patches, and it sequences them
+AFTER containment: R-05 ordered-inventory large-object verification, R-10 an identity-keyed
+exact-outcome ledger, R-11 a durable intent/outbox with fail-closed persistence, R-12 full
+server-issued one-shot capabilities, R-09 the six-platform local materialization matrix,
+R-15 metadata-only replication, R-16 provider short-page handling, and the modern-versioning
+edit path. These are the §65.10 war room and a one-typed-mutation-protocol refactor. The
+branch is honestly NOT a valuable-data safety-claim release until they land — recorded here
+rather than implied done. Both reviewers agree the system suite is the backbone and must
+gate release, and that the P0 behaviors had to be contained first (now done).
+
+### 65.10 Eleventh milestone — the test war room (planned)
+
+Owner directive (2026-08-30): "a full set of integration/system tests that
+exercises every possible action supported by the app and checks the result …
+that the right data is copied, that no data is accidentally deleted, that it's
+updated when it's meant to" — with reportable coverage, as a dedicated branch
+cut from the accepted review-fixes tip. Both external reviewers endorsed the
+shape and hardened it; their refinements are folded in below. The full
+commit-sequence plan is written when the milestone starts.
+
+**What "full coverage" means here (and what it does not).** Never the cartesian
+product of every setting — that never finishes and still misses bugs. The
+reportable definition:
+
+- 100% supported-ACTION coverage: every bridge method is a matrix row with a
+  happy path and its refusal twin;
+- 100% of destructive/mutating actions ALSO carry conflict, cancellation,
+  partial-failure, and retry cases;
+- 100% K-* requirement mapping and 100% known-bug regression mapping (the
+  review-wave scenarios become named system tests);
+- line coverage stays a SECONDARY signal — 100% lines proves nothing about
+  data safety.
+
+**Load-bearing design rules:**
+
+1. **Auto-inventoried matrix.** The bridge surface is enumerated by the build
+   (reflection over bound services); CI FAILS when a method or UI action has no
+   matrix entry. The coverage report is a generated artifact, never a claim.
+2. **Independent read-only oracle.** Snapshots are taken by a separate raw-HTTP
+   Swift reader in the test harness — NEVER through Aeronautes' own parsers, or
+   a parsing bug validates itself. Snapshots cover content digests and logical
+   GET bytes, all metadata/content headers, DLO manifest values plus complete
+   segment inventories, raw SLO manifests (ranges, nesting, digests), symlink
+   headers, container configuration/ACLs/quotas/versioning and archived
+   versions, BOTH accounts, local filesystem output, job state, recovery
+   records, and audit events.
+3. **Whole-account snapshot/diff after every action**, scoped to throwaway
+   per-test containers for cost: the expected delta is explicit and "nothing
+   else changed" is asserted globally — the assertion that catches accidental
+   deletion anywhere.
+4. **This suite drives the Go service layer** (the same entry points the UI
+   calls) and never re-implements operations in test code. UI truthfulness
+   (filter retargeting, dialog identity) is a SEPARATE harness: UI→bridge
+   contract tests plus destructive-dialog component/a11y coverage — kept apart
+   so neither stalls the other.
+5. **Adversarial interleavings are first-class matrix rows**, made
+   deterministic with barriers/failpoints, never sleeps: concurrent writers
+   between plan/commit/delete, process death at every durable/remote boundary
+   (a real subprocess killed around a real rclone child, then a second process
+   sweeping — in-process failure is not that), SQLite failures at safety
+   writes, token expiry mid-job, 401/429/5xx, redirects, malformed bulk
+   responses, truncated listings.
+6. **State matrix**: plain/DLO/SLO/nested/shared-segment/symlink ×
+   new/same/changed/unknown × versioned/unversioned destinations ×
+   same/cross-account × hostile names × system/custom-CA/insecure TLS.
+7. **Two SAIO accounts are MANDATORY** for the suite — skip-if-absent is how
+   cross-account tests silently disappear. Whole-account snapshot tests run
+   serially in isolated namespaces so parallel residue cannot hide or
+   fabricate changes.
+8. **Platform suites** for local materialization and child lifecycle run on
+   real Linux/macOS/Windows runners; SAIO-on-Linux cannot prove Windows path or
+   cancellation behavior.
+
+**Build order** (roughly codex's sequence): inventory + generated coverage
+report → independent snapshot oracle → browse/inspect/metadata/container
+matrix → copy/upload/download matrix → mirror + deletion variants →
+cancellation/crash/fault-injection matrix → UI-to-bridge and dialog coverage →
+macOS/Windows platform matrix → hard CI gates with report artifacts.
+
+**Standing rule (phased, per review consensus):** until the harness lands, the
+existing discipline holds — no merge without a regression test (unit/SAIO).
+Once the harness exists, every behavior-changing feature adds a matrix row and
+system test, every bug fix carries the system-level reproduction that failed
+before it, and build/CI-only bugs get the equivalent pipeline regression. No
+system test, no merge.
+
+Also riding this milestone: the §65.9 deferred list (adaptive concurrency,
+plan tokens, six-platform materialization/cancellation, metadata-only
+replication, audit outbox/export, Backstage capability, benchmark realism,
+short-page seam tests, a11y/contrast/responsive program, SLO DTO raw fields),
+and the frontend whole-source floor turned from honest-red to green.
+
 
 ## 66. Final project statement
 
