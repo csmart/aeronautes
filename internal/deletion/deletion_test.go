@@ -229,3 +229,29 @@ func TestConfigSnapshotDiff(t *testing.T) {
 		t.Errorf("diff = %q", diff)
 	}
 }
+
+func TestExactFailureAccounting(t *testing.T) {
+	// K-DEL-002 (review-wave G15/H-07): the failure COUNT is exact and
+	// every name streams through OnFailure even past the display-sample
+	// cap, and a failed bulk request accounts for its whole batch.
+	session, capabilities, mock := cluster(t, "")
+	ctx := context.Background()
+	mock.AddContainer("media", "standard")
+	seedMany(mock, "media", "doomed/", 30)
+	mock.FailDeletes = true // every delete answers 500
+
+	var streamed int
+	result, err := DeletePrefix(ctx, session, capabilities, "media", "doomed/", Options{
+		ForceParallel: true, Workers: 4,
+		OnFailure: func(name, detail string) { streamed++ },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Failed != int64(streamed) || result.Failed < 30 {
+		t.Fatalf("Failed=%d streamed=%d (exact, uncapped accounting expected)", result.Failed, streamed)
+	}
+	if int64(len(result.Failures)) > result.Failed {
+		t.Fatalf("sample %d exceeds exact count %d", len(result.Failures), result.Failed)
+	}
+}

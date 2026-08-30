@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"strings"
 	"sync"
@@ -90,11 +91,13 @@ func (s *TransferService) runMirror(ctx context.Context, jobID string, req Mirro
 		if message != "" {
 			_ = s.jobs.SetError(background, jobID, message)
 		}
+		// Deregister BEFORE the terminal state becomes visible: a job
+		// that reads terminal must no longer be cancel-addressable.
+		s.runner.release(jobID)
 		transition(state)
 		s.record(background, req.SourceBookmarkID, "transfer.mirror."+string(state),
 			req.SourceContainer+"/"+req.SourcePrefix+" → "+req.DestContainer+"/"+req.DestPrefix,
 			"job "+jobID, terminalAuditResult(state))
-		s.runner.release(jobID)
 	}
 
 	transition(jobs.StatePlanning)
@@ -112,7 +115,11 @@ func (s *TransferService) runMirror(ctx context.Context, jobID string, req Mirro
 		SrcSpec: "aeronautes_src:" + req.SourceContainer, DstSpec: "aeronautes_dst:" + req.DestContainer,
 		SrcContainer: req.SourceContainer, DstContainer: req.DestContainer,
 		SrcPrefix: req.SourcePrefix, DstPrefix: req.DestPrefix,
-		JobID:      jobID,
+		JobID: jobID,
+		OnAuthFailure: func() {
+			src.ForceReauth()
+			dst.ForceReauth()
+		},
 		OnRecovery: s.recoveryRecorder(background, jobID, req.DestBookmarkID),
 		OnItem: func(outcome transfercopy.ItemOutcome) {
 			countersMu.Lock()
@@ -130,10 +137,13 @@ func (s *TransferService) runMirror(ctx context.Context, jobID string, req Mirro
 		finish(jobs.StateFailed, err.Error())
 		return
 	}
-	_ = s.jobs.RecoveryAdd(background, jobs.RecoveryRecord{
+	if err := s.jobs.RecoveryAdd(background, jobs.RecoveryRecord{
 		JobID: jobID, BookmarkID: req.DestBookmarkID, Kind: jobs.RecoveryStaging,
 		Container: req.DestContainer, Prefix: executor.StagingPrefix(),
-	})
+	}); err != nil {
+		finish(jobs.StateFailed, "recovery store unavailable before first write: "+err.Error())
+		return
+	}
 	transition(jobs.StateRunning)
 
 	// One pass feeds the copy executor AND spills the delete set to
@@ -155,7 +165,7 @@ func (s *TransferService) runMirror(ctx context.Context, jobID string, req Mirro
 		dst.Objects(ctx, req.DestContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.DestPrefix}),
 		req.SourcePrefix, req.DestPrefix, func(item plan.Item) error {
 			if item.Verdict == plan.VerdictDestOnly {
-				if err := spillEncoder.Encode(req.DestPrefix + item.Name); err != nil {
+				if err := spillEncoder.Encode(spilledDelete{Name: req.DestPrefix + item.Name, ETag: item.DestETag}); err != nil {
 					return fmt.Errorf("delete-set spill: %w", err)
 				}
 				destOnlyCount++
@@ -188,8 +198,11 @@ func (s *TransferService) runMirror(ctx context.Context, jobID string, req Mirro
 	countersMu.Unlock()
 	flush()
 
-	if _, err := executor.Reconcile(background, report); err == nil {
+	if reconcile, err := executor.Reconcile(background, report); err == nil && len(reconcile.Notes) == 0 {
+		// Records clear ONLY after a note-free sweep — same rule as Copy.
 		_ = s.jobs.RecoveryClear(background, jobID)
+	} else if err == nil {
+		log.Printf("job %s reconcile kept records: %s", jobID, strings.Join(reconcile.Notes, "; "))
 	}
 	s.recordOwnership(background, req.DestBookmarkID, jobID, report.CommittedPrefixes)
 
@@ -223,17 +236,33 @@ func (s *TransferService) runMirror(ctx context.Context, jobID string, req Mirro
 		return
 	}
 
-	// Delete half: native, manifest-only, exactly the planned names —
-	// streamed back off the spill in bounded chunks.
+	// Delete half: native, manifest-only, streamed back off the spill in
+	// bounded chunks — and each chunk RE-CHECKS source membership at the
+	// last moment (§65.9 item 10): a name whose source reappeared since
+	// the plan pass is no longer destination-only and is skipped, so an
+	// ordinary concurrent writer cannot make yesterday's plan delete
+	// today's data.
 	deleteResult := &deletion.Result{}
-	err = streamSpill(spillPath, mirrorDeleteChunk, func(chunk []string) error {
-		chunkResult, chunkErr := deletion.DeleteNames(ctx, dst, capabilities, req.DestContainer, chunk, deletion.Options{
+	var skippedFresh int64
+	recordFailure, closeSpill := failureSpill(jobID)
+	var skippedReplaced int64
+	err = streamSpill(spillPath, mirrorDeleteChunk, func(chunk []spilledDelete) error {
+		names, freshErr := s.recheckDeleteChunk(ctx, src, dst, req, chunk, &skippedFresh, &skippedReplaced)
+		if freshErr != nil {
+			return fmt.Errorf("membership recheck: %w", freshErr)
+		}
+		chunkNames := names
+		if len(chunkNames) == 0 {
+			return nil
+		}
+		chunkResult, chunkErr := deletion.DeleteNames(ctx, dst, capabilities, req.DestContainer, chunkNames, deletion.Options{
 			OnProgress: func(deleted, failed int64) {
 				countersMu.Lock()
 				counters.ObjectsDeleted = deleteResult.Deleted + deleted
 				countersMu.Unlock()
 				flush()
 			},
+			OnFailure: recordFailure,
 		})
 		if chunkResult != nil {
 			deleteResult.Strategy = chunkResult.Strategy
@@ -241,19 +270,31 @@ func (s *TransferService) runMirror(ctx context.Context, jobID string, req Mirro
 			deleteResult.Deleted += chunkResult.Deleted
 			deleteResult.NotFound += chunkResult.NotFound
 			deleteResult.Remaining += chunkResult.Remaining
-			deleteResult.Failures = append(deleteResult.Failures, chunkResult.Failures...)
+			deleteResult.Failed += chunkResult.Failed
+			if len(deleteResult.Failures) < 200 {
+				deleteResult.Failures = append(deleteResult.Failures, chunkResult.Failures...)
+			}
 			countersMu.Lock()
 			counters.ObjectsDeleted = deleteResult.Deleted
-			counters.ObjectsFailed += int64(len(chunkResult.Failures))
+			counters.ObjectsFailed += chunkResult.Failed
 			countersMu.Unlock()
 			flush()
 		}
 		return chunkErr
 	})
+	failureSpillPath, _ := closeSpill()
 	if err != nil {
-		if errors.Is(err, context.Canceled) {
-			finish(jobs.StateCancelled, fmt.Sprintf("cancelled during deletions (%d of %d done)", deleteResult.Deleted, destOnlyCount))
-		} else {
+		// Once any deletion succeeded the outcome is PARTIAL whatever
+		// interrupted it: some destination objects are irreversibly
+		// gone and the terminal state must say so exactly.
+		switch {
+		case deleteResult.Deleted > 0 && errors.Is(err, context.Canceled):
+			finish(jobs.StatePartial, fmt.Sprintf("cancelled during deletions: %d of %d dest-only names deleted before the stop", deleteResult.Deleted, destOnlyCount))
+		case deleteResult.Deleted > 0:
+			finish(jobs.StatePartial, fmt.Sprintf("delete half stopped after %d of %d deletions: %v", deleteResult.Deleted, destOnlyCount, err))
+		case errors.Is(err, context.Canceled):
+			finish(jobs.StateCancelled, "cancelled before any deletion")
+		default:
 			finish(jobs.StateFailed, "delete half: "+err.Error())
 		}
 		return
@@ -262,25 +303,39 @@ func (s *TransferService) runMirror(ctx context.Context, jobID string, req Mirro
 	settings = strings.TrimSuffix(settings, "}") + fmt.Sprintf(`,"deleteStrategy":%q,"deleteVerify":%q}`, deleteResult.Strategy, deleteResult.VerifyPolicy)
 	_ = s.jobs.SetSettings(background, jobID, settings)
 
-	if len(deleteResult.Failures) > 0 || deleteResult.Remaining > 0 {
-		finish(jobs.StatePartial, fmt.Sprintf("%d deletions failed, %d sampled names still answer",
-			len(deleteResult.Failures), deleteResult.Remaining))
+	if deleteResult.Failed > 0 || deleteResult.Remaining > 0 {
+		detail := fmt.Sprintf("%d deletions failed, %d sampled names still answer", deleteResult.Failed, deleteResult.Remaining)
+		if failureSpillPath != "" {
+			detail += "; full list: " + failureSpillPath
+		}
+		finish(jobs.StatePartial, detail)
+		return
+	}
+	if skippedFresh > 0 || skippedReplaced > 0 {
+		parts := []string{}
+		if skippedFresh > 0 {
+			parts = append(parts, fmt.Sprintf("%d skipped: source reappeared", skippedFresh))
+		}
+		if skippedReplaced > 0 {
+			parts = append(parts, fmt.Sprintf("%d skipped: destination replaced since planning (conflict, not deleted)", skippedReplaced))
+		}
+		finish(jobs.StateComplete, strings.Join(parts, "; "))
 		return
 	}
 	finish(jobs.StateComplete, "")
 }
 
 // streamSpill replays the JSON-lines delete set in bounded chunks.
-func streamSpill(path string, chunkSize int, handle func([]string) error) error {
+func streamSpill(path string, chunkSize int, handle func([]spilledDelete) error) error {
 	file, err := os.Open(path)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
 	decoder := json.NewDecoder(bufio.NewReader(file))
-	chunk := make([]string, 0, chunkSize)
+	chunk := make([]spilledDelete, 0, chunkSize)
 	for {
-		var name string
+		var name spilledDelete
 		if err := decoder.Decode(&name); err != nil {
 			if errors.Is(err, io.EOF) {
 				break
@@ -299,4 +354,102 @@ func streamSpill(path string, chunkSize int, handle func([]string) error) error 
 		return handle(chunk)
 	}
 	return nil
+}
+
+// spilledDelete is one planned dest-only deletion: the name AND the
+// destination identity the plan saw — deletion is bound to both.
+type spilledDelete struct {
+	Name string `json:"n"`
+	ETag string `json:"e"`
+}
+
+// recheckDeleteChunk revalidates each planned deletion at the last
+// moment, on BOTH sides (review F-02): the source must still lack the
+// name, and the destination object must still carry the ETag the plan
+// recorded — a replaced destination is a conflict skip, never a
+// deletion of someone else's new data. Bounded worker fan-out; any
+// HEAD failure aborts the chunk (doubt never deletes).
+func (s *TransferService) recheckDeleteChunk(ctx context.Context, src, dst *swiftcontrol.Session,
+	req MirrorRequestDTO, chunk []spilledDelete, skippedFresh, skippedReplaced *int64) ([]string, error) {
+
+	type verdict struct {
+		idx      int
+		fresh    bool
+		replaced bool
+		err      error
+	}
+	const workers = 8
+	jobsCh := make(chan int)
+	results := make(chan verdict)
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for idx := range jobsCh {
+				entry := chunk[idx]
+				rel := strings.TrimPrefix(entry.Name, req.DestPrefix)
+				_, srcErr := src.ObjectDetail(ctx, req.SourceContainer, req.SourcePrefix+rel)
+				switch {
+				case srcErr == nil:
+					results <- verdict{idx: idx, fresh: true}
+					continue
+				case !swiftcontrol.IsNotFound(srcErr):
+					results <- verdict{idx: idx, err: srcErr}
+					continue
+				}
+				live, dstErr := dst.ObjectDetail(ctx, req.DestContainer, entry.Name)
+				switch {
+				case dstErr != nil && swiftcontrol.IsNotFound(dstErr):
+					// Already gone: deleting it is a no-op either way.
+					results <- verdict{idx: idx}
+				case dstErr != nil:
+					results <- verdict{idx: idx, err: dstErr}
+				case entry.ETag == "":
+					// No planned identity means nothing to bind the
+					// delete to: fail CLOSED as a conflict, never
+					// delete an unidentified target (Swift has no
+					// conditional DELETE — measured: If-Match on
+					// DELETE is ignored, wrong etag still 204s).
+					results <- verdict{idx: idx, replaced: true}
+				case strings.Trim(live.ETag, `"`) != strings.Trim(entry.ETag, `"`):
+					results <- verdict{idx: idx, replaced: true}
+				default:
+					results <- verdict{idx: idx}
+				}
+			}
+		}()
+	}
+	go func() {
+		for idx := range chunk {
+			jobsCh <- idx
+		}
+		close(jobsCh)
+		wg.Wait()
+		close(results)
+	}()
+	keepIdx := make([]bool, len(chunk))
+	var firstErr error
+	for v := range results {
+		switch {
+		case v.err != nil && firstErr == nil:
+			firstErr = v.err
+		case v.fresh:
+			*skippedFresh++
+		case v.replaced:
+			*skippedReplaced++
+		default:
+			keepIdx[v.idx] = true
+		}
+	}
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	var kept []string
+	for idx, keep := range keepIdx {
+		if keep {
+			kept = append(kept, chunk[idx].Name)
+		}
+	}
+	return kept, nil
 }

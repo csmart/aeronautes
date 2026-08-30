@@ -44,6 +44,9 @@ type Options struct {
 	Passes int
 	// OnProgress is told cumulative counts as the run advances.
 	OnProgress func(deleted, failed int64)
+	// OnFailure receives EVERY per-name failure (uncapped) — the
+	// complete-set channel behind Result.Failures' bounded sample.
+	OnFailure func(name, detail string)
 }
 
 // Failure is one name that would not die.
@@ -58,6 +61,11 @@ type Result struct {
 	Deleted  int64
 	NotFound int64
 	Failures []Failure
+	// Failed is the EXACT failure count — Failures above is a bounded
+	// sample for display; every failure also streams through
+	// Options.OnFailure so callers can retain the complete set
+	// (K-DEL-002).
+	Failed int64
 	// Remaining counts names still listed after the final pass and
 	// verification retries: eventual consistency or a concurrent writer.
 	// Remaining > 0 means Partial, never silent success.
@@ -70,9 +78,13 @@ type Result struct {
 
 const maxFailures = 200
 
-func (r *Result) fail(name string, err error) {
+func (r *Result) fail(onFailure func(name, detail string), name string, err error) {
+	r.Failed++
 	if len(r.Failures) < maxFailures {
 		r.Failures = append(r.Failures, Failure{Name: name, Err: err.Error()})
+	}
+	if onFailure != nil {
+		onFailure(name, err.Error())
 	}
 }
 
@@ -115,7 +127,7 @@ func DeletePrefix(ctx context.Context, session *swiftcontrol.Session, capabiliti
 
 	for pass := 1; pass <= passes; pass++ {
 		result.Passes = pass
-		deletedThisPass, err := deletePass(ctx, session, container, prefix, bulkSize, workers, result, opts.OnProgress)
+		deletedThisPass, err := deletePass(ctx, session, container, prefix, bulkSize, workers, result, opts.OnProgress, opts.OnFailure)
 		if err != nil {
 			return result, err
 		}
@@ -134,16 +146,15 @@ func DeletePrefix(ctx context.Context, session *swiftcontrol.Session, capabiliti
 
 // deletePass consumes one full listing sweep, deleting as it streams.
 func deletePass(ctx context.Context, session *swiftcontrol.Session, container, prefix string,
-	bulkSize, workers int, result *Result, onProgress func(deleted, failed int64)) (int64, error) {
+	bulkSize, workers int, result *Result, onProgress func(deleted, failed int64), onFailure func(name, detail string)) (int64, error) {
 
 	var passDeleted int64
 	var mu sync.Mutex
+	// Progress snapshots are taken AND delivered under the mutex:
+	// callers see monotonic, consistent pairs (§65.9 item 11).
 	progress := func() {
 		if onProgress != nil {
-			mu.Lock()
-			deleted, failed := result.Deleted, int64(len(result.Failures))
-			mu.Unlock()
-			onProgress(deleted, failed)
+			onProgress(result.Deleted, result.Failed)
 		}
 	}
 
@@ -154,18 +165,32 @@ func deletePass(ctx context.Context, session *swiftcontrol.Session, container, p
 				return nil
 			}
 			bulk, err := session.BulkDelete(ctx, container, batch)
-			batch = batch[:0]
+			mu.Lock()
+			defer mu.Unlock()
+			if bulk != nil {
+				result.Deleted += bulk.Deleted
+				result.NotFound += bulk.NotFound
+				passDeleted += bulk.Deleted
+				for _, item := range bulk.Errors {
+					result.fail(onFailure, item[0], fmt.Errorf("%s", item[1]))
+				}
+			}
 			if err != nil {
+				// EVERY name the response did not account for is a
+				// recorded failure — a failed request must never lose
+				// its batch (K-DEL-002).
+				accounted := int64(0)
+				if bulk != nil {
+					accounted = bulk.Deleted + bulk.NotFound + int64(len(bulk.Errors))
+				}
+				for i := accounted; i < int64(len(batch)); i++ {
+					result.fail(onFailure, batch[i], err)
+				}
+				batch = batch[:0]
+				progress()
 				return err
 			}
-			mu.Lock()
-			result.Deleted += bulk.Deleted
-			result.NotFound += bulk.NotFound
-			passDeleted += bulk.Deleted
-			for _, item := range bulk.Errors {
-				result.fail(item[0], fmt.Errorf("%s", item[1]))
-			}
-			mu.Unlock()
+			batch = batch[:0]
 			progress()
 			return nil
 		}
@@ -204,10 +229,10 @@ func deletePass(ctx context.Context, session *swiftcontrol.Session, container, p
 				case swiftcontrol.IsNotFound(err):
 					result.NotFound++
 				default:
-					result.fail(name, err)
+					result.fail(onFailure, name, err)
 				}
-				mu.Unlock()
 				progress()
+				mu.Unlock()
 			}
 		}()
 	}
@@ -348,10 +373,7 @@ func DeleteNames(ctx context.Context, session *swiftcontrol.Session, capabilitie
 	var mu sync.Mutex
 	progress := func() {
 		if opts.OnProgress != nil {
-			mu.Lock()
-			deleted, failed := result.Deleted, int64(len(result.Failures))
-			mu.Unlock()
-			opts.OnProgress(deleted, failed)
+			opts.OnProgress(result.Deleted, result.Failed)
 		}
 	}
 
@@ -362,17 +384,29 @@ func DeleteNames(ctx context.Context, session *swiftcontrol.Session, capabilitie
 			}
 			end := min(start+bulkSize, len(names))
 			bulk, err := session.BulkDelete(ctx, container, names[start:end])
+			mu.Lock()
+			if bulk != nil {
+				result.Deleted += bulk.Deleted
+				result.NotFound += bulk.NotFound
+				for _, item := range bulk.Errors {
+					result.fail(opts.OnFailure, item[0], fmt.Errorf("%s", item[1]))
+				}
+			}
 			if err != nil {
+				accounted := int64(0)
+				if bulk != nil {
+					accounted = bulk.Deleted + bulk.NotFound + int64(len(bulk.Errors))
+				}
+				chunk := names[start:end]
+				for i := accounted; i < int64(len(chunk)); i++ {
+					result.fail(opts.OnFailure, chunk[i], err)
+				}
+				progress()
+				mu.Unlock()
 				return result, err
 			}
-			mu.Lock()
-			result.Deleted += bulk.Deleted
-			result.NotFound += bulk.NotFound
-			for _, item := range bulk.Errors {
-				result.fail(item[0], fmt.Errorf("%s", item[1]))
-			}
-			mu.Unlock()
 			progress()
+			mu.Unlock()
 		}
 	} else {
 		queue := make(chan string, workers*2)
@@ -390,10 +424,10 @@ func DeleteNames(ctx context.Context, session *swiftcontrol.Session, capabilitie
 					case swiftcontrol.IsNotFound(err):
 						result.NotFound++
 					default:
-						result.fail(name, err)
+						result.fail(opts.OnFailure, name, err)
 					}
-					mu.Unlock()
 					progress()
+					mu.Unlock()
 				}
 			}()
 		}
