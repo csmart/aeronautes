@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 
 	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/deletion"
@@ -169,10 +170,12 @@ func (s *DeleteService) runDelete(ctx context.Context, jobID string, req DeleteR
 		if message != "" {
 			_ = s.jobs.SetError(background, jobID, message)
 		}
+		// Deregister BEFORE the terminal state becomes visible: a job
+		// that reads terminal must no longer be cancel-addressable.
+		s.runner.release(jobID)
 		transition(state)
 		s.runner.record(background, req.BookmarkID, "delete."+string(req.Mode)+"."+string(state),
 			req.Container+"/"+req.Prefix, "job "+jobID, terminalAuditResult(state))
-		s.runner.release(jobID)
 	}
 
 	// Planning: count the scope for honest progress.
@@ -206,23 +209,44 @@ func (s *DeleteService) runDelete(ctx context.Context, jobID string, req DeleteR
 	}
 
 	transition(jobs.StateRunning)
+	recordFailure, closeSpill := failureSpill(jobID)
+	var countersMu sync.Mutex
 	result, err := deletion.DeletePrefix(ctx, session, capabilities, req.Container, req.Prefix, deletion.Options{
 		OnProgress: func(deleted, failed int64) {
+			countersMu.Lock()
 			counters.ObjectsCopied = deleted // "processed" for the drawer's n/planned display
 			counters.ObjectsFailed = failed
-			_ = s.jobs.UpdateCounters(background, jobID, counters)
+			snapshot := counters
+			countersMu.Unlock()
+			_ = s.jobs.UpdateCounters(background, jobID, snapshot)
 		},
+		OnFailure: recordFailure,
 	})
+	spillPath, failedTotal := closeSpill()
 	if result != nil {
+		countersMu.Lock()
 		counters.ObjectsCopied = result.Deleted
-		counters.ObjectsFailed = int64(len(result.Failures))
+		counters.ObjectsFailed = result.Failed
 		counters.ObjectsVerified = result.Deleted
+		countersMu.Unlock()
 	}
 	_ = s.jobs.UpdateCounters(background, jobID, counters)
 	if err != nil {
-		if errors.Is(err, context.Canceled) {
+		// Once anything was irreversibly deleted, an interruption is
+		// PARTIAL with the exact count — never a plain cancel/fail
+		// that understates what happened (review F-10).
+		deleted := int64(0)
+		if result != nil {
+			deleted = result.Deleted
+		}
+		switch {
+		case deleted > 0 && errors.Is(err, context.Canceled):
+			finish(jobs.StatePartial, fmt.Sprintf("cancelled after %d deletions", deleted))
+		case deleted > 0:
+			finish(jobs.StatePartial, fmt.Sprintf("stopped after %d deletions: %v", deleted, err))
+		case errors.Is(err, context.Canceled):
 			finish(jobs.StateCancelled, "")
-		} else {
+		default:
 			finish(jobs.StateFailed, err.Error())
 		}
 		return
@@ -234,10 +258,15 @@ func (s *DeleteService) runDelete(ctx context.Context, jobID string, req DeleteR
 
 	transition(jobs.StateVerifying)
 	problems := []string{}
-	if len(result.Failures) > 0 {
-		problems = append(problems, fmt.Sprintf("%d deletes failed (first: %s: %s)",
-			len(result.Failures), result.Failures[0].Name, result.Failures[0].Err))
+	if result.Failed > 0 {
+		detail := fmt.Sprintf("%d deletes failed (first: %s: %s)",
+			result.Failed, result.Failures[0].Name, result.Failures[0].Err)
+		if spillPath != "" {
+			detail += "; full list: " + spillPath
+		}
+		problems = append(problems, detail)
 	}
+	_ = failedTotal
 	if result.Remaining > 0 {
 		problems = append(problems, "objects still listed after the final pass (concurrent writer or listing lag)")
 	}

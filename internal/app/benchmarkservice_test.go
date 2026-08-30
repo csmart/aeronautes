@@ -14,8 +14,8 @@ func TestBenchmarkRunsAndFeedsAuto(t *testing.T) {
 	h.connect(t)
 	bookmark := h.transfer.connections.ActiveBookmarkID()
 	service := NewBenchmarkService(h.transfer.connections, h.transfer.jobs, h.transfer.runner, h.db)
-	service.SetScale(24, []int{2, 4})
-	h.transfer.SetRecommendationSource(service.RecommendationFor)
+	service.setScale(24, []int{2, 4})
+	h.transfer.setRecommendationSource(service.recommendationFor)
 
 	// Consent gate: the typed account name, exactly.
 	if _, err := service.StartBenchmark(ctx, BenchmarkRequestDTO{BookmarkID: bookmark, Confirm: "AUTH_wrong"}); err == nil ||

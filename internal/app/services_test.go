@@ -5,8 +5,10 @@ import (
 	"errors"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/bookmarks"
@@ -37,7 +39,7 @@ type harness struct {
 // way main.go does.
 func transferService(connections *Connections, jobStore *jobs.Store, auditStore *audit.Store, ev *evidence.Store) *TransferService {
 	service := NewTransferService(connections, jobStore, auditStore)
-	service.SetEvidenceStore(ev)
+	service.setEvidenceStore(ev)
 	return service
 }
 
@@ -67,7 +69,7 @@ func newHarnessWithInfo(t *testing.T, infoJSON string) *harness {
 	auditStore := audit.NewStore(d)
 	jobStore := jobs.NewStore(d)
 	return &harness{
-		bookmarks: NewBookmarkService(store),
+		bookmarks: NewBookmarkService(store, connections, jobStore),
 		browse:    NewBrowseService(connections, ev),
 		inspector: NewInspectorService(connections, ev),
 		mutate:    NewMutateService(connections, auditStore, ev),
@@ -606,5 +608,192 @@ func TestDeleteManifestService(t *testing.T) {
 	}
 	if !strings.Contains(events[0].Summary, "segments remain at external-dlo-segments/wedding-video/") {
 		t.Errorf("summary = %q", events[0].Summary)
+	}
+}
+
+func TestBridgeSurfaceCarriesNoWiringHooks(t *testing.T) {
+	// G19 mechanized: the Wails binding generator exposes a bound
+	// service's exported METHODS — none of the composition hooks may
+	// ever be one again.
+	// Internal-maintenance/composition verbs must never be exported on a
+	// bound service — the Wails generator would surface them to the
+	// page. A prefix guard (not a hand-maintained denylist) so a NEW
+	// exported hook is caught the moment it appears (review R-13 — the
+	// old denylist missed RecoverySweepStep in the very commit that
+	// added it). allowed lists the genuine bridge actions that happen to
+	// start with a guarded verb.
+	guardedPrefixes := []string{"Set", "Wire", "Sweep", "Recovery", "Run", "Force", "Recommendation"}
+	allowed := map[string]bool{"RunBenchmark": true, "Set": true} // Set = SettingsService.Set, the settings-save bridge action
+	for _, subject := range []any{&TransferService{}, &BenchmarkService{}, &SettingsService{}, &DeleteService{}, &MutateService{}, &BookmarkService{}} {
+		typ := reflect.TypeOf(subject)
+		for i := 0; i < typ.NumMethod(); i++ {
+			name := typ.Method(i).Name
+			if allowed[name] {
+				continue
+			}
+			for _, prefix := range guardedPrefixes {
+				if strings.HasPrefix(name, prefix) {
+					t.Errorf("%s exports maintenance-shaped method %s: it would be bound to the webview (unexport it or add to allowed)", typ, name)
+				}
+			}
+		}
+	}
+}
+
+func TestJobCeilingSurvivesResize(t *testing.T) {
+	// G24/H-16: lowering the ceiling under running jobs must not admit
+	// new work until enough of them finish — the old channel swap let
+	// running jobs release into an orphaned channel while new jobs used
+	// an empty fresh one.
+	runner := newJobRunner(nil, nil)
+	runner.setMaxActiveJobs(2)
+	ctx := context.Background()
+	if !runner.acquireSlot(ctx) || !runner.acquireSlot(ctx) {
+		t.Fatal("two slots under a ceiling of two must admit")
+	}
+	// Lower the ceiling with both running: nothing further admits.
+	runner.setMaxActiveJobs(1)
+	admitted := make(chan struct{})
+	go func() {
+		if runner.acquireSlot(ctx) {
+			close(admitted)
+		}
+	}()
+	select {
+	case <-admitted:
+		t.Fatal("third job admitted over a lowered ceiling with two running")
+	case <-time.After(100 * time.Millisecond):
+	}
+	// One finishes: still over the new ceiling of one → no admit.
+	runner.releaseSlot()
+	select {
+	case <-admitted:
+		t.Fatal("job admitted while the running count still met the lowered ceiling")
+	case <-time.After(100 * time.Millisecond):
+	}
+	// The second finishes: now under the ceiling → the queued job runs.
+	runner.releaseSlot()
+	select {
+	case <-admitted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("queued job never admitted after capacity freed")
+	}
+	// A queued job's cancellation releases it without admission.
+	cancelCtx, cancel := context.WithCancel(ctx)
+	refused := make(chan bool, 1)
+	go func() { refused <- !runner.acquireSlot(cancelCtx) }()
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	select {
+	case ok := <-refused:
+		if !ok {
+			t.Fatal("cancelled queued acquire reported admission")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancelled queued acquire never returned")
+	}
+}
+
+func TestBookmarkSaveInvalidatesCachedSession(t *testing.T) {
+	// H-12, second attempt with a test this time: after editing a
+	// bookmark's endpoint, SessionFor must open against the NEW cluster,
+	// and the active browse pointer must not survive the edit.
+	d, err := db.Open(context.Background(), filepath.Join(t.TempDir(), "state.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { d.Close() })
+	mockA := swifttest.New("test:tester", "testing")
+	srvA := httptest.NewServer(mockA)
+	t.Cleanup(srvA.Close)
+	mockB := swifttest.New("test:tester", "testing")
+	srvB := httptest.NewServer(mockB)
+	t.Cleanup(srvB.Close)
+
+	store := bookmarks.NewStore(d, secrets.NewSessionStore())
+	connections := NewConnections(store)
+	service := NewBookmarkService(store, connections, jobs.NewStore(d))
+	ctx := context.Background()
+	saved, err := service.Save(ctx, BookmarkDTO{
+		DisplayName: "primary", AuthURL: srvA.URL + "/auth/v1.0", Username: "test:tester",
+	}, "testing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := connections.Connect(ctx, saved.ID); err != nil {
+		t.Fatal(err)
+	}
+	first, err := connections.SessionFor(ctx, saved.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldURL := first.StorageURL()
+
+	saved.AuthURL = srvB.URL + "/auth/v1.0"
+	if _, err := service.Save(ctx, saved, "testing"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := connections.Session(); err == nil {
+		t.Fatal("active session survived the endpoint edit")
+	}
+	second, err := connections.SessionFor(ctx, saved.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.StorageURL() == oldURL {
+		t.Fatalf("SessionFor still answers the OLD cluster %s after the edit", oldURL)
+	}
+}
+
+func TestSymlinkMetadataEditRefused(t *testing.T) {
+	// F-05: the editor must refuse a followed symlink outright — on
+	// real Swift the POST would mutate the LINK with target-derived
+	// metadata and answer 307 (mimicked by the mock).
+	h := newHarness(t)
+	h.connect(t)
+	ctx := context.Background()
+	h.mock.AddContainer("media", "standard")
+	h.mock.PutObject("media", "real.txt", swifttest.Object{Bytes: 12, ETag: "aa", ContentType: "text/plain", Data: []byte("target bytes")})
+	h.mock.PutObject("media", "link.txt", swifttest.Object{ContentType: "text/plain", SymlinkTarget: "media/real.txt"})
+
+	_, err := h.mutate.UpdateObjectMetadata(ctx, "media", "link.txt", "", ObjectMetadataEditDTO{
+		Meta: map[string]string{"Team": "ops"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("symlink edit = %v, want refusal", err)
+	}
+	// Nothing was written to the link.
+	session, err := h.transfer.connections.Session()
+	if err != nil {
+		t.Fatal(err)
+	}
+	link, err := session.SymlinkGet(ctx, "media", "link.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if link.Meta["Team"] != "" {
+		t.Fatalf("refusal still wrote to the link: %+v", link.Meta)
+	}
+}
+
+func TestPublicAclRequiresAcknowledgement(t *testing.T) {
+	// grok follow-up 3: the Go side refuses a world-readable ACL without
+	// the explicit ack — a bypassed/compromised webview cannot quietly
+	// publish a container.
+	h := newHarness(t)
+	h.connect(t)
+	ctx := context.Background()
+	h.mock.AddContainer("private", "standard")
+
+	_, err := h.mutate.UpdateContainer(ctx, "private", "", ContainerEditDTO{ReadACL: ".r:*"})
+	if err == nil || !strings.Contains(err.Error(), "publicly readable") {
+		t.Fatalf("public ACL without ack = %v, want refusal", err)
+	}
+	// With the acknowledgement it proceeds (a private ACL never needs it).
+	if _, err := h.mutate.UpdateContainer(ctx, "private", "", ContainerEditDTO{ReadACL: ".r:*", AckPublic: true}); err != nil {
+		t.Fatalf("acknowledged public ACL refused: %v", err)
+	}
+	if _, err := h.mutate.UpdateContainer(ctx, "private", "", ContainerEditDTO{ReadACL: ".r:example.com"}); err != nil {
+		t.Fatalf("non-public ACL refused: %v", err)
 	}
 }

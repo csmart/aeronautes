@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -46,6 +47,13 @@ type CopyPlanDTO struct {
 	// LargeObjectsAsDLO: large sources commit as destination DLOs whose
 	// reads depend on listing consistency (§28.6 disclosure).
 	LargeObjectsAsDLO bool `json:"largeObjectsAsDlo"`
+	// DataPath names where the bytes physically travel (K-XFER-005):
+	// v1 always hairpins through this workstation — stated, never
+	// implied.
+	DataPath string `json:"dataPath"`
+	// OverwriteBytes are the planned bytes that land on EXISTING names
+	// (the changed set) — the blast radius of the overwrite half.
+	OverwriteBytes int64 `json:"overwriteBytes"`
 }
 
 // TransferService is the bridge's transfer surface (ADR 0011): planning
@@ -68,6 +76,8 @@ type TransferService struct {
 	recommendations func(bookmarkID string) *TransferSettingsDTO
 	// picker is the injected native-dialog seam (nil when headless).
 	picker FilePicker
+	// selections holds picker-issued path selections behind tokens.
+	selections selectionStore
 }
 
 // defaultMaxActiveJobs is the §38 v1 budget: small and bounded.
@@ -87,9 +97,9 @@ func NewTransferServiceWithRunner(connections *Connections, jobStore *jobs.Store
 	}
 }
 
-// SetEvidenceStore wires §28.6(b) ownership recording: committed
+// setEvidenceStore wires §28.6(b) ownership recording: committed
 // segment prefixes a job wrote become ExclusiveOwnershipProof rows.
-func (s *TransferService) SetEvidenceStore(store *evidence.Store) {
+func (s *TransferService) setEvidenceStore(store *evidence.Store) {
 	s.evidence = store
 }
 
@@ -104,9 +114,9 @@ func (s *TransferService) recordOwnership(ctx context.Context, bookmarkID, jobID
 	}
 }
 
-// SetEngineFactory overrides engine construction (tests; the future
+// setEngineFactory overrides engine construction (tests; the future
 // compatibility matrix).
-func (s *TransferService) SetEngineFactory(f func(source transfercopy.RemoteSource, opts rclone.Options) (transfercopy.Engine, error)) {
+func (s *TransferService) setEngineFactory(f func(source transfercopy.RemoteSource, opts rclone.Options) (transfercopy.Engine, error)) {
 	s.engineFactory = f
 }
 
@@ -114,9 +124,9 @@ func (s *TransferService) SetEngineFactory(f func(source transfercopy.RemoteSour
 // before an engine spawn forces re-authentication.
 const tokenRefreshMargin = 2 * time.Minute
 
-// SetMaxActiveJobs resizes the §38 budget (the settings surface will
+// setMaxActiveJobsHook resizes the §38 budget (the settings surface will
 // drive this; tests too). Applies to jobs started afterwards.
-func (s *TransferService) SetMaxActiveJobs(n int) {
+func (s *TransferService) setMaxActiveJobsHook(n int) {
 	s.runner.setMaxActiveJobs(n)
 }
 
@@ -156,9 +166,38 @@ func (s *TransferService) resolve(ctx context.Context, req CopyRequestDTO) (src,
 	if err != nil {
 		return nil, nil, false, fmt.Errorf("destination: %w", err)
 	}
+	// Overlapping scopes in ONE namespace are refused outright (C-03):
+	// nested prefixes make a mirror delete its own source or ingest its
+	// own output. Identity is the ACCOUNT, compared FAIL-CLOSED: when
+	// the two containers+nested-prefixes overlap and account distinctness
+	// is not PROVEN (aliases, VIPs, and DNS names for one account defeat
+	// a host-string compare — review R-04), refuse. Two accounts prove
+	// distinct only by different authoritative account identifiers in
+	// the resolved storage URL.
+	if req.SourceContainer == req.DestContainer &&
+		(strings.HasPrefix(req.SourcePrefix, req.DestPrefix) || strings.HasPrefix(req.DestPrefix, req.SourcePrefix)) &&
+		!provenDistinctAccounts(src.StorageURL(), dst.StorageURL()) {
+		return nil, nil, false, fmt.Errorf(
+			"source and destination overlap: container %q with nested prefixes (%q / %q), and the two endpoints are not PROVABLY different accounts (%s vs %s) — a run could consume its own output; use disjoint prefixes, another container, or endpoints with distinct account identifiers",
+			req.SourceContainer, req.SourcePrefix, req.DestPrefix, accountIdentity(src.StorageURL()), accountIdentity(dst.StorageURL()))
+	}
 	detail, err := dst.ContainerDetail(ctx, req.DestContainer)
 	if err != nil {
 		return nil, nil, false, fmt.Errorf("destination container %q: %w", req.DestContainer, err)
+	}
+	// K-XFER-004: the chunk knob is capped against the DESTINATION
+	// cluster's advertised limit at preview and start alike.
+	effective, err := s.effectiveSettings(req)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	capabilities, err := dst.FetchCapabilities(ctx)
+	if err == nil {
+		if err := effective.CheckChunkAgainst(capabilities); err != nil {
+			return nil, nil, false, err
+		}
+	} else if err := effective.CheckChunkAgainst(nil); err != nil {
+		return nil, nil, false, err
 	}
 	versioned = detail.Versioning.Mode != swiftcontrol.VersioningOff
 	return src, dst, versioned, nil
@@ -172,12 +211,16 @@ func (s *TransferService) PlanCopy(ctx context.Context, req CopyRequestDTO) (*Co
 		return nil, err
 	}
 	largeConservative := false
+	var overwriteBytes int64
 	summary, err := plan.Copy(ctx,
 		src.Objects(ctx, req.SourceContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.SourcePrefix}),
 		dst.Objects(ctx, req.DestContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.DestPrefix}),
 		req.SourcePrefix, req.DestPrefix, func(item plan.Item) error {
-			if item.Reason == plan.ReasonLargeObject {
+			if item.Reason == plan.ReasonLargeObject || item.Reason == plan.ReasonPossibleManifest {
 				largeConservative = true
+			}
+			if item.Verdict == plan.VerdictChanged {
+				overwriteBytes += item.SourceBytes
 			}
 			return nil
 		})
@@ -188,6 +231,8 @@ func (s *TransferService) PlanCopy(ctx context.Context, req CopyRequestDTO) (*Co
 		Summary:              summary,
 		VersionedDestination: versioned,
 		LargeObjectsAsDLO:    largeConservative,
+		DataPath:             "workstation hairpin: every byte downloads to this machine and uploads again (no server-side path in v1)",
+		OverwriteBytes:       overwriteBytes,
 	}, nil
 }
 
@@ -206,9 +251,9 @@ func (s *TransferService) recommendationFor(bookmarkID string) *TransferSettings
 	return s.recommendations(bookmarkID)
 }
 
-// SetRecommendationSource wires the benchmark store's per-bookmark
+// setRecommendationSource wires the benchmark store's per-bookmark
 // recommendation lookup into Auto (§40/§42).
-func (s *TransferService) SetRecommendationSource(f func(bookmarkID string) *TransferSettingsDTO) {
+func (s *TransferService) setRecommendationSource(f func(bookmarkID string) *TransferSettingsDTO) {
 	s.recommendations = f
 }
 
@@ -224,6 +269,20 @@ func (s *TransferService) buildEngine(ctx context.Context, req CopyRequestDTO, s
 	dstInsecure, dstCA, err := s.connections.TLSRemote(ctx, req.DestBookmarkID)
 	if err != nil {
 		return nil, err
+	}
+	// §12.3: one child may serve both endpoints only when their TLS
+	// trust identities are EQUAL — refuse here so the operator sees the
+	// reason at start, not a child-spawn failure mid-job.
+	srcTrust, err := rclone.TrustIdentity(srcInsecure, srcCA)
+	if err != nil {
+		return nil, err
+	}
+	dstTrust, err := rclone.TrustIdentity(dstInsecure, dstCA)
+	if err != nil {
+		return nil, err
+	}
+	if srcTrust != dstTrust {
+		return nil, errors.New("the two bookmarks carry different TLS trust (custom CA or insecure): one transfer child cannot serve both safely (§12.3) — align their trust settings or move data via a location both trust")
 	}
 	source := func(spawnCtx context.Context) ([]rclone.Remote, error) {
 		if err := src.RefreshIfStale(spawnCtx, tokenRefreshMargin); err != nil {
@@ -241,10 +300,22 @@ func (s *TransferService) buildEngine(ctx context.Context, req CopyRequestDTO, s
 	if err != nil {
 		return nil, err
 	}
-	if s.engineFactory != nil {
-		return s.engineFactory(source, effective.options())
+	options := effective.options()
+	// K-XFER-004's default half: an EMPTY chunk size means rclone's
+	// 5Gi default — on a cluster advertising a smaller max_file_size
+	// the effective chunk is capped to it, recorded, never left to
+	// fail at upload time.
+	if options.ChunkSize == "" {
+		if caps, err := dst.FetchCapabilities(ctx); err == nil {
+			if max := caps.MaxFileSize(); max > 0 && max < 5<<30 {
+				options.ChunkSize = fmt.Sprintf("%db", max)
+			}
+		}
 	}
-	runner, err := rclone.NewRunner(effective.options())
+	if s.engineFactory != nil {
+		return s.engineFactory(source, options)
+	}
+	runner, err := rclone.NewRunner(options)
 	if err != nil {
 		return nil, err
 	}
@@ -305,11 +376,13 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 		if message != "" {
 			_ = s.jobs.SetError(background, jobID, message)
 		}
+		// Deregister BEFORE the terminal state becomes visible: a job
+		// that reads terminal must no longer be cancel-addressable.
+		s.runner.release(jobID)
 		transition(state)
 		s.record(background, req.SourceBookmarkID, "transfer.copy."+string(state),
 			req.SourceContainer+"/"+req.SourcePrefix+" → "+req.DestContainer+"/"+req.DestPrefix,
 			"job "+jobID, terminalAuditResult(state))
-		s.runner.release(jobID)
 	}
 
 	transition(jobs.StatePlanning)
@@ -348,6 +421,10 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 			countersMu.Unlock()
 			flush(false)
 		},
+		OnAuthFailure: func() {
+			src.ForceReauth()
+			dst.ForceReauth()
+		},
 		OnRecovery: s.recoveryRecorder(background, jobID, req.DestBookmarkID),
 	})
 	if err != nil {
@@ -355,11 +432,16 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 		return
 	}
 	// The staging namespace is durable BEFORE anything is written: a
-	// crash from here on is sweepable at next startup (§65.8 item 2).
-	_ = s.jobs.RecoveryAdd(background, jobs.RecoveryRecord{
+	// crash from here on is sweepable at next startup (§65.8 item 2). A
+	// failed write fails the job closed — running without a sweepable
+	// record would strand litter invisibly.
+	if err := s.jobs.RecoveryAdd(background, jobs.RecoveryRecord{
 		JobID: jobID, BookmarkID: req.DestBookmarkID, Kind: jobs.RecoveryStaging,
 		Container: req.DestContainer, Prefix: executor.StagingPrefix(),
-	})
+	}); err != nil {
+		finish(jobs.StateFailed, "recovery store unavailable before first write: "+err.Error())
+		return
+	}
 	transition(jobs.StateRunning)
 
 	planned := func(item plan.Item) error {
@@ -405,7 +487,14 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 		if reconcile.SweptStaged > 0 || reconcile.SweptSegments > 0 {
 			log.Printf("job %s reconcile: swept %d staged, %d segments", jobID, reconcile.SweptStaged, reconcile.SweptSegments)
 		}
-		_ = s.jobs.RecoveryClear(background, jobID)
+		if len(reconcile.Notes) == 0 {
+			// Records clear ONLY after a note-free sweep: anything the
+			// sweep could not resolve keeps its facts for the next
+			// startup pass instead of being tidied into oblivion.
+			_ = s.jobs.RecoveryClear(background, jobID)
+		} else {
+			log.Printf("job %s reconcile kept records: %s", jobID, strings.Join(reconcile.Notes, "; "))
+		}
 	}
 
 	if planErr != nil {
@@ -463,25 +552,29 @@ func (s *TransferService) effectiveConfigJSON(req CopyRequestDTO) string {
 	return effectiveJSONWithProfile(profile, effective)
 }
 
-// recoveryRecorder persists executor recovery facts durably.
-func (s *TransferService) recoveryRecorder(ctx context.Context, jobID, bookmarkID string) func(kind, container, prefix string) {
-	return func(kind, container, prefix string) {
-		if err := s.jobs.RecoveryAdd(ctx, jobs.RecoveryRecord{
+// recoveryRecorder persists executor recovery facts durably. Errors
+// return to the executor, which fails closed: no commit crosses a
+// boundary whose facts could not be persisted (§65.9 item 5).
+func (s *TransferService) recoveryRecorder(ctx context.Context, jobID, bookmarkID string) func(kind, container, prefix, object string) error {
+	return func(kind, container, prefix, object string) error {
+		err := s.jobs.RecoveryAdd(ctx, jobs.RecoveryRecord{
 			JobID: jobID, BookmarkID: bookmarkID, Kind: jobs.RecoveryKind(kind),
-			Container: container, Prefix: prefix,
-		}); err != nil {
-			log.Printf("job %s: recovery record: %v", jobID, err)
+			Container: container, Prefix: prefix, Object: object,
+		})
+		if err != nil {
+			log.Printf("job %s: recovery record (%s %s/%s): %v", jobID, kind, container, prefix, err)
 		}
+		return err
 	}
 }
 
-// SweepCrashLitter replays reconciliation for jobs that died before
+// sweepCrashLitter replays reconciliation for jobs that died before
 // their own could run (§65.8 item 2): every persisted staging prefix
 // and captured-minus-committed segment prefix of a TERMINAL job, under
 // the same live-manifest guard. Bookmarks that cannot authenticate
 // right now are skipped and retried later; records clear only after a
 // clean sweep.
-func (s *TransferService) SweepCrashLitter(ctx context.Context) (swept int, err error) {
+func (s *TransferService) sweepCrashLitter(ctx context.Context) (swept int, err error) {
 	pending, err := s.jobs.RecoveryPending(ctx)
 	if err != nil {
 		return 0, err
@@ -489,6 +582,7 @@ func (s *TransferService) SweepCrashLitter(ctx context.Context) (swept int, err 
 	type group struct {
 		bookmarkID, dstContainer, stagingPrefix string
 		captured, committed                     []rclone.SegmentPrefix
+		committing                              map[rclone.SegmentPrefix]string
 	}
 	groups := map[string]*group{}
 	order := []string{}
@@ -503,7 +597,12 @@ func (s *TransferService) SweepCrashLitter(ctx context.Context) (swept int, err 
 		case jobs.RecoveryStaging:
 			g.dstContainer, g.stagingPrefix = r.Container, r.Prefix
 		case jobs.RecoveryCaptured:
-			g.captured = append(g.captured, rclone.SegmentPrefix{Container: r.Container, Prefix: r.Prefix})
+			g.captured = append(g.captured, rclone.SegmentPrefix{Container: r.Container, Prefix: r.Prefix}.Canonical())
+		case jobs.RecoveryCommitting:
+			if g.committing == nil {
+				g.committing = map[rclone.SegmentPrefix]string{}
+			}
+			g.committing[rclone.SegmentPrefix{Container: r.Container, Prefix: r.Prefix}.Canonical()] = r.Object
 		case jobs.RecoveryCommitted:
 			g.committed = append(g.committed, rclone.SegmentPrefix{Container: r.Container, Prefix: r.Prefix})
 		}
@@ -521,16 +620,23 @@ func (s *TransferService) SweepCrashLitter(ctx context.Context) (swept int, err 
 			// convention recovers the destination container.
 			dstContainer = strings.TrimSuffix(g.captured[0].Container, "_segments")
 		}
-		report, sweepErr := transfercopy.SweepLitter(ctx, session, dstContainer, g.stagingPrefix, g.captured, g.committed)
+		report, sweepErr := transfercopy.SweepLitter(ctx, session, transfercopy.SweepInput{
+			DstContainer: dstContainer, StagingPrefix: g.stagingPrefix,
+			Captured: g.captured, Committed: g.committed, Committing: g.committing,
+		})
 		if sweepErr != nil {
 			log.Printf("crash sweep: job %s: %v", jobID, sweepErr)
 			continue
 		}
 		swept += report.SweptStaged + report.SweptSegments
 		s.record(ctx, g.bookmarkID, "transfer.crash-sweep", "job "+jobID,
-			fmt.Sprintf("swept %d staged + %d segments; kept %d referenced prefixes",
-				report.SweptStaged, report.SweptSegments, len(report.KeptPrefixes)), audit.ResultApplied)
-		_ = s.jobs.RecoveryClear(ctx, jobID)
+			fmt.Sprintf("swept %d staged + %d segments; kept %d referenced prefixes; %d notes",
+				report.SweptStaged, report.SweptSegments, len(report.KeptPrefixes), len(report.Notes)), audit.ResultApplied)
+		if len(report.Notes) == 0 {
+			_ = s.jobs.RecoveryClear(ctx, jobID)
+		} else {
+			log.Printf("crash sweep: job %s kept records: %s", jobID, strings.Join(report.Notes, "; "))
+		}
 	}
 	return swept, nil
 }
@@ -689,4 +795,71 @@ func splitLocator(locator string) (container, prefix string, ok bool) {
 		return locator[:i], locator[i+1:], true
 	}
 	return locator, "", true
+}
+
+// accountIdentity extracts the authoritative account segment from a v1
+// storage URL path (the ".../v1/AUTH_xxx" tail), lowercased — the part
+// that stays equal across host aliases/VIPs for one Swift account and
+// differs between accounts. "" when it cannot be found.
+func accountIdentity(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	segments := strings.Split(strings.Trim(u.Path, "/"), "/")
+	for i, seg := range segments {
+		if seg == "v1" && i+1 < len(segments) {
+			return strings.ToLower(segments[i+1])
+		}
+	}
+	if n := len(segments); n > 0 {
+		return strings.ToLower(segments[n-1])
+	}
+	return ""
+}
+
+// provenDistinctAccounts reports whether two storage URLs are
+// DEMONSTRABLY different accounts. It returns true ONLY when both
+// account identifiers parse and differ — anything ambiguous (a missing
+// identifier, an unparseable URL) is NOT proven distinct, so the
+// overlap guard fails closed (review R-04).
+func provenDistinctAccounts(a, b string) bool {
+	idA, idB := accountIdentity(a), accountIdentity(b)
+	return idA != "" && idB != "" && idA != idB
+}
+
+// canonicalEndpoint normalizes a storage URL for identity comparison:
+// scheme+host (lowercased, default ports dropped) + path without a
+// trailing slash — two bookmarks naming one account through cosmetic
+// URL differences still count as the same target.
+func canonicalEndpoint(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return strings.TrimSuffix(raw, "/")
+	}
+	host := strings.ToLower(u.Host)
+	host = strings.TrimSuffix(host, ":443")
+	host = strings.TrimSuffix(host, ":80")
+	return strings.ToLower(u.Scheme) + "://" + host + strings.TrimSuffix(u.Path, "/")
+}
+
+// recoverySweepStep is ONE supervised pass of the startup crash
+// sweeper, returning whether litter remained to act on. main.go runs
+// it forever (backing off when quiet) rather than a bounded attempt
+// count — a job can crash later in the same process (review F-11 /
+// grok follow-up 3). Unexported so it stays OFF the Wails bridge
+// (review R-13); main.go reaches it through RecoverySweepStep in
+// wiring.go, tests through the method directly.
+func (s *TransferService) recoverySweepStep(ctx context.Context) (hadWork bool, err error) {
+	pending, err := s.jobs.RecoveryPending(ctx)
+	if err != nil {
+		return false, err
+	}
+	if len(pending) == 0 {
+		return false, nil
+	}
+	if _, err := s.sweepCrashLitter(ctx); err != nil {
+		return true, err
+	}
+	return true, nil
 }

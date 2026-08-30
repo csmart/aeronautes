@@ -90,8 +90,11 @@ func TestSettingsServicePersistsAndApplies(t *testing.T) {
 	if err != nil || settings.MaxActiveJobs != 4 || settings.DefaultProfile != "aggressive" {
 		t.Fatalf("reloaded = %+v %v", settings, err)
 	}
-	if cap(runner2.slots) != 4 {
-		t.Fatalf("budget not applied at construction: cap %d", cap(runner2.slots))
+	runner2.mu.Lock()
+	capacity := runner2.capacity
+	runner2.mu.Unlock()
+	if capacity != 4 {
+		t.Fatalf("budget not applied at construction: capacity %d", capacity)
 	}
 }
 
@@ -145,7 +148,7 @@ func TestRetentionPrunesExactly(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	service.RunRetention(ctx, jobStore, auditStore)
+	service.runRetention(ctx, jobStore, auditStore)
 
 	if _, err := jobStore.Get(ctx, oldDone); err == nil {
 		t.Fatal("old terminal job survived the prune")
@@ -183,7 +186,7 @@ func TestRetentionPrunesExactly(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	service.RunRetention(ctx, jobStore, auditStore)
+	service.runRetention(ctx, jobStore, auditStore)
 	if _, err := jobStore.Get(ctx, freshDone); err != nil {
 		t.Fatal("prune ran with retention disabled")
 	}

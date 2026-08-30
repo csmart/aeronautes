@@ -207,7 +207,7 @@ func (h *harness) installEngine(block chan struct{}) *[]rclone.Options {
 
 func (h *harness) installChunkingEngine(block chan struct{}, chunk int) *[]rclone.Options {
 	var seen []rclone.Options
-	h.transfer.SetEngineFactory(func(source transfercopy.RemoteSource, opts rclone.Options) (transfercopy.Engine, error) {
+	h.transfer.setEngineFactory(func(source transfercopy.RemoteSource, opts rclone.Options) (transfercopy.Engine, error) {
 		remotes, err := source(context.Background())
 		if err != nil {
 			return nil, err
@@ -273,6 +273,9 @@ func TestPlanAndStartCopyAcrossBookmarks(t *testing.T) {
 	preview, err := h.transfer.PlanCopy(ctx, req)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !strings.Contains(preview.DataPath, "workstation") {
+		t.Errorf("preview does not name its data path (K-XFER-005): %q", preview.DataPath)
 	}
 	if preview.Summary.New != 1 || preview.Summary.Same != 1 || preview.Summary.Changed != 1 {
 		t.Fatalf("preview = %+v", preview.Summary)
@@ -416,9 +419,19 @@ func TestUploadAndDownloadJobs(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	h.transfer.setFilePicker(fakePicker{
+		files: []string{filepath.Join(dir, "a.txt"), filepath.Join(dir, "b.txt")},
+	})
+	picked, err := h.transfer.PickUploadFiles(ctx)
+	if err != nil || picked == nil || len(picked.Files) != 2 {
+		t.Fatalf("pick: %+v %v", picked, err)
+	}
+	if strings.Contains(strings.Join(picked.Files, " "), string(filepath.Separator)) {
+		t.Fatalf("picker leaked paths across the bridge: %v", picked.Files)
+	}
 	upload := UploadRequestDTO{
 		BookmarkID: bookmark, Container: "media", Prefix: "up/",
-		Paths: []string{filepath.Join(dir, "a.txt"), filepath.Join(dir, "b.txt")},
+		SelectionToken: picked.Token,
 	}
 	preflight, err := h.transfer.PreflightUpload(ctx, upload)
 	if err != nil || preflight.Rejected() {
@@ -438,7 +451,12 @@ func TestUploadAndDownloadJobs(t *testing.T) {
 
 	// Download the uploaded prefix into a fresh directory.
 	destDir := t.TempDir()
-	download := DownloadRequestDTO{BookmarkID: bookmark, Container: "media", Prefix: "up/", DestDir: destDir}
+	h.transfer.setFilePicker(fakePicker{dir: destDir})
+	pickedDir, err := h.transfer.PickDownloadDir(ctx)
+	if err != nil || pickedDir == nil {
+		t.Fatalf("pick dir: %+v %v", pickedDir, err)
+	}
+	download := DownloadRequestDTO{BookmarkID: bookmark, Container: "media", Prefix: "up/", DestDirToken: pickedDir.Token}
 	jobID, err = h.transfer.StartDownload(ctx, download)
 	if err != nil {
 		t.Fatal(err)
@@ -450,6 +468,12 @@ func TestUploadAndDownloadJobs(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(destDir, "a.txt"))
 	if err != nil || string(data) != "alpha" {
 		t.Errorf("a.txt = %q %v", data, err)
+	}
+	// A token the picker never issued is refused outright.
+	if _, err := h.transfer.StartUpload(ctx, UploadRequestDTO{
+		BookmarkID: bookmark, Container: "media", Prefix: "up/", SelectionToken: "forged-token",
+	}); err == nil || !strings.Contains(err.Error(), "selection") {
+		t.Errorf("forged selection token = %v, want refusal", err)
 	}
 	// Re-running rejects on local-exists — nothing overwritten.
 	if _, err := h.transfer.StartDownload(ctx, download); err == nil || !strings.Contains(err.Error(), "collisions") {
@@ -509,7 +533,7 @@ func TestSchedulerBudgetQueues(t *testing.T) {
 	dstBookmark, dstMock := secondCluster(t, h)
 	block := make(chan struct{})
 	h.installEngine(block)
-	h.transfer.SetMaxActiveJobs(1)
+	h.transfer.setMaxActiveJobsHook(1)
 
 	h.mock.AddContainer("media", "standard")
 	seedObject(h.mock, "media", "one.txt", "payload", nil)
@@ -635,7 +659,7 @@ func TestMirrorSkipsDeletionsWhenCopyFails(t *testing.T) {
 	dstBookmark, dstMock := secondCluster(t, h)
 	// An engine that silently drops one name: the copy half will fail
 	// verification, so the delete half must not run.
-	h.transfer.SetEngineFactory(func(source transfercopy.RemoteSource, opts rclone.Options) (transfercopy.Engine, error) {
+	h.transfer.setEngineFactory(func(source transfercopy.RemoteSource, opts rclone.Options) (transfercopy.Engine, error) {
 		remotes, err := source(context.Background())
 		if err != nil {
 			return nil, err
@@ -765,7 +789,7 @@ func TestCrashLitterSweep(t *testing.T) {
 		}
 	}
 
-	swept, err := h.transfer.SweepCrashLitter(ctx)
+	swept, err := h.transfer.sweepCrashLitter(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -788,7 +812,7 @@ func TestCrashLitterSweep(t *testing.T) {
 	if pending, _ := h.transfer.jobs.RecoveryPending(ctx); len(pending) != 0 {
 		t.Fatalf("records not cleared: %+v", pending)
 	}
-	if swept, _ := h.transfer.SweepCrashLitter(ctx); swept != 0 {
+	if swept, _ := h.transfer.sweepCrashLitter(ctx); swept != 0 {
 		t.Fatalf("second sweep = %d", swept)
 	}
 }
@@ -884,7 +908,7 @@ func TestStreamSpillChunksAndHostileNames(t *testing.T) {
 		}
 		enc := json.NewEncoder(f)
 		for _, n := range names {
-			if err := enc.Encode(n); err != nil {
+			if err := enc.Encode(spilledDelete{Name: n}); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -905,7 +929,7 @@ func TestStreamSpillChunksAndHostileNames(t *testing.T) {
 			names[i] = fmt.Sprintf("obj-%d", i)
 		}
 		var got []int
-		if err := streamSpill(write(t, names), tc.chunk, func(chunk []string) error {
+		if err := streamSpill(write(t, names), tc.chunk, func(chunk []spilledDelete) error {
 			got = append(got, len(chunk))
 			return nil
 		}); err != nil {
@@ -917,8 +941,10 @@ func TestStreamSpillChunksAndHostileNames(t *testing.T) {
 	}
 	// Hostile names round-trip byte-exact through the JSON lines.
 	var back []string
-	if err := streamSpill(write(t, hostile), 2, func(chunk []string) error {
-		back = append(back, chunk...)
+	if err := streamSpill(write(t, hostile), 2, func(chunk []spilledDelete) error {
+		for _, entry := range chunk {
+			back = append(back, entry.Name)
+		}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -969,5 +995,381 @@ func TestMirrorDeleteSetSpansChunks(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Fatalf("survivor: %+v", entry)
+	}
+}
+
+func TestCrashSweepCommitBoundary(t *testing.T) {
+	// The review-wave C-01 sequence, both sides of the boundary. A
+	// staged DLO's live manifest PUT LANDED but the process died before
+	// the committed record: the sweep must resolve from the committing
+	// record's live identity and KEEP the segments — the old code
+	// deleted the staging namespace first, derived the staged name,
+	// found it gone, and destroyed the live object's segments.
+	h := newHarness(t)
+	ctx := context.Background()
+	h.connect(t)
+	bookmark := h.transfer.connections.ActiveBookmarkID()
+	h.mock.AddContainer("backup", "standard")
+	h.mock.AddContainer("backup_segments", "standard")
+
+	newCrashed := func() string {
+		t.Helper()
+		crashed, err := h.transfer.jobs.Create(ctx, jobs.Job{Type: jobs.TypeCopy, DestBookmarkID: bookmark})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = h.transfer.jobs.Transition(ctx, crashed.ID, jobs.StatePlanning)
+		_ = h.transfer.jobs.Transition(ctx, crashed.ID, jobs.StateCancelled)
+		return crashed.ID
+	}
+
+	// Case A: commit landed, committed record lost.
+	jobA := newCrashed()
+	stagingA := ".aeronautes/stage/" + jobA + "/"
+	prefixA := stagingA + "000001/2026-08-30-0000000000000000000011/"
+	seedObject(h.mock, "backup", stagingA+"000001", "", nil) // staged manifest placeholder
+	for i := 0; i < 3; i++ {
+		seedObject(h.mock, "backup_segments", fmt.Sprintf("%s%08d", prefixA, i), "segment-bytes", nil)
+	}
+	h.mock.PutObject("backup", "video.bin", swifttest.Object{Manifest: "backup_segments/" + prefixA})
+	for _, r := range []jobs.RecoveryRecord{
+		{JobID: jobA, BookmarkID: bookmark, Kind: jobs.RecoveryStaging, Container: "backup", Prefix: stagingA},
+		{JobID: jobA, BookmarkID: bookmark, Kind: jobs.RecoveryCaptured, Container: "backup_segments", Prefix: prefixA},
+		{JobID: jobA, BookmarkID: bookmark, Kind: jobs.RecoveryCommitting, Container: "backup_segments", Prefix: prefixA, Object: "backup/video.bin"},
+	} {
+		if err := h.transfer.jobs.RecoveryAdd(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Case B: process died BEFORE the live PUT — same shape, live name
+	// absent. The segments are true litter and must go.
+	jobB := newCrashed()
+	stagingB := ".aeronautes/stage/" + jobB + "/"
+	prefixB := stagingB + "000001/2026-08-30-0000000000000000000022/"
+	seedObject(h.mock, "backup", stagingB+"000001", "", nil)
+	for i := 0; i < 2; i++ {
+		seedObject(h.mock, "backup_segments", fmt.Sprintf("%s%08d", prefixB, i), "doomed", nil)
+	}
+	for _, r := range []jobs.RecoveryRecord{
+		{JobID: jobB, BookmarkID: bookmark, Kind: jobs.RecoveryStaging, Container: "backup", Prefix: stagingB},
+		{JobID: jobB, BookmarkID: bookmark, Kind: jobs.RecoveryCaptured, Container: "backup_segments", Prefix: prefixB},
+		{JobID: jobB, BookmarkID: bookmark, Kind: jobs.RecoveryCommitting, Container: "backup_segments", Prefix: prefixB, Object: "backup/never-made-it.bin"},
+	} {
+		if err := h.transfer.jobs.RecoveryAdd(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, err := h.transfer.sweepCrashLitter(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	// Case A: the live DLO still assembles — its segments survived.
+	session := h.transfer.connections.sessions[bookmark]
+	d, err := session.ObjectDetail(ctx, "backup", "video.bin")
+	if err != nil || d.ContentLength != 3*int64(len("segment-bytes")) {
+		t.Fatalf("live DLO after sweep = %+v %v (its segments were destroyed)", d, err)
+	}
+	// Its staged manifest is gone (staging swept), and records cleared.
+	if _, err := session.ObjectDetail(ctx, "backup", stagingA+"000001"); err == nil {
+		t.Error("staged manifest survived the sweep")
+	}
+	// Case B: the never-committed segments are gone.
+	for i := 0; i < 2; i++ {
+		if _, err := session.ObjectDetail(ctx, "backup_segments", fmt.Sprintf("%s%08d", prefixB, i)); err == nil {
+			t.Errorf("uncommitted segment %d survived", i)
+		}
+	}
+	pending, err := h.transfer.jobs.RecoveryPending(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 0 {
+		t.Errorf("records not cleared after clean sweep: %+v", pending)
+	}
+}
+
+func TestOverlappingScopesRefused(t *testing.T) {
+	// The review-wave C-03 pair: src a/z/ → dst a/ (deterministic
+	// source self-deletion under Mirror) and src a/ → dst a/z/
+	// (recursive output ingestion) both refuse at resolve time, for
+	// Copy preview, Copy start, and Mirror alike — even when the two
+	// bookmark IDs differ but resolve to the same account.
+	h := newHarness(t)
+	ctx := context.Background()
+	h.connect(t)
+	bookmark := h.transfer.connections.ActiveBookmarkID()
+	h.mock.AddContainer("media", "standard")
+	seedObject(h.mock, "media", "a/z/file", "payload", nil)
+
+	cases := []struct{ srcPrefix, dstPrefix string }{
+		{"a/z/", "a/"},
+		{"a/", "a/z/"},
+		{"a/", "a/"},
+		{"", "a/"},
+	}
+	for _, tc := range cases {
+		req := CopyRequestDTO{
+			SourceBookmarkID: bookmark, SourceContainer: "media", SourcePrefix: tc.srcPrefix,
+			DestBookmarkID: bookmark, DestContainer: "media", DestPrefix: tc.dstPrefix,
+		}
+		if _, err := h.transfer.PlanCopy(ctx, req); err == nil || !strings.Contains(err.Error(), "overlap") {
+			t.Errorf("PlanCopy %q→%q = %v, want overlap refusal", tc.srcPrefix, tc.dstPrefix, err)
+		}
+		if _, err := h.transfer.StartCopy(ctx, req); err == nil {
+			t.Errorf("StartCopy %q→%q accepted", tc.srcPrefix, tc.dstPrefix)
+		}
+		if _, err := h.transfer.StartMirror(ctx, MirrorRequestDTO{CopyRequestDTO: req, Confirm: "media"}); err == nil {
+			t.Errorf("StartMirror %q→%q accepted", tc.srcPrefix, tc.dstPrefix)
+		}
+	}
+
+	// TWO bookmark ids naming ONE account still refuse: the identity is
+	// the canonicalized resolved endpoint, never the bookmark id.
+	twin, err := h.bookmarks.Save(ctx, BookmarkDTO{
+		DisplayName: "same-account twin", AuthURL: h.authURL, Username: "test:tester",
+	}, "testing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.transfer.PlanCopy(ctx, CopyRequestDTO{
+		SourceBookmarkID: bookmark, SourceContainer: "media", SourcePrefix: "a/z/",
+		DestBookmarkID: twin.ID, DestContainer: "media", DestPrefix: "a/",
+	}); err == nil || !strings.Contains(err.Error(), "overlap") {
+		t.Errorf("dual-bookmark same-account overlap = %v, want refusal", err)
+	}
+
+	// Disjoint prefixes in one container stay allowed.
+	seedObject(h.mock, "media", "in/x.txt", "x", nil)
+	okReq := CopyRequestDTO{
+		SourceBookmarkID: bookmark, SourceContainer: "media", SourcePrefix: "in/",
+		DestBookmarkID: bookmark, DestContainer: "media", DestPrefix: "out/",
+	}
+	if _, err := h.transfer.PlanCopy(ctx, okReq); err != nil {
+		t.Errorf("disjoint same-container copy refused: %v", err)
+	}
+}
+
+func TestMirrorSkipsReappearedSourceNames(t *testing.T) {
+	// H-06: a name planned destination-only whose SOURCE reappears
+	// before the delete half must be skipped — the destructive set is
+	// re-checked against the current source, not yesterday's plan.
+	h := newHarness(t)
+	ctx := context.Background()
+	h.connect(t)
+	srcBookmark := h.transfer.connections.ActiveBookmarkID()
+	dstBookmark, dstMock := secondCluster(t, h)
+	block := make(chan struct{})
+	h.installEngine(block)
+
+	h.mock.AddContainer("media", "standard")
+	seedObject(h.mock, "media", "scope/copied.txt", "engine payload", nil)
+	dstMock.AddContainer("backup", "standard")
+	// Two dest-only names; "reborn.txt" will reappear at the source
+	// while the engine (blocked) holds the copy half open.
+	seedObject(dstMock, "backup", "scope/reborn.txt", "same bytes!", nil)
+	seedObject(dstMock, "backup", "scope/stale.txt", "leftover", nil)
+
+	jobID, err := h.transfer.StartMirror(ctx, MirrorRequestDTO{
+		CopyRequestDTO: CopyRequestDTO{
+			SourceBookmarkID: srcBookmark, SourceContainer: "media", SourcePrefix: "scope/",
+			DestBookmarkID: dstBookmark, DestContainer: "backup", DestPrefix: "scope/",
+		},
+		Confirm: "backup",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(150 * time.Millisecond) // the engine is now blocked mid-copy
+	seedObject(h.mock, "media", "scope/reborn.txt", "same bytes!", nil)
+	close(block)
+
+	job := awaitTerminal(t, h, jobID)
+	if job.State != "complete" || !strings.Contains(job.Error, "skipped") {
+		t.Fatalf("job = %+v, want complete with a skip note", job)
+	}
+	session := h.transfer.connections.sessions[dstBookmark]
+	if _, err := session.ObjectDetail(ctx, "backup", "scope/reborn.txt"); err != nil {
+		t.Fatal("reappeared-source object was deleted from the destination")
+	}
+	if _, err := session.ObjectDetail(ctx, "backup", "scope/stale.txt"); err == nil {
+		t.Fatal("genuinely stale object survived")
+	}
+}
+
+// fakePicker satisfies FilePicker for tests.
+type fakePicker struct {
+	files []string
+	dir   string
+}
+
+func (f fakePicker) PickFiles(string) ([]string, error)   { return f.files, nil }
+func (f fakePicker) PickDirectory(string) (string, error) { return f.dir, nil }
+
+func TestCrashSweepProductionSlashPair(t *testing.T) {
+	// The follow-up review's C01-slash sequence, with PRODUCTION forms:
+	// the captured row is slash-terminated (log-derived), the committing
+	// row and the live X-Object-Manifest are UNSLASHED (rclone's header
+	// form), and the staged object is already gone. The sweep must still
+	// match them and KEEP the live DLO's segments.
+	h := newHarness(t)
+	ctx := context.Background()
+	h.connect(t)
+	bookmark := h.transfer.connections.ActiveBookmarkID()
+	h.mock.AddContainer("backup", "standard")
+	h.mock.AddContainer("backup_segments", "standard")
+
+	crashed, err := h.transfer.jobs.Create(ctx, jobs.Job{Type: jobs.TypeCopy, DestBookmarkID: bookmark})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = h.transfer.jobs.Transition(ctx, crashed.ID, jobs.StatePlanning)
+	_ = h.transfer.jobs.Transition(ctx, crashed.ID, jobs.StateCancelled)
+
+	staging := ".aeronautes/stage/" + crashed.ID + "/"
+	prefix := staging + "000001/2026-08-30-0000000000000000000033/" // canonical captured form
+	for i := 0; i < 2; i++ {
+		seedObject(h.mock, "backup_segments", fmt.Sprintf("%s%08d", prefix, i), "live-bytes", nil)
+	}
+	// Live manifest header WITHOUT the trailing slash — rclone's form.
+	h.mock.PutObject("backup", "video.bin", swifttest.Object{Manifest: "backup_segments/" + strings.TrimSuffix(prefix, "/")})
+	// No staged manifest object: the staging namespace is already gone.
+	for _, r := range []jobs.RecoveryRecord{
+		{JobID: crashed.ID, BookmarkID: bookmark, Kind: jobs.RecoveryStaging, Container: "backup", Prefix: staging},
+		{JobID: crashed.ID, BookmarkID: bookmark, Kind: jobs.RecoveryCaptured, Container: "backup_segments", Prefix: prefix},
+		// Committing row planted UNSLASHED, as an older build (or the
+		// raw header path) would have written it.
+		{JobID: crashed.ID, BookmarkID: bookmark, Kind: jobs.RecoveryCommitting, Container: "backup_segments", Prefix: strings.TrimSuffix(prefix, "/"), Object: "backup/video.bin"},
+	} {
+		if err := h.transfer.jobs.RecoveryAdd(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, err := h.transfer.sweepCrashLitter(ctx); err != nil {
+		t.Fatal(err)
+	}
+	session := h.transfer.connections.sessions[bookmark]
+	d, err := session.ObjectDetail(ctx, "backup", "video.bin")
+	if err != nil || d.ContentLength != 2*int64(len("live-bytes")) {
+		t.Fatalf("live DLO after sweep = %+v %v (C01-slash: its segments were destroyed)", d, err)
+	}
+}
+
+func TestMirrorSkipsReplacedDestination(t *testing.T) {
+	// F-02: a planned dest-only object REPLACED by another writer after
+	// planning must not be deleted — the plan's identity no longer
+	// matches, so the delete becomes a conflict skip.
+	h := newHarness(t)
+	ctx := context.Background()
+	h.connect(t)
+	srcBookmark := h.transfer.connections.ActiveBookmarkID()
+	dstBookmark, dstMock := secondCluster(t, h)
+	block := make(chan struct{})
+	h.installEngine(block)
+
+	h.mock.AddContainer("media", "standard")
+	seedObject(h.mock, "media", "scope/copied.txt", "engine payload", nil)
+	dstMock.AddContainer("backup", "standard")
+	seedObject(dstMock, "backup", "scope/victim.txt", "old planned bytes", nil)
+	seedObject(dstMock, "backup", "scope/stale.txt", "leftover", nil)
+
+	jobID, err := h.transfer.StartMirror(ctx, MirrorRequestDTO{
+		CopyRequestDTO: CopyRequestDTO{
+			SourceBookmarkID: srcBookmark, SourceContainer: "media", SourcePrefix: "scope/",
+			DestBookmarkID: dstBookmark, DestContainer: "backup", DestPrefix: "scope/",
+		},
+		Confirm: "backup",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(150 * time.Millisecond) // engine blocked: plan is done
+	// Another client replaces the planned victim with NEW content.
+	seedObject(dstMock, "backup", "scope/victim.txt", "someone else's brand-new data", nil)
+	close(block)
+
+	job := awaitTerminal(t, h, jobID)
+	if job.State != "complete" || !strings.Contains(job.Error, "replaced") {
+		t.Fatalf("job = %+v, want complete with a replaced-skip note", job)
+	}
+	session := h.transfer.connections.sessions[dstBookmark]
+	d, err := session.ObjectDetail(ctx, "backup", "scope/victim.txt")
+	if err != nil || d.ContentLength != int64(len("someone else's brand-new data")) {
+		t.Fatalf("replaced object = %+v %v (the other client's data was deleted)", d, err)
+	}
+	if _, err := session.ObjectDetail(ctx, "backup", "scope/stale.txt"); err == nil {
+		t.Fatal("genuinely stale object survived")
+	}
+}
+
+func TestRecoverySweepStepNeverRetiresOnEmpty(t *testing.T) {
+	// grok follow-up 3 RECOVERY-EMPTY: the sweep STEP reports "no work"
+	// on an empty pending set (the supervised loop backs off, never
+	// returns) and then ACTS when a job crashes later in the same
+	// process — proving the loop cannot retire early.
+	h := newHarness(t)
+	ctx := context.Background()
+	h.connect(t)
+	bookmark := h.transfer.connections.ActiveBookmarkID()
+
+	// Empty at first: a step finds nothing and does not error.
+	hadWork, err := h.transfer.recoverySweepStep(ctx)
+	if err != nil || hadWork {
+		t.Fatalf("empty step = (%v, %v), want (false, nil)", hadWork, err)
+	}
+
+	// A job "crashes later in the same run": terminal row + recovery
+	// records + real litter appear.
+	h.mock.AddContainer("backup", "standard")
+	h.mock.AddContainer("backup_segments", "standard")
+	crashed, err := h.transfer.jobs.Create(ctx, jobs.Job{Type: jobs.TypeCopy, DestBookmarkID: bookmark})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = h.transfer.jobs.Transition(ctx, crashed.ID, jobs.StatePlanning)
+	_ = h.transfer.jobs.Transition(ctx, crashed.ID, jobs.StateCancelled)
+	prefix := "orphan/2026-08-30-0000000000000000000099/"
+	seedObject(h.mock, "backup_segments", prefix+"00000000", "litter", nil)
+	for _, r := range []jobs.RecoveryRecord{
+		{JobID: crashed.ID, BookmarkID: bookmark, Kind: jobs.RecoveryStaging, Container: "backup", Prefix: ".aeronautes/stage/" + crashed.ID + "/"},
+		{JobID: crashed.ID, BookmarkID: bookmark, Kind: jobs.RecoveryCaptured, Container: "backup_segments", Prefix: prefix},
+	} {
+		if err := h.transfer.jobs.RecoveryAdd(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// The NEXT step (the loop would still be running) finds and sweeps it.
+	hadWork, err = h.transfer.recoverySweepStep(ctx)
+	if err != nil || !hadWork {
+		t.Fatalf("post-crash step = (%v, %v), want (true, nil)", hadWork, err)
+	}
+	session := h.transfer.connections.sessions[bookmark]
+	if _, err := session.ObjectDetail(ctx, "backup_segments", prefix+"00000000"); err == nil {
+		t.Fatal("orphan litter survived the later sweep")
+	}
+}
+
+func TestOverlapFailsClosedOnAccountAliases(t *testing.T) {
+	// R-04: two bookmarks that resolve to the SAME account via different
+	// hosts must NOT bypass the overlap guard — identity is the account
+	// segment (AUTH_xxx), not the host string, and ambiguity fails
+	// closed.
+	if provenDistinctAccounts(
+		"https://vip1.example/v1/AUTH_shared",
+		"https://vip2.example/v1/AUTH_shared") {
+		t.Error("two hosts for one account were treated as distinct accounts")
+	}
+	// Genuinely different accounts are provably distinct → allowed.
+	if !provenDistinctAccounts(
+		"https://a.example/v1/AUTH_alice",
+		"https://b.example/v1/AUTH_bob") {
+		t.Error("different accounts not recognized as distinct")
+	}
+	// An unresolvable identity is NOT proven distinct (fail closed).
+	if provenDistinctAccounts("https://x.example/weird", "https://y.example/weird") {
+		t.Error("ambiguous endpoints treated as distinct (should fail closed)")
 	}
 }

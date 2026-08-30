@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -105,8 +106,9 @@ func TestEmptyAndDeleteContainerJobs(t *testing.T) {
 	// Container config that must survive Empty (§33): empty base
 	// fingerprint = unconditional apply in the mutate flow.
 	if _, err := h.mutate.UpdateContainer(ctx, "media", "", ContainerEditDTO{
-		Meta:    map[string]string{"Team": "ops"},
-		ReadACL: ".r:*",
+		Meta:      map[string]string{"Team": "ops"},
+		ReadACL:   ".r:*",
+		AckPublic: true,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +197,7 @@ func TestSegmentDeleteDLOOwnership(t *testing.T) {
 	_, err = service.DeleteManifestWithSegments(ctx, SegmentsDeleteRequestDTO{
 		BookmarkID: bookmark, Container: "media", Name: "theirs.bin", Confirm: "theirs.bin",
 	})
-	if err == nil || !strings.Contains(err.Error(), "not proven") {
+	if err == nil || !strings.Contains(err.Error(), "Backstage force") {
 		t.Fatalf("unproven delete = %v", err)
 	}
 	session := h.transfer.connections.sessions[bookmark]
@@ -210,14 +212,16 @@ func TestSegmentDeleteDLOOwnership(t *testing.T) {
 		t.Fatal("bad confirmation accepted")
 	}
 
-	// Owned: manifest + exactly its prefix die; the external prefix stays.
+	// Owned + force: manifest + exactly its prefix die; external stays.
+	// (Force is now required for ALL segment deletes — evidence is
+	// advisory until the live reference scan exists, review R-02.)
 	result, err := service.DeleteManifestWithSegments(ctx, SegmentsDeleteRequestDTO{
-		BookmarkID: bookmark, Container: "media", Name: "ours.bin", Confirm: "ours.bin",
+		BookmarkID: bookmark, Container: "media", Name: "ours.bin", Confirm: "ours.bin", Force: true,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.ManifestDeleted || result.SegmentsDeleted != 3 || result.Basis != "exclusive-ownership" {
+	if !result.ManifestDeleted || result.SegmentsDeleted != 3 || result.Basis != "backstage-forced-with-evidence" {
 		t.Fatalf("result = %+v", result)
 	}
 	d, err := session.ObjectDetail(ctx, "media", "theirs.bin")
@@ -278,9 +282,10 @@ func TestSegmentDeleteSLO(t *testing.T) {
 		t.Fatalf("mixed.slo status = %+v %v", status, err)
 	}
 
-	// Native manifest+segments for the proven one.
+	// Native manifest+segments for the proven one (Force now required
+	// for all segment deletes, review R-02).
 	result, err := service.DeleteManifestWithSegments(ctx, SegmentsDeleteRequestDTO{
-		BookmarkID: bookmark, Container: "media", Name: "big.slo", Confirm: "big.slo",
+		BookmarkID: bookmark, Container: "media", Name: "big.slo", Confirm: "big.slo", Force: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -333,8 +338,9 @@ func TestCopyJobOwnershipRoundTrip(t *testing.T) {
 		t.Fatalf("ownership rows = %+v", owned)
 	}
 
-	// The copied DLO is provably ours: segments-delete proceeds without
-	// force and sweeps exactly the owned prefix.
+	// The copied DLO is provably ours: the evidence shows Proven, and a
+	// forced segments-delete (Force now required for all — review R-02)
+	// sweeps exactly the owned prefix.
 	status, err := deleteSvc.CheckSegmentOwnership(ctx, SegmentsDeleteRequestDTO{
 		BookmarkID: dstBookmark, Container: "backup", Name: "video.bin",
 	})
@@ -342,12 +348,12 @@ func TestCopyJobOwnershipRoundTrip(t *testing.T) {
 		t.Fatalf("status = %+v %v", status, err)
 	}
 	result, err := deleteSvc.DeleteManifestWithSegments(ctx, SegmentsDeleteRequestDTO{
-		BookmarkID: dstBookmark, Container: "backup", Name: "video.bin", Confirm: "video.bin",
+		BookmarkID: dstBookmark, Container: "backup", Name: "video.bin", Confirm: "video.bin", Force: true,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.ManifestDeleted || result.SegmentsDeleted != 5 || result.Basis != "exclusive-ownership" {
+	if !result.ManifestDeleted || result.SegmentsDeleted != 5 || result.Basis != "backstage-forced-with-evidence" {
 		t.Fatalf("cleanup = %+v", result)
 	}
 }
@@ -382,7 +388,7 @@ func TestAuditSearch(t *testing.T) {
 	}
 	// Result filter catches the refusal.
 	failed, err := h.auditSvc.Search(ctx, AuditQueryDTO{Result: "failed"})
-	if err != nil || len(failed) != 1 || !strings.Contains(failed[0].Summary, "no exclusive-ownership") {
+	if err != nil || len(failed) != 1 || !strings.Contains(failed[0].Summary, "Backstage force") {
 		t.Fatalf("failed = %+v %v", failed, err)
 	}
 	// A LIKE metacharacter is literal, never a wildcard.
@@ -397,5 +403,191 @@ func TestAuditSearch(t *testing.T) {
 	page2, err := h.auditSvc.Search(ctx, AuditQueryDTO{Limit: 2, BeforeID: page1[1].ID})
 	if err != nil || len(page2) == 0 || page2[0].ID >= page1[1].ID {
 		t.Fatalf("page2 = %+v %v", page2, err)
+	}
+}
+
+func TestNestedRangedAndBoundaryProofsRefused(t *testing.T) {
+	// The review-wave C-05/G13 set. A nested sub-SLO whose manifest
+	// OBJECT sits under an owned prefix must NOT prove: the proof covers
+	// the nested manifest, not its descendants, and Swift's recursive
+	// delete follows them. Ranged entries and non-slash prefix
+	// boundaries are equally unprovable.
+	h, service, bookmark := deleteHarness(t)
+	ctx := context.Background()
+	h.mock.AddContainer("media", "standard")
+	h.mock.AddContainer("parts", "standard")
+	seedObject(h.mock, "parts", "job/aa/000001", "0123456789", nil)
+	seedObject(h.mock, "parts", "job/aa/sub.slo", "inner manifest", nil)
+	if err := h.evidence.RecordOwnership(ctx, bookmark, "job-y", "parts", "job/aa/"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Nested: every entry under the owned prefix, one is a sub-SLO.
+	nested := `[{"name":"/parts/job/aa/000001","hash":"h1","bytes":10},{"name":"/parts/job/aa/sub.slo","hash":"h2","bytes":14,"sub_slo":true}]`
+	h.mock.PutObject("media", "nested.slo", swifttest.Object{Bytes: 24, SLO: true, SLOManifestJSON: nested, ContentType: "application/octet-stream"})
+	status, err := service.CheckSegmentOwnership(ctx, SegmentsDeleteRequestDTO{BookmarkID: bookmark, Container: "media", Name: "nested.slo"})
+	if err != nil || status.Proven {
+		t.Fatalf("nested proof = %+v %v (must be unprovable)", status, err)
+	}
+	if _, err := service.DeleteManifestWithSegments(ctx, SegmentsDeleteRequestDTO{
+		BookmarkID: bookmark, Container: "media", Name: "nested.slo", Confirm: "nested.slo",
+	}); err == nil {
+		t.Fatal("nested SLO segment deletion proceeded without force")
+	}
+
+	// Ranged: whole-object deletion of a partially-referenced object is
+	// not what the proof proves.
+	ranged := `[{"name":"/parts/job/aa/000001","hash":"h1","bytes":5,"range":"0-4"}]`
+	h.mock.PutObject("media", "ranged.slo", swifttest.Object{Bytes: 5, SLO: true, SLOManifestJSON: ranged, ContentType: "application/octet-stream"})
+	status, err = service.CheckSegmentOwnership(ctx, SegmentsDeleteRequestDTO{BookmarkID: bookmark, Container: "media", Name: "ranged.slo"})
+	if err != nil || status.Proven {
+		t.Fatalf("ranged proof = %+v %v (must be unprovable)", status, err)
+	}
+
+	// Boundary: an owned "job/bb" (no trailing slash) must not cover
+	// "job/bb-evil/x".
+	if err := h.evidence.RecordOwnership(ctx, bookmark, "job-z", "parts", "job/bb"); err != nil {
+		t.Fatal(err)
+	}
+	seedObject(h.mock, "parts", "job/bb-evil/x", "unrelated!", nil)
+	evil := `[{"name":"/parts/job/bb-evil/x","hash":"h9","bytes":10}]`
+	h.mock.PutObject("media", "evil.slo", swifttest.Object{Bytes: 10, SLO: true, SLOManifestJSON: evil, ContentType: "application/octet-stream"})
+	status, err = service.CheckSegmentOwnership(ctx, SegmentsDeleteRequestDTO{BookmarkID: bookmark, Container: "media", Name: "evil.slo"})
+	if err != nil || status.Proven {
+		t.Fatalf("boundary proof = %+v %v (job/bb must not cover job/bb-evil/)", status, err)
+	}
+}
+
+func TestSegmentDeleteNeverUsesRecursiveMultipart(t *testing.T) {
+	// C-06's wire lock: the proven manifest+segments path must never
+	// send ?multipart-manifest=delete — the server-side recursive
+	// delete follows whatever manifest occupies the live name at
+	// execution time. Reintroducing the fast path fails this test.
+	h, service, bookmark := deleteHarness(t)
+	ctx := context.Background()
+	h.mock.AddContainer("media", "standard")
+	h.mock.AddContainer("parts", "standard")
+	seedObject(h.mock, "parts", "job/bb/000001", "0123456789", nil)
+	manifest := `[{"name":"/parts/job/bb/000001","hash":"h1","bytes":10}]`
+	h.mock.PutObject("media", "wire.slo", swifttest.Object{Bytes: 10, SLO: true, SLOManifestJSON: manifest, ContentType: "application/octet-stream"})
+	if err := h.evidence.RecordOwnership(ctx, bookmark, "job-w", "parts", "job/bb/"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.DeleteManifestWithSegments(ctx, SegmentsDeleteRequestDTO{
+		BookmarkID: bookmark, Container: "media", Name: "wire.slo", Confirm: "wire.slo", Force: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range h.mock.RequestLog() {
+		if strings.Contains(line, "multipart-manifest=delete") {
+			t.Fatalf("recursive multipart delete on the wire: %s", line)
+		}
+	}
+}
+
+func TestSegmentDeleteRefusesSwappedManifest(t *testing.T) {
+	// The SLO-SWAP barrier: the live manifest is replaced right after
+	// the proof fetch (planted by the mock's AfterRequest hook on that
+	// exact HEAD) — the pre-delete identity re-check must refuse, the
+	// replacement survive, and its segments stay untouched.
+	h, service, bookmark := deleteHarness(t)
+	ctx := context.Background()
+	h.mock.AddContainer("media", "standard")
+	h.mock.AddContainer("parts", "standard")
+	seedObject(h.mock, "parts", "job/cc/000001", "0123456789", nil)
+	seedObject(h.mock, "parts", "other/keep", "unrelated!", nil)
+	manifest := `[{"name":"/parts/job/cc/000001","hash":"h1","bytes":10}]`
+	h.mock.PutObject("media", "swap.slo", swifttest.Object{Bytes: 10, ETag: "etag-original", SLO: true, SLOManifestJSON: manifest, ContentType: "application/octet-stream"})
+	if err := h.evidence.RecordOwnership(ctx, bookmark, "job-s", "parts", "job/cc/"); err != nil {
+		t.Fatal(err)
+	}
+	replacement := `[{"name":"/parts/other/keep","hash":"h2","bytes":10}]`
+	swapped := false
+	h.mock.AfterRequest = func(method, path string) {
+		// The proof fetch ends with the manifest GET; the swap lands
+		// right after it — BETWEEN the reviewed graph and the
+		// pre-delete identity re-HEAD.
+		if method == "GET" && strings.HasSuffix(path, "/media/swap.slo") && !swapped {
+			swapped = true
+			h.mock.PutObject("media", "swap.slo", swifttest.Object{Bytes: 10, ETag: "etag-replacement", SLO: true, SLOManifestJSON: replacement, ContentType: "text/plain"})
+		}
+	}
+	defer func() { h.mock.AfterRequest = nil }()
+
+	_, err := service.DeleteManifestWithSegments(ctx, SegmentsDeleteRequestDTO{
+		BookmarkID: bookmark, Container: "media", Name: "swap.slo", Confirm: "swap.slo", Force: true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "changed since") {
+		t.Fatalf("swapped manifest delete = %v, want identity refusal", err)
+	}
+	session := h.transfer.connections.sessions[bookmark]
+	if _, err := session.ObjectDetail(ctx, "media", "swap.slo"); err != nil {
+		t.Fatal("the replacement manifest was deleted despite the refusal")
+	}
+	if _, err := session.ObjectDetail(ctx, "parts", "job/cc/000001"); err != nil {
+		t.Fatal("old-graph segments were deleted despite the refusal")
+	}
+}
+
+func TestDeletePartialAfterIrreversibleSubset(t *testing.T) {
+	// F-10 / Grok P1: a prefix delete that removes some objects and then
+	// fails must end PARTIAL with the exact count — not a plain Failed
+	// that erases the fact that data is already gone. The mock fails
+	// deletes after the first batch lands.
+	h, service, bookmark := deleteHarness(t)
+	ctx := context.Background()
+	h.mock.AddContainer("media", "standard")
+	for i := 0; i < 20; i++ {
+		seedObject(h.mock, "media", fmt.Sprintf("doomed/obj-%03d", i), "x", nil)
+	}
+	// Delete a handful, then start failing: some objects are
+	// irreversibly gone when the error surfaces.
+	// Five objects delete, then every further delete fails per-item:
+	// an irreversible subset is gone when the error surfaces.
+	h.mock.FailDeletesAfter = 5
+	defer func() { h.mock.FailDeletesAfter = 0 }()
+
+	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{
+		BookmarkID: bookmark, Container: "media", Prefix: "doomed/", Mode: ModePrefix, Confirm: "media",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, h, jobID)
+	if job.State != "partial" {
+		t.Fatalf("state = %s, want partial (some objects were deleted before the failure)", job.State)
+	}
+	if job.Counters.ObjectsCopied == 0 {
+		t.Fatal("partial delete reported zero deletions")
+	}
+}
+
+func TestProvenSegmentsStillNeedForce(t *testing.T) {
+	// R-02 containment: even a PROVEN prefix must not auto-delete —
+	// segment deletion is force-only until the live reference scan
+	// exists, so a stale/shared evidence row cannot nuke shared data.
+	h, service, bookmark := deleteHarness(t)
+	ctx := context.Background()
+	h.mock.AddContainer("media", "standard")
+	h.mock.AddContainer("parts", "standard")
+	seedObject(h.mock, "parts", "job/pp/000001", "0123456789", nil)
+	manifest := `[{"name":"/parts/job/pp/000001","hash":"h1","bytes":10}]`
+	h.mock.PutObject("media", "proven.slo", swifttest.Object{Bytes: 10, ETag: "e1", SLO: true, SLOManifestJSON: manifest, ContentType: "application/octet-stream"})
+	if err := h.evidence.RecordOwnership(ctx, bookmark, "job-p", "parts", "job/pp/"); err != nil {
+		t.Fatal(err)
+	}
+	status, err := service.CheckSegmentOwnership(ctx, SegmentsDeleteRequestDTO{BookmarkID: bookmark, Container: "media", Name: "proven.slo"})
+	if err != nil || !status.Proven {
+		t.Fatalf("status = %+v %v, want proven", status, err)
+	}
+	// Proven, but no force → refused; the manifest survives.
+	if _, err := service.DeleteManifestWithSegments(ctx, SegmentsDeleteRequestDTO{
+		BookmarkID: bookmark, Container: "media", Name: "proven.slo", Confirm: "proven.slo",
+	}); err == nil || !strings.Contains(err.Error(), "Backstage force") {
+		t.Fatalf("proven-without-force = %v, want force-required refusal", err)
+	}
+	session := h.transfer.connections.sessions[bookmark]
+	if _, err := session.ObjectDetail(ctx, "media", "proven.slo"); err != nil {
+		t.Fatal("proven-without-force refusal still deleted the manifest")
 	}
 }

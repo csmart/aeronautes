@@ -170,6 +170,8 @@ func toObjectDetailDTO(d *swiftcontrol.ObjectDetail) ObjectDetailDTO {
 		ETag:                d.ETag,
 		LastModified:        d.LastModified.UTC().Format(time.RFC3339),
 		Manifest:            d.Manifest,
+		FollowedSymlink:     d.FollowedSymlink,
+		SymlinkTarget:       d.SymlinkTarget,
 		Meta:                d.Meta,
 		RawHeaders:          d.RawHeaders,
 		TransID:             d.TransID,

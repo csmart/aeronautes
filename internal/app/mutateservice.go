@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/csmart/aeronautes/internal/audit"
@@ -74,6 +75,24 @@ func (s *MutateService) UpdateContainer(ctx context.Context, name, baseFingerpri
 	session, err := s.connections.Session()
 	if err != nil {
 		return MutationResultDTO{}, err
+	}
+	// A world-readable ACL is a public-exposure decision requiring an
+	// explicit acknowledgement. This guards against an operator
+	// ACCIDENT (an omitted checkbox); it is NOT a hostile-webview
+	// control, since a compromised page can supply ackPublic itself —
+	// closing that requires a server-issued one-shot capability, which
+	// is §65.10 / R-12. Documented honestly rather than overclaimed.
+	if grantsPublicRead(edit.ReadACL) && !edit.AckPublic {
+		return MutationResultDTO{}, fmt.Errorf(
+			"read ACL %q makes %s publicly readable: set ackPublic to confirm the exposure", edit.ReadACL, name)
+	}
+	// Modern object versioning (X-Versions-Enabled) has no safe editable
+	// representation in v1; refuse to rewrite such a container into a
+	// legacy location shape (grok follow-up 3, §65.10 tracks the path).
+	if current := s.currentVersioningMode(ctx, name); current == swiftcontrol.VersioningEnabled &&
+		swiftcontrol.VersioningMode(edit.VersioningMode) != swiftcontrol.VersioningEnabled {
+		return MutationResultDTO{}, fmt.Errorf(
+			"%s uses modern object versioning, which v1 cannot edit safely — manage it with swift/CLI", name)
 	}
 	adapterEdit := swiftcontrol.ContainerEdit{
 		Meta:     edit.Meta,
@@ -296,4 +315,29 @@ func (s *MutateService) DeleteManifest(ctx context.Context, container, name stri
 	}
 	s.record(ctx, "manifest.delete", resource, summary, audit.ResultApplied, []string{before.TransID})
 	return toObjectDetailDTO(before), nil
+}
+
+// grantsPublicRead reports whether a read ACL opens the container to
+// the world (.r:* referrer grant, in any comma position).
+func grantsPublicRead(acl string) bool {
+	for _, part := range strings.Split(acl, ",") {
+		if strings.TrimSpace(part) == ".r:*" {
+			return true
+		}
+	}
+	return false
+}
+
+// currentVersioningMode reads the live container's versioning mode, or
+// "" when it cannot be resolved (the caller treats unknown as editable).
+func (s *MutateService) currentVersioningMode(ctx context.Context, name string) swiftcontrol.VersioningMode {
+	session, err := s.connections.Session()
+	if err != nil {
+		return ""
+	}
+	detail, err := session.ContainerDetail(ctx, name)
+	if err != nil {
+		return ""
+	}
+	return detail.Versioning.Mode
 }

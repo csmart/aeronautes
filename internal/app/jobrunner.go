@@ -15,10 +15,13 @@ import (
 type jobRunner struct {
 	jobs  *jobs.Store
 	audit *audit.Store
-
-	mu      sync.Mutex
-	slots   chan struct{}
-	cancels map[string]context.CancelFunc
+	mu    sync.Mutex
+	// active/capacity are the §38 admission budget; slotFreed wakes
+	// queued launches on release, resize, or queued-cancel.
+	active    int
+	capacity  int
+	slotFreed *sync.Cond
+	cancels   map[string]context.CancelFunc
 }
 
 // NewJobRunner is the exported constructor for the shell (main.go).
@@ -27,21 +30,28 @@ func NewJobRunner(jobStore *jobs.Store, auditStore *audit.Store) *jobRunner {
 }
 
 func newJobRunner(jobStore *jobs.Store, auditStore *audit.Store) *jobRunner {
-	return &jobRunner{
-		jobs:    jobStore,
-		audit:   auditStore,
-		slots:   make(chan struct{}, defaultMaxActiveJobs),
-		cancels: map[string]context.CancelFunc{},
+	r := &jobRunner{
+		jobs:     jobStore,
+		audit:    auditStore,
+		capacity: defaultMaxActiveJobs,
+		cancels:  map[string]context.CancelFunc{},
 	}
+	r.slotFreed = sync.NewCond(&r.mu)
+	return r
 }
 
+// setMaxActiveJobs resizes the §38 ceiling. The budget is a COUNT, not
+// a swapped channel (review G24/H-16): running jobs stay accounted, a
+// lowered ceiling admits nothing until enough of them finish, and a
+// raised one wakes queued jobs immediately.
 func (r *jobRunner) setMaxActiveJobs(n int) {
 	if n <= 0 {
 		n = defaultMaxActiveJobs
 	}
 	r.mu.Lock()
-	r.slots = make(chan struct{}, n)
+	r.capacity = n
 	r.mu.Unlock()
+	r.slotFreed.Broadcast()
 }
 
 func (r *jobRunner) register(jobID string, cancel context.CancelFunc) {
@@ -67,22 +77,45 @@ func (r *jobRunner) cancel(jobID string) (context.CancelFunc, bool) {
 // until a slot frees; cancellation while queued is honoured without
 // ever starting.
 func (r *jobRunner) launch(ctx context.Context, jobID, bookmarkID string, body func(ctx context.Context)) {
-	r.mu.Lock()
-	slots := r.slots
-	r.mu.Unlock()
 	go func() {
 		background := context.WithoutCancel(ctx)
-		select {
-		case slots <- struct{}{}:
-		case <-ctx.Done():
+		if !r.acquireSlot(ctx) {
 			_ = r.jobs.Transition(background, jobID, jobs.StateCancelled)
 			r.record(background, bookmarkID, "transfer.cancelled-queued", "job "+jobID, "cancelled before a job slot freed", audit.ResultApplied)
 			r.release(jobID)
 			return
 		}
-		defer func() { <-slots }()
+		defer r.releaseSlot()
 		body(ctx)
 	}()
+}
+
+// acquireSlot blocks until the active count is under the ceiling or the
+// context dies; false means cancelled-while-queued.
+func (r *jobRunner) acquireSlot(ctx context.Context) bool {
+	// A context watcher pokes the cond so a queued cancellation wakes.
+	stop := context.AfterFunc(ctx, func() { r.slotFreed.Broadcast() })
+	defer stop()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for r.active >= r.capacity {
+		if ctx.Err() != nil {
+			return false
+		}
+		r.slotFreed.Wait()
+	}
+	if ctx.Err() != nil {
+		return false
+	}
+	r.active++
+	return true
+}
+
+func (r *jobRunner) releaseSlot() {
+	r.mu.Lock()
+	r.active--
+	r.mu.Unlock()
+	r.slotFreed.Broadcast()
 }
 
 func (r *jobRunner) record(ctx context.Context, bookmarkID, operation, resource, summary string, result audit.Result) {
