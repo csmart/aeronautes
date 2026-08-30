@@ -6,6 +6,8 @@ package swiftcontrol
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"sync"
 	"time"
 
@@ -34,6 +36,14 @@ type Config struct {
 // account. It is safe for concurrent use after Authenticate.
 type Session struct {
 	conn *swift.Connection
+	// auth is the v1 authenticator preset on conn — the source of the
+	// atomic credential snapshot Session reads (review R-06).
+	auth *v1Auth
+	// raw serves the requests the wire library has no verb for (bulk
+	// delete): the SAME bookmark transport (custom CA / insecure), no
+	// redirect following (a redirect would resend X-Auth-Token wherever
+	// it pointed), and a ceiling instead of an unbounded hang.
+	raw *http.Client
 
 	// refreshMu single-flights explicit refreshes; authedAt is the last
 	// EXPLICIT authentication (the wire library's own 401-driven re-auth
@@ -52,7 +62,22 @@ func New(cfg Config) (*Session, error) {
 		return nil, err
 	}
 	const userAgent = "aeronautes"
+	auth := &v1Auth{
+		authURL:   cfg.AuthURL,
+		username:  cfg.Username,
+		apiKey:    cfg.APIKey,
+		userAgent: userAgent,
+		override:  cfg.StorageURLOverride,
+	}
 	return &Session{
+		auth: auth,
+		raw: &http.Client{
+			Transport: transport,
+			Timeout:   10 * time.Minute,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return errors.New("redirect refused: native Swift calls never follow one (the token must not travel)")
+			},
+		},
 		conn: &swift.Connection{
 			AuthUrl:     cfg.AuthURL,
 			UserName:    cfg.Username,
@@ -60,13 +85,7 @@ func New(cfg Config) (*Session, error) {
 			AuthVersion: 1,
 			UserAgent:   userAgent,
 			Transport:   transport,
-			Auth: &v1Auth{
-				authURL:   cfg.AuthURL,
-				username:  cfg.Username,
-				apiKey:    cfg.APIKey,
-				userAgent: userAgent,
-				override:  cfg.StorageURLOverride,
-			},
+			Auth:        auth,
 		},
 	}, nil
 }
@@ -94,7 +113,7 @@ func (s *Session) Authenticate(ctx context.Context) error {
 func (s *Session) RefreshIfStale(ctx context.Context, margin time.Duration) error {
 	s.refreshMu.Lock()
 	defer s.refreshMu.Unlock()
-	expires := s.conn.Expires
+	expires := s.auth.snapshot().expires
 	stale := false
 	if !expires.IsZero() {
 		stale = time.Until(expires) < margin
@@ -114,19 +133,30 @@ func (s *Session) RefreshIfStale(ctx context.Context, margin time.Duration) erro
 // StorageURL returns the storage URL in effect (override included), or ""
 // before authentication.
 func (s *Session) StorageURL() string {
-	return s.conn.StorageUrl
+	return s.auth.snapshot().storageURL
 }
 
 // TokenExpires returns when the current token expires, or the zero time
 // when the auth backend does not say (§26.2 falls through its priority
 // order: configured per-bookmark lifetime, then failure-driven reauth).
 func (s *Session) TokenExpires() time.Time {
-	return s.conn.Expires
+	return s.auth.snapshot().expires
 }
 
 // AuthToken returns the current auth token — for handing to the rclone
 // child's environment (§26.2) ONLY. It must never cross the frontend
 // bridge or reach a log or database (K-SEC-002/003).
 func (s *Session) AuthToken() string {
-	return s.conn.AuthToken
+	return s.auth.snapshot().token
+}
+
+// ForceReauth invalidates the current token so the NEXT RefreshIfStale
+// (every engine spawn does one) performs a real authentication — the
+// retry after an observed 401 must never replay the rejected token
+// (review F-06).
+func (s *Session) ForceReauth() {
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+	s.conn.UnAuthenticate()
+	s.authedAt = time.Time{}
 }

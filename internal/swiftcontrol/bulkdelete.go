@@ -30,21 +30,33 @@ func (s *Session) BulkDelete(ctx context.Context, container string, names []stri
 	for _, name := range names {
 		body.WriteString("/" + url.PathEscape(container) + "/" + escapeObjectPath(name) + "\n")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		s.conn.StorageUrl+"?bulk-delete", strings.NewReader(body.String()))
-	if err != nil {
-		return nil, err
+	// The session's own client (bookmark transport, refused redirects,
+	// bounded time) with ONE re-auth on 401 — the lifecycle the wire
+	// library gives every other verb.
+	send := func() (*http.Response, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+			s.conn.StorageUrl+"?bulk-delete", strings.NewReader(body.String()))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("X-Auth-Token", s.conn.AuthToken)
+		req.Header.Set("Content-Type", "text/plain")
+		req.Header.Set("Accept", "application/json")
+		return s.raw.Do(req)
 	}
-	req.Header.Set("X-Auth-Token", s.conn.AuthToken)
-	req.Header.Set("Content-Type", "text/plain")
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := send()
+	if err == nil && resp.StatusCode == http.StatusUnauthorized {
+		resp.Body.Close()
+		if authErr := s.Authenticate(ctx); authErr != nil {
+			return nil, authErr
+		}
+		resp, err = send()
+	}
 	if err != nil {
 		return nil, Normalize(err)
 	}
 	defer resp.Body.Close()
-	payload, err := io.ReadAll(resp.Body)
+	payload, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
 		return nil, Normalize(err)
 	}
@@ -74,6 +86,12 @@ func (s *Session) BulkDelete(ctx context.Context, container string, names []stri
 	if !strings.HasPrefix(decoded.ResponseStatus, "200") && len(decoded.Errors) == 0 {
 		return result, fmt.Errorf("bulk-delete: %s", decoded.ResponseStatus)
 	}
+	// Cardinality must reconcile: every requested name is deleted, not
+	// found, or individually errored — an undercounted 200 cannot pass
+	// as success (K-DEL-002).
+	if accounted := result.Deleted + result.NotFound + int64(len(result.Errors)); accounted != int64(len(names)) {
+		return result, fmt.Errorf("bulk-delete response accounts for %d of %d requested names — treating the difference as failed", accounted, len(names))
+	}
 	return result, nil
 }
 
@@ -92,47 +110,4 @@ func escapeObjectPath(name string) string {
 // this; Swift answers 409 while contents remain).
 func (s *Session) DeleteContainer(ctx context.Context, name string) error {
 	return Normalize(s.conn.ContainerDelete(ctx, name))
-}
-
-// DeleteSLOWithSegments issues Swift's native SLO deletion
-// (?multipart-manifest=delete): the server deletes the manifest AND
-// every referenced segment. This is §34's fast path and it is exactly
-// as destructive as it sounds — callers gate it behind
-// ExclusiveOwnershipProof or the deliberate Backstage flow; this
-// method only does the wire work.
-func (s *Session) DeleteSLOWithSegments(ctx context.Context, container, name string) (*BulkDeleteResult, error) {
-	target := s.conn.StorageUrl + "/" + url.PathEscape(container) + "/" + escapeObjectPath(name) + "?multipart-manifest=delete"
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, target, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("X-Auth-Token", s.conn.AuthToken)
-	req.Header.Set("Accept", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, Normalize(err)
-	}
-	defer resp.Body.Close()
-	payload, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, Normalize(err)
-	}
-	if resp.StatusCode >= 300 {
-		return nil, &SwiftError{Kind: KindServer, HTTPStatus: resp.StatusCode,
-			Message: fmt.Sprintf("slo delete: %s", strings.TrimSpace(string(payload)))}
-	}
-	var decoded struct {
-		NumberDeleted  int64       `json:"Number Deleted"`
-		NumberNotFound int64       `json:"Number Not Found"`
-		ResponseStatus string      `json:"Response Status"`
-		Errors         [][2]string `json:"Errors"`
-	}
-	if err := json.Unmarshal(payload, &decoded); err != nil {
-		return nil, fmt.Errorf("slo delete response: %w", err)
-	}
-	result := &BulkDeleteResult{Deleted: decoded.NumberDeleted, NotFound: decoded.NumberNotFound, Errors: decoded.Errors}
-	if !strings.HasPrefix(decoded.ResponseStatus, "200") && len(decoded.Errors) == 0 {
-		return result, fmt.Errorf("slo delete: %s", decoded.ResponseStatus)
-	}
-	return result, nil
 }
