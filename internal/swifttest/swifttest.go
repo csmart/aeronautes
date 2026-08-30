@@ -38,6 +38,12 @@ type Object struct {
 	SLOManifestJSON string
 	// Meta becomes X-Object-Meta-<key> headers on HEAD responses.
 	Meta map[string]string
+	// SymlinkTarget makes the object a Swift symlink ("container/name");
+	// plain HEAD/GET follow it (with Content-Location), ?symlink=get
+	// addresses the link itself.
+	SymlinkTarget string
+	// SymlinkTargetAccount is the optional cross-account half.
+	SymlinkTargetAccount string
 	// DeleteAt sets X-Delete-At (unix seconds) when non-zero.
 	DeleteAt int64
 	// Data is the stored body, served on GET (fixtures may omit it and
@@ -74,6 +80,23 @@ const defaultInfoJSON = `{
 
 // Server is the mock cluster; it implements http.Handler.
 type Server struct {
+	// FailDeletes makes every object DELETE answer 500 — the exact-
+	// accounting fixtures' knob.
+	FailDeletes bool
+	// FailDeletesAfter, when > 0, deletes succeed until this many have
+	// landed, then every further delete fails — an exact
+	// irreversible-subset-then-fail fixture within a single bulk batch.
+	FailDeletesAfter int
+	deletesDone      int
+	// AfterRequest, when set, runs AFTER each request's response is
+	// written — the barrier-test hook for planting a concurrent writer
+	// at an exact protocol point.
+	AfterRequest func(method, path string)
+	// DisableBulkDelete makes ?bulk-delete answer 404 so the deletion
+	// engine falls to the parallel single-DELETE path.
+	DisableBulkDelete bool
+	requestLog        []string
+
 	user  string
 	key   string
 	token string
@@ -129,6 +152,14 @@ func (s *Server) Requests() int {
 	return s.requests
 }
 
+// RequestLog returns every storage request as "METHOD path?query" —
+// the wire-truth oracle for tests asserting what was (never) sent.
+func (s *Server) RequestLog() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.requestLog...)
+}
+
 const accountPath = "/v1/AUTH_test"
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -153,11 +184,20 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.Lock()
 	s.requests++
+	s.requestLog = append(s.requestLog, r.Method+" "+r.URL.Path+querySuffix(r))
+	after := s.AfterRequest
 	s.mu.Unlock()
+	if after != nil {
+		defer after(r.Method, r.URL.Path)
+	}
 
 	switch {
 	case ep == accountPath:
 		if r.Method == http.MethodPost && r.URL.Query().Has("bulk-delete") {
+			if s.DisableBulkDelete {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
 			s.handleBulkDelete(w, r)
 			return
 		}
@@ -410,13 +450,23 @@ func (s *Server) putObject(w http.ResponseWriter, r *http.Request, container, na
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
+	if r.Header.Get("If-None-Match") == "*" {
+		// Conditional create, as measured on real Swift: 412 when the
+		// name exists, first writer wins.
+		if _, exists := c.objects[name]; exists {
+			w.WriteHeader(http.StatusPreconditionFailed)
+			return
+		}
+	}
 	o := Object{
-		Bytes:       int64(len(body)),
-		ETag:        hex.EncodeToString(sum[:]),
-		ContentType: r.Header.Get("Content-Type"),
-		Manifest:    r.Header.Get("X-Object-Manifest"),
-		Meta:        objectMetaFromHeaders(r),
-		Data:        body,
+		Bytes:                int64(len(body)),
+		ETag:                 hex.EncodeToString(sum[:]),
+		ContentType:          r.Header.Get("Content-Type"),
+		Manifest:             r.Header.Get("X-Object-Manifest"),
+		SymlinkTarget:        symlinkTargetHeader(r),
+		SymlinkTargetAccount: r.Header.Get("X-Symlink-Target-Account"),
+		Meta:                 objectMetaFromHeaders(r),
+		Data:                 body,
 	}
 	if o.ContentType == "" {
 		o.ContentType = "application/octet-stream"
@@ -439,6 +489,17 @@ func (s *Server) putObject(w http.ResponseWriter, r *http.Request, container, na
 // survives untouched.
 func (s *Server) postObject(w http.ResponseWriter, r *http.Request, container, name string) {
 	s.mu.Lock()
+	if c0, ok0 := s.containers[container]; ok0 {
+		if o0, ok1 := c0.objects[name]; ok1 && o0.SymlinkTarget != "" && r.URL.Query().Get("symlink") != "get" {
+			// Measured on real Swift: the POST applies to the LINK's
+			// metadata and the response is 307 toward the target.
+			o0.Meta = objectMetaFromHeaders(r)
+			c0.objects[name] = o0
+			s.mu.Unlock()
+			w.WriteHeader(http.StatusTemporaryRedirect)
+			return
+		}
+	}
 	defer s.mu.Unlock()
 	c, ok := s.containers[container]
 	var o Object
@@ -516,8 +577,15 @@ func (s *Server) handleBulkDelete(w http.ResponseWriter, r *http.Request) {
 			notFound++
 			continue
 		}
+		if s.FailDeletes || (s.FailDeletesAfter > 0 && s.deletesDone >= s.FailDeletesAfter) {
+			// Per-item failure, as the real middleware reports: the
+			// object stays and the caller sees an exact error row.
+			errorsList = append(errorsList, [2]string{line, "500 Internal Server Error"})
+			continue
+		}
 		delete(c.objects, name)
 		deleted++
+		s.deletesDone++
 	}
 	s.mu.Unlock()
 
@@ -642,6 +710,10 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request, container,
 		s.postObject(w, r, container, name)
 		return
 	case http.MethodDelete:
+		if s.FailDeletes {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 		if r.URL.Query().Get("multipart-manifest") == "delete" {
 			s.deleteSLOWithSegments(w, container, name)
 			return
@@ -658,6 +730,24 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request, container,
 	var o Object
 	if ok {
 		o, ok = c.objects[name]
+	}
+	followed := ""
+	if ok && o.SymlinkTarget != "" && r.URL.Query().Get("symlink") != "get" && o.SymlinkTargetAccount == "" {
+		// Follow the link (same-account only in the mock): the response
+		// is the TARGET's, plus Content-Location naming the link chase.
+		if slash := strings.Index(o.SymlinkTarget, "/"); slash > 0 {
+			tc, tcOK := s.containers[o.SymlinkTarget[:slash]]
+			if tcOK {
+				if target, tOK := tc.objects[o.SymlinkTarget[slash+1:]]; tOK {
+					followed = "/v1/AUTH_test/" + o.SymlinkTarget
+					o, ok = target, true
+				} else {
+					s.mu.Unlock()
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+			}
+		}
 	}
 	length := o.Bytes
 	var logical []byte
@@ -709,6 +799,15 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request, container,
 	}
 	if o.SLO {
 		h.Set("X-Static-Large-Object", "True")
+	}
+	if followed != "" {
+		h.Set("Content-Location", followed)
+	}
+	if o.SymlinkTarget != "" && (r.URL.Query().Get("symlink") == "get" || o.SymlinkTargetAccount != "") {
+		h.Set("X-Symlink-Target", o.SymlinkTarget)
+		if o.SymlinkTargetAccount != "" {
+			h.Set("X-Symlink-Target-Account", o.SymlinkTargetAccount)
+		}
 	}
 	for k, v := range o.Meta {
 		h.Set("X-Object-Meta-"+k, v)
@@ -827,4 +926,22 @@ func (s *Server) copyObject(w http.ResponseWriter, r *http.Request, container, n
 	dc.objects[dstName] = dst
 	w.Header().Set("X-Copied-From", container+"/"+name)
 	w.WriteHeader(http.StatusCreated)
+}
+
+// symlinkTargetHeader mimics real Swift's measured behavior: a
+// leading-slash X-Symlink-Target is IGNORED (the PUT stores a plain
+// object), only the bare container/object form creates a link.
+func symlinkTargetHeader(r *http.Request) string {
+	v := r.Header.Get("X-Symlink-Target")
+	if v == "" || strings.HasPrefix(v, "/") {
+		return ""
+	}
+	return v
+}
+
+func querySuffix(r *http.Request) string {
+	if r.URL.RawQuery == "" {
+		return ""
+	}
+	return "?" + r.URL.RawQuery
 }

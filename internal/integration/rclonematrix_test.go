@@ -29,7 +29,7 @@ func TestRcloneMatrix(t *testing.T) {
 	}
 	h := harness(t)
 	if h.Session2() == nil {
-		t.Skip("no second account on this cluster")
+		skipOrFailSecondAccount(t)
 	}
 	ctx := context.Background()
 	report := func(key string, format string, args ...any) {
@@ -77,19 +77,19 @@ func TestRcloneMatrix(t *testing.T) {
 	result, err := runner.Copy(ctx, []rclone.Remote{
 		{Name: "aeronautes_src", StorageURL: h.conn.StorageUrl, Token: h.conn.AuthToken},
 		{Name: "aeronautes_dst", StorageURL: h.Conn2().StorageUrl, Token: h.Conn2().AuthToken},
-	}, "aeronautes_src:"+src, "aeronautes_dst:"+dst, listable, nil)
+	}, "aeronautes_src:"+src, "aeronautes_dst:"+dst+"/.aeronautes/stage/it-matrix/batch", listable, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	report("encoding.exit", "%d (errors reported: %d)", result.ExitCode, len(result.Errors))
 
 	arrived := map[string]bool{}
-	for entry, err := range h.Session2().Objects(ctx, dst, swiftcontrol.ObjectListOptions{Deep: true}) {
+	for entry, err := range h.Session2().Objects(ctx, dst, swiftcontrol.ObjectListOptions{Deep: true, Prefix: ".aeronautes/stage/it-matrix/batch/"}) {
 		if err != nil {
 			t.Fatal(err)
 		}
 		if object, ok := entry.(swiftcontrol.ObjectEntry); ok {
-			arrived[object.Name] = true
+			arrived[strings.TrimPrefix(object.Name, ".aeronautes/stage/it-matrix/batch/")] = true
 		}
 	}
 	var exact, missing []string
@@ -125,11 +125,11 @@ func TestRcloneMatrix(t *testing.T) {
 	result, err = runner.Copy(ctx, []rclone.Remote{
 		{Name: "aeronautes_src", StorageURL: h.conn.StorageUrl, Token: h.conn.AuthToken},
 		{Name: "aeronautes_dst", StorageURL: h.Conn2().StorageUrl, Token: h.Conn2().AuthToken},
-	}, "aeronautes_src:"+src, "aeronautes_dst:"+dst, []string{"matrix-big.bin"}, nil)
+	}, "aeronautes_src:"+src, "aeronautes_dst:"+dst+"/.aeronautes/stage/it-matrixbig/batch", []string{"matrix-big.bin"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	d, err := h.Session2().ObjectDetail(ctx, dst, "matrix-big.bin")
+	d, err := h.Session2().ObjectDetail(ctx, dst, ".aeronautes/stage/it-matrixbig/batch/matrix-big.bin")
 	if err != nil {
 		report("large.result", "MISSING after copy (exit %d)", result.ExitCode)
 	} else {

@@ -648,7 +648,7 @@ func TestRcloneRunnerRealSwift(t *testing.T) {
 	}
 	h := harness(t)
 	if h.Conn2() == nil {
-		t.Skip("no second account on this cluster")
+		skipOrFailSecondAccount(t)
 	}
 	ctx := context.Background()
 
@@ -682,8 +682,9 @@ func TestRcloneRunnerRealSwift(t *testing.T) {
 		{Name: "aeronautes_src", StorageURL: h.conn.StorageUrl, Token: h.conn.AuthToken},
 		{Name: "aeronautes_dst", StorageURL: h.Conn2().StorageUrl, Token: h.Conn2().AuthToken},
 	}
+	// The runner's own policy: writes land in a staging namespace.
 	result, err := runner.Copy(ctx, remotes,
-		"aeronautes_src:"+srcName, "aeronautes_dst:"+dstName,
+		"aeronautes_src:"+srcName, "aeronautes_dst:"+dstName+"/.aeronautes/stage/it-runner/batch",
 		[]string{"runner/big.bin", "runner/small.txt"}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -709,12 +710,12 @@ func TestRcloneRunnerRealSwift(t *testing.T) {
 	}
 
 	// Both objects landed with the right sizes.
-	obj, _, err := h.Conn2().Object(ctx, dstName, "runner/big.bin")
+	obj, _, err := h.Conn2().Object(ctx, dstName, ".aeronautes/stage/it-runner/batch/runner/big.bin")
 	if err != nil || obj.Bytes != int64(len(big)) {
-		t.Errorf("big.bin at dest: %v bytes=%d", err, obj.Bytes)
+		t.Errorf("big.bin at staged dest: %v bytes=%d", err, obj.Bytes)
 	}
-	if _, _, err := h.Conn2().Object(ctx, dstName, "runner/small.txt"); err != nil {
-		t.Errorf("small.txt at dest: %v", err)
+	if _, _, err := h.Conn2().Object(ctx, dstName, ".aeronautes/stage/it-runner/batch/runner/small.txt"); err != nil {
+		t.Errorf("small.txt at staged dest: %v", err)
 	}
 }
 
@@ -724,7 +725,7 @@ func TestRcloneRunnerRealSwift(t *testing.T) {
 func TestCopyPlannerRealSwift(t *testing.T) {
 	h := harness(t)
 	if h.Session2() == nil {
-		t.Skip("no second account on this cluster")
+		skipOrFailSecondAccount(t)
 	}
 	ctx := context.Background()
 
@@ -870,7 +871,7 @@ func TestCopyExecutorRealSwift(t *testing.T) {
 	}
 	h := harness(t)
 	if h.Session2() == nil {
-		t.Skip("no second account on this cluster")
+		skipOrFailSecondAccount(t)
 	}
 	ctx := context.Background()
 
@@ -1117,7 +1118,7 @@ func TestLocalTransferRealSwift(t *testing.T) {
 	if err != nil || preflight.Rejected() {
 		t.Fatalf("preflight: %v %+v", err, preflight)
 	}
-	report, err := localtransfer.Upload(ctx, h.Session, engine, "aeronautes_dst:"+container, container, "up/", preflight, nil)
+	report, err := localtransfer.Upload(ctx, h.Session, engine, "aeronautes_dst:"+container, container, "up/", "it-up-job", preflight, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1140,18 +1141,32 @@ func TestLocalTransferRealSwift(t *testing.T) {
 	srcEngine := transfercopy.BindRunner(runner, []rclone.Remote{
 		{Name: "aeronautes_src", StorageURL: h.conn.StorageUrl, Token: h.conn.AuthToken},
 	})
+	// The uploaded control-character name is legal IN Swift but outside
+	// the cross-platform materialization policy: the download preflight
+	// must reject the scope while it is present (§65.9 item 13, pinned
+	// on real Swift), and proceed once it is gone.
+	rejected, err := localtransfer.PreflightDownload(ctx, h.Session, container, "up/", destDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rejected.Rejected() {
+		t.Fatalf("control-character name did not reject the download: %+v", rejected)
+	}
+	if err := h.Session.DeleteObject(ctx, container, "up/line\nname"); err != nil {
+		t.Fatal(err)
+	}
 	downPre, err := localtransfer.PreflightDownload(ctx, h.Session, container, "up/", destDir)
 	if err != nil || downPre.Rejected() {
 		t.Fatalf("download preflight: %v %+v", err, downPre)
 	}
-	downReport, err := localtransfer.Download(ctx, h.Session, srcEngine, "aeronautes_src:"+container, container, "up/", destDir, downPre, nil)
+	downReport, err := localtransfer.Download(ctx, h.Session, srcEngine, "aeronautes_src:"+container, container, "up/", destDir, "it-down-job", downPre, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if downReport.Done != 3 || len(downReport.Failures) != 0 {
+	if downReport.Done != 2 || len(downReport.Failures) != 0 {
 		t.Fatalf("download report = %+v (failures %+v)", downReport, downReport.Failures)
 	}
-	for name, want := range map[string][]byte{"small.txt": []byte("small upload"), "big.bin": big, "line\nname": []byte("hostile upload")} {
+	for name, want := range map[string][]byte{"small.txt": []byte("small upload"), "big.bin": big} {
 		got, err := os.ReadFile(filepath.Join(destDir, name))
 		if err != nil || !bytes.Equal(got, want) {
 			t.Errorf("%q: err %v, %d bytes (want %d)", name, err, len(got), len(want))
@@ -1161,7 +1176,7 @@ func TestLocalTransferRealSwift(t *testing.T) {
 	// The encoding container carries dot-segment names: materializing it
 	// must be rejected COMPLETELY before any write (§27.5).
 	rejectDir := t.TempDir()
-	rejected, err := localtransfer.PreflightDownload(ctx, h.Session, h.Container("encoding"), "", rejectDir)
+	rejected, err = localtransfer.PreflightDownload(ctx, h.Session, h.Container("encoding"), "", rejectDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1324,15 +1339,38 @@ func TestSLOSegmentsDeleteRealSwift(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := h.Session.DeleteSLOWithSegments(ctx, manifests, "doomed.slo")
+	// The product path (§65.9 item 7): fetch the graph, delete the
+	// manifest with a plain DELETE (manifest-only on real Swift), then
+	// delete exactly the fetched identities natively — never the
+	// recursive ?multipart-manifest=delete, whose target is whatever
+	// occupies the live name at execution time.
+	graph, err := h.Session.SLOManifest(ctx, manifests, "doomed.slo")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Deleted != 4 || len(result.Errors) != 0 { // 3 segments + manifest
-		t.Fatalf("result = %+v", result)
+	if err := h.Session.DeleteObject(ctx, manifests, "doomed.slo"); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := h.Session.ObjectDetail(ctx, manifests, "doomed.slo"); !swiftcontrol.IsNotFound(err) {
 		t.Fatalf("manifest survived: %v", err)
+	}
+	// Plain DELETE was manifest-only: the segments are still there.
+	if _, err := h.Session.ObjectDetail(ctx, parts, "doomed/part-01"); err != nil {
+		t.Fatalf("plain DELETE followed segments on real Swift: %v", err)
+	}
+	deleted := 0
+	for _, entry := range graph.Entries {
+		segment, ok := entry.(swiftcontrol.ObjectSegment)
+		if !ok {
+			t.Fatalf("unexpected entry shape %T", entry)
+		}
+		if err := h.Session.DeleteObject(ctx, segment.Path.Container, segment.Path.Object); err != nil {
+			t.Fatal(err)
+		}
+		deleted++
+	}
+	if deleted != 3 {
+		t.Fatalf("deleted %d segments, want 3", deleted)
 	}
 	for i := 1; i <= 3; i++ {
 		if _, err := h.Session.ObjectDetail(ctx, parts, fmt.Sprintf("doomed/part-%02d", i)); !swiftcontrol.IsNotFound(err) {
@@ -1356,7 +1394,7 @@ func TestMirrorAcceptanceRealSwift(t *testing.T) {
 	}
 	h := harness(t)
 	if h.Session2() == nil {
-		t.Skip("no second account on this cluster")
+		skipOrFailSecondAccount(t)
 	}
 	ctx := context.Background()
 	capabilities, err := h.Session2().FetchCapabilities(ctx)
@@ -1519,7 +1557,7 @@ func TestBenchmarkRealSwift(t *testing.T) {
 	jobStore := jobs.NewStore(d)
 	runner := app.NewJobRunner(jobStore, audit.NewStore(d))
 	service := app.NewBenchmarkService(connections, jobStore, runner, d)
-	service.SetScale(40, []int{2, 8})
+	app.BenchmarkScale(service, 40, []int{2, 8})
 
 	account := "AUTH_" + strings.SplitN(envOr("AERONAUTES_SAIO_USER", "test:tester"), ":", 2)[0]
 	jobID, err := service.StartBenchmark(ctx, app.BenchmarkRequestDTO{BookmarkID: saved.ID, Confirm: account})
@@ -1648,14 +1686,14 @@ func TestTLSRealSwift(t *testing.T) {
 		{Name: "aeronautes_src", StorageURL: caSession.StorageURL(), Token: caSession.AuthToken(), CACertFile: caFile},
 		{Name: "aeronautes_dst", StorageURL: caSession.StorageURL(), Token: caSession.AuthToken(), CACertFile: caFile},
 	}
-	result, err := runner.Copy(ctx, remotes, "aeronautes_src:"+src, "aeronautes_dst:"+dst, []string{"hello.txt"}, nil)
+	result, err := runner.Copy(ctx, remotes, "aeronautes_src:"+src, "aeronautes_dst:"+dst+"/.aeronautes/stage/it-tls/batch", []string{"hello.txt"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if result.ExitCode != 0 || len(result.Errors) != 0 {
 		t.Fatalf("rclone over TLS: exit %d errors %v", result.ExitCode, result.Errors)
 	}
-	d, err := caSession.ObjectDetail(ctx, dst, "hello.txt")
+	d, err := caSession.ObjectDetail(ctx, dst, ".aeronautes/stage/it-tls/batch/hello.txt")
 	if err != nil || d.ContentLength != 9 {
 		t.Fatalf("copied object: %+v %v", d, err)
 	}
@@ -1669,7 +1707,7 @@ func TestTLSRealSwift(t *testing.T) {
 	untrusted, err := runner.Copy(ctx, []rclone.Remote{
 		{Name: "aeronautes_src", StorageURL: caSession.StorageURL(), Token: caSession.AuthToken(), CACertFile: caFile},
 		{Name: "aeronautes_dst", StorageURL: caSession.StorageURL(), Token: caSession.AuthToken()},
-	}, "aeronautes_src:"+src, "aeronautes_dst:"+dst, []string{"hello.txt"}, nil)
+	}, "aeronautes_src:"+src, "aeronautes_dst:"+dst+"/.aeronautes/stage/it-tls2/batch", []string{"hello.txt"}, nil)
 	if err == nil {
 		t.Fatalf("mixed trust in one child accepted: %+v", untrusted)
 	}
@@ -1689,7 +1727,7 @@ func TestTLSRealSwift(t *testing.T) {
 		{Name: "aeronautes_src", StorageURL: insecureSession.StorageURL(), Token: insecureSession.AuthToken(), InsecureTLS: true},
 		{Name: "aeronautes_dst", StorageURL: insecureSession.StorageURL(), Token: insecureSession.AuthToken(), InsecureTLS: true},
 	}
-	result, err = runner.Copy(ctx, insecureRemotes, "aeronautes_src:"+src, "aeronautes_dst:"+dst, []string{"hello.txt"}, nil)
+	result, err = runner.Copy(ctx, insecureRemotes, "aeronautes_src:"+src, "aeronautes_dst:"+dst+"/.aeronautes/stage/it-tls2/batch", []string{"hello.txt"}, nil)
 	if err != nil || result.ExitCode != 0 {
 		t.Fatalf("insecure rclone over TLS: %v %+v", err, result)
 	}
@@ -1777,7 +1815,7 @@ func TestVersionedOverwriteArchivesRealSwift(t *testing.T) {
 	}
 	h := harness(t)
 	if h.Session2() == nil {
-		t.Skip("no second account on this cluster")
+		skipOrFailSecondAccount(t)
 	}
 	ctx := context.Background()
 
@@ -1944,5 +1982,38 @@ func TestTokenRefreshAcrossSpawnsRealSwift(t *testing.T) {
 		if err != nil || d.ContentLength != int64(len("payload-"+name)) {
 			t.Fatalf("%s: %+v %v", name, d, err)
 		}
+	}
+}
+
+func TestSymlinkSemanticsRealSwift(t *testing.T) {
+	h := harness(t)
+	ctx := context.Background()
+	c := h.Container("symlink-lab")
+	if err := h.conn.ContainerCreate(ctx, c, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := h.put(ctx, c, "target.txt", []byte("real bytes"), "text/plain", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Session.PutObject(ctx, c, "link.txt", strings.NewReader(""), "text/plain",
+		map[string]string{"X-Symlink-Target": c + "/target.txt", "X-Object-Meta-Kind": "pointer"}); err != nil {
+		t.Fatal(err)
+	}
+	// A plain HEAD follows: target size, FollowedSymlink set.
+	followed, err := h.Session.ObjectDetail(ctx, c, "link.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !followed.FollowedSymlink || followed.ContentLength != int64(len("real bytes")) {
+		t.Fatalf("followed HEAD = %+v (middleware contract changed?)", followed)
+	}
+	// ?symlink=get addresses the link itself.
+	link, err := h.Session.SymlinkGet(ctx, c, "link.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if link.SymlinkTarget != c+"/target.txt" || link.Meta["Kind"] != "pointer" {
+		t.Fatalf("symlink=get = %+v", link)
 	}
 }

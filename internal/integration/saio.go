@@ -312,3 +312,20 @@ func (h *Harness) teardownAccount(ctx context.Context, conn *swift.Connection) {
 		}
 	}
 }
+
+// skipOrFailSecondAccount lets a laptop without the second SAIO account
+// skip cross-account scenarios — but REQUIRED CI sets
+// AERONAUTES_REQUIRE_TWO_ACCOUNTS=1 and a missing account is then a
+// FAILURE: skip-if-absent is how the advertised cross-account matrix
+// silently disappears (review F-16).
+func skipOrFailSecondAccount(t interface {
+	Skip(...any)
+	Fatal(...any)
+	Helper()
+}) {
+	t.Helper()
+	if os.Getenv("AERONAUTES_REQUIRE_TWO_ACCOUNTS") != "" {
+		t.Fatal("second SAIO account unavailable but AERONAUTES_REQUIRE_TWO_ACCOUNTS is set: the cross-account matrix MUST run in required CI")
+	}
+	t.Skip("no second account on this cluster")
+}
