@@ -210,6 +210,41 @@ jobs:
           name: badge-go
           path: badges/
 
+  # The headless release smoke (§65.8 item 6): the real binary under
+  # Xvfb against the in-repo mock cluster, ending in a real engine copy
+  # asserted server-side. A UI-breaking change cannot reach master
+  # green.
+  smoke:
+    name: Smoke — headless app against mock Swift
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: system deps (webview build + headless display + capture)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends             libgtk-4-dev libwebkitgtk-6.0-dev pkg-config             xvfb xdotool imagemagick unzip
+      - run: make tools
+      - run: make build
+      - name: pinned rclone on PATH
+        run: |
+          ./scripts/fetch-rclone.sh linux amd64 "$RUNNER_TEMP/rclone-pin"
+          echo "$RUNNER_TEMP/rclone-pin" >> "$GITHUB_PATH"
+      - run: ./scripts/smoke.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-artifacts
+          path: smoke-artifacts/
+          retention-days: 7
+
   badges:
     name: Commit coverage badges
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'

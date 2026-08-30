@@ -47,7 +47,7 @@ a fully static binary is not possible (see README).
 ## Release steps
 
 1. `make test` and `make test-integration` (SAIO running) are green.
-2. `scripts/smoke.sh` passes headless (release smoke, §65.6).
+2. `scripts/smoke.sh` passes headless — CI runs it on every push/PR too.
 3. Tag `vX.Y.Z` and push; CI produces the six unsigned artifacts.
 4. The §57.4 smoke against real SwiftStack infrastructure is a manual
    owner step before announcing anything.
