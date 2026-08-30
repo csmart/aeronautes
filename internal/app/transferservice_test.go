@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/csmart/aeronautes/internal/jobs"
+	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	"github.com/csmart/aeronautes/internal/swifttest"
 	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
 	"github.com/csmart/aeronautes/internal/transfer/rclone"
@@ -870,5 +872,102 @@ func TestRerunJob(t *testing.T) {
 	}
 	if len(*seen) < 1 || (*seen)[len(*seen)-1].Transfers != 9 {
 		t.Fatalf("engine options on rerun: %+v", *seen)
+	}
+}
+
+func TestStreamSpillChunksAndHostileNames(t *testing.T) {
+	write := func(t *testing.T, names []string) string {
+		t.Helper()
+		f, err := os.CreateTemp(t.TempDir(), "spill-*.jsonl")
+		if err != nil {
+			t.Fatal(err)
+		}
+		enc := json.NewEncoder(f)
+		for _, n := range names {
+			if err := enc.Encode(n); err != nil {
+				t.Fatal(err)
+			}
+		}
+		f.Close()
+		return f.Name()
+	}
+	hostile := []string{"plain.txt", "line\nbreak.txt", "tab\tand \"quotes\".txt", "утф-8 πλήρης.bin"}
+	for _, tc := range []struct {
+		names, chunk int
+		want         []int
+	}{
+		{0, 3, nil},         // empty spill: handler never called
+		{3, 3, []int{3}},    // exactly one chunk
+		{4, 3, []int{3, 1}}, // boundary straddle
+	} {
+		names := make([]string, tc.names)
+		for i := range names {
+			names[i] = fmt.Sprintf("obj-%d", i)
+		}
+		var got []int
+		if err := streamSpill(write(t, names), tc.chunk, func(chunk []string) error {
+			got = append(got, len(chunk))
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if fmt.Sprint(got) != fmt.Sprint(tc.want) {
+			t.Errorf("names=%d chunk=%d → %v, want %v", tc.names, tc.chunk, got, tc.want)
+		}
+	}
+	// Hostile names round-trip byte-exact through the JSON lines.
+	var back []string
+	if err := streamSpill(write(t, hostile), 2, func(chunk []string) error {
+		back = append(back, chunk...)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprint(back) != fmt.Sprint(hostile) {
+		t.Errorf("round-trip = %q, want %q", back, hostile)
+	}
+}
+
+func TestMirrorDeleteSetSpansChunks(t *testing.T) {
+	// More dest-only names than one delete chunk: the spill streams
+	// back in several chunks and the aggregate counters stay exact.
+	h := newHarness(t)
+	ctx := context.Background()
+	h.connect(t)
+	srcBookmark := h.transfer.connections.ActiveBookmarkID()
+	dstBookmark, dstMock := secondCluster(t, h)
+	h.installEngine(nil)
+
+	h.mock.AddContainer("media", "standard")
+	dstMock.AddContainer("backup", "standard")
+	total := mirrorDeleteChunk + 100
+	for i := 0; i < total-1; i++ {
+		seedObject(dstMock, "backup", fmt.Sprintf("scope/stale-%05d", i), "x", nil)
+	}
+	seedObject(dstMock, "backup", "scope/hostile\nname.txt", "x", nil)
+
+	jobID, err := h.transfer.StartMirror(ctx, MirrorRequestDTO{
+		CopyRequestDTO: CopyRequestDTO{
+			SourceBookmarkID: srcBookmark, SourceContainer: "media", SourcePrefix: "scope/",
+			DestBookmarkID: dstBookmark, DestContainer: "backup", DestPrefix: "scope/",
+		},
+		Confirm: "backup",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, h, jobID)
+	if job.State != "complete" {
+		t.Fatalf("job = %+v", job)
+	}
+	if job.Counters.ObjectsDeleted != int64(total) || job.Counters.ObjectsFailed != 0 {
+		t.Fatalf("deleted = %d failed = %d, want %d/0", job.Counters.ObjectsDeleted, job.Counters.ObjectsFailed, total)
+	}
+	session := h.transfer.connections.sessions[dstBookmark]
+	for entry, err := range session.Objects(ctx, "backup", swiftcontrol.ObjectListOptions{Deep: true, Prefix: "scope/"}) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Fatalf("survivor: %+v", entry)
 	}
 }

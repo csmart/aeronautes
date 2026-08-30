@@ -3701,6 +3701,13 @@ local byte progress shipped alongside; the narrow-width pass landed two breakpoi
 tracked, not gated here: the mirror delete-set memory cap and first real macOS/Windows
 builds.
 
+Follow-up (2026-08-30): the mirror delete-set cap is gone — dest-only names spill to a
+JSON-lines temp file during the single plan walk and stream back into the delete half in
+bounded chunks, so Mirror holds O(chunk) names in memory at any scale and hostile names
+(newlines included) round-trip through the spill encoding. First real macOS/Windows builds
+remain tracked: the release matrix exists and its test-gate ordering was fixed after the
+first dispatch failed on the unbuilt go:embed frontend.
+
 ---
 
 ## 66. Final project statement
