@@ -37,7 +37,7 @@ func TestMirrorConvergesAndDeletesOnlyDestOnly(t *testing.T) {
 	// the target container (grok war-room: named-containers-only blind spot).
 	dstBefore := h.SnapshotNamespace(h.Secondary)
 
-	jobID, err := h.Transfer.StartMirror(ctx, app.MirrorRequestDTO{
+	jobID, err := h.StartMirror(ctx, app.MirrorRequestDTO{
 		CopyRequestDTO: app.CopyRequestDTO{
 			SourceBookmarkID: h.Primary.BookmarkID, SourceContainer: src,
 			DestBookmarkID: h.Secondary.BookmarkID, DestContainer: dst,
@@ -78,5 +78,5 @@ func TestMirrorConvergesAndDeletesOnlyDestOnly(t *testing.T) {
 	// other moves are the added B and the overwritten E — the
 	// accidental-deletion guard.
 	h.AssertNoCollateral(dstBefore, dstAfter, dst+"/B.txt", dst+"/E.txt", dst+"/C.txt", dst+"/D.txt")
-	RecordScenario(t, "TransferService.StartMirror", "happy")
+	h.RecordScenario("TransferService.StartMirror", "happy")
 }

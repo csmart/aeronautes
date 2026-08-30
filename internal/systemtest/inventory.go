@@ -1,13 +1,25 @@
 package systemtest
 
 // The action inventory (§65.10 rule 1): every bound bridge method is a
-// row with its kind and the scenarios the war room must exercise. A
-// reflection guard (inventory_test.go) fails the build when a bound
-// service exports a method absent here — so a new action cannot ship
-// without an inventory entry. That guarantees the DENOMINATOR is
-// complete (no un-inventoried action); it does NOT claim the scenarios
-// are covered. Actual coverage is the evidence-based numerator from the
-// runtime registry (scenario_test.go), and today it is far from full.
+// row with its kind and the scenarios the war room must exercise. Two
+// guards keep it honest: a reflection guard fails the build when a bound
+// service exports a method with no row (so no action is un-inventoried),
+// and TestInventoryIsWellFormed rejects an invalid kind or an empty
+// requirement set (so no row can contribute zero to the denominator and
+// silently look complete). Together they make the DENOMINATOR sound; they
+// do NOT claim the scenarios are COVERED — actual coverage is the
+// evidence-based numerator from the runtime registry (scenario_test.go),
+// and today it is far from full.
+//
+// The kind defaults are a conservative FLOOR, not DESIGN §65.10's literal
+// blanket rule (happy+refusal for all 47, plus conflict/cancel/partial/
+// retry for every mutating/destructive action ≈ 162): a synchronous
+// atomic mutate has no "partial", so a per-action Scenarios override
+// states the real contract where the default is wrong. The floor, the
+// literal-162 baseline, and the far larger full matrix (K-*, data class,
+// account direction, hostile names, paging, fault points, UI, platform)
+// are all above this number — it is a floor to grow from, never a
+// completeness claim.
 
 // Kind classifies what a bridge method does, which fixes its required
 // scenarios.

@@ -4128,21 +4128,36 @@ rejects bogus coverage entries (H-02); reclassification and the wired per-action
 Scenarios override (H-03); the changed-object mirror fixture and optimistic-
 conflict metadata case (H-07).
 
-Coverage is now EVIDENCE-BASED (F-04): a (action, scenario) pair counts only when
-a running system test calls RecordScenario, so a fictional claim is impossible;
-TestMain emits a machine-readable scenario-coverage.json artifact (F-05), which
-the SAIO CI job uploads. It is 8/102 today and visibly incomplete scaffolding —
-NOT yet a hard no-gap gate (that gate is future). Overclaims Codex flagged are
-corrected: the R-06 credential and R-07 endpoint dispositions above (no longer
-"race-free"/"full policy"), and the oracle/harness package comments no longer say
-"full identity"/"whole-account" — the oracle is a scope-limited witness whose out-
-of-scope domains (account config, archived versions, local/jobs/audit state,
-ranged/nested SLO, dangling cross-account symlinks) are named in its package doc.
-The larger program Codex specifies — a semantic oracle over complete account +
-local + durable state, a deterministic barrier/fault layer, a real two-direction
-Swift matrix, a UI/native layer, and hard CI gates — is the tranche the war room
-grows into; H-01/H-04/H-08 and F-06 (scope-completeness), plus a fully
-machine-checked "this test proves scenario X" contract, are its next rows.
+Coverage is now EVIDENCE-BASED and hardened against the false-credit paths Codex's
+re-review reproduced (R-01): a credit requires the bridge action to have been
+OBSERVED invoked through a harness wrapper (a no-op test that only names an action
+earns nothing), and it is committed only if the test PASSED — not skipped, not
+failed — by a finalizer that runs after every resource cleanup. So a credit means
+"a passing, non-skipped test invoked this action and reached the record call after
+its assertions" — NOT that the assertion is provably strong (that remains future
+work, stated plainly in scenario.go). The report carries a `valid` bit tied to the
+process result and the test name that earned each cell (R-03 provenance); TestMain
+FAILS the process if a configured report cannot be written, and CI validates the
+schema/valid bit and uploads with if-no-files-found:error (R-03). The denominator
+is validated well-formed — an invalid Kind or empty requirement set fails
+TestInventoryIsWellFormed, so no row can contribute zero and look complete (R-02);
+the kind defaults are a conservative FLOOR below DESIGN's literal ≈162 baseline and
+the far larger full matrix, documented as such in inventory.go, not a completeness
+claim. Passing tests now leave Swift exactly as they found it: cleanup enumerates
+by raw JSON-decoded listing (never a logical GET of a broken manifest, never a
+whitespace-sensitive string scrape), checks every DELETE, and an end-of-test
+residue sweep FAILS a test that left any ns container behind (R-04). It is 8/102
+today and visibly incomplete scaffolding — NOT a hard no-gap gate (future).
+Overclaims Codex flagged are corrected: the R-06/R-07 dispositions above; the
+oracle/harness comments (no "full identity"/"whole-account"; ObjectState says
+"modelled identity"); the out-of-scope domains (account config, archived versions,
+local/jobs/audit state, ranged/nested SLO, dangling cross-account symlinks) named
+in the oracle package doc. The larger program Codex specifies — a semantic oracle
+over complete account + local + durable state, a deterministic barrier/fault layer,
+a real two-direction Swift matrix, a UI/native layer, and hard CI gates — is the
+tranche the war room grows into; H-01/H-04/H-08, F-06 and Codex R-05/R-06
+(scope- and matrix-completeness), plus a machine-checked assertion-strength
+contract and explicit per-action N/A waivers, are its next rows.
 
 
 ## 66. Final project statement

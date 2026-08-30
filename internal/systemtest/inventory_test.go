@@ -44,6 +44,40 @@ func TestInventoryCoversEveryBoundAction(t *testing.T) {
 	}
 }
 
+// TestInventoryIsWellFormed validates every inventory row so the
+// denominator cannot be silently weakened (codex war-room R-02): an
+// invalid or omitted Kind yields zero requirements and would mark the
+// action complete with no test. Each action must have a KNOWN kind, a
+// non-empty required set drawn from the known scenario vocabulary with no
+// duplicates, and must at least require the "happy" baseline.
+func TestInventoryIsWellFormed(t *testing.T) {
+	knownKinds := map[Kind]bool{Read: true, Session: true, Mutate: true, Destructive: true, Job: true}
+	knownScenarios := map[string]bool{"happy": true, "refusal": true, "conflict": true, "cancel": true, "partial": true, "retry": true}
+	for key, a := range Inventory {
+		if !knownKinds[a.Kind] {
+			t.Errorf("%s: unknown Kind %q", key, a.Kind)
+		}
+		req := a.required()
+		if len(req) == 0 {
+			t.Errorf("%s: zero required scenarios — an invalid Kind or empty override would silently mark it complete", key)
+			continue
+		}
+		seen := map[string]bool{}
+		for _, s := range req {
+			if !knownScenarios[s] {
+				t.Errorf("%s: required scenario %q is not in the known vocabulary", key, s)
+			}
+			if seen[s] {
+				t.Errorf("%s: required scenario %q listed twice", key, s)
+			}
+			seen[s] = true
+		}
+		if !seen["happy"] {
+			t.Errorf("%s: does not require the baseline 'happy' scenario", key)
+		}
+	}
+}
+
 // TestInventoryLogsRequiredScenarios logs the static contract — every
 // action, its kind, and the scenarios it requires. The COVERAGE numbers
 // (what actually ran) are emitted separately by TestMain from the

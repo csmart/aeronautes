@@ -59,6 +59,9 @@ type Harness struct {
 
 	Primary   *Account // the active browse/inspect/mutate account
 	Secondary *Account // for cross-account Copy/Mirror
+
+	invoked map[string]bool  // bridge actions this test invoked through a wrapper
+	pending []recordedCredit // scenarios to credit iff the test passes
 }
 
 // New builds a harness or skips when SAIO is unavailable. A second
@@ -126,7 +129,106 @@ func New(t *testing.T) *Harness {
 	if err := connections.Connect(ctx, h.Primary.BookmarkID); err != nil {
 		t.Fatal(err)
 	}
+
+	// Registered here (before any Container purge, which is registered in
+	// the test body) so LIFO runs them LAST: the residue sweep after every
+	// purge, then the scenario finalizer after the sweep — so a credit is
+	// committed only once cleanup has run and the test is still green
+	// (codex R-01/R-04).
+	t.Cleanup(h.finalizeScenarios)
+	t.Cleanup(h.assertNoResidue)
 	return h
+}
+
+// finalizeScenarios commits this test's pending scenario credits, but only
+// if the test PASSED — not if it failed or skipped, and only after every
+// earlier-registered cleanup (purges, residue sweep) has run (codex R-01).
+func (h *Harness) finalizeScenarios() {
+	if h.T.Failed() || h.T.Skipped() {
+		return
+	}
+	for _, c := range h.pending {
+		creditScenario(c.action, c.scenario, h.T.Name())
+	}
+}
+
+// assertNoResidue fails the test if it left any ns-prefixed container
+// behind on either account — a safety harness must leave Swift exactly as
+// it found it, and silently accepted residue trains the suite to tolerate
+// unexplained state (codex R-04). It reports, and does not blindly delete.
+func (h *Harness) assertNoResidue() {
+	h.T.Helper()
+	for _, a := range []*Account{h.Primary, h.Secondary} {
+		if a == nil {
+			continue
+		}
+		names, err := a.Oracle.ListContainers(h.ns)
+		if err != nil {
+			h.T.Errorf("residue sweep: listing %q-prefixed containers on %s failed: %v", h.ns, a.user, err)
+			continue
+		}
+		if len(names) > 0 {
+			h.T.Errorf("test left %d container(s) behind on %s (namespace %q): %v", len(names), a.user, h.ns, names)
+		}
+	}
+}
+
+// markInvoked records that this test invoked a bridge action through a
+// harness wrapper — the OBSERVED fact RecordScenario requires, so a
+// scenario can never be self-attested by a no-op test (codex R-01).
+func (h *Harness) markInvoked(action string) {
+	if h.invoked == nil {
+		h.invoked = map[string]bool{}
+	}
+	h.invoked[action] = true
+}
+
+// RecordScenario claims that this test exercised (action, scenario). The
+// action must be inventoried, the scenario one it requires, AND the
+// harness must have observed the action actually invoked through a wrapper
+// — otherwise it fails loudly. The credit itself is committed later, only
+// if the test passes (see finalizeScenarios).
+func (h *Harness) RecordScenario(action, scenario string) {
+	h.T.Helper()
+	a, ok := Inventory[action]
+	if !ok {
+		h.T.Fatalf("RecordScenario: %q is not an inventoried action", action)
+	}
+	if !scenarioRequired(a, scenario) {
+		h.T.Fatalf("RecordScenario: %q is not a required scenario for %q (needs %v)", scenario, action, a.required())
+	}
+	if !h.invoked[action] {
+		h.T.Fatalf("RecordScenario: %q was recorded but the harness never observed it invoked — call it through the harness wrapper, not the raw service", action)
+	}
+	h.pending = append(h.pending, recordedCredit{action, scenario})
+}
+
+// Bridge-action wrappers: tests call THESE (not the raw services) so the
+// harness observes the invocation for scenario crediting (codex R-01).
+
+func (h *Harness) StartCopy(ctx context.Context, req app.CopyRequestDTO) (string, error) {
+	h.markInvoked("TransferService.StartCopy")
+	return h.Transfer.StartCopy(ctx, req)
+}
+
+func (h *Harness) StartMirror(ctx context.Context, req app.MirrorRequestDTO) (string, error) {
+	h.markInvoked("TransferService.StartMirror")
+	return h.Transfer.StartMirror(ctx, req)
+}
+
+func (h *Harness) StartDelete(ctx context.Context, req app.DeleteRequestDTO) (string, error) {
+	h.markInvoked("DeleteService.StartDelete")
+	return h.Delete.StartDelete(ctx, req)
+}
+
+func (h *Harness) DeleteManifestWithSegments(ctx context.Context, req app.SegmentsDeleteRequestDTO) (*app.SegmentsDeleteResultDTO, error) {
+	h.markInvoked("DeleteService.DeleteManifestWithSegments")
+	return h.Delete.DeleteManifestWithSegments(ctx, req)
+}
+
+func (h *Harness) UpdateObjectMetadata(ctx context.Context, container, name, baseFingerprint string, edit app.ObjectMetadataEditDTO) (app.MutationResultDTO, error) {
+	h.markInvoked("MutateService.UpdateObjectMetadata")
+	return h.Mutate.UpdateObjectMetadata(ctx, container, name, baseFingerprint, edit)
 }
 
 // account provisions a test account. It returns an error rather than
@@ -240,24 +342,43 @@ func (h *Harness) SeedSLO(a *Account, container, name, manifestJSON string) {
 	h.rawPutQuery(a, "/"+container+"/"+oracle.Escape(name), "multipart-manifest=put", []byte(manifestJSON), nil)
 }
 
+// purge deletes a container's objects and then the container itself,
+// enumerating by RAW listing (never a logical GET, so a broken manifest
+// whose segments were purged first cannot block cleanup) and checking
+// every DELETE status. It does not fail the test directly — the
+// end-of-test residue sweep (assertNoResidue) is the single assertion that
+// nothing survived (codex R-04).
 func (h *Harness) purge(a *Account, container string) {
-	snap, err := a.Oracle.SnapshotContainers(container)
-	if err != nil {
-		return
-	}
-	for _, cs := range snap.Containers {
-		for name := range cs.Objects {
-			req, _ := http.NewRequest(http.MethodDelete, a.storageURL+"/"+container+"/"+oracle.Escape(name), nil)
-			req.Header.Set("X-Auth-Token", a.token)
-			if resp, err := a.rawClient.Do(req); err == nil {
-				resp.Body.Close()
-			}
+	if names, err := a.Oracle.ListObjects(container); err == nil {
+		for _, name := range names {
+			h.rawDeleteChecked(a, "/"+container+"/"+oracle.Escape(name))
 		}
 	}
-	req, _ := http.NewRequest(http.MethodDelete, a.storageURL+"/"+container, nil)
-	req.Header.Set("X-Auth-Token", a.token)
-	if resp, err := a.rawClient.Do(req); err == nil {
+	h.rawDeleteChecked(a, "/"+container)
+}
+
+// rawDeleteChecked issues a DELETE and treats 2xx and 404 as success. A
+// 409 (container not yet empty under eventual consistency) is retried a
+// bounded number of times; other outcomes are left for the residue sweep
+// to surface rather than silently swallowed.
+func (h *Harness) rawDeleteChecked(a *Account, path string) {
+	for attempt := 0; attempt < 5; attempt++ {
+		req, _ := http.NewRequest(http.MethodDelete, a.storageURL+path, nil)
+		req.Header.Set("X-Auth-Token", a.token)
+		resp, err := a.rawClient.Do(req)
+		if err != nil {
+			return
+		}
+		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
+		if resp.StatusCode/100 == 2 || resp.StatusCode == http.StatusNotFound {
+			return
+		}
+		if resp.StatusCode == http.StatusConflict {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		return
 	}
 }
 

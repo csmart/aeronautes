@@ -68,7 +68,9 @@ func Connect(authURL, user, key string) (*Oracle, error) {
 	return &Oracle{client: client, storageURL: storageURL, token: token}, nil
 }
 
-// ObjectState is the complete identity of one object.
+// ObjectState is the MODELLED identity of one object (the fields below),
+// not its complete Swift identity — see the package doc for what is out
+// of scope.
 type ObjectState struct {
 	Name               string
 	Class              string // plain | dlo | slo | symlink
@@ -137,6 +139,13 @@ func (o *Oracle) ListContainers(prefix string) ([]string, error) {
 		query = "prefix=" + Escape(prefix)
 	}
 	return o.listPaged("", query, nil)
+}
+
+// ListObjects returns a container's object names via marker pagination,
+// WITHOUT any logical GET — so a caller (e.g. test cleanup) can enumerate
+// a container whose manifests are already broken (codex war-room R-04).
+func (o *Oracle) ListObjects(container string) ([]string, error) {
+	return o.listPaged("/"+container, "", nil)
 }
 
 // SnapshotContainers captures the exact state of the named containers.

@@ -20,7 +20,7 @@ func TestObjectMetadataEditIsSurgical(t *testing.T) {
 	before := h.Snapshot(h.Primary, c)
 
 	// Edit target's metadata through the real service (active = primary).
-	result, err := h.Mutate.UpdateObjectMetadata(ctx, c, "target.txt", "", app.ObjectMetadataEditDTO{
+	result, err := h.UpdateObjectMetadata(ctx, c, "target.txt", "", app.ObjectMetadataEditDTO{
 		Meta: map[string]string{"Team": "migrations", "Wave": "5"}, ContentType: "text/plain",
 	})
 	if err != nil {
@@ -46,14 +46,14 @@ func TestObjectMetadataEditIsSurgical(t *testing.T) {
 	}
 	// Nothing outside target.txt moved anywhere on the account.
 	h.AssertNoCollateral(before, after, c+"/target.txt")
-	RecordScenario(t, "MutateService.UpdateObjectMetadata", "happy")
+	h.RecordScenario("MutateService.UpdateObjectMetadata", "happy")
 
 	// Optimistic-concurrency refusal: an edit built on a STALE fingerprint
 	// is refused as a conflict, and a refused edit changes NOTHING (codex
 	// war-room H-07 — the earlier empty base fingerprint never exercised
 	// this path).
 	conflictBefore := h.Snapshot(h.Primary, c)
-	stale, err := h.Mutate.UpdateObjectMetadata(ctx, c, "target.txt", "stale-fingerprint-that-cannot-match", app.ObjectMetadataEditDTO{
+	stale, err := h.UpdateObjectMetadata(ctx, c, "target.txt", "stale-fingerprint-that-cannot-match", app.ObjectMetadataEditDTO{
 		Meta: map[string]string{"Team": "must-not-apply"}, ContentType: "text/plain",
 	})
 	if err != nil {
@@ -66,5 +66,5 @@ func TestObjectMetadataEditIsSurgical(t *testing.T) {
 	if d := diffOf(conflictBefore, conflictAfter); !d.Empty() {
 		t.Fatalf("a refused (conflict) metadata edit still changed state:\n%s", d)
 	}
-	RecordScenario(t, "MutateService.UpdateObjectMetadata", "conflict")
+	h.RecordScenario("MutateService.UpdateObjectMetadata", "conflict")
 }

@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"strings"
 	"testing"
 	"time"
 )
@@ -152,20 +151,44 @@ func hasField(fs []Field, want Field) bool {
 	return false
 }
 
-func purge(t *testing.T, seed *rawClient, oracle *Oracle, container string) {
-	resp, err := oracle.do(http.MethodGet, "/"+container, "format=json")
-	if err != nil {
-		return
+func purge(t *testing.T, seed *rawClient, o *Oracle, container string) {
+	t.Helper()
+	// Enumerate by JSON-decoded raw listing (never scrape structured data
+	// with a whitespace-sensitive string split, which silently matched
+	// nothing against SAIO's spaced JSON and leaked every object — codex
+	// war-room R-04), then delete each object and the container, checking
+	// status and retrying an eventual-consistency 409.
+	names, err := o.ListObjects(container)
+	if err == nil {
+		for _, name := range names {
+			purgeDelete(seed, "/"+container+"/"+Escape(name))
+		}
 	}
-	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	for _, line := range strings.Split(string(body), `"name":"`)[1:] {
-		name := line[:strings.Index(line, `"`)]
-		req, _ := http.NewRequest(http.MethodDelete, seed.storageURL+"/"+container+"/"+Escape(name), nil)
+	if left := purgeDelete(seed, "/"+container); left {
+		t.Errorf("purge left container %q behind", container)
+	}
+}
+
+// purgeDelete issues a DELETE and returns true if the resource still
+// appears to exist afterwards (non-2xx, non-404 after bounded retries).
+func purgeDelete(seed *rawClient, path string) bool {
+	for attempt := 0; attempt < 5; attempt++ {
+		req, _ := http.NewRequest(http.MethodDelete, seed.storageURL+path, nil)
 		req.Header.Set("X-Auth-Token", seed.token)
-		seed.client.Do(req)
+		resp, err := seed.client.Do(req)
+		if err != nil {
+			return true
+		}
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode/100 == 2 || resp.StatusCode == http.StatusNotFound {
+			return false
+		}
+		if resp.StatusCode == http.StatusConflict {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		return true
 	}
-	req, _ := http.NewRequest(http.MethodDelete, seed.storageURL+"/"+container, nil)
-	req.Header.Set("X-Auth-Token", seed.token)
-	seed.client.Do(req)
+	return true
 }

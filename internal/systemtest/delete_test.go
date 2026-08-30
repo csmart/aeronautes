@@ -37,7 +37,7 @@ func TestPrefixDeleteSparesEverythingElse(t *testing.T) {
 	// container would show, not just the target (grok war-room #2).
 	before := h.SnapshotNamespace(h.Primary)
 
-	jobID, err := h.Delete.StartDelete(ctx, app.DeleteRequestDTO{
+	jobID, err := h.StartDelete(ctx, app.DeleteRequestDTO{
 		BookmarkID: h.Primary.BookmarkID, Container: c, Prefix: "scope/",
 		Mode: app.ModePrefix, Confirm: c,
 	})
@@ -71,5 +71,5 @@ func TestPrefixDeleteSparesEverythingElse(t *testing.T) {
 		allowed = append(allowed, fmt.Sprintf("%s/scope/doomed-%d", c, i))
 	}
 	h.AssertNoCollateral(before, after, allowed...)
-	RecordScenario(t, "DeleteService.StartDelete", "happy")
+	h.RecordScenario("DeleteService.StartDelete", "happy")
 }

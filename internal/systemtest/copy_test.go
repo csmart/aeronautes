@@ -41,7 +41,7 @@ func TestCopyCrossAccountPreservesLogicalContent(t *testing.T) {
 	// engine might create — before and after.
 	dstBefore := h.SnapshotNamespace(h.Secondary)
 
-	jobID, err := h.Transfer.StartCopy(ctx, app.CopyRequestDTO{
+	jobID, err := h.StartCopy(ctx, app.CopyRequestDTO{
 		SourceBookmarkID: h.Primary.BookmarkID, SourceContainer: srcC,
 		DestBookmarkID: h.Secondary.BookmarkID, DestContainer: dstC,
 	})
@@ -84,5 +84,5 @@ func TestCopyCrossAccountPreservesLogicalContent(t *testing.T) {
 		allowed[i] = dstC + "/" + name
 	}
 	h.AssertNoCollateral(dstBefore, dstAfter, allowed...)
-	RecordScenario(t, "TransferService.StartCopy", "happy")
+	h.RecordScenario("TransferService.StartCopy", "happy")
 }

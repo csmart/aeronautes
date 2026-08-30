@@ -219,14 +219,20 @@ jobs:
           pct=$(go tool cover -func=cover.out | awk '/^total:/ {gsub(/%/,"",$3); print $3}')
           echo "combined Go statement coverage: ${pct}%"
           echo "$pct" > coverage-pct.txt
+          # Validate the report fails-closed (codex war-room R-03): it must
+          # exist, be the expected schema, and be marked valid (tied to the
+          # test process result). No `|| true` — a missing report fails.
           echo "scenario coverage (evidence-based, see uploaded artifact):"
-          grep -E '"total(Covered|Required)"|"actionsWithGaps"' scenario-coverage.json || true
+          grep -E '"total(Covered|Required)"|"actionsWithGaps"' scenario-coverage.json
+          grep -q '"schemaVersion": 1' scenario-coverage.json || { echo "::error::unexpected scenario report schema"; exit 1; }
+          grep -q '"valid": true' scenario-coverage.json || { echo "::error::scenario report marks the run invalid"; exit 1; }
       - name: upload scenario-coverage report
         if: steps.detect.outputs.present == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: scenario-coverage
           path: scenario-coverage.json
+          if-no-files-found: error
       # SOFT coverage floor: red step + warning on a drop, pipeline
       # continues (continue-on-error).
       - name: coverage floor (soft, 75%)
