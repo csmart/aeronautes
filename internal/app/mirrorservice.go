@@ -1,9 +1,13 @@
 package app
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"sync"
 
@@ -29,10 +33,11 @@ type MirrorRequestDTO struct {
 	Confirm string `json:"confirm"`
 }
 
-// maxMirrorDeleteSet bounds the in-memory dest-only name list; beyond
-// it the job refuses honestly rather than growing unbounded (§15.2's
-// spirit — a v1 limit stated in the error, not a silent truncation).
-const maxMirrorDeleteSet = 200_000
+// mirrorDeleteChunk is how many dest-only names are held in memory at
+// once during the delete half; the full set spills to disk (JSON-
+// encoded per line, so hostile names survive), keeping Mirror
+// bounded-memory at any scale (§15.2).
+const mirrorDeleteChunk = 2000
 
 // StartMirror validates the typed confirmation and launches the job.
 func (s *TransferService) StartMirror(ctx context.Context, req MirrorRequestDTO) (string, error) {
@@ -131,20 +136,29 @@ func (s *TransferService) runMirror(ctx context.Context, jobID string, req Mirro
 	})
 	transition(jobs.StateRunning)
 
-	// One pass feeds the copy executor AND collects the delete set: the
-	// names this execution's plan proved destination-only.
-	var destOnly []string
-	tooMany := false
+	// One pass feeds the copy executor AND spills the delete set to
+	// disk: the names this execution's plan proved destination-only,
+	// JSON-encoded one per line so hostile names round-trip, with only
+	// a chunk ever in memory.
+	spill, err := os.CreateTemp("", "aeronautes-mirror-*.jsonl")
+	if err != nil {
+		finish(jobs.StateFailed, "delete-set spill: "+err.Error())
+		return
+	}
+	spillPath := spill.Name()
+	defer os.Remove(spillPath)
+	spillWriter := bufio.NewWriter(spill)
+	spillEncoder := json.NewEncoder(spillWriter)
+	var destOnlyCount int64
 	_, planErr := plan.Copy(ctx,
 		src.Objects(ctx, req.SourceContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.SourcePrefix}),
 		dst.Objects(ctx, req.DestContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.DestPrefix}),
 		req.SourcePrefix, req.DestPrefix, func(item plan.Item) error {
 			if item.Verdict == plan.VerdictDestOnly {
-				if len(destOnly) >= maxMirrorDeleteSet {
-					tooMany = true
-					return fmt.Errorf("destination-only set exceeds the v1 mirror limit (%d names)", maxMirrorDeleteSet)
+				if err := spillEncoder.Encode(req.DestPrefix + item.Name); err != nil {
+					return fmt.Errorf("delete-set spill: %w", err)
 				}
-				destOnly = append(destOnly, req.DestPrefix+item.Name)
+				destOnlyCount++
 				countersMu.Lock()
 				counters.ObjectsPlanned++
 				countersMu.Unlock()
@@ -159,6 +173,10 @@ func (s *TransferService) runMirror(ctx context.Context, jobID string, req Mirro
 			countersMu.Unlock()
 			return executor.Handle(ctx, item)
 		})
+	if flushErr := spillWriter.Flush(); planErr == nil && flushErr != nil {
+		planErr = fmt.Errorf("delete-set spill: %w", flushErr)
+	}
+	spill.Close()
 	report, finishErr := executor.Finish(ctx)
 	if planErr == nil {
 		planErr = finishErr
@@ -178,8 +196,6 @@ func (s *TransferService) runMirror(ctx context.Context, jobID string, req Mirro
 	if planErr != nil {
 		if errors.Is(planErr, context.Canceled) {
 			finish(jobs.StateCancelled, "")
-		} else if tooMany {
-			finish(jobs.StateFailed, planErr.Error()+"; nothing was deleted")
 		} else {
 			finish(jobs.StateFailed, planErr.Error())
 		}
@@ -207,25 +223,36 @@ func (s *TransferService) runMirror(ctx context.Context, jobID string, req Mirro
 		return
 	}
 
-	// Delete half: native, manifest-only, exactly the planned names.
-	deleteResult, err := deletion.DeleteNames(ctx, dst, capabilities, req.DestContainer, destOnly, deletion.Options{
-		OnProgress: func(deleted, failed int64) {
+	// Delete half: native, manifest-only, exactly the planned names —
+	// streamed back off the spill in bounded chunks.
+	deleteResult := &deletion.Result{}
+	err = streamSpill(spillPath, mirrorDeleteChunk, func(chunk []string) error {
+		chunkResult, chunkErr := deletion.DeleteNames(ctx, dst, capabilities, req.DestContainer, chunk, deletion.Options{
+			OnProgress: func(deleted, failed int64) {
+				countersMu.Lock()
+				counters.ObjectsDeleted = deleteResult.Deleted + deleted
+				countersMu.Unlock()
+				flush()
+			},
+		})
+		if chunkResult != nil {
+			deleteResult.Strategy = chunkResult.Strategy
+			deleteResult.VerifyPolicy = chunkResult.VerifyPolicy
+			deleteResult.Deleted += chunkResult.Deleted
+			deleteResult.NotFound += chunkResult.NotFound
+			deleteResult.Remaining += chunkResult.Remaining
+			deleteResult.Failures = append(deleteResult.Failures, chunkResult.Failures...)
 			countersMu.Lock()
-			counters.ObjectsDeleted = deleted
+			counters.ObjectsDeleted = deleteResult.Deleted
+			counters.ObjectsFailed += int64(len(chunkResult.Failures))
 			countersMu.Unlock()
 			flush()
-		},
+		}
+		return chunkErr
 	})
-	if deleteResult != nil {
-		countersMu.Lock()
-		counters.ObjectsDeleted = deleteResult.Deleted
-		counters.ObjectsFailed += int64(len(deleteResult.Failures))
-		countersMu.Unlock()
-		flush()
-	}
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			finish(jobs.StateCancelled, fmt.Sprintf("cancelled during deletions (%d of %d done)", deleteResult.Deleted, len(destOnly)))
+			finish(jobs.StateCancelled, fmt.Sprintf("cancelled during deletions (%d of %d done)", deleteResult.Deleted, destOnlyCount))
 		} else {
 			finish(jobs.StateFailed, "delete half: "+err.Error())
 		}
@@ -241,4 +268,35 @@ func (s *TransferService) runMirror(ctx context.Context, jobID string, req Mirro
 		return
 	}
 	finish(jobs.StateComplete, "")
+}
+
+// streamSpill replays the JSON-lines delete set in bounded chunks.
+func streamSpill(path string, chunkSize int, handle func([]string) error) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	decoder := json.NewDecoder(bufio.NewReader(file))
+	chunk := make([]string, 0, chunkSize)
+	for {
+		var name string
+		if err := decoder.Decode(&name); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return fmt.Errorf("delete-set spill read: %w", err)
+		}
+		chunk = append(chunk, name)
+		if len(chunk) == chunkSize {
+			if err := handle(chunk); err != nil {
+				return err
+			}
+			chunk = chunk[:0]
+		}
+	}
+	if len(chunk) > 0 {
+		return handle(chunk)
+	}
+	return nil
 }
