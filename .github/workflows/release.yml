@@ -68,7 +68,7 @@ jobs:
           cp bin/*.deb "dist/aeronautes-linux-${{ matrix.arch }}-UNSIGNED.deb" 2>/dev/null || true
       # SIGNING (deliberately absent): rpm --addsign / debsigs would go
       # here once release keys exist. Artifacts are honestly UNSIGNED.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux-${{ matrix.arch }}-unsigned
           path: dist/*
@@ -112,7 +112,7 @@ jobs:
       # SIGNING/NOTARISATION (deliberately absent): codesign + notarytool
       # go here once an Apple Developer identity exists. Gatekeeper will
       # warn on these artifacts — that is the honest current state.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: macos-${{ matrix.arch }}-unsigned
           path: dist/*
@@ -148,7 +148,7 @@ jobs:
           Compress-Archive -Path bin\* -DestinationPath "dist/aeronautes-windows-${{ matrix.arch }}-UNSIGNED.zip"
       # SIGNING (deliberately absent): signtool goes here once a code-
       # signing certificate exists. SmartScreen will warn — honestly.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-${{ matrix.arch }}-unsigned
           path: dist/*
