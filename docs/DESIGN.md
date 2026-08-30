@@ -4008,6 +4008,42 @@ replication, audit outbox/export, Backstage capability, benchmark realism,
 short-page seam tests, a11y/contrast/responsive program, SLO DTO raw fields),
 and the frontend whole-source floor turned from honest-red to green.
 
+#### 65.10.1 Executable commit sequence (started 2026-08-30)
+
+The foundation lands before any matrix, one tested commit per component:
+
+1. **Independent oracle** (`internal/systemtest/oracle`) — a raw-HTTP Swift
+   reader that NEVER imports swiftcontrol. It snapshots an account: every
+   container's config (ACLs, quota, versioning, meta) and every object's
+   identity (SHA-256 of the logical GET bytes, size, content-type/encoding/
+   disposition, delete-at, all user metadata, class, DLO manifest value + the
+   full segment inventory with per-segment digests, raw SLO manifest, symlink
+   target/account). `Diff(before, after)` yields added/removed/changed
+   containers and objects so a test asserts the expected delta AND that nothing
+   else moved. Proven against SAIO by seeding known state and asserting the
+   snapshot matches byte-for-byte.
+2. **System harness** (`internal/systemtest`) — connects two SAIO accounts
+   through the real `internal/app` services (the same entry points the UI
+   calls), gives each test throwaway prefixed containers, and provides
+   snapshot-before / act / snapshot-after / assert-delta helpers. Gated on
+   `AERONAUTES_SAIO_AUTH_URL`; a second account is MANDATORY under
+   `AERONAUTES_REQUIRE_TWO_ACCOUNTS`.
+3. **Action inventory + guard** — a machine-readable `inventory.go` listing
+   every bound bridge method with its required scenarios (happy + refusal, plus
+   conflict/cancel/partial/retry for destructive ones); a test enumerates the
+   bound services by reflection and FAILS on any exported method absent from the
+   inventory, so a new action cannot ship without a matrix row.
+4. **Behavioral matrices**, each snapshot-diff asserted: browse/inspect/
+   container+metadata → copy/upload/download → mirror + deletion variants →
+   cancellation/crash/fault-injection (reusing the swifttest barrier hooks and a
+   real killed-subprocess crash) → coverage report artifact + CI gate.
+
+Deferred-architecture items from §65.9 (ordered-inventory verification, exact
+outcome ledger, durable outbox, capability tokens, six-platform local matrix,
+metadata-only replication, short-page handling, modern-versioning edit) are
+pulled in where a matrix exercises them; each lands with the system test that
+would fail without it.
+
 
 ## 66. Final project statement
 
