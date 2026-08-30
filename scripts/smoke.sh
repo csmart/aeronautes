@@ -69,16 +69,21 @@ wire_saw() {
 }
 
 say "waiting for the window"
-timeout 30 env DISPLAY=:98 xdotool search --sync --onlyvisible --name "Aeronautes" >/dev/null   || fail "app window never appeared (see $ART/app.log)"
+WIN=$(timeout 30 env DISPLAY=:98 xdotool search --sync --onlyvisible --name "Aeronautes" | head -1)   || fail "app window never appeared (see $ART/app.log)"
+# No window manager under Xvfb: X keyboard focus is nowhere until set,
+# so keystrokes can miss the app entirely. Pin it explicitly.
+X windowactivate --sync "$WIN" 2>/dev/null || X windowfocus --sync "$WIN"
 sleep 2
 kill -0 "$APP_PID" || fail "app exited at launch (see $ART/app.log)"
 
 say "bookmark + connect"
 connected=""
 for attempt in 1 2 3; do
+  X windowfocus --sync "$WIN" 2>/dev/null || true
   X key Escape; sleep 1                 # clear any half-open state
   X mousemove 42 50 click 1; sleep 2    # Add bookmark
-  X mousemove 639 280 click 1           # display-name field
+  # The dialog's focus trap puts focus on the Display-name field at
+  # mount — type straight in, no pixel-hunting for the field.
   X type --delay 15 "Smoke"
   X key Tab; X type --delay 10 "http://127.0.0.1:8899/auth/v1.0"
   X key Tab; X type --delay 15 "test:tester"
