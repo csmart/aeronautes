@@ -219,14 +219,17 @@ func (h *Harness) rawPutQuery(a *Account, path, query string, body []byte, heade
 }
 
 // Seed writes a raw object directly (test setup, bypassing the product).
+// The object name is percent-escaped with the oracle's own encoder so a
+// hostile name seeds the object the oracle will later look for (codex
+// war-room H-07).
 func (h *Harness) Seed(a *Account, container, name string, body []byte, headers map[string]string) {
-	h.rawPut(a, "/"+container+"/"+name, body, headers)
+	h.rawPut(a, "/"+container+"/"+oracle.Escape(name), body, headers)
 }
 
 // SeedSLO writes a static-large-object manifest directly (test setup).
 // The referenced segments must already exist.
 func (h *Harness) SeedSLO(a *Account, container, name, manifestJSON string) {
-	h.rawPutQuery(a, "/"+container+"/"+name, "multipart-manifest=put", []byte(manifestJSON), nil)
+	h.rawPutQuery(a, "/"+container+"/"+oracle.Escape(name), "multipart-manifest=put", []byte(manifestJSON), nil)
 }
 
 func (h *Harness) purge(a *Account, container string) {

@@ -54,21 +54,48 @@ func TestInventoryReportsCoverage(t *testing.T) {
 	var rows []string
 	for key, action := range Inventory {
 		kinds[action.Kind]++
-		rows = append(rows, key+" ["+string(action.Kind)+"] needs: "+strings.Join(action.Kind.requiredScenarios(), ","))
+		rows = append(rows, key+" ["+string(action.Kind)+"] needs: "+strings.Join(action.required(), ","))
 	}
 	sort.Strings(rows)
 	t.Logf("ACTION INVENTORY (%d actions: %d read, %d session, %d mutate, %d destructive, %d job)\n%s",
 		len(Inventory), kinds[Read], kinds[Session], kinds[Mutate], kinds[Destructive], kinds[Job], strings.Join(rows, "\n"))
 
+	// Validate the Covered map so the numerator cannot be inflated by a
+	// bogus entry (codex war-room H-02): every key must name a real
+	// action, every scenario must be one that action actually requires,
+	// and no scenario may be listed twice.
+	var covered int
+	for key, scns := range Covered {
+		action, ok := Inventory[key]
+		if !ok {
+			t.Errorf("Covered names %q, which is not an inventoried action", key)
+			continue
+		}
+		req := map[string]bool{}
+		for _, r := range action.required() {
+			req[r] = true
+		}
+		seen := map[string]bool{}
+		for _, s := range scns {
+			if seen[s] {
+				t.Errorf("Covered[%q] lists %q twice", key, s)
+				continue
+			}
+			seen[s] = true
+			if !req[s] {
+				t.Errorf("Covered[%q] lists %q, which is not a required scenario for that action", key, s)
+				continue
+			}
+			covered++ // a genuine, required, non-duplicate coverage claim
+		}
+	}
+
 	// The reportable coverage artifact (§65.10): required scenarios met
 	// vs. still open, per action.
 	gaps := CoverageGaps()
-	var required, covered int
+	var required int
 	for _, action := range Inventory {
-		required += len(action.Kind.requiredScenarios())
-	}
-	for _, c := range Covered {
-		covered += len(c)
+		required += len(action.required())
 	}
 	var gapRows []string
 	for key, missing := range gaps {

@@ -29,7 +29,13 @@ type Oracle struct {
 // Connect authenticates against a v1 auth endpoint and returns a reader
 // bound to the resulting account. No product code is involved.
 func Connect(authURL, user, key string) (*Oracle, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
+	// Never auto-follow redirects: a redirect could resend the token/key
+	// to another host or silently rewrite the request (codex war-room
+	// H-06). The oracle inspects exactly what it asked for.
+	client := &http.Client{
+		Timeout:       30 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
 	req, err := http.NewRequest(http.MethodGet, authURL, nil)
 	if err != nil {
 		return nil, err
@@ -227,7 +233,14 @@ func (o *Oracle) listPaged(path, query string, firstPage []byte) ([]string, erro
 		for _, row := range rows {
 			names = append(names, row.Name)
 		}
-		marker = rows[len(rows)-1].Name
+		// The marker MUST strictly advance; a provider that returns a
+		// non-advancing page would otherwise loop forever (codex war-room
+		// H-06). Fail closed instead.
+		next := rows[len(rows)-1].Name
+		if next <= marker {
+			return nil, fmt.Errorf("list %s: marker did not advance (%q -> %q) — refusing to loop", path, marker, next)
+		}
+		marker = next
 	}
 }
 
@@ -238,10 +251,13 @@ func (o *Oracle) snapshotObject(container, name string) (ObjectState, error) {
 	if err != nil {
 		return ObjectState{}, err
 	}
-	body, _ := io.ReadAll(resp.Body)
+	body, readErr := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
 		return ObjectState{}, fmt.Errorf("oracle get %s/%s: HTTP %d", container, name, resp.StatusCode)
+	}
+	if readErr != nil {
+		return ObjectState{}, fmt.Errorf("oracle get %s/%s: read: %w", container, name, readErr)
 	}
 	sum := sha256.Sum256(body)
 	os := ObjectState{
@@ -328,12 +344,22 @@ func (o *Oracle) sloInventory(container, name string) (string, []SegmentState, e
 	if err != nil {
 		return "", nil, err
 	}
-	raw, _ := io.ReadAll(resp.Body)
+	raw, readErr := io.ReadAll(resp.Body)
 	resp.Body.Close()
+	// Fail closed: an error body must not be parsed/hashed as a manifest
+	// (codex war-room H-06).
+	if resp.StatusCode/100 != 2 {
+		return "", nil, fmt.Errorf("oracle SLO manifest %s/%s: HTTP %d", container, name, resp.StatusCode)
+	}
+	if readErr != nil {
+		return "", nil, fmt.Errorf("oracle SLO manifest %s/%s: read: %w", container, name, readErr)
+	}
 	var entries []struct {
 		Name string `json:"name"`
 	}
-	_ = json.Unmarshal(raw, &entries)
+	if err := json.Unmarshal(raw, &entries); err != nil {
+		return "", nil, fmt.Errorf("oracle SLO manifest %s/%s: decode: %w", container, name, err)
+	}
 	var segs []SegmentState
 	for _, e := range entries {
 		path := strings.TrimPrefix(e.Name, "/")
@@ -355,8 +381,16 @@ func (o *Oracle) segment(container, name string) (SegmentState, error) {
 	if err != nil {
 		return SegmentState{}, err
 	}
-	body, _ := io.ReadAll(resp.Body)
+	body, readErr := io.ReadAll(resp.Body)
 	resp.Body.Close()
+	// Fail closed: never digest an error body as segment content (codex
+	// war-room H-06).
+	if resp.StatusCode/100 != 2 {
+		return SegmentState{}, fmt.Errorf("oracle segment %s/%s: HTTP %d", container, name, resp.StatusCode)
+	}
+	if readErr != nil {
+		return SegmentState{}, fmt.Errorf("oracle segment %s/%s: read: %w", container, name, readErr)
+	}
 	sum := sha256.Sum256(body)
 	return SegmentState{Name: container + "/" + name, Size: int64(len(body)), Digest: hex.EncodeToString(sum[:])}, nil
 }

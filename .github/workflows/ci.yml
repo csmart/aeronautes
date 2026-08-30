@@ -192,7 +192,11 @@ jobs:
         run: |
           ./scripts/fetch-rclone.sh linux amd64 "$RUNNER_TEMP/rclone-pin"
           echo "$RUNNER_TEMP/rclone-pin" >> "$GITHUB_PATH"
-      - name: Run full suite with combined coverage
+      # Named honestly: this runs the internal Go suite against SAIO. It is
+      # NOT the "full" suite — the rclone compatibility matrix stays gated
+      # behind AERONAUTES_MATRIX_RCLONE and is not run here (codex war-room
+      # W-16); enabling that lane is release-assurance work.
+      - name: Run internal Go suite with combined coverage (SAIO)
         if: steps.detect.outputs.present == 'true'
         env:
           AERONAUTES_SAIO_AUTH_URL: http://127.0.0.1:8080/auth/v1.0

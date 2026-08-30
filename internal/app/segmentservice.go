@@ -183,11 +183,13 @@ func (s *DeleteService) CheckSegmentOwnership(ctx context.Context, req SegmentsD
 	return ownership, err
 }
 
-// DeleteManifestWithSegments removes a manifest AND its segments —
-// automatically only under proof; otherwise only through the Backstage
-// force with typed confirmation. The HEAD here is the §28.6 required
-// authoritative re-check: the operation follows segments, so identity
-// at execution time matters.
+// DeleteManifestWithSegments removes a manifest AND its segments. It is
+// ALWAYS gated on the Backstage force with typed confirmation — ownership
+// evidence is advisory and never auto-authorizes (no live
+// reverse-reference scan exists yet). The HEAD here is the §28.6 required
+// authoritative re-check: the operation follows segments, so identity at
+// execution time matters. The residual HEAD-to-DELETE window and the
+// content-ETag-only recheck are stated honestly below (review W-10).
 func (s *DeleteService) DeleteManifestWithSegments(ctx context.Context, req SegmentsDeleteRequestDTO) (*SegmentsDeleteResultDTO, error) {
 	if req.BookmarkID == "" || req.Container == "" || req.Name == "" {
 		return nil, errors.New("bookmark, container, and object are required")

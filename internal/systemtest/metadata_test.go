@@ -46,4 +46,23 @@ func TestObjectMetadataEditIsSurgical(t *testing.T) {
 	}
 	// Nothing outside target.txt moved anywhere on the account.
 	h.AssertNoCollateral(before, after, c+"/target.txt")
+
+	// Optimistic-concurrency refusal: an edit built on a STALE fingerprint
+	// is refused as a conflict, and a refused edit changes NOTHING (codex
+	// war-room H-07 — the earlier empty base fingerprint never exercised
+	// this path).
+	conflictBefore := h.Snapshot(h.Primary, c)
+	stale, err := h.Mutate.UpdateObjectMetadata(ctx, c, "target.txt", "stale-fingerprint-that-cannot-match", app.ObjectMetadataEditDTO{
+		Meta: map[string]string{"Team": "must-not-apply"}, ContentType: "text/plain",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stale.Outcome != "conflict" {
+		t.Fatalf("stale-fingerprint edit outcome = %q, want conflict", stale.Outcome)
+	}
+	conflictAfter := h.Snapshot(h.Primary, c)
+	if d := diffOf(conflictBefore, conflictAfter); !d.Empty() {
+		t.Fatalf("a refused (conflict) metadata edit still changed state:\n%s", d)
+	}
 }

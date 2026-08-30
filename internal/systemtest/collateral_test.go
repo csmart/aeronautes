@@ -54,7 +54,22 @@ func TestCollateralDetection(t *testing.T) {
 		t.Fatalf("allowed content change still flagged: %v", s)
 	}
 
-	// 4. An object name containing a colon parses on the exact "container/
+	// 4. A whole new container with an object: allowing the bare container
+	// name covers the container add but NOT the object inside it (H-05).
+	before = &oracle.AccountSnapshot{Containers: map[string]oracle.ContainerState{}}
+	after = &oracle.AccountSnapshot{Containers: map[string]oracle.ContainerState{
+		"newc": {Name: "newc", Objects: map[string]oracle.ObjectState{
+			"smuggled": {Name: "smuggled", Digest: "d9"},
+		}},
+	}}
+	if s := collateral(before, after, []string{"newc"}); len(s) != 1 {
+		t.Fatalf("bare container allow should still flag the object inside a new container: %v", s)
+	}
+	if s := collateral(before, after, []string{"newc", "newc/smuggled"}); len(s) != 0 {
+		t.Fatalf("explicitly allowing container+object still flagged: %v", s)
+	}
+
+	// 5. An object name containing a colon parses on the exact "container/
 	// name: <what>" separator, so its allow ref still matches.
 	before, after = base(), base()
 	before.Containers["c"].Objects["ts:2026"] = oracle.ObjectState{Name: "ts:2026", Digest: "d1"}

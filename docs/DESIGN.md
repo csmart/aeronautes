@@ -3909,9 +3909,14 @@ Contained/fixed with tests: R-01 planned-new plain commits now use a CONDITIONAL
 (the racer survives — the test is inverted to prove it); R-02 segment deletion is
 FORCE-ONLY until a live reverse-reference scan exists (evidence is advisory, never
 auto-authorizes destruction); R-04 overlap identity is the account segment (AUTH_xxx)
-compared fail-closed so host aliases can't bypass it; R-06 credentials are read from an
-atomic snapshot published in v1Auth.Response (no race with the library's implicit reauth,
-proven under -race); R-07 the returned storage URL gets the full endpoint policy; R-08
+compared fail-closed so host aliases can't bypass it; R-06 credentials are read from a
+snapshot published in v1Auth.Response for the primary read path — PARTIAL: codex's
+war-room W-05 later reproduced, under -race, that ForceReauth can retain a rejected
+future-expiry snapshot and skip reauth, and that raw helpers (BulkDelete and peers) still
+read mutable swift.Connection fields; the single atomic {url,token,expiry,generation}
+tuple is the deferred fix, NOT yet done — do not call this race-free; R-07 the returned
+storage URL gets scheme/host validation and HTTPS→HTTP downgrade rejection but NOT yet the
+full public/private plaintext endpoint policy (codex W-06); R-08
 symlink edits refuse any link form (cross-account included); R-09 partial (absolute paths
 no longer cross the bridge, native upload verifies its landing); R-12 partial (the
 public-ACL ack is honestly documented as an accident control, not a hostile-webview one).
@@ -4083,6 +4088,38 @@ race-clean under `-race` against SAIO. Remaining matrix rows (read/session happy
 paths, conflict/cancel/partial cases, upload/download, fault-injection/crash
 with real killed subprocesses, UI→bridge, platform) build on this foundation
 next.
+
+**Two adversarial war-room reviews actioned (2026-08-30).** Grok ("real
+foundation, not comment theatre") and Codex both reviewed the branch. Codex's
+verdict is **NO-GO for release against valuable data** — correctly so: its P0/P1
+findings (W-01 stale-preview→different-op plan tokens, W-02 mirror last-hop
+HEAD→DELETE race, W-03 overwrite last-hop race, W-04 recovery-sweep exclusivity,
+W-05 credential atomic tuple, W-06 endpoint policy on returned URL, W-07
+ordered-manifest verification, W-08 identity-keyed outcome ledger, W-09 durable
+outbox/panic boundary, W-10 capability-bound force, W-11 local transfer, W-12
+metadata-only/symlink fidelity, W-13 short-page iteration, W-14 versioning, W-15
+session-generation, W-16 release attestation, W-17 native capability tokens) are
+the SAME deferred architecture already named as R-01–R-18 — the redesign the war
+room exists to eventually gate, NOT defects in this test branch. A NO-GO on
+releasing the PRODUCT does not block merging TEST infrastructure. The concrete
+bugs Codex found in the SUITE ITSELF are all fixed with catching tests: Diff now
+enumerates the objects inside an added/removed container so a bare-container
+allowance can't hide contents (H-05); the oracle fails closed on every segment,
+SLO, read, decode, and non-advancing-pagination case and refuses redirects
+(H-06); the Covered map is validated (unknown keys, non-required scenarios, and
+duplicates fail the report) and the numerator can no longer be inflated (H-02);
+DeleteManifestWithSegments is reclassified synchronous-Destructive and StartFind
+carries an explicit cancel scenario via the now-wired Scenarios override (H-03);
+the mirror fixture gained a genuinely changed object and the metadata matrix a
+real optimistic-conflict refusal (H-07); a non-asserting `if !d.Empty() == false`
+test and the stale "automatically under proof" comment are fixed (AI-slop).
+Honest coverage is now 8/97. Overclaims Codex flagged are corrected in the R-06
+credential and R-07 endpoint dispositions above (no longer "race-free"/"full
+policy"). The larger program Codex specifies — a semantic oracle over complete
+account + local + durable state, a deterministic barrier/fault layer, a real
+two-direction Swift matrix, a UI/native layer, and hard CI gates — is the
+tranche the war room grows into; H-01/H-04/H-08 (incompleteness, schema-generated
+bindings, the race/crash/UI/native matrix) are tracked as its next rows.
 
 
 ## 66. Final project statement

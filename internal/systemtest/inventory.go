@@ -31,8 +31,21 @@ const (
 
 // Action is one inventory row.
 type Action struct {
-	Kind      Kind
-	Scenarios []string // required scenario tags for this action
+	Kind Kind
+	// Scenarios, when set, overrides the kind's default required list for
+	// this specific action — for methods whose real contract does not fit
+	// the five-kind shortcut (codex war-room H-03). Empty means "use the
+	// kind default".
+	Scenarios []string
+}
+
+// required is the scenario list this action must cover: its explicit
+// per-action override if set, otherwise its kind's default.
+func (a Action) required() []string {
+	if len(a.Scenarios) > 0 {
+		return a.Scenarios
+	}
+	return a.Kind.requiredScenarios()
 }
 
 // requiredScenarios maps a kind to the scenarios every action of that
@@ -100,15 +113,19 @@ var Inventory = map[string]Action{
 	"TransferService.RerunJob":          {Kind: Job},
 	"TransferService.CancelJob":         {Kind: Session},
 	// DeleteService
-	"DeleteService.PreviewDelete":              {Kind: Read},
-	"DeleteService.CheckSegmentOwnership":      {Kind: Read},
-	"DeleteService.StartDelete":                {Kind: Job},
-	"DeleteService.DeleteManifestWithSegments": {Kind: Job},
+	"DeleteService.PreviewDelete":         {Kind: Read},
+	"DeleteService.CheckSegmentOwnership": {Kind: Read},
+	"DeleteService.StartDelete":           {Kind: Job},
+	// DeleteManifestWithSegments returns its result synchronously (force +
+	// typed confirmation, no job/cancel lifecycle), so it is Destructive,
+	// not a Job (codex war-room H-03).
+	"DeleteService.DeleteManifestWithSegments": {Kind: Destructive},
 	// JobService
 	"JobService.Get":  {Kind: Read},
 	"JobService.List": {Kind: Read},
-	// FindService
-	"FindService.StartFind":  {Kind: Read},
+	// FindService — StartFind launches a cancellable async scan (read-only,
+	// but not a plain synchronous read), so it needs a cancel scenario.
+	"FindService.StartFind":  {Kind: Read, Scenarios: []string{"happy", "cancel"}},
 	"FindService.FindStatus": {Kind: Read},
 	"FindService.CancelFind": {Kind: Session},
 	// SettingsService
@@ -126,7 +143,7 @@ var Inventory = map[string]Action{
 // future hard gate fails CI when a shipped action has an uncovered
 // required scenario.
 var Covered = map[string][]string{
-	"MutateService.UpdateObjectMetadata":       {"happy"},            // metadata_test.go
+	"MutateService.UpdateObjectMetadata":       {"happy", "refusal"}, // metadata_test.go (happy + optimistic-conflict refusal)
 	"TransferService.StartCopy":                {"happy", "refusal"}, // copy_test.go + refusal_test.go
 	"TransferService.StartMirror":              {"happy"},            // mirror_test.go
 	"DeleteService.StartDelete":                {"happy", "refusal"}, // delete_test.go + refusal_test.go
@@ -144,7 +161,7 @@ func CoverageGaps() map[string][]string {
 			have[s] = true
 		}
 		var missing []string
-		for _, req := range action.Kind.requiredScenarios() {
+		for _, req := range action.required() {
 			if !have[req] {
 				missing = append(missing, req)
 			}

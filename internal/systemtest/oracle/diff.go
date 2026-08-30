@@ -50,15 +50,25 @@ func (d Delta) String() string {
 // change is a CHANGE, and a stray deletion anywhere is a removal.
 func Diff(before, after *AccountSnapshot) Delta {
 	var d Delta
-	for name := range after.Containers {
+	for name, ac := range after.Containers {
 		if _, ok := before.Containers[name]; !ok {
 			d.AddedContainers = append(d.AddedContainers, name)
+			// Enumerate the new container's objects too: a bare-container
+			// allowance must not blanket-allow arbitrary contents appearing
+			// inside it (codex war-room H-05).
+			for obj := range ac.Objects {
+				d.AddedObjects = append(d.AddedObjects, name+"/"+obj)
+			}
 		}
 	}
 	for name, bc := range before.Containers {
 		ac, ok := after.Containers[name]
 		if !ok {
 			d.RemovedContainers = append(d.RemovedContainers, name)
+			// Likewise enumerate what disappeared with a removed container.
+			for obj := range bc.Objects {
+				d.RemovedObjects = append(d.RemovedObjects, name+"/"+obj)
+			}
 			continue
 		}
 		if why := containerConfigDiff(bc, ac); why != "" {
