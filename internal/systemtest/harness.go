@@ -245,6 +245,26 @@ func (h *Harness) AssertNoCollateral(before, after *oracle.AccountSnapshot, allo
 	}
 }
 
+// AwaitJob polls JobService until the job reaches a terminal state or
+// the deadline passes, returning the terminal DTO.
+func (h *Harness) AwaitJob(jobID string) *app.JobDTO {
+	h.T.Helper()
+	deadline := time.Now().Add(90 * time.Second)
+	for time.Now().Before(deadline) {
+		job, err := h.Jobs.Get(h.ctx, jobID)
+		if err != nil {
+			h.T.Fatal(err)
+		}
+		switch job.State {
+		case "complete", "partial", "failed", "cancelled":
+			return job
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	h.T.Fatalf("job %s never reached a terminal state", jobID)
+	return nil
+}
+
 func containerOf(objRef string) string {
 	c, _, _ := strings.Cut(objRef, "/")
 	return c
@@ -255,4 +275,9 @@ func envOr(k, d string) string {
 		return v
 	}
 	return d
+}
+
+// diffOf is Diff over the oracle snapshots (a thin re-export for tests).
+func diffOf(before, after *oracle.AccountSnapshot) oracle.Delta {
+	return oracle.Diff(before, after)
 }
