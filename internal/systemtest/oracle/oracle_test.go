@@ -24,7 +24,12 @@ func seedClient(t *testing.T) *rawClient {
 	if authURL == "" {
 		t.Skip("AERONAUTES_SAIO_AUTH_URL not set")
 	}
-	c := &http.Client{Timeout: 30 * time.Second}
+	// Refuse redirects so the durable test token/key is never forwarded to
+	// another host by a 3xx (codex war-room F-06 — match the Oracle).
+	c := &http.Client{
+		Timeout:       30 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
 	req, _ := http.NewRequest(http.MethodGet, authURL, nil)
 	req.Header.Set("X-Auth-User", envOr("AERONAUTES_SAIO_USER", "test:tester"))
 	req.Header.Set("X-Auth-Key", envOr("AERONAUTES_SAIO_KEY", "testing"))
@@ -33,7 +38,14 @@ func seedClient(t *testing.T) *rawClient {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	return &rawClient{client: c, storageURL: resp.Header.Get("X-Storage-Url"), token: resp.Header.Get("X-Auth-Token")}
+	if resp.StatusCode/100 != 2 {
+		t.Fatalf("seed auth %s: HTTP %d", authURL, resp.StatusCode)
+	}
+	storageURL, token := resp.Header.Get("X-Storage-Url"), resp.Header.Get("X-Auth-Token")
+	if storageURL == "" || token == "" {
+		t.Fatalf("seed auth: missing storage URL or token")
+	}
+	return &rawClient{client: c, storageURL: storageURL, token: token}
 }
 
 func (r *rawClient) req(t *testing.T, method, path, query string, body []byte, headers map[string]string) *http.Response {

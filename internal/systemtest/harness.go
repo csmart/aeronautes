@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -60,8 +61,14 @@ type Harness struct {
 	Primary   *Account // the active browse/inspect/mutate account
 	Secondary *Account // for cross-account Copy/Mirror
 
-	invoked map[string]bool  // bridge actions this test invoked through a wrapper
-	pending []recordedCredit // scenarios to credit iff the test passes
+	// The scenario-evidence ledger. mu guards it because the war room is
+	// designed to drive one harness from concurrent goroutines (codex
+	// war-room F-03).
+	mu           sync.Mutex
+	invoked      map[string]bool  // bridge actions invoked through a wrapper
+	pending      []recordedCredit // validated scenario credits, committed iff the test passes
+	finalFailed  bool             // captured by the last cleanup, read by RunScenario
+	finalSkipped bool
 }
 
 // New builds a harness or skips when SAIO is unavailable. A second
@@ -78,7 +85,6 @@ func New(t *testing.T) *Harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { database.Close() })
 
 	store := bookmarks.NewStore(database, secrets.NewSessionStore())
 	connections := app.NewConnections(store)
@@ -101,6 +107,23 @@ func New(t *testing.T) *Harness {
 		Jobs:      app.NewJobService(jobStore),
 		Audit:     app.NewAuditService(auditStore),
 	}
+
+	// Registered FIRST so LIFO runs it LAST — after every other cleanup
+	// (purges, residue sweep, db close) — capturing the test's TRULY final
+	// disposition. RunScenario reads this to decide whether to commit
+	// credits, instead of a finalizer that would run before an
+	// earlier-registered cleanup (codex war-room F-02).
+	t.Cleanup(func() {
+		h.finalFailed = t.Failed()
+		h.finalSkipped = t.Skipped()
+	})
+	// Checked db close: a close/durability error fails the test (and so
+	// blocks credit), rather than being silently ignored (codex F-02).
+	t.Cleanup(func() {
+		if err := database.Close(); err != nil {
+			t.Errorf("harness db close: %v", err)
+		}
+	})
 
 	primary, err := h.account(authURL, envOr("AERONAUTES_SAIO_USER", "test:tester"), envOr("AERONAUTES_SAIO_KEY", "testing"), "primary")
 	if err != nil {
@@ -130,25 +153,46 @@ func New(t *testing.T) *Harness {
 		t.Fatal(err)
 	}
 
-	// Registered here (before any Container purge, which is registered in
-	// the test body) so LIFO runs them LAST: the residue sweep after every
-	// purge, then the scenario finalizer after the sweep — so a credit is
-	// committed only once cleanup has run and the test is still green
-	// (codex R-01/R-04).
-	t.Cleanup(h.finalizeScenarios)
+	// The residue sweep runs after every Container purge (which the body
+	// registers later) and before the disposition capture registered above
+	// — so a leak fails the test and blocks credit (codex R-04).
 	t.Cleanup(h.assertNoResidue)
 	return h
 }
 
-// finalizeScenarios commits this test's pending scenario credits, but only
-// if the test PASSED — not if it failed or skipped, and only after every
-// earlier-registered cleanup (purges, residue sweep) has run (codex R-01).
-func (h *Harness) finalizeScenarios() {
-	if h.T.Failed() || h.T.Skipped() {
+// RunScenario runs a recording test body inside a subtest and commits its
+// scenario credits only if that subtest PASSED — judged AFTER its entire
+// lifecycle, including every cleanup, has completed (codex war-room F-02).
+// A test that only witnesses the oracle (records nothing) can call New
+// directly; a test that records scenarios MUST use RunScenario so its
+// disposition is observed from the outside.
+func RunScenario(t *testing.T, body func(t *testing.T, h *Harness)) {
+	runScenario(t, New, body)
+}
+
+// runScenario is the core with an injectable harness factory, so the
+// disposition rule (commit only after a subtest that neither failed nor
+// skipped, judged post-cleanup) is testable without SAIO.
+func runScenario(t *testing.T, newHarness func(*testing.T) *Harness, body func(t *testing.T, h *Harness)) {
+	t.Helper()
+	var h *Harness
+	t.Run("scenario", func(st *testing.T) {
+		h = newHarness(st)
+		if h != nil {
+			body(st, h)
+		}
+	})
+	// After the subtest and ALL its cleanups have run, commit iff it truly
+	// passed. The disposition was captured by the harness's first-registered
+	// (last-running) cleanup, so a late skip or a cleanup failure is seen.
+	if h == nil || h.finalFailed || h.finalSkipped {
 		return
 	}
-	for _, c := range h.pending {
-		creditScenario(c.action, c.scenario, h.T.Name())
+	h.mu.Lock()
+	pending := append([]recordedCredit(nil), h.pending...)
+	h.mu.Unlock()
+	for _, c := range pending {
+		creditScenario(c.action, c.scenario, t.Name())
 	}
 }
 
@@ -184,34 +228,83 @@ func (h *Harness) assertNoResidue() {
 	}
 }
 
-// markInvoked records that this test invoked a bridge action through a
-// harness wrapper — the OBSERVED fact RecordScenario requires, so a
-// scenario can never be self-attested by a no-op test (codex R-01).
+// markInvoked records (concurrency-safely, codex F-03) that this test
+// invoked a bridge action through a harness wrapper — the OBSERVED fact a
+// credit requires, so a no-op test that never called the action earns
+// nothing.
 func (h *Harness) markInvoked(action string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	if h.invoked == nil {
 		h.invoked = map[string]bool{}
 	}
 	h.invoked[action] = true
 }
 
-// RecordScenario claims that this test exercised (action, scenario). The
-// action must be inventoried, the scenario one it requires, AND the
-// harness must have observed the action actually invoked through a wrapper
-// — otherwise it fails loudly. The credit itself is committed later, only
-// if the test passes (see finalizeScenarios).
-func (h *Harness) RecordScenario(action, scenario string) {
+// claim is the private core: it validates the pair against the inventory
+// and requires the action to have been observed invoked, then queues the
+// credit (committed later by RunScenario iff the test passes). It never
+// decides the scenario from a bare label — the public Credit* helpers do
+// that from OBSERVED OUTCOME evidence, so one call cannot certify a
+// scenario it did not produce (codex war-room F-01).
+func (h *Harness) claim(action, scenario string) {
 	h.T.Helper()
 	a, ok := Inventory[action]
 	if !ok {
-		h.T.Fatalf("RecordScenario: %q is not an inventoried action", action)
+		h.T.Fatalf("claim: %q is not an inventoried action", action)
 	}
 	if !scenarioRequired(a, scenario) {
-		h.T.Fatalf("RecordScenario: %q is not a required scenario for %q (needs %v)", scenario, action, a.required())
+		h.T.Fatalf("claim: %q is not a required scenario for %q (needs %v)", scenario, action, a.required())
 	}
-	if !h.invoked[action] {
-		h.T.Fatalf("RecordScenario: %q was recorded but the harness never observed it invoked — call it through the harness wrapper, not the raw service", action)
+	h.mu.Lock()
+	invoked := h.invoked[action]
+	if invoked {
+		h.pending = append(h.pending, recordedCredit{action, scenario})
 	}
-	h.pending = append(h.pending, recordedCredit{action, scenario})
+	h.mu.Unlock()
+	if !invoked {
+		h.T.Fatalf("claim %q/%q: the harness never observed this action invoked — call it through a harness wrapper", action, scenario)
+	}
+}
+
+// CreditHappyJob credits "happy" for a job-running action ONLY when the
+// job reached the terminal COMPLETE state — a refused or failed start
+// cannot be labelled happy (codex F-01).
+func (h *Harness) CreditHappyJob(action, jobID string) {
+	h.T.Helper()
+	if job := h.AwaitJob(jobID); job.State != "complete" {
+		h.T.Fatalf("CreditHappyJob %s: job %s is %q, not complete", action, jobID, job.State)
+	}
+	h.claim(action, "happy")
+}
+
+// CreditApplied credits "happy" for a synchronous mutate ONLY when its
+// result outcome is "applied".
+func (h *Harness) CreditApplied(action, outcome string) {
+	h.T.Helper()
+	if outcome != "applied" {
+		h.T.Fatalf("CreditApplied %s: outcome %q, not applied", action, outcome)
+	}
+	h.claim(action, "happy")
+}
+
+// CreditRefusal credits "refusal" ONLY when the call actually returned an
+// error — a successful call cannot be recorded as a refusal (codex F-01).
+func (h *Harness) CreditRefusal(action string, err error) {
+	h.T.Helper()
+	if err == nil {
+		h.T.Fatalf("CreditRefusal %s: the call returned no error, so it was not refused", action)
+	}
+	h.claim(action, "refusal")
+}
+
+// CreditConflict credits "conflict" ONLY when the outcome is "conflict".
+func (h *Harness) CreditConflict(action, outcome string) {
+	h.T.Helper()
+	if outcome != "conflict" {
+		h.T.Fatalf("CreditConflict %s: outcome %q, not conflict", action, outcome)
+	}
+	h.claim(action, "conflict")
 }
 
 // Bridge-action wrappers: tests call THESE (not the raw services) so the

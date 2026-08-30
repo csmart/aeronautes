@@ -4128,36 +4128,43 @@ rejects bogus coverage entries (H-02); reclassification and the wired per-action
 Scenarios override (H-03); the changed-object mirror fixture and optimistic-
 conflict metadata case (H-07).
 
-Coverage is now EVIDENCE-BASED and hardened against the false-credit paths Codex's
-re-review reproduced (R-01): a credit requires the bridge action to have been
-OBSERVED invoked through a harness wrapper (a no-op test that only names an action
-earns nothing), and it is committed only if the test PASSED — not skipped, not
-failed — by a finalizer that runs after every resource cleanup. So a credit means
-"a passing, non-skipped test invoked this action and reached the record call after
-its assertions" — NOT that the assertion is provably strong (that remains future
-work, stated plainly in scenario.go). The report carries a `valid` bit tied to the
-process result and the test name that earned each cell (R-03 provenance); TestMain
-FAILS the process if a configured report cannot be written, and CI validates the
-schema/valid bit and uploads with if-no-files-found:error (R-03). The denominator
-is validated well-formed — an invalid Kind or empty requirement set fails
+Coverage is EVIDENCE-BASED and, after Codex's third and fourth re-reviews, hardened
+against the false-credit paths it reproduced. A credit now requires THREE things,
+not a label: (1) the action was OBSERVED invoked through a harness wrapper (a no-op
+test earns nothing); (2) the scenario matches OBJECTIVE OUTCOME EVIDENCE — credit
+comes from scenario-specific helpers (CreditHappyJob requires a COMPLETE job,
+CreditRefusal a returned error, CreditConflict a "conflict" outcome), so one
+refusal can no longer certify happy/conflict/cancel/partial/retry — the six-from-one
+spoof is impossible because those helpers validate evidence and cancel/partial/retry
+have no credit path at all yet (Codex round-4 F-01); (3) the whole test PASSED —
+judged by RunScenario from OUTSIDE a subtest, after that subtest's entire lifecycle
+including every cleanup, so a late skip or a cleanup failure blocks credit, not just
+a body failure (F-02). The invocation/credit ledger is mutex-guarded and race-tested
+under the concurrency the war room exists to drive (F-03). The disposition rule and
+concurrency are covered by real regressions (a late-cleanup-skip earns no credit; a
+16-goroutine ledger race test). So a credit means "a passing test invoked this
+action and observed the coarse outcome the helper checks" — NOT that its
+negative-space assertions are exhaustive (future work, stated in scenario.go), and
+NOT merely "observed invocation". The report carries a `valid` bit tied to the
+process result plus the test name that earned each cell; TestMain FAILS the process
+if a configured report cannot be written; CI validates the schema/valid bit and
+uploads with if-no-files-found:error (R-03). The denominator is validated
+well-formed — an invalid Kind or empty requirement set fails
 TestInventoryIsWellFormed, so no row can contribute zero and look complete (R-02);
-the kind defaults are a conservative FLOOR below DESIGN's literal ≈162 baseline and
-the far larger full matrix, documented as such in inventory.go, not a completeness
-claim. Passing tests now leave Swift exactly as they found it: cleanup enumerates
-by raw JSON-decoded listing (never a logical GET of a broken manifest, never a
-whitespace-sensitive string scrape), checks every DELETE, and an end-of-test
-residue sweep FAILS a test that left any ns container behind (R-04). It is 8/102
-today and visibly incomplete scaffolding — NOT a hard no-gap gate (future).
-Overclaims Codex flagged are corrected: the R-06/R-07 dispositions above; the
-oracle/harness comments (no "full identity"/"whole-account"; ObjectState says
-"modelled identity"); the out-of-scope domains (account config, archived versions,
-local/jobs/audit state, ranged/nested SLO, dangling cross-account symlinks) named
-in the oracle package doc. The larger program Codex specifies — a semantic oracle
-over complete account + local + durable state, a deterministic barrier/fault layer,
-a real two-direction Swift matrix, a UI/native layer, and hard CI gates — is the
-tranche the war room grows into; H-01/H-04/H-08, F-06 and Codex R-05/R-06
-(scope- and matrix-completeness), plus a machine-checked assertion-strength
-contract and explicit per-action N/A waivers, are its next rows.
+the kind defaults are a conservative FLOOR below DESIGN's literal ≈162 baseline,
+documented as such, NOT a completeness claim. Passing tests leave Swift exactly as
+they found it: cleanup enumerates by raw JSON-decoded listing (never a logical GET
+of a broken manifest, never a whitespace-sensitive string scrape), checks every
+DELETE, and an end-of-test residue sweep FAILS a test that left any ns container
+behind (R-04, verified across ten repetitions). Every raw test client — the Oracle,
+the harness, AND the oracle test's seed client — refuses redirects so a test token
+is never forwarded (F-06). It is 8/102 today and visibly incomplete scaffolding —
+NOT a hard no-gap gate (future). The larger program Codex specifies — a per-cell
+evidence ledger with variant/oracle provenance (F-05), an explicit per-action
+required/N/A contract reconciled with the 162 baseline and a joined UI matrix
+(F-04), a semantic oracle over complete account + local + durable state (R-05), a
+deterministic barrier/fault layer, a real two-direction Swift matrix, and hard CI
+gates (R-06) — is the tranche the war room grows into; those are its next rows.
 
 
 ## 66. Final project statement

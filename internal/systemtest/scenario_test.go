@@ -6,6 +6,7 @@ import (
 	"os"
 	"runtime"
 	"sort"
+	"sync"
 	"testing"
 )
 
@@ -136,53 +137,72 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// TestScenarioCreditLifecycle exercises the REAL testing.T lifecycle (not
-// a synthetic bool) through subtests: a passing test's credit lands, a
-// SKIPPED test's does not, and the finalizer runs AFTER a resource cleanup
-// registered later — so a cleanup that fails is observed before credit
-// (codex R-01). The fail branch shares the exact `Failed() || Skipped()`
-// guard proven by the skip branch; a failing subtest would fail this
-// parent, which Go gives no clean way to isolate.
-func TestScenarioCreditLifecycle(t *testing.T) {
+// fakeNew mimics New's disposition-capture (a first-registered, so
+// last-running, cleanup) without SAIO, with one pending credit queued.
+func fakeNew(fake string) func(*testing.T) *Harness {
+	return func(st *testing.T) *Harness {
+		h := &Harness{T: st, pending: []recordedCredit{{fake, "happy"}}}
+		st.Cleanup(func() {
+			h.finalFailed = st.Failed()
+			h.finalSkipped = st.Skipped()
+		})
+		return h
+	}
+}
+
+// TestRunScenarioDisposition exercises the REAL testing.T lifecycle through
+// runScenario with an injected harness (codex war-room F-02): a passing
+// subtest commits, a subtest that SKIPS in its body does not, and — the
+// exact reproduction — a subtest that SKIPS in a LATE CLEANUP (registered
+// after the harness, so it runs before the disposition capture) also
+// commits nothing. A body failure shares the same Failed() guard; a
+// failing subtest would fail this parent, which Go cannot cleanly isolate.
+func TestRunScenarioDisposition(t *testing.T) {
 	const fake = "SentinelService.Only" // absent from Inventory → never pollutes the report
 	clear := func() { scenarioMu.Lock(); delete(scenarioSeen, fake); scenarioMu.Unlock() }
 	defer clear()
 
-	// A passing test commits its pending credit.
-	t.Run("pass-commits", func(st *testing.T) {
-		clear()
-		h := &Harness{T: st, pending: []recordedCredit{{fake, "happy"}}}
-		st.Cleanup(h.finalizeScenarios)
-	})
+	clear()
+	runScenario(t, fakeNew(fake), func(st *testing.T, h *Harness) {})
 	if _, ok := recordedScenarios()[fake]; !ok {
-		t.Fatal("a passing test did not commit its pending credit")
+		t.Error("a passing scenario did not commit its credit")
 	}
 
-	// A skipped test commits nothing (a skip is not a pass).
-	t.Run("skip-does-not-commit", func(st *testing.T) {
-		clear()
-		h := &Harness{T: st, pending: []recordedCredit{{fake, "happy"}}}
-		st.Cleanup(h.finalizeScenarios)
-		st.Skip("deliberate skip")
+	clear()
+	runScenario(t, fakeNew(fake), func(st *testing.T, h *Harness) { st.Skip("body skip") })
+	if _, ok := recordedScenarios()[fake]; ok {
+		t.Error("a body-skipped scenario earned credit")
+	}
+
+	clear()
+	runScenario(t, fakeNew(fake), func(st *testing.T, h *Harness) {
+		st.Cleanup(func() { st.Skip("late cleanup skip") }) // runs before the disposition capture
 	})
 	if _, ok := recordedScenarios()[fake]; ok {
-		t.Fatal("a skipped test committed a credit")
+		t.Error("a late-cleanup-skip scenario earned credit (F-02 reproduction)")
 	}
+}
 
-	// The finalizer, registered FIRST like New does, runs LAST — after a
-	// resource cleanup registered later. So it observes the post-cleanup
-	// state (including any failure a cleanup raised) before crediting.
-	clear()
-	var order []string
-	t.Run("finalizer-runs-after-resource-cleanup", func(st *testing.T) {
-		h := &Harness{T: st, pending: []recordedCredit{{fake, "happy"}}}
-		st.Cleanup(func() { order = append(order, "finalizer"); h.finalizeScenarios() }) // first → last
-		st.Cleanup(func() { order = append(order, "resource") })                         // later → first
-	})
-	if len(order) != 2 || order[0] != "resource" || order[1] != "finalizer" {
-		t.Fatalf("finalizer did not run after the resource cleanup: %v", order)
+// TestLedgerConcurrencySafe drives one harness ledger from many goroutines,
+// so `go test -race` proves the invocation/credit bookkeeping is safe under
+// the concurrency this war room exists to exercise (codex war-room F-03).
+func TestLedgerConcurrencySafe(t *testing.T) {
+	const action = "TransferService.StartCopy"
+	h := &Harness{T: t}
+	var wg sync.WaitGroup
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			h.markInvoked(action)
+			h.claim(action, "happy")
+		}()
 	}
-	if _, ok := recordedScenarios()[fake]; !ok {
-		t.Fatal("passing test with a resource cleanup was not credited")
+	wg.Wait()
+	h.mu.Lock()
+	got := len(h.pending)
+	h.mu.Unlock()
+	if got != 16 {
+		t.Fatalf("expected 16 pending claims, got %d", got)
 	}
 }
