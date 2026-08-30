@@ -20,7 +20,9 @@ table, and the manifest-only delete. More in [`docs/assets/screenshots/`](docs/a
 ## What it is
 
 - A **Swift-native** operator tool — containers, objects, prefixes, **segments**, DLO/SLO manifests,
-  storage policies, ACLs, versioning, TempURL, quotas, CORS, staticweb — not a file-manager metaphor.
+  storage policies, ACLs, versioning, quotas — not a file-manager metaphor. TempURL, CORS, and
+  staticweb are modeled read-only today (key slots and presence, never secret values); their
+  management surfaces are tracked v1.x work.
 - **Cross-account / cross-cluster** copy and mirror as a first-class workflow.
 - **Safety-first**: destructive actions explain scope; heuristics never authorize destruction;
   object-metadata edits never silently drop keys.
@@ -34,8 +36,9 @@ table, and the manifest-only delete. More in [`docs/assets/screenshots/`](docs/a
 ## Stack
 
 Go core · `github.com/ncw/swift/v2` (wrapped) · **Wails v3** desktop shell · Svelte 5 + TypeScript UI ·
-pinned rclone subprocess for bulk movement · SQLite (non-secret state) · OS keychain / opt-in encrypted
-vault for secrets.
+pinned rclone subprocess for bulk movement · SQLite (non-secret state) · OS keychain for secrets
+(session-only fallback when no keychain is reachable; an encrypted vault is a proposed
+future option, ADR 0006).
 
 ## Documents
 
