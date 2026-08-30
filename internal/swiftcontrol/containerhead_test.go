@@ -167,3 +167,12 @@ func TestContainerDetailNotFound(t *testing.T) {
 		t.Fatalf("err = %v, want not_found", err)
 	}
 }
+
+func TestVersionsEnabledParses(t *testing.T) {
+	d := buildContainerDetail(map[string]string{
+		"X-Versions-Enabled": "true",
+	}, time.Now())
+	if d.Versioning.Mode != VersioningEnabled {
+		t.Fatalf("mode = %q, want enabled (object_versioning)", d.Versioning.Mode)
+	}
+}

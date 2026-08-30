@@ -2,8 +2,12 @@ package swiftcontrol
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/ncw/swift/v2"
@@ -31,6 +35,18 @@ type v1Auth struct {
 
 	headers http.Header
 	expires time.Time
+	// snap is an atomically-published credential snapshot captured on
+	// every (re)authentication — Response runs inside ncw/swift's own
+	// authLock, so a value stored here is consistent, and Session reads
+	// it via atomic load instead of racing the connection's exported
+	// fields during an implicit 401 reauth (review R-06).
+	snap atomic.Pointer[authSnapshot]
+}
+
+// authSnapshot is one consistent (token, storage URL, expiry) triple.
+type authSnapshot struct {
+	token, storageURL string
+	expires           time.Time
 }
 
 func (a *v1Auth) Request(ctx context.Context, _ *swift.Connection) (*http.Request, error) {
@@ -45,8 +61,72 @@ func (a *v1Auth) Request(ctx context.Context, _ *swift.Connection) (*http.Reques
 }
 
 func (a *v1Auth) Response(_ context.Context, resp *http.Response) error {
+	// The server-returned storage URL is an ATTACK SURFACE, not just a
+	// value (review F-07): a compromised or misconfigured auth endpoint
+	// answering over https could hand back an http storage URL and the
+	// token would then travel plaintext. The storage scheme may never
+	// DOWNGRADE from the auth scheme, and the URL must parse cleanly.
+	if a.override == "" {
+		storage := resp.Header.Get("X-Storage-Url")
+		if storage != "" {
+			if err := checkStorageURL(a.authURL, storage); err != nil {
+				return err
+			}
+		}
+	}
 	a.headers = resp.Header
 	a.expires = parseV1Expiry(resp.Header.Get("X-Auth-Token-Expires"), time.Now())
+	storageURL := a.override
+	if storageURL == "" {
+		storageURL = resp.Header.Get("X-Storage-Url")
+	}
+	token := resp.Header.Get("X-Auth-Token")
+	// Publish the snapshot ONLY on a genuinely successful auth: a
+	// non-2xx (a 401 caught during a token-rollover window) or a
+	// tokenless response must NEVER clobber a good snapshot with empty
+	// credentials, or a concurrent reader would get an empty storage
+	// URL/token (the R-06 snapshot's own corner).
+	if resp.StatusCode/100 == 2 && token != "" {
+		a.snap.Store(&authSnapshot{token: token, storageURL: storageURL, expires: a.expires})
+	}
+	return nil
+}
+
+// snapshot returns the last published credential triple, or the zero
+// snapshot before first authentication.
+func (a *v1Auth) snapshot() authSnapshot {
+	if s := a.snap.Load(); s != nil {
+		return *s
+	}
+	return authSnapshot{}
+}
+
+// checkStorageURL refuses a returned storage endpoint that fails the
+// same endpoint policy entered auth URLs must pass: parseable http(s),
+// a real host, no embedded credentials, no query/fragment, no control
+// characters, and no plaintext DOWNGRADE from an https auth endpoint
+// (review R-07 — one normalized policy for entered and returned URLs).
+func checkStorageURL(authURL, storage string) error {
+	if strings.ContainsFunc(storage, func(c rune) bool { return c < 0x21 || c == 0x7f }) {
+		return fmt.Errorf("auth returned a storage URL with whitespace or control characters; refused")
+	}
+	su, err := url.Parse(storage)
+	if err != nil {
+		return fmt.Errorf("auth returned an unparseable storage URL: %w", err)
+	}
+	switch {
+	case su.Scheme != "http" && su.Scheme != "https":
+		return fmt.Errorf("auth returned a storage URL with scheme %q; refused", su.Scheme)
+	case su.Host == "":
+		return fmt.Errorf("auth returned a storage URL with no host; refused")
+	case su.User != nil:
+		return fmt.Errorf("auth returned a storage URL embedding credentials; refused")
+	case su.RawQuery != "" || su.Fragment != "":
+		return fmt.Errorf("auth returned a storage URL with a query or fragment; refused")
+	}
+	if au, err := url.Parse(authURL); err == nil && au.Scheme == "https" && su.Scheme == "http" {
+		return fmt.Errorf("auth over https returned an http storage URL (%s): the token would travel plaintext — refused", su.Host)
+	}
 	return nil
 }
 

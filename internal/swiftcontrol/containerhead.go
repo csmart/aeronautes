@@ -16,7 +16,10 @@ const containerMetaPrefix = "X-Container-Meta-"
 type VersioningMode string
 
 const (
-	VersioningOff              VersioningMode = "off"
+	VersioningOff VersioningMode = "off"
+	// VersioningEnabled is modern object versioning
+	// (X-Versions-Enabled: true) — versions live in the SAME container.
+	VersioningEnabled          VersioningMode = "enabled"
 	VersioningVersionsLocation VersioningMode = "versions_location"
 	VersioningHistoryLocation  VersioningMode = "history_location"
 )
@@ -130,6 +133,12 @@ func buildContainerDetail(headers map[string]string, now time.Time) *ContainerDe
 		case "X-History-Location":
 			d.Versioning = ContainerVersioning{Mode: VersioningHistoryLocation, Archive: v}
 			editable[k] = v
+		case "X-Versions-Enabled":
+			// Modern object versioning (§21 display-only): deletes and
+			// overwrites here accumulate versions in-container.
+			if isTrue(v) {
+				d.Versioning = ContainerVersioning{Mode: VersioningEnabled}
+			}
 		case "X-Trans-Id":
 			d.TransID = v
 		case "X-Openstack-Request-Id":

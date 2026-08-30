@@ -67,6 +67,15 @@ func (s *Session) UpdateObjectMetadata(ctx context.Context, container, name, bas
 	if err != nil {
 		return nil, err
 	}
+	if before.FollowedSymlink || before.SymlinkTarget != "" {
+		// A symlink in ANY form is refused: a followed link (same
+		// account) OR a link whose target headers are present without
+		// being followed (cross-account — review R-08). A POST would
+		// apply metadata to the LINK and 307 (measured on SAIO, F-05),
+		// so the edit is refused until the ?symlink=get protocol exists
+		// (§65.10); edit the target object directly.
+		return nil, fmt.Errorf("%s/%s is a symlink: editing through it would write the TARGET's metadata onto the LINK (Swift POSTs to the link, then redirects) — open and edit the target object instead", container, name)
+	}
 	result := &ObjectUpdateResult{Before: before, TransIDs: []string{before.TransID}}
 
 	if baseFingerprint != "" && before.EditableFingerprint != baseFingerprint {

@@ -2,7 +2,9 @@ package swiftcontrol
 
 import (
 	"context"
+	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -44,6 +46,15 @@ type ObjectDetail struct {
 	Meta map[string]string
 	// RawHeaders is the full header set, secret-shaped values redacted.
 	RawHeaders map[string]string
+	// FollowedSymlink reports the HEAD chased a Swift symlink
+	// (Content-Location present): the fields describe the TARGET; the
+	// link object itself is addressed with ?symlink=get.
+	FollowedSymlink bool
+	// SymlinkTarget/-Account are set when the response exposes the link
+	// headers (a ?symlink=get HEAD, or a cross-account link Swift will
+	// not follow).
+	SymlinkTarget        string
+	SymlinkTargetAccount string
 	// TransID is the Swift transaction id of the HEAD, for diagnostics.
 	TransID string
 	// EditableFingerprint covers what the metadata editor can change
@@ -86,6 +97,12 @@ func buildObjectDetail(headers map[string]string, now time.Time) *ObjectDetail {
 		case "X-Object-Manifest":
 			d.Class = ClassDLO
 			d.Manifest = v
+		case "Content-Location":
+			d.FollowedSymlink = true
+		case "X-Symlink-Target":
+			d.SymlinkTarget = strings.TrimPrefix(v, "/")
+		case "X-Symlink-Target-Account":
+			d.SymlinkTargetAccount = v
 		case "X-Static-Large-Object":
 			if isTrue(v) {
 				d.Class = ClassSLO
@@ -120,4 +137,46 @@ func isTrue(v string) bool {
 		return true
 	}
 	return false
+}
+
+// SymlinkGet HEADs the link OBJECT itself (?symlink=get) via the
+// session's raw client: the returned detail carries X-Symlink-Target
+// and the link's own metadata, never the followed target's.
+func (s *Session) SymlinkGet(ctx context.Context, container, name string) (*ObjectDetail, error) {
+	target := s.conn.StorageUrl + "/" + escapeObjectPath(container) + "/" + escapeObjectPath(name) + "?symlink=get"
+	send := func() (*http.Response, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodHead, target, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("X-Auth-Token", s.conn.AuthToken)
+		return s.raw.Do(req)
+	}
+	resp, err := send()
+	if err == nil && resp.StatusCode == http.StatusUnauthorized {
+		resp.Body.Close()
+		if authErr := s.Authenticate(ctx); authErr != nil {
+			return nil, authErr
+		}
+		resp, err = send()
+	}
+	if err != nil {
+		return nil, Normalize(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, &SwiftError{Kind: KindNotFound, HTTPStatus: resp.StatusCode, Message: "symlink HEAD: not found"}
+	}
+	if resp.StatusCode >= 300 {
+		return nil, &SwiftError{Kind: KindServer, HTTPStatus: resp.StatusCode, Message: "symlink HEAD failed"}
+	}
+	flat := map[string]string{}
+	for k, values := range resp.Header {
+		if len(values) > 0 {
+			flat[k] = values[0]
+		}
+	}
+	d := buildObjectDetail(flat, time.Now().UTC())
+	d.Name = name
+	return d, nil
 }
