@@ -7,11 +7,11 @@ vars:
   # Target OS for build/package/run; overridden by `wails3 build GOOS=...`.
   GOOS: '{{.GOOS | default OS}}'
 
-# darwin/windows task includes land with the per-OS CI build matrix (§61.0);
-# a Taskfile include must exist, so they are added when those builds do.
 includes:
   common: ./build/Taskfile.yml
   linux: ./build/linux/Taskfile.yml
+  darwin: ./build/darwin/Taskfile.yml
+  windows: ./build/windows/Taskfile.yml
 
 tasks:
   build:

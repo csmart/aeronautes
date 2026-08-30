@@ -1,0 +1,58 @@
+# Windows build tasks. Curated from the Wails v3 template: pure-Go builds
+# (the webview rides WebView2 over COM — no CGO), a .syso carrying the icon
+# and version resources, and -H windowsgui so no console window opens. The
+# release matrix zips bin\ directly (§61.0), so there is no installer task.
+# Signing is deliberately absent until a code-signing certificate exists
+# (§65.6); artifacts say UNSIGNED.
+version: '3'
+
+includes:
+  common: ../Taskfile.yml
+
+tasks:
+  build:
+    summary: Builds the application for Windows
+    deps:
+      - task: common:go:mod:tidy
+      - task: common:build:frontend
+        vars:
+          BUILD_FLAGS:
+            ref: .BUILD_FLAGS
+          DEV:
+            ref: .DEV
+      - task: generate:syso
+    cmds:
+      - go build {{.BUILD_FLAGS}} -o {{.OUTPUT}}
+      - cmd: powershell Remove-item *.syso
+        platforms: [windows]
+      - cmd: rm -f *.syso
+        platforms: [linux, darwin]
+    vars:
+      # Production builds carry `-tags production` (§55) and -H windowsgui
+      # so the app opens without a console window.
+      BUILD_FLAGS: '{{if eq .DEV "true"}}-buildvcs=false -gcflags=all="-l"{{else}}-tags production -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui"{{end}}'
+      DEFAULT_OUTPUT: '{{.BIN_DIR}}/{{.APP_NAME}}.exe'
+      OUTPUT: '{{ .OUTPUT | default .DEFAULT_OUTPUT }}'
+    env:
+      GOOS: windows
+      CGO_ENABLED: 0
+      GOARCH: '{{.ARCH | default ARCH}}'
+
+  generate:syso:
+    summary: Generates the .syso (icon + version resources) linked into the exe
+    deps:
+      - task: common:generate:icons
+    dir: build
+    cmds:
+      - wails3 generate syso -arch {{.ARCH}} -icon windows/icon.ico -manifest windows/wails.exe.manifest -info windows/info.json -out ../wails_windows_{{.ARCH}}.syso
+    vars:
+      ARCH: '{{.ARCH | default ARCH}}'
+
+  package:
+    summary: Alias of build — the release matrix zips bin\ itself
+    deps:
+      - task: build
+
+  run:
+    cmds:
+      - '{{.BIN_DIR}}\{{.APP_NAME}}.exe'

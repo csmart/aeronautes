@@ -1,0 +1,15 @@
+{
+    "fixed": {
+        "file_version": "0.1.0"
+    },
+    "info": {
+        "0409": {
+            "ProductVersion": "0.1.0",
+            "CompanyName": "Aeronautes",
+            "FileDescription": "Desktop operator workbench for OpenStack Swift",
+            "LegalCopyright": "(c) 2026 Chris Smart",
+            "ProductName": "Aeronautes",
+            "Comments": "Swift-aware browsing, inspection, and data movement"
+        }
+    }
+}
