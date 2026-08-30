@@ -19,6 +19,13 @@ func main() {
 	if *fixtures {
 		server.LoadCanonicalFixtures()
 	}
+	// Request logging: the smoke script verifies UI steps by their wire
+	// effects (an auth GET proves connect happened, a PUT proves the
+	// copy started) instead of trusting blind sleeps.
+	logged := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("%s %s", r.Method, r.URL.Path)
+		server.ServeHTTP(w, r)
+	})
 	log.Printf("mockswift on http://%s (auth /auth/v1.0, test:tester/testing)", *addr)
-	log.Fatal(http.ListenAndServe(*addr, server))
+	log.Fatal(http.ListenAndServe(*addr, logged))
 }

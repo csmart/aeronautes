@@ -11,7 +11,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
+import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -28,9 +28,7 @@ import * as $models from "./models.js";
  * Get returns the persisted settings with defaults filled in.
  */
 export function Get(): $CancellablePromise<$models.AppSettingsDTO> {
-    return $Call.ByID(3118058760).then(($result: any) => {
-        return $$createType0($result);
-    });
+    return $Call.ByID(3118058760);
 }
 
 /**
@@ -47,10 +45,5 @@ export function RunRetention(jobStore: jobs$0.Store | null, auditStore: audit$0.
  * Set validates, persists, and applies the settings.
  */
 export function Set(settings: $models.AppSettingsDTO): $CancellablePromise<$models.AppSettingsDTO> {
-    return $Call.ByID(2666897108, settings).then(($result: any) => {
-        return $$createType0($result);
-    });
+    return $Call.ByID(2666897108, settings);
 }
-
-// Private type creation functions
-const $$createType0 = $models.AppSettingsDTO.createFrom;
