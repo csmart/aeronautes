@@ -1,6 +1,6 @@
 # ADR 0009 — Token lifecycle: bounded batches, fresh children, failure-driven reauth
 
-**Status:** Accepted (2026-08-28)
+**Status:** Accepted; refresh-before-spawn implemented 2026-08-30 (§65.8 item 1) (2026-08-28)
 **Detail:** `DESIGN.md` §26.2; requirements K-SEC-001, K-XFER-001, K-XFER-013
 
 ## Context

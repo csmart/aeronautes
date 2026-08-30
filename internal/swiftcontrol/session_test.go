@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // fakeAuth is a minimal TempAuth-style v1 endpoint: it checks
@@ -239,4 +241,48 @@ func TestTLSModes(t *testing.T) {
 			t.Fatal("New accepted an empty/invalid CA bundle")
 		}
 	})
+}
+
+func TestRefreshIfStale(t *testing.T) {
+	var authCount int64
+	mux := http.NewServeMux()
+	mux.HandleFunc("/auth/v1.0", func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt64(&authCount, 1)
+		w.Header().Set("X-Storage-Url", "http://"+r.Host+"/v1/AUTH_test")
+		w.Header().Set("X-Auth-Token", fmt.Sprintf("tok-%d", atomic.LoadInt64(&authCount)))
+		// 65s: near expiry for a 2-minute margin, but past the wire
+		// library's own 60-second refusal floor.
+		w.Header().Set("X-Auth-Token-Expires", "65")
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	session, err := New(Config{AuthURL: srv.URL + "/auth/v1.0", Username: "test:tester", APIKey: "testing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := session.Authenticate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	first := session.AuthToken()
+
+	// Inside the margin of a known expiry: refresh happens, token turns.
+	if err := session.RefreshIfStale(ctx, 2*time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if session.AuthToken() == first {
+		t.Fatal("stale token not refreshed")
+	}
+	if atomic.LoadInt64(&authCount) != 2 {
+		t.Fatalf("auths = %d", authCount)
+	}
+
+	// Comfortably before expiry (tiny margin): no refresh.
+	if err := session.RefreshIfStale(ctx, time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if atomic.LoadInt64(&authCount) != 2 {
+		t.Fatalf("needless refresh: auths = %d", authCount)
+	}
 }

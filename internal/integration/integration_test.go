@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1835,4 +1836,113 @@ func TestVersionedOverwriteArchivesRealSwift(t *testing.T) {
 		t.Fatal("versioned overwrite archived nothing — the §28.6 disclosure would be a lie")
 	}
 	t.Logf("archive holds %d version(s) after stage-and-commit overwrite", archived)
+}
+
+// TestTokenRefreshAcrossSpawnsRealSwift is the §65.8 item-1 gate: a
+// copy spanning multiple engine spawns must survive token expiry. An
+// auth proxy in front of the SAIO advertises a 65-second token
+// lifetime (X-Auth-Token-Expires rewritten — 65 and not less because
+// the wire library itself refuses a token inside 60s of expiry), the
+// per-spawn RemoteSource refreshes sessions inside the 2-minute
+// margin, and the auth counter proves each child got a freshly-
+// authenticated token — while the copy itself completes.
+func TestTokenRefreshAcrossSpawnsRealSwift(t *testing.T) {
+	if _, err := exec.LookPath("rclone"); err != nil {
+		t.Skip("pinned rclone not installed")
+	}
+	h := harness(t)
+	ctx := context.Background()
+
+	var authCalls int64
+	backend, err := url.Parse("http://127.0.0.1:8080")
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := httputil.NewSingleHostReverseProxy(backend)
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		if resp.Header.Get("X-Auth-Token") != "" {
+			resp.Header.Set("X-Auth-Token-Expires", "65")
+		}
+		return nil
+	}
+	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/auth/") {
+			atomic.AddInt64(&authCalls, 1)
+		}
+		proxy.ServeHTTP(w, r)
+	}))
+	t.Cleanup(front.Close)
+
+	session, err := swiftcontrol.New(swiftcontrol.Config{
+		AuthURL: front.URL + "/auth/v1.0", Username: "test:tester", APIKey: "testing",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Authenticate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if until := time.Until(session.TokenExpires()); until < 30*time.Second || until > 2*time.Minute {
+		t.Fatalf("proxy expiry rewrite not in effect: %v", until)
+	}
+
+	src := h.Container("tok-src")
+	dst := h.Container("tok-dst")
+	for _, c := range []string{src, dst} {
+		if _, err := session.CreateContainer(ctx, swiftcontrol.ContainerCreateRequest{Name: c}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"a.bin", "b.bin", "c.bin"} {
+		if _, err := session.PutObject(ctx, src, name, strings.NewReader("payload-"+name), "application/octet-stream", nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	runner, err := rclone.NewRunner(rclone.Options{Retries: 1, LowLevelRetries: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := func(spawnCtx context.Context) ([]rclone.Remote, error) {
+		if err := session.RefreshIfStale(spawnCtx, 2*time.Minute); err != nil {
+			return nil, err
+		}
+		return []rclone.Remote{
+			{Name: "aeronautes_src", StorageURL: session.StorageURL(), Token: session.AuthToken()},
+			{Name: "aeronautes_dst", StorageURL: session.StorageURL(), Token: session.AuthToken()},
+		}, nil
+	}
+	executor, err := transfercopy.New(transfercopy.Config{
+		Source: session, Dest: session,
+		Engine:  transfercopy.BindRunnerSource(runner, source),
+		SrcSpec: "aeronautes_src:" + src, DstSpec: "aeronautes_dst:" + dst,
+		SrcContainer: src, DstContainer: dst,
+		JobID: "job-token", BatchSize: 1, // one child per object: three spawns
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := atomic.LoadInt64(&authCalls)
+	_, err = plan.Copy(ctx,
+		session.Objects(ctx, src, swiftcontrol.ObjectListOptions{Deep: true}),
+		session.Objects(ctx, dst, swiftcontrol.ObjectListOptions{Deep: true}),
+		"", "", func(item plan.Item) error { return executor.Handle(ctx, item) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := executor.Finish(ctx)
+	if err != nil || len(report.Failures) != 0 || report.Copied != 3 {
+		t.Fatalf("copy: %v %+v (failures %+v)", err, report, report.Failures)
+	}
+	refreshes := atomic.LoadInt64(&authCalls) - before
+	if refreshes < 3 {
+		t.Fatalf("expected a re-authentication per spawn, saw %d", refreshes)
+	}
+	t.Logf("3 spawns → %d re-authentications through the 65s-expiry proxy; copy complete", refreshes)
+	for _, name := range []string{"a.bin", "b.bin", "c.bin"} {
+		d, err := session.ObjectDetail(ctx, dst, name)
+		if err != nil || d.ContentLength != int64(len("payload-"+name)) {
+			t.Fatalf("%s: %+v %v", name, d, err)
+		}
+	}
 }

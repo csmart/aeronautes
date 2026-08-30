@@ -6,6 +6,7 @@ package swiftcontrol
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/ncw/swift/v2"
@@ -33,6 +34,12 @@ type Config struct {
 // account. It is safe for concurrent use after Authenticate.
 type Session struct {
 	conn *swift.Connection
+
+	// refreshMu single-flights explicit refreshes; authedAt is the last
+	// EXPLICIT authentication (the wire library's own 401-driven re-auth
+	// does not update it, which only makes RefreshIfStale conservative).
+	refreshMu sync.Mutex
+	authedAt  time.Time
 }
 
 // New builds a Session for cfg. It does not touch the network; call
@@ -72,6 +79,35 @@ func (s *Session) Authenticate(ctx context.Context) error {
 	if err := s.conn.Authenticate(ctx); err != nil {
 		return Normalize(err)
 	}
+	s.refreshMu.Lock()
+	s.authedAt = time.Now()
+	s.refreshMu.Unlock()
+	return nil
+}
+
+// RefreshIfStale re-authenticates when the token is close to expiry
+// (§26.2/ADR 0009): within margin of a KNOWN expiry, or — when the
+// backend does not advertise one — past a conservative age. Long jobs
+// call this before every engine spawn so no child starts on a token
+// about to die; the child itself cannot re-authenticate (its
+// environment carries a token, never credentials).
+func (s *Session) RefreshIfStale(ctx context.Context, margin time.Duration) error {
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+	expires := s.conn.Expires
+	stale := false
+	if !expires.IsZero() {
+		stale = time.Until(expires) < margin
+	} else {
+		stale = s.authedAt.IsZero() || time.Since(s.authedAt) > 10*time.Minute
+	}
+	if !stale {
+		return nil
+	}
+	if err := s.conn.Authenticate(ctx); err != nil {
+		return Normalize(err)
+	}
+	s.authedAt = time.Now()
 	return nil
 }
 

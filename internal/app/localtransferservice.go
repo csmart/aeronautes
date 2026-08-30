@@ -9,6 +9,7 @@ import (
 	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
+	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
 	"github.com/csmart/aeronautes/internal/transfer/local"
 	"github.com/csmart/aeronautes/internal/transfer/rclone"
 )
@@ -92,33 +93,43 @@ func (s *TransferService) PreflightDownload(ctx context.Context, req DownloadReq
 	return local.PreflightDownload(ctx, session, req.Container, req.Prefix, req.DestDir)
 }
 
-// localEngine builds the single-remote engine for the bookmark's end.
+// localEngine builds the single-remote engine for the bookmark's end;
+// remotes resolve per spawn with token refresh (§26.2).
 func (s *TransferService) localEngine(ctx context.Context, bookmarkID string, session *swiftcontrol.Session, remoteName string, settings TransferSettingsDTO) (local.Engine, error) {
 	insecure, caFile, err := s.connections.TLSRemote(ctx, bookmarkID)
 	if err != nil {
 		return nil, err
 	}
-	remotes := []rclone.Remote{{
-		Name: remoteName, StorageURL: session.StorageURL(), Token: session.AuthToken(), InsecureTLS: insecure, CACertFile: caFile,
-	}}
+	source := func(spawnCtx context.Context) ([]rclone.Remote, error) {
+		if err := session.RefreshIfStale(spawnCtx, tokenRefreshMargin); err != nil {
+			return nil, fmt.Errorf("token refresh: %w", err)
+		}
+		return []rclone.Remote{{
+			Name: remoteName, StorageURL: session.StorageURL(), Token: session.AuthToken(), InsecureTLS: insecure, CACertFile: caFile,
+		}}, nil
+	}
 	if s.engineFactory != nil {
-		return s.engineFactory(remotes, settings.options())
+		return s.engineFactory(source, settings.options())
 	}
 	runner, err := rclone.NewRunner(settings.options())
 	if err != nil {
 		return nil, err
 	}
-	return boundLocal{runner: runner, remotes: remotes}, nil
+	return boundLocal{runner: runner, source: source}, nil
 }
 
 // boundLocal adapts the Runner to local.Engine.
 type boundLocal struct {
-	runner  *rclone.Runner
-	remotes []rclone.Remote
+	runner *rclone.Runner
+	source transfercopy.RemoteSource
 }
 
 func (b boundLocal) Copy(ctx context.Context, src, dst string, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
-	return b.runner.Copy(ctx, b.remotes, src, dst, names, onEvent)
+	remotes, err := b.source(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return b.runner.Copy(ctx, remotes, src, dst, names, onEvent)
 }
 
 // StartUpload re-runs the preflight (state may have moved since the UI
