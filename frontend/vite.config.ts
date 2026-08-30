@@ -14,5 +14,13 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     include: ["src/**/*.test.ts"],
+    coverage: {
+      // Whole-source accounting: untested files count as 0%, so the
+      // number means coverage OF THE APPLICATION, not of whatever the
+      // tests happened to import (review-wave test-gap note).
+      all: true,
+      include: ["src/**/*.{ts,svelte}"],
+      exclude: ["src/**/*.test.ts"],
+    },
   },
 });

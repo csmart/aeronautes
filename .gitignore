@@ -20,6 +20,7 @@
 /vendor/
 
 # Node / frontend
+/frontend/coverage/
 node_modules/
 .svelte-kit/
 *.tsbuildinfo

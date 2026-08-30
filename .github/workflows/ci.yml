@@ -27,8 +27,8 @@ jobs:
     name: Go — fmt, vet, build, test (race)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: stable
       - name: Detect Go module
@@ -47,7 +47,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends libgtk-4-dev libwebkitgtk-6.0-dev
       # go:embed all:frontend/dist needs the built frontend before any Go
       # compile step; the committed frontend/bindings are used as-is.
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         if: steps.detect.outputs.present == 'true'
         with:
           node-version: lts/*
@@ -76,6 +76,14 @@ jobs:
       - name: internal/ builds without CGO
         if: steps.detect.outputs.present == 'true'
         run: CGO_ENABLED=0 go build ./internal/...
+      - name: bindings drift gate
+        run: |
+          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.15
+          ~/go/bin/wails3 task common:generate:bindings
+          git diff --exit-code frontend/bindings || {
+            echo '::error::generated bindings drifted from the Go services — run wails3 task common:generate:bindings and commit'
+            exit 1
+          }
       - name: go test -race
         if: steps.detect.outputs.present == 'true'
         run: go test -race -count=1 ./...
@@ -84,7 +92,7 @@ jobs:
     name: Frontend — lint, build, test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Detect frontend
         id: detect
         run: |
@@ -93,7 +101,7 @@ jobs:
           else
             echo "No frontend/ yet — skipping."
           fi
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         if: steps.detect.outputs.present == 'true'
         with:
           node-version: lts/*
@@ -103,24 +111,25 @@ jobs:
         if: steps.detect.outputs.present == 'true'
         working-directory: frontend
         run: npm ci
-      - name: lint
-        if: steps.detect.outputs.present == 'true'
-        working-directory: frontend
-        run: npm run lint --if-present
+      # svelte-check IS the lint gate; a --if-present npm alias that
+      # silently no-ops is worse than nothing (review M-12).
       - name: typecheck (svelte-check)
         if: steps.detect.outputs.present == 'true'
         working-directory: frontend
-        run: npm run check --if-present
+        run: npm run check
       - name: build
         if: steps.detect.outputs.present == 'true'
         working-directory: frontend
-        run: npm run build --if-present
+        run: npm run build
       - name: test (with coverage)
         if: steps.detect.outputs.present == 'true'
         working-directory: frontend
         run: npm run test:coverage
       # SOFT coverage floor: a drop below it turns this step red without
       # failing the pipeline (continue-on-error) — a warning, not a wall.
+      # Accounting is WHOLE-SOURCE since the review wave (untested files
+      # count), so this reads red until the 65.10 test war room raises
+      # real component coverage — an honest red, not a lie to silence.
       - name: coverage floor (soft, 70%)
         if: steps.detect.outputs.present == 'true'
         continue-on-error: true
@@ -135,7 +144,7 @@ jobs:
         run: |
           pct=$(cat frontend/coverage-pct.txt 2>/dev/null || echo 0)
           ./scripts/coverage-badge.sh "ui coverage" "$pct" 70 badges/coverage-frontend.svg
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: steps.detect.outputs.present == 'true'
         with:
           name: badge-frontend
@@ -149,8 +158,8 @@ jobs:
     name: Integration — containerized Swift (SAIO)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: stable
       - name: Detect Go module
@@ -163,7 +172,7 @@ jobs:
           fi
       - name: Start SAIO
         if: steps.detect.outputs.present == 'true'
-        run: docker run -d --name saio -p 127.0.0.1:8080:8080 docker.io/openstackswift/saio:latest
+        run: docker run -d --name saio -p 127.0.0.1:8080:8080 docker.io/openstackswift/saio@sha256:18ddf9feb9d1f419751a66eace8d956ecdaf5a085dedcc54ae51c210447ea1fa
       - name: Wait for Swift
         if: steps.detect.outputs.present == 'true'
         run: |
@@ -187,6 +196,7 @@ jobs:
         if: steps.detect.outputs.present == 'true'
         env:
           AERONAUTES_SAIO_AUTH_URL: http://127.0.0.1:8080/auth/v1.0
+          AERONAUTES_REQUIRE_TWO_ACCOUNTS: "1"
         run: |
           go test -race -count=1 -coverprofile=cover.out -coverpkg=./internal/... ./... 2>&1 | grep -v "no test files"
           pct=$(go tool cover -func=cover.out | awk '/^total:/ {gsub(/%/,"",$3); print $3}')
@@ -204,7 +214,7 @@ jobs:
         if: steps.detect.outputs.present == 'true'
         run: |
           ./scripts/coverage-badge.sh "go coverage" "$(cat coverage-pct.txt)" 75 badges/coverage-go.svg
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: steps.detect.outputs.present == 'true'
         with:
           name: badge-go
@@ -218,11 +228,11 @@ jobs:
     name: Smoke — headless app against mock Swift
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: "22"
           cache: npm
@@ -245,7 +255,7 @@ jobs:
         env:
           WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: "1"
           GTK_A11Y: none
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
           name: smoke-artifacts
@@ -265,10 +275,10 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ssh-key: ${{ secrets.BADGE_DEPLOY_KEY }}
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: badge-*
           path: .github/badges/
