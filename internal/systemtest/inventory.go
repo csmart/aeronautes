@@ -110,3 +110,40 @@ var Inventory = map[string]Action{
 	"BenchmarkService.Latest":         {Kind: Read},
 	"BenchmarkService.StartBenchmark": {Kind: Destructive},
 }
+
+// Covered records which (action, scenario) pairs an actual system test
+// exercises — maintained alongside the tests (the standing rule forbids
+// a behavior change without its system test, so this stays honest). The
+// report test turns required-minus-covered into the gap artifact; a
+// future hard gate fails CI when a shipped action has an uncovered
+// required scenario.
+var Covered = map[string][]string{
+	"MutateService.UpdateObjectMetadata":       {"happy"},            // metadata_test.go
+	"TransferService.StartCopy":                {"happy", "refusal"}, // copy_test.go + refusal_test.go
+	"TransferService.StartMirror":              {"happy"},            // mirror_test.go
+	"DeleteService.StartDelete":                {"happy", "refusal"}, // delete_test.go + refusal_test.go
+	"DeleteService.DeleteManifestWithSegments": {"refusal"},          // refusal_test.go
+}
+
+// CoverageGaps returns, per action, the required scenarios that no
+// system test yet covers. An action absent from the map is fully
+// covered for its kind.
+func CoverageGaps() map[string][]string {
+	gaps := map[string][]string{}
+	for key, action := range Inventory {
+		have := map[string]bool{}
+		for _, s := range Covered[key] {
+			have[s] = true
+		}
+		var missing []string
+		for _, req := range action.Kind.requiredScenarios() {
+			if !have[req] {
+				missing = append(missing, req)
+			}
+		}
+		if len(missing) > 0 {
+			gaps[key] = missing
+		}
+	}
+	return gaps
+}

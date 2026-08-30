@@ -67,4 +67,22 @@ func TestInventoryReportsCoverage(t *testing.T) {
 	sort.Strings(rows)
 	t.Logf("ACTION INVENTORY (%d actions: %d read, %d session, %d mutate, %d destructive)\n%s",
 		len(Inventory), kinds[Read], kinds[Session], kinds[Mutate], kinds[Destructive], strings.Join(rows, "\n"))
+
+	// The reportable coverage artifact (§65.10): required scenarios met
+	// vs. still open, per action.
+	gaps := CoverageGaps()
+	var required, covered int
+	for _, action := range Inventory {
+		required += len(action.Kind.requiredScenarios())
+	}
+	for _, c := range Covered {
+		covered += len(c)
+	}
+	var gapRows []string
+	for key, missing := range gaps {
+		gapRows = append(gapRows, key+": "+strings.Join(missing, ","))
+	}
+	sort.Strings(gapRows)
+	t.Logf("SCENARIO COVERAGE: %d/%d required scenarios have a system test; %d actions still have gaps:\n%s",
+		covered, required, len(gaps), strings.Join(gapRows, "\n"))
 }
