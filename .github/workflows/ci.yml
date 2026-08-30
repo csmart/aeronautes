@@ -237,7 +237,14 @@ jobs:
         run: |
           ./scripts/fetch-rclone.sh linux amd64 "$RUNNER_TEMP/rclone-pin"
           echo "$RUNNER_TEMP/rclone-pin" >> "$GITHUB_PATH"
+      # The runner's container denies the user namespaces WebKit's
+      # bubblewrap sandbox needs (bwrap: setting up uid map: Permission
+      # denied), so the smoke — and only the smoke — runs the webview
+      # unsandboxed here. The shipped application keeps its sandbox.
       - run: ./scripts/smoke.sh
+        env:
+          WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: "1"
+          GTK_A11Y: none
       - uses: actions/upload-artifact@v4
         if: always()
         with:
