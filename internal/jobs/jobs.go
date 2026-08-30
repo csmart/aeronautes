@@ -415,3 +415,25 @@ func (s *Store) RecoveryPending(ctx context.Context) ([]RecoveryRecord, error) {
 	}
 	return out, rows.Err()
 }
+
+// PruneTerminal deletes terminal jobs finished before the cutoff —
+// §51's retention, never touching non-terminal rows and never a job
+// that still holds crash-recovery records (those carry sweep facts the
+// startup reconciler needs). Returns how many jobs were pruned.
+func (s *Store) PruneTerminal(ctx context.Context, before time.Time) (int64, error) {
+	cutoff := before.UTC().Format(time.RFC3339)
+	var pruned int64
+	err := s.db.WriteTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `
+			DELETE FROM jobs
+			WHERE state IN ('complete','partial','cancelled','failed')
+			  AND finished_at IS NOT NULL AND finished_at < ?
+			  AND id NOT IN (SELECT DISTINCT job_id FROM job_recovery)`, cutoff)
+		if err != nil {
+			return err
+		}
+		pruned, err = res.RowsAffected()
+		return err
+	})
+	return pruned, err
+}
