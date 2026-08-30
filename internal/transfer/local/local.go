@@ -3,9 +3,11 @@
 // collision preflight before any write, and the v1 policy on a
 // collision is to reject the whole operation, reported fully. The
 // engine (rclone) moves safe names; identities it cannot carry stream
-// natively. v1 targets the filesystem the app runs on (Linux first);
-// portability hazards for other OS families are reported as warnings,
-// not silent surprises.
+// natively. v1 enforces ONE cross-platform namespace policy: names
+// that cannot materialize identically on every desktop target
+// (backslashes, dot segments, empty segments, control characters,
+// case-fold twins) REJECT rather than behave per-OS; §65.10 tracks
+// per-target relaxations.
 package local
 
 import (
@@ -19,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
+	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
 	"github.com/csmart/aeronautes/internal/transfer/plan"
 	"github.com/csmart/aeronautes/internal/transfer/rclone"
 )
@@ -63,9 +66,9 @@ func (p *UploadPreflight) Rejected() bool { return rejected(p.Problems) }
 // PreflightUpload maps the selected files onto container/prefix and
 // reports every problem before anything is written: unreadable or
 // non-regular paths, duplicate basenames in the selection, and names
-// already live at the destination (v1 refuses upload-overwrites — the
-// engine must only ever write planned-new names, §28.6(a), and upload
-// has no stage-and-commit path yet).
+// already live at the destination (v1 refuses upload-overwrites). The
+// engine writes only into the job staging namespace and each name
+// commits natively with a conditional create (§28.6, Upload).
 func PreflightUpload(ctx context.Context, dst *swiftcontrol.Session, container, prefix string, paths []string) (*UploadPreflight, error) {
 	if prefix != "" && !strings.HasSuffix(prefix, "/") {
 		return nil, fmt.Errorf("prefix %q must be empty or end with '/'", prefix)
@@ -164,26 +167,60 @@ func PreflightDownload(ctx context.Context, src *swiftcontrol.Session, container
 		problem := func(kind, detail string) {
 			report.Problems = append(report.Problems, Problem{Name: object.Name, Kind: kind, Detail: detail, Reject: true})
 		}
+		// Namespace-policy checks run BEFORE the directory-marker branch:
+		// a folder marker named "scope/../" would otherwise become a
+		// MkdirAll outside the destination (the follow-up review's
+		// dir-marker escape).
+		trimmed := strings.TrimSuffix(rel, "/")
 		switch {
-		case rel == "" || strings.HasSuffix(rel, "/"):
-			if object.Bytes == 0 {
-				report.Items = append(report.Items, DownloadItem{Name: object.Name, RelPath: filepath.FromSlash(strings.TrimSuffix(rel, "/")), Dir: true})
+		case strings.HasPrefix(rel, "/"):
+			problem("path-escape", "leading slash would escape the destination directory")
+			continue
+		case hasDotSegment(trimmed):
+			problem("path-escape", "'.' or '..' path segments would escape or alias inside the destination directory")
+			continue
+		case strings.ContainsRune(rel, '\\'):
+			// A backslash is a legal Swift name byte and a path separator
+			// on Windows: one namespace policy for every target (§65.9
+			// item 13) — reject rather than materialize differently per OS.
+			problem("path-escape", "backslash in the name is a path separator on Windows; refused on every platform")
+			continue
+		case strings.Contains(rel, "//"):
+			problem("collision", "empty path segment: the name collapses onto another path when joined locally")
+			continue
+		case strings.ContainsFunc(rel, func(c rune) bool { return c < 0x20 || c == 0x7f }):
+			problem("unmaterializable", "control character in the name cannot ride a local path")
+			continue
+		}
+		if rel == "" || strings.HasSuffix(rel, "/") {
+			logical := object.Bytes
+			if logical == 0 {
+				// A zero-byte listing row may be a DLO/SLO manifest whose
+				// LOGICAL size the listing hides (review F-09): resolve
+				// before treating it as a folder marker, or a large
+				// object could "complete" as an empty directory.
+				detail, err := src.ObjectDetail(ctx, container, object.Name)
+				if err != nil {
+					return nil, err
+				}
+				logical = detail.ContentLength
+			}
+			if logical == 0 {
+				report.Items = append(report.Items, DownloadItem{Name: object.Name, RelPath: filepath.FromSlash(trimmed), Dir: true})
 				report.Objects++
 				continue
 			}
 			problem("unmaterializable", "a non-empty object named like a directory cannot be a local file and a directory at once")
 			continue
-		case strings.HasPrefix(rel, "/"):
-			problem("path-escape", "leading slash would escape the destination directory")
-			continue
-		case hasDotSegment(rel):
-			problem("path-escape", "'.' or '..' path segments would escape or alias inside the destination directory")
-			continue
 		}
 
 		local := filepath.Join(destDir, filepath.FromSlash(rel))
-		if info, err := os.Stat(local); err == nil && !info.IsDir() {
-			problem("local-exists", local+" already exists; v1 download never overwrites")
+		if info, err := os.Stat(local); err == nil {
+			if info.IsDir() {
+				problem("local-exists", filepath.FromSlash(rel)+" is an existing DIRECTORY under the destination; a file cannot land on it")
+			} else {
+				problem("local-exists", filepath.FromSlash(rel)+" already exists under the destination; v1 download never overwrites")
+			}
 			continue
 		}
 		size := object.Bytes
@@ -204,25 +241,47 @@ func PreflightDownload(ctx context.Context, src *swiftcontrol.Session, container
 			Name: object.Name, RelPath: filepath.FromSlash(rel), Size: size, Route: route,
 		})
 		report.Objects++
-		report.TotalBytes += object.Bytes
+		report.TotalBytes += size
 	}
 
-	// File-vs-prefix conflicts: sorted adjacency makes them cheap.
+	// File-vs-prefix conflicts: a real ancestor lookup, not sorted
+	// adjacency — "foo", "foo.txt", "foo/child" sorts foo.txt between
+	// the conflicting pair and adjacency misses it (follow-up review).
+	fileSet := map[string]bool{}
+	for _, name := range names {
+		if name != "" && !strings.HasSuffix(name, "/") {
+			fileSet[name] = true
+		}
+	}
 	sort.Strings(names)
-	for i := 0; i+1 < len(names); i++ {
-		if names[i] != "" && !strings.HasSuffix(names[i], "/") && strings.HasPrefix(names[i+1], names[i]+"/") {
-			report.Problems = append(report.Problems, Problem{
-				Name: prefix + names[i], Kind: "file-vs-prefix",
-				Detail: fmt.Sprintf("object %q needs to be both a file and the directory holding %q", names[i], names[i+1]),
-				Reject: true,
-			})
+	flagged := map[string]bool{}
+	for _, name := range names {
+		segments := strings.Split(name, "/")
+		ancestor := ""
+		for _, segment := range segments[:len(segments)-1] {
+			if ancestor == "" {
+				ancestor = segment
+			} else {
+				ancestor += "/" + segment
+			}
+			if fileSet[ancestor] && !flagged[ancestor] {
+				flagged[ancestor] = true
+				report.Problems = append(report.Problems, Problem{
+					Name: prefix + ancestor, Kind: "file-vs-prefix",
+					Detail: fmt.Sprintf("object %q needs to be both a file and the directory holding %q", ancestor, name),
+					Reject: true,
+				})
+			}
 		}
 	}
 	for _, twins := range folded {
 		if len(twins) > 1 {
+			// Rejected, not warned: the same operator moves this data to
+			// macOS/Windows next — one namespace policy per target set.
 			report.Problems = append(report.Problems, Problem{
 				Name: prefix + twins[0], Kind: "case-fold",
 				Detail: fmt.Sprintf("%d names collide on case-insensitive filesystems: %q", len(twins), twins),
+				Reject: true,
 			})
 		}
 	}
@@ -263,14 +322,25 @@ type Report struct {
 
 const maxFailures = 200
 
-// Upload runs a preflighted upload: engine-safe files batch per parent
-// directory (rclone copies FROM a directory), native ones stream, and
-// every name is verified by destination HEAD — never the engine's exit
-// code.
-func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSpec, container, prefix string,
-	preflight *UploadPreflight, onProgress func(done, total, bytes int64)) (*Report, error) {
+// Upload runs a preflighted upload. Engine-safe files batch per parent
+// directory (rclone copies FROM a directory) into the job STAGING
+// namespace — rclone never receives a live destination name here any
+// more than in Copy (§28.6, the follow-up review's G2 remainder) — and
+// each staged object commits natively: live-absent check (an appeared
+// object is a conflict, never an rclone Update), server-side COPY for
+// plain, manifest-swap PUT for a staged DLO. Native ones stream a
+// single live PUT (manifest-only by Swift semantics). Every name is
+// verified by destination HEAD — never the engine's exit code.
+// onRecovery (optional) receives streamed captured prefixes and the
+// commit protocol records, same contract as the copy executor.
+func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSpec, container, prefix, stageID string,
+	preflight *UploadPreflight, onProgress func(done, total, bytes int64),
+	onRecovery func(kind, container, prefix, object string) error) (*Report, error) {
 	if preflight.Rejected() {
 		return nil, errors.New("preflight rejected the upload; nothing was written")
+	}
+	if stageID == "" {
+		return nil, errors.New("upload needs a stage id (the job id)")
 	}
 	report := &Report{}
 	fail := func(name, stage string, err error) {
@@ -282,6 +352,19 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 	progress := func() {
 		if onProgress != nil {
 			onProgress(report.Done+int64(len(report.Failures)), total, report.Bytes)
+		}
+	}
+	stagePrefix := ".aeronautes/stage/" + stageID + "/batch/"
+	var recoveryBroken error
+	capture := func(event rclone.Event) {
+		if p, ok := rclone.PrefixFromEvent(event); ok {
+			p = p.Canonical()
+			report.CapturedPrefixes = append(report.CapturedPrefixes, p)
+			if onRecovery != nil {
+				if err := onRecovery("captured", p.Container, p.Prefix, ""); err != nil && recoveryBroken == nil {
+					recoveryBroken = err
+				}
+			}
 		}
 	}
 
@@ -310,9 +393,14 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 		for _, item := range items {
 			names = append(names, filepath.Base(item.Path))
 		}
-		result, err := engine.Copy(ctx, dir, dstSpec+"/"+strings.TrimSuffix(prefix, "/"), names, nil)
+		result, err := copyWithAuthRetry(ctx, dst, engine, dir, dstSpec+"/"+strings.TrimSuffix(stagePrefix, "/"), names, capture)
 		if result != nil {
-			report.CapturedPrefixes = append(report.CapturedPrefixes, result.SegmentPrefixes...)
+			for _, p := range result.SegmentPrefixes {
+				report.CapturedPrefixes = append(report.CapturedPrefixes, p.Canonical())
+			}
+		}
+		if err == nil {
+			err = transfercopy.ResultFailure(result)
 		}
 		if err != nil {
 			for _, item := range items {
@@ -322,20 +410,105 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 			continue
 		}
 		for _, item := range items {
-			detail, err := dst.ObjectDetail(ctx, container, item.Name)
-			switch {
-			case err != nil:
-				fail(item.Name, "verify", fmt.Errorf("missing after upload: %w", err))
-			case detail.ContentLength != item.Size:
-				fail(item.Name, "verify", fmt.Errorf("size %d != local %d", detail.ContentLength, item.Size))
-			default:
-				report.Done++
-				report.Bytes += item.Size
-			}
+			commitStagedUpload(ctx, dst, container, prefix, stagePrefix, item, report, fail, recoveryBroken, onRecovery)
 			progress()
 		}
 	}
+	// Staging litter: whatever did not commit cleanly is swept
+	// best-effort; leftovers stay for the startup sweep via the
+	// recovery rows.
+	for entry, listErr := range dst.Objects(ctx, container, swiftcontrol.ObjectListOptions{Deep: true, Prefix: stagePrefix}) {
+		if listErr != nil {
+			break
+		}
+		if object, ok := entry.(swiftcontrol.ObjectEntry); ok {
+			_ = dst.DeleteObject(ctx, container, object.Name)
+		}
+	}
 	return report, nil
+}
+
+// commitStagedUpload lands one staged upload on its live name.
+func commitStagedUpload(ctx context.Context, dst *swiftcontrol.Session, container, prefix, stagePrefix string,
+	item UploadItem, report *Report, fail func(name, stage string, err error),
+	recoveryBroken error, onRecovery func(kind, container, prefix, object string) error) {
+
+	base := strings.TrimPrefix(item.Name, prefix)
+	stagedName := stagePrefix + base
+	if recoveryBroken != nil {
+		fail(item.Name, "recovery-store", recoveryBroken)
+		return
+	}
+	staged, err := dst.ObjectDetail(ctx, container, stagedName)
+	if err != nil {
+		fail(item.Name, "stage-verify", fmt.Errorf("staged object missing: %w", err))
+		return
+	}
+	if staged.ContentLength != item.Size {
+		fail(item.Name, "stage-verify", fmt.Errorf("staged size %d != local %d", staged.ContentLength, item.Size))
+		return
+	}
+	if _, err := dst.ObjectDetail(ctx, container, item.Name); err == nil {
+		// The preflight promised absence; something appeared since. A
+		// commit would be an unconfirmed overwrite — conflict.
+		fail(item.Name, "commit-conflict", errors.New("destination appeared since preflight"))
+		return
+	} else if !swiftcontrol.IsNotFound(err) {
+		fail(item.Name, "commit-rehead", err)
+		return
+	}
+	if staged.Class == swiftcontrol.ClassDLO {
+		if slash := strings.Index(staged.Manifest, "/"); slash > 0 && onRecovery != nil {
+			intent := rclone.SegmentPrefix{Container: staged.Manifest[:slash], Prefix: staged.Manifest[slash+1:]}.Canonical()
+			if err := onRecovery("committing", intent.Container, intent.Prefix, container+"/"+item.Name); err != nil {
+				fail(item.Name, "commit-intent", err)
+				return
+			}
+		}
+		headers := map[string]string{"X-Object-Manifest": staged.Manifest, "If-None-Match": "*"}
+		if _, err := dst.PutObject(ctx, container, item.Name, strings.NewReader(""), staged.ContentType, headers); err != nil {
+			if swiftcontrol.IsPreconditionFailed(err) {
+				fail(item.Name, "commit-conflict", errors.New("destination appeared at commit time"))
+				return
+			}
+			fail(item.Name, "commit-manifest", err)
+			return
+		}
+		if slash := strings.Index(staged.Manifest, "/"); slash > 0 && onRecovery != nil {
+			intent := rclone.SegmentPrefix{Container: staged.Manifest[:slash], Prefix: staged.Manifest[slash+1:]}.Canonical()
+			_ = onRecovery("committed", intent.Container, intent.Prefix, "")
+		}
+	} else {
+		// Planned-new plain commit: conditional live PUT, not an
+		// unconditional server-side COPY (review R-01). A 412 is a
+		// concurrent-writer conflict, never a clobber.
+		body, _, err := dst.OpenObject(ctx, container, stagedName)
+		if err != nil {
+			fail(item.Name, "commit-open-staged", err)
+			return
+		}
+		_, putErr := dst.PutObject(ctx, container, item.Name, body, staged.ContentType, map[string]string{"If-None-Match": "*"})
+		body.Close()
+		if putErr != nil {
+			if swiftcontrol.IsPreconditionFailed(putErr) {
+				fail(item.Name, "commit-conflict", errors.New("destination appeared at commit time"))
+				return
+			}
+			fail(item.Name, "commit-copy", putErr)
+			return
+		}
+	}
+	live, err := dst.ObjectDetail(ctx, container, item.Name)
+	switch {
+	case err != nil:
+		fail(item.Name, "verify", fmt.Errorf("missing after commit: %w", err))
+	case live.ContentLength != item.Size:
+		fail(item.Name, "verify", fmt.Errorf("size %d != local %d", live.ContentLength, item.Size))
+	default:
+		_ = dst.DeleteObject(ctx, container, stagedName)
+		report.Done++
+		report.Bytes += item.Size
+	}
 }
 
 func nativeUpload(ctx context.Context, dst *swiftcontrol.Session, container string, item UploadItem) error {
@@ -344,17 +517,33 @@ func nativeUpload(ctx context.Context, dst *swiftcontrol.Session, container stri
 		return err
 	}
 	defer file.Close()
-	_, err = dst.PutObject(ctx, container, item.Name, file, "application/octet-stream", nil)
-	return err
+	// Conditional create: the preflight promised absence; a 412 means
+	// someone else created it since — a conflict, never an overwrite.
+	if _, err = dst.PutObject(ctx, container, item.Name, file, "application/octet-stream",
+		map[string]string{"If-None-Match": "*"}); err != nil {
+		return err
+	}
+	// Verify the landing (review R-09: no PUT is trusted on its own).
+	detail, err := dst.ObjectDetail(ctx, container, item.Name)
+	if err != nil {
+		return fmt.Errorf("verify after native upload: %w", err)
+	}
+	if detail.ContentLength != item.Size {
+		return fmt.Errorf("uploaded size %d != local %d", detail.ContentLength, item.Size)
+	}
+	return nil
 }
 
 // Download materializes a preflighted scope: directories first, engine
 // batch for safe names, native streams for the rest, then a local stat
 // verify per file.
-func Download(ctx context.Context, src *swiftcontrol.Session, engine Engine, srcSpec, container, prefix, destDir string,
+func Download(ctx context.Context, src *swiftcontrol.Session, engine Engine, srcSpec, container, prefix, destDir, stageID string,
 	preflight *DownloadPreflight, onProgress func(done, total, bytes int64)) (*Report, error) {
 	if preflight.Rejected() {
 		return nil, errors.New("preflight rejected the download; nothing was written")
+	}
+	if stageID == "" {
+		return nil, errors.New("download needs a stage id (the job id)")
 	}
 	report := &Report{}
 	fail := func(name, stage string, err error) {
@@ -400,8 +589,19 @@ func Download(ctx context.Context, src *swiftcontrol.Session, engine Engine, src
 		if err := ctx.Err(); err != nil {
 			return report, err
 		}
-		result, err := engine.Copy(ctx, srcSpec+"/"+strings.TrimSuffix(prefix, "/"), destDir, engineNames, nil)
-		_ = result
+		// The engine writes into a job stage directory, never the live
+		// destination tree: a partial or racing write cannot land on a
+		// final path, and each file moves into place no-replace with an
+		// exact byte check (the follow-up review's G2/G16 remainder).
+		stageDir := filepath.Join(destDir, ".aeronautes-stage-"+stageID)
+		if err := os.MkdirAll(stageDir, 0o700); err != nil {
+			return report, err
+		}
+		defer os.RemoveAll(stageDir)
+		result, err := copyWithAuthRetry(ctx, src, engine, srcSpec+"/"+strings.TrimSuffix(prefix, "/"), stageDir, engineNames, nil)
+		if err == nil {
+			err = transfercopy.ResultFailure(result)
+		}
 		if err != nil {
 			for _, rel := range engineNames {
 				fail(engineItems[rel].Name, "engine", err)
@@ -410,13 +610,11 @@ func Download(ctx context.Context, src *swiftcontrol.Session, engine Engine, src
 		} else {
 			for _, rel := range engineNames {
 				item := engineItems[rel]
-				info, statErr := os.Stat(filepath.Join(destDir, item.RelPath))
-				switch {
-				case statErr != nil:
-					fail(item.Name, "verify", fmt.Errorf("missing after download (silent drop?): %w", statErr))
-				case info.Size() != item.Size:
-					fail(item.Name, "verify", fmt.Errorf("size %d != object %d", info.Size(), item.Size))
-				default:
+				staged := filepath.Join(stageDir, item.RelPath)
+				target := filepath.Join(destDir, item.RelPath)
+				if err := placeDownloaded(staged, target, item.Size); err != nil {
+					fail(item.Name, "place", err)
+				} else {
 					report.Done++
 					report.Bytes += item.Size
 				}
@@ -425,6 +623,32 @@ func Download(ctx context.Context, src *swiftcontrol.Session, engine Engine, src
 		}
 	}
 	return report, nil
+}
+
+// placeDownloaded moves one staged download onto its final path: exact
+// byte check first, then os.Link — a true no-replace landing (EEXIST if
+// anything is already at the target), never a replacement-capable
+// rename.
+func placeDownloaded(staged, target string, wantSize int64) error {
+	info, err := os.Stat(staged)
+	if err != nil {
+		return fmt.Errorf("missing after download (silent drop?): %w", err)
+	}
+	if info.Size() != wantSize {
+		return fmt.Errorf("size %d != object %d", info.Size(), wantSize)
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return err
+	}
+	// os.Link is a true no-replace landing (EEXIST if anything appears
+	// at the target) — a rename would replace whatever won the race.
+	// The staged copy is removed only after the link exists. (Same-
+	// volume on the happy path since the stage dir sits beside the
+	// target; cross-device atomicity is the §65.10 platform matrix.)
+	if err := os.Link(staged, target); err != nil {
+		return err
+	}
+	return os.Remove(staged)
 }
 
 func nativeDownload(ctx context.Context, src *swiftcontrol.Session, container string, item DownloadItem, destDir string) error {
@@ -437,14 +661,53 @@ func nativeDownload(ctx context.Context, src *swiftcontrol.Session, container st
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return err
 	}
-	// O_EXCL enforces the preflight's no-overwrite promise at write time.
-	file, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	// Private temp beside the target, fsync, then a no-replace move: a
+	// failed read never leaves a partial file at the final name, and
+	// the byte count must match the preflight before the move.
+	temp, err := os.CreateTemp(filepath.Dir(target), ".aeronautes-part-*")
 	if err != nil {
 		return err
 	}
-	if _, err := io.Copy(file, body); err != nil {
-		file.Close()
+	defer os.Remove(temp.Name())
+	written, err := io.Copy(temp, body)
+	if err != nil {
+		temp.Close()
 		return err
 	}
-	return file.Close()
+	if written != item.Size {
+		temp.Close()
+		return fmt.Errorf("wrote %d bytes, object says %d — refusing to place a short file", written, item.Size)
+	}
+	if err := temp.Sync(); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	// os.Link is a true no-replace landing: EEXIST if anything appears
+	// at the target between the preflight and now (review F-09).
+	if err := os.Link(temp.Name(), target); err != nil {
+		return err
+	}
+	return nil
+}
+
+// copyWithAuthRetry mirrors the executor's bounded auth lifecycle for
+// the local paths (review F-06 parity): one auth-shaped failure forces
+// re-authentication and earns exactly one fresh child.
+func copyWithAuthRetry(ctx context.Context, session *swiftcontrol.Session, engine Engine,
+	src, dst string, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
+	for attempt := 0; ; attempt++ {
+		result, err := engine.Copy(ctx, src, dst, names, onEvent)
+		if err != nil {
+			return result, err
+		}
+		if failure := transfercopy.ResultFailure(result); failure != nil &&
+			attempt == 0 && transfercopy.IsAuthFailure(result) && ctx.Err() == nil {
+			session.ForceReauth()
+			continue
+		}
+		return result, nil
+	}
 }

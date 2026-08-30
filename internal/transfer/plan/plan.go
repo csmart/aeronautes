@@ -166,7 +166,7 @@ func Copy(ctx context.Context, source, dest iter.Seq2[swiftcontrol.ListingEntry,
 				return summary, err
 			}
 		case !src.ok || dst.rel < src.rel:
-			item = Item{Name: dst.rel, Verdict: VerdictDestOnly, DestBytes: dst.row.Bytes}
+			item = Item{Name: dst.rel, Verdict: VerdictDestOnly, DestBytes: dst.row.Bytes, DestETag: dst.row.ETag}
 			if err := dst.advance(); err != nil {
 				return summary, err
 			}

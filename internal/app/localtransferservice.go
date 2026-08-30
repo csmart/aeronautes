@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"path/filepath"
 
 	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/jobs"
@@ -18,24 +19,43 @@ import (
 // separate, complete, read-only step the UI must show before Start; the
 // v1 policy rejects the whole operation on any collision.
 
-// UploadRequestDTO scopes a multi-file upload.
+// UploadRequestDTO scopes a multi-file upload. Filesystem paths NEVER
+// cross the bridge (ADR 0011): the webview holds an opaque selection
+// token from the Go-side picker and the service resolves it here.
 type UploadRequestDTO struct {
-	BookmarkID string   `json:"bookmarkId"`
-	Container  string   `json:"container"`
-	Prefix     string   `json:"prefix"`
-	Paths      []string `json:"paths"`
+	BookmarkID string `json:"bookmarkId"`
+	Container  string `json:"container"`
+	Prefix     string `json:"prefix"`
+	// SelectionToken names a picker-issued file selection.
+	SelectionToken string `json:"selectionToken"`
 	// Settings are the per-job §44.1 overrides.
 	Settings TransferSettingsDTO `json:"settings"`
 }
 
-// DownloadRequestDTO scopes a prefix download.
+// DownloadRequestDTO scopes a prefix download; DestDirToken is the
+// picker-issued directory handle (paths never cross the bridge).
 type DownloadRequestDTO struct {
 	BookmarkID string `json:"bookmarkId"`
 	Container  string `json:"container"`
 	Prefix     string `json:"prefix"`
-	DestDir    string `json:"destDir"`
+	// DestDirToken names a picker-issued destination directory.
+	DestDirToken string `json:"destDirToken"`
 	// Settings are the per-job §44.1 overrides.
 	Settings TransferSettingsDTO `json:"settings"`
+}
+
+// PickedFilesDTO is what the webview learns about a file selection:
+// display names and a token — never the paths.
+type PickedFilesDTO struct {
+	Token string   `json:"token"`
+	Files []string `json:"files"`
+}
+
+// PickedDirDTO is the directory selection: a display path (shown to
+// the operator, never trusted back) and the token the request carries.
+type PickedDirDTO struct {
+	Token string `json:"token"`
+	Dir   string `json:"dir"`
 }
 
 // FilePicker opens native file dialogs. It is an injected seam so
@@ -47,50 +67,91 @@ type FilePicker interface {
 	PickDirectory(title string) (string, error)
 }
 
-// SetFilePicker wires the shell's dialog implementation.
-func (s *TransferService) SetFilePicker(picker FilePicker) {
+// setFilePicker wires the shell's dialog implementation.
+func (s *TransferService) setFilePicker(picker FilePicker) {
 	s.picker = picker
 }
 
-// PickUploadFiles opens the OS multi-file picker (Go side: the webview
-// never sees filesystem paths otherwise). Empty when cancelled.
-func (s *TransferService) PickUploadFiles(ctx context.Context) ([]string, error) {
+// PickUploadFiles opens the OS multi-file picker and returns a token
+// plus display names — the paths stay in Go (ADR 0011: a compromised
+// page must not be able to name ~/.ssh/id_rsa). Nil token when
+// cancelled.
+func (s *TransferService) PickUploadFiles(ctx context.Context) (*PickedFilesDTO, error) {
 	if s.picker == nil {
 		return nil, errors.New("no file picker available (headless shell)")
 	}
-	return s.picker.PickFiles("Choose files to upload")
-}
-
-// PickDownloadDir opens the OS directory picker. "" when cancelled.
-func (s *TransferService) PickDownloadDir(ctx context.Context) (string, error) {
-	if s.picker == nil {
-		return "", errors.New("no file picker available (headless shell)")
+	paths, err := s.picker.PickFiles("Choose files to upload")
+	if err != nil || len(paths) == 0 {
+		return nil, err
 	}
-	return s.picker.PickDirectory("Choose a destination directory")
+	names := make([]string, len(paths))
+	for i, p := range paths {
+		names[i] = filepath.Base(p)
+	}
+	return &PickedFilesDTO{Token: s.selections.putFiles(paths), Files: names}, nil
 }
 
-// PreflightUpload runs the complete §27.5 pre-write report.
+// PickDownloadDir opens the OS directory picker. Nil when cancelled.
+func (s *TransferService) PickDownloadDir(ctx context.Context) (*PickedDirDTO, error) {
+	if s.picker == nil {
+		return nil, errors.New("no file picker available (headless shell)")
+	}
+	dir, err := s.picker.PickDirectory("Choose a destination directory")
+	if err != nil || dir == "" {
+		return nil, err
+	}
+	return &PickedDirDTO{Token: s.selections.putDir(dir), Dir: dir}, nil
+}
+
+// PreflightUpload is the BRIDGE-facing report: absolute local paths are
+// blanked so they never cross to the webview (ADR 0011, review R-09) —
+// the page shows destination NAMES. Execution uses uploadPreflight
+// (below), which keeps the paths it needs.
 func (s *TransferService) PreflightUpload(ctx context.Context, req UploadRequestDTO) (*local.UploadPreflight, error) {
-	if req.BookmarkID == "" || req.Container == "" || len(req.Paths) == 0 {
-		return nil, errors.New("bookmark, container, and at least one file are required")
+	report, err := s.uploadPreflight(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	safe := *report
+	safe.Items = make([]local.UploadItem, len(report.Items))
+	for i, item := range report.Items {
+		item.Path = "" // display-only: paths stay Go-side
+		safe.Items[i] = item
+	}
+	return &safe, nil
+}
+
+// uploadPreflight computes the full report WITH local paths, for
+// execution — never returned across the bridge.
+func (s *TransferService) uploadPreflight(ctx context.Context, req UploadRequestDTO) (*local.UploadPreflight, error) {
+	if req.BookmarkID == "" || req.Container == "" {
+		return nil, errors.New("bookmark and container are required")
+	}
+	paths, err := s.selections.getFiles(req.SelectionToken)
+	if err != nil {
+		return nil, err
 	}
 	session, err := s.connections.SessionFor(ctx, req.BookmarkID)
 	if err != nil {
 		return nil, err
 	}
-	return local.PreflightUpload(ctx, session, req.Container, req.Prefix, req.Paths)
+	return local.PreflightUpload(ctx, session, req.Container, req.Prefix, paths)
 }
 
 // PreflightDownload runs the complete §27.5 materialization report.
 func (s *TransferService) PreflightDownload(ctx context.Context, req DownloadRequestDTO) (*local.DownloadPreflight, error) {
-	if req.BookmarkID == "" || req.Container == "" || req.DestDir == "" {
-		return nil, errors.New("bookmark, container, and a destination directory are required")
+	if req.BookmarkID == "" || req.Container == "" {
+		return nil, errors.New("bookmark and container are required")
+	}
+	destDir, err := s.selections.getDir(req.DestDirToken)
+	if err != nil {
+		return nil, err
 	}
 	session, err := s.connections.SessionFor(ctx, req.BookmarkID)
 	if err != nil {
 		return nil, err
 	}
-	return local.PreflightDownload(ctx, session, req.Container, req.Prefix, req.DestDir)
+	return local.PreflightDownload(ctx, session, req.Container, req.Prefix, destDir)
 }
 
 // localEngine builds the single-remote engine for the bookmark's end;
@@ -139,7 +200,7 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 	if err != nil {
 		return "", err
 	}
-	preflight, err := s.PreflightUpload(ctx, req)
+	preflight, err := s.uploadPreflight(ctx, req)
 	if err != nil {
 		return "", err
 	}
@@ -169,15 +230,30 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 	}
 	jobCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	s.runner.register(job.ID, cancel)
+	// Upload jobs carry the same durable staging record as Copy: a
+	// crash strands sweepable litter, never invisible litter.
+	if err := s.jobs.RecoveryAdd(context.WithoutCancel(ctx), jobs.RecoveryRecord{
+		JobID: job.ID, BookmarkID: req.BookmarkID, Kind: jobs.RecoveryStaging,
+		Container: req.Container, Prefix: ".aeronautes/stage/" + job.ID + "/",
+	}); err != nil {
+		s.runner.release(job.ID)
+		_ = s.jobs.SetError(context.WithoutCancel(ctx), job.ID, "recovery store unavailable before first write: "+err.Error())
+		_ = s.jobs.Transition(context.WithoutCancel(ctx), job.ID, jobs.StateFailed)
+		return "", fmt.Errorf("recovery store unavailable: %w", err)
+	}
 	s.record(ctx, req.BookmarkID, "transfer.upload.start", job.Source+" → "+job.Destination, "job "+job.ID+" · "+job.Settings, audit.ResultApplied)
 
 	s.launch(jobCtx, job.ID, req.BookmarkID, func(runCtx context.Context) {
 		s.runLocal(runCtx, job.ID, req.BookmarkID, job.Counters, func(innerCtx context.Context, onProgress func(done, total, bytes int64)) (*local.Report, error) {
-			report, err := local.Upload(innerCtx, session, engine, "aeronautes_dst:"+req.Container, req.Container, req.Prefix, preflight, onProgress)
+			background := context.WithoutCancel(innerCtx)
+			report, err := local.Upload(innerCtx, session, engine, "aeronautes_dst:"+req.Container, req.Container, req.Prefix, job.ID,
+				preflight, onProgress, s.recoveryRecorder(background, job.ID, req.BookmarkID))
 			if report != nil && err == nil && len(report.Failures) == 0 {
 				// Every upload verified: the captured segment prefixes
-				// are job-written and now referenced — record ownership.
-				s.recordOwnership(context.WithoutCancel(innerCtx), req.BookmarkID, job.ID, report.CapturedPrefixes)
+				// are job-written and now referenced — record ownership
+				// and release the recovery rows.
+				s.recordOwnership(background, req.BookmarkID, job.ID, report.CapturedPrefixes)
+				_ = s.jobs.RecoveryClear(background, job.ID)
 			}
 			return report, err
 		})
@@ -188,6 +264,10 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 // StartDownload mirrors StartUpload for materialization.
 func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequestDTO) (string, error) {
 	session, err := s.connections.SessionFor(ctx, req.BookmarkID)
+	if err != nil {
+		return "", err
+	}
+	destDir, err := s.selections.getDir(req.DestDirToken)
 	if err != nil {
 		return "", err
 	}
@@ -209,7 +289,7 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 		Type:             jobs.TypeDownload,
 		Settings:         req.Settings.effectiveJSON(),
 		Source:           req.Container + "/" + req.Prefix,
-		Destination:      req.DestDir,
+		Destination:      "local directory (picker-selected)",
 		SourceBookmarkID: req.BookmarkID,
 		Engine:           "rclone+native",
 		Counters: jobs.Counters{
@@ -225,7 +305,7 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 
 	s.launch(jobCtx, job.ID, req.BookmarkID, func(runCtx context.Context) {
 		s.runLocal(runCtx, job.ID, req.BookmarkID, job.Counters, func(innerCtx context.Context, onProgress func(done, total, bytes int64)) (*local.Report, error) {
-			return local.Download(innerCtx, session, engine, "aeronautes_src:"+req.Container, req.Container, req.Prefix, req.DestDir, preflight, onProgress)
+			return local.Download(innerCtx, session, engine, "aeronautes_src:"+req.Container, req.Container, req.Prefix, destDir, job.ID, preflight, onProgress)
 		})
 	})
 	return job.ID, nil
@@ -269,9 +349,11 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 		if message != "" {
 			_ = s.jobs.SetError(background, jobID, message)
 		}
+		// Deregister BEFORE the terminal state becomes visible: a job
+		// that reads terminal must no longer be cancel-addressable.
+		s.runner.release(jobID)
 		transition(state)
 		s.record(background, bookmarkID, "transfer.local."+string(state), "job "+jobID, "", terminalAuditResult(state))
-		s.runner.release(jobID)
 	}
 	switch {
 	case err != nil && errors.Is(err, context.Canceled):
