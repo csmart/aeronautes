@@ -4044,6 +4044,24 @@ metadata-only replication, short-page handling, modern-versioning edit) are
 pulled in where a matrix exercises them; each lands with the system test that
 would fail without it.
 
+**Foundation landed (2026-08-30).** The cornerstone is in and proven against
+containerized Swift: the independent raw-HTTP oracle (never imports
+swiftcontrol; witnesses plain/DLO/SLO/symlink identity with content digests and
+full segment inventories; Diff catches a same-size swap with zero phantom
+changes), the two-account system harness driving the REAL services with
+snapshot/AssertNoCollateral, the auto-inventory gate (47 bound actions; a
+reflection guard fails CI on an un-inventoried method; pure reflection so it
+runs without SAIO), and five flagship behavioral matrices — object metadata
+edit (surgical), cross-account copy (logical-content identity, source
+untouched, no staging leak), prefix delete (spares the adversarial near-miss),
+mirror (converges + deletes only dest-only), and the destructive refusal twins
+(refusals have zero effect). The suite auto-runs in the SAIO CI job (two
+accounts required). Reportable coverage today: 7/75 required scenarios, the
+rest enumerated as honest gaps by the report artifact. Remaining matrix rows
+(read/session happy paths, conflict/cancel/partial cases, upload/download,
+fault-injection/crash with real killed subprocesses, UI→bridge, platform) build
+on this foundation next.
+
 
 ## 66. Final project statement
 
