@@ -1,0 +1,59 @@
+# macOS build/package tasks. Curated from the Wails v3 template: native CGO
+# builds on a matched runner (the webview binds Cocoa/WebKit via CGO), and
+# packaging produces the .app bundle the release matrix zips (§61.0). No
+# universal-binary task — the matrix builds each arch natively. Signing and
+# notarisation are deliberately absent until an Apple Developer identity
+# exists (§65.6); artifacts say UNSIGNED.
+version: '3'
+
+includes:
+  common: ../Taskfile.yml
+
+tasks:
+  build:
+    summary: Builds the application for macOS
+    deps:
+      - task: common:go:mod:tidy
+      - task: common:build:frontend
+        vars:
+          BUILD_FLAGS:
+            ref: .BUILD_FLAGS
+          DEV:
+            ref: .DEV
+    cmds:
+      - go build {{.BUILD_FLAGS}} -o {{.OUTPUT}}
+    vars:
+      # Production builds carry `-tags production`, which compiles the wails
+      # DevTools capability out entirely (§55) — same policy as linux.
+      BUILD_FLAGS: '{{if eq .DEV "true"}}-buildvcs=false -gcflags=all="-l"{{else}}-tags production -trimpath -buildvcs=false -ldflags="-w -s"{{end}}'
+      DEFAULT_OUTPUT: '{{.BIN_DIR}}/{{.APP_NAME}}'
+      OUTPUT: '{{ .OUTPUT | default .DEFAULT_OUTPUT }}'
+    env:
+      GOOS: darwin
+      CGO_ENABLED: 1
+      GOARCH: '{{.ARCH | default ARCH}}'
+      CGO_CFLAGS: -mmacosx-version-min=10.15
+      CGO_LDFLAGS: -mmacosx-version-min=10.15
+      MACOSX_DEPLOYMENT_TARGET: "10.15"
+
+  package:
+    summary: Packages a production build into an .app bundle (unsigned)
+    deps:
+      - task: build
+    cmds:
+      - task: create:app:bundle
+
+  create:app:bundle:
+    summary: Creates the .app bundle
+    deps:
+      - task: common:generate:icons
+    cmds:
+      - mkdir -p {{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS
+      - mkdir -p {{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources
+      - cp build/darwin/icons.icns {{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources
+      - cp {{.BIN_DIR}}/{{.APP_NAME}} {{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS
+      - cp build/darwin/Info.plist {{.BIN_DIR}}/{{.APP_NAME}}.app/Contents
+
+  run:
+    cmds:
+      - '{{.BIN_DIR}}/{{.APP_NAME}}'

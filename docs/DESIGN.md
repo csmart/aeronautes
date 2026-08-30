@@ -3708,6 +3708,17 @@ bounded chunks, so Mirror holds O(chunk) names in memory at any scale and hostil
 remain tracked: the release matrix exists and its test-gate ordering was fixed after the
 first dispatch failed on the unbuilt go:embed frontend.
 
+Follow-up (2026-08-30, later): the smoke job was promoted to the fourth required status
+check on master after seven consecutive green runs. The first full release-matrix dispatch
+proved both Linux targets and exposed that the darwin/windows Taskfile includes (§61.0's
+"land with the per-OS builds" note) were still missing: both landed, curated from the Wails
+v3 template — darwin builds CGO-native and packages an unsigned .app bundle from
+build/darwin/Info.plist; windows builds pure-Go (WebView2 over COM) with -H windowsgui and
+a generated .syso carrying icon and version resources. Icon generation is the shared
+common task (wails3 always emits both platforms' icons; outputs are gitignored build
+products). The windows chain is validated by cross-build from Linux; the matrix (now
+fail-fast: false so sibling targets report independently) proves the native runners.
+
 ---
 
 ## 66. Final project statement

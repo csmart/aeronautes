@@ -6,6 +6,10 @@
 .task/
 /build/linux/appimage/build/
 /build/linux/aeronautes.desktop
+/build/darwin/icons.icns
+/build/darwin/Assets.car
+/build/windows/icon.ico
+*.syso
 
 # Wails
 /frontend/dist/

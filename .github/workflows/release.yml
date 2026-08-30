@@ -40,6 +40,7 @@ jobs:
   linux:
     needs: test
     strategy:
+      fail-fast: false
       matrix:
         include:
           - runner: ubuntu-24.04
@@ -80,6 +81,7 @@ jobs:
   macos:
     needs: test
     strategy:
+      fail-fast: false
       matrix:
         include:
           - runner: macos-15 # Apple Silicon
@@ -106,10 +108,10 @@ jobs:
       - name: bundle (unsigned)
         run: |
           mkdir -p dist
-          if [ -d bin/Aeronautes.app ]; then
+          if [ -d bin/aeronautes.app ]; then
             # The sidecar sits beside the app executable inside the bundle.
-            cp bin/rclone bin/Aeronautes.app/Contents/MacOS/rclone
-            ditto -c -k --keepParent bin/Aeronautes.app "dist/aeronautes-macos-${{ matrix.arch }}-UNSIGNED.zip"
+            cp bin/rclone bin/aeronautes.app/Contents/MacOS/rclone
+            ditto -c -k --keepParent bin/aeronautes.app "dist/aeronautes-macos-${{ matrix.arch }}-UNSIGNED.zip"
           else
             ditto -c -k bin "dist/aeronautes-macos-${{ matrix.arch }}-UNSIGNED.zip"
           fi
@@ -124,6 +126,7 @@ jobs:
   windows:
     needs: test
     strategy:
+      fail-fast: false
       matrix:
         include:
           - runner: windows-2022
