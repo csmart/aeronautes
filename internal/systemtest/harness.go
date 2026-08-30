@@ -144,7 +144,13 @@ func (h *Harness) account(authURL, user, key, name string) (*Account, error) {
 	if err != nil {
 		return nil, err
 	}
-	a := &Account{BookmarkID: saved.ID, Oracle: ora, authURL: authURL, user: user, key: key, rawClient: &http.Client{Timeout: 30 * time.Second}}
+	a := &Account{BookmarkID: saved.ID, Oracle: ora, authURL: authURL, user: user, key: key, rawClient: &http.Client{
+		Timeout: 30 * time.Second,
+		// The raw seed/teardown client refuses redirects too, so a
+		// misrouted setup write cannot silently land elsewhere or resend
+		// the token (codex war-room H-06/H-07 — match the oracle).
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}}
 	if err := h.rawAuth(a); err != nil {
 		return nil, err
 	}
