@@ -15,7 +15,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -60,15 +59,6 @@ type Harness struct {
 
 	Primary   *Account // the active browse/inspect/mutate account
 	Secondary *Account // for cross-account Copy/Mirror
-
-	// The scenario-evidence ledger. mu guards it because the war room is
-	// designed to drive one harness from concurrent goroutines (codex
-	// war-room F-03).
-	mu           sync.Mutex
-	invoked      map[string]bool  // bridge actions invoked through a wrapper
-	pending      []recordedCredit // validated scenario credits, committed iff the test passes
-	finalFailed  bool             // captured by the last cleanup, read by RunScenario
-	finalSkipped bool
 }
 
 // New builds a harness or skips when SAIO is unavailable. A second
@@ -108,17 +98,9 @@ func New(t *testing.T) *Harness {
 		Audit:     app.NewAuditService(auditStore),
 	}
 
-	// Registered FIRST so LIFO runs it LAST — after every other cleanup
-	// (purges, residue sweep, db close) — capturing the test's TRULY final
-	// disposition. RunScenario reads this to decide whether to commit
-	// credits, instead of a finalizer that would run before an
-	// earlier-registered cleanup (codex war-room F-02).
-	t.Cleanup(func() {
-		h.finalFailed = t.Failed()
-		h.finalSkipped = t.Skipped()
-	})
-	// Checked db close: a close/durability error fails the test (and so
-	// blocks credit), rather than being silently ignored (codex F-02).
+	// Checked db close: a close/durability error fails the test (so its
+	// coverage claims are not credited by the reconciler) rather than being
+	// silently ignored (codex war-room F-02).
 	t.Cleanup(func() {
 		if err := database.Close(); err != nil {
 			t.Errorf("harness db close: %v", err)
@@ -160,42 +142,6 @@ func New(t *testing.T) *Harness {
 	return h
 }
 
-// RunScenario runs a recording test body inside a subtest and commits its
-// scenario credits only if that subtest PASSED — judged AFTER its entire
-// lifecycle, including every cleanup, has completed (codex war-room F-02).
-// A test that only witnesses the oracle (records nothing) can call New
-// directly; a test that records scenarios MUST use RunScenario so its
-// disposition is observed from the outside.
-func RunScenario(t *testing.T, body func(t *testing.T, h *Harness)) {
-	runScenario(t, New, body)
-}
-
-// runScenario is the core with an injectable harness factory, so the
-// disposition rule (commit only after a subtest that neither failed nor
-// skipped, judged post-cleanup) is testable without SAIO.
-func runScenario(t *testing.T, newHarness func(*testing.T) *Harness, body func(t *testing.T, h *Harness)) {
-	t.Helper()
-	var h *Harness
-	t.Run("scenario", func(st *testing.T) {
-		h = newHarness(st)
-		if h != nil {
-			body(st, h)
-		}
-	})
-	// After the subtest and ALL its cleanups have run, commit iff it truly
-	// passed. The disposition was captured by the harness's first-registered
-	// (last-running) cleanup, so a late skip or a cleanup failure is seen.
-	if h == nil || h.finalFailed || h.finalSkipped {
-		return
-	}
-	h.mu.Lock()
-	pending := append([]recordedCredit(nil), h.pending...)
-	h.mu.Unlock()
-	for _, c := range pending {
-		creditScenario(c.action, c.scenario, t.Name())
-	}
-}
-
 // assertNoResidue fails the test if it left any ns-prefixed container
 // behind on either account — a safety harness must leave Swift exactly as
 // it found it, and silently accepted residue trains the suite to tolerate
@@ -228,111 +174,121 @@ func (h *Harness) assertNoResidue() {
 	}
 }
 
-// markInvoked records (concurrency-safely, codex F-03) that this test
-// invoked a bridge action through a harness wrapper — the OBSERVED fact a
-// credit requires, so a no-op test that never called the action earns
-// nothing.
-func (h *Harness) markInvoked(action string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.invoked == nil {
-		h.invoked = map[string]bool{}
+// Receipt is the single-use record of ONE bridge-action invocation through
+// a harness wrapper. A coverage claim can be EMITTED only through the
+// receipt's Credit* methods, which validate the scenario against the
+// action, job, error, and outcome captured from THAT one call — so
+// evidence for call B cannot certify call A, and one invocation cannot
+// certify a scenario it did not produce (codex war-room round-4 F-01).
+// Emitting only writes a line; whether it becomes a credit is decided OUT
+// OF PROCESS by cmd/scenariocov, which requires the emitting test (and
+// every ancestor) to terminally PASS (F-02).
+type Receipt struct {
+	h        *Harness
+	action   string
+	jobID    string // set for job-running actions
+	outcome  string // set for synchronous mutates (result.Outcome)
+	err      error  // the call's returned error
+	consumed bool
+}
+
+// JobID, Err, and Outcome expose this call's result so the test can make
+// its own assertions before crediting.
+func (r *Receipt) JobID() string   { return r.jobID }
+func (r *Receipt) Err() error      { return r.err }
+func (r *Receipt) Outcome() string { return r.outcome }
+
+func (r *Receipt) emit(scenario, evidence string) {
+	r.h.T.Helper()
+	if r.consumed {
+		r.h.T.Fatalf("receipt for %s already consumed — one invocation credits at most one scenario", r.action)
 	}
-	h.invoked[action] = true
-}
-
-// claim is the private core: it validates the pair against the inventory
-// and requires the action to have been observed invoked, then queues the
-// credit (committed later by RunScenario iff the test passes). It never
-// decides the scenario from a bare label — the public Credit* helpers do
-// that from OBSERVED OUTCOME evidence, so one call cannot certify a
-// scenario it did not produce (codex war-room F-01).
-func (h *Harness) claim(action, scenario string) {
-	h.T.Helper()
-	a, ok := Inventory[action]
-	if !ok {
-		h.T.Fatalf("claim: %q is not an inventoried action", action)
+	r.consumed = true
+	a, ok := Inventory[r.action]
+	if !ok || !scenarioRequired(a, scenario) {
+		r.h.T.Fatalf("receipt %s: %q is not a required scenario", r.action, scenario)
 	}
-	if !scenarioRequired(a, scenario) {
-		h.T.Fatalf("claim: %q is not a required scenario for %q (needs %v)", scenario, action, a.required())
+	r.h.T.Logf("%s%s", scenarioClaimMarker, claimJSON(r.action, scenario, evidence))
+}
+
+// CreditHappy emits a happy claim for a JOB action, validating from THIS
+// receipt that the call succeeded and its job reached the terminal
+// complete state — so a refused start, or a DIFFERENT action's job, cannot
+// certify happy.
+func (r *Receipt) CreditHappy() {
+	r.h.T.Helper()
+	if r.err != nil {
+		r.h.T.Fatalf("CreditHappy %s: the call returned an error (%v), not a happy path", r.action, r.err)
 	}
-	h.mu.Lock()
-	invoked := h.invoked[action]
-	if invoked {
-		h.pending = append(h.pending, recordedCredit{action, scenario})
+	if r.jobID == "" {
+		r.h.T.Fatalf("CreditHappy %s: no job id on the receipt", r.action)
 	}
-	h.mu.Unlock()
-	if !invoked {
-		h.T.Fatalf("claim %q/%q: the harness never observed this action invoked — call it through a harness wrapper", action, scenario)
+	if job := r.h.AwaitJob(r.jobID); job.State != "complete" {
+		r.h.T.Fatalf("CreditHappy %s: job %s is %q, not complete", r.action, r.jobID, job.State)
 	}
+	r.emit("happy", "job "+r.jobID+" complete")
 }
 
-// CreditHappyJob credits "happy" for a job-running action ONLY when the
-// job reached the terminal COMPLETE state — a refused or failed start
-// cannot be labelled happy (codex F-01).
-func (h *Harness) CreditHappyJob(action, jobID string) {
-	h.T.Helper()
-	if job := h.AwaitJob(jobID); job.State != "complete" {
-		h.T.Fatalf("CreditHappyJob %s: job %s is %q, not complete", action, jobID, job.State)
+// CreditApplied emits a happy claim for a SYNCHRONOUS mutate, validating
+// from THIS receipt that the outcome was "applied".
+func (r *Receipt) CreditApplied() {
+	r.h.T.Helper()
+	if r.err != nil {
+		r.h.T.Fatalf("CreditApplied %s: returned an error (%v)", r.action, r.err)
 	}
-	h.claim(action, "happy")
-}
-
-// CreditApplied credits "happy" for a synchronous mutate ONLY when its
-// result outcome is "applied".
-func (h *Harness) CreditApplied(action, outcome string) {
-	h.T.Helper()
-	if outcome != "applied" {
-		h.T.Fatalf("CreditApplied %s: outcome %q, not applied", action, outcome)
+	if r.outcome != "applied" {
+		r.h.T.Fatalf("CreditApplied %s: outcome %q, not applied", r.action, r.outcome)
 	}
-	h.claim(action, "happy")
+	r.emit("happy", "outcome applied")
 }
 
-// CreditRefusal credits "refusal" ONLY when the call actually returned an
-// error — a successful call cannot be recorded as a refusal (codex F-01).
-func (h *Harness) CreditRefusal(action string, err error) {
-	h.T.Helper()
-	if err == nil {
-		h.T.Fatalf("CreditRefusal %s: the call returned no error, so it was not refused", action)
+// CreditConflict emits a conflict claim, validating from THIS receipt that
+// the outcome was "conflict".
+func (r *Receipt) CreditConflict() {
+	r.h.T.Helper()
+	if r.outcome != "conflict" {
+		r.h.T.Fatalf("CreditConflict %s: outcome %q, not conflict", r.action, r.outcome)
 	}
-	h.claim(action, "refusal")
+	r.emit("conflict", "outcome conflict")
 }
 
-// CreditConflict credits "conflict" ONLY when the outcome is "conflict".
-func (h *Harness) CreditConflict(action, outcome string) {
-	h.T.Helper()
-	if outcome != "conflict" {
-		h.T.Fatalf("CreditConflict %s: outcome %q, not conflict", action, outcome)
+// CreditRefusal emits a refusal claim, validating from THIS receipt that
+// the call actually returned an error.
+func (r *Receipt) CreditRefusal() {
+	r.h.T.Helper()
+	if r.err == nil {
+		r.h.T.Fatalf("CreditRefusal %s: the call returned no error, so it was not refused", r.action)
 	}
-	h.claim(action, "conflict")
+	r.emit("refusal", "refused: "+r.err.Error())
 }
 
-// Bridge-action wrappers: tests call THESE (not the raw services) so the
-// harness observes the invocation for scenario crediting (codex R-01).
+// Bridge-action wrappers: tests call THESE (not the raw services) so each
+// invocation yields a receipt that binds any later credit to this exact
+// call's action and result (codex war-room F-01).
 
-func (h *Harness) StartCopy(ctx context.Context, req app.CopyRequestDTO) (string, error) {
-	h.markInvoked("TransferService.StartCopy")
-	return h.Transfer.StartCopy(ctx, req)
+func (h *Harness) StartCopy(ctx context.Context, req app.CopyRequestDTO) *Receipt {
+	jobID, err := h.Transfer.StartCopy(ctx, req)
+	return &Receipt{h: h, action: "TransferService.StartCopy", jobID: jobID, err: err}
 }
 
-func (h *Harness) StartMirror(ctx context.Context, req app.MirrorRequestDTO) (string, error) {
-	h.markInvoked("TransferService.StartMirror")
-	return h.Transfer.StartMirror(ctx, req)
+func (h *Harness) StartMirror(ctx context.Context, req app.MirrorRequestDTO) *Receipt {
+	jobID, err := h.Transfer.StartMirror(ctx, req)
+	return &Receipt{h: h, action: "TransferService.StartMirror", jobID: jobID, err: err}
 }
 
-func (h *Harness) StartDelete(ctx context.Context, req app.DeleteRequestDTO) (string, error) {
-	h.markInvoked("DeleteService.StartDelete")
-	return h.Delete.StartDelete(ctx, req)
+func (h *Harness) StartDelete(ctx context.Context, req app.DeleteRequestDTO) *Receipt {
+	jobID, err := h.Delete.StartDelete(ctx, req)
+	return &Receipt{h: h, action: "DeleteService.StartDelete", jobID: jobID, err: err}
 }
 
-func (h *Harness) DeleteManifestWithSegments(ctx context.Context, req app.SegmentsDeleteRequestDTO) (*app.SegmentsDeleteResultDTO, error) {
-	h.markInvoked("DeleteService.DeleteManifestWithSegments")
-	return h.Delete.DeleteManifestWithSegments(ctx, req)
+func (h *Harness) DeleteManifestWithSegments(ctx context.Context, req app.SegmentsDeleteRequestDTO) *Receipt {
+	_, err := h.Delete.DeleteManifestWithSegments(ctx, req)
+	return &Receipt{h: h, action: "DeleteService.DeleteManifestWithSegments", err: err}
 }
 
-func (h *Harness) UpdateObjectMetadata(ctx context.Context, container, name, baseFingerprint string, edit app.ObjectMetadataEditDTO) (app.MutationResultDTO, error) {
-	h.markInvoked("MutateService.UpdateObjectMetadata")
-	return h.Mutate.UpdateObjectMetadata(ctx, container, name, baseFingerprint, edit)
+func (h *Harness) UpdateObjectMetadata(ctx context.Context, container, name, baseFingerprint string, edit app.ObjectMetadataEditDTO) *Receipt {
+	result, err := h.Mutate.UpdateObjectMetadata(ctx, container, name, baseFingerprint, edit)
+	return &Receipt{h: h, action: "MutateService.UpdateObjectMetadata", outcome: result.Outcome, err: err}
 }
 
 // account provisions a test account. It returns an error rather than

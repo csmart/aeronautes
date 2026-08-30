@@ -4128,43 +4128,65 @@ rejects bogus coverage entries (H-02); reclassification and the wired per-action
 Scenarios override (H-03); the changed-object mirror fixture and optimistic-
 conflict metadata case (H-07).
 
-Coverage is EVIDENCE-BASED and, after Codex's third and fourth re-reviews, hardened
-against the false-credit paths it reproduced. A credit now requires THREE things,
-not a label: (1) the action was OBSERVED invoked through a harness wrapper (a no-op
-test earns nothing); (2) the scenario matches OBJECTIVE OUTCOME EVIDENCE — credit
-comes from scenario-specific helpers (CreditHappyJob requires a COMPLETE job,
-CreditRefusal a returned error, CreditConflict a "conflict" outcome), so one
-refusal can no longer certify happy/conflict/cancel/partial/retry — the six-from-one
-spoof is impossible because those helpers validate evidence and cancel/partial/retry
-have no credit path at all yet (Codex round-4 F-01); (3) the whole test PASSED —
-judged by RunScenario from OUTSIDE a subtest, after that subtest's entire lifecycle
-including every cleanup, so a late skip or a cleanup failure blocks credit, not just
-a body failure (F-02). The invocation/credit ledger is mutex-guarded and race-tested
-under the concurrency the war room exists to drive (F-03). The disposition rule and
-concurrency are covered by real regressions (a late-cleanup-skip earns no credit; a
-16-goroutine ledger race test). So a credit means "a passing test invoked this
-action and observed the coarse outcome the helper checks" — NOT that its
-negative-space assertions are exhaustive (future work, stated in scenario.go), and
-NOT merely "observed invocation". The report carries a `valid` bit tied to the
-process result plus the test name that earned each cell; TestMain FAILS the process
-if a configured report cannot be written; CI validates the schema/valid bit and
-uploads with if-no-files-found:error (R-03). The denominator is validated
-well-formed — an invalid Kind or empty requirement set fails
-TestInventoryIsWellFormed, so no row can contribute zero and look complete (R-02);
-the kind defaults are a conservative FLOOR below DESIGN's literal ≈162 baseline,
-documented as such, NOT a completeness claim. Passing tests leave Swift exactly as
-they found it: cleanup enumerates by raw JSON-decoded listing (never a logical GET
-of a broken manifest, never a whitespace-sensitive string scrape), checks every
-DELETE, and an end-of-test residue sweep FAILS a test that left any ns container
-behind (R-04, verified across ten repetitions). Every raw test client — the Oracle,
-the harness, AND the oracle test's seed client — refuses redirects so a test token
-is never forwarded (F-06). It is 8/102 today and visibly incomplete scaffolding —
-NOT a hard no-gap gate (future). The larger program Codex specifies — a per-cell
-evidence ledger with variant/oracle provenance (F-05), an explicit per-action
-required/N/A contract reconciled with the 162 baseline and a joined UI matrix
-(F-04), a semantic oracle over complete account + local + durable state (R-05), a
-deterministic barrier/fault layer, a real two-direction Swift matrix, and hard CI
-gates (R-06) — is the tranche the war room grows into; those are its next rows.
+Coverage is EVIDENCE-BASED, and after five Codex re-reviews the credit mechanism is
+redesigned so a cell cannot be created without the exact execution and outcome it
+names. Codex's round-4 review reproduced two spoofs that string-argument helpers and
+in-process disposition inference could not stop — one refusal certifying happy AND
+conflict from literal strings, and a completed Mirror job certifying Copy — plus a
+skipped parallel/parent test still earning a valid credit. The fix (chosen with the
+owner) is TYPED INVOCATION RECEIPTS plus OUT-OF-PROCESS reconciliation:
+
+Each harness wrapper returns a single-use Receipt carrying THAT call's action, job
+id, error, and outcome. A credit is emitted only through the receipt's Credit*
+methods, which validate the scenario against the receipt's own evidence
+(`CreditHappy` awaits the receipt's job to COMPLETE, `CreditRefusal` requires the
+receipt's error, `CreditConflict`/`CreditApplied` the receipt's outcome). The action
+is embedded in the receipt, so a Mirror job cannot certify Copy; the receipt is
+single-use; and there is no Credit path for cancel/partial/retry. The six-from-one
+spoof no longer compiles. The credit is not committed in process — it is EMITTED as a
+`go test -json` output line, and `cmd/scenariocov` reconciles it AFTER the whole test
+tree finishes, crediting a claim only if the emitting test and every ancestor reached
+a terminal PASS in the event stream. So a skipped, failed, parallel-paused, or
+parent-cleanup-skipped test leaves NO credit — the exact spoofs an in-process
+collector could not see — and the whole fragile RunScenario/finalizer/disposition
+machinery is gone. The reconciler is unit-tested with synthetic events (a claim from
+a skipped/failed test, and one whose ancestor failed, earn nothing). No shared
+mutable ledger remains, so the concurrency race is gone by construction. The report
+retains a LIST of tests + evidence per cell (F-05 partial), a `valid` bit tied to the
+run, schema, commit SHA, and Go version; CI pipes `go test -json` through the tool,
+which exits non-zero on any failure (so the pipe still fails the step), validates the
+schema/valid bit, and uploads with if-no-files-found:error.
+
+Standing invariants from earlier rounds hold: the denominator is validated
+well-formed (an invalid Kind or empty requirement set fails TestInventoryIsWellFormed,
+R-02); the kind defaults are a conservative FLOOR below DESIGN's literal ≈162
+baseline, documented as such, not a completeness claim; passing tests leave Swift
+exactly as they found it (raw-listing checked cleanup + residue sweep, R-04, ten
+repetitions clean); every raw test client refuses redirects (F-06). It is 8/102 today
+and visibly incomplete scaffolding — NOT a hard no-gap gate. Deferred, as the tranche
+the war room grows into: per-cell variant/oracle provenance beyond the test list, an
+explicit per-action required/N/A contract reconciled with the 162 baseline and a
+joined UI matrix (F-04), a semantic oracle over complete account + local + durable
+state (Codex R-05), a deterministic barrier/fault layer, the two-direction Swift
+matrix, and hard CI gates (R-06).
+
+**Grok's fourth war-room review (2026-08-31) confirmed the ledger is trustworthy and
+found NEW PRODUCT P1s — dual-path regressions where copy's safety net was never
+carried onto the sibling paths.** These are product-code hardening for the redesign
+tranche (the war room's job is to LOCK them with tests, not this branch): (P1-2)
+StartUpload runs RecoveryClear after a note-free best-effort staging sweep, so a
+"complete" upload can leave staging litter with no recovery rows — copy's gate is not
+on the upload path; (P1-3) local DLO commit skips the staged-segment completeness
+gate copy has; (P1-4) Force DLO segment sweep does not slash-terminate the manifest
+prefix, so an external unslashed manifest can expand into a sibling's segments;
+(P1-5) the pre-delete DLO recheck is ETag-only, and an empty-DLO swap shares the
+empty-body ETag; (P1-6) Mirror dest-only can delete another job's `.aeronautes/stage/`
+objects; (P1-7) the rclone child still follows storage 302s with the env auth token
+(native Location strip does not cover the byte path); (P1-8) Windows reserved
+download names (CON/PRN/…, trailing dot, `<>:"|?*`) are not refused. None has a
+catching test yet. Grok also confirms: do NOT restore auto-delete under
+ExclusiveOwnershipProof to "match" DESIGN §34 — the code is correctly stricter
+(Force-always); §34's body is the stale side and should be rewritten.
 
 
 ## 66. Final project statement

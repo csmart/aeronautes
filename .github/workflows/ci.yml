@@ -201,30 +201,27 @@ jobs:
         env:
           AERONAUTES_SAIO_AUTH_URL: http://127.0.0.1:8080/auth/v1.0
           AERONAUTES_REQUIRE_TWO_ACCOUNTS: "1"
-          # The evidence-based scenario-coverage report (codex war-room
-          # F-04/F-05): the systemtest TestMain writes it here from what
-          # actually executed, and it is uploaded below. Absolute path
-          # because the test binary's CWD is the package dir, not the repo
-          # root. Visibly incomplete scaffolding — NOT yet a no-gap gate.
-          AERONAUTES_SCENARIO_REPORT: ${{ github.workspace }}/scenario-coverage.json
         run: |
           # Scope the run to ./internal/... — exactly the -coverpkg set.
           # The root package has no tests, but -coverpkg forces it to
           # compile, and its //go:embed frontend/dist is not built in this
-          # job (it is exercised by the Smoke and Frontend jobs). Its
-          # inclusion via ./... previously failed setup; that failure was
-          # masked only because the removed `| grep` swallowed go test's
-          # exit status under this job's non-pipefail shell.
-          go test -race -count=1 -coverprofile=cover.out -coverpkg=./internal/... ./internal/...
+          # job (it is exercised by the Smoke and Frontend jobs).
+          #
+          # -json streams test2json events to cmd/scenariocov, which
+          # reconciles scenario coverage from each test's TERMINAL pass/skip/
+          # fail after the whole tree finishes (codex war-room round-4 F-02)
+          # and exits non-zero if any test failed — so this pipeline still
+          # fails the step through the pipe even under a non-pipefail shell.
+          # cover.out is written by go test as a side effect of -coverprofile.
+          go test -json -v -race -count=1 -coverprofile=cover.out -coverpkg=./internal/... ./internal/... \
+            | go run ./internal/systemtest/cmd/scenariocov -out scenario-coverage.json
           pct=$(go tool cover -func=cover.out | awk '/^total:/ {gsub(/%/,"",$3); print $3}')
           echo "combined Go statement coverage: ${pct}%"
           echo "$pct" > coverage-pct.txt
-          # Validate the report fails-closed (codex war-room R-03): it must
-          # exist, be the expected schema, and be marked valid (tied to the
-          # test process result). No `|| true` — a missing report fails.
-          echo "scenario coverage (evidence-based, see uploaded artifact):"
+          # Validate the reconciled report (codex war-room R-03): expected
+          # schema and marked valid (no test failed). No `|| true`.
           grep -E '"total(Covered|Required)"|"actionsWithGaps"' scenario-coverage.json
-          grep -q '"schemaVersion": 1' scenario-coverage.json || { echo "::error::unexpected scenario report schema"; exit 1; }
+          grep -q '"schemaVersion": 2' scenario-coverage.json || { echo "::error::unexpected scenario report schema"; exit 1; }
           grep -q '"valid": true' scenario-coverage.json || { echo "::error::scenario report marks the run invalid"; exit 1; }
       - name: upload scenario-coverage report
         if: steps.detect.outputs.present == 'true'

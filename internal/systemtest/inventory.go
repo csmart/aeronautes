@@ -8,8 +8,8 @@ package systemtest
 // requirement set (so no row can contribute zero to the denominator and
 // silently look complete). Together they make the DENOMINATOR sound; they
 // do NOT claim the scenarios are COVERED — actual coverage is the
-// evidence-based numerator from the runtime registry (scenario_test.go),
-// and today it is far from full.
+// evidence-based numerator reconciled by cmd/scenariocov from emitted
+// claims and terminal test results, and today it is far from full.
 //
 // The kind defaults are a conservative FLOOR, not DESIGN §65.10's literal
 // blanket rule (happy+refusal for all 47, plus conflict/cancel/partial/
@@ -156,8 +156,10 @@ var Inventory = map[string]Action{
 	"BenchmarkService.StartBenchmark": {Kind: Job},
 }
 
-// Coverage is EVIDENCE-BASED, not a hand-maintained map: a (action,
-// scenario) pair counts only when a running system test calls
-// RecordScenario for it (see scenario_test.go, codex war-room F-04). The
-// report is emitted from that registry by TestMain. A future hard gate
-// can fail CI when a shipped action has an uncovered required scenario.
+// Coverage is EVIDENCE-BASED, not a hand map: a (action, scenario) pair
+// counts only when a system test EMITS a claim through a single-use
+// invocation Receipt (harness.go) whose Credit* method validated the
+// scenario against that call's real outcome, AND cmd/scenariocov sees the
+// emitting test terminally PASS in the `go test -json` stream. A future
+// hard gate can fail CI when a shipped action has an uncovered required
+// scenario; today the report is visibly incomplete scaffolding.
