@@ -28,8 +28,14 @@ var (
 
 // RecordScenario marks (action, scenario) as exercised by the calling
 // test. The action must be inventoried and the scenario one it requires,
-// so a typo or an obsolete claim fails loudly rather than inflating
-// coverage.
+// so a typo or an obsolete claim fails loudly (immediately) rather than
+// inflating coverage.
+//
+// Crediting is deferred to test cleanup and skipped if the test FAILED,
+// so coverage means "a PASSING test exercised this", not merely
+// "RecordScenario ran" — a test whose later assertion (e.g. a closing
+// AssertNoCollateral) fails does not leave a credited scenario behind in
+// the uploaded report (grok war-room 3 P2).
 func RecordScenario(t *testing.T, action, scenario string) {
 	t.Helper()
 	a, ok := Inventory[action]
@@ -39,12 +45,40 @@ func RecordScenario(t *testing.T, action, scenario string) {
 	if !scenarioRequired(a, scenario) {
 		t.Fatalf("RecordScenario: %q is not a required scenario for %q (needs %v)", scenario, action, a.required())
 	}
+	name := t.Name()
+	t.Cleanup(func() { creditScenario(action, scenario, name, t.Failed()) })
+}
+
+// creditScenario commits a (action, scenario) credit unless the test
+// failed. Extracted from the cleanup closure so the credit-only-on-pass
+// rule is unit-testable without a real failing test.
+func creditScenario(action, scenario, testName string, failed bool) {
+	if failed {
+		return
+	}
 	scenarioMu.Lock()
 	defer scenarioMu.Unlock()
 	if scenarioSeen[action] == nil {
 		scenarioSeen[action] = map[string]string{}
 	}
-	scenarioSeen[action][scenario] = t.Name()
+	scenarioSeen[action][scenario] = testName
+}
+
+// TestScenarioCreditSkipsFailedTests proves coverage is credited only for
+// PASSING tests (grok war-room 3 P2). A sentinel action (absent from the
+// Inventory, so it never pollutes the report) exercises both outcomes.
+func TestScenarioCreditSkipsFailedTests(t *testing.T) {
+	const fake = "SentinelService.Only"
+	defer func() { scenarioMu.Lock(); delete(scenarioSeen, fake); scenarioMu.Unlock() }()
+
+	creditScenario(fake, "happy", "TestFake", true) // test FAILED → no credit
+	if _, ok := recordedScenarios()[fake]; ok {
+		t.Fatal("a failed test credited its scenario")
+	}
+	creditScenario(fake, "happy", "TestFake", false) // test PASSED → credit
+	if r := recordedScenarios()[fake]; len(r) != 1 || r[0] != "happy" {
+		t.Fatalf("a passing test was not credited: %v", r)
+	}
 }
 
 func scenarioRequired(a Action, scenario string) bool {
