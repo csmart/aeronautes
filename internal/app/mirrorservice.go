@@ -107,7 +107,8 @@ func (s *TransferService) runMirror(ctx context.Context, jobID string, req Mirro
 		SrcSpec: "aeronautes_src:" + req.SourceContainer, DstSpec: "aeronautes_dst:" + req.DestContainer,
 		SrcContainer: req.SourceContainer, DstContainer: req.DestContainer,
 		SrcPrefix: req.SourcePrefix, DstPrefix: req.DestPrefix,
-		JobID: jobID,
+		JobID:      jobID,
+		OnRecovery: s.recoveryRecorder(background, jobID, req.DestBookmarkID),
 		OnItem: func(outcome transfercopy.ItemOutcome) {
 			countersMu.Lock()
 			switch outcome.Outcome {
@@ -124,6 +125,10 @@ func (s *TransferService) runMirror(ctx context.Context, jobID string, req Mirro
 		finish(jobs.StateFailed, err.Error())
 		return
 	}
+	_ = s.jobs.RecoveryAdd(background, jobs.RecoveryRecord{
+		JobID: jobID, BookmarkID: req.DestBookmarkID, Kind: jobs.RecoveryStaging,
+		Container: req.DestContainer, Prefix: executor.StagingPrefix(),
+	})
 	transition(jobs.StateRunning)
 
 	// One pass feeds the copy executor AND collects the delete set: the
@@ -165,9 +170,8 @@ func (s *TransferService) runMirror(ctx context.Context, jobID string, req Mirro
 	countersMu.Unlock()
 	flush()
 
-	if reconcile, err := executor.Reconcile(background, report); err == nil &&
-		(reconcile.SweptStaged > 0 || reconcile.SweptSegments > 0) {
-		_ = reconcile // litter control; counts live in logs for copy jobs
+	if _, err := executor.Reconcile(background, report); err == nil {
+		_ = s.jobs.RecoveryClear(background, jobID)
 	}
 	s.recordOwnership(background, req.DestBookmarkID, jobID, report.CommittedPrefixes)
 

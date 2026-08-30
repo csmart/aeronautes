@@ -347,11 +347,18 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 			countersMu.Unlock()
 			flush(false)
 		},
+		OnRecovery: s.recoveryRecorder(background, jobID, req.DestBookmarkID),
 	})
 	if err != nil {
 		finish(jobs.StateFailed, err.Error())
 		return
 	}
+	// The staging namespace is durable BEFORE anything is written: a
+	// crash from here on is sweepable at next startup (§65.8 item 2).
+	_ = s.jobs.RecoveryAdd(background, jobs.RecoveryRecord{
+		JobID: jobID, BookmarkID: req.DestBookmarkID, Kind: jobs.RecoveryStaging,
+		Container: req.DestContainer, Prefix: executor.StagingPrefix(),
+	})
 	transition(jobs.StateRunning)
 
 	planned := func(item plan.Item) error {
@@ -389,11 +396,15 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 	s.recordOwnership(background, req.DestBookmarkID, jobID, report.CommittedPrefixes)
 
 	// Reconciliation runs on EVERY exit path (§26.4: after graceful
-	// cancellation too, never only after hard interruption).
+	// cancellation too, never only after hard interruption). A clean
+	// reconciliation clears the crash-recovery records.
 	if reconcile, err := executor.Reconcile(background, report); err != nil {
 		log.Printf("job %s reconcile: %v", jobID, err)
-	} else if reconcile.SweptStaged > 0 || reconcile.SweptSegments > 0 {
-		log.Printf("job %s reconcile: swept %d staged, %d segments", jobID, reconcile.SweptStaged, reconcile.SweptSegments)
+	} else {
+		if reconcile.SweptStaged > 0 || reconcile.SweptSegments > 0 {
+			log.Printf("job %s reconcile: swept %d staged, %d segments", jobID, reconcile.SweptStaged, reconcile.SweptSegments)
+		}
+		_ = s.jobs.RecoveryClear(background, jobID)
 	}
 
 	if planErr != nil {
@@ -449,6 +460,78 @@ func (s *TransferService) effectiveConfigJSON(req CopyRequestDTO) string {
 		profile = ProfileBalanced
 	}
 	return effectiveJSONWithProfile(profile, effective)
+}
+
+// recoveryRecorder persists executor recovery facts durably.
+func (s *TransferService) recoveryRecorder(ctx context.Context, jobID, bookmarkID string) func(kind, container, prefix string) {
+	return func(kind, container, prefix string) {
+		if err := s.jobs.RecoveryAdd(ctx, jobs.RecoveryRecord{
+			JobID: jobID, BookmarkID: bookmarkID, Kind: jobs.RecoveryKind(kind),
+			Container: container, Prefix: prefix,
+		}); err != nil {
+			log.Printf("job %s: recovery record: %v", jobID, err)
+		}
+	}
+}
+
+// SweepCrashLitter replays reconciliation for jobs that died before
+// their own could run (§65.8 item 2): every persisted staging prefix
+// and captured-minus-committed segment prefix of a TERMINAL job, under
+// the same live-manifest guard. Bookmarks that cannot authenticate
+// right now are skipped and retried later; records clear only after a
+// clean sweep.
+func (s *TransferService) SweepCrashLitter(ctx context.Context) (swept int, err error) {
+	pending, err := s.jobs.RecoveryPending(ctx)
+	if err != nil {
+		return 0, err
+	}
+	type group struct {
+		bookmarkID, dstContainer, stagingPrefix string
+		captured, committed                     []rclone.SegmentPrefix
+	}
+	groups := map[string]*group{}
+	order := []string{}
+	for _, r := range pending {
+		g, ok := groups[r.JobID]
+		if !ok {
+			g = &group{bookmarkID: r.BookmarkID}
+			groups[r.JobID] = g
+			order = append(order, r.JobID)
+		}
+		switch r.Kind {
+		case jobs.RecoveryStaging:
+			g.dstContainer, g.stagingPrefix = r.Container, r.Prefix
+		case jobs.RecoveryCaptured:
+			g.captured = append(g.captured, rclone.SegmentPrefix{Container: r.Container, Prefix: r.Prefix})
+		case jobs.RecoveryCommitted:
+			g.committed = append(g.committed, rclone.SegmentPrefix{Container: r.Container, Prefix: r.Prefix})
+		}
+	}
+	for _, jobID := range order {
+		g := groups[jobID]
+		session, sessionErr := s.connections.SessionFor(ctx, g.bookmarkID)
+		if sessionErr != nil {
+			log.Printf("crash sweep: job %s bookmark unavailable (%v); will retry", jobID, sessionErr)
+			continue
+		}
+		dstContainer := g.dstContainer
+		if dstContainer == "" && len(g.captured) > 0 {
+			// Upload jobs have no staging row; the engine's sidecar
+			// convention recovers the destination container.
+			dstContainer = strings.TrimSuffix(g.captured[0].Container, "_segments")
+		}
+		report, sweepErr := transfercopy.SweepLitter(ctx, session, dstContainer, g.stagingPrefix, g.captured, g.committed)
+		if sweepErr != nil {
+			log.Printf("crash sweep: job %s: %v", jobID, sweepErr)
+			continue
+		}
+		swept += report.SweptStaged + report.SweptSegments
+		s.record(ctx, g.bookmarkID, "transfer.crash-sweep", "job "+jobID,
+			fmt.Sprintf("swept %d staged + %d segments; kept %d referenced prefixes",
+				report.SweptStaged, report.SweptSegments, len(report.KeptPrefixes)), audit.ResultApplied)
+		_ = s.jobs.RecoveryClear(ctx, jobID)
+	}
+	return swept, nil
 }
 
 func terminalAuditResult(state jobs.State) audit.Result {

@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/adrg/xdg"
 	"github.com/csmart/aeronautes/internal/app"
@@ -63,6 +64,24 @@ func main() {
 	jobRunner := app.NewJobRunner(jobStore, auditStore)
 	transferService := app.NewTransferServiceWithRunner(connections, jobStore, jobRunner)
 	transferService.SetEvidenceStore(evidenceStore)
+	// Crash litter from previous runs: sweep in the background, retrying
+	// while bookmarks come online (keychain credentials permit an
+	// immediate pass; session-only secrets succeed after connect).
+	go func() {
+		for attempt := 0; attempt < 12; attempt++ {
+			if attempt > 0 {
+				time.Sleep(5 * time.Minute)
+			}
+			if pending, err := jobStore.RecoveryPending(context.Background()); err != nil || len(pending) == 0 {
+				return
+			}
+			if swept, err := transferService.SweepCrashLitter(context.Background()); err != nil {
+				log.Printf("crash sweep: %v", err)
+			} else if swept > 0 {
+				log.Printf("crash sweep: %d objects removed", swept)
+			}
+		}
+	}()
 	transferService.SetFilePicker(wailsPicker{})
 	benchmarkService := app.NewBenchmarkService(connections, jobStore, jobRunner, database)
 	transferService.SetRecommendationSource(benchmarkService.RecommendationFor)
