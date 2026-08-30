@@ -139,7 +139,7 @@ func TestPreflightUploadProblems(t *testing.T) {
 	}
 
 	// Execution refuses a rejected preflight outright.
-	if _, err := Upload(ctx, s, &fsEngine{s}, "aeronautes_dst:media", "media", "docs/", report, nil); err == nil {
+	if _, err := Upload(ctx, s, &fsEngine{s}, "aeronautes_dst:media", "media", "docs/", "test-job", report, nil, nil); err == nil {
 		t.Error("rejected preflight executed")
 	}
 }
@@ -176,14 +176,12 @@ func TestPreflightDownloadRejections(t *testing.T) {
 			warned[p.Kind] = true
 		}
 	}
-	for _, want := range []string{"path-escape", "file-vs-prefix", "unmaterializable", "local-exists"} {
+	for _, want := range []string{"path-escape", "file-vs-prefix", "unmaterializable", "local-exists", "case-fold"} {
 		if !found[want] {
 			t.Errorf("missing rejection %q: %+v", want, report.Problems)
 		}
 	}
-	if !warned["case-fold"] {
-		t.Errorf("case twins should warn, not reject: %+v", report.Problems)
-	}
+	_ = warned
 	if !report.Rejected() {
 		t.Error("collisions not rejected")
 	}
@@ -211,7 +209,7 @@ func TestUploadExecutes(t *testing.T) {
 	if err != nil || report.Rejected() {
 		t.Fatalf("preflight: %v %+v", err, report.Problems)
 	}
-	result, err := Upload(ctx, s, &fsEngine{s}, "aeronautes_dst:media", "media", "up/", report, nil)
+	result, err := Upload(ctx, s, &fsEngine{s}, "aeronautes_dst:media", "media", "up/", "test-job", report, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +231,7 @@ func TestDownloadExecutes(t *testing.T) {
 	seed(mock, "media", "snap/plain.txt", "plain content")
 	seed(mock, "media", "snap/nested/deep.bin", "deep bytes!")
 	seed(mock, "media", "snap/folder/", "")
-	seed(mock, "media", "snap/we ird//name", "hostile dl") // // → native
+	seed(mock, "media", "snap/we ird/name", "hostile dl") // space → native-ish oddity
 
 	destDir := t.TempDir()
 	report, err := PreflightDownload(ctx, s, "media", "snap/", destDir)
@@ -243,17 +241,20 @@ func TestDownloadExecutes(t *testing.T) {
 	if report.Rejected() {
 		t.Fatalf("unexpected rejection: %+v", report.Problems)
 	}
-	result, err := Download(ctx, s, &fsEngine{s}, "aeronautes_src:media", "media", "snap/", destDir, report, nil)
+	result, err := Download(ctx, s, &fsEngine{s}, "aeronautes_src:media", "media", "snap/", destDir, "test-job", report, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Done != 4 || result.NativeRouted != 1 || len(result.Failures) != 0 {
+	// The uniform namespace policy now rejects every rclone-unsafe name
+	// at preflight, so nothing reaches the native download route in v1
+	// (its code stays for §65.10's per-target policies).
+	if result.Done != 4 || result.NativeRouted != 0 || len(result.Failures) != 0 {
 		t.Fatalf("result = %+v (failures %+v)", result, result.Failures)
 	}
 	for rel, want := range map[string]string{
 		"plain.txt":       "plain content",
 		"nested/deep.bin": "deep bytes!",
-		"we ird/name":     "hostile dl", // filepath.Join collapses //
+		"we ird/name":     "hostile dl",
 	} {
 		data, err := os.ReadFile(filepath.Join(destDir, rel))
 		if err != nil || string(data) != want {
@@ -263,4 +264,145 @@ func TestDownloadExecutes(t *testing.T) {
 	if info, err := os.Stat(filepath.Join(destDir, "folder")); err != nil || !info.IsDir() {
 		t.Errorf("folder marker not a directory: %v", err)
 	}
+}
+
+func TestPreflightRejectsCrossPlatformHazards(t *testing.T) {
+	// §65.9 item 13: one namespace policy for every target — backslash
+	// components (Windows separators), empty segments (local-path
+	// collapse), control characters, and a directory sitting at a file
+	// target all REJECT on every platform.
+	session, mock := session(t)
+	seed(mock, "media", "scope/evil\\component", "x")
+	seed(mock, "media", "scope/a//b", "x")
+	seed(mock, "media", "scope/ctl\x01name", "x")
+	seed(mock, "media", "scope/dirhit", "x")
+	dest := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dest, "dirhit"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	report, err := PreflightDownload(context.Background(), session, "media", "scope/", dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := map[string]int{}
+	for _, p := range report.Problems {
+		if p.Reject {
+			kinds[p.Kind]++
+		}
+	}
+	if kinds["path-escape"] == 0 || kinds["collision"] == 0 || kinds["unmaterializable"] == 0 || kinds["local-exists"] == 0 {
+		t.Fatalf("hazards not all rejected: %+v", report.Problems)
+	}
+	if !report.Rejected() {
+		t.Fatal("report not rejected overall")
+	}
+}
+
+func TestNativeDownloadNeverLeavesPartials(t *testing.T) {
+	// A read that dies mid-copy must leave NOTHING at the final name;
+	// a short read must refuse; a clean copy lands atomically.
+	session, mock := session(t)
+	seed(mock, "media", "ok.bin", "complete-content")
+	dest := t.TempDir()
+
+	// Short read: item.Size larger than the object → refuse + no file.
+	err := nativeDownload(context.Background(), session, "media",
+		DownloadItem{Name: "ok.bin", RelPath: "short.bin", Size: 9999}, dest)
+	if err == nil || !strings.Contains(err.Error(), "short") {
+		t.Fatalf("short download = %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dest, "short.bin")); statErr == nil {
+		t.Fatal("short download left a file at the final name")
+	}
+	// Clean copy lands with exact bytes.
+	if err := nativeDownload(context.Background(), session, "media",
+		DownloadItem{Name: "ok.bin", RelPath: "ok.bin", Size: int64(len("complete-content"))}, dest); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(dest, "ok.bin"))
+	if err != nil || string(data) != "complete-content" {
+		t.Fatalf("landed bytes = %q %v", data, err)
+	}
+	// No temp litter.
+	entries, _ := os.ReadDir(dest)
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".aeronautes-part-") {
+			t.Fatalf("temp litter %s", e.Name())
+		}
+	}
+}
+
+func TestDirMarkerEscapesAndAncestorConflicts(t *testing.T) {
+	// Follow-up review: a zero-byte "scope/../" folder marker must not
+	// become MkdirAll outside the destination, and file-vs-prefix must
+	// catch non-adjacent pairs like foo / foo.txt / foo/child.
+	s, mock := session(t)
+	mock.PutObject("media", "scope/../", swifttest.Object{Bytes: 0, ETag: "d41d8cd98f00b204e9800998ecf8427e"})
+	mock.PutObject("media", "scope/../pwned/", swifttest.Object{Bytes: 0, ETag: "d41d8cd98f00b204e9800998ecf8427e"})
+	seed(mock, "media", "scope/foo", "a file")
+	seed(mock, "media", "scope/foo.txt", "between")
+	seed(mock, "media", "scope/foo/child", "conflict")
+
+	dest := t.TempDir()
+	report, err := PreflightDownload(context.Background(), s, "media", "scope/", dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := map[string]int{}
+	for _, p := range report.Problems {
+		if p.Reject {
+			kinds[p.Kind]++
+		}
+	}
+	if kinds["path-escape"] < 2 {
+		t.Fatalf("dot-segment folder markers not rejected: %+v", report.Problems)
+	}
+	if kinds["file-vs-prefix"] == 0 {
+		t.Fatalf("non-adjacent file-vs-prefix missed: %+v", report.Problems)
+	}
+	// No directory item may point outside the destination.
+	for _, item := range report.Items {
+		if item.Dir && strings.Contains(item.RelPath, "..") {
+			t.Fatalf("escaping directory item survived: %+v", item)
+		}
+	}
+}
+
+func TestLocalUploadNeverTargetsLiveName(t *testing.T) {
+	// The local analogue of TestEngineNeverReceivesLiveNames: reverting
+	// Upload to a live destination would make the runner refuse — this
+	// records the engine destinations and asserts every one is staging-
+	// scoped.
+	s, mock := session(t)
+	mock.AddContainer("dst", "standard")
+	dir := t.TempDir()
+	writeFile(t, dir, "a.txt", "alpha")
+	writeFile(t, dir, "b.txt", "bravo")
+	pre, err := PreflightUpload(context.Background(), s, "dst", "up/",
+		[]string{filepath.Join(dir, "a.txt"), filepath.Join(dir, "b.txt")})
+	if err != nil || pre.Rejected() {
+		t.Fatalf("preflight: %v %+v", err, pre)
+	}
+	rec := &recordingLocalEngine{inner: &fsEngine{s}}
+	if _, err := Upload(context.Background(), s, rec, "aeronautes_dst:dst", "dst", "up/", "job-x", pre, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.dsts) == 0 {
+		t.Fatal("engine never invoked")
+	}
+	for _, dst := range rec.dsts {
+		if !strings.Contains(dst, "/.aeronautes/stage/") {
+			t.Errorf("upload engine received a live destination %q", dst)
+		}
+	}
+}
+
+type recordingLocalEngine struct {
+	inner Engine
+	dsts  []string
+}
+
+func (r *recordingLocalEngine) Copy(ctx context.Context, src, dst string, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
+	r.dsts = append(r.dsts, dst)
+	return r.inner.Copy(ctx, src, dst, names, onEvent)
 }
