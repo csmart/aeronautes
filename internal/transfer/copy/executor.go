@@ -1,7 +1,9 @@
 // Package copy executes copy plans under the §28.6 boundary: the engine
-// (rclone) writes only planned-new or uniquely-staged names, and every
-// overwrite commits natively — stage-and-commit for plain and large
-// objects alike. Verification is Aeronautes' own (listing-diff plus
+// (rclone) writes ONLY uniquely-staged names — never a live destination
+// — and every landing commits natively: stage-and-commit for new,
+// changed, plain, and large objects alike (an existing live name can at
+// most make rclone Update it, which bulk-deletes the old manifest's
+// segments; staging makes that unreachable). Verification is Aeronautes' own (listing-diff plus
 // per-object HEADs, §28.4); engine exit codes are never trusted for
 // completeness. Reconciliation sweeps only names and segment prefixes
 // this job itself created: the phase invariant is zero destruction
@@ -13,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	"github.com/csmart/aeronautes/internal/transfer/plan"
@@ -66,10 +69,17 @@ type Config struct {
 	OnEvent func(rclone.Event)
 	// OnItem is told each item's outcome as it happens; optional.
 	OnItem func(ItemOutcome)
+	// OnAuthFailure invalidates the endpoint tokens before the one
+	// auth-shaped retry: the fresh child must authenticate anew, never
+	// replay the rejected token (review F-06). Optional.
+	OnAuthFailure func()
 	// OnRecovery persists crash-recovery facts AS THEY HAPPEN (§65.8
-	// item 2): captured and committed segment prefixes. Optional; a
-	// dead process's litter is only sweepable if these were durable.
-	OnRecovery func(kind string, container, prefix string)
+	// item 2, §65.9 item 5): captured prefixes stream durably DURING the
+	// child run, a committing record (with the live object identity)
+	// lands BEFORE every live manifest PUT, and committed records after.
+	// A persistence failure fails closed: no commit crosses the
+	// boundary without its durable intent. Optional (tests).
+	OnRecovery func(kind string, container, prefix, object string) error
 }
 
 // ItemOutcome is one name's fate during execution.
@@ -121,6 +131,10 @@ type Executor struct {
 	batch      []string
 	batchBytes int64
 	printed    map[rclone.SegmentPrefix]bool
+	// recoveryBroken latches a failed captured-fact persist: staged
+	// bytes may keep landing, but nothing COMMITS past a boundary the
+	// sweep could not replay (§65.9 item 5 fail-closed rule).
+	recoveryBroken error
 }
 
 // New validates the config and builds an executor.
@@ -236,18 +250,21 @@ func (e *Executor) runUnknown(ctx context.Context, item plan.Item) error {
 // provenEqual implements the executor-grade §28.4 test over two
 // authoritative HEADs: plain pairs by size+ETag; anything manifest-y by
 // the destination fingerprint (proof Aeronautes itself verified this
-// copy of this content).
+// copy of this content) AND live logical-length equality — a DLO whose
+// backing segments changed or vanished re-sums differently on HEAD, so
+// a stale fingerprint alone can no longer skip it (review H-04).
 func provenEqual(src, dst *swiftcontrol.ObjectDetail) bool {
 	if src.Class == swiftcontrol.ClassPlain && dst.Class == swiftcontrol.ClassPlain {
 		return src.ContentLength == dst.ContentLength &&
 			strings.Trim(src.ETag, `"`) == strings.Trim(dst.ETag, `"`)
 	}
 	want := fingerprint(src.ContentLength, src.ETag)
-	return dst.Meta[fingerprintMetaKey] == want
+	return dst.Meta[fingerprintMetaKey] == want && dst.ContentLength == src.ContentLength
 }
 
 // runNew copies a name with no live destination: engine-routed names
-// batch; native-routed names stream through the client immediately.
+// batch toward the staging namespace; native-routed names stream
+// through the client immediately.
 func (e *Executor) runNew(ctx context.Context, item plan.Item) error {
 	if item.Route == plan.RouteNative {
 		e.report.NativeRouted++
@@ -262,10 +279,10 @@ func (e *Executor) runNew(ctx context.Context, item plan.Item) error {
 	return nil
 }
 
-// flushBatch runs one engine copy over the queued planned-new names and
-// then finalizes each: per-object destination HEAD (the engine's exit
-// code proves nothing, §14.3), §27.4 metadata re-application, and the
-// destination fingerprint.
+// flushBatch runs one engine copy of the queued planned-new names into
+// the job staging namespace, then commits each natively — per-object
+// verification (the engine's exit proves nothing for success, §14.3),
+// conflict re-HEAD, §27.4 metadata, and the destination fingerprint.
 func (e *Executor) flushBatch(ctx context.Context) error {
 	if len(e.batch) == 0 {
 		return nil
@@ -286,22 +303,50 @@ func (e *Executor) flushBatch(ctx context.Context) error {
 		}
 		return nil
 	}
-	result, err := e.cfg.Engine.Copy(ctx, e.enginePath(e.cfg.SrcSpec, e.cfg.SrcPrefix),
-		e.enginePath(e.cfg.DstSpec, e.cfg.DstPrefix), names, e.captureEvents)
-	if result != nil {
-		e.capturePrefixes(result.SegmentPrefixes)
+	// The batch lands under the job staging namespace — rclone NEVER
+	// receives a live destination name (§28.6, K-XFER-014). Each name
+	// then commits natively with the same machinery overwrites use.
+	batchPrefix := e.stage + "batch/"
+	for _, name := range names {
+		e.report.StagedResidue = append(e.report.StagedResidue, batchPrefix+name)
 	}
-	if err != nil {
-		for _, name := range names {
-			e.fail(name, "engine-copy", err)
+	var result *rclone.Result
+	var err error
+	for attempt := 0; ; attempt++ {
+		result, err = e.cfg.Engine.Copy(ctx, e.enginePath(e.cfg.SrcSpec, e.cfg.SrcPrefix),
+			e.enginePath(e.cfg.DstSpec, batchPrefix), names, e.captureEvents)
+		if result != nil {
+			e.capturePrefixes(result.SegmentPrefixes)
 		}
-		return nil
+		if err != nil {
+			for _, name := range names {
+				e.fail(name, "engine-copy", err)
+			}
+			return nil
+		}
+		failure := ResultFailure(result)
+		if failure == nil {
+			break
+		}
+		// One fresh child for an auth-shaped failure: tokens are
+		// force-invalidated so the next spawn AUTHENTICATES, never
+		// replays the rejected token (K-XFER-001, review F-06).
+		if attempt == 0 && IsAuthFailure(result) && ctx.Err() == nil {
+			if e.cfg.OnAuthFailure != nil {
+				e.cfg.OnAuthFailure()
+			}
+			continue
+		}
+		for _, name := range names {
+			e.fail(name, "engine-status", failure)
+		}
+		return ctx.Err()
 	}
 	for _, name := range names {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		e.finalizeEngineCopy(ctx, name)
+		e.commitStaged(ctx, plan.Item{Name: name}, batchPrefix+name, false)
 	}
 	return nil
 }
@@ -315,62 +360,34 @@ func (e *Executor) enginePath(spec, prefix string) string {
 }
 
 func (e *Executor) captureEvents(event rclone.Event) {
+	// Streamed capture: the fact is durable at OBSERVATION time, so a
+	// process that dies mid-child still knows its generated prefixes.
+	if p, ok := rclone.PrefixFromEvent(event); ok {
+		e.capturePrefix(p)
+	}
 	if e.cfg.OnEvent != nil {
 		e.cfg.OnEvent(event)
 	}
 }
 
-func (e *Executor) capturePrefixes(prefixes []rclone.SegmentPrefix) {
-	for _, p := range prefixes {
-		if !e.printed[p] {
-			e.printed[p] = true
-			e.report.CapturedPrefixes = append(e.report.CapturedPrefixes, p)
-			if e.cfg.OnRecovery != nil {
-				e.cfg.OnRecovery("captured", p.Container, p.Prefix)
-			}
+func (e *Executor) capturePrefix(p rclone.SegmentPrefix) {
+	p = p.Canonical()
+	if e.printed[p] {
+		return
+	}
+	e.printed[p] = true
+	e.report.CapturedPrefixes = append(e.report.CapturedPrefixes, p)
+	if e.cfg.OnRecovery != nil {
+		if err := e.cfg.OnRecovery("captured", p.Container, p.Prefix, ""); err != nil && e.recoveryBroken == nil {
+			e.recoveryBroken = fmt.Errorf("captured-prefix record: %w", err)
 		}
 	}
 }
 
-// finalizeEngineCopy verifies one engine-written destination and applies
-// the §27.4 set. The destination of a large source is the engine's own
-// DLO — its manifest header MUST ride the metadata POST (a naive POST
-// demotes a DLO, the measured §17.1 trap).
-func (e *Executor) finalizeEngineCopy(ctx context.Context, name string) {
-	src, err := e.cfg.Source.ObjectDetail(ctx, e.cfg.SrcContainer, e.cfg.SrcPrefix+name)
-	if err != nil {
-		e.fail(name, "finalize-head-source", err)
-		return
+func (e *Executor) capturePrefixes(prefixes []rclone.SegmentPrefix) {
+	for _, p := range prefixes {
+		e.capturePrefix(p)
 	}
-	dst, err := e.cfg.Dest.ObjectDetail(ctx, e.cfg.DstContainer, e.cfg.DstPrefix+name)
-	if err != nil {
-		if swiftcontrol.IsNotFound(err) {
-			e.fail(name, "verify", errors.New("engine reported success but the destination is missing (silent drop)"))
-			return
-		}
-		e.fail(name, "finalize-head-dest", err)
-		return
-	}
-	if verifyErr := verifyCopied(src, dst); verifyErr != nil {
-		e.fail(name, "verify", verifyErr)
-		return
-	}
-	if dst.Class == swiftcontrol.ClassDLO {
-		e.markCommitted(dst.Manifest)
-	}
-
-	headers := metadataHeaders(src, "X-Object-Meta-")
-	headers["X-Object-Meta-"+fingerprintMetaKey] = fingerprint(src.ContentLength, src.ETag)
-	if dst.Class == swiftcontrol.ClassDLO {
-		headers["X-Object-Manifest"] = dst.Manifest
-	}
-	if err := e.cfg.Dest.PostObjectHeaders(ctx, e.cfg.DstContainer, e.cfg.DstPrefix+name, headers); err != nil {
-		e.fail(name, "metadata-apply", err)
-		return
-	}
-	e.report.Copied++
-	e.report.BytesCopied += src.ContentLength
-	e.emit(name, "copied", "")
 }
 
 // verifyCopied is the post-write §28.4 check: plain→plain by ETag+size,
@@ -429,6 +446,10 @@ func (e *Executor) nativeCopy(ctx context.Context, item plan.Item, overwrite boo
 		return
 	}
 	defer body.Close()
+	if src.FollowedSymlink {
+		e.copySymlink(ctx, item, srcName, dstName, overwrite)
+		return
+	}
 	if src.ContentLength > maxSinglePut {
 		e.fail(item.Name, "native-size", fmt.Errorf(
 			"logical size %d exceeds the single-PUT limit and the name cannot ride the engine (v1 limitation)", src.ContentLength))
@@ -454,7 +475,15 @@ func (e *Executor) nativeCopy(ctx context.Context, item plan.Item, overwrite boo
 
 	headers := metadataHeaders(src, "X-Object-Meta-")
 	headers["X-Object-Meta-"+fingerprintMetaKey] = fingerprint(src.ContentLength, src.ETag)
+	if !overwrite {
+		headers["If-None-Match"] = "*"
+	}
 	if _, err := e.cfg.Dest.PutObject(ctx, e.cfg.DstContainer, dstName, body, src.ContentType, headers); err != nil {
+		if swiftcontrol.IsPreconditionFailed(err) {
+			e.report.Conflicts = append(e.report.Conflicts, item.Name)
+			e.emit(item.Name, "conflict", "destination appeared at commit time")
+			return
+		}
 		e.fail(item.Name, "native-put", err)
 		return
 	}
@@ -518,82 +547,205 @@ func (e *Executor) runOverwrite(ctx context.Context, item plan.Item) error {
 	e.stageN++
 	stagedName := fmt.Sprintf("%s%06d", e.stage, e.stageN)
 	e.report.StagedResidue = append(e.report.StagedResidue, stagedName)
-	result, err := e.cfg.Engine.CopyTo(ctx,
-		e.cfg.SrcSpec+"/"+srcName, e.cfg.DstSpec+"/"+stagedName, e.captureEvents)
-	if result != nil {
-		e.capturePrefixes(result.SegmentPrefixes)
-	}
-	if err != nil {
-		e.fail(item.Name, "stage-copy", err)
-		return nil
+	var result *rclone.Result
+	for attempt := 0; ; attempt++ {
+		result, err = e.cfg.Engine.CopyTo(ctx,
+			e.cfg.SrcSpec+"/"+srcName, e.cfg.DstSpec+"/"+stagedName, e.captureEvents)
+		if result != nil {
+			e.capturePrefixes(result.SegmentPrefixes)
+		}
+		if err != nil {
+			e.fail(item.Name, "stage-copy", err)
+			return nil
+		}
+		failure := ResultFailure(result)
+		if failure == nil {
+			break
+		}
+		if attempt == 0 && IsAuthFailure(result) && ctx.Err() == nil {
+			if e.cfg.OnAuthFailure != nil {
+				e.cfg.OnAuthFailure()
+			}
+			continue
+		}
+		e.fail(item.Name, "stage-status", failure)
+		return ctx.Err()
 	}
 
-	// 3. verify the staged object against the source.
+	e.commitStaged(ctx, item, stagedName, true)
+	return nil
+}
+
+// commitStaged carries a verified staged object onto its live name: the
+// shared §28.6 back half for overwrites AND planned-new batches. It
+// verifies the staged object against the source, re-HEADs the live name
+// (an intervening external write is a conflict — for a planned-new name
+// ANY live object is), commits natively (server-side COPY for plain, a
+// manifest-swap PUT for a staged DLO), verifies the committed object,
+// and cleans the staging litter (for a staged DLO the manifest only —
+// its segments now belong to the live manifest).
+func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName string, overwrite bool) {
+	srcName := e.cfg.SrcPrefix + item.Name
+	dstName := e.cfg.DstPrefix + item.Name
+
+	if e.recoveryBroken != nil {
+		// A safety fact failed to persist: nothing commits past a
+		// boundary the crash sweep could not replay.
+		e.fail(item.Name, "recovery-store", e.recoveryBroken)
+		return
+	}
+
 	src, err := e.cfg.Source.ObjectDetail(ctx, e.cfg.SrcContainer, srcName)
 	if err != nil {
 		e.fail(item.Name, "stage-head-source", err)
-		return nil
+		return
+	}
+	if src.FollowedSymlink {
+		// The source is a Swift symlink: the staged bytes are the
+		// followed TARGET's — faithful §17.1 semantics copy the LINK.
+		e.copySymlink(ctx, item, srcName, e.cfg.DstPrefix+item.Name, overwrite)
+		e.cleanStaged(ctx, stagedName)
+		return
 	}
 	staged, err := e.cfg.Dest.ObjectDetail(ctx, e.cfg.DstContainer, stagedName)
 	if err != nil {
+		if swiftcontrol.IsNotFound(err) {
+			e.fail(item.Name, "stage-verify", errors.New("engine reported success but the staged object is missing (silent drop)"))
+			return
+		}
 		e.fail(item.Name, "stage-verify", fmt.Errorf("staged object missing: %w", err))
-		return nil
+		return
 	}
 	if err := verifyCopied(src, staged); err != nil {
 		e.fail(item.Name, "stage-verify", err)
 		e.cleanStaged(ctx, stagedName)
-		return nil
+		return
 	}
 
-	// 4. re-HEAD the live name: intervening external write → conflict.
+	if staged.Class == swiftcontrol.ClassDLO {
+		// K-CON-001: segment-listing completeness with bounded retries
+		// BEFORE the commit — a truncated upload whose manifest HEAD
+		// happens to sum right transiently must not become live.
+		if err := e.verifyStagedSegments(ctx, staged, src.ContentLength); err != nil {
+			e.fail(item.Name, "stage-segments", err)
+			return
+		}
+	}
+
 	liveNow, err := e.cfg.Dest.ObjectDetail(ctx, e.cfg.DstContainer, dstName)
 	if err != nil && !swiftcontrol.IsNotFound(err) {
 		e.fail(item.Name, "commit-rehead", err)
-		return nil
+		return
 	}
-	if err == nil && e.conflicted(item, liveNow) {
-		e.cleanStaged(ctx, stagedName)
-		return nil
+	if err == nil {
+		if !overwrite {
+			// Planned new, but a live object exists NOW: someone else
+			// created it since the advisory listing. Touching it would
+			// be an unconfirmed overwrite — conflict, never a write.
+			e.report.Conflicts = append(e.report.Conflicts, item.Name)
+			e.emit(item.Name, "conflict", "destination appeared since planning")
+			e.cleanStaged(ctx, stagedName)
+			return
+		}
+		if e.conflicted(item, liveNow) {
+			e.cleanStaged(ctx, stagedName)
+			return
+		}
 	}
 
-	// 5. commit natively.
 	headers := metadataHeaders(src, "X-Object-Meta-")
 	headers["X-Object-Meta-"+fingerprintMetaKey] = fingerprint(src.ContentLength, src.ETag)
 	if staged.Class == swiftcontrol.ClassDLO {
+		if !overwrite {
+			// Planned new commits are CONDITIONAL where the verb is a
+			// PUT (measured on SAIO: If-None-Match:* → 201/412, first
+			// writer wins). ONLY here: on the plain branch's
+			// server-side COPY the same header reads as a conditional
+			// on the staged SOURCE and answers 304 — measured too.
+			headers["If-None-Match"] = "*"
+		}
+		// The durable COMMITTING intent rides ahead of the live PUT: it
+		// binds the segment prefix to the LIVE identity, so a crash in
+		// the gap resolves from the live name's actual manifest instead
+		// of guesswork. No intent, no PUT.
+		if slash := strings.Index(staged.Manifest, "/"); slash > 0 && e.cfg.OnRecovery != nil {
+			intent := rclone.SegmentPrefix{Container: staged.Manifest[:slash], Prefix: staged.Manifest[slash+1:]}.Canonical()
+			if err := e.cfg.OnRecovery("committing", intent.Container, intent.Prefix,
+				e.cfg.DstContainer+"/"+dstName); err != nil {
+				e.fail(item.Name, "commit-intent", err)
+				e.cleanStaged(ctx, stagedName)
+				return
+			}
+		}
 		// Manifest-swap PUT: the live name becomes a DLO pointing at the
 		// staged segments in one atomic write (validated on real Swift).
 		headers["X-Object-Manifest"] = staged.Manifest
 		if _, err := e.cfg.Dest.PutObject(ctx, e.cfg.DstContainer, dstName, strings.NewReader(""), src.ContentType, headers); err != nil {
+			if swiftcontrol.IsPreconditionFailed(err) {
+				e.report.Conflicts = append(e.report.Conflicts, item.Name)
+				e.emit(item.Name, "conflict", "destination appeared at commit time")
+				e.cleanStaged(ctx, stagedName)
+				return
+			}
 			e.fail(item.Name, "commit-manifest", err)
-			return nil
+			return
 		}
 		e.markCommitted(staged.Manifest)
+	} else if !overwrite {
+		// Planned-new plain commit: server-side COPY cannot be
+		// destination-conditioned (Swift evaluates If-None-Match on the
+		// COPY SOURCE — measured, 304), so a concurrent writer between
+		// the re-HEAD and an unconditional COPY would be overwritten
+		// (review R-01). Stream the staged bytes through a CONDITIONAL
+		// live PUT instead: costs one dest-internal GET+PUT, but a 412
+		// means the racer won and we CONFLICT rather than clobber.
+		body, _, err := e.cfg.Dest.OpenObject(ctx, e.cfg.DstContainer, stagedName)
+		if err != nil {
+			e.fail(item.Name, "commit-open-staged", err)
+			return
+		}
+		putHeaders := map[string]string{"If-None-Match": "*"}
+		for k, v := range headers {
+			putHeaders[k] = v
+		}
+		_, putErr := e.cfg.Dest.PutObject(ctx, e.cfg.DstContainer, dstName, body, staged.ContentType, putHeaders)
+		body.Close()
+		if putErr != nil {
+			if swiftcontrol.IsPreconditionFailed(putErr) {
+				e.report.Conflicts = append(e.report.Conflicts, item.Name)
+				e.emit(item.Name, "conflict", "destination appeared at commit time")
+				e.cleanStaged(ctx, stagedName)
+				return
+			}
+			e.fail(item.Name, "commit-put", putErr)
+			return
+		}
 	} else {
+		// Overwrite is INTENDED (VerdictChanged, conflict-checked
+		// above): server-side COPY is correct and cheap.
 		if err := e.cfg.Dest.CopyObject(ctx, e.cfg.DstContainer, stagedName, e.cfg.DstContainer, dstName, headers); err != nil {
 			e.fail(item.Name, "commit-copy", err)
-			return nil
+			return
 		}
 	}
 
-	// 6. verify the committed live object.
 	committed, err := e.cfg.Dest.ObjectDetail(ctx, e.cfg.DstContainer, dstName)
 	if err != nil {
 		e.fail(item.Name, "commit-verify", err)
-		return nil
+		return
 	}
 	if err := verifyCopied(src, committed); err != nil {
 		e.fail(item.Name, "commit-verify", err)
-		return nil
+		return
 	}
 
-	// 7. clean the staging litter: for a staged DLO the manifest ONLY —
-	// its segments now belong to the live manifest.
 	e.cleanStaged(ctx, stagedName)
 	e.report.Copied++
-	e.report.Overwrites++
 	e.report.BytesCopied += src.ContentLength
+	if overwrite {
+		e.report.Overwrites++
+	}
 	e.emit(item.Name, "copied", "stage-and-commit")
-	return nil
 }
 
 // markCommitted records that a captured segment prefix is now referenced
@@ -601,10 +753,21 @@ func (e *Executor) runOverwrite(ctx context.Context, item plan.Item) error {
 // sweeps it.
 func (e *Executor) markCommitted(manifest string) {
 	if slash := strings.Index(manifest, "/"); slash > 0 {
-		e.report.CommittedPrefixes = append(e.report.CommittedPrefixes,
-			rclone.SegmentPrefix{Container: manifest[:slash], Prefix: manifest[slash+1:]})
+		p := rclone.SegmentPrefix{Container: manifest[:slash], Prefix: manifest[slash+1:]}.Canonical()
+		if !e.printed[p] {
+			// Never promote a manifest this job did not OBSERVE its own
+			// child create: an unobserved prefix is not ours to own
+			// (§28.6(b) — the review wave's H-01).
+			return
+		}
+		e.report.CommittedPrefixes = append(e.report.CommittedPrefixes, p)
 		if e.cfg.OnRecovery != nil {
-			e.cfg.OnRecovery("committed", manifest[:slash], manifest[slash+1:])
+			// Best-effort: the committing record already guards this
+			// boundary (the sweep re-HEADs the live name it carries) —
+			// but the key it writes is the CANONICAL one.
+			if err := e.cfg.OnRecovery("committed", p.Container, p.Prefix, ""); err != nil && e.recoveryBroken == nil {
+				e.recoveryBroken = fmt.Errorf("committed record: %w", err)
+			}
 		}
 	}
 }
@@ -619,4 +782,105 @@ func (e *Executor) cleanStaged(ctx context.Context, stagedName string) {
 			return
 		}
 	}
+}
+
+// verifyStagedSegments lists the staged DLO's generated prefix and
+// requires the summed segment bytes to equal the source's logical size,
+// with bounded retries for listing consistency (§15.3, K-CON-001).
+func (e *Executor) verifyStagedSegments(ctx context.Context, staged *swiftcontrol.ObjectDetail, want int64) error {
+	slash := strings.Index(staged.Manifest, "/")
+	if slash <= 0 {
+		return fmt.Errorf("staged DLO carries malformed manifest %q", staged.Manifest)
+	}
+	container, prefix := staged.Manifest[:slash], staged.Manifest[slash+1:]
+	var sum int64
+	var count int
+	for attempt := 0; attempt < 4; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(500 * time.Millisecond):
+			}
+		}
+		sum, count = 0, 0
+		for entry, err := range e.cfg.Dest.Objects(ctx, container, swiftcontrol.ObjectListOptions{Deep: true, Prefix: prefix}) {
+			if err != nil {
+				return fmt.Errorf("staged segment listing: %w", err)
+			}
+			if object, ok := entry.(swiftcontrol.ObjectEntry); ok {
+				sum += object.Bytes
+				count++
+			}
+		}
+		if sum == want {
+			return nil
+		}
+	}
+	return fmt.Errorf("staged segments sum to %d bytes over %d objects, source is %d — listing incomplete or upload truncated", sum, count, want)
+}
+
+// copySymlink carries a Swift symlink AS a symlink (§17.1's
+// carry-when-present row): the link object's own target headers and
+// user metadata land at the destination in one empty-body PUT; the
+// target itself moves (or not) as its own listed name. A dangling
+// destination link is legal Swift and reported honestly.
+func (e *Executor) copySymlink(ctx context.Context, item plan.Item, srcName, dstName string, overwrite bool) {
+	link, err := e.cfg.Source.SymlinkGet(ctx, e.cfg.SrcContainer, srcName)
+	if err != nil {
+		e.fail(item.Name, "symlink-head", err)
+		return
+	}
+	if link.SymlinkTarget == "" {
+		e.fail(item.Name, "symlink-head", errors.New("followed a symlink but ?symlink=get shows no target"))
+		return
+	}
+	liveNow, err := e.cfg.Dest.ObjectDetail(ctx, e.cfg.DstContainer, dstName)
+	if err != nil && !swiftcontrol.IsNotFound(err) {
+		e.fail(item.Name, "symlink-rehead", err)
+		return
+	}
+	if err == nil {
+		if !overwrite {
+			e.report.Conflicts = append(e.report.Conflicts, item.Name)
+			e.emit(item.Name, "conflict", "destination appeared since planning")
+			return
+		}
+		if e.conflicted(item, liveNow) {
+			return
+		}
+	}
+	// No leading slash: real Swift silently stores a plain object when
+	// the target carries one (measured on SAIO — the mock mimics it).
+	headers := map[string]string{"X-Symlink-Target": link.SymlinkTarget}
+	if !overwrite {
+		headers["If-None-Match"] = "*"
+	}
+	if link.SymlinkTargetAccount != "" {
+		headers["X-Symlink-Target-Account"] = link.SymlinkTargetAccount
+	}
+	for k, v := range link.Meta {
+		if k != fingerprintMetaKey {
+			headers["X-Object-Meta-"+k] = v
+		}
+	}
+	if _, err := e.cfg.Dest.PutObject(ctx, e.cfg.DstContainer, dstName, strings.NewReader(""), link.ContentType, headers); err != nil {
+		if swiftcontrol.IsPreconditionFailed(err) {
+			e.report.Conflicts = append(e.report.Conflicts, item.Name)
+			e.emit(item.Name, "conflict", "destination appeared at commit time")
+			return
+		}
+		e.fail(item.Name, "symlink-put", err)
+		return
+	}
+	written, err := e.cfg.Dest.SymlinkGet(ctx, e.cfg.DstContainer, dstName)
+	if err != nil || written.SymlinkTarget != link.SymlinkTarget {
+		e.fail(item.Name, "symlink-verify", fmt.Errorf("destination link does not carry the target (%v)", err))
+		return
+	}
+	e.report.Copied++
+	if overwrite {
+		e.report.Overwrites++
+	}
+	e.emit(item.Name, "copied", "symlink")
 }
