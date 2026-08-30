@@ -41,26 +41,43 @@ type SegmentOwnershipDTO struct {
 	Proven bool `json:"proven"`
 	// Segments counted (SLO) or 0 (DLO — prefix-scoped).
 	Segments int64 `json:"segments"`
+	// InlineEntries counts SLO `data` entries: they live ONLY in the
+	// manifest, so even a manifest-only delete destroys them (§34
+	// honesty — the dialog must not claim every segment survives).
+	InlineEntries int64 `json:"inlineEntries"`
 }
 
 // SegmentsDeleteResultDTO reports what actually died.
 type SegmentsDeleteResultDTO struct {
-	ManifestDeleted bool   `json:"manifestDeleted"`
-	SegmentsDeleted int64  `json:"segmentsDeleted"`
-	Basis           string `json:"basis"` // "exclusive-ownership" | "backstage-forced"
+	ManifestDeleted bool  `json:"manifestDeleted"`
+	SegmentsDeleted int64 `json:"segmentsDeleted"`
+	// SegmentsFailed are proven identities whose delete failed — the
+	// result is then PARTIAL and says so, never silently "applied".
+	SegmentsFailed int64  `json:"segmentsFailed"`
+	Basis          string `json:"basis"` // "exclusive-ownership" | "backstage-forced"
 }
 
-// sloSegmentRefs flattens a manifest's direct object references.
-// Nested sub-SLO entries are references too; v1 does not chase them —
-// a nested manifest in scope simply fails the proof.
-func sloSegmentRefs(manifest *swiftcontrol.SLOManifest) []swiftcontrol.ObjectRef {
-	var refs []swiftcontrol.ObjectRef
+// sloSegmentRefs flattens a manifest's direct whole-object references
+// and says whether the graph is PROVABLE at all. A nested sub-SLO entry
+// makes it unprovable — the proof would cover the nested manifest
+// object, not its descendants, and Swift's recursive delete follows
+// them. Ranged entries (referencing part of an object this job would
+// not have written that way), inline data, and unrecognised entry
+// shapes are equally unprovable (§28.6(b), K-SEG-003).
+func sloSegmentRefs(manifest *swiftcontrol.SLOManifest) (refs []swiftcontrol.ObjectRef, provable bool) {
+	provable = true
 	for _, entry := range manifest.Entries {
-		if segment, ok := entry.(swiftcontrol.ObjectSegment); ok {
-			refs = append(refs, segment.Path)
+		segment, ok := entry.(swiftcontrol.ObjectSegment)
+		if !ok {
+			provable = false // inline data or an unrecognised shape
+			continue
 		}
+		if segment.NestedSLO || segment.Range != nil {
+			provable = false
+		}
+		refs = append(refs, segment.Path)
 	}
-	return refs
+	return refs, provable
 }
 
 // segmentScope resolves a manifest's authoritative class and scope.
@@ -90,11 +107,17 @@ func (s *DeleteService) segmentScope(ctx context.Context, session *swiftcontrol.
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		refs := sloSegmentRefs(manifest)
+		refs, provable := sloSegmentRefs(manifest)
+		for _, entry := range manifest.Entries {
+			if _, inline := entry.(swiftcontrol.InlineDataSegment); inline {
+				ownership.InlineEntries++
+			}
+		}
 		ownership.Segments = int64(len(refs))
 		ownership.Target = fmt.Sprintf("%d segments", len(refs))
-		if len(refs) != len(manifest.Entries) {
-			// Nested or unrecognised entries: never provable in v1.
+		if !provable || len(refs) != len(manifest.Entries) {
+			// Nested, ranged, inline, or unrecognised entries: never
+			// provable in v1 — the proof cannot see past them.
 			return detail, ownership, refs, nil
 		}
 		owned, err := s.ownedRefs(ctx, req.BookmarkID, refs)
@@ -129,7 +152,10 @@ func (s *DeleteService) ownedRefs(ctx context.Context, bookmarkID string, refs [
 		}
 		covered := false
 		for _, proof := range owned {
-			if strings.HasPrefix(ref.Object, proof.Prefix) {
+			// Prefix coverage requires a real namespace boundary: an
+			// owned "job/aa/" must not cover "job/aa-evil/x", so only
+			// slash-terminated proofs match.
+			if strings.HasSuffix(proof.Prefix, "/") && strings.HasPrefix(ref.Object, proof.Prefix) {
 				covered = true
 				break
 			}
@@ -171,35 +197,71 @@ func (s *DeleteService) DeleteManifestWithSegments(ctx context.Context, req Segm
 	if err != nil {
 		return nil, err
 	}
-	detail, ownership, _, err := s.segmentScope(ctx, session, req)
+	detail, ownership, refs, err := s.segmentScope(ctx, session, req)
 	if err != nil {
 		return nil, err
 	}
 	resource := req.Container + "/" + req.Name
-	if !ownership.Proven && !req.Force {
+	// Evidence rows IDENTIFY candidate-owned segments; they do NOT
+	// PROVE exclusivity — no live reverse-reference scan exists yet, so
+	// an external or later manifest can share an Aeronautes-created
+	// prefix (review R-02, K-SEG-004 second clause = §65.10). Until that
+	// scan lands, a row-only "proof" MUST NOT auto-authorize
+	// destruction: every manifest+segments delete requires the
+	// deliberate Backstage force + typed confirmation. The proof still
+	// shows in the dialog as context; it just never deletes on its own.
+	if !req.Force {
 		s.runner.record(ctx, req.BookmarkID, "segments.delete", resource,
-			"refused: no exclusive-ownership proof for "+ownership.Target, audit.ResultFailed)
-		return nil, fmt.Errorf("segments are not proven exclusively this app's (%s): sharing cannot be disproved from one manifest — use the Backstage force only if you know better than the evidence", ownership.Target)
+			"refused: segment deletion needs Backstage force (ownership evidence is advisory until the live reference scan exists)", audit.ResultFailed)
+		return nil, fmt.Errorf("deleting %s's segments needs the Backstage force with typed confirmation: ownership evidence identifies likely-owned segments but cannot yet PROVE no other object references them (%s)", resource, ownership.Target)
 	}
-	basis := "exclusive-ownership"
-	if !ownership.Proven {
-		basis = "backstage-forced"
+	basis := "backstage-forced"
+	if ownership.Proven {
+		basis = "backstage-forced-with-evidence"
+	}
+
+	// The proof/delete gap is bound as tightly as Swift allows: DELETE
+	// ignores If-Match (measured on SAIO — a wrong etag still 204s), so
+	// the manifest is re-HEADed IMMEDIATELY before deletion and any
+	// identity change refuses. The residual is one HEAD-to-DELETE hop,
+	// stated here rather than implied closed.
+	recheck, err := session.ObjectDetail(ctx, req.Container, req.Name)
+	if err != nil {
+		return nil, err
+	}
+	if strings.Trim(recheck.ETag, `"`) != strings.Trim(detail.ETag, `"`) {
+		s.runner.record(ctx, req.BookmarkID, "segments.delete", resource,
+			"refused: the manifest changed between review and deletion", audit.ResultFailed)
+		return nil, fmt.Errorf("%s changed since the segments were reviewed (etag moved) — re-open the dialog to review the CURRENT graph", resource)
 	}
 
 	result := &SegmentsDeleteResultDTO{Basis: basis}
 	switch detail.Class {
 	case swiftcontrol.ClassSLO:
-		// Swift-native manifest+segments (§34): faster, not safer — the
-		// gate above is the safety.
-		bulk, err := session.DeleteSLOWithSegments(ctx, req.Container, req.Name)
-		if err != nil {
-			s.runner.record(ctx, req.BookmarkID, "segments.delete", resource, "slo delete failed: "+err.Error(), audit.ResultFailed)
+		// Manifest-only DELETE first, then native deletion of EXACTLY
+		// the fetched identities. Swift's ?multipart-manifest=delete
+		// would follow whatever manifest occupies the live name at
+		// execution time — a proof/delete TOCTOU — so it is never used:
+		// the destructive set is the graph that was actually reviewed.
+		if err := session.DeleteObject(ctx, req.Container, req.Name); err != nil {
+			s.runner.record(ctx, req.BookmarkID, "segments.delete", resource, "manifest delete failed: "+err.Error(), audit.ResultFailed)
 			return nil, err
 		}
 		result.ManifestDeleted = true
-		result.SegmentsDeleted = bulk.Deleted - 1 // the manifest is one of the count
-		if result.SegmentsDeleted < 0 {
-			result.SegmentsDeleted = 0
+		for _, ref := range refs {
+			if err := session.DeleteObject(ctx, ref.Container, ref.Object); err != nil {
+				if swiftcontrol.IsNotFound(err) {
+					continue
+				}
+				result.SegmentsFailed++
+				continue
+			}
+			result.SegmentsDeleted++
+		}
+		if result.SegmentsFailed > 0 {
+			s.runner.record(ctx, req.BookmarkID, "segments.delete", resource,
+				fmt.Sprintf("PARTIAL: manifest + %d segments deleted, %d segment deletes failed (%s)", result.SegmentsDeleted, result.SegmentsFailed, basis), audit.ResultVerifyMismatch)
+			return result, fmt.Errorf("%d segment deletes failed; the manifest is gone and %d segments were removed — retry the leftover names", result.SegmentsFailed, result.SegmentsDeleted)
 		}
 	case swiftcontrol.ClassDLO:
 		// Manifest first, then the exact prefix through the native
@@ -218,10 +280,21 @@ func (s *DeleteService) DeleteManifestWithSegments(ctx context.Context, req Segm
 		sweep, err := deletion.DeletePrefix(ctx, session, capabilities, segContainer, segPrefix, deletion.Options{})
 		if sweep != nil {
 			result.SegmentsDeleted = sweep.Deleted
+			result.SegmentsFailed = sweep.Failed
 		}
 		if err != nil {
 			s.runner.record(ctx, req.BookmarkID, "segments.delete", resource, "prefix sweep failed: "+err.Error(), audit.ResultFailed)
 			return result, err
+		}
+		if sweep != nil && (sweep.Failed > 0 || sweep.Remaining > 0) {
+			// Never "applied" with residue: the manifest is gone but the
+			// prefix retains objects — the operator gets exact numbers
+			// and the retained prefix for a retry.
+			s.runner.record(ctx, req.BookmarkID, "segments.delete", resource,
+				fmt.Sprintf("PARTIAL: %d segments deleted, %d failed, %d still answering under %s/%s (%s)",
+					sweep.Deleted, sweep.Failed, sweep.Remaining, segContainer, segPrefix, basis), audit.ResultVerifyMismatch)
+			return result, fmt.Errorf("%d segment deletes failed and %d names still answer under %s/%s — the manifest is gone; retry the prefix",
+				sweep.Failed, sweep.Remaining, segContainer, segPrefix)
 		}
 	}
 	s.runner.record(ctx, req.BookmarkID, "segments.delete", resource,

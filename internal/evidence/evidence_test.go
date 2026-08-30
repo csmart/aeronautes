@@ -181,3 +181,48 @@ func TestClassifyContainers(t *testing.T) {
 		t.Errorf("other bookmark = %q, want heuristic-only suspected", classesOther["external-dlo-segments"])
 	}
 }
+
+func TestOwnershipCanonicalization(t *testing.T) {
+	// F-03's normalization half: rows store slash-terminated; a query in
+	// rclone's unslashed header form must still match, and vice versa.
+	s, _, bookmark := newStore(t)
+	ctx := context.Background()
+	if err := s.RecordOwnership(ctx, bookmark, "job-1", "parts", "video.bin/gen"); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{"video.bin/gen", "video.bin/gen/"} {
+		proven, err := s.HasExclusiveOwnership(ctx, bookmark, "parts", q)
+		if err != nil || !proven {
+			t.Fatalf("query %q = %v %v, want proven", q, proven, err)
+		}
+	}
+	owned, err := s.Ownerships(ctx, bookmark, "parts")
+	if err != nil || len(owned) != 1 || owned[0].Prefix != "video.bin/gen/" {
+		t.Fatalf("stored form = %+v %v, want canonical slash-terminated", owned, err)
+	}
+}
+
+func TestExclusiveOwnershipRequiresSingleJob(t *testing.T) {
+	// The second clause (recorded half): a prefix two jobs both recorded
+	// is shared between Aeronautes jobs and is NOT exclusive.
+	s, _, bookmark := newStore(t)
+	ctx := context.Background()
+	if err := s.RecordOwnership(ctx, bookmark, "job-a", "parts", "shared/gen/"); err != nil {
+		t.Fatal(err)
+	}
+	proven, err := s.HasExclusiveOwnership(ctx, bookmark, "parts", "shared/gen/")
+	if err != nil || !proven {
+		t.Fatalf("single-job proof = %v %v, want proven", proven, err)
+	}
+	// A second job records the SAME prefix → no longer exclusive.
+	if err := s.RecordOwnership(ctx, bookmark, "job-b", "parts", "shared/gen/"); err != nil {
+		t.Fatal(err)
+	}
+	proven, err = s.HasExclusiveOwnership(ctx, bookmark, "parts", "shared/gen/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if proven {
+		t.Fatal("a prefix recorded by two jobs was still reported exclusive")
+	}
+}
