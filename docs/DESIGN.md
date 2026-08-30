@@ -3689,6 +3689,18 @@ Gate: a copy spanning multiple engine spawns completes across a forced token exp
 Swift; a killed process's staging litter is provably swept at next startup; CI runs the
 headless smoke; retention prunes exactly what its policy says.
 
+**Status: complete (2026-08-30).** All gate items held: the 65-second-expiry auth proxy run
+re-authenticates once per spawn and the copy completes (with the wire library's own
+60-second refusal floor documented where the test found it); the crash sweep replays the
+in-job reconciliation rules from persisted records — the committed prefix's live manifest
+survives, the orphans and stranded staging go, records clear; retention's boundary-set test
+prunes exactly the old terminal job and old audit event while recovery-held, running, and
+fresh rows survive; and the smoke runs in CI (WebKit's sandbox disabled for that one step —
+the runner container denies its user namespaces; the shipped app keeps it). Re-run and live
+local byte progress shipped alongside; the narrow-width pass landed two breakpoints. Still
+tracked, not gated here: the mirror delete-set memory cap and first real macOS/Windows
+builds.
+
 ---
 
 ## 66. Final project statement
