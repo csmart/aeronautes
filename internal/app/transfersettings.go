@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strconv"
 
+	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	"github.com/csmart/aeronautes/internal/transfer/rclone"
 )
 
@@ -80,4 +82,60 @@ func effectiveJSONWithProfile(profile Profile, s TransferSettingsDTO) string {
 		name = ProfileBalanced
 	}
 	return `{"profile":` + fmt.Sprintf("%q", string(name)) + `,` + encoded[1:]
+}
+
+// ParseSize converts the SizeSuffix grammar to bytes (K-XFER-004: the
+// chunk knob is CAPPED against the destination's advertised
+// max_file_size, not just syntax-checked).
+func ParseSize(v string) (int64, error) {
+	if !sizePattern.MatchString(v) {
+		return 0, fmt.Errorf("%q is not a size", v)
+	}
+	multipliers := map[string]float64{
+		"": 1, "b": 1, "B": 1,
+		"k": 1024, "K": 1024, "Ki": 1024,
+		"M": 1 << 20, "Mi": 1 << 20,
+		"G": 1 << 30, "Gi": 1 << 30,
+		"T": 1 << 40, "Ti": 1 << 40,
+		"P": 1 << 50, "Pi": 1 << 50,
+	}
+	num := v
+	suffix := ""
+	for i := len(v) - 1; i >= 0; i-- {
+		c := v[i]
+		if c >= '0' && c <= '9' || c == '.' {
+			num, suffix = v[:i+1], v[i+1:]
+			break
+		}
+	}
+	m, ok := multipliers[suffix]
+	if !ok {
+		return 0, fmt.Errorf("unknown size suffix %q", suffix)
+	}
+	f, err := strconv.ParseFloat(num, 64)
+	if err != nil {
+		return 0, err
+	}
+	return int64(f * m), nil
+}
+
+// CheckChunkAgainst refuses a chunk size the destination cannot store
+// as one segment, and a zero/absurd value outright.
+func (s TransferSettingsDTO) CheckChunkAgainst(capabilities *swiftcontrol.Capabilities) error {
+	if s.ChunkSize == "" {
+		return nil
+	}
+	bytes, err := ParseSize(s.ChunkSize)
+	if err != nil {
+		return err
+	}
+	if bytes < 1<<20 {
+		return fmt.Errorf("chunk size %s is below 1Mi — segments that small drown the cluster in requests", s.ChunkSize)
+	}
+	if capabilities != nil {
+		if max := capabilities.MaxFileSize(); max > 0 && bytes > max {
+			return fmt.Errorf("chunk size %s exceeds the destination's max_file_size (%d bytes): a single segment could not be stored", s.ChunkSize, max)
+		}
+	}
+	return nil
 }

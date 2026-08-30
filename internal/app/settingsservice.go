@@ -32,11 +32,11 @@ func NewSettingsService(database *db.DB, runner *jobRunner) *SettingsService {
 	return s
 }
 
-// RunRetention applies the §51 prune per the persisted policy: audit
+// runRetention applies the §51 prune per the persisted policy: audit
 // events and terminal jobs past their windows (0 disables either).
 // Non-terminal jobs and jobs holding crash-recovery records survive
 // regardless.
-func (s *SettingsService) RunRetention(ctx context.Context, jobStore *jobs.Store, auditStore *audit.Store) {
+func (s *SettingsService) runRetention(ctx context.Context, jobStore *jobs.Store, auditStore *audit.Store) {
 	settings, err := s.Get(ctx)
 	if err != nil {
 		log.Printf("retention: read settings: %v", err)

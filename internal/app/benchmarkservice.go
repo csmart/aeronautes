@@ -41,8 +41,8 @@ func NewBenchmarkService(connections *Connections, jobStore *jobs.Store, runner 
 	return &BenchmarkService{connections: connections, jobs: jobStore, runner: runner, db: database}
 }
 
-// SetScale overrides the workload for tests.
-func (s *BenchmarkService) SetScale(objects int, concurrencies []int) {
+// setScale overrides the workload for tests.
+func (s *BenchmarkService) setScale(objects int, concurrencies []int) {
 	s.objects = objects
 	s.concurrencies = concurrencies
 }
@@ -92,7 +92,7 @@ func (s *BenchmarkService) Latest(ctx context.Context, bookmarkID string) (*Benc
 }
 
 // RecommendationFor is the §40 Auto hook (nil when no run recorded).
-func (s *BenchmarkService) RecommendationFor(bookmarkID string) *TransferSettingsDTO {
+func (s *BenchmarkService) recommendationFor(bookmarkID string) *TransferSettingsDTO {
 	result, err := s.Latest(context.Background(), bookmarkID)
 	if err != nil || result == nil {
 		return nil
@@ -214,9 +214,11 @@ func (s *BenchmarkService) runBenchmark(ctx context.Context, jobID, bookmarkID s
 		if message != "" {
 			_ = s.jobs.SetError(background, jobID, message)
 		}
+		// Deregister before the terminal state is visible — a terminal
+		// benchmark must not stay cancel-addressable (review F-11).
+		s.runner.release(jobID)
 		_ = s.jobs.Transition(background, jobID, state)
 		s.runner.record(background, bookmarkID, "benchmark."+string(state), container, "job "+jobID, terminalAuditResult(state))
-		s.runner.release(jobID)
 	}
 	fail := func(stage string, err error) {
 		// Best-effort cleanup before reporting: the container is ours by
@@ -237,7 +239,12 @@ func (s *BenchmarkService) runBenchmark(ctx context.Context, jobID, bookmarkID s
 	}
 	_ = s.jobs.Transition(background, jobID, jobs.StateRunning)
 
-	counters := jobs.Counters{ObjectsPlanned: int64(objects * (2 + 2*len(concurrencies)))}
+	// Planned = the operations that actually bump: uploads (~objects
+	// across the levels), one listing pass, HEADs (objects × levels),
+	// and deletes (objects). The §42 result is an ENDPOINT
+	// MICROBENCHMARK — small native PUT/HEAD/DELETE ops — not a
+	// transfer-path prediction.
+	counters := jobs.Counters{ObjectsPlanned: int64(objects * (3 + len(concurrencies)))}
 	bump := func(n int) {
 		counters.ObjectsCopied += int64(n)
 		_ = s.jobs.UpdateCounters(background, jobID, counters)

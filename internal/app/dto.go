@@ -169,6 +169,9 @@ type ContainerEditDTO struct {
 	VersioningArchive string            `json:"versioningArchive"`
 	QuotaBytes        int64             `json:"quotaBytes"`
 	QuotaCount        int64             `json:"quotaCount"`
+	// AckPublic must be true to set a world-readable (.r:*) read ACL
+	// — the operator explicitly acknowledged public exposure (§19.1).
+	AckPublic bool `json:"ackPublic"`
 }
 
 // ContainerCreateDTO describes a new container (§20).
@@ -215,17 +218,22 @@ type PrefixDetailDTO struct {
 
 // ObjectDetailDTO is the authoritative HEAD detail (§53).
 type ObjectDetailDTO struct {
-	Name          string            `json:"name"`
-	Class         string            `json:"class"` // plain | dlo | slo
-	ContentLength int64             `json:"contentLength"`
-	ContentType   string            `json:"contentType"`
-	ETag          string            `json:"etag"`
-	LastModified  string            `json:"lastModified"`
-	Manifest      string            `json:"manifest"`
-	DeleteAt      string            `json:"deleteAt"`
-	Meta          map[string]string `json:"meta"`
-	RawHeaders    map[string]string `json:"rawHeaders"`
-	TransID       string            `json:"transId"`
+	Name          string `json:"name"`
+	Class         string `json:"class"` // plain | dlo | slo
+	ContentLength int64  `json:"contentLength"`
+	ContentType   string `json:"contentType"`
+	ETag          string `json:"etag"`
+	LastModified  string `json:"lastModified"`
+	Manifest      string `json:"manifest"`
+	// FollowedSymlink reports the HEAD chased a Swift symlink — the
+	// inspector must show a symlink, not a plain object, and the editor
+	// refuses (§17.1, F-05).
+	FollowedSymlink bool              `json:"followedSymlink"`
+	SymlinkTarget   string            `json:"symlinkTarget"`
+	DeleteAt        string            `json:"deleteAt"`
+	Meta            map[string]string `json:"meta"`
+	RawHeaders      map[string]string `json:"rawHeaders"`
+	TransID         string            `json:"transId"`
 	// EditableFingerprint is the working-copy base for §18 conflict
 	// detection: hand it back with the edit.
 	EditableFingerprint string `json:"editableFingerprint"`
