@@ -9,8 +9,11 @@ package rclone
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,8 +43,93 @@ type Remote struct {
 	InsecureTLS bool
 }
 
+// checkPositionals rejects paths that could read as flags — defense in
+// depth beside the "--" separator on every child argv.
+func checkPositionals(paths ...string) error {
+	for _, p := range paths {
+		if strings.HasPrefix(p, "-") {
+			return fmt.Errorf("path %q starts with '-'; refused (argv hygiene)", p)
+		}
+	}
+	return nil
+}
+
+// checkRemoteDestStaged mechanizes K-XFER-014 at the LAST boundary: a
+// REMOTE destination (our fixed remote names) must live under an
+// .aeronautes staging namespace — no caller, present or future, can
+// hand rclone a live Swift name. Local filesystem destinations
+// (downloads) are governed by the local stage-and-place path instead.
+func checkRemoteDestStaged(dst string) error {
+	if !strings.HasPrefix(dst, "aeronautes_") {
+		return nil
+	}
+	// The staging marker must be a real path SEGMENT, not a substring of
+	// a live user name, and must not smuggle a "\.\." escape back out of
+	// the namespace (grok follow-up 3 P2).
+	container, path, _ := strings.Cut(strings.TrimPrefix(dst, "aeronautes_"), ":")
+	_ = container
+	segments := strings.Split(path, "/")
+	staged := false
+	for i := 0; i+2 < len(segments); i++ {
+		if segments[i] == ".aeronautes" && segments[i+1] == "stage" && segments[i+2] != "" {
+			staged = true
+			break
+		}
+	}
+	if !staged {
+		return fmt.Errorf("remote destination %q is a LIVE name: every rclone write goes through an .aeronautes/stage/<job>/ path segment and commits natively (§28.6, K-XFER-014)", dst)
+	}
+	for _, seg := range segments {
+		if seg == ".." {
+			return fmt.Errorf("remote destination %q contains a '..' segment; refused", dst)
+		}
+	}
+	return nil
+}
+
 func (r Remote) needsConfigFile() bool {
 	return r.CACertFile != "" || r.InsecureTLS
+}
+
+// TrustIdentity normalizes a TLS trust configuration into a comparable
+// identity: "system", "insecure", or a content hash of the CA bundle
+// (the same bundle at two paths is the same trust). One child may carry
+// multiple remotes ONLY when their identities are equal — override.*
+// in the job config leaks across remotes in one process (§12.3), so a
+// non-identical pairing must refuse, and a CA bundle that cannot be
+// read fails closed.
+func TrustIdentity(insecure bool, caCertFile string) (string, error) {
+	switch {
+	case insecure && caCertFile != "":
+		h, err := hashFile(caCertFile)
+		if err != nil {
+			return "", err
+		}
+		return "insecure+ca:" + h, nil
+	case insecure:
+		return "insecure", nil
+	case caCertFile != "":
+		h, err := hashFile(caCertFile)
+		if err != nil {
+			return "", err
+		}
+		return "ca:" + h, nil
+	default:
+		return "system", nil
+	}
+}
+
+func hashFile(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("CA bundle %s: %w", path, err)
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+func (r Remote) trustIdentity() (string, error) {
+	return TrustIdentity(r.InsecureTLS, r.CACertFile)
 }
 
 // Options configures a Runner.
@@ -98,7 +186,15 @@ func NewRunner(opts Options) (*Runner, error) {
 		}
 		binary = found
 	}
-	out, err := exec.Command(binary, "version").Output()
+	// The probe runs with a deadline and a minimal environment (PATH
+	// plus an empty rclone config so ~/.config/rclone is never read):
+	// a hung or hostile PATH binary must not hang job creation or pick
+	// up ambient credentials.
+	probeCtx, cancelProbe := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancelProbe()
+	probe := exec.CommandContext(probeCtx, binary, "version")
+	probe.Env = []string{"PATH=" + os.Getenv("PATH"), "RCLONE_CONFIG=" + os.DevNull}
+	out, err := probe.Output()
 	if err != nil {
 		return nil, fmt.Errorf("rclone version check failed: %w", err)
 	}
@@ -120,6 +216,35 @@ func (r *Runner) Version() string { return r.version }
 type SegmentPrefix struct {
 	Container string
 	Prefix    string
+}
+
+// Canonical returns the prefix in the ONE canonical form every store
+// and comparison uses: slash-terminated. rclone's X-Object-Manifest
+// omits the trailing slash the log-derived capture carries; a key that
+// depends on which source it came from is how the review wave's
+// C01-slash sequence stayed reachable.
+func (p SegmentPrefix) Canonical() SegmentPrefix {
+	if !strings.HasSuffix(p.Prefix, "/") {
+		p.Prefix += "/"
+	}
+	return p
+}
+
+// PrefixFromEvent extracts the generated segment prefix from one child
+// log event, when the line is a segment-upload notice — the streamed
+// form of capture, so callers can persist the fact AT OBSERVATION TIME
+// instead of only after child exit (§65.9 item 5).
+func PrefixFromEvent(event Event) (SegmentPrefix, bool) {
+	m := segmentPattern.FindStringSubmatch(event.Msg)
+	if m == nil {
+		return SegmentPrefix{}, false
+	}
+	name := m[1]
+	slash := strings.LastIndex(name, "/")
+	if slash <= 0 {
+		return SegmentPrefix{}, false
+	}
+	return SegmentPrefix{Container: m[2], Prefix: name[:slash+1]}, true
 }
 
 // Stats is the latest progress snapshot from the child.
@@ -150,7 +275,11 @@ type Result struct {
 	SegmentPrefixes []SegmentPrefix
 	// Errors are the child's error-level messages (bounded).
 	Errors []string
-	Stats  Stats
+	// LogStreamErr is a stderr scanner failure: the prefix-capture
+	// stream may be INCOMPLETE, so callers must treat the child as
+	// unverified (§26.4).
+	LogStreamErr string
+	Stats        Stats
 }
 
 // Copy runs one bounded batch: `rclone copy src dst` over exactly the
@@ -158,6 +287,18 @@ type Result struct {
 // expressible in a newline-delimited raw list — the planner routes
 // newline-bearing names natively, and the runner refuses them outright.
 func (r *Runner) Copy(ctx context.Context, remotes []Remote, src, dst string, names []string, onEvent func(Event)) (*Result, error) {
+	// Refuse-closed: an empty selected set would make rclone copy the
+	// ENTIRE source scope — the caller must always say exactly what
+	// moves (§28.4).
+	if len(names) == 0 {
+		return nil, fmt.Errorf("empty selected set: rclone copy without --files-from-raw would copy the whole scope; refuse (§28.4)")
+	}
+	if err := checkPositionals(src, dst); err != nil {
+		return nil, err
+	}
+	if err := checkRemoteDestStaged(dst); err != nil {
+		return nil, err
+	}
 	for _, name := range names {
 		if strings.ContainsAny(name, "\n\r") {
 			return nil, fmt.Errorf("name %q cannot ride an rclone list (newline); route it natively (§14.3)", name)
@@ -175,16 +316,16 @@ func (r *Runner) Copy(ctx context.Context, remotes []Remote, src, dst string, na
 		return nil, err
 	}
 
-	args := []string{"copy", src, dst, "--ignore-times", "--use-json-log", "-vv", "--stats", "1s"}
-	if len(names) > 0 {
-		listPath := filepath.Join(workDir, "files-from-raw")
-		if err := os.WriteFile(listPath, []byte(strings.Join(names, "\n")+"\n"), 0o600); err != nil {
-			return nil, err
-		}
-		args = append(args, "--files-from-raw", listPath)
+	listPath := filepath.Join(workDir, "files-from-raw")
+	if err := os.WriteFile(listPath, []byte(strings.Join(names, "\n")+"\n"), 0o600); err != nil {
+		return nil, err
 	}
-	args = append(args, "--config", configPath)
+	args := []string{"copy", "--ignore-times", "--use-json-log", "-vv", "--stats", "1s",
+		"--files-from-raw", listPath, "--config", configPath}
 	args = append(args, r.pacingArgs()...)
+	// Flags close before "--": nothing in a path can ever be parsed as
+	// a flag, whatever it starts with.
+	args = append(args, "--", src, dst)
 
 	return r.run(ctx, args, env, onEvent)
 }
@@ -197,6 +338,12 @@ func (r *Runner) CopyTo(ctx context.Context, remotes []Remote, src, dst string, 
 	if strings.ContainsAny(src+dst, "\n\r") {
 		return nil, fmt.Errorf("newline-bearing path cannot ride rclone argv; route it natively (§14.3)")
 	}
+	if err := checkPositionals(src, dst); err != nil {
+		return nil, err
+	}
+	if err := checkRemoteDestStaged(dst); err != nil {
+		return nil, err
+	}
 	workDir, err := os.MkdirTemp("", "aeronautes-job-")
 	if err != nil {
 		return nil, err
@@ -207,8 +354,9 @@ func (r *Runner) CopyTo(ctx context.Context, remotes []Remote, src, dst string, 
 	if err != nil {
 		return nil, err
 	}
-	args := []string{"copyto", src, dst, "--ignore-times", "--use-json-log", "-vv", "--stats", "1s", "--config", configPath}
+	args := []string{"copyto", "--ignore-times", "--use-json-log", "-vv", "--stats", "1s", "--config", configPath}
 	args = append(args, r.pacingArgs()...)
+	args = append(args, "--", src, dst)
 	return r.run(ctx, args, env, onEvent)
 }
 
@@ -259,6 +407,14 @@ func buildEnvironment(workDir string, remotes []Remote) (configPath string, env 
 		if remote.Name == "" || remote.StorageURL == "" || remote.Token == "" {
 			return "", nil, fmt.Errorf("remote needs name, storage URL, and token")
 		}
+		// A control character in a value would let one INI line become
+		// two (key/section injection); bookmark validation rejects them
+		// upstream, and the boundary refuses regardless.
+		for _, value := range []string{remote.StorageURL, remote.CACertFile} {
+			if strings.ContainsFunc(value, func(c rune) bool { return c < 0x20 || c == 0x7f }) {
+				return "", nil, fmt.Errorf("remote %s carries a control character; refused", remote.Name)
+			}
+		}
 		upper := strings.ToUpper(remote.Name)
 		env = append(env, fmt.Sprintf("RCLONE_CONFIG_%s_AUTH_TOKEN=%s", upper, remote.Token))
 		if remote.needsConfigFile() {
@@ -280,16 +436,20 @@ func buildEnvironment(workDir string, remotes []Remote) (configPath string, env 
 		}
 	}
 
-	// Mixed TLS trust in one child is forbidden (§12.3): the override
-	// leaks. The caller (planner) splits such jobs; this is the last line.
-	tlsRemotes := 0
-	for _, remote := range remotes {
-		if remote.needsConfigFile() {
-			tlsRemotes++
+	// Non-identical TLS trust in one child is forbidden (§12.3): the
+	// override leaks across remotes in one process. There is no child
+	// splitter — the pairing refuses here and at job validation.
+	var firstIdentity string
+	for i, remote := range remotes {
+		identity, err := remote.trustIdentity()
+		if err != nil {
+			return "", nil, err
 		}
-	}
-	if tlsRemotes > 0 && tlsRemotes != len(remotes) {
-		return "", nil, fmt.Errorf("mixed TLS trust in one child is forbidden (§12.3): split into two single-remote children")
+		if i == 0 {
+			firstIdentity = identity
+		} else if identity != firstIdentity {
+			return "", nil, fmt.Errorf("TLS trust differs between remotes (§12.3: overrides leak across one child); run per-endpoint jobs or align the bookmarks' trust settings")
+		}
 	}
 
 	configPath = filepath.Join(workDir, "rclone.conf")
@@ -317,6 +477,7 @@ func (r *Runner) run(ctx context.Context, args, env []string, onEvent func(Event
 	// The child gets its own lifetime: cancellation is OUR signal
 	// escalation (SIGINT then SIGKILL), not a blunt kill from exec.
 	cmd := exec.Command(r.binary, args...)
+	cmd.SysProcAttr = childSysProcAttr()
 	cmd.Env = env
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
@@ -335,6 +496,17 @@ func (r *Runner) run(ctx context.Context, args, env []string, onEvent func(Event
 		defer close(parseDone)
 		scanner := bufio.NewScanner(stderr)
 		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+		defer func() {
+			if scanErr := scanner.Err(); scanErr != nil {
+				mu.Lock()
+				result.LogStreamErr = scanErr.Error()
+				result.Errors = append(result.Errors, "log stream: "+scanErr.Error())
+				mu.Unlock()
+				// Keep DRAINING: a stopped reader would block the child
+				// on a full pipe and Wait would never run (review F-14).
+				_, _ = io.Copy(io.Discard, stderr)
+			}
+		}()
 		for scanner.Scan() {
 			event := parseLine(scanner.Bytes())
 			if event == nil {
@@ -347,11 +519,8 @@ func (r *Runner) run(ctx context.Context, args, env []string, onEvent func(Event
 			if event.Level == "error" && len(result.Errors) < maxCollectedErrors {
 				result.Errors = append(result.Errors, event.Msg)
 			}
-			if m := segmentPattern.FindStringSubmatch(event.Msg); m != nil {
-				name := m[1]
-				if slash := strings.LastIndex(name, "/"); slash > 0 {
-					prefixes[SegmentPrefix{Container: m[2], Prefix: name[:slash+1]}] = true
-				}
+			if p, ok := PrefixFromEvent(*event); ok {
+				prefixes[p] = true
 			}
 			mu.Unlock()
 			if onEvent != nil {
@@ -360,8 +529,15 @@ func (r *Runner) run(ctx context.Context, args, env []string, onEvent func(Event
 		}
 	}()
 
+	// cmd.Wait closes the stderr pipe, so it must not run until the
+	// scanner has drained to EOF — otherwise the tail of the log stream
+	// (segment-prefix events included) is silently lost. The child's
+	// exit (natural or killed) EOFs the pipe and releases the scanner.
 	waitDone := make(chan error, 1)
-	go func() { waitDone <- cmd.Wait() }()
+	go func() {
+		<-parseDone
+		waitDone <- cmd.Wait()
+	}()
 
 	var waitErr error
 	select {
@@ -370,16 +546,14 @@ func (r *Runner) run(ctx context.Context, args, env []string, onEvent func(Event
 		result.Cancelled = true
 		// Graceful first (§26.4: rclone cleans up on interrupt — best
 		// effort), escalate if it lingers.
-		_ = cmd.Process.Signal(syscall.SIGINT)
+		signalChild(cmd, syscall.SIGINT)
 		select {
 		case waitErr = <-waitDone:
 		case <-time.After(10 * time.Second):
-			_ = cmd.Process.Kill()
+			killChild(cmd)
 			waitErr = <-waitDone
 		}
 	}
-	<-parseDone
-
 	if exitErr, ok := waitErr.(*exec.ExitError); ok {
 		result.ExitCode = exitErr.ExitCode()
 	} else if waitErr != nil {
