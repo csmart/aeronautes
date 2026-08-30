@@ -1,8 +1,10 @@
 // Package systemtest is the war room's behavioral harness (§65.10): it
 // drives the REAL internal/app services (the same entry points the UI
 // calls) against two containerized-Swift accounts, hands each test
-// throwaway prefixed containers, and witnesses whole-account state with
-// the independent oracle before and after every action.
+// throwaway prefixed containers, and witnesses their state with the
+// independent oracle before and after the action under test. The witness
+// is scoped to the harness namespace and to the identity the oracle
+// models — see that package for what is and is not covered.
 package systemtest
 
 import (
@@ -269,13 +271,15 @@ func (h *Harness) Snapshot(a *Account, containers ...string) *oracle.AccountSnap
 	return snap
 }
 
-// SnapshotNamespace witnesses EVERY container this harness created on the
-// account (all share the ns prefix), including any the engine created as
-// a side effect — a copy/mirror segment sidecar, a versions archive.
-// Naming only the primary container would leave such a sidecar invisible
-// to AssertNoCollateral (grok war-room P1: COPY-SIDECAR). Scoped to the
-// harness namespace so a parallel test's containers never look like
-// collateral here.
+// SnapshotNamespace witnesses every container whose name shares this
+// harness's ns prefix — the ones it created AND ns-prefixed side effects
+// the engine derives from them (e.g. a "{dest}_segments" sidecar, since
+// dest is itself ns-prefixed). Naming only the primary container would
+// leave such a sidecar invisible to AssertNoCollateral (grok war-room
+// P1: COPY-SIDECAR). It is NOT a whole-account witness: a container the
+// engine creates OUTSIDE this namespace is not seen (codex war-room
+// F-06). Prefix-scoping also keeps a parallel test's containers from
+// looking like collateral here.
 func (h *Harness) SnapshotNamespace(a *Account) *oracle.AccountSnapshot {
 	h.T.Helper()
 	names, err := a.Oracle.ListContainers(h.ns)
@@ -298,11 +302,13 @@ func (h *Harness) AssertNoCollateral(before, after *oracle.AccountSnapshot, allo
 
 // collateral returns every change from before to after that is NOT in
 // the approved set — the pure core of AssertNoCollateral, unit-testable
-// without SAIO. An allow entry is an object ref "container/name", a
-// change string "container/name: <what>", a bare container name (for
-// container add/remove/config only), or a "container: <what>" config
-// change. A bare container name does NOT blanket-allow object changes
-// inside it.
+// without SAIO. An allow entry is an object ref "container/name" or a
+// bare container name (for container add/remove/config only). Matching is
+// on the delta's TYPED identity: the "container/name" key is CONSTRUCTED
+// from the typed fields, never parsed back out of a formatted string, so
+// an object whose name contains ": " cannot masquerade as an allowed one
+// (codex war-room F-01). A bare container name does NOT blanket-allow
+// object changes inside it.
 func collateral(before, after *oracle.AccountSnapshot, allowed []string) []string {
 	ok := map[string]bool{}
 	for _, a := range allowed {
@@ -310,17 +316,14 @@ func collateral(before, after *oracle.AccountSnapshot, allowed []string) []strin
 	}
 	d := oracle.Diff(before, after)
 	var stray []string
-	for _, x := range append(append([]string{}, d.AddedObjects...), d.RemovedObjects...) {
-		if !ok[x] {
-			stray = append(stray, x)
+	for _, x := range append(append([]oracle.ObjectChange{}, d.AddedObjects...), d.RemovedObjects...) {
+		if !ok[x.Ref()] {
+			stray = append(stray, "object "+x.Ref())
 		}
 	}
 	for _, x := range d.ChangedObjects {
-		// Diff formats a change as "container/name: <what>"; split on that
-		// exact separator so a colon inside an object name can't misparse.
-		ref, _, _ := strings.Cut(x, ": ")
-		if !ok[ref] {
-			stray = append(stray, x)
+		if !ok[x.Ref()] {
+			stray = append(stray, "object "+x.Ref())
 		}
 	}
 	for _, x := range append(d.AddedContainers, d.RemovedContainers...) {
@@ -329,9 +332,11 @@ func collateral(before, after *oracle.AccountSnapshot, allowed []string) []strin
 		}
 	}
 	for _, x := range d.ChangedContainers {
-		name, _, _ := strings.Cut(x, ": ")
-		if !ok[x] && !ok[name] {
-			stray = append(stray, "container-config "+x)
+		// Bare container name allows any config change to THAT exact
+		// container — matched on the typed Container field, so a distinct
+		// container named "c: other" is not covered by an allow for "c".
+		if !ok[x.Container] {
+			stray = append(stray, "container-config "+x.Container)
 		}
 	}
 	return stray

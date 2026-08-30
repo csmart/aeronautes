@@ -46,6 +46,7 @@ func TestObjectMetadataEditIsSurgical(t *testing.T) {
 	}
 	// Nothing outside target.txt moved anywhere on the account.
 	h.AssertNoCollateral(before, after, c+"/target.txt")
+	RecordScenario(t, "MutateService.UpdateObjectMetadata", "happy")
 
 	// Optimistic-concurrency refusal: an edit built on a STALE fingerprint
 	// is refused as a conflict, and a refused edit changes NOTHING (codex
@@ -65,4 +66,5 @@ func TestObjectMetadataEditIsSurgical(t *testing.T) {
 	if d := diffOf(conflictBefore, conflictAfter); !d.Empty() {
 		t.Fatalf("a refused (conflict) metadata edit still changed state:\n%s", d)
 	}
+	RecordScenario(t, "MutateService.UpdateObjectMetadata", "conflict")
 }

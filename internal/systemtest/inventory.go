@@ -4,7 +4,10 @@ package systemtest
 // row with its kind and the scenarios the war room must exercise. A
 // reflection guard (inventory_test.go) fails the build when a bound
 // service exports a method absent here — so a new action cannot ship
-// without a matrix entry, and "full coverage" is a generated fact.
+// without an inventory entry. That guarantees the DENOMINATOR is
+// complete (no un-inventoried action); it does NOT claim the scenarios
+// are covered. Actual coverage is the evidence-based numerator from the
+// runtime registry (scenario_test.go), and today it is far from full.
 
 // Kind classifies what a bridge method does, which fixes its required
 // scenarios.
@@ -90,13 +93,14 @@ var Inventory = map[string]Action{
 	"InspectorService.Prefix":      {Kind: Read},
 	"InspectorService.DLOSegments": {Kind: Read},
 	"InspectorService.SLOManifest": {Kind: Read},
-	// MutateService
+	// MutateService — the UPDATE mutates carry optimistic-concurrency, so
+	// their explicit contract adds conflict (codex war-room F-03).
 	"MutateService.CreateContainer":      {Kind: Mutate},
-	"MutateService.UpdateContainer":      {Kind: Mutate},
+	"MutateService.UpdateContainer":      {Kind: Mutate, Scenarios: []string{"happy", "refusal", "conflict"}},
 	"MutateService.CreateMarker":         {Kind: Mutate},
 	"MutateService.DeleteMarker":         {Kind: Destructive},
 	"MutateService.DeleteManifest":       {Kind: Destructive},
-	"MutateService.UpdateObjectMetadata": {Kind: Mutate},
+	"MutateService.UpdateObjectMetadata": {Kind: Mutate, Scenarios: []string{"happy", "refusal", "conflict"}},
 	// AuditService
 	"AuditService.Recent": {Kind: Read},
 	"AuditService.Search": {Kind: Read},
@@ -116,10 +120,14 @@ var Inventory = map[string]Action{
 	"DeleteService.PreviewDelete":         {Kind: Read},
 	"DeleteService.CheckSegmentOwnership": {Kind: Read},
 	"DeleteService.StartDelete":           {Kind: Job},
-	// DeleteManifestWithSegments returns its result synchronously (force +
-	// typed confirmation, no job/cancel lifecycle), so it is Destructive,
-	// not a Job (codex war-room H-03).
-	"DeleteService.DeleteManifestWithSegments": {Kind: Destructive},
+	// DeleteManifestWithSegments returns synchronously (no Job runner/state
+	// machine), but it DOES have partial-result and retry semantics — it
+	// reports failed/remaining segments, instructs the operator to retry,
+	// and context cancellation can interrupt it mid-request. So it keeps
+	// partial/retry/cancel through an explicit per-action contract; a
+	// synchronous return shape does not erase those semantics (codex
+	// war-room F-03).
+	"DeleteService.DeleteManifestWithSegments": {Kind: Destructive, Scenarios: []string{"happy", "refusal", "conflict", "partial", "retry", "cancel"}},
 	// JobService
 	"JobService.Get":  {Kind: Read},
 	"JobService.List": {Kind: Read},
@@ -136,39 +144,8 @@ var Inventory = map[string]Action{
 	"BenchmarkService.StartBenchmark": {Kind: Job},
 }
 
-// Covered records which (action, scenario) pairs an actual system test
-// exercises — maintained alongside the tests (the standing rule forbids
-// a behavior change without its system test, so this stays honest). The
-// report test turns required-minus-covered into the gap artifact; a
-// future hard gate fails CI when a shipped action has an uncovered
-// required scenario.
-var Covered = map[string][]string{
-	"MutateService.UpdateObjectMetadata":       {"happy", "refusal"}, // metadata_test.go (happy + optimistic-conflict refusal)
-	"TransferService.StartCopy":                {"happy", "refusal"}, // copy_test.go + refusal_test.go
-	"TransferService.StartMirror":              {"happy"},            // mirror_test.go
-	"DeleteService.StartDelete":                {"happy", "refusal"}, // delete_test.go + refusal_test.go
-	"DeleteService.DeleteManifestWithSegments": {"refusal"},          // refusal_test.go
-}
-
-// CoverageGaps returns, per action, the required scenarios that no
-// system test yet covers. An action absent from the map is fully
-// covered for its kind.
-func CoverageGaps() map[string][]string {
-	gaps := map[string][]string{}
-	for key, action := range Inventory {
-		have := map[string]bool{}
-		for _, s := range Covered[key] {
-			have[s] = true
-		}
-		var missing []string
-		for _, req := range action.required() {
-			if !have[req] {
-				missing = append(missing, req)
-			}
-		}
-		if len(missing) > 0 {
-			gaps[key] = missing
-		}
-	}
-	return gaps
-}
+// Coverage is EVIDENCE-BASED, not a hand-maintained map: a (action,
+// scenario) pair counts only when a running system test calls
+// RecordScenario for it (see scenario_test.go, codex war-room F-04). The
+// report is emitted from that registry by TestMain. A future hard gate
+// can fail CI when a shipped action has an uncovered required scenario.

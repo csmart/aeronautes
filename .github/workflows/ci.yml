@@ -201,6 +201,12 @@ jobs:
         env:
           AERONAUTES_SAIO_AUTH_URL: http://127.0.0.1:8080/auth/v1.0
           AERONAUTES_REQUIRE_TWO_ACCOUNTS: "1"
+          # The evidence-based scenario-coverage report (codex war-room
+          # F-04/F-05): the systemtest TestMain writes it here from what
+          # actually executed, and it is uploaded below. Absolute path
+          # because the test binary's CWD is the package dir, not the repo
+          # root. Visibly incomplete scaffolding — NOT yet a no-gap gate.
+          AERONAUTES_SCENARIO_REPORT: ${{ github.workspace }}/scenario-coverage.json
         run: |
           # Scope the run to ./internal/... — exactly the -coverpkg set.
           # The root package has no tests, but -coverpkg forces it to
@@ -213,6 +219,13 @@ jobs:
           pct=$(go tool cover -func=cover.out | awk '/^total:/ {gsub(/%/,"",$3); print $3}')
           echo "combined Go statement coverage: ${pct}%"
           echo "$pct" > coverage-pct.txt
+          echo "scenario coverage report:"; cat scenario-coverage.json | python3 -c 'import sys,json; d=json.load(sys.stdin); print(f"  {d[\"totalCovered\"]}/{d[\"totalRequired\"]} scenarios exercised; {d[\"actionsWithGaps\"]} actions with gaps")'
+      - name: upload scenario-coverage report
+        if: steps.detect.outputs.present == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: scenario-coverage
+          path: scenario-coverage.json
       # SOFT coverage floor: red step + warning on a drop, pipeline
       # continues (continue-on-error).
       - name: coverage floor (soft, 75%)

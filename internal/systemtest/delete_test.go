@@ -33,7 +33,9 @@ func TestPrefixDeleteSparesEverythingElse(t *testing.T) {
 		h.Seed(h.Primary, c, name, body, map[string]string{"X-Object-Meta-Keep": "yes"})
 	}
 
-	before := h.Snapshot(h.Primary, c)
+	// Whole-namespace witness so a stray delete into another ns-prefixed
+	// container would show, not just the target (grok war-room #2).
+	before := h.SnapshotNamespace(h.Primary)
 
 	jobID, err := h.Delete.StartDelete(ctx, app.DeleteRequestDTO{
 		BookmarkID: h.Primary.BookmarkID, Container: c, Prefix: "scope/",
@@ -46,7 +48,7 @@ func TestPrefixDeleteSparesEverythingElse(t *testing.T) {
 		t.Fatalf("delete job = %s: %s", job.State, job.Error)
 	}
 
-	after := h.Snapshot(h.Primary, c)
+	after := h.SnapshotNamespace(h.Primary)
 
 	// Every doomed object is gone.
 	for name := range after.Containers[c].Objects {
@@ -69,4 +71,5 @@ func TestPrefixDeleteSparesEverythingElse(t *testing.T) {
 		allowed = append(allowed, fmt.Sprintf("%s/scope/doomed-%d", c, i))
 	}
 	h.AssertNoCollateral(before, after, allowed...)
+	RecordScenario(t, "DeleteService.StartDelete", "happy")
 }

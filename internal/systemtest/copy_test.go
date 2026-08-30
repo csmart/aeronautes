@@ -55,7 +55,12 @@ func TestCopyCrossAccountPreservesLogicalContent(t *testing.T) {
 	srcAfter := h.Snapshot(h.Primary, srcC, srcSegs)
 	dstAfter := h.SnapshotNamespace(h.Secondary)
 
-	// Destination logical content matches the source exactly.
+	// Destination LOGICAL content matches the source exactly. This asserts
+	// readable-bytes identity (class-independent): a DLO/SLO whose engine
+	// reassembles to a plain object on the destination still passes. It
+	// does NOT assert class preservation (DLO-copied-as-DLO) or ordered
+	// per-segment/metadata fidelity — that stronger contract is deferred
+	// verification work (codex W-07/W-12), not claimed here (grok #3).
 	copied := []string{"plain.txt", "big.bin", "manifest.slo", "sentinel.txt"}
 	sb, db := srcBefore.Containers[srcC].Objects, dstAfter.Containers[dstC].Objects
 	for _, name := range copied {
@@ -79,4 +84,5 @@ func TestCopyCrossAccountPreservesLogicalContent(t *testing.T) {
 		allowed[i] = dstC + "/" + name
 	}
 	h.AssertNoCollateral(dstBefore, dstAfter, allowed...)
+	RecordScenario(t, "TransferService.StartCopy", "happy")
 }

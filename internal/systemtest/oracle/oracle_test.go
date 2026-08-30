@@ -135,12 +135,21 @@ func TestOracleWitnessesEveryClass(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := Diff(before, after)
-	if len(d.ChangedObjects) != 1 || !strings.Contains(d.ChangedObjects[0], "plain.txt: content") {
+	if len(d.ChangedObjects) != 1 || d.ChangedObjects[0].Object != "plain.txt" || !hasField(d.ChangedObjects[0].Fields, "content") {
 		t.Fatalf("same-size swap not caught as a content change: %s", d)
 	}
 	if len(d.AddedObjects)+len(d.RemovedObjects)+len(d.ChangedContainers) != 0 {
 		t.Fatalf("phantom changes: %s", d)
 	}
+}
+
+func hasField(fs []Field, want Field) bool {
+	for _, f := range fs {
+		if f == want {
+			return true
+		}
+	}
+	return false
 }
 
 func purge(t *testing.T, seed *rawClient, oracle *Oracle, container string) {

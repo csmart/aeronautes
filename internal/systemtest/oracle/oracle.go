@@ -1,14 +1,24 @@
 // Package oracle is the test war room's INDEPENDENT witness (§65.10): a
 // raw-HTTP Swift reader that never imports internal/swiftcontrol, so a
 // parsing bug in the product cannot validate itself in the assertion.
-// It snapshots the full identity of an account's containers and objects
-// — content digests, headers, large-object inventories, symlink targets
-// — and diffs two snapshots so a test can assert an exact delta AND that
-// nothing else moved.
+// For the containers it is asked to snapshot it records the object
+// identity it MODELS — content digest, content/meta headers, large-object
+// segment inventory, symlink target — and diffs two snapshots so a test
+// can assert an exact delta over that modelled identity.
+//
+// It is a SCOPE-LIMITED witness, not a whole-account/complete-state one.
+// Deliberately out of scope today (tracked gaps): account-level config,
+// archived object versions, storage-policy/CORS/staticweb/TempURL header
+// families, and local-filesystem / jobs / audit / recovery state. A
+// symlink's identity is its target pointer (it is not followed for
+// content); a dangling or cross-account link that fails a logical GET is
+// not yet representable. Ranged/nested SLO entry forms are refused, not
+// modelled. Callers get exactness over what is modelled — no more.
 package oracle
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -95,8 +105,9 @@ type ContainerState struct {
 	Objects    map[string]ObjectState
 }
 
-// AccountSnapshot is the whole visible state of an account, scoped to
-// the containers a test asked for.
+// AccountSnapshot is the modelled state of the containers a test asked
+// for (not the whole account — see the package doc for what is out of
+// scope).
 type AccountSnapshot struct {
 	Containers map[string]ContainerState
 }
@@ -150,13 +161,17 @@ func (o *Oracle) snapshotContainer(name string) (ContainerState, bool, error) {
 	if err != nil {
 		return ContainerState{}, false, err
 	}
-	body, _ := io.ReadAll(resp.Body)
+	body, readErr := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
 		return ContainerState{}, false, nil
 	}
 	if resp.StatusCode/100 != 2 {
 		return ContainerState{}, false, fmt.Errorf("oracle list %s: HTTP %d", name, resp.StatusCode)
+	}
+	// Fail closed on a truncated first listing page (codex war-room F-02).
+	if readErr != nil {
+		return ContainerState{}, false, fmt.Errorf("oracle list %s: read: %w", name, readErr)
 	}
 	cs := ContainerState{
 		Name:       name,
@@ -202,6 +217,7 @@ func (o *Oracle) listPaged(path, query string, firstPage []byte) ([]string, erro
 	for page := 0; ; page++ {
 		var body []byte
 		if page == 0 && firstPage != nil {
+			// The caller already read and status-checked this body.
 			body = firstPage
 		} else {
 			q := "format=json"
@@ -215,10 +231,17 @@ func (o *Oracle) listPaged(path, query string, firstPage []byte) ([]string, erro
 			if err != nil {
 				return nil, err
 			}
-			body, _ = io.ReadAll(resp.Body)
+			var readErr error
+			body, readErr = io.ReadAll(resp.Body)
 			resp.Body.Close()
 			if resp.StatusCode/100 != 2 {
 				return nil, fmt.Errorf("list %s page %d: HTTP %d", path, page, resp.StatusCode)
+			}
+			// Fail closed on a truncated body: a partial "[]" plus a read
+			// error must NOT be accepted as a complete empty page, or the
+			// tail of a listing silently vanishes (codex war-room F-02).
+			if readErr != nil {
+				return nil, fmt.Errorf("list %s page %d: read: %w", path, page, readErr)
 			}
 		}
 		var rows []struct {
@@ -230,17 +253,19 @@ func (o *Oracle) listPaged(path, query string, firstPage []byte) ([]string, erro
 		if len(rows) == 0 {
 			return names, nil
 		}
+		// Every name MUST be strictly greater than the last one seen —
+		// within the page and across the page boundary. This detects
+		// duplicates, out-of-order rows, and a non-advancing marker that
+		// would otherwise loop forever; all are fail-closed (codex F-02).
+		prev := marker
 		for _, row := range rows {
+			if row.Name <= prev {
+				return nil, fmt.Errorf("list %s: names not strictly increasing (%q after %q) — refusing", path, row.Name, prev)
+			}
+			prev = row.Name
 			names = append(names, row.Name)
 		}
-		// The marker MUST strictly advance; a provider that returns a
-		// non-advancing page would otherwise loop forever (codex war-room
-		// H-06). Fail closed instead.
-		next := rows[len(rows)-1].Name
-		if next <= marker {
-			return nil, fmt.Errorf("list %s: marker did not advance (%q -> %q) — refusing to loop", path, marker, next)
-		}
-		marker = next
+		marker = prev
 	}
 }
 
@@ -355,23 +380,44 @@ func (o *Oracle) sloInventory(container, name string) (string, []SegmentState, e
 		return "", nil, fmt.Errorf("oracle SLO manifest %s/%s: read: %w", container, name, readErr)
 	}
 	var entries []struct {
-		Name string `json:"name"`
+		Name   string `json:"name"`
+		Data   string `json:"data"`    // inline base64 data segment
+		Range  string `json:"range"`   // ranged reference into a segment
+		SubSLO bool   `json:"sub_slo"` // nested SLO manifest
 	}
 	if err := json.Unmarshal(raw, &entries); err != nil {
 		return "", nil, fmt.Errorf("oracle SLO manifest %s/%s: decode: %w", container, name, err)
 	}
 	var segs []SegmentState
-	for _, e := range entries {
-		path := strings.TrimPrefix(e.Name, "/")
-		c, n, found := strings.Cut(path, "/")
-		if !found {
-			continue
+	for i, e := range entries {
+		// Every entry must be witnessed. Forms the oracle cannot yet
+		// digest exactly are REFUSED, never silently omitted, so a
+		// manifest it can't fully account for fails closed (codex F-02).
+		// Full ranged/nested modeling is deferred (R-05).
+		switch {
+		case e.SubSLO:
+			return "", nil, fmt.Errorf("oracle SLO %s/%s entry %d: nested sub_slo not modeled — refusing to under-witness", container, name, i)
+		case e.Range != "":
+			return "", nil, fmt.Errorf("oracle SLO %s/%s entry %d: ranged reference %q not modeled — refusing", container, name, i, e.Range)
+		case e.Data != "":
+			decoded, err := base64.StdEncoding.DecodeString(e.Data)
+			if err != nil {
+				return "", nil, fmt.Errorf("oracle SLO %s/%s entry %d: inline data decode: %w", container, name, i, err)
+			}
+			sum := sha256.Sum256(decoded)
+			segs = append(segs, SegmentState{Name: fmt.Sprintf("inline:%d", i), Size: int64(len(decoded)), Digest: hex.EncodeToString(sum[:])})
+		default:
+			path := strings.TrimPrefix(e.Name, "/")
+			c, n, found := strings.Cut(path, "/")
+			if !found {
+				return "", nil, fmt.Errorf("oracle SLO %s/%s entry %d: unparseable segment name %q — refusing to omit", container, name, i, e.Name)
+			}
+			seg, err := o.segment(c, n)
+			if err != nil {
+				return "", nil, err
+			}
+			segs = append(segs, seg)
 		}
-		seg, err := o.segment(c, n)
-		if err != nil {
-			return "", nil, err
-		}
-		segs = append(segs, seg)
 	}
 	return string(raw), segs, nil
 }

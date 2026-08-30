@@ -78,4 +78,5 @@ func TestMirrorConvergesAndDeletesOnlyDestOnly(t *testing.T) {
 	// other moves are the added B and the overwritten E — the
 	// accidental-deletion guard.
 	h.AssertNoCollateral(dstBefore, dstAfter, dst+"/B.txt", dst+"/E.txt", dst+"/C.txt", dst+"/D.txt")
+	RecordScenario(t, "TransferService.StartMirror", "happy")
 }

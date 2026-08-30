@@ -3929,7 +3929,10 @@ R-15 metadata-only replication, R-16 provider short-page handling, and the moder
 edit path. These are the §65.10 war room and a one-typed-mutation-protocol refactor. The
 branch is honestly NOT a valuable-data safety-claim release until they land — recorded here
 rather than implied done. Both reviewers agree the system suite is the backbone and must
-gate release, and that the P0 behaviors had to be contained first (now done).
+gate release. NOTE: the war room's own critical paths (codex W-01 stale-preview plan tokens,
+W-02 mirror last-hop delete race, W-03 overwrite last-hop race, W-04 recovery-sweep
+exclusivity) are NOT yet contained — the product code is unchanged and they remain open P0
+architecture. Do not read "war room landed" as "P0s contained".
 
 ### 65.10 Eleventh milestone — the test war room (planned)
 
@@ -4100,26 +4103,46 @@ outbox/panic boundary, W-10 capability-bound force, W-11 local transfer, W-12
 metadata-only/symlink fidelity, W-13 short-page iteration, W-14 versioning, W-15
 session-generation, W-16 release attestation, W-17 native capability tokens) are
 the SAME deferred architecture already named as R-01–R-18 — the redesign the war
-room exists to eventually gate, NOT defects in this test branch. A NO-GO on
-releasing the PRODUCT does not block merging TEST infrastructure. The concrete
-bugs Codex found in the SUITE ITSELF are all fixed with catching tests: Diff now
-enumerates the objects inside an added/removed container so a bare-container
-allowance can't hide contents (H-05); the oracle fails closed on every segment,
-SLO, read, decode, and non-advancing-pagination case and refuses redirects
-(H-06); the Covered map is validated (unknown keys, non-required scenarios, and
-duplicates fail the report) and the numerator can no longer be inflated (H-02);
-DeleteManifestWithSegments is reclassified synchronous-Destructive and StartFind
-carries an explicit cancel scenario via the now-wired Scenarios override (H-03);
-the mirror fixture gained a genuinely changed object and the metadata matrix a
-real optimistic-conflict refusal (H-07); a non-asserting `if !d.Empty() == false`
-test and the stale "automatically under proof" comment are fixed (AI-slop).
-Honest coverage is now 8/97. Overclaims Codex flagged are corrected in the R-06
-credential and R-07 endpoint dispositions above (no longer "race-free"/"full
-policy"). The larger program Codex specifies — a semantic oracle over complete
-account + local + durable state, a deterministic barrier/fault layer, a real
-two-direction Swift matrix, a UI/native layer, and hard CI gates — is the
-tranche the war room grows into; H-01/H-04/H-08 (incompleteness, schema-generated
-bindings, the race/crash/UI/native matrix) are tracked as its next rows.
+room exists to eventually gate. That these are unchanged in this branch is a
+SCOPE statement, not a disposition: they are existing product defects present in
+the branch; it is merely reasonable to merge isolated TEST infrastructure before
+fixing them. A NO-GO on releasing the PRODUCT does not block merging TEST
+infrastructure once that infrastructure's oracle cannot bless false state.
+
+Codex's FIRST followup found the first round of suite fixes still had three
+correctness defects; its SECOND followup blocked the test-infra merge until they
+were fixed. They are now fixed with catching tests: (F-01) the negative-space
+delta is a TYPED record — identity is matched as an exact (container, object)
+tuple, never parsed from a formatted string, so an object literally named
+"approved: smuggled" can no longer masquerade as an allowed "approved"; (F-02)
+the oracle propagates BOTH listing-page read errors (a valid empty "[]" plus a
+truncated read is now refused, not accepted as complete-empty), requires strictly
+increasing listing names, and REFUSES a malformed or unmodeled SLO entry instead
+of silently omitting it — with offline custom-transport regressions for each;
+(F-03) DeleteManifestWithSegments keeps partial/retry/cancel through an explicit
+per-action contract (a synchronous return shape does not erase those semantics
+its implementation has), and the update mutates carry conflict. Earlier accepted
+fixes stand: Diff enumerates an added/removed container's objects (H-05); segment/
+SLO/object reads fail closed and clients refuse redirects (H-06); the report
+rejects bogus coverage entries (H-02); reclassification and the wired per-action
+Scenarios override (H-03); the changed-object mirror fixture and optimistic-
+conflict metadata case (H-07).
+
+Coverage is now EVIDENCE-BASED (F-04): a (action, scenario) pair counts only when
+a running system test calls RecordScenario, so a fictional claim is impossible;
+TestMain emits a machine-readable scenario-coverage.json artifact (F-05), which
+the SAIO CI job uploads. It is 8/102 today and visibly incomplete scaffolding —
+NOT yet a hard no-gap gate (that gate is future). Overclaims Codex flagged are
+corrected: the R-06 credential and R-07 endpoint dispositions above (no longer
+"race-free"/"full policy"), and the oracle/harness package comments no longer say
+"full identity"/"whole-account" — the oracle is a scope-limited witness whose out-
+of-scope domains (account config, archived versions, local/jobs/audit state,
+ranged/nested SLO, dangling cross-account symlinks) are named in its package doc.
+The larger program Codex specifies — a semantic oracle over complete account +
+local + durable state, a deterministic barrier/fault layer, a real two-direction
+Swift matrix, a UI/native layer, and hard CI gates — is the tranche the war room
+grows into; H-01/H-04/H-08 and F-06 (scope-completeness), plus a fully
+machine-checked "this test proves scenario X" contract, are its next rows.
 
 
 ## 66. Final project statement

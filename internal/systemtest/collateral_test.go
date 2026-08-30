@@ -26,10 +26,8 @@ func TestCollateralDetection(t *testing.T) {
 	if s := collateral(before, after, nil); len(s) != 1 {
 		t.Fatalf("ACL flip not caught: %v", s)
 	}
-	// Allowed by the config change string OR the bare container name.
-	if s := collateral(before, after, []string{"c: readACL"}); len(s) != 0 {
-		t.Fatalf("allowed ACL change still flagged: %v", s)
-	}
+	// A config change is allowed by the bare container name (which covers
+	// any config change to THAT exact container).
 	if s := collateral(before, after, []string{"c"}); len(s) != 0 {
 		t.Fatalf("bare-container allow should cover config: %v", s)
 	}
@@ -69,8 +67,8 @@ func TestCollateralDetection(t *testing.T) {
 		t.Fatalf("explicitly allowing container+object still flagged: %v", s)
 	}
 
-	// 5. An object name containing a colon parses on the exact "container/
-	// name: <what>" separator, so its allow ref still matches.
+	// 5. An object name containing a colon still matches its own allow ref
+	// (identity is a typed tuple, not a parsed string).
 	before, after = base(), base()
 	before.Containers["c"].Objects["ts:2026"] = oracle.ObjectState{Name: "ts:2026", Digest: "d1"}
 	after.Containers["c"].Objects["ts:2026"] = oracle.ObjectState{Name: "ts:2026", Digest: "d2"}
@@ -79,5 +77,35 @@ func TestCollateralDetection(t *testing.T) {
 	}
 	if s := collateral(before, after, []string{"c/ts:2026"}); len(s) != 0 {
 		t.Fatalf("colon-name allow ref failed to match: %v", s)
+	}
+
+	// 6. THE F-01 ATTACK: an object literally named "approved: smuggled"
+	// (containing the display separator ": ") must NOT be hidden by an
+	// allow for a DIFFERENT object "c/approved". A string-parsing helper
+	// split "c/approved: smuggled: content" at the first ": " and wrongly
+	// matched "c/approved"; typed identity does not.
+	before, after = base(), base()
+	before.Containers["c"].Objects["approved: smuggled"] = oracle.ObjectState{Name: "approved: smuggled", Digest: "d1"}
+	after.Containers["c"].Objects["approved: smuggled"] = oracle.ObjectState{Name: "approved: smuggled", Digest: "dX"}
+	if s := collateral(before, after, []string{"c/approved"}); len(s) != 1 {
+		t.Fatalf("colon-space name masqueraded as an allowed object: %v", s)
+	}
+	if s := collateral(before, after, []string{"c/approved: smuggled"}); len(s) != 0 {
+		t.Fatalf("the real object's own allow ref failed to match: %v", s)
+	}
+
+	// 7. The same collision shape for containers: a config change to a
+	// container named "c: other" is not covered by an allow for "c".
+	before = &oracle.AccountSnapshot{Containers: map[string]oracle.ContainerState{
+		"c: other": {Name: "c: other", ReadACL: ""},
+	}}
+	after = &oracle.AccountSnapshot{Containers: map[string]oracle.ContainerState{
+		"c: other": {Name: "c: other", ReadACL: ".r:*"},
+	}}
+	if s := collateral(before, after, []string{"c"}); len(s) != 1 {
+		t.Fatalf("config change to \"c: other\" masqueraded as allowed container \"c\": %v", s)
+	}
+	if s := collateral(before, after, []string{"c: other"}); len(s) != 0 {
+		t.Fatalf("the real container's own allow failed to match: %v", s)
 	}
 }

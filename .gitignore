@@ -18,6 +18,8 @@
 *.test
 *.out
 /vendor/
+# war-room evidence-based scenario report (written by systemtest TestMain)
+scenario-coverage.json
 
 # Node / frontend
 /frontend/coverage/

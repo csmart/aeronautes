@@ -37,6 +37,7 @@ func TestDestructiveRefusalsHaveNoEffect(t *testing.T) {
 	}); err == nil {
 		t.Fatal("empty-container delete accepted a wrong confirmation")
 	}
+	RecordScenario(t, "DeleteService.StartDelete", "refusal")
 
 	// 2. Copy with overlapping same-account nested scopes is refused at
 	// start (before any write).
@@ -46,6 +47,7 @@ func TestDestructiveRefusalsHaveNoEffect(t *testing.T) {
 	}); err == nil || !strings.Contains(err.Error(), "overlap") {
 		t.Fatalf("overlapping copy = %v, want overlap refusal", err)
 	}
+	RecordScenario(t, "TransferService.StartCopy", "refusal")
 
 	// 3. Segment deletion WITHOUT the Backstage force is refused, even
 	// though a DLO exists (evidence is advisory; force is mandatory).
@@ -54,6 +56,7 @@ func TestDestructiveRefusalsHaveNoEffect(t *testing.T) {
 	}); err == nil || !strings.Contains(err.Error(), "Backstage force") {
 		t.Fatalf("segment delete without force = %v, want force-required refusal", err)
 	}
+	RecordScenario(t, "DeleteService.DeleteManifestWithSegments", "refusal")
 
 	after := h.SnapshotNamespace(h.Primary)
 	// Every refusal was total: NOTHING moved anywhere in the namespace —

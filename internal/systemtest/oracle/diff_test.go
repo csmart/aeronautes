@@ -18,7 +18,7 @@ func TestDiffDetectsContainerConfig(t *testing.T) {
 		}},
 	}}
 	d := Diff(before, after)
-	if len(d.ChangedContainers) != 1 || d.ChangedContainers[0] != "c: readACL" {
+	if len(d.ChangedContainers) != 1 || d.ChangedContainers[0].Container != "c" || !hasField(d.ChangedContainers[0].Fields, "readACL") {
 		t.Fatalf("ACL flip not detected: %+v", d)
 	}
 	if d.Empty() {
