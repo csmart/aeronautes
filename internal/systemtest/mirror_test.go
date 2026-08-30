@@ -29,7 +29,10 @@ func TestMirrorConvergesAndDeletesOnlyDestOnly(t *testing.T) {
 	h.Seed(h.Secondary, dst, "D.txt", []byte("dest-only, doomed too"), nil)
 
 	srcBefore := h.Snapshot(h.Primary, src)
-	dstBefore := h.Snapshot(h.Secondary, dst)
+	// Witness the whole destination namespace so a sidecar/segment
+	// container mirror might create is inside the negative space, not just
+	// the target container (grok war-room: named-containers-only blind spot).
+	dstBefore := h.SnapshotNamespace(h.Secondary)
 
 	jobID, err := h.Transfer.StartMirror(ctx, app.MirrorRequestDTO{
 		CopyRequestDTO: app.CopyRequestDTO{
@@ -46,7 +49,7 @@ func TestMirrorConvergesAndDeletesOnlyDestOnly(t *testing.T) {
 	}
 
 	srcAfter := h.Snapshot(h.Primary, src)
-	dstAfter := h.Snapshot(h.Secondary, dst)
+	dstAfter := h.SnapshotNamespace(h.Secondary)
 
 	// Destination now equals the source set exactly: {A, B}, nothing else.
 	dst2 := dstAfter.Containers[dst].Objects

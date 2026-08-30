@@ -1,9 +1,11 @@
-package main
+package systemtest
 
 import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"path/filepath"
+	"runtime"
 	"sort"
 	"testing"
 
@@ -11,14 +13,26 @@ import (
 )
 
 // TestMainBindsExactlyBoundServices is the other half of the §65.10
-// auto-inventory gate (grok war-room P2). The inventory reflection test
+// auto-inventory gate (grok war-room P2). TestInventoryCoversEveryBoundAction
 // reflects over app.BoundServices(); this test proves main.go's actual
 // application.Service list binds exactly those same constructors. A
 // service added to main.go but not to app.BoundServices() (so
 // un-inventoried and un-gated), or vice versa, fails here.
+//
+// It reads main.go as SOURCE rather than living in package main, whose
+// //go:embed frontend/dist would force a frontend build in the SAIO test
+// job just to compile the test binary. The path is resolved from this
+// file's own location so it holds regardless of the test's working dir.
 func TestMainBindsExactlyBoundServices(t *testing.T) {
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("cannot locate this test file to find main.go")
+	}
+	repoRoot := filepath.Dir(filepath.Dir(filepath.Dir(thisFile)))
+	mainPath := filepath.Join(repoRoot, "main.go")
+
 	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "main.go", nil, 0)
+	file, err := parser.ParseFile(fset, mainPath, nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +63,7 @@ func TestMainBindsExactlyBoundServices(t *testing.T) {
 	bound := map[string]bool{}
 	ast.Inspect(file, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
-		if !ok || !isSelector(call.Fun, "application", "NewService") || len(call.Args) != 1 {
+		if !ok || !isSelectorCall(call.Fun, "application", "NewService") || len(call.Args) != 1 {
 			return true
 		}
 		switch arg := call.Args[0].(type) {
@@ -73,10 +87,10 @@ func TestMainBindsExactlyBoundServices(t *testing.T) {
 	for _, b := range app.BoundServices() {
 		want[b.Constructor] = true
 	}
-	if missing := diff(want, bound); len(missing) > 0 {
+	if missing := onlyIn(want, bound); len(missing) > 0 {
 		t.Errorf("app.BoundServices lists constructors main.go does not bind: %v", missing)
 	}
-	if extra := diff(bound, want); len(extra) > 0 {
+	if extra := onlyIn(bound, want); len(extra) > 0 {
 		t.Errorf("main.go binds services absent from app.BoundServices (un-inventoried): %v", extra)
 	}
 }
@@ -97,7 +111,7 @@ func appConstructor(e ast.Expr) string {
 	return sel.Sel.Name
 }
 
-func isSelector(e ast.Expr, pkg, name string) bool {
+func isSelectorCall(e ast.Expr, pkg, name string) bool {
 	sel, ok := e.(*ast.SelectorExpr)
 	if !ok {
 		return false
@@ -106,7 +120,7 @@ func isSelector(e ast.Expr, pkg, name string) bool {
 	return ok && id.Name == pkg && sel.Sel.Name == name
 }
 
-func diff(a, b map[string]bool) []string {
+func onlyIn(a, b map[string]bool) []string {
 	var only []string
 	for k := range a {
 		if !b[k] {

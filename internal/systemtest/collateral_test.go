@@ -53,4 +53,16 @@ func TestCollateralDetection(t *testing.T) {
 	if s := collateral(before, after, []string{"c/keep"}); len(s) != 0 {
 		t.Fatalf("allowed content change still flagged: %v", s)
 	}
+
+	// 4. An object name containing a colon parses on the exact "container/
+	// name: <what>" separator, so its allow ref still matches.
+	before, after = base(), base()
+	before.Containers["c"].Objects["ts:2026"] = oracle.ObjectState{Name: "ts:2026", Digest: "d1"}
+	after.Containers["c"].Objects["ts:2026"] = oracle.ObjectState{Name: "ts:2026", Digest: "d2"}
+	if s := collateral(before, after, nil); len(s) != 1 {
+		t.Fatalf("colon-name content change not caught: %v", s)
+	}
+	if s := collateral(before, after, []string{"c/ts:2026"}); len(s) != 0 {
+		t.Fatalf("colon-name allow ref failed to match: %v", s)
+	}
 }

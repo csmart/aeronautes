@@ -307,7 +307,10 @@ func collateral(before, after *oracle.AccountSnapshot, allowed []string) []strin
 		}
 	}
 	for _, x := range d.ChangedObjects {
-		if name := strings.SplitN(x, ":", 2)[0]; !ok[name] {
+		// Diff formats a change as "container/name: <what>"; split on that
+		// exact separator so a colon inside an object name can't misparse.
+		ref, _, _ := strings.Cut(x, ": ")
+		if !ok[ref] {
 			stray = append(stray, x)
 		}
 	}
@@ -317,7 +320,7 @@ func collateral(before, after *oracle.AccountSnapshot, allowed []string) []strin
 		}
 	}
 	for _, x := range d.ChangedContainers {
-		name := strings.TrimSpace(strings.SplitN(x, ":", 2)[0])
+		name, _, _ := strings.Cut(x, ": ")
 		if !ok[x] && !ok[name] {
 			stray = append(stray, "container-config "+x)
 		}
