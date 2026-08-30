@@ -144,6 +144,22 @@
     grid-template-rows: minmax(0, 1fr) auto auto;
   }
 
+  /* §65.8 item 7: the four panes track narrower windows instead of
+     jamming — tighter columns first, then the rail and side panes give
+     up more ground. Below that the working list stays usable and the
+     window scrolls nothing horizontally. */
+  @media (max-width: 1100px) {
+    .screen {
+      grid-template-columns: 4.6rem 13rem minmax(19rem, 1fr) minmax(15rem, 18rem);
+    }
+  }
+
+  @media (max-width: 920px) {
+    .screen {
+      grid-template-columns: 4.2rem 10.5rem minmax(16rem, 1fr) minmax(13rem, 15rem);
+    }
+  }
+
   .screen > :global(*) {
     grid-row: 1;
   }

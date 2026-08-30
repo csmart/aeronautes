@@ -55,40 +55,78 @@ XVFB_PID=$!
 sleep 1
 AERONAUTES_STATE_DIR="$STATE_DIR" DISPLAY=:98 WAYLAND_DISPLAY= ./bin/aeronautes >"$ART/app.log" 2>&1 &
 APP_PID=$!
-sleep 7
-kill -0 "$APP_PID" || fail "app exited at launch (see $ART/app.log)"
 
 X() { DISPLAY=:98 xdotool "$@"; }
 shot() { DISPLAY=:98 import -window root "$ART/$1.png"; }
+# wire_saw <pattern> <seconds>: the mock's request log is the truth —
+# a UI step only counts when its wire effect appears.
+wire_saw() {
+  for _ in $(seq 1 "$2"); do
+    grep -q "$1" "$ART/mockswift.log" 2>/dev/null && return 0
+    sleep 1
+  done
+  return 1
+}
+
+say "waiting for the window"
+timeout 30 env DISPLAY=:98 xdotool search --sync --onlyvisible --name "Aeronautes" >/dev/null   || fail "app window never appeared (see $ART/app.log)"
+sleep 2
+kill -0 "$APP_PID" || fail "app exited at launch (see $ART/app.log)"
 
 say "bookmark + connect"
-X mousemove 42 50 click 1; sleep 2
-X mousemove 639 280 click 1
-X type --delay 15 "Smoke"
-X key Tab; X type --delay 10 "http://127.0.0.1:8899/auth/v1.0"
-X key Tab; X type --delay 15 "test:tester"
-X key Tab; X type --delay 15 "testing"
-X key Return; sleep 3
+connected=""
+for attempt in 1 2 3; do
+  X key Escape; sleep 1                 # clear any half-open state
+  X mousemove 42 50 click 1; sleep 2    # Add bookmark
+  X mousemove 639 280 click 1           # display-name field
+  X type --delay 15 "Smoke"
+  X key Tab; X type --delay 10 "http://127.0.0.1:8899/auth/v1.0"
+  X key Tab; X type --delay 15 "test:tester"
+  X key Tab; X type --delay 15 "testing"
+  X key Return
+  # Save & connect lists containers: the account GET is the proof.
+  if wire_saw 'GET /v1/AUTH_test$' 10; then
+    connected=yes; break
+  fi
+  say "connect attempt $attempt did not reach the cluster; retrying"
+  shot "retry-connect-$attempt"
+done
+[ -n "$connected" ] || fail "never connected after 3 attempts"
+sleep 1
 shot 01-connected
-grep -q "GET /v1/AUTH_test" "$ART/mockswift.log" 2>/dev/null || true
 
 say "open smoke-src"
-X mousemove 160 160 click 1; sleep 2   # second container row (smoke-out sorts first)
+opened=""
+for attempt in 1 2 3; do
+  X mousemove 160 160 click 1           # second container row (smoke-out sorts first)
+  if wire_saw "GET /v1/AUTH_test/smoke-src" 8; then opened=yes; break; fi
+  say "container open attempt $attempt saw no listing; retrying"
+done
+[ -n "$opened" ] || fail "smoke-src never opened"
+sleep 1
 shot 02-browse
 
 if [ "$TRANSFERS" = 1 ]; then
   say "copy smoke-src -> smoke-out through the real engine"
-  X mousemove 872 82 click 1; sleep 2          # Copy to…
-  # The focus trap lands on the Copy tab; tab order is deterministic:
-  # Mirror, close, destination select, container input.
-  X key Tab Tab Tab Tab
-  X type --delay 15 "smoke-out"; sleep 1
-  X key Tab Tab Tab                            # prefix, settings summary, Preview
-  X key Return; sleep 3                        # Preview
-  shot 03-preview
-  X key Tab; X key Return; sleep 2             # Start copy
-  shot 04-started
-  X key Escape; sleep 1
+  started=""
+  for attempt in 1 2; do
+    X mousemove 872 82 click 1; sleep 2          # Copy to…
+    # The focus trap lands on the Copy tab; tab order is deterministic:
+    # Mirror, close, destination select, container input.
+    X key Tab Tab Tab Tab
+    X type --delay 15 "smoke-out"; sleep 1
+    X key Tab Tab Tab                            # prefix, settings summary, Preview
+    X key Return; sleep 3                        # Preview
+    shot 03-preview
+    X key Tab; X key Return; sleep 2             # Start copy
+    shot 04-started
+    X key Escape; sleep 1
+    # The engine's first write is the proof the job started.
+    if wire_saw "PUT /v1/AUTH_test/smoke-out/" 15; then started=yes; break; fi
+    say "copy attempt $attempt never reached the cluster; retrying dialog"
+    X key Escape; sleep 1
+  done
+  [ -n "$started" ] || fail "copy never started after 2 dialog attempts"
 
   say "waiting for the copy to land server-side"
   landed=""
