@@ -107,6 +107,25 @@ func (c *Connections) SessionFor(ctx context.Context, bookmarkID string) (*swift
 	return session, nil
 }
 
+// Invalidate drops any cached session (and, when it is the active
+// browse connection, the cached capabilities) for a bookmark whose
+// stored configuration changed or which was deleted — the next use
+// re-reads the store instead of operating on the old account (§65.9
+// item 15, review H-12).
+func (c *Connections) Invalidate(bookmarkID string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.sessions, bookmarkID)
+	if c.activeID == bookmarkID {
+		// The active browse pointer is the SAME staleness: drop it too,
+		// so Session() answers nil and the UI reconnects against the
+		// stored configuration instead of the old cluster.
+		c.active = nil
+		c.activeID = ""
+		c.capabilities = nil
+	}
+}
+
 // TLSInsecure reports whether the bookmark opts into unverified TLS —
 // the transfer service maps it onto the rclone remote (§12.3: identical
 // trust across one child, or the runner refuses).
