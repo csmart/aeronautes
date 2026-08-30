@@ -517,3 +517,417 @@ func TestReconcileSweepsOnlyOwnedOrphans(t *testing.T) {
 		t.Error("orphan segment survived the sweep")
 	}
 }
+
+// statusEngine wraps another engine and force-returns canned results for
+// the first N Copy calls — the exit-status contract fixture.
+type statusEngine struct {
+	inner  Engine
+	canned []*rclone.Result
+	calls  int
+}
+
+func (s *statusEngine) Copy(ctx context.Context, src, dst string, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
+	s.calls++
+	if len(s.canned) > 0 {
+		r := s.canned[0]
+		s.canned = s.canned[1:]
+		return r, nil
+	}
+	return s.inner.Copy(ctx, src, dst, names, onEvent)
+}
+
+func (s *statusEngine) CopyTo(ctx context.Context, src, dst string, onEvent func(rclone.Event)) (*rclone.Result, error) {
+	s.calls++
+	if len(s.canned) > 0 {
+		r := s.canned[0]
+		s.canned = s.canned[1:]
+		return r, nil
+	}
+	return s.inner.CopyTo(ctx, src, dst, onEvent)
+}
+
+func TestEngineStatusIsAuthoritativeFailure(t *testing.T) {
+	ctx := context.Background()
+	items := func() []plan.Item {
+		return []plan.Item{{Name: "a.txt", Verdict: plan.VerdictNew, Route: plan.RouteRclone, SourceBytes: 5}}
+	}
+	seedBoth := func() *world {
+		w := newWorld(t)
+		seed(w.srcMock, "media", "a.txt", []byte("aaaaa"), nil)
+		return w
+	}
+
+	// Nonzero exit fails the batch even when a same-size destination
+	// answers the verification HEAD (stale/partial output must not be
+	// silently accepted).
+	w := seedBoth()
+	seed(w.dstMock, "backup", "a.txt", []byte("bbbbb"), nil)
+	e := newExecutor(t, w, &statusEngine{canned: []*rclone.Result{{ExitCode: 9, Errors: []string{"io broke"}}}})
+	report, err := e.Run(ctx, items())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Copied != 0 || len(report.Failures) != 1 || report.Failures[0].Stage != "engine-status" {
+		t.Fatalf("exit 9 report = %+v", report)
+	}
+
+	// A cancelled child fails the names rather than finalizing them.
+	w = seedBoth()
+	e = newExecutor(t, w, &statusEngine{canned: []*rclone.Result{{Cancelled: true}}})
+	report, _ = e.Run(ctx, items())
+	if report.Copied != 0 || len(report.Failures) != 1 {
+		t.Fatalf("cancelled report = %+v", report)
+	}
+
+	// A truncated log stream means capture cannot be trusted: failure.
+	w = seedBoth()
+	e = newExecutor(t, w, &statusEngine{canned: []*rclone.Result{{LogStreamErr: "bufio: token too long"}}})
+	report, _ = e.Run(ctx, items())
+	if report.Copied != 0 || len(report.Failures) != 1 {
+		t.Fatalf("log-stream report = %+v", report)
+	}
+
+	// An auth-shaped failure earns exactly one fresh child; the second
+	// spawn succeeds and the name lands verified.
+	w = seedBoth()
+	authy := &statusEngine{
+		inner:  &fakeEngine{w: w, interruptAfter: -1},
+		canned: []*rclone.Result{{ExitCode: 1, Errors: []string{"HTTP Error: 401 Unauthorized"}}},
+	}
+	e = newExecutor(t, w, authy)
+	report, err = e.Run(ctx, items())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Copied != 1 || len(report.Failures) != 0 || authy.calls != 2 {
+		t.Fatalf("auth retry report = %+v calls=%d", report, authy.calls)
+	}
+
+	// Two auth failures in a row: the retry is bounded at one.
+	w = seedBoth()
+	twice := &statusEngine{canned: []*rclone.Result{
+		{ExitCode: 1, Errors: []string{"401 Unauthorized"}},
+		{ExitCode: 1, Errors: []string{"401 Unauthorized"}},
+	}}
+	e = newExecutor(t, w, twice)
+	report, _ = e.Run(ctx, items())
+	if report.Copied != 0 || len(report.Failures) != 1 || twice.calls != 2 {
+		t.Fatalf("bounded retry report = %+v calls=%d", report, twice.calls)
+	}
+}
+
+// recordingEngine wraps an engine and records every destination spec the
+// executor hands it.
+type recordingEngine struct {
+	inner Engine
+	dsts  []string
+}
+
+func (r *recordingEngine) Copy(ctx context.Context, src, dst string, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
+	r.dsts = append(r.dsts, dst)
+	return r.inner.Copy(ctx, src, dst, names, onEvent)
+}
+
+func (r *recordingEngine) CopyTo(ctx context.Context, src, dst string, onEvent func(rclone.Event)) (*rclone.Result, error) {
+	r.dsts = append(r.dsts, dst)
+	return r.inner.CopyTo(ctx, src, dst, onEvent)
+}
+
+func TestEngineNeverReceivesLiveNames(t *testing.T) {
+	// K-XFER-014's absolute boundary, mechanized: every engine write —
+	// planned-new batches and staged overwrites alike — carries the job
+	// staging namespace, never a live destination path.
+	w := newWorld(t)
+	seed(w.srcMock, "media", "new-a.txt", []byte("alpha"), nil)
+	seed(w.srcMock, "media", "new-b.txt", []byte("bravo"), nil)
+	seed(w.srcMock, "media", "changed.txt", []byte("fresh content"), nil)
+	seed(w.dstMock, "backup", "changed.txt", []byte("old"), nil)
+
+	rec := &recordingEngine{inner: &fakeEngine{w: w, interruptAfter: -1}}
+	e := newExecutor(t, w, rec)
+	report, err := e.Run(context.Background(), []plan.Item{
+		{Name: "new-a.txt", Verdict: plan.VerdictNew, Route: plan.RouteRclone, SourceBytes: 5},
+		{Name: "new-b.txt", Verdict: plan.VerdictNew, Route: plan.RouteRclone, SourceBytes: 5},
+		{Name: "changed.txt", Verdict: plan.VerdictChanged, Route: plan.RouteRclone, SourceBytes: 13, DestETag: md5hex("old")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Copied != 3 || len(report.Failures) != 0 {
+		t.Fatalf("report = %+v", report)
+	}
+	if len(rec.dsts) == 0 {
+		t.Fatal("engine never invoked")
+	}
+	for _, dst := range rec.dsts {
+		if !strings.Contains(dst, "/.aeronautes/stage/") {
+			t.Errorf("engine received a live destination %q", dst)
+		}
+	}
+	// The staged copies COMMITTED: live names exist, staging is clean.
+	ctx := context.Background()
+	for _, name := range []string{"new-a.txt", "new-b.txt", "changed.txt"} {
+		if _, err := w.dst.ObjectDetail(ctx, "backup", name); err != nil {
+			t.Errorf("%s missing after staged commit: %v", name, err)
+		}
+	}
+	if len(report.StagedResidue) != 0 {
+		t.Errorf("staging residue after clean run: %v", report.StagedResidue)
+	}
+}
+
+func TestPlannedNewConflictsWhenDestinationAppears(t *testing.T) {
+	// The C-02 race: a name classified New gains a live DLO (whose
+	// segments another manifest shares) before the engine batch lands.
+	// The commit must CONFLICT — the shared segments survive untouched.
+	w := newWorld(t)
+	seed(w.srcMock, "media", "video.bin", []byte("new content!"), nil)
+	w.dstMock.AddContainer("backup_segments", "standard")
+	seed(w.dstMock, "backup_segments", "shared/0", bytes.Repeat([]byte("s"), 40), nil)
+	w.dstMock.PutObject("backup", "video.bin", swifttest.Object{Manifest: "backup_segments/shared/"})
+	w.dstMock.PutObject("backup", "sibling.bin", swifttest.Object{Manifest: "backup_segments/shared/"})
+
+	e := newExecutor(t, w, &fakeEngine{w: w, interruptAfter: -1})
+	report, err := e.Run(context.Background(), []plan.Item{
+		// Planned as New: the advisory listing predates the DLO.
+		{Name: "video.bin", Verdict: plan.VerdictNew, Route: plan.RouteRclone, SourceBytes: 12},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Conflicts) != 1 || report.Copied != 0 {
+		t.Fatalf("report = %+v, want one conflict and no copy", report)
+	}
+	// The concurrent DLO and its shared segments are intact.
+	ctx := context.Background()
+	d, err := w.dst.ObjectDetail(ctx, "backup", "sibling.bin")
+	if err != nil || d.ContentLength != 40 {
+		t.Fatalf("sibling = %+v %v: shared segments were harmed", d, err)
+	}
+	live, err := w.dst.ObjectDetail(ctx, "backup", "video.bin")
+	if err != nil || live.Class != swiftcontrol.ClassDLO {
+		t.Fatalf("live DLO = %+v %v: the racing object was overwritten", live, err)
+	}
+}
+
+func md5hex(s string) string {
+	sum := md5.Sum([]byte(s))
+	return hex.EncodeToString(sum[:])
+}
+
+func TestUnobservedManifestNeverPromoted(t *testing.T) {
+	// H-01: a destination manifest whose prefix this job's child was
+	// never observed creating must not become a committed (ownership)
+	// prefix, whatever the commit path sees.
+	w := newWorld(t)
+	e := newExecutor(t, w, nil)
+	e.markCommitted("backup_segments/somebody-elses/prefix/")
+	if len(e.report.CommittedPrefixes) != 0 {
+		t.Fatalf("unobserved manifest promoted: %+v", e.report.CommittedPrefixes)
+	}
+	// An observed (captured) prefix promotes normally.
+	e.capturePrefix(rclone.SegmentPrefix{Container: "backup_segments", Prefix: "ours/gen/"})
+	e.markCommitted("backup_segments/ours/gen/")
+	if len(e.report.CommittedPrefixes) != 1 {
+		t.Fatalf("observed manifest not promoted: %+v", e.report.CommittedPrefixes)
+	}
+}
+
+func TestStaleManifestFingerprintCannotSkip(t *testing.T) {
+	// H-04: a destination DLO carrying a matching fingerprint but whose
+	// live logical size no longer matches (a segment vanished) must NOT
+	// be skipped as proven-equal.
+	w := newWorld(t)
+	seed(w.srcMock, "media", "video.bin", bytes.Repeat([]byte("v"), 3000), nil)
+	src, err := w.src.ObjectDetail(context.Background(), "media", "video.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.dstMock.AddContainer("backup_segments", "standard")
+	// Destination DLO: fingerprint stamped for the FULL size, but only
+	// ONE segment actually remains (2000 of 3000 bytes).
+	seed(w.dstMock, "backup_segments", "video.bin/gen/00000000", bytes.Repeat([]byte("v"), 2000), nil)
+	w.dstMock.PutObject("backup", "video.bin", swifttest.Object{
+		Manifest: "backup_segments/video.bin/gen/",
+		Meta:     map[string]string{"Aeronautes-Fingerprint": fingerprint(src.ContentLength, src.ETag)},
+	})
+	dst, err := w.dst.ObjectDetail(context.Background(), "backup", "video.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provenEqual(src, dst) {
+		t.Fatal("stale fingerprint with mismatched live length passed as proven-equal")
+	}
+
+	// A destination whose segments still sum right IS proven.
+	seed(w.dstMock, "backup_segments", "video.bin/gen/00000001", bytes.Repeat([]byte("v"), 1000), nil)
+	dst, _ = w.dst.ObjectDetail(context.Background(), "backup", "video.bin")
+	if !provenEqual(src, dst) {
+		t.Fatal("intact fingerprinted DLO no longer proves equal")
+	}
+}
+
+func TestStagedSegmentCompletenessGate(t *testing.T) {
+	// K-CON-001: a staged DLO whose segments do not sum to the source's
+	// logical size must fail before commit — driven end to end with a
+	// chunking engine that drops one segment.
+	w := newWorld(t)
+	seed(w.srcMock, "media", "big.bin", bytes.Repeat([]byte("b"), 5000), nil)
+	seed(w.dstMock, "backup", "big.bin", []byte("old"), nil) // forces staged overwrite
+	w.dstMock.AddContainer("backup_segments", "standard")
+
+	engine := &segmentDroppingEngine{fakeEngine{w: w, chunk: 1024, interruptAfter: -1}}
+	e := newExecutor(t, w, engine)
+	report, err := e.Run(context.Background(), []plan.Item{
+		{Name: "big.bin", Verdict: plan.VerdictChanged, Route: plan.RouteRclone, SourceBytes: 5000, DestETag: md5hex("old")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Copied != 0 || len(report.Failures) != 1 {
+		t.Fatalf("report = %+v, want the truncated stage to fail", report)
+	}
+	// The live destination still holds the OLD object.
+	live, err := w.dst.ObjectDetail(context.Background(), "backup", "big.bin")
+	if err != nil || live.ContentLength != 3 {
+		t.Fatalf("live = %+v %v (truncated commit went live)", live, err)
+	}
+}
+
+// segmentDroppingEngine chunks like the fake engine, then deletes one
+// segment after upload — a truncated sidecar whose manifest still
+// answers.
+type segmentDroppingEngine struct {
+	fakeEngine
+}
+
+func (s *segmentDroppingEngine) CopyTo(ctx context.Context, src, dst string, onEvent func(rclone.Event)) (*rclone.Result, error) {
+	result, err := s.fakeEngine.CopyTo(ctx, src, dst, onEvent)
+	if err == nil && len(result.SegmentPrefixes) > 0 {
+		p := result.SegmentPrefixes[0]
+		var names []string
+		for entry, listErr := range s.w.dst.Objects(ctx, p.Container, swiftcontrol.ObjectListOptions{Deep: true, Prefix: p.Prefix}) {
+			if listErr != nil {
+				break
+			}
+			if object, ok := entry.(swiftcontrol.ObjectEntry); ok {
+				names = append(names, object.Name)
+			}
+		}
+		if len(names) > 0 {
+			_ = s.w.dst.DeleteObject(ctx, p.Container, names[len(names)-1])
+		}
+	}
+	return result, err
+}
+
+func TestSymlinkCopiedAsSymlink(t *testing.T) {
+	// §17.1's carry-when-present row, finally executable: a source
+	// symlink lands at the destination AS a symlink with the link's own
+	// metadata — never materialized target bytes.
+	w := newWorld(t)
+	seed(w.srcMock, "media", "real/data.bin", []byte("target-bytes"), nil)
+	w.srcMock.PutObject("media", "link.bin", swifttest.Object{
+		ContentType:   "application/octet-stream",
+		SymlinkTarget: "media/real/data.bin",
+		Meta:          map[string]string{"Kind": "pointer"},
+	})
+
+	e := newExecutor(t, w, &fakeEngine{w: w, interruptAfter: -1})
+	report, err := e.Run(context.Background(), []plan.Item{
+		{Name: "link.bin", Verdict: plan.VerdictNew, Route: plan.RouteRclone, SourceBytes: 12},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Copied != 1 || len(report.Failures) != 0 {
+		t.Fatalf("report = %+v", report)
+	}
+	link, err := w.dst.SymlinkGet(context.Background(), "backup", "link.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if link.SymlinkTarget != "media/real/data.bin" || link.Meta["Kind"] != "pointer" {
+		t.Fatalf("destination link = %+v", link)
+	}
+}
+
+func TestPlannedNewCommitsAreConditional(t *testing.T) {
+	// F-04: the planned-new commit carries If-None-Match:* (measured on
+	// SAIO: 201/412, first writer wins), so an object appearing between
+	// the re-HEAD and the PUT is a CONFLICT — never an overwrite. The
+	// racing writer is simulated by an engine whose stage step also
+	// plants the live destination.
+	w := newWorld(t)
+	seed(w.srcMock, "media", "raced.txt", []byte("mine"), nil)
+	e := newExecutor(t, w, &liveRacingEngine{fakeEngine{w: w, interruptAfter: -1}})
+	report, err := e.Run(context.Background(), []plan.Item{
+		{Name: "raced.txt", Verdict: plan.VerdictNew, Route: plan.RouteRclone, SourceBytes: 4},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Conflicts) != 1 || report.Copied != 0 {
+		t.Fatalf("report = %+v, want a commit-time conflict", report)
+	}
+	live, err := w.dst.ObjectDetail(context.Background(), "backup", "raced.txt")
+	if err != nil || live.ContentLength != int64(len("theirs, first")) {
+		t.Fatalf("live = %+v %v (the racing writer's object was overwritten)", live, err)
+	}
+}
+
+// liveRacingEngine stages normally, then plants a live destination the
+// instant AFTER the executor's commit re-HEAD would have seen absence —
+// by winning the race during the stage copy itself. The plain-commit
+// path uses server-side COPY (unconditional), so the fixture routes the
+// race through the re-HEAD; the conditional-PUT paths are additionally
+// covered because a DLO/symlink/native commit hits 412.
+type liveRacingEngine struct {
+	fakeEngine
+}
+
+func (l *liveRacingEngine) Copy(ctx context.Context, src, dst string, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
+	result, err := l.fakeEngine.Copy(ctx, src, dst, names, onEvent)
+	seed(l.w.dstMock, "backup", "raced.txt", []byte("theirs, first"), nil)
+	return result, err
+}
+
+func TestPlainCommitRacerSurvives(t *testing.T) {
+	// R-01 (codex re-review): a plain planned-new commit that meets a
+	// concurrent writer between its live re-HEAD and its commit must
+	// NOT overwrite the racer — the commit is a conditional PUT
+	// (If-None-Match:*), so the racer's object survives and the name
+	// CONFLICTS. The racer is planted at the exact 404 answer to the
+	// re-HEAD via the mock's AfterRequest hook.
+	w := newWorld(t)
+	seed(w.srcMock, "media", "notes.txt", []byte("ours"), nil)
+	racerPlanted := false
+	w.dstMock.AfterRequest = func(method, path string) {
+		if method == "HEAD" && strings.HasSuffix(path, "/backup/notes.txt") && !racerPlanted {
+			racerPlanted = true
+			seed(w.dstMock, "backup", "notes.txt", []byte("racer's data, longer"), nil)
+		}
+	}
+	e := newExecutor(t, w, &fakeEngine{w: w, interruptAfter: -1})
+	report, err := e.Run(context.Background(), []plan.Item{
+		{Name: "notes.txt", Verdict: plan.VerdictNew, Route: plan.RouteRclone, SourceBytes: 4},
+	})
+	w.dstMock.AfterRequest = nil
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !racerPlanted {
+		t.Fatal("fixture failed: the re-HEAD never happened")
+	}
+	// The racer WON: conflict, not copy, and their bytes stand.
+	if len(report.Conflicts) != 1 || report.Copied != 0 {
+		t.Fatalf("report = %+v, want a commit-time conflict that spares the racer", report)
+	}
+	live, headErr := w.dst.ObjectDetail(context.Background(), "backup", "notes.txt")
+	if headErr != nil {
+		t.Fatal(headErr)
+	}
+	if live.ContentLength != int64(len("racer's data, longer")) {
+		t.Fatalf("live size %d: the concurrent writer's data was overwritten (R-01 not closed)", live.ContentLength)
+	}
+}
