@@ -3649,6 +3649,46 @@ verified official build; the recorded matrix run (docs/rclone.md) covers v1.74.3
 behaviourally identical on every measured hazard, with v1.75.0's new --files-from0 noted as
 the future path for newline-bearing names.
 
+### 65.8 Ninth milestone — data-safety hardening
+
+The post-release review (owner: "anything else missing or sub-par… a rock solid, beautiful
+app that manages people's data?") produced this list, ordered by data-safety weight:
+
+1. **Token freshness for long transfers** — the engine child holds a fixed token in its
+   environment and cannot re-authenticate; a job outliving the token dies mid-transfer
+   (ADR 0009 designed the priority order; §26.2). Sessions learn to refresh a stale token
+   before it expires (known expiry: refresh inside a safety margin; unknown expiry: refresh
+   past a conservative age), the engine binding turns dynamic — every child spawn pulls fresh
+   tokens from the sessions instead of capturing them once — and engine batches gain a byte
+   cap alongside the name cap so no single child outlives a token on sheer transfer size.
+   Proven end to end against real Swift through an auth proxy that shortens the advertised
+   token lifetime to seconds: a multi-batch copy must re-authenticate mid-job and finish.
+2. **Crash-safe staging cleanup** — a crashed process currently strands its staging objects
+   and any captured-but-uncommitted segment prefixes with no record to sweep from. Jobs
+   persist their staging prefix and captured segment prefixes as they run; the startup
+   crash-recovery sweep grows a reconciliation pass that deletes stranded staging names and
+   sweeps captured prefixes under the same live-manifest guard the in-job reconciler uses.
+3. **Retention** — jobs and audit grow without bound (§51 called compaction a product
+   feature). A retention pass at startup keeps terminal jobs and audit events for a
+   configurable window (defaults: 90 days audit, 30 days terminal jobs), never touching
+   non-terminal rows, with the §45/§50 caveat stated: the audit trail is a local record, not
+   an immutable ledger.
+4. **Re-run surfacing** — re-running a copy is already cheap-idempotent (fingerprints and
+   Same verdicts skip verified work); the drawer says so with a re-run control on terminal
+   copy/mirror jobs instead of leaving the operator to rediscover it.
+5. **Live byte progress for local transfers** — upload/download jobs report bytes as they
+   move (per-object completion today), matching the copy jobs' live rate and ETA.
+6. **Smoke in CI** — scripts/smoke.sh runs headless in the pipeline (Xvfb on the runner) so
+   a UI-breaking change cannot reach master green; the transfer half already degrades
+   honestly when the pinned engine is absent, and CI fetches the pin anyway.
+7. **Polish pass as feasible** — responsive behaviour below ~1100px and any quick wins the
+   pass exposes; the mirror delete-set memory cap and macOS/Windows first real builds stay
+   tracked but are not gated here.
+
+Gate: a copy spanning multiple engine spawns completes across a forced token expiry on real
+Swift; a killed process's staging litter is provably swept at next startup; CI runs the
+headless smoke; retention prunes exactly what its policy says.
+
 ---
 
 ## 66. Final project statement
