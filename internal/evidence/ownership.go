@@ -14,6 +14,18 @@ import (
 // (§24.1) proves a segment is *referenced*, never that it is *unshared*,
 // and MUST NOT be promoted to ownership.
 
+// canonicalPrefix is the ONE stored/queried form: slash-terminated.
+// rclone's X-Object-Manifest omits the trailing slash the log-derived
+// capture carries; without one canonical form a legitimately owned
+// prefix reads unproven (or a query in the other spelling misses) —
+// the follow-up review's F-03 normalization half.
+func canonicalPrefix(prefix string) string {
+	if prefix != "" && prefix[len(prefix)-1] != '/' {
+		return prefix + "/"
+	}
+	return prefix
+}
+
 // Ownership is one recorded proof.
 type Ownership struct {
 	JobID     string
@@ -29,6 +41,7 @@ func (s *Store) RecordOwnership(ctx context.Context, bookmarkID, jobID, containe
 	if bookmarkID == "" || jobID == "" || container == "" || prefix == "" {
 		return fmt.Errorf("ownership proof needs bookmark, job, container, and prefix")
 	}
+	prefix = canonicalPrefix(prefix)
 	now := time.Now().UTC().Format(time.RFC3339)
 	return s.db.WriteTx(ctx, func(tx *sql.Tx) error {
 		var exists int
@@ -55,15 +68,21 @@ func (s *Store) RecordOwnership(ctx context.Context, bookmarkID, jobID, containe
 // parent prefix never covers a child and a child never covers its
 // parent — the proof is the unique prefix as written, nothing broader.
 func (s *Store) HasExclusiveOwnership(ctx context.Context, bookmarkID, container, prefix string) (bool, error) {
-	var count int
+	prefix = canonicalPrefix(prefix)
+	// Exclusive means the prefix is recorded AND recorded by exactly ONE
+	// job: if two Aeronautes jobs committed manifests over the same
+	// segment prefix, it is shared between them and NOT exclusively any
+	// one manifest's (§28.6(b) second clause, RECORDED half — the LIVE
+	// no-other-references scan against external manifests stays §65.10).
+	var jobs int
 	err := s.db.Reader().QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM segment_ownership
+		SELECT COUNT(DISTINCT job_id) FROM segment_ownership
 		WHERE bookmark_id=? AND container=? AND prefix=?`,
-		bookmarkID, container, prefix).Scan(&count)
+		bookmarkID, container, prefix).Scan(&jobs)
 	if err != nil {
 		return false, err
 	}
-	return count > 0, nil
+	return jobs == 1, nil
 }
 
 // Ownerships lists the recorded proofs for one container, newest first —
