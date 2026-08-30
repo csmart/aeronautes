@@ -38,6 +38,13 @@ func main() {
 		// Dev/test override so scratch runs never touch real state.
 		statePath = filepath.Join(dev, "state.sqlite")
 	}
+	// One process per state directory: a second instance would mark this
+	// one's running jobs interrupted and sweep its staging litter.
+	releaseLock, err := app.AcquireInstanceLock(filepath.Dir(statePath))
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+	defer releaseLock()
 	database, err := db.Open(context.Background(), statePath)
 	if err != nil {
 		log.Fatalf("open state database %s: %v", statePath, err)
@@ -63,37 +70,49 @@ func main() {
 	}
 	jobRunner := app.NewJobRunner(jobStore, auditStore)
 	transferService := app.NewTransferServiceWithRunner(connections, jobStore, jobRunner)
-	transferService.SetEvidenceStore(evidenceStore)
+	app.WireEvidenceStore(transferService, evidenceStore)
 	// Crash litter from previous runs: sweep in the background, retrying
 	// while bookmarks come online (keychain credentials permit an
 	// immediate pass; session-only secrets succeed after connect).
 	go func() {
-		for attempt := 0; attempt < 12; attempt++ {
-			if attempt > 0 {
-				time.Sleep(5 * time.Minute)
-			}
-			if pending, err := jobStore.RecoveryPending(context.Background()); err != nil || len(pending) == 0 {
-				return
-			}
-			if swept, err := transferService.SweepCrashLitter(context.Background()); err != nil {
+		// Supervised for the process LIFETIME: neither a transient store
+		// error nor a momentarily-empty pending set retires the sweeper,
+		// because a job can crash later in this same run (review F-11 /
+		// grok follow-up 3 RECOVERY-EMPTY). It backs off once things are
+		// quiet but never returns except on process exit.
+		idle := 0
+		for {
+			hadWork, err := app.RecoverySweepStep(context.Background(), transferService)
+			switch {
+			case err != nil:
 				log.Printf("crash sweep: %v", err)
-			} else if swept > 0 {
-				log.Printf("crash sweep: %d objects removed", swept)
+				idle = 0
+			case hadWork:
+				idle = 0
+			default:
+				idle++
+			}
+			// Tight cadence while litter remains or bookmarks are still
+			// coming online; relaxed once quiet — but always checking.
+			if idle > 3 {
+				time.Sleep(15 * time.Minute)
+			} else {
+				time.Sleep(1 * time.Minute)
 			}
 		}
 	}()
-	transferService.SetFilePicker(wailsPicker{})
+	app.WireFilePicker(transferService, wailsPicker{})
 	settingsService := app.NewSettingsService(database, jobRunner)
-	settingsService.RunRetention(context.Background(), jobStore, auditStore)
+	app.RunStartupRetention(context.Background(), settingsService, jobStore, auditStore)
 	benchmarkService := app.NewBenchmarkService(connections, jobStore, jobRunner, database)
-	transferService.SetRecommendationSource(benchmarkService.RecommendationFor)
+	app.WireBenchmarkRecommendations(transferService, benchmarkService)
 
 	a := application.New(application.Options{
 		Name:        "Aeronautes",
 		Description: "Desktop operator workbench for OpenStack Swift",
 		Services: []application.Service{
 			application.NewService(app.NewAppService(version, string(secretBackend))),
-			application.NewService(app.NewBookmarkService(bookmarkStore)),
+			application.NewService(app.NewBookmarkService(bookmarkStore, connections, jobStore)),
 			application.NewService(app.NewBrowseService(connections, evidenceStore)),
 			application.NewService(app.NewInspectorService(connections, evidenceStore)),
 			application.NewService(app.NewMutateService(connections, auditStore, evidenceStore)),

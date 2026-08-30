@@ -47,9 +47,12 @@ const (
 
 // legalNext defines the §46 machine. Terminal states have no exits.
 var legalNext = map[State][]State{
-	StateQueued:    {StatePlanning, StateCancelled, StateFailed},
-	StatePlanning:  {StateRunning, StateComplete, StateCancelled, StateFailed},
-	StateRunning:   {StateVerifying, StateCancelled, StateFailed},
+	StateQueued:   {StatePlanning, StateCancelled, StateFailed},
+	StatePlanning: {StateRunning, StateComplete, StateCancelled, StateFailed},
+	// Running may end PARTIAL directly: once any irreversible subset
+	// succeeded, an interruption must not be recorded as a plain
+	// cancel/fail (review F-10).
+	StateRunning:   {StateVerifying, StatePartial, StateCancelled, StateFailed},
 	StateVerifying: {StateComplete, StatePartial, StateCancelled, StateFailed},
 }
 
@@ -342,6 +345,9 @@ const (
 	RecoveryStaging RecoveryKind = "staging"
 	// RecoveryCaptured is a generated segment prefix observed live.
 	RecoveryCaptured RecoveryKind = "captured"
+	// RecoveryCommitting: persisted BEFORE the live manifest PUT — the
+	// prefix may already be referenced by the recorded live object.
+	RecoveryCommitting RecoveryKind = "committing"
 	// RecoveryCommitted marks a captured prefix now referenced by a
 	// committed manifest — never swept.
 	RecoveryCommitted RecoveryKind = "committed"
@@ -354,6 +360,8 @@ type RecoveryRecord struct {
 	Kind       RecoveryKind
 	Container  string
 	Prefix     string
+	// Object is the live "container/name" a committing record targets.
+	Object string
 }
 
 // RecoveryAdd persists one record; duplicates are fine (the sweep
@@ -366,17 +374,17 @@ func (s *Store) RecoveryAdd(ctx context.Context, r RecoveryRecord) error {
 		var exists int
 		if err := tx.QueryRowContext(ctx, `
 			SELECT COUNT(*) FROM job_recovery
-			WHERE job_id=? AND kind=? AND container=? AND prefix=?`,
-			r.JobID, string(r.Kind), r.Container, r.Prefix).Scan(&exists); err != nil {
+			WHERE job_id=? AND kind=? AND container=? AND prefix=? AND object=?`,
+			r.JobID, string(r.Kind), r.Container, r.Prefix, r.Object).Scan(&exists); err != nil {
 			return err
 		}
 		if exists > 0 {
 			return nil
 		}
 		_, err := tx.ExecContext(ctx, `
-			INSERT INTO job_recovery (job_id, bookmark_id, kind, container, prefix)
-			VALUES (?, ?, ?, ?, ?)`,
-			r.JobID, r.BookmarkID, string(r.Kind), r.Container, r.Prefix)
+			INSERT INTO job_recovery (job_id, bookmark_id, kind, container, prefix, object)
+			VALUES (?, ?, ?, ?, ?, ?)`,
+			r.JobID, r.BookmarkID, string(r.Kind), r.Container, r.Prefix, r.Object)
 		return err
 	})
 }
@@ -395,7 +403,7 @@ func (s *Store) RecoveryClear(ctx context.Context, jobID string) error {
 // its reconciliation could finish.
 func (s *Store) RecoveryPending(ctx context.Context) ([]RecoveryRecord, error) {
 	rows, err := s.db.Reader().QueryContext(ctx, `
-		SELECT r.job_id, r.bookmark_id, r.kind, r.container, r.prefix
+		SELECT r.job_id, r.bookmark_id, r.kind, r.container, r.prefix, r.object
 		FROM job_recovery r JOIN jobs j ON j.id = r.job_id
 		WHERE j.state IN ('complete','partial','cancelled','failed')
 		ORDER BY r.job_id, r.id`)
@@ -407,7 +415,7 @@ func (s *Store) RecoveryPending(ctx context.Context) ([]RecoveryRecord, error) {
 	for rows.Next() {
 		var r RecoveryRecord
 		var kind string
-		if err := rows.Scan(&r.JobID, &r.BookmarkID, &kind, &r.Container, &r.Prefix); err != nil {
+		if err := rows.Scan(&r.JobID, &r.BookmarkID, &kind, &r.Container, &r.Prefix, &r.Object); err != nil {
 			return nil, err
 		}
 		r.Kind = RecoveryKind(kind)
@@ -436,4 +444,16 @@ func (s *Store) PruneTerminal(ctx context.Context, before time.Time) (int64, err
 		return err
 	})
 	return pruned, err
+}
+
+// ActiveForBookmark counts non-terminal jobs referencing a bookmark on
+// either end — the bookmark-deletion guard (§65.9 item 15).
+func (s *Store) ActiveForBookmark(ctx context.Context, bookmarkID string) (int, error) {
+	var n int
+	err := s.db.Reader().QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM jobs
+		WHERE state NOT IN ('complete','partial','cancelled','failed')
+		AND (source_bookmark_id = ? OR dest_bookmark_id = ?)`,
+		bookmarkID, bookmarkID).Scan(&n)
+	return n, err
 }
