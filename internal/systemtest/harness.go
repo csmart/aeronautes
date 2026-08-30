@@ -156,13 +156,24 @@ func (h *Harness) finalizeScenarios() {
 // behind on either account — a safety harness must leave Swift exactly as
 // it found it, and silently accepted residue trains the suite to tolerate
 // unexplained state (codex R-04). It reports, and does not blindly delete.
+// It retries a few times because Swift's account container listing is
+// eventually consistent: a just-deleted container can linger for a beat,
+// but a REAL leak persists across the retries.
 func (h *Harness) assertNoResidue() {
 	h.T.Helper()
 	for _, a := range []*Account{h.Primary, h.Secondary} {
 		if a == nil {
 			continue
 		}
-		names, err := a.Oracle.ListContainers(h.ns)
+		var names []string
+		var err error
+		for attempt := 0; attempt < 5; attempt++ {
+			names, err = a.Oracle.ListContainers(h.ns)
+			if err != nil || len(names) == 0 {
+				break
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
 		if err != nil {
 			h.T.Errorf("residue sweep: listing %q-prefixed containers on %s failed: %v", h.ns, a.user, err)
 			continue
