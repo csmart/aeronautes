@@ -3909,9 +3909,14 @@ Contained/fixed with tests: R-01 planned-new plain commits now use a CONDITIONAL
 (the racer survives — the test is inverted to prove it); R-02 segment deletion is
 FORCE-ONLY until a live reverse-reference scan exists (evidence is advisory, never
 auto-authorizes destruction); R-04 overlap identity is the account segment (AUTH_xxx)
-compared fail-closed so host aliases can't bypass it; R-06 credentials are read from an
-atomic snapshot published in v1Auth.Response (no race with the library's implicit reauth,
-proven under -race); R-07 the returned storage URL gets the full endpoint policy; R-08
+compared fail-closed so host aliases can't bypass it; R-06 credentials are read from a
+snapshot published in v1Auth.Response for the primary read path — PARTIAL: codex's
+war-room W-05 later reproduced, under -race, that ForceReauth can retain a rejected
+future-expiry snapshot and skip reauth, and that raw helpers (BulkDelete and peers) still
+read mutable swift.Connection fields; the single atomic {url,token,expiry,generation}
+tuple is the deferred fix, NOT yet done — do not call this race-free; R-07 the returned
+storage URL gets scheme/host validation and HTTPS→HTTP downgrade rejection but NOT yet the
+full public/private plaintext endpoint policy (codex W-06); R-08
 symlink edits refuse any link form (cross-account included); R-09 partial (absolute paths
 no longer cross the bridge, native upload verifies its landing); R-12 partial (the
 public-ACL ack is honestly documented as an accident control, not a hostile-webview one).
@@ -3924,7 +3929,10 @@ R-15 metadata-only replication, R-16 provider short-page handling, and the moder
 edit path. These are the §65.10 war room and a one-typed-mutation-protocol refactor. The
 branch is honestly NOT a valuable-data safety-claim release until they land — recorded here
 rather than implied done. Both reviewers agree the system suite is the backbone and must
-gate release, and that the P0 behaviors had to be contained first (now done).
+gate release. NOTE: the war room's own critical paths (codex W-01 stale-preview plan tokens,
+W-02 mirror last-hop delete race, W-03 overwrite last-hop race, W-04 recovery-sweep
+exclusivity) are NOT yet contained — the product code is unchanged and they remain open P0
+architecture. Do not read "war room landed" as "P0s contained".
 
 ### 65.10 Eleventh milestone — the test war room (planned)
 
@@ -4007,6 +4015,186 @@ plan tokens, six-platform materialization/cancellation, metadata-only
 replication, audit outbox/export, Backstage capability, benchmark realism,
 short-page seam tests, a11y/contrast/responsive program, SLO DTO raw fields),
 and the frontend whole-source floor turned from honest-red to green.
+
+#### 65.10.1 Executable commit sequence (started 2026-08-30)
+
+The foundation lands before any matrix, one tested commit per component:
+
+1. **Independent oracle** (`internal/systemtest/oracle`) — a raw-HTTP Swift
+   reader that NEVER imports swiftcontrol. It snapshots an account: every
+   container's config (ACLs, quota, versioning, meta) and every object's
+   identity (SHA-256 of the logical GET bytes, size, content-type/encoding/
+   disposition, delete-at, all user metadata, class, DLO manifest value + the
+   full segment inventory with per-segment digests, raw SLO manifest, symlink
+   target/account). `Diff(before, after)` yields added/removed/changed
+   containers and objects so a test asserts the expected delta AND that nothing
+   else moved. Proven against SAIO by seeding known state and asserting the
+   snapshot matches byte-for-byte.
+2. **System harness** (`internal/systemtest`) — connects two SAIO accounts
+   through the real `internal/app` services (the same entry points the UI
+   calls), gives each test throwaway prefixed containers, and provides
+   snapshot-before / act / snapshot-after / assert-delta helpers. Gated on
+   `AERONAUTES_SAIO_AUTH_URL`; a second account is MANDATORY under
+   `AERONAUTES_REQUIRE_TWO_ACCOUNTS`.
+3. **Action inventory + guard** — a machine-readable `inventory.go` listing
+   every bound bridge method with its required scenarios (happy + refusal, plus
+   conflict/cancel/partial/retry for destructive ones); a test enumerates the
+   bound services by reflection and FAILS on any exported method absent from the
+   inventory, so a new action cannot ship without a matrix row.
+4. **Behavioral matrices**, each snapshot-diff asserted: browse/inspect/
+   container+metadata → copy/upload/download → mirror + deletion variants →
+   cancellation/crash/fault-injection (reusing the swifttest barrier hooks and a
+   real killed-subprocess crash) → coverage report artifact + CI gate.
+
+Deferred-architecture items from §65.9 (ordered-inventory verification, exact
+outcome ledger, durable outbox, capability tokens, six-platform local matrix,
+metadata-only replication, short-page handling, modern-versioning edit) are
+pulled in where a matrix exercises them; each lands with the system test that
+would fail without it.
+
+**Foundation landed (2026-08-30).** The cornerstone is in and proven against
+containerized Swift: the independent raw-HTTP oracle (never imports
+swiftcontrol; witnesses plain/DLO/SLO/symlink identity with content digests and
+full segment inventories; Diff catches a same-size swap with zero phantom
+changes), the two-account system harness driving the REAL services with
+snapshot/AssertNoCollateral, the auto-inventory gate (47 bound actions; a
+reflection guard fails CI on an un-inventoried method; pure reflection so it
+runs without SAIO), and five flagship behavioral matrices — object metadata
+edit (surgical), cross-account copy (logical-content identity, source
+untouched, no staging leak), prefix delete (spares the adversarial near-miss),
+mirror (converges + deletes only dest-only), and the destructive refusal twins
+(refusals have zero effect). The suite auto-runs in the SAIO CI job (two
+accounts required).
+
+**Foundation hardened (2026-08-30, post-review).** The first adversarial
+war-room review (grok) found real helper holes that could bless a lie; all are
+closed with catching tests: AssertNoCollateral now walks container-config
+changes (an ACL/quota/versioning flip that adds no object is caught), and its
+pure core is unit-tested without SAIO (a bare container name no longer
+blanket-allows object changes inside it). The oracle escapes control bytes
+correctly (`%09`, not the illegal `%9`) and follows Swift marker pagination on
+every listing, so a tab/newline object name and a container past the 10k page
+are both witnessed — proven by an offline httptest. The copy matrix now seeds a
+real SLO and asserts negative space over the WHOLE destination namespace (a
+sidecar/segment container the engine might create is no longer invisible); the
+refusal matrix snapshots after the DLO setup and asserts nothing moved anywhere,
+including the segment container. Seed PUTs fail closed on non-2xx; a missing
+second account skips locally but still fails CI. The inventory now distinguishes
+synchronous Destructive ops from asynchronous Jobs, whose required scenarios
+include the full DESIGN lifecycle (conflict, cancel, partial, retry) — so those
+appear as honest gaps rather than being silently dropped. The bound-service list
+is derived from a single source of truth in the app package, and an AST test
+proves main.go binds exactly those. Reportable coverage today: 7/99 required
+scenarios (the honest denominator, up from 7/75 once job lifecycles are
+counted), the rest enumerated as gaps by the report artifact. The suite is
+race-clean under `-race` against SAIO. Remaining matrix rows (read/session happy
+paths, conflict/cancel/partial cases, upload/download, fault-injection/crash
+with real killed subprocesses, UI→bridge, platform) build on this foundation
+next.
+
+**Two adversarial war-room reviews actioned (2026-08-30).** Grok ("real
+foundation, not comment theatre") and Codex both reviewed the branch. Codex's
+verdict is **NO-GO for release against valuable data** — correctly so: its P0/P1
+findings (W-01 stale-preview→different-op plan tokens, W-02 mirror last-hop
+HEAD→DELETE race, W-03 overwrite last-hop race, W-04 recovery-sweep exclusivity,
+W-05 credential atomic tuple, W-06 endpoint policy on returned URL, W-07
+ordered-manifest verification, W-08 identity-keyed outcome ledger, W-09 durable
+outbox/panic boundary, W-10 capability-bound force, W-11 local transfer, W-12
+metadata-only/symlink fidelity, W-13 short-page iteration, W-14 versioning, W-15
+session-generation, W-16 release attestation, W-17 native capability tokens) are
+the SAME deferred architecture already named as R-01–R-18 — the redesign the war
+room exists to eventually gate. That these are unchanged in this branch is a
+SCOPE statement, not a disposition: they are existing product defects present in
+the branch; it is merely reasonable to merge isolated TEST infrastructure before
+fixing them. A NO-GO on releasing the PRODUCT does not block merging TEST
+infrastructure once that infrastructure's oracle cannot bless false state.
+
+Codex's FIRST followup found the first round of suite fixes still had three
+correctness defects; its SECOND followup blocked the test-infra merge until they
+were fixed. They are now fixed with catching tests: (F-01) the negative-space
+delta is a TYPED record — identity is matched as an exact (container, object)
+tuple, never parsed from a formatted string, so an object literally named
+"approved: smuggled" can no longer masquerade as an allowed "approved"; (F-02)
+the oracle propagates BOTH listing-page read errors (a valid empty "[]" plus a
+truncated read is now refused, not accepted as complete-empty), requires strictly
+increasing listing names, and REFUSES a malformed or unmodeled SLO entry instead
+of silently omitting it — with offline custom-transport regressions for each;
+(F-03) DeleteManifestWithSegments keeps partial/retry/cancel through an explicit
+per-action contract (a synchronous return shape does not erase those semantics
+its implementation has), and the update mutates carry conflict. Earlier accepted
+fixes stand: Diff enumerates an added/removed container's objects (H-05); segment/
+SLO/object reads fail closed and clients refuse redirects (H-06); the report
+rejects bogus coverage entries (H-02); reclassification and the wired per-action
+Scenarios override (H-03); the changed-object mirror fixture and optimistic-
+conflict metadata case (H-07).
+
+Coverage is EVIDENCE-BASED, reconciled OUT OF PROCESS, and honest about being a
+cooperating-author progress signal rather than authenticated proof — the full threat
+model, mechanism, invariants, and review history are ADR 0013. In brief: the
+denominator is one trusted non-test source (`internal/scenariocontract`, imported by
+both the tests and `cmd/scenariocov`, never read from the stream); a single-use Receipt
+emits a claim as a `go test -json` line only from a top-level test; and
+`cmd/scenariocov` credits a cell only when that top-level test ran, was running (not
+paused) when the claim line completed, terminally passed exactly once, its package is
+expected, and that package started and passed. Claims are top-level only (a slash-bearing
+claimant is ambiguous and rejected at both the harness and the reconciler). The reconciler
+is a phase automaton (`idle → running ⇄ paused → terminal`) over the authentic records the
+CI producer profile emits (Go 1.27 test2json: start/run/pause/cont/attr/output/terminals,
+no `-bench`): illegal transitions (duplicate run, cont-before-pause, terminal-without-run,
+post-terminal output), a package that passes with a failed test or leaves a test
+unfinished, an empty or misshapen record, a non-JSON line, benchmark activity, and a
+reserved marker in a non-output event, in package output, or from a subtest — including a
+marker split across fragments — are rejected or invalidate the stream; a marker from a
+paused test is parsed but earns no credit. It is not a hostile-input validator for a
+non-gating counter and does not exhaustively reject every out-of-profile shape. All output
+is reassembled linearly with per-line, aggregate, and active-buffer bounds checked before
+each completed line, and retained state is bounded for the trusted CI artifact at
+configured limits.
+
+CI is fail-closed. `go list` fixes the expected package set (validated non-empty, unique,
+and exact); the raw stream is tee'd to an artifact and both the `go test` and `tee` exit
+codes are checked; and `cmd/scenariocov` is handed go test's real exit code
+(`${PIPESTATUS[0]}`) and that set. `valid` is the conjunction of process-succeeded,
+stream-complete, and contract-valid, and deliberately does NOT imply coverage-complete;
+an expected package must PASS (or be a genuine no-test skip), and the safety inputs are
+mandatory for `valid:true` so the local stdin mode is visibly incomplete. `saioConfigured`
+names only that the env var was set. On a protocol PARSE error the tool writes a
+structured `valid:false` report before exiting; the raw stream is uploaded regardless
+(`if: always()`), though a `go list`, event-open, report-write, or `tee` failure fails the
+step without producing a report.
+
+Standing invariants hold: the contract is validated well-formed (a bad kind, an unknown
+or duplicate scenario, or a missing happy baseline fails `scenariocontract.Validate`,
+with negative unit tests over synthetic contracts); the kind
+defaults are a conservative FLOOR below DESIGN's literal ≈162 baseline, not a
+completeness claim; passing tests leave Swift exactly as they found it (raw-listing
+checked cleanup + residue sweep, ten repetitions clean); every raw test client refuses
+redirects. It is 8/102 today and visibly incomplete scaffolding — NOT a hard no-gap gate,
+and no policy yet prevents a credited cell from disappearing (a regression gate is later
+work, per ADR 0013). Deferred, as the tranche
+the war room grows into: per-cell variant/oracle provenance beyond the test list, an
+explicit per-action required/N/A contract reconciled with the 162 baseline and a
+joined UI matrix (F-04), a semantic oracle over complete account + local + durable
+state (Codex R-05), a deterministic barrier/fault layer, the two-direction Swift
+matrix, and hard CI gates (R-06).
+
+**Grok's fourth war-room review (2026-08-31) exercised the harness and found NEW
+PRODUCT P1s — dual-path regressions where copy's safety net was never carried onto the
+sibling paths.** These are product-code hardening for the redesign
+tranche (the war room's job is to LOCK them with tests, not this branch): (P1-2)
+StartUpload runs RecoveryClear after a note-free best-effort staging sweep, so a
+"complete" upload can leave staging litter with no recovery rows — copy's gate is not
+on the upload path; (P1-3) local DLO commit skips the staged-segment completeness
+gate copy has; (P1-4) Force DLO segment sweep does not slash-terminate the manifest
+prefix, so an external unslashed manifest can expand into a sibling's segments;
+(P1-5) the pre-delete DLO recheck is ETag-only, and an empty-DLO swap shares the
+empty-body ETag; (P1-6) Mirror dest-only can delete another job's `.aeronautes/stage/`
+objects; (P1-7) the rclone child still follows storage 302s with the env auth token
+(native Location strip does not cover the byte path); (P1-8) Windows reserved
+download names (CON/PRN/…, trailing dot, `<>:"|?*`) are not refused. None has a
+catching test yet. Grok also confirms: do NOT restore auto-delete under
+ExclusiveOwnershipProof to "match" DESIGN §34 — the code is correctly stricter
+(Force-always); §34's body is the stale side and should be rewritten.
 
 
 ## 66. Final project statement
