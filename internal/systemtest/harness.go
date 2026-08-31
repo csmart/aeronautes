@@ -511,9 +511,8 @@ func (h *Harness) AssertNoCollateral(before, after *oracle.AccountSnapshot, allo
 // bare container name (for container add/remove/config only). Matching is
 // on the delta's TYPED identity: the "container/name" key is CONSTRUCTED
 // from the typed fields, never parsed back out of a formatted string, so
-// an object whose name contains ": " cannot masquerade as an allowed one
-// . A bare container name does NOT blanket-allow
-// object changes inside it.
+// an object whose name contains ": " cannot masquerade as an allowed one.
+// A bare container name does NOT blanket-allow object changes inside it.
 func collateral(before, after *oracle.AccountSnapshot, allowed []string) []string {
 	ok := map[string]bool{}
 	for _, a := range allowed {

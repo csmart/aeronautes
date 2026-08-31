@@ -207,13 +207,12 @@ func validateInventory(inv map[string]Action) error {
 		if !knownKinds[a.Kind] {
 			return fmt.Errorf("%s: unknown kind %q", key, a.Kind)
 		}
-		req := a.Required()
-		if len(req) == 0 {
-			return fmt.Errorf("%s: zero required scenarios", key)
-		}
+		// An empty Scenarios override falls back to the kind default, so a
+		// known kind always yields a non-empty list; a genuinely empty required
+		// set is caught by the missing-happy check below.
 		seen := map[string]bool{}
 		happy := false
-		for _, s := range req {
+		for _, s := range a.Required() {
 			if !knownScenarios[s] {
 				return fmt.Errorf("%s: unknown scenario %q", key, s)
 			}

@@ -4134,13 +4134,15 @@ model, mechanism, invariants, and review history are ADR 0013. In brief: the
 denominator is one trusted non-test source (`internal/scenariocontract`, imported by
 both the tests and `cmd/scenariocov`, never read from the stream); a single-use Receipt
 emits a claim as a `go test -json` line only from a top-level test; and
-`cmd/scenariocov` credits a cell only when that top-level test terminally passed, its
-package is expected, and that package passed. Claims are top-level only (a slash-bearing
-claimant is ambiguous and rejected at both the harness and the reconciler). Marker and
-lifecycle parsing is strict — malformed, trailing-content, subtest, duplicate,
-unattributable-marker, post-terminal, or conflicting-terminal streams are rejected — and
-the line accumulator is linear with per-line, aggregate, and active-buffer bounds
-checked before processing.
+`cmd/scenariocov` credits a cell only when that top-level test ran and terminally passed
+exactly once, its package is expected, and that package started and passed. Claims are
+top-level only (a slash-bearing claimant is ambiguous and rejected at both the harness
+and the reconciler). The reconciler is an explicit event automaton over the test2json
+grammar: a run-less or dangling test, a package that passes with a failed test,
+post-terminal or conflicting-terminal events, a non-JSON line, an unknown action, and a
+reserved marker outside a running top-level test's output are all rejected or invalidate
+the stream, and the line accumulator is linear with per-line, aggregate, and
+active-buffer bounds checked before processing each completed line.
 
 CI is fail-closed. `go list` fixes the expected package set (validated non-empty, unique,
 and exact); the raw stream is tee'd to an artifact and both the `go test` and `tee` exit
@@ -4154,8 +4156,9 @@ structured `valid:false` report before exiting; the raw stream is uploaded regar
 (`if: always()`), though a `go list`, event-open, report-write, or `tee` failure fails the
 step without producing a report.
 
-Standing invariants hold: the contract is validated well-formed (a bad kind or empty
-requirement set fails `scenariocontract.Validate`, with negative unit tests); the kind
+Standing invariants hold: the contract is validated well-formed (a bad kind, an unknown
+or duplicate scenario, or a missing happy baseline fails `scenariocontract.Validate`,
+with negative unit tests over synthetic contracts); the kind
 defaults are a conservative FLOOR below DESIGN's literal ≈162 baseline, not a
 completeness claim; passing tests leave Swift exactly as they found it (raw-listing
 checked cleanup + residue sweep, ten repetitions clean); every raw test client refuses

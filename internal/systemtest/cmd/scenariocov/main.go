@@ -1,13 +1,13 @@
 // Command scenariocov reconciles war-room scenario coverage from a
 // `go test -json` event stream. It credits a claim ONLY if the emitting
-// top-level test reached exactly one terminal PASS, that test belongs to an
-// expected package, and that package passed — so a skipped, failed,
-// parallel-paused, or parent-cleanup-skipped test earns no credit.
+// top-level test ran and reached a single terminal PASS, that test belongs to
+// an expected package, and that package started and passed — so a skipped,
+// failed, parallel-paused, or parent-cleanup-skipped test earns no credit.
 //
 // The coverage DENOMINATOR comes from internal/scenariocontract, imported
 // directly into this separately executed process; it is never taken from the
-// test stream, and any protocol marker in the stream that is not a claim from
-// a running top-level test is rejected.
+// test stream. A reserved marker anywhere but a running top-level test's own
+// output is rejected.
 //
 // The report is an honest-author progress signal, not authenticated proof of
 // application behavior: a test can bypass the harness API and print a claim.
@@ -33,6 +33,7 @@ import (
 	"os"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/csmart/aeronautes/internal/scenariocontract"
@@ -45,10 +46,6 @@ const (
 	maxActiveBuffers = 4096    // concurrently retained per-key buffers
 	maxViolations    = 64      // cap the recorded lifecycle-violation list
 )
-
-func main() {
-	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
-}
 
 type event struct {
 	Action  string `json:"Action"`
@@ -111,6 +108,10 @@ type options struct {
 	testExit         int
 	testExitProvided bool
 	expectedPackages []string
+}
+
+func main() {
+	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
 // run is the testable entry point: it parses args, reconciles the stream, and
@@ -206,26 +207,34 @@ func writeErrorReport(outPath string, opts options, cause error) {
 	_ = os.WriteFile(outPath, data, 0o644)
 }
 
-// testState / pkgState track the legal one-terminal lifecycle so the parser
-// can reject contradictory or post-terminal events.
+func hasMarker(s string) bool {
+	return strings.Contains(s, scenariocontract.ClaimMarker) || strings.Contains(s, scenariocontract.InventoryMarker)
+}
+
+// testState / pkgState drive an explicit event automaton over the test2json
+// grammar: a test must run before it outputs or terminates and terminate
+// exactly once; a package must start, terminate once, have every started test
+// terminate first, and not pass with a failed test. Illegal transitions are
+// recorded as violations, which invalidate the stream.
 type testState struct {
-	terminal  string
-	terminals int
-	violated  bool
+	started  bool
+	terminal string
+	violated bool
 }
 
 type pkgState struct {
+	started   bool
 	terminal  string
-	terminals int
+	openTests int // started, not yet terminated
+	failed    int // tests that terminally failed
 	sawTest   bool
 }
 
-// reconcile parses a test2json stream and builds the coverage report. It
-// returns an error for a broken/forged stream (a malformed, trailing-content,
-// subtest, or duplicate claim; a protocol marker that is not an attributable
-// claim; an unterminated marker; an over-limit line or budget). A failed run,
-// a truncated stream, an unexpected package, or a lifecycle violation is
-// reported as valid:false, not an error.
+// reconcile parses a test2json stream into the coverage report. It returns an
+// error for a broken/forged stream (a malformed, trailing-content, subtest, or
+// duplicate claim; a misplaced reserved marker; an unterminated marker; an
+// over-limit line or budget). A failed run, a truncated stream, an unexpected
+// package, or a lifecycle violation is reported as valid:false, not an error.
 func reconcile(r io.Reader, opts options) (report, error) {
 	expected := map[string]bool{}
 	for _, p := range opts.expectedPackages {
@@ -268,12 +277,11 @@ func reconcile(r io.Reader, opts options) (report, error) {
 		}
 	}
 
-	// processLine scans one COMPLETE line for protocol markers. A claim is
-	// accepted only from a top-level test (its key's test name has no slash);
-	// a marker in package-level output (empty test name) is unattributable and
-	// rejected, as is an inventory marker anywhere.
+	// processLine scans one COMPLETE test-output line for a claim marker. It is
+	// only ever called for a running top-level test's output; a slash-bearing
+	// (subtest) claimant, an inventory marker, or a malformed/duplicate claim is
+	// rejected.
 	processLine := func(key, line string) error {
-		pkg, testName, _ := strings.Cut(key, "\t")
 		if strings.Contains(line, scenariocontract.InventoryMarker) {
 			return fmt.Errorf("inventory marker in stream from %q: the denominator comes from the contract", key)
 		}
@@ -281,9 +289,7 @@ func reconcile(r io.Reader, opts options) (report, error) {
 		if idx < 0 {
 			return nil
 		}
-		if testName == "" {
-			return fmt.Errorf("claim marker in package-level output (%s): unattributable to a test", pkg)
-		}
+		_, testName, _ := strings.Cut(key, "\t")
 		if strings.Contains(testName, "/") {
 			return fmt.Errorf("claim from subtest %q: claims must be emitted from a top-level test", key)
 		}
@@ -310,14 +316,14 @@ func reconcile(r io.Reader, opts options) (report, error) {
 		return nil
 	}
 
-	// flush rejects a residual partial line that still carries a marker (an
-	// unterminated/corrupt claim) and releases the buffer.
+	// flush rejects a residual partial line that still carries a marker and
+	// releases the buffer.
 	flush := func(key string) error {
 		buf, ok := partial[key]
 		if !ok {
 			return nil
 		}
-		if bytes.Contains(buf, []byte(scenariocontract.ClaimMarker)) || bytes.Contains(buf, []byte(scenariocontract.InventoryMarker)) {
+		if hasMarker(string(buf)) {
 			return fmt.Errorf("unterminated protocol marker in residual output from %q", key)
 		}
 		totalPartial -= len(buf)
@@ -325,10 +331,11 @@ func reconcile(r io.Reader, opts options) (report, error) {
 		return nil
 	}
 
-	// appendFragment adds an output fragment, checks EACH completed logical
-	// line's length BEFORE processing it, compacts into a right-sized buffer
-	// (releasing the old backing array), and enforces per-line, aggregate, and
-	// active-buffer bounds.
+	// appendFragment adds an output fragment and processes completed lines. It
+	// keeps the buffer's spare capacity while a line is still incomplete (so a
+	// long line arriving in ~1 KiB test2json fragments reassembles in linear
+	// time, not quadratic), and right-sizes only the small remainder once one
+	// or more lines have been consumed (releasing the completed lines' memory).
 	appendFragment := func(key, frag string) error {
 		buf := partial[key]
 		if buf == nil && len(partial) >= maxActiveBuffers {
@@ -355,13 +362,17 @@ func reconcile(r io.Reader, opts options) (report, error) {
 		if len(rem) > maxProtocolLine {
 			return fmt.Errorf("protocol line exceeded %d bytes for %q", maxProtocolLine, key)
 		}
-		if len(rem) == 0 {
+		switch {
+		case len(rem) == 0:
 			delete(partial, key) // release the backing array
-		} else {
-			nb := make([]byte, len(rem)) // right-size so a large line's array is freed
+		case start > 0:
+			nb := make([]byte, len(rem)) // consumed a line: right-size the small remainder
 			copy(nb, rem)
 			partial[key] = nb
 			totalPartial += len(nb)
+		default:
+			partial[key] = buf // still incomplete: keep spare capacity (linear growth)
+			totalPartial += len(buf)
 		}
 		if totalPartial > maxTotalPartial {
 			return fmt.Errorf("retained partial output exceeded %d bytes: truncated or garbage stream?", maxTotalPartial)
@@ -373,61 +384,118 @@ func reconcile(r io.Reader, opts options) (report, error) {
 		var e event
 		if err := json.Unmarshal(sc.Bytes(), &e); err != nil {
 			nonJSON++
+			if machineValid {
+				addViolation("non-JSON line in stream")
+			}
 			continue
 		}
-		// Ownership: in machine-valid mode, ANY event naming a package outside
-		// the expected set is unexpected activity.
 		if machineValid && e.Package != "" && !expected[e.Package] {
 			unexpected[e.Package] = true
 		}
+		// A reserved marker may appear only in a running top-level test's own
+		// output; anywhere else (a non-output action, or package-level output)
+		// it is misplaced and rejected, so it cannot be hidden by changing the
+		// action or clearing attribution.
+		if (e.Action != "output" || e.Test == "") && hasMarker(e.Output) {
+			return report{}, fmt.Errorf("reserved marker in a %q event (test=%q): markers come only from top-level test output", e.Action, e.Test)
+		}
+		if e.Package == "" {
+			continue
+		}
+		p := pkgGet(e.Package)
+		key := e.Package + "\t" + e.Test
+
 		switch e.Action {
-		case "run", "pause", "cont":
+		case "start":
+			if e.Test == "" {
+				if p.started {
+					addViolation("duplicate package start: " + e.Package)
+				}
+				p.started = true
+			}
+		case "run":
 			if e.Test != "" {
-				p := pkgGet(e.Package)
-				p.sawTest = true // any test-level event, incl. run
+				p.sawTest = true
+				if !p.started {
+					addViolation("test run before package start: " + key)
+				}
 				if p.terminal != "" {
-					addViolation("test event after package terminal: " + e.Package + "/" + e.Test)
+					addViolation("test run after package terminal: " + key)
+				}
+				ts := testGet(key)
+				if ts.terminal != "" {
+					ts.violated = true
+					addViolation("run after test terminal: " + key)
+				} else if !ts.started {
+					ts.started = true
+					p.openTests++
+				}
+			}
+		case "pause", "cont":
+			if e.Test != "" {
+				ts := testGet(key)
+				if !ts.started || ts.terminal != "" {
+					ts.violated = true
+					addViolation(e.Action + " outside a running test: " + key)
 				}
 			}
 		case "pass", "fail", "skip":
 			if e.Test != "" {
-				key := e.Package + "\t" + e.Test
-				p := pkgGet(e.Package)
 				p.sawTest = true
 				if p.terminal != "" {
 					addViolation("test terminal after package terminal: " + key)
 				}
 				ts := testGet(key)
-				ts.terminals++
-				if ts.terminals > 1 {
+				if !ts.started {
 					ts.violated = true
-					addViolation("duplicate/conflicting test terminal: " + key)
+					addViolation("test terminal without run: " + key)
+				}
+				if ts.terminal != "" {
+					ts.violated = true
+					addViolation("duplicate test terminal: " + key)
+				} else if ts.started {
+					p.openTests--
 				}
 				ts.terminal = e.Action
+				if e.Action == "fail" {
+					p.failed++
+				}
 				if err := flush(key); err != nil {
 					return report{}, err
 				}
-			} else if e.Package != "" {
-				p := pkgGet(e.Package)
-				p.terminals++
-				if p.terminals > 1 {
+			} else {
+				if !p.started {
+					addViolation("package terminal without start: " + e.Package)
+				}
+				if p.terminal != "" {
 					addViolation("duplicate package terminal: " + e.Package)
 				}
 				p.terminal = e.Action
+				if p.openTests > 0 {
+					addViolation("package terminal with unfinished tests: " + e.Package)
+				}
+				if e.Action == "pass" && p.failed > 0 {
+					addViolation("package pass with a failed test: " + e.Package)
+				}
 				if err := flush(e.Package + "\t"); err != nil {
 					return report{}, err
 				}
 			}
 		case "output":
 			if e.Test != "" {
-				key := e.Package + "\t" + e.Test
-				p := pkgGet(e.Package)
 				p.sawTest = true
+				if !p.started {
+					addViolation("test output before package start: " + e.Package)
+				}
 				ts := testGet(key)
+				if !ts.started {
+					ts.violated = true
+					addViolation("test output before run: " + key)
+				}
 				if ts.terminal != "" {
 					ts.violated = true
 					addViolation("output after test terminal: " + key)
-					continue // do not process post-terminal output
+					continue
 				}
 				if p.terminal != "" {
 					addViolation("test output after package terminal: " + e.Package)
@@ -435,10 +503,14 @@ func reconcile(r io.Reader, opts options) (report, error) {
 				if err := appendFragment(key, e.Output); err != nil {
 					return report{}, err
 				}
-			} else if e.Package != "" {
-				if err := appendFragment(e.Package+"\t", e.Output); err != nil {
-					return report{}, err
-				}
+			} else if p.terminal != "" {
+				addViolation("package output after package terminal: " + e.Package)
+			}
+		case "bench":
+			// benchmarks carry no scenario coverage; accepted.
+		default:
+			if machineValid {
+				addViolation("unknown action " + strconv.Quote(e.Action))
 			}
 		}
 	}
@@ -457,12 +529,12 @@ func reconcile(r io.Reader, opts options) (report, error) {
 	contract := scenariocontract.All()
 	contractValid := scenariocontract.Validate() == nil && len(contract) > 0
 
-	// Credit a claim only from a cleanly-passed top-level test whose expected
-	// package also passed.
+	// Credit a claim only from a cleanly-run, cleanly-passed top-level test
+	// whose expected package started and passed.
 	credited := map[string]map[string][]emittedClaim{}
 	for _, ec := range claims {
 		ts := tests[ec.testKey]
-		if ts == nil || ts.violated || ts.terminals != 1 || ts.terminal != "pass" {
+		if ts == nil || ts.violated || !ts.started || ts.terminal != "pass" {
 			continue
 		}
 		if machineValid {
@@ -470,7 +542,7 @@ func reconcile(r io.Reader, opts options) (report, error) {
 			if !expected[pkg] {
 				continue
 			}
-			if p := pkgs[pkg]; p == nil || p.terminal != "pass" {
+			if p := pkgs[pkg]; p == nil || !p.started || p.terminal != "pass" {
 				continue
 			}
 		}

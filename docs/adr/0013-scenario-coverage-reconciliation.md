@@ -45,12 +45,17 @@ tagged with a marker; nothing is committed in process. Claims are emitted only
 from top-level tests.
 
 **Reconciliation — out of process, after the whole tree finishes.**
-`cmd/scenariocov` reads the `go test -json` stream and credits a cell only when
-the emitting top-level test reached exactly one terminal PASS, that test
-belongs to an expected package, and that package passed. Because it judges each
-test from its definitive final disposition, a skipped, failed, parallel-paused,
-or parent-cleanup-skipped test earns nothing — the dispositions an in-process
-collector cannot see.
+`cmd/scenariocov` reads the `go test -json` stream through an explicit event
+automaton over the test2json grammar: a package must `start`, a test must `run`
+before it outputs or terminates and terminate exactly once, every started test
+must terminate before its package, and a package cannot pass with a failed
+test. A cell is credited only when the emitting top-level test ran and reached a
+single terminal PASS, belongs to an expected package, and that package started
+and passed. In machine-valid mode a non-JSON line, an unknown action, or a
+reserved marker outside a running top-level test's own output makes the report
+invalid or is rejected. Because it judges each test from its definitive final
+disposition, a skipped, failed, parallel-paused, or parent-cleanup-skipped test
+earns nothing.
 
 **Fail-closed reporting.** `valid` is the conjunction of three separate
 notions — process-succeeded (the real `go test` exit, supplied out of band),
@@ -92,27 +97,14 @@ does not pretend to stop a determined author.
   ~162 baseline and far below the full matrix (data class, direction, hostile
   names, paging, fault points, UI, platform). It is a floor to grow from.
 
-## Review history
+## Origin
 
-The mechanism reached this shape through adversarial review by Grok and Codex
-against pinned commits:
-
-- **Round 4** reproduced string-helper spoofs (one refusal certifying
-  happy+conflict) and an in-process-disposition spoof; answered by the receipt
-  redesign.
-- **Round 5** established the in-process-forgery impossibility, moved
-  reconciliation out of process, and required an honest, non-gating framing;
-  the denominator moved to `scenariocontract` and the CI path became
-  fail-closed.
-- **Round 6** fixed a slash-subtest ancestry bug (→ top-level-only claims), the
-  package-must-pass rule, decoder-EOF/trailing content, unterminated markers,
-  mandatory safety inputs, linear reassembly, a `-trimpath`-safe hygiene lint,
-  and structured protocol-error reports.
-- **Round 7** bound claims to the exact expected-package event set, added a
-  legal one-terminal test/package lifecycle (rejecting post-terminal output and
-  conflicting terminals), enforced line and aggregate bounds before processing,
-  rejected package-level markers, and added command-level and negative-contract
-  tests.
-
-Detailed round-by-round findings live in the review archive
-(`~/code/aeronautes-review-*-warroom-*.md`), not in the stable source.
+The design settled through several rounds of adversarial review that
+reproduced concrete forgery and parser defects: in-process spoofs (answered by
+moving attestation out of the trust story and reconciliation out of process),
+then a series of parser-contract holes — subtest-ancestry ambiguity, packages
+that only terminated rather than passed, unbounded and quadratic line handling,
+misplaced markers, and lifecycle events that a real `go test -json` producer
+never emits. The current mechanism is the response to those, and its guarantees
+are exactly the invariants listed above — no more. The blow-by-blow findings
+belong in the project's review correspondence, not this record.

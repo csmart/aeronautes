@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -15,8 +16,9 @@ import (
 
 // This package is the reconciler's own unit tests, so it legitimately
 // constructs marker fixtures (the systemtest marker-hygiene lint exempts
-// cmd/scenariocov). These regressions retain the reproduced attacks from the
-// review rounds.
+// cmd/scenariocov). Valid fixtures follow the authentic test2json order
+// (package start, test run, output, test terminal, package terminal);
+// malformed fixtures deliberately break it and must be rejected.
 
 func ev(action, test, output string) string {
 	e := event{Action: action, Package: "p", Test: test, Output: output}
@@ -38,6 +40,9 @@ func pkgEventFor(pkg, action string) string {
 	return string(b) + "\n"
 }
 
+func startEvent(pkg string) string { return evPkg(pkg, "start", "", "") }
+func runEvent(test string) string  { return ev("run", test, "") }
+
 // out emits a test output event whose payload ends in a newline.
 func out(test, payload string) string { return ev("output", test, payload+"\n") }
 
@@ -48,6 +53,30 @@ func claimPayload(action, scenario, evidence string) string {
 
 func claimLine(test, action, scenario string) string {
 	return out(test, scenariocontract.ClaimMarker+claimPayload(action, scenario, "ev "+test))
+}
+
+// tSeg is one test's authentic segment in package p: run, body lines, terminal.
+func tSeg(test, terminal string, body ...string) string {
+	s := runEvent(test)
+	for _, b := range body {
+		s += b
+	}
+	return s + ev(terminal, test, "")
+}
+
+// pkgP wraps test segments in a well-formed package "p": start ... terminal.
+func pkgP(pkgTerminal string, segs ...string) string {
+	s := startEvent("p")
+	for _, seg := range segs {
+		s += seg
+	}
+	return s + pkgEventFor("p", pkgTerminal)
+}
+
+// validStream is a canonical well-formed single-test package that credits one
+// top-level happy claim.
+func validStream() string {
+	return pkgP("pass", tSeg("TestH", "pass", claimLine("TestH", "AppService.About", "happy")))
 }
 
 func baseOpts() options {
@@ -97,14 +126,25 @@ func contractTotals() (actions, required int) {
 	return
 }
 
-// --- terminal-disposition attacks (skipped/failed/parallel/cleanup) ---
+// --- happy path + terminal-disposition attacks ---
+
+func TestExpectedPackagesCompleteValid(t *testing.T) {
+	rep := reconcileOK(t, validStream(), validOpts("p"))
+	if !rep.StreamComplete || !rep.Valid {
+		t.Errorf("valid=%t streamComplete=%t violations=%v", rep.Valid, rep.StreamComplete, rep.Violations)
+	}
+	if !coveredScenarios(rep, "AppService.About")["happy"] {
+		t.Error("the top-level claim was not credited")
+	}
+}
 
 func TestOnlyPassingTestsAreCredited(t *testing.T) {
 	const act = "MutateService.UpdateObjectMetadata" // requires happy, refusal, conflict
-	stream := claimLine("TestHappy", act, "happy") + ev("pass", "TestHappy", "") +
-		claimLine("TestSkipped", act, "refusal") + ev("skip", "TestSkipped", "") +
-		claimLine("TestFailed", act, "conflict") + ev("fail", "TestFailed", "")
-
+	stream := pkgP("fail",
+		tSeg("TestHappy", "pass", claimLine("TestHappy", act, "happy")),
+		tSeg("TestSkipped", "skip", claimLine("TestSkipped", act, "refusal")),
+		tSeg("TestFailed", "fail", claimLine("TestFailed", act, "conflict")),
+	)
 	opts := baseOpts()
 	opts.testExit = 1
 	rep := reconcileOK(t, stream, opts)
@@ -120,23 +160,111 @@ func TestOnlyPassingTestsAreCredited(t *testing.T) {
 	}
 }
 
-// --- claims are top-level only; subtest claims are rejected ---
-
 func TestSubtestClaimIsRejected(t *testing.T) {
-	mustError(t, out("TestParent/child", scenariocontract.ClaimMarker+claimPayload("AppService.About", "happy", "e"))+ev("pass", "TestParent/child", ""), baseOpts())
+	mustError(t, startEvent("p")+runEvent("TestParent")+runEvent("TestParent/child")+
+		out("TestParent/child", scenariocontract.ClaimMarker+claimPayload("AppService.About", "happy", "e")), baseOpts())
 }
 
-// --- T-01: claims are bound to the exact expected package event set ---
+// --- T-02: explicit lifecycle automaton ---
+
+func TestRunAfterTerminalRejected(t *testing.T) {
+	// claim; TestH pass; TestH run AGAIN; package pass.
+	stream := startEvent("p") + runEvent("TestH") + claimLine("TestH", "AppService.About", "happy") +
+		ev("pass", "TestH", "") + runEvent("TestH") + pkgEvent("pass")
+	rep := reconcileOK(t, stream, validOpts("p"))
+	if rep.Valid || coveredScenarios(rep, "AppService.About")["happy"] {
+		t.Errorf("run-after-terminal should invalidate and not credit: valid=%t", rep.Valid)
+	}
+}
+
+func TestDanglingTestRejected(t *testing.T) {
+	// A started test that never terminates, beneath a package pass.
+	stream := startEvent("p") + runEvent("TestDangling") +
+		tSeg("TestGood", "pass", claimLine("TestGood", "AppService.About", "happy")) + pkgEvent("pass")
+	rep := reconcileOK(t, stream, validOpts("p"))
+	if rep.Valid {
+		t.Error("a dangling started test should invalidate the package")
+	}
+}
+
+func TestFailedTestUnderPackagePassRejected(t *testing.T) {
+	stream := pkgP("pass",
+		tSeg("TestBad", "fail"),
+		tSeg("TestGood", "pass", claimLine("TestGood", "AppService.About", "happy")),
+	)
+	rep := reconcileOK(t, stream, validOpts("p"))
+	if rep.Valid {
+		t.Error("a package pass with a failed test should invalidate the stream")
+	}
+}
+
+func TestClaimWithoutRunRejected(t *testing.T) {
+	// output + terminal for a test that never ran.
+	stream := startEvent("p") + claimLine("TestNoRun", "AppService.About", "happy") +
+		ev("pass", "TestNoRun", "") + pkgEvent("pass")
+	rep := reconcileOK(t, stream, validOpts("p"))
+	if rep.Valid || coveredScenarios(rep, "AppService.About")["happy"] {
+		t.Errorf("a claim from a test that never ran must not be valid or credited: valid=%t", rep.Valid)
+	}
+}
+
+func TestOutputAfterTestTerminalRejected(t *testing.T) {
+	stream := startEvent("p") + runEvent("TestLate") + ev("pass", "TestLate", "") +
+		claimLine("TestLate", "AppService.About", "happy") + pkgEvent("pass")
+	rep := reconcileOK(t, stream, validOpts("p"))
+	if rep.Valid || coveredScenarios(rep, "AppService.About")["happy"] {
+		t.Errorf("post-terminal output should invalidate and not credit: valid=%t", rep.Valid)
+	}
+}
+
+func TestConflictingTerminalsRejected(t *testing.T) {
+	stream := startEvent("p") + runEvent("TestFlip") + claimLine("TestFlip", "AppService.About", "happy") +
+		ev("fail", "TestFlip", "") + ev("pass", "TestFlip", "") + pkgEvent("pass")
+	rep := reconcileOK(t, stream, validOpts("p"))
+	if rep.Valid || coveredScenarios(rep, "AppService.About")["happy"] {
+		t.Errorf("conflicting terminals should invalidate and not credit: valid=%t", rep.Valid)
+	}
+}
+
+func TestPackageOutputAfterTerminalRejected(t *testing.T) {
+	stream := validStream() + evPkg("p", "output", "", "trailing package output\n")
+	rep := reconcileOK(t, stream, validOpts("p"))
+	if rep.Valid {
+		t.Error("package output after the package terminal should invalidate")
+	}
+}
+
+func TestPackageWithoutStartRejected(t *testing.T) {
+	// No package start event at all.
+	stream := runEvent("TestH") + claimLine("TestH", "AppService.About", "happy") + ev("pass", "TestH", "") + pkgEvent("pass")
+	rep := reconcileOK(t, stream, validOpts("p"))
+	if rep.Valid {
+		t.Error("a package terminal without a start should invalidate")
+	}
+}
+
+func TestRunThenPackageSkipIsTested(t *testing.T) {
+	stream := startEvent("p") + runEvent("TestX") + pkgEvent("skip")
+	rep := reconcileOK(t, stream, validOpts("p"))
+	if rep.StreamComplete || rep.Valid {
+		t.Error("a tested package that skipped should not count complete")
+	}
+	if len(rep.FailedPackages) != 1 || rep.FailedPackages[0] != "p" {
+		t.Errorf("FailedPackages=%v want [p]", rep.FailedPackages)
+	}
+}
+
+// --- T-01: exact expected-package ownership ---
 
 func TestExtraPackageClaimNotCredited(t *testing.T) {
-	// An extra package emits a claim and a passing test but no package
-	// terminal; expected set is only [p]. The claim must not be credited and
-	// the stream must be invalid.
-	stream := evPkg("extra", "output", "TestExtra", scenariocontract.ClaimMarker+claimPayload("AppService.About", "happy", "e")+"\n") +
-		evPkg("extra", "pass", "TestExtra", "") +
-		claimLine("TestH", "AppService.Info", "happy") + ev("pass", "TestH", "") + pkgEvent("pass")
+	// The extra package claims a DIFFERENT cell than validStream, so its
+	// non-crediting is observable.
+	stream := startEvent("extra") + runEvent("TestExtra") +
+		evPkg("extra", "output", "TestExtra", scenariocontract.ClaimMarker+claimPayload("BookmarkService.List", "happy", "e")+"\n") +
+		evPkg("extra", "pass", "TestExtra", "") + pkgEventFor("extra", "pass") +
+		validStream()
 	rep := reconcileOK(t, stream, validOpts("p"))
-	if coveredScenarios(rep, "AppService.About")["happy"] {
+	if coveredScenarios(rep, "BookmarkService.List")["happy"] {
 		t.Error("a claim from an unexpected package was credited")
 	}
 	if rep.StreamComplete || rep.Valid {
@@ -153,142 +281,146 @@ func TestExtraPackageClaimNotCredited(t *testing.T) {
 	}
 }
 
-// --- T-02: one-terminal lifecycle; no post-terminal or conflicting events ---
+// --- T-03: non-JSON and unknown/misplaced records fail closed ---
 
-func TestOutputAfterTestTerminalRejected(t *testing.T) {
-	// The claim output arrives AFTER the test's terminal.
-	stream := ev("pass", "TestLate", "") + claimLine("TestLate", "AppService.About", "happy") + pkgEvent("pass")
+func TestNonJSONLineInvalidates(t *testing.T) {
+	stream := "this-is-not-json\n" + validStream()
 	rep := reconcileOK(t, stream, validOpts("p"))
-	if coveredScenarios(rep, "AppService.About")["happy"] {
-		t.Error("a post-terminal claim was credited")
-	}
-	if rep.Valid || len(rep.Violations) == 0 {
-		t.Errorf("post-terminal output should invalidate: valid=%t violations=%v", rep.Valid, rep.Violations)
+	if rep.Valid || rep.NonJSONLines != 1 {
+		t.Errorf("a non-JSON line must invalidate: valid=%t nonJSONLines=%d", rep.Valid, rep.NonJSONLines)
 	}
 }
 
-func TestConflictingTerminalsRejected(t *testing.T) {
-	// A test that terminally fails and then terminally passes.
-	stream := claimLine("TestFlip", "AppService.About", "happy") +
-		ev("fail", "TestFlip", "") + ev("pass", "TestFlip", "") + pkgEvent("pass")
+func TestUnknownActionInvalidates(t *testing.T) {
+	stream := validStream() + ev("mystery", "TestH", "")
 	rep := reconcileOK(t, stream, validOpts("p"))
-	if coveredScenarios(rep, "AppService.About")["happy"] {
-		t.Error("a claim from a test with conflicting terminals was credited")
-	}
-	if rep.Valid || len(rep.Violations) == 0 {
-		t.Errorf("conflicting terminals should invalidate: valid=%t violations=%v", rep.Valid, rep.Violations)
+	if rep.Valid {
+		t.Error("an unknown action must invalidate in machine-valid mode")
 	}
 }
 
-func TestRunThenPackageSkipIsTested(t *testing.T) {
-	// A test-level run followed by a package-level skip is NOT a genuine
-	// no-test package: sawTest must be set on the run event.
-	stream := ev("run", "TestX", "") + pkgEvent("skip")
-	rep := reconcileOK(t, stream, validOpts("p"))
-	if rep.StreamComplete || rep.Valid {
-		t.Error("a tested package that skipped should not count complete")
+func TestMarkerOnUnknownActionRejected(t *testing.T) {
+	mustError(t, startEvent("p")+ev("mystery", "TestH", scenariocontract.ClaimMarker+claimPayload("AppService.About", "happy", "e")), validOpts("p"))
+}
+
+func TestMarkerInEmptyPackageOutputRejected(t *testing.T) {
+	e := event{Action: "output", Output: scenariocontract.ClaimMarker + claimPayload("AppService.About", "happy", "e") + "\n"}
+	b, _ := json.Marshal(e)
+	mustError(t, string(b)+"\n"+validStream(), validOpts("p"))
+}
+
+// --- T-01: reassembly is linear, not quadratic ---
+
+func TestReassemblyIsLinear(t *testing.T) {
+	// A ~512-KiB logical line delivered in 1-KiB fragments (the real test2json
+	// shape) must allocate O(n), not O(n^2). The quadratic version allocated
+	// >300 MB for this exact input.
+	const frags = 512
+	var b strings.Builder
+	b.WriteString(startEvent("p") + runEvent("TestLin"))
+	for i := 0; i < frags; i++ {
+		b.WriteString(ev("output", "TestLin", strings.Repeat("a", 1024))) // 1 KiB, no newline
 	}
-	if len(rep.FailedPackages) != 1 || rep.FailedPackages[0] != "p" {
-		t.Errorf("FailedPackages=%v want [p]", rep.FailedPackages)
+	b.WriteString(ev("output", "TestLin", "\n")) // complete the big line
+	b.WriteString(ev("pass", "TestLin", "") + pkgEvent("pass"))
+	stream := b.String()
+
+	var m1, m2 runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&m1)
+	if _, err := reconcile(strings.NewReader(stream), validOpts("p")); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	runtime.ReadMemStats(&m2)
+	if allocated := m2.TotalAlloc - m1.TotalAlloc; allocated > 64<<20 {
+		t.Fatalf("reassembly allocated %d bytes for a %d-fragment line — quadratic?", allocated, frags)
 	}
 }
 
-// --- T-04: package-level protocol markers are rejected ---
-
-func TestPackageLevelInventoryMarkerRejected(t *testing.T) {
-	mustError(t, evPkg("p", "output", "", scenariocontract.InventoryMarker+`{"x":1}`+"\n")+pkgEvent("pass"), validOpts("p"))
-}
-
-func TestPackageLevelClaimMarkerRejected(t *testing.T) {
-	mustError(t, evPkg("p", "output", "", scenariocontract.ClaimMarker+claimPayload("AppService.About", "happy", "e")+"\n")+pkgEvent("pass"), validOpts("p"))
-}
-
-// --- T-03: bounds are enforced before processing; memory is bounded ---
+// --- bounds ---
 
 func TestOversizedCompletedLineRejected(t *testing.T) {
-	// A ~1.4 MiB logical line assembled across two fragments (each event line
-	// well under the scanner limit), ending in a valid claim and a newline,
-	// must be rejected before its claim is processed.
 	frag1 := strings.Repeat("x", 700<<10) // no newline
 	frag2 := strings.Repeat("y", 700<<10) + scenariocontract.ClaimMarker + claimPayload("AppService.About", "happy", "e") + "\n"
-	stream := ev("output", "TestBig", frag1) + ev("output", "TestBig", frag2) + ev("pass", "TestBig", "") + pkgEvent("pass")
+	stream := startEvent("p") + runEvent("TestBig") + ev("output", "TestBig", frag1) + ev("output", "TestBig", frag2)
 	mustError(t, stream, validOpts("p"))
 }
 
 func TestAggregateBudgetExceeded(t *testing.T) {
 	var b strings.Builder
-	chunk := strings.Repeat("z", 900<<10) // 900 KiB incomplete line per test
-	for i := 0; i < 10; i++ {             // 9 MiB > 8 MiB aggregate cap
-		b.WriteString(ev("output", "TestAgg"+strconv.Itoa(i), chunk))
+	b.WriteString(startEvent("p"))
+	chunk := strings.Repeat("z", 900<<10)
+	for i := 0; i < 10; i++ { // 9 MiB > 8 MiB
+		test := "TestAgg" + strconv.Itoa(i)
+		b.WriteString(runEvent(test) + ev("output", test, chunk))
 	}
-	mustError(t, b.String(), baseOpts())
+	mustError(t, b.String(), validOpts("p"))
 }
 
 func TestActiveBufferCapExceeded(t *testing.T) {
 	var b strings.Builder
+	b.WriteString(startEvent("p"))
 	for i := 0; i < maxActiveBuffers+1; i++ {
-		b.WriteString(ev("output", "T"+strconv.Itoa(i), "y")) // tiny incomplete line, unique test
+		test := "T" + strconv.Itoa(i)
+		b.WriteString(runEvent(test) + ev("output", test, "y")) // tiny incomplete line each
 	}
-	mustError(t, b.String(), baseOpts())
+	mustError(t, b.String(), validOpts("p"))
 }
 
 func TestCompletedLinesDoNotRetain(t *testing.T) {
-	// One test emits far more than the aggregate cap, but every line is
-	// newline-terminated, so completed lines are released and no cap trips.
 	var b strings.Builder
-	line := strings.Repeat("d", 130<<10) + "\n" // 130 KiB complete lines
-	for i := 0; i < 100; i++ {                  // ~13 MiB total, all completed
+	b.WriteString(startEvent("p") + runEvent("TestStream"))
+	line := strings.Repeat("d", 130<<10) + "\n"
+	for i := 0; i < 100; i++ { // ~13 MiB total, all completed lines
 		b.WriteString(ev("output", "TestStream", line))
 	}
 	b.WriteString(ev("pass", "TestStream", "") + pkgEvent("pass"))
-	reconcileOK(t, b.String(), validOpts("p")) // must not error
+	reconcileOK(t, b.String(), validOpts("p")) // must not error (buffers released)
 }
 
 // --- retained protocol attacks ---
 
 func TestInventoryMarkerRejected(t *testing.T) {
-	mustError(t, out("TestX", scenariocontract.InventoryMarker+`{"whatever":1}`)+ev("pass", "TestX", ""), baseOpts())
+	mustError(t, startEvent("p")+runEvent("TestX")+out("TestX", scenariocontract.InventoryMarker+`{"whatever":1}`), baseOpts())
 }
 
 func TestMalformedClaimIsError(t *testing.T) {
-	mustError(t, out("TestX", scenariocontract.ClaimMarker+`{"action":`)+ev("pass", "TestX", ""), baseOpts())
+	mustError(t, startEvent("p")+runEvent("TestX")+out("TestX", scenariocontract.ClaimMarker+`{"action":`), baseOpts())
 }
 
 func TestUnknownFieldIsError(t *testing.T) {
-	mustError(t, out("TestX", scenariocontract.ClaimMarker+`{"action":"AppService.About","scenario":"happy","evidence":"e","x":1}`)+ev("pass", "TestX", ""), baseOpts())
+	mustError(t, startEvent("p")+runEvent("TestX")+out("TestX", scenariocontract.ClaimMarker+`{"action":"AppService.About","scenario":"happy","evidence":"e","x":1}`), baseOpts())
 }
 
 func TestUnknownActionOrScenarioIsError(t *testing.T) {
-	mustError(t, out("TestX", scenariocontract.ClaimMarker+claimPayload("Nope.NotReal", "happy", "e"))+ev("pass", "TestX", ""), baseOpts())
-	mustError(t, out("TestX", scenariocontract.ClaimMarker+claimPayload("AppService.About", "conflict", "e"))+ev("pass", "TestX", ""), baseOpts())
+	mustError(t, startEvent("p")+runEvent("TestX")+out("TestX", scenariocontract.ClaimMarker+claimPayload("Nope.NotReal", "happy", "e")), baseOpts())
+	mustError(t, startEvent("p")+runEvent("TestX")+out("TestX", scenariocontract.ClaimMarker+claimPayload("AppService.About", "conflict", "e")), baseOpts())
 }
 
 func TestDuplicateClaimIsError(t *testing.T) {
-	mustError(t, claimLine("TestX", "AppService.About", "happy")+claimLine("TestX", "AppService.About", "happy")+ev("pass", "TestX", ""), baseOpts())
+	mustError(t, startEvent("p")+runEvent("TestX")+claimLine("TestX", "AppService.About", "happy")+claimLine("TestX", "AppService.About", "happy"), baseOpts())
 }
 
 func TestTrailingContentAfterClaimIsError(t *testing.T) {
-	mustError(t, out("TestX", scenariocontract.ClaimMarker+claimPayload("AppService.About", "happy", "e")+" trailing-garbage")+ev("pass", "TestX", ""), baseOpts())
-	mustError(t, out("TestX", scenariocontract.ClaimMarker+claimPayload("AppService.About", "happy", "e")+claimPayload("AppService.Info", "happy", "e"))+ev("pass", "TestX", ""), baseOpts())
-}
-
-func TestUnterminatedMarkerIsError(t *testing.T) {
-	mustError(t, ev("output", "TestX", scenariocontract.ClaimMarker+`{"action":`)+ev("pass", "TestX", ""), baseOpts())
+	mustError(t, startEvent("p")+runEvent("TestX")+out("TestX", scenariocontract.ClaimMarker+claimPayload("AppService.About", "happy", "e")+" trailing-garbage"), baseOpts())
+	mustError(t, startEvent("p")+runEvent("TestX")+out("TestX", scenariocontract.ClaimMarker+claimPayload("AppService.About", "happy", "e")+claimPayload("AppService.Info", "happy", "e")), baseOpts())
 }
 
 func TestUnterminatedMarkerAtEOFIsError(t *testing.T) {
-	mustError(t, ev("output", "TestX", scenariocontract.ClaimMarker+`{"action":`), baseOpts())
+	mustError(t, startEvent("p")+runEvent("TestX")+ev("output", "TestX", scenariocontract.ClaimMarker+`{"action":`), baseOpts())
 }
 
-func TestUnterminatedNonMarkerLineIsDropped(t *testing.T) {
-	reconcileOK(t, ev("output", "TestX", "some diagnostic with no newline")+ev("pass", "TestX", ""), baseOpts())
+func TestPackageLevelMarkersRejected(t *testing.T) {
+	mustError(t, startEvent("p")+evPkg("p", "output", "", scenariocontract.InventoryMarker+`{"x":1}`+"\n")+pkgEvent("pass"), validOpts("p"))
+	mustError(t, startEvent("p")+evPkg("p", "output", "", scenariocontract.ClaimMarker+claimPayload("AppService.About", "happy", "e")+"\n")+pkgEvent("pass"), validOpts("p"))
 }
 
 func TestChunkedMarkerReassembled(t *testing.T) {
 	full := scenariocontract.ClaimMarker + claimPayload("AppService.About", "happy", "chunked")
 	mid := len(full) / 2
-	stream := ev("output", "TestChunk", full[:mid]) + ev("output", "TestChunk", full[mid:]) +
-		ev("output", "TestChunk", "\n") + ev("pass", "TestChunk", "") + pkgEvent("pass")
+	stream := startEvent("p") + runEvent("TestChunk") +
+		ev("output", "TestChunk", full[:mid]) + ev("output", "TestChunk", full[mid:]) + ev("output", "TestChunk", "\n") +
+		ev("pass", "TestChunk", "") + pkgEvent("pass")
 	rep := reconcileOK(t, stream, validOpts("p"))
 	if !coveredScenarios(rep, "AppService.About")["happy"] {
 		t.Fatal("a claim split across output events was not reassembled and credited")
@@ -298,22 +430,20 @@ func TestChunkedMarkerReassembled(t *testing.T) {
 // --- safe inputs / package completeness ---
 
 func TestUnsafeDefaultsAreInvalid(t *testing.T) {
-	stream := claimLine("TestH", "AppService.About", "happy") + ev("pass", "TestH", "") + pkgEvent("pass")
-	rep := reconcileOK(t, stream, options{}) // nothing provided
+	rep := reconcileOK(t, validStream(), options{}) // nothing provided
 	if rep.ProcessSucceeded || rep.StreamComplete || rep.Valid {
 		t.Errorf("unsafe defaults must be invalid: process=%t stream=%t valid=%t", rep.ProcessSucceeded, rep.StreamComplete, rep.Valid)
 	}
 }
 
 func TestMissingExpectedPackagesInvalid(t *testing.T) {
-	stream := claimLine("TestH", "AppService.About", "happy") + ev("pass", "TestH", "") + pkgEvent("pass")
-	if reconcileOK(t, stream, baseOpts()).Valid {
+	if reconcileOK(t, validStream(), baseOpts()).Valid {
 		t.Error("valid true without an expected package set")
 	}
 }
 
 func TestExpectedPackageFailIsIncomplete(t *testing.T) {
-	stream := claimLine("TestH", "AppService.About", "happy") + ev("pass", "TestH", "") + pkgEvent("fail")
+	stream := pkgP("fail", tSeg("TestH", "pass", claimLine("TestH", "AppService.About", "happy")))
 	rep := reconcileOK(t, stream, validOpts("p"))
 	if rep.StreamComplete || rep.Valid {
 		t.Error("an expected package that failed should be incomplete")
@@ -324,15 +454,15 @@ func TestExpectedPackageFailIsIncomplete(t *testing.T) {
 }
 
 func TestNoTestPackageSkipIsComplete(t *testing.T) {
-	stream := claimLine("TestH", "AppService.About", "happy") + ev("pass", "TestH", "") + pkgEvent("pass") + pkgEventFor("q", "skip")
+	stream := validStream() + startEvent("q") + pkgEventFor("q", "skip") // q: started, no tests, skip
 	rep := reconcileOK(t, stream, validOpts("p", "q"))
 	if !rep.StreamComplete || !rep.Valid {
-		t.Errorf("a no-test package skip should be complete: streamComplete=%t valid=%t", rep.StreamComplete, rep.Valid)
+		t.Errorf("a no-test package skip should be complete: streamComplete=%t valid=%t violations=%v", rep.StreamComplete, rep.Valid, rep.Violations)
 	}
 }
 
 func TestUnexpectedPackageInvalid(t *testing.T) {
-	stream := claimLine("TestH", "AppService.About", "happy") + ev("pass", "TestH", "") + pkgEvent("pass") + pkgEventFor("r", "pass")
+	stream := validStream() + startEvent("r") + pkgEventFor("r", "pass")
 	rep := reconcileOK(t, stream, validOpts("p"))
 	if rep.StreamComplete || rep.Valid {
 		t.Error("an unexpected package should invalidate the stream")
@@ -340,7 +470,7 @@ func TestUnexpectedPackageInvalid(t *testing.T) {
 }
 
 func TestDuplicatePackageTerminalInvalid(t *testing.T) {
-	stream := claimLine("TestH", "AppService.About", "happy") + ev("pass", "TestH", "") + pkgEvent("pass") + pkgEvent("pass")
+	stream := validStream() + pkgEvent("pass")
 	rep := reconcileOK(t, stream, validOpts("p"))
 	if rep.StreamComplete || rep.Valid || len(rep.Violations) == 0 {
 		t.Error("a duplicate package terminal should invalidate the stream")
@@ -348,41 +478,27 @@ func TestDuplicatePackageTerminalInvalid(t *testing.T) {
 }
 
 func TestNonZeroTestExitInvalidates(t *testing.T) {
-	stream := claimLine("TestH", "AppService.About", "happy") + ev("pass", "TestH", "") + pkgEvent("pass")
 	opts := validOpts("p")
 	opts.testExit = 42
-	rep := reconcileOK(t, stream, opts)
+	rep := reconcileOK(t, validStream(), opts)
 	if rep.ProcessSucceeded || rep.Valid {
 		t.Error("a nonzero producer exit must invalidate")
 	}
 }
 
 func TestTruncatedStreamInvalid(t *testing.T) {
-	stream := claimLine("TestH", "AppService.About", "happy") + ev("pass", "TestH", "") + pkgEvent("pass")
-	rep := reconcileOK(t, stream, validOpts("p", "q"))
+	rep := reconcileOK(t, validStream(), validOpts("p", "q")) // q never appears
 	if rep.StreamComplete || len(rep.MissingPackages) != 1 || rep.MissingPackages[0] != "q" {
 		t.Errorf("truncated stream: streamComplete=%t missing=%v", rep.StreamComplete, rep.MissingPackages)
 	}
 }
 
-func TestExpectedPackagesCompleteValid(t *testing.T) {
-	stream := claimLine("TestH", "AppService.About", "happy") + ev("pass", "TestH", "") + pkgEvent("pass")
-	rep := reconcileOK(t, stream, validOpts("p"))
-	if !rep.StreamComplete || !rep.Valid {
-		t.Errorf("expected a valid, complete report: valid=%t streamComplete=%t", rep.Valid, rep.StreamComplete)
-	}
-	if !coveredScenarios(rep, "AppService.About")["happy"] {
-		t.Error("the top-level claim was not credited")
-	}
-}
-
 func TestOversizedProtocolLineIsError(t *testing.T) {
-	mustError(t, ev("output", "TestX", strings.Repeat("x", maxProtocolLine+10)), baseOpts())
+	mustError(t, startEvent("p")+runEvent("TestX")+ev("output", "TestX", strings.Repeat("x", maxProtocolLine+10)), baseOpts())
 }
 
 func TestGapsAndTotals(t *testing.T) {
-	stream := claimLine("TestH", "AppService.About", "happy") + ev("pass", "TestH", "") + pkgEvent("pass")
-	rep := reconcileOK(t, stream, validOpts("p"))
+	rep := reconcileOK(t, validStream(), validOpts("p"))
 	actions, required := contractTotals()
 	if rep.TotalActions != actions || rep.TotalRequired != required || rep.TotalCovered != 1 {
 		t.Errorf("totals wrong: actions=%d/%d required=%d/%d covered=%d/1", rep.TotalActions, actions, rep.TotalRequired, required, rep.TotalCovered)
@@ -395,7 +511,7 @@ func TestGapsAndTotals(t *testing.T) {
 	}
 }
 
-// --- T-05: command-level tests through run() ---
+// --- command-level tests through run() ---
 
 func writeFile(t *testing.T, dir, name, content string) string {
 	t.Helper()
@@ -406,15 +522,10 @@ func writeFile(t *testing.T, dir, name, content string) string {
 	return p
 }
 
-func runCLI(t *testing.T, stdin string, args ...string) (int, string) {
+func runCLI(t *testing.T, stdin string, args ...string) int {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
-	code := run(args, strings.NewReader(stdin), &stdout, &stderr)
-	return code, stderr.String()
-}
-
-func validStream() string {
-	return claimLine("TestH", "AppService.About", "happy") + ev("pass", "TestH", "") + pkgEvent("pass")
+	return run(args, strings.NewReader(stdin), &stdout, &stderr)
 }
 
 func TestRunValidWithFlags(t *testing.T) {
@@ -422,8 +533,7 @@ func TestRunValidWithFlags(t *testing.T) {
 	events := writeFile(t, dir, "events.jsonl", validStream())
 	expected := writeFile(t, dir, "pkgs.txt", "p\n")
 	outPath := filepath.Join(dir, "rep.json")
-	code, _ := runCLI(t, "", "-events", events, "-expected-packages", expected, "-test-exit", "0", "-out", outPath)
-	if code != 0 {
+	if code := runCLI(t, "", "-events", events, "-expected-packages", expected, "-test-exit", "0", "-out", outPath); code != 0 {
 		t.Fatalf("run returned %d, want 0", code)
 	}
 	var rep report
@@ -439,9 +549,7 @@ func TestRunValidWithFlags(t *testing.T) {
 func TestRunUnsafeDefaultsInvalidNonzero(t *testing.T) {
 	dir := t.TempDir()
 	outPath := filepath.Join(dir, "rep.json")
-	// No -test-exit and no -expected-packages: cannot be valid.
-	code, _ := runCLI(t, validStream(), "-out", outPath)
-	if code != 1 {
+	if code := runCLI(t, validStream(), "-out", outPath); code != 1 {
 		t.Fatalf("run returned %d, want 1 (invalid)", code)
 	}
 	var rep report
@@ -456,12 +564,10 @@ func TestRunExplicitTestExitZeroCounts(t *testing.T) {
 	dir := t.TempDir()
 	events := writeFile(t, dir, "events.jsonl", validStream())
 	expected := writeFile(t, dir, "pkgs.txt", "p\n")
-	// WITHOUT -test-exit: processSucceeded false -> invalid -> exit 1.
-	if code, _ := runCLI(t, "", "-events", events, "-expected-packages", expected); code != 1 {
+	if code := runCLI(t, "", "-events", events, "-expected-packages", expected); code != 1 {
 		t.Errorf("omitted -test-exit should be invalid: code=%d", code)
 	}
-	// WITH explicit -test-exit 0: flag.Visit sees it -> valid -> exit 0.
-	if code, _ := runCLI(t, "", "-events", events, "-expected-packages", expected, "-test-exit", "0"); code != 0 {
+	if code := runCLI(t, "", "-events", events, "-expected-packages", expected, "-test-exit", "0"); code != 0 {
 		t.Errorf("explicit -test-exit 0 should be valid: code=%d", code)
 	}
 }
@@ -470,28 +576,37 @@ func TestRunBadExpectedFileReturns2(t *testing.T) {
 	dir := t.TempDir()
 	events := writeFile(t, dir, "events.jsonl", validStream())
 	dup := writeFile(t, dir, "dup.txt", "p\np\n")
-	if code, _ := runCLI(t, "", "-events", events, "-expected-packages", dup, "-test-exit", "0"); code != 2 {
+	if code := runCLI(t, "", "-events", events, "-expected-packages", dup, "-test-exit", "0"); code != 2 {
 		t.Errorf("a duplicate expected-package file should return 2: code=%d", code)
 	}
 	empty := writeFile(t, dir, "empty.txt", "\n \n")
-	if code, _ := runCLI(t, "", "-events", events, "-expected-packages", empty, "-test-exit", "0"); code != 2 {
+	if code := runCLI(t, "", "-events", events, "-expected-packages", empty, "-test-exit", "0"); code != 2 {
 		t.Errorf("an empty expected-package file should return 2: code=%d", code)
 	}
 }
 
 func TestRunMissingEventsFileReturns2(t *testing.T) {
-	if code, _ := runCLI(t, "", "-events", filepath.Join(t.TempDir(), "nope.jsonl")); code != 2 {
+	if code := runCLI(t, "", "-events", filepath.Join(t.TempDir(), "nope.jsonl")); code != 2 {
 		t.Errorf("a missing events file should return 2: code=%d", code)
+	}
+}
+
+func TestRunReportWriteFailureReturns2(t *testing.T) {
+	dir := t.TempDir()
+	events := writeFile(t, dir, "events.jsonl", validStream())
+	expected := writeFile(t, dir, "pkgs.txt", "p\n")
+	badOut := filepath.Join(dir, "nonexistent-dir", "rep.json") // parent does not exist
+	if code := runCLI(t, "", "-events", events, "-expected-packages", expected, "-test-exit", "0", "-out", badOut); code != 2 {
+		t.Errorf("an unwritable report path should return 2: code=%d", code)
 	}
 }
 
 func TestRunProtocolErrorWritesReport(t *testing.T) {
 	dir := t.TempDir()
 	outPath := filepath.Join(dir, "rep.json")
-	bad := out("TestX", scenariocontract.InventoryMarker+`{"x":1}`) + ev("pass", "TestX", "")
-	code, _ := runCLI(t, bad, "-out", outPath, "-test-exit", "0")
-	if code != 2 {
-		t.Fatalf("a protocol error should return 2: code=%d", code)
+	bad := startEvent("p") + runEvent("TestX") + out("TestX", scenariocontract.InventoryMarker+`{"x":1}`)
+	if code := runCLI(t, bad, "-out", outPath, "-test-exit", "0"); code != 2 {
+		t.Fatalf("a protocol error should return 2")
 	}
 	var rep report
 	data, err := os.ReadFile(outPath)
