@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -13,7 +15,7 @@ import (
 // This package is the reconciler's own unit tests, so it legitimately
 // constructs marker fixtures (the systemtest marker-hygiene lint exempts
 // cmd/scenariocov). These regressions retain the exact attacks from the
-// war-room review rounds.
+// review rounds.
 
 func ev(action, test, output string) string {
 	e := event{Action: action, Package: "p", Test: test, Output: output}
@@ -21,15 +23,16 @@ func ev(action, test, output string) string {
 	return string(b) + "\n"
 }
 
-func pkgEvent(action string) string {
-	e := event{Action: action, Package: "p"}
+func pkgEvent(action string) string { return pkgEventFor("p", action) }
+
+func pkgEventFor(pkg, action string) string {
+	e := event{Action: action, Package: pkg}
 	b, _ := json.Marshal(e)
 	return string(b) + "\n"
 }
 
 // out emits a test output event whose payload ends in a newline, matching
-// how test2json presents a t.Logf line (the reconciler only scans complete,
-// newline-terminated lines).
+// how test2json presents a t.Logf line.
 func out(test, payload string) string { return ev("output", test, payload+"\n") }
 
 func claimPayload(action, scenario, evidence string) string {
@@ -41,7 +44,19 @@ func claimLine(test, action, scenario string) string {
 	return out(test, scenariocontract.ClaimMarker+claimPayload(action, scenario, "ev "+test))
 }
 
-func defaultOpts() options { return options{commitSHA: "sha", saioConfigured: true, testExit: 0} }
+// baseOpts supplies the producer exit as actually provided (exit 0) but no
+// expected package set.
+func baseOpts() options {
+	return options{commitSHA: "sha", saioConfigured: true, testExit: 0, testExitProvided: true}
+}
+
+// validOpts additionally supplies the expected package set, the combination
+// CI uses and the only one that can yield valid:true.
+func validOpts(pkgs ...string) options {
+	o := baseOpts()
+	o.expectedPackages = pkgs
+	return o
+}
 
 func run(t *testing.T, stream string, opts options) report {
 	t.Helper()
@@ -50,6 +65,13 @@ func run(t *testing.T, stream string, opts options) report {
 		t.Fatalf("reconcile: %v", err)
 	}
 	return rep
+}
+
+func mustError(t *testing.T, stream string, opts options) {
+	t.Helper()
+	if _, err := reconcile(strings.NewReader(stream), opts); err == nil {
+		t.Fatal("expected an error, got none")
+	}
 }
 
 func coveredScenarios(rep report, action string) map[string]bool {
@@ -73,17 +95,17 @@ func contractTotals() (actions, required int) {
 	return
 }
 
-// TestOnlyPassingTestsAreCredited retains the skipped/failed/parallel/cleanup
-// attacks: each reduces to a test whose terminal disposition is not pass, and
-// only a passing test's claim is credited.
+// --- terminal-disposition attacks (skipped/failed/parallel/cleanup) ---
+
 func TestOnlyPassingTestsAreCredited(t *testing.T) {
 	const act = "MutateService.UpdateObjectMetadata" // requires happy, refusal, conflict
 	stream := claimLine("TestHappy", act, "happy") + ev("pass", "TestHappy", "") +
 		claimLine("TestSkipped", act, "refusal") + ev("skip", "TestSkipped", "") +
 		claimLine("TestFailed", act, "conflict") + ev("fail", "TestFailed", "")
 
-	// A failed test means the producer exited nonzero in CI.
-	rep := run(t, stream, options{commitSHA: "sha", saioConfigured: true, testExit: 1})
+	opts := baseOpts()
+	opts.testExit = 1 // a failed test means the producer exited nonzero in CI
+	rep := run(t, stream, opts)
 	got := coveredScenarios(rep, act)
 	if !got["happy"] {
 		t.Error("a passing test's claim was not credited")
@@ -99,45 +121,212 @@ func TestOnlyPassingTestsAreCredited(t *testing.T) {
 	}
 }
 
-// TestAncestorMustPass: a claim from a passing subtest whose PARENT failed is
-// not credited.
-func TestAncestorMustPass(t *testing.T) {
-	stream := claimLine("TestParent/child", "AppService.About", "happy") +
-		ev("pass", "TestParent/child", "") +
-		ev("fail", "TestParent", "")
-	if coveredScenarios(run(t, stream, options{testExit: 1}), "AppService.About")["happy"] {
-		t.Error("a claim was credited despite its parent failing")
+// --- claims are top-level only; subtest claims are rejected ---
+
+func TestSubtestClaimIsRejected(t *testing.T) {
+	// A slash-bearing claimant name is a subtest; parentage is ambiguous, so
+	// it must be rejected rather than silently mis-credited or mis-dropped.
+	mustError(t, out("TestParent/child", scenariocontract.ClaimMarker+claimPayload("AppService.About", "happy", "e"))+ev("pass", "TestParent/child", ""), baseOpts())
+}
+
+// --- an expected package must PASS, not merely terminate ---
+
+func TestExpectedPackageFailIsIncomplete(t *testing.T) {
+	// The exact attack: a clean claim/test-pass stream, a package-level FAIL,
+	// and a supplied exit 0.
+	stream := claimLine("TestH", "AppService.About", "happy") + ev("pass", "TestH", "") + pkgEvent("fail")
+	rep := run(t, stream, validOpts("p"))
+	if rep.StreamComplete {
+		t.Error("StreamComplete true despite the expected package failing")
+	}
+	if rep.Valid {
+		t.Error("Valid true despite the expected package failing")
+	}
+	if len(rep.FailedPackages) != 1 || rep.FailedPackages[0] != "p" {
+		t.Errorf("FailedPackages=%v want [p]", rep.FailedPackages)
 	}
 }
 
-// TestSlashSubtestThroughGoTestJSON is the F-04 regression through REAL
-// go test -json: a subtest named "a/b" has no "a" node, and its claim must
-// still be credited. Synthetic events cannot prove the real hierarchy.
-func TestSlashSubtestThroughGoTestJSON(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skips the go test subprocess in -short")
+func TestNoTestPackageSkipIsComplete(t *testing.T) {
+	// A package with no test files terminates with a package-level skip and
+	// must still count complete (go emits skip for "[no test files]").
+	stream := claimLine("TestH", "AppService.About", "happy") + ev("pass", "TestH", "") + pkgEvent("pass") +
+		pkgEventFor("q", "skip") // q: no tests, package-level skip
+	rep := run(t, stream, validOpts("p", "q"))
+	if !rep.StreamComplete || !rep.Valid {
+		t.Errorf("a no-test package skip should be complete: streamComplete=%t valid=%t missing=%v failed=%v",
+			rep.StreamComplete, rep.Valid, rep.MissingPackages, rep.FailedPackages)
 	}
-	if _, err := exec.LookPath("go"); err != nil {
-		t.Skip("go toolchain not on PATH")
+}
+
+// --- strict parsing rejects trailing content after the claim ---
+
+func TestTrailingContentAfterClaimIsError(t *testing.T) {
+	mustError(t, out("TestX", scenariocontract.ClaimMarker+claimPayload("AppService.About", "happy", "e")+" trailing-garbage")+ev("pass", "TestX", ""), baseOpts())
+	// A second concatenated JSON value is equally rejected.
+	mustError(t, out("TestX", scenariocontract.ClaimMarker+claimPayload("AppService.About", "happy", "e")+claimPayload("AppService.Info", "happy", "e"))+ev("pass", "TestX", ""), baseOpts())
+}
+
+// --- an unterminated marker line is rejected, not silently lost ---
+
+func TestUnterminatedMarkerIsError(t *testing.T) {
+	// A marker with no terminating newline, flushed at the test's terminal
+	// event.
+	stream := ev("output", "TestX", scenariocontract.ClaimMarker+`{"action":`) + ev("pass", "TestX", "")
+	mustError(t, stream, baseOpts())
+}
+
+func TestUnterminatedMarkerAtEOFIsError(t *testing.T) {
+	// The same, with no terminal event at all: caught by the EOF flush.
+	mustError(t, ev("output", "TestX", scenariocontract.ClaimMarker+`{"action":`), baseOpts())
+}
+
+func TestUnterminatedNonMarkerLineIsDropped(t *testing.T) {
+	// A residual line WITHOUT a marker is ordinary output; dropping it is fine.
+	stream := ev("output", "TestX", "some diagnostic with no newline") + ev("pass", "TestX", "")
+	run(t, stream, baseOpts()) // must not error
+}
+
+// --- safe inputs are mandatory for valid:true ---
+
+func TestUnsafeDefaultsAreInvalid(t *testing.T) {
+	// A clean, complete-looking stream with NEITHER a provided exit nor an
+	// expected set must not be valid.
+	stream := claimLine("TestH", "AppService.About", "happy") + ev("pass", "TestH", "") + pkgEvent("pass")
+	rep := run(t, stream, options{}) // nothing provided
+	if rep.ProcessSucceeded {
+		t.Error("ProcessSucceeded true without a provided producer exit")
 	}
-	cmd := exec.Command("go", "test", "-json", "-v", "-count=1", "-run", "TestSlash", "./testdata/slashsub")
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("fixture subprocess failed: %v\n%s", err, out)
+	if rep.StreamComplete {
+		t.Error("StreamComplete true without an expected package set")
 	}
-	rep, rerr := reconcile(bytes.NewReader(out), defaultOpts())
-	if rerr != nil {
-		t.Fatalf("reconcile of real stream: %v", rerr)
+	if rep.Valid {
+		t.Error("Valid true with unsafe default inputs")
 	}
+}
+
+func TestMissingExpectedPackagesInvalid(t *testing.T) {
+	stream := claimLine("TestH", "AppService.About", "happy") + ev("pass", "TestH", "") + pkgEvent("pass")
+	rep := run(t, stream, baseOpts()) // exit provided, but no expected set
+	if rep.Valid {
+		t.Error("Valid true without an expected package set")
+	}
+}
+
+// --- exact expected set (unexpected/duplicate/empty/duplicate file) ---
+
+func TestUnexpectedPackageInvalid(t *testing.T) {
+	stream := claimLine("TestH", "AppService.About", "happy") + ev("pass", "TestH", "") + pkgEvent("pass") + pkgEventFor("r", "pass")
+	rep := run(t, stream, validOpts("p"))
+	if rep.StreamComplete || rep.Valid {
+		t.Error("an unexpected package terminal should invalidate the stream")
+	}
+	if len(rep.UnexpectedPkgs) != 1 || rep.UnexpectedPkgs[0] != "r" {
+		t.Errorf("UnexpectedPkgs=%v want [r]", rep.UnexpectedPkgs)
+	}
+}
+
+func TestDuplicatePackageTerminalInvalid(t *testing.T) {
+	stream := claimLine("TestH", "AppService.About", "happy") + ev("pass", "TestH", "") + pkgEvent("pass") + pkgEvent("pass")
+	rep := run(t, stream, validOpts("p"))
+	if rep.StreamComplete || rep.Valid {
+		t.Error("a duplicate package terminal should invalidate the stream")
+	}
+}
+
+func TestEmptyOrDuplicateExpectedFileRejected(t *testing.T) {
+	dir := t.TempDir()
+	empty := filepath.Join(dir, "empty.txt")
+	if err := os.WriteFile(empty, []byte("\n  \n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readExpected(empty); err == nil {
+		t.Error("an empty expected-package file should be rejected")
+	}
+	dup := filepath.Join(dir, "dup.txt")
+	if err := os.WriteFile(dup, []byte("a\nb\na\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readExpected(dup); err == nil {
+		t.Error("a duplicate expected-package file should be rejected")
+	}
+}
+
+// --- retained protocol attacks ---
+
+func TestInventoryMarkerRejected(t *testing.T) {
+	mustError(t, out("TestX", scenariocontract.InventoryMarker+`{"whatever":1}`)+ev("pass", "TestX", ""), baseOpts())
+}
+
+func TestMalformedClaimIsError(t *testing.T) {
+	mustError(t, out("TestX", scenariocontract.ClaimMarker+`{"action":`)+ev("pass", "TestX", ""), baseOpts())
+}
+
+func TestUnknownFieldIsError(t *testing.T) {
+	mustError(t, out("TestX", scenariocontract.ClaimMarker+`{"action":"AppService.About","scenario":"happy","evidence":"e","x":1}`)+ev("pass", "TestX", ""), baseOpts())
+}
+
+func TestUnknownActionOrScenarioIsError(t *testing.T) {
+	mustError(t, out("TestX", scenariocontract.ClaimMarker+claimPayload("Nope.NotReal", "happy", "e"))+ev("pass", "TestX", ""), baseOpts())
+	mustError(t, out("TestX", scenariocontract.ClaimMarker+claimPayload("AppService.About", "conflict", "e"))+ev("pass", "TestX", ""), baseOpts())
+}
+
+func TestDuplicateClaimIsError(t *testing.T) {
+	mustError(t, claimLine("TestX", "AppService.About", "happy")+claimLine("TestX", "AppService.About", "happy")+ev("pass", "TestX", ""), baseOpts())
+}
+
+func TestChunkedMarkerReassembled(t *testing.T) {
+	full := scenariocontract.ClaimMarker + claimPayload("AppService.About", "happy", "chunked")
+	mid := len(full) / 2
+	stream := ev("output", "TestChunk", full[:mid]) +
+		ev("output", "TestChunk", full[mid:]) +
+		ev("output", "TestChunk", "\n") +
+		ev("pass", "TestChunk", "")
+	rep := run(t, stream, baseOpts())
 	if !coveredScenarios(rep, "AppService.About")["happy"] {
-		t.Fatalf("slash-named subtest claim was not credited through real go test -json\n%s", out)
+		t.Fatal("a claim split across output events was not reassembled and credited")
 	}
 }
 
-// TestGapsAndTotals checks the denominator (from the contract) and numerator.
+func TestNonZeroTestExitInvalidates(t *testing.T) {
+	stream := claimLine("TestH", "AppService.About", "happy") + ev("pass", "TestH", "") + pkgEvent("pass")
+	opts := validOpts("p")
+	opts.testExit = 42
+	rep := run(t, stream, opts)
+	if rep.ProcessSucceeded {
+		t.Error("ProcessSucceeded true with exit 42")
+	}
+	if rep.Valid {
+		t.Error("Valid true despite a nonzero producer exit")
+	}
+}
+
+func TestTruncatedStreamInvalid(t *testing.T) {
+	stream := claimLine("TestH", "AppService.About", "happy") + ev("pass", "TestH", "") + pkgEvent("pass")
+	rep := run(t, stream, validOpts("p", "q")) // q never appears
+	if rep.StreamComplete {
+		t.Error("StreamComplete true with a missing expected package")
+	}
+	if len(rep.MissingPackages) != 1 || rep.MissingPackages[0] != "q" {
+		t.Errorf("MissingPackages=%v want [q]", rep.MissingPackages)
+	}
+}
+
+func TestExpectedPackagesCompleteValid(t *testing.T) {
+	stream := claimLine("TestH", "AppService.About", "happy") + ev("pass", "TestH", "") + pkgEvent("pass")
+	rep := run(t, stream, validOpts("p"))
+	if !rep.StreamComplete || !rep.Valid {
+		t.Errorf("expected a valid, complete report: valid=%t streamComplete=%t", rep.Valid, rep.StreamComplete)
+	}
+}
+
+func TestOversizedProtocolLineIsError(t *testing.T) {
+	mustError(t, ev("output", "TestX", strings.Repeat("x", maxProtocolLine+10)), baseOpts())
+}
+
 func TestGapsAndTotals(t *testing.T) {
 	stream := claimLine("TestH", "AppService.About", "happy") + ev("pass", "TestH", "")
-	rep := run(t, stream, defaultOpts())
+	rep := run(t, stream, baseOpts())
 	actions, required := contractTotals()
 	if rep.TotalActions != actions {
 		t.Errorf("TotalActions=%d want %d", rep.TotalActions, actions)
@@ -148,8 +337,6 @@ func TestGapsAndTotals(t *testing.T) {
 	if rep.TotalCovered != 1 {
 		t.Errorf("TotalCovered=%d want 1", rep.TotalCovered)
 	}
-	// AppService.About needs only happy, so it is fully covered; every other
-	// action still has a gap.
 	if rep.ActionsWithGaps != actions-1 {
 		t.Errorf("ActionsWithGaps=%d want %d", rep.ActionsWithGaps, actions-1)
 	}
@@ -161,121 +348,62 @@ func TestGapsAndTotals(t *testing.T) {
 	}
 }
 
-// TestInventoryMarkerRejected: an inventory marker in the stream is a hard
-// error — the denominator must never come from test output.
-func TestInventoryMarkerRejected(t *testing.T) {
-	stream := out("TestX", scenariocontract.InventoryMarker+`{"whatever":1}`) + ev("pass", "TestX", "")
-	if _, err := reconcile(strings.NewReader(stream), defaultOpts()); err == nil {
-		t.Fatal("expected an error for an inventory marker in the stream")
+// --- a protocol error still leaves a machine-readable invalid report ---
+
+func TestErrorReportWritten(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "err.json")
+	writeErrorReport(path, baseOpts(), errInvalidStreamForTest())
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("no error report written: %v", err)
+	}
+	var rep report
+	if err := json.Unmarshal(data, &rep); err != nil {
+		t.Fatalf("error report is not valid JSON: %v", err)
+	}
+	if rep.SchemaVersion != schemaVersion || rep.Valid || rep.ProtocolError == "" {
+		t.Errorf("error report wrong: schema=%d valid=%t protocolError=%q", rep.SchemaVersion, rep.Valid, rep.ProtocolError)
 	}
 }
 
-// TestMalformedClaimIsError: once a claim marker is seen, invalid JSON is an
-// error, not silently ignored.
-func TestMalformedClaimIsError(t *testing.T) {
-	stream := out("TestX", scenariocontract.ClaimMarker+`{"action":`) + ev("pass", "TestX", "")
-	if _, err := reconcile(strings.NewReader(stream), defaultOpts()); err == nil {
-		t.Fatal("expected an error for a malformed claim")
+func errInvalidStreamForTest() error { return errTest("synthetic protocol failure") }
+
+type errTest string
+
+func (e errTest) Error() string { return string(e) }
+
+// --- real go test -json subprocess regressions ---
+
+func runFixture(t *testing.T, runArg string) []byte {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("skips the go test subprocess in -short")
 	}
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go toolchain not on PATH")
+	}
+	out, err := exec.Command("go", "test", "-json", "-v", "-count=1", "-run", runArg, "./testdata/slashsub").Output()
+	if err != nil {
+		t.Fatalf("fixture subprocess (%s) failed: %v\n%s", runArg, err, out)
+	}
+	return out
 }
 
-// TestUnknownFieldIsError: a claim carrying an unexpected field is rejected.
-func TestUnknownFieldIsError(t *testing.T) {
-	stream := out("TestX", scenariocontract.ClaimMarker+`{"action":"AppService.About","scenario":"happy","evidence":"e","x":1}`) + ev("pass", "TestX", "")
-	if _, err := reconcile(strings.NewReader(stream), defaultOpts()); err == nil {
-		t.Fatal("expected an error for an unknown claim field")
+func TestTopLevelClaimThroughGoTestJSON(t *testing.T) {
+	rep, err := reconcile(bytes.NewReader(runFixture(t, "^TestTopLevel$")), baseOpts())
+	if err != nil {
+		t.Fatalf("reconcile of real top-level stream: %v", err)
 	}
-}
-
-// TestUnknownActionOrScenarioIsError: a claim for a non-contract action, or a
-// real action with a scenario it does not require, is an error.
-func TestUnknownActionOrScenarioIsError(t *testing.T) {
-	bad := out("TestX", scenariocontract.ClaimMarker+claimPayload("Nope.NotReal", "happy", "e")) + ev("pass", "TestX", "")
-	if _, err := reconcile(strings.NewReader(bad), defaultOpts()); err == nil {
-		t.Fatal("expected an error for an unknown action")
-	}
-	wrongScenario := out("TestX", scenariocontract.ClaimMarker+claimPayload("AppService.About", "conflict", "e")) + ev("pass", "TestX", "")
-	if _, err := reconcile(strings.NewReader(wrongScenario), defaultOpts()); err == nil {
-		t.Fatal("expected an error for a scenario the action does not require")
-	}
-}
-
-// TestDuplicateClaimIsError: the same test crediting the same cell twice is an
-// error, not a double credit.
-func TestDuplicateClaimIsError(t *testing.T) {
-	stream := claimLine("TestX", "AppService.About", "happy") +
-		claimLine("TestX", "AppService.About", "happy") + ev("pass", "TestX", "")
-	if _, err := reconcile(strings.NewReader(stream), defaultOpts()); err == nil {
-		t.Fatal("expected an error for a duplicate claim")
-	}
-}
-
-// TestChunkedMarkerReassembled: test2json splits a long line into ~1KB
-// output events; a claim split across events must reassemble and credit.
-func TestChunkedMarkerReassembled(t *testing.T) {
-	full := scenariocontract.ClaimMarker + claimPayload("AppService.About", "happy", "chunked")
-	// Emit the claim line in three output fragments with no newline until the
-	// end, then a newline, exactly as chunking would present it.
-	mid := len(full) / 2
-	stream := ev("output", "TestChunk", full[:mid]) +
-		ev("output", "TestChunk", full[mid:]) +
-		ev("output", "TestChunk", "\n") +
-		ev("pass", "TestChunk", "")
-	rep := run(t, stream, defaultOpts())
 	if !coveredScenarios(rep, "AppService.About")["happy"] {
-		t.Fatal("a claim split across output events was not reassembled and credited")
+		t.Fatal("a real top-level claim was not credited")
 	}
 }
 
-// TestNonZeroTestExitInvalidates: a nonzero producer exit sets valid:false
-// even when the stream parsed cleanly (the upstream-exit-42 attack).
-func TestNonZeroTestExitInvalidates(t *testing.T) {
-	stream := claimLine("TestH", "AppService.About", "happy") + ev("pass", "TestH", "")
-	rep := run(t, stream, options{testExit: 42})
-	if rep.ProcessSucceeded {
-		t.Error("ProcessSucceeded true with exit 42")
-	}
-	if rep.Valid {
-		t.Error("Valid true despite a nonzero producer exit")
-	}
-}
-
-// TestTruncatedStreamInvalid: an expected package that never terminates makes
-// the stream incomplete and the report invalid (the truncation attack).
-func TestTruncatedStreamInvalid(t *testing.T) {
-	stream := claimLine("TestH", "AppService.About", "happy") + ev("pass", "TestH", "") + pkgEvent("pass")
-	opts := defaultOpts()
-	opts.expectedPackages = []string{"p", "q"} // q never appears
-	rep := run(t, stream, opts)
-	if rep.StreamComplete {
-		t.Error("StreamComplete true with a missing expected package")
-	}
-	if rep.Valid {
-		t.Error("Valid true with a truncated stream")
-	}
-	if len(rep.MissingPackages) != 1 || rep.MissingPackages[0] != "q" {
-		t.Errorf("MissingPackages=%v want [q]", rep.MissingPackages)
-	}
-}
-
-// TestExpectedPackagesCompleteValid: every expected package terminating makes
-// a clean run valid.
-func TestExpectedPackagesCompleteValid(t *testing.T) {
-	stream := claimLine("TestH", "AppService.About", "happy") + ev("pass", "TestH", "") + pkgEvent("pass")
-	opts := defaultOpts()
-	opts.expectedPackages = []string{"p"}
-	rep := run(t, stream, opts)
-	if !rep.StreamComplete || !rep.Valid {
-		t.Errorf("expected a valid, complete report: valid=%t streamComplete=%t", rep.Valid, rep.StreamComplete)
-	}
-}
-
-// TestOversizedProtocolLineIsError: a single unterminated line beyond the
-// protocol limit is rejected rather than buffered unboundedly.
-func TestOversizedProtocolLineIsError(t *testing.T) {
-	huge := strings.Repeat("x", maxProtocolLine+10)
-	stream := ev("output", "TestX", huge) // no newline
-	if _, err := reconcile(strings.NewReader(stream), defaultOpts()); err == nil {
-		t.Fatal("expected an error for an oversized protocol line")
+func TestSubtestClaimRejectedThroughGoTestJSON(t *testing.T) {
+	// The ambiguous case through REAL go test -json: a/b passes, sibling a
+	// skips, and the subtest claim must be rejected — not silently dropped by
+	// mistaking the skipped sibling for an ancestor.
+	if _, err := reconcile(bytes.NewReader(runFixture(t, "^TestSlash$")), baseOpts()); err == nil {
+		t.Fatal("a real subtest claim was not rejected")
 	}
 }

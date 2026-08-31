@@ -4161,26 +4161,35 @@ but, by the shared-process argument above, not a determined one — it is labell
 hygiene control, not a boundary.
 
 A credit is EMITTED as a `go test -json` output line; `cmd/scenariocov` reconciles it
-AFTER the whole tree finishes, crediting a claim only if the emitting test and every
-OBSERVED ancestor reached a terminal PASS. So a skipped, failed, parallel-paused, or
-parent-cleanup-skipped test leaves no credit — the disposition an in-process collector
-could not see — and the fragile finalizer/disposition machinery is gone. Ancestor
-matching requires only test nodes that actually appear in the stream, so a subtest
-whose name contains a slash is credited correctly (F-04, regressed through a REAL
-`go test -json` subprocess, not synthetic events). Marker parsing is strict and
-bounded: a malformed claim, an unknown or unrequired action/scenario, a duplicate
-claim, an inventory marker, or an over-long protocol line is an error, and per-test
-output is reassembled one line at a time rather than buffered without limit.
+AFTER the whole tree finishes, crediting a claim only if the emitting test reached a
+terminal PASS. So a skipped, failed, parallel-paused, or parent-cleanup-skipped test
+leaves no credit — the disposition an in-process collector could not see — and the
+fragile finalizer/disposition machinery is gone. Claims are emitted ONLY from top-level
+tests: the event stream does not label parentage, so a slash-bearing (subtest) claimant
+is indistinguishable from a sibling and is rejected outright, both at the harness (a
+subtest CreditX is fatal) and at the reconciler — a top-level test credits after its
+data subtests finish. Marker parsing is strict: a malformed claim, a claim with trailing
+content after its JSON, an unknown or unrequired action/scenario, a duplicate claim, an
+inventory marker, a subtest claim, or an unterminated marker left at a test's end or at
+EOF is an error. Reassembly is linear and globally bounded: only incomplete lines are
+retained, compacted in place rather than recopied, each per-test buffer is dropped at
+that test's terminal event, and per-line, aggregate-byte, and active-buffer caps all
+fail closed.
 
-CI is fail-closed. `go list` fixes the expected package set; the raw stream is tee'd to
-an artifact; and `cmd/scenariocov` is handed go test's real exit code
-(`${PIPESTATUS[0]}`) and that expected set. The report keeps the notions of validity
-separate — process-succeeded, stream-complete, contract-valid — and `valid` is their
-conjunction, which deliberately does NOT imply coverage-complete; the reconciler exits
-nonzero (failing the step) when the producer exited nonzero, an expected package never
-terminated, or the contract is malformed. `saioConfigured` is named for what it is (the
-env var was set), not an observed SAIO interaction. The report and the raw stream
-upload even on failure.
+CI is fail-closed. `go list` fixes the expected package set (validated non-empty, unique,
+and exact — an unexpected or duplicate package terminal invalidates the stream); the raw
+stream is tee'd to an artifact and both the `go test` and `tee` exit codes are checked;
+and `cmd/scenariocov` is handed go test's real exit code (`${PIPESTATUS[0]}`) and that
+set. The report keeps the notions of validity separate — process-succeeded,
+stream-complete, contract-valid — and `valid` is their conjunction, which deliberately
+does NOT imply coverage-complete. An expected package must PASS (or be a genuine no-test
+skip); a package that failed, never terminated, or was unexpected makes the stream
+incomplete. The safety inputs are mandatory for `valid:true` — an absent producer exit
+or empty expected set cannot be valid, so the local stdin convenience mode is visibly
+incomplete, never mistakable for release evidence. `saioConfigured` is named for what it
+is (the env var was set), not an observed SAIO interaction. On a protocol error the tool
+still writes a structured `valid:false` report, and the report plus the raw stream upload
+even on failure.
 
 Standing invariants from earlier rounds hold: the denominator is validated
 well-formed (an invalid Kind or empty requirement set fails TestInventoryIsWellFormed,

@@ -3,19 +3,18 @@ package systemtest
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
 
 // This is a HYGIENE lint, not a security boundary. Under the cooperating-
-// author model (codex war-room round-5) a determined test can forge a
+// author model a determined test can forge a
 // coverage claim — build the marker dynamically, or fabricate a Receipt —
 // and this guard cannot stop that. What it does stop is the accidental or
 // copy-pasted forge: a top-level system test that prints a claim marker
 // directly instead of going through the Receipt API. It catches both the
 // literal marker and the emission-helper identifiers, which is the exact
-// shape of the no-op forge Codex reproduced. cmd/scenariocov is out of
+// shape of the no-op forge the review reproduced. cmd/scenariocov is out of
 // scope: its parser unit tests legitimately construct marker fixtures.
 
 // forbiddenEmissionTokens are the strings a top-level system test must not
@@ -43,13 +42,15 @@ func offendingTokens(content string) []string {
 }
 
 // TestMarkerHygiene fails if any top-level system test source emits a
-// coverage claim directly instead of through the Receipt API.
+// coverage claim directly instead of through the Receipt API. It scans the
+// package working directory (go test's cwd is the package's source dir),
+// which — unlike a runtime.Caller path — survives the standard -trimpath
+// build flag.
 func TestMarkerHygiene(t *testing.T) {
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("cannot locate this test file")
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
 	}
-	dir := filepath.Dir(thisFile)
 	matches, err := filepath.Glob(filepath.Join(dir, "*_test.go"))
 	if err != nil {
 		t.Fatal(err)
@@ -78,7 +79,7 @@ func TestMarkerHygiene(t *testing.T) {
 // must flag a synthetic direct-emission forge, so a broken detector that
 // silently passes everything is itself caught.
 func TestMarkerHygieneCatchesForge(t *testing.T) {
-	// A no-op forge in the shape Codex reproduced: print the marker with a
+	// A no-op forge in the shape the review reproduced: print the marker with a
 	// hand-built claim, no application action invoked. Assembled here from
 	// fragments so this fixture does not itself trip the file lint.
 	forge := "t.Logf(\"%s%s\", scenario" + "ClaimMarker, claim" + "JSON(a, s, \"nothing ran\"))"

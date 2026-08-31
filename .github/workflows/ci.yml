@@ -225,7 +225,12 @@ jobs:
           go test -json -v -race -count=1 -coverprofile=cover.out -coverpkg=./internal/... ./internal/... \
             | tee events.jsonl
           test_exit=${PIPESTATUS[0]}
+          tee_exit=${PIPESTATUS[1]}
           set -e
+          # A failed artifact write must not be mistaken for a clean stream.
+          if [ "$tee_exit" != "0" ]; then
+            echo "::error::tee failed writing events.jsonl (exit $tee_exit)"; exit 1
+          fi
           go run ./internal/systemtest/cmd/scenariocov \
             -events events.jsonl \
             -test-exit "$test_exit" \

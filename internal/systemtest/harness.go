@@ -221,6 +221,14 @@ func (r *Receipt) emit(scenario, evidence string) {
 	if !scenariocontract.Requires(r.action, scenario) {
 		r.h.T.Fatalf("receipt %s: %q is not a required scenario", r.action, scenario)
 	}
+	// Claims must come from a top-level test: the go test -json stream does
+	// not label parentage, so a subtest name cannot be told from a sibling and
+	// the reconciler rejects any slash-bearing claimant. Credit after the
+	// subtests finish, from the top-level test, until a real parent protocol
+	// exists.
+	if strings.Contains(r.h.T.Name(), "/") {
+		r.h.T.Fatalf("receipt %s: credit from a top-level test, not subtest %q", r.action, r.h.T.Name())
+	}
 	r.h.T.Logf("%s%s", scenariocontract.ClaimMarker, claimJSON(r.action, scenario, evidence))
 }
 
@@ -297,9 +305,9 @@ func (h *Harness) StartDelete(ctx context.Context, req app.DeleteRequestDTO) *Re
 func (h *Harness) DeleteManifestWithSegments(ctx context.Context, req app.SegmentsDeleteRequestDTO) *Receipt {
 	// The result DTO (failed/remaining segments) is intentionally not yet
 	// surfaced on the receipt: this action's partial/retry/cancel cells are
-	// deferred, and Codex round-5 asks that the full DTO and typed outcomes
-	// be retained BEFORE those cells are added. Until then only happy/refusal/
-	// conflict are creditable, none of which needs the remainder list.
+	// deferred, and the full DTO and typed outcomes should be retained BEFORE
+	// those cells are added. Until then only happy/refusal/conflict are
+	// creditable, none of which needs the remainder list.
 	_, err := h.Delete.DeleteManifestWithSegments(ctx, req)
 	return &Receipt{h: h, action: "DeleteService.DeleteManifestWithSegments", err: err}
 }

@@ -7,7 +7,7 @@ import (
 )
 
 // TestReceiptConsumeIsRaceSafe is the focused regression for the receipt
-// data race Codex reproduced: many goroutines racing to consume one receipt
+// data race the review reproduced: many goroutines racing to consume one receipt
 // must yield exactly one winner, with no data race on the consumed flag.
 // Run under -race, this fails loudly if consume() reverts to a plain bool.
 // It needs no SAIO — it exercises the consumption primitive directly.

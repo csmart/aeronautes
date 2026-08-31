@@ -3,7 +3,7 @@
 // the coverage report is built from. Both the system tests and the
 // cmd/scenariocov reconciler import it directly, so the coverage
 // DENOMINATOR is fixed in Go source and cannot be selected, replaced, or
-// forged from test-authored output (codex war-room round-5 F-02).
+// forged from test-authored output.
 //
 // This is a cooperating-author contract, not a security boundary: repo
 // code and CI are the real trust domain. It makes the denominator sound
