@@ -224,9 +224,12 @@ jobs:
           set +e
           go test -json -v -race -count=1 -coverprofile=cover.out -coverpkg=./internal/... ./internal/... \
             | tee events.jsonl
-          test_exit=${PIPESTATUS[0]}
-          tee_exit=${PIPESTATUS[1]}
+          # Capture the WHOLE PIPESTATUS array in one statement: reading it into
+          # a scalar first would reset PIPESTATUS before the second element.
+          pipestatus=("${PIPESTATUS[@]}")
           set -e
+          test_exit=${pipestatus[0]}
+          tee_exit=${pipestatus[1]}
           # A failed artifact write must not be mistaken for a clean stream.
           if [ "$tee_exit" != "0" ]; then
             echo "::error::tee failed writing events.jsonl (exit $tee_exit)"; exit 1
