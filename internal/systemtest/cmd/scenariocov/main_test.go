@@ -360,11 +360,157 @@ func TestAggregateBudgetExceeded(t *testing.T) {
 func TestActiveBufferCapExceeded(t *testing.T) {
 	var b strings.Builder
 	b.WriteString(startEvent("p"))
-	for i := 0; i < maxActiveBuffers+1; i++ {
+	for i := 0; i < maxActiveBufs+1; i++ {
 		test := "T" + strconv.Itoa(i)
 		b.WriteString(runEvent(test) + ev("output", test, "y")) // tiny incomplete line each
 	}
 	mustError(t, b.String(), validOpts("p"))
+}
+
+// --- round-9: phase automaton, record shapes, benchmark scope ---
+
+// TestStepPhaseTransitions is the transition-table conformance suite.
+func TestStepPhaseTransitions(t *testing.T) {
+	legal := []struct {
+		from phase
+		act  string
+		to   phase
+	}{
+		{phaseIdle, "run", phaseRunning},
+		{phaseRunning, "pause", phasePaused},
+		{phasePaused, "cont", phaseRunning},
+		{phaseRunning, "output", phaseRunning},
+		{phasePaused, "output", phasePaused},
+		{phaseRunning, "pass", phaseTerminal},
+		{phasePaused, "pass", phaseTerminal},
+		{phaseRunning, "fail", phaseTerminal},
+		{phaseRunning, "skip", phaseTerminal},
+	}
+	for _, c := range legal {
+		if got, ok := stepPhase(c.from, c.act); !ok || got != c.to {
+			t.Errorf("stepPhase(%d,%q)=(%d,%t) want (%d,true)", c.from, c.act, got, ok, c.to)
+		}
+	}
+	illegal := []struct {
+		from phase
+		act  string
+	}{
+		{phaseRunning, "run"},     // duplicate run
+		{phasePaused, "run"},      // run while paused
+		{phaseTerminal, "run"},    // run after terminal
+		{phaseRunning, "cont"},    // cont before pause
+		{phaseIdle, "cont"},       // cont before run
+		{phasePaused, "pause"},    // duplicate pause
+		{phaseIdle, "pause"},      // pause before run
+		{phaseIdle, "output"},     // output before run
+		{phaseTerminal, "output"}, // output after terminal
+		{phaseIdle, "pass"},       // terminal without run
+		{phaseTerminal, "pass"},   // duplicate terminal
+	}
+	for _, c := range illegal {
+		if _, ok := stepPhase(c.from, c.act); ok {
+			t.Errorf("stepPhase(%d,%q) unexpectedly legal", c.from, c.act)
+		}
+	}
+}
+
+// TestPausedClaimNotCredited: an authentic parallel order where TestA's claim
+// is logged from a background goroutine while TestA is paused. The stream is
+// legal (so valid stays true), but the paused claim is NOT running-phase and
+// earns no credit.
+func TestPausedClaimNotCredited(t *testing.T) {
+	stream := startEvent("p") +
+		runEvent("TestA") + ev("pause", "TestA", "") +
+		runEvent("TestB") +
+		claimLine("TestA", "AppService.About", "happy") + // logged while TestA paused
+		ev("pass", "TestB", "") +
+		ev("cont", "TestA", "") + ev("pass", "TestA", "") +
+		pkgEvent("pass")
+	rep := reconcileOK(t, stream, validOpts("p"))
+	if coveredScenarios(rep, "AppService.About")["happy"] {
+		t.Error("a claim logged while its test was paused was credited as running")
+	}
+	if !rep.Valid {
+		t.Errorf("an ordinary paused-output stream should stay valid: violations=%v", rep.Violations)
+	}
+}
+
+// TestRunningClaimStillCredited: the same shape but the claim is logged after
+// cont, while running, is credited — proving the paused guard is not blanket.
+func TestRunningClaimStillCredited(t *testing.T) {
+	stream := startEvent("p") +
+		runEvent("TestA") + ev("pause", "TestA", "") +
+		runEvent("TestB") + ev("pass", "TestB", "") +
+		ev("cont", "TestA", "") +
+		claimLine("TestA", "AppService.About", "happy") + // logged after cont, running
+		ev("pass", "TestA", "") + pkgEvent("pass")
+	rep := reconcileOK(t, stream, validOpts("p"))
+	if !coveredScenarios(rep, "AppService.About")["happy"] {
+		t.Error("a running-phase claim after cont was not credited")
+	}
+	if !rep.Valid {
+		t.Errorf("valid=false unexpectedly: violations=%v", rep.Violations)
+	}
+}
+
+func TestDuplicateRunRejected(t *testing.T) {
+	stream := startEvent("p") + runEvent("TestH") + runEvent("TestH") +
+		claimLine("TestH", "AppService.About", "happy") + ev("pass", "TestH", "") + pkgEvent("pass")
+	rep := reconcileOK(t, stream, validOpts("p"))
+	if rep.Valid || coveredScenarios(rep, "AppService.About")["happy"] {
+		t.Errorf("a duplicate run should invalidate and not credit: valid=%t", rep.Valid)
+	}
+}
+
+func TestContBeforePauseRejected(t *testing.T) {
+	stream := startEvent("p") + runEvent("TestH") + ev("cont", "TestH", "") +
+		claimLine("TestH", "AppService.About", "happy") + ev("pass", "TestH", "") + pkgEvent("pass")
+	if reconcileOK(t, stream, validOpts("p")).Valid {
+		t.Error("cont before pause should invalidate")
+	}
+}
+
+func TestEmptyRecordInvalidates(t *testing.T) {
+	for _, rec := range []string{"{}", "null"} {
+		stream := rec + "\n" + validStream()
+		if reconcileOK(t, stream, validOpts("p")).Valid {
+			t.Errorf("a semantically empty record %q should invalidate", rec)
+		}
+	}
+}
+
+func TestAttributedEmptyPackageMarkerRejected(t *testing.T) {
+	e := event{Action: "output", Test: "TestGhost", Output: scenariocontract.ClaimMarker + claimPayload("AppService.About", "happy", "e") + "\n"}
+	b, _ := json.Marshal(e)
+	mustError(t, string(b)+"\n"+validStream(), validOpts("p"))
+}
+
+func TestSplitPackageMarkerRejected(t *testing.T) {
+	full := scenariocontract.InventoryMarker + `{"x":1}`
+	mid := len(full) / 2
+	stream := startEvent("p") +
+		evPkg("p", "output", "", full[:mid]) + evPkg("p", "output", "", full[mid:]+"\n") + pkgEvent("pass")
+	mustError(t, stream, validOpts("p"))
+}
+
+func TestBenchmarkRejected(t *testing.T) {
+	stream := startEvent("p") + ev("bench", "BenchmarkX", "") + pkgEvent("pass")
+	if reconcileOK(t, stream, validOpts("p")).Valid {
+		t.Error("a benchmark event should invalidate (out of scope for this profile)")
+	}
+}
+
+func TestMisshapenActionsInvalidate(t *testing.T) {
+	// test-level start and package-level run are impossible shapes.
+	testLevelStart := startEvent("p") + ev("start", "TestH", "") +
+		tSeg("TestH", "pass", claimLine("TestH", "AppService.About", "happy")) + pkgEvent("pass")
+	if reconcileOK(t, testLevelStart, validOpts("p")).Valid {
+		t.Error("a test-level start should invalidate")
+	}
+	pkgLevelRun := startEvent("p") + ev("run", "", "") + pkgEvent("pass")
+	if reconcileOK(t, pkgLevelRun, validOpts("p")).Valid {
+		t.Error("a package-level run should invalidate")
+	}
 }
 
 func TestCompletedLinesDoNotRetain(t *testing.T) {

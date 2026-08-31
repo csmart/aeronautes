@@ -45,17 +45,26 @@ tagged with a marker; nothing is committed in process. Claims are emitted only
 from top-level tests.
 
 **Reconciliation — out of process, after the whole tree finishes.**
-`cmd/scenariocov` reads the `go test -json` stream through an explicit event
-automaton over the test2json grammar: a package must `start`, a test must `run`
-before it outputs or terminates and terminate exactly once, every started test
-must terminate before its package, and a package cannot pass with a failed
-test. A cell is credited only when the emitting top-level test ran and reached a
-single terminal PASS, belongs to an expected package, and that package started
-and passed. In machine-valid mode a non-JSON line, an unknown action, or a
-reserved marker outside a running top-level test's own output makes the report
-invalid or is rejected. Because it judges each test from its definitive final
-disposition, a skipped, failed, parallel-paused, or parent-cleanup-skipped test
-earns nothing.
+`cmd/scenariocov` reads the `go test -json` stream through an explicit phase
+automaton over the test2json grammar. Each test moves `idle → running ⇄ paused
+→ terminal` by a table-driven legal-transition function, so a duplicate `run`,
+a `cont` before `pause`, a terminal without a `run`, output before `run` or
+after terminal, and similar illegal transitions are rejected. A package must
+`start`, terminate once, have every started test terminate first, and cannot
+pass with a failed test. Records are shape-validated (every event names a
+package; `start` is package-level, `run`/`pause`/`cont` are test-level;
+semantically empty `{}`/`null` records are malformed). All output — test and
+package — is reassembled, so a reserved marker split across fragments is still
+detected; a marker outside a running top-level test's own output is rejected. A
+cell is credited only when the emitting top-level test ran, was *running* (not
+paused) when the claim line completed, reached a single terminal PASS, and
+belongs to an expected package that started and passed. Retained events, tests,
+packages, claims, evidence bytes, and reported witnesses are all bounded.
+
+**Scope.** The reconciler targets the exact CI producer profile
+(`go test -json -v -race -count=1 ./internal/...`, no `-bench`). Benchmark
+activity and other out-of-profile shapes are rejected with a diagnostic rather
+than modelled; ordinary paused output is accepted but does not earn credit.
 
 **Fail-closed reporting.** `valid` is the conjunction of three separate
 notions — process-succeeded (the real `go test` exit, supplied out of band),
@@ -75,10 +84,15 @@ does not pretend to stop a determined author.
 ## Invariants the mechanism guarantees
 
 - The denominator is well-formed and comes from Go source, not the stream.
-- A cell is credited only from a cleanly-passed top-level test in a passed
-  expected package.
-- A malformed, trailing-content, subtest, duplicate, or unattributable-marker
-  stream is rejected; an incomplete/failed/unexpected stream is `valid:false`.
+- A cell is credited only from a cleanly-run, running-phase, cleanly-passed
+  top-level test in a passed expected package.
+- A malformed, trailing-content, subtest, duplicate, or misplaced/unattributable
+  marker (including one split across fragments), an illegal lifecycle
+  transition, an empty or misshapen record, and benchmark activity are rejected
+  or make the stream `valid:false`; an incomplete/failed/unexpected stream is
+  `valid:false`.
+- Retained state (events, tests, packages, claims, evidence, witnesses) is
+  bounded.
 - `valid:true` requires the producer exit and expected-package set; it never
   asserts coverage completeness or application behavior.
 

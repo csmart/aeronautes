@@ -1,17 +1,21 @@
 // Command scenariocov reconciles war-room scenario coverage from a
 // `go test -json` event stream. It credits a claim ONLY if the emitting
-// top-level test ran and reached a single terminal PASS, that test belongs to
-// an expected package, and that package started and passed — so a skipped,
-// failed, parallel-paused, or parent-cleanup-skipped test earns no credit.
+// top-level test ran, was running (not paused) when the claim line completed,
+// reached a single terminal PASS, and belongs to an expected package that
+// started and passed — so a skipped, failed, parallel-paused, or
+// parent-cleanup-skipped test earns no credit.
 //
 // The coverage DENOMINATOR comes from internal/scenariocontract, imported
 // directly into this separately executed process; it is never taken from the
 // test stream. A reserved marker anywhere but a running top-level test's own
-// output is rejected.
+// output is rejected, including markers split across fragments.
 //
-// The report is an honest-author progress signal, not authenticated proof of
-// application behavior: a test can bypass the harness API and print a claim.
-// CI does not gate on zero gaps.
+// SCOPE: the reconciler models the exact CI producer profile —
+// `go test -json -v -race -count=1 ./internal/...` with no `-bench`. Benchmark
+// activity and other out-of-profile shapes are rejected with a diagnostic, not
+// modelled. The report is an honest-author progress signal, not authenticated
+// proof of application behavior: a test can bypass the harness API and print a
+// claim. CI does not gate on zero gaps.
 //
 // Usage (CI): go test -json ... | tee events.jsonl ; then
 //
@@ -40,12 +44,20 @@ import (
 )
 
 const (
-	schemaVersion    = 3
-	maxProtocolLine  = 1 << 20 // per logical line
-	maxTotalPartial  = 8 << 20 // all retained incomplete lines
-	maxActiveBuffers = 4096    // concurrently retained per-key buffers
-	maxViolations    = 64      // cap the recorded lifecycle-violation list
+	schemaVersion   = 3
+	maxProtocolLine = 1 << 20 // per logical line
+	maxTotalPartial = 8 << 20 // all retained incomplete lines
+	maxActiveBufs   = 4096    // concurrently retained per-key line buffers
+	maxViolations   = 64      // recorded lifecycle-violation list
+	maxEvents       = 50_000_000
+	maxTests        = 2_000_000
+	maxClaims       = 2_000_000
+	maxEvidence     = 2048 // retained evidence bytes per claim
+	maxUnexpected   = 64   // recorded unexpected-package list
+	maxWitnesses    = 64   // reported tests/evidence per covered cell
 )
+
+var errProtocolLine = errors.New("protocol line exceeded the limit")
 
 type event struct {
 	Action  string `json:"Action"`
@@ -59,6 +71,7 @@ type emittedClaim struct {
 	Action   string
 	Scenario string
 	Evidence string
+	running  bool // the claim line completed without spanning a paused phase
 }
 
 type scenarioCredit struct {
@@ -79,27 +92,28 @@ type actionCoverage struct {
 // conjunction of process-succeeded, stream-complete, and contract-valid — it
 // deliberately does NOT imply coverage-complete.
 type report struct {
-	SchemaVersion    int              `json:"schemaVersion"`
-	Valid            bool             `json:"valid"`
-	ProcessSucceeded bool             `json:"processSucceeded"`
-	StreamComplete   bool             `json:"streamComplete"`
-	ContractValid    bool             `json:"contractValid"`
-	CoverageComplete bool             `json:"coverageComplete"`
-	ProtocolError    string           `json:"protocolError,omitempty"`
-	CommitSHA        string           `json:"commitSha"`
-	GoVersion        string           `json:"goVersion"`
-	SAIOConfigured   bool             `json:"saioConfigured"`
-	ContractHash     string           `json:"contractHash"`
-	TotalActions     int              `json:"totalActions"`
-	TotalRequired    int              `json:"totalRequired"`
-	TotalCovered     int              `json:"totalCovered"`
-	ActionsWithGaps  int              `json:"actionsWithGaps"`
-	MissingPackages  []string         `json:"missingPackages,omitempty"`
-	FailedPackages   []string         `json:"failedPackages,omitempty"`
-	UnexpectedPkgs   []string         `json:"unexpectedPackages,omitempty"`
-	Violations       []string         `json:"violations,omitempty"`
-	NonJSONLines     int              `json:"nonJSONLines"`
-	Actions          []actionCoverage `json:"actions"`
+	SchemaVersion       int              `json:"schemaVersion"`
+	Valid               bool             `json:"valid"`
+	ProcessSucceeded    bool             `json:"processSucceeded"`
+	StreamComplete      bool             `json:"streamComplete"`
+	ContractValid       bool             `json:"contractValid"`
+	CoverageComplete    bool             `json:"coverageComplete"`
+	ProtocolError       string           `json:"protocolError,omitempty"`
+	CommitSHA           string           `json:"commitSha"`
+	GoVersion           string           `json:"goVersion"`
+	SAIOConfigured      bool             `json:"saioConfigured"`
+	ContractHash        string           `json:"contractHash"`
+	TotalActions        int              `json:"totalActions"`
+	TotalRequired       int              `json:"totalRequired"`
+	TotalCovered        int              `json:"totalCovered"`
+	ActionsWithGaps     int              `json:"actionsWithGaps"`
+	MissingPackages     []string         `json:"missingPackages,omitempty"`
+	FailedPackages      []string         `json:"failedPackages,omitempty"`
+	UnexpectedPkgs      []string         `json:"unexpectedPackages,omitempty"`
+	Violations          []string         `json:"violations,omitempty"`
+	ViolationsTruncated int              `json:"violationsTruncated,omitempty"`
+	NonJSONLines        int              `json:"nonJSONLines"`
+	Actions             []actionCoverage `json:"actions"`
 }
 
 type options struct {
@@ -132,11 +146,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		saioConfigured: os.Getenv("AERONAUTES_SAIO_AUTH_URL") != "",
 		testExit:       *testExit,
 	}
-	// An implicit zero exit is not evidence: only a value the caller actually
-	// supplied counts.
 	fs.Visit(func(f *flag.Flag) {
 		if f.Name == "test-exit" {
-			opts.testExitProvided = true
+			opts.testExitProvided = true // an implicit zero is not evidence
 		}
 	})
 
@@ -187,8 +199,6 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// writeErrorReport emits a minimal schema-3 invalid report for a protocol
-// failure, so a broken stream still leaves a machine-readable artifact.
 func writeErrorReport(outPath string, opts options, cause error) {
 	if outPath == "" {
 		return
@@ -211,317 +221,414 @@ func hasMarker(s string) bool {
 	return strings.Contains(s, scenariocontract.ClaimMarker) || strings.Contains(s, scenariocontract.InventoryMarker)
 }
 
-// testState / pkgState drive an explicit event automaton over the test2json
-// grammar: a test must run before it outputs or terminates and terminate
-// exactly once; a package must start, terminate once, have every started test
-// terminate first, and not pass with a failed test. Illegal transitions are
-// recorded as violations, which invalidate the stream.
+// --- reassembler ---------------------------------------------------------
+
+// phase is a test's position in the test2json lifecycle.
+type phase uint8
+
+const (
+	phaseIdle phase = iota
+	phaseRunning
+	phasePaused
+	phaseTerminal
+)
+
+// stepPhase is the legal-transition table: it returns the next phase and
+// whether `action` is legal from `cur`. Illegal transitions (duplicate run,
+// cont-before-pause, terminal without run, ...) return ok=false.
+func stepPhase(cur phase, action string) (phase, bool) {
+	switch action {
+	case "run":
+		if cur == phaseIdle {
+			return phaseRunning, true
+		}
+	case "pause":
+		if cur == phaseRunning {
+			return phasePaused, true
+		}
+	case "cont":
+		if cur == phasePaused {
+			return phaseRunning, true
+		}
+	case "pass", "fail", "skip":
+		if cur == phaseRunning || cur == phasePaused {
+			return phaseTerminal, true
+		}
+	case "output":
+		if cur == phaseRunning || cur == phasePaused {
+			return cur, true
+		}
+	}
+	return cur, false
+}
+
+type completedLine struct {
+	text    string
+	spanned bool // the line touched a paused phase, so it is not "running" output
+}
+
+// lineAcc reassembles one key's output. It keeps spare capacity while a line
+// is incomplete (linear growth) and right-sizes only a consumed remainder, and
+// it marks a line that touched a paused phase so a claim authored across a
+// pause is not credited as running.
+type lineAcc struct {
+	data    []byte
+	spanned bool
+}
+
+func (a *lineAcc) add(frag string, paused bool) ([]completedLine, int, error) {
+	if paused {
+		a.spanned = true
+	}
+	a.data = append(a.data, frag...)
+	var lines []completedLine
+	start := 0
+	for {
+		rel := bytes.IndexByte(a.data[start:], '\n')
+		if rel < 0 {
+			break
+		}
+		nl := start + rel
+		if nl-start > maxProtocolLine {
+			return nil, len(a.data), errProtocolLine
+		}
+		lines = append(lines, completedLine{string(a.data[start:nl]), a.spanned})
+		a.spanned = false
+		start = nl + 1
+	}
+	rem := a.data[start:]
+	if len(rem) > maxProtocolLine {
+		return nil, len(a.data), errProtocolLine
+	}
+	switch {
+	case len(rem) == 0:
+		a.data = nil // release the backing array
+	case start > 0:
+		nb := make([]byte, len(rem)) // consumed a line: right-size the remainder
+		copy(nb, rem)
+		a.data = nb
+	}
+	return lines, len(a.data), nil
+}
+
+// --- parser --------------------------------------------------------------
+
 type testState struct {
-	started  bool
+	phase    phase
 	terminal string
 	violated bool
 }
 
 type pkgState struct {
-	started   bool
-	terminal  string
-	openTests int // started, not yet terminated
-	failed    int // tests that terminally failed
-	sawTest   bool
+	started  bool
+	terminal string
+	open     int // tests started, not yet terminated
+	failed   int
+	sawTest  bool
 }
 
-// reconcile parses a test2json stream into the coverage report. It returns an
-// error for a broken/forged stream (a malformed, trailing-content, subtest, or
-// duplicate claim; a misplaced reserved marker; an unterminated marker; an
-// over-limit line or budget). A failed run, a truncated stream, an unexpected
-// package, or a lifecycle violation is reported as valid:false, not an error.
-func reconcile(r io.Reader, opts options) (report, error) {
+type parser struct {
+	opts         options
+	expected     map[string]bool
+	machineValid bool
+
+	tests    map[string]*testState
+	pkgs     map[string]*pkgState
+	accs     map[string]*lineAcc
+	retained int
+
+	seen       map[string]bool
+	claims     []emittedClaim
+	unexpected map[string]bool
+	violations []string
+	vTrunc     int
+	nonJSON    int
+	events     int
+}
+
+func newParser(opts options) *parser {
 	expected := map[string]bool{}
 	for _, p := range opts.expectedPackages {
 		expected[p] = true
 	}
-	machineValid := len(expected) > 0
-
-	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 0, 64*1024), maxProtocolLine+1024)
-
-	tests := map[string]*testState{}
-	pkgs := map[string]*pkgState{}
-	partial := map[string][]byte{}
-	totalPartial := 0
-	seen := map[string]bool{}
-	unexpected := map[string]bool{}
-	var claims []emittedClaim
-	var violations []string
-	nonJSON := 0
-
-	pkgGet := func(pkg string) *pkgState {
-		p := pkgs[pkg]
-		if p == nil {
-			p = &pkgState{}
-			pkgs[pkg] = p
-		}
-		return p
+	return &parser{
+		opts: opts, expected: expected, machineValid: len(expected) > 0,
+		tests: map[string]*testState{}, pkgs: map[string]*pkgState{},
+		accs: map[string]*lineAcc{}, seen: map[string]bool{}, unexpected: map[string]bool{},
 	}
-	testGet := func(key string) *testState {
-		ts := tests[key]
-		if ts == nil {
-			ts = &testState{}
-			tests[key] = ts
-		}
-		return ts
-	}
-	addViolation := func(v string) {
-		if len(violations) < maxViolations {
-			violations = append(violations, v)
-		}
-	}
+}
 
-	// processLine scans one COMPLETE test-output line for a claim marker. It is
-	// only ever called for a running top-level test's output; a slash-bearing
-	// (subtest) claimant, an inventory marker, or a malformed/duplicate claim is
-	// rejected.
-	processLine := func(key, line string) error {
-		if strings.Contains(line, scenariocontract.InventoryMarker) {
-			return fmt.Errorf("inventory marker in stream from %q: the denominator comes from the contract", key)
+func (p *parser) addViolation(v string) {
+	if len(p.violations) < maxViolations {
+		p.violations = append(p.violations, v)
+	} else {
+		p.vTrunc++
+	}
+}
+
+func (p *parser) pkg(name string) *pkgState {
+	s := p.pkgs[name]
+	if s == nil {
+		s = &pkgState{}
+		p.pkgs[name] = s
+	}
+	return s
+}
+
+// step validates one decoded event's record shape, then drives the lifecycle
+// automaton. It returns an error only for a broken/forged stream; illegal but
+// bounded shapes are recorded as violations that invalidate the report.
+func (p *parser) step(e event) error {
+	p.events++
+	if p.events > maxEvents {
+		return fmt.Errorf("stream exceeded %d events", maxEvents)
+	}
+	// A reserved marker may appear only in a test's output, and is scanned via
+	// reassembly there; a non-output event must not carry one.
+	if e.Action != "output" && hasMarker(e.Output) {
+		return fmt.Errorf("reserved marker in a %q event: markers come only from running top-level test output", e.Action)
+	}
+	// Semantic record shape: every real test2json event names a package.
+	if e.Package == "" {
+		if hasMarker(e.Output) {
+			return fmt.Errorf("reserved marker in an event with no package attribution")
 		}
-		idx := strings.Index(line, scenariocontract.ClaimMarker)
-		if idx < 0 {
+		if p.machineValid {
+			p.addViolation("record without a package")
+		}
+		return nil
+	}
+	if p.machineValid && !p.expected[e.Package] {
+		if len(p.unexpected) < maxUnexpected {
+			p.unexpected[e.Package] = true
+		}
+	}
+	pk := p.pkg(e.Package)
+
+	switch e.Action {
+	case "start":
+		if e.Test != "" {
+			p.addViolation("test-level start: " + e.Package + "/" + e.Test)
 			return nil
 		}
-		_, testName, _ := strings.Cut(key, "\t")
-		if strings.Contains(testName, "/") {
-			return fmt.Errorf("claim from subtest %q: claims must be emitted from a top-level test", key)
+		if pk.started {
+			p.addViolation("duplicate package start: " + e.Package)
 		}
-		payload := strings.TrimSpace(line[idx+len(scenariocontract.ClaimMarker):])
-		dec := json.NewDecoder(strings.NewReader(payload))
-		dec.DisallowUnknownFields()
-		var c scenariocontract.Claim
-		if err := dec.Decode(&c); err != nil {
-			return fmt.Errorf("malformed claim from %s: %v (%q)", key, err, payload)
-		}
-		var tail json.RawMessage
-		if err := dec.Decode(&tail); !errors.Is(err, io.EOF) {
-			return fmt.Errorf("trailing content after claim from %s: %q", key, payload)
-		}
-		if !scenariocontract.Requires(c.Action, c.Scenario) {
-			return fmt.Errorf("claim from %s names an unknown or unrequired action/scenario %q/%q", key, c.Action, c.Scenario)
-		}
-		dk := key + "\x00" + c.Action + "\x00" + c.Scenario
-		if seen[dk] {
-			return fmt.Errorf("duplicate claim from %s for %s/%s", key, c.Action, c.Scenario)
-		}
-		seen[dk] = true
-		claims = append(claims, emittedClaim{testKey: key, Action: c.Action, Scenario: c.Scenario, Evidence: c.Evidence})
+		pk.started = true
 		return nil
-	}
-
-	// flush rejects a residual partial line that still carries a marker and
-	// releases the buffer.
-	flush := func(key string) error {
-		buf, ok := partial[key]
-		if !ok {
+	case "bench":
+		p.addViolation("benchmark event is out of scope for this CI profile: " + e.Package)
+		return nil
+	case "run", "pause", "cont":
+		if e.Test == "" {
+			p.addViolation("package-level " + e.Action + ": " + e.Package)
 			return nil
 		}
-		if hasMarker(string(buf)) {
-			return fmt.Errorf("unterminated protocol marker in residual output from %q", key)
+		return p.testEvent(e, pk)
+	case "pass", "fail", "skip":
+		if e.Test == "" {
+			return p.packageTerminal(e, pk)
 		}
-		totalPartial -= len(buf)
-		delete(partial, key)
-		return nil
-	}
-
-	// appendFragment adds an output fragment and processes completed lines. It
-	// keeps the buffer's spare capacity while a line is still incomplete (so a
-	// long line arriving in ~1 KiB test2json fragments reassembles in linear
-	// time, not quadratic), and right-sizes only the small remainder once one
-	// or more lines have been consumed (releasing the completed lines' memory).
-	appendFragment := func(key, frag string) error {
-		buf := partial[key]
-		if buf == nil && len(partial) >= maxActiveBuffers {
-			return fmt.Errorf("too many active per-test buffers (>%d): truncated or garbage stream?", maxActiveBuffers)
-		}
-		totalPartial -= len(buf)
-		buf = append(buf, frag...)
-		start := 0
-		for {
-			rel := bytes.IndexByte(buf[start:], '\n')
-			if rel < 0 {
-				break
-			}
-			nl := start + rel
-			if nl-start > maxProtocolLine {
-				return fmt.Errorf("protocol line exceeded %d bytes for %q", maxProtocolLine, key)
-			}
-			if err := processLine(key, string(buf[start:nl])); err != nil {
-				return err
-			}
-			start = nl + 1
-		}
-		rem := buf[start:]
-		if len(rem) > maxProtocolLine {
-			return fmt.Errorf("protocol line exceeded %d bytes for %q", maxProtocolLine, key)
-		}
-		switch {
-		case len(rem) == 0:
-			delete(partial, key) // release the backing array
-		case start > 0:
-			nb := make([]byte, len(rem)) // consumed a line: right-size the small remainder
-			copy(nb, rem)
-			partial[key] = nb
-			totalPartial += len(nb)
-		default:
-			partial[key] = buf // still incomplete: keep spare capacity (linear growth)
-			totalPartial += len(buf)
-		}
-		if totalPartial > maxTotalPartial {
-			return fmt.Errorf("retained partial output exceeded %d bytes: truncated or garbage stream?", maxTotalPartial)
+		return p.testEvent(e, pk)
+	case "output":
+		return p.output(e, pk)
+	default:
+		if p.machineValid {
+			p.addViolation("unknown action " + strconv.Quote(e.Action))
 		}
 		return nil
 	}
+}
 
-	for sc.Scan() {
-		var e event
-		if err := json.Unmarshal(sc.Bytes(), &e); err != nil {
-			nonJSON++
-			if machineValid {
-				addViolation("non-JSON line in stream")
-			}
-			continue
+func (p *parser) test(key string) (*testState, error) {
+	ts := p.tests[key]
+	if ts == nil {
+		if len(p.tests) >= maxTests {
+			return nil, fmt.Errorf("stream exceeded %d tests", maxTests)
 		}
-		if machineValid && e.Package != "" && !expected[e.Package] {
-			unexpected[e.Package] = true
-		}
-		// A reserved marker may appear only in a running top-level test's own
-		// output; anywhere else (a non-output action, or package-level output)
-		// it is misplaced and rejected, so it cannot be hidden by changing the
-		// action or clearing attribution.
-		if (e.Action != "output" || e.Test == "") && hasMarker(e.Output) {
-			return report{}, fmt.Errorf("reserved marker in a %q event (test=%q): markers come only from top-level test output", e.Action, e.Test)
-		}
-		if e.Package == "" {
-			continue
-		}
-		p := pkgGet(e.Package)
-		key := e.Package + "\t" + e.Test
+		ts = &testState{}
+		p.tests[key] = ts
+	}
+	return ts, nil
+}
 
-		switch e.Action {
-		case "start":
-			if e.Test == "" {
-				if p.started {
-					addViolation("duplicate package start: " + e.Package)
-				}
-				p.started = true
-			}
-		case "run":
-			if e.Test != "" {
-				p.sawTest = true
-				if !p.started {
-					addViolation("test run before package start: " + key)
-				}
-				if p.terminal != "" {
-					addViolation("test run after package terminal: " + key)
-				}
-				ts := testGet(key)
-				if ts.terminal != "" {
-					ts.violated = true
-					addViolation("run after test terminal: " + key)
-				} else if !ts.started {
-					ts.started = true
-					p.openTests++
-				}
-			}
-		case "pause", "cont":
-			if e.Test != "" {
-				ts := testGet(key)
-				if !ts.started || ts.terminal != "" {
-					ts.violated = true
-					addViolation(e.Action + " outside a running test: " + key)
-				}
-			}
-		case "pass", "fail", "skip":
-			if e.Test != "" {
-				p.sawTest = true
-				if p.terminal != "" {
-					addViolation("test terminal after package terminal: " + key)
-				}
-				ts := testGet(key)
-				if !ts.started {
-					ts.violated = true
-					addViolation("test terminal without run: " + key)
-				}
-				if ts.terminal != "" {
-					ts.violated = true
-					addViolation("duplicate test terminal: " + key)
-				} else if ts.started {
-					p.openTests--
-				}
-				ts.terminal = e.Action
-				if e.Action == "fail" {
-					p.failed++
-				}
-				if err := flush(key); err != nil {
-					return report{}, err
-				}
-			} else {
-				if !p.started {
-					addViolation("package terminal without start: " + e.Package)
-				}
-				if p.terminal != "" {
-					addViolation("duplicate package terminal: " + e.Package)
-				}
-				p.terminal = e.Action
-				if p.openTests > 0 {
-					addViolation("package terminal with unfinished tests: " + e.Package)
-				}
-				if e.Action == "pass" && p.failed > 0 {
-					addViolation("package pass with a failed test: " + e.Package)
-				}
-				if err := flush(e.Package + "\t"); err != nil {
-					return report{}, err
-				}
-			}
-		case "output":
-			if e.Test != "" {
-				p.sawTest = true
-				if !p.started {
-					addViolation("test output before package start: " + e.Package)
-				}
-				ts := testGet(key)
-				if !ts.started {
-					ts.violated = true
-					addViolation("test output before run: " + key)
-				}
-				if ts.terminal != "" {
-					ts.violated = true
-					addViolation("output after test terminal: " + key)
-					continue
-				}
-				if p.terminal != "" {
-					addViolation("test output after package terminal: " + e.Package)
-				}
-				if err := appendFragment(key, e.Output); err != nil {
-					return report{}, err
-				}
-			} else if p.terminal != "" {
-				addViolation("package output after package terminal: " + e.Package)
-			}
-		case "bench":
-			// benchmarks carry no scenario coverage; accepted.
-		default:
-			if machineValid {
-				addViolation("unknown action " + strconv.Quote(e.Action))
-			}
+func (p *parser) testEvent(e event, pk *pkgState) error {
+	key := e.Package + "\t" + e.Test
+	pk.sawTest = true
+	if !pk.started {
+		p.addViolation("test event before package start: " + key)
+	}
+	if pk.terminal != "" {
+		p.addViolation("test event after package terminal: " + key)
+	}
+	ts, err := p.test(key)
+	if err != nil {
+		return err
+	}
+	next, ok := stepPhase(ts.phase, e.Action)
+	if !ok {
+		ts.violated = true
+		p.addViolation("illegal " + e.Action + " for " + key)
+		return nil
+	}
+	switch e.Action {
+	case "run":
+		pk.open++
+	case "pass", "fail", "skip":
+		pk.open--
+		ts.terminal = e.Action
+		if e.Action == "fail" {
+			pk.failed++
+		}
+		if err := p.flush(key); err != nil {
+			return err
 		}
 	}
-	if err := sc.Err(); err != nil {
-		if err == bufio.ErrTooLong {
-			return report{}, fmt.Errorf("a stream line exceeded the protocol limit")
-		}
-		return report{}, err
+	ts.phase = next
+	return nil
+}
+
+func (p *parser) packageTerminal(e event, pk *pkgState) error {
+	if !pk.started {
+		p.addViolation("package terminal without start: " + e.Package)
 	}
-	for key := range partial {
-		if err := flush(key); err != nil {
+	if pk.terminal != "" {
+		p.addViolation("duplicate package terminal: " + e.Package)
+	}
+	pk.terminal = e.Action
+	if pk.open > 0 {
+		p.addViolation("package terminal with unfinished tests: " + e.Package)
+	}
+	if e.Action == "pass" && pk.failed > 0 {
+		p.addViolation("package pass with a failed test: " + e.Package)
+	}
+	return p.flush(e.Package + "\t")
+}
+
+func (p *parser) output(e event, pk *pkgState) error {
+	key := e.Package + "\t" + e.Test
+	if e.Test == "" {
+		// Package-level output: accumulate to detect a marker split across
+		// fragments; a marker on a completed package-level line is rejected.
+		if pk.terminal != "" {
+			p.addViolation("package output after package terminal: " + e.Package)
+		}
+		return p.accumulate(key, e.Output, false, true)
+	}
+	pk.sawTest = true
+	if !pk.started {
+		p.addViolation("test output before package start: " + e.Package)
+	}
+	ts, err := p.test(key)
+	if err != nil {
+		return err
+	}
+	if ts.phase == phaseIdle {
+		ts.violated = true
+		p.addViolation("test output before run: " + key)
+	}
+	if ts.phase == phaseTerminal {
+		ts.violated = true
+		p.addViolation("test output after terminal: " + key)
+		return nil
+	}
+	if pk.terminal != "" {
+		p.addViolation("test output after package terminal: " + e.Package)
+	}
+	return p.accumulate(key, e.Output, ts.phase == phasePaused, false)
+}
+
+func (p *parser) accumulate(key, output string, paused, packageLevel bool) error {
+	acc := p.accs[key]
+	if acc == nil {
+		if len(p.accs) >= maxActiveBufs {
+			return fmt.Errorf("too many active per-key buffers (>%d): truncated or garbage stream?", maxActiveBufs)
+		}
+		acc = &lineAcc{}
+		p.accs[key] = acc
+	}
+	p.retained -= len(acc.data)
+	lines, retained, err := acc.add(output, paused)
+	if err != nil {
+		return fmt.Errorf("%w for %q", err, key)
+	}
+	p.retained += retained
+	if retained == 0 {
+		delete(p.accs, key)
+	}
+	if p.retained > maxTotalPartial {
+		return fmt.Errorf("retained partial output exceeded %d bytes: truncated or garbage stream?", maxTotalPartial)
+	}
+	for _, ln := range lines {
+		if err := p.processLine(key, ln, packageLevel); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *parser) processLine(key string, ln completedLine, packageLevel bool) error {
+	if strings.Contains(ln.text, scenariocontract.InventoryMarker) {
+		return fmt.Errorf("inventory marker in stream from %q: the denominator comes from the contract", key)
+	}
+	idx := strings.Index(ln.text, scenariocontract.ClaimMarker)
+	if idx < 0 {
+		return nil
+	}
+	if packageLevel {
+		return fmt.Errorf("claim marker in package-level output (%q): unattributable to a test", key)
+	}
+	_, testName, _ := strings.Cut(key, "\t")
+	if strings.Contains(testName, "/") {
+		return fmt.Errorf("claim from subtest %q: claims must be emitted from a top-level test", key)
+	}
+	payload := strings.TrimSpace(ln.text[idx+len(scenariocontract.ClaimMarker):])
+	dec := json.NewDecoder(strings.NewReader(payload))
+	dec.DisallowUnknownFields()
+	var c scenariocontract.Claim
+	if err := dec.Decode(&c); err != nil {
+		return fmt.Errorf("malformed claim from %s: %v (%q)", key, err, payload)
+	}
+	var tail json.RawMessage
+	if err := dec.Decode(&tail); !errors.Is(err, io.EOF) {
+		return fmt.Errorf("trailing content after claim from %s: %q", key, payload)
+	}
+	if !scenariocontract.Requires(c.Action, c.Scenario) {
+		return fmt.Errorf("claim from %s names an unknown or unrequired action/scenario %q/%q", key, c.Action, c.Scenario)
+	}
+	dk := key + "\x00" + c.Action + "\x00" + c.Scenario
+	if p.seen[dk] {
+		return fmt.Errorf("duplicate claim from %s for %s/%s", key, c.Action, c.Scenario)
+	}
+	p.seen[dk] = true
+	if len(p.claims) >= maxClaims {
+		return fmt.Errorf("stream exceeded %d claims", maxClaims)
+	}
+	evidence := c.Evidence
+	if len(evidence) > maxEvidence {
+		evidence = evidence[:maxEvidence]
+	}
+	p.claims = append(p.claims, emittedClaim{testKey: key, Action: c.Action, Scenario: c.Scenario, Evidence: evidence, running: !ln.spanned})
+	return nil
+}
+
+func (p *parser) flush(key string) error {
+	acc := p.accs[key]
+	if acc == nil {
+		return nil
+	}
+	if hasMarker(string(acc.data)) {
+		return fmt.Errorf("unterminated protocol marker in residual output from %q", key)
+	}
+	p.retained -= len(acc.data)
+	delete(p.accs, key)
+	return nil
+}
+
+// finalize flushes residual buffers and builds the report.
+func (p *parser) finalize() (report, error) {
+	for key := range p.accs {
+		if err := p.flush(key); err != nil {
 			return report{}, err
 		}
 	}
@@ -529,20 +636,20 @@ func reconcile(r io.Reader, opts options) (report, error) {
 	contract := scenariocontract.All()
 	contractValid := scenariocontract.Validate() == nil && len(contract) > 0
 
-	// Credit a claim only from a cleanly-run, cleanly-passed top-level test
-	// whose expected package started and passed.
+	// Credit a claim only from a cleanly-run, running-phase, cleanly-passed
+	// top-level test whose expected package started and passed.
 	credited := map[string]map[string][]emittedClaim{}
-	for _, ec := range claims {
-		ts := tests[ec.testKey]
-		if ts == nil || ts.violated || !ts.started || ts.terminal != "pass" {
+	for _, ec := range p.claims {
+		ts := p.tests[ec.testKey]
+		if ts == nil || ts.violated || ts.terminal != "pass" || !ec.running {
 			continue
 		}
-		if machineValid {
-			pkg, _, _ := strings.Cut(ec.testKey, "\t")
-			if !expected[pkg] {
+		if p.machineValid {
+			pkgName, _, _ := strings.Cut(ec.testKey, "\t")
+			if !p.expected[pkgName] {
 				continue
 			}
-			if p := pkgs[pkg]; p == nil || !p.started || p.terminal != "pass" {
+			if pk := p.pkgs[pkgName]; pk == nil || !pk.started || pk.terminal != "pass" {
 				continue
 			}
 		}
@@ -552,46 +659,45 @@ func reconcile(r io.Reader, opts options) (report, error) {
 		credited[ec.Action][ec.Scenario] = append(credited[ec.Action][ec.Scenario], ec)
 	}
 
-	// Package completeness: every expected package must pass, or be a genuine
-	// no-test skip (a package-level skip with no test-level events).
 	var missing, failed, unexpectedList []string
-	if machineValid {
-		for pkg := range expected {
-			p := pkgs[pkg]
+	if p.machineValid {
+		for name := range p.expected {
+			pk := p.pkgs[name]
 			switch {
-			case p == nil || p.terminal == "":
-				missing = append(missing, pkg)
-			case p.terminal == "pass":
-			case p.terminal == "skip" && !p.sawTest:
+			case pk == nil || pk.terminal == "":
+				missing = append(missing, name)
+			case pk.terminal == "pass":
+			case pk.terminal == "skip" && !pk.sawTest:
 			default:
-				failed = append(failed, pkg)
+				failed = append(failed, name)
 			}
 		}
-		for pkg := range unexpected {
-			unexpectedList = append(unexpectedList, pkg)
+		for name := range p.unexpected {
+			unexpectedList = append(unexpectedList, name)
 		}
 		sort.Strings(missing)
 		sort.Strings(failed)
 		sort.Strings(unexpectedList)
 	}
-	streamComplete := machineValid &&
-		len(missing) == 0 && len(failed) == 0 && len(unexpectedList) == 0 && len(violations) == 0
+	streamComplete := p.machineValid &&
+		len(missing) == 0 && len(failed) == 0 && len(unexpectedList) == 0 && len(p.violations) == 0 && p.vTrunc == 0
 
 	rep := report{
-		SchemaVersion:    schemaVersion,
-		ProcessSucceeded: opts.testExitProvided && opts.testExit == 0,
-		StreamComplete:   streamComplete,
-		ContractValid:    contractValid,
-		CommitSHA:        opts.commitSHA,
-		GoVersion:        runtime.Version(),
-		SAIOConfigured:   opts.saioConfigured,
-		ContractHash:     scenariocontract.Hash(),
-		TotalActions:     len(contract),
-		MissingPackages:  missing,
-		FailedPackages:   failed,
-		UnexpectedPkgs:   unexpectedList,
-		Violations:       violations,
-		NonJSONLines:     nonJSON,
+		SchemaVersion:       schemaVersion,
+		ProcessSucceeded:    p.opts.testExitProvided && p.opts.testExit == 0,
+		StreamComplete:      streamComplete,
+		ContractValid:       contractValid,
+		CommitSHA:           p.opts.commitSHA,
+		GoVersion:           runtime.Version(),
+		SAIOConfigured:      p.opts.saioConfigured,
+		ContractHash:        scenariocontract.Hash(),
+		TotalActions:        len(contract),
+		MissingPackages:     missing,
+		FailedPackages:      failed,
+		UnexpectedPkgs:      unexpectedList,
+		Violations:          p.violations,
+		ViolationsTruncated: p.vTrunc,
+		NonJSONLines:        p.nonJSON,
 	}
 
 	for _, action := range sortedKeys(contract) {
@@ -610,6 +716,9 @@ func reconcile(r io.Reader, opts options) (report, error) {
 			sortByTest(ecs)
 			cr := scenarioCredit{Scenario: scenario}
 			for _, ec := range ecs {
+				if len(cr.Tests) >= maxWitnesses { // bound reported witnesses per cell
+					break
+				}
 				cr.Tests = append(cr.Tests, ec.testKey)
 				cr.Evidence = append(cr.Evidence, ec.Evidence)
 			}
@@ -629,6 +738,37 @@ func reconcile(r io.Reader, opts options) (report, error) {
 	return rep, nil
 }
 
+// reconcile parses a test2json stream into the coverage report. It returns an
+// error for a broken/forged stream (a malformed, trailing-content, subtest, or
+// duplicate claim; a misplaced or unattributable marker; an over-limit line or
+// budget). A failed run, a truncated stream, an unexpected package, or a
+// lifecycle violation is reported as valid:false, not an error.
+func reconcile(r io.Reader, opts options) (report, error) {
+	p := newParser(opts)
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 0, 64*1024), maxProtocolLine+1024)
+	for sc.Scan() {
+		var e event
+		if err := json.Unmarshal(sc.Bytes(), &e); err != nil {
+			p.nonJSON++
+			if p.machineValid {
+				p.addViolation("non-JSON line in stream")
+			}
+			continue
+		}
+		if err := p.step(e); err != nil {
+			return report{}, err
+		}
+	}
+	if err := sc.Err(); err != nil {
+		if err == bufio.ErrTooLong {
+			return report{}, fmt.Errorf("a stream line exceeded the protocol limit")
+		}
+		return report{}, err
+	}
+	return p.finalize()
+}
+
 func sortedKeys(m map[string]scenariocontract.Action) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
@@ -642,8 +782,6 @@ func sortByTest(ecs []emittedClaim) {
 	sort.Slice(ecs, func(i, j int) bool { return ecs[i].testKey < ecs[j].testKey })
 }
 
-// readExpected reads the expected package list and validates it is non-empty
-// and free of duplicates.
 func readExpected(path string) ([]string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

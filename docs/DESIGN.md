@@ -4134,15 +4134,19 @@ model, mechanism, invariants, and review history are ADR 0013. In brief: the
 denominator is one trusted non-test source (`internal/scenariocontract`, imported by
 both the tests and `cmd/scenariocov`, never read from the stream); a single-use Receipt
 emits a claim as a `go test -json` line only from a top-level test; and
-`cmd/scenariocov` credits a cell only when that top-level test ran and terminally passed
-exactly once, its package is expected, and that package started and passed. Claims are
-top-level only (a slash-bearing claimant is ambiguous and rejected at both the harness
-and the reconciler). The reconciler is an explicit event automaton over the test2json
-grammar: a run-less or dangling test, a package that passes with a failed test,
-post-terminal or conflicting-terminal events, a non-JSON line, an unknown action, and a
-reserved marker outside a running top-level test's output are all rejected or invalidate
-the stream, and the line accumulator is linear with per-line, aggregate, and
-active-buffer bounds checked before processing each completed line.
+`cmd/scenariocov` credits a cell only when that top-level test ran, was running (not
+paused) when the claim line completed, terminally passed exactly once, its package is
+expected, and that package started and passed. Claims are top-level only (a slash-bearing
+claimant is ambiguous and rejected at both the harness and the reconciler). The reconciler
+is an explicit phase automaton (`idle → running ⇄ paused → terminal`) driven by a
+table of legal transitions: illegal transitions (duplicate run, cont-before-pause,
+terminal-without-run, post-terminal output), a package that passes with a failed test or
+leaves a test unfinished, an empty or misshapen record, a non-JSON line, an unknown
+action, benchmark activity (out of the CI profile's scope), and a reserved marker outside
+a running top-level test's output — including one split across fragments — are all
+rejected or invalidate the stream. All output is reassembled linearly with per-line,
+aggregate, and active-buffer bounds checked before each completed line, and retained
+events/tests/packages/claims/evidence are bounded.
 
 CI is fail-closed. `go list` fixes the expected package set (validated non-empty, unique,
 and exact); the raw stream is tee'd to an artifact and both the `go test` and `tee` exit
