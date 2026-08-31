@@ -25,6 +25,7 @@ import (
 	"github.com/csmart/aeronautes/internal/db"
 	"github.com/csmart/aeronautes/internal/evidence"
 	"github.com/csmart/aeronautes/internal/jobs"
+	"github.com/csmart/aeronautes/internal/scenariocontract"
 	"github.com/csmart/aeronautes/internal/secrets"
 	"github.com/csmart/aeronautes/internal/systemtest/oracle"
 )
@@ -175,21 +176,30 @@ func (h *Harness) assertNoResidue() {
 }
 
 // Receipt is the single-use record of ONE bridge-action invocation through
-// a harness wrapper. A coverage claim can be EMITTED only through the
-// receipt's Credit* methods, which validate the scenario against the
-// action, job, error, and outcome captured from THAT one call — so
-// evidence for call B cannot certify call A, and one invocation cannot
-// certify a scenario it did not produce (codex war-room round-4 F-01).
-// Emitting only writes a line; whether it becomes a credit is decided OUT
-// OF PROCESS by cmd/scenariocov, which requires the emitting test (and
-// every ancestor) to terminally PASS (F-02).
+// a harness wrapper. Its Credit* methods emit a claim only after checking
+// the scenario against the action, job, error, and outcome captured from
+// THAT one call, so for a cooperating author using this API the evidence
+// for call B does not get attached to call A, and a single invocation does
+// not credit a scenario it did not produce. This is convenience machinery
+// that catches accidental mix-ups, not an anti-forgery boundary: a test can
+// still bypass the API. Emitting only writes a line; whether it becomes a
+// credit is decided OUT OF PROCESS by cmd/scenariocov, which requires the
+// emitting test (and every observed ancestor) to terminally PASS.
+//
+// Credit* are all defined on this one type, so calling the wrong one for an
+// action compiles and is caught at run time by the checks below, not by the
+// compiler.
 type Receipt struct {
-	h        *Harness
-	action   string
-	jobID    string // set for job-running actions
-	outcome  string // set for synchronous mutates (result.Outcome)
-	err      error  // the call's returned error
-	consumed bool
+	h       *Harness
+	action  string
+	jobID   string // set for job-running actions
+	outcome string // set for synchronous mutates (result.Outcome)
+	err     error  // the call's returned error
+
+	// consumed guards single use. It is atomic so a test that races two
+	// Credit* calls on one receipt gets a deterministic single winner
+	// instead of a data race (see receipt_race_test.go).
+	consumed atomic.Bool
 }
 
 // JobID, Err, and Outcome expose this call's result so the test can make
@@ -198,17 +208,20 @@ func (r *Receipt) JobID() string   { return r.jobID }
 func (r *Receipt) Err() error      { return r.err }
 func (r *Receipt) Outcome() string { return r.outcome }
 
+// consume marks the receipt used, returning false if it was already used.
+// The compare-and-swap makes concurrent consumption safe: exactly one
+// caller observes true.
+func (r *Receipt) consume() bool { return r.consumed.CompareAndSwap(false, true) }
+
 func (r *Receipt) emit(scenario, evidence string) {
 	r.h.T.Helper()
-	if r.consumed {
+	if !r.consume() {
 		r.h.T.Fatalf("receipt for %s already consumed — one invocation credits at most one scenario", r.action)
 	}
-	r.consumed = true
-	a, ok := Inventory[r.action]
-	if !ok || !scenarioRequired(a, scenario) {
+	if !scenariocontract.Requires(r.action, scenario) {
 		r.h.T.Fatalf("receipt %s: %q is not a required scenario", r.action, scenario)
 	}
-	r.h.T.Logf("%s%s", scenarioClaimMarker, claimJSON(r.action, scenario, evidence))
+	r.h.T.Logf("%s%s", scenariocontract.ClaimMarker, claimJSON(r.action, scenario, evidence))
 }
 
 // CreditHappy emits a happy claim for a JOB action, validating from THIS
@@ -282,6 +295,11 @@ func (h *Harness) StartDelete(ctx context.Context, req app.DeleteRequestDTO) *Re
 }
 
 func (h *Harness) DeleteManifestWithSegments(ctx context.Context, req app.SegmentsDeleteRequestDTO) *Receipt {
+	// The result DTO (failed/remaining segments) is intentionally not yet
+	// surfaced on the receipt: this action's partial/retry/cancel cells are
+	// deferred, and Codex round-5 asks that the full DTO and typed outcomes
+	// be retained BEFORE those cells are added. Until then only happy/refusal/
+	// conflict are creditable, none of which needs the remainder list.
 	_, err := h.Delete.DeleteManifestWithSegments(ctx, req)
 	return &Receipt{h: h, action: "DeleteService.DeleteManifestWithSegments", err: err}
 }

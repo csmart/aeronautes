@@ -7,12 +7,13 @@ import (
 	"testing"
 
 	"github.com/csmart/aeronautes/internal/app"
+	"github.com/csmart/aeronautes/internal/scenariocontract"
 )
 
 // boundServices derives the bridge surface from the single source of
 // truth in the app package (app.BoundServices) rather than a second
-// handwritten copy that could drift from main.go. main_test.go proves
-// main.go binds exactly these constructors (grok war-room P2).
+// handwritten copy that could drift from main.go. main_binding_test.go
+// proves main.go binds exactly these constructors (grok war-room P2).
 func boundServices() map[string]any {
 	m := map[string]any{}
 	for _, b := range app.BoundServices() {
@@ -22,76 +23,57 @@ func boundServices() map[string]any {
 }
 
 // TestInventoryCoversEveryBoundAction is the §65.10 auto-inventory gate:
-// every exported method on a bound service MUST have an inventory row,
-// and every inventory row must name a real bound method. A new bridge
-// action cannot ship without declaring its required scenarios.
+// every exported method on a bound service MUST have a contract row, and
+// every contract row must name a real bound method. A new bridge action
+// cannot ship without declaring its required scenarios. The contract lives
+// in internal/scenariocontract so the reconciler reads the same denominator.
 func TestInventoryCoversEveryBoundAction(t *testing.T) {
+	contract := scenariocontract.All()
 	live := map[string]bool{}
 	for svcName, svc := range boundServices() {
 		typ := reflect.TypeOf(svc)
 		for i := 0; i < typ.NumMethod(); i++ {
 			key := svcName + "." + typ.Method(i).Name
 			live[key] = true
-			if _, ok := Inventory[key]; !ok {
-				t.Errorf("bound bridge method %s has no inventory row — add it (and its scenarios) to Inventory", key)
+			if _, ok := contract[key]; !ok {
+				t.Errorf("bound bridge method %s has no contract row — add it (and its scenarios) to scenariocontract", key)
 			}
 		}
 	}
-	for key := range Inventory {
+	for key := range contract {
 		if !live[key] {
-			t.Errorf("inventory row %s names no bound method — remove or fix it", key)
+			t.Errorf("contract row %s names no bound method — remove or fix it", key)
 		}
 	}
 }
 
-// TestInventoryIsWellFormed validates every inventory row so the
-// denominator cannot be silently weakened (codex war-room R-02): an
-// invalid or omitted Kind yields zero requirements and would mark the
-// action complete with no test. Each action must have a KNOWN kind, a
-// non-empty required set drawn from the known scenario vocabulary with no
-// duplicates, and must at least require the "happy" baseline.
+// TestInventoryIsWellFormed asserts the contract validates: a known kind, a
+// non-empty required set from the known vocabulary with no duplicates, and
+// the happy baseline. The check itself lives in scenariocontract.Validate
+// (and is unit-tested there); this keeps the systemtest suite red if the
+// shared contract is ever malformed.
 func TestInventoryIsWellFormed(t *testing.T) {
-	knownKinds := map[Kind]bool{Read: true, Session: true, Mutate: true, Destructive: true, Job: true}
-	knownScenarios := map[string]bool{"happy": true, "refusal": true, "conflict": true, "cancel": true, "partial": true, "retry": true}
-	for key, a := range Inventory {
-		if !knownKinds[a.Kind] {
-			t.Errorf("%s: unknown Kind %q", key, a.Kind)
-		}
-		req := a.required()
-		if len(req) == 0 {
-			t.Errorf("%s: zero required scenarios — an invalid Kind or empty override would silently mark it complete", key)
-			continue
-		}
-		seen := map[string]bool{}
-		for _, s := range req {
-			if !knownScenarios[s] {
-				t.Errorf("%s: required scenario %q is not in the known vocabulary", key, s)
-			}
-			if seen[s] {
-				t.Errorf("%s: required scenario %q listed twice", key, s)
-			}
-			seen[s] = true
-		}
-		if !seen["happy"] {
-			t.Errorf("%s: does not require the baseline 'happy' scenario", key)
-		}
+	if err := scenariocontract.Validate(); err != nil {
+		t.Errorf("scenario contract is malformed: %v", err)
 	}
 }
 
 // TestInventoryLogsRequiredScenarios logs the static contract — every
-// action, its kind, and the scenarios it requires. The COVERAGE numbers
-// (what actually ran) are emitted separately by TestMain from the
-// evidence-based registry, so they cannot be gamed by a hand map.
+// action, its kind, and the scenarios it requires — as a human-readable
+// diagnostic. It is NOT the denominator source; cmd/scenariocov imports the
+// contract directly.
 func TestInventoryLogsRequiredScenarios(t *testing.T) {
-	kinds := map[Kind]int{}
+	contract := scenariocontract.All()
+	kinds := map[scenariocontract.Kind]int{}
 	var rows []string
 	total := 0
-	for key, action := range Inventory {
+	for key, action := range contract {
 		kinds[action.Kind]++
-		total += len(action.required())
-		rows = append(rows, key+" ["+string(action.Kind)+"] needs: "+strings.Join(action.required(), ","))
+		total += len(action.Required())
+		rows = append(rows, key+" ["+string(action.Kind)+"] needs: "+strings.Join(action.Required(), ","))
 	}
 	sort.Strings(rows)
-	t.Logf("ACTION INVENTORY (%d actions: %d read, %d session, %d mutate, %d destructive, %d job; %d required scenarios)\n%s",
-		len(Inventory), kinds[Read], kinds[Session], kinds[Mutate], kinds[Destructive], kinds[Job], total, strings.Join(rows, "\n"))
+	t.Logf("ACTION CONTRACT (%d actions: %d read, %d session, %d mutate, %d destructive, %d job; %d required scenarios; hash %s)\n%s",
+		len(contract), kinds[scenariocontract.Read], kinds[scenariocontract.Session], kinds[scenariocontract.Mutate],
+		kinds[scenariocontract.Destructive], kinds[scenariocontract.Job], total, scenariocontract.Hash(), strings.Join(rows, "\n"))
 }

@@ -198,6 +198,7 @@ jobs:
       # W-16); enabling that lane is release-assurance work.
       - name: Run internal Go suite with combined coverage (SAIO)
         if: steps.detect.outputs.present == 'true'
+        shell: bash
         env:
           AERONAUTES_SAIO_AUTH_URL: http://127.0.0.1:8080/auth/v1.0
           AERONAUTES_REQUIRE_TWO_ACCOUNTS: "1"
@@ -207,29 +208,48 @@ jobs:
           # compile, and its //go:embed frontend/dist is not built in this
           # job (it is exercised by the Smoke and Frontend jobs).
           #
-          # -json streams test2json events to cmd/scenariocov, which
-          # reconciles scenario coverage from each test's TERMINAL pass/skip/
-          # fail after the whole tree finishes (codex war-room round-4 F-02)
-          # and exits non-zero if any test failed — so this pipeline still
-          # fails the step through the pipe even under a non-pipefail shell.
-          # cover.out is written by go test as a side effect of -coverprofile.
+          # Fail-closed reconciliation (codex war-room round-5 F-03). The
+          # denominator comes from internal/scenariocontract, imported by
+          # cmd/scenariocov — never from the stream. The exact expected
+          # package set comes from `go list`; the raw event stream is tee'd
+          # to an artifact for diagnosis; and the reconciler is handed
+          # go test's REAL exit code (${PIPESTATUS[0]}) plus that expected
+          # set. It marks the report invalid — and exits nonzero, failing
+          # this step — if the producer exited nonzero, the stream was
+          # truncated (any expected package never terminated), or the
+          # contract is malformed. `shell: bash` supplies -eo pipefail as
+          # defence in depth; -e is dropped only around the tee so the real
+          # exit code is captured instead of aborting the step early.
+          go list ./internal/... > expected-packages.txt
+          set +e
           go test -json -v -race -count=1 -coverprofile=cover.out -coverpkg=./internal/... ./internal/... \
-            | go run ./internal/systemtest/cmd/scenariocov -out scenario-coverage.json
+            | tee events.jsonl
+          test_exit=${PIPESTATUS[0]}
+          set -e
+          go run ./internal/systemtest/cmd/scenariocov \
+            -events events.jsonl \
+            -test-exit "$test_exit" \
+            -expected-packages expected-packages.txt \
+            -out scenario-coverage.json
           pct=$(go tool cover -func=cover.out | awk '/^total:/ {gsub(/%/,"",$3); print $3}')
           echo "combined Go statement coverage: ${pct}%"
           echo "$pct" > coverage-pct.txt
-          # Validate the reconciled report (codex war-room R-03): expected
-          # schema and marked valid (no test failed). No `|| true`.
-          grep -E '"total(Covered|Required)"|"actionsWithGaps"' scenario-coverage.json
-          grep -q '"schemaVersion": 2' scenario-coverage.json || { echo "::error::unexpected scenario report schema"; exit 1; }
+          # Belt and braces: scenariocov already exits nonzero when invalid;
+          # assert the expected schema and the valid flag here too.
+          grep -E '"total(Covered|Required)"|"actionsWithGaps"|"contractHash"' scenario-coverage.json
+          grep -q '"schemaVersion": 3' scenario-coverage.json || { echo "::error::unexpected scenario report schema"; exit 1; }
           grep -q '"valid": true' scenario-coverage.json || { echo "::error::scenario report marks the run invalid"; exit 1; }
+      # Upload the report AND the raw stream even on failure, so an invalid or
+      # partial run is diagnosable (codex war-room round-5 F-03).
       - name: upload scenario-coverage report
-        if: steps.detect.outputs.present == 'true'
+        if: always() && steps.detect.outputs.present == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: scenario-coverage
-          path: scenario-coverage.json
-          if-no-files-found: error
+          path: |
+            scenario-coverage.json
+            events.jsonl
+          if-no-files-found: warn
       # SOFT coverage floor: red step + warning on a drop, pipeline
       # continues (continue-on-error).
       - name: coverage floor (soft, 75%)

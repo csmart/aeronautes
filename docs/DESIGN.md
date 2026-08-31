@@ -4128,34 +4128,59 @@ rejects bogus coverage entries (H-02); reclassification and the wired per-action
 Scenarios override (H-03); the changed-object mirror fixture and optimistic-
 conflict metadata case (H-07).
 
-Coverage is EVIDENCE-BASED, and after five Codex re-reviews the credit mechanism is
-redesigned so a cell cannot be created without the exact execution and outcome it
-names. Codex's round-4 review reproduced two spoofs that string-argument helpers and
-in-process disposition inference could not stop — one refusal certifying happy AND
-conflict from literal strings, and a completed Mirror job certifying Copy — plus a
-skipped parallel/parent test still earning a valid credit. The fix (chosen with the
-owner) is TYPED INVOCATION RECEIPTS plus OUT-OF-PROCESS reconciliation:
+Coverage is EVIDENCE-BASED and reconciled OUT OF PROCESS, on a cooperating-author
+model that the sixth Codex round settled explicitly: a coverage number a test process
+attests to from its own evidence cannot be made unforgeable from inside that process,
+and the report does not claim to be. Reviewed repository code plus CI is the trust
+domain. The machinery below catches accidental action/result mix-ups and refuses
+credit to tests that did not pass; it is convenience and hygiene, not an anti-forgery
+boundary. (Codex's round-4 review had reproduced string-helper spoofs and an
+in-process-disposition spoof; the receipt + out-of-process design closes those
+accidental paths, and round 5 established that no in-binary mechanism closes the
+determined one — so we stopped claiming it does.)
 
-Each harness wrapper returns a single-use Receipt carrying THAT call's action, job
-id, error, and outcome. A credit is emitted only through the receipt's Credit*
-methods, which validate the scenario against the receipt's own evidence
-(`CreditHappy` awaits the receipt's job to COMPLETE, `CreditRefusal` requires the
-receipt's error, `CreditConflict`/`CreditApplied` the receipt's outcome). The action
-is embedded in the receipt, so a Mirror job cannot certify Copy; the receipt is
-single-use; and there is no Credit path for cancel/partial/retry. The six-from-one
-spoof no longer compiles. The credit is not committed in process — it is EMITTED as a
-`go test -json` output line, and `cmd/scenariocov` reconciles it AFTER the whole test
-tree finishes, crediting a claim only if the emitting test and every ancestor reached
-a terminal PASS in the event stream. So a skipped, failed, parallel-paused, or
-parent-cleanup-skipped test leaves NO credit — the exact spoofs an in-process
-collector could not see — and the whole fragile RunScenario/finalizer/disposition
-machinery is gone. The reconciler is unit-tested with synthetic events (a claim from
-a skipped/failed test, and one whose ancestor failed, earn nothing). No shared
-mutable ledger remains, so the concurrency race is gone by construction. The report
-retains a LIST of tests + evidence per cell (F-05 partial), a `valid` bit tied to the
-run, schema, commit SHA, and Go version; CI pipes `go test -json` through the tool,
-which exits non-zero on any failure (so the pipe still fails the step), validates the
-schema/valid bit, and uploads with if-no-files-found:error.
+The denominator is a single non-test source of truth: `internal/scenariocontract`
+holds the action table, exposes `All()` (a defensive copy) and a strict `Validate()`,
+and is imported directly by both the system tests and `cmd/scenariocov`. It is never
+taken from test output — the reconciler REJECTS any inventory marker in the stream —
+and the report records the contract's deterministic hash and its action/cell counts.
+
+Each harness wrapper returns a single-use Receipt carrying THAT call's action, job id,
+error, and outcome. Its Credit* methods check the scenario against the receipt's own
+evidence (`CreditHappy` awaits the receipt's job to COMPLETE, `CreditRefusal` requires
+the receipt's error, `CreditConflict`/`CreditApplied` the receipt's outcome), so for a
+cooperating author using the API the evidence for one call is not attached to another.
+Consumption is single-use through an atomic compare-and-swap, with a focused race
+regression over concurrent Credit* calls. Credit* are all methods on one `*Receipt`,
+so calling the wrong one for an action is a run-time check, not a compile error — the
+receipt reduces accidental cross-action credit, it does not type-forbid it. A test can
+still bypass the API and print a claim marker directly; a marker-hygiene lint fails the
+suite if a top-level system test names the claim marker or the emission helpers,
+catching the accidental or copy-pasted forge (including Codex's reproduced no-op probe)
+but, by the shared-process argument above, not a determined one — it is labelled a
+hygiene control, not a boundary.
+
+A credit is EMITTED as a `go test -json` output line; `cmd/scenariocov` reconciles it
+AFTER the whole tree finishes, crediting a claim only if the emitting test and every
+OBSERVED ancestor reached a terminal PASS. So a skipped, failed, parallel-paused, or
+parent-cleanup-skipped test leaves no credit — the disposition an in-process collector
+could not see — and the fragile finalizer/disposition machinery is gone. Ancestor
+matching requires only test nodes that actually appear in the stream, so a subtest
+whose name contains a slash is credited correctly (F-04, regressed through a REAL
+`go test -json` subprocess, not synthetic events). Marker parsing is strict and
+bounded: a malformed claim, an unknown or unrequired action/scenario, a duplicate
+claim, an inventory marker, or an over-long protocol line is an error, and per-test
+output is reassembled one line at a time rather than buffered without limit.
+
+CI is fail-closed. `go list` fixes the expected package set; the raw stream is tee'd to
+an artifact; and `cmd/scenariocov` is handed go test's real exit code
+(`${PIPESTATUS[0]}`) and that expected set. The report keeps the notions of validity
+separate — process-succeeded, stream-complete, contract-valid — and `valid` is their
+conjunction, which deliberately does NOT imply coverage-complete; the reconciler exits
+nonzero (failing the step) when the producer exited nonzero, an expected package never
+terminated, or the contract is malformed. `saioConfigured` is named for what it is (the
+env var was set), not an observed SAIO interaction. The report and the raw stream
+upload even on failure.
 
 Standing invariants from earlier rounds hold: the denominator is validated
 well-formed (an invalid Kind or empty requirement set fails TestInventoryIsWellFormed,
@@ -4170,9 +4195,9 @@ joined UI matrix (F-04), a semantic oracle over complete account + local + durab
 state (Codex R-05), a deterministic barrier/fault layer, the two-direction Swift
 matrix, and hard CI gates (R-06).
 
-**Grok's fourth war-room review (2026-08-31) confirmed the ledger is trustworthy and
-found NEW PRODUCT P1s — dual-path regressions where copy's safety net was never
-carried onto the sibling paths.** These are product-code hardening for the redesign
+**Grok's fourth war-room review (2026-08-31) exercised the harness and found NEW
+PRODUCT P1s — dual-path regressions where copy's safety net was never carried onto the
+sibling paths.** These are product-code hardening for the redesign
 tranche (the war room's job is to LOCK them with tests, not this branch): (P1-2)
 StartUpload runs RecoveryClear after a note-free best-effort staging sweep, so a
 "complete" upload can leave staging litter with no recovery rows — copy's gate is not
