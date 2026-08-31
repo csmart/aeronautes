@@ -4138,15 +4138,18 @@ emits a claim as a `go test -json` line only from a top-level test; and
 paused) when the claim line completed, terminally passed exactly once, its package is
 expected, and that package started and passed. Claims are top-level only (a slash-bearing
 claimant is ambiguous and rejected at both the harness and the reconciler). The reconciler
-is an explicit phase automaton (`idle → running ⇄ paused → terminal`) driven by a
-table of legal transitions: illegal transitions (duplicate run, cont-before-pause,
-terminal-without-run, post-terminal output), a package that passes with a failed test or
-leaves a test unfinished, an empty or misshapen record, a non-JSON line, an unknown
-action, benchmark activity (out of the CI profile's scope), and a reserved marker outside
-a running top-level test's output — including one split across fragments — are all
-rejected or invalidate the stream. All output is reassembled linearly with per-line,
-aggregate, and active-buffer bounds checked before each completed line, and retained
-events/tests/packages/claims/evidence are bounded.
+is a phase automaton (`idle → running ⇄ paused → terminal`) over the authentic records the
+CI producer profile emits (Go 1.27 test2json: start/run/pause/cont/attr/output/terminals,
+no `-bench`): illegal transitions (duplicate run, cont-before-pause, terminal-without-run,
+post-terminal output), a package that passes with a failed test or leaves a test
+unfinished, an empty or misshapen record, a non-JSON line, benchmark activity, and a
+reserved marker in a non-output event, in package output, or from a subtest — including a
+marker split across fragments — are rejected or invalidate the stream; a marker from a
+paused test is parsed but earns no credit. It is not a hostile-input validator for a
+non-gating counter and does not exhaustively reject every out-of-profile shape. All output
+is reassembled linearly with per-line, aggregate, and active-buffer bounds checked before
+each completed line, and retained state is bounded for the trusted CI artifact at
+configured limits.
 
 CI is fail-closed. `go list` fixes the expected package set (validated non-empty, unique,
 and exact); the raw stream is tee'd to an artifact and both the `go test` and `tee` exit

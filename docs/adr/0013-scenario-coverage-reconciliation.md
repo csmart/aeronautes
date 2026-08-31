@@ -52,19 +52,26 @@ a `cont` before `pause`, a terminal without a `run`, output before `run` or
 after terminal, and similar illegal transitions are rejected. A package must
 `start`, terminate once, have every started test terminate first, and cannot
 pass with a failed test. Records are shape-validated (every event names a
-package; `start` is package-level, `run`/`pause`/`cont` are test-level;
+package; `start` is package-level, `run`/`pause`/`cont`/`attr` are test-level;
 semantically empty `{}`/`null` records are malformed). All output — test and
 package — is reassembled, so a reserved marker split across fragments is still
-detected; a marker outside a running top-level test's own output is rejected. A
-cell is credited only when the emitting top-level test ran, was *running* (not
+detected; a marker in a non-output event, in package output, or from a subtest
+is rejected, and a marker from a *paused* test is parsed but earns no credit. A
+cell is credited only when the emitting top-level test ran, was running (not
 paused) when the claim line completed, reached a single terminal PASS, and
 belongs to an expected package that started and passed. Retained events, tests,
-packages, claims, evidence bytes, and reported witnesses are all bounded.
+packages, claims, evidence bytes, and reported witnesses are bounded for the
+trusted CI artifact at configured limits — not intended as operational
+memory limits against a hostile artifact.
 
-**Scope.** The reconciler targets the exact CI producer profile
-(`go test -json -v -race -count=1 ./internal/...`, no `-bench`). Benchmark
-activity and other out-of-profile shapes are rejected with a diagnostic rather
-than modelled; ordinary paused output is accepted but does not earn credit.
+**Scope.** This reconciles the authentic records the CI producer profile emits
+— `go test -json -v -race -count=1 ./internal/...` (Go 1.27 test2json: `start`,
+`run`, `pause`, `cont`, `attr`, `output`, terminals), no `-bench`. Benchmark
+activity is rejected as out of scope. It is deliberately not a hostile-input
+validator for a non-gating counter: it does not exhaustively reject every
+out-of-profile shape a real producer never emits, and a future producer action
+would need a one-line addition. Ordinary paused output is accepted but earns no
+credit.
 
 **Fail-closed reporting.** `valid` is the conjunction of three separate
 notions — process-succeeded (the real `go test` exit, supplied out of band),
@@ -73,8 +80,9 @@ no-test skip; no unexpected/duplicate package terminal; no lifecycle
 violation), and contract-valid — and deliberately does *not* imply
 coverage-complete. Safety inputs (`-test-exit` and a non-empty
 `-expected-packages`) are mandatory for `valid:true`, so the local stdin
-convenience mode is visibly incomplete. Marker/parser input is strict and the
-line accumulator is linearly and globally bounded.
+convenience mode is visibly incomplete. Marker/parser input from the supported
+producer is validated, and the line accumulator reassembles linearly, bounded
+for the trusted CI artifact at the configured limits.
 
 **Hygiene, not a boundary.** A marker-hygiene lint fails the suite if a
 top-level system test emits a claim directly instead of through the Receipt

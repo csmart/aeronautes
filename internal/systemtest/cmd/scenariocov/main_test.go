@@ -769,7 +769,7 @@ func TestRunProtocolErrorWritesReport(t *testing.T) {
 
 // --- real go test -json subprocess regressions ---
 
-func runFixture(t *testing.T, runArg string) []byte {
+func runFixture(t *testing.T, pkg, runArg string) []byte {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("skips the go test subprocess in -short")
@@ -777,15 +777,30 @@ func runFixture(t *testing.T, runArg string) []byte {
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("go toolchain not on PATH")
 	}
-	out, err := exec.Command("go", "test", "-json", "-v", "-count=1", "-run", runArg, "./testdata/slashsub").Output()
+	out, err := exec.Command("go", "test", "-json", "-v", "-count=1", "-run", runArg, pkg).Output()
 	if err != nil {
-		t.Fatalf("fixture subprocess (%s) failed: %v\n%s", runArg, err, out)
+		t.Fatalf("fixture subprocess (%s %s) failed: %v\n%s", pkg, runArg, err, out)
 	}
 	return out
 }
 
+func firstPackage(t *testing.T, stream []byte) string {
+	t.Helper()
+	for _, ln := range strings.Split(string(stream), "\n") {
+		if ln == "" {
+			continue
+		}
+		var e event
+		if json.Unmarshal([]byte(ln), &e) == nil && e.Package != "" {
+			return e.Package
+		}
+	}
+	t.Fatal("no package in fixture stream")
+	return ""
+}
+
 func TestTopLevelClaimThroughGoTestJSON(t *testing.T) {
-	rep, err := reconcile(bytes.NewReader(runFixture(t, "^TestTopLevel$")), baseOpts())
+	rep, err := reconcile(bytes.NewReader(runFixture(t, "./testdata/slashsub", "^TestTopLevel$")), baseOpts())
 	if err != nil {
 		t.Fatalf("reconcile of real top-level stream: %v", err)
 	}
@@ -795,7 +810,47 @@ func TestTopLevelClaimThroughGoTestJSON(t *testing.T) {
 }
 
 func TestSubtestClaimRejectedThroughGoTestJSON(t *testing.T) {
-	if _, err := reconcile(bytes.NewReader(runFixture(t, "^TestSlash$")), baseOpts()); err == nil {
+	if _, err := reconcile(bytes.NewReader(runFixture(t, "./testdata/slashsub", "^TestSlash$")), baseOpts()); err == nil {
 		t.Fatal("a real subtest claim was not rejected")
+	}
+}
+
+// TestAttrThroughGoTestJSON: Go 1.27's real producer emits Action:"attr" for
+// t.Attr under -v. The reconciler must model it, not reject the exact CI
+// command's output as an unknown action.
+func TestAttrThroughGoTestJSON(t *testing.T) {
+	stream := runFixture(t, "./testdata/attrprobe", "^TestCodexAttr$")
+	pkg := firstPackage(t, stream)
+	rep, err := reconcile(bytes.NewReader(stream), validOpts(pkg))
+	if err != nil {
+		t.Fatalf("a real t.Attr stream was rejected: %v", err)
+	}
+	if !rep.Valid {
+		t.Fatalf("a real t.Attr stream was not valid: violations=%v", rep.Violations)
+	}
+}
+
+// TestAttrEventTolerated (synthetic): an attr event between run and the claim
+// does not invalidate the stream or block credit.
+func TestAttrEventTolerated(t *testing.T) {
+	stream := startEvent("p") + runEvent("TestH") + ev("attr", "TestH", "") +
+		claimLine("TestH", "AppService.About", "happy") + ev("pass", "TestH", "") + pkgEvent("pass")
+	rep := reconcileOK(t, stream, validOpts("p"))
+	if !rep.Valid || !coveredScenarios(rep, "AppService.About")["happy"] {
+		t.Errorf("attr should be tolerated: valid=%t violations=%v", rep.Valid, rep.Violations)
+	}
+}
+
+// TestMultiLinePausedFragmentNotCredited: two logical lines in one paused
+// output fragment — the claim on the second line must still be treated as
+// paused (not credited), i.e. `spanned` is not cleared mid-fragment.
+func TestMultiLinePausedFragmentNotCredited(t *testing.T) {
+	twoLines := "first line\n" + scenariocontract.ClaimMarker + claimPayload("AppService.About", "happy", "e") + "\n"
+	stream := startEvent("p") + runEvent("TestP") + ev("pause", "TestP", "") +
+		ev("output", "TestP", twoLines) + // whole fragment received while paused
+		ev("cont", "TestP", "") + ev("pass", "TestP", "") + pkgEvent("pass")
+	rep := reconcileOK(t, stream, validOpts("p"))
+	if coveredScenarios(rep, "AppService.About")["happy"] {
+		t.Error("a claim on the second line of a paused fragment was credited")
 	}
 }

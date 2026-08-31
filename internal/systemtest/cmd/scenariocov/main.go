@@ -7,15 +7,19 @@
 //
 // The coverage DENOMINATOR comes from internal/scenariocontract, imported
 // directly into this separately executed process; it is never taken from the
-// test stream. A reserved marker anywhere but a running top-level test's own
-// output is rejected, including markers split across fragments.
+// test stream. A marker in a non-output event, in package-level output, or from
+// a subtest is rejected (including markers split across output fragments); a
+// marker emitted while its test is paused is parsed but earns no credit.
 //
-// SCOPE: the reconciler models the exact CI producer profile —
-// `go test -json -v -race -count=1 ./internal/...` with no `-bench`. Benchmark
-// activity and other out-of-profile shapes are rejected with a diagnostic, not
-// modelled. The report is an honest-author progress signal, not authenticated
-// proof of application behavior: a test can bypass the harness API and print a
-// claim. CI does not gate on zero gaps.
+// SCOPE: this reconciles the authentic records the CI producer profile emits —
+// `go test -json -v -race -count=1 ./internal/...` (Go 1.27 test2json: start,
+// run, pause, cont, attr, output, and terminals), no `-bench`. Benchmark
+// activity is rejected as out of scope. It is not a hostile-input validator for
+// a non-gating counter: it does not exhaustively reject every out-of-profile
+// shape a real producer never emits, and a future producer action would need a
+// one-line addition. The report is an honest-author progress signal, not
+// authenticated proof of behavior: a test can bypass the harness API and print
+// a claim. CI does not gate on zero gaps.
 //
 // Usage (CI): go test -json ... | tee events.jsonl ; then
 //
@@ -293,7 +297,7 @@ func (a *lineAcc) add(frag string, paused bool) ([]completedLine, int, error) {
 			return nil, len(a.data), errProtocolLine
 		}
 		lines = append(lines, completedLine{string(a.data[start:nl]), a.spanned})
-		a.spanned = false
+		a.spanned = paused // remaining lines from a paused fragment are also paused
 		start = nl + 1
 	}
 	rem := a.data[start:]
@@ -418,6 +422,25 @@ func (p *parser) step(e event) error {
 		return nil
 	case "bench":
 		p.addViolation("benchmark event is out of scope for this CI profile: " + e.Package)
+		return nil
+	case "attr":
+		// Go 1.27's test2json emits `attr` for t.Attr under -v: a test-level
+		// metadata event that changes no phase and earns no credit. Modelling
+		// it keeps the exact documented producer profile from being rejected.
+		if e.Test == "" {
+			p.addViolation("package-level attr: " + e.Package)
+			return nil
+		}
+		key := e.Package + "\t" + e.Test
+		pk.sawTest = true
+		ts, err := p.test(key)
+		if err != nil {
+			return err
+		}
+		if ts.phase == phaseIdle || ts.phase == phaseTerminal {
+			ts.violated = true
+			p.addViolation("attr outside a running test: " + key)
+		}
 		return nil
 	case "run", "pause", "cont":
 		if e.Test == "" {
