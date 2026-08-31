@@ -45,6 +45,26 @@ func TestHashIsDeterministic(t *testing.T) {
 	}
 }
 
+// TestValidateRejectsMalformed exercises each rejection branch against
+// synthetic contracts, so the well-formedness guarantee is actually tested
+// and not just asserted on the shipped (valid) contract.
+func TestValidateRejectsMalformed(t *testing.T) {
+	cases := map[string]map[string]Action{
+		"unknown kind":     {"X.Y": {Kind: "bogus"}},
+		"unknown scenario": {"X.Y": {Kind: Read, Scenarios: []string{"happy", "nope"}}},
+		"duplicate":        {"X.Y": {Kind: Read, Scenarios: []string{"happy", "happy"}}},
+		"missing happy":    {"X.Y": {Kind: Read, Scenarios: []string{"refusal"}}},
+	}
+	for name, inv := range cases {
+		if err := validateInventory(inv); err == nil {
+			t.Errorf("%s: expected a validation error, got nil", name)
+		}
+	}
+	if err := validateInventory(map[string]Action{"X.Y": {Kind: Read}}); err != nil {
+		t.Errorf("a well-formed synthetic contract should validate: %v", err)
+	}
+}
+
 // TestRequires checks the membership helper the emitter validates against.
 func TestRequires(t *testing.T) {
 	if !Requires("MutateService.UpdateObjectMetadata", "conflict") {

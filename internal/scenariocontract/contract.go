@@ -83,12 +83,12 @@ func (k Kind) required() []string {
 	}
 }
 
-// KnownKinds and KnownScenarios are the closed vocabularies Validate checks
+// knownKinds and knownScenarios are the closed vocabularies validate checks
 // against, so a typo cannot silently create a zero-requirement action or an
 // unrecognised scenario.
 var (
-	KnownKinds     = map[Kind]bool{Read: true, Session: true, Mutate: true, Destructive: true, Job: true}
-	KnownScenarios = map[string]bool{"happy": true, "refusal": true, "conflict": true, "cancel": true, "partial": true, "retry": true}
+	knownKinds     = map[Kind]bool{Read: true, Session: true, Mutate: true, Destructive: true, Job: true}
+	knownScenarios = map[string]bool{"happy": true, "refusal": true, "conflict": true, "cancel": true, "partial": true, "retry": true}
 )
 
 // inventory is the authoritative bridge-action list, keyed "Service.Method".
@@ -188,15 +188,23 @@ func Requires(action, scenario string) bool {
 	return false
 }
 
-// Validate checks every row is well-formed: a known kind, a non-empty
-// required set drawn from the known vocabulary with no duplicates, and at
-// least the happy baseline. A malformed contract is a build-time failure,
-// so no row can contribute zero to the denominator and silently look
-// complete.
-func Validate() error {
-	for _, key := range sortedKeys() {
-		a := inventory[key]
-		if !KnownKinds[a.Kind] {
+// Validate checks the shipped contract is well-formed. A malformed contract
+// is a build-time failure, so no row can contribute zero to the denominator
+// and silently look complete.
+func Validate() error { return validateInventory(inventory) }
+
+// validateInventory is the row-by-row check, split out so its rejection
+// branches (unknown kind, unknown/duplicate scenario, missing happy) have
+// negative unit tests against synthetic contracts.
+func validateInventory(inv map[string]Action) error {
+	keys := make([]string, 0, len(inv))
+	for k := range inv {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		a := inv[key]
+		if !knownKinds[a.Kind] {
 			return fmt.Errorf("%s: unknown kind %q", key, a.Kind)
 		}
 		req := a.Required()
@@ -206,7 +214,7 @@ func Validate() error {
 		seen := map[string]bool{}
 		happy := false
 		for _, s := range req {
-			if !KnownScenarios[s] {
+			if !knownScenarios[s] {
 				return fmt.Errorf("%s: unknown scenario %q", key, s)
 			}
 			if seen[s] {

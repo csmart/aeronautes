@@ -4128,76 +4128,40 @@ rejects bogus coverage entries (H-02); reclassification and the wired per-action
 Scenarios override (H-03); the changed-object mirror fixture and optimistic-
 conflict metadata case (H-07).
 
-Coverage is EVIDENCE-BASED and reconciled OUT OF PROCESS, on a cooperating-author
-model that the sixth Codex round settled explicitly: a coverage number a test process
-attests to from its own evidence cannot be made unforgeable from inside that process,
-and the report does not claim to be. Reviewed repository code plus CI is the trust
-domain. The machinery below catches accidental action/result mix-ups and refuses
-credit to tests that did not pass; it is convenience and hygiene, not an anti-forgery
-boundary. (Codex's round-4 review had reproduced string-helper spoofs and an
-in-process-disposition spoof; the receipt + out-of-process design closes those
-accidental paths, and round 5 established that no in-binary mechanism closes the
-determined one — so we stopped claiming it does.)
-
-The denominator is a single non-test source of truth: `internal/scenariocontract`
-holds the action table, exposes `All()` (a defensive copy) and a strict `Validate()`,
-and is imported directly by both the system tests and `cmd/scenariocov`. It is never
-taken from test output — the reconciler REJECTS any inventory marker in the stream —
-and the report records the contract's deterministic hash and its action/cell counts.
-
-Each harness wrapper returns a single-use Receipt carrying THAT call's action, job id,
-error, and outcome. Its Credit* methods check the scenario against the receipt's own
-evidence (`CreditHappy` awaits the receipt's job to COMPLETE, `CreditRefusal` requires
-the receipt's error, `CreditConflict`/`CreditApplied` the receipt's outcome), so for a
-cooperating author using the API the evidence for one call is not attached to another.
-Consumption is single-use through an atomic compare-and-swap, with a focused race
-regression over concurrent Credit* calls. Credit* are all methods on one `*Receipt`,
-so calling the wrong one for an action is a run-time check, not a compile error — the
-receipt reduces accidental cross-action credit, it does not type-forbid it. A test can
-still bypass the API and print a claim marker directly; a marker-hygiene lint fails the
-suite if a top-level system test names the claim marker or the emission helpers,
-catching the accidental or copy-pasted forge (including Codex's reproduced no-op probe)
-but, by the shared-process argument above, not a determined one — it is labelled a
-hygiene control, not a boundary.
-
-A credit is EMITTED as a `go test -json` output line; `cmd/scenariocov` reconciles it
-AFTER the whole tree finishes, crediting a claim only if the emitting test reached a
-terminal PASS. So a skipped, failed, parallel-paused, or parent-cleanup-skipped test
-leaves no credit — the disposition an in-process collector could not see — and the
-fragile finalizer/disposition machinery is gone. Claims are emitted ONLY from top-level
-tests: the event stream does not label parentage, so a slash-bearing (subtest) claimant
-is indistinguishable from a sibling and is rejected outright, both at the harness (a
-subtest CreditX is fatal) and at the reconciler — a top-level test credits after its
-data subtests finish. Marker parsing is strict: a malformed claim, a claim with trailing
-content after its JSON, an unknown or unrequired action/scenario, a duplicate claim, an
-inventory marker, a subtest claim, or an unterminated marker left at a test's end or at
-EOF is an error. Reassembly is linear and globally bounded: only incomplete lines are
-retained, compacted in place rather than recopied, each per-test buffer is dropped at
-that test's terminal event, and per-line, aggregate-byte, and active-buffer caps all
-fail closed.
+Coverage is EVIDENCE-BASED, reconciled OUT OF PROCESS, and honest about being a
+cooperating-author progress signal rather than authenticated proof — the full threat
+model, mechanism, invariants, and review history are ADR 0013. In brief: the
+denominator is one trusted non-test source (`internal/scenariocontract`, imported by
+both the tests and `cmd/scenariocov`, never read from the stream); a single-use Receipt
+emits a claim as a `go test -json` line only from a top-level test; and
+`cmd/scenariocov` credits a cell only when that top-level test terminally passed, its
+package is expected, and that package passed. Claims are top-level only (a slash-bearing
+claimant is ambiguous and rejected at both the harness and the reconciler). Marker and
+lifecycle parsing is strict — malformed, trailing-content, subtest, duplicate,
+unattributable-marker, post-terminal, or conflicting-terminal streams are rejected — and
+the line accumulator is linear with per-line, aggregate, and active-buffer bounds
+checked before processing.
 
 CI is fail-closed. `go list` fixes the expected package set (validated non-empty, unique,
-and exact — an unexpected or duplicate package terminal invalidates the stream); the raw
-stream is tee'd to an artifact and both the `go test` and `tee` exit codes are checked;
-and `cmd/scenariocov` is handed go test's real exit code (`${PIPESTATUS[0]}`) and that
-set. The report keeps the notions of validity separate — process-succeeded,
-stream-complete, contract-valid — and `valid` is their conjunction, which deliberately
-does NOT imply coverage-complete. An expected package must PASS (or be a genuine no-test
-skip); a package that failed, never terminated, or was unexpected makes the stream
-incomplete. The safety inputs are mandatory for `valid:true` — an absent producer exit
-or empty expected set cannot be valid, so the local stdin convenience mode is visibly
-incomplete, never mistakable for release evidence. `saioConfigured` is named for what it
-is (the env var was set), not an observed SAIO interaction. On a protocol error the tool
-still writes a structured `valid:false` report, and the report plus the raw stream upload
-even on failure.
+and exact); the raw stream is tee'd to an artifact and both the `go test` and `tee` exit
+codes are checked; and `cmd/scenariocov` is handed go test's real exit code
+(`${PIPESTATUS[0]}`) and that set. `valid` is the conjunction of process-succeeded,
+stream-complete, and contract-valid, and deliberately does NOT imply coverage-complete;
+an expected package must PASS (or be a genuine no-test skip), and the safety inputs are
+mandatory for `valid:true` so the local stdin mode is visibly incomplete. `saioConfigured`
+names only that the env var was set. On a protocol PARSE error the tool writes a
+structured `valid:false` report before exiting; the raw stream is uploaded regardless
+(`if: always()`), though a `go list`, event-open, report-write, or `tee` failure fails the
+step without producing a report.
 
-Standing invariants from earlier rounds hold: the denominator is validated
-well-formed (an invalid Kind or empty requirement set fails TestInventoryIsWellFormed,
-R-02); the kind defaults are a conservative FLOOR below DESIGN's literal ≈162
-baseline, documented as such, not a completeness claim; passing tests leave Swift
-exactly as they found it (raw-listing checked cleanup + residue sweep, R-04, ten
-repetitions clean); every raw test client refuses redirects (F-06). It is 8/102 today
-and visibly incomplete scaffolding — NOT a hard no-gap gate. Deferred, as the tranche
+Standing invariants hold: the contract is validated well-formed (a bad kind or empty
+requirement set fails `scenariocontract.Validate`, with negative unit tests); the kind
+defaults are a conservative FLOOR below DESIGN's literal ≈162 baseline, not a
+completeness claim; passing tests leave Swift exactly as they found it (raw-listing
+checked cleanup + residue sweep, ten repetitions clean); every raw test client refuses
+redirects. It is 8/102 today and visibly incomplete scaffolding — NOT a hard no-gap gate,
+and no policy yet prevents a credited cell from disappearing (a regression gate is later
+work, per ADR 0013). Deferred, as the tranche
 the war room grows into: per-cell variant/oracle provenance beyond the test list, an
 explicit per-action required/N/A contract reconciled with the 162 baseline and a
 joined UI matrix (F-04), a semantic oracle over complete account + local + durable

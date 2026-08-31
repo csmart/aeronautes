@@ -101,7 +101,7 @@ func New(t *testing.T) *Harness {
 
 	// Checked db close: a close/durability error fails the test (so its
 	// coverage claims are not credited by the reconciler) rather than being
-	// silently ignored (codex war-room F-02).
+	// silently ignored.
 	t.Cleanup(func() {
 		if err := database.Close(); err != nil {
 			t.Errorf("harness db close: %v", err)
@@ -138,7 +138,7 @@ func New(t *testing.T) *Harness {
 
 	// The residue sweep runs after every Container purge (which the body
 	// registers later) and before the disposition capture registered above
-	// — so a leak fails the test and blocks credit (codex R-04).
+	// — so a leak fails the test and blocks credit.
 	t.Cleanup(h.assertNoResidue)
 	return h
 }
@@ -146,7 +146,7 @@ func New(t *testing.T) *Harness {
 // assertNoResidue fails the test if it left any ns-prefixed container
 // behind on either account — a safety harness must leave Swift exactly as
 // it found it, and silently accepted residue trains the suite to tolerate
-// unexplained state (codex R-04). It reports, and does not blindly delete.
+// unexplained state. It reports, and does not blindly delete.
 // It retries a few times because Swift's account container listing is
 // eventually consistent: a just-deleted container can linger for a beat,
 // but a REAL leak persists across the retries.
@@ -184,7 +184,8 @@ func (h *Harness) assertNoResidue() {
 // that catches accidental mix-ups, not an anti-forgery boundary: a test can
 // still bypass the API. Emitting only writes a line; whether it becomes a
 // credit is decided OUT OF PROCESS by cmd/scenariocov, which requires the
-// emitting test (and every observed ancestor) to terminally PASS.
+// emitting top-level test to terminally PASS (claims come only from top-level
+// tests).
 //
 // Credit* are all defined on this one type, so calling the wrong one for an
 // action compiles and is caught at run time by the checks below, not by the
@@ -285,7 +286,7 @@ func (r *Receipt) CreditRefusal() {
 
 // Bridge-action wrappers: tests call THESE (not the raw services) so each
 // invocation yields a receipt that binds any later credit to this exact
-// call's action and result (codex war-room F-01).
+// call's action and result.
 
 func (h *Harness) StartCopy(ctx context.Context, req app.CopyRequestDTO) *Receipt {
 	jobID, err := h.Transfer.StartCopy(ctx, req)
@@ -320,7 +321,7 @@ func (h *Harness) UpdateObjectMetadata(ctx context.Context, container, name, bas
 // account provisions a test account. It returns an error rather than
 // Fatal-ing so the caller can decide: the primary must exist (Fatal),
 // but a missing secondary is a Skip on a one-account laptop unless
-// AERONAUTES_REQUIRE_TWO_ACCOUNTS is set (grok war-room P2 — a 401 on
+// AERONAUTES_REQUIRE_TWO_ACCOUNTS is set (a 401 on
 // the secondary auth used to fatal the whole package).
 func (h *Harness) account(authURL, user, key, name string) (*Account, error) {
 	h.T.Helper()
@@ -338,7 +339,7 @@ func (h *Harness) account(authURL, user, key, name string) (*Account, error) {
 		Timeout: 30 * time.Second,
 		// The raw seed/teardown client refuses redirects too, so a
 		// misrouted setup write cannot silently land elsewhere or resend
-		// the token (codex war-room H-06/H-07 — match the oracle).
+		// the token (match the oracle).
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}}
 	if err := h.rawAuth(a); err != nil {
@@ -405,7 +406,7 @@ func (h *Harness) rawPutQuery(a *Account, path, query string, body []byte, heade
 	}
 	// A non-2xx seed (typo'd path, 401, quota) leaves an empty container;
 	// the matrix would then assert "copy completed" against missing
-	// source objects. Fail closed and loud (grok war-room P1 SEED-404).
+	// source objects. Fail closed and loud.
 	if resp.StatusCode/100 != 2 {
 		msg, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -416,8 +417,7 @@ func (h *Harness) rawPutQuery(a *Account, path, query string, body []byte, heade
 
 // Seed writes a raw object directly (test setup, bypassing the product).
 // The object name is percent-escaped with the oracle's own encoder so a
-// hostile name seeds the object the oracle will later look for (codex
-// war-room H-07).
+// hostile name seeds the object the oracle will later look for.
 func (h *Harness) Seed(a *Account, container, name string, body []byte, headers map[string]string) {
 	h.rawPut(a, "/"+container+"/"+oracle.Escape(name), body, headers)
 }
@@ -433,7 +433,7 @@ func (h *Harness) SeedSLO(a *Account, container, name, manifestJSON string) {
 // whose segments were purged first cannot block cleanup) and checking
 // every DELETE status. It does not fail the test directly — the
 // end-of-test residue sweep (assertNoResidue) is the single assertion that
-// nothing survived (codex R-04).
+// nothing survived.
 func (h *Harness) purge(a *Account, container string) {
 	if names, err := a.Oracle.ListObjects(container); err == nil {
 		for _, name := range names {
@@ -482,10 +482,8 @@ func (h *Harness) Snapshot(a *Account, containers ...string) *oracle.AccountSnap
 // harness's ns prefix — the ones it created AND ns-prefixed side effects
 // the engine derives from them (e.g. a "{dest}_segments" sidecar, since
 // dest is itself ns-prefixed). Naming only the primary container would
-// leave such a sidecar invisible to AssertNoCollateral (grok war-room
-// P1: COPY-SIDECAR). It is NOT a whole-account witness: a container the
-// engine creates OUTSIDE this namespace is not seen (codex war-room
-// F-06). Prefix-scoping also keeps a parallel test's containers from
+// leave such a sidecar invisible to AssertNoCollateral. It is NOT a whole-account witness: a container the
+// engine creates OUTSIDE this namespace is not seen. Prefix-scoping also keeps a parallel test's containers from
 // looking like collateral here.
 func (h *Harness) SnapshotNamespace(a *Account) *oracle.AccountSnapshot {
 	h.T.Helper()
@@ -514,7 +512,7 @@ func (h *Harness) AssertNoCollateral(before, after *oracle.AccountSnapshot, allo
 // on the delta's TYPED identity: the "container/name" key is CONSTRUCTED
 // from the typed fields, never parsed back out of a formatted string, so
 // an object whose name contains ": " cannot masquerade as an allowed one
-// (codex war-room F-01). A bare container name does NOT blanket-allow
+// . A bare container name does NOT blanket-allow
 // object changes inside it.
 func collateral(before, after *oracle.AccountSnapshot, allowed []string) []string {
 	ok := map[string]bool{}

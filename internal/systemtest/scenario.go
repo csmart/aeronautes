@@ -9,11 +9,12 @@ import (
 // Scenario claims are cooperating-test annotations, reconciled OUT OF
 // PROCESS from the `go test -json` event stream by cmd/scenariocov. A test
 // does not commit a credit to any in-process registry — it EMITS a claim
-// line, and the tool credits that claim only if the emitting test and every
-// observed ancestor reached a terminal PASS in the stream. That terminal-
-// event reconciliation is what prevents a skipped, failed, parallel-paused,
-// or later-skipped test from leaving a credit behind, since the tool reads
-// each test's definitive final disposition after the whole tree finishes.
+// line, and the tool credits that claim only if the emitting top-level test
+// reached a single terminal PASS in the stream (claims come only from
+// top-level tests). That terminal-event reconciliation is what prevents a
+// skipped, failed, parallel-paused, or later-skipped test from leaving a
+// credit behind, since the tool reads each test's definitive final
+// disposition after the whole tree finishes.
 //
 // What this does NOT provide is authenticated provenance. The test process
 // can bypass the harness API and print a claim marker directly, so the
