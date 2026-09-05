@@ -15,7 +15,7 @@ import (
 	"strings"
 	"sync"
 
-	_ "modernc.org/sqlite"
+	"modernc.org/sqlite"
 )
 
 // DB is the handle to the local state database.
@@ -36,13 +36,14 @@ func Open(ctx context.Context, path string) (*DB, error) {
 		"_pragma=busy_timeout(5000)",
 		"_pragma=journal_mode(WAL)",
 		"_pragma=foreign_keys(1)",
-		"_pragma=synchronous(NORMAL)",
+		"_pragma=synchronous(FULL)",
 	}, "&")
 
-	h, err := sql.Open("sqlite", dsn)
+	connector, err := sqlite.NewConnector(dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
+	h := sql.OpenDB(durableConnector{connector})
 
 	d := &DB{sql: h}
 	if err := d.migrate(ctx); err != nil {
