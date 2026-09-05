@@ -2,6 +2,8 @@
 
 Every PR runs `.github/workflows/ci.yml`, including documentation and workflow changes.
 Pushes to master and main run the same checks again.
+New revisions of the same PR supersede its previous run; each master or main push has its own concurrency group and runs to completion independently.
+The push group uses the run ID because a shared group can replace a pending run even when cancellation of a running job is disabled; see [GitHub's concurrency rules](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
 The README status badge shows master push runs so that a green PR cannot hide a failing master.
 
 ## Required checks
