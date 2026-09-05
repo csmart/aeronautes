@@ -4257,6 +4257,11 @@ Their `swift.Connection.Call` token selection remains library-managed and can ra
 CA files remain published by content identity; each gateway reads the captured bytes once for its trust configuration and identity check.
 This does not yet revoke held sessions after a bookmark edit or bind stored keys to a configuration generation; those P10 lifecycle and secret-store fixes remain open.
 
+The next P10 design slice is [ADR 0015](adr/0015-credential-bindings.md), proposed for independent review before implementation.
+It chooses credential reentry for an origin/account/trust change and defines immutable references, durable external-store work, recoverable deletion and generation-bound session/job admission.
+The proposed commit sequence is durable SQLite settings, bound credential publication and snapshots, recoverable deletion, then coordinated session/job lifetime and the remaining request-pairing fix.
+The proposal is not implementation evidence; all of those lifecycle gates remain open until their tests and review pass.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
