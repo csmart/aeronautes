@@ -2550,6 +2550,10 @@ Use migrations immediately.
 
 Enable WAL mode and serialise writes (single writer, many readers); Aeronautes is highly concurrent and the DB layer must be safe under many goroutines. Keep long-running scans/streams out of write transactions. Set a `busy_timeout` and funnel writes through a single writer goroutine (record both in the DB ADR). Give `segment_evidence` a retention/compaction policy so Backstage state does not grow into a second, unbounded object store inside SQLite. Give `audit_events` the same treatment: a size/age cap with compaction and an export path — the audit trail is a product feature, not an unbounded log, and an operator must be able to archive it before compaction discards anything.
 
+Require `synchronous=FULL` and verify the effective WAL/FULL settings before each physical connection enters the pool, including before migrations.
+Refuse a connection whose settings cannot meet that prerequisite; do not silently weaken the required journal settings.
+The external credential ordering and the limits of this durability prerequisite are specified in [ADR 0015](adr/0015-credential-bindings.md).
+
 Choose the SQLite driver with the six-target build matrix (§61.0) in mind: a pure-Go driver (e.g. `modernc.org/sqlite`) keeps the database CGO-free, so the arch dimension needs no extra C toolchain, whereas a CGO driver (`mattn/go-sqlite3`) needs a matching C compiler for every target. Wails already forces CGO for the webview, so builds run on per-OS runners regardless; the driver choice mainly decides how painful cross-*arch* builds are. Pin the choice in the DB ADR (pure-Go recommended).
 
 ---
@@ -4257,10 +4261,12 @@ Their `swift.Connection.Call` token selection remains library-managed and can ra
 CA files remain published by content identity; each gateway reads the captured bytes once for its trust configuration and identity check.
 This does not yet revoke held sessions after a bookmark edit or bind stored keys to a configuration generation; those P10 lifecycle and secret-store fixes remain open.
 
-The next P10 design slice is [ADR 0015](adr/0015-credential-bindings.md), proposed for independent review before implementation.
+The next P10 design slice is [ADR 0015](adr/0015-credential-bindings.md), accepted after independent design review under the authorised remediation plan.
 It chooses credential reentry for an origin/account/trust change and defines immutable references, durable external-store work, recoverable deletion and generation-bound session/job admission.
-The proposed commit sequence is durable SQLite settings, bound credential publication and snapshots, recoverable deletion, then coordinated session/job lifetime and the remaining request-pairing fix.
-The proposal is not implementation evidence; all of those lifecycle gates remain open until their tests and review pass.
+The commit sequence is durable SQLite settings, bound credential publication and snapshots, recoverable deletion, then coordinated session/job lifetime and the remaining request-pairing fix.
+The first implementation requires effective WAL/FULL settings on every physical connection and refuses an ineffective setting before use.
+The [validation record](experiments/2026-09-06-sqlite-durability.md) includes the failing-before regressions, connection and migration checks, measured commit cost and proof limits.
+This prerequisite does not implement the credential journal, binding guard, cleanup or session/job lifetime; those lifecycle gates and the wider P12/P13 recovery contract remain open.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
