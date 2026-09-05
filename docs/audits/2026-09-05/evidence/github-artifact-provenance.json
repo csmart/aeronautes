@@ -1,0 +1,16 @@
+{
+  "runID": 33379497500,
+  "artifactID": 9753227900,
+  "zipSHA256": "d64fa445f6d7ad2ea3b458908d173ab2b00d0d0209df36e0f24466a27f45e7c9",
+  "report": {
+    "commitSha": "b16c9ffd3461a519489c24112a23503ac2725566",
+    "goVersion": "go1.27.0",
+    "valid": true,
+    "coverageComplete": false,
+    "saioConfigured": true,
+    "totalActions": 47,
+    "totalRequired": 102,
+    "totalCovered": 8,
+    "actionsWithGaps": 47
+  }
+}

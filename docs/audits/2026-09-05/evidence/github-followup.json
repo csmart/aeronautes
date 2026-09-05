@@ -1,0 +1,64 @@
+{
+  "base_to_master": {
+    "http_status": 200,
+    "data": {
+      "status": "ahead",
+      "ahead_by": 1,
+      "behind_by": 0,
+      "files": [
+        {
+          "filename": ".github/badges/coverage-go.svg",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        }
+      ],
+      "commits": [
+        {
+          "sha": "b16c9ffd3461a519489c24112a23503ac2725566",
+          "subject": "update coverage badges [ci]"
+        }
+      ]
+    }
+  },
+  "master_runs": {
+    "http_status": 200,
+    "data": {
+      "total_count": 1,
+      "runs": [
+        {
+          "id": 33379497500,
+          "name": "CI",
+          "event": "push",
+          "status": "completed",
+          "conclusion": "success",
+          "head_sha": "b16c9ffd3461a519489c24112a23503ac2725566",
+          "html_url": "https://github.com/csmart/aeronautes/actions/runs/33379497500",
+          "created_at": "2026-08-31T09:48:36Z",
+          "updated_at": "2026-08-31T09:52:33Z"
+        }
+      ]
+    }
+  },
+  "master_branch": {
+    "http_status": 200,
+    "data": {
+      "name": "master",
+      "protected": true
+    }
+  },
+  "workflow_permissions": {
+    "http_status": 200,
+    "data": {
+      "default_workflow_permissions": "read",
+      "can_approve_pull_request_reviews": false
+    }
+  },
+  "vulnerability_alerts_enabled": {
+    "http_status": 204,
+    "data": null
+  },
+  "code_scanning_open": {
+    "http_status": 403
+  }
+}

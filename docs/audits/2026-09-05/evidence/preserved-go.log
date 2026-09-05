@@ -1,0 +1,69 @@
+=== RUN   TestAuditCopyRejectsSameSizeCorruptSegments
+    audit_data_safety_test.go:48: data corruption reported copied: logical bytes="EVILDATA", report=&{Copied:1 SkippedEqual:0 BytesCopied:8 Overwrites:0 NativeRouted:0 Conflicts:[] Failures:[] CapturedPrefixes:[{Container:backup_segments Prefix:.aeronautes/stage/job01/batch/asset/2026-08-29-0000000000000000000001/}] CommittedPrefixes:[{Container:backup_segments Prefix:.aeronautes/stage/job01/batch/asset/2026-08-29-0000000000000000000001/}] StagedResidue:[] OldManifests:map[]}
+--- FAIL: TestAuditCopyRejectsSameSizeCorruptSegments (0.00s)
+=== RUN   TestAuditSkipRejectsChangedDestinationSegments
+    audit_data_safety_test.go:69: changed logical destination is skipped as equal: &{Copied:0 SkippedEqual:1 BytesCopied:0 Overwrites:0 NativeRouted:0 Conflicts:[] Failures:[] CapturedPrefixes:[] CommittedPrefixes:[] StagedResidue:[] OldManifests:map[]}
+--- FAIL: TestAuditSkipRejectsChangedDestinationSegments (0.00s)
+=== RUN   TestAuditSweepKeepsExternallySharedCapturedPrefix
+    audit_data_safety_test.go:96: sweep damaged an unrelated live alias: bytes="", report=&{SweptStaged:0 SweptSegments:1 KeptPrefixes:[] Notes:[]}
+--- FAIL: TestAuditSweepKeepsExternallySharedCapturedPrefix (0.00s)
+=== RUN   TestAuditOverwritePreservesLastHopConcurrentWriter
+    audit_data_safety_test.go:134: concurrent writer lost at final commit: bytes="NEW", report=&{Copied:1 SkippedEqual:0 BytesCopied:3 Overwrites:1 NativeRouted:0 Conflicts:[] Failures:[] CapturedPrefixes:[] CommittedPrefixes:[] StagedResidue:[] OldManifests:map[]}
+--- FAIL: TestAuditOverwritePreservesLastHopConcurrentWriter (0.00s)
+=== RUN   TestAuditPowerLossMissingCommitFactPreservesLiveDLO
+    security_audit_probe_test.go:39: live DLO changed after lost-commit-facts recovery: before bytes=8 after=&{Name:live.bin Class:dlo ContentLength:0 ContentType:application/octet-stream ETag:d41d8cd98f00b204e9800998ecf8427e LastModified:2026-08-28 10:00:00 +0000 UTC Manifest:backup_segments/.aeronautes/stage/powerloss/live.bin/2026-09-05-0000000000000000000001/ DeleteAt:0001-01-01 00:00:00 +0000 UTC ContentEncoding: ContentDisposition: Meta:map[] RawHeaders:map[Content-Length:0 Content-Type:application/octet-stream Date:Sat, 05 Sep 2026 08:39:55 GMT Etag:d41d8cd98f00b204e9800998ecf8427e Last-Modified:Fri, 28 Aug 2026 10:00:00 GMT X-Object-Manifest:backup_segments/.aeronautes/stage/powerloss/live.bin/2026-09-05-0000000000000000000001/ X-Trans-Id:txswifttest-object] FollowedSymlink:false SymlinkTarget: SymlinkTargetAccount: TransID:txswifttest-object EditableFingerprint:da2a765bfb5fb4559a563ab1eb6107b4a9d2b8e81ab723b9935b609cf8cd6435 FetchedAt:2026-09-05 08:39:55.519877914 +0000 UTC} report=&{SweptStaged:0 SweptSegments:1 KeptPrefixes:[] Notes:[]} err=<nil>
+--- FAIL: TestAuditPowerLossMissingCommitFactPreservesLiveDLO (0.00s)
+FAIL
+FAIL	github.com/csmart/aeronautes/internal/transfer/copy	0.015s
+=== RUN   TestAuditDownloadDoesNotEscapePickedDirectory
+    audit_data_safety_test.go:35: download escaped selected directory through parent symlink: data="DATA" report=&{Done:1 Bytes:4 NativeRouted:0 Failures:[] CapturedPrefixes:[]}
+--- FAIL: TestAuditDownloadDoesNotEscapePickedDirectory (0.00s)
+=== RUN   TestAuditPreflightRejectsCaseFoldAncestorConflict
+    audit_data_safety_test.go:48: cross-platform namespace policy accepted a case-folded file/directory collision: &{Items:[{Name:Foo RelPath:Foo Size:4 Route:rclone Dir:false} {Name:foo/child RelPath:foo/child Size:5 Route:rclone Dir:false}] Problems:[] TotalBytes:9 Objects:2}
+--- FAIL: TestAuditPreflightRejectsCaseFoldAncestorConflict (0.00s)
+=== RUN   TestAuditCancelledDownloadStopsBeforePlacement
+    audit_data_safety_test.go:75: download continued final placement after cancellation: report=&{Done:1 Bytes:4 NativeRouted:0 Failures:[] CapturedPrefixes:[]} err=<nil>
+--- FAIL: TestAuditCancelledDownloadStopsBeforePlacement (0.00s)
+FAIL
+FAIL	github.com/csmart/aeronautes/internal/transfer/local	0.008s
+=== RUN   TestAuditMirrorPreservesLastHopConcurrentWriter
+    audit_data_safety_test.go:43: Mirror deleted a last-hop replacement: error=swift: Object Not Found (not_found, HTTP 404) job={ID:8439025e0dfa4c1b Type:mirror State:complete Source:media/ Destination:backup/ SourceBookmarkID:a3a43ac76b6a43a1bd3631550cb39dce DestBookmarkID:614ecdbb0e7291a01ddcaf9bacd619ef CreatedAt:2026-09-05T08:39:55Z StartedAt:2026-09-05T08:39:55Z FinishedAt:2026-09-05T08:39:55Z Engine:rclone+native Counters:{ObjectsPlanned:1 ObjectsCopied:0 ObjectsVerified:0 ObjectsFailed:0 BytesPlanned:0 BytesCopied:0 Overwrites:0 NativeRouted:0 ObjectsDeleted:1} Error: Settings:{"profile":"balanced","chunkSize":"","transfers":4,"checkers":8,"tpsLimit":0,"bwLimit":"","deleteStrategy":"bulk-delete","deleteVerify":"sampled HEAD=404 (≤10 names)"}}
+--- FAIL: TestAuditMirrorPreservesLastHopConcurrentWriter (0.07s)
+=== RUN   TestAuditCopyPropagatesMetadataOnlyChange
+    audit_data_safety_test.go:68: metadata-only change skipped: destination=map[Purpose:old] job={ID:959f910dc3becce7 Type:copy State:complete Source:media/ Destination:backup/ SourceBookmarkID:005b318d03a68316f590bc2d8a9f3748 DestBookmarkID:3000aa7eb73ddfa5dd2a9f63f12223f7 CreatedAt:2026-09-05T08:39:56Z StartedAt:2026-09-05T08:39:56Z FinishedAt:2026-09-05T08:39:56Z Engine:rclone+native Counters:{ObjectsPlanned:0 ObjectsCopied:0 ObjectsVerified:1 ObjectsFailed:0 BytesPlanned:0 BytesCopied:0 Overwrites:0 NativeRouted:0 ObjectsDeleted:0} Error: Settings:{"profile":"balanced","chunkSize":"","transfers":4,"checkers":8,"tpsLimit":0,"bwLimit":""}}
+--- FAIL: TestAuditCopyPropagatesMetadataOnlyChange (0.06s)
+=== RUN   TestAuditCopyCountsOneFailedIdentityOnce
+2026/09/05 18:39:56 job 16319df8b3266258 reconcile: swept 1 staged, 0 segments
+    audit_data_safety_test.go:90: one missing identity counted as 2 failures: job={ID:16319df8b3266258 Type:copy State:partial Source:media/ Destination:backup/ SourceBookmarkID:dbc392a07a5608ef334a613b006571a5 DestBookmarkID:a3a7caf6fec269a842b1e8b5b2811f30 CreatedAt:2026-09-05T08:39:56Z StartedAt:2026-09-05T08:39:56Z FinishedAt:2026-09-05T08:39:56Z Engine:rclone+native Counters:{ObjectsPlanned:1 ObjectsCopied:0 ObjectsVerified:0 ObjectsFailed:2 BytesPlanned:4 BytesCopied:0 Overwrites:0 NativeRouted:0 ObjectsDeleted:0} Error:1 failed (first: asset: engine reported success but the staged object is missing (silent drop)); 1 unverified (first: asset) Settings:{"profile":"balanced","chunkSize":"","transfers":4,"checkers":8,"tpsLimit":0,"bwLimit":""}}
+--- FAIL: TestAuditCopyCountsOneFailedIdentityOnce (0.06s)
+=== RUN   TestAuditUploadChecksDestinationChunkLimit
+    audit_data_safety_test.go:113: upload accepted 8Mi chunks when cluster maximum is 1Mi: job={ID:04d9c26599d42e6e Type:upload State:complete Source:1 local files Destination:media/ SourceBookmarkID: DestBookmarkID:9933cc8e5f6a7442b4cc626ec691fc9b CreatedAt:2026-09-05T08:39:56Z StartedAt:2026-09-05T08:39:56Z FinishedAt:2026-09-05T08:39:56Z Engine:rclone+native Counters:{ObjectsPlanned:1 ObjectsCopied:1 ObjectsVerified:1 ObjectsFailed:0 BytesPlanned:4 BytesCopied:4 Overwrites:0 NativeRouted:0 ObjectsDeleted:0} Error: Settings:{"chunkSize":"8Mi","transfers":0,"checkers":0,"tpsLimit":0,"bwLimit":""}}
+--- FAIL: TestAuditUploadChecksDestinationChunkLimit (0.05s)
+=== RUN   TestAuditFailedCredentialRemovalInvalidatesDeletedBookmark
+    security_audit_probe_test.go:52: deleted bookmark retains active authenticated session; remote call error=<nil>
+--- FAIL: TestAuditFailedCredentialRemovalInvalidatesDeletedBookmark (0.04s)
+=== RUN   TestAuditDatabaseDurabilitySetting
+    security_audit_probe_test.go:70: SQLite runtime settings: journal=wal synchronous=1
+--- PASS: TestAuditDatabaseDurabilitySetting (0.04s)
+=== RUN   TestAuditRetargetCannotReuseSavedCredential
+    security_audit_probe_test.go:96: retargeting through the write-only bridge sent the stored durable credential to the new endpoint without credential reentry or native approval
+--- FAIL: TestAuditRetargetCannotReuseSavedCredential (0.04s)
+FAIL
+FAIL	github.com/csmart/aeronautes/internal/app	0.351s
+=== RUN   TestAuditLoopbackAuthCannotReturnPublicPlaintext
+    security_audit_probe_test.go:7: loopback auth accepts public plaintext storage URL without insecure opt-in
+--- FAIL: TestAuditLoopbackAuthCannotReturnPublicPlaintext (0.00s)
+FAIL
+FAIL	github.com/csmart/aeronautes/internal/swiftcontrol	0.002s
+=== RUN   TestAuditPinnedChildRefusesTokenRedirect
+    security_audit_probe_test.go:39: real pinned child forwarded its token across a storage redirect to a different hostname
+--- FAIL: TestAuditPinnedChildRefusesTokenRedirect (0.05s)
+FAIL
+FAIL	github.com/csmart/aeronautes/internal/transfer/rclone	0.053s
+=== RUN   TestAuditOracleDetectsContentEncodingChange
+    audit_encoding_test.go:50: stored encoding lost: got "", want gzip
+    audit_encoding_test.go:53: oracle declared no change after stored Content-Encoding changed from gzip to absent
+--- FAIL: TestAuditOracleDetectsContentEncodingChange (0.00s)
+FAIL
+FAIL	github.com/csmart/aeronautes/internal/systemtest/oracle	0.006s
+FAIL

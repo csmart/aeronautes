@@ -1,0 +1,7 @@
+=== RUN   TestAuditOracleDetectsContentEncodingChange
+    audit_encoding_test.go:50: stored encoding lost: got "", want gzip
+    audit_encoding_test.go:53: oracle declared no change after stored Content-Encoding changed from gzip to absent
+--- FAIL: TestAuditOracleDetectsContentEncodingChange (0.01s)
+FAIL
+FAIL	github.com/csmart/aeronautes/internal/systemtest/oracle	0.013s
+FAIL

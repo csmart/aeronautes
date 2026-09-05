@@ -4197,6 +4197,11 @@ ExclusiveOwnershipProof to "match" DESIGN §34 — the code is correctly stricte
 (Force-always); §34's body is the stale side and should be rewritten.
 
 
+**Full project audit (2026-09-05):** the [recorded assessment](audits/2026-09-05/README.md) revalidates the open safety work and adds executable data, credential, local-filesystem, UI and oracle findings against `cc6465ac69ec00756d9976bbf6cf7531b07da66d`.
+Its [proposed remediation sequence](audits/2026-09-05/remediation-plan.md) includes the minimum deterministic fault/barrier harness, early containment, and subsequent safety, product and release work.
+The audit records evidence and a plan; it does not implement fixes or supersede locked decisions.
+Conflicting ownership/concurrency/durability contracts must be resolved in this design and an ADR before dependent implementation.
+
 ## 66. Final project statement
 
 Aeronautes should feel like the Swift operator tool that should already exist:

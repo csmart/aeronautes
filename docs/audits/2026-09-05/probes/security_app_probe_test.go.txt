@@ -1,0 +1,98 @@
+package app
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"testing"
+	"sync/atomic"
+
+	"github.com/csmart/aeronautes/internal/bookmarks"
+	"github.com/csmart/aeronautes/internal/db"
+	"github.com/csmart/aeronautes/internal/jobs"
+	"github.com/csmart/aeronautes/internal/secrets"
+	"github.com/csmart/aeronautes/internal/swifttest"
+)
+
+type auditDeleteFailSecret struct{ *secrets.SessionStore }
+
+func (s auditDeleteFailSecret) Delete(context.Context, string) error {
+	return errors.New("injected keychain removal failure")
+}
+
+func TestAuditFailedCredentialRemovalInvalidatesDeletedBookmark(t *testing.T) {
+	ctx := context.Background()
+	d, err := db.Open(ctx, filepath.Join(t.TempDir(), "state.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { d.Close() })
+	srv := httptest.NewServer(swifttest.New("test:tester", "testing"))
+	t.Cleanup(srv.Close)
+	store := bookmarks.NewStore(d, auditDeleteFailSecret{secrets.NewSessionStore()})
+	c := NewConnections(store)
+	s := NewBookmarkService(store, c, jobs.NewStore(d))
+	b, err := s.Save(ctx, BookmarkDTO{DisplayName: "audit", AuthURL: srv.URL + "/auth/v1.0", Username: "test:tester"}, "testing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Connect(ctx, b.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Delete(ctx, b.ID); err == nil {
+		t.Fatal("credential deletion injection did not fail")
+	}
+	if _, err := store.Get(ctx, b.ID); !errors.Is(err, bookmarks.ErrNotFound) {
+		t.Fatalf("bookmark not deleted from DB: %v", err)
+	}
+	if live, err := c.Session(); err == nil {
+		_, remoteErr := live.AccountPortrait(ctx)
+		t.Fatalf("deleted bookmark retains active authenticated session; remote call error=%v", remoteErr)
+	}
+}
+
+func TestAuditDatabaseDurabilitySetting(t *testing.T) {
+	d, err := db.Open(context.Background(), filepath.Join(t.TempDir(), "state.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { d.Close() })
+	var synchronous int
+	var journal string
+	if err := d.Reader().QueryRow("PRAGMA synchronous").Scan(&synchronous); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Reader().QueryRow("PRAGMA journal_mode").Scan(&journal); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("SQLite runtime settings: journal=%s synchronous=%d", journal, synchronous)
+}
+
+func TestAuditRetargetCannotReuseSavedCredential(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	h.connect(t)
+	bookmarks, err := h.bookmarks.List(ctx)
+	if err != nil || len(bookmarks) != 1 {
+		t.Fatalf("bookmark fixture: count=%d err=%v", len(bookmarks), err)
+	}
+	var savedKeyReceived atomic.Bool
+	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Auth-Key") == "testing" {
+			savedKeyReceived.Store(true)
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	t.Cleanup(sink.Close)
+	b := bookmarks[0]
+	b.AuthURL = sink.URL + "/auth/v1.0"
+	if _, err := h.bookmarks.Save(ctx, b, ""); err != nil {
+		return
+	}
+	_, _ = h.browse.Connect(ctx, b.ID)
+	if savedKeyReceived.Load() {
+		t.Fatal("retargeting through the write-only bridge sent the stored durable credential to the new endpoint without credential reentry or native approval")
+	}
+}

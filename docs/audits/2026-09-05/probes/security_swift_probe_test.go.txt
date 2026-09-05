@@ -1,0 +1,9 @@
+package swiftcontrol
+
+import "testing"
+
+func TestAuditLoopbackAuthCannotReturnPublicPlaintext(t *testing.T) {
+	if err := checkStorageURL("http://127.0.0.1:12345/auth/v1.0", "http://192.0.2.10/v1/AUTH_audit"); err == nil {
+		t.Fatal("loopback auth accepts public plaintext storage URL without insecure opt-in")
+	}
+}

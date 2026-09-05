@@ -1,0 +1,267 @@
+
+ RUN  v4.1.11 <repo>/frontend
+
+ × ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts > discard load-more results from a previous container 10ms
+   → expected true to be false // Object.is equality
+ × ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts > deduplicate concurrent Load more clicks 2ms
+   → expected [ { kind: 'object', …(6) }, …(1) ] to have a length of 1 but got 2
+ × ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts > keep detail identity after a save resolves behind another selection 104ms
+   → expected 'empty-object' to be 'external-dlo' // Object.is equality
+ × ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts > clear account information when the active bookmark is deleted 1ms
+   → expected { name: 'AUTH_demo', …(6) } to be null
+ × ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts > leave Copy start disarmed after inputs change during preview 78ms
+   → expected false to be true // Object.is equality
+ × ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts > leave destructive Start disarmed after mode changes during preview 60ms
+   → expected false to be true // Object.is equality
+ × ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts > preserve exact destination prefix bytes in Copy preview 6ms
+   → expected 'object prefix' to be '  object prefix  ' // Object.is equality
+ × ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts > stop pending Find before its startup returns 52ms
+   → expected "cancelFind" to be called with arguments: [ 'late-find' ]
+
+Number of calls: 0
+
+ × ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts > offer an exact-object delete flow for a plain object 58ms
+   → expected false to be true // Object.is equality
+ × ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts > send the exact server prefix instead of appending a slash 23ms
+   → expected 'external/' to be 'external' // Object.is equality
+ × ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts > either retain or explicitly reject a user-entered __proto__ metadata key 1ms
+   → expected false to be true // Object.is equality
+ × ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts > report added metadata keys independently of Object.prototype 1ms
+   → expected [] to deeply equal [ 'constructor' ]
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 12 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts > discard load-more results from a previous container
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts:63:75
+     61|   page.resolve({rows:[{kind:'object',name:'belongs-to-fixtures',bytes:…
+     62|   await more;
+     63|   expect(state.entries.some((row) => row.name === 'belongs-to-fixtures…
+       |                                                                           ^
+     64| });
+     65|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/12]⎯
+
+ FAIL  ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts > deduplicate concurrent Load more clicks
+AssertionError: expected [ { kind: 'object', …(6) }, …(1) ] to have a length of 1 but got 2
+
+- Expected
++ Received
+
+- 1
++ 2
+
+ ❯ ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts:71:67
+     69|   vi.spyOn(api,'objects').mockResolvedValue({rows:[{kind:'object',name…
+     70|   await Promise.all([state.loadMoreEntries(),state.loadMoreEntries()]);
+     71|   expect(state.entries.filter((row) => row.name === 'next-page')).toHa…
+       |                                                                   ^
+     72| });
+     73|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/12]⎯
+
+ FAIL  ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts > keep detail identity after a save resolves behind another selection
+AssertionError: expected 'empty-object' to be 'external-dlo' // Object.is equality
+
+Expected: "external-dlo"
+Received: "empty-object"
+
+ ❯ ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts:86:36
+     84|   saved.resolve({outcome:'applied',objectAfter:after,containerAfter:nu…
+     85|   await saving;
+     86|   expect(state.objectDetail?.name).toBe(state.detailIdentity?.name);
+       |                                    ^
+     87| });
+     88|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/12]⎯
+
+ FAIL  ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts > clear account information when the active bookmark is deleted
+AssertionError: expected { name: 'AUTH_demo', …(6) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "bytesUsed": 47461000000,
+  "containers": 6,
+  "meta": {
+    "Book-Owner": "ops-team",
+  },
+  "name": "AUTH_demo",
+  "objects": 24,
+  "quotaBytes": 0,
+  "tempUrlKeySlots": [
+    "Temp-Url-Key",
+  ],
+}
+
+ ❯ ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts:92:25
+     90|   const {state,bookmark} = await connected();
+     91|   await state.deleteBookmark(bookmark.id);
+     92|   expect(state.account).toBeNull();
+       |                         ^
+     93| });
+     94|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/12]⎯
+
+ FAIL  ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts > leave Copy start disarmed after inputs change during preview
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts:107:48
+    105|   preview.resolve(plan);
+    106|   await vi.waitFor(() => expect(target.textContent).toContain('to tran…
+    107|   expect(button(target,'Start copy').disabled).toBe(true);
+       |                                                ^
+    108| });
+    109|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/12]⎯
+
+ FAIL  ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts > leave destructive Start disarmed after mode changes during preview
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts:123:54
+    121|   await vi.waitFor(() => expect(target.querySelector('input[placeholde…
+    122|   input(target,'input[placeholder="fixtures"]','fixtures');
+    123|   expect(button(target,'Delete container').disabled).toBe(true);
+       |                                                      ^
+    124| });
+    125|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/12]⎯
+
+ FAIL  ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts > preserve exact destination prefix bytes in Copy preview
+AssertionError: expected 'object prefix' to be '  object prefix  ' // Object.is equality
+
+Expected: "  object prefix  "
+Received: "object prefix"
+
+ ❯ ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts:134:44
+    132|   button(target,'Preview').click();
+    133|   await vi.waitFor(() => expect(plan).toHaveBeenCalledTimes(1));
+    134|   expect(plan.mock.calls[0][0].destPrefix).toBe('  object prefix  ');
+       |                                            ^
+    135| });
+    136|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/12]⎯
+
+ FAIL  ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts > stop pending Find before its startup returns
+AssertionError: expected "cancelFind" to be called with arguments: [ 'late-find' ]
+
+Number of calls: 0
+
+ ❯ ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts:147:18
+    145|   started.resolve('late-find');
+    146|   await finding;
+    147|   expect(cancel).toHaveBeenCalledWith('late-find');
+       |                  ^
+    148| });
+    149|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/12]⎯
+
+ FAIL  ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts > offer an exact-object delete flow for a plain object
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts:155:99
+    153|   await vi.waitFor(() => expect(state.objectDetail).not.toBeNull());
+    154|   const target = render(Inspector,state);
+    155|   expect([...target.querySelectorAll('button')].some((b) => /delete/i.…
+       |                                                                                                   ^
+    156| });
+    157|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/12]⎯
+
+ FAIL  ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts > send the exact server prefix instead of appending a slash
+AssertionError: expected 'external/' to be 'external' // Object.is equality
+
+Expected: "external"
+Received: "external/"
+
+ ❯ ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts:165:36
+    163|   prefix.dispatchEvent(new Event('change',{bubbles:true}));
+    164|   await vi.waitFor(() => expect(listing).toHaveBeenCalled());
+    165|   expect(listing.mock.calls[0][1]).toBe('external');
+       |                                    ^
+    166| });
+    167|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/12]⎯
+
+ FAIL  ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts > either retain or explicitly reject a user-entered __proto__ metadata key
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts:170:77
+    168| it('either retain or explicitly reject a user-entered __proto__ metada…
+    169|   const result = metaFromRows([{key:'__proto__',value:'operator input'…
+    170|   expect(Object.hasOwn(result.meta,'__proto__') || result.duplicate !=…
+       |                                                                             ^
+    171| });
+    172|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/12]⎯
+
+ FAIL  ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts > report added metadata keys independently of Object.prototype
+AssertionError: expected [] to deeply equal [ 'constructor' ]
+
+- Expected
++ Received
+
+- [
+-   "constructor",
+- ]
++ []
+
+ ❯ ../../../../../../..<audit-scratch>/ui-probes/audit.test.ts:174:62
+    172|
+    173| it('report added metadata keys independently of Object.prototype', () …
+    174|   expect(diffMeta({}, {constructor:'operator input'}).added).toEqual([…
+       |                                                              ^
+    175| });
+    176|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/12]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  12 failed (12)
+   Start at  08:22:21
+   Duration  1.51s (transform 613ms, setup 0ms, import 711ms, tests 398ms, environment 325ms)

@@ -1,0 +1,77 @@
+package local
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/csmart/aeronautes/internal/transfer/rclone"
+)
+
+func TestAuditDownloadDoesNotEscapePickedDirectory(t *testing.T) {
+	s, mock := session(t)
+	ctx := context.Background()
+	seed(mock, "media", "scope/redirect/payload", "DATA")
+	dest, outside := t.TempDir(), t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(dest, "redirect")); err != nil {
+		t.Fatal(err)
+	}
+	p, err := PreflightDownload(ctx, s, "media", "scope/", dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Rejected() {
+		return
+	}
+	r, err := Download(ctx, s, &fsEngine{session: s}, "aeronautes_src:media", "media", "scope/", dest, "probe", p, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Done != 1 {
+		t.Fatalf("probe transfer did not finish: %+v", r)
+	}
+	if data, err := os.ReadFile(filepath.Join(outside, "payload")); err == nil {
+		t.Fatalf("download escaped selected directory through parent symlink: data=%q report=%+v", string(data), r)
+	}
+}
+
+func TestAuditPreflightRejectsCaseFoldAncestorConflict(t *testing.T) {
+	s, mock := session(t)
+	seed(mock, "media", "Foo", "file")
+	seed(mock, "media", "foo/child", "child")
+	p, err := PreflightDownload(context.Background(), s, "media", "", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p.Rejected() {
+		t.Fatalf("cross-platform namespace policy accepted a case-folded file/directory collision: %+v", p)
+	}
+}
+
+type auditCancelAfterStage struct {
+	inner  Engine
+	cancel context.CancelFunc
+}
+
+func (e auditCancelAfterStage) Copy(ctx context.Context, src, dst string, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
+	r, err := e.inner.Copy(ctx, src, dst, names, onEvent)
+	e.cancel()
+	return r, err
+}
+
+func TestAuditCancelledDownloadStopsBeforePlacement(t *testing.T) {
+	s, mock := session(t)
+	seed(mock, "media", "scope/payload", "DATA")
+	dest := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	p, err := PreflightDownload(ctx, s, "media", "scope/", dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := Download(ctx, s, auditCancelAfterStage{inner: &fsEngine{session: s}, cancel: cancel}, "aeronautes_src:media", "media", "scope/", dest, "probe", p, nil)
+	if _, statErr := os.Stat(filepath.Join(dest, "payload")); statErr == nil {
+		t.Fatalf("download continued final placement after cancellation: report=%+v err=%v", r, err)
+	}
+}
