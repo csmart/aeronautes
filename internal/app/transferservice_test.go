@@ -248,6 +248,32 @@ func awaitTerminal(t *testing.T, h *harness, jobID string) JobDTO {
 	return JobDTO{}
 }
 
+func awaitJobAudit(t *testing.T, h *harness, jobID, operation string) {
+	t.Helper()
+	// The terminal row and audit event are separate writes; observing
+	// the row does not join the job goroutine's final audit append.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		events, err := h.auditSvc.Search(ctx, AuditQueryDTO{OperationPrefix: operation})
+		if err != nil {
+			t.Fatalf("waiting for %s audit for job %s: %v", operation, jobID, err)
+		}
+		for _, event := range events {
+			if event.Operation == operation && event.Summary == "job "+jobID {
+				return
+			}
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("missing %s audit for job %s: %+v", operation, jobID, events)
+		case <-ticker.C:
+		}
+	}
+}
+
 func TestPlanAndStartCopyAcrossBookmarks(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
@@ -307,6 +333,7 @@ func TestPlanAndStartCopyAcrossBookmarks(t *testing.T) {
 	}
 
 	// Audit: a start and a terminal event.
+	awaitJobAudit(t, h, jobID, "transfer.copy.complete")
 	events, err := h.auditSvc.Recent(ctx, 10)
 	if err != nil {
 		t.Fatal(err)
