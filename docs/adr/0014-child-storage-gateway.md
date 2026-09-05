@@ -1,6 +1,6 @@
 # ADR 0014 — Enforce Swift transport policy before the child
 
-**Status:** Proposed for P09 implementation (2026-09-05); independent design review required before code changes.
+**Status:** Initial P09 design reviewed (2026-09-05); storage-policy amendment proposed for independent review (2026-09-06).
 **Detail:** DESIGN §12.3, §26.2, §44.1 and §65.11; K-SEC-001/002/006/007/008; audit SEC-02 and P09.
 
 ## Evidence and problem
@@ -35,7 +35,10 @@ Apply the role restrictions below as part of the first gateway implementation, r
 - The source remote allows only `GET` and `HEAD` inside that account.
   The destination allows reads and `PUT`/`DELETE` of the invocation's staging objects and corresponding generated segment paths, never live destination names or another invocation's stage.
   `CopyTo` binds an exact staged object; `Copy` binds its fresh batch prefix; both bind the destination container and matching `<container>_segments` sidecar.
-  Allow only a bare sidecar-container creation `PUT`; refuse ACL, metadata, versioning, history and storage-policy headers so creation cannot mutate container policy.
+  Allow only a zero-body sidecar-container creation `PUT`, after the gateway has observed a successful authenticated `HEAD` of the exact destination container.
+  If that response contains one nonempty `X-Storage-Policy`, require the same single value on creation; if it omits the policy, permit creation without the header.
+  A missing prior HEAD, failed HEAD, ambiguous policy header, omitted expected policy or different policy refuses creation before upstream contact.
+  Refuse ACL, metadata, versioning and history headers; the bound storage-policy value is the sole policy-header exception.
   Require each staged `X-Object-Manifest` to name a generated segment prefix inside the same invocation's sidecar scope.
   Allow the observed abort-cleanup form, `DELETE` on the account path with `bulk-delete=1`, only after reading a bounded complete `text/plain` body and validating every URL-encoded `/container/object` line against the invocation's staged names or generated segment paths.
   Any out-of-scope name, malformed encoding/body or exceeded body/name limit refuses the whole request before upstream contact; decode each name exactly once using Swift's wire semantics, without path cleaning.
@@ -68,6 +71,26 @@ It remains an alternative if the gateway cannot pass the compatibility and resou
 A plain HTTP forward proxy cannot inspect redirect responses inside HTTPS CONNECT tunnels without introducing another TLS trust mechanism.
 Relying on HEAD preflight, stripping a token only after a redirect, or assuming a newer version fixes the issue does not meet the credential oracle.
 Replacing the complete byte engine with native transfers is a larger product change than this transport adapter.
+
+## Storage-policy compatibility amendment (2026-09-06)
+
+The first gateway implementation's full Swift integration run refused three existing transfer tests because the pinned child creates its sidecar with `X-Storage-Policy` from the destination container.
+The original request recording had omitted that header, so the bare-creation proposal missed this compatibility requirement.
+The preserved recorder now includes the policy value, and repeating its two-account experiment with the original direct-child runner produced 73 requests, including one sidecar-container PUT with `X-Storage-Policy: 1replica`.
+No token values were recorded.
+The [pinned backend](https://github.com/rclone/rclone/blob/v1.74.3/backend/swift/swift.go) obtains that value in `fetchStoragePolicy` and sends it in `makeContainer`.
+
+Bind the permitted header to the gateway's own authenticated destination-container HEAD response.
+Keep only the most recent completed HEAD result for this exact resource; failures or ambiguous headers invalidate the creation allowance.
+The child cannot choose another policy, substitute a different container's HEAD, or attach other policy-changing headers.
+Do not strip the requested policy and silently use the cluster default, because that could change where segments are stored.
+
+[Swift assigns storage policy at container creation](https://docs.openstack.org/swift/latest/overview_policies.html#containers-and-policies); changing an existing container's policy requires deletion and recreation.
+The HEAD binds the allowed value, but is not an atomic creation or exclusivity proof and does not solve concurrent container replacement.
+Preserve any upstream conflict or failure and keep the broader generation/concurrency work open.
+
+Before enabling this exception, require independent review of this amendment, followed by regressions for matching and omitted policy, missing or failed HEAD, duplicate headers, unrelated-container HEAD, mismatched values and combined policy/ACL mutation.
+The unchanged real-Swift transfer tests must pass through the gateway, including segmented upload and cleanup.
 
 ## Implementation sequence and gates
 

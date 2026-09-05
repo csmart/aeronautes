@@ -51,7 +51,7 @@ func TestRcloneMatrix(t *testing.T) {
 		original := proxy.Director
 		proxy.Director = func(r *http.Request) { original(r); r.Host = u.Host }
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			record := map[string]any{"role": role, "method": r.Method, "path": r.URL.EscapedPath(), "query": r.URL.RawQuery, "token_present": r.Header.Get("X-Auth-Token") != ""}
+			record := map[string]any{"role": role, "method": r.Method, "path": r.URL.EscapedPath(), "query": r.URL.RawQuery, "token_present": r.Header.Get("X-Auth-Token") != "", "storage_policy": r.Header.Get("X-Storage-Policy")}
 			if r.Method == http.MethodDelete && r.URL.Query().Get("bulk-delete") == "1" {
 				body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 64<<10))
 				if err != nil {

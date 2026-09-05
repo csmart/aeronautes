@@ -32,7 +32,7 @@ The role limit is additional authority control; a local token without these rest
 | Destination staged objects | `PUT`, `DELETE` | Exact `CopyTo` staged name or fresh `Copy` batch prefix; never a live name or another invocation's stage |
 | Destination generated segments | `PUT`, `DELETE` | Matching sidecar container and segment paths rooted in that invocation's staged object/batch path; the sidecar container alone is not authority to delete its other segments |
 | Destination account abort cleanup | `DELETE` with `bulk-delete=1` | Bounded complete `text/plain` body; validate every URL-encoded `/container/object` against the same staged/segment scope before forwarding; refuse the whole request on any invalid or out-of-scope name |
-| Matching sidecar container | Bare creation `PUT`; `GET`/`HEAD` | Refuse ACL, metadata, versioning, history and storage-policy headers; no container deletion |
+| Matching sidecar container | Zero-body creation `PUT`; `GET`/`HEAD` | Require a successful authenticated destination-container HEAD; bind the policy header to that response (or omit it when the response has none); refuse other policy/ACL/metadata/versioning/history changes; no container deletion |
 | Anonymous capability request | `GET` on the exact library-derived `/info` path | No upstream token; this class comes from the wire-library contract and was not emitted in the run below |
 | Everything else | Refused locally | `POST`, `COPY`, unscoped bulk delete, absolute request targets and out-of-scope paths remain forbidden unless a separate reviewed requirement changes this table |
 
@@ -43,7 +43,7 @@ The response passes through unchanged because bulk middleware can report per-nam
 A request-recording extension of the existing two-account SAIO compatibility fixture ran on 5 September 2026 with the official Linux amd64 rclone 1.74.3 pin.
 It exercised selected-name batch Copy, plain and DLO writes, CopyTo upload/download, and failure cleanup after an injected HTTP 403 on the second segment PUT.
 The original recording logged method, escaped path, query and token presence, without token values or request bodies.
-The preserved fixture now also records the bounded bulk-delete body containing only names in test-owned containers, to make abort-cleanup scope directly inspectable.
+The preserved fixture now also records the bounded bulk-delete body containing only names in test-owned containers, and the sidecar storage-policy value, to make cleanup and creation scope directly inspectable.
 The 73 observed requests were:
 
 | Role | Request class | Count |
@@ -57,6 +57,8 @@ The 73 observed requests were:
 | Destination | Account-root bulk `DELETE` | 1 |
 
 Every observed request carried an auth token.
+The storage-policy follow-up repeated the 73-request experiment on 6 September and recorded `X-Storage-Policy: 1replica` on sidecar creation.
+The [ADR amendment](adr/0014-child-storage-gateway.md#storage-policy-compatibility-amendment-2026-09-06) proposes allowing only the policy bound by an authenticated HEAD of the destination container; that amendment requires review before enabling it.
 The bulk `DELETE` body names the failed upload's first successfully written generated segment; it is the observed segment cleanup, not a staged-object deletion.
 No `POST`, `COPY`, anonymous `/info` or per-object `DELETE` was observed in this run.
 Per-object staged/segment `DELETE` remains an allowance for the documented abort-cleanup contract, with real cancellation coverage still required before implementation approval.
