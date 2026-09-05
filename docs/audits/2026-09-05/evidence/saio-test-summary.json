@@ -1,0 +1,124 @@
+{
+  "counts": {
+    "pass_test": 352,
+    "pass_package": 19
+  },
+  "topLevel": {
+    "pass": 332
+  },
+  "packages": [
+    {
+      "package": "github.com/csmart/aeronautes/internal/transfer/plan",
+      "action": "pass",
+      "elapsed": 1.079
+    },
+    {
+      "package": "github.com/csmart/aeronautes/internal/scenariocontract",
+      "action": "pass",
+      "elapsed": 1.085
+    },
+    {
+      "package": "github.com/csmart/aeronautes/internal/swifttest",
+      "action": "pass",
+      "elapsed": 1.091
+    },
+    {
+      "package": "github.com/csmart/aeronautes/internal/transfer/local",
+      "action": "pass",
+      "elapsed": 1.149
+    },
+    {
+      "package": "github.com/csmart/aeronautes/internal/transfer/copy",
+      "action": "pass",
+      "elapsed": 1.23
+    },
+    {
+      "package": "github.com/csmart/aeronautes/internal/secrets",
+      "action": "pass",
+      "elapsed": 1.319
+    },
+    {
+      "package": "github.com/csmart/aeronautes/internal/swiftcontrol",
+      "action": "pass",
+      "elapsed": 1.392
+    },
+    {
+      "package": "github.com/csmart/aeronautes/internal/audit",
+      "action": "pass",
+      "elapsed": 1.637
+    },
+    {
+      "package": "github.com/csmart/aeronautes/internal/jobs",
+      "action": "pass",
+      "elapsed": 1.821
+    },
+    {
+      "package": "github.com/csmart/aeronautes/internal/bookmarks",
+      "action": "pass",
+      "elapsed": 1.8279999999999998
+    },
+    {
+      "package": "github.com/csmart/aeronautes/internal/evidence",
+      "action": "pass",
+      "elapsed": 2.126
+    },
+    {
+      "package": "github.com/csmart/aeronautes/internal/deletion",
+      "action": "pass",
+      "elapsed": 2.632
+    },
+    {
+      "package": "github.com/csmart/aeronautes/internal/systemtest/cmd/scenariocov",
+      "action": "pass",
+      "elapsed": 3.013
+    },
+    {
+      "package": "github.com/csmart/aeronautes/internal/systemtest/oracle",
+      "action": "pass",
+      "elapsed": 3.292
+    },
+    {
+      "package": "github.com/csmart/aeronautes/internal/db",
+      "action": "pass",
+      "elapsed": 6.458
+    },
+    {
+      "package": "github.com/csmart/aeronautes/internal/systemtest",
+      "action": "pass",
+      "elapsed": 11.175
+    },
+    {
+      "package": "github.com/csmart/aeronautes/internal/app",
+      "action": "pass",
+      "elapsed": 11.676
+    },
+    {
+      "package": "github.com/csmart/aeronautes/internal/transfer/rclone",
+      "action": "pass",
+      "elapsed": 11.719
+    },
+    {
+      "package": "github.com/csmart/aeronautes/internal/integration",
+      "action": "pass",
+      "elapsed": 30.76
+    }
+  ],
+  "failed": [],
+  "skipped": [],
+  "matrixObservations": [
+    "rclonematrix_test.go:36: MATRIX|version|v1.74.3",
+    "rclonematrix_test.go:36: MATRIX|flag.files-from-raw|true",
+    "rclonematrix_test.go:36: MATRIX|flag.files-from0|false",
+    "rclonematrix_test.go:36: MATRIX|encoding.excluded|\"line\\nbreak\" (newline cannot ride a list)",
+    "rclonematrix_test.go:36: MATRIX|encoding.exit|0 (errors reported: 2)",
+    "rclonematrix_test.go:36: MATRIX|encoding.exact|11/16",
+    "rclonematrix_test.go:36: MATRIX|encoding.missing|\"/foo\"",
+    "rclonematrix_test.go:36: MATRIX|encoding.missing|\"a/../b\"",
+    "rclonematrix_test.go:36: MATRIX|encoding.missing|\"a/./b\"",
+    "rclonematrix_test.go:36: MATRIX|encoding.missing|\"foo/\"",
+    "rclonematrix_test.go:36: MATRIX|encoding.missing|\"foo//bar\"",
+    "rclonematrix_test.go:36: MATRIX|large.class|dlo (logical 3145728 bytes)",
+    "rclonematrix_test.go:36: MATRIX|large.prefix-capture|1 prefixes captured",
+    "rclonematrix_test.go:36: MATRIX|large.metadata-preserved|false (X-Object-Meta on destination)"
+  ]
+}

@@ -1,0 +1,87 @@
+{
+  "jobs": {
+    "jobs": [
+      {
+        "id": 99448371755,
+        "name": "Integration \u2014 containerized Swift (SAIO)",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/csmart/aeronautes/actions/runs/33379497500/job/99448371755",
+        "started_at": "2026-08-31T09:48:40Z",
+        "completed_at": "2026-08-31T09:50:56Z"
+      },
+      {
+        "id": 99448371840,
+        "name": "Smoke \u2014 headless app against mock Swift",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/csmart/aeronautes/actions/runs/33379497500/job/99448371840",
+        "started_at": "2026-08-31T09:48:40Z",
+        "completed_at": "2026-08-31T09:52:07Z"
+      },
+      {
+        "id": 99448371866,
+        "name": "Go \u2014 fmt, vet, build, test (race)",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/csmart/aeronautes/actions/runs/33379497500/job/99448371866",
+        "started_at": "2026-08-31T09:48:40Z",
+        "completed_at": "2026-08-31T09:52:25Z"
+      },
+      {
+        "id": 99448371883,
+        "name": "Frontend \u2014 lint, build, test",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/csmart/aeronautes/actions/runs/33379497500/job/99448371883",
+        "started_at": "2026-08-31T09:48:41Z",
+        "completed_at": "2026-08-31T09:49:13Z"
+      },
+      {
+        "id": 99449303223,
+        "name": "Commit coverage badges",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/csmart/aeronautes/actions/runs/33379497500/job/99449303223",
+        "started_at": "2026-08-31T09:52:28Z",
+        "completed_at": "2026-08-31T09:52:32Z"
+      }
+    ]
+  },
+  "artifacts": {
+    "artifacts": [
+      {
+        "id": 9753263017,
+        "name": "smoke-artifacts",
+        "size_in_bytes": 6085689,
+        "expired": false,
+        "archive_download_url": "https://api.github.com/repos/csmart/aeronautes/actions/artifacts/9753263017/zip",
+        "created_at": "2026-08-31T09:52:04Z"
+      },
+      {
+        "id": 9753228232,
+        "name": "badge-go",
+        "size_in_bytes": 512,
+        "expired": false,
+        "archive_download_url": "https://api.github.com/repos/csmart/aeronautes/actions/artifacts/9753228232/zip",
+        "created_at": "2026-08-31T09:50:54Z"
+      },
+      {
+        "id": 9753227900,
+        "name": "scenario-coverage",
+        "size_in_bytes": 30957,
+        "expired": false,
+        "archive_download_url": "https://api.github.com/repos/csmart/aeronautes/actions/artifacts/9753227900/zip",
+        "created_at": "2026-08-31T09:50:53Z"
+      },
+      {
+        "id": 9753178007,
+        "name": "badge-frontend",
+        "size_in_bytes": 526,
+        "expired": false,
+        "archive_download_url": "https://api.github.com/repos/csmart/aeronautes/actions/artifacts/9753178007/zip",
+        "created_at": "2026-08-31T09:49:10Z"
+      }
+    ]
+  }
+}

@@ -1,0 +1,56 @@
+[
+  {
+    "type": "deletion",
+    "parameters": null,
+    "ruleset_id": 21829446,
+    "ruleset_source_type": "Repository"
+  },
+  {
+    "type": "non_fast_forward",
+    "parameters": null,
+    "ruleset_id": 21829446,
+    "ruleset_source_type": "Repository"
+  },
+  {
+    "type": "pull_request",
+    "parameters": {
+      "required_approving_review_count": 0,
+      "dismiss_stale_reviews_on_push": false,
+      "required_reviewers": [],
+      "require_code_owner_review": false,
+      "require_last_push_approval": false,
+      "required_review_thread_resolution": false,
+      "require_extra_approval_for_unattributed_changes": true,
+      "allowed_merge_methods": [
+        "merge",
+        "squash",
+        "rebase"
+      ]
+    },
+    "ruleset_id": 21829446,
+    "ruleset_source_type": "Repository"
+  },
+  {
+    "type": "required_status_checks",
+    "parameters": {
+      "strict_required_status_checks_policy": false,
+      "do_not_enforce_on_create": false,
+      "required_status_checks": [
+        {
+          "context": "Go \u2014 fmt, vet, build, test (race)"
+        },
+        {
+          "context": "Frontend \u2014 lint, build, test"
+        },
+        {
+          "context": "Integration \u2014 containerized Swift (SAIO)"
+        },
+        {
+          "context": "Smoke \u2014 headless app against mock Swift"
+        }
+      ]
+    },
+    "ruleset_id": 21829446,
+    "ruleset_source_type": "Repository"
+  }
+]

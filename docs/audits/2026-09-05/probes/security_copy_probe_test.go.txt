@@ -1,0 +1,41 @@
+package copy
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/csmart/aeronautes/internal/transfer/rclone"
+)
+
+// The recovered facts model a power failure that retained older captured
+// rows but lost later unsynced committing and committed transactions.
+// It does not simulate a power cut or assume ordinary process crashes
+// lose SQLite NORMAL commits.
+func TestAuditPowerLossMissingCommitFactPreservesLiveDLO(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	prefix := ".aeronautes/stage/powerloss/live.bin/2026-09-05-0000000000000000000001/"
+	seed(w.dstMock, "backup_segments", prefix+"00000000", []byte("valuable"), nil)
+	_, err := w.dst.PutObject(ctx, "backup", "live.bin", strings.NewReader(""), "application/octet-stream", map[string]string{
+		"X-Object-Manifest": "backup_segments/" + prefix,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := w.dst.ObjectDetail(ctx, "backup", "live.bin")
+	if err != nil || before.ContentLength != 8 {
+		t.Fatalf("invalid fixture: before=%+v err=%v", before, err)
+	}
+	report, err := SweepLitter(ctx, w.dst, SweepInput{
+		DstContainer: "backup", StagingPrefix: ".aeronautes/stage/powerloss/",
+		Captured: []rclone.SegmentPrefix{{Container: "backup_segments", Prefix: prefix}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := w.dst.ObjectDetail(ctx, "backup", "live.bin")
+	if err != nil || after.ContentLength != before.ContentLength {
+		t.Fatalf("live DLO changed after lost-commit-facts recovery: before bytes=%d after=%+v report=%+v err=%v", before.ContentLength, after, report, err)
+	}
+}

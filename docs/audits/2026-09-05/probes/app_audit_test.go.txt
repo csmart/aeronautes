@@ -1,0 +1,115 @@
+package app
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"sync/atomic"
+	"testing"
+
+	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
+	"github.com/csmart/aeronautes/internal/transfer/rclone"
+)
+
+func TestAuditMirrorPreservesLastHopConcurrentWriter(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	h.connect(t)
+	source := h.transfer.connections.ActiveBookmarkID()
+	dest, mock := secondCluster(t, h)
+	h.installEngine(nil)
+	h.mock.AddContainer("media", "standard")
+	mock.AddContainer("backup", "standard")
+	seedObject(mock, "backup", "victim", "OLD", nil)
+	var hit atomic.Bool
+	mock.AfterRequest = func(method, path string) {
+		if method == "HEAD" && path == "/v1/AUTH_test/backup/victim" && hit.CompareAndSwap(false, true) {
+			seedObject(mock, "backup", "victim", "NEW RACER DATA", nil)
+		}
+	}
+	jobID, err := h.transfer.StartMirror(ctx, MirrorRequestDTO{CopyRequestDTO: CopyRequestDTO{
+		SourceBookmarkID: source, SourceContainer: "media", DestBookmarkID: dest, DestContainer: "backup",
+	}, Confirm: "backup"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, h, jobID)
+	mock.AfterRequest = nil
+	if !hit.Load() {
+		t.Fatal("probe missed delete re-HEAD")
+	}
+	session := h.transfer.connections.sessions[dest]
+	if _, err := session.ObjectDetail(ctx, "backup", "victim"); err != nil {
+		t.Fatalf("Mirror deleted a last-hop replacement: error=%v job=%+v", err, job)
+	}
+}
+
+func TestAuditCopyPropagatesMetadataOnlyChange(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	h.connect(t)
+	source := h.transfer.connections.ActiveBookmarkID()
+	dest, mock := secondCluster(t, h)
+	h.installEngine(nil)
+	h.mock.AddContainer("media", "standard")
+	mock.AddContainer("backup", "standard")
+	seedObject(h.mock, "media", "asset", "DATA", map[string]string{"Purpose": "updated"})
+	seedObject(mock, "backup", "asset", "DATA", map[string]string{"Purpose": "old"})
+	jobID, err := h.transfer.StartCopy(ctx, CopyRequestDTO{SourceBookmarkID: source, SourceContainer: "media", DestBookmarkID: dest, DestContainer: "backup"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, h, jobID)
+	after, err := h.transfer.connections.sessions[dest].ObjectDetail(ctx, "backup", "asset")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Meta["Purpose"] != "updated" {
+		t.Fatalf("metadata-only change skipped: destination=%+v job=%+v", after.Meta, job)
+	}
+}
+
+func TestAuditCopyCountsOneFailedIdentityOnce(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	h.connect(t)
+	source := h.transfer.connections.ActiveBookmarkID()
+	dest, mock := secondCluster(t, h)
+	h.transfer.setEngineFactory(func(transfercopy.RemoteSource, rclone.Options) (transfercopy.Engine, error) {
+		return &droppingEngine{}, nil
+	})
+	h.mock.AddContainer("media", "standard")
+	mock.AddContainer("backup", "standard")
+	seedObject(h.mock, "media", "asset", "DATA", nil)
+	jobID, err := h.transfer.StartCopy(ctx, CopyRequestDTO{SourceBookmarkID: source, SourceContainer: "media", DestBookmarkID: dest, DestContainer: "backup"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, h, jobID)
+	if job.Counters.ObjectsFailed != 1 {
+		t.Fatalf("one missing identity counted as %d failures: job=%+v", job.Counters.ObjectsFailed, job)
+	}
+}
+
+func TestAuditUploadChecksDestinationChunkLimit(t *testing.T) {
+	h := newHarnessWithInfo(t, `{"swift":{"max_file_size":1048576}}`)
+	ctx := context.Background()
+	h.connect(t)
+	bookmark := h.transfer.connections.ActiveBookmarkID()
+	h.installEngine(nil)
+	h.mock.AddContainer("media", "standard")
+	path := filepath.Join(t.TempDir(), "asset")
+	if err := os.WriteFile(path, []byte("DATA"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	h.transfer.setFilePicker(fakePicker{files: []string{path}})
+	pick, err := h.transfer.PickUploadFiles(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobID, err := h.transfer.StartUpload(ctx, UploadRequestDTO{BookmarkID: bookmark, Container: "media", SelectionToken: pick.Token, Settings: TransferSettingsDTO{ChunkSize: "8Mi"}})
+	if err == nil {
+		job := awaitTerminal(t, h, jobID)
+		t.Fatalf("upload accepted 8Mi chunks when cluster maximum is 1Mi: job=%+v", job)
+	}
+}

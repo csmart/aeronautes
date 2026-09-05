@@ -1,0 +1,175 @@
+import { afterEach, expect, it, vi } from 'vitest';
+import { flushSync, mount, unmount } from 'svelte';
+import { BrowserState } from '__AUDIT_REPO__/frontend/src/features/browser/browserState.svelte';
+import { newFakeApi } from '__AUDIT_REPO__/frontend/src/features/browser/fakeApi';
+import TransferDialog from '__AUDIT_REPO__/frontend/src/features/transfer/TransferDialog.svelte';
+import DeleteDialog from '__AUDIT_REPO__/frontend/src/features/transfer/DeleteDialog.svelte';
+import Inspector from '__AUDIT_REPO__/frontend/src/features/inspector/Inspector.svelte';
+import WorkingList from '__AUDIT_REPO__/frontend/src/features/browser/WorkingList.svelte';
+import { diffMeta, metaFromRows } from '__AUDIT_REPO__/frontend/src/lib/metadataDiff';
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => { resolve = r; });
+  return { promise, resolve };
+}
+
+async function connected() {
+  const api = newFakeApi();
+  const state = new BrowserState(api);
+  const bookmark = await state.saveBookmark({id:'', displayName:'Mock', authUrl:'http://mock/auth/v1.0', username:'test:tester', storageUrlOverride:'', tlsMode:'system', caPem:'', hasCa:false, hasCredential:false}, 'testing');
+  await state.connect(bookmark.id);
+  await state.openContainer('fixtures');
+  return {api, state, bookmark};
+}
+
+let mounted: ReturnType<typeof mount> | null = null;
+function render(Component, state) {
+  const target = document.createElement('div');
+  document.body.append(target);
+  mounted = mount(Component, {target, props:{browser:state, onClose:vi.fn()}});
+  flushSync();
+  return target;
+}
+afterEach(async () => {
+  if (mounted) await unmount(mounted);
+  mounted = null;
+  document.body.innerHTML = '';
+  vi.restoreAllMocks();
+});
+function button(target: HTMLElement, text: string) {
+  const found = [...target.querySelectorAll('button')].find((b) => b.textContent?.trim() === text);
+  if (!found) throw new Error('button not found: '+text);
+  return found;
+}
+function input(target: HTMLElement, selector: string, value: string) {
+  const field = target.querySelector(selector) as HTMLInputElement;
+  field.value = value;
+  field.dispatchEvent(new Event('input', {bubbles:true}));
+  flushSync();
+  return field;
+}
+
+it('discard load-more results from a previous container', async () => {
+  const {api,state} = await connected();
+  state.entriesMarker = 'page2';
+  const page = deferred<Awaited<ReturnType<typeof api.objects>>>();
+  const original = api.objects;
+  vi.spyOn(api,'objects').mockImplementation((container,prefix,marker,limit) => marker === 'page2' ? page.promise : original(container,prefix,marker,limit));
+  const more = state.loadMoreEntries();
+  await state.openContainer('photos_segments');
+  page.resolve({rows:[{kind:'object',name:'belongs-to-fixtures',bytes:1,etag:'old',lastModified:'',contentType:'text/plain',sloListed:false}], nextMarker:''});
+  await more;
+  expect(state.entries.some((row) => row.name === 'belongs-to-fixtures')).toBe(false);
+});
+
+it('deduplicate concurrent Load more clicks', async () => {
+  const {api,state} = await connected();
+  state.entriesMarker = 'page2';
+  vi.spyOn(api,'objects').mockResolvedValue({rows:[{kind:'object',name:'next-page',bytes:1,etag:'x',lastModified:'',contentType:'text/plain',sloListed:false}],nextMarker:''});
+  await Promise.all([state.loadMoreEntries(),state.loadMoreEntries()]);
+  expect(state.entries.filter((row) => row.name === 'next-page')).toHaveLength(1);
+});
+
+it('keep detail identity after a save resolves behind another selection', async () => {
+  const {api,state} = await connected();
+  state.select(state.entries.findIndex((row) => row.name === 'empty-object'));
+  await vi.waitFor(() => expect(state.objectDetail).not.toBeNull());
+  const after = {...state.objectDetail!, meta:{Team:'ops'}};
+  const saved = deferred<Awaited<ReturnType<typeof api.updateObjectMetadata>>>();
+  vi.spyOn(api,'updateObjectMetadata').mockReturnValue(saved.promise);
+  const saving = state.saveObjectMetadata({meta:{Team:'ops'},contentType:'',deleteAt:''});
+  state.select(state.entries.findIndex((row) => row.name === 'external-dlo'));
+  await vi.waitFor(() => expect(state.objectDetail?.name).toBe('external-dlo'));
+  saved.resolve({outcome:'applied',objectAfter:after,containerAfter:null,mismatch:'',transIds:[]});
+  await saving;
+  expect(state.objectDetail?.name).toBe(state.detailIdentity?.name);
+});
+
+it('clear account information when the active bookmark is deleted', async () => {
+  const {state,bookmark} = await connected();
+  await state.deleteBookmark(bookmark.id);
+  expect(state.account).toBeNull();
+});
+
+it('leave Copy start disarmed after inputs change during preview', async () => {
+  const {api,state} = await connected();
+  const preview = deferred<Awaited<ReturnType<typeof api.planCopy>>>();
+  const plan = await api.planCopy({sourceBookmarkId:'a',sourceContainer:'fixtures',sourcePrefix:'',destBookmarkId:'b',destContainer:'original',destPrefix:'',profile:'auto',settings:{chunkSize:'',transfers:0,checkers:0,tpsLimit:0,bwLimit:''}});
+  vi.spyOn(api,'planCopy').mockReturnValue(preview.promise);
+  const target = render(TransferDialog,state);
+  input(target,'input[placeholder="container"]','original');
+  button(target,'Preview').click();
+  flushSync();
+  input(target,'input[placeholder="container"]','different-destination');
+  preview.resolve(plan);
+  await vi.waitFor(() => expect(target.textContent).toContain('to transfer'));
+  expect(button(target,'Start copy').disabled).toBe(true);
+});
+
+it('leave destructive Start disarmed after mode changes during preview', async () => {
+  const {api,state} = await connected();
+  await state.goTo('normal/');
+  const preview = deferred<Awaited<ReturnType<typeof api.previewDelete>>>();
+  vi.spyOn(api,'previewDelete').mockReturnValue(preview.promise);
+  const target = render(DeleteDialog,state);
+  button(target,'Preview').click();
+  flushSync();
+  (target.querySelector('input[value="delete_container"]') as HTMLInputElement).click();
+  flushSync();
+  preview.resolve({objects:1,bytes:8,strategy:'native',possibleManifests:0});
+  await vi.waitFor(() => expect(target.querySelector('input[placeholder="fixtures"]')).not.toBeNull());
+  input(target,'input[placeholder="fixtures"]','fixtures');
+  expect(button(target,'Delete container').disabled).toBe(true);
+});
+
+it('preserve exact destination prefix bytes in Copy preview', async () => {
+  const {api,state} = await connected();
+  const plan = vi.spyOn(api,'planCopy');
+  const target = render(TransferDialog,state);
+  input(target,'input[placeholder="container"]','destination');
+  input(target,'input[placeholder="prefix/ (optional)"]','  object prefix  ');
+  button(target,'Preview').click();
+  await vi.waitFor(() => expect(plan).toHaveBeenCalledTimes(1));
+  expect(plan.mock.calls[0][0].destPrefix).toBe('  object prefix  ');
+});
+
+it('stop pending Find before its startup returns', async () => {
+  const {api,state} = await connected();
+  const started = deferred<string>();
+  const cancel = vi.spyOn(api,'cancelFind');
+  vi.spyOn(api,'startFind').mockReturnValue(started.promise);
+  const finding = state.startFind('hello');
+  await vi.waitFor(() => expect(state.findRunning).toBe(true));
+  await state.cancelFind();
+  started.resolve('late-find');
+  await finding;
+  expect(cancel).toHaveBeenCalledWith('late-find');
+});
+
+it('offer an exact-object delete flow for a plain object', async () => {
+  const {state} = await connected();
+  state.select(state.entries.findIndex((row) => row.name === 'empty-object'));
+  await vi.waitFor(() => expect(state.objectDetail).not.toBeNull());
+  const target = render(Inspector,state);
+  expect([...target.querySelectorAll('button')].some((b) => /delete/i.test(b.textContent ?? ''))).toBe(true);
+});
+
+it('send the exact server prefix instead of appending a slash', async () => {
+  const {api,state} = await connected();
+  const listing = vi.spyOn(api,'objects');
+  const target = render(WorkingList,state);
+  const prefix = input(target,'input[placeholder="server-side prefix…"]','external');
+  prefix.dispatchEvent(new Event('change',{bubbles:true}));
+  await vi.waitFor(() => expect(listing).toHaveBeenCalled());
+  expect(listing.mock.calls[0][1]).toBe('external');
+});
+
+it('either retain or explicitly reject a user-entered __proto__ metadata key', () => {
+  const result = metaFromRows([{key:'__proto__',value:'operator input'}]);
+  expect(Object.hasOwn(result.meta,'__proto__') || result.duplicate !== '').toBe(true);
+});
+
+it('report added metadata keys independently of Object.prototype', () => {
+  expect(diffMeta({}, {constructor:'operator input'}).added).toEqual(['constructor']);
+});

@@ -1,0 +1,42 @@
+package rclone
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+)
+
+func TestAuditPinnedChildRefusesTokenRedirect(t *testing.T) {
+	const syntheticToken = "audit-synthetic-token-not-a-real-secret"
+	var credentialReceived atomic.Bool
+	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Auth-Token") == syntheticToken {
+			credentialReceived.Store(true)
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(sink.Close)
+	target := strings.Replace(sink.URL, "127.0.0.1", "localhost", 1) + "/elsewhere"
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", target)
+		w.WriteHeader(http.StatusFound)
+	}))
+	t.Cleanup(source.Close)
+	runner, err := NewRunner(Options{Binary: "__AUDIT_RCLONE__", Retries: 1, LowLevelRetries: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err = runner.CopyTo(ctx, []Remote{{Name: "aeronautes_src", StorageURL: source.URL + "/v1/AUTH_audit", Token: syntheticToken}},
+		"aeronautes_src:container/object", filepath.Join(t.TempDir(), "download"), nil)
+	if credentialReceived.Load() {
+		t.Fatal("real pinned child forwarded its token across a storage redirect to a different hostname")
+	}
+	t.Logf("redirect refused without forwarding token; runner error=%v", err)
+}

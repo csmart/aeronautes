@@ -48,6 +48,7 @@ future option, ADR 0006).
 - [`docs/assets/screenshots/`](docs/assets/screenshots/) — real captures of the app against containerized Swift.
 - [`docs/rclone.md`](docs/rclone.md) — the exact pinned-rclone flag surface and measured behaviours.
 - [`docs/RELEASING.md`](docs/RELEASING.md) — the six-target release pipeline (unsigned for now, on purpose).
+- [Full project audit, 5 September 2026](docs/audits/2026-09-05/README.md) — evidence-backed findings and an ordered remediation plan, including the fault/barrier harness.
 - [`AGENTS.md`](AGENTS.md) — start-here guide for coding agents.
 
 ## Building on Fedora

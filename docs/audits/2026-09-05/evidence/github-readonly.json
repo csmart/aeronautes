@@ -1,0 +1,38 @@
+{
+  "repository": {
+    "full_name": "csmart/aeronautes",
+    "private": true,
+    "default_branch": "master",
+    "archived": false,
+    "pushed_at": "2026-08-31T09:48:35Z",
+    "visibility": "private"
+  },
+  "master": {
+    "sha": "b16c9ffd3461a519489c24112a23503ac2725566",
+    "subject": "update coverage badges [ci]",
+    "date": "2026-08-31T09:48:33Z"
+  },
+  "audited_revision_runs": {
+    "total_count": 1,
+    "runs": [
+      {
+        "id": 33379153749,
+        "name": "CI",
+        "event": "push",
+        "status": "completed",
+        "conclusion": "cancelled",
+        "head_sha": "cc6465ac69ec00756d9976bbf6cf7531b07da66d",
+        "html_url": "https://github.com/csmart/aeronautes/actions/runs/33379153749",
+        "created_at": "2026-08-31T09:44:22Z",
+        "updated_at": "2026-08-31T09:48:39Z"
+      }
+    ]
+  },
+  "open_dependabot_alerts": {
+    "alerts": [],
+    "has_next_page": false
+  },
+  "branch_protection": {
+    "http_status": 404
+  }
+}

@@ -1,0 +1,55 @@
+package oracle
+
+import (
+	"bytes"
+	"compress/gzip"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
+	"testing"
+)
+
+func TestAuditOracleDetectsContentEncodingChange(t *testing.T) {
+	payload := []byte("the same logical content")
+	var compressed bytes.Buffer
+	writer := gzip.NewWriter(&compressed)
+	if _, err := writer.Write(payload); err != nil { t.Fatal(err) }
+	if err := writer.Close(); err != nil { t.Fatal(err) }
+	var encoded atomic.Bool
+	encoded.Store(true)
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth":
+			w.Header().Set("X-Storage-Url", server.URL+"/v1/AUTH_audit")
+			w.Header().Set("X-Auth-Token", "audit-test-token")
+		case "/v1/AUTH_audit/objects":
+			w.Header().Set("Content-Type", "application/json")
+			if r.URL.Query().Get("marker") == "item" { fmt.Fprint(w, "[]"); return }
+			fmt.Fprint(w, `[{"name":"item"}]`)
+		case "/v1/AUTH_audit/objects/item":
+			w.Header().Set("Content-Type", "application/octet-stream")
+			if encoded.Load() {
+				w.Header().Set("Content-Encoding", "gzip")
+				w.Write(compressed.Bytes())
+			} else { w.Write(payload) }
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	o, err := Connect(server.URL+"/auth", "audit", "test-key")
+	if err != nil { t.Fatal(err) }
+	before, err := o.SnapshotContainers("objects")
+	if err != nil { t.Fatal(err) }
+	encoded.Store(false)
+	after, err := o.SnapshotContainers("objects")
+	if err != nil { t.Fatal(err) }
+	if got := before.Containers["objects"].Objects["item"].ContentEncoding; got != "gzip" {
+		t.Errorf("stored encoding lost: got %q, want gzip", got)
+	}
+	if delta := Diff(before, after); delta.Empty() {
+		t.Error("oracle declared no change after stored Content-Encoding changed from gzip to absent")
+	}
+}

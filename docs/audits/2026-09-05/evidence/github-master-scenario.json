@@ -1,0 +1,715 @@
+{
+  "schemaVersion": 3,
+  "valid": true,
+  "processSucceeded": true,
+  "streamComplete": true,
+  "contractValid": true,
+  "coverageComplete": false,
+  "commitSha": "b16c9ffd3461a519489c24112a23503ac2725566",
+  "goVersion": "go1.27.0",
+  "saioConfigured": true,
+  "contractHash": "71e2a07183a48cd7",
+  "totalActions": 47,
+  "totalRequired": 102,
+  "totalCovered": 8,
+  "actionsWithGaps": 47,
+  "nonJSONLines": 0,
+  "actions": [
+    {
+      "action": "AppService.About",
+      "kind": "read",
+      "required": [
+        "happy"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy"
+      ]
+    },
+    {
+      "action": "AppService.Info",
+      "kind": "read",
+      "required": [
+        "happy"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy"
+      ]
+    },
+    {
+      "action": "AuditService.Recent",
+      "kind": "read",
+      "required": [
+        "happy"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy"
+      ]
+    },
+    {
+      "action": "AuditService.Search",
+      "kind": "read",
+      "required": [
+        "happy"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy"
+      ]
+    },
+    {
+      "action": "BenchmarkService.Latest",
+      "kind": "read",
+      "required": [
+        "happy"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy"
+      ]
+    },
+    {
+      "action": "BenchmarkService.StartBenchmark",
+      "kind": "job",
+      "required": [
+        "happy",
+        "refusal",
+        "conflict",
+        "cancel",
+        "partial",
+        "retry"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy",
+        "refusal",
+        "conflict",
+        "cancel",
+        "partial",
+        "retry"
+      ]
+    },
+    {
+      "action": "BookmarkService.Delete",
+      "kind": "destructive",
+      "required": [
+        "happy",
+        "refusal",
+        "conflict"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy",
+        "refusal",
+        "conflict"
+      ]
+    },
+    {
+      "action": "BookmarkService.List",
+      "kind": "read",
+      "required": [
+        "happy"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy"
+      ]
+    },
+    {
+      "action": "BookmarkService.Save",
+      "kind": "mutate",
+      "required": [
+        "happy",
+        "refusal"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy",
+        "refusal"
+      ]
+    },
+    {
+      "action": "BrowseService.Account",
+      "kind": "read",
+      "required": [
+        "happy"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy"
+      ]
+    },
+    {
+      "action": "BrowseService.Capabilities",
+      "kind": "read",
+      "required": [
+        "happy"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy"
+      ]
+    },
+    {
+      "action": "BrowseService.Connect",
+      "kind": "session",
+      "required": [
+        "happy"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy"
+      ]
+    },
+    {
+      "action": "BrowseService.Containers",
+      "kind": "read",
+      "required": [
+        "happy"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy"
+      ]
+    },
+    {
+      "action": "BrowseService.Objects",
+      "kind": "read",
+      "required": [
+        "happy"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy"
+      ]
+    },
+    {
+      "action": "DeleteService.CheckSegmentOwnership",
+      "kind": "read",
+      "required": [
+        "happy"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy"
+      ]
+    },
+    {
+      "action": "DeleteService.DeleteManifestWithSegments",
+      "kind": "destructive",
+      "required": [
+        "happy",
+        "refusal",
+        "conflict",
+        "partial",
+        "retry",
+        "cancel"
+      ],
+      "covered": [
+        {
+          "scenario": "refusal",
+          "tests": [
+            "github.com/csmart/aeronautes/internal/systemtest\tTestDestructiveRefusalsHaveNoEffect"
+          ],
+          "evidence": [
+            "refused: deleting st1788169830505386914-refuse-1/big.bin's segments needs the Backstage force with typed confirmation: ownership evidence identifies likely-owned segments but cannot yet PROVE no other object references them (st1788169830505386914-refuse-segs-2/g/)"
+          ]
+        }
+      ],
+      "gaps": [
+        "happy",
+        "conflict",
+        "partial",
+        "retry",
+        "cancel"
+      ]
+    },
+    {
+      "action": "DeleteService.PreviewDelete",
+      "kind": "read",
+      "required": [
+        "happy"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy"
+      ]
+    },
+    {
+      "action": "DeleteService.StartDelete",
+      "kind": "job",
+      "required": [
+        "happy",
+        "refusal",
+        "conflict",
+        "cancel",
+        "partial",
+        "retry"
+      ],
+      "covered": [
+        {
+          "scenario": "happy",
+          "tests": [
+            "github.com/csmart/aeronautes/internal/systemtest\tTestPrefixDeleteSparesEverythingElse"
+          ],
+          "evidence": [
+            "job 55ca071475e5ee9c complete"
+          ]
+        },
+        {
+          "scenario": "refusal",
+          "tests": [
+            "github.com/csmart/aeronautes/internal/systemtest\tTestDestructiveRefusalsHaveNoEffect"
+          ],
+          "evidence": [
+            "refused: confirmation \"not-the-container\" does not match the container name \u2014 type it exactly"
+          ]
+        }
+      ],
+      "gaps": [
+        "conflict",
+        "cancel",
+        "partial",
+        "retry"
+      ]
+    },
+    {
+      "action": "FindService.CancelFind",
+      "kind": "session",
+      "required": [
+        "happy"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy"
+      ]
+    },
+    {
+      "action": "FindService.FindStatus",
+      "kind": "read",
+      "required": [
+        "happy"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy"
+      ]
+    },
+    {
+      "action": "FindService.StartFind",
+      "kind": "read",
+      "required": [
+        "happy",
+        "cancel"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy",
+        "cancel"
+      ]
+    },
+    {
+      "action": "InspectorService.Container",
+      "kind": "read",
+      "required": [
+        "happy"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy"
+      ]
+    },
+    {
+      "action": "InspectorService.DLOSegments",
+      "kind": "read",
+      "required": [
+        "happy"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy"
+      ]
+    },
+    {
+      "action": "InspectorService.Object",
+      "kind": "read",
+      "required": [
+        "happy"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy"
+      ]
+    },
+    {
+      "action": "InspectorService.Prefix",
+      "kind": "read",
+      "required": [
+        "happy"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy"
+      ]
+    },
+    {
+      "action": "InspectorService.SLOManifest",
+      "kind": "read",
+      "required": [
+        "happy"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy"
+      ]
+    },
+    {
+      "action": "JobService.Get",
+      "kind": "read",
+      "required": [
+        "happy"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy"
+      ]
+    },
+    {
+      "action": "JobService.List",
+      "kind": "read",
+      "required": [
+        "happy"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy"
+      ]
+    },
+    {
+      "action": "MutateService.CreateContainer",
+      "kind": "mutate",
+      "required": [
+        "happy",
+        "refusal"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy",
+        "refusal"
+      ]
+    },
+    {
+      "action": "MutateService.CreateMarker",
+      "kind": "mutate",
+      "required": [
+        "happy",
+        "refusal"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy",
+        "refusal"
+      ]
+    },
+    {
+      "action": "MutateService.DeleteManifest",
+      "kind": "destructive",
+      "required": [
+        "happy",
+        "refusal",
+        "conflict"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy",
+        "refusal",
+        "conflict"
+      ]
+    },
+    {
+      "action": "MutateService.DeleteMarker",
+      "kind": "destructive",
+      "required": [
+        "happy",
+        "refusal",
+        "conflict"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy",
+        "refusal",
+        "conflict"
+      ]
+    },
+    {
+      "action": "MutateService.UpdateContainer",
+      "kind": "mutate",
+      "required": [
+        "happy",
+        "refusal",
+        "conflict"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy",
+        "refusal",
+        "conflict"
+      ]
+    },
+    {
+      "action": "MutateService.UpdateObjectMetadata",
+      "kind": "mutate",
+      "required": [
+        "happy",
+        "refusal",
+        "conflict"
+      ],
+      "covered": [
+        {
+          "scenario": "happy",
+          "tests": [
+            "github.com/csmart/aeronautes/internal/systemtest\tTestObjectMetadataEditIsSurgical"
+          ],
+          "evidence": [
+            "outcome applied"
+          ]
+        },
+        {
+          "scenario": "conflict",
+          "tests": [
+            "github.com/csmart/aeronautes/internal/systemtest\tTestObjectMetadataEditIsSurgical"
+          ],
+          "evidence": [
+            "outcome conflict"
+          ]
+        }
+      ],
+      "gaps": [
+        "refusal"
+      ]
+    },
+    {
+      "action": "SettingsService.Get",
+      "kind": "read",
+      "required": [
+        "happy"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy"
+      ]
+    },
+    {
+      "action": "SettingsService.Set",
+      "kind": "mutate",
+      "required": [
+        "happy",
+        "refusal"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy",
+        "refusal"
+      ]
+    },
+    {
+      "action": "TransferService.CancelJob",
+      "kind": "session",
+      "required": [
+        "happy"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy"
+      ]
+    },
+    {
+      "action": "TransferService.PickDownloadDir",
+      "kind": "session",
+      "required": [
+        "happy"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy"
+      ]
+    },
+    {
+      "action": "TransferService.PickUploadFiles",
+      "kind": "session",
+      "required": [
+        "happy"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy"
+      ]
+    },
+    {
+      "action": "TransferService.PlanCopy",
+      "kind": "read",
+      "required": [
+        "happy"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy"
+      ]
+    },
+    {
+      "action": "TransferService.PreflightDownload",
+      "kind": "read",
+      "required": [
+        "happy"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy"
+      ]
+    },
+    {
+      "action": "TransferService.PreflightUpload",
+      "kind": "read",
+      "required": [
+        "happy"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy"
+      ]
+    },
+    {
+      "action": "TransferService.RerunJob",
+      "kind": "job",
+      "required": [
+        "happy",
+        "refusal",
+        "conflict",
+        "cancel",
+        "partial",
+        "retry"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy",
+        "refusal",
+        "conflict",
+        "cancel",
+        "partial",
+        "retry"
+      ]
+    },
+    {
+      "action": "TransferService.StartCopy",
+      "kind": "job",
+      "required": [
+        "happy",
+        "refusal",
+        "conflict",
+        "cancel",
+        "partial",
+        "retry"
+      ],
+      "covered": [
+        {
+          "scenario": "happy",
+          "tests": [
+            "github.com/csmart/aeronautes/internal/systemtest\tTestCopyCrossAccountPreservesLogicalContent"
+          ],
+          "evidence": [
+            "job 64ee7de41e4471fa complete"
+          ]
+        },
+        {
+          "scenario": "refusal",
+          "tests": [
+            "github.com/csmart/aeronautes/internal/systemtest\tTestDestructiveRefusalsHaveNoEffect"
+          ],
+          "evidence": [
+            "refused: source and destination overlap: container \"st1788169830505386914-refuse-1\" with nested prefixes (\"x/y/\" / \"x/\"), and the two endpoints are not PROVABLY different accounts (auth_test vs auth_test) \u2014 a run could consume its own output; use disjoint prefixes, another container, or endpoints with distinct account identifiers"
+          ]
+        }
+      ],
+      "gaps": [
+        "conflict",
+        "cancel",
+        "partial",
+        "retry"
+      ]
+    },
+    {
+      "action": "TransferService.StartDownload",
+      "kind": "job",
+      "required": [
+        "happy",
+        "refusal",
+        "conflict",
+        "cancel",
+        "partial",
+        "retry"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy",
+        "refusal",
+        "conflict",
+        "cancel",
+        "partial",
+        "retry"
+      ]
+    },
+    {
+      "action": "TransferService.StartMirror",
+      "kind": "job",
+      "required": [
+        "happy",
+        "refusal",
+        "conflict",
+        "cancel",
+        "partial",
+        "retry"
+      ],
+      "covered": [
+        {
+          "scenario": "happy",
+          "tests": [
+            "github.com/csmart/aeronautes/internal/systemtest\tTestMirrorConvergesAndDeletesOnlyDestOnly"
+          ],
+          "evidence": [
+            "job ed4c54fb5f7d9295 complete"
+          ]
+        }
+      ],
+      "gaps": [
+        "refusal",
+        "conflict",
+        "cancel",
+        "partial",
+        "retry"
+      ]
+    },
+    {
+      "action": "TransferService.StartUpload",
+      "kind": "job",
+      "required": [
+        "happy",
+        "refusal",
+        "conflict",
+        "cancel",
+        "partial",
+        "retry"
+      ],
+      "covered": null,
+      "gaps": [
+        "happy",
+        "refusal",
+        "conflict",
+        "cancel",
+        "partial",
+        "retry"
+      ]
+    }
+  ]
+}

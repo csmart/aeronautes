@@ -1,0 +1,27 @@
+=== RUN   TestAuditPowerLossMissingCommitFactPreservesLiveDLO
+    security_audit_probe_test.go:39: live DLO changed after lost-commit-facts recovery: before bytes=8 after=&{Name:live.bin Class:dlo ContentLength:0 ContentType:application/octet-stream ETag:d41d8cd98f00b204e9800998ecf8427e LastModified:2026-08-28 10:00:00 +0000 UTC Manifest:backup_segments/.aeronautes/stage/powerloss/live.bin/2026-09-05-0000000000000000000001/ DeleteAt:0001-01-01 00:00:00 +0000 UTC ContentEncoding: ContentDisposition: Meta:map[] RawHeaders:map[Content-Length:0 Content-Type:application/octet-stream Date:Sat, 05 Sep 2026 08:31:31 GMT Etag:d41d8cd98f00b204e9800998ecf8427e Last-Modified:Fri, 28 Aug 2026 10:00:00 GMT X-Object-Manifest:backup_segments/.aeronautes/stage/powerloss/live.bin/2026-09-05-0000000000000000000001/ X-Trans-Id:txswifttest-object] FollowedSymlink:false SymlinkTarget: SymlinkTargetAccount: TransID:txswifttest-object EditableFingerprint:da2a765bfb5fb4559a563ab1eb6107b4a9d2b8e81ab723b9935b609cf8cd6435 FetchedAt:2026-09-05 08:31:31.713703687 +0000 UTC} report=&{SweptStaged:0 SweptSegments:1 KeptPrefixes:[] Notes:[]} err=<nil>
+--- FAIL: TestAuditPowerLossMissingCommitFactPreservesLiveDLO (0.01s)
+FAIL
+FAIL	github.com/csmart/aeronautes/internal/transfer/copy	0.015s
+=== RUN   TestAuditFailedCredentialRemovalInvalidatesDeletedBookmark
+    security_audit_probe_test.go:52: deleted bookmark retains active authenticated session; remote call error=<nil>
+--- FAIL: TestAuditFailedCredentialRemovalInvalidatesDeletedBookmark (0.10s)
+=== RUN   TestAuditDatabaseDurabilitySetting
+    security_audit_probe_test.go:70: SQLite runtime settings: journal=wal synchronous=1
+--- PASS: TestAuditDatabaseDurabilitySetting (0.08s)
+=== RUN   TestAuditRetargetCannotReuseSavedCredential
+    security_audit_probe_test.go:96: retargeting through the write-only bridge sent the stored durable credential to the new endpoint without credential reentry or native approval
+--- FAIL: TestAuditRetargetCannotReuseSavedCredential (0.09s)
+FAIL
+FAIL	github.com/csmart/aeronautes/internal/app	0.283s
+=== RUN   TestAuditLoopbackAuthCannotReturnPublicPlaintext
+    security_audit_probe_test.go:7: loopback auth accepts public plaintext storage URL without insecure opt-in
+--- FAIL: TestAuditLoopbackAuthCannotReturnPublicPlaintext (0.00s)
+FAIL
+FAIL	github.com/csmart/aeronautes/internal/swiftcontrol	0.006s
+=== RUN   TestAuditPinnedChildRefusesTokenRedirect
+    security_audit_probe_test.go:39: real pinned child forwarded its token across a storage redirect to a different hostname
+--- FAIL: TestAuditPinnedChildRefusesTokenRedirect (0.05s)
+FAIL
+FAIL	github.com/csmart/aeronautes/internal/transfer/rclone	0.064s
+FAIL

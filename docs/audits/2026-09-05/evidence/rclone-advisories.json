@@ -1,0 +1,607 @@
+{
+  "meaning": "Symbol-level inventory only; enabled Aeronautes path reachability is untriaged.",
+  "scanDate": "2026-09-05",
+  "binary": "official rclone 1.74.3 linux/amd64",
+  "binaryGoVersion": "go1.26.4",
+  "binarySHA256": "9700aa1273ac73d6d0833c43ba63fe830516422cb131960b8c1a24ced789cba0",
+  "scanner": "golang.org/x/vuln v1.7.0 govulncheck",
+  "dbSourceCommit": "7106aff44bfd324e2f3ec6b0f0927ee03a835325",
+  "dbArchiveSHA256": "e557c53412bd9a01ef9f4908af35c5625e63d1adb6e048452847edcf9d09df2e",
+  "originalJSONSHA256": "e2dccf8615cca195708192c105c72ed25380197fe73a76ff9b0dc61d2ea5f63e",
+  "advisoryCount": 42,
+  "advisories": [
+    {
+      "id": "GO-2026-4961",
+      "summary": "Panic when decoding large WEBP image on 32-bit platforms in golang.org/x/image",
+      "aliases": [
+        "CVE-2026-33813"
+      ],
+      "modules": [
+        "golang.org/x/image"
+      ],
+      "fixedVersions": [
+        "v0.42.0"
+      ],
+      "symbolMessages": 6
+    },
+    {
+      "id": "GO-2026-4970",
+      "summary": "Root escape via symlink plus trailing slash in os",
+      "aliases": [
+        "CVE-2026-39822"
+      ],
+      "modules": [
+        "stdlib"
+      ],
+      "fixedVersions": [
+        "v1.26.5"
+      ],
+      "symbolMessages": 12
+    },
+    {
+      "id": "GO-2026-5026",
+      "summary": "Invoking failure to reject ASCII-only Punycode-encoded labels in golang.org/x/net/idna",
+      "aliases": [
+        "CVE-2026-39821"
+      ],
+      "modules": [
+        "stdlib"
+      ],
+      "fixedVersions": [
+        "v1.26.6"
+      ],
+      "symbolMessages": 25
+    },
+    {
+      "id": "GO-2026-5051",
+      "summary": "Out-of-bounds read and panic in ReadDir in github.com/cloudsoda/go-smb2 and github.com/hirochachacha/go-smb2",
+      "aliases": [],
+      "modules": [
+        "github.com/cloudsoda/go-smb2"
+      ],
+      "fixedVersions": [
+        "v0.0.0-20260609183447-7b96c35f5f4b"
+      ],
+      "symbolMessages": 4
+    },
+    {
+      "id": "GO-2026-5061",
+      "summary": "Panic on VP8 alpha channel size mismatch in x/image/webp in golang.org/x/image",
+      "aliases": [
+        "CVE-2026-46601"
+      ],
+      "modules": [
+        "golang.org/x/image"
+      ],
+      "fixedVersions": [
+        "v0.43.0"
+      ],
+      "symbolMessages": 6
+    },
+    {
+      "id": "GO-2026-5062",
+      "summary": "Lack of limit on tile sizes in x/image/tiff in golang.org/x/image",
+      "aliases": [
+        "CVE-2026-46602"
+      ],
+      "modules": [
+        "golang.org/x/image"
+      ],
+      "fixedVersions": [
+        "v0.43.0"
+      ],
+      "symbolMessages": 4
+    },
+    {
+      "id": "GO-2026-5066",
+      "summary": "Panic decoding image with out-of-bounds strip offset in x/image/tiff in golang.org/x/image",
+      "aliases": [
+        "CVE-2026-46604"
+      ],
+      "modules": [
+        "golang.org/x/image"
+      ],
+      "fixedVersions": [
+        "v0.43.0"
+      ],
+      "symbolMessages": 4
+    },
+    {
+      "id": "GO-2026-5158",
+      "summary": "Opentelemetry-go's baggage parsing no longer caps raw header length in go.opentelemetry.io/otel",
+      "aliases": [
+        "CVE-2026-41178",
+        "GHSA-5wrp-cwcj-q835"
+      ],
+      "modules": [
+        "go.opentelemetry.io/otel"
+      ],
+      "fixedVersions": [
+        "v1.44.0"
+      ],
+      "symbolMessages": 6
+    },
+    {
+      "id": "GO-2026-5774",
+      "summary": "Chi has an IP spoofing vulnerability in middleware.RealIP in github.com/go-chi/chi",
+      "aliases": [
+        "GHSA-3fxj-6jh8-hvhx"
+      ],
+      "modules": [
+        "github.com/go-chi/chi/v5"
+      ],
+      "fixedVersions": [
+        "v5.3.0"
+      ],
+      "symbolMessages": 5
+    },
+    {
+      "id": "GO-2026-5775",
+      "summary": "Chi Middleware vulnerable to IP spoofing via X-Forwarded-For header in github.com/go-chi/chi",
+      "aliases": [
+        "GHSA-9g5q-2w5x-hmxf"
+      ],
+      "modules": [
+        "github.com/go-chi/chi/v5"
+      ],
+      "fixedVersions": [
+        "v5.3.0"
+      ],
+      "symbolMessages": 5
+    },
+    {
+      "id": "GO-2026-5777",
+      "summary": "Chi's RealIP Middleware allows IP spoofing via unvalidated X-Forwarded-For header in github.com/go-chi/chi",
+      "aliases": [
+        "GHSA-rjr7-jggh-pgcp"
+      ],
+      "modules": [
+        "github.com/go-chi/chi/v5"
+      ],
+      "fixedVersions": [
+        "v5.3.0"
+      ],
+      "symbolMessages": 5
+    },
+    {
+      "id": "GO-2026-5841",
+      "summary": "OOB read in github.com/klauspost/compress/s2",
+      "aliases": [
+        "GHSA-259r-337f-4rfw"
+      ],
+      "modules": [
+        "github.com/klauspost/compress"
+      ],
+      "fixedVersions": [
+        "v1.18.7"
+      ],
+      "symbolMessages": 3
+    },
+    {
+      "id": "GO-2026-5856",
+      "summary": "Invoking Encrypted Client Hello privacy leak in crypto/tls",
+      "aliases": [
+        "CVE-2026-42505"
+      ],
+      "modules": [
+        "stdlib"
+      ],
+      "fixedVersions": [
+        "v1.26.5"
+      ],
+      "symbolMessages": 23
+    },
+    {
+      "id": "GO-2026-5932",
+      "summary": "The golang.org/x/crypto/openpgp package is unmaintained, unsafe by design, and has known security issues",
+      "aliases": [],
+      "modules": [
+        "golang.org/x/crypto"
+      ],
+      "fixedVersions": [],
+      "symbolMessages": 15
+    },
+    {
+      "id": "GO-2026-5942",
+      "summary": "Parsing an invalid SVCB or HTTPS RR can panic in golang.org/x/net/dns/dnsmessage",
+      "aliases": [
+        "CVE-2026-46600"
+      ],
+      "modules": [
+        "golang.org/x/net",
+        "stdlib"
+      ],
+      "fixedVersions": [
+        "v0.56.0",
+        "v1.26.6"
+      ],
+      "symbolMessages": 15
+    },
+    {
+      "id": "GO-2026-5970",
+      "summary": "Infinite loop on invalid input in golang.org/x/text",
+      "aliases": [
+        "CVE-2026-56852"
+      ],
+      "modules": [
+        "golang.org/x/text"
+      ],
+      "fixedVersions": [
+        "v0.39.0"
+      ],
+      "symbolMessages": 26
+    },
+    {
+      "id": "GO-2026-5972",
+      "summary": "Enforce maximum recursion depth in encoding/asn1",
+      "aliases": [
+        "CVE-2026-33818"
+      ],
+      "modules": [
+        "stdlib"
+      ],
+      "fixedVersions": [
+        "v1.26.6"
+      ],
+      "symbolMessages": 4
+    },
+    {
+      "id": "GO-2026-6061",
+      "summary": "Vulnerabilities in the xDS RBAC authorization engine and the HTTP/2 transport server implementation in google.golang.org/grpc",
+      "aliases": [
+        "GHSA-hrxh-6v49-42gf"
+      ],
+      "modules": [
+        "google.golang.org/grpc"
+      ],
+      "fixedVersions": [
+        "v1.82.1"
+      ],
+      "symbolMessages": 27
+    },
+    {
+      "id": "GO-2026-6088",
+      "summary": "Add recursion depth guard during decode in encoding/xml",
+      "aliases": [
+        "CVE-2026-56859"
+      ],
+      "modules": [
+        "stdlib"
+      ],
+      "fixedVersions": [
+        "v1.26.6"
+      ],
+      "symbolMessages": 8
+    },
+    {
+      "id": "GO-2026-6089",
+      "summary": "Apply ReadHeaderTimeout when doing unencrypted HTTP/2 check in net/http",
+      "aliases": [
+        "CVE-2026-56853"
+      ],
+      "modules": [
+        "stdlib"
+      ],
+      "fixedVersions": [
+        "v1.26.6"
+      ],
+      "symbolMessages": 10
+    },
+    {
+      "id": "GO-2026-6090",
+      "summary": "Limit handshake messages we are willing to accept post-handshake in crypto/tls",
+      "aliases": [
+        "CVE-2026-56862"
+      ],
+      "modules": [
+        "stdlib"
+      ],
+      "fixedVersions": [
+        "v1.26.6"
+      ],
+      "symbolMessages": 22
+    },
+    {
+      "id": "GO-2026-6091",
+      "summary": "Fix Javascript regexp context tracking in html/template",
+      "aliases": [
+        "CVE-2026-56858"
+      ],
+      "modules": [
+        "stdlib"
+      ],
+      "fixedVersions": [
+        "v1.26.6"
+      ],
+      "symbolMessages": 4
+    },
+    {
+      "id": "GO-2026-6181",
+      "summary": "Verbose stack trace disclosure in RC API error responses in github.com/rclone/rclone",
+      "aliases": [
+        "GHSA-gwfq-86j8-7qhv"
+      ],
+      "modules": [
+        "github.com/rclone/rclone"
+      ],
+      "fixedVersions": [
+        "v1.75.0"
+      ],
+      "symbolMessages": 6
+    },
+    {
+      "id": "GO-2026-6182",
+      "summary": "Command execution via PowerShell smart quotes in github.com/rclone/rclone",
+      "aliases": [
+        "CVE-2026-71312",
+        "GHSA-2m8m-jhrm-w6j2"
+      ],
+      "modules": [
+        "github.com/rclone/rclone"
+      ],
+      "fixedVersions": [
+        "v1.75.0"
+      ],
+      "symbolMessages": 4
+    },
+    {
+      "id": "GO-2026-6183",
+      "summary": "Nil pointer dereference in Infinite Scale TUS uploads in github.com/rclone/rclone",
+      "aliases": [
+        "GHSA-3x6r-wxxg-53vv"
+      ],
+      "modules": [
+        "github.com/rclone/rclone"
+      ],
+      "fixedVersions": [
+        "v1.75.0"
+      ],
+      "symbolMessages": 46
+    },
+    {
+      "id": "GO-2026-6184",
+      "summary": "Path traversal in serve restic in github.com/rclone/rclone",
+      "aliases": [
+        "CVE-2026-71309",
+        "GHSA-45pq-889g-fcgh"
+      ],
+      "modules": [
+        "github.com/rclone/rclone"
+      ],
+      "fixedVersions": [
+        "v1.75.0"
+      ],
+      "symbolMessages": 8
+    },
+    {
+      "id": "GO-2026-6185",
+      "summary": "Path traversal via crafted archive paths in github.com/rclone/rclone",
+      "aliases": [
+        "CVE-2026-59732",
+        "GHSA-4vr5-p2gc-h23p"
+      ],
+      "modules": [
+        "github.com/rclone/rclone"
+      ],
+      "fixedVersions": [
+        "v1.74.4"
+      ],
+      "symbolMessages": 3
+    },
+    {
+      "id": "GO-2026-6186",
+      "summary": "Path traversal via local backend encoding in github.com/rclone/rclone",
+      "aliases": [
+        "CVE-2026-71313",
+        "GHSA-7p4m-qxvv-g567"
+      ],
+      "modules": [
+        "github.com/rclone/rclone"
+      ],
+      "fixedVersions": [
+        "v1.75.0"
+      ],
+      "symbolMessages": 26
+    },
+    {
+      "id": "GO-2026-6187",
+      "summary": "FTP command injection via custom encoding in github.com/rclone/rclone",
+      "aliases": [
+        "CVE-2026-71311",
+        "GHSA-8c48-q9wj-3w37"
+      ],
+      "modules": [
+        "github.com/rclone/rclone"
+      ],
+      "fixedVersions": [
+        "v1.75.0"
+      ],
+      "symbolMessages": 3
+    },
+    {
+      "id": "GO-2026-6188",
+      "summary": "S3 redirect sanitization omits sensitive headers in github.com/rclone/rclone",
+      "aliases": [
+        "GHSA-8mxv-9xhp-86h4"
+      ],
+      "modules": [
+        "github.com/rclone/rclone"
+      ],
+      "fixedVersions": [
+        "v1.75.0"
+      ],
+      "symbolMessages": 37
+    },
+    {
+      "id": "GO-2026-6189",
+      "summary": "Path traversal in serve s3 in github.com/rclone/rclone",
+      "aliases": [
+        "GHSA-8v25-v8p6-qf7v"
+      ],
+      "modules": [
+        "github.com/rclone/rclone"
+      ],
+      "fixedVersions": [
+        "v1.74.4"
+      ],
+      "symbolMessages": 19
+    },
+    {
+      "id": "GO-2026-6190",
+      "summary": "Unsafe file permission restoration from metadata in github.com/rclone/rclone",
+      "aliases": [
+        "GHSA-945v-v9p3-v5xw"
+      ],
+      "modules": [
+        "github.com/rclone/rclone"
+      ],
+      "fixedVersions": [
+        "v1.74.4"
+      ],
+      "symbolMessages": 21
+    },
+    {
+      "id": "GO-2026-6191",
+      "summary": "Arbitrary file write via --links symlinks in github.com/rclone/rclone",
+      "aliases": [
+        "CVE-2026-54572",
+        "GHSA-cf44-9pgv-m4xc"
+      ],
+      "modules": [
+        "github.com/rclone/rclone"
+      ],
+      "fixedVersions": [
+        "v1.74.4"
+      ],
+      "symbolMessages": 23
+    },
+    {
+      "id": "GO-2026-6195",
+      "summary": "Authorization bypass in serve restic in github.com/rclone/rclone",
+      "aliases": [
+        "CVE-2026-59733",
+        "GHSA-fqj9-69pf-6pjg"
+      ],
+      "modules": [
+        "github.com/rclone/rclone"
+      ],
+      "fixedVersions": [
+        "v1.74.4"
+      ],
+      "symbolMessages": 8
+    },
+    {
+      "id": "GO-2026-6196",
+      "summary": "S3 session token leakage on HTTPS to HTTP redirect in github.com/rclone/rclone",
+      "aliases": [
+        "GHSA-gx4c-2hqx-cw2r"
+      ],
+      "modules": [
+        "github.com/rclone/rclone"
+      ],
+      "fixedVersions": [
+        "v1.74.4"
+      ],
+      "symbolMessages": 37
+    },
+    {
+      "id": "GO-2026-6197",
+      "summary": "WebDAV credential leakage on HTTPS to HTTP redirect in github.com/rclone/rclone",
+      "aliases": [
+        "GHSA-h4mf-4v27-hggj"
+      ],
+      "modules": [
+        "github.com/rclone/rclone"
+      ],
+      "fixedVersions": [
+        "v1.75.0"
+      ],
+      "symbolMessages": 48
+    },
+    {
+      "id": "GO-2026-6199",
+      "summary": "Resource exhaustion via unbounded HTTP CONNECT response in github.com/rclone/rclone",
+      "aliases": [
+        "CVE-2026-71310",
+        "GHSA-xhf4-832v-7xcr"
+      ],
+      "modules": [
+        "github.com/rclone/rclone"
+      ],
+      "fixedVersions": [
+        "v1.75.0"
+      ],
+      "symbolMessages": 3
+    },
+    {
+      "id": "GO-2026-6218",
+      "summary": "Avoid quadratic complexity in resolvePath in net/url",
+      "aliases": [
+        "CVE-2026-56860"
+      ],
+      "modules": [
+        "stdlib"
+      ],
+      "fixedVersions": [
+        "v1.26.6"
+      ],
+      "symbolMessages": 4
+    },
+    {
+      "id": "GO-2026-6222",
+      "summary": "Excessive memory allocation during VP8L decoding in golang.org/x/image",
+      "aliases": [
+        "CVE-2026-46603"
+      ],
+      "modules": [
+        "golang.org/x/image"
+      ],
+      "fixedVersions": [
+        "v0.45.0"
+      ],
+      "symbolMessages": 3
+    },
+    {
+      "id": "GO-2026-6303",
+      "summary": "Source-address critical option not enforced for non-public-key auth callbacks in golang.org/x/crypto/ssh",
+      "aliases": [
+        "CVE-2026-56854"
+      ],
+      "modules": [
+        "golang.org/x/crypto"
+      ],
+      "fixedVersions": [
+        "v0.55.0"
+      ],
+      "symbolMessages": 5
+    },
+    {
+      "id": "GO-2026-6354",
+      "summary": "Prevent DoS on deadlocked undecided channel in golang.org/x/crypto/ssh",
+      "aliases": [
+        "CVE-2026-78662"
+      ],
+      "modules": [
+        "golang.org/x/crypto"
+      ],
+      "fixedVersions": [
+        "v0.56.0"
+      ],
+      "symbolMessages": 12
+    },
+    {
+      "id": "GO-2026-6355",
+      "summary": "Prevent DoS on deadlocked established channel in golang.org/x/crypto/ssh",
+      "aliases": [
+        "CVE-2026-56855"
+      ],
+      "modules": [
+        "golang.org/x/crypto"
+      ],
+      "fixedVersions": [
+        "v0.56.0"
+      ],
+      "symbolMessages": 11
+    }
+  ]
+}

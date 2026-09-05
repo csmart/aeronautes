@@ -1,0 +1,41 @@
+=== RUN   TestAuditCopyRejectsSameSizeCorruptSegments
+    audit_data_safety_test.go:42: data corruption reported copied: logical bytes="EVILDATA", report=&{Copied:1 SkippedEqual:0 BytesCopied:8 Overwrites:0 NativeRouted:0 Conflicts:[] Failures:[] CapturedPrefixes:[{Container:backup_segments Prefix:.aeronautes/stage/job01/batch/asset/2026-08-29-0000000000000000000001/}] CommittedPrefixes:[{Container:backup_segments Prefix:.aeronautes/stage/job01/batch/asset/2026-08-29-0000000000000000000001/}] StagedResidue:[] OldManifests:map[]}
+--- FAIL: TestAuditCopyRejectsSameSizeCorruptSegments (0.00s)
+=== RUN   TestAuditSkipRejectsChangedDestinationSegments
+    audit_data_safety_test.go:58: changed logical destination is skipped as equal: &{Copied:0 SkippedEqual:1 BytesCopied:0 Overwrites:0 NativeRouted:0 Conflicts:[] Failures:[] CapturedPrefixes:[] CommittedPrefixes:[] StagedResidue:[] OldManifests:map[]}
+--- FAIL: TestAuditSkipRejectsChangedDestinationSegments (0.00s)
+=== RUN   TestAuditSweepKeepsExternallySharedCapturedPrefix
+    audit_data_safety_test.go:75: sweep damaged an unrelated live alias: bytes="", report=&{SweptStaged:0 SweptSegments:1 KeptPrefixes:[] Notes:[]}
+--- FAIL: TestAuditSweepKeepsExternallySharedCapturedPrefix (0.00s)
+=== RUN   TestAuditOverwritePreservesLastHopConcurrentWriter
+    audit_data_safety_test.go:101: concurrent writer lost at final commit: bytes="NEW", report=&{Copied:1 SkippedEqual:0 BytesCopied:3 Overwrites:1 NativeRouted:0 Conflicts:[] Failures:[] CapturedPrefixes:[] CommittedPrefixes:[] StagedResidue:[] OldManifests:map[]}
+--- FAIL: TestAuditOverwritePreservesLastHopConcurrentWriter (0.00s)
+FAIL
+FAIL	github.com/csmart/aeronautes/internal/transfer/copy	0.012s
+=== RUN   TestAuditDownloadDoesNotEscapePickedDirectory
+    audit_data_safety_test.go:25: download escaped selected directory through parent symlink: data="DATA" report=&{Done:1 Bytes:4 NativeRouted:0 Failures:[] CapturedPrefixes:[]}
+--- FAIL: TestAuditDownloadDoesNotEscapePickedDirectory (0.00s)
+=== RUN   TestAuditPreflightRejectsCaseFoldAncestorConflict
+    audit_data_safety_test.go:35: cross-platform namespace policy accepted a case-folded file/directory collision: &{Items:[{Name:Foo RelPath:Foo Size:4 Route:rclone Dir:false} {Name:foo/child RelPath:foo/child Size:5 Route:rclone Dir:false}] Problems:[] TotalBytes:9 Objects:2}
+--- FAIL: TestAuditPreflightRejectsCaseFoldAncestorConflict (0.00s)
+=== RUN   TestAuditCancelledDownloadStopsBeforePlacement
+    audit_data_safety_test.go:56: download continued final placement after cancellation: report=&{Done:1 Bytes:4 NativeRouted:0 Failures:[] CapturedPrefixes:[]} err=<nil>
+--- FAIL: TestAuditCancelledDownloadStopsBeforePlacement (0.00s)
+FAIL
+FAIL	github.com/csmart/aeronautes/internal/transfer/local	0.009s
+=== RUN   TestAuditMirrorPreservesLastHopConcurrentWriter
+    audit_data_safety_test.go:39: Mirror deleted a last-hop replacement: error=swift: Object Not Found (not_found, HTTP 404) job={ID:ec2c18848ebda652 Type:mirror State:complete Source:media/ Destination:backup/ SourceBookmarkID:b4339897864d480795da13ddc8bd4972 DestBookmarkID:c7ac3a18bb73245852e2fef516bb9a92 CreatedAt:2026-09-05T08:24:31Z StartedAt:2026-09-05T08:24:31Z FinishedAt:2026-09-05T08:24:31Z Engine:rclone+native Counters:{ObjectsPlanned:1 ObjectsCopied:0 ObjectsVerified:0 ObjectsFailed:0 BytesPlanned:0 BytesCopied:0 Overwrites:0 NativeRouted:0 ObjectsDeleted:1} Error: Settings:{"profile":"balanced","chunkSize":"","transfers":4,"checkers":8,"tpsLimit":0,"bwLimit":"","deleteStrategy":"bulk-delete","deleteVerify":"sampled HEAD=404 (≤10 names)"}}
+--- FAIL: TestAuditMirrorPreservesLastHopConcurrentWriter (0.07s)
+=== RUN   TestAuditCopyPropagatesMetadataOnlyChange
+    audit_data_safety_test.go:59: metadata-only change skipped: destination=map[Purpose:old] job={ID:81de262386f31456 Type:copy State:complete Source:media/ Destination:backup/ SourceBookmarkID:2b68860a55eecea74b21bb4d046a2084 DestBookmarkID:a6db51206d38864ec25f980939f7df17 CreatedAt:2026-09-05T08:24:31Z StartedAt:2026-09-05T08:24:31Z FinishedAt:2026-09-05T08:24:31Z Engine:rclone+native Counters:{ObjectsPlanned:0 ObjectsCopied:0 ObjectsVerified:1 ObjectsFailed:0 BytesPlanned:0 BytesCopied:0 Overwrites:0 NativeRouted:0 ObjectsDeleted:0} Error: Settings:{"profile":"balanced","chunkSize":"","transfers":4,"checkers":8,"tpsLimit":0,"bwLimit":""}}
+--- FAIL: TestAuditCopyPropagatesMetadataOnlyChange (0.06s)
+=== RUN   TestAuditCopyCountsOneFailedIdentityOnce
+2026/09/05 18:24:31 job 97a926ad14b73795 reconcile: swept 1 staged, 0 segments
+    audit_data_safety_test.go:75: one missing identity counted as 2 failures: job={ID:97a926ad14b73795 Type:copy State:partial Source:media/ Destination:backup/ SourceBookmarkID:d98b9531145be2aa93070803e0e4f0d6 DestBookmarkID:4bbbfa3f2ec1289ce04cb6a0e536fe0c CreatedAt:2026-09-05T08:24:31Z StartedAt:2026-09-05T08:24:31Z FinishedAt:2026-09-05T08:24:31Z Engine:rclone+native Counters:{ObjectsPlanned:1 ObjectsCopied:0 ObjectsVerified:0 ObjectsFailed:2 BytesPlanned:4 BytesCopied:0 Overwrites:0 NativeRouted:0 ObjectsDeleted:0} Error:1 failed (first: asset: engine reported success but the staged object is missing (silent drop)); 1 unverified (first: asset) Settings:{"profile":"balanced","chunkSize":"","transfers":4,"checkers":8,"tpsLimit":0,"bwLimit":""}}
+--- FAIL: TestAuditCopyCountsOneFailedIdentityOnce (0.06s)
+=== RUN   TestAuditUploadChecksDestinationChunkLimit
+    audit_data_safety_test.go:93: upload accepted 8Mi chunks when cluster maximum is 1Mi: job={ID:c98bb8a1ad4d17ca Type:upload State:complete Source:1 local files Destination:media/ SourceBookmarkID: DestBookmarkID:1ad0faf47ba7a607d2c921fd393b64e5 CreatedAt:2026-09-05T08:24:31Z StartedAt:2026-09-05T08:24:31Z FinishedAt:2026-09-05T08:24:31Z Engine:rclone+native Counters:{ObjectsPlanned:1 ObjectsCopied:1 ObjectsVerified:1 ObjectsFailed:0 BytesPlanned:4 BytesCopied:4 Overwrites:0 NativeRouted:0 ObjectsDeleted:0} Error: Settings:{"chunkSize":"8Mi","transfers":0,"checkers":0,"tpsLimit":0,"bwLimit":""}}
+--- FAIL: TestAuditUploadChecksDestinationChunkLimit (0.06s)
+FAIL
+FAIL	github.com/csmart/aeronautes/internal/app	0.247s
+FAIL

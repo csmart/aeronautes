@@ -1,0 +1,10 @@
+{
+  "internal/transfer/copy/audit_data_safety_test.go": "copy_audit_test.go.txt",
+  "internal/transfer/local/audit_data_safety_test.go": "local_audit_test.go.txt",
+  "internal/app/audit_data_safety_test.go": "app_audit_test.go.txt",
+  "internal/transfer/copy/security_audit_probe_test.go": "security_copy_probe_test.go.txt",
+  "internal/app/security_audit_probe_test.go": "security_app_probe_test.go.txt",
+  "internal/swiftcontrol/security_audit_probe_test.go": "security_swift_probe_test.go.txt",
+  "internal/transfer/rclone/security_audit_probe_test.go": "security_rclone_probe_test.go.txt",
+  "internal/systemtest/oracle/audit_encoding_test.go": "oracle_encoding_probe_test.go.txt"
+}
