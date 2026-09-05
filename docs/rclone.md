@@ -19,6 +19,68 @@ here is a gap to resolve deliberately, never a free-form argument.
 
 Remote names are fixed: `aeronautes_src:` / `aeronautes_dst:` (§26.2).
 
+## Gateway request policy (proposed)
+
+[ADR 0014](adr/0014-child-storage-gateway.md) proposes applying the following allowlist before a child request can reach Swift.
+The gateway is not implemented yet.
+The role limit is additional authority control; a local token without these restrictions would delegate the upstream account's authority for its lifetime.
+
+| Remote and resource | Allowed requests | Limit |
+| --- | --- | --- |
+| Source account | `GET`, `HEAD` | Fixed upstream account; no mutation methods |
+| Destination account reads | `GET`, `HEAD` | Fixed upstream account; preserve exact listing parameters |
+| Destination staged objects | `PUT`, `DELETE` | Exact `CopyTo` staged name or fresh `Copy` batch prefix; never a live name or another invocation's stage |
+| Destination generated segments | `PUT`, `DELETE` | Matching sidecar container and segment paths rooted in that invocation's staged object/batch path; the sidecar container alone is not authority to delete its other segments |
+| Destination account abort cleanup | `DELETE` with `bulk-delete=1` | Bounded complete `text/plain` body; validate every URL-encoded `/container/object` against the same staged/segment scope before forwarding; refuse the whole request on any invalid or out-of-scope name |
+| Matching sidecar container | Bare creation `PUT`; `GET`/`HEAD` | Refuse ACL, metadata, versioning, history and storage-policy headers; no container deletion |
+| Anonymous capability request | `GET` on the exact library-derived `/info` path | No upstream token; this class comes from the wire-library contract and was not emitted in the run below |
+| Everything else | Refused locally | `POST`, `COPY`, unscoped bulk delete, absolute request targets and out-of-scope paths remain forbidden unless a separate reviewed requirement changes this table |
+
+Staged DLO `PUT` requests must keep `X-Object-Manifest` inside the invocation's matching sidecar prefix.
+Bulk-delete validation decodes each name once according to Swift's wire format, refuses malformed encoding and container-only entries, and applies explicit byte and name-count limits before any upstream request.
+The response passes through unchanged because bulk middleware can report per-name failures inside HTTP 200.
+
+A request-recording extension of the existing two-account SAIO compatibility fixture ran on 5 September 2026 with the official Linux amd64 rclone 1.74.3 pin.
+It exercised selected-name batch Copy, plain and DLO writes, CopyTo upload/download, and failure cleanup after an injected HTTP 403 on the second segment PUT.
+The original recording logged method, escaped path, query and token presence, without token values or request bodies.
+The preserved fixture now also records the bounded bulk-delete body containing only names in test-owned containers, to make abort-cleanup scope directly inspectable.
+The 73 observed requests were:
+
+| Role | Request class | Count |
+| --- | --- | ---: |
+| Source | Container listing `GET` | 5 |
+| Source | Object `GET` / `HEAD` | 13 / 14 |
+| Destination | Container listing `GET` / `HEAD` | 2 / 8 |
+| Destination | Staged object `HEAD` / `PUT` | 8 / 13 |
+| Destination | Generated segment `PUT` | 8 |
+| Destination | Sidecar-container `PUT` | 1 |
+| Destination | Account-root bulk `DELETE` | 1 |
+
+Every observed request carried an auth token.
+The bulk `DELETE` body names the failed upload's first successfully written generated segment; it is the observed segment cleanup, not a staged-object deletion.
+No `POST`, `COPY`, anonymous `/info` or per-object `DELETE` was observed in this run.
+Per-object staged/segment `DELETE` remains an allowance for the documented abort-cleanup contract, with real cancellation coverage still required before implementation approval.
+The experiment's download bytes matched its source and the injected upload failed as intended.
+The underlying measurement lane still reports only 11/16 names exact, the known five unsafe-name omissions, DLO prefix capture and missing user metadata; its passing exit remains a harness result, not behavioural compatibility approval.
+Cancellation, TLS, header restrictions, platform behaviour and the gateway itself remain untested by this experiment and retain their separate gates.
+
+The [recording fixture](experiments/2026-09-05-child-requests.go.txt) replaces `internal/integration/rclonematrix_test.go` through a Go overlay without changing the normal test suite.
+With the existing test-owned SAIO environment and `AERONAUTES_MATRIX_RCLONE` pointing to the verified pin, reproduce it from the repository root:
+
+```sh
+python3 - <<'PY'
+import json, pathlib, tempfile
+repo = pathlib.Path.cwd()
+overlay = pathlib.Path(tempfile.mkdtemp(prefix="aeronautes-requests-")) / "overlay.json"
+overlay.write_text(json.dumps({"Replace": {
+    str(repo / "internal/integration/rclonematrix_test.go"):
+    str(repo / "docs/experiments/2026-09-05-child-requests.go.txt")
+}}))
+print(overlay)
+PY
+go test -overlay=<printed-overlay-path> -count=1 -run '^TestRcloneMatrix$' -v ./internal/integration
+```
+
 ## Flags (per invocation)
 
 | Flag | Driven by | Spike verification |

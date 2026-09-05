@@ -1407,6 +1407,10 @@ Do not expose a generic shell interface to the frontend.
 
 ### 26.2 Credentials/config
 
+P09 proposes replacing the direct upstream credentials below with an invocation-scoped storage gateway; see [ADR 0014](adr/0014-child-storage-gateway.md).
+The gateway decision requires local design review before implementation, and the current direct-child path remains vulnerable to storage redirects until that implementation passes its gates.
+The original seam contract below remains the current implementation description during that transition.
+
 Prefer ephemeral environment-based remote configuration.
 
 Do not use a persistent `rclone.conf` as credential storage.
@@ -4222,6 +4226,10 @@ A lab using private-IP HTTP authentication that advertises a hostname-based HTTP
 DNS resolution is not a lasting authority to send credentials in cleartext.
 An accepted override takes precedence even when the advertised endpoint is missing or forbidden, including on reauthentication.
 Subsequent work follows the full plan's dependencies; a completed security slice does not imply the harness, destructive paths or release are complete.
+
+The P09 child-transport proposal is [ADR 0014](adr/0014-child-storage-gateway.md).
+The real Swift token-redirect reproduction also fails on the verified 1.75.1 candidate, so the proposal uses a narrow per-invocation gateway instead of treating a version upgrade as the fix.
+Implementation and permanent compatibility/security regressions are pending.
 
 ## 66. Final project statement
 
