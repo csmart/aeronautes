@@ -5,6 +5,7 @@
 package swiftcontrol
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -37,6 +38,7 @@ type Config struct {
 // account. It is safe for concurrent use after Authenticate.
 type Session struct {
 	conn *swift.Connection
+	tls  TLSConfig
 	// auth is the v1 authenticator preset on conn — the source of the
 	// atomic credential snapshot Session reads (review R-06).
 	auth *v1Auth
@@ -58,6 +60,7 @@ type Session struct {
 // connection is preset with Aeronautes' own v1 authenticator so token
 // expiry is captured and the storage-URL override holds across re-auths.
 func New(cfg Config) (*Session, error) {
+	cfg.TLS.CACertPEM = bytes.Clone(cfg.TLS.CACertPEM)
 	if err := ValidateEndpointURL(cfg.AuthURL, cfg.TLS.Mode); err != nil {
 		return nil, fmt.Errorf("auth URL: %w", err)
 	}
@@ -81,6 +84,7 @@ func New(cfg Config) (*Session, error) {
 	}
 	return &Session{
 		auth: auth,
+		tls:  cfg.TLS,
 		raw: &http.Client{
 			Transport: transport,
 			Timeout:   10 * time.Minute,
@@ -123,6 +127,10 @@ func (s *Session) Authenticate(ctx context.Context) error {
 func (s *Session) RefreshIfStale(ctx context.Context, margin time.Duration) error {
 	s.refreshMu.Lock()
 	defer s.refreshMu.Unlock()
+	return s.refreshIfStale(ctx, margin)
+}
+
+func (s *Session) refreshIfStale(ctx context.Context, margin time.Duration) error {
 	expires := s.auth.snapshot().expires
 	// ForceReauth clears authedAt even when the rejected token claims
 	// a future expiry. Only successful authentication clears that state.
@@ -142,6 +150,38 @@ func (s *Session) RefreshIfStale(ctx context.Context, margin time.Duration) erro
 	return nil
 }
 
+// StorageCredentials stays inside the Go core: neither it nor its TLS
+// material belongs in the renderer, a log or persisted job settings.
+type StorageCredentials struct {
+	StorageURL string
+	Token      string `json:"-"`
+	Expires    time.Time
+	TLS        TLSConfig
+}
+
+// Credentials refreshes and captures one accepted auth response under
+// the explicit-refresh lock. A failed or forced refresh cannot expose
+// the last rejected token through this API, even if a caller ignores err.
+// Trust comes from the immutable session config, never a later bookmark
+// edit; callers own the returned CA bytes and cannot change the session.
+func (s *Session) Credentials(ctx context.Context, margin time.Duration) (StorageCredentials, error) {
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+	if err := s.refreshIfStale(ctx, margin); err != nil {
+		return StorageCredentials{}, err
+	}
+	snapshot := s.auth.snapshot()
+	if snapshot.token == "" || snapshot.storageURL == "" {
+		return StorageCredentials{}, errors.New("no accepted Swift credentials")
+	}
+	tls := s.tls
+	tls.CACertPEM = bytes.Clone(tls.CACertPEM)
+	return StorageCredentials{
+		StorageURL: snapshot.storageURL, Token: snapshot.token,
+		Expires: snapshot.expires, TLS: tls,
+	}, nil
+}
+
 // StorageURL returns the storage URL in effect (override included), or ""
 // before authentication.
 func (s *Session) StorageURL() string {
@@ -155,9 +195,9 @@ func (s *Session) TokenExpires() time.Time {
 	return s.auth.snapshot().expires
 }
 
-// AuthToken returns the current auth token — for handing to the rclone
-// child's environment (§26.2) ONLY. It must never cross the frontend
-// bridge or reach a log or database (K-SEC-002/003).
+// AuthToken returns the last accepted token for diagnostics inside tests.
+// Callers sending credentials must use Credentials for a refreshed tuple.
+// Neither API may cross the frontend or reach a log/database (K-SEC-002/003).
 func (s *Session) AuthToken() string {
 	return s.auth.snapshot().token
 }

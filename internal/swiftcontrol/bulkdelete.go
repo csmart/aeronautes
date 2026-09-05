@@ -34,12 +34,16 @@ func (s *Session) BulkDelete(ctx context.Context, container string, names []stri
 	// bounded time) with ONE re-auth on 401 — the lifecycle the wire
 	// library gives every other verb.
 	send := func() (*http.Response, error) {
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-			s.conn.StorageUrl+"?bulk-delete", strings.NewReader(body.String()))
+		credentials, err := s.Credentials(ctx, 0)
 		if err != nil {
 			return nil, err
 		}
-		req.Header.Set("X-Auth-Token", s.conn.AuthToken)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+			credentials.StorageURL+"?bulk-delete", strings.NewReader(body.String()))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("X-Auth-Token", credentials.Token)
 		req.Header.Set("Content-Type", "text/plain")
 		req.Header.Set("Accept", "application/json")
 		return s.raw.Do(req)
@@ -47,10 +51,11 @@ func (s *Session) BulkDelete(ctx context.Context, container string, names []stri
 	resp, err := send()
 	if err == nil && resp.StatusCode == http.StatusUnauthorized {
 		resp.Body.Close()
-		if authErr := s.Authenticate(ctx); authErr != nil {
-			return nil, authErr
-		}
+		s.ForceReauth()
 		resp, err = send()
+		if err == nil && resp.StatusCode == http.StatusUnauthorized {
+			s.ForceReauth()
+		}
 	}
 	if err != nil {
 		return nil, Normalize(err)

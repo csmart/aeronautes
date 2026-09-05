@@ -143,27 +143,32 @@ func isTrue(v string) bool {
 // session's raw client: the returned detail carries X-Symlink-Target
 // and the link's own metadata, never the followed target's.
 func (s *Session) SymlinkGet(ctx context.Context, container, name string) (*ObjectDetail, error) {
-	target := s.conn.StorageUrl + "/" + escapeObjectPath(container) + "/" + escapeObjectPath(name) + "?symlink=get"
 	send := func() (*http.Response, error) {
+		credentials, err := s.Credentials(ctx, 0)
+		if err != nil {
+			return nil, err
+		}
+		target := credentials.StorageURL + "/" + escapeObjectPath(container) + "/" + escapeObjectPath(name) + "?symlink=get"
 		req, err := http.NewRequestWithContext(ctx, http.MethodHead, target, nil)
 		if err != nil {
 			return nil, err
 		}
-		req.Header.Set("X-Auth-Token", s.conn.AuthToken)
+		req.Header.Set("X-Auth-Token", credentials.Token)
 		return s.raw.Do(req)
 	}
 	resp, err := send()
 	if err == nil && resp.StatusCode == http.StatusUnauthorized {
 		resp.Body.Close()
-		if authErr := s.Authenticate(ctx); authErr != nil {
-			return nil, authErr
-		}
+		s.ForceReauth()
 		resp, err = send()
 	}
 	if err != nil {
 		return nil, Normalize(err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized {
+		s.ForceReauth()
+	}
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, &SwiftError{Kind: KindNotFound, HTTPStatus: resp.StatusCode, Message: "symlink HEAD: not found"}
 	}

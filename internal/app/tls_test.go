@@ -10,6 +10,7 @@ import (
 
 	"os"
 
+	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	"github.com/csmart/aeronautes/internal/swifttest"
 )
 
@@ -24,6 +25,33 @@ func tlsMock(t *testing.T) (*swifttest.Server, string, string) {
 	t.Cleanup(srv.Close)
 	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
 	return mock, srv.URL, string(caPEM)
+}
+
+func TestCapturedTrustFilesRemainDistinctAndFailClosed(t *testing.T) {
+	h := newHarness(t)
+	c := h.transfer.connections
+	c.SetCADir(t.TempDir())
+	_, _, ca := tlsMock(t)
+	first := swiftcontrol.TLSConfig{Mode: swiftcontrol.TLSModeCustomCA, CACertPEM: []byte(ca)}
+	_, firstPath, err := c.TLSRemote(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := swiftcontrol.TLSConfig{Mode: swiftcontrol.TLSModeCustomCA, CACertPEM: []byte(ca + "\n")}
+	_, secondPath, err := c.TLSRemote(second)
+	if err != nil || secondPath == firstPath {
+		t.Fatalf("new bundle replaced an existing child trust file: %v", err)
+	}
+	stored, err := os.ReadFile(firstPath)
+	if err != nil || string(stored) != ca {
+		t.Fatalf("original child trust changed: %v", err)
+	}
+	if err := os.WriteFile(firstPath, []byte("unexpected replacement"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, path, err := c.TLSRemote(first); err == nil || path != "" {
+		t.Fatal("a replaced CA file was handed to the child")
+	}
 }
 
 func TestCustomCATrust(t *testing.T) {
@@ -73,7 +101,12 @@ func TestCustomCATrust(t *testing.T) {
 	}
 
 	// The engine gets the trust as a file whose content is the bundle.
-	insecure, caFile, err := h.transfer.connections.TLSRemote(ctx, caBookmark.ID)
+	session, err := h.transfer.connections.Session()
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote, err := h.transfer.connections.EngineRemote(ctx, session, "aeronautes_src")
+	insecure, caFile := remote.InsecureTLS, remote.CACertFile
 	if err != nil || insecure || caFile == "" {
 		t.Fatalf("TLSRemote = %v %q %v", insecure, caFile, err)
 	}
@@ -100,8 +133,12 @@ func TestCustomCATrust(t *testing.T) {
 	if _, err := h.browse.Connect(ctx, insecureBookmark.ID); err != nil {
 		t.Fatalf("insecure connect: %v", err)
 	}
-	flag, caFile, _ := h.transfer.connections.TLSRemote(ctx, insecureBookmark.ID)
-	if !flag || caFile != "" {
-		t.Fatalf("insecure TLSRemote = %v %q", flag, caFile)
+	session, err = h.transfer.connections.Session()
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote, err = h.transfer.connections.EngineRemote(ctx, session, "aeronautes_src")
+	if err != nil || !remote.InsecureTLS || remote.CACertFile != "" {
+		t.Fatalf("insecure remote: insecure=%v ca=%q err=%v", remote.InsecureTLS, remote.CACertFile, err)
 	}
 }

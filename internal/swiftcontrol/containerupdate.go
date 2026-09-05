@@ -191,18 +191,18 @@ func max64(v, floor int64) int64 {
 // post POSTs headers at container level (object "") or object level and
 // returns the write's transaction id.
 func (s *Session) post(ctx context.Context, container, object string, headers swift.Headers) (string, error) {
-	if !s.conn.Authenticated() {
-		if err := s.Authenticate(ctx); err != nil {
-			return "", err
-		}
+	credentials, err := s.Credentials(ctx, 0)
+	if err != nil {
+		return "", err
 	}
-	resp, respHeaders, err := s.conn.Call(ctx, s.conn.StorageUrl, swift.RequestOpts{
+	resp, respHeaders, err := s.conn.Call(ctx, credentials.StorageURL, swift.RequestOpts{
 		Container:  container,
 		ObjectName: object,
 		Operation:  "POST",
 		Headers:    headers,
 		NoResponse: true,
-		OnReAuth:   func() (string, error) { return s.conn.StorageUrl, nil },
+		// Call holds the connection's auth lock while invoking this callback.
+		OnReAuth: func() (string, error) { return s.auth.snapshot().storageURL, nil },
 	})
 	if err != nil {
 		return "", Normalize(err)

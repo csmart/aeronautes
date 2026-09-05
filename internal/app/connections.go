@@ -1,7 +1,9 @@
 package app
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/csmart/aeronautes/internal/bookmarks"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
+	"github.com/csmart/aeronautes/internal/transfer/rclone"
 )
 
 // ErrNotConnected is returned by browse/inspect calls before Connect.
@@ -146,33 +149,57 @@ func (c *Connections) SetCADir(dir string) {
 	c.mu.Unlock()
 }
 
-// TLSRemote resolves a bookmark's trust for the engine: the insecure
-// flag, and for custom-CA mode a filesystem path holding the PEM
-// (written once per CA id; certificates are public material).
-func (c *Connections) TLSRemote(ctx context.Context, bookmarkID string) (insecure bool, caFile string, err error) {
-	b, err := c.store.Get(ctx, bookmarkID)
+// EngineRemote binds the child to one session's accepted credentials and
+// trust, even when the bookmark has been edited since that session opened.
+func (c *Connections) EngineRemote(ctx context.Context, session *swiftcontrol.Session, name string) (rclone.Remote, error) {
+	credentials, err := session.Credentials(ctx, tokenRefreshMargin)
 	if err != nil {
-		return false, "", err
+		return rclone.Remote{}, err
 	}
-	switch b.TLSMode {
+	insecure, caFile, err := c.TLSRemote(credentials.TLS)
+	if err != nil {
+		return rclone.Remote{}, err
+	}
+	return rclone.Remote{Name: name, StorageURL: credentials.StorageURL, Token: credentials.Token,
+		InsecureTLS: insecure, CACertFile: caFile}, nil
+}
+
+// TLSRemote materialises the captured trust without consulting bookmarks.
+// Publishing another bundle must not replace a running child's CA file.
+func (c *Connections) TLSRemote(tls swiftcontrol.TLSConfig) (insecure bool, caFile string, err error) {
+	switch tls.Mode {
 	case swiftcontrol.TLSModeInsecure:
 		return true, "", nil
 	case swiftcontrol.TLSModeCustomCA:
-		pem, err := c.store.CAPem(ctx, b.TLSCAID)
-		if err != nil {
-			return false, "", err
-		}
 		c.mu.Lock()
+		defer c.mu.Unlock()
 		dir := c.caDir
-		c.mu.Unlock()
 		if dir == "" {
 			dir = filepath.Join(os.TempDir(), "aeronautes-ca")
 		}
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return false, "", err
 		}
-		path := filepath.Join(dir, b.TLSCAID+".pem")
-		if err := os.WriteFile(path, pem, 0o600); err != nil {
+		path := filepath.Join(dir, fmt.Sprintf("%x.pem", sha256.Sum256(tls.CACertPEM)))
+		if stored, err := os.ReadFile(path); err == nil {
+			if !bytes.Equal(stored, tls.CACertPEM) {
+				return false, "", errors.New("materialised CA differs from the session trust")
+			}
+			return false, path, nil
+		} else if !os.IsNotExist(err) {
+			return false, "", err
+		}
+		file, err := os.CreateTemp(dir, ".ca-*.pem")
+		if err != nil {
+			return false, "", err
+		}
+		defer os.Remove(file.Name())
+		_, writeErr := file.Write(tls.CACertPEM)
+		closeErr := file.Close()
+		if err := errors.Join(writeErr, closeErr); err != nil {
+			return false, "", err
+		}
+		if err := os.Rename(file.Name(), path); err != nil {
 			return false, "", err
 		}
 		return false, path, nil
