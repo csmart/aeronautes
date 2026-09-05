@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -90,12 +91,14 @@ func TestGatewayCancelDeadlineRevokesWithoutChildExit(t *testing.T) {
 	}
 	cancel()
 	// No child exits and the invocation cleanup is deliberately withheld.
-	// Its existing connection must still be revoked at the kill deadline.
+	// A cancelled upstream request can flush an error before Close reaches
+	// the socket. Drain that bounded response, then require closure at the
+	// kill deadline independently of child exit.
 	if err := conn.SetReadDeadline(time.Now().Add(childCancelGrace + 2*time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := conn.Read(make([]byte, 1)); err == nil {
-		t.Fatal("cancelled gateway kept a connection usable")
+	if _, err := io.CopyN(io.Discard, conn, 32<<10); err == nil {
+		t.Fatal("cancelled gateway sent 32 KiB without closing")
 	} else if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
 		t.Fatal("gateway relied on child exit instead of its cancellation deadline")
 	}
