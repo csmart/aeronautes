@@ -46,9 +46,13 @@ Aeronautes moves and deletes **people's data**, and a bug can be irreversible. T
 first-class deliverable — untested destructive, classification, or encoding code does not ship, and CI
 must be green.
 
-- **CI runs on every push/PR** (`.github/workflows/ci.yml`): `gofmt`, `go vet`, `go build`,
-  `go test -race ./...`, plus frontend lint/build. It activates automatically once `go.mod` /
-  `frontend/` exist. Don't merge red.
+- **Every PR must run CI and pass before merging**, including documentation and CI changes.
+  Require successful Go, frontend, real-Swift integration, smoke and aggregate checks on the latest PR head with the current master incorporated.
+  Missing, pending, skipped, cancelled or failing checks are blockers; an older green run does not qualify.
+  Refresh the branch and rerun verification and independent local review after a rebase or other history rewrite.
+  Use the [protected merge procedure](docs/CI.md), merge only the verified head, and check the resulting master pipeline.
+  Stop feature merges and repair a broken master before continuing.
+  Never bypass the ruleset or push directly to master, including for generated files.
 - **Test the dangerous paths first and hardest** — the four layers in §57 against the fixture namespace
   in §58: object-name encoding on both engines; DLO/SLO classification; segment evidence and
   exclusive-ownership; the mutation planner (metadata replace-all, DLO preservation); the delete planner;
@@ -87,9 +91,8 @@ the reference/first-polish platform. App id: `io.csmart.aeronautes`.
   §65.10 behavioral harness lands, no merge without a regression test (unit/SAIO); once it
   exists, every behavior-changing feature adds a system-matrix row and test, and every bug fix
   carries the system-level reproduction that failed before it. No system test, no merge.
-- **CI is live** (`.github/workflows/ci.yml`): Go, frontend, containerized-Swift integration, and
-  headless smoke are required checks on master (PR-only). The six-target release matrix builds
-  unsigned artifacts on dispatch/tag (§61.0). Keep it green.
+- **CI is live** (`.github/workflows/ci.yml`): Go, frontend, containerized-Swift integration, headless smoke and their aggregate gate are required checks on master through PRs.
+  The six-target release matrix builds unsigned artifacts on dispatch/tag (§61.0).
 - **Highest-value early task: the disposable Phase-0 rclone-seam experiment** (§60) — it runs in
   parallel with Phases 1–4 (start with token-lifetime and `override.*` TLS, the cheapest assumptions
   to falsify) and must finish before the Phase-5 transfer abstraction freezes. It will invalidate

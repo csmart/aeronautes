@@ -4264,6 +4264,13 @@ This corrects test synchronisation only; the P12/P13 durable outcome and audit c
 The [subsequent PR run](https://github.com/csmart/aeronautes/actions/runs/33991688319) exposed a second test ordering assumption: gateway cancellation can flush an HTTP 502 before closing the child socket.
 The deadline test now drains that bounded response and still requires socket closure and listener refusal within the existing deadline; disabling revocation must fail.
 
+The owner requires a successful pipeline on every PR before merge and verification of master after merge.
+The CI protection slice removes the coverage bot's direct master pushes, adds an aggregate gate that rejects any required job without success, and removes the obsolete checks that skipped absent application code.
+The reviewed [master ruleset](../.github/master-ruleset.json) requires the latest base, binds all five checks to GitHub Actions, and allows no bypass actors.
+Apply and read back that configuration after the new gate has passed on the PR; a repository file alone does not change GitHub settings.
+The [merge procedure](CI.md) records the incident evidence and requires independent local review, a verified current head, green PR checks and post-merge monitoring.
+Coverage artifacts retain their existing soft thresholds; hard scenario and coverage gates remain P34 work.
+
 ## 66. Final project statement
 
 Aeronautes should feel like the Swift operator tool that should already exist:

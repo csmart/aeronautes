@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 # coverage-badge.sh <label> <percent> <soft-floor> <out.svg>
-# Generates a small shields-style SVG locally (no external service —
-# the repo is private, so badges live in-repo and README references
-# them by relative path). Color: red below the soft floor, yellow
-# within 5 points above it, green beyond.
+# Keep private coverage data in CI artifacts without publishing it to
+# an external badge service or granting CI a source-branch bypass.
 set -euo pipefail
 LABEL="${1:?label}"
 PCT="${2:?percent}"

@@ -1,8 +1,6 @@
 # Aeronautes
 
-![CI](https://github.com/csmart/aeronautes/actions/workflows/ci.yml/badge.svg)
-![Go coverage](.github/badges/coverage-go.svg)
-![UI coverage](.github/badges/coverage-frontend.svg)
+[![CI](https://github.com/csmart/aeronautes/actions/workflows/ci.yml/badge.svg?branch=master&event=push)](https://github.com/csmart/aeronautes/actions/workflows/ci.yml?query=branch%3Amaster+event%3Apush)
 
 **Aeronautes** (a living genus of swifts; “air sailor”) is a beautiful, performance-first
 **desktop operator workbench for OpenStack Swift / SwiftStack**.
@@ -48,6 +46,7 @@ future option, ADR 0006).
 - [`docs/assets/screenshots/`](docs/assets/screenshots/) — real captures of the app against containerized Swift.
 - [`docs/rclone.md`](docs/rclone.md) — the exact pinned-rclone flag surface and measured behaviours.
 - [`docs/RELEASING.md`](docs/RELEASING.md) — the six-target release pipeline (unsigned for now, on purpose).
+- [`docs/CI.md`](docs/CI.md) — required PR checks, merge rules and coverage artifacts.
 - [Full project audit, 5 September 2026](docs/audits/2026-09-05/README.md) — evidence-backed findings and an ordered remediation plan, including the fault/barrier harness.
 - [`AGENTS.md`](AGENTS.md) — start-here guide for coding agents.
 
