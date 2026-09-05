@@ -301,7 +301,8 @@ Record the accepted guarantees and containment in an ADR before implementing a n
 Modern `object_versioning` is intentionally display-only, so lack of a full editor is a supported-scope gap rather than a newly discovered defect.
 Its mode is omitted from the editable fingerprint at `internal/swiftcontrol/containerhead.go:136`, and `currentVersioningMode` treats a failed preliminary read as unknown/editable at `internal/app/mutateservice.go:333`.
 Those are concrete facts the future versioning mutation design must handle fail-closed.
-The legacy `versioned_writes` behaviour, hidden archived content, delete/restore semantics, versioned-stage cleanup, and version accumulation were not revalidated against SAIO here.
+Existing SAIO tests subsequently passed in the completed local run.
+The complete legacy `versioned_writes`, hidden archive, delete/restore, versioned-stage cleanup and interruption matrix remains unvalidated; this audit added no real-server versioning fault variants.
 Do not extend a green mock suite into a versioned-destination safety claim.
 
 The bounded task did not independently assess the credential tuple, returned-endpoint policy, native bridge capability issuance, release attestation, or frontend dialog/selection identity; those are separate audit workstreams.
@@ -326,7 +327,9 @@ Native local placement uses hard-link no-replace, which protects an existing fin
 Copy persists staging before writes, streams captured-prefix records, and refuses DLO commit when committing-intent persistence fails.
 The independent raw-HTTP system oracle checks content and collateral state separately from the production parsers.
 Those are useful foundations for fixes rather than reasons to discard the design.
-The root audit separately ran the normal internal race suite and reported 299 passing top-level tests, 33 skipped, 19 packages, and 75.8% statement coverage without SAIO; this bounded report relies on that as shared baseline evidence rather than claiming to have run it independently.
+The initial shared baseline reported 299 passing top-level tests, 33 skipped and 75.8% statements without SAIO.
+The completed local two-account run then passed all 332 top-level tests with zero skips and 81.7% statements, including the explicit pinned-engine measurement lane.
+Those existing-suite results do not close the separate defect reproductions or missing system scenarios; see [verification.md](verification.md).
 
 ## Sequenced remediation recommendations
 

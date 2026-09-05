@@ -57,7 +57,8 @@ The data-safety, security and UI reports point to existing useful tests as well 
 ## Real Swift attempt and scenario evidence
 
 The baseline skipped 25 integration tests, 6 system tests, 1 oracle SAIO test and 1 explicit official-sidecar test.
-The later official-sidecar command passed, leaving 32 cluster/matrix tests without execution evidence here.
+The later official-sidecar command passed, initially leaving 32 cluster/matrix tests without execution evidence.
+The completed host-SAIO run below subsequently executed all of them.
 The real-rclone compatibility matrix remains a separate gated test, not covered merely by placing the engine on PATH.
 
 Attempted a disposable local SAIO with the repository's exact pinned image:
@@ -71,7 +72,8 @@ podman run --detach --name aeronautes-audit-20260905-saio \
 The image could not unpack: the environment had insufficient UID/GID namespace mappings for the image's ownership (`0:42` on `/etc/shadow`; `lchown: invalid argument`).
 Podman exited 125 before a Swift service started.
 Host mappings and image ownership were not altered to manufacture a passing run.
-Use a properly configured disposable runner for the plan's mandatory two-account tests.
+The local reviewer subsequently identified an existing host SAIO reachable at port 8080 outside the command sandbox.
+That test service supplied the completed run below; no host mappings were changed and no existing service was stopped.
 
 The actual local event stream was reconciled with the real producer exit 0 and exact `go list ./internal/...` package set:
 
@@ -84,7 +86,35 @@ go run ./internal/systemtest/cmd/scenariocov \
 
 Result: `valid:true`, `coverageComplete:false`, `saioConfigured:false`, 0/102 cells, 47/47 actions with gaps.
 The [complete report](evidence/local-scenario-coverage.json) and [47-action inventory](action-coverage.md) are preserved.
-This is an honest incomplete baseline under ADR 0013; historical design counts and a valid event stream must not be turned into current system-safety evidence.
+This is the initial incomplete baseline under ADR 0013; historical design counts and a valid event stream must not be turned into complete system-safety evidence.
+
+## Completed local two-account validation
+
+After local review, ran the full internal suite against the existing local SAIO with both accounts mandatory, the verified official sidecar enabled and the explicit rclone measurement lane enabled.
+Product source remained unchanged; the run's source identifier is the docs-only audit commit `a93e61bc9c72a60c851fefd24b98702bcb75dba3`.
+Go remained 1.27.1 and rclone remained the verified Linux/amd64 1.74.3 binary.
+
+```sh
+env AERONAUTES_SAIO_AUTH_URL=http://127.0.0.1:8080/auth/v1.0 \
+  AERONAUTES_REQUIRE_TWO_ACCOUNTS=1 \
+  AERONAUTES_OFFICIAL_RCLONE_DIR=<verified-sidecar-dir> \
+  AERONAUTES_MATRIX_RCLONE=<verified-sidecar-dir>/rclone \
+  go test -json -race -count=1 \
+  -coverprofile=<audit-scratch>/saio-cover.out \
+  -coverpkg=./internal/... ./internal/...
+```
+
+The command exited 0: **332 top-level tests passed, zero skipped/failed, 19 packages passed, 352 passing test events including subtests, 81.7% internal statements**.
+The integration package completed in 30.76 seconds and system tests in 11.175 seconds.
+The [test summary](evidence/saio-test-summary.json) retains counts, package results and matrix observations.
+Reconciliation with the exact package list and producer exit 0 produced a [valid 8/102 report](evidence/saio-scenario-coverage.json), with `saioConfigured:true`, `coverageComplete:false`, and gaps for all 47 actions.
+This closes the initial existing-suite execution gap while preserving the separate current system-coverage gap.
+
+The explicit `TestRcloneMatrix` is a measurement tool, not a behavioural assertion gate: it fails on harness errors and prints observed differences as `MATRIX|` records.
+For this pin it reported 11/16 names exact, five unsafe path forms absent, a newline name excluded from the file list, two reported engine errors despite exit 0, DLO upload with one captured prefix, and no rclone metadata preservation.
+These are engine-seam observations; Aeronautes intentionally routes unsafe names natively and applies metadata itself.
+Do not misclassify them as five newly proven application data-loss bugs, or treat the passing matrix process as complete compatibility approval.
+P34 must compare observations against the supported contract when making this a release gate.
 
 ## Retrieved GitHub evidence
 
@@ -98,10 +128,12 @@ The [job metadata](evidence/github-ci-evidence.json) is preserved; this is retri
 
 The downloaded scenario artifact from the successful master run records Go 1.27.0, `valid:true`, `saioConfigured:true`, 8/102 cells, `coverageComplete:false`, and gaps for all 47 actions.
 The [report](evidence/github-master-scenario.json) and [artifact provenance/checksum](evidence/github-artifact-provenance.json) are retained.
-It corroborates the historical foundation count while the local Go 1.27.1 run remains 0/102 without SAIO.
+It corroborates the historical foundation count; the initial local Go 1.27.1 run had 0/102 without SAIO and the completed local SAIO run also reached 8/102.
 The existing real-engine matrix and full native-platform coverage remain outside that successful CI contract.
 
-GitHub reports master as protected, but the classic branch-protection endpoint returned 404, so exact required-rule enforcement was not established.
+GitHub reports master as protected; the classic branch-protection endpoint returned 404 because the protection is represented by a ruleset.
+The subsequent [branch-rules response](evidence/github-master-rules.json) confirms a pull-request requirement, required Go/frontend/SAIO/smoke checks, and deletion/non-fast-forward protections.
+It does not require an approving GitHub review or strict up-to-date checks; full administrative bypass configuration was not inspected.
 Default workflow permissions are read-only and workflows cannot approve pull requests.
 Dependabot alerts are enabled and the complete open-alert response contained zero alerts.
 Code-scanning alert retrieval returned 403; no code-scanning result is claimed.
@@ -138,7 +170,7 @@ Public maintainer advisory spot checks and the zero-open-alert GitHub Dependabot
 
 ## What remains unverified
 
-- Real two-account SAIO and representative SwiftStack semantics, including version archives, legacy/modern versioning and the full real-engine matrix.
+- Uncovered two-account scenarios and representative SwiftStack semantics, including the complete supported version/archive contract; the existing local SAIO suite and one Linux engine measurement lane now ran, while all-six-engine and full safety-contract validation remain open.
 - Native Linux GUI interaction, native macOS/Windows operation, all six packaged artifacts, screen readers, picker/keychain/portal integration, install/upgrade/rollback.
 - Large-namespace memory/throughput/fairness measurements, long-duration token expiry/load/soak tests, broad fuzzing and a deployed-app penetration test.
 - Actual child/parent kill and restart experiments across platforms, OS/power-loss experiments, and complete recovery/audit/local-filesystem snapshots.

@@ -5,9 +5,11 @@ It is a proposed execution sequence, not a declaration that the defects have bee
 Keep the existing valuable-data release hold until the safety and release gates below have evidence.
 Implement through the project's commit/review discipline, with a catching regression for every fix and an independent system reproduction once the relevant harness layer exists.
 
-The first practical slice is **the oracle encoding correction plus the minimum deterministic HTTP barrier layer, followed immediately by recovery and destructive-race containment**.
-Do not wait for a universal fault framework or the complete scenario matrix before containing demonstrated hazards.
-Credential-origin and UI-intent fixes can proceed in separate bounded slices while the deeper mutation contract is settled.
+**Proposed execution priority: start P09/P10 as the first independent security slices**, while P01/P02/P03 establish the decisions, corrected oracle and minimum deterministic HTTP barrier layer.
+Follow with P04/P05 recovery and destructive-race containment without waiting for a universal fault framework or the complete scenario matrix.
+The phase labels group related work; they do not postpone credential-origin and token-redirect fixes until Phase A has finished.
+Confirm this security-first ordering with the owner before P-series implementation; the audit does not itself change an earlier agreed implementation order.
+UI-intent fixes can proceed in separate bounded slices while the deeper mutation contract is settled.
 
 ## Decisions to record before dependent code
 
@@ -114,7 +116,7 @@ A token contrast calculation or jsdom test is not a whole-app conformance claim.
 | P31 | Triage all shipped sidecar advisories and update the engine through its compatibility gate (SEC-11), coordinated with P09/P30 | Every retained advisory has an enabled-path disposition; all six binaries scanned; selected pin passes redirects, TLS, names, staging, retries, cancellation and large-object tests; checksums/version refusal remain enforced |
 | P32 | Align Linux distribution installation/update policy with the strict engine pin (SEC-12), after P31 | Clean install and ordinary upgrade on each advertised distro provide the accepted engine or clearly refuse unsupported transfer capability; recovery/repair instructions are actionable |
 | P33 | Stamp version/source identity consistently through binary and all packages (SEC-10) | Two fixture release versions yield distinct, matching About/native/package metadata, filenames and source revision; checksums/provenance identify the exact artifacts |
-| P34 | Join scenario, engine, real-Swift and native-artifact evidence into an exact-commit release gate (TEST-02/03/04; SEC-09), growing critical regression gates earlier as tests land | Missing tools, skipped required lanes, lost cells, failing fixtures or different source/artifact identity block release; current accepted signing policy remains explicit |
+| P34 | Join scenario, engine, real-Swift and native-artifact evidence into an exact-commit release gate (TEST-02/03/04; SEC-09), growing critical regression gates earlier as tests land | Missing tools, skipped required lanes, lost cells, failing fixtures or different source/artifact identity block release; matrix observations are compared with explicit expected behaviour instead of accepting its exit code alone; current accepted signing policy remains explicit |
 | P35 | Refresh supported/deferred/status docs and release/support ownership (DOC-01 and security support notes), alongside each completed phase | DESIGN/ADRs/README/requirements/action inventory agree; security reporting and update ownership, third-party notices, manual upgrade/rollback and future-schema refusal policy are documented and verified where executable |
 
 P30 does not need to wait for product-polish Phase E.
@@ -192,4 +194,4 @@ Before valuable-data release, all of the following must be true:
 - The accepted deferred/non-goal list and remaining risks are explicit; unresolved design decisions have not been silently converted into unsupported guarantees.
 
 No calendar estimate is justified until the concurrency/durability choices and real-runner constraints are resolved.
-Track completion by these reviewable evidence gates, starting with P01–P06 and the independent credential-origin fix, rather than by a nominal coverage percentage or phase label.
+Track completion by these reviewable evidence gates, starting with the independent P09/P10 security slices alongside P01–P06, rather than by a nominal coverage percentage or phase label.

@@ -40,19 +40,22 @@ The labels are audit priorities, not CVSS scores or proof of exploitability in e
 | Check | Result | What it establishes |
 | --- | --- | --- |
 | Existing Go internal suite with race detector | 299 top-level tests passed; 33 skipped; 19 packages passed; 75.8% statements | Strong existing package regression base; does not prove skipped real-cluster scenarios |
+| Completed local Go suite with two-account SAIO and pinned engine | 332 top-level tests passed; zero skips; 19 packages passed; 81.7% statements | Closes the initial existing-suite skips; the separate damage probes and unimplemented scenarios remain |
 | Explicit official-sidecar test after the baseline | Passed against verified rclone 1.74.3 | Resolves one of the 33 baseline skips |
 | Existing frontend suite | 48 tests passed; 6 files; 17.18% statements | The current tested helper/state behaviours pass; large component gaps remain |
 | Svelte checks and frontend production build | 0 errors/warnings; build passed | Types and production bundle are viable |
 | Go vet, formatting, Linux production build | Passed; upstream GTK deprecation warnings | Linux compilation works in this environment; no native interaction proof |
 | Six OS/architecture internal-core builds | Passed without CGO | Pure-Go core portability; not six packaged desktop app runs |
 | Data, security, UI, and oracle audit probes | 29 intended safe-behaviour assertion failures; 1 passing PRAGMA observation | Specific failure modes absent from the normal suite; archived separately |
-| Scenario reconciliation on this local run | Valid event/contract report; 0/102 credited cells; 47/47 actions have gaps | Honest incomplete evidence because SAIO was unavailable; not a parser failure |
+| Local scenario reconciliation | Initial run 0/102 without SAIO; completed run 8/102 with SAIO; both valid; all 47 actions have gaps | Correct accounting of each run; the full system contract remains incomplete |
 | Retrieved master CI evidence, 31 August | Go/frontend/SAIO/smoke reported success; scenario artifact 8/102, all 47 actions still have gaps | Existing real-cluster/smoke foundation evidence on identical product source; the full safety contract remains incomplete |
 
 Full commands, versions, preserved probe sources, advisory scope, and environmental limits are in [verification.md](verification.md).
-The two-account SAIO run was attempted, but the pinned container could not unpack under the host's available UID/GID mappings.
+The initial nested SAIO container could not unpack under the available UID/GID mappings.
+Local review then identified an accessible host SAIO; the complete two-account suite and Linux pinned-engine measurement lane passed there.
+Its matrix reports observations rather than failing on behavioural differences, so a successful exit is not a complete compatibility gate.
 No native GUI, screen-reader, macOS/Windows runtime, representative SwiftStack deployment, physical power-loss, or full release-artifact validation was completed here.
-The historical 8/102 count in DESIGN is not a result of this audit run.
+The completed local run reproduced DESIGN's historical 8/102 system count and retained the remaining gaps explicitly.
 
 ## Product suitability and feature coverage
 

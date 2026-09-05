@@ -195,8 +195,10 @@ It does not itself require the real-rclone compatibility matrix, required SAIO c
 Separate CI has SAIO infrastructure, but the real-rclone matrix is explicitly not enabled, and release `needs` edges do not establish those other outcomes for the exact release commit.
 Producing a binary is not evidence of its native runtime behaviour.
 
-The webview smoke script can also exit successfully when Xvfb is missing.
+The separate §55 spike script, `scripts/webview-spike.sh` (`make spike`), can exit successfully when Xvfb is missing.
 Its socket-check command swallows `ss` errors; a missing inspection tool can therefore be mistaken for the absence of a listener.
+The CI smoke runs `scripts/smoke.sh` instead, which fails closed when Xvfb, xdotool, import, curl or python3 is missing.
+That smoke only skips its transfer step if the pinned rclone is unavailable; CI explicitly fetches the pin first.
 That is acceptable only as an explicitly reported developer skip, not a successful mandatory release assertion.
 
 Remediation: make release eligibility an explicit exact-commit evidence gate including deterministic scenarios, required Swift integration, real engine matrix, actual production bundle smoke, and each platform's native contracts.
@@ -233,7 +235,8 @@ The metadata-permission issue requires metadata restoration; the presence of loc
 The TLS KeyUpdate advisory describes a malicious client against a server, so it must not be presented as a confirmed Swift-client exploit solely because TLS symbols are in the binary. [Go TLS advisory](https://pkg.go.dev/vuln/GO-2026-6090)
 Conversely, the old standard-library URL parser used by HTTP code has a published resource-exhaustion issue that warrants actual redirect/input reachability analysis. [Go URL advisory](https://pkg.go.dev/vuln/GO-2026-6218)
 
-The maintenance finding is that the manual pin is excluded from automatic dependency updates and the documented compatibility gate is not running, while known fixes now exist beyond that pin.
+The maintenance finding is that the manual pin is excluded from automatic dependency updates and the compatibility measurements are not a required behavioural CI gate, while known fixes now exist beyond that pin.
+The audit subsequently ran the existing Linux/amd64 matrix; its observations and non-gating semantics are recorded in [verification.md](verification.md#completed-local-two-account-validation).
 Before shipping, every retained advisory needs an evidence-backed disposition for the exact Swift/local surfaces and shipped binary.
 An immediately reachable security defect should be promoted to P1; this audit already supplies an independent P1 redirect reproduction in SEC-02.
 
@@ -384,5 +387,5 @@ It should support the defined safety contracts; a broader harness redesign that 
 
 This domain audit did not run real desktop windows, macOS or Windows binaries, native keychain/portal dialogs, a physical power-loss experiment, signing/notarization, installer upgrade tests, a real production SwiftStack account, broad fuzzing, or penetration testing against a deployed app.
 It did not scan real user secrets or inspect private keychain contents.
-The companion audit documents cover the full application baseline, UI, data safety, harness breadth and attempted SAIO run.
+The companion audit documents cover the full application baseline, UI, data safety, harness breadth and completed local SAIO run.
 This report deliberately distinguishes direct reproductions from source-derived risks, public advisory inventory, and unresolved product decisions.

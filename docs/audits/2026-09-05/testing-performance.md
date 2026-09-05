@@ -38,9 +38,11 @@ Its `valid:true` deliberately does not mean all actions/scenarios are covered.
 There is currently no hard requirement for full coverage or a non-regression ratchet on already credited cells.
 The frontend's 70% and Go's 75% statement floors both use `continue-on-error`.
 
-This local run produced a valid report with 0/102 credited cells and gaps for all 47 actions because the real-cluster tests skipped.
-That is correct reconciliation of incomplete execution, not evidence that the parser accepted a failed suite.
-The earlier recorded 8/102 result is historical and was not reproduced here.
+The initial local run produced a valid report with 0/102 cells because the real-cluster tests skipped.
+The later complete local SAIO run passed all 332 top-level tests and credited 8/102 cells, reproducing the retrieved historical CI count; all 47 actions still have gaps.
+Both reports correctly describe their execution scope.
+The real-rclone `TestRcloneMatrix` lane was also run, but `internal/integration/rclonematrix_test.go:18` explicitly defines it as a measurement tool that fails only on harness errors, not behavioural differences.
+A successful matrix process must therefore be joined to expected-observation checks before it can serve as a behavioural release gate.
 
 Remedy: retain the existing fail-closed stream checks, publish an explicit per-action required/not-applicable contract with reasons, and add a hard ratchet on accepted critical regression cells.
 Expand to a complete supported-operation release contract as the tests land.
