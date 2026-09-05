@@ -35,26 +35,34 @@ type TLSConfig struct {
 // an auth or storage endpoint would resend the credentials wherever it
 // pointed (review G22). Swift never legitimately redirects these calls.
 func (t TLSConfig) transport() (http.RoundTripper, error) {
-	var inner http.RoundTripper
+	config, err := t.ClientConfig()
+	if err != nil {
+		return nil, err
+	}
+	var inner http.RoundTripper = http.DefaultTransport
+	if config != nil {
+		inner = &http.Transport{TLSClientConfig: config}
+	}
+	return redirectRefusingTransport{inner: inner}, nil
+}
+
+// ClientConfig keeps native requests and the child gateway on the same
+// trust policy while allowing each to own its connection lifetime.
+func (t TLSConfig) ClientConfig() (*tls.Config, error) {
 	switch t.Mode {
 	case TLSModeSystem, "":
-		inner = http.DefaultTransport
+		return nil, nil
 	case TLSModeInsecure:
-		inner = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		}
+		return &tls.Config{InsecureSkipVerify: true}, nil
 	case TLSModeCustomCA:
 		pool := x509.NewCertPool()
 		if !pool.AppendCertsFromPEM(t.CACertPEM) {
 			return nil, fmt.Errorf("custom CA: no certificates found in PEM data")
 		}
-		inner = &http.Transport{
-			TLSClientConfig: &tls.Config{RootCAs: pool},
-		}
+		return &tls.Config{RootCAs: pool}, nil
 	default:
 		return nil, fmt.Errorf("unknown TLS mode %q", t.Mode)
 	}
-	return redirectRefusingTransport{inner: inner}, nil
 }
 
 // redirectRefusingTransport strips the Location header off any 3xx so

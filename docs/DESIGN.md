@@ -749,16 +749,13 @@ honoured **only in a config file** — the env-variable forms
 **leaks across remotes within one child**: with `override.ca_cert` on the source only, the
 strict-TLS destination accepted the self-signed certificate too (order-dependent; the
 no-override control failed as expected). So `override.*` is NOT per-remote isolation in
-practice. The rule is therefore:
+practice.
 
-- endpoints with **identical TLS trust** may share one child, with the trust expressed via
-  `override.*` in the job-scoped config file (which also means: when a TLS override is needed,
-  the job config file carries the remote's *non-secret* keys — the auth token stays in the
-  environment, which rclone merges with file-defined remotes, verified in the spike);
-- endpoints with **different TLS trust** MUST run as **two single-remote children** — download
-  under one policy, upload under the other (already a client-side hairpin, §28.5) — or the
-  pairing is rejected. Never broaden trust process-wide, and never rely on `override.*` to
-  isolate it. (K-SEC-008.)
+[ADR 0014](adr/0014-child-storage-gateway.md) replaces the child TLS configuration with a parent-owned transport per fixed upstream.
+The child receives literal loopback HTTP endpoints and no TLS overrides; the parent applies the captured system/custom-CA/insecure policy to each remote.
+Endpoints with **identical TLS trust** may share one child.
+The existing rule for **different TLS trust** remains: use two single-remote children or reject the pairing until a separate reviewed compatibility change permits it.
+Never broaden trust process-wide. (K-SEC-008.)
 
 ---
 
@@ -1407,19 +1404,34 @@ Do not expose a generic shell interface to the frontend.
 
 ### 26.2 Credentials/config
 
-P09 proposes replacing the direct upstream credentials below with an invocation-scoped storage gateway; see [ADR 0014](adr/0014-child-storage-gateway.md).
-The gateway decision requires local design review before implementation, and the current direct-child path remains vulnerable to storage redirects until that implementation passes its gates.
-The original seam contract below remains the current implementation description during that transition.
+Each `Runner.Copy` and `Runner.CopyTo` invocation uses a scoped storage gateway per remote; see [ADR 0014](adr/0014-child-storage-gateway.md).
+Aeronautes captures the real upstream URL, token and TLS policy in the parent, while rclone receives a literal loopback URL and fresh random local bearer token.
+The gateway performs one upstream round trip, refuses redirects and strips redirect/authentication response headers.
+It permits source reads and destination writes only within this invocation's stage and matching generated segment scope.
+The [request policy](rclone.md#gateway-request-policy) records the bounded bulk-cleanup and sidecar-policy exceptions.
+The child environment remains readable by the same OS user; possession of a local token delegates the gateway's allowed requests for its bounded lifetime.
+Neither real nor local tokens may enter argv, the job config, SQLite, the renderer or diagnostics.
 
 Prefer ephemeral environment-based remote configuration.
 
 Do not use a persistent `rclone.conf` as credential storage.
 
-Secrets are injected only into the child process environment.
+Only the invocation-local gateway tokens enter the child process environment.
 
 Sanitized diagnostics must omit them.
 
-**Hand rclone a token, not the key.** Aeronautes authenticates once with its own client and passes rclone pre-authenticated storage URLs + auth tokens via **named-remote** environment config (see below), never the long-lived `X-Auth-Key`. This matches the "authenticate once" model, keeps the durable secret out of the subprocess, and bounds exposure if the child's environment is read — on Linux the child environment is readable at `/proc/<pid>/environ` by the same user (and root). **Token expiry does not refresh inside a running rclone child**, so plan for it two ways. *Preferred — bounded batches:* stock one-shot rclone has **no drain** (`--max-duration HARD` kills active transfers; `SOFT` only stops *starting* new transfers after the deadline, so an in-flight large object can still run past expiry; signalling the child is a cancel, not a drain). So for long jobs Aeronautes splits work into bounded file batches and starts a **fresh child per batch** with a fresh token, and/or requires the remaining token lifetime to exceed the time to move the batch's largest object at a conservative throughput floor. Token lifetime is established in priority order: **(1)** a server-provided expiry — stock TempAuth returns `X-Auth-Token-Expires` as delta-seconds remaining (observed against upstream SAIO 2.38; the adapter's own v1 authenticator captures it, tolerating absolute-epoch variants), but the target SwiftStack cluster's auth may not (confirming *that* remains seam-spike item 1, §60); **(2)** a conservative per-bookmark configured lifetime; **(3)** a bounded maximum child duration plus the failure-driven reauth→reconcile fallback below. One consequence must be surfaced honestly: a **single object too large to move within the assumed lifetime at the floor rate** (multi-TiB over a slow link) is outside the supported envelope — the planner MUST fail such a job at preflight with a clear explanation (object size × measured link speed vs token lifetime), never mid-flight. *Fallback — failure-driven:* if a token does expire in flight, the child's requests fail with an auth error and, after a **small** bounded retry budget (so control returns quickly rather than looping), the child exits; Aeronautes then re-authenticates with the durable key it still holds, reconciles partial destination state, and spawns a new rclone process. On restart, Aeronautes rebuilds the work set from **unverified** objects only (§28.4): a *completed, verified* object is simply absent from the new set — Aeronautes does **not** rely on rclone's skip-identical, which is unsafe for `Unknown` objects and is bypassed by the `--ignore-times` selected-set contract. A **partially-uploaded large object** has no destination manifest yet (only segments Aeronautes may not be able to name), so its resume behaviour is **unknown** until the Phase-0 spike (§60) settles it and must not be promised in the UI; its orphaned segments are handled by §26.4 reconciliation. Keep the failure-driven reauth/reconcile path as a fallback, not a guaranteed happy path. The durable key never enters the subprocess. (See ADR `0009-token-refresh`.)
+**Hand rclone a local token.** Aeronautes authenticates with its own client and passes rclone the scoped gateway URLs and local tokens via **named-remote** environment config, never the upstream Swift token or long-lived `X-Auth-Key`.
+This matches the "authenticate once" model, keeps the durable secret out of the subprocess, and bounds exposure if the child's environment is read — on Linux the child environment is readable at `/proc/<pid>/environ` by the same user (and root).
+**Token expiry does not refresh inside a running rclone child**, so plan for it two ways.
+*Preferred — bounded batches:* stock one-shot rclone has **no drain** (`--max-duration HARD` kills active transfers; `SOFT` only stops *starting* new transfers after the deadline, so an in-flight large object can still run past expiry; signalling the child is a cancel, not a drain).
+So for long jobs Aeronautes splits work into bounded file batches and starts a **fresh child per batch** with a fresh token, and/or requires the remaining token lifetime to exceed the time to move the batch's largest object at a conservative throughput floor.
+Token lifetime is established in priority order: **(1)** a server-provided expiry — stock TempAuth returns `X-Auth-Token-Expires` as delta-seconds remaining (observed against upstream SAIO 2.38; the adapter's own v1 authenticator captures it, tolerating absolute-epoch variants), but the target SwiftStack cluster's auth may not (confirming *that* remains seam-spike item 1, §60); **(2)** a conservative per-bookmark configured lifetime; **(3)** a bounded maximum child duration plus the failure-driven reauth→reconcile fallback below.
+One consequence must be surfaced honestly: a **single object too large to move within the assumed lifetime at the floor rate** (multi-TiB over a slow link) is outside the supported envelope — the planner MUST fail such a job at preflight with a clear explanation (object size × measured link speed vs token lifetime), never mid-flight.
+*Fallback — failure-driven:* if a token does expire in flight, the child's requests fail with an auth error and, after a **small** bounded retry budget (so control returns quickly rather than looping), the child exits; Aeronautes then re-authenticates with the durable key it still holds, reconciles partial destination state, and spawns a new rclone process.
+On restart, Aeronautes rebuilds the work set from **unverified** objects only (§28.4): a *completed, verified* object is simply absent from the new set — Aeronautes does **not** rely on rclone's skip-identical, which is unsafe for `Unknown` objects and is bypassed by the `--ignore-times` selected-set contract.
+A **partially-uploaded large object** has no destination manifest yet (only segments Aeronautes may not be able to name), so its resume behaviour is **unknown** until the Phase-0 spike (§60) settles it and must not be promised in the UI; its orphaned segments are handled by §26.4 reconciliation.
+Keep the failure-driven reauth/reconcile path as a fallback, not a guaranteed happy path.
+The durable key never enters the subprocess. (See ADR `0009-token-refresh`.)
 
 **Two bookmarks need two named remotes, and the child must be isolated.** A Swift→Swift job configures two remotes in one process, which the backend-wide `RCLONE_SWIFT_*` defaults cannot express. Use fixed internal remote names via rclone's configless form — `RCLONE_CONFIG_AERONAUTES_SRC_TYPE=swift`, `RCLONE_CONFIG_AERONAUTES_SRC_STORAGE_URL`, `RCLONE_CONFIG_AERONAUTES_SRC_AUTH_TOKEN`, and the `AERONAUTES_DST_*` equivalents — addressing `aeronautes_src:`/`aeronautes_dst:`. Requirements: tokens go in the child **environment only, never in argv** (argv is readable by the same user at `/proc/<pid>/cmdline` and leaks through "Show sanitized command"); every spawn uses a job-scoped **empty** config (`--config` a temp file, or `RCLONE_CONFIG` pointing at a dummy) so the operator's own `rclone.conf` — a stray remote, extra flags, `leave_parts_on_error` — cannot silently change semantics; the inherited environment is whitelisted, not passed through; the sanitized command shows remote names and non-secret flags only. This is why §44.1's flag surface must **not** carry `--swift-storage-url`/`--swift-auth-token`: they would put the token in argv.
 
@@ -2290,7 +2302,9 @@ A developer/debug build may have deeper tooling, but it is not a normal product 
 
 ### 44.1 Enumerate the depended-upon rclone flag surface
 
-"No arbitrary args" only works if every behaviour Aeronautes needs is reachable through a specific, supported rclone flag. Before Phase 5, produce and maintain (in `docs/rclone.md`) the **exact list of rclone flags Aeronautes sets**, mapped to the product setting that drives each one, covering at minimum: v1 auth via pre-authenticated **named-remote environment** config (`RCLONE_CONFIG_AERONAUTES_SRC_*` / `RCLONE_CONFIG_AERONAUTES_DST_*`; **never** `--swift-storage-url`/`--swift-auth-token`, which would put the token in argv — §26.2), the large-object chunk size (`--swift-chunk-size`), destination segment placement (segment container / in-container behaviour), storage policy, **per-remote** TLS overrides (remote-scoped `override.*` global-flag overrides — `override.no_check_certificate`/`override.ca_cert` on `aeronautes_src`/`aeronautes_dst` — **not** the process-global `--ca-cert`/`--no-check-certificate`, which would change trust for both remotes in a Swift→Swift child; two-child fallback if `override.*` is not honoured — §12.3), and concurrency/pacing (`--transfers`, `--checkers`, `--tpslimit`, `--bwlimit`). If a required behaviour (e.g. a specific segment-placement mode) has **no** supported flag, that is a concrete gap to resolve deliberately — narrow adapter, upstream contribution, or an explicit compatibility decision — not a reason to open a free-form argument box.
+"No arbitrary args" only works if every behaviour Aeronautes needs is reachable through a specific, supported rclone flag.
+Before Phase 5, produce and maintain (in `docs/rclone.md`) the **exact list of rclone flags Aeronautes sets**, mapped to the product setting that drives each one, covering at minimum: v1 auth via pre-authenticated **named-remote environment** config (`RCLONE_CONFIG_AERONAUTES_SRC_*` / `RCLONE_CONFIG_AERONAUTES_DST_*`; **never** `--swift-storage-url`/`--swift-auth-token`, which would put the token in argv — §26.2), the large-object chunk size (`--swift-chunk-size`), destination segment placement (segment container / in-container behaviour), storage policy, **per-remote** TLS in the parent gateway (no child TLS overrides; the same-trust pairing restriction remains — §12.3, ADR 0014), and concurrency/pacing (`--transfers`, `--checkers`, `--tpslimit`, `--bwlimit`).
+If a required behaviour (e.g. a specific segment-placement mode) has **no** supported flag, that is a concrete gap to resolve deliberately — narrow adapter, upstream contribution, or an explicit compatibility decision — not a reason to open a free-form argument box.
 
 A **narrow, typed, per-bookmark compatibility allowlist** for known provider quirks (pagination style, non-standard behaviours) is permitted where it is enumerated, documented, audited in the job's effective configuration, and shown in "Show sanitized command". The hard rule remains: no free-form arbitrary-argument textbox that can silently change semantics or invalidate the UI's claims. (Consider ADR `0007-rclone-flag-surface`.)
 
@@ -4227,9 +4241,12 @@ DNS resolution is not a lasting authority to send credentials in cleartext.
 An accepted override takes precedence even when the advertised endpoint is missing or forbidden, including on reauthentication.
 Subsequent work follows the full plan's dependencies; a completed security slice does not imply the harness, destructive paths or release are complete.
 
-The P09 child-transport proposal is [ADR 0014](adr/0014-child-storage-gateway.md).
-The real Swift token-redirect reproduction also fails on the verified 1.75.1 candidate, so the proposal uses a narrow per-invocation gateway instead of treating a version upgrade as the fix.
-Implementation and permanent compatibility/security regressions are pending.
+The P09 child-transport implementation follows [ADR 0014](adr/0014-child-storage-gateway.md).
+The real Swift token-redirect reproduction also fails on the verified 1.75.1 candidate, so this uses a scoped invocation-local gateway while retaining the 1.74.3 pin.
+Permanent tests exercise all forty real-child redirect cases, upstream TLS, method/path/header scope, whole-body bulk validation, streaming, setup failure and listener teardown.
+Cancellation retains the existing ten-second SIGINT cleanup grace; gateways close on child exit or at that deadline independently of reaping.
+The repeated Swift trace preserves segmented transfer and failed-upload cleanup; measured streaming costs and remaining platform evidence are [recorded separately](experiments/2026-09-06-child-gateway.md).
+This closes the tested child redirect path, while the wider safety and platform release hold remains.
 
 The first P10 prerequisites make forced invalidation override advertised token expiry and retain it after failed authentication.
 The Go-only `Session.Credentials` operation now refreshes and returns a coherent URL/token/expiry tuple with copied trust from the session's construction config.
@@ -4237,7 +4254,7 @@ Both engine builders and the raw native bulk-delete and symlink-read paths consu
 Those raw requests refresh the complete tuple after a 401 and retain invalidation if authentication fails or the retry is rejected.
 Container/object metadata POST and SLO-manifest reads now use snapshot URLs, including after library reauthentication, removing direct reads of mutable connection fields.
 Their `swift.Connection.Call` token selection remains library-managed and can race with an independently refreshed URL generation, as can the library's own operation wrappers; closing that library request-pairing gap remains P10 work.
-Until the gateway replaces the direct child path, CA files are published by content identity so another bundle cannot replace an existing child's trust.
+CA files remain published by content identity; each gateway reads the captured bytes once for its trust configuration and identity check.
 This does not yet revoke held sessions after a bookmark edit or bind stored keys to a configuration generation; those P10 lifecycle and secret-store fixes remain open.
 
 ## 66. Final project statement

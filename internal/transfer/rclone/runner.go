@@ -28,18 +28,16 @@ import (
 // caller explicitly allows it (the future compatibility matrix).
 const PinnedVersion = "v1.74.3"
 
-// Remote is one endpoint of a child. The token travels in the child
-// environment only; when TLS settings are present the remote's
-// NON-SECRET keys move into the job config file (override.* is honoured
-// only there, §12.3) while the token stays in the environment.
+// Remote captures an upstream endpoint. The runner keeps its credentials
+// and TLS policy in the parent; the child receives a scoped local gateway.
 type Remote struct {
 	// Name is the fixed internal remote name ("aeronautes_src"/"_dst").
 	Name       string
 	StorageURL string
 	Token      string
-	// CACertFile is a path to a PEM bundle for override.ca_cert.
+	// CACertFile is a path to the captured upstream CA bundle.
 	CACertFile string
-	// InsecureTLS sets override.no_check_certificate.
+	// InsecureTLS disables verification only on this upstream transport.
 	InsecureTLS bool
 }
 
@@ -87,17 +85,11 @@ func checkRemoteDestStaged(dst string) error {
 	return nil
 }
 
-func (r Remote) needsConfigFile() bool {
-	return r.CACertFile != "" || r.InsecureTLS
-}
-
 // TrustIdentity normalizes a TLS trust configuration into a comparable
 // identity: "system", "insecure", or a content hash of the CA bundle
-// (the same bundle at two paths is the same trust). One child may carry
-// multiple remotes ONLY when their identities are equal — override.*
-// in the job config leaks across remotes in one process (§12.3), so a
-// non-identical pairing must refuse, and a CA bundle that cannot be
-// read fails closed.
+// (the same bundle at two paths is the same trust). The pairing rule
+// remains in force after moving TLS into the gateway: relaxing it
+// requires a separate compatibility decision (§12.3, ADR 0014).
 func TrustIdentity(insecure bool, caCertFile string) (string, error) {
 	switch {
 	case insecure && caCertFile != "":
@@ -126,10 +118,6 @@ func hashFile(path string) (string, error) {
 	}
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:]), nil
-}
-
-func (r Remote) trustIdentity() (string, error) {
-	return TrustIdentity(r.InsecureTLS, r.CACertFile)
 }
 
 // Options configures a Runner.
@@ -311,7 +299,12 @@ func (r *Runner) Copy(ctx context.Context, remotes []Remote, src, dst string, na
 	}
 	defer os.RemoveAll(workDir)
 
-	configPath, env, err := buildEnvironment(workDir, remotes)
+	localRemotes, closeGateways, err := startGateways(ctx, remotes, dst, false, r.gatewayCapacity())
+	if err != nil {
+		return nil, err
+	}
+	defer closeGateways()
+	configPath, env, err := buildEnvironment(workDir, localRemotes)
 	if err != nil {
 		return nil, err
 	}
@@ -350,7 +343,12 @@ func (r *Runner) CopyTo(ctx context.Context, remotes []Remote, src, dst string, 
 	}
 	defer os.RemoveAll(workDir)
 
-	configPath, env, err := buildEnvironment(workDir, remotes)
+	localRemotes, closeGateways, err := startGateways(ctx, remotes, dst, true, r.gatewayCapacity())
+	if err != nil {
+		return nil, err
+	}
+	defer closeGateways()
+	configPath, env, err := buildEnvironment(workDir, localRemotes)
 	if err != nil {
 		return nil, err
 	}
@@ -358,6 +356,10 @@ func (r *Runner) CopyTo(ctx context.Context, remotes []Remote, src, dst string, 
 	args = append(args, r.pacingArgs()...)
 	args = append(args, "--", src, dst)
 	return r.run(ctx, args, env, onEvent)
+}
+
+func (r *Runner) gatewayCapacity() int {
+	return min(1024, max(64, 2*(max(0, r.opts.Transfers)+max(0, r.opts.Checkers))+16))
 }
 
 func (r *Runner) pacingArgs() []string {
@@ -391,78 +393,29 @@ func (r *Runner) pacingArgs() []string {
 	return args
 }
 
-// buildEnvironment assembles the whitelisted child environment and the
-// job config file. Remotes without TLS needs are pure env; a remote
-// with TLS settings puts its NON-SECRET keys in the config file
-// (override.* is config-file-only, §12.3) — its token still travels in
-// the environment, merged by rclone.
+// The child sees only loopback remotes and local tokens; an empty config
+// prevents it from discovering the operator's own configured remotes.
 func buildEnvironment(workDir string, remotes []Remote) (configPath string, env []string, err error) {
 	// Whitelist, never inherit: the operator's environment must not
 	// steer the child (§26.2).
 	env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + workDir}
 
-	var configBody strings.Builder
-	needsFile := false
 	for _, remote := range remotes {
 		if remote.Name == "" || remote.StorageURL == "" || remote.Token == "" {
 			return "", nil, fmt.Errorf("remote needs name, storage URL, and token")
 		}
-		// A control character in a value would let one INI line become
-		// two (key/section injection); bookmark validation rejects them
-		// upstream, and the boundary refuses regardless.
-		for _, value := range []string{remote.StorageURL, remote.CACertFile} {
-			if strings.ContainsFunc(value, func(c rune) bool { return c < 0x20 || c == 0x7f }) {
-				return "", nil, fmt.Errorf("remote %s carries a control character; refused", remote.Name)
-			}
-		}
 		upper := strings.ToUpper(remote.Name)
-		env = append(env, fmt.Sprintf("RCLONE_CONFIG_%s_AUTH_TOKEN=%s", upper, remote.Token))
-		if remote.needsConfigFile() {
-			needsFile = true
-			fmt.Fprintf(&configBody, "[%s]\ntype = swift\nenv_auth = false\nstorage_url = %s\n", remote.Name, remote.StorageURL)
-			if remote.CACertFile != "" {
-				fmt.Fprintf(&configBody, "override.ca_cert = %s\n", remote.CACertFile)
-			}
-			if remote.InsecureTLS {
-				configBody.WriteString("override.no_check_certificate = true\n")
-			}
-			configBody.WriteString("\n")
-		} else {
-			env = append(env,
-				fmt.Sprintf("RCLONE_CONFIG_%s_TYPE=swift", upper),
-				fmt.Sprintf("RCLONE_CONFIG_%s_ENV_AUTH=false", upper),
-				fmt.Sprintf("RCLONE_CONFIG_%s_STORAGE_URL=%s", upper, remote.StorageURL),
-			)
-		}
-	}
-
-	// Non-identical TLS trust in one child is forbidden (§12.3): the
-	// override leaks across remotes in one process. There is no child
-	// splitter — the pairing refuses here and at job validation.
-	var firstIdentity string
-	for i, remote := range remotes {
-		identity, err := remote.trustIdentity()
-		if err != nil {
-			return "", nil, err
-		}
-		if i == 0 {
-			firstIdentity = identity
-		} else if identity != firstIdentity {
-			return "", nil, fmt.Errorf("TLS trust differs between remotes (§12.3: overrides leak across one child); run per-endpoint jobs or align the bookmarks' trust settings")
-		}
+		env = append(env,
+			fmt.Sprintf("RCLONE_CONFIG_%s_AUTH_TOKEN=%s", upper, remote.Token),
+			fmt.Sprintf("RCLONE_CONFIG_%s_TYPE=swift", upper),
+			fmt.Sprintf("RCLONE_CONFIG_%s_ENV_AUTH=false", upper),
+			fmt.Sprintf("RCLONE_CONFIG_%s_STORAGE_URL=%s", upper, remote.StorageURL),
+		)
 	}
 
 	configPath = filepath.Join(workDir, "rclone.conf")
-	if needsFile {
-		if err := os.WriteFile(configPath, []byte(configBody.String()), 0o600); err != nil {
-			return "", nil, err
-		}
-	} else {
-		// An empty file, not /dev/null: rclone must see a config that
-		// exists and contains nothing of the operator's.
-		if err := os.WriteFile(configPath, nil, 0o600); err != nil {
-			return "", nil, err
-		}
+	if err := os.WriteFile(configPath, nil, 0o600); err != nil {
+		return "", nil, err
 	}
 	return configPath, env, nil
 }
@@ -471,6 +424,8 @@ func buildEnvironment(workDir string, remotes []Remote) (configPath string, env 
 var segmentPattern = regexp.MustCompile(`Uploading segment file "(.+)" into "(.+)"`)
 
 const maxCollectedErrors = 50
+
+const childCancelGrace = 10 * time.Second
 
 // run spawns, streams, and reaps one child.
 func (r *Runner) run(ctx context.Context, args, env []string, onEvent func(Event)) (*Result, error) {
@@ -549,7 +504,7 @@ func (r *Runner) run(ctx context.Context, args, env []string, onEvent func(Event
 		signalChild(cmd, syscall.SIGINT)
 		select {
 		case waitErr = <-waitDone:
-		case <-time.After(10 * time.Second):
+		case <-time.After(childCancelGrace):
 			killChild(cmd)
 			waitErr = <-waitDone
 		}

@@ -32,8 +32,7 @@ commit, phase by phase, following the design.
   for plain ones). (§28.6)
 - **Listings are advisory (eventually consistent); HEAD is authoritative.** Verify with bounded
   retries; namespace comparison is a streaming merge-join over the sorted listings. (§15.2, §15.3, K-CON-001)
-- **Secrets never reach the frontend or SQLite**; rclone gets a token, never the durable key, via
-  named-remote env config, never argv. (§55, §26.2, K-SEC-*)
+- **Secrets never reach the frontend or SQLite**; rclone gets an invocation-local gateway token through named-remote env config, never the durable key or real Swift token, and never through argv. (§55, §26.2, ADR 0014, K-SEC-*)
 - **Never HEAD every listing row**; stream large namespaces (never accumulate). (§14.2, §15)
 - **Swift semantics live in Go domain packages**, not UI components. Don't port `python-swiftclient`;
   wrap `github.com/ncw/swift/v2`.

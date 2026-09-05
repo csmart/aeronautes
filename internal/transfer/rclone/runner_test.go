@@ -2,7 +2,10 @@ package rclone
 
 import (
 	"context"
+	"encoding/pem"
 	"fmt"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,8 +35,8 @@ func dumpDir(stubPath string) string { return filepath.Dir(stubPath) }
 
 func remotes() []Remote {
 	return []Remote{
-		{Name: "aeronautes_src", StorageURL: "http://src/v1/AUTH_a", Token: "tok-src-SECRET"},
-		{Name: "aeronautes_dst", StorageURL: "http://dst/v1/AUTH_b", Token: "tok-dst-SECRET"},
+		{Name: "aeronautes_src", StorageURL: "https://src/v1/AUTH_a", Token: "tok-src-SECRET"},
+		{Name: "aeronautes_dst", StorageURL: "https://dst/v1/AUTH_b", Token: "tok-dst-SECRET"},
 	}
 }
 
@@ -95,14 +98,33 @@ func TestCopyHygieneAndContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"RCLONE_CONFIG_AERONAUTES_SRC_AUTH_TOKEN=tok-src-SECRET",
-		"RCLONE_CONFIG_AERONAUTES_DST_AUTH_TOKEN=tok-dst-SECRET",
-		"RCLONE_CONFIG_AERONAUTES_SRC_STORAGE_URL=http://src/v1/AUTH_a",
+		"RCLONE_CONFIG_AERONAUTES_SRC_STORAGE_URL=http://127.0.0.1:",
 		"RCLONE_CONFIG_AERONAUTES_SRC_TYPE=swift",
 	} {
 		if !strings.Contains(string(env), want) {
 			t.Errorf("env missing %q", want)
 		}
+	}
+	if strings.Contains(string(env), "SECRET") || strings.Contains(string(env), "https://") {
+		t.Fatal("upstream credentials or endpoint reached the child environment")
+	}
+	values := map[string]string{}
+	for line := range strings.SplitSeq(string(env), "\n") {
+		key, value, _ := strings.Cut(line, "=")
+		values[key] = value
+	}
+	for _, role := range []string{"SRC", "DST"} {
+		prefix := "RCLONE_CONFIG_AERONAUTES_" + role
+		if len(values[prefix+"_AUTH_TOKEN"]) < 26 {
+			t.Fatal("child gateway token missing")
+		}
+		endpoint, err := url.Parse(values[prefix+"_STORAGE_URL"])
+		if err != nil || endpoint.Hostname() != "127.0.0.1" || endpoint.Scheme != "http" {
+			t.Fatal("child endpoint is not the literal loopback gateway")
+		}
+	}
+	if values["RCLONE_CONFIG_AERONAUTES_SRC_AUTH_TOKEN"] == values["RCLONE_CONFIG_AERONAUTES_DST_AUTH_TOKEN"] {
+		t.Fatal("remotes share a local token")
 	}
 
 	// The files list rode along with exact names.
@@ -125,10 +147,9 @@ func TestNewlineNamesRefused(t *testing.T) {
 	}
 }
 
-func TestTLSConfigFile(t *testing.T) {
-	// IDENTICAL trust on both remotes (the same CA bundle content at two
-	// paths) is the ONLY multi-remote TLS-override shape one child may
-	// carry (§12.3).
+func TestChildConfigOmitsUpstreamTLS(t *testing.T) {
+	// Equal captured trust remains a supported pairing, even though the
+	// gateway now keeps the CA out of the child configuration.
 	bin := stub(t, "v1.74.3",
 		`CONF=$(printf '%s\n' "$@" | grep -A1 -x -- --config | tail -1); cp "$CONF" "$(dirname "$0")/conf"`)
 	r, err := NewRunner(Options{Binary: bin})
@@ -137,8 +158,11 @@ func TestTLSConfigFile(t *testing.T) {
 	}
 	dir := t.TempDir()
 	caA, caB := filepath.Join(dir, "a.pem"), filepath.Join(dir, "b.pem")
+	server := httptest.NewTLSServer(nil)
+	defer server.Close()
+	ca := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw})
 	for _, p := range []string{caA, caB} {
-		if err := os.WriteFile(p, []byte("-----BEGIN CERTIFICATE-----\nsame\n-----END CERTIFICATE-----\n"), 0o600); err != nil {
+		if err := os.WriteFile(p, ca, 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -153,16 +177,8 @@ func TestTLSConfigFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := string(conf)
-	for _, want := range []string{"[aeronautes_src]", "override.ca_cert = " + caA,
-		"[aeronautes_dst]", "override.ca_cert = " + caB, "storage_url = https://src/v1/AUTH_a"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("config missing %q:\n%s", want, body)
-		}
-	}
-	// The config file carries NO secrets (§26.2): tokens stay in env.
-	if strings.Contains(body, "SECRET") || strings.Contains(body, "auth_token") {
-		t.Fatalf("secret material in the config file:\n%s", body)
+	if len(conf) != 0 {
+		t.Fatal("child config should be empty; upstream trust belongs to the gateway")
 	}
 }
 

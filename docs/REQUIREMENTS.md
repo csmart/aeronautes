@@ -11,8 +11,7 @@ gates can reference stable IDs instead of re-reading ~11k words of prose.
 
 ## Security & secrets
 
-- **K-SEC-001** — rclone MUST NOT receive the durable Swift auth key; it gets a pre-authenticated
-  `storage_url` + short-lived `token` only. (§26.2)
+- **K-SEC-001** — rclone MUST NOT receive the durable Swift auth key or real Swift token; it gets an invocation-local gateway `storage_url` and random local `token` only. (§26.2, ADR 0014)
 - **K-SEC-002** — The frontend/webview MUST NOT receive passwords, keys, tokens, keychain handles,
   or the rclone credential environment. (§55)
 - **K-SEC-003** — Secrets MUST NOT be stored in SQLite. Credentials live in the OS Secret Service, an
@@ -52,11 +51,10 @@ gates can reference stable IDs instead of re-reading ~11k words of prose.
 - **K-SEC-007** — rclone tokens MUST be passed by environment named-remote config only, never in argv;
   the child MUST run with a job-scoped empty config, never inheriting the user's `rclone.conf`. (§26.2)
 - **K-SEC-008** — Per-bookmark TLS policy MUST be applied per-remote, never process-globally.
-  Seam-spike verdict (rclone 1.74.3): `override.*` is honoured only via config file AND its trust
-  leaks across remotes within one child — so endpoints sharing identical TLS trust may share a
-  child (override in the job-scoped config, token still env-only); endpoints with **different**
-  trust MUST split into two single-remote children or the pairing is rejected. Never broaden
-  trust process-wide. (§12.3, §44.1)
+  The parent gateway applies captured trust to its fixed upstream; child TLS overrides are unused. (§12.3, §44.1, ADR 0014)
+  The historical seam found that rclone 1.74.3 `override.*` leaks trust across remotes in one child.
+  Until a separately reviewed compatibility change, endpoints with **different** trust MUST split into two single-remote children or the pairing is rejected.
+  Never broaden trust process-wide.
 - **K-XFER-010** — Cross-bookmark Copy MUST preserve object metadata explicitly (rclone's Swift path
   drops it): HEAD source, apply the §17.1 writable-header set; the destination keeps its own
   `X-Object-Manifest`; if data-only, the planner MUST preview every dropped category. (§27.4)
