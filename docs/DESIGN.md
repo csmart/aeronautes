@@ -4257,6 +4257,11 @@ Their `swift.Connection.Call` token selection remains library-managed and can ra
 CA files remain published by content identity; each gateway reads the captured bytes once for its trust configuration and identity check.
 This does not yet revoke held sessions after a bookmark edit or bind stored keys to a configuration generation; those P10 lifecycle and secret-store fixes remain open.
 
+The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
+The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
+Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
+This corrects test synchronisation only; the P12/P13 durable outcome and audit contract remains open.
+
 ## 66. Final project statement
 
 Aeronautes should feel like the Swift operator tool that should already exist:

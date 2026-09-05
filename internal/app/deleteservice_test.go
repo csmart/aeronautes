@@ -123,6 +123,7 @@ func TestEmptyAndDeleteContainerJobs(t *testing.T) {
 	if job.State != "complete" {
 		t.Fatalf("empty job = %+v", job)
 	}
+	awaitJobAudit(t, h, jobID, "delete.empty.complete")
 	after, err := session.ContainerDetail(ctx, "media")
 	if err != nil {
 		t.Fatal(err)
@@ -147,7 +148,11 @@ func TestEmptyAndDeleteContainerJobs(t *testing.T) {
 	}
 
 	// Audit carries the destructive trail.
-	events, _ := h.auditSvc.Recent(ctx, 20)
+	awaitJobAudit(t, h, jobID, "delete.delete_container.complete")
+	events, err := h.auditSvc.Recent(ctx, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var starts, completes int
 	for _, e := range events {
 		if strings.HasPrefix(e.Operation, "delete.") && strings.HasSuffix(e.Operation, ".start") {
@@ -372,6 +377,7 @@ func TestAuditSearch(t *testing.T) {
 		t.Fatal(err)
 	}
 	awaitTerminal(t, h, jobID)
+	awaitJobAudit(t, h, jobID, "delete.prefix.complete")
 	h.mock.PutObject("media", "ext.bin", swifttest.Object{Manifest: "media_segments/x/"})
 	_, _ = service.DeleteManifestWithSegments(ctx, SegmentsDeleteRequestDTO{
 		BookmarkID: bookmark, Container: "media", Name: "ext.bin", Confirm: "ext.bin",
