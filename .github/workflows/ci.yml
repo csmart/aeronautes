@@ -192,6 +192,7 @@ jobs:
         run: |
           ./scripts/fetch-rclone.sh linux amd64 "$RUNNER_TEMP/rclone-pin"
           echo "$RUNNER_TEMP/rclone-pin" >> "$GITHUB_PATH"
+          echo "AERONAUTES_OFFICIAL_RCLONE_DIR=$RUNNER_TEMP/rclone-pin" >> "$GITHUB_ENV"
       # Named honestly: this runs the internal Go suite against SAIO. It is
       # NOT the "full" suite — the rclone compatibility matrix stays gated
       # behind AERONAUTES_MATRIX_RCLONE and is not run here (codex war-room
