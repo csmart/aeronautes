@@ -105,12 +105,12 @@ func New(cfg Config) (*Session, error) {
 // re-authenticates once and replays when a request meets 401 (§9.2); the
 // authenticator preserves the storage-URL override across those re-auths.
 func (s *Session) Authenticate(ctx context.Context) error {
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
 	if err := s.conn.Authenticate(ctx); err != nil {
 		return Normalize(err)
 	}
-	s.refreshMu.Lock()
 	s.authedAt = time.Now()
-	s.refreshMu.Unlock()
 	return nil
 }
 
@@ -124,11 +124,13 @@ func (s *Session) RefreshIfStale(ctx context.Context, margin time.Duration) erro
 	s.refreshMu.Lock()
 	defer s.refreshMu.Unlock()
 	expires := s.auth.snapshot().expires
-	stale := false
+	// ForceReauth clears authedAt even when the rejected token claims
+	// a future expiry. Only successful authentication clears that state.
+	stale := s.authedAt.IsZero()
 	if !expires.IsZero() {
-		stale = time.Until(expires) < margin
+		stale = stale || time.Until(expires) < margin
 	} else {
-		stale = s.authedAt.IsZero() || time.Since(s.authedAt) > 10*time.Minute
+		stale = stale || time.Since(s.authedAt) > 10*time.Minute
 	}
 	if !stale {
 		return nil

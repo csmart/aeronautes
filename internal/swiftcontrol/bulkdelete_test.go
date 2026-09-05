@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -110,35 +111,43 @@ func TestAuthenticateRefusesRedirect(t *testing.T) {
 }
 
 func TestForceReauthChangesTheToken(t *testing.T) {
-	// F-06: after ForceReauth, the next RefreshIfStale must perform a
-	// REAL authentication and carry a different token — never replay
-	// the rejected one.
-	var authCalls int
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/auth/") {
-			authCalls++
-			w.Header().Set("X-Storage-Url", "http://"+r.Host+"/v1/AUTH_test")
-			w.Header().Set("X-Auth-Token", fmt.Sprintf("tok-%d", authCalls))
-		}
-	}))
-	defer srv.Close()
-	session := mustSession(t, srv.URL)
-	first := session.AuthToken()
-
-	// A young token is deliberately NOT refreshed…
-	if err := session.RefreshIfStale(context.Background(), time.Minute); err != nil {
-		t.Fatal(err)
-	}
-	if session.AuthToken() != first {
-		t.Fatal("young token refreshed without cause")
-	}
-	// …but after ForceReauth the same call authenticates anew.
-	session.ForceReauth()
-	if err := session.RefreshIfStale(context.Background(), time.Minute); err != nil {
-		t.Fatal(err)
-	}
-	if session.AuthToken() == first || session.AuthToken() == "" {
-		t.Fatalf("token after ForceReauth = %q, want a new one (first %q)", session.AuthToken(), first)
+	for _, expires := range []string{"", "3600", fmt.Sprint(time.Now().Add(time.Hour).Unix())} {
+		t.Run("expiry="+expires, func(t *testing.T) {
+			var authCalls int
+			var fail atomic.Bool
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				authCalls++
+				if fail.Load() {
+					http.Error(w, "synthetic auth failure", http.StatusServiceUnavailable)
+					return
+				}
+				w.Header().Set("X-Storage-Url", "http://"+r.Host+"/v1/AUTH_test")
+				w.Header().Set("X-Auth-Token", fmt.Sprintf("tok-%d", authCalls))
+				w.Header().Set("X-Auth-Token-Expires", expires)
+			}))
+			defer srv.Close()
+			session := mustSession(t, srv.URL)
+			first := session.AuthToken()
+			ctx := context.Background()
+			if err := session.RefreshIfStale(ctx, time.Minute); err != nil {
+				t.Fatal(err)
+			}
+			if session.AuthToken() != first {
+				t.Fatal("young token refreshed without cause")
+			}
+			session.ForceReauth()
+			fail.Store(true)
+			if err := session.RefreshIfStale(ctx, time.Minute); err == nil {
+				t.Fatal("rejected token survived forced refresh")
+			}
+			fail.Store(false)
+			if err := session.RefreshIfStale(ctx, time.Minute); err != nil {
+				t.Fatal(err)
+			}
+			if session.AuthToken() == first || session.AuthToken() == "" {
+				t.Fatal("refresh after auth failure reused the rejected token")
+			}
+		})
 	}
 }
 
