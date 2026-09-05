@@ -156,18 +156,16 @@ func (s *TransferService) PreflightDownload(ctx context.Context, req DownloadReq
 
 // localEngine builds the single-remote engine for the bookmark's end;
 // remotes resolve per spawn with token refresh (§26.2).
-func (s *TransferService) localEngine(ctx context.Context, bookmarkID string, session *swiftcontrol.Session, remoteName string, settings TransferSettingsDTO) (local.Engine, error) {
-	insecure, caFile, err := s.connections.TLSRemote(ctx, bookmarkID)
-	if err != nil {
-		return nil, err
-	}
+func (s *TransferService) localEngine(ctx context.Context, session *swiftcontrol.Session, remoteName string, settings TransferSettingsDTO) (local.Engine, error) {
 	source := func(spawnCtx context.Context) ([]rclone.Remote, error) {
-		if err := session.RefreshIfStale(spawnCtx, tokenRefreshMargin); err != nil {
-			return nil, fmt.Errorf("token refresh: %w", err)
+		remote, err := s.connections.EngineRemote(spawnCtx, session, remoteName)
+		if err != nil {
+			return nil, fmt.Errorf("credentials: %w", err)
 		}
-		return []rclone.Remote{{
-			Name: remoteName, StorageURL: session.StorageURL(), Token: session.AuthToken(), InsecureTLS: insecure, CACertFile: caFile,
-		}}, nil
+		return []rclone.Remote{remote}, nil
+	}
+	if _, err := source(ctx); err != nil {
+		return nil, err
 	}
 	if s.engineFactory != nil {
 		return s.engineFactory(source, settings.options())
@@ -210,7 +208,7 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 	if err := req.Settings.Validate(); err != nil {
 		return "", err
 	}
-	engine, err := s.localEngine(ctx, req.BookmarkID, session, "aeronautes_dst", req.Settings)
+	engine, err := s.localEngine(ctx, session, "aeronautes_dst", req.Settings)
 	if err != nil {
 		return "", fmt.Errorf("transfer engine: %w", err)
 	}
@@ -281,7 +279,7 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 	if err := req.Settings.Validate(); err != nil {
 		return "", err
 	}
-	engine, err := s.localEngine(ctx, req.BookmarkID, session, "aeronautes_src", req.Settings)
+	engine, err := s.localEngine(ctx, session, "aeronautes_src", req.Settings)
 	if err != nil {
 		return "", fmt.Errorf("transfer engine: %w", err)
 	}

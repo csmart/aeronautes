@@ -76,17 +76,17 @@ func (s *Session) SLOManifest(ctx context.Context, container, name string) (*SLO
 	// The library's operation wrappers authenticate lazily; a direct Call
 	// (needed for the query parameter) must do the same, and refresh its
 	// target on mid-call re-auth.
-	if !s.conn.Authenticated() {
-		if err := s.Authenticate(ctx); err != nil {
-			return nil, err
-		}
+	credentials, err := s.Credentials(ctx, 0)
+	if err != nil {
+		return nil, err
 	}
-	resp, _, err := s.conn.Call(ctx, s.conn.StorageUrl, swift.RequestOpts{
+	resp, _, err := s.conn.Call(ctx, credentials.StorageURL, swift.RequestOpts{
 		Container:  container,
 		ObjectName: name,
 		Operation:  "GET",
 		Parameters: url.Values{"multipart-manifest": []string{"get"}},
-		OnReAuth:   func() (string, error) { return s.conn.StorageUrl, nil },
+		// Call holds the connection's auth lock while invoking this callback.
+		OnReAuth: func() (string, error) { return s.auth.snapshot().storageURL, nil },
 	})
 	if err != nil {
 		return nil, Normalize(err)

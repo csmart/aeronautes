@@ -262,39 +262,34 @@ func (s *TransferService) setRecommendationSource(f func(bookmarkID string) *Tra
 // child gets tokens refreshed against expiry first (§26.2 — the child
 // cannot re-authenticate itself).
 func (s *TransferService) buildEngine(ctx context.Context, req CopyRequestDTO, src, dst *swiftcontrol.Session) (transfercopy.Engine, error) {
-	srcInsecure, srcCA, err := s.connections.TLSRemote(ctx, req.SourceBookmarkID)
-	if err != nil {
-		return nil, err
+	source := func(spawnCtx context.Context) ([]rclone.Remote, error) {
+		srcRemote, err := s.connections.EngineRemote(spawnCtx, src, "aeronautes_src")
+		if err != nil {
+			return nil, fmt.Errorf("source credentials: %w", err)
+		}
+		dstRemote, err := s.connections.EngineRemote(spawnCtx, dst, "aeronautes_dst")
+		if err != nil {
+			return nil, fmt.Errorf("destination credentials: %w", err)
+		}
+		return []rclone.Remote{srcRemote, dstRemote}, nil
 	}
-	dstInsecure, dstCA, err := s.connections.TLSRemote(ctx, req.DestBookmarkID)
+	remotes, err := source(ctx)
 	if err != nil {
 		return nil, err
 	}
 	// §12.3: one child may serve both endpoints only when their TLS
 	// trust identities are EQUAL — refuse here so the operator sees the
 	// reason at start, not a child-spawn failure mid-job.
-	srcTrust, err := rclone.TrustIdentity(srcInsecure, srcCA)
+	srcTrust, err := rclone.TrustIdentity(remotes[0].InsecureTLS, remotes[0].CACertFile)
 	if err != nil {
 		return nil, err
 	}
-	dstTrust, err := rclone.TrustIdentity(dstInsecure, dstCA)
+	dstTrust, err := rclone.TrustIdentity(remotes[1].InsecureTLS, remotes[1].CACertFile)
 	if err != nil {
 		return nil, err
 	}
 	if srcTrust != dstTrust {
 		return nil, errors.New("the two bookmarks carry different TLS trust (custom CA or insecure): one transfer child cannot serve both safely (§12.3) — align their trust settings or move data via a location both trust")
-	}
-	source := func(spawnCtx context.Context) ([]rclone.Remote, error) {
-		if err := src.RefreshIfStale(spawnCtx, tokenRefreshMargin); err != nil {
-			return nil, fmt.Errorf("source token refresh: %w", err)
-		}
-		if err := dst.RefreshIfStale(spawnCtx, tokenRefreshMargin); err != nil {
-			return nil, fmt.Errorf("destination token refresh: %w", err)
-		}
-		return []rclone.Remote{
-			{Name: "aeronautes_src", StorageURL: src.StorageURL(), Token: src.AuthToken(), InsecureTLS: srcInsecure, CACertFile: srcCA},
-			{Name: "aeronautes_dst", StorageURL: dst.StorageURL(), Token: dst.AuthToken(), InsecureTLS: dstInsecure, CACertFile: dstCA},
-		}, nil
 	}
 	effective, err := s.effectiveSettings(req)
 	if err != nil {

@@ -4231,6 +4231,15 @@ The P09 child-transport proposal is [ADR 0014](adr/0014-child-storage-gateway.md
 The real Swift token-redirect reproduction also fails on the verified 1.75.1 candidate, so the proposal uses a narrow per-invocation gateway instead of treating a version upgrade as the fix.
 Implementation and permanent compatibility/security regressions are pending.
 
+The first P10 prerequisites make forced invalidation override advertised token expiry and retain it after failed authentication.
+The Go-only `Session.Credentials` operation now refreshes and returns a coherent URL/token/expiry tuple with copied trust from the session's construction config.
+Both engine builders and the raw native bulk-delete and symlink-read paths consume that tuple; an authentication error returns no credentials.
+Those raw requests refresh the complete tuple after a 401 and retain invalidation if authentication fails or the retry is rejected.
+Container/object metadata POST and SLO-manifest reads now use snapshot URLs, including after library reauthentication, removing direct reads of mutable connection fields.
+Their `swift.Connection.Call` token selection remains library-managed and can race with an independently refreshed URL generation, as can the library's own operation wrappers; closing that library request-pairing gap remains P10 work.
+Until the gateway replaces the direct child path, CA files are published by content identity so another bundle cannot replace an existing child's trust.
+This does not yet revoke held sessions after a bookmark edit or bind stored keys to a configuration generation; those P10 lifecycle and secret-store fixes remain open.
+
 ## 66. Final project statement
 
 Aeronautes should feel like the Swift operator tool that should already exist:
