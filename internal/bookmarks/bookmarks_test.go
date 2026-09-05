@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -163,6 +164,51 @@ func TestValidation(t *testing.T) {
 		mutate(&b)
 		if _, err := st.Save(ctx, b, nil); err == nil {
 			t.Errorf("case %d: invalid bookmark saved", i)
+		}
+	}
+}
+
+func TestSavedEndpointPolicy(t *testing.T) {
+	cases := []struct {
+		name, endpoint string
+		mode           swiftcontrol.TLSMode
+		allowed        bool
+	}{
+		{"https", "https://swift.example/v1/AUTH_test", swiftcontrol.TLSModeSystem, true},
+		{"loopback", "http://127.0.0.1/v1/AUTH_test", swiftcontrol.TLSModeSystem, true},
+		{"private without opt in", "http://10.0.0.1/v1/AUTH_test", swiftcontrol.TLSModeSystem, false},
+		{"private with opt in", "http://10.0.0.1/v1/AUTH_test", swiftcontrol.TLSModeInsecure, true},
+		{"public insecure", "http://192.0.2.10/v1/AUTH_test", swiftcontrol.TLSModeInsecure, false},
+		{"missing hostname", "https://:443/v1/AUTH_test", swiftcontrol.TLSModeSystem, false},
+		{"empty query", "https://swift.example/v1/AUTH_test?", swiftcontrol.TLSModeSystem, false},
+	}
+	for _, tc := range cases {
+		for _, override := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/override=%t", tc.name, override), func(t *testing.T) {
+				st, _, _ := newTestStore(t)
+				b := sample()
+				b.TLSMode = tc.mode
+				if override {
+					b.AuthURL = "http://127.0.0.1/auth/v1.0"
+					b.StorageURLOverride = tc.endpoint
+				} else {
+					b.AuthURL = tc.endpoint
+				}
+				saved, err := st.Save(context.Background(), b, []byte("synthetic-key"))
+				if (err == nil) != tc.allowed {
+					t.Fatalf("Save error = %v, allowed = %t", err, tc.allowed)
+				}
+				if tc.allowed {
+					if _, err := swiftcontrol.New(saved.SwiftConfig([]byte("synthetic-key"), nil)); err != nil {
+						t.Fatalf("saved endpoint refused by session: %v", err)
+					}
+				} else {
+					rows, err := st.List(context.Background())
+					if err != nil || len(rows) != 0 {
+						t.Fatalf("invalid bookmark persisted: count=%d, error=%v", len(rows), err)
+					}
+				}
+			})
 		}
 	}
 }

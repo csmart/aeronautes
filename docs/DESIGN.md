@@ -4202,6 +4202,27 @@ Its [proposed remediation sequence](audits/2026-09-05/remediation-plan.md) inclu
 The audit records evidence and a plan; it does not implement fixes or supersede locked decisions.
 Conflicting ownership/concurrency/durability contracts must be resolved in this design and an ADR before dependent implementation.
 
+### 65.11. Audit remediation
+
+The owner authorised implementation of the [5 September audit plan](https://github.com/csmart/aeronautes/blob/c3da04c45fd214ed166118c0debc12d3a9996763/docs/audits/2026-09-05/remediation-plan.md).
+Implement each logical fix with a failing-before/passing-after regression and independent local review before pushing.
+Keep the valuable-data release hold until the plan's safety and release gates have evidence.
+
+The first commit sequence follows the plan's security-first order:
+
+1. P09: apply the saved-endpoint policy to returned storage URLs and every reauthentication; keep the no-HTTPS-downgrade rule.
+2. P09: close the real rclone redirect path, recording any required transport/engine decision before changing that boundary.
+3. P10: bind saved credentials to their endpoint, account and trust identity, then address session acquisition and credential-store failure as separate fixes.
+4. P02/P03: correct snapshot encoding and add the minimum deterministic HTTP barriers needed by the first containment regressions.
+5. P01/P04/P05: record the concurrency, ownership and durability contract, then retain uncertain recovery residue and contain unsupported destructive races.
+
+P09's endpoint oracle is the existing bookmark policy: HTTPS is accepted; loopback HTTP is accepted; literal private-address HTTP needs explicit insecure mode; public HTTP is refused even in insecure mode.
+The effective storage endpoint, including an override, must also preserve HTTPS when authentication uses HTTPS.
+A lab using private-IP HTTP authentication that advertises a hostname-based HTTP storage endpoint must use HTTPS or configure a literal private-IP storage override with insecure mode.
+DNS resolution is not a lasting authority to send credentials in cleartext.
+An accepted override takes precedence even when the advertised endpoint is missing or forbidden, including on reauthentication.
+Subsequent work follows the full plan's dependencies; a completed security slice does not imply the harness, destructive paths or release are complete.
+
 ## 66. Final project statement
 
 Aeronautes should feel like the Swift operator tool that should already exist:
