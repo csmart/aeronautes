@@ -11,10 +11,10 @@ on:
 permissions:
   contents: read
 
-# A newer push to the same ref supersedes an in-flight run.
+# Keep every master result; only newer PR revisions supersede earlier runs.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   go:
