@@ -4261,6 +4261,8 @@ The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/ru
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
 This corrects test synchronisation only; the P12/P13 durable outcome and audit contract remains open.
+The [subsequent PR run](https://github.com/csmart/aeronautes/actions/runs/33991688319) exposed a second test ordering assumption: gateway cancellation can flush an HTTP 502 before closing the child socket.
+The deadline test now drains that bounded response and still requires socket closure and listener refusal within the existing deadline; disabling revocation must fail.
 
 ## 66. Final project statement
 
