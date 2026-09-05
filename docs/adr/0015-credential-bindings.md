@@ -27,6 +27,7 @@ A change in custom CA bytes or a transition between system, custom and insecure 
 
 Changing that binding while retaining a stored credential requires key reentry.
 Refuse the whole edit when the caller supplies no replacement key; do not first change metadata, clear the old key or disconnect a valid unchanged bookmark.
+Refused edits do not invalidate the existing connection.
 The caller's `HasCredential` field never determines credential presence or authorises retention.
 Display name and performance or upload preferences do not change the credential binding.
 The editor must explain when reentry is required and retain a useful error if the backend refuses an edit.
@@ -38,7 +39,9 @@ Give each replacement credential a fresh random reference in the existing Secret
 Never overwrite the value at a reference that a published bookmark or in-flight snapshot can still name.
 The bookmark's configuration and its selected reference are published in one SQLite transaction.
 Read configuration, reference and generation together; load the key and custom CA using those captured references.
-An old reference that has already been retired may cause acquisition to fail and retry, but must never resolve to a replacement key under the old configuration.
+Snapshot acquisition holds a reference lease from that read until the external key read finishes or is abandoned, coordinated with publication and cleanup.
+After releasing the lease, a snapshot must not read that reference again without reacquiring it through the current generation.
+A retired generation may cause acquisition to fail and retry, but must never resolve to a replacement key under the old configuration.
 The existing `bookmark/<id>` references remain readable until a replacement or deletion retires them.
 Do not require users to reenter every unchanged legacy credential merely to upgrade the schema.
 No reference, key, token or credential-bearing configuration is returned through a frontend DTO.
@@ -56,7 +59,9 @@ Credential replacement follows this order:
 
 1. Validate the requested binding and record a fresh prepared reference durably.
 2. Write the new key at that reference while the old reference remains unchanged.
-3. Publish the new configuration, generation and reference atomically, and record the old reference as retired in the same durable transaction.
+3. Inside the publication transaction, require the bookmark row to exist and its generation to equal the generation captured during validation.
+   Assign the next generation from that published value, publish the new configuration and reference, and retire the reference read from that same row in the same durable transaction.
+   If the comparison fails, refuse the edit and leave its prepared replacement tracked for cleanup.
 4. Revoke the previous generation's logical authority, then attempt external cleanup of references proven unreferenced.
 5. Retain failed cleanup records for retry and report the committed result with cleanup pending, rather than presenting a successful publication as an unchanged failed edit.
 
@@ -64,7 +69,12 @@ If external Put fails or publication does not complete, keep the previously publ
 An ambiguous SQL commit error requires checking the published reference before compensation; do not delete a key that might have been selected by the commit.
 If that check fails, retain the candidate and journal record for recovery.
 Report the publication outcome as unresolved and pause use of that bookmark until its published generation can be revalidated; do not claim an unchanged failure or a successful save.
+An edit never inserts a bookmark row; creation uses a fresh backend-generated ID.
+A Save that loses a race with another credential publication or deletion must not silently retry against the changed binding or recreate the deleted row.
 The cleanup worker must coordinate with active Save operations so it cannot mistake a still-running prepared write for abandoned work.
+For cleanup, a reference remains in use if it is published, belongs to an active prepared write, has a snapshot-acquisition lease, or is pinned by an admitted job until that job and its cancellation cleanup finish.
+Claiming a reference for cleanup must check this set under the same coordination used to acquire leases, publish credentials and admit jobs; no new user can acquire a claimed reference.
+Release that coordination before calling the external store, retaining the durable cleanup record until removal is confirmed.
 Do not hold the global SQLite writer transaction while waiting for an OS keychain operation or prompt.
 
 Deletion atomically removes the bookmark's logical authority and records its credential for cleanup.
@@ -72,6 +82,8 @@ Removing the bookmark row must not cascade-delete the cleanup record.
 Revocation occurs before the service reports the logical deletion, even when external key removal fails.
 Retries operate on the cleanup record and never recreate the bookmark or reactivate its sessions.
 The user can distinguish complete deletion from logical deletion with pending credential cleanup.
+An ambiguous deletion commit revokes in-memory authority and pauses acquisition while the outcome is unresolved.
+Re-read the bookmark and cleanup record before declaring deletion or attempting physical cleanup; an unsuccessful re-read retains the journal evidence and cannot justify deleting a possibly published key.
 
 The active secret backend needs an explicit identity for journal routing; a session-only store is not the same authority as the persistent OS keychain.
 Ephemeral identity must include its lifetime so recovery can distinguish an ended session from an unavailable persistent backend.
@@ -84,13 +96,14 @@ This does not select or implement the vault in ADR 0006.
 
 Each published credential binding has a monotonic generation, including replacement of a key without an endpoint change.
 Session acquisition and publication must verify that their captured generation is still current after any blocking read or authentication.
+Each session cache entry records that generation, so cache lookup and revocation use the same identity as acquisition.
 Revocation covers active, cached, held and still-authenticating sessions, including native and child request admission.
 After an edit or logical deletion returns, an obsolete generation cannot admit a new request.
 An already admitted remote operation can have effects despite cancellation; its outcome still needs the normal transfer and recovery rules.
 Do not claim that revocation rolls those effects back.
 
-Coordinate job admission with identity-changing edits and deletion so that checking for active jobs and accepting a new job cannot race.
-Refuse a binding change or deletion while an admitted non-terminal job still uses it, and require cancellation to finish before retrying that edit.
+Coordinate job admission with credential-generation changes and deletion so that checking for active jobs and accepting a new job cannot race.
+Refuse a binding change, key-only replacement or deletion while an admitted job still uses the bookmark, and require both the job and its cancellation cleanup to finish before retrying that edit.
 Cosmetic changes can retain the binding and need not cancel a job.
 This preserves the existing child cancellation cleanup grace instead of revoking a running transfer's cleanup authority during an edit.
 Queued work must retain its reviewed generation and refuse a changed or deleted one rather than silently acquiring the bookmark's replacement identity.
@@ -112,6 +125,8 @@ Permanent regressions must cover the service-level retarget attack with zero req
 Inject failure before and after each SQL/keychain boundary, including a Put that takes effect and then fails, publication failure, ambiguous commit and failed cleanup.
 Prove that old credentials remain intact on refused or unpublished edits and that compensation cannot remove the published key.
 Exercise concurrent Save and snapshot acquisition, delayed authentication racing edit/delete, held-session use after deletion, and queued job admission racing a binding change.
+Prove that two Saves capturing the same generation cannot both publish, a Save racing deletion cannot recreate its row, and the losing candidate remains tracked without retiring the winner's key.
+Exercise key-only replacement during a job and cleanup racing both snapshot leases and cancellation cleanup; no reference still in use may be removed.
 Restart tests must find prepared or retired synthetic keys without restoring deleted authority, and session fallback must not erase persistent cleanup evidence.
 Verify that keys, tokens and reference handles never reach DTOs, returned errors or audit records.
 Label fault injection, persistent test-backend recovery, process crashes, actual native keychains and power-loss evidence separately.
