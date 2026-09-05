@@ -7,6 +7,7 @@ package swiftcontrol
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -57,6 +58,14 @@ type Session struct {
 // connection is preset with Aeronautes' own v1 authenticator so token
 // expiry is captured and the storage-URL override holds across re-auths.
 func New(cfg Config) (*Session, error) {
+	if err := ValidateEndpointURL(cfg.AuthURL, cfg.TLS.Mode); err != nil {
+		return nil, fmt.Errorf("auth URL: %w", err)
+	}
+	if cfg.StorageURLOverride != "" {
+		if err := ValidateStorageURL(cfg.AuthURL, cfg.StorageURLOverride, cfg.TLS.Mode); err != nil {
+			return nil, err
+		}
+	}
 	transport, err := cfg.TLS.transport()
 	if err != nil {
 		return nil, err
@@ -67,6 +76,7 @@ func New(cfg Config) (*Session, error) {
 		username:  cfg.Username,
 		apiKey:    cfg.APIKey,
 		userAgent: userAgent,
+		tlsMode:   cfg.TLS.Mode,
 		override:  cfg.StorageURLOverride,
 	}
 	return &Session{
