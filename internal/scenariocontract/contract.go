@@ -152,8 +152,9 @@ var inventory = map[string]Action{
 	// partial/retry/cancel via an explicit contract.
 	"DeleteService.DeleteManifestWithSegments": {Kind: Destructive, Scenarios: []string{"happy", "refusal", "conflict", "partial", "retry", "cancel"}},
 	// JobService
-	"JobService.Get":  {Kind: Read},
-	"JobService.List": {Kind: Read},
+	"JobService.Get":            {Kind: Read},
+	"JobService.List":           {Kind: Read},
+	"JobService.RecoveryStatus": {Kind: Read, Scenarios: []string{"happy", "refusal"}},
 	// FindService — StartFind launches a cancellable async scan.
 	"FindService.StartFind":  {Kind: Read, Scenarios: []string{"happy", "cancel"}},
 	"FindService.FindStatus": {Kind: Read},

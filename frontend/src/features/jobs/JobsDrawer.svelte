@@ -64,12 +64,13 @@
   }
 
   onMount(() => {
-    void browser.loadJobs();
+    const refresh = () => {
+      void browser.loadJobs();
+      void browser.loadRecoveryStatus();
+    };
+    refresh();
     void browser.loadAppSettings();
-    const tick = setInterval(
-      () => void browser.loadJobs(),
-      1500,
-    );
+    const tick = setInterval(refresh, 1500);
     return () => clearInterval(tick);
   });
 
@@ -123,6 +124,11 @@
       {/if}
       {#if browser.auditEvents.length > 0}
         · {browser.auditEvents.length} recent changes
+      {/if}
+      {#if browser.recoveryStatusError}
+        · Recovery status unavailable
+      {:else if browser.recoveryStatus && browser.recoveryStatus.records > 0}
+        · {browser.recoveryStatus.records} recovery {browser.recoveryStatus.records === 1 ? "record" : "records"} retained
       {/if}
     </span>
     <span class="hint">{open ? "▾ hide" : "▸ jobs & changes"}</span>
@@ -188,6 +194,22 @@
       </div>
 
       {#if tab === "jobs"}
+        <div class="recovery" role="status" aria-busy={browser.recoveryStatusLoading}>
+          {#if browser.recoveryStatusError}
+            <p>Recovery status is unavailable. Retained counts are unknown.</p>
+          {:else if browser.recoveryStatus}
+            <p>
+              {browser.recoveryStatus.records} recovery {browser.recoveryStatus.records === 1 ? "record" : "records"} retained across
+              {browser.recoveryStatus.jobs} finished {browser.recoveryStatus.jobs === 1 ? "job" : "jobs"} in all accounts.
+            </p>
+          {:else}
+            <p>Checking recovery status…</p>
+          {/if}
+          <p>
+            Remote residue is unverified. These counts describe records, not
+            objects or failed transfers. Automatic recovery cleanup is unavailable.
+          </p>
+        </div>
         {#if benchOpen}
           <form
             class="bench-form num"
@@ -224,7 +246,7 @@
         {#if browser.jobsError}
           <p class="empty">jobs unavailable: {browser.jobsError}</p>
         {:else if browser.jobs.length === 0}
-          <p class="empty">No jobs yet — start a copy from the working list.</p>
+          <p class="empty">No jobs in this view.</p>
         {:else}
           <div class="rows">
             {#each browser.jobs as job (job.id)}
@@ -280,6 +302,11 @@
                 {/if}
                 {#if job.error}
                   <p class="error">{job.error}</p>
+                {/if}
+                {#if !isActive(job) && job.recoveryRecords > 0}
+                  <p class="recovery-row">
+                    {job.recoveryRecords} recovery {job.recoveryRecords === 1 ? "record" : "records"} retained; remote residue is unverified.
+                  </p>
                 {/if}
                 {#if expanded === job.id}
                   <div class="config num">
@@ -429,6 +456,25 @@
     margin: 0;
     font-size: var(--text-sm);
     color: var(--color-text-faint);
+  }
+
+  .recovery {
+    padding: var(--space-2);
+    margin-bottom: var(--space-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+    color: var(--color-text-secondary);
+    font-size: var(--text-xs);
+  }
+
+  .recovery p {
+    margin: 0;
+  }
+
+  .recovery-row {
+    grid-column: 1 / -1;
+    margin: 0;
+    color: var(--color-text-secondary);
   }
 
   .job {

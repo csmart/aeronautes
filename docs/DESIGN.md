@@ -4382,7 +4382,10 @@ The separate P05 implementation must refuse unsupported overwrites and Mirror st
 Review each logical implementation and require catching system evidence, all five PR checks and green master before delivery.
 The first backend slice now removes recovery deletion, automatic authentication, record clearing and the background sweep, while preserving interrupted-job classification and reporting retention in its error text.
 The [validation record](experiments/2026-09-06-recovery-retention.md) includes unchanged audit probes, independent mock and real-Swift aliases, service-level upload and bookmark-change checks, a separate process reopening SQLite and deliberately restored unsafe behaviour.
-Read-only global and per-job status with accurate UI wording remains the next separately reviewed slice; P04 is not complete until that visibility and protected delivery pass.
+The status slice now replaces the unused startup hooks with local-only `JobService.RecoveryStatus` counts across all terminal jobs and a per-job count in Get/List.
+The jobs drawer shows both counts, preserves the transfer result, labels remote residue unverified and displays unavailable reads as unknown.
+The summary is independent of the account filter and recent-job window, and older frontend responses cannot replace newer results.
+The validation record includes two service scenarios, drawer tests and deliberately broken status variants; P04 still requires independent approval and protected delivery before completion.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.

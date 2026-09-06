@@ -811,7 +811,7 @@ func TestFindInContainer(t *testing.T) {
 	}
 }
 
-func TestCrashLitterSweep(t *testing.T) {
+func TestRecoveryStatusRetainsCrashData(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 	h.connect(t)
@@ -849,12 +849,12 @@ func TestCrashLitterSweep(t *testing.T) {
 		}
 	}
 
-	swept, err := h.transfer.sweepCrashLitter(ctx)
+	status, err := h.jobsSvc.RecoveryStatus(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if swept != 0 {
-		t.Fatalf("recovery reclaimed %d objects", swept)
+	if status != (RecoveryStatusDTO{Jobs: 1, Records: 4}) {
+		t.Fatalf("retained recovery = %+v", status)
 	}
 	session := h.transfer.connections.sessions[bookmark].session
 	if _, err := session.ObjectDetail(ctx, "backup", staging+"000001"); err != nil {
@@ -872,8 +872,8 @@ func TestCrashLitterSweep(t *testing.T) {
 	if pending, err := h.transfer.jobs.RecoveryPending(ctx); err != nil || len(pending) != 4 {
 		t.Fatalf("recovery records not retained: %+v, %v", pending, err)
 	}
-	if swept, _ := h.transfer.sweepCrashLitter(ctx); swept != 0 {
-		t.Fatalf("second sweep = %d", swept)
+	if next, err := h.jobsSvc.RecoveryStatus(ctx); err != nil || next != status {
+		t.Fatalf("repeated recovery status = %+v, %v", next, err)
 	}
 }
 
@@ -1119,7 +1119,7 @@ func TestCrashSweepCommitBoundary(t *testing.T) {
 		}
 	}
 
-	if _, err := h.transfer.sweepCrashLitter(ctx); err != nil {
+	if _, err := h.jobsSvc.RecoveryStatus(ctx); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1303,7 +1303,7 @@ func TestCrashSweepProductionSlashPair(t *testing.T) {
 		}
 	}
 
-	if _, err := h.transfer.sweepCrashLitter(ctx); err != nil {
+	if _, err := h.jobsSvc.RecoveryStatus(ctx); err != nil {
 		t.Fatal(err)
 	}
 	session := h.transfer.connections.sessions[bookmark].session
@@ -1360,16 +1360,15 @@ func TestMirrorSkipsReplacedDestination(t *testing.T) {
 	}
 }
 
-func TestRecoveryStepRetainsLaterRecords(t *testing.T) {
+func TestRecoveryStatusRetainsLaterRecords(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 	h.connect(t)
 	bookmark := h.transfer.connections.ActiveBookmarkID()
 
-	// Empty at first: a step finds nothing and does not error.
-	hadWork, err := h.transfer.recoverySweepStep(ctx)
-	if err != nil || hadWork {
-		t.Fatalf("empty step = (%v, %v), want (false, nil)", hadWork, err)
+	status, err := h.jobsSvc.RecoveryStatus(ctx)
+	if err != nil || status != (RecoveryStatusDTO{}) {
+		t.Fatalf("empty status = %+v, %v", status, err)
 	}
 
 	// A job "crashes later in the same run": terminal row + recovery
@@ -1394,9 +1393,9 @@ func TestRecoveryStepRetainsLaterRecords(t *testing.T) {
 	}
 
 	// Observing newly retained work cannot authorise its deletion.
-	hadWork, err = h.transfer.recoverySweepStep(ctx)
-	if err != nil || !hadWork {
-		t.Fatalf("post-crash step = (%v, %v), want (true, nil)", hadWork, err)
+	status, err = h.jobsSvc.RecoveryStatus(ctx)
+	if err != nil || status != (RecoveryStatusDTO{Jobs: 1, Records: 2}) {
+		t.Fatalf("post-crash status = %+v, %v", status, err)
 	}
 	session := h.transfer.connections.sessions[bookmark].session
 	if _, err := session.ObjectDetail(ctx, "backup_segments", prefix+"00000000"); err != nil {

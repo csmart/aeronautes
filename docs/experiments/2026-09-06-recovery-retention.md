@@ -1,15 +1,15 @@
 # Recovery retention
 
 Date: 2026-09-06.
-Scope: the first P04 backend slice under [ADR 0020](../adr/0020-recovery-containment.md), based on master `beaaf216ca9242f0c7289ebfda477c94f11c577b` after PR33.
-Global and per-job status with UI wording remains a separate implementation slice before P04 delivery.
+Scope: P04 backend containment and its separate read-only status/UI slice under [ADR 0020](../adr/0020-recovery-containment.md), based on master `beaaf216ca9242f0c7289ebfda477c94f11c577b` after PR33.
+The first backend slice is commit `e6e39954daa1ad7a`; its independently reproduced evidence is separated from the status follow-up below.
 
 ## Behaviour and boundary
 
 Reconciliation no longer deletes explicit staged-residue names, staging prefixes or captured segments.
-The historical recovery entry points perform only local database reads; they cannot authenticate through a changed bookmark, contact Swift, add an applied-cleanup audit event or clear records.
-Their existing interfaces remain conservative entry points so existing callers and the unchanged archived probes cannot regain cleanup through an alternate path.
-The background retry loop is removed.
+The first slice made historical recovery entry points perform only local database reads; they could no longer authenticate through a changed bookmark, contact Swift, add an applied-cleanup audit event or clear records.
+The status follow-up removes those unused application hooks, and the background retry loop remains removed.
+The domain reconciliation interfaces remain inert for their existing callers and unchanged archived probes.
 Copy, Mirror and local upload retain recovery rows even on completion, and the unused internal record-clearing method is removed.
 Local upload also stops its final namespace-wide staging sweep.
 Interrupted jobs still become failed with a finish time; their error now says that data and recovery records are retained and remote residue is unverified.
@@ -36,7 +36,7 @@ Despite its historical name, the second probe models missing history; it does no
 | Local upload service | `TestUploadRetainsFinalSweepResidue` plants an outside staging alias at the acknowledged engine-entry barrier, completes the upload, and proves the only storage delta is the intended new file while exact recovery rows remain |
 | Completed Copy and Mirror | Existing service tests now require retained recovery rows after successful completion |
 | Changed bookmark | `TestRecoveryDoesNotUseChangedBookmark` provides a usable replacement binding and data at both endpoints, then requires no recovery requests, no audit append, unchanged exact records and no storage delta |
-| Reopened process | `TestRecoveryRecordsAfterProcessReopen` launches an actual child test executable against the task-owned SQLite file; it classifies interruption without connection authority, preserves exact rows and leaves outside data unchanged |
+| Reopened process | `TestRecoveryRecordsAfterProcessReopen` launches an actual child test executable against the task-owned SQLite file; it classifies interruption without connection authority, preserves exact rows and leaves outside data unchanged; the status follow-up reads the new counts instead of invoking the removed hook |
 | Unavailable database | `TestRecoveryReadFailureIsNotEmpty` rejects cancelled reads and a closed database instead of reporting empty or successful recovery |
 
 The mock does not assemble SLO bodies itself; its SLO fixture carries the body while the independent reader checks the separately referenced leaf.
@@ -75,7 +75,42 @@ No variant is credited for a build failure, sandbox failure or test-process time
 
 ## Remaining work
 
-P04 still needs local-only summary and per-job counts with unavailable reads displayed as unknown, plus frontend stale-response and recent-job-limit checks.
+P04's local-only summary and per-job counts are implemented in the status follow-up below; independent approval and protected delivery remain the completion gate.
 P05 will separately refuse unsupported overwrite and Mirror work before irreversible effects.
 Original cleanup authority, exact remote outcomes, native writer quiescence, physical durability and the wider audit/release gates remain open.
 The valuable-data release hold remains.
+
+## Read-only status follow-up
+
+`JobService.RecoveryStatus` returns only the number of terminal jobs holding recovery records and the number of those records.
+One SQLite aggregate covers complete, partial, cancelled and failed jobs without fetching all rows or using the recent-job limit.
+Get/List include each job's record count in the same query that reads the job.
+The service needs no connection or credential service and returns a generic unavailable error when the database read fails.
+The former startup sweep hooks are removed instead of leaving an unused background-maintenance API beside the new status.
+The domain report's zero deletion counts remain for its callers and the original audit probes; they never claim that remote residue is absent.
+
+The drawer displays counts for all accounts above its filtered recent-job list and shows each terminal job's retained count without changing its existing result.
+An empty filtered list says there are no jobs in that view, avoiding a claim that no jobs exist elsewhere.
+The global notice explains that counts describe records, not objects or failed transfers, and that remote residue is unverified and automatic recovery cleanup is unavailable.
+It exposes no clear or reclaim action.
+Polling keeps the last successful counts while a refresh is pending, drops them on a failed read, and rejects older successes and failures using a request sequence.
+Unknown status persists until a newer successful read; the next drawer poll can recover without a new connection.
+
+`TestRecoveryStatusBeyondRecentJobs` covers every job state, 65 newer jobs that hide the retained jobs from the 50-entry window, per-job Get/List counts and the pruning exemption.
+Four terminal jobs hold 26 records, while all eight jobs together retain 36 records; active jobs are excluded from the global terminal summary.
+Pruning removes only the 65 newer jobs without recovery facts, preserving every live and terminal fact.
+`TestRecoveryStatusRefusesUnavailableDatabase` verifies a failed bridge read, with Get/List also refusing unavailable per-job counts.
+Both service tests supply real SQLite and no Swift connection, and credit the new action's happy/refusal scenarios only after assertions pass.
+The existing changed-bookmark, separate-process reopen and read-failure tests now exercise the new service, retaining their exact-row and independent-storage checks.
+
+The complete status tree passed **474 top-level internal race tests across 20 packages, zero failures or skips**, with the same required two-account SAIO, pinned rclone/matrix and private keychain fixtures.
+Go statement coverage remains **83.7%**; the valid scenario report is **12/106**, with **47/49 actions still carrying gaps**.
+The frontend passed **68 tests across 10 files**, including ten new state/drawer cases, and reports **24.6% statement coverage**; the broader frontend coverage gap remains open.
+Svelte checking reports zero errors and warnings, and the production frontend and application builds, vet and internal build without CGO pass.
+Generated bindings include the new status method, its count model and the per-job count.
+
+Four separately compiled Go variants each fail one service regression when they restrict totals to 50 recent jobs, include active jobs, hide the database error or return zero per-job counts.
+Two isolated frontend copies fail four tests when accepting stale responses and one test when retaining counts after a failed read.
+The final tree also rechecks the unchanged archived probes and the five still-applicable deletion/record-clearing controls from the first slice.
+The historical startup and read-error controls above apply to `e6e39954`; their hooks no longer exist in the final tree, and current read-error refusal is covered by the new status control.
+These results establish retention and truthful local status, not original cleanup authority, exact remote residue or broader audit closure.

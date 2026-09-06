@@ -490,6 +490,7 @@ export interface JobDTO {
      * Settings is the §45 effective-configuration JSON ("" when none).
      */
     "settings": string;
+    "recoveryRecords": number;
 }
 
 /**
@@ -654,6 +655,11 @@ export interface PrefixDetailDTO {
      * SelfObject is nil for an implied prefix.
      */
     "selfObject": ObjectDetailDTO | null;
+}
+
+export interface RecoveryStatusDTO {
+    "jobs": number;
+    "records": number;
 }
 
 /**

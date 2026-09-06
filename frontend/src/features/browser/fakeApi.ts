@@ -510,6 +510,7 @@ export function newFakeApi(): Api {
         finishedAt: "",
         engine: "rclone+native",
         settings: "",
+        recoveryRecords: 0,
         counters: {
           objectsPlanned: 7,
           objectsCopied: 0,
@@ -540,6 +541,7 @@ export function newFakeApi(): Api {
         finishedAt: "",
         engine: "rclone+native",
         settings: "",
+        recoveryRecords: 0,
         counters: {
           objectsPlanned: 5,
           objectsCopied: 2,
@@ -613,6 +615,7 @@ export function newFakeApi(): Api {
         finishedAt: "",
         engine: "rclone+native",
         settings: "",
+        recoveryRecords: 0,
         counters: {
           objectsPlanned: paths.length,
           objectsCopied: 0,
@@ -654,6 +657,7 @@ export function newFakeApi(): Api {
         finishedAt: "",
         engine: "rclone+native",
         settings: "",
+        recoveryRecords: 0,
         counters: {
           objectsPlanned: 1,
           objectsCopied: 0,
@@ -693,6 +697,7 @@ export function newFakeApi(): Api {
         finishedAt: "",
         engine: "native",
         settings: "",
+        recoveryRecords: 0,
         counters: {
           objectsPlanned: 42,
           objectsCopied: 0,
@@ -751,6 +756,7 @@ export function newFakeApi(): Api {
       record("segments.delete", `${req.container}/${req.name}`, "applied");
       return { manifestDeleted: true, segmentsDeleted: 3, segmentsFailed: 0, basis: req.force ? "backstage-forced" : "exclusive-ownership" };
     },
+    recoveryStatus: async () => ({ jobs: 0, records: 0 }),
     jobs: async (bookmarkId, activeOnly, limit) =>
       jobs
         .filter(

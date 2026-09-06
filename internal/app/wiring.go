@@ -25,11 +25,6 @@ func WireFilePicker(s *TransferService, picker FilePicker) {
 	s.setFilePicker(picker)
 }
 
-// StartupCrashSweep preserves the old hook with reclamation disabled.
-func StartupCrashSweep(ctx context.Context, s *TransferService) (int, error) {
-	return s.sweepCrashLitter(ctx)
-}
-
 // RunStartupRetention applies the persisted §51 retention policy.
 func RunStartupRetention(ctx context.Context, s *SettingsService, jobStore *jobs.Store, auditStore *audit.Store) {
 	s.runRetention(ctx, jobStore, auditStore)
@@ -51,10 +46,4 @@ func WireRecommendationSource(s *TransferService, f func(bookmarkID string) *Tra
 // the transfer service — composition, never a bridge method.
 func WireBenchmarkRecommendations(ts *TransferService, bench *BenchmarkService) {
 	ts.setRecommendationSource(bench.recommendationFor)
-}
-
-// RecoverySweepStep retains the old hook without granting remote
-// cleanup authority. It stays off the Wails bridge (review R-13).
-func RecoverySweepStep(ctx context.Context, s *TransferService) (hadWork bool, err error) {
-	return s.recoverySweepStep(ctx)
 }

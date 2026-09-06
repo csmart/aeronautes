@@ -301,6 +301,11 @@ func (h *Harness) CredentialStatus(ctx context.Context) (app.CredentialStatusDTO
 	return status, &Receipt{h: h, action: "BookmarkService.CredentialStatus", err: err}
 }
 
+func (h *Harness) RecoveryStatus(ctx context.Context) (app.RecoveryStatusDTO, *Receipt) {
+	status, err := h.Jobs.RecoveryStatus(ctx)
+	return status, &Receipt{h: h, action: "JobService.RecoveryStatus", err: err}
+}
+
 func (h *Harness) StartCopy(ctx context.Context, req app.CopyRequestDTO) *Receipt {
 	jobID, err := h.Transfer.StartCopy(ctx, req)
 	return &Receipt{h: h, action: "TransferService.StartCopy", jobID: jobID, err: err}
