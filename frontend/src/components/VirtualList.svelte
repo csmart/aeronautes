@@ -85,8 +85,16 @@
     scrollTop = el.scrollTop;
   }
 
+  // Loading another page must not undo a user's scroll away from the selection.
+  let lastEnsured = -1;
   $effect(() => {
-    if (selected >= 0 && selected < items.length) ensureVisible(selected);
+    if (selected < 0 || selected >= items.length) {
+      lastEnsured = -1;
+      return;
+    }
+    if (selected === lastEnsured || !el) return;
+    lastEnsured = selected;
+    ensureVisible(selected);
   });
 
   function handleKeydown(event: KeyboardEvent) {

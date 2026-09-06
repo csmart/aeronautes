@@ -29,6 +29,7 @@ That row does not establish current existence, content or mutation authority.
 A missing or mismatched HEAD leaves detail unavailable and editing refused; SLO and DLO selection retains the existing manifest or segment-preview path.
 No preceding pages are scanned and no per-row HEAD loop is added.
 Literal object-name bytes are preserved, filtering anchors selection by kind and name, and external selection scrolls the virtual list to the result while allowing later manual scrolling.
+Appending or refreshing rows and resizing the viewport preserve that manual scroll when the selection has not changed.
 
 ## UI scenario matrix
 
@@ -49,26 +50,29 @@ These are UI-to-bridge scenarios, with no Go service-scenario credit.
 | Old panel unmount, BrowserState prop replacement and all close paths | `Find panel ownership` |
 | Literal names, existing row, off-page row and same-name virtual prefix | `Find exact result selection` |
 | Full first page, bounded retrieval, visible selection and manual scrolling | `makes a selected result beyond a full page visible` |
+| Page append, in-place refresh and resize after manual scrolling | `VirtualList preserves manual scroll` |
+| External selection, clearing and reselecting, and a selection whose rows arrive later | `VirtualList reveals` |
 | Missing object, mismatched HEAD and SLO/DLO detail | `Find exact result selection` and `Find result navigation lifetime` |
 | Stop/close/navigation/selection during cancellation or parent listing | `Find result navigation lifetime` |
 | Late selected HEAD success or failure after another view takes ownership | `after result selection` |
 
 ## Verification
 
-With Node 22.23.2 and unchanged locked dependencies, all **718 tests in 19 frontend files pass**, with zero failures or skips.
-Whole-source statement coverage is **77.59%** (3,144 of 4,052 statements), not an audit completion percentage.
+With Node 22.23.2 and unchanged locked dependencies, all **724 tests in 19 frontend files pass**, with zero failures or skips.
+Whole-source statement coverage is **77.65%** (3,152 of 4,059 statements), not an audit completion percentage.
 Type checking reports zero errors and warnings, the production build completes with 205 modules, and `go build ./...` passes with the final assets.
 The existing 618 test assertions were preserved.
 No Go implementation, generated bridge, dependency or workflow changed.
 Independent local review and all five current-head/current-master PR checks, followed by the resulting master checks, remain required.
 
-The same **100 new cases** on parent production `686fb9fdef2611a183e5d5e3616e6c9475291b3f` produce **69 assertion failures and 31 passing controls**, with no skips, setup errors, timeouts or unhandled rejections.
+The same **100 Find cases** on parent production `686fb9fdef2611a183e5d5e3616e6c9475291b3f` produce **69 assertion failures and 31 passing controls**, with no skips, setup errors, timeouts or unhandled rejections.
 All 100 pass after implementation.
 The first ten focused cases also failed their intended assertions before implementation and passed afterwards.
 Later adversarial cases caught missing Stop/selection ownership after cancellation, prop-change cleanup and preservation of the buffer-full flag; those failures and corrections are retained separately.
 
-The final scratch runner loads all 100 cases for each independently broken safeguard, requiring assertion failures and rejecting setup, transform, timeout and unhandled-promise failures.
-All **42 variants** are caught.
+The final scratch runner loads those 100 Find cases and all 11 VirtualList cases for each independently broken safeguard, requiring assertion failures and rejecting setup, transform, timeout and unhandled-promise failures.
+Together, the 111 cases produce 72 assertion failures and 39 passes on parent production; five of the passing VirtualList cases are inherited, so the 106 added cases account for 72 failures and 34 passes.
+All **45 variants** are caught.
 Where a row gives multiple counts, they are separate variants in the listed order.
 
 | Broken safeguard | Failing cases |
@@ -100,14 +104,27 @@ Where a row gives multiple counts, they are separate variants in the listed orde
 | Select the exact result row | 24 |
 | Report a failed parent listing | 1 |
 | Preserve literal name instead of trimming | 2 |
-| Make external virtual-list selection visible | 1 |
+| Make external virtual-list selection visible | 4 |
+| Preserve manual scroll with unchanged selection | 3 |
+| Reveal a row after clearing and reselecting it | 1 |
+| Reveal an unavailable selection after rows arrive | 1 |
 | Existing selected-HEAD identity check | 1 |
 
 The first runner exposed test waits that hung under broken admission or cancellation, plus weak timing for a duplicate submission and redundant scope paths that did not isolate the setters.
 Those runs are retained as incomplete evidence, not counted as successful controls.
 The corrected tests assert bridge admission before awaiting completion, release deferred work in finalisation, cover direct scope changes and submit again after startup is admitted.
 The runner also terminates its owned process group on timeout and records an invalid result rather than losing the rest of the matrix.
-The complete final matrix is `p08-find-controls-v4/results.json`; every variant is valid.
+The complete final matrix is `p08-find-controls-v5/results.json`; every variant is valid.
+
+## Scroll correction during local review
+
+The first implementation made external selection visible, but its reactive effect also ran when rows or viewport height changed.
+Independent local review reproduced the resulting regression: selecting row 5, scrolling to position 3,240 and appending rows moved the viewport back to position 180.
+The initial 718-case suite missed that sequence.
+Three maintained tests for page append, same-order refresh and viewport resize fail with assertion errors on that implementation, while the other eight VirtualList cases pass.
+The correction remembers the last visible selection and only reveals a new valid selection, resetting that memory when selection is absent or out of range.
+All 11 VirtualList cases and the existing 100 Find cases pass afterwards, including the actual off-page Find navigation path.
+Removing the unchanged-selection guard independently fails the three scroll tests; disabling reset and remembering an unavailable selection each fail their corresponding positive selection case.
 
 ## Original probe and admission timing
 
@@ -123,7 +140,8 @@ With the actual bridge boundary synchronised, the selected probes produce two pa
 The maintained suite separately covers both cancellation before admission and cancellation of every late id after admission.
 The original bodies and both kinds of evidence remain available for independent review.
 
-Artifacts are under `/tmp/aeronautes-remediation-20260905`: `p08-find-final-*`, the reproducible `p08-find-controls.py` and `p08-find-controls-v4/`, plus `p08-find-archived.py`, `p08-find-archived-admitted.py` and `p08-find-archived-observed.py` with their corresponding directories.
+Artifacts are under `/tmp/aeronautes-remediation-20260905`: final `p08-find-reviewed-*`, `p08-find-scroll-before.json` and `p08-find-scroll-after.json`, the reproducible `p08-find-controls.py` and `p08-find-controls-v5/`, plus `p08-find-archived.py`, `p08-find-archived-admitted.py` and `p08-find-archived-observed.py` with their corresponding directories.
+Earlier `p08-find-final-*` and `p08-find-controls-v4/` evidence is preserved for the initial implementation.
 The observed probe's request counts are in `p08-find-archived-observed/before-default.log` and `after-default.log`.
 
 ## Remaining work

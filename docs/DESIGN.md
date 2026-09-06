@@ -4625,7 +4625,8 @@ Both close controls, destruction and BrowserState prop changes share panel owner
 Cancellation uncertainty is visible, stopped results retain their original scope, and polling errors preserve counts, matches and the buffer-full flag.
 Result clicks use one parent page and the existing exact-object HEAD path, with an advisory object row when the match is absent from the page or folded into a virtual prefix.
 The selected object remains distinct from a same-name prefix, becomes visible in the virtual list, and stays unavailable for editing if HEAD fails or returns another identity.
-The [Find validation record](experiments/2026-09-06-find-binding.md) records 718 passing frontend cases, 100-case parent pairing and 42 independent broken-safeguard controls, with no Go service-scenario credit.
+Local review caught a virtual-list scroll regression when rows or viewport height changed after manual scrolling; selection transitions now reveal the result while unchanged selection preserves the user's scroll.
+The [Find validation record](experiments/2026-09-06-find-binding.md) records 724 passing frontend cases, 111-case parent pairing, the scroll reproduction and 45 independent broken-safeguard controls, with no Go service-scenario credit.
 It preserves the original Find probe's remaining timing-assumption failure and separately proves late-id cancellation after explicit bridge admission.
 Backend Find admission, retention, idle expiry and shutdown cleanup remain the third P08 slice; the broader authority, resource and valuable-data release gates remain open.
 
