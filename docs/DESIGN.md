@@ -1300,7 +1300,9 @@ Examples:
 - observed directly from a manifest;
 - created by an Aeronautes-controlled upload with recorded ownership.
 
-**`Confirmed` proves a segment is *referenced*, not that it is *unshared*.** Do not treat it as authorization to delete: a destructive segment operation needs the separate `ExclusiveOwnershipProof` defined in §28.6(b) (a unique Aeronautes-recorded prefix), which `Confirmed` alone never satisfies for an externally-created object.
+**`Confirmed` proves a segment is *referenced*, not that it is *unshared*.**
+Automatic segment deletion needs the separate `ExclusiveOwnershipProof` defined in §28.6(b), including exclusion of other references and relevant concurrent writers through deletion.
+A unique Aeronautes-recorded prefix proves creation only; neither that record nor `Confirmed` supplies this authority (ADR 0020).
 
 ### 24.2 Declared
 
@@ -1455,7 +1457,14 @@ Cancelling a transfer — or the process dying — while a large object is uploa
 
 **Graceful cancellation (preferred).** Cancel by signalling the child (context cancel / interrupt) so rclone can abort the upload and clean up its own uploaded segments — rclone does this by default unless told to leave parts on error, so Aeronautes must **not** set `--swift-leave-parts-on-error`. Then Aeronautes reconciles destination state and reports `Cancelled` / `Partial`. **Seam-spike measurement (v1.74.3): cleanup is best-effort, not perfect** — a SIGINT mid-segmentation cleaned the manifest and all but **one residual segment** (an in-flight PUT completing after cleanup), and a SIGKILL left nine orphaned segments and no manifest, exactly as this section predicts. Reconciliation therefore runs after *graceful* cancellation too, never only after hard interruption.
 
-**Hard interruption (kill / crash / power loss) is not a safe boundary.** rclone had no chance to clean up, so orphaned segments may exist. Crucially, for rclone-executed uploads **Aeronautes does not choose the segment prefix** — rclone generates the segment namespace itself (under `<container>_segments` or `.file-segments/`), so Aeronautes cannot simply record "its" prefix before spawning. **Seam-spike confirmation (v1.74.3):** the generated prefix is `<object>/<date>-<time>-<22-char-random>/<seq>` under the auto-created `<container>_segments` sidecar — the random component makes each upload's prefix effectively unique (good for §28.6(b) ownership), and it is capturable in real time from the child's `--use-json-log -vv` stream (`"Uploading segment file \"<prefix>/<seq>\" into \"<container>_segments\""` debug messages). Automatic cleanup after a hard interruption is therefore permitted **only** when Aeronautes has Confirmed ownership evidence of the *actual generated prefix* (captured from that stream for that job). If ownership cannot be proven:
+**Hard interruption (kill / crash / power loss) is not a safe boundary.**
+rclone had no chance to clean up, so orphaned segments may exist.
+For rclone-executed uploads, Aeronautes does not choose the segment prefix: rclone generates it under `<container>_segments` or `.file-segments/`.
+The v1.74.3 seam experiment observed `<object>/<date>-<time>-<22-char-random>/<seq>` and captured the actual prefix from the child's JSON debug stream.
+That evidence records creation provenance, not exclusive deletion authority.
+[ADR 0020](adr/0020-recovery-containment.md) requires recovery and post-job reconciliation to retain uncertain staging objects, segments and records, including after graceful cancellation.
+Neither a captured prefix nor an absent recorded live reference permits automatic reclamation.
+The required containment path is:
 
 ```text
 possible orphaned segments detected
@@ -1704,9 +1713,20 @@ Swift explicitly allows a segment object to be referenced by more than one SLO m
 
 Two consequences, both locked for v1:
 
-**(a) The rclone boundary is absolute: rclone writes only planned-new or uniquely-staged names; Aeronautes performs every overwrite, deletion, manifest commit, bulk deletion, segment reclamation, and container deletion natively.** No raw `rclone sync` delete phase, no `rclone purge`, no `rclone delete`, no rclone write to an existing live name — ever, on any scope (§36). The reasoning: Swift offers no namespace snapshot or lock, so **no point-in-time scan can make a later rclone `Remove`/`Update` safe** — an object can become a shared-segment DLO/SLO between the scan and rclone's operation, and rclone would then bulk-delete whatever segments it references *at that moment*. The native path is immune by construction: a native DELETE (or bulk-delete entry) on a name removes **only the manifest/object at that name** and never follows segments, so the same race costs at most an orphaned segment set (recoverable), never shared-segment corruption. A residual, honestly-stated race remains on *planned-new* names: a concurrent external writer can create the name between planning and rclone's PUT, and last-write-wins applies as it would between any two Swift clients; execution-time verification detects the anomaly.
+**(a) The rclone boundary is absolute: Aeronautes performs every overwrite, deletion, manifest commit, bulk deletion, segment reclamation, and container deletion natively.**
+No raw `rclone sync` delete phase, `purge`, `delete` or rclone write to an existing live name is allowed, on any scope (§36).
+No point-in-time scan can make a later rclone `Remove`/`Update` safe: a destination can become a shared-segment DLO/SLO after the scan, and rclone would then follow its current segments.
+Copy and upload route engine writes through unique staging names and commit live names natively.
+A native manifest-only DELETE does not follow segments, but it can still remove a replacement at that name or an object another manifest references.
+Stage-and-commit alone does not preserve a writer arriving after the final HEAD.
+Planned-new commits use the established conditional-create path and refuse a concurrently created destination; an unconditional fallback is forbidden.
+ADR 0020 requires P05 containment of unsupported overwrite and destructive Mirror work until an enforceable concurrency protocol has been implemented and tested.
 
-**HEAD-immediately-before-mutation is scoped to where identity matters, not a blanket rule.** An authoritative HEAD directly before the operation is REQUIRED wherever semantics depend on the object's current identity: the stage-and-commit re-HEAD before commit (below); any operation that will follow segments (SLO manifest+segments delete under `ExclusiveOwnershipProof`, §34); single-object destructive actions taken from the inspector (so the confirmation reflects reality); and evidence recording. Mass **manifest-only** deletion (recursive delete, Empty Container, Mirror destination-only deletes) does NOT require a per-object safety HEAD — native deletion cannot follow segments, so the HEAD would buy audit fidelity, not safety, at roughly double the request cost (§42). The job's effective configuration states the audit/verification sampling policy it ran with (§32, §45).
+**HEAD-immediately-before-mutation is scoped to where identity matters, not a blanket rule.**
+An authoritative HEAD is required where semantics depend on current identity: commit checks, segment operations, inspector destructive actions and evidence recording.
+It is an observation, not an atomic compare-and-mutate boundary, and cannot make unsupported identity-sensitive work safe.
+Do not add per-row HEADs to mass deletion and claim that the final-hop race is fixed.
+The P05 Mirror refusal and P14/P15 concurrency gates in ADR 0020 apply independently of audit sampling and native manifest-only semantics.
 
 **Seam-spike validation of the commit primitives (2026-08-29):** server-side `COPY` returns
 201 and carries user metadata with it; a zero-byte `PUT` with `X-Object-Manifest` over an
@@ -1717,11 +1737,18 @@ must disclose.
 
 **(b) Exclusive ownership is a distinct positive proof, not a confidence level.** `Confirmed` evidence (§24.1) proves a segment is *referenced*, not that it is *unshared* — §35 says exactly this for DLO prefixes. So define, separately:
 
-> **ExclusiveOwnershipProof** — the segments were written by Aeronautes/rclone for *this* job under a **unique, Aeronautes-recorded prefix** (rclone's generated `timestamp + 128-bit random` namespace, captured into `segment_ownership`), and no other *recorded* Aeronautes manifest references that prefix.
+> **ExclusiveOwnershipProof** — authority over the exact objects to be removed, including exclusion of other references and relevant concurrent writers through the destructive effect.
 
-This is the **only** tractable v1 exclusivity proof: an account-wide manifest scan is not required and is forbidden by the performance rules; `Confirmed` MUST NOT be promoted to exclusive; and an external SLO/DLO is **never** exclusive on single-manifest inspection — only a deliberate Backstage flow (with an explicit "sharing cannot be disproved" warning) may purge its segments. Old destination segments are reclaimed only when `ExclusiveOwnershipProof` holds — normally *never* for an externally-created object; the safe default leaves them (a recoverable orphan beats irreversible shared-segment corruption).
+Generated-prefix records prove creation and `Confirmed` proves a reference; neither establishes this stronger authority.
+The current workflow has no enforceable exclusivity proof, so automatic reclamation remains unavailable.
+An account-wide scan is neither required nor a substitute for excluding a later reference; the performance rules still forbid adding one to ordinary transfers.
+Explicit force cleanup remains a separate Backstage action with sharing risk disclosed, never automatic recovery or a promotion to exclusivity.
+ADR 0020 supersedes the earlier generated-prefix definition and requires P04 to retain uncertain data and recovery records.
 
 **Stage-and-commit protocol for overwriting a changed large object** (rclone moves the bytes; Aeronautes commits the tiny manifest — a DLO-header PUT, not an SLO composer, so it stays inside K-XFER-007):
+
+This protocol describes the data path, not a completed concurrency guarantee.
+P05 must refuse unsupported overwrites before staging; re-enabling them requires P14's reviewed final-effect boundary (ADR 0020).
 
 1. HEAD/GET the live destination and persist the old manifest for reconciliation;
 2. `rclone copy` the source to a **new** unique staging name under an Aeronautes staging prefix, so rclone's `Update` never runs against the live name;
@@ -1819,9 +1846,9 @@ Possible executors:
 
 ```text
 SingleSwiftDelete
-SLODelete           # manifest-only default; +segments only under ExclusiveOwnershipProof (§28.6)
+SLODelete           # manifest-only default; +segments only by explicit force (§28.6, ADR 0020)
 AsyncSLODelete
-BulkDelete          # manifests only; never follows segments without ExclusiveOwnershipProof
+BulkDelete          # manifests only; never follows segments
 ParallelSwiftDelete
 ContainerDelete     # Delete Container: native empty (above), then native container DELETE (§33)
 ```
@@ -1925,7 +1952,10 @@ Execution may use:
 - Aeronautes-native **bulk-delete** of the container's objects (default);
 - bounded parallel Aeronautes-native DELETE.
 
-Both are **manifest-only by construction** (§28.6a) and MUST NOT follow DLO/SLO segments into other containers unless `ExclusiveOwnershipProof` holds (§28.6). rclone is not an Empty Container engine at all — not `purge` (stock rclone `Purge` deletes every object **then** `Rmdir`s, and at a container root `Rmdir` issues a Swift `ContainerDelete`, losing the container and its metadata/ACL/policy/versioning/quota/identity — K-DEL-001), and not `delete` (its per-object `Remove` bulk-deletes any large object's segments, and no point-in-time scan makes that safe — §28.6a, ADR 0004). The acceptance test compares pre/post container HEAD state (config preserved), not merely that a same-named container still exists.
+Both are **manifest-only by construction** (§28.6a) and MUST NOT follow DLO/SLO segments into other containers.
+Automatic segment reclamation is unavailable under ADR 0020; explicit force cleanup is a separate action.
+rclone is not an Empty Container engine: `Purge` deletes the objects and container, losing its configuration and identity, while `Remove` follows referenced large-object segments (K-DEL-001, ADR 0004).
+The acceptance test compares pre/post container HEAD configuration, not merely the existence of a same-named container.
 
 Do **not** delete/recreate the container as an optimisation.
 
@@ -1944,7 +1974,8 @@ Empty contents first if explicitly requested (same native engines as Empty Conta
 Offer:
 
 - **Manifest only** — the normal, default action (delete just the manifest object);
-- **Manifest + segments** — permitted to auto-delete segments **only** under `ExclusiveOwnershipProof` (§28.6(b)) for every referenced segment, including nested and ranged segments; for external SLOs, single-manifest inspection cannot in general disprove sharing, so require a deliberately destructive Backstage flow with appropriate confirmation.
+- **Manifest + segments** — an explicit force action with sharing risk disclosed.
+  Automatic segment deletion is unavailable because the current workflow cannot establish `ExclusiveOwnershipProof` through deletion (§28.6(b), ADR 0020).
 
 **Implementation note (2026-08-30, review wave):** the shipped code does NOT send `?multipart-manifest=delete` — it would follow whatever manifest occupies the live name at execution time (a proof/delete TOCTOU), so segment deletion is manifest-only DELETE plus native deletion of exactly the proven identities, with a pre-delete manifest re-HEAD that refuses on identity change. The server-native fast path stays desirable once a live exclusivity binding exists (§65.10); until then correctness beats speed. (Requirement K-SEG-003; fixtures for direct, ranged, repeated, shared, and nested SLO segments.)
 
@@ -1958,15 +1989,10 @@ Normal option:
 
 > **Delete manifest only**
 
-Automatic manifest + segment-prefix cleanup is allowed when Aeronautes has sufficiently strong ownership evidence, for example:
-
-- Aeronautes/rclone created the DLO under an app-controlled unique prefix;
-- ownership was recorded.
-
-For externally-created DLOs with uncertain sharing:
-
-- do not claim segment cleanup is proven safe;
-- require explicit Backstage action and appropriate confirmation to purge an exact prefix.
+Automatic manifest plus segment-prefix cleanup is unavailable under ADR 0020.
+An app-created unique prefix and an ownership row do not exclude outside references or concurrent writers.
+This applies to app-created and external DLOs alike.
+Purging an exact prefix requires the separate explicit Backstage force action with sharing risk disclosed; its remaining P11/P15 gates are not waived.
 
 A DLO prefix observed from one manifest does **not** prove that no other manifest references it.
 
@@ -1974,10 +2000,9 @@ A DLO prefix observed from one manifest does **not** prove that no other manifes
 
 ## 36. The rclone boundary is absolute
 
-rclone executes exactly two kinds of write:
-
-- **uploads/copies to planned-new destination names** — names the plan verified absent (with the honestly-stated residual race of §28.6a);
-- **uploads/copies to uniquely-staged names** under an Aeronautes staging prefix (§28.6).
+rclone uploads and copies only to unique names under an Aeronautes staging prefix (§28.6).
+This includes planned-new objects, whose live destination is committed natively with conditional creation.
+Existing-destination replacement remains subject to ADR 0020's P05 refusal and later concurrency gate.
 
 Plus reads: downloads, and the source half of every copy.
 
@@ -2441,10 +2466,10 @@ Conceptual decision table:
 | Metadata/ACL/config | Aeronautes Swift client |
 | Small marker PUT | Aeronautes Swift client |
 | Upload/download | rclone |
-| Swift→Swift Copy | rclone copy to planned-new names; every overwrite via stage-and-commit (§28.6) |
-| Ordinary Mirror | Aeronautes-planned rclone copy of the forced set; destination-only delete always Aeronautes-native (§28.6a) |
+| Swift→Swift Copy | rclone stages, native conditional creation commits new names; P05 must refuse unsupported overwrite (§28.6, ADR 0020) |
+| Ordinary Mirror | P05 must refuse the start while its concurrency guarantee is unsupported; the eventual native delete boundary remains §28.6a (ADR 0020) |
 | Single object delete | Aeronautes-native, manifest-only; HEAD first (inspector-initiated, §28.6a) |
-| SLO delete | manifest-only default; +segments only under `ExclusiveOwnershipProof` (§34) |
+| SLO delete | manifest-only default; +segments by explicit force with sharing risk disclosed (§34, ADR 0020) |
 | Recursive prefix delete | Aeronautes-native bulk/parallel delete; manifest-only (§28.6a) |
 | Empty container | Aeronautes-native bulk/parallel delete only (§33) |
 | Delete container | native empty, then native container DELETE; never `purge` (§33) |
@@ -4229,6 +4254,8 @@ Conflicting ownership/concurrency/durability contracts must be resolved in this 
 The owner authorised implementation of the [5 September audit plan](https://github.com/csmart/aeronautes/blob/c3da04c45fd214ed166118c0debc12d3a9996763/docs/audits/2026-09-05/remediation-plan.md).
 Implement each logical fix with a failing-before/passing-after regression and independent local review before pushing.
 Keep the valuable-data release hold until the plan's safety and release gates have evidence.
+Earlier §65 implementation logs are historical evidence, not authority to resume unsafe cleanup.
+In particular, the generated-prefix sweep rules in §65.8 item 2 and §65.9 item 5 are superseded by the P01/P04 contract in ADR 0020.
 
 The first commit sequence follows the plan's security-first order:
 
@@ -4342,6 +4369,16 @@ Require mock and owned real-Swift evidence, negative controls and local review b
 The implementation now includes the bounded handler wrapper, the converted conditional-copy race and raw PUT controls through both the mock and the owned real-Swift proxy.
 The [validation record](experiments/2026-09-06-http-response-barriers.md) records 465 passing top-level race tests with no skips, thirteen safeguard-removal controls and the unsupported Expect/100-Continue boundary.
 This is the first P03 seam; the wider fault matrix and P01/P04/P05 recovery and destructive-race containment remain open.
+
+The next P01/P04 design slice is [ADR 0020](adr/0020-recovery-containment.md), proposed for independent review before implementation.
+It replaces generated-prefix exclusivity with authority that excludes other references and relevant concurrent writers through deletion.
+Because the current workflow has no such proof, suspend automatic historical and post-job recovery deletion, retain all recovery rows across Copy, Mirror and upload, and remove the background remote sweep.
+Expose retained-record counts through local read-only job status, including a summary independent of the recent-job limit; unavailable reads remain unknown.
+Completed jobs may retain records for unverified residue without changing the transfer result or claiming confirmed orphans.
+Verify outside DLO/SLO aliases, staging aliases, malformed and missing history, changed bookmark bindings, database failures and a separate process reopening the state database.
+Normal transfer-time cleanup remains P12/P15/P21 work.
+The separate P05 implementation must refuse unsupported overwrites and Mirror starts before their irreversible work, preserving conditional planned-new Copy.
+Review each logical implementation and require catching system evidence, all five PR checks and green master; this design commit does not claim those fixes are delivered.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.

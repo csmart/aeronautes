@@ -25,11 +25,14 @@ commit, phase by phase, following the design.
   never overwrites or deletes an existing object — no `sync`, `purge`, or `delete`, on any scope.
   All destruction is **Aeronautes-native** and manifest-only, with an authoritative HEAD before any
   mutation whose semantics depend on the object's current identity. (§28.6, §36, K-XFER-014)
-- **Segment deletion needs `ExclusiveOwnershipProof`** — a unique Aeronautes-recorded prefix.
-  `Confirmed` evidence proves a segment is *referenced*, never *unshared*. (§28.6, K-SEG-004)
+- **Automatic segment deletion needs `ExclusiveOwnershipProof`** through the destructive effect.
+  Generated prefixes prove creation and `Confirmed` proves a reference; neither excludes sharing or concurrent writers.
+  Recovery retains uncertain data and records under ADR 0020; explicit force cleanup is a separate action. (§28.6, K-SEG-004)
 - **Overwriting any changed object uses the stage-and-commit protocol** (rclone stages to a unique
   temp name; Aeronautes commits natively — a DLO-manifest PUT for large objects, a server-side COPY
   for plain ones). (§28.6)
+  Stage-and-commit alone does not protect a concurrent replacement.
+  ADR 0020 requires P05 to refuse unsupported overwrite and Mirror work; this is a containment requirement, not completed implementation.
 - **Listings are advisory (eventually consistent); HEAD is authoritative.** Verify with bounded
   retries; namespace comparison is a streaming merge-join over the sorted listings. (§15.2, §15.3, K-CON-001)
 - **Secrets never reach the frontend or SQLite**; rclone gets an invocation-local gateway token through named-remote env config, never the durable key or real Swift token, and never through argv. (§55, §26.2, ADR 0014, K-SEC-*)
