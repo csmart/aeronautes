@@ -25,8 +25,7 @@ func WireFilePicker(s *TransferService, picker FilePicker) {
 	s.setFilePicker(picker)
 }
 
-// StartupCrashSweep replays reconciliation for jobs that died before
-// their own could run.
+// StartupCrashSweep preserves the old hook with reclamation disabled.
 func StartupCrashSweep(ctx context.Context, s *TransferService) (int, error) {
 	return s.sweepCrashLitter(ctx)
 }
@@ -54,9 +53,8 @@ func WireBenchmarkRecommendations(ts *TransferService, bench *BenchmarkService) 
 	ts.setRecommendationSource(bench.recommendationFor)
 }
 
-// RecoverySweepStep runs one supervised crash-sweep pass — main.go's
-// loop calls this package FUNCTION so the step never becomes a bound
-// bridge method (review R-13).
+// RecoverySweepStep retains the old hook without granting remote
+// cleanup authority. It stays off the Wails bridge (review R-13).
 func RecoverySweepStep(ctx context.Context, s *TransferService) (hadWork bool, err error) {
 	return s.recoverySweepStep(ctx)
 }

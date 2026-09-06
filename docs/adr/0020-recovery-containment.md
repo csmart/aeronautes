@@ -1,6 +1,6 @@
 # ADR 0020 — retain uncertain recovery data
 
-**Status:** Proposed for independent local design review under the authorised audit remediation plan.
+**Status:** Accepted after independent local design review under the authorised audit remediation plan.
 **Scope:** The P01 ownership, concurrency and durability decisions needed by P04 recovery containment and P05 transfer refusal.
 Implementation and release evidence remain separate gates.
 

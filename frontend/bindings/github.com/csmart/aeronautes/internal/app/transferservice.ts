@@ -22,8 +22,8 @@ import * as local$0 from "../transfer/local/models.js";
 import * as $models from "./models.js";
 
 /**
- * CancelJob requests graceful cancellation (§26.4: the engine child gets
- * SIGINT and cleans up; reconciliation then sweeps).
+ * CancelJob requests graceful cancellation. Child cleanup remains
+ * best-effort, so subsequent reconciliation retains uncertain residue.
  */
 export function CancelJob(jobID: string): $CancellablePromise<void> {
     return $Call.ByID(900975859, jobID);

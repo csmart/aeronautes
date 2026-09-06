@@ -683,6 +683,9 @@ func TestMirrorExecutes(t *testing.T) {
 	if job.State != "complete" || job.Type != "mirror" {
 		t.Fatalf("job = %+v", job)
 	}
+	if pending, err := h.transfer.jobs.RecoveryPending(ctx); err != nil || len(pending) != 1 || pending[0].JobID != jobID {
+		t.Fatalf("completed mirror lost recovery intent: %+v, %v", pending, err)
+	}
 	if job.Counters.ObjectsDeleted != 3 { // two plain + the dest-only DLO manifest
 		t.Fatalf("deleted = %d, want 3 (counters %+v)", job.Counters.ObjectsDeleted, job.Counters)
 	}
@@ -850,24 +853,24 @@ func TestCrashLitterSweep(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if swept != 3 { // 1 staged + 2 orphan segments
-		t.Fatalf("swept = %d, want 3", swept)
+	if swept != 0 {
+		t.Fatalf("recovery reclaimed %d objects", swept)
 	}
 	session := h.transfer.connections.sessions[bookmark].session
-	if _, err := session.ObjectDetail(ctx, "backup", staging+"000001"); err == nil {
-		t.Fatal("stranded staged object survived")
+	if _, err := session.ObjectDetail(ctx, "backup", staging+"000001"); err != nil {
+		t.Fatalf("stranded staging object not retained: %v", err)
 	}
-	if _, err := session.ObjectDetail(ctx, "backup_segments", orphanPrefix+"00000000"); err == nil {
-		t.Fatal("orphan segment survived")
+	if _, err := session.ObjectDetail(ctx, "backup_segments", orphanPrefix+"00000000"); err != nil {
+		t.Fatalf("uncertain segment not retained: %v", err)
 	}
 	// The committed manifest still assembles.
 	d, err := session.ObjectDetail(ctx, "backup", "kept.bin")
 	if err != nil || d.ContentLength != int64(len("kept-seg")) {
 		t.Fatalf("committed DLO harmed: %+v %v", d, err)
 	}
-	// Records cleared; a second sweep is a no-op.
-	if pending, _ := h.transfer.jobs.RecoveryPending(ctx); len(pending) != 0 {
-		t.Fatalf("records not cleared: %+v", pending)
+	// Repeated recovery cannot turn uncertainty into deletion authority.
+	if pending, err := h.transfer.jobs.RecoveryPending(ctx); err != nil || len(pending) != 4 {
+		t.Fatalf("recovery records not retained: %+v, %v", pending, err)
 	}
 	if swept, _ := h.transfer.sweepCrashLitter(ctx); swept != 0 {
 		t.Fatalf("second sweep = %d", swept)
@@ -885,8 +888,7 @@ func TestJobRecordsRecoveryDurably(t *testing.T) {
 	seedObject(h.mock, "media", "big.bin", strings.Repeat("b", 4000), nil)
 	dstMock.AddContainer("backup", "standard")
 
-	// During a healthy run the records exist mid-flight and are cleared
-	// by the job's own reconciliation at the end.
+	// A completed transfer still cannot prove uncertain residue absent.
 	jobID, err := h.transfer.StartCopy(ctx, CopyRequestDTO{
 		SourceBookmarkID: srcBookmark, SourceContainer: "media",
 		DestBookmarkID: dstBookmark, DestContainer: "backup",
@@ -897,8 +899,8 @@ func TestJobRecordsRecoveryDurably(t *testing.T) {
 	if job := awaitTerminal(t, h, jobID); job.State != "complete" {
 		t.Fatalf("job = %+v", job)
 	}
-	if pending, _ := h.transfer.jobs.RecoveryPending(ctx); len(pending) != 0 {
-		t.Fatalf("clean job left recovery records: %+v", pending)
+	if pending, err := h.transfer.jobs.RecoveryPending(ctx); err != nil || len(pending) != 4 {
+		t.Fatalf("completed job lost recovery records: %+v, %v", pending, err)
 	}
 }
 
@@ -1099,8 +1101,7 @@ func TestCrashSweepCommitBoundary(t *testing.T) {
 		}
 	}
 
-	// Case B: process died BEFORE the live PUT — same shape, live name
-	// absent. The segments are true litter and must go.
+	// Missing live names do not rule out outside aliases or later writes.
 	jobB := newCrashed()
 	stagingB := ".aeronautes/stage/" + jobB + "/"
 	prefixB := stagingB + "000001/2026-08-30-0000000000000000000022/"
@@ -1128,22 +1129,20 @@ func TestCrashSweepCommitBoundary(t *testing.T) {
 	if err != nil || d.ContentLength != 3*int64(len("segment-bytes")) {
 		t.Fatalf("live DLO after sweep = %+v %v (its segments were destroyed)", d, err)
 	}
-	// Its staged manifest is gone (staging swept), and records cleared.
-	if _, err := session.ObjectDetail(ctx, "backup", stagingA+"000001"); err == nil {
-		t.Error("staged manifest survived the sweep")
+	if _, err := session.ObjectDetail(ctx, "backup", stagingA+"000001"); err != nil {
+		t.Errorf("uncertain staged manifest not retained: %v", err)
 	}
-	// Case B: the never-committed segments are gone.
 	for i := 0; i < 2; i++ {
-		if _, err := session.ObjectDetail(ctx, "backup_segments", fmt.Sprintf("%s%08d", prefixB, i)); err == nil {
-			t.Errorf("uncommitted segment %d survived", i)
+		if _, err := session.ObjectDetail(ctx, "backup_segments", fmt.Sprintf("%s%08d", prefixB, i)); err != nil {
+			t.Errorf("uncertain segment %d not retained: %v", i, err)
 		}
 	}
 	pending, err := h.transfer.jobs.RecoveryPending(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(pending) != 0 {
-		t.Errorf("records not cleared after clean sweep: %+v", pending)
+	if len(pending) != 6 {
+		t.Errorf("recovery records not retained: %+v", pending)
 	}
 }
 
@@ -1361,11 +1360,7 @@ func TestMirrorSkipsReplacedDestination(t *testing.T) {
 	}
 }
 
-func TestRecoverySweepStepNeverRetiresOnEmpty(t *testing.T) {
-	// grok follow-up 3 RECOVERY-EMPTY: the sweep STEP reports "no work"
-	// on an empty pending set (the supervised loop backs off, never
-	// returns) and then ACTS when a job crashes later in the same
-	// process — proving the loop cannot retire early.
+func TestRecoveryStepRetainsLaterRecords(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 	h.connect(t)
@@ -1398,14 +1393,14 @@ func TestRecoverySweepStepNeverRetiresOnEmpty(t *testing.T) {
 		}
 	}
 
-	// The NEXT step (the loop would still be running) finds and sweeps it.
+	// Observing newly retained work cannot authorise its deletion.
 	hadWork, err = h.transfer.recoverySweepStep(ctx)
 	if err != nil || !hadWork {
 		t.Fatalf("post-crash step = (%v, %v), want (true, nil)", hadWork, err)
 	}
 	session := h.transfer.connections.sessions[bookmark].session
-	if _, err := session.ObjectDetail(ctx, "backup_segments", prefix+"00000000"); err == nil {
-		t.Fatal("orphan litter survived the later sweep")
+	if _, err := session.ObjectDetail(ctx, "backup_segments", prefix+"00000000"); err != nil {
+		t.Fatalf("uncertain segment not retained: %v", err)
 	}
 }
 

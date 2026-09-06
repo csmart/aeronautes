@@ -31,6 +31,7 @@ import (
 	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/secrets"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
+	"github.com/csmart/aeronautes/internal/systemtest/oracle"
 	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
 	localtransfer "github.com/csmart/aeronautes/internal/transfer/local"
 	"github.com/csmart/aeronautes/internal/transfer/plan"
@@ -1047,34 +1048,27 @@ func TestCopyExecutorRealSwift(t *testing.T) {
 		_ = executor.Handle(cancelCtx, plan.Item{Name: "huge.bin", Verdict: plan.VerdictNew, Route: plan.RouteRclone, SourceBytes: int64(len(huge))})
 		report, _ := executor.Finish(cancelCtx)
 
-		reconcile, err := executor.Reconcile(ctx, report)
+		witness, err := oracle.Connect(os.Getenv("AERONAUTES_SAIO_AUTH_URL"), envOr("AERONAUTES_SAIO_USER2", "test2:tester2"), envOr("AERONAUTES_SAIO_KEY2", "testing2"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		// After reconciliation: no staging litter, and any captured
-		// prefix either belongs to a live manifest or holds no segments.
-		for entry, err := range h.Session2().Objects(ctx, dst, swiftcontrol.ObjectListOptions{Deep: true, Prefix: executor.StagingPrefix()}) {
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Errorf("staging litter after reconcile: %+v", entry)
+		t.Cleanup(witness.Close)
+		// The child and Finish may already have cleaned some objects.
+		// Reconciliation must retain everything that remains at its boundary.
+		before, err := witness.SnapshotContainers(dst, dst+"_segments")
+		if err != nil {
+			t.Fatal(err)
 		}
-		for _, captured := range report.CapturedPrefixes {
-			kept := false
-			for _, k := range reconcile.KeptPrefixes {
-				if k == captured.Container+"/"+captured.Prefix {
-					kept = true
-				}
-			}
-			if kept {
-				continue
-			}
-			for entry, err := range h.Session2().Objects(ctx, captured.Container, swiftcontrol.ObjectListOptions{Deep: true, Prefix: captured.Prefix}) {
-				if err != nil {
-					break // segment container may not even exist
-				}
-				t.Errorf("orphan segment survived reconcile: %+v", entry)
-			}
+		reconcile, err := executor.Reconcile(ctx, report)
+		if err != nil || reconcile.SweptStaged != 0 || reconcile.SweptSegments != 0 || len(reconcile.Notes) == 0 {
+			t.Fatalf("cancel reconciliation = %+v, %v", reconcile, err)
+		}
+		after, err := witness.SnapshotContainers(dst, dst+"_segments")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if delta := oracle.Diff(before, after); !delta.Empty() {
+			t.Fatalf("reconciliation changed retained data after child exit: %s", delta)
 		}
 		t.Logf("cancel: captured=%d swept=%d kept=%v notes=%v",
 			len(report.CapturedPrefixes), reconcile.SweptSegments, reconcile.KeptPrefixes, reconcile.Notes)
