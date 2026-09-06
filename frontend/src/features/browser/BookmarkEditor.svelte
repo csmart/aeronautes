@@ -121,6 +121,7 @@
         <span class="hint">
           Leave blank to keep the stored key when the auth URL, username and TLS trust
           stay the same. Re-enter the key when changing them or the storage override.
+          Old keys may remain in credential storage after replacement or deletion.
         </span>
       {/if}
     </label>

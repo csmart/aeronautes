@@ -99,6 +99,11 @@ The Makefile is a thin directory over the real build system, the Wails v3 Taskfi
 
 ### Before trusting a release against production
 
+The [project audit](docs/audits/2026-09-05/README.md) still blocks use of mutation, recovery and transfer paths on valuable data.
+Credential replacement now preserves the previously published key if a save fails, but retired and unused keys remain tracked in credential storage until verified cleanup is implemented.
+Deleting a bookmark removes its saved configuration and cached connection; it does not yet prove physical key removal or revoke every previously held session.
+These remaining [credential lifetime and recovery gates](docs/adr/0015-credential-bindings.md) must close before that hold is lifted.
+
 The §57.4 smoke against real SwiftStack infrastructure is a **manual operator step**:
 connect to a real endpoint over TLS, browse a large container, run a small cross-account copy
 into a scratch container, verify counts in the drawer, and check `/info`-gated features match

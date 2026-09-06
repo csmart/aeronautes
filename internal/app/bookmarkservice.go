@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/csmart/aeronautes/internal/bookmarks"
@@ -73,6 +74,9 @@ func (s *BookmarkService) Save(ctx context.Context, dto BookmarkDTO, secret stri
 	}
 	saved, err := s.store.SaveWithCA(ctx, b, secretBytes, caPEM)
 	if err != nil {
+		if errors.Is(err, bookmarks.ErrPublicationUnresolved) && s.connections != nil {
+			s.connections.Invalidate(dto.ID)
+		}
 		return BookmarkDTO{}, err
 	}
 	if dto.ID != "" && s.connections != nil {
@@ -99,6 +103,9 @@ func (s *BookmarkService) Delete(ctx context.Context, id string) error {
 		}
 	}
 	if err := s.store.Delete(ctx, id); err != nil {
+		if errors.Is(err, bookmarks.ErrPublicationUnresolved) && s.connections != nil {
+			s.connections.Invalidate(id)
+		}
 		return err
 	}
 	if s.connections != nil {

@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/csmart/aeronautes/internal/bookmarks"
+	"github.com/csmart/aeronautes/internal/secrets"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	"github.com/csmart/aeronautes/internal/transfer/rclone"
 )
@@ -41,22 +42,14 @@ func NewConnections(store *bookmarks.Store) *Connections {
 
 // open authenticates one bookmark into a fresh session.
 func (c *Connections) open(ctx context.Context, bookmarkID string) (*swiftcontrol.Session, error) {
-	b, err := c.store.Get(ctx, bookmarkID)
+	config, _, err := c.store.ConnectionConfig(ctx, bookmarkID)
 	if err != nil {
+		if errors.Is(err, secrets.ErrNotFound) {
+			return nil, fmt.Errorf("saved key is unavailable; unlock credential storage or re-enter it: %w", err)
+		}
 		return nil, err
 	}
-	var caPEM []byte
-	if b.TLSMode == swiftcontrol.TLSModeCustomCA {
-		caPEM, err = c.store.CAPem(ctx, b.TLSCAID)
-		if err != nil {
-			return nil, fmt.Errorf("custom-CA bookmark: %w", err)
-		}
-	}
-	apiKey, err := c.store.Credential(ctx, bookmarkID)
-	if err != nil {
-		return nil, fmt.Errorf("no credential on record for this bookmark (session store is wiped on restart): %w", err)
-	}
-	session, err := swiftcontrol.New(b.SwiftConfig(apiKey, caPEM))
+	session, err := swiftcontrol.New(config)
 	if err != nil {
 		return nil, err
 	}
@@ -93,6 +86,9 @@ func (c *Connections) Connect(ctx context.Context, bookmarkID string) error {
 // first use and caching it (transfers hold sessions for BOTH ends —
 // neither needs to be the active browse connection).
 func (c *Connections) SessionFor(ctx context.Context, bookmarkID string) (*swiftcontrol.Session, error) {
+	if err := c.store.Available(ctx, bookmarkID); err != nil {
+		return nil, err
+	}
 	c.mu.Lock()
 	if session, ok := c.sessions[bookmarkID]; ok {
 		c.mu.Unlock()
@@ -222,6 +218,9 @@ func (c *Connections) Session() (*swiftcontrol.Session, error) {
 	defer c.mu.Unlock()
 	if c.active == nil {
 		return nil, ErrNotConnected
+	}
+	if err := c.store.Available(context.Background(), c.activeID); err != nil {
+		return nil, err
 	}
 	return c.active, nil
 }

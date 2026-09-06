@@ -4270,10 +4270,14 @@ The subsequent binding guard refuses a blank-key edit that changes the complete 
 Identical CA bytes and cosmetic changes retain the saved key; caller-supplied credential presence cannot grant retention.
 The editor explains key reentry, and refused edits retain the existing bookmark and live connection.
 Imported CA rows publish in the same transaction as the bookmark; service tests prove both retarget refusal with zero receiver requests and CA rollback on an injected SQL failure.
-This is containment only: explicit-key replacement still overwrites the fixed external reference before SQL publication, and held-session revocation is not implemented.
-The credential journal, immutable references, coherent acquisition, cleanup and session/job lifetime remain open, together with the wider P12/P13 recovery contract.
-The publication slice must distinguish a session-store lifetime from an unverified native-keychain adapter lifetime, as specified in ADR 0015.
+The publication slice now records a fresh replacement reference before external Put, compares the captured generation and row revision, and publishes configuration, key reference and CA together.
+Connection acquisition uses a single SQL snapshot and holds a lease through the external key read, refusing a changed binding before authentication.
+Ambiguous commit responses are re-read before declaring success or failure; an unavailable read-back pauses new acquisition and retains evidence.
+Logical deletion keeps its selected reference in an independent journal row, and no physical cleanup runs in this slice.
+It distinguishes a session-store lifetime from an unverified native-keychain adapter lifetime, as specified in ADR 0015.
 It retains unused references and journal records until cleanup can prove both the original backend and the absence of live users; a fallback or a negative lookup through a changed OS default is not deletion evidence.
+The [validation record](experiments/2026-09-06-credential-publication.md) records the failure/concurrency oracles and the limited database/adapter reopen proof.
+The editor and README disclose retained keys; held/authenticating-session revocation, job admission/pins and the wider P12/P13 recovery contract remain open.
 Verified persistent-backend selection, visible cleanup status and bounded recovery remain prerequisites for completing P10.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
