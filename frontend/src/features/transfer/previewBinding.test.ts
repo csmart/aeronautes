@@ -142,12 +142,13 @@ describe.each(["copy", "delete"] as const)("%s preview binding", (kind) => {
     expect(f.api.startDelete).not.toHaveBeenCalled();
   });
 
-  it.each(["pending", "ready"])("disarms on same-bookmark reconnect with unchanged request, phase=%s", async (phase) => {
+  it.each(["pending", "ready"])("disarms on same-bookmark reconnect even if the old location returns, phase=%s", async (phase) => {
     const f = show(kind);
     f.preview();
     if (phase === "ready") { await f.resolve(); f.arm(); }
     await expect(f.browser.connect("source")).rejects.toThrow("reconnect failed");
-    expect([f.browser.connectedBookmarkId, f.browser.containerName, f.browser.prefix]).toEqual(["source", "media", "selected/"]);
+    expect([f.browser.connectedBookmarkId, f.browser.containerName, f.browser.prefix]).toEqual([null, null, ""]);
+    f.browser.connectedBookmarkId = "source"; f.browser.containerName = "media"; f.browser.prefix = "selected/";
     if (phase === "pending") await f.resolve();
     await settle();
     f.arm();
@@ -169,7 +170,7 @@ describe.each(["copy", "delete"] as const)("%s preview binding", (kind) => {
     expect(f.api.startDelete).not.toHaveBeenCalled();
     reconnect.reject(new Error("failed reconnect"));
     expect(await pending).toBe("failed reconnect"); await settle();
-    expect(f.previewButton().disabled).toBe(false);
+    expect(f.previewButton().disabled).toBe(true);
     expect(f.startButton().disabled).toBe(true);
   });
 

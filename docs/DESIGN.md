@@ -4560,6 +4560,17 @@ The [dialog validation record](experiments/2026-09-06-dialog-binding.md) contain
 Full bookmark/connection reset remains the third P07 slice; ordinary paging and Find work remains P08.
 This slice still requires independent local review and all five PR/master checks before delivery.
 
+The third P07 implementation now resets the complete connected UI at active-bookmark save/delete admission and reconnect admission, including failed or uncertain attempts.
+A private pending target serializes frontend Connect through its bridge and dependent reads, while scope and editor lifetime checks retire obsolete publication without releasing that slot early.
+Target-specific reference counts also prevent reconnect while any change to that bookmark remains pending.
+Save-only leaves the active view disconnected; a current Save & connect can reconnect after its own reset, while a closed editor or later connection intent cannot do so.
+New-bookmark retries retain the saved id after a connection failure.
+Reset-crossing initial reads, pages, Find startup/polling/cancellation and backstage follow-ups cannot repopulate or navigate a later connection.
+The [connection-reset validation record](experiments/2026-09-06-connection-reset.md) contains the separate UI matrix, 74-case parent reproduction and 34 independent removed-safeguard controls.
+The two selected archived UI-02/05 probes now pass; this does not mark the other archived audit cases complete.
+This final P07 frontend slice still requires independent local review and all five PR/master checks before delivery.
+Ordinary paging and the full Find lifecycle remain P08; backend authority, durable outcomes, external writers, ownership and the valuable-data release hold remain open.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.

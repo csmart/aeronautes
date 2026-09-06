@@ -2,6 +2,7 @@
   progress — scanned count and throughput — and streamed matches.
   Clicking a match navigates to its parent prefix. -->
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import type { BrowserState } from "../browser/browserState.svelte";
   import { formatBytes } from "../../lib/format";
   import { parentPrefix } from "../../lib/listing";
@@ -9,14 +10,22 @@
   let { browser, onClose }: { browser: BrowserState; onClose: () => void } = $props();
 
   let query = $state("");
+  let closed = false;
+  onDestroy(() => { closed = true; });
 
   async function go(name: string) {
+    if (closed || browser.connecting || !browser.connectedBookmarkId) return;
+    const scope = browser.scopeRevision;
     await browser.cancelFind();
+    if (closed || scope !== browser.scopeRevision) return;
+    closed = true;
     onClose();
     await browser.goTo(parentPrefix(name));
   }
 
   function close() {
+    if (closed) return;
+    closed = true;
     void browser.cancelFind();
     onClose();
   }
@@ -27,7 +36,7 @@
     class="controls"
     onsubmit={(e) => {
       e.preventDefault();
-      if (query.trim() !== "") void browser.startFind(query);
+      if (!closed && query.trim() !== "") void browser.startFind(query);
     }}
   >
     <input

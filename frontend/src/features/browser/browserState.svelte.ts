@@ -95,6 +95,8 @@ export class BrowserState {
     this.#connectedBookmarkId = value;
   }
   connecting = $state(false);
+  #connectingBookmarkId: string | null = null;
+  #bookmarkChanges = new Map<string, number>();
   connectError: string | null = $state(null);
   account: AccountDTO | null = $state(null);
   /** Connect-time §10 capability snapshot; null until connected. */
@@ -232,6 +234,49 @@ export class BrowserState {
     this.bookmarks = await this.#api.listBookmarks();
   }
 
+  #resetConnection() {
+    this.#scopeRevision++;
+    this.#connectionRevision++;
+    this.connectedBookmarkId = null;
+    this.account = null;
+    this.capabilities = null;
+    this.connectError = null;
+    this.#containersSeq++;
+    this.containers = [];
+    this.containersMarker = "";
+    this.containersError = null;
+    this.#containerDetailSeq++;
+    this.containerName = null;
+    this.containerDetail = null;
+    this.#containerDetailConnection = -1;
+    this.backstageFrom = null;
+    this.prefix = "";
+    this.#listSeq++;
+    this.entries = [];
+    this.entriesMarker = "";
+    this.entriesLoading = false;
+    this.entriesError = null;
+    this.filter = "";
+    this.select(-1);
+    this.transferOpen = false;
+    this.localTransfer = null;
+    this.deleteOpen = false;
+    this.findOpen = false;
+    this.findStatus = null;
+    void this.cancelFind();
+  }
+
+  #beginBookmarkChange(id: string) {
+    if (id !== "") this.#bookmarkChanges.set(id, (this.#bookmarkChanges.get(id) ?? 0) + 1);
+    if (id === this.connectedBookmarkId || id === this.#connectingBookmarkId) this.#resetConnection();
+  }
+
+  #endBookmarkChange(id: string) {
+    const remaining = (this.#bookmarkChanges.get(id) ?? 0) - 1;
+    if (remaining > 0) this.#bookmarkChanges.set(id, remaining);
+    else this.#bookmarkChanges.delete(id);
+  }
+
   #invalidateCredentialStatus() {
     this.#credentialStatusSeq++;
     this.credentialStatus = null;
@@ -259,16 +304,13 @@ export class BrowserState {
   }
 
   async deleteBookmark(id: string): Promise<void> {
+    this.#beginBookmarkChange(id);
     this.#invalidateCredentialStatus();
     try {
       await this.#api.deleteBookmark(id);
       this.bookmarks = this.bookmarks.filter((b) => b.id !== id);
-      if (this.connectedBookmarkId === id) {
-        this.connectedBookmarkId = null;
-        this.containers = [];
-        this.containerName = null;
-      }
     } finally {
+      this.#endBookmarkChange(id);
       // Refresh even after an uncertain result; status must not change the
       // mutation's outcome or delay reporting it while the bridge is busy.
       void this.loadCredentialStatus();
@@ -276,37 +318,59 @@ export class BrowserState {
   }
 
   async saveBookmark(bookmark: BookmarkDTO, secret: string): Promise<BookmarkDTO> {
+    const id = bookmark.id;
+    this.#beginBookmarkChange(id);
     this.#invalidateCredentialStatus();
     try {
       const saved = await this.#api.saveBookmark(bookmark, secret);
       await this.loadBookmarks();
       return saved;
     } finally {
+      this.#endBookmarkChange(id);
       // A failed save can leave a prepared key even without a bookmark row.
       void this.loadCredentialStatus();
     }
   }
 
-  async connect(bookmarkId: string) {
-    // Reconnecting may change authority even when all visible names stay equal.
-    this.#scopeRevision++;
-    this.#connectionRevision++;
+  async connect(bookmarkId: string, ownsView = () => true): Promise<boolean> {
+    // Ignoring a stale reply cannot undo the backend's implicit active session.
+    // Hold this slot through all dependent reads, even after UI invalidation.
+    if (this.#connectingBookmarkId !== null) throw new Error("A connection attempt is already in progress");
+    if (!ownsView()) return false;
+    if (this.#bookmarkChanges.has(bookmarkId)) {
+      this.connectError = "This bookmark is still being changed. Try connecting when it finishes.";
+      throw new Error(this.connectError);
+    }
+    this.#resetConnection();
+    const scope = this.#scopeRevision;
+    const current = () => scope === this.#scopeRevision && ownsView();
+    this.#connectingBookmarkId = bookmarkId;
     this.connecting = true;
-    this.connectError = null;
     try {
-      this.account = await this.#api.connect(bookmarkId);
-      this.connectedBookmarkId = bookmarkId;
-      this.containerName = null;
-      this.prefix = "";
-      this.entries = [];
-      this.selectedIndex = -1;
-      this.capabilities = await this.#api.capabilities().catch(() => null);
-      await this.loadContainers();
+      const account = await this.#api.connect(bookmarkId);
+      if (!current()) return false;
+      const capabilities = await this.#api.capabilities().catch(() => null);
+      if (!current()) return false;
+      let containersError: string | null = null;
+      const containers = await this.#api.containers("", pageLimit).catch((err) => {
+        containersError = messageOf(err);
+        return { rows: [], nextMarker: "" };
+      });
+      if (!current()) return false;
       await this.loadAudit();
+      if (!current()) return false;
+      this.account = account;
+      this.capabilities = capabilities;
+      this.containers = containers.rows;
+      this.containersMarker = containers.nextMarker;
+      this.containersError = containersError;
+      this.connectedBookmarkId = bookmarkId;
+      return true;
     } catch (err) {
-      this.connectError = messageOf(err);
+      if (current()) this.connectError = messageOf(err);
       throw err;
     } finally {
+      this.#connectingBookmarkId = null;
       this.connecting = false;
     }
   }
@@ -327,10 +391,15 @@ export class BrowserState {
   }
 
   async loadMoreContainers() {
-    if (this.containersMarker === "") {
+    if (this.containersMarker === "" || this.connecting || !this.connectedBookmarkId) {
       return;
     }
-    const page = await this.#api.containers(this.containersMarker, pageLimit);
+    const scope = this.#scopeRevision;
+    const page = await this.#api.containers(this.containersMarker, pageLimit).catch((err) => {
+      if (scope !== this.#scopeRevision) return null;
+      throw err;
+    });
+    if (!page || scope !== this.#scopeRevision) return;
     this.containers = [...this.containers, ...page.rows];
     this.containersMarker = page.nextMarker;
   }
@@ -366,6 +435,7 @@ export class BrowserState {
   }
 
   async openContainer(name: string) {
+    if (this.connecting || !this.connectedBookmarkId) return;
     this.containerName = name;
     this.containerDetail = null;
     this.backstageFrom = null;
@@ -385,7 +455,7 @@ export class BrowserState {
   }
 
   async goTo(prefix: string) {
-    if (!this.containerName) {
+    if (!this.containerName || this.connecting || !this.connectedBookmarkId) {
       return;
     }
     await this.#loadEntries(prefix);
@@ -393,7 +463,7 @@ export class BrowserState {
 
   /** Backspace / Alt+↑ (§4.4): parent prefix, then out of the container. */
   async up() {
-    if (!this.containerName) {
+    if (!this.containerName || this.connecting || !this.connectedBookmarkId) {
       return;
     }
     if (this.prefix === "") {
@@ -438,15 +508,20 @@ export class BrowserState {
   }
 
   async loadMoreEntries() {
-    if (this.entriesMarker === "" || !this.containerName) {
+    if (this.entriesMarker === "" || !this.containerName || this.connecting || !this.connectedBookmarkId) {
       return;
     }
+    const scope = this.#scopeRevision;
     const page = await this.#api.objects(
       this.containerName,
       this.prefix,
       this.entriesMarker,
       pageLimit,
-    );
+    ).catch((err) => {
+      if (scope !== this.#scopeRevision) return null;
+      throw err;
+    });
+    if (!page || scope !== this.#scopeRevision) return;
     this.entries = [...this.entries, ...page.rows];
     this.entriesMarker = page.nextMarker;
   }
@@ -641,16 +716,27 @@ export class BrowserState {
   }
 
   async startFind(query: string) {
-    if (this.containerName === null) {
+    if (this.containerName === null || this.connecting || !this.connectedBookmarkId) {
       return;
     }
+    const connection = this.#connectionRevision;
+    const container = this.containerName;
+    const prefix = this.prefix;
     await this.cancelFind();
+    if (connection !== this.#connectionRevision) return;
     this.findStatus = null;
     this.findRunning = true;
+    let id: string | null = null;
     try {
-      this.#findId = await this.#api.startFind(this.containerName, this.prefix, query);
-      while (this.findRunning && this.#findId !== null) {
-        const status = await this.#api.findStatus(this.#findId);
+      id = await this.#api.startFind(container, prefix, query);
+      if (connection !== this.#connectionRevision) {
+        await this.#api.cancelFind(id).catch(() => {});
+        return;
+      }
+      this.#findId = id;
+      while (this.findRunning && this.#findId === id && connection === this.#connectionRevision) {
+        const status = await this.#api.findStatus(id);
+        if (connection !== this.#connectionRevision || this.#findId !== id) return;
         this.findStatus = status;
         if (status.done) {
           break;
@@ -658,25 +744,26 @@ export class BrowserState {
         await new Promise((resolve) => setTimeout(resolve, 400));
       }
     } catch (error) {
-      this.findStatus = {
-        scanned: this.findStatus?.scanned ?? 0,
-        matches: this.findStatus?.matches ?? [],
-        truncated: false,
-        done: true,
-        error: messageOf(error),
-        objectsPerSecond: 0,
-      };
+      if (connection === this.#connectionRevision && (id === null || this.#findId === id)) {
+        this.findStatus = {
+          scanned: this.findStatus?.scanned ?? 0,
+          matches: this.findStatus?.matches ?? [],
+          truncated: false,
+          done: true,
+          error: messageOf(error),
+          objectsPerSecond: 0,
+        };
+      }
     } finally {
-      this.findRunning = false;
+      if (connection === this.#connectionRevision && (id === null || this.#findId === id)) this.findRunning = false;
     }
   }
 
   async cancelFind() {
     this.findRunning = false;
-    if (this.#findId !== null) {
-      await this.#api.cancelFind(this.#findId).catch(() => {});
-      this.#findId = null;
-    }
+    const id = this.#findId;
+    this.#findId = null;
+    if (id !== null) await this.#api.cancelFind(id).catch(() => {});
   }
 
   async previewDelete(req: DeleteRequestDTO): Promise<DeletePreviewDTO> {
@@ -830,9 +917,16 @@ export class BrowserState {
    * the segment container under its prefix, with a banner naming the
    * manifest we came from. */
   async openBackstage(container: string, prefix: string, fromLabel: string) {
-    await this.openContainer(container);
+    if (this.connecting || !this.connectedBookmarkId) return;
+    const opening = this.openContainer(container);
+    let scope = this.#scopeRevision;
+    await opening;
+    if (scope !== this.#scopeRevision) return;
     if (prefix !== "") {
-      await this.goTo(prefix);
+      const loading = this.goTo(prefix);
+      scope = this.#scopeRevision;
+      await loading;
+      if (scope !== this.#scopeRevision) return;
     }
     this.backstageFrom = fromLabel;
   }
