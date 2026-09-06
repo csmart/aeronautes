@@ -201,8 +201,7 @@ func (s *Session) post(ctx context.Context, container, object string, headers sw
 		Operation:  "POST",
 		Headers:    headers,
 		NoResponse: true,
-		// Call holds the connection's auth lock while invoking this callback.
-		OnReAuth: func() (string, error) { return s.auth.snapshot().storageURL, nil },
+		OnReAuth:   s.auth.storageTarget,
 	})
 	if err != nil {
 		return "", Normalize(err)

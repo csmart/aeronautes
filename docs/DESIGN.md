@@ -4300,18 +4300,19 @@ All six job entry points now acquire generation pins before preflight and durabl
 Cosmetic edits retain the binding, and a second publication check protects jobs admitted while an external key save is waiting.
 Failed starts release all acquired pins; queued cancellation and running jobs retain theirs through the entire job body and cancellation cleanup.
 The [job lifetime validation record](experiments/2026-09-06-job-generations.md) covers the original queued replacement failures, both ends of cross-bookmark jobs, failed creation and cleanup barriers, with safeguard-removal negative controls.
-Historical recovery identity, library URL/token pairing and verified native cleanup remain required work; these process-local pins do not complete P10.
+Historical recovery identity and verified native cleanup remain required work; these process-local pins do not complete P10.
 Each bookmark session now carries its captured generation into native transport admission, so replacement, deletion or an unavailable generation refuses new authentication and storage requests from held sessions.
 Credential snapshots also validate before handing authority to an engine; the parent gateway validates at creation and before every upstream request, including policy HEADs and dispatch after body reads.
 Publication coordination covers admission but is released before external I/O, preserving concurrent transfers and allowing operations admitted before a change to finish.
 The [request-admission validation record](experiments/2026-09-06-request-admission.md) covers all 42 initial obsolete/unavailable cases, later retries/pages/reopens, delayed gateway requests and five negative controls.
-Native cleanup authority, historical recovery identity and the remaining library URL/token pairing gap stay open, and P10 remains incomplete.
+Native cleanup authority and historical recovery identity stay open, and P10 remains incomplete.
 
-The next pairing slice is proposed in [ADR 0016](adr/0016-native-request-credentials.md).
+The pairing correction follows the accepted [ADR 0016](adr/0016-native-request-credentials.md).
 A deterministic reproduction of the library's split URL/token reads fails when authentication changes the host or account path, while an unchanged-endpoint control passes.
-The proposed narrow local dependency patch selects the URL callback and token under one authentication lock on every attempt, preserving concurrent storage I/O and existing retry semantics.
-First review that dependency decision, then implement it with provenance, permanent regressions, explicit upstream-module tests and the full application gates.
-The proposal and disposable prototype are not an implemented guarantee.
+The narrow local dependency patch selects the URL callback and token under one authentication lock on every attempt, preserving concurrent storage I/O and existing retry semantics.
+The required Go job verifies the recorded upstream archive plus patch against the exact imported source and explicitly tests the nested upstream root package against its mock.
+The [pairing validation record](experiments/2026-09-06-native-pairing.md) covers deterministic regressions, concurrent native and direct calls, prepared requests, retries, body replay, lazy pages and stream reopen.
+Native cleanup, historical recovery, throughput measurement and the broader P10 work remain open.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.

@@ -85,8 +85,7 @@ func (s *Session) SLOManifest(ctx context.Context, container, name string) (*SLO
 		ObjectName: name,
 		Operation:  "GET",
 		Parameters: url.Values{"multipart-manifest": []string{"get"}},
-		// Call holds the connection's auth lock while invoking this callback.
-		OnReAuth: func() (string, error) { return s.auth.snapshot().storageURL, nil },
+		OnReAuth:   s.auth.storageTarget,
 	})
 	if err != nil {
 		return nil, Normalize(err)
