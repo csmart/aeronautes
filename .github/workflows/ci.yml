@@ -46,6 +46,10 @@ jobs:
         run: |
           diff=$(gofmt -l .)
           if [ -n "$diff" ]; then echo "gofmt needed on:"; echo "$diff"; exit 1; fi
+      - name: Verify patched Swift source and checker refusals
+        run: make verify-swift-source
+      - name: Test upstream Swift core against its local mock
+        run: make test-swift-core
       - name: go vet
         run: go vet ./...
       - name: go build

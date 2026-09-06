@@ -2,6 +2,7 @@ package swiftcontrol
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"sync/atomic"
@@ -87,6 +88,16 @@ func (a *v1Auth) snapshot() authSnapshot {
 		return *s
 	}
 	return authSnapshot{}
+}
+
+// storageTarget runs under the wire connection's authentication lock, so
+// its accepted URL belongs to the token selected in that same critical section.
+func (a *v1Auth) storageTarget() (string, error) {
+	target := a.snapshot().storageURL
+	if target == "" {
+		return "", errors.New("no accepted Swift storage URL")
+	}
+	return target, nil
 }
 
 // StorageUrl ignores the library's internal/service-net flag: Aeronautes

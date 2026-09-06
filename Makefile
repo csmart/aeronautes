@@ -12,6 +12,7 @@ export PATH := $(HOME)/go/bin:$(PATH)
 WAILS3_VERSION := v3.0.0-beta.15
 
 .PHONY: all tools build run dev test test-go test-frontend test-integration \
+	verify-swift-source test-swift-core \
 	rpm deb package spike rclone-matrix clean
 
 all: build
@@ -41,8 +42,16 @@ coverage:
 	@go tool cover -func=cover.out | awk '/^total:/ {print "Go combined:", $$3}'
 	cd frontend && npm run test:coverage | tail -8
 
-test-go:
+test-go: verify-swift-source test-swift-core
 	go test -race -count=1 ./...
+
+verify-swift-source:
+	python3 scripts/check-swift-source.py
+	python3 -B scripts/check-swift-source-test.py
+
+## The nested module is excluded by ./...; its rs suite needs live Rackspace CDN.
+test-swift-core:
+	cd third_party/ncw-swift/source && SWIFT_API_USER= SWIFT_API_KEY= SWIFT_AUTH_URL= go test -race -count=1 .
 
 test-frontend:
 	cd frontend && npm install && npm run check && npm test

@@ -1,6 +1,6 @@
 # ADR 0016 — native request credential selection
 
-**Status:** Proposed for independent local review; no production replacement is implemented.
+**Status:** Accepted after independent local review; the implementation and validation are recorded below.
 **Scope:** Audit P10 and W-05; DESIGN §§6.5, 9, 12 and 55; ADR 0015.
 
 ## Context
@@ -63,6 +63,7 @@ Implement `scripts/check-swift-source.py` with these required checks:
 The local `make verify-swift-source` target must run that script, and the required `Go — fmt, vet, build, test (race)` job must run the same target without allowing failure.
 Test the checker with source alteration, required-version drift, wrong replacement, checksum mismatch and patch removal; none may silently build or report success.
 The existing `gofmt -l .` gate also applies to the imported source, which is clean under Go 1.27 today.
+The imported upstream workflow and linter configuration are inert at their nested paths; exclude `third_party` if a future linter scans the entire tree.
 
 ## Alternatives and maintenance cost
 
@@ -80,7 +81,8 @@ Adding that second authority cache would require another request-lifetime contra
 This creates an explicit dependency-maintenance obligation.
 Keep the patch small and mechanically compare it with its recorded upstream base during review and upgrades.
 Prepare the minimal patch and standalone reproduction for an upstream contribution as part of delivery.
-Record the upstream link when submitted; the reviewed local correction does not depend on an upstream response.
+Upstream submission is an owner action; record its link when submitted.
+The reviewed local correction does not depend on an upstream response.
 No unreviewed release or moving branch replaces the pin.
 Remove the local replacement only when an accepted upstream version passes the same pairing, retry, encoding and full application gates.
 
@@ -99,3 +101,9 @@ An older in-flight request's 401 can still invalidate credentials obtained by a 
 That existing retry-pressure behaviour is outside this pairing correction and remains relevant to the throughput gate.
 The replacement does not complete native key cleanup, historical recovery identity, throughput measurement, the six-platform release gates or the broader audit.
 The valuable-data release hold remains.
+
+## Implementation
+
+The repository now carries the reviewed source copy, patch and provenance gate, and both direct application callbacks use the accepted snapshot with explicit missing-URL refusal.
+The required Go CI job and local make targets run archive and source verification, the checker's rejection tests and the nested root mock suite.
+The [validation record](../experiments/2026-09-06-native-pairing.md) describes the deterministic before/after proof, concurrent progress, retry and stream controls, full application gates and remaining limits.
