@@ -182,19 +182,25 @@ Its read uses the publication coordinator and local journal without contacting t
 Counts survive bookmark deletion and database reopen; failed status reads remain unavailable instead of claiming an empty journal.
 The frontend refreshes after successful and failed save/delete attempts and when the view opens, and discards responses superseded by another refresh or mutation.
 The [status validation record](../experiments/2026-09-06-credential-status.md) covers these boundaries; the counts describe recorded work and are not proof that native keys exist or were erased.
-Verified native cleanup and held/authenticating-session revocation remain open.
+Verified native cleanup and the remaining library URL/token pairing fix remain open.
 Removing matching legacy values from the current session store is also deferred; this slice makes no external Delete call, even for memory-only values.
 The cache containment slice now records the captured generation and refuses obsolete results after authentication and capability discovery.
 Final validation and cache installation share the publication coordinator, with only the cache update nested under the cache mutex.
 Cache reads validate their generation and identity again before returning a session or active connection details; unavailable reads refuse use.
 The [cache validation record](../experiments/2026-09-06-cache-generations.md) covers delayed authentication, replacement and deletion, unavailable reads, and lock-order negative controls.
-This closes obsolete cache publication and lookup, while sessions already returned to callers still need request admission and revocation before the full lifetime rule is met.
+Cache containment alone closes obsolete publication and lookup; sessions already returned to callers require the following request-admission step.
 Copy, Mirror, upload, download, deletion and benchmark jobs now pin their captured credential generations before preflight and durable job creation.
 Binding changes, key-only replacement and deletion refuse while any admitted job holds that bookmark; cosmetic edits retain the binding.
 Publication rechecks job pins after an external key write, so a job admitted during that write keeps its credentials and the unused candidate stays tracked.
 Failed starts release every acquired pin, including upload recovery-record failure; queued cancellation and running work release only after the entire job body and its cleanup return.
 The [job lifetime validation record](../experiments/2026-09-06-job-generations.md) covers all six entry points, acknowledged cancellation/cleanup barriers and deliberately broken safeguards.
 These pins protect live jobs in this process; they do not bind historical recovery records or plan capabilities, revoke held-session requests, or authorise physical key cleanup.
+Bookmark sessions now carry a generation check before their first authentication and run it before each native HTTP dispatch, including implicit retries and later listing or stream requests.
+Credential snapshot access checks the generation even when a fresh token avoids HTTP, and engine remotes carry the check to the parent gateway.
+Gateway creation and every upstream request validate that authority, including the separate policy HEAD and dispatch after a blocked bulk-body read.
+The check is coordinated with publication, with coordination released before external I/O; an operation admitted before a change may still complete or have effects afterwards.
+The [request-admission validation record](../experiments/2026-09-06-request-admission.md) records obsolete-session failures, retry/page/reopen barriers, gateway checks and safeguard-removal controls.
+This closes request admission by obsolete bookmark generations; the library's independent URL/token selection within one binding, historical recovery identity and verified native cleanup remain open.
 
 Permanent regressions must cover the service-level retarget attack with zero requests to the new receiver, explicit reentry, URL/port/account/override/TLS changes, and identical-byte CA reimport.
 Inject failure before and after each SQL/keychain boundary, including a Put that takes effect and then fails, publication failure, ambiguous commit and failed cleanup.

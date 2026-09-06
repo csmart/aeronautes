@@ -32,6 +32,9 @@ type Config struct {
 	StorageURLOverride string
 	// TLS is this bookmark's TLS policy (§12.3).
 	TLS TLSConfig
+	// AdmitRequest binds held sessions to the captured bookmark generation.
+	// Standalone sessions may omit it; bookmark sessions must supply it.
+	AdmitRequest func(context.Context) error `json:"-"`
 }
 
 // Session is an authenticated (or authenticatable) connection to one Swift
@@ -46,7 +49,8 @@ type Session struct {
 	// delete): the SAME bookmark transport (custom CA / insecure), no
 	// redirect following (a redirect would resend X-Auth-Token wherever
 	// it pointed), and a ceiling instead of an unbounded hang.
-	raw *http.Client
+	raw          *http.Client
+	admitRequest func(context.Context) error
 
 	// refreshMu single-flights explicit refreshes; authedAt is the last
 	// EXPLICIT authentication (the wire library's own 401-driven re-auth
@@ -73,6 +77,9 @@ func New(cfg Config) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	if cfg.AdmitRequest != nil {
+		transport = requestAdmissionTransport{inner: transport, admit: cfg.AdmitRequest}
+	}
 	const userAgent = "aeronautes"
 	auth := &v1Auth{
 		authURL:   cfg.AuthURL,
@@ -83,8 +90,9 @@ func New(cfg Config) (*Session, error) {
 		override:  cfg.StorageURLOverride,
 	}
 	return &Session{
-		auth: auth,
-		tls:  cfg.TLS,
+		auth:         auth,
+		tls:          cfg.TLS,
+		admitRequest: cfg.AdmitRequest,
 		raw: &http.Client{
 			Transport: transport,
 			Timeout:   10 * time.Minute,
@@ -165,6 +173,11 @@ type StorageCredentials struct {
 // Trust comes from the immutable session config, never a later bookmark
 // edit; callers own the returned CA bytes and cannot change the session.
 func (s *Session) Credentials(ctx context.Context, margin time.Duration) (StorageCredentials, error) {
+	// A fresh token can bypass HTTP entirely, so transport admission alone
+	// would still let an obsolete session hand credentials to a child gateway.
+	if err := s.AdmitRequest(ctx); err != nil {
+		return StorageCredentials{}, err
+	}
 	s.refreshMu.Lock()
 	defer s.refreshMu.Unlock()
 	if err := s.refreshIfStale(ctx, margin); err != nil {

@@ -25,20 +25,21 @@ import (
 const gatewayIdleTimeout = 60 * time.Second
 
 type storageGateway struct {
-	upstream    *url.URL
-	accountPath string
-	infoPath    string
-	upstreamKey string
-	localKey    string
-	localHost   string
-	identity    string
-	scope       *gatewayScope
-	transport   *http.Transport
-	server      *http.Server
-	cancel      context.CancelFunc
-	done        chan struct{}
-	closeOnce   sync.Once
-	bulkSlots   chan struct{}
+	upstream     *url.URL
+	accountPath  string
+	infoPath     string
+	upstreamKey  string
+	localKey     string
+	localHost    string
+	identity     string
+	scope        *gatewayScope
+	transport    *http.Transport
+	admitRequest func(context.Context) error
+	server       *http.Server
+	cancel       context.CancelFunc
+	done         chan struct{}
+	closeOnce    sync.Once
+	bulkSlots    chan struct{}
 }
 
 type gatewayFactory func(context.Context, Remote, *gatewayScope, int) (*storageGateway, Remote, error)
@@ -113,6 +114,11 @@ func newStorageGateway(parent context.Context, remote Remote, scope *gatewayScop
 	if err := parent.Err(); err != nil {
 		return nil, Remote{}, err
 	}
+	if remote.AdmitRequest != nil {
+		if err := remote.AdmitRequest(parent); err != nil {
+			return nil, Remote{}, err
+		}
+	}
 	if remote.Token == "" || strings.ContainsAny(remote.Token, "\r\n\x00") {
 		return nil, Remote{}, fmt.Errorf("gateway needs a valid upstream token")
 	}
@@ -179,7 +185,7 @@ func newStorageGateway(parent context.Context, remote Remote, scope *gatewayScop
 	gateway := &storageGateway{
 		upstream: upstream, accountPath: accountPath, infoPath: path.Join(accountPath, "..", "..", "info"),
 		upstreamKey: remote.Token, localKey: rand.Text(), localHost: listener.Addr().String(),
-		identity: identity, scope: scope, transport: transport, cancel: cancel,
+		identity: identity, scope: scope, transport: transport, cancel: cancel, admitRequest: remote.AdmitRequest,
 		done: make(chan struct{}), bulkSlots: make(chan struct{}, 2),
 	}
 	gateway.server = &http.Server{
@@ -294,7 +300,7 @@ func (g *storageGateway) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if !info {
 		upstream.Header.Set("X-Auth-Token", g.upstreamKey)
 	}
-	resp, err := g.transport.RoundTrip(upstream)
+	resp, err := g.roundTrip(upstream)
 	if err != nil {
 		// Transport errors may contain request details. Keep them out of
 		// child logs, which feed persisted job diagnostics.
@@ -319,6 +325,18 @@ func (g *storageGateway) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
+func (g *storageGateway) roundTrip(req *http.Request) (*http.Response, error) {
+	if g.admitRequest != nil {
+		if err := g.admitRequest(req.Context()); err != nil {
+			if req.Body != nil {
+				req.Body.Close()
+			}
+			return nil, err
+		}
+	}
+	return g.transport.RoundTrip(req)
+}
+
 func (g *storageGateway) sidecarPolicyMatches(req *http.Request) bool {
 	// The child cannot select a tier or supply another container's
 	// evidence. This fresh request is built wholly from the bound scope.
@@ -331,7 +349,7 @@ func (g *storageGateway) sidecarPolicyMatches(req *http.Request) bool {
 		return false
 	}
 	head.Header.Set("X-Auth-Token", g.upstreamKey)
-	resp, err := g.transport.RoundTrip(head)
+	resp, err := g.roundTrip(head)
 	if err != nil {
 		return false
 	}
