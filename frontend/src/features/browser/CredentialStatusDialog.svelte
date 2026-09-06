@@ -33,7 +33,7 @@
         <dl class="num">
           <dt>Old key records</dt><dd>{status.retired}</dd>
           <dt>Unfinished saves</dt><dd>{status.unfinished}</dd>
-          <dt>Saves in progress</dt><dd>{status.saving}</dd>
+          <dt>Saves in progress in this app</dt><dd>{status.saving}</dd>
         </dl>
         {#if status.retired + status.unfinished > 0}
           <p>Recorded key changes await cleanup.</p>
