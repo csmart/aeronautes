@@ -85,6 +85,7 @@ func TestOracleWitnessesEveryClass(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(oracle.client.CloseIdleConnections)
 	ns := fmt.Sprintf("oracle-%d", time.Now().UnixNano())
 	data := ns + "-data"
 	segs := ns + "-segs"
@@ -101,6 +102,10 @@ func TestOracleWitnessesEveryClass(t *testing.T) {
 	plainBody := []byte("plain content here")
 	seed.req(t, http.MethodPut, "/"+data+"/plain.txt", "", plainBody, map[string]string{
 		"Content-Type": "text/plain", "X-Object-Meta-Team": "ops",
+	}).Body.Close()
+	encoded := gzipBytes(t, plainBody, "stored")
+	seed.req(t, http.MethodPut, "/"+data+"/encoded.gz", "", encoded, map[string]string{
+		"Content-Type": "application/octet-stream", "Content-Encoding": "gzip",
 	}).Body.Close()
 
 	// DLO: two segments under a prefix + a manifest.
@@ -126,6 +131,9 @@ func TestOracleWitnessesEveryClass(t *testing.T) {
 
 	if p := objs["plain.txt"]; p.Class != "plain" || p.Size != int64(len(plainBody)) || p.Meta["Team"] != "ops" || p.ContentType != "text/plain" {
 		t.Fatalf("plain witnessed as %+v", p)
+	}
+	if p := objs["encoded.gz"]; p.ContentEncoding != "gzip" || p.Size != int64(len(encoded)) || p.Digest != digest(encoded) {
+		t.Fatalf("stored gzip representation was decoded or lost: %+v", p)
 	}
 	if b := objs["big.bin"]; b.Class != "dlo" || b.Size != 160 || len(b.Segments) != 2 {
 		t.Fatalf("DLO witnessed as %+v", b)

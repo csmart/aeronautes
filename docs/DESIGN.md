@@ -4326,6 +4326,9 @@ The [keychain validation record](experiments/2026-09-06-keychain-writes.md) sepa
 The next harness prerequisite is P02 / TEST-01, following [ADR 0018](adr/0018-snapshot-representations.md).
 The archived gzip/plain probe still fails after the keychain slice because the independent oracle implicitly decodes and loses the stored encoding header.
 After local design approval, preserve content-coded bytes and encoding evidence as one reviewed fix, then reject incomplete snapshot responses as a second reviewed fix.
+The first fix now uses an owned transport without automatic decompression and records ordered encoding headers for objects and backing segments.
+Its [validation record](experiments/2026-09-06-snapshot-representations.md) includes the original failing probe, same-decoded-content and header-only controls, real-Swift gzip evidence and safeguards deliberately removed.
+Incomplete-response refusal remains the next separately reviewed implementation.
 This follows the existing P02/P03 and P01/P04/P05 containment sequence while leaving native P10 authority, bounded prompts and physical cleanup explicitly open.
 The oracle's representation and refusal tests must pass before its expanded snapshots are used to certify recovery safety.
 

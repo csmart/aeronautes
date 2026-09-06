@@ -348,6 +348,7 @@ func (h *Harness) account(authURL, user, key, name string) (*Account, error) {
 	if err != nil {
 		return nil, err
 	}
+	h.T.Cleanup(ora.Close)
 	a := &Account{BookmarkID: saved.ID, Oracle: ora, authURL: authURL, user: user, key: key, rawClient: &http.Client{
 		Timeout: 30 * time.Second,
 		// The raw seed/teardown client refuses redirects too, so a

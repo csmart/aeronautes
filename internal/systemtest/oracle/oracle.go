@@ -39,13 +39,24 @@ type Oracle struct {
 // Connect authenticates against a v1 auth endpoint and returns a reader
 // bound to the resulting account. No product code is involved.
 func Connect(authURL, user, key string) (*Oracle, error) {
+	// Decoding here would erase stored bytes and encoding metadata from
+	// the witness. The product and other tests keep their own policy.
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DisableCompression = true
 	// Never auto-follow redirects: a redirect could resend the token/key
 	// to another host or silently rewrite the request (codex war-room
 	// H-06). The oracle inspects exactly what it asked for.
 	client := &http.Client{
+		Transport:     transport,
 		Timeout:       30 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
+	connected := false
+	defer func() {
+		if !connected {
+			client.CloseIdleConnections()
+		}
+	}()
 	req, err := http.NewRequest(http.MethodGet, authURL, nil)
 	if err != nil {
 		return nil, err
@@ -65,8 +76,13 @@ func Connect(authURL, user, key string) (*Oracle, error) {
 	if storageURL == "" || token == "" {
 		return nil, fmt.Errorf("oracle auth: missing storage URL or token")
 	}
+	connected = true
 	return &Oracle{client: client, storageURL: storageURL, token: token}, nil
 }
+
+// Each oracle owns its transport, so fixture teardown must release its
+// idle connections after the final snapshot or residue check.
+func (o *Oracle) Close() { o.client.CloseIdleConnections() }
 
 // ObjectState is the MODELLED identity of one object (the fields below),
 // not its complete Swift identity — see the package doc for what is out
@@ -74,8 +90,8 @@ func Connect(authURL, user, key string) (*Oracle, error) {
 type ObjectState struct {
 	Name               string
 	Class              string // plain | dlo | slo | symlink
-	Size               int64  // logical Content-Length
-	Digest             string // SHA-256 of the logical GET body
+	Size               int64  // content-coded GET body length, after large-object assembly
+	Digest             string // SHA-256 of those bytes, without content decoding
 	ContentType        string
 	ContentEncoding    string
 	ContentDisposition string
@@ -90,9 +106,10 @@ type ObjectState struct {
 
 // SegmentState is one backing segment's identity.
 type SegmentState struct {
-	Name   string
-	Size   int64
-	Digest string
+	Name            string
+	Size            int64
+	Digest          string
+	ContentEncoding string
 }
 
 // ContainerState is a container's configuration and object set.
@@ -279,8 +296,8 @@ func (o *Oracle) listPaged(path, query string, firstPage []byte) ([]string, erro
 }
 
 func (o *Oracle) snapshotObject(container, name string) (ObjectState, error) {
-	// GET follows a symlink and assembles a large object — the LOGICAL
-	// bytes, which is what an operator reads.
+	// Large-object assembly belongs to Swift; decoding its content coding
+	// here would hide a change to the representation being witnessed.
 	resp, err := o.do(http.MethodGet, "/"+container+"/"+Escape(name), "")
 	if err != nil {
 		return ObjectState{}, err
@@ -300,7 +317,7 @@ func (o *Oracle) snapshotObject(container, name string) (ObjectState, error) {
 		Size:               int64(len(body)),
 		Digest:             hex.EncodeToString(sum[:]),
 		ContentType:        resp.Header.Get("Content-Type"),
-		ContentEncoding:    resp.Header.Get("Content-Encoding"),
+		ContentEncoding:    strings.Join(resp.Header.Values("Content-Encoding"), ", "),
 		ContentDisposition: resp.Header.Get("Content-Disposition"),
 		DeleteAt:           resp.Header.Get("X-Delete-At"),
 		Meta:               metaFrom(resp.Header, "X-Object-Meta-"),
@@ -447,7 +464,10 @@ func (o *Oracle) segment(container, name string) (SegmentState, error) {
 		return SegmentState{}, fmt.Errorf("oracle segment %s/%s: read: %w", container, name, readErr)
 	}
 	sum := sha256.Sum256(body)
-	return SegmentState{Name: container + "/" + name, Size: int64(len(body)), Digest: hex.EncodeToString(sum[:])}, nil
+	return SegmentState{
+		Name: container + "/" + name, Size: int64(len(body)), Digest: hex.EncodeToString(sum[:]),
+		ContentEncoding: strings.Join(resp.Header.Values("Content-Encoding"), ", "),
+	}, nil
 }
 
 func metaFrom(h http.Header, prefix string) map[string]string {
