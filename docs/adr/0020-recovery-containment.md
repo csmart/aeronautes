@@ -54,6 +54,7 @@ This decision does not claim that ordinary manual deletion, metadata updates, lo
 
 Suspend remote reclamation by both in-process reconciliation and startup recovery.
 This includes explicit staged-residue names as well as prefix-based staging and segment sweeps.
+Remove the final staging-prefix sweep in `local.Upload` as well as `Executor.Reconcile` reclamation and historical recovery sweeps.
 A live alias may refer to either kind of object.
 Recovery performs no remote listing, HEAD, DELETE or automatic authentication using a historical bookmark record.
 It does not infer an original endpoint or a destination container from naming conventions.
@@ -67,13 +68,17 @@ Keep recovery-held jobs exempt from history pruning.
 This conservative first implementation may retain records for successfully completed jobs even when their temporary objects were already removed during normal execution.
 The UI must therefore say that recovery records are retained and remote residue is unverified; counts are records or jobs, not object counts, bytes, proven orphans or failed transfers.
 Retained recovery work does not rewrite the transfer's existing terminal result.
-Expose a bounded read-only summary across all terminal jobs, independent of the recent-job list limit, and a per-job retained-record count in the job view.
+Expose a bounded read-only summary with the number of terminal jobs holding recovery records and the number of those records, independent of the recent-job list limit.
+Also expose a per-job retained-record count in the job view.
 Do not contact Swift to calculate that status.
 An unavailable database read is unknown, never a zero count or a successful cleanup claim.
 
 Keep startup classification of interrupted jobs, but change its message to say that data and recovery records are retained.
+The existing job-state/error update and diagnostic log record that classification; this slice adds no cleanup audit event.
+An unavailable classification write is reported as a failure, not a successful recovery.
 Remove the background deletion/retry loop so retained work cannot repeatedly authenticate or emit false applied-cleanup events.
-Normal executor/child staging cleanup while an operation is still running is a separate P12/P15/P21 policy gap; this slice makes no guarantee about those earlier effects.
+The executor's `cleanStaged`, the per-object deletion in `local.commitStagedUpload`, and the child's own cancellation cleanup remain the exact transfer-time boundary for separate P12/P15/P21 work.
+This slice makes no guarantee about those earlier effects; the final namespace-wide sweep in `local.Upload` is included in P04 above.
 Retaining records also prevents local upload from discarding evidence of its existing best-effort cleanup failures, without claiming that upload verification and cleanup parity are complete.
 
 ## Durability and outcome boundary

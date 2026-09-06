@@ -26,9 +26,8 @@ gates can reference stable IDs instead of re-reading ~11k words of prose.
 
 - **K-XFER-001** — A pre-authenticated rclone job whose token expires MUST be handled as
   child-failure → Aeronautes reauth → reconcile → **new** child, never by injecting the durable key. (§26.2, ADR 0009)
-- **K-XFER-002** — After a hard interruption, Aeronautes MUST NOT auto-delete destination segment objects
-  without Confirmed ownership of the actual generated prefix; otherwise classify as suspected orphan
-  and surface to the operator. (§26.4)
+- **K-XFER-002** — After a hard interruption, Aeronautes MUST NOT automatically delete destination staging or segment objects.
+  Recovery MUST retain the data and records and surface remote residue as unverified; a confirmed generated prefix does not authorise reclamation. (§26.4, ADR 0020)
 - **K-XFER-003** — Graceful cancellation MUST let rclone clean its own segments; Aeronautes MUST NOT set
   `--swift-leave-parts-on-error`. (§26.4)
 - **K-XFER-004** — The large-object chunk size is a single control that MUST NOT exceed the cluster's
@@ -102,9 +101,9 @@ gates can reference stable IDs instead of re-reading ~11k words of prose.
 - **K-SEG-001** — Naming heuristics (Suspected) MUST NOT authorize any destructive segment operation. (§24.4)
 - **K-SEG-002** — A legitimate container that merely *looks* like a segment store (e.g. `photos_segments`)
   MUST NOT be hidden or destructively classified from its name alone. (§58, §60 Phase 2 gate)
-- **K-SEG-003** — "SLO manifest + segments" delete MUST auto-delete segments only when every referenced
-  segment (nested and ranged included) is proven exclusively owned; external SLOs require a Backstage
-  flow. `?multipart-manifest=delete` deletes shared segments too. (§34)
+- **K-SEG-003** — Automatic SLO segment deletion requires exclusive authority through deletion for every referenced segment, including nested and ranged segments.
+  The current workflow provides no automatic path; manifest plus segments is a separate Backstage force action with sharing risk disclosed.
+  `?multipart-manifest=delete` deletes shared segments too. (§34, ADR 0020)
 - **K-DEL-001** — Empty Container MUST preserve the container and its configuration, and MUST NOT use
   `rclone purge` at a container root (stock rclone deletes the container). (§33)
 - **K-DEL-002** — Recursive/large deletes MUST be bounded, streaming, cancellable, and retain exact

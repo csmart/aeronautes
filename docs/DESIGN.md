@@ -1476,7 +1476,8 @@ record in segment_evidence / segment_ownership, surface to operator
 DO NOT auto-delete
 ```
 
-Reconciliation only ever deletes segments Aeronautes can prove it created for that job; it must never heuristically purge a shared or externally-created prefix.
+Reconciliation performs no automatic deletion under ADR 0020.
+It retains uncertain staging and segment data and all recovery records; explicit force cleanup remains a separate action with sharing risk disclosed.
 
 **Learning the generated prefix is a Phase-0 investigation** (§60): determine whether the actual segment prefix is reliably obtainable from rclone structured/JSON output or another supported interface. Do not depend permanently on parsing unstable human-readable log strings unless that behaviour is explicitly tested and pinned. A future upstream rclone enhancement (caller-specified segment prefix, or machine-readable reporting of the generated namespace) would make this materially cleaner.
 
@@ -4255,7 +4256,7 @@ The owner authorised implementation of the [5 September audit plan](https://gith
 Implement each logical fix with a failing-before/passing-after regression and independent local review before pushing.
 Keep the valuable-data release hold until the plan's safety and release gates have evidence.
 Earlier §65 implementation logs are historical evidence, not authority to resume unsafe cleanup.
-In particular, the generated-prefix sweep rules in §65.8 item 2 and §65.9 item 5 are superseded by the P01/P04 contract in ADR 0020.
+In particular, the generated-prefix sweep rules in §65.8 item 2 and §65.9 item 5, and §65.10's scan-based re-enablement suggestions, are superseded by the P01/P04 contract in ADR 0020.
 
 The first commit sequence follows the plan's security-first order:
 
@@ -4372,7 +4373,7 @@ This is the first P03 seam; the wider fault matrix and P01/P04/P05 recovery and 
 
 The next P01/P04 design slice is [ADR 0020](adr/0020-recovery-containment.md), proposed for independent review before implementation.
 It replaces generated-prefix exclusivity with authority that excludes other references and relevant concurrent writers through deletion.
-Because the current workflow has no such proof, suspend automatic historical and post-job recovery deletion, retain all recovery rows across Copy, Mirror and upload, and remove the background remote sweep.
+Because the current workflow has no such proof, suspend automatic historical and post-job recovery deletion, including local upload's final staging-prefix sweep, retain all recovery rows across Copy, Mirror and upload, and remove the background remote sweep.
 Expose retained-record counts through local read-only job status, including a summary independent of the recent-job limit; unavailable reads remain unknown.
 Completed jobs may retain records for unverified residue without changing the transfer result or claiming confirmed orphans.
 Verify outside DLO/SLO aliases, staging aliases, malformed and missing history, changed bookmark bindings, database failures and a separate process reopening the state database.
