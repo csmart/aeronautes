@@ -4612,6 +4612,14 @@ Record the precise shutdown and timing seam before implementation if it needs an
 Every implementation needs its relevant full suites, independent local review and all five PR/master checks; absent or failing required evidence cannot be replaced by a rerun or a synthetic passing claim.
 P22 listing completeness and total retained UI rows, P24 wider queue/resource budgets, P10/P11 authority, P13 outcomes, P14 writers, P15 ownership and the valuable-data release hold remain open.
 
+The first P08 implementation now binds page requests to scope, initial-list generation and marker, refusing duplicates and retiring old success/error/finalisation after reload or navigation.
+Page appends retain unique row identities and selection, and reject non-advancing markers with UTF-8 ordering before accepting progress.
+Container and object panes expose pending Load more and visible retry errors while keeping already-loaded rows usable.
+The [pagination validation record](experiments/2026-09-06-paging-binding.md) includes the separate UI matrix, 64-case parent reproduction and 33 independent removed-safeguard controls.
+The two selected original page probes now pass, while the unchanged Find cancellation probe still fails as evidence of the remaining second slice.
+This paging slice still requires independent local review and all five PR/master checks before delivery.
+Find frontend lifecycle and backend scan bounds remain the next two P08 implementations; P22/P24 wider completeness and resource work and the valuable-data release hold remain open.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.

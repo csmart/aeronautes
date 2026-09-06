@@ -224,7 +224,19 @@
         · {browser.selectedIndex >= 0 ? "1 selected" : "none selected"}
       </span>
       {#if browser.entriesMarker !== ""}
-        <button class="more" onclick={() => browser.loadMoreEntries()}>Load more</button>
+        <div class="paging">
+          {#if browser.entriesMoreError}
+            <span class="page-error" role="alert">Could not load more objects: {browser.entriesMoreError}</span>
+          {/if}
+          <button
+            class="more"
+            disabled={browser.entriesMoreLoading || browser.entriesError !== null}
+            aria-busy={browser.entriesMoreLoading}
+            onclick={() => browser.loadMoreEntries().catch(() => {})}
+          >
+            {browser.entriesMoreLoading ? "Loading…" : browser.entriesMoreError ? "Retry load more" : "Load more"}
+          </button>
+        </div>
       {/if}
     {:else}
       <span>{browser.containerName ? "listing…" : "no container open"}</span>
@@ -454,6 +466,8 @@
 
   .pane-foot {
     display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
     justify-content: space-between;
     align-items: center;
     padding: var(--space-1) var(--space-3);
@@ -471,5 +485,23 @@
     border: 1px solid var(--color-accent-border);
     border-radius: var(--radius-pill);
     cursor: pointer;
+  }
+
+  .more:disabled {
+    cursor: wait;
+    opacity: 0.6;
+  }
+
+  .paging {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    max-width: 100%;
+  }
+
+  .page-error {
+    color: var(--color-danger);
+    overflow-wrap: anywhere;
   }
 </style>

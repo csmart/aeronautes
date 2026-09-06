@@ -61,6 +61,26 @@ interface DetailRequest {
   name: string;
 }
 
+interface PageRequest {
+  scope: number;
+  seq: number;
+  marker: string;
+}
+
+function requireAdvancingMarker(previous: string, next: string) {
+  if (next === "") return;
+  // Swift orders UTF-8 names; JavaScript's UTF-16 comparison differs for
+  // supplementary characters and would reject valid continuation markers.
+  const encoder = new TextEncoder();
+  const before = encoder.encode(previous);
+  const after = encoder.encode(next);
+  for (let i = 0; i < Math.min(before.length, after.length); i++) {
+    if (after[i] > before[i]) return;
+    if (after[i] < before[i]) throw new Error("The page marker did not advance. Retry the page.");
+  }
+  if (after.length <= before.length) throw new Error("The page marker did not advance. Retry the page.");
+}
+
 export class BrowserState {
   #api: Api;
 
@@ -147,6 +167,20 @@ export class BrowserState {
   containersMarker = $state("");
   containersError: string | null = $state(null);
   #containersSeq = 0;
+  #containersLoadingScope = $state<number | null>(null);
+  #containersPage = $state.raw<PageRequest | null>(null);
+  #containersPageError = $state.raw<(PageRequest & { message: string }) | null>(null);
+
+  get containersLoading(): boolean { return this.#containersLoadingScope === this.#scopeRevision; }
+  get containersMoreLoading(): boolean { return this.#containersPage !== null && this.#currentContainersPage(this.#containersPage); }
+  get containersMoreError(): string | null {
+    return this.#containersPageError && this.#currentContainersPage(this.#containersPageError) ? this.#containersPageError.message : null;
+  }
+
+  #currentContainersPage(request: PageRequest): boolean {
+    return !this.connecting && this.connectedBookmarkId !== null && request.scope === this.#scopeRevision
+      && request.seq === this.#containersSeq && request.marker === this.containersMarker;
+  }
 
   // Working list.
   #containerName: string | null = $state(null);
@@ -218,6 +252,18 @@ export class BrowserState {
   #containerDetailSeq = 0;
   #containerDetailConnection = -1;
   #listSeq = 0;
+  #entriesPage = $state.raw<PageRequest | null>(null);
+  #entriesPageError = $state.raw<(PageRequest & { message: string }) | null>(null);
+
+  get entriesMoreLoading(): boolean { return this.#entriesPage !== null && this.#currentEntriesPage(this.#entriesPage); }
+  get entriesMoreError(): string | null {
+    return this.#entriesPageError && this.#currentEntriesPage(this.#entriesPageError) ? this.#entriesPageError.message : null;
+  }
+
+  #currentEntriesPage(request: PageRequest): boolean {
+    return !this.connecting && this.connectedBookmarkId !== null && request.scope === this.#scopeRevision
+      && request.seq === this.#listSeq && request.marker === this.entriesMarker;
+  }
 
   #currentDetail(request: DetailRequest): boolean {
     return !this.connecting && request.scope === this.#scopeRevision && request.seq === this.#detailSeq
@@ -242,6 +288,9 @@ export class BrowserState {
     this.capabilities = null;
     this.connectError = null;
     this.#containersSeq++;
+    this.#containersLoadingScope = null;
+    this.#containersPage = null;
+    this.#containersPageError = null;
     this.containers = [];
     this.containersMarker = "";
     this.containersError = null;
@@ -252,6 +301,8 @@ export class BrowserState {
     this.backstageFrom = null;
     this.prefix = "";
     this.#listSeq++;
+    this.#entriesPage = null;
+    this.#entriesPageError = null;
     this.entries = [];
     this.entriesMarker = "";
     this.entriesLoading = false;
@@ -378,6 +429,10 @@ export class BrowserState {
   async loadContainers() {
     const scope = this.#scopeRevision;
     const seq = ++this.#containersSeq;
+    this.#containersLoadingScope = scope;
+    this.#containersPage = null;
+    this.#containersPageError = null;
+    this.containersMarker = "";
     this.containersError = null;
     try {
       const page = await this.#api.containers("", pageLimit);
@@ -387,21 +442,38 @@ export class BrowserState {
       }
     } catch (err) {
       if (scope === this.#scopeRevision && seq === this.#containersSeq) this.containersError = messageOf(err);
+    } finally {
+      if (seq === this.#containersSeq) this.#containersLoadingScope = null;
     }
   }
 
   async loadMoreContainers() {
-    if (this.containersMarker === "" || this.connecting || !this.connectedBookmarkId) {
+    if (this.containersMarker === "" || this.connecting || !this.connectedBookmarkId
+      || this.containersLoading || this.containersError || this.containersMoreLoading) {
       return;
     }
-    const scope = this.#scopeRevision;
-    const page = await this.#api.containers(this.containersMarker, pageLimit).catch((err) => {
-      if (scope !== this.#scopeRevision) return null;
+    const request = { scope: this.#scopeRevision, seq: this.#containersSeq, marker: this.containersMarker };
+    this.#containersPage = request;
+    this.#containersPageError = null;
+    try {
+      const page = await this.#api.containers(request.marker, pageLimit);
+      if (!this.#currentContainersPage(request)) return;
+      requireAdvancingMarker(request.marker, page.nextMarker);
+      const names = new Set(this.containers.map((row) => row.name));
+      const rows = page.rows.filter((row) => {
+        if (names.has(row.name)) return false;
+        names.add(row.name);
+        return true;
+      });
+      this.containers = [...this.containers, ...rows];
+      this.containersMarker = page.nextMarker;
+    } catch (err) {
+      if (!this.#currentContainersPage(request)) return;
+      this.#containersPageError = { ...request, message: messageOf(err) };
       throw err;
-    });
-    if (!page || scope !== this.#scopeRevision) return;
-    this.containers = [...this.containers, ...page.rows];
-    this.containersMarker = page.nextMarker;
+    } finally {
+      if (this.#containersPage === request) this.#containersPage = null;
+    }
   }
 
   /** The §52 modes over the service's §24 classification. */
@@ -482,6 +554,9 @@ export class BrowserState {
 
   async #loadEntries(prefix: string) {
     const seq = ++this.#listSeq;
+    this.#entriesPage = null;
+    this.#entriesPageError = null;
+    this.entriesMarker = "";
     this.prefix = prefix;
     this.filter = "";
     this.select(-1);
@@ -508,22 +583,34 @@ export class BrowserState {
   }
 
   async loadMoreEntries() {
-    if (this.entriesMarker === "" || !this.containerName || this.connecting || !this.connectedBookmarkId) {
+    if (this.entriesMarker === "" || !this.containerName || this.connecting || !this.connectedBookmarkId
+      || this.entriesLoading || this.entriesError || this.entriesMoreLoading) {
       return;
     }
-    const scope = this.#scopeRevision;
-    const page = await this.#api.objects(
-      this.containerName,
-      this.prefix,
-      this.entriesMarker,
-      pageLimit,
-    ).catch((err) => {
-      if (scope !== this.#scopeRevision) return null;
+    const request = { scope: this.#scopeRevision, seq: this.#listSeq, marker: this.entriesMarker };
+    this.#entriesPage = request;
+    this.#entriesPageError = null;
+    try {
+      const page = await this.#api.objects(this.containerName, this.prefix, request.marker, pageLimit);
+      if (!this.#currentEntriesPage(request)) return;
+      requireAdvancingMarker(request.marker, page.nextMarker);
+      const identity = (row: ListingRowDTO) => row.kind + ":" + row.name;
+      const names = new Set(this.entries.map(identity));
+      const rows = page.rows.filter((row) => {
+        const name = identity(row);
+        if (names.has(name)) return false;
+        names.add(name);
+        return true;
+      });
+      this.entries = [...this.entries, ...rows];
+      this.entriesMarker = page.nextMarker;
+    } catch (err) {
+      if (!this.#currentEntriesPage(request)) return;
+      this.#entriesPageError = { ...request, message: messageOf(err) };
       throw err;
-    });
-    if (!page || scope !== this.#scopeRevision) return;
-    this.entries = [...this.entries, ...page.rows];
-    this.entriesMarker = page.nextMarker;
+    } finally {
+      if (this.#entriesPage === request) this.#entriesPage = null;
+    }
   }
 
   /** Selection moves; the selected row triggers its authoritative HEAD

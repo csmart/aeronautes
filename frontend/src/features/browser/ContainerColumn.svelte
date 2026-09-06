@@ -55,6 +55,8 @@
   <div class="rows">
     {#if !browser.account}
       <p class="disconnected">Not connected.</p>
+    {:else if browser.containersLoading}
+      <p class="disconnected" role="status">Listing…</p>
     {:else if browser.containersError}
       <p class="error">{browser.containersError}</p>
     {:else}
@@ -72,8 +74,16 @@
       {/if}
 
       {#if browser.containersMarker !== ""}
-        <button class="load-more" onclick={() => browser.loadMoreContainers()}>
-          Load more…
+        {#if browser.containersMoreError}
+          <p class="error" role="alert">Could not load more containers: {browser.containersMoreError}</p>
+        {/if}
+        <button
+          class="load-more"
+          disabled={browser.containersMoreLoading}
+          aria-busy={browser.containersMoreLoading}
+          onclick={() => browser.loadMoreContainers().catch(() => {})}
+        >
+          {browser.containersMoreLoading ? "Loading…" : browser.containersMoreError ? "Retry load more" : "Load more…"}
         </button>
       {/if}
     {/if}
@@ -174,6 +184,7 @@
 
   .error {
     color: var(--color-danger);
+    overflow-wrap: anywhere;
   }
 
   .container-row {
@@ -244,6 +255,11 @@
     border: 1px dashed var(--color-border-strong);
     border-radius: var(--radius-control);
     cursor: pointer;
+  }
+
+  .load-more:disabled {
+    cursor: wait;
+    opacity: 0.6;
   }
 
   .pane-foot {
