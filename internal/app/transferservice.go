@@ -130,8 +130,8 @@ func (s *TransferService) setMaxActiveJobsHook(n int) {
 	s.runner.setMaxActiveJobs(n)
 }
 
-func (s *TransferService) launch(ctx context.Context, jobID, bookmarkID string, body func(ctx context.Context)) {
-	s.runner.launch(ctx, jobID, bookmarkID, body)
+func (s *TransferService) launch(ctx context.Context, jobID, bookmarkID string, releasePins func(), body func(ctx context.Context)) {
+	s.runner.launch(ctx, jobID, bookmarkID, releasePins, body)
 }
 
 func validateCopyRequest(req CopyRequestDTO) error {
@@ -320,6 +320,18 @@ func (s *TransferService) buildEngine(ctx context.Context, req CopyRequestDTO, s
 // StartCopy creates the job and launches execution in the background;
 // the returned job id is the handle for JobService and CancelJob.
 func (s *TransferService) StartCopy(ctx context.Context, req CopyRequestDTO) (string, error) {
+	if err := validateCopyRequest(req); err != nil {
+		return "", err
+	}
+	releasePins, err := s.connections.pinForJob(ctx, req.SourceBookmarkID, req.DestBookmarkID)
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		if releasePins != nil {
+			releasePins()
+		}
+	}()
 	src, dst, _, err := s.resolve(ctx, req)
 	if err != nil {
 		return "", err
@@ -347,9 +359,10 @@ func (s *TransferService) StartCopy(ctx context.Context, req CopyRequestDTO) (st
 
 	s.record(ctx, req.SourceBookmarkID, "transfer.copy.start",
 		job.Source+" → "+job.Destination, "job "+job.ID+" · "+job.Settings, audit.ResultApplied)
-	s.launch(jobCtx, job.ID, req.SourceBookmarkID, func(runCtx context.Context) {
+	s.launch(jobCtx, job.ID, req.SourceBookmarkID, releasePins, func(runCtx context.Context) {
 		s.runCopy(runCtx, job.ID, req, src, dst, engine)
 	})
+	releasePins = nil
 	return job.ID, nil
 }
 

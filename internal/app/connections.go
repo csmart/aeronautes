@@ -95,6 +95,11 @@ func (c *Connections) Connect(ctx context.Context, bookmarkID string) error {
 // first use and caching it (transfers hold sessions for BOTH ends —
 // neither needs to be the active browse connection).
 func (c *Connections) SessionFor(ctx context.Context, bookmarkID string) (*swiftcontrol.Session, error) {
+	entry, err := c.sessionEntryFor(ctx, bookmarkID)
+	return entry.session, err
+}
+
+func (c *Connections) sessionEntryFor(ctx context.Context, bookmarkID string) (cachedSession, error) {
 	c.mu.Lock()
 	entry, found := c.sessions[bookmarkID]
 	c.mu.Unlock()
@@ -107,22 +112,52 @@ func (c *Connections) SessionFor(ctx context.Context, bookmarkID string) (*swift
 		})
 		if err != nil {
 			c.forgetObsolete(bookmarkID, entry, err)
-			return nil, err
+			return cachedSession{}, err
 		}
-		return entry.session, nil
+		return entry, nil
 	}
 
 	entry, err := c.open(ctx, bookmarkID)
 	if err != nil {
-		return nil, err
+		return cachedSession{}, err
 	}
 	if err := c.guardCache(ctx, bookmarkID, entry.generation, func() error {
 		c.sessions[bookmarkID] = entry
 		return nil
 	}); err != nil {
-		return nil, err
+		return cachedSession{}, err
 	}
-	return entry.session, nil
+	return entry, nil
+}
+
+// Pin before resolving a job's sessions or doing its preflight, so every
+// later acquisition must still use those bindings through queueing/cleanup.
+func (c *Connections) pinForJob(ctx context.Context, bookmarkIDs ...string) (func(), error) {
+	var pins []func()
+	release := func() {
+		for _, unpin := range pins {
+			unpin()
+		}
+	}
+	seen := make(map[string]bool)
+	for _, id := range bookmarkIDs {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		entry, err := c.sessionEntryFor(ctx, id)
+		if err != nil {
+			release()
+			return nil, err
+		}
+		unpin, err := c.store.PinGeneration(ctx, id, entry.generation)
+		if err != nil {
+			release()
+			return nil, err
+		}
+		pins = append(pins, unpin)
+	}
+	return release, nil
 }
 
 // The store coordinator stays held across the cache action, so an edit

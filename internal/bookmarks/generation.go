@@ -7,10 +7,10 @@ import (
 	"fmt"
 )
 
-// WithCurrentGeneration coordinates a local cache action with publication.
-// A separate check followed by use would let an edit invalidate the cache
-// before the old session is installed. use must not perform external I/O or
-// reenter the store; nil checks the generation without a cache action.
+// WithCurrentGeneration coordinates local cache use and job admission with
+// publication. A separate check would let an edit invalidate the binding
+// before the old session is installed or pinned. use must not perform external
+// I/O or reenter the store; nil checks the generation without a local action.
 func (st *Store) WithCurrentGeneration(ctx context.Context, id string, generation int64, use func() error) error {
 	st.mu.Lock()
 	defer st.mu.Unlock()

@@ -106,6 +106,15 @@ func (s *BenchmarkService) StartBenchmark(ctx context.Context, req BenchmarkRequ
 	if req.BookmarkID == "" {
 		return "", errors.New("bookmark is required")
 	}
+	releasePins, err := s.connections.pinForJob(ctx, req.BookmarkID)
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		if releasePins != nil {
+			releasePins()
+		}
+	}()
 	session, err := s.connections.SessionFor(ctx, req.BookmarkID)
 	if err != nil {
 		return "", err
@@ -146,9 +155,10 @@ func (s *BenchmarkService) StartBenchmark(ctx context.Context, req BenchmarkRequ
 	jobCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	s.runner.register(job.ID, cancel)
 	s.runner.record(ctx, req.BookmarkID, "benchmark.start", account, "job "+job.ID+" in "+container, audit.ResultApplied)
-	s.runner.launch(jobCtx, job.ID, req.BookmarkID, func(runCtx context.Context) {
+	s.runner.launch(jobCtx, job.ID, req.BookmarkID, releasePins, func(runCtx context.Context) {
 		s.runBenchmark(runCtx, job.ID, req.BookmarkID, session, capabilities, container, objects, concurrencies)
 	})
+	releasePins = nil
 	return job.ID, nil
 }
 

@@ -42,6 +42,18 @@ const mirrorDeleteChunk = 2000
 
 // StartMirror validates the typed confirmation and launches the job.
 func (s *TransferService) StartMirror(ctx context.Context, req MirrorRequestDTO) (string, error) {
+	if err := validateCopyRequest(req.CopyRequestDTO); err != nil {
+		return "", err
+	}
+	releasePins, err := s.connections.pinForJob(ctx, req.SourceBookmarkID, req.DestBookmarkID)
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		if releasePins != nil {
+			releasePins()
+		}
+	}()
 	src, dst, _, err := s.resolve(ctx, req.CopyRequestDTO)
 	if err != nil {
 		return "", err
@@ -74,9 +86,10 @@ func (s *TransferService) StartMirror(ctx context.Context, req MirrorRequestDTO)
 	s.runner.register(job.ID, cancel)
 	s.record(ctx, req.SourceBookmarkID, "transfer.mirror.start",
 		job.Source+" → "+job.Destination, "job "+job.ID+" · "+job.Settings, audit.ResultApplied)
-	s.launch(jobCtx, job.ID, req.SourceBookmarkID, func(runCtx context.Context) {
+	s.launch(jobCtx, job.ID, req.SourceBookmarkID, releasePins, func(runCtx context.Context) {
 		s.runMirror(runCtx, job.ID, req, src, dst, engine, capabilities)
 	})
+	releasePins = nil
 	return job.ID, nil
 }
 
