@@ -4496,6 +4496,11 @@ P07 owns bookmark invalidation and general asynchronous mutation completion, inc
 P23 owns destination-name byte preservation, so this slice does not silently expand into changing the existing input normalisation policy.
 P18–P21 and P30 retain local filesystem, materialisation and native-picker obligations.
 No native accessibility, platform picker or valuable-data release guarantee follows from these frontend tests.
+
+The first P06 implementation now binds Copy/Mirror comparison and container/prefix Delete previews to captured requests, dialog generations and a synchronous UI scope revision.
+It ignores obsolete results and errors, consumes the preview before Start, and invalidates on close, reconnect, scope changes and every relevant input event.
+The [preview validation record](experiments/2026-09-06-preview-binding.md) contains the separate UI scenario matrix, maintained before/after cases, explicitly adapted archived reproductions and removed-safeguard controls.
+Local picker/preflight binding remains the next P06 commit; backend plan authority and the wider release hold remain open.
 Independent local review and all five current-head/current-master checks remain required before delivery.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
