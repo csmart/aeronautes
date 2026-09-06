@@ -4307,6 +4307,12 @@ Publication coordination covers admission but is released before external I/O, p
 The [request-admission validation record](experiments/2026-09-06-request-admission.md) covers all 42 initial obsolete/unavailable cases, later retries/pages/reopens, delayed gateway requests and five negative controls.
 Native cleanup authority, historical recovery identity and the remaining library URL/token pairing gap stay open, and P10 remains incomplete.
 
+The next pairing slice is proposed in [ADR 0016](adr/0016-native-request-credentials.md).
+A deterministic reproduction of the library's split URL/token reads fails when authentication changes the host or account path, while an unchanged-endpoint control passes.
+The proposed narrow local dependency patch selects the URL callback and token under one authentication lock on every attempt, preserving concurrent storage I/O and existing retry semantics.
+First review that dependency decision, then implement it with provenance, permanent regressions, explicit upstream-module tests and the full application gates.
+The proposal and disposable prototype are not an implemented guarantee.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
