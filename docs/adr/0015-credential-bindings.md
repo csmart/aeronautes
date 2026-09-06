@@ -165,6 +165,8 @@ Logical deletion retains the selected reference independently of the removed boo
 The [publication validation record](../experiments/2026-09-06-credential-publication.md) distinguishes the red service reproductions, injected boundary failures, database/adapter reopen proof and remaining native/lifetime gates.
 Retired and unused keys remain in credential storage; the editor and README disclose this interim behaviour alongside the valuable-data release hold.
 Verified native cleanup, visible pending-work status, held/authenticating-session revocation and job admission/pins remain open.
+Removing matching legacy values from the current session store is also deferred; this slice makes no external Delete call, even for memory-only values.
+Cache entries do not yet record the generation returned by acquisition, so the generation-tagged cache and lookup rules above remain part of the lifetime slice.
 
 Permanent regressions must cover the service-level retarget attack with zero requests to the new receiver, explicit reentry, URL/port/account/override/TLS changes, and identical-byte CA reimport.
 Inject failure before and after each SQL/keychain boundary, including a Put that takes effect and then fails, publication failure, ambiguous commit and failed cleanup.

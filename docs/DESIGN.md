@@ -4278,6 +4278,7 @@ It distinguishes a session-store lifetime from an unverified native-keychain ada
 It retains unused references and journal records until cleanup can prove both the original backend and the absence of live users; a fallback or a negative lookup through a changed OS default is not deletion evidence.
 The [validation record](experiments/2026-09-06-credential-publication.md) records the failure/concurrency oracles and the limited database/adapter reopen proof.
 The editor and README disclose retained keys; held/authenticating-session revocation, job admission/pins and the wider P12/P13 recovery contract remain open.
+Removal from the current session store is deferred along with persistent key cleanup, and cache entries do not yet carry generation tags.
 Verified persistent-backend selection, visible cleanup status and bounded recovery remain prerequisites for completing P10.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
