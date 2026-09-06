@@ -4630,6 +4630,51 @@ The [Find validation record](experiments/2026-09-06-find-binding.md) records 724
 It preserves the original Find probe's remaining timing-assumption failure and separately proves late-id cancellation after explicit bridge admission.
 Backend Find admission, retention, idle expiry and shutdown cleanup remain the third P08 slice; the broader authority, resource and valuable-data release gates remain open.
 
+The third P08 slice uses the following timing and shutdown contract before changing the service:
+
+1. Keep `NewFindService(connections)` and the three existing renderer methods and DTOs unchanged.
+   Use a package-private clock dependency providing current time and stoppable delayed callbacks, backed by `time.Now` and `time.AfterFunc` in production.
+   Tests may advance that clock and run callbacks deterministically; the renderer cannot change limits, time or cleanup policy.
+   Start no timer or background worker until a scan is admitted.
+2. Serialise admission, retained records, idle deadlines, cancellation and worker exit under service-owned state.
+   Admit at most four actual workers and sixteen retained records, counting running records in both limits.
+   Reserve a worker before launching it and release its slot only in the worker's exit path.
+   At the record bound, evict only the oldest completed scan, ordered by completion time with admission order as a stable tie-break.
+   Worker overload or shutdown refuses startup explicitly before listing work; record eviction cannot make an occupied worker slot available.
+3. Give each retained scan one idle timer with a five-minute deadline from admission or its latest successful status poll.
+   A successful poll before that deadline renews it; a poll at or after the deadline refuses the expired id instead of reviving it.
+   The timer callback verifies the scan's current identity and deadline under the same state guard, so a callback queued before renewal cannot expire the renewed lease early.
+   It must cancel and retire expired scans without requiring any later API call.
+   There is no fixed duration cap on a scan whose polls keep renewing its lease.
+4. Cancellation, expiry and completed-record eviction stop the record's timer, remove the id and release its retained match buffer.
+   The worker must observe retirement before accumulating any further results, even if its underlying request is slow to return after cancellation.
+   Such a worker continues occupying its slot until it actually exits.
+   Keep the existing 1,000-match bound, case-insensitive substring matching, literal names, error reporting and truthful scanned counts and throughput.
+   Unknown, cancelled and expired ids produce explicit status errors; cancelling an already absent id stays idempotent.
+5. Implement Wails' `ServiceShutdown() error` lifecycle hook directly on FindService, keeping Wails imports in the shell.
+   The pinned Wails v3 beta.15 runtime and binding generator both reserve this method name and exclude it from the renderer bridge.
+   The action-inventory test must recognise this specific lifecycle method with its expected signature, while continuing to reject every unaccounted renderer method.
+   Verify its binding exclusion against the pinned dependency and retain the three-method Find bridge surface; do not credit shutdown as a renderer action.
+6. Shutdown closes admission, stops all retained timers, releases results and requests cancellation of all service-owned scans, including workers whose records were already removed.
+   Wait at most five seconds for the actual workers to exit, returning an explicit error if they do not; a cancellation request alone cannot count as a successful drain.
+   This is a shutdown wait bound, not a scan execution limit.
+   Repeated shutdown is safe, and worker exit remains responsible for releasing the slot and signalling the drained state.
+   Use the private clock for deterministic timeout tests and register checked cleanup before test fixtures or their database are torn down.
+
+Reproduce the missing worker and retained-record bounds through the existing public Find service entry points before implementation, preserving tests that compile and fail their intended assertions on the old service.
+Exercise admission and cancellation with observed request barriers, not elapsed sleeps.
+Use the existing session-admission hook to hold an actual worker after cancellation when testing slot retention, preserving the captured bookmark-generation check and releasing every test gate during cleanup.
+Independently remove the worker-admission, retained-record, cancellation, timer-expiry, renewal/deadline, buffer-retirement, worker-exit and shutdown guards; setup failures and hung fixtures provide no passing evidence.
+Clock tests cover idle expiry without another API call, renewal past the old deadline, expiry racing a poll, stale timer callbacks, completed-record expiry and cleanup of all timers.
+Keep stable current-success controls for matching, prefix scope, buffer-full status, snapshot copies, errors and worker reuse after actual exit.
+
+Wire Find into the two-account behavioral harness and witness both owned namespaces before and after successful scans, cancellation and refusal against mock Swift and SAIO.
+Record start ids and status/cancellation results on invocation-specific receipts.
+Do not credit an asynchronous start as a completed read merely because it returned an id: completion needs that scan's terminal status, and cancellation needs its matching cancellation call and observed worker/request termination.
+Add explicit refusal requirements for StartFind admission and FindStatus lookup alongside the existing happy/cancel requirements, and keep scenario-credit validation tests separate from product-behaviour assertions.
+Keep deterministic clock/worker tests, UI-to-bridge cases and actual SAIO service-scenario coverage separately accounted.
+Review this contract before runtime changes, then independently review each implementation commit and require the same five current-head/current-master PR and master checks.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
