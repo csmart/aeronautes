@@ -39,6 +39,9 @@ type Remote struct {
 	CACertFile string
 	// InsecureTLS disables verification only on this upstream transport.
 	InsecureTLS bool
+	// AdmitRequest stays in the parent so a captured gateway cannot keep
+	// using authority revoked after this remote was constructed.
+	AdmitRequest func(context.Context) error `json:"-"`
 }
 
 // checkPositionals rejects paths that could read as flags — defense in

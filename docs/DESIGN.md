@@ -4284,7 +4284,7 @@ Logical deletion keeps its selected reference in an independent journal row, and
 It distinguishes a session-store lifetime from an unverified native-keychain adapter lifetime, as specified in ADR 0015.
 It retains unused references and journal records until cleanup can prove both the original backend and the absence of live users; a fallback or a negative lookup through a changed OS default is not deletion evidence.
 The [validation record](experiments/2026-09-06-credential-publication.md) records the failure/concurrency oracles and the limited database/adapter reopen proof.
-The editor and README disclose retained keys; held/authenticating-session revocation and the wider P12/P13 recovery contract remain open.
+The editor and README disclose retained keys; native cleanup and the wider P12/P13 recovery contract remain open.
 Removal from the current session store is deferred along with persistent key cleanup.
 The status bar now exposes recorded credential cleanup work, including references belonging to deleted bookmarks and unfinished saves.
 The journal-only read distinguishes active saves under the publication coordinator, never changes cleanup evidence and exposes only counts through the bridge.
@@ -4295,12 +4295,17 @@ Cached sessions now carry the generation captured with their credential configur
 Final validation and cache installation share bookmark coordination; cache readers release their mutex before acquiring that coordinator and verify the same cached identity before returning it.
 Unreadable generations refuse access, while cosmetic edits retain the generation and allow authentication to finish.
 The [cache validation record](experiments/2026-09-06-cache-generations.md) includes acknowledged HTTP and database barriers, the original failing service regressions and negative controls for lock inversion and uncoordinated cache use.
-Held-session request admission and native cleanup authority remain open; cache containment does not revoke pointers already held by a caller.
+Cache containment alone does not revoke pointers already held by a caller; request admission is enforced by the subsequent step below.
 All six job entry points now acquire generation pins before preflight and durable creation, refusing binding changes, key-only rotation and deletion until the final pin is released.
 Cosmetic edits retain the binding, and a second publication check protects jobs admitted while an external key save is waiting.
 Failed starts release all acquired pins; queued cancellation and running jobs retain theirs through the entire job body and cancellation cleanup.
 The [job lifetime validation record](experiments/2026-09-06-job-generations.md) covers the original queued replacement failures, both ends of cross-bookmark jobs, failed creation and cleanup barriers, with safeguard-removal negative controls.
-Historical recovery identity, held-session request revocation, library URL/token pairing and verified native cleanup remain required work; these process-local pins do not complete P10.
+Historical recovery identity, library URL/token pairing and verified native cleanup remain required work; these process-local pins do not complete P10.
+Each bookmark session now carries its captured generation into native transport admission, so replacement, deletion or an unavailable generation refuses new authentication and storage requests from held sessions.
+Credential snapshots also validate before handing authority to an engine; the parent gateway validates at creation and before every upstream request, including policy HEADs and dispatch after body reads.
+Publication coordination covers admission but is released before external I/O, preserving concurrent transfers and allowing operations admitted before a change to finish.
+The [request-admission validation record](experiments/2026-09-06-request-admission.md) covers all 42 initial obsolete/unavailable cases, later retries/pages/reopens, delayed gateway requests and five negative controls.
+Native cleanup authority, historical recovery identity and the remaining library URL/token pairing gap stay open, and P10 remains incomplete.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.

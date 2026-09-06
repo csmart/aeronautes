@@ -55,6 +55,9 @@ func (c *Connections) open(ctx context.Context, bookmarkID string) (cachedSessio
 		}
 		return cachedSession{}, err
 	}
+	config.AdmitRequest = func(ctx context.Context) error {
+		return c.store.WithCurrentGeneration(ctx, bookmarkID, generation, nil)
+	}
 	session, err := swiftcontrol.New(config)
 	if err != nil {
 		return cachedSession{}, err
@@ -249,8 +252,8 @@ func (c *Connections) SetCADir(dir string) {
 	c.mu.Unlock()
 }
 
-// EngineRemote binds the child to one session's accepted credentials and
-// trust, even when the bookmark has been edited since that session opened.
+// EngineRemote carries the captured credentials, trust and admission check
+// through CA materialisation and the gateway's later upstream requests.
 func (c *Connections) EngineRemote(ctx context.Context, session *swiftcontrol.Session, name string) (rclone.Remote, error) {
 	credentials, err := session.Credentials(ctx, tokenRefreshMargin)
 	if err != nil {
@@ -261,7 +264,7 @@ func (c *Connections) EngineRemote(ctx context.Context, session *swiftcontrol.Se
 		return rclone.Remote{}, err
 	}
 	return rclone.Remote{Name: name, StorageURL: credentials.StorageURL, Token: credentials.Token,
-		InsecureTLS: insecure, CACertFile: caFile}, nil
+		InsecureTLS: insecure, CACertFile: caFile, AdmitRequest: session.AdmitRequest}, nil
 }
 
 // TLSRemote materialises the captured trust without consulting bookmarks.
