@@ -99,7 +99,7 @@ it("keeps Mirror comparison available without an execution or confirmation flow"
   expect(api.startCopy).not.toHaveBeenCalled();
 });
 
-it("cannot turn a Copy preview into a Mirror start and still allows Copy", async () => {
+it("cannot turn a Copy preview into a Mirror start and allows a fresh Copy preview", async () => {
   const api = show();
   button("Preview")!.click();
   await vi.waitFor(() => expect(button("Start copy")?.disabled).toBe(false));
@@ -109,6 +109,9 @@ it("cannot turn a Copy preview into a Mirror start and still allows Copy", async
   expect(button("Mirror unavailable")?.disabled).toBe(true);
   button("Copy")!.click();
   flushSync();
+  expect(button("Start copy")?.disabled).toBe(true);
+  button("Preview")!.click();
+  await vi.waitFor(() => expect(button("Start copy")?.disabled).toBe(false));
   button("Start copy")!.click();
   await vi.waitFor(() => expect(api.startCopy).toHaveBeenCalledOnce());
   expect(api.startMirror).not.toHaveBeenCalled();

@@ -3,6 +3,7 @@
   typed confirmation unlocks Start. Deletion is Aeronautes-native and
   manifest-only; the Go side re-validates everything. -->
 <script lang="ts">
+  import { onDestroy, untrack } from "svelte";
   import { trapFocus } from "../../lib/trapFocus";
   import type { BrowserState } from "../browser/browserState.svelte";
   import type { DeletePreviewDTO, DeleteRequestDTO } from "../../lib/api";
@@ -10,69 +11,121 @@
 
   let { browser, onClose }: { browser: BrowserState; onClose: () => void } = $props();
 
+  const hasPrefix = $derived(browser.prefix !== "");
   // svelte-ignore state_referenced_locally
-  const hasPrefix = browser.prefix !== "";
   let mode: "prefix" | "empty" | "delete_container" = $state(hasPrefix ? "prefix" : "empty");
-  let preview = $state<DeletePreviewDTO | null>(null);
   let confirmText = $state("");
-  let busy = $state(false);
+  let previewing = $state(false);
+  let starting = $state(false);
   let error: string | null = $state(null);
   let startedJobId: string | null = $state(null);
+  let closed = $state(false);
+  let generation = 0;
+  interface Intent {
+    generation: number;
+    browser: BrowserState;
+    scopeRevision: number;
+    request: DeleteRequestDTO;
+  }
+  let prepared = $state.raw<{ intent: Intent; plan: DeletePreviewDTO } | null>(null);
+  const preview = $derived(prepared && isCurrent(prepared.intent) ? prepared.plan : null);
+  const canPreview = $derived(!closed && !previewing && !starting && !browser.connecting
+    && !!browser.connectedBookmarkId && !!browser.containerName && (mode !== "prefix" || hasPrefix));
+  const canStart = $derived(!!prepared && !!preview && !previewing && !starting
+    && confirmText === prepared.intent.request.container);
 
-  function request() {
+  function request(): DeleteRequestDTO {
     return {
       bookmarkId: browser.connectedBookmarkId ?? "",
       container: browser.containerName ?? "",
       prefix: mode === "prefix" ? browser.prefix : "",
       mode: mode as DeleteRequestDTO["mode"],
-      confirm: confirmText,
+      confirm: "",
     };
   }
 
-  async function runPreview() {
-    busy = true;
+  function isCurrent(intent: Intent): boolean {
+    return !closed && !browser.connecting && intent.generation === generation
+      && intent.browser === browser && intent.scopeRevision === browser.scopeRevision
+      && JSON.stringify(intent.request) === JSON.stringify(request());
+  }
+
+  function invalidate() {
+    generation++;
+    prepared = null;
+    confirmText = "";
+    previewing = false;
+    startedJobId = null;
     error = null;
+  }
+
+  $effect(() => {
+    void browser.scopeRevision;
+    untrack(invalidate);
+  });
+
+  function close() {
+    closed = true;
+    invalidate();
+    onClose();
+  }
+  onDestroy(() => { closed = true; invalidate(); });
+
+  async function runPreview() {
+    if (!canPreview) return;
+    invalidate();
+    const req = Object.freeze(request());
+    const intent: Intent = { generation, browser, scopeRevision: browser.scopeRevision, request: req };
+    previewing = true;
     try {
-      preview = await browser.previewDelete(request());
+      const plan = await browser.previewDelete(req);
+      if (isCurrent(intent)) prepared = { intent, plan };
     } catch (e) {
-      preview = null;
-      error = e instanceof Error ? e.message : String(e);
+      if (isCurrent(intent)) error = e instanceof Error ? e.message : String(e);
     } finally {
-      busy = false;
+      if (isCurrent(intent)) previewing = false;
     }
   }
 
   async function start() {
-    busy = true;
+    const current = prepared;
+    if (starting || previewing || !current || !isCurrent(current.intent)
+      || confirmText !== current.intent.request.container) return;
+    const req = { ...current.intent.request, confirm: confirmText };
+    prepared = null;
+    confirmText = "";
+    starting = true;
     error = null;
     try {
-      startedJobId = await browser.startDelete(request());
+      const jobId = await browser.startDelete(req);
+      if (isCurrent(current.intent)) startedJobId = jobId;
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      if (isCurrent(current.intent)) error = e instanceof Error ? e.message : String(e);
     } finally {
-      busy = false;
+      // A scope edit cannot open a second Start while this one is pending.
+      starting = false;
     }
   }
 </script>
 
-<div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && onClose()}>
+<div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && close()}>
   <div class="dialog" role="dialog" aria-label="Delete" tabindex="-1" use:trapFocus>
     <header>
       <h2>Destructive operation</h2>
-      <button class="close" onclick={onClose} aria-label="Close">✕</button>
+      <button class="close" onclick={close} aria-label="Close">✕</button>
     </header>
 
     <div class="modes" role="radiogroup" aria-label="Scope">
       {#if hasPrefix}
         <label class="mode">
-          <input type="radio" value="prefix" bind:group={mode} onchange={() => (preview = null)} />
+          <input type="radio" value="prefix" bind:group={mode} onchange={invalidate} />
           <span>
             Delete prefix <span class="type-mono">{browser.containerName}/{browser.prefix}</span>
           </span>
         </label>
       {/if}
       <label class="mode">
-        <input type="radio" value="empty" bind:group={mode} onchange={() => (preview = null)} />
+        <input type="radio" value="empty" bind:group={mode} onchange={invalidate} />
         <span>
           Empty container <span class="type-mono">{browser.containerName}</span> — contents go,
           the container and all its configuration stay
@@ -83,7 +136,7 @@
           type="radio"
           value="delete_container"
           bind:group={mode}
-          onchange={() => (preview = null)}
+          onchange={invalidate}
         />
         <span>
           Delete container <span class="type-mono">{browser.containerName}</span> — empty it,
@@ -123,15 +176,15 @@
     <footer>
       {#if startedJobId}
         <span class="started">Job {startedJobId} started — follow it in the drawer.</span>
-        <button onclick={onClose}>Close</button>
+        <button onclick={close}>Close</button>
       {:else}
-        <button onclick={runPreview} disabled={busy}>
-          {busy ? "Counting…" : "Preview"}
+        <button onclick={runPreview} disabled={!canPreview}>
+          {previewing ? "Counting…" : "Preview"}
         </button>
         <button
           class="danger"
           onclick={start}
-          disabled={busy || !preview || confirmText !== (browser.containerName ?? "")}
+          disabled={!canStart}
         >
           {mode === "prefix"
             ? "Delete prefix"

@@ -1,6 +1,7 @@
 <!-- Mirror keeps its comparison preview while ADR 0020 prevents an
   execution that cannot protect concurrent changes. -->
 <script lang="ts">
+  import { onDestroy, untrack } from "svelte";
   import { trapFocus } from "../../lib/trapFocus";
   import type { BrowserState } from "../browser/browserState.svelte";
   import type { CopyPlanDTO, CopyRequestDTO } from "../../lib/api";
@@ -8,7 +9,8 @@
 
   let { browser, onClose }: { browser: BrowserState; onClose: () => void } = $props();
 
-  let mode: "copy" | "mirror" = $state("copy");
+  type TransferMode = "copy" | "mirror";
+  let mode: TransferMode = $state("copy");
   // The dialog remounts per open, so the initial value is the intent.
   // svelte-ignore state_referenced_locally
   let destBookmarkId = $state(browser.connectedBookmarkId ?? "");
@@ -17,7 +19,6 @@
   let profile = $state(browser.appSettings?.defaultProfile ?? "auto");
   let destContainer = $state("");
   let destPrefix = $state("");
-  let preview: CopyPlanDTO | null = $state(null);
   // Per-job §44.1 overrides; empty/zero = defaults.
   let chunkSize = $state("");
   let transfers = $state("");
@@ -26,6 +27,19 @@
   let starting = $state(false);
   let error: string | null = $state(null);
   let startedJobId: string | null = $state(null);
+  let closed = $state(false);
+  let generation = 0;
+  interface Intent {
+    generation: number;
+    browser: BrowserState;
+    scopeRevision: number;
+    mode: TransferMode;
+    request: CopyRequestDTO;
+  }
+  let prepared = $state.raw<{ intent: Intent; plan: CopyPlanDTO } | null>(null);
+  const preview = $derived(prepared && isCurrent(prepared.intent) ? prepared.plan : null);
+  const canPreview = $derived(!closed && !previewing && !starting && !browser.connecting
+    && !!browser.connectedBookmarkId && !!browser.containerName && !!destContainer.trim());
 
   function request(): CopyRequestDTO {
     return {
@@ -46,42 +60,77 @@
     };
   }
 
-  // Any input change invalidates the preview — Start is gated on a
-  // preview of exactly what would run.
+  function isCurrent(intent: Intent): boolean {
+    return !closed && !browser.connecting && intent.generation === generation
+      && intent.browser === browser && intent.scopeRevision === browser.scopeRevision
+      && intent.mode === mode && JSON.stringify(intent.request) === JSON.stringify(request());
+  }
+
   function invalidate() {
-    preview = null;
+    generation++;
+    prepared = null;
+    previewing = false;
     startedJobId = null;
     error = null;
   }
 
+  // A synchronous scope revision also catches leaving and returning before
+  // Svelte runs this effect; request equality alone would miss that history.
+  $effect(() => {
+    void browser.scopeRevision;
+    untrack(invalidate);
+  });
+
+  function close() {
+    closed = true;
+    invalidate();
+    onClose();
+  }
+  onDestroy(() => { closed = true; invalidate(); });
+
+  function changeMode(next: TransferMode) {
+    if (mode === next) return;
+    mode = next;
+    invalidate();
+  }
+
   async function runPreview() {
+    if (!canPreview) return;
+    invalidate();
+    const req = request();
+    Object.freeze(req.settings);
+    Object.freeze(req);
+    const intent: Intent = { generation, browser, scopeRevision: browser.scopeRevision, mode, request: req };
     previewing = true;
-    error = null;
     try {
-      preview = await browser.planCopy(request());
+      const plan = await browser.planCopy(req);
+      if (isCurrent(intent)) prepared = { intent, plan };
     } catch (e) {
-      preview = null;
-      error = e instanceof Error ? e.message : String(e);
+      if (isCurrent(intent)) error = e instanceof Error ? e.message : String(e);
     } finally {
-      previewing = false;
+      if (isCurrent(intent)) previewing = false;
     }
   }
 
   async function start() {
-    if (mode !== "copy") return;
+    const current = prepared;
+    if (mode !== "copy" || starting || previewing || !current || !isCurrent(current.intent)) return;
+    prepared = null;
     starting = true;
     error = null;
     try {
-      startedJobId = await browser.startCopy(request());
+      const jobId = await browser.startCopy(current.intent.request);
+      if (isCurrent(current.intent)) startedJobId = jobId;
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      if (isCurrent(current.intent)) error = e instanceof Error ? e.message : String(e);
     } finally {
+      // Only one Start can be pending in this dialog, even after intent edits.
       starting = false;
     }
   }
 </script>
 
-<div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && onClose()}>
+<div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && close()}>
   <div class="dialog" role="dialog" aria-label="Transfer" tabindex="-1" use:trapFocus>
     <header>
       <div class="modes" role="tablist">
@@ -89,16 +138,16 @@
           role="tab"
           class:active={mode === "copy"}
           aria-selected={mode === "copy"}
-          onclick={() => (mode = "copy")}>Copy</button
+          onclick={() => changeMode("copy")}>Copy</button
         >
         <button
           role="tab"
           class:active={mode === "mirror"}
           aria-selected={mode === "mirror"}
-          onclick={() => (mode = "mirror")}>Mirror</button
+          onclick={() => changeMode("mirror")}>Mirror</button
         >
       </div>
-      <button class="close" onclick={onClose} aria-label="Close">✕</button>
+      <button class="close" onclick={close} aria-label="Close">✕</button>
     </header>
 
     {#if mode === "mirror"}
@@ -167,15 +216,15 @@
         </label>
         <label>
           <span>Chunk size</span>
-          <input class="type-mono" placeholder="5Gi (default)" bind:value={chunkSize} onchange={invalidate} />
+          <input class="type-mono" placeholder="5Gi (default)" bind:value={chunkSize} oninput={invalidate} />
         </label>
         <label>
           <span>Transfers</span>
-          <input class="type-mono" placeholder="4 (default)" bind:value={transfers} onchange={invalidate} />
+          <input class="type-mono" placeholder="4 (default)" bind:value={transfers} oninput={invalidate} />
         </label>
         <label>
           <span>Bandwidth</span>
-          <input class="type-mono" placeholder="unlimited" bind:value={bwLimit} onchange={invalidate} />
+          <input class="type-mono" placeholder="unlimited" bind:value={bwLimit} oninput={invalidate} />
         </label>
       </div>
     </details>
@@ -247,13 +296,13 @@
     <footer>
       {#if startedJobId}
         <span class="started">Job {startedJobId} started — follow it in the drawer.</span>
-        <button class="primary" onclick={onClose}>Close</button>
+        <button class="primary" onclick={close}>Close</button>
       {:else}
-        <button onclick={runPreview} disabled={previewing || !destContainer.trim()}>
+        <button onclick={runPreview} disabled={!canPreview}>
           {previewing ? "Planning…" : "Preview"}
         </button>
         {#if mode === "copy"}
-          <button class="primary" onclick={start} disabled={!preview || starting}>
+          <button class="primary" onclick={start} disabled={!preview || previewing || starting || closed}>
             {starting ? "Starting…" : "Start copy"}
           </button>
         {:else}

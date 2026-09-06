@@ -69,7 +69,17 @@ export class BrowserState {
 
   // Bookmarks and connection.
   bookmarks: BookmarkDTO[] = $state([]);
-  connectedBookmarkId: string | null = $state(null);
+  // UI previews must notice a scope change even if its names are then restored.
+  // This revision does not replace the backend's credential generation.
+  #scopeRevision = $state(0);
+  get scopeRevision(): number { return this.#scopeRevision; }
+
+  #connectedBookmarkId: string | null = $state(null);
+  get connectedBookmarkId(): string | null { return this.#connectedBookmarkId; }
+  set connectedBookmarkId(value: string | null) {
+    if (value !== this.#connectedBookmarkId) this.#scopeRevision++;
+    this.#connectedBookmarkId = value;
+  }
   connecting = $state(false);
   connectError: string | null = $state(null);
   account: AccountDTO | null = $state(null);
@@ -113,13 +123,23 @@ export class BrowserState {
   containersError: string | null = $state(null);
 
   // Working list.
-  containerName: string | null = $state(null);
+  #containerName: string | null = $state(null);
+  get containerName(): string | null { return this.#containerName; }
+  set containerName(value: string | null) {
+    if (value !== this.#containerName) this.#scopeRevision++;
+    this.#containerName = value;
+  }
   /** The open container's §53 HEAD detail; null while loading/closed. */
   containerDetail: ContainerDetailDTO | null = $state(null);
   /** Set while viewing a manifest's segment location (§23.1 backstage
    * jump): the label of where we came from; null in normal browsing. */
   backstageFrom: string | null = $state(null);
-  prefix = $state("");
+  #prefix = $state("");
+  get prefix(): string { return this.#prefix; }
+  set prefix(value: string) {
+    if (value !== this.#prefix) this.#scopeRevision++;
+    this.#prefix = value;
+  }
   #filter = $state("");
 
   /** Loaded-row filter. Setting it re-anchors the selection BY NAME:
@@ -230,6 +250,8 @@ export class BrowserState {
   }
 
   async connect(bookmarkId: string) {
+    // Reconnecting may change authority even when all visible names stay equal.
+    this.#scopeRevision++;
     this.connecting = true;
     this.connectError = null;
     try {
