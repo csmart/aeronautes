@@ -123,6 +123,7 @@ It is not completed recovery: pending keys can consume storage, and the cleanup/
 No session-fallback result, new adapter lifetime or persistent `ErrNotFound` can silently remove that evidence.
 Native selection, verified persistent authority and recovery after a lost deletion response remain required follow-up work, with tests for changed defaults and unavailable original stores.
 Do not claim that these metadata records establish backup-copy ownership or prove native keychain erasure.
+The additional [write-verification prerequisite](0017-keychain-write-verification.md) addresses false success from dismissed native prompts before publication, while retaining these original-store and cleanup requirements.
 
 ### Generations, sessions and jobs
 
