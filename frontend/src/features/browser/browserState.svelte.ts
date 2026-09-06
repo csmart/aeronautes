@@ -53,6 +53,13 @@ export interface ContainerGroups {
   hiddenBackstage: number;
 }
 
+interface DetailRequest {
+  scope: number;
+  seq: number;
+  container: string;
+  name: string;
+}
+
 export class BrowserState {
   #api: Api;
 
@@ -74,12 +81,16 @@ export class BrowserState {
   // UI previews must notice a scope change even if its names are then restored.
   // This revision does not replace the backend's credential generation.
   #scopeRevision = $state(0);
+  #connectionRevision = 0;
   get scopeRevision(): number { return this.#scopeRevision; }
 
   #connectedBookmarkId: string | null = $state(null);
   get connectedBookmarkId(): string | null { return this.#connectedBookmarkId; }
   set connectedBookmarkId(value: string | null) {
-    if (value !== this.#connectedBookmarkId) this.#scopeRevision++;
+    if (value !== this.#connectedBookmarkId) {
+      this.#scopeRevision++;
+      this.#connectionRevision++;
+    }
     this.#connectedBookmarkId = value;
   }
   connecting = $state(false);
@@ -199,7 +210,21 @@ export class BrowserState {
   detailLoading = $state(false);
   detailError: string | null = $state(null);
   #detailSeq = 0;
+  #detailScope = -1;
+  #containerDetailSeq = 0;
+  #containerDetailConnection = -1;
   #listSeq = 0;
+
+  #currentDetail(request: DetailRequest): boolean {
+    return !this.connecting && request.scope === this.#scopeRevision && request.seq === this.#detailSeq
+      && request.container === this.containerName
+      && request.container === this.detailIdentity?.container && request.name === this.detailIdentity?.name;
+  }
+
+  #currentContainerDetail(scope: number, seq: number, name: string): boolean {
+    return !this.connecting && scope === this.#scopeRevision && seq === this.#containerDetailSeq
+      && name === this.containerName;
+  }
 
   async loadBookmarks() {
     this.bookmarks = await this.#api.listBookmarks();
@@ -263,6 +288,7 @@ export class BrowserState {
   async connect(bookmarkId: string) {
     // Reconnecting may change authority even when all visible names stay equal.
     this.#scopeRevision++;
+    this.#connectionRevision++;
     this.connecting = true;
     this.connectError = null;
     try {
@@ -337,16 +363,11 @@ export class BrowserState {
     this.containerName = name;
     this.containerDetail = null;
     this.backstageFrom = null;
+    // Prefix reset belongs to this navigation, before its HEAD captures scope.
+    this.prefix = "";
     // §14.2: opening IS selecting the container — one HEAD for the
     // inspector; failure falls back to the listing row's fields.
-    this.#api
-      .containerDetail(name)
-      .then((detail) => {
-        if (this.containerName === name) {
-          this.containerDetail = detail;
-        }
-      })
-      .catch(() => {});
+    void this.refreshContainerDetail();
     await this.#loadEntries("");
   }
 
@@ -429,6 +450,7 @@ export class BrowserState {
     this.selectedIndex = index;
     const entry = this.selectedEntry;
     const seq = ++this.#detailSeq;
+    this.#detailScope = this.#scopeRevision;
     this.detailIdentity =
       entry && this.containerName
         ? { container: this.containerName, name: entry.name }
@@ -444,40 +466,43 @@ export class BrowserState {
       return;
     }
     this.detailLoading = true;
+    const request = { scope: this.#scopeRevision, seq, container, name: entry.name };
     const fetch =
       entry.kind === "object"
         ? this.#api.objectDetail(container, entry.name).then(async (detail) => {
-            if (seq !== this.#detailSeq) {
+            if (!this.#currentDetail(request)) {
               return;
             }
+            if (detail.name !== request.name) throw new Error("object detail does not match the selected name");
             this.objectDetail = detail;
             if (detail.class === "slo") {
               // The exact segment table (§23.2) — still one selection.
               const manifest = await this.#api.sloManifest(container, entry.name);
-              if (seq === this.#detailSeq) {
+              if (this.#currentDetail(request)) {
                 this.sloManifest = manifest;
               }
             } else if (detail.class === "dlo" && detail.manifest !== "") {
               // The bounded §23.1 preview.
               const preview = await this.#api.dloSegments(detail.manifest);
-              if (seq === this.#detailSeq) {
+              if (this.#currentDetail(request)) {
                 this.dloSegments = preview;
               }
             }
           })
         : this.#api.prefixDetail(container, entry.name).then((detail) => {
-            if (seq === this.#detailSeq) {
+            if (this.#currentDetail(request)) {
+              if (detail.prefix !== request.name) throw new Error("prefix detail does not match the selected name");
               this.prefixDetail = detail;
             }
           });
     fetch
       .catch((err) => {
-        if (seq === this.#detailSeq) {
+        if (this.#currentDetail(request)) {
           this.detailError = messageOf(err);
         }
       })
       .finally(() => {
-        if (seq === this.#detailSeq) {
+        if (this.#currentDetail(request)) {
           this.detailLoading = false;
         }
       });
@@ -709,12 +734,17 @@ export class BrowserState {
   async saveObjectMetadata(edit: ObjectMetadataEditDTO, force = false): Promise<MutationResultDTO> {
     const identity = this.detailIdentity;
     const detail = this.objectDetail;
-    if (!identity || !detail) {
-      throw new Error("no object selected");
+    if (!identity || !detail || detail.name !== identity.name || identity.container !== this.containerName
+      || this.#detailScope !== this.#scopeRevision || this.connecting || !this.connectedBookmarkId) {
+      throw new Error("no current object detail selected — reload before editing");
     }
+    const request = { scope: this.#scopeRevision, seq: ++this.#detailSeq, ...identity };
+    this.detailLoading = false;
+    this.detailError = null;
     const base = force ? "" : detail.editableFingerprint;
     const result = await this.#api.updateObjectMetadata(identity.container, identity.name, base, edit);
-    if (result.outcome === "applied" && result.objectAfter) {
+    if (this.#currentDetail(request) && result.outcome === "applied" && result.objectAfter
+      && result.objectAfter.name === identity.name) {
       this.objectDetail = result.objectAfter;
     }
     await this.loadAudit();
@@ -730,12 +760,16 @@ export class BrowserState {
   async saveContainer(edit: ContainerEditDTO, force = false): Promise<MutationResultDTO> {
     const name = this.containerName;
     const detail = this.containerDetail;
-    if (!name || !detail) {
-      throw new Error("no container open");
+    if (!name || !detail || detail.name !== name || this.connecting || !this.connectedBookmarkId
+      || this.#containerDetailConnection !== this.#connectionRevision) {
+      throw new Error("no current container detail open — reload before editing");
     }
+    const scope = this.#scopeRevision;
+    const seq = ++this.#containerDetailSeq;
     const base = force ? "" : detail.editableFingerprint;
     const result = await this.#api.updateContainer(name, base, edit);
-    if (result.outcome === "applied" && result.containerAfter) {
+    if (this.#currentContainerDetail(scope, seq, name) && result.outcome === "applied" && result.containerAfter
+      && result.containerAfter.name === name) {
       this.containerDetail = result.containerAfter;
     }
     await this.loadAudit();
@@ -747,7 +781,15 @@ export class BrowserState {
     if (!name) {
       return;
     }
-    this.containerDetail = await this.#api.containerDetail(name).catch(() => null);
+    const scope = this.#scopeRevision;
+    const seq = ++this.#containerDetailSeq;
+    const connection = this.#connectionRevision;
+    const detail = await this.#api.containerDetail(name).catch(() => null);
+    if (this.#currentContainerDetail(scope, seq, name)) {
+      this.containerDetail = detail?.name === name ? detail : null;
+      // A prefix change does not change this container's working-copy identity.
+      this.#containerDetailConnection = connection;
+    }
   }
 
   /** Create a container and open it. */
@@ -761,10 +803,17 @@ export class BrowserState {
   /** Create the explicit marker for the selected implied prefix. */
   async createMarker(prefix: string) {
     const container = this.containerName;
-    if (!container) {
-      throw new Error("no container open");
+    const identity = this.detailIdentity;
+    if (!container || !identity || identity.container !== container || identity.name !== prefix
+      || this.prefixDetail?.prefix !== prefix || this.#detailScope !== this.#scopeRevision
+      || this.connecting || !this.connectedBookmarkId) {
+      throw new Error("no current prefix detail selected — reload before creating a marker");
     }
-    this.prefixDetail = await this.#api.createMarker(container, prefix);
+    const request = { scope: this.#scopeRevision, seq: ++this.#detailSeq, container, name: prefix };
+    this.detailLoading = false;
+    this.detailError = null;
+    const detail = await this.#api.createMarker(container, prefix);
+    if (this.#currentDetail(request) && detail.prefix === prefix) this.prefixDetail = detail;
     await this.loadAudit();
   }
 
