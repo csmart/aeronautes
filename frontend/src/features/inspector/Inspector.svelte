@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import { formatBytes, formatCount } from "../../lib/format";
+  import type { PrefixDetailDTO } from "../../lib/api";
   import type { BrowserState } from "../browser/browserState.svelte";
   import ObjectEditPanel from "./ObjectEditPanel.svelte";
   import ContainerEditPanel from "./ContainerEditPanel.svelte";
@@ -17,15 +19,18 @@
   let deleteManifestOpen = $state(false);
   let markerBusy = $state(false);
   let markerError: string | null = $state(null);
+  let alive = true;
+  onDestroy(() => { alive = false; });
 
-  // Selection or container changes end any edit in progress.
+  // Identity survives filter reordering, while a fresh selection or scope ends editing.
   $effect(() => {
-    void browser.selectedIndex;
-    void browser.containerName;
+    void browser.detailIdentity;
+    void browser.scopeRevision;
     editingObject = false;
     editingContainer = false;
     deleteManifestOpen = false;
     markerError = null;
+    markerBusy = false;
   });
 
   // Where a manifest's segments live, for the backstage jump and the
@@ -53,15 +58,21 @@
     browser.openBackstage(at.slice(0, slash), at.slice(slash + 1), detail.name);
   }
 
-  async function markerAction(action: () => Promise<void>) {
+  async function markerAction(expected: PrefixDetailDTO, action: (ownsView: () => boolean) => Promise<void>) {
+    if (!alive || markerBusy || browser.connecting || !browser.connectedBookmarkId
+      || browser.prefixDetail !== expected || browser.detailIdentity?.name !== expected.prefix) return;
+    const owner = browser;
+    const scope = browser.scopeRevision;
+    const selection = browser.detailIdentity;
+    const current = () => alive && owner === browser && scope === browser.scopeRevision && selection === browser.detailIdentity;
     markerBusy = true;
     markerError = null;
     try {
-      await action();
+      await action(current);
     } catch (err) {
-      markerError = err instanceof Error ? err.message : String(err);
+      if (current()) markerError = err instanceof Error ? err.message : String(err);
     } finally {
-      markerBusy = false;
+      if (current()) markerBusy = false;
     }
   }
 
@@ -169,6 +180,11 @@
               {preview.segments?.length} segments · {formatBytes(preview.previewBytes)}
             {/if}
           </p>
+        {:else if browser.detailLoading}
+          <p class="teach">fetching segment preview…</p>
+        {:else}
+          <p class="teach">Segment details are unavailable.</p>
+          <button class="edit-btn inline" onclick={() => browser.refreshDetail()}>Reload segment details</button>
         {/if}
         <div class="lo-actions">
           <button class="edit-btn inline" onclick={openBackstage}>Open segments backstage</button>
@@ -215,8 +231,11 @@
             {browser.sloManifest.entries?.length} entries · declared
             {formatBytes(declared)} · HEAD reports {formatBytes(detail.contentLength)}
           </p>
-        {:else}
+        {:else if browser.detailLoading}
           <p class="teach">fetching exact manifest…</p>
+        {:else}
+          <p class="teach">Exact manifest details are unavailable.</p>
+          <button class="edit-btn inline" onclick={() => browser.refreshDetail()}>Reload segment details</button>
         {/if}
         <div class="lo-actions">
           {#if segmentsAt !== ""}
@@ -286,7 +305,7 @@
           <button
             class="edit-btn inline"
             disabled={markerBusy}
-            onclick={() => markerAction(() => browser.createMarker(entry.name))}
+            onclick={() => markerAction(pd, () => browser.createMarker(pd.prefix))}
           >
             Create marker object
           </button>
@@ -297,7 +316,7 @@
           <button
             class="edit-btn inline danger"
             disabled={markerBusy}
-            onclick={() => markerAction(() => browser.deleteMarker(entry.name))}
+            onclick={() => markerAction(pd, (ownsView) => browser.deleteMarker(pd.prefix, ownsView))}
           >
             Delete marker object
           </button>

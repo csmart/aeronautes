@@ -3,10 +3,27 @@
   chrome, several offer a select with the default marked ('s rule
   about not cluttering the UI unnecessarily). -->
 <script lang="ts">
+  import { onDestroy, untrack } from "svelte";
   import { trapFocus } from "../../lib/trapFocus";
   import type { BrowserState } from "./browserState.svelte";
 
   let { browser, onClose }: { browser: BrowserState; onClose: () => void } = $props();
+
+  // Container creation belongs to the account and view that opened this dialog.
+  // svelte-ignore state_referenced_locally
+  const target = { browser, scope: browser.scopeRevision, selection: browser.detailIdentity };
+  let closed = $state(false);
+  function isCurrent() {
+    return !closed && browser === target.browser && !browser.connecting && !!browser.connectedBookmarkId
+      && browser.scopeRevision === target.scope && browser.detailIdentity === target.selection;
+  }
+  function close() {
+    if (closed) return;
+    closed = true;
+    onClose();
+  }
+  onDestroy(() => { closed = true; });
+  $effect(() => { if (!isCurrent()) untrack(close); });
 
   const policies = $derived(browser.capabilities?.storagePolicies ?? []);
   const showPicker = $derived(policies.length > 1);
@@ -17,20 +34,21 @@
   let error: string | null = $state(null);
 
   async function create() {
+    if (saving || !isCurrent()) return;
     saving = true;
     error = null;
     try {
-      await browser.createContainer({ name, policy, meta: {} });
-      onClose();
+      await browser.createContainer({ name, policy, meta: {} }, isCurrent);
+      if (isCurrent()) close();
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      if (isCurrent()) error = err instanceof Error ? err.message : String(err);
     } finally {
-      saving = false;
+      if (isCurrent()) saving = false;
     }
   }
 </script>
 
-<div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && onClose()}>
+<div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && close()}>
   <form
     class="dialog"
     use:trapFocus
@@ -45,13 +63,13 @@
     <label class="field">
       <span>Name</span>
       <!-- svelte-ignore a11y_autofocus -->
-      <input class="type-mono" bind:value={name} autofocus required placeholder="my-container" />
+      <input class="type-mono" bind:value={name} autofocus required placeholder="my-container" disabled={saving || !isCurrent()} />
     </label>
 
     {#if showPicker}
       <label class="field">
         <span>Storage policy</span>
-        <select bind:value={policy}>
+        <select bind:value={policy} disabled={saving || !isCurrent()}>
           <option value="">cluster default</option>
           {#each policies as p (p.name)}
             <option value={p.name}>{p.name}{p.default ? " (default)" : ""}</option>
@@ -65,8 +83,8 @@
     {/if}
 
     <div class="actions">
-      <button type="button" class="secondary" onclick={onClose} disabled={saving}>Cancel</button>
-      <button type="submit" class="primary" disabled={saving}>
+      <button type="button" class="secondary" onclick={close} disabled={saving}>Cancel</button>
+      <button type="submit" class="primary" disabled={saving || !isCurrent()}>
         {saving ? "Creating…" : "Create"}
       </button>
     </div>

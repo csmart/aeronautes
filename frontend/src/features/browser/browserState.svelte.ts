@@ -12,6 +12,7 @@ import type {
   MirrorRequestDTO,
   DeleteRequestDTO,
   SegmentOwnershipDTO,
+  SegmentsDeleteRequestDTO,
   DownloadPreflight,
   DownloadRequestDTO,
   FindStatusDTO,
@@ -143,6 +144,7 @@ export class BrowserState {
   containers: ContainerRowDTO[] = $state([]);
   containersMarker = $state("");
   containersError: string | null = $state(null);
+  #containersSeq = 0;
 
   // Working list.
   #containerName: string | null = $state(null);
@@ -310,13 +312,17 @@ export class BrowserState {
   }
 
   async loadContainers() {
+    const scope = this.#scopeRevision;
+    const seq = ++this.#containersSeq;
     this.containersError = null;
     try {
       const page = await this.#api.containers("", pageLimit);
-      this.containers = page.rows;
-      this.containersMarker = page.nextMarker;
+      if (scope === this.#scopeRevision && seq === this.#containersSeq) {
+        this.containers = page.rows;
+        this.containersMarker = page.nextMarker;
+      }
     } catch (err) {
-      this.containersError = messageOf(err);
+      if (scope === this.#scopeRevision && seq === this.#containersSeq) this.containersError = messageOf(err);
     }
   }
 
@@ -409,22 +415,23 @@ export class BrowserState {
     this.prefix = prefix;
     this.filter = "";
     this.select(-1);
+    const scope = this.#scopeRevision;
     this.entriesLoading = true;
     this.entriesError = null;
     try {
       const page = await this.#api.objects(this.containerName ?? "", prefix, "", pageLimit);
-      if (seq !== this.#listSeq) {
+      if (seq !== this.#listSeq || scope !== this.#scopeRevision) {
         return; // a newer navigation superseded this load
       }
       this.entries = page.rows;
       this.entriesMarker = page.nextMarker;
     } catch (err) {
-      if (seq === this.#listSeq) {
+      if (seq === this.#listSeq && scope === this.#scopeRevision) {
         this.entries = [];
         this.entriesError = messageOf(err);
       }
     } finally {
-      if (seq === this.#listSeq) {
+      if (seq === this.#listSeq && scope === this.#scopeRevision) {
         this.entriesLoading = false;
       }
     }
@@ -682,27 +689,25 @@ export class BrowserState {
     return id;
   }
 
-  async checkSegmentOwnership(container: string, name: string): Promise<SegmentOwnershipDTO> {
-    return await this.#api.checkSegmentOwnership({
-      bookmarkId: this.connectedBookmarkId ?? "",
-      container,
-      name,
-      force: false,
-      confirm: "",
-    });
+  async checkSegmentOwnership(req: SegmentsDeleteRequestDTO): Promise<SegmentOwnershipDTO> {
+    return await this.#api.checkSegmentOwnership(req);
   }
 
-  async deleteManifestWithSegments(container: string, name: string, force: boolean, confirm: string) {
-    const result = await this.#api.deleteManifestWithSegments({
-      bookmarkId: this.connectedBookmarkId ?? "",
-      container,
-      name,
-      force,
-      confirm,
-    });
-    // The inspector's selection is gone; refresh like deleteManifest.
+  async deleteManifestWithSegments(req: SegmentsDeleteRequestDTO, ownsView = () => true) {
+    const scope = this.#scopeRevision;
+    const selection = this.detailIdentity;
+    const prefix = this.prefix;
+    const displayed = req.bookmarkId === this.connectedBookmarkId && req.container === selection?.container && req.name === selection.name;
+    const result = await this.#api.deleteManifestWithSegments(req);
     await this.loadAudit();
+    if (displayed && result.manifestDeleted && ownsView() && this.#currentView(scope, selection)) await this.goTo(prefix);
     return result;
+  }
+
+  // A reopened dialog can share this identity, so dialog callers also supply
+  // their lifetime check before follow-up navigation.
+  #currentView(scope: number, selection: typeof this.detailIdentity): boolean {
+    return !this.connecting && scope === this.#scopeRevision && selection === this.detailIdentity;
   }
 
   // §50 viewer filters + paging over the drawer's Changes tab.
@@ -793,10 +798,14 @@ export class BrowserState {
   }
 
   /** Create a container and open it. */
-  async createContainer(create: ContainerCreateDTO) {
+  async createContainer(create: ContainerCreateDTO, ownsView = () => true) {
+    const scope = this.#scopeRevision;
+    const selection = this.detailIdentity;
     await this.#api.createContainer(create);
-    await this.loadContainers();
     await this.loadAudit();
+    if (!ownsView() || !this.#currentView(scope, selection)) return;
+    await this.loadContainers();
+    if (!ownsView() || !this.#currentView(scope, selection)) return;
     await this.openContainer(create.name);
   }
 
@@ -831,24 +840,34 @@ export class BrowserState {
   /** Delete ONLY the named manifest object (§60 Phase 4's low-risk
    * delete): segments survive; the working list refreshes. The dialog
    * passes the exact identity it displayed — never the live index. */
-  async deleteManifest(container: string, name: string): Promise<void> {
+  async deleteManifest(container: string, name: string, ownsView = () => true): Promise<void> {
     if (!container || !name) {
       throw new Error("no object identity");
     }
+    const scope = this.#scopeRevision;
+    const selection = this.detailIdentity;
+    const prefix = this.prefix;
+    const displayed = container === selection?.container && name === selection.name;
     await this.#api.deleteManifest(container, name);
     await this.loadAudit();
-    await this.goTo(this.prefix);
+    if (displayed && ownsView() && this.#currentView(scope, selection)) await this.goTo(prefix);
   }
 
   /** Delete ONLY a verified marker; the working list refreshes. */
-  async deleteMarker(prefix: string) {
+  async deleteMarker(prefix: string, ownsView = () => true) {
     const container = this.containerName;
-    if (!container) {
-      throw new Error("no container open");
+    const identity = this.detailIdentity;
+    if (!container || !identity || identity.container !== container || identity.name !== prefix
+      || this.prefixDetail?.prefix !== prefix || this.#detailScope !== this.#scopeRevision
+      || this.connecting || !this.connectedBookmarkId) {
+      throw new Error("no current prefix detail selected — reload before deleting a marker");
     }
+    const scope = this.#scopeRevision;
+    const selection = this.detailIdentity;
+    const parent = this.prefix;
     await this.#api.deleteMarker(container, prefix);
     await this.loadAudit();
-    await this.goTo(this.prefix);
+    if (ownsView() && this.#currentView(scope, selection)) await this.goTo(parent);
   }
 }
 

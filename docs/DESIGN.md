@@ -4550,6 +4550,16 @@ The [inspector validation record](experiments/2026-09-06-detail-binding.md) incl
 The archived UI-02 probe now passes; UI-05 still fails because the separately planned dialog and connection-reset implementations have not landed.
 This is the first P07 slice only, and requires independent local review and the normal PR/master checks before delivery.
 
+The second P07 implementation now binds editors, container creation, manifest deletion and marker actions to their captured identity and lifetime.
+A refreshed portrait cannot lend its fingerprint to an older editor; working fields stay disabled during submission, and duplicate or stale forced submissions are refused.
+Ownership checks and explicit segment-deletion confirmation carry the captured bookmark, container and object.
+Component closure also retires its follow-up navigation, preventing an old operation from indirectly closing a replacement dialog that shares the same resource names.
+Initial list replies require current scope and request ordering; each awaited mutation follow-up rechecks its originating view.
+A retired segment preview now shows unavailable details and an explicit reload action.
+The [dialog validation record](experiments/2026-09-06-dialog-binding.md) contains the UI matrix, parent failures and independent removed-safeguard controls.
+Full bookmark/connection reset remains the third P07 slice; ordinary paging and Find work remains P08.
+This slice still requires independent local review and all five PR/master checks before delivery.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.

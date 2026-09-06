@@ -3,6 +3,7 @@
   select is capability-gated: modes the cluster is KNOWN to reject are
   disabled; an unknown /info leaves everything enabled with a note. -->
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import MetadataEditor from "./MetadataEditor.svelte";
   import AclEditor from "./AclEditor.svelte";
   import type { BrowserState } from "../browser/browserState.svelte";
@@ -13,6 +14,22 @@
     detail,
     onDone,
   }: { browser: BrowserState; detail: ContainerDetailDTO; onDone: () => void } = $props();
+
+  // Keep the displayed working copy and its fingerprint from the same portrait.
+  // svelte-ignore state_referenced_locally
+  const target = { browser, scope: browser.scopeRevision, selection: browser.detailIdentity, detail };
+  let closed = $state(false);
+  function isCurrent() {
+    return !closed && browser === target.browser && !browser.connecting
+      && browser.scopeRevision === target.scope && browser.detailIdentity === target.selection;
+  }
+  const currentBaseline = $derived(isCurrent() && browser.containerDetail === target.detail && detail === target.detail);
+  function close() {
+    if (closed) return;
+    closed = true;
+    onDone();
+  }
+  onDestroy(() => { closed = true; });
 
   let editor: MetadataEditor | undefined = $state();
   // The panel mounts fresh per edit session; initial capture is intended.
@@ -55,6 +72,7 @@
   const modernVersioning = $derived(initialVersioningMode === "enabled");
 
   async function save(force: boolean) {
+    if (saving || !currentBaseline) return;
     if (modernVersioning) {
       error = "This container uses modern object versioning, which v1 cannot edit safely — manage it with swift/CLI for now.";
       return;
@@ -86,17 +104,18 @@
         },
         force,
       );
+      if (!isCurrent()) return;
       if (result.outcome === "applied") {
-        onDone();
+        close();
       } else if (result.outcome === "conflict") {
         conflict = true;
       } else {
         mismatch = result.mismatch;
       }
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      if (isCurrent()) error = err instanceof Error ? err.message : String(err);
     } finally {
-      saving = false;
+      if (isCurrent()) saving = false;
     }
   }
 </script>
@@ -104,43 +123,45 @@
 <section class="card">
   <h3 class="card-title">Configure container</h3>
 
-  <h4 class="sub">User metadata</h4>
-  <MetadataEditor bind:this={editor} base={detail.meta ?? {}} />
+  <fieldset class="fields" aria-label="Container configuration" disabled={saving || !currentBaseline}>
+    <h4 class="sub">User metadata</h4>
+    <MetadataEditor bind:this={editor} base={target.detail.meta ?? {}} />
 
-  <AclEditor label="Read ACL" bind:value={readAcl} />
-  <AclEditor label="Write ACL" bind:value={writeAcl} />
+    <AclEditor label="Read ACL" bind:value={readAcl} />
+    <AclEditor label="Write ACL" bind:value={writeAcl} />
 
-  <div class="grid">
-    <label class="field">
-      <span>Versioning</span>
-      <select bind:value={versioningMode}>
-        <option value="off">off</option>
-        <option value="versions_location" disabled={!modeAllowed("x-versions-location")}>
-          versions location
-        </option>
-        <option value="history_location" disabled={!modeAllowed("x-history-location")}>
-          history location
-        </option>
-        {#if versioningMode === "enabled"}
-          <option value="enabled" disabled selected>in-container versions (read-only in v1)</option>
-        {/if}
-      </select>
-    </label>
-    {#if versioningMode !== "off"}
+    <div class="grid">
       <label class="field">
-        <span>Archive container</span>
-        <input class="type-mono" bind:value={versioningArchive} placeholder="container name" />
+        <span>Versioning</span>
+        <select bind:value={versioningMode}>
+          <option value="off">off</option>
+          <option value="versions_location" disabled={!modeAllowed("x-versions-location")}>
+            versions location
+          </option>
+          <option value="history_location" disabled={!modeAllowed("x-history-location")}>
+            history location
+          </option>
+          {#if versioningMode === "enabled"}
+            <option value="enabled" disabled selected>in-container versions (read-only in v1)</option>
+          {/if}
+        </select>
       </label>
-    {/if}
-    <label class="field">
-      <span>Quota bytes (0 = none)</span>
-      <input type="number" min="0" bind:value={quotaBytes} />
-    </label>
-    <label class="field">
-      <span>Quota objects (0 = none)</span>
-      <input type="number" min="0" bind:value={quotaCount} />
-    </label>
-  </div>
+      {#if versioningMode !== "off"}
+        <label class="field">
+          <span>Archive container</span>
+          <input class="type-mono" bind:value={versioningArchive} placeholder="container name" />
+        </label>
+      {/if}
+      <label class="field">
+        <span>Quota bytes (0 = none)</span>
+        <input type="number" min="0" bind:value={quotaBytes} />
+      </label>
+      <label class="field">
+        <span>Quota objects (0 = none)</span>
+        <input type="number" min="0" bind:value={quotaCount} />
+      </label>
+    </div>
+  </fieldset>
   {#if !capsKnown}
     <p class="note">
       /info could not be read: nothing is gated; the cluster will decide.
@@ -153,11 +174,12 @@
       <div class="banner-actions">
         <button
           onclick={() => {
+            if (saving || !isCurrent()) return;
             browser.refreshContainerDetail();
-            onDone();
+            close();
           }}>Reload theirs</button
         >
-        <button class="danger" onclick={() => save(true)}>Apply mine anyway</button>
+        <button class="danger" onclick={() => save(true)} disabled={saving || !currentBaseline}>Apply mine anyway</button>
       </div>
     </div>
   {/if}
@@ -167,22 +189,35 @@
   {#if error}
     <p class="banner mismatch">{error}</p>
   {/if}
+  {#if !currentBaseline && !saving}
+    <p class="banner mismatch">Details changed. Close and reopen the editor before saving.</p>
+  {/if}
 
   <div class="actions">
-    <button onclick={onDone} disabled={saving}>Cancel</button>
+    <button onclick={close} disabled={saving}>Cancel</button>
     {#if grantsPublic}
       <label class="public-ack">
-        <input type="checkbox" bind:checked={publicAck} />
-        I understand this makes <span class="type-mono">{browser.containerName}</span> publicly readable.
+        <input type="checkbox" bind:checked={publicAck} disabled={saving || !currentBaseline} />
+        I understand this makes <span class="type-mono">{target.detail.name}</span> publicly readable.
       </label>
     {/if}
-    <button class="primary" onclick={() => save(false)} disabled={saving}>
+    <button class="primary" onclick={() => save(false)} disabled={saving || !currentBaseline}>
       {saving ? "Saving…" : "Save"}
     </button>
   </div>
 </section>
 
 <style>
+  .fields {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
   .card {
     padding: var(--space-3);
     background: var(--color-bg-card);

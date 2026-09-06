@@ -3,6 +3,7 @@
   (a deliberate overwrite that skips the fingerprint check); a verify
   mismatch is shown red, never swallowed. -->
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import MetadataEditor from "./MetadataEditor.svelte";
   import type { BrowserState } from "../browser/browserState.svelte";
   import type { ObjectDetailDTO } from "../../lib/api";
@@ -12,6 +13,22 @@
     detail,
     onDone,
   }: { browser: BrowserState; detail: ObjectDetailDTO; onDone: () => void } = $props();
+
+  // A refreshed portrait must not lend its fingerprint to an older working copy.
+  // svelte-ignore state_referenced_locally
+  const target = { browser, scope: browser.scopeRevision, selection: browser.detailIdentity, detail };
+  let closed = $state(false);
+  function isCurrent() {
+    return !closed && browser === target.browser && !browser.connecting
+      && browser.scopeRevision === target.scope && browser.detailIdentity === target.selection;
+  }
+  const currentBaseline = $derived(isCurrent() && browser.objectDetail === target.detail && detail === target.detail);
+  function close() {
+    if (closed) return;
+    closed = true;
+    onDone();
+  }
+  onDestroy(() => { closed = true; });
 
   let editor: MetadataEditor | undefined = $state();
   // The panel mounts fresh per edit session; initial capture is intended.
@@ -25,6 +42,7 @@
   let mismatch: string | null = $state(null);
 
   async function save(force: boolean) {
+    if (saving || !currentBaseline) return;
     const { meta, duplicate } = editor!.value();
     if (duplicate !== "") {
       error = `duplicate key "${duplicate}"`;
@@ -39,17 +57,18 @@
         { meta, contentType, deleteAt },
         force,
       );
+      if (!isCurrent()) return;
       if (result.outcome === "applied") {
-        onDone();
+        close();
       } else if (result.outcome === "conflict") {
         conflict = true;
       } else {
         mismatch = result.mismatch;
       }
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      if (isCurrent()) error = err instanceof Error ? err.message : String(err);
     } finally {
-      saving = false;
+      if (isCurrent()) saving = false;
     }
   }
 </script>
@@ -57,16 +76,18 @@
 <section class="card">
   <h3 class="card-title">Edit metadata</h3>
 
-  <MetadataEditor bind:this={editor} base={detail.meta ?? {}} />
+  <fieldset class="fields" aria-label="Object metadata" disabled={saving || !currentBaseline}>
+    <MetadataEditor bind:this={editor} base={target.detail.meta ?? {}} />
 
-  <label class="field">
-    <span>Content type</span>
-    <input class="type-mono" bind:value={contentType} />
-  </label>
-  <label class="field">
-    <span>Delete at <span class="hint">(RFC3339, empty = never)</span></span>
-    <input class="type-mono" bind:value={deleteAt} placeholder="2027-01-01T00:00:00Z" />
-  </label>
+    <label class="field">
+      <span>Content type</span>
+      <input class="type-mono" bind:value={contentType} />
+    </label>
+    <label class="field">
+      <span>Delete at <span class="hint">(RFC3339, empty = never)</span></span>
+      <input class="type-mono" bind:value={deleteAt} placeholder="2027-01-01T00:00:00Z" />
+    </label>
+  </fieldset>
 
   {#if conflict}
     <div class="banner conflict">
@@ -76,11 +97,12 @@
       <div class="banner-actions">
         <button
           onclick={() => {
+            if (saving || !isCurrent()) return;
             browser.refreshDetail();
-            onDone();
+            close();
           }}>Reload theirs</button
         >
-        <button class="danger" onclick={() => save(true)}>Apply mine anyway</button>
+        <button class="danger" onclick={() => save(true)} disabled={saving || !currentBaseline}>Apply mine anyway</button>
       </div>
     </div>
   {/if}
@@ -90,16 +112,29 @@
   {#if error}
     <p class="banner mismatch">{error}</p>
   {/if}
+  {#if !currentBaseline && !saving}
+    <p class="banner mismatch">Details changed. Close and reopen the editor before saving.</p>
+  {/if}
 
   <div class="actions">
-    <button onclick={onDone} disabled={saving}>Cancel</button>
-    <button class="primary" onclick={() => save(false)} disabled={saving}>
+    <button onclick={close} disabled={saving}>Cancel</button>
+    <button class="primary" onclick={() => save(false)} disabled={saving || !currentBaseline}>
       {saving ? "Saving…" : "Save"}
     </button>
   </div>
 </section>
 
 <style>
+  .fields {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
   .card {
     padding: var(--space-3);
     background: var(--color-bg-card);
