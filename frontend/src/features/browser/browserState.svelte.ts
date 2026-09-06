@@ -13,9 +13,11 @@ import type {
   DeleteRequestDTO,
   SegmentOwnershipDTO,
   DownloadPreflight,
+  DownloadRequestDTO,
   FindStatusDTO,
   JobDTO,
   UploadPreflight,
+  UploadRequestDTO,
   Api,
   AuditEventDTO,
   BookmarkDTO,
@@ -101,7 +103,16 @@ export class BrowserState {
   // Transfer dialog (§27.1 Copy / §27.2 Mirror preview).
   transferOpen = $state(false);
   // Local transfer dialog (§27.5); null = closed.
-  localTransfer: "upload" | "download" | null = $state(null);
+  #localTransfer: "upload" | "download" | null = $state(null);
+  #localTransferRevision = $state(0);
+  get localTransferRevision(): number { return this.#localTransferRevision; }
+  get localTransfer(): "upload" | "download" | null { return this.#localTransfer; }
+  set localTransfer(value: "upload" | "download" | null) {
+    // Closing/reopening or changing modes must retire pending picker replies,
+    // including changes that happen before the parent can remount the dialog.
+    if (value !== this.#localTransfer) this.#localTransferRevision++;
+    this.#localTransfer = value;
+  }
   // Destructive-jobs dialog (§31–§33).
   deleteOpen = $state(false);
   // Application settings (§38/§40).
@@ -577,31 +588,22 @@ export class BrowserState {
     return await this.#api.pickDownloadDir();
   }
 
-  #localScope() {
-    return {
-      bookmarkId: this.connectedBookmarkId ?? "",
-      container: this.containerName ?? "",
-      prefix: this.prefix,
-      settings: { chunkSize: "", transfers: 0, checkers: 0, tpsLimit: 0, bwLimit: "" },
-    };
+  async preflightUpload(req: UploadRequestDTO): Promise<UploadPreflight> {
+    return await this.#api.preflightUpload(req);
   }
 
-  async preflightUpload(selectionToken: string): Promise<UploadPreflight> {
-    return await this.#api.preflightUpload({ ...this.#localScope(), selectionToken });
-  }
-
-  async startUpload(selectionToken: string): Promise<string> {
-    const id = await this.#api.startUpload({ ...this.#localScope(), selectionToken });
+  async startUpload(req: UploadRequestDTO): Promise<string> {
+    const id = await this.#api.startUpload(req);
     await this.loadJobs();
     return id;
   }
 
-  async preflightDownload(destDirToken: string): Promise<DownloadPreflight> {
-    return await this.#api.preflightDownload({ ...this.#localScope(), destDirToken });
+  async preflightDownload(req: DownloadRequestDTO): Promise<DownloadPreflight> {
+    return await this.#api.preflightDownload(req);
   }
 
-  async startDownload(destDirToken: string): Promise<string> {
-    const id = await this.#api.startDownload({ ...this.#localScope(), destDirToken });
+  async startDownload(req: DownloadRequestDTO): Promise<string> {
+    const id = await this.#api.startDownload(req);
     await this.loadJobs();
     return id;
   }

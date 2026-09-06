@@ -3,8 +3,10 @@
   v1 rule is reject-on-collision — Start only exists for a clean
   report. -->
 <script lang="ts">
+  import { onDestroy, untrack } from "svelte";
   import { trapFocus } from "../../lib/trapFocus";
   import type { BrowserState } from "../browser/browserState.svelte";
+  import type { DownloadRequestDTO, UploadRequestDTO } from "../../lib/api";
   import { formatBytes } from "../../lib/format";
 
   // The common §27.5 report shape (upload and download preflights share
@@ -22,70 +24,128 @@
     onClose,
   }: { browser: BrowserState; mode: "upload" | "download"; onClose: () => void } = $props();
 
-  // Opaque picker tokens: the webview shows names, never paths.
-  let selectionToken = $state("");
-  let pickedNames: string[] = $state([]);
-  let destDirToken = $state("");
-  let destDir = $state(""); // display only — the token is authoritative
-  let report = $state<PreflightView | null>(null);
-  let busy = $state(false);
+  let checking = $state(false);
+  let starting = $state(false);
   let error: string | null = $state(null);
   let startedJobId: string | null = $state(null);
+  let closed = $state(false);
+  let generation = 0;
+  type Scope = Omit<UploadRequestDTO, "selectionToken">;
+  interface Intent {
+    generation: number;
+    browser: BrowserState;
+    scopeRevision: number;
+    localRevision: number;
+    mode: "upload" | "download";
+    scope: Scope;
+  }
+  type Prepared = {
+    intent: Intent;
+    report: PreflightView;
+    destination: string;
+  } & ({ mode: "upload"; request: UploadRequestDTO } | { mode: "download"; request: DownloadRequestDTO });
+  let prepared = $state.raw<Prepared | null>(null);
+  const report = $derived(prepared && isCurrent(prepared.intent) ? prepared.report : null);
+  const destDir = $derived(report ? prepared?.destination ?? "" : "");
+  const canChoose = $derived(!closed && !checking && !starting && !browser.connecting
+    && !!browser.connectedBookmarkId && !!browser.containerName);
 
   const rejected = $derived(report?.problems?.some((p) => p.reject) ?? false);
   const warnings = $derived(report?.problems?.filter((p) => !p.reject) ?? []);
   const rejections = $derived(report?.problems?.filter((p) => p.reject) ?? []);
 
-  async function pickAndPreflight() {
-    busy = true;
+  function scope(): Scope {
+    return {
+      bookmarkId: browser.connectedBookmarkId ?? "",
+      container: browser.containerName ?? "",
+      prefix: browser.prefix,
+      settings: { chunkSize: "", transfers: 0, checkers: 0, tpsLimit: 0, bwLimit: "" },
+    };
+  }
+
+  function isCurrent(intent: Intent): boolean {
+    return !closed && !browser.connecting && intent.generation === generation
+      && intent.browser === browser && intent.scopeRevision === browser.scopeRevision
+      && intent.localRevision === browser.localTransferRevision && intent.mode === mode
+      && JSON.stringify(intent.scope) === JSON.stringify(scope());
+  }
+
+  function invalidate() {
+    generation++;
+    prepared = null;
+    checking = false;
+    startedJobId = null;
     error = null;
-    report = null;
+  }
+
+  $effect(() => {
+    void browser.scopeRevision;
+    void browser.localTransferRevision;
+    void mode;
+    untrack(invalidate);
+  });
+
+  function close() {
+    closed = true;
+    invalidate();
+    onClose();
+  }
+  onDestroy(() => { closed = true; invalidate(); });
+
+  async function pickAndPreflight() {
+    if (!canChoose) return;
+    invalidate();
+    const capturedScope = scope();
+    Object.freeze(capturedScope.settings);
+    Object.freeze(capturedScope);
+    const intent: Intent = { generation, browser, scopeRevision: browser.scopeRevision,
+      localRevision: browser.localTransferRevision, mode, scope: capturedScope };
+    checking = true;
     try {
-      if (mode === "upload") {
+      if (intent.mode === "upload") {
         const picked = await browser.pickUploadFiles();
-        if (!picked || !picked.files || picked.files.length === 0) {
-          busy = false;
-          return;
-        }
-        selectionToken = picked.token;
-        pickedNames = picked.files ?? [];
-        report = await browser.preflightUpload(selectionToken);
+        if (!isCurrent(intent) || !picked?.token || !picked.files?.length) return;
+        const req = Object.freeze({ ...capturedScope, selectionToken: picked.token });
+        const result = await browser.preflightUpload(req);
+        if (isCurrent(intent)) prepared = { intent, mode: "upload", request: req, report: result, destination: "" };
       } else {
         const dir = await browser.pickDownloadDir();
-        if (!dir) {
-          busy = false;
-          return;
-        }
-        destDirToken = dir.token;
-        destDir = dir.dir;
-        report = await browser.preflightDownload(destDirToken);
+        if (!isCurrent(intent) || !dir?.token) return;
+        const req = Object.freeze({ ...capturedScope, destDirToken: dir.token });
+        const result = await browser.preflightDownload(req);
+        if (isCurrent(intent)) prepared = { intent, mode: "download", request: req, report: result, destination: dir.dir };
       }
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      if (isCurrent(intent)) error = e instanceof Error ? e.message : String(e);
     } finally {
-      busy = false;
+      if (isCurrent(intent)) checking = false;
     }
   }
 
   async function start() {
-    busy = true;
+    const current = prepared;
+    if (starting || checking || !current || !isCurrent(current.intent)
+      || current.report.problems?.some((p) => p.reject)) return;
+    prepared = null;
+    starting = true;
     error = null;
     try {
-      startedJobId =
-        mode === "upload"
-          ? await browser.startUpload(selectionToken)
-          : await browser.startDownload(destDirToken);
+      const jobId = current.mode === "upload"
+        ? await browser.startUpload(current.request)
+        : await browser.startDownload(current.request);
+      if (isCurrent(current.intent)) startedJobId = jobId;
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      if (isCurrent(current.intent)) error = e instanceof Error ? e.message : String(e);
     } finally {
-      busy = false;
+      // A new picker cannot overtake this dialog's one pending Start.
+      starting = false;
     }
   }
 
   const itemCount = $derived(report?.items?.length ?? 0);
 </script>
 
-<div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && onClose()}>
+<div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && close()}>
   <div class="dialog" role="dialog" aria-label={mode === "upload" ? "Upload" : "Download"} tabindex="-1" use:trapFocus>
     <header>
       <h2>
@@ -93,7 +153,7 @@
           ? `Upload to ${browser.containerName}/${browser.prefix}`
           : `Download ${browser.containerName}/${browser.prefix}`}
       </h2>
-      <button class="close" onclick={onClose} aria-label="Close">✕</button>
+      <button class="close" onclick={close} aria-label="Close">✕</button>
     </header>
 
     {#if error}
@@ -143,17 +203,17 @@
     <footer>
       {#if startedJobId}
         <span class="started">Job {startedJobId} started — follow it in the drawer.</span>
-        <button class="primary" onclick={onClose}>Close</button>
+        <button class="primary" onclick={close}>Close</button>
       {:else}
-        <button onclick={pickAndPreflight} disabled={busy}>
-          {busy
+        <button onclick={pickAndPreflight} disabled={!canChoose}>
+          {checking || starting
             ? "Working…"
             : mode === "upload"
               ? "Choose files…"
               : "Choose directory…"}
         </button>
         {#if report && !rejected}
-          <button class="primary" onclick={start} disabled={busy}>
+          <button class="primary" onclick={start} disabled={checking || starting}>
             {mode === "upload" ? "Start upload" : "Start download"}
           </button>
         {/if}
