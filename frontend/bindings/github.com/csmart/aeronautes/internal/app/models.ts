@@ -320,6 +320,16 @@ export interface CopyRequestDTO {
 }
 
 /**
+ * Counts disclose retained work without exposing credential references or
+ * backend-instance handles through the bridge.
+ */
+export interface CredentialStatusDTO {
+    "retired": number;
+    "unfinished": number;
+    "saving": number;
+}
+
+/**
  * DLOSegmentsDTO is the bounded §23.1 segment preview: the first rows a
  * DLO manifest would assemble, never all of them.
  */

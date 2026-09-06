@@ -50,6 +50,7 @@ export type {
     ContainerRowDTO,
     CopyPlanDTO,
     CopyRequestDTO,
+    CredentialStatusDTO,
     DLOSegmentsDTO,
     DeletePreviewDTO,
     DeleteRequestDTO,

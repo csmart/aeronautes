@@ -39,6 +39,16 @@ func (s *BookmarkService) List(ctx context.Context) ([]BookmarkDTO, error) {
 	return out, nil
 }
 
+func (s *BookmarkService) CredentialStatus(ctx context.Context) (CredentialStatusDTO, error) {
+	status, err := s.store.CredentialStatus(ctx)
+	if err != nil {
+		return CredentialStatusDTO{}, err
+	}
+	return CredentialStatusDTO{
+		Retired: status.Retired, Unfinished: status.Unfinished, Saving: status.Saving,
+	}, nil
+}
+
 // Save inserts (empty id) or updates a bookmark. A non-empty secret
 // replaces the stored credential; an empty one retains it only while
 // the authentication and trust binding stays the same.

@@ -25,6 +25,7 @@ import type {
   AccountDTO,
   AuditEventDTO,
   BookmarkDTO,
+  CredentialStatusDTO,
   CapabilitiesDTO,
   ContainerCreateDTO,
   ContainerDetailDTO,
@@ -51,6 +52,7 @@ export type {
   PickedFilesDTO,
   AuditEventDTO,
   BookmarkDTO,
+  CredentialStatusDTO,
   CapabilitiesDTO,
   ContainerCreateDTO,
   ContainerDetailDTO,
@@ -116,6 +118,7 @@ export interface Api {
   info(): Promise<Info>;
   about(): Promise<About>;
   listBookmarks(): Promise<BookmarkDTO[]>;
+  credentialStatus(): Promise<CredentialStatusDTO>;
   saveBookmark(bookmark: BookmarkDTO, secret: string): Promise<BookmarkDTO>;
   deleteBookmark(id: string): Promise<void>;
   connect(bookmarkId: string): Promise<AccountDTO>;
@@ -183,6 +186,7 @@ export const liveApi: Api = {
     return about;
   },
   listBookmarks: async () => (await BookmarkService.List()) ?? [],
+  credentialStatus: () => BookmarkService.CredentialStatus(),
   saveBookmark: (bookmark, secret) => BookmarkService.Save(bookmark, secret),
   deleteBookmark: (id) => BookmarkService.Delete(id),
   connect: (bookmarkId) => BrowseService.Connect(bookmarkId),

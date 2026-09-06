@@ -19,6 +19,7 @@ import type {
   Api,
   AuditEventDTO,
   BookmarkDTO,
+  CredentialStatusDTO,
   CapabilitiesDTO,
   ContainerCreateDTO,
   ContainerDetailDTO,
@@ -59,6 +60,11 @@ export class BrowserState {
   // Shell environment.
   /** "keychain" or "session" (§12.1) — "" until Info arrives. */
   secretBackend = $state("");
+
+  credentialStatus = $state<CredentialStatusDTO | null>(null);
+  credentialStatusLoading = $state(false);
+  credentialStatusError = $state(false);
+  #credentialStatusSeq = 0;
 
   // Bookmarks and connection.
   bookmarks: BookmarkDTO[] = $state([]);
@@ -163,20 +169,59 @@ export class BrowserState {
     this.bookmarks = await this.#api.listBookmarks();
   }
 
+  #invalidateCredentialStatus() {
+    this.#credentialStatusSeq++;
+    this.credentialStatus = null;
+    this.credentialStatusError = false;
+    this.credentialStatusLoading = true;
+  }
+
+  async loadCredentialStatus(): Promise<void> {
+    this.#invalidateCredentialStatus();
+    const seq = this.#credentialStatusSeq;
+    try {
+      const status = await this.#api.credentialStatus();
+      if (seq === this.#credentialStatusSeq) {
+        this.credentialStatus = status;
+      }
+    } catch {
+      if (seq === this.#credentialStatusSeq) {
+        this.credentialStatusError = true;
+      }
+    } finally {
+      if (seq === this.#credentialStatusSeq) {
+        this.credentialStatusLoading = false;
+      }
+    }
+  }
+
   async deleteBookmark(id: string): Promise<void> {
-    await this.#api.deleteBookmark(id);
-    this.bookmarks = this.bookmarks.filter((b) => b.id !== id);
-    if (this.connectedBookmarkId === id) {
-      this.connectedBookmarkId = null;
-      this.containers = [];
-      this.containerName = null;
+    this.#invalidateCredentialStatus();
+    try {
+      await this.#api.deleteBookmark(id);
+      this.bookmarks = this.bookmarks.filter((b) => b.id !== id);
+      if (this.connectedBookmarkId === id) {
+        this.connectedBookmarkId = null;
+        this.containers = [];
+        this.containerName = null;
+      }
+    } finally {
+      // Refresh even after an uncertain result; status must not change the
+      // mutation's outcome or delay reporting it while the bridge is busy.
+      void this.loadCredentialStatus();
     }
   }
 
   async saveBookmark(bookmark: BookmarkDTO, secret: string): Promise<BookmarkDTO> {
-    const saved = await this.#api.saveBookmark(bookmark, secret);
-    await this.loadBookmarks();
-    return saved;
+    this.#invalidateCredentialStatus();
+    try {
+      const saved = await this.#api.saveBookmark(bookmark, secret);
+      await this.loadBookmarks();
+      return saved;
+    } finally {
+      // A failed save can leave a prepared key even without a bookmark row.
+      void this.loadCredentialStatus();
+    }
   }
 
   async connect(bookmarkId: string) {

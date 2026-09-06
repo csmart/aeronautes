@@ -16,6 +16,10 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
+export function CredentialStatus(): $CancellablePromise<$models.CredentialStatusDTO> {
+    return $Call.ByID(3493337594);
+}
+
 /**
  * Delete removes a bookmark. It refuses while any non-terminal job
  * references the bookmark (a running transfer must not lose its
