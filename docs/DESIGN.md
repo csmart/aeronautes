@@ -4274,6 +4274,8 @@ Those tests now wait boundedly for the exact operation and job identity before c
 This corrects test synchronisation only; the P12/P13 durable outcome and audit contract remains open.
 The [subsequent PR run](https://github.com/csmart/aeronautes/actions/runs/33991688319) exposed a second test ordering assumption: gateway cancellation can flush an HTTP 502 before closing the child socket.
 The deadline test now drains that bounded response and still requires socket closure and listener refusal within the existing deadline; disabling revocation must fail.
+The real-Swift TLS and token-expiry proxies now use the configured authentication origin; a hard-coded port previously sent them to a different fixture when the configured port changed.
+Integration CI runs on a different host port to exercise this endpoint configuration in every PR.
 
 The owner requires a successful pipeline on every PR before merge and verification of master after merge.
 The CI protection slice removes the coverage bot's direct master pushes, adds an aggregate gate that rejects any required job without success, and removes the obsolete checks that skipped absent application code.

@@ -125,11 +125,12 @@ jobs:
         with:
           go-version: stable
       - name: Start SAIO
-        run: docker run -d --name saio -p 127.0.0.1:8080:8080 docker.io/openstackswift/saio@sha256:18ddf9feb9d1f419751a66eace8d956ecdaf5a085dedcc54ae51c210447ea1fa
+        # A different host port catches helpers that ignore the configured endpoint.
+        run: docker run -d --name saio -p 127.0.0.1:18080:8080 docker.io/openstackswift/saio@sha256:18ddf9feb9d1f419751a66eace8d956ecdaf5a085dedcc54ae51c210447ea1fa
       - name: Wait for Swift
         run: |
           for i in $(seq 1 60); do
-            if curl -sf -m 2 http://127.0.0.1:8080/info > /dev/null; then
+            if curl -sf -m 2 http://127.0.0.1:18080/info > /dev/null; then
               echo "Swift is up after ${i}s"
               exit 0
             fi
@@ -151,7 +152,7 @@ jobs:
       - name: Run internal Go suite with combined coverage (SAIO)
         shell: bash
         env:
-          AERONAUTES_SAIO_AUTH_URL: http://127.0.0.1:8080/auth/v1.0
+          AERONAUTES_SAIO_AUTH_URL: http://127.0.0.1:18080/auth/v1.0
           AERONAUTES_REQUIRE_TWO_ACCOUNTS: "1"
         run: |
           # Scope the run to ./internal/... — exactly the -coverpkg set.
