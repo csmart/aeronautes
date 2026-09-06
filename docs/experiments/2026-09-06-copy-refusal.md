@@ -116,6 +116,6 @@ Earlier compile/setup failures and that failed run are retained separately and a
 
 The existing terminal-job write precedes the separate audit append; tests wait boundedly for the exact operation and job identity rather than weakening that assertion.
 P12/P13 durability, ambiguous remote results, cancellation quiescence and authoritative restart outcomes remain open.
-P06 verification depth, P14 overwrite/Mirror concurrency, P15/P21 transfer-time cleanup and the broader platform/performance/release gates remain open.
+P16 verification strength, P14 overwrite/Mirror concurrency, P15/P21 transfer-time cleanup and the broader platform/performance/release gates remain open.
 The private file's POSIX mode check does not establish Windows ACL or native desktop proof.
 The valuable-data release hold remains.
