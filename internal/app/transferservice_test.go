@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -45,12 +46,41 @@ func secondCluster(t *testing.T, h *harness) (string, *swifttest.Server) {
 // the service wired real storage URLs and tokens into the engine.
 type httpEngine struct {
 	remotes map[string]rclone.Remote
-	block   chan struct{} // non-nil: Copy blocks until ctx dies (cancel tests)
+	block   *engineBarrier
 	// chunk > 0: bodies over it are segmented into <container>_segments
 	// under a generated prefix with a DLO manifest — the rclone shape.
 	chunk    int
 	n        int
 	captured []rclone.SegmentPrefix
+}
+
+// Tests must observe engine entry before changing a planned namespace or
+// cancelling work; elapsed time does not prove that the job reached Copy.
+type engineBarrier struct {
+	entered     chan struct{}
+	release     chan struct{}
+	enterOnce   sync.Once
+	releaseOnce sync.Once
+}
+
+func newEngineBarrier(t *testing.T) *engineBarrier {
+	t.Helper()
+	b := &engineBarrier{entered: make(chan struct{}), release: make(chan struct{})}
+	t.Cleanup(b.unblock)
+	return b
+}
+
+func (b *engineBarrier) waitUntilEntered(t *testing.T) {
+	t.Helper()
+	select {
+	case <-b.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("job never reached the engine barrier")
+	}
+}
+
+func (b *engineBarrier) unblock() {
+	b.releaseOnce.Do(func() { close(b.release) })
 }
 
 func (e *httpEngine) endpoint(spec string) (base string, token string, path string) {
@@ -172,8 +202,9 @@ func escapePath(p string) string {
 
 func (e *httpEngine) Copy(ctx context.Context, src, dst string, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
 	if e.block != nil {
+		e.block.enterOnce.Do(func() { close(e.block.entered) })
 		select {
-		case <-e.block:
+		case <-e.block.release:
 		case <-ctx.Done():
 			return &rclone.Result{Cancelled: true}, nil
 		}
@@ -201,11 +232,11 @@ func (e *httpEngine) CopyTo(ctx context.Context, src, dst string, onEvent func(r
 	return result, nil
 }
 
-func (h *harness) installEngine(block chan struct{}) *[]rclone.Options {
+func (h *harness) installEngine(block *engineBarrier) *[]rclone.Options {
 	return h.installChunkingEngine(block, 0)
 }
 
-func (h *harness) installChunkingEngine(block chan struct{}, chunk int) *[]rclone.Options {
+func (h *harness) installChunkingEngine(block *engineBarrier, chunk int) *[]rclone.Options {
 	var seen []rclone.Options
 	h.transfer.setEngineFactory(func(source transfercopy.RemoteSource, opts rclone.Options) (transfercopy.Engine, error) {
 		remotes, err := source(context.Background())
@@ -402,7 +433,7 @@ func TestCancelCopyJob(t *testing.T) {
 	h.connect(t)
 	srcBookmark := h.transfer.connections.ActiveBookmarkID()
 	dstBookmark, dstMock := secondCluster(t, h)
-	block := make(chan struct{})
+	block := newEngineBarrier(t)
 	h.installEngine(block)
 
 	h.mock.AddContainer("media", "standard")
@@ -416,8 +447,7 @@ func TestCancelCopyJob(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Give the goroutine a moment to reach the blocking engine call.
-	time.Sleep(100 * time.Millisecond)
+	block.waitUntilEntered(t)
 	if err := h.transfer.CancelJob(ctx, jobID); err != nil {
 		t.Fatal(err)
 	}
@@ -558,7 +588,7 @@ func TestSchedulerBudgetQueues(t *testing.T) {
 	h.connect(t)
 	srcBookmark := h.transfer.connections.ActiveBookmarkID()
 	dstBookmark, dstMock := secondCluster(t, h)
-	block := make(chan struct{})
+	block := newEngineBarrier(t)
 	h.installEngine(block)
 	h.transfer.setMaxActiveJobsHook(1)
 
@@ -585,7 +615,7 @@ func TestSchedulerBudgetQueues(t *testing.T) {
 
 	// The budget is 1: the first job runs (blocked in the engine), the
 	// others stay Queued.
-	time.Sleep(200 * time.Millisecond)
+	block.waitUntilEntered(t)
 	j1, _ := h.jobsSvc.Get(ctx, first)
 	j2, _ := h.jobsSvc.Get(ctx, second)
 	j3, _ := h.jobsSvc.Get(ctx, third)
@@ -602,7 +632,7 @@ func TestSchedulerBudgetQueues(t *testing.T) {
 	}
 
 	// Freeing the slot lets the second run to completion.
-	close(block)
+	block.unblock()
 	if got := awaitTerminal(t, h, first); got.State != "complete" {
 		t.Fatalf("first = %+v", got)
 	}
@@ -1187,7 +1217,7 @@ func TestMirrorSkipsReappearedSourceNames(t *testing.T) {
 	h.connect(t)
 	srcBookmark := h.transfer.connections.ActiveBookmarkID()
 	dstBookmark, dstMock := secondCluster(t, h)
-	block := make(chan struct{})
+	block := newEngineBarrier(t)
 	h.installEngine(block)
 
 	h.mock.AddContainer("media", "standard")
@@ -1208,13 +1238,13 @@ func TestMirrorSkipsReappearedSourceNames(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(150 * time.Millisecond) // the engine is now blocked mid-copy
+	block.waitUntilEntered(t)
 	seedObject(h.mock, "media", "scope/reborn.txt", "same bytes!", nil)
-	close(block)
+	block.unblock()
 
 	job := awaitTerminal(t, h, jobID)
 	if job.State != "complete" || !strings.Contains(job.Error, "skipped") {
-		t.Fatalf("job = %+v, want complete with a skip note", job)
+		t.Errorf("job = %+v, want complete with a skip note", job)
 	}
 	session := h.transfer.connections.sessions[dstBookmark]
 	if _, err := session.ObjectDetail(ctx, "backup", "scope/reborn.txt"); err != nil {
@@ -1293,7 +1323,7 @@ func TestMirrorSkipsReplacedDestination(t *testing.T) {
 	h.connect(t)
 	srcBookmark := h.transfer.connections.ActiveBookmarkID()
 	dstBookmark, dstMock := secondCluster(t, h)
-	block := make(chan struct{})
+	block := newEngineBarrier(t)
 	h.installEngine(block)
 
 	h.mock.AddContainer("media", "standard")
@@ -1312,14 +1342,14 @@ func TestMirrorSkipsReplacedDestination(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(150 * time.Millisecond) // engine blocked: plan is done
+	block.waitUntilEntered(t)
 	// Another client replaces the planned victim with NEW content.
 	seedObject(dstMock, "backup", "scope/victim.txt", "someone else's brand-new data", nil)
-	close(block)
+	block.unblock()
 
 	job := awaitTerminal(t, h, jobID)
 	if job.State != "complete" || !strings.Contains(job.Error, "replaced") {
-		t.Fatalf("job = %+v, want complete with a replaced-skip note", job)
+		t.Errorf("job = %+v, want complete with a replaced-skip note", job)
 	}
 	session := h.transfer.connections.sessions[dstBookmark]
 	d, err := session.ObjectDetail(ctx, "backup", "scope/victim.txt")
