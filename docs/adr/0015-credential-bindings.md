@@ -93,6 +93,36 @@ Legacy references have no recorded backend provenance: keep persistent cleanup u
 Do not silently clear persistent cleanup records when falling back to memory.
 This does not select or implement the vault in ADR 0006.
 
+### Backend provenance during staged implementation
+
+The current `go-keyring` adapter does not expose a pinned persistent store identity.
+Its Linux calls select the login collection or default alias each time, its macOS calls use the current keychain search list/default, and its Windows calls use the current credential set.
+These selectors are not immutable: see [Secret Service aliases](https://specifications.freedesktop.org/secret-service/latest-single/#aliases), [Apple's keychain contexts](https://developer.apple.com/documentation/technotes/tn3137-on-mac-keychains) and [Windows credential-set selection](https://learn.microsoft.com/en-us/windows/win32/api/wincred/nf-wincred-credreada).
+Finding a marker through a search list therefore does not prove that a later negative lookup checked the store that accepted an earlier write.
+Do not invent that proof from a backend kind, machine name, user name or marker alone.
+
+The publication slice records provenance conservatively before external writes:
+
+| Origin | Recorded provenance | What it proves |
+|---|---|---|
+| New session value | Session backend and a random ID for that store instance | The exact in-memory store lifetime that accepted the write |
+| New keychain value | Keychain backend and a random ID for that adapter instance; persistent authority unverified | Which adapter invocation lifetime attempted the write, without asserting a stable native store |
+| Existing reference | Legacy unknown provenance | Neither persistence nor the original backend has been established |
+
+Instance IDs and reference names are internal non-secret metadata; neither is a frontend capability or a credential value.
+Never equate an adapter instance ID with a persistent authority ID.
+An unchanged legacy reference remains readable through the active backend, and a new keychain reference remains readable after restart through the keychain adapter by its unique immutable name.
+Those reads may succeed or report unavailable; they do not establish absence in another store.
+A recorded session reference is read only from its originating live session store, never from a newly opened session or a keychain that happens to contain the same name.
+
+The first publication slice retains all prepared and retired work after failure or replacement and adds no automatic garbage collector.
+It must still keep logical deletion's selected reference tracked, without depending on the removed bookmark row, and must never rewrite a published reference.
+This deliberately avoids deleting a reference before the later acquisition/job coordination and native-backend proof exist.
+It is not completed recovery: pending keys can consume storage, and the cleanup/status slice must surface and resolve that work before P10 is complete.
+No session-fallback result, new adapter lifetime or persistent `ErrNotFound` can silently remove that evidence.
+Native selection, verified persistent authority and recovery after a lost deletion response remain required follow-up work, with tests for changed defaults and unavailable original stores.
+Do not claim that these metadata records establish backup-copy ownership or prove native keychain erasure.
+
 ### Generations, sessions and jobs
 
 Each published credential binding has a monotonic generation, including replacement of a key without an endpoint change.
@@ -118,7 +148,9 @@ Implement and review each logical slice separately:
 1. Establish and verify the durable SQLite prerequisite, recording its cost and the limits of the proof.
 2. First add binding-change refusal with the editor explanation as an independently tested containment commit.
    Then add backend-aware prepared/retired references, immutable replacement and coherent credential snapshots as the next publication commit.
+   Record unverified native provenance honestly and retain unused references until the cleanup prerequisites are implemented.
 3. Make logical deletion and cleanup status recoverable, including failed external deletion and legacy/session fallback.
+   Establish verified persistent-backend selection before using absence as proof of completed cleanup.
 4. Coordinate generation revocation, session publication and job admission, then close the remaining library request URL/token pairing gap.
 
 Each slice must state which guarantees it implements and which remain open; P10 is complete only when the combined gates pass.
