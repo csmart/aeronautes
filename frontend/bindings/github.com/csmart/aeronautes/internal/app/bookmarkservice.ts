@@ -35,7 +35,8 @@ export function List(): $CancellablePromise<$models.BookmarkDTO[] | null> {
 
 /**
  * Save inserts (empty id) or updates a bookmark. A non-empty secret
- * replaces the stored credential; an empty one keeps whatever exists.
+ * replaces the stored credential; an empty one retains it only while
+ * the authentication and trust binding stays the same.
  */
 export function Save(dto: $models.BookmarkDTO, secret: string): $CancellablePromise<$models.BookmarkDTO> {
     return $Call.ByID(4205203304, dto, secret);

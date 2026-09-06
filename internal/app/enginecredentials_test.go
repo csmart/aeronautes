@@ -25,7 +25,7 @@ func TestEngineCannotMixSessionCredentialsWithEditedTrust(t *testing.T) {
 			}
 			edited := bookmarks[0]
 			edited.TLSMode = "insecure"
-			if _, err := h.bookmarks.Save(ctx, edited, ""); err != nil {
+			if _, err := h.bookmarks.Save(ctx, edited, "testing"); err != nil {
 				t.Fatal(err)
 			}
 			var source transfercopy.RemoteSource

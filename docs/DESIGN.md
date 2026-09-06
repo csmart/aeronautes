@@ -4261,12 +4261,17 @@ Their `swift.Connection.Call` token selection remains library-managed and can ra
 CA files remain published by content identity; each gateway reads the captured bytes once for its trust configuration and identity check.
 This does not yet revoke held sessions after a bookmark edit or bind stored keys to a configuration generation; those P10 lifecycle and secret-store fixes remain open.
 
-The next P10 design slice is [ADR 0015](adr/0015-credential-bindings.md), accepted after independent design review under the authorised remediation plan.
+The next P10 design slice is [ADR 0015](adr/0015-credential-bindings.md), accepted after independent local design review under the authorised remediation plan.
 It chooses credential reentry for an origin/account/trust change and defines immutable references, durable external-store work, recoverable deletion and generation-bound session/job admission.
 The commit sequence is durable SQLite settings, bound credential publication and snapshots, recoverable deletion, then coordinated session/job lifetime and the remaining request-pairing fix.
 The first implementation requires effective WAL/FULL settings on every physical connection and refuses an ineffective setting before use.
 The [validation record](experiments/2026-09-06-sqlite-durability.md) includes the failing-before regressions, connection and migration checks, measured commit cost and proof limits.
-This prerequisite does not implement the credential journal, binding guard, cleanup or session/job lifetime; those lifecycle gates and the wider P12/P13 recovery contract remain open.
+The subsequent binding guard refuses a blank-key edit that changes the complete auth URL, username, storage override or TLS trust, checking the current row inside the update transaction.
+Identical CA bytes and cosmetic changes retain the saved key; caller-supplied credential presence cannot grant retention.
+The editor explains key reentry, and refused edits retain the existing bookmark and live connection.
+Imported CA rows publish in the same transaction as the bookmark; service tests prove both retarget refusal with zero receiver requests and CA rollback on an injected SQL failure.
+This is containment only: explicit-key replacement still overwrites the fixed external reference before SQL publication, and held-session revocation is not implemented.
+The credential journal, immutable references, coherent acquisition, cleanup and session/job lifetime remain open, together with the wider P12/P13 recovery contract.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
