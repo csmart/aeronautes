@@ -2,7 +2,7 @@
   exactly what dies and exactly what survives, and where. -->
 <script lang="ts">
   import { trapFocus } from "../../lib/trapFocus";
-  import { onMount } from "svelte";
+  import { onDestroy, onMount, untrack } from "svelte";
   import type { BrowserState } from "../browser/browserState.svelte";
   import type { ObjectDetailDTO, SegmentOwnershipDTO } from "../../lib/api";
 
@@ -25,25 +25,49 @@
   let withSegments = $state(false);
   let ownership = $state<SegmentOwnershipDTO | null>(null);
   let confirmText = $state("");
+  let closed = $state(false);
 
   // The dialog binds the EXACT identity it was opened for: whatever
   // the list, filter, or selection does afterwards, confirm acts on
   // this and nothing else (C-04).
   // svelte-ignore state_referenced_locally
-  const target = { container: browser.containerName ?? "", name: detail.name };
+  const target = {
+    browser, scope: browser.scopeRevision, selection: browser.detailIdentity, detail, segmentsAt,
+    request: Object.freeze({ bookmarkId: browser.connectedBookmarkId ?? "", container: browser.containerName ?? "",
+      name: detail.name, force: false, confirm: "" }),
+  };
+
+  function isCurrent() {
+    return !closed && browser === target.browser && !browser.connecting
+      && !!target.request.bookmarkId && !!target.request.container && !!target.request.name
+      && target.request.container === target.selection?.container && target.request.name === target.selection.name
+      && browser.scopeRevision === target.scope && browser.detailIdentity === target.selection
+      && browser.objectDetail === target.detail && detail === target.detail;
+  }
+  function close() {
+    if (closed) return;
+    closed = true;
+    ownership = null;
+    confirmText = "";
+    onClose();
+  }
+  onDestroy(() => { closed = true; });
+  $effect(() => { if (!isCurrent()) untrack(close); });
 
   onMount(async () => {
     try {
-      ownership = await browser.checkSegmentOwnership(target.container, target.name);
+      if (!isCurrent()) return;
+      const result = await browser.checkSegmentOwnership(target.request);
+      if (isCurrent()) ownership = result;
     } catch {
-      ownership = null; // segments option simply unavailable
+      if (isCurrent()) ownership = null;
     }
   });
 
   function onKeydown(event: KeyboardEvent) {
     if (event.key === "Escape") {
       event.stopPropagation();
-      onClose();
+      close();
     }
   }
 
@@ -52,41 +76,37 @@
   // "proven" prefix requires the typed confirmation before its backing
   // segments can be deleted.
   const forceNeeded = $derived(withSegments);
-  const armed = $derived(!withSegments || confirmText === detail.name);
+  const armed = $derived(isCurrent() && (!withSegments || (ownership !== null && confirmText === target.request.name)));
 
   async function confirm() {
+    if (deleting || !armed) return;
     deleting = true;
     error = null;
     try {
       if (withSegments) {
         // Force is always true for segment deletion; the confirmation is
         // always what the operator typed.
-        await browser.deleteManifestWithSegments(
-          target.container,
-          target.name,
-          true,
-          confirmText,
-        );
+        await browser.deleteManifestWithSegments({ ...target.request, force: true, confirm: confirmText }, isCurrent);
       } else {
-        await browser.deleteManifest(target.container, target.name);
+        await browser.deleteManifest(target.request.container, target.request.name, isCurrent);
       }
-      onClose();
+      if (isCurrent()) close();
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      if (isCurrent()) error = err instanceof Error ? err.message : String(err);
     } finally {
-      deleting = false;
+      if (isCurrent()) deleting = false;
     }
   }
 </script>
 
 <svelte:window onkeydown={onKeydown} />
 
-<div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && onClose()}>
+<div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && close()}>
   <div class="dialog" role="alertdialog" aria-label="Delete manifest"
     use:trapFocus>
-    <h2 class="title">Delete {detail.class.toUpperCase()} manifest</h2>
+    <h2 class="title">Delete {target.detail.class.toUpperCase()} manifest</h2>
     <p class="what">
-      <span class="type-mono">{detail.name}</span> will be deleted. The logical object stops
+      <span class="type-mono">{target.request.name}</span> will be deleted. The logical object stops
       existing: reads of this name will fail.
     </p>
     {#if !withSegments}
@@ -94,7 +114,7 @@
         <strong>{(ownership?.inlineEntries ?? 0) > 0
           ? "Referenced segment objects survive; inline data does not."
           : "Every referenced segment object survives."}</strong> The data remains at
-        <span class="type-mono">{segmentsAt}</span> and becomes orphaned unless another manifest
+        <span class="type-mono">{target.segmentsAt}</span> and becomes orphaned unless another manifest
         references it.
       </p>
       {#if (ownership?.inlineEntries ?? 0) > 0}
@@ -108,7 +128,7 @@
 
     {#if ownership}
       <label class="segments-opt">
-        <input type="checkbox" bind:checked={withSegments} />
+        <input type="checkbox" bind:checked={withSegments} disabled={deleting || !isCurrent()} />
         <span>
           Also delete the segments ({ownership.target})
           {#if ownership.proven}
@@ -125,7 +145,8 @@
         <input
           class="force-confirm type-mono"
           bind:value={confirmText}
-          placeholder={detail.name}
+          placeholder={target.request.name}
+          disabled={deleting || !isCurrent()}
         />
       {/if}
     {/if}
@@ -133,7 +154,7 @@
       <p class="error" role="alert">{error}</p>
     {/if}
     <div class="actions">
-      <button class="secondary" onclick={onClose} disabled={deleting}>Cancel</button>
+      <button class="secondary" onclick={close} disabled={deleting}>Cancel</button>
       <button class="danger" onclick={confirm} disabled={deleting || !armed}>
         {deleting
           ? "Deleting…"
