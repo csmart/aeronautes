@@ -3,8 +3,8 @@
 ## Scope
 
 [ADR 0017](../adr/0017-keychain-write-verification.md) records the write-verification contract and its staged implementation.
-The first implementation establishes the isolated Linux protocol fixture and removes the credential reference from the existing decode error.
-Write and startup acknowledgement verification remain the next implementation step.
+The implementation verifies write acknowledgements before credential publication and checks the complete startup probe.
+The first reviewed step established the isolated Linux protocol fixture and removed the credential reference from the existing decode error; the second adds the write and startup checks below.
 Native original-store selection, bounded native prompts and physical credential cleanup remain open.
 
 ## Protocol finding
@@ -52,3 +52,48 @@ The unchanged frontend tree reused its previously built embedding assets for the
 
 Independent implementation review and the protected PR/master pipeline gates follow before delivery.
 The valuable-data release hold remains.
+
+## Second implementation: write and startup verification
+
+`KeychainStore.Put` now reads the same name back after a successful library Set and requires the exact string supplied to Set.
+It compares the encoded string without trimming or decoding, and returns fixed errors for failed native writes or read-back so a backend cannot echo the supplied reference or value.
+A verification failure leaves compensation to the existing prepared-work journal.
+The startup probe uses the same exact comparison and requires a subsequent `ErrNotFound` after its own deletion; an unavailable check or retained probe selects the existing visible session fallback.
+The ordinary credential Delete adapter and native selectors are unchanged, and physical credential cleanup remains disabled at publication level.
+
+The permanent protocol tests exercise eight failure modes: dismissed creation, a write error before or after its effect, missing read-back, a read error containing private material, a different value, a noncanonical encoded value, and a dismissed read-back unlock.
+Each mode covers direct Put and both bookmark creation and replacement.
+Failed replacement preserves the old bookmark, generation, endpoint and readable key; failed creation publishes no row.
+Both retain the prepared candidate and original backend provenance, preserve any partial external value, make no compensating Delete call, and allow a later healthy save.
+Ten startup cases add dismissed deletion and a failed lookup after deletion, checking that the returned fallback remains usable.
+The successful round-trip control includes empty and non-UTF-8 values.
+
+An acknowledged `GetSecret` barrier holds replacement verification while the old credential, active-save status and SQLite writer remain available.
+Releasing the barrier lets the verified replacement publish.
+Waits are bounded and cleanup releases the barrier and drains the outstanding operations.
+
+The final test tree with the pre-verification adapter overlaid fails 25 leaf cases, including the read-back barrier and reference-bearing native write errors.
+Positive write-error and binary controls distinguish failures that the original adapter already handled.
+Six additional negative controls deliberately break the correction or its coordination:
+
+| Disabled or weakened behaviour | Failing cases |
+| --- | --- |
+| Exact equality check removed | 8 |
+| Read-back normalised before comparison | 1 |
+| Native read error forwarded with private text | 1 |
+| Native Set error forwarded with private text | 2 |
+| Startup post-delete lookup removed | 2 |
+| Bookmark coordinator held across external Put/read-back | 1 |
+
+Every control compiled and failed behavioural assertions.
+Separately, blocking the synthetic OpenSession call triggered the committed fixture watchdog at 45.012 seconds, stopped the daemon and failed the test binary.
+This proves the fixture's failure bound, not a bounded production keychain operation.
+
+The final full internal race suite passed 447 top-level tests in 20 packages with zero failures or skips, both owned SAIO accounts, the pinned real rclone and its matrix enabled.
+Statement coverage was 83.0%; scenario reconciliation stayed valid at 10/104 cells with 47/48 actions carrying gaps.
+The protocol package passed three race-enabled repetitions; application build, vet, formatting and the internal build without CGO passed.
+The secrets package cross-compiled without CGO for Linux, Windows and macOS on both amd64 and arm64.
+Frontend source and bridge signatures remain unchanged, so native runtime behaviour on the other platforms and desktop prompt latency are still separate gates.
+
+Independent review and green PR/master pipelines are required before delivery.
+Read-back cannot establish original-store authority across changed defaults, erase a key from another store, bound a real native prompt or complete P10.

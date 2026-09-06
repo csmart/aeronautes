@@ -19,7 +19,7 @@ func TestKeychainBinaryRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	name := "fixture/" + rand.Text()
-	for _, value := range [][]byte{{0, 0xff, '\n', 'k', 0x80}, []byte("rotated fixture value")} {
+	for _, value := range [][]byte{{}, {0, 0xff, '\n', 'k', 0x80}, []byte("rotated fixture value")} {
 		if err := store.Put(t.Context(), name, value); err != nil {
 			t.Fatal(err)
 		}

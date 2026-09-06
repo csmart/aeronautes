@@ -1,6 +1,6 @@
 # ADR 0017 — verify keychain write acknowledgements
 
-**Status:** Design accepted after independent local review; implementation is staged below.
+**Status:** Design accepted after independent local review; both implementation steps are present, with validation and delivery tracked below.
 **Scope:** P10 credential publication and the startup health probe in ADR 0012.
 
 ## Context and oracle
@@ -24,6 +24,7 @@ Add verification in the Aeronautes keychain adapter before reporting a successfu
 
 1. Call the existing library Set with the intended encoded value.
 2. If Set reports an error, return failure without publishing the new reference.
+   Return a fixed operation error; native backend error text can also carry the supplied reference or value.
 3. If Set reports success, read that exact reference through the existing adapter and require exact equality with the encoded value supplied to Set.
    Compare the string returned by the library without decoding or normalising it.
 4. Missing, unreadable or different read-back is a write failure, with an error that includes neither the credential value nor its reference name.
@@ -78,4 +79,4 @@ The cross-platform read-back adds one `security` subprocess per credential write
 Bookmark writes are infrequent; correctness takes priority over this extra call.
 Measure or revisit latency with native platform evidence rather than claiming a synthetic fixture establishes prompt or desktop performance.
 
-The [validation record](../experiments/2026-09-06-keychain-writes.md) distinguishes completed implementation steps from the remaining write, native authority and cleanup work.
+The [validation record](../experiments/2026-09-06-keychain-writes.md) describes both implementation steps and distinguishes their proof from the remaining native authority, bounded-prompt and cleanup work.
