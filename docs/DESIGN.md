@@ -4314,6 +4314,13 @@ The required Go job verifies the recorded upstream archive plus patch against th
 The [pairing validation record](experiments/2026-09-06-native-pairing.md) covers deterministic regressions, concurrent native and direct calls, prepared requests, retries, body replay, lazy pages and stream reopen.
 Native cleanup, historical recovery, throughput measurement and the broader P10 work remain open.
 
+The next native-store prerequisite follows [ADR 0017](adr/0017-keychain-write-verification.md).
+A private D-Bus probe shows that the pinned keyring library can report success after dismissed write and delete prompts.
+Before publishing an immutable replacement, the keychain adapter will read the supplied value back exactly; a missing, unreadable or different value must preserve the old bookmark and leave the candidate tracked.
+The startup probe will also verify its synthetic value and observe absence after deletion before accepting the backend as healthy.
+Implement and locally review the protocol regressions, adapter checks and required Linux fixture lane as one bounded slice after design approval.
+These observations do not establish original-store authority, bounded native prompts or completed cleanup; retain the existing conservative journal policy and valuable-data hold.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
