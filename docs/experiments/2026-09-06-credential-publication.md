@@ -17,6 +17,7 @@ Connection acquisition reads the configuration, reference, generation and CA in 
 It leases the selected reference while the external Get is in progress, checks the generation again and returns no configuration/key on failure.
 The application connection builder uses that combined read.
 Previously acquired, authenticating and job-held sessions still need the later generation-lifetime work.
+The connection builder currently discards the returned generation; cache-entry generation tagging and checks remain open.
 
 A commit error is checked using an independent bounded context before reporting its outcome.
 A failed transaction begin or rejected callback cannot commit and returns its original error without that extra read.
@@ -28,6 +29,7 @@ This does not yet revoke a pointer already held outside the connection registry.
 Logical deletion records its selected reference independently of the bookmark row.
 Prepared and retired work records carry their own creation time, rather than inheriting the previous bookmark update time.
 No physical key deletion or automatic collector runs in this slice.
+That includes removal from the current session store, even when a legacy reference has a matching memory-only value.
 The editor and README disclose that old keys can remain, and the valuable-data release hold remains in place.
 
 ## Regressions and fault evidence
