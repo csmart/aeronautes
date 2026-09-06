@@ -30,15 +30,15 @@ func NewKeychainStore() (*KeychainStore, error) {
 		return nil, err
 	}
 	probe := "probe-" + hex.EncodeToString(nonce[:])
-	if err := keyring.Set(service, probe, "probe"); err != nil {
-		return nil, fmt.Errorf("keychain unavailable: %w", err)
-	}
-	if _, err := keyring.Get(service, probe); err != nil {
+	if err := setKeychainValue(probe, "probe"); err != nil {
 		_ = keyring.Delete(service, probe)
-		return nil, fmt.Errorf("keychain read-back failed: %w", err)
+		return nil, fmt.Errorf("keychain unavailable: %w", err)
 	}
 	if err := keyring.Delete(service, probe); err != nil {
 		return nil, fmt.Errorf("keychain delete failed: %w", err)
+	}
+	if _, err := keyring.Get(service, probe); !errors.Is(err, keyring.ErrNotFound) {
+		return nil, errors.New("keychain probe deletion could not be verified")
 	}
 	return &KeychainStore{origin: newOrigin(BackendKeychain)}, nil
 }
@@ -63,7 +63,24 @@ func (*KeychainStore) Get(_ context.Context, name string) ([]byte, error) {
 
 // Put stores the named secret, replacing any existing value.
 func (*KeychainStore) Put(_ context.Context, name string, value []byte) error {
-	return keyring.Set(service, name, base64.StdEncoding.EncodeToString(value))
+	return setKeychainValue(name, base64.StdEncoding.EncodeToString(value))
+}
+
+func setKeychainValue(name, value string) error {
+	// Native error text may carry the key or reference being verified.
+	if err := keyring.Set(service, name, value); err != nil {
+		return errors.New("keychain write failed")
+	}
+	// The pinned client can return nil after a dismissed creation prompt.
+	// Publication must not select that reference without reading its value.
+	stored, err := keyring.Get(service, name)
+	if err != nil {
+		return errors.New("keychain write read-back failed")
+	}
+	if stored != value {
+		return errors.New("keychain write read-back did not match")
+	}
+	return nil
 }
 
 // Delete removes the named secret.
