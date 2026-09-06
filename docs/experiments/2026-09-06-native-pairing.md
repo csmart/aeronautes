@@ -33,6 +33,7 @@ All five failures pass with the correction, and both unchanged-endpoint controls
 - An already opened object remains readable after reauthentication, and its later range reopen selects the new pair.
 
 Restoring the pristine library through a temporary Go overlay fails the five pairing cases without a compile failure.
+Independent review also reproduced failures in the callback-refusal and concurrent origin/account cases against pristine upstream; the preservation controls continued to pass.
 Removing only the empty-target guard fails both empty-callback cases, which otherwise cycle through transport retries.
 Removing only the application's missing-snapshot guard fails its explicit refusal test.
 The existing request-admission and endpoint/redirect regressions also pass in the application suite.

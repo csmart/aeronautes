@@ -182,7 +182,7 @@ Its read uses the publication coordinator and local journal without contacting t
 Counts survive bookmark deletion and database reopen; failed status reads remain unavailable instead of claiming an empty journal.
 The frontend refreshes after successful and failed save/delete attempts and when the view opens, and discards responses superseded by another refresh or mutation.
 The [status validation record](../experiments/2026-09-06-credential-status.md) covers these boundaries; the counts describe recorded work and are not proof that native keys exist or were erased.
-Verified native cleanup and the remaining library URL/token pairing fix remain open.
+Verified native cleanup remains open; the subsequent request-pairing correction is recorded below.
 Removing matching legacy values from the current session store is also deferred; this slice makes no external Delete call, even for memory-only values.
 The cache containment slice now records the captured generation and refuses obsolete results after authentication and capability discovery.
 Final validation and cache installation share the publication coordinator, with only the cache update nested under the cache mutex.
@@ -200,7 +200,9 @@ Credential snapshot access checks the generation even when a fresh token avoids 
 Gateway creation and every upstream request validate that authority, including the separate policy HEAD and dispatch after a blocked bulk-body read.
 The check is coordinated with publication, with coordination released before external I/O; an operation admitted before a change may still complete or have effects afterwards.
 The [request-admission validation record](../experiments/2026-09-06-request-admission.md) records obsolete-session failures, retry/page/reopen barriers, gateway checks and safeguard-removal controls.
-This closes request admission by obsolete bookmark generations; the library's independent URL/token selection within one binding, historical recovery identity and verified native cleanup remain open.
+This closes request admission by obsolete bookmark generations.
+The subsequent [ADR 0016](0016-native-request-credentials.md) correction pairs the native library's URL/token selection within one binding on every attempt, with permanent failing-before regressions and a verified upstream source/patch gate.
+The [pairing validation record](../experiments/2026-09-06-native-pairing.md) distinguishes that proof from the remaining native cleanup, historical recovery identity and throughput work.
 
 Permanent regressions must cover the service-level retarget attack with zero requests to the new receiver, explicit reentry, URL/port/account/override/TLS changes, and identical-byte CA reimport.
 Inject failure before and after each SQL/keychain boundary, including a Put that takes effect and then fails, publication failure, ambiguous commit and failed cleanup.
