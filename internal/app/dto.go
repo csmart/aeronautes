@@ -24,6 +24,14 @@ type BookmarkDTO struct {
 	HasCredential bool   `json:"hasCredential"`
 }
 
+// Counts disclose retained work without exposing credential references or
+// backend-instance handles through the bridge.
+type CredentialStatusDTO struct {
+	Retired    int64 `json:"retired"`
+	Unfinished int64 `json:"unfinished"`
+	Saving     int64 `json:"saving"`
+}
+
 // AccountDTO is the connected account's portrait (§53).
 type AccountDTO struct {
 	// Name is the storage-URL account suffix (e.g. AUTH_demo).

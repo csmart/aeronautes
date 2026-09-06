@@ -14,6 +14,7 @@
   import TransferDialog from "../transfer/TransferDialog.svelte";
   import LocalTransferDialog from "../transfer/LocalTransferDialog.svelte";
   import AboutDialog from "./AboutDialog.svelte";
+  import CredentialStatusDialog from "./CredentialStatusDialog.svelte";
   import DeleteDialog from "../transfer/DeleteDialog.svelte";
   import { BrowserState } from "./browserState.svelte";
 
@@ -25,8 +26,19 @@
   let createOpen = $state(false);
   let shellInfo = $state("connecting…");
   let aboutOpen = $state(false);
+  let credentialStatusOpen = $state(false);
+
+  let cleanupLabel = $derived.by(() => {
+    if (browser.credentialStatusLoading) return "key cleanup: checking…";
+    if (browser.credentialStatusError || !browser.credentialStatus) return "key cleanup: unknown";
+    const pending = browser.credentialStatus.retired + browser.credentialStatus.unfinished;
+    if (pending > 0) return `key cleanup: ${pending} pending`;
+    if (browser.credentialStatus.saving > 0) return "key save in progress";
+    return "key cleanup";
+  });
 
   onMount(async () => {
+    void browser.loadCredentialStatus();
     try {
       const info = await liveApi.info();
       shellInfo = `shell ${info.version} · Wails ${info.wails} · secrets: ${info.secretBackend}`;
@@ -56,6 +68,7 @@
       editorOpen ||
       createOpen ||
       aboutOpen ||
+      credentialStatusOpen ||
       browser.transferOpen ||
       browser.localTransfer !== null ||
       browser.deleteOpen
@@ -64,6 +77,7 @@
         editorOpen = false;
         createOpen = false;
         aboutOpen = false;
+        credentialStatusOpen = false;
         browser.transferOpen = false;
         browser.localTransfer = null;
         browser.deleteOpen = false;
@@ -116,6 +130,7 @@
         {browser.account ? `connected · ${browser.account.name}` : "not connected"}
       {/if}
     </span>
+    <button class="about-link" onclick={() => (credentialStatusOpen = true)}>{cleanupLabel}</button>
     <button class="about-link" onclick={() => (aboutOpen = true)}>{shellInfo}</button>
   </footer>
 </div>
@@ -145,6 +160,10 @@
 
 {#if aboutOpen}
   <AboutDialog onClose={() => (aboutOpen = false)} />
+{/if}
+
+{#if credentialStatusOpen}
+  <CredentialStatusDialog {browser} onClose={() => (credentialStatusOpen = false)} />
 {/if}
 
 <style>
@@ -204,6 +223,8 @@
     grid-column: 1 / -1;
     display: flex;
     justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-3);
     padding: var(--space-1) var(--space-4);
     font-size: var(--text-xs);
     color: var(--color-text-faint);

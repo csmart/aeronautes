@@ -104,9 +104,10 @@ var inventory = map[string]Action{
 	"AppService.About": {Kind: Read},
 	"AppService.Info":  {Kind: Read},
 	// BookmarkService
-	"BookmarkService.List":   {Kind: Read},
-	"BookmarkService.Save":   {Kind: Mutate},
-	"BookmarkService.Delete": {Kind: Destructive},
+	"BookmarkService.List":             {Kind: Read},
+	"BookmarkService.Save":             {Kind: Mutate},
+	"BookmarkService.Delete":           {Kind: Destructive},
+	"BookmarkService.CredentialStatus": {Kind: Read, Scenarios: []string{"happy", "refusal"}},
 	// BrowseService
 	"BrowseService.Connect":      {Kind: Session},
 	"BrowseService.Account":      {Kind: Read},

@@ -164,7 +164,12 @@ The subsequent publication slice uses immutable replacements, durably prepared w
 Logical deletion retains the selected reference independently of the removed bookmark, and no physical cleanup runs yet.
 The [publication validation record](../experiments/2026-09-06-credential-publication.md) distinguishes the red service reproductions, injected boundary failures, database/adapter reopen proof and remaining native/lifetime gates.
 Retired and unused keys remain in credential storage; the editor and README disclose this interim behaviour alongside the valuable-data release hold.
-Verified native cleanup, visible pending-work status, held/authenticating-session revocation and job admission/pins remain open.
+The status bar now opens a credential cleanup view, with counts for retired references, unfinished prepared writes and saves still in progress in this app.
+Its read uses the publication coordinator and local journal without contacting the secret backend or changing recorded work.
+Counts survive bookmark deletion and database reopen; failed status reads remain unavailable instead of claiming an empty journal.
+The frontend refreshes after successful and failed save/delete attempts and when the view opens, and discards responses superseded by another refresh or mutation.
+The [status validation record](../experiments/2026-09-06-credential-status.md) covers these boundaries; the counts describe recorded work and are not proof that native keys exist or were erased.
+Verified native cleanup, held/authenticating-session revocation and job admission/pins remain open.
 Removing matching legacy values from the current session store is also deferred; this slice makes no external Delete call, even for memory-only values.
 Cache entries do not yet record the generation returned by acquisition, so the generation-tagged cache and lookup rules above remain part of the lifetime slice.
 

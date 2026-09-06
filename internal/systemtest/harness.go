@@ -284,9 +284,22 @@ func (r *Receipt) CreditRefusal() {
 	r.emit("refusal", "refused: "+r.err.Error())
 }
 
+func (r *Receipt) CreditRead() {
+	r.h.T.Helper()
+	if r.err != nil || scenariocontract.All()[r.action].Kind != scenariocontract.Read {
+		r.h.T.Fatalf("CreditRead %s: not a successful read (%v)", r.action, r.err)
+	}
+	r.emit("happy", "read completed")
+}
+
 // Bridge-action wrappers: tests call THESE (not the raw services) so each
 // invocation yields a receipt that binds any later credit to this exact
 // call's action and result.
+
+func (h *Harness) CredentialStatus(ctx context.Context) (app.CredentialStatusDTO, *Receipt) {
+	status, err := h.Bookmarks.CredentialStatus(ctx)
+	return status, &Receipt{h: h, action: "BookmarkService.CredentialStatus", err: err}
+}
 
 func (h *Harness) StartCopy(ctx context.Context, req app.CopyRequestDTO) *Receipt {
 	jobID, err := h.Transfer.StartCopy(ctx, req)
