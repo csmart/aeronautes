@@ -4506,6 +4506,43 @@ The validation record includes local UI scenarios, the paired baseline and indep
 This completes the defined frontend P06 binding work; backend plan authority, native picker obligations and the wider release hold remain open.
 Independent local review and all five current-head/current-master checks remain required before delivery.
 
+P07 binds inspector results and mutation dialogs to the UI identity that requested them, and makes bookmark invalidation leave a truthful disconnected state.
+The archived UI-02 and UI-05 probes both still fail on the P06 tree: a late object save replaces another selection's detail, and deleting the active bookmark retains its account portrait.
+The oracle is UI-02/05, the selection contract in §§14.2 and 17–18, and K-UI-005.
+An operation already submitted may complete, but its response must not replace a newer view, close a newer editor or initiate follow-up work for a different scope.
+
+Implement P07 as three separately reviewed logical fixes:
+
+1. Bind object, prefix and container detail reads and mutation results to the captured UI scope revision, exact resource identity and relevant detail request generation.
+   Selection changes, navigation and reconnect attempts invalidate pending results, including a change followed by a return to the same names.
+   A newer read or mutation for the same resource supersedes earlier result publication; stale success, error and finalisation callbacks own no current detail state.
+   Apply this to object metadata save, container save/refresh/open and marker creation, including subordinate SLO/DLO detail reads.
+   Keep returning the original mutation outcome to its caller and recording completion through the existing audit path even when the inspector has moved.
+   Reject an inconsistent working copy before mutation admission; never combine one resource's fingerprint with another resource's name.
+2. Bind inspector edit sessions, marker actions, manifest deletion and container creation dialogs to their captured target and lifetime.
+   Close or unmount retires callbacks immediately; selection or scope changes cannot let an old success close a newer editor or let an old error/busy callback alter it.
+   Recheck the captured target and connection at submission, including forced retries and synthetic duplicate events.
+   Manifest ownership results and confirmation must describe the captured bookmark/container/object; pass that captured bookmark through operations that already accept it.
+   Mutation-triggered list refreshes and navigation must remain in the original current scope, with a recheck after every awaited follow-up.
+   Preserve explicit force confirmation and retained-segment policies; this is not a new ownership proof or server-side mutation capability.
+3. Use one complete UI connection reset for active-bookmark save/delete invalidation and reconnect admission.
+   Clear account, capabilities, container/list/selection/detail state and scope-bound dialogs, retire pending scope reads and stop old Find work.
+   Treat an active-bookmark change attempt conservatively as disconnected until explicit successful reconnect; a failed or uncertain save must not revive the old connected UI.
+   Preserve inactive-bookmark operations and the existing credential cleanup status refresh on success and failure.
+   Keep at most one frontend Connect operation admitted until its bridge call and dependent loads settle, so merely ignoring an old reply cannot leave the implicit backend active session selected by a different concurrent call.
+   Invalidation during that attempt retires its UI publication without allowing a replacement Connect to race it; later explicit reconnect establishes the next connection.
+   Save & connect may continue only for its still-live editor and connection intent, and failure must leave truthful disconnected/error state.
+   Cover pending initial reads, pages and Find replies crossing connection reset as necessary invalidation work; P08 still owns ordinary paging deduplication, pagination errors and the full Find start/stop/navigation lifecycle.
+
+Use production BrowserState/components with a recording Api boundary and deferred replies, and record a separate UI scenario matrix under §65.10 rule 4.
+For each slice, demonstrate maintained assertions failing on its parent and passing after the fix, then remove individual scope, generation, identity or lifetime safeguards in scratch copies and require assertion failures rather than setup failures.
+Cover object A/save/select B, equal names across containers/accounts, change-and-return, same-bookmark reconnect, overlapping reads and mutations in both completion orders, and current success/conflict/mismatch/error controls.
+For dialog and lifecycle slices also cover close/reopen, stale callbacks, duplicate submission, Save-only, Save & connect failure, active deletion, inactive edits and delayed connection invalidation.
+Keep the two archived probes as separately scoped before/after evidence; only their selected cases count, and neither earns Go service-scenario credit.
+Run frontend check, production build and the complete frontend suite for every implementation, plus the normal local review and five-check PR/master delivery gates.
+If the connection work requires a changed Go API or authority contract, record and review that additional design before implementation and add the corresponding service-level reproduction.
+P10 native authority and cleanup, P11 backend capability/replay/expiry, P14 external writers, P15 ownership, P08's remaining lifecycle work and the valuable-data release hold remain open.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
