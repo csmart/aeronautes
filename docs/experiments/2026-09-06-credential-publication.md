@@ -19,6 +19,7 @@ The application connection builder uses that combined read.
 Previously acquired, authenticating and job-held sessions still need the later generation-lifetime work.
 
 A commit error is checked using an independent bounded context before reporting its outcome.
+A failed transaction begin or rejected callback cannot commit and returns its original error without that extra read.
 A matching published row means the write succeeded; an unchanged row leaves the failure intact.
 An unavailable read-back pauses new acquisition through the store/cache entry points and invalidates the service cache.
 It keeps both possible keys and the durable evidence.
@@ -46,6 +47,7 @@ The editor and README disclose that old keys can remain, and the valuable-data r
 | Commit response and subsequent read-back both fail | A closed read handle models unavailable local state; the result is unresolved, both keys survive and acquisition remains paused until a successful re-read |
 | Delete commits but reports failure | The absent row and independent retirement record establish logical deletion; no external cleanup is attempted |
 | Backend reports key/reference material in an error | Returned errors contain neither the synthetic value nor reference handles |
+| A known refusal coincides with an unavailable read handle | Binding/missing-row refusal, rollback, failed begin and a losing replacement keep their original errors and never pause an unchanged bookmark; real lost-commit replies still require revalidation |
 | Legacy reference | An unchanged legacy-shaped row remains readable; rotation retires its unchanged legacy key with unknown provenance |
 | A different session lifetime has the same reference name | The new memory store cannot supply that key or replace its recorded cleanup provenance |
 | Database and persistent fixture reopen, then session fallback | Published and unused synthetic keys are found through a new adapter lifetime; a same-name key in fallback memory is refused and every pending record survives |
