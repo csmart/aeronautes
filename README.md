@@ -21,7 +21,7 @@ table, and the manifest-only delete. More in [`docs/assets/screenshots/`](docs/a
   storage policies, ACLs, versioning, quotas — not a file-manager metaphor. TempURL, CORS, and
   staticweb are modeled read-only today (key slots and presence, never secret values); their
   management surfaces are tracked v1.x work.
-- **Cross-account / cross-cluster** copy and mirror as a first-class workflow.
+- **Cross-account / cross-cluster** Copy and comparison preview; Mirror execution is unavailable while concurrent changes cannot be protected.
 - **Safety-first**: destructive actions explain scope; heuristics never authorize destruction;
   object-metadata edits never silently drop keys.
 - **Cross-platform** desktop app — Linux, macOS, and Windows on both **x86_64 and aarch64** (six
@@ -91,7 +91,7 @@ The Makefile is a thin directory over the real build system, the Wails v3 Taskfi
    (server-side prefix + Find in container), authoritative HEAD detail on the right.
 5. Transfers: open a container and use **Copy to…** (preview first, then start), **Upload…**/
    **Download…** (complete collision preflight before any write), or the **Mirror** tab
-   (destructive: typed confirmation, delete half runs only after the copy half verifies).
+   (comparison preview only; execution is unavailable while concurrent changes cannot be protected).
    Follow everything in the jobs drawer — progress, throughput, cancel, audit trail.
 6. Destructive cleanup: **Delete…** for prefix/empty/delete-container (typed confirmation),
    and manifest deletion from the inspector — segments die only under recorded ownership

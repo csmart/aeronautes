@@ -99,7 +99,9 @@ export function StartDownload(req: $models.DownloadRequestDTO): $CancellableProm
 }
 
 /**
- * StartMirror validates the typed confirmation and launches the job.
+ * StartMirror refuses because a fresh HEAD cannot protect a later
+ * deletion from an external writer. ADR 0020 requires refusing the
+ * entire operation before any transfer or deletion starts.
  */
 export function StartMirror(req: $models.MirrorRequestDTO): $CancellablePromise<string> {
     return $Call.ByID(1210013037, req);

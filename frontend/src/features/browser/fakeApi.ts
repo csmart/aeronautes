@@ -492,39 +492,8 @@ export function newFakeApi(): Api {
       versionedDestination: req.destContainer === "versioned",
       largeObjectsAsDlo: true,
     }),
-    startMirror: async (req) => {
-      if (req.confirm !== req.destContainer) {
-        throw new Error("confirmation does not match the destination container");
-      }
-      const id = `job-${jobs.length + 1}`;
-      jobs.push({
-        id,
-        type: "mirror",
-        state: "running",
-        source: `${req.sourceContainer}/${req.sourcePrefix}`,
-        destination: `${req.destContainer}/${req.destPrefix}`,
-        sourceBookmarkId: req.sourceBookmarkId,
-        destBookmarkId: req.destBookmarkId,
-        createdAt: "2026-08-29T10:00:00Z",
-        startedAt: "2026-08-29T10:00:01Z",
-        finishedAt: "",
-        engine: "rclone+native",
-        settings: "",
-        recoveryRecords: 0,
-        counters: {
-          objectsPlanned: 7,
-          objectsCopied: 0,
-          objectsVerified: 0,
-          objectsFailed: 0,
-          bytesPlanned: 42_000_000,
-          bytesCopied: 0,
-          overwrites: 0,
-          nativeRouted: 0,
-          objectsDeleted: 0,
-        },
-        error: "",
-      });
-      return id;
+    startMirror: async () => {
+      throw new Error("Mirror is unavailable while concurrent changes cannot be protected");
     },
     startCopy: async (req) => {
       const id = `job-${jobs.length + 1}`;

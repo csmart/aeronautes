@@ -519,7 +519,8 @@ export interface ListingRowDTO {
 }
 
 /**
- * MirrorRequestDTO is a copy request plus the §28.2 typed confirmation.
+ * MirrorRequestDTO preserves the bridge shape for callers that still
+ * request Mirror while execution is unavailable under ADR 0020.
  */
 export interface MirrorRequestDTO {
     "sourceBookmarkId": string;
@@ -539,10 +540,6 @@ export interface MirrorRequestDTO {
      * (§38); with Profile "custom" they are the whole configuration.
      */
     "settings": TransferSettingsDTO;
-
-    /**
-     * Confirm must equal the DESTINATION container name.
-     */
     "confirm": string;
 }
 
