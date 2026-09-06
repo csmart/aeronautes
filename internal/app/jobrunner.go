@@ -76,8 +76,12 @@ func (r *jobRunner) cancel(jobID string) (context.CancelFunc, bool) {
 // launch runs a job body under the slot budget: the job stays Queued
 // until a slot frees; cancellation while queued is honoured without
 // ever starting.
-func (r *jobRunner) launch(ctx context.Context, jobID, bookmarkID string, body func(ctx context.Context)) {
+func (r *jobRunner) launch(ctx context.Context, jobID, bookmarkID string, releasePins func(), body func(ctx context.Context)) {
 	go func() {
+		// Terminal rows and cancellation deregistration can precede
+		// cleanup. The binding survives until the whole body has returned,
+		// including when queued cancellation never enters that body.
+		defer releasePins()
 		background := context.WithoutCancel(ctx)
 		if !r.acquireSlot(ctx) {
 			_ = r.jobs.Transition(background, jobID, jobs.StateCancelled)

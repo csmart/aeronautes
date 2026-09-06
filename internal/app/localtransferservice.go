@@ -194,6 +194,15 @@ func (b boundLocal) Copy(ctx context.Context, src, dst string, names []string, o
 // StartUpload re-runs the preflight (state may have moved since the UI
 // showed it), rejects on any collision, and launches the job.
 func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO) (string, error) {
+	releasePins, err := s.connections.pinForJob(ctx, req.BookmarkID)
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		if releasePins != nil {
+			releasePins()
+		}
+	}()
 	session, err := s.connections.SessionFor(ctx, req.BookmarkID)
 	if err != nil {
 		return "", err
@@ -241,7 +250,7 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 	}
 	s.record(ctx, req.BookmarkID, "transfer.upload.start", job.Source+" → "+job.Destination, "job "+job.ID+" · "+job.Settings, audit.ResultApplied)
 
-	s.launch(jobCtx, job.ID, req.BookmarkID, func(runCtx context.Context) {
+	s.launch(jobCtx, job.ID, req.BookmarkID, releasePins, func(runCtx context.Context) {
 		s.runLocal(runCtx, job.ID, req.BookmarkID, job.Counters, func(innerCtx context.Context, onProgress func(done, total, bytes int64)) (*local.Report, error) {
 			background := context.WithoutCancel(innerCtx)
 			report, err := local.Upload(innerCtx, session, engine, "aeronautes_dst:"+req.Container, req.Container, req.Prefix, job.ID,
@@ -256,11 +265,21 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 			return report, err
 		})
 	})
+	releasePins = nil
 	return job.ID, nil
 }
 
 // StartDownload mirrors StartUpload for materialization.
 func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequestDTO) (string, error) {
+	releasePins, err := s.connections.pinForJob(ctx, req.BookmarkID)
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		if releasePins != nil {
+			releasePins()
+		}
+	}()
 	session, err := s.connections.SessionFor(ctx, req.BookmarkID)
 	if err != nil {
 		return "", err
@@ -301,11 +320,12 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 	s.runner.register(job.ID, cancel)
 	s.record(ctx, req.BookmarkID, "transfer.download.start", job.Source+" → "+job.Destination, "job "+job.ID+" · "+job.Settings, audit.ResultApplied)
 
-	s.launch(jobCtx, job.ID, req.BookmarkID, func(runCtx context.Context) {
+	s.launch(jobCtx, job.ID, req.BookmarkID, releasePins, func(runCtx context.Context) {
 		s.runLocal(runCtx, job.ID, req.BookmarkID, job.Counters, func(innerCtx context.Context, onProgress func(done, total, bytes int64)) (*local.Report, error) {
 			return local.Download(innerCtx, session, engine, "aeronautes_src:"+req.Container, req.Container, req.Prefix, destDir, job.ID, preflight, onProgress)
 		})
 	})
+	releasePins = nil
 	return job.ID, nil
 }
 

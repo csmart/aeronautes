@@ -77,6 +77,7 @@ type Store struct {
 	mu         sync.Mutex
 	preparing  map[string]bool
 	leases     map[string]int
+	jobPins    map[string]int
 	unresolved map[string]bool
 }
 
@@ -88,7 +89,7 @@ type stateDB interface {
 // NewStore builds a Store over the state database and the active secret
 // backend.
 func NewStore(d *db.DB, s secrets.SecretStore) *Store {
-	return &Store{db: d, secrets: s, preparing: map[string]bool{}, leases: map[string]int{}, unresolved: map[string]bool{}}
+	return &Store{db: d, secrets: s, preparing: map[string]bool{}, leases: map[string]int{}, jobPins: map[string]int{}, unresolved: map[string]bool{}}
 }
 
 // Save inserts (empty ID) or updates a bookmark. Every replacement key
@@ -163,6 +164,9 @@ func (st *Store) SaveWithCA(ctx context.Context, b Bookmark, secret, caPEM []byt
 				return bindingErr
 			}
 			if secret != nil || bindingErr != nil {
+				if st.jobPins[b.ID] != 0 {
+					return ErrInUse
+				}
 				proposed.generation++
 			}
 			if secret == nil {
@@ -211,6 +215,11 @@ func (st *Store) SaveWithCA(ctx context.Context, b Bookmark, secret, caPEM []byt
 			}
 			if current.generation != previous.generation || current.revision != previous.revision {
 				return ErrChanged
+			}
+			// A job can be admitted while the external Put is waiting.
+			// Its old binding must survive the resumed publication too.
+			if st.jobPins[b.ID] != 0 {
+				return ErrInUse
 			}
 		}
 		return publishRecord(ctx, tx, previous, proposed, caPEM, isNew)
@@ -298,6 +307,9 @@ func (st *Store) Delete(ctx context.Context, id string) error {
 		previous, err = readRecord(ctx, tx, id)
 		if err != nil {
 			return err
+		}
+		if st.jobPins[id] != 0 {
+			return ErrInUse
 		}
 		if previous.ref != "" {
 			if err := recordWork(ctx, tx, previous, "retired"); err != nil {
