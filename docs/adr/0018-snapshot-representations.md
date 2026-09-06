@@ -1,6 +1,6 @@
 # ADR 0018 — preserve snapshot representations
 
-**Status:** Proposed for independent local review before implementation.
+**Status:** Design accepted after independent local review; encoding preservation is implemented, with incomplete-response refusal still staged below.
 **Scope:** Audit P02 / TEST-01 and the independent HTTP oracle in DESIGN §65.10.
 
 ## Problem and oracle
@@ -18,9 +18,12 @@ An assembled large-object GET also differs from decoding that GET's content codi
 
 Disable automatic response decompression on an oracle-owned transport without mutating the process-wide default transport.
 Retain connection timeouts, redirect refusal and explicit transport cleanup for the oracle's lifetime.
+Send no Accept-Encoding header and rely on Swift returning its stored representation without content negotiation.
+An intermediary that transforms that representation is outside this fixture contract; this is not a claim to inspect bytes behind an arbitrary transforming proxy.
 The snapshot's existing Size and Digest describe the complete response body after HTTP transfer framing is removed, with content coding still applied.
 For DLO and SLO objects this is the assembled GET representation; backing segments use the same byte rule.
 Record Content-Encoding independently, preserving every field value in order, so changing only the encoding metadata remains observable.
+Backing inventories include each segment's Content-Encoding, so header-only changes remain observable when its container is outside the requested snapshot.
 Do not add a decoded-content field until a scenario needs one.
 
 | Response or change | Required observation |
@@ -54,3 +57,5 @@ No scenario credit or release claim follows merely from making the oracle strict
 P10 native authority, bounded prompts and physical credential cleanup remain open under ADR0015/0017.
 Continuing P02 now follows the accepted audit sequence into the minimum fault/barrier and recovery-containment work without representing P10 as complete.
 The valuable-data release hold remains.
+
+The [validation record](../experiments/2026-09-06-snapshot-representations.md) separates implemented encoding evidence from the remaining incomplete-response and wider harness work.
