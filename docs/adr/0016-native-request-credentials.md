@@ -50,6 +50,7 @@ Neither a successful build nor those module commands establish this copy's prove
 
 Record the module path `github.com/ncw/swift/v2`, version `v2.0.5`, upstream revision, Go module `h1:` source sum, module-file sum and patch filename in `third_party/ncw-swift/UPSTREAM.json`.
 The pinned source sum is `h1:9o5Gsd7bInAFEqsGPcaUdsboMbqf8lnNtxqWKFT9iz8=`.
+The checker compares the recorded revision when the proxy supplies origin metadata; the source and module-file sums remain the authority when that metadata is absent.
 Keep the complete local delta in `third_party/ncw-swift/credential-pairing.patch` and the imported module in the separate `source` subdirectory, so metadata is outside the compared tree.
 
 Implement `scripts/check-swift-source.py` with these required checks:
@@ -64,6 +65,7 @@ The local `make verify-swift-source` target must run that script, and the requir
 Test the checker with source alteration, required-version drift, wrong replacement, checksum mismatch and patch removal; none may silently build or report success.
 The existing `gofmt -l .` gate also applies to the imported source, which is clean under Go 1.27 today.
 The imported upstream workflow and linter configuration are inert at their nested paths; exclude `third_party` if a future linter scans the entire tree.
+File modes are outside the module archive's content hashes and the source comparison; this copy is Go source, and its upstream helper scripts are not executed by these gates.
 
 ## Alternatives and maintenance cost
 
