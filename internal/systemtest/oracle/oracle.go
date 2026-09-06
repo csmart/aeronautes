@@ -181,23 +181,36 @@ func (o *Oracle) SnapshotContainers(names ...string) (*AccountSnapshot, error) {
 	return snap, nil
 }
 
+func readComplete(resp *http.Response) ([]byte, error) {
+	defer resp.Body.Close()
+	// A valid-looking subset must never stand in for a whole object or
+	// inventory. Reject its headers before waiting for more body data.
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	if len(resp.Header.Values("Content-Range")) != 0 {
+		return nil, fmt.Errorf("partial representation: Content-Range present")
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read: %w", err)
+	}
+	return body, nil
+}
+
 func (o *Oracle) snapshotContainer(name string) (ContainerState, bool, error) {
 	// First page also carries the container's headers and 404 signal.
 	resp, err := o.do(http.MethodGet, "/"+name, "format=json")
 	if err != nil {
 		return ContainerState{}, false, err
 	}
-	body, readErr := io.ReadAll(resp.Body)
-	resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
+		resp.Body.Close()
 		return ContainerState{}, false, nil
 	}
-	if resp.StatusCode/100 != 2 {
-		return ContainerState{}, false, fmt.Errorf("oracle list %s: HTTP %d", name, resp.StatusCode)
-	}
-	// Fail closed on a truncated first listing page (codex war-room F-02).
-	if readErr != nil {
-		return ContainerState{}, false, fmt.Errorf("oracle list %s: read: %w", name, readErr)
+	body, err := readComplete(resp)
+	if err != nil {
+		return ContainerState{}, false, fmt.Errorf("oracle list %s: %w", name, err)
 	}
 	cs := ContainerState{
 		Name:       name,
@@ -257,17 +270,9 @@ func (o *Oracle) listPaged(path, query string, firstPage []byte) ([]string, erro
 			if err != nil {
 				return nil, err
 			}
-			var readErr error
-			body, readErr = io.ReadAll(resp.Body)
-			resp.Body.Close()
-			if resp.StatusCode/100 != 2 {
-				return nil, fmt.Errorf("list %s page %d: HTTP %d", path, page, resp.StatusCode)
-			}
-			// Fail closed on a truncated body: a partial "[]" plus a read
-			// error must NOT be accepted as a complete empty page, or the
-			// tail of a listing silently vanishes (codex war-room F-02).
-			if readErr != nil {
-				return nil, fmt.Errorf("list %s page %d: read: %w", path, page, readErr)
+			body, err = readComplete(resp)
+			if err != nil {
+				return nil, fmt.Errorf("list %s page %d: %w", path, page, err)
 			}
 		}
 		var rows []struct {
@@ -302,13 +307,9 @@ func (o *Oracle) snapshotObject(container, name string) (ObjectState, error) {
 	if err != nil {
 		return ObjectState{}, err
 	}
-	body, readErr := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode/100 != 2 {
-		return ObjectState{}, fmt.Errorf("oracle get %s/%s: HTTP %d", container, name, resp.StatusCode)
-	}
-	if readErr != nil {
-		return ObjectState{}, fmt.Errorf("oracle get %s/%s: read: %w", container, name, readErr)
+	body, err := readComplete(resp)
+	if err != nil {
+		return ObjectState{}, fmt.Errorf("oracle get %s/%s: %w", container, name, err)
 	}
 	sum := sha256.Sum256(body)
 	os := ObjectState{
@@ -395,15 +396,9 @@ func (o *Oracle) sloInventory(container, name string) (string, []SegmentState, e
 	if err != nil {
 		return "", nil, err
 	}
-	raw, readErr := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	// Fail closed: an error body must not be parsed/hashed as a manifest
-	// (codex war-room H-06).
-	if resp.StatusCode/100 != 2 {
-		return "", nil, fmt.Errorf("oracle SLO manifest %s/%s: HTTP %d", container, name, resp.StatusCode)
-	}
-	if readErr != nil {
-		return "", nil, fmt.Errorf("oracle SLO manifest %s/%s: read: %w", container, name, readErr)
+	raw, err := readComplete(resp)
+	if err != nil {
+		return "", nil, fmt.Errorf("oracle SLO manifest %s/%s: %w", container, name, err)
 	}
 	var entries []struct {
 		Name   string `json:"name"`
@@ -453,15 +448,9 @@ func (o *Oracle) segment(container, name string) (SegmentState, error) {
 	if err != nil {
 		return SegmentState{}, err
 	}
-	body, readErr := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	// Fail closed: never digest an error body as segment content (codex
-	// war-room H-06).
-	if resp.StatusCode/100 != 2 {
-		return SegmentState{}, fmt.Errorf("oracle segment %s/%s: HTTP %d", container, name, resp.StatusCode)
-	}
-	if readErr != nil {
-		return SegmentState{}, fmt.Errorf("oracle segment %s/%s: read: %w", container, name, readErr)
+	body, err := readComplete(resp)
+	if err != nil {
+		return SegmentState{}, fmt.Errorf("oracle segment %s/%s: %w", container, name, err)
 	}
 	sum := sha256.Sum256(body)
 	return SegmentState{
