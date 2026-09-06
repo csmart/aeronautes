@@ -4333,12 +4333,14 @@ An acknowledged header/body barrier verifies refusal before a partial response's
 This follows the existing P02/P03 and P01/P04/P05 containment sequence while leaving native P10 authority, bounded prompts and physical cleanup explicitly open.
 The oracle's representation and refusal tests must pass before its expanded snapshots are used to certify recovery safety.
 
-The minimum P03 HTTP fault slice follows [ADR 0019](adr/0019-http-response-barriers.md), subject to independent design review before implementation.
+The minimum P03 HTTP fault slice follows the independently reviewed [ADR 0019](adr/0019-http-response-barriers.md).
 Add an acknowledged response-ready barrier around the existing test handlers, with exact method, escaped path, raw query and arrival occurrence selection scoped to a fixture operation.
 The selected response stays buffered until explicit release; a lost-response mode aborts the exchange after the backend effect without inventing an HTTP result or retrying.
 Bound arrival, response holding, response size and cleanup, and test cancellation and failure paths.
 Its first callers are the existing planned-new final-HEAD race and a landed-but-lost PUT acknowledgement, witnessed through ADR 0018's reader outside the fault endpoint.
 Require mock and owned real-Swift evidence, negative controls and local review before protected delivery.
+The implementation now includes the bounded handler wrapper, the converted conditional-copy race and raw PUT controls through both the mock and the owned real-Swift proxy.
+The [validation record](experiments/2026-09-06-http-response-barriers.md) records 465 passing top-level race tests with no skips, thirteen safeguard-removal controls and the unsupported Expect/100-Continue boundary.
 This is the first P03 seam; the wider fault matrix and P01/P04/P05 recovery and destructive-race containment remain open.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.

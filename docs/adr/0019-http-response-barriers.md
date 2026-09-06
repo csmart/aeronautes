@@ -1,6 +1,6 @@
 # ADR 0019 — acknowledged HTTP response faults
 
-**Status:** Proposed for independent local review before implementation.
+**Status:** Design accepted after independent local review; implementation and its validation record are present.
 **Scope:** The minimum P03 HTTP seam needed by the audit containment regressions.
 
 ## Problem and oracle
@@ -11,7 +11,7 @@ A handler that flushes can expose the response before that callback runs.
 The accepted audit plan requires a test to establish the intended protocol boundary before introducing a competing writer or losing an acknowledgement.
 An injected failure must describe the actual server effect separately from the outcome observed by the client.
 
-The behaviour oracle is the [P03 fault/barrier contract](../audits/2026-09-05/remediation-plan.md#the-faultbarrier-harness-is-included), the conditional planned-new PUT contract in DESIGN §28.6, and ADR 0018's independent representation snapshots.
+The behaviour oracle is the [P03 fault/barrier contract](../audits/2026-09-05/remediation-plan.md#the-faultbarrier-harness-is-included), the conditional planned-new PUT contract in DESIGN §28.6 and its R-01/F-04 follow-ups, and ADR 0018's independent representation snapshots.
 This slice does not choose a concurrency primitive for overwrites or Mirror deletion.
 
 ## Decision
@@ -34,6 +34,10 @@ Tests establish effects separately through the original backend and independent 
 
 Capture only the selected response, with a fixed small body limit suitable for HEAD and mutation acknowledgements.
 Overflow, unsupported response behaviour and a handler failure are fixture errors; they must not become a fabricated successful response or an indefinite arrival wait.
+The first implementation captures at most 64 KiB and its callers use five-second arrival and selected-request bounds.
+Flushing, hijacking, informational responses and trailers are unsupported by this first buffered seam.
+Selected requests with Expect are refused before the handler because [Go can send 100 Continue when the handler reads the request body](https://pkg.go.dev/net/http#ResponseWriter), outside its replacement response writer.
+The lost-PUT controls therefore use a raw HTTP client without Expect, with no retries; native and child retry/continue behaviour remain later dimensions.
 Do not use this buffered seam to claim streaming, throughput or arbitrary large-response behaviour.
 Unselected responses retain their existing streaming behaviour.
 
@@ -62,6 +66,7 @@ Implement the bounded response barrier and its lifecycle controls, then replace 
 Strengthen that caller's final assertion with an independent snapshot of the raced object and unrelated data.
 Add a landed-but-lost PUT acknowledgement control through the same helper, using both a mock and the owned real Swift fixture.
 Use the independent oracle outside the fault endpoint so the injected failure cannot corrupt its observation.
+The mock reader uses a second listener over the same storage; the real-Swift reader uses the original endpoint outside the controlled proxy.
 Keep real-server evidence distinct from mock evidence and do not credit a service scenario for a raw fixture operation.
 
 Exercise wrong selectors, exact occurrence, out-of-order completion, arrival timeout, held timeout, client cancellation, closure, flush, overflow and repeated cleanup under the race detector.
@@ -73,3 +78,5 @@ P03 remains broader than this first seam.
 Final-hop overwrite and Mirror races, recovery history loss, process death, durable-write faults, native filesystem placement and child lifetime land with their dependent containment or contract work.
 The next implementation slice follows P01/P04: reconcile the ownership and durability contract, retain uncertain recovery residue and keep unresolved records visible.
 This harness change does not resolve those product hazards or lift the valuable-data release hold.
+
+The [validation record](../experiments/2026-09-06-http-response-barriers.md) separates the mock, real-Swift, refusal and deliberately weakened safeguards.

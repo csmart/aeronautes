@@ -6,6 +6,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -23,11 +24,22 @@ type world struct {
 }
 
 func newWorld(t *testing.T) *world {
+	return newWorldWithResponseBarrier(t, nil)
+}
+
+func newWorldWithResponseBarrier(t *testing.T, barrier *swifttest.HTTPResponseBarrier) *world {
 	t.Helper()
 	w := &world{}
-	build := func(mock *swifttest.Server) *swiftcontrol.Session {
-		srv := httptest.NewServer(mock)
+	build := func(mock *swifttest.Server, barrier *swifttest.HTTPResponseBarrier) *swiftcontrol.Session {
+		var handler http.Handler = mock
+		if barrier != nil {
+			handler = barrier.Wrap(mock)
+		}
+		srv := httptest.NewServer(handler)
 		t.Cleanup(srv.Close)
+		if barrier != nil {
+			t.Cleanup(barrier.Close)
+		}
 		session, err := swiftcontrol.New(swiftcontrol.Config{
 			AuthURL: srv.URL + "/auth/v1.0", Username: "test:tester", APIKey: "testing",
 		})
@@ -41,8 +53,8 @@ func newWorld(t *testing.T) *world {
 	}
 	w.srcMock = swifttest.New("test:tester", "testing")
 	w.dstMock = swifttest.New("test:tester", "testing")
-	w.src = build(w.srcMock)
-	w.dst = build(w.dstMock)
+	w.src = build(w.srcMock, nil)
+	w.dst = build(w.dstMock, barrier)
 	w.srcMock.AddContainer("media", "standard")
 	w.dstMock.AddContainer("backup", "standard")
 	return w
@@ -890,44 +902,4 @@ func (l *liveRacingEngine) Copy(ctx context.Context, src, dst string, names []st
 	result, err := l.fakeEngine.Copy(ctx, src, dst, names, onEvent)
 	seed(l.w.dstMock, "backup", "raced.txt", []byte("theirs, first"), nil)
 	return result, err
-}
-
-func TestPlainCommitRacerSurvives(t *testing.T) {
-	// R-01 (codex re-review): a plain planned-new commit that meets a
-	// concurrent writer between its live re-HEAD and its commit must
-	// NOT overwrite the racer — the commit is a conditional PUT
-	// (If-None-Match:*), so the racer's object survives and the name
-	// CONFLICTS. The racer is planted at the exact 404 answer to the
-	// re-HEAD via the mock's AfterRequest hook.
-	w := newWorld(t)
-	seed(w.srcMock, "media", "notes.txt", []byte("ours"), nil)
-	racerPlanted := false
-	w.dstMock.AfterRequest = func(method, path string) {
-		if method == "HEAD" && strings.HasSuffix(path, "/backup/notes.txt") && !racerPlanted {
-			racerPlanted = true
-			seed(w.dstMock, "backup", "notes.txt", []byte("racer's data, longer"), nil)
-		}
-	}
-	e := newExecutor(t, w, &fakeEngine{w: w, interruptAfter: -1})
-	report, err := e.Run(context.Background(), []plan.Item{
-		{Name: "notes.txt", Verdict: plan.VerdictNew, Route: plan.RouteRclone, SourceBytes: 4},
-	})
-	w.dstMock.AfterRequest = nil
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !racerPlanted {
-		t.Fatal("fixture failed: the re-HEAD never happened")
-	}
-	// The racer WON: conflict, not copy, and their bytes stand.
-	if len(report.Conflicts) != 1 || report.Copied != 0 {
-		t.Fatalf("report = %+v, want a commit-time conflict that spares the racer", report)
-	}
-	live, headErr := w.dst.ObjectDetail(context.Background(), "backup", "notes.txt")
-	if headErr != nil {
-		t.Fatal(headErr)
-	}
-	if live.ContentLength != int64(len("racer's data, longer")) {
-		t.Fatalf("live size %d: the concurrent writer's data was overwritten (R-01 not closed)", live.ContentLength)
-	}
 }
