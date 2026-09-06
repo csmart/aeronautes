@@ -26,10 +26,10 @@ jobs:
         with:
           go-version: stable
       # The Wails shell binds the system webview via CGO (§6.6, ADR 0010).
-      - name: Install webview system dependencies (GTK4/WebKitGTK 6.0)
+      - name: Install webview and test dependencies (GTK4/WebKitGTK 6.0, D-Bus)
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libgtk-4-dev libwebkitgtk-6.0-dev
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libwebkitgtk-6.0-dev dbus
       # go:embed all:frontend/dist needs the built frontend before any Go
       # compile step; the committed frontend/bindings are used as-is.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
@@ -50,6 +50,8 @@ jobs:
         run: make verify-swift-source
       - name: Test upstream Swift core against its local mock
         run: make test-swift-core
+      - name: Test keychain protocol on an isolated D-Bus service
+        run: make test-secret-service
       - name: go vet
         run: go vet ./...
       - name: go build

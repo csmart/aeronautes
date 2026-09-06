@@ -12,7 +12,7 @@ export PATH := $(HOME)/go/bin:$(PATH)
 WAILS3_VERSION := v3.0.0-beta.15
 
 .PHONY: all tools build run dev test test-go test-frontend test-integration \
-	verify-swift-source test-swift-core \
+	verify-swift-source test-swift-core test-secret-service \
 	rpm deb package spike rclone-matrix clean
 
 all: build
@@ -52,6 +52,10 @@ verify-swift-source:
 ## The nested module is excluded by ./...; its rs suite needs live Rackspace CDN.
 test-swift-core:
 	cd third_party/ncw-swift/source && SWIFT_API_USER= SWIFT_API_KEY= SWIFT_AUTH_URL= go test -race -count=1 .
+
+## A private Linux protocol fixture cannot substitute for native keychain tests.
+test-secret-service:
+	AERONAUTES_REQUIRE_SECRET_SERVICE_FIXTURE=1 go test -race -count=1 ./internal/secrets/protocoltest
 
 test-frontend:
 	cd frontend && npm install && npm run check && npm test

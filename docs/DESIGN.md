@@ -4318,7 +4318,7 @@ The next native-store prerequisite follows [ADR 0017](adr/0017-keychain-write-ve
 A private D-Bus probe shows that the pinned keyring library can report success after dismissed write and delete prompts.
 Before publishing an immutable replacement, the keychain adapter will read the supplied value back exactly; a missing, unreadable or different value must preserve the old bookmark and leave the candidate tracked.
 The startup probe will also verify its synthetic value and observe absence after deletion before accepting the backend as healthy.
-Implement and locally review the protocol regressions, adapter checks and required Linux fixture lane as one bounded slice after design approval.
+After design approval, implement the isolated fixture, required Linux lane and decode-error redaction as one reviewed commit, then write/startup verification and its publication regressions as a second reviewed commit.
 These observations do not establish original-store authority, bounded native prompts or completed cleanup; retain the existing conservative journal policy and valuable-data hold.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
