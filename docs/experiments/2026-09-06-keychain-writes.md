@@ -79,13 +79,15 @@ Six additional negative controls deliberately break the correction or its coordi
 | Disabled or weakened behaviour | Failing cases |
 | --- | --- |
 | Exact equality check removed | 8 |
-| Read-back normalised before comparison | 1 |
+| Read-back normalised before comparison, selected direct Put case | 1 |
 | Native read error forwarded with private text | 1 |
 | Native Set error forwarded with private text | 2 |
 | Startup post-delete lookup removed | 2 |
 | Bookmark coordinator held across external Put/read-back | 1 |
 
 Every control compiled and failed behavioural assertions.
+Independent review repeated the normalisation control across the complete protocol package and observed four failures: direct Put, creation, replacement and startup.
+The one-case count above records the narrower author-side selection, not the complete failing set.
 Separately, blocking the synthetic OpenSession call triggered the committed fixture watchdog at 45.012 seconds, stopped the daemon and failed the test binary.
 This proves the fixture's failure bound, not a bounded production keychain operation.
 
