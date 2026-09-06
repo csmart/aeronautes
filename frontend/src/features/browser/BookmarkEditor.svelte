@@ -109,7 +109,7 @@
       <input class="type-mono" bind:value={username} required placeholder="account:user" />
     </label>
     <label class="field">
-      <span>API key {existing?.hasCredential ? "(blank keeps the stored key)" : ""}</span>
+      <span>API key</span>
       <input
         class="type-mono"
         type="password"
@@ -117,6 +117,12 @@
         autocomplete="off"
         required={!existing?.hasCredential}
       />
+      {#if existing?.hasCredential}
+        <span class="hint">
+          Leave blank to keep the stored key when the auth URL, username and TLS trust
+          stay the same. Re-enter the key when changing them or the storage override.
+        </span>
+      {/if}
     </label>
     <label class="field">
       <span>TLS</span>

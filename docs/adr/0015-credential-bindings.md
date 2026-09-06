@@ -1,12 +1,12 @@
 # ADR 0015 — credential bindings and bookmark lifetime
 
-**Status:** Design accepted after independent review under the authorised P10 remediation plan.
-Only the durable SQLite prerequisite is implemented; the credential lifecycle remains open.
+**Status:** Design accepted after independent local review under the authorised P10 remediation plan.
+The durable SQLite prerequisite and blank-key binding guard are implemented; credential publication, recovery and generation lifetime remain open.
 **Scope:** Audit P10, SEC-01/04 and W-05/W-15; DESIGN §§11, 12, 51 and 55; K-SEC-002/003/005/008.
 
 ## Context
 
-A blank key currently lets a bridge caller retain an existing credential while changing its authentication URL, account or trust.
+At the start of P10, a blank key let a bridge caller retain an existing credential while changing its authentication URL, account or trust.
 The archived SEC-01 probe demonstrates that the backend then sends the saved key to the replacement receiver.
 Requiring a new key for that change is necessary, but the current write ordering introduces another risk: Save replaces the external key before publishing its matching SQLite configuration.
 A failed SQL write or concurrent connection can therefore pair a new key with an old endpoint.
@@ -116,13 +116,19 @@ Backend-held plan capabilities remain P11 work; the generation check is a prereq
 Implement and review each logical slice separately:
 
 1. Establish and verify the durable SQLite prerequisite, recording its cost and the limits of the proof.
-2. Add backend-aware prepared/retired references, immutable replacement, coherent credential snapshots and binding-change refusal with the editor explanation.
+2. First add binding-change refusal with the editor explanation as an independently tested containment commit.
+   Then add backend-aware prepared/retired references, immutable replacement and coherent credential snapshots as the next publication commit.
 3. Make logical deletion and cleanup status recoverable, including failed external deletion and legacy/session fallback.
 4. Coordinate generation revocation, session publication and job admission, then close the remaining library request URL/token pairing gap.
 
 Each slice must state which guarantees it implements and which remain open; P10 is complete only when the combined gates pass.
 The valuable-data release hold remains throughout.
 The SQLite prerequisite's [validation and measured write cost](../experiments/2026-09-06-sqlite-durability.md) do not establish credential recovery or physical power-loss safety.
+The binding guard compares the current persisted row inside the bookmark update transaction and ignores caller-supplied credential presence.
+The service publishes an imported CA in that same transaction, so a refused edit or injected bookmark-write failure leaves no imported CA row.
+Permanent service regressions cover the retarget receiver, retained live connection, explicit replacement, CA reimport and failed CA publication; store regressions cover every binding field, cosmetic edits and stale edits.
+This containment does not repair explicit-key replacement ordering: the existing fixed reference is still written before the SQL update, so failure or concurrent acquisition can still mix a replacement key with old configuration.
+Immutable references, coherent acquisition, recovery and held-session revocation remain the next implementation work.
 
 Permanent regressions must cover the service-level retarget attack with zero requests to the new receiver, explicit reentry, URL/port/account/override/TLS changes, and identical-byte CA reimport.
 Inject failure before and after each SQL/keychain boundary, including a Put that takes effect and then fails, publication failure, ambiguous commit and failed cleanup.

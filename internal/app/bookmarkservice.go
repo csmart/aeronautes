@@ -39,7 +39,8 @@ func (s *BookmarkService) List(ctx context.Context) ([]BookmarkDTO, error) {
 }
 
 // Save inserts (empty id) or updates a bookmark. A non-empty secret
-// replaces the stored credential; an empty one keeps whatever exists.
+// replaces the stored credential; an empty one retains it only while
+// the authentication and trust binding stays the same.
 func (s *BookmarkService) Save(ctx context.Context, dto BookmarkDTO, secret string) (BookmarkDTO, error) {
 	b := bookmarks.Bookmark{}
 	if dto.ID != "" {
@@ -56,16 +57,9 @@ func (s *BookmarkService) Save(ctx context.Context, dto BookmarkDTO, secret stri
 	b.Username = dto.Username
 	b.StorageURLOverride = dto.StorageURLOverride
 	b.TLSMode = swiftcontrol.TLSMode(dto.TLSMode)
-	if dto.CAPem != "" {
-		caID, err := s.store.SaveCA(ctx, []byte(dto.CAPem))
-		if err != nil {
-			return BookmarkDTO{}, err
-		}
-		b.TLSCAID = caID
-	}
 	if b.TLSMode != swiftcontrol.TLSModeCustomCA {
 		b.TLSCAID = ""
-	} else if b.TLSCAID == "" {
+	} else if b.TLSCAID == "" && dto.CAPem == "" {
 		return BookmarkDTO{}, fmt.Errorf("custom-CA TLS needs a CA bundle (paste the PEM)")
 	}
 
@@ -73,7 +67,11 @@ func (s *BookmarkService) Save(ctx context.Context, dto BookmarkDTO, secret stri
 	if secret != "" {
 		secretBytes = []byte(secret)
 	}
-	saved, err := s.store.Save(ctx, b, secretBytes)
+	var caPEM []byte
+	if dto.CAPem != "" {
+		caPEM = []byte(dto.CAPem)
+	}
+	saved, err := s.store.SaveWithCA(ctx, b, secretBytes, caPEM)
 	if err != nil {
 		return BookmarkDTO{}, err
 	}

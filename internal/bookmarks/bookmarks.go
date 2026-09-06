@@ -6,6 +6,7 @@
 package bookmarks
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/x509"
@@ -81,10 +82,27 @@ func NewStore(d *db.DB, s secrets.SecretStore) *Store {
 
 // Save inserts (empty ID) or updates a bookmark. A non-nil secret is
 // stored in the SecretStore under bookmark/<id>; nil keeps any existing
-// credential. The saved bookmark is returned with ID and timestamps set.
+// credential only while its authentication and trust binding stays the same.
 func (st *Store) Save(ctx context.Context, b Bookmark, secret []byte) (Bookmark, error) {
+	return st.SaveWithCA(ctx, b, secret, nil)
+}
+
+// SaveWithCA publishes an optional new CA bundle with the bookmark, so
+// a refused edit cannot leave behind a partially applied trust change.
+func (st *Store) SaveWithCA(ctx context.Context, b Bookmark, secret, caPEM []byte) (Bookmark, error) {
 	if err := validate(b); err != nil {
 		return Bookmark{}, err
+	}
+	if caPEM != nil {
+		caPEM = bytes.Clone(caPEM)
+		if !x509.NewCertPool().AppendCertsFromPEM(caPEM) {
+			return Bookmark{}, fmt.Errorf("custom CA: no certificates found in PEM data")
+		}
+		if b.TLSMode == swiftcontrol.TLSModeCustomCA {
+			b.TLSCAID = newID()
+		} else {
+			caPEM = nil
+		}
 	}
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -104,14 +122,34 @@ func (st *Store) Save(ctx context.Context, b Bookmark, secret []byte) (Bookmark,
 		b.TLSMode = swiftcontrol.TLSModeSystem
 	}
 
+	b.HasCredential = secret != nil
 	if secret != nil {
 		if err := st.secrets.Put(ctx, secretName(b.ID), secret); err != nil {
 			return Bookmark{}, fmt.Errorf("store credential: %w", err)
 		}
-		b.HasCredential = true
 	}
 
 	err := st.db.WriteTx(ctx, func(tx *sql.Tx) error {
+		if !isNew && secret == nil {
+			current, err := scanBookmark(tx.QueryRowContext(ctx, selectColumns+` WHERE id=?`, b.ID).Scan)
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrNotFound
+			}
+			if err != nil {
+				return err
+			}
+			if current.HasCredential {
+				if err := retainCredentialBinding(ctx, tx, current, b, caPEM); err != nil {
+					return err
+				}
+			}
+		}
+		if caPEM != nil {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO ca_certs (id, pem, added_at) VALUES (?, ?, ?)`,
+				b.TLSCAID, string(caPEM), now.Format(time.RFC3339)); err != nil {
+				return err
+			}
+		}
 		if isNew {
 			var ref *string
 			if b.HasCredential {
@@ -160,6 +198,39 @@ func (st *Store) Save(ctx context.Context, b Bookmark, secret []byte) (Bookmark,
 		return Bookmark{}, err
 	}
 	return st.Get(ctx, b.ID)
+}
+
+var errKeyReentry = errors.New("re-enter the API key when changing the auth URL, username, storage override or TLS trust")
+
+// Retention is checked against the row inside the update transaction;
+// a prior service read could become stale before this edit is published.
+func retainCredentialBinding(ctx context.Context, tx *sql.Tx, current, proposed Bookmark, caPEM []byte) error {
+	mode := current.TLSMode
+	if mode == "" {
+		mode = swiftcontrol.TLSModeSystem
+	}
+	if current.AuthURL != proposed.AuthURL || current.Username != proposed.Username ||
+		current.StorageURLOverride != proposed.StorageURLOverride || mode != proposed.TLSMode {
+		return errKeyReentry
+	}
+	if mode != swiftcontrol.TLSModeCustomCA {
+		return nil
+	}
+	var currentCA string
+	if err := tx.QueryRowContext(ctx, `SELECT pem FROM ca_certs WHERE id=?`, current.TLSCAID).Scan(&currentCA); err != nil {
+		return fmt.Errorf("read stored CA for credential binding: %w", err)
+	}
+	if caPEM == nil {
+		var proposedCA string
+		if err := tx.QueryRowContext(ctx, `SELECT pem FROM ca_certs WHERE id=?`, proposed.TLSCAID).Scan(&proposedCA); err != nil {
+			return fmt.Errorf("read proposed CA for credential binding: %w", err)
+		}
+		caPEM = []byte(proposedCA)
+	}
+	if !bytes.Equal([]byte(currentCA), caPEM) {
+		return errKeyReentry
+	}
+	return nil
 }
 
 // Get returns one bookmark.
