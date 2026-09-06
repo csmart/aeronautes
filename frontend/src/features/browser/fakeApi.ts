@@ -487,7 +487,7 @@ export function newFakeApi(): Api {
         nativeRouted: 1,
         destOnlyBytes: 7_000_000,
       },
-      dataPath: "workstation hairpin: every byte downloads to this machine and uploads again (no server-side path in v1)",
+      dataPath: "eligible copies pass through this workstation: source download and destination upload",
       overwriteBytes: 512,
       versionedDestination: req.destContainer === "versioned",
       largeObjectsAsDlo: true,
@@ -518,7 +518,7 @@ export function newFakeApi(): Api {
           objectsFailed: 0,
           bytesPlanned: 42_000_000,
           bytesCopied: 12_000_000,
-          overwrites: 0,
+          overwrites: 0, overwritesRefused: 1,
           nativeRouted: 1,
           objectsDeleted: 0,
         },
@@ -544,7 +544,12 @@ export function newFakeApi(): Api {
       if (!job || job.finishedAt !== "") {
         throw new Error(`job ${jobId} is not running`);
       }
-      job.state = "cancelled";
+      if (job.type === "copy" && job.counters.overwritesRefused > 0) {
+        job.state = "partial";
+        job.error = "1 overwrite refused: concurrent changes cannot be protected; context canceled";
+      } else {
+        job.state = "cancelled";
+      }
       job.finishedAt = "2026-08-29T10:05:00Z";
     },
     pickUploadFiles: async () => ({ token: "fake-selection", files: ["fake-a.txt", "fake-b.txt"] }),
@@ -592,7 +597,7 @@ export function newFakeApi(): Api {
           objectsFailed: 0,
           bytesPlanned: 1024 * paths.length,
           bytesCopied: 0,
-          overwrites: 0,
+          overwrites: 0, overwritesRefused: 0,
           nativeRouted: 0,
           objectsDeleted: 0,
         },
@@ -634,7 +639,7 @@ export function newFakeApi(): Api {
           objectsFailed: 0,
           bytesPlanned: 512,
           bytesCopied: 0,
-          overwrites: 0,
+          overwrites: 0, overwritesRefused: 0,
           nativeRouted: 0,
           objectsDeleted: 0,
         },
@@ -674,7 +679,7 @@ export function newFakeApi(): Api {
           objectsFailed: 0,
           bytesPlanned: 9_000_000,
           bytesCopied: 0,
-          overwrites: 0,
+          overwrites: 0, overwritesRefused: 0,
           nativeRouted: 0,
           objectsDeleted: 0,
         },

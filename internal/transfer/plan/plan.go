@@ -28,11 +28,11 @@ const (
 	// VerdictChanged is proven difference between two plain objects.
 	VerdictChanged Verdict = "changed"
 	// VerdictUnknown is §28.4's conservative bucket: equality cannot be
-	// proven from listings alone. Unknown objects are transferred (after
-	// executor-side HEAD resolution) and never treated as equal.
+	// proven from listings alone. HEAD resolution may prove equality or
+	// a missing destination; unequal existing destinations are refused.
 	VerdictUnknown Verdict = "unknown"
 	// VerdictDestOnly is a destination object with no source
-	// counterpart — Copy ignores it; Mirror preview's would-delete set.
+	// counterpart — Copy ignores it; Mirror preview compares the scopes.
 	VerdictDestOnly Verdict = "dest_only"
 )
 
@@ -78,14 +78,14 @@ type Item struct {
 	SourceBytes int64
 	SourceETag  string
 	DestBytes   int64
-	// DestETag lets the executor detect an intervening external write
-	// before committing an overwrite (§28.6 re-HEAD).
+	// DestETag preserves the observed comparison evidence. It cannot
+	// authorise an overwrite or exclude a later external writer.
 	DestETag string
 }
 
 // Summary is the §65.4 preflight surface: honest conservative counts
-// (§28.4's preview contract), the stage-and-commit overwrite count, and
-// the native-routing count. Versioned-destination disclosure is the
+// (§28.4's preview contract), existing-destination candidate counts, and
+// candidate routing. Versioned-destination disclosure is the
 // caller's job — it comes from the destination container's headers, not
 // the join.
 type Summary struct {
@@ -94,16 +94,14 @@ type Summary struct {
 	Changed  int64 `json:"changed"`
 	Unknown  int64 `json:"unknown"`
 	DestOnly int64 `json:"destOnly"`
-	// TransferObjects/TransferBytes cover New + Changed + Unknown —
-	// Unknown transfers conservatively unless the executor proves
-	// equality per object.
+	// These legacy field names cover New + Changed + Unknown comparison
+	// candidates, including refused objects. They are not transfer estimates.
 	TransferObjects int64 `json:"transferObjects"`
 	TransferBytes   int64 `json:"transferBytes"`
-	// Overwrites counts transfers whose destination name already exists:
-	// every one commits via §28.6 stage-and-commit, never a direct PUT.
+	// Overwrites counts Changed + Unknown existing-destination candidates.
+	// Changed is refused; Unknown needs resolution before a decision.
 	Overwrites int64 `json:"overwrites"`
-	// NativeRouted counts transfers the §14.3 classification forced down
-	// the native path.
+	// NativeRouted counts candidates requiring native handling if eligible.
 	NativeRouted  int64 `json:"nativeRouted"`
 	DestOnlyBytes int64 `json:"destOnlyBytes"`
 }

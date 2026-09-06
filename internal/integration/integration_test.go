@@ -840,6 +840,11 @@ func executorFixture(t *testing.T, h *Harness, srcContainer, dstContainer, jobID
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		if err := executor.Close(); err != nil {
+			t.Error(err)
+		}
+	})
 	return executor
 }
 
@@ -864,8 +869,8 @@ func planInto(ctx context.Context, t *testing.T, h *Harness, executor *transferc
 // TestCopyExecutorRealSwift is the K-TEST-001 copy gate on real Swift:
 // the full §58 hostile-name suite crosses accounts byte-exact through
 // the real pinned rclone with native fallback, large objects survive as
-// logical copies, overwrites commit via stage-and-commit, and
-// cancellation leaves no unswept staging.
+// logical copies, changed destinations are refused, and reconciliation
+// retains uncertain residue after cancellation.
 func TestCopyExecutorRealSwift(t *testing.T) {
 	if _, err := exec.LookPath("rclone"); err != nil {
 		t.Skip("pinned rclone not installed")
@@ -958,7 +963,7 @@ func TestCopyExecutorRealSwift(t *testing.T) {
 			t.Errorf("prefixes: %+v / %+v", report.CapturedPrefixes, report.CommittedPrefixes)
 		}
 
-		// Overwrite both (one plain, one large) via stage-and-commit.
+		// Updating the source cannot authorise replacing either destination.
 		if err := h.put(ctx, src, "small.txt", []byte("v2 BYTES"), "text/plain", nil); err != nil {
 			t.Fatal(err)
 		}
@@ -968,18 +973,18 @@ func TestCopyExecutorRealSwift(t *testing.T) {
 		}
 		executor2 := executorFixture(t, h, src, dst, "job-big2")
 		report2 := planInto(ctx, t, h, executor2, src, dst)
-		if len(report2.Failures) != 0 || report2.Overwrites != 2 {
-			t.Fatalf("overwrite report: %+v (failures %+v)", report2, report2.Failures)
+		if len(report2.Failures) != 0 || report2.Overwrites != 0 || report2.OverwritesRefused != 2 || report2.Copied != 0 {
+			t.Fatalf("refusal report: %+v (failures %+v)", report2, report2.Failures)
 		}
 		d2, err := h.Session2().ObjectDetail(ctx, dst, "big.bin")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if d2.Class != swiftcontrol.ClassDLO || d2.ContentLength != int64(len(big2)) {
-			t.Fatalf("big.bin after overwrite = class %s length %d", d2.Class, d2.ContentLength)
+		if d2.Class != swiftcontrol.ClassDLO || d2.ContentLength != int64(len(big)) {
+			t.Fatalf("big.bin after refusal = class %s length %d", d2.Class, d2.ContentLength)
 		}
-		if d2.Manifest == d.Manifest {
-			t.Error("manifest not swapped on overwrite")
+		if d2.Manifest != d.Manifest {
+			t.Error("manifest changed despite refusal")
 		}
 		small, _, err := h.Session2().OpenObject(ctx, dst, "small.txt")
 		if err != nil {
@@ -987,7 +992,7 @@ func TestCopyExecutorRealSwift(t *testing.T) {
 		}
 		smallBytes, _ := io.ReadAll(small)
 		small.Close()
-		if string(smallBytes) != "v2 BYTES" {
+		if string(smallBytes) != "v1 bytes" {
 			t.Errorf("small.txt = %q", smallBytes)
 		}
 		// No staging litter under either job's prefix.
@@ -1000,11 +1005,17 @@ func TestCopyExecutorRealSwift(t *testing.T) {
 			}
 		}
 
-		// A fresh third plan must find nothing to do: Same for the plain
-		// object, fingerprint-proven equality for the DLO.
+		// Restoring the original source makes both pairs equal again;
+		// refusal has preserved the prior destination fingerprint and bytes.
+		if err := h.put(ctx, src, "small.txt", []byte("v1 bytes"), "text/plain", nil); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.put(ctx, src, "big.bin", big, "application/octet-stream", nil); err != nil {
+			t.Fatal(err)
+		}
 		executor3 := executorFixture(t, h, src, dst, "job-noop")
 		report3 := planInto(ctx, t, h, executor3, src, dst)
-		if report3.Copied != 0 || len(report3.Failures) != 0 || report3.SkippedEqual == 0 {
+		if report3.Copied != 0 || report3.OverwritesRefused != 0 || len(report3.Failures) != 0 || report3.SkippedEqual == 0 {
 			t.Errorf("idempotent re-plan: %+v (failures %+v)", report3, report3.Failures)
 		}
 	})
@@ -1043,6 +1054,11 @@ func TestCopyExecutorRealSwift(t *testing.T) {
 		}
 
 		// Cancel a few seconds into the throttled upload.
+		defer func() {
+			if err := executor.Close(); err != nil {
+				t.Error(err)
+			}
+		}()
 		cancelCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 		defer cancel()
 		_ = executor.Handle(cancelCtx, plan.Item{Name: "huge.bin", Verdict: plan.VerdictNew, Route: plan.RouteRclone, SourceBytes: int64(len(huge))})
@@ -1376,13 +1392,10 @@ func TestSLOSegmentsDeleteRealSwift(t *testing.T) {
 	}
 }
 
-// TestMirrorAcceptanceRealSwift runs the §28.6 acceptance fixtures on
-// real Swift: a full mirror (copy half through the real rclone, then
-// native destination-only deletion) where a deleted dest-only DLO
-// shares segments with an out-of-scope manifest that must keep
-// assembling; plus the plan-to-delete race where a planned dest-only
-// plain object becomes a shared-prefix DLO before the delete executes.
-func TestMirrorAcceptanceRealSwift(t *testing.T) {
+// Copy and manifest-only deletion remain independently supported domain
+// operations. These component checks cannot certify public Mirror,
+// whose start is refused under ADR 0020.
+func TestCopyAndManifestDeleteComponentsRealSwift(t *testing.T) {
 	if _, err := exec.LookPath("rclone"); err != nil {
 		t.Skip("pinned rclone not installed")
 	}
@@ -1469,6 +1482,11 @@ func TestMirrorAcceptanceRealSwift(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() {
+		if err := executor.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
 	var destOnly []string
 	_, err = plan.Copy(ctx,
 		h.Session.Objects(ctx, src, swiftcontrol.ObjectListOptions{Deep: true, Prefix: "scope/"}),
@@ -1809,12 +1827,9 @@ func TestFeatureSurfacesRealSwift(t *testing.T) {
 	}
 }
 
-// TestVersionedOverwriteArchivesRealSwift turns the §28.6 seam-spike
-// note — "on a versioned_writes destination each commit-overwrite
-// archives the previous object" — into an automated behavioural test:
-// the executor's stage-and-commit overwrite of a changed object on a
-// versioned container must leave the prior version in the archive.
-func TestVersionedOverwriteArchivesRealSwift(t *testing.T) {
+// Versioning cannot exclude a concurrent writer, so it must never turn
+// a refused overwrite into a permitted write or create an archive entry.
+func TestVersionedOverwriteRefusedRealSwift(t *testing.T) {
 	if _, err := exec.LookPath("rclone"); err != nil {
 		t.Skip("pinned rclone not installed")
 	}
@@ -1853,17 +1868,17 @@ func TestVersionedOverwriteArchivesRealSwift(t *testing.T) {
 
 	executor := executorFixture(t, h, src, dst, "job-versioned")
 	report := planInto(ctx, t, h, executor, src, dst)
-	if len(report.Failures) != 0 || report.Overwrites != 1 {
+	if len(report.Failures) != 0 || report.Overwrites != 0 || report.OverwritesRefused != 1 || report.Copied != 0 {
 		t.Fatalf("report = %+v (failures %+v)", report, report.Failures)
 	}
-	// The live object is the new content; the archive holds the old.
+	// Refusal preserves the live bytes and leaves the empty archive alone.
 	live, _, err := h.Session2().OpenObject(ctx, dst, "doc.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
 	liveBytes, _ := io.ReadAll(live)
 	live.Close()
-	if string(liveBytes) != "version TWO" {
+	if string(liveBytes) != "version one" {
 		t.Fatalf("live = %q", liveBytes)
 	}
 	archived := 0
@@ -1875,10 +1890,9 @@ func TestVersionedOverwriteArchivesRealSwift(t *testing.T) {
 			archived++
 		}
 	}
-	if archived == 0 {
-		t.Fatal("versioned overwrite archived nothing — the §28.6 disclosure would be a lie")
+	if archived != 0 {
+		t.Fatal("refused overwrite created an archive entry")
 	}
-	t.Logf("archive holds %d version(s) after stage-and-commit overwrite", archived)
 }
 
 // TestTokenRefreshAcrossSpawnsRealSwift is the §65.8 item-1 gate: a
@@ -1962,6 +1976,11 @@ func TestTokenRefreshAcrossSpawnsRealSwift(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() {
+		if err := executor.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
 	before := atomic.LoadInt64(&authCalls)
 	_, err = plan.Copy(ctx,
 		session.Objects(ctx, src, swiftcontrol.ObjectListOptions{Deep: true}),

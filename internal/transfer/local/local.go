@@ -327,9 +327,9 @@ const maxFailures = 200
 // namespace — rclone never receives a live destination name here any
 // more than in Copy (§28.6, the follow-up review's G2 remainder) — and
 // each staged object commits natively: live-absent check (an appeared
-// object is a conflict, never an rclone Update), server-side COPY for
-// plain, manifest-swap PUT for a staged DLO. Native ones stream a
-// single live PUT (manifest-only by Swift semantics). Every name is
+// object is a conflict, never an rclone Update), conditional PUT for
+// plain bodies and staged DLO manifests. Native ones also use a
+// conditional live PUT. Every name is
 // verified by destination HEAD — never the engine's exit code.
 // onRecovery (optional) receives streamed captured prefixes and the
 // commit protocol records, same contract as the copy executor.

@@ -251,6 +251,19 @@ func (r *Receipt) CreditHappy() {
 	r.emit("happy", "job "+r.jobID+" complete")
 }
 
+// A refused item can leave an admitted Copy job partial. Credit that
+// state only from this call's terminal job, never from a start error.
+func (r *Receipt) CreditPartial() {
+	r.h.T.Helper()
+	if r.err != nil || r.jobID == "" || scenariocontract.All()[r.action].Kind != scenariocontract.Job {
+		r.h.T.Fatalf("CreditPartial %s: not an admitted job (%v)", r.action, r.err)
+	}
+	if job := r.h.AwaitJob(r.jobID); job.State != "partial" {
+		r.h.T.Fatalf("CreditPartial %s: job %s is %q, not partial", r.action, r.jobID, job.State)
+	}
+	r.emit("partial", "job "+r.jobID+" partial")
+}
+
 // CreditApplied emits a happy claim for a SYNCHRONOUS mutate, validating
 // from THIS receipt that the outcome was "applied".
 func (r *Receipt) CreditApplied() {

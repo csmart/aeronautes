@@ -270,8 +270,7 @@ export interface CopyPlanDTO {
     "summary": plan$0.Summary;
 
     /**
-     * VersionedDestination: commits on this container archive a version
-     * per overwrite (§28.6 seam finding) — disclosed, not hidden.
+     * Versioning does not grant permission to overwrite an existing object.
      */
     "versionedDestination": boolean;
 
@@ -289,8 +288,8 @@ export interface CopyPlanDTO {
     "dataPath": string;
 
     /**
-     * OverwriteBytes are the planned bytes that land on EXISTING names
-     * (the changed set) — the blast radius of the overwrite half.
+     * OverwriteBytes counts listed source bytes in refused Changed rows;
+     * keeping the bridge field does not promise an overwrite or transfer.
      */
     "overwriteBytes": number;
 }
