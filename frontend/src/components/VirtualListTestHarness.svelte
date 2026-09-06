@@ -8,12 +8,11 @@
     rowHeight?: number;
     viewport?: number;
     overscan?: number;
+    selected?: number;
     onActivate?: (item: string, index: number) => void;
   }
 
-  let { items, rowHeight = 36, viewport = 360, overscan = 2, onActivate }: Props = $props();
-
-  let selected = $state(-1);
+  let { items, rowHeight = 36, viewport = 360, overscan = 2, selected = $bindable(-1), onActivate }: Props = $props();
 </script>
 
 <VirtualList
