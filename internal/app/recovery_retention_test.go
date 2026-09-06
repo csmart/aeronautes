@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/db"
 	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/swifttest"
@@ -123,10 +122,10 @@ func TestRecoveryRecordsAfterProcessReopen(t *testing.T) {
 		}
 		// A retained historical row must work without any connection or
 		// credential authority in the newly started process.
-		service := NewTransferService(nil, store, audit.NewStore(database))
+		service := NewJobService(store)
 		for range 2 {
-			if swept, err := StartupCrashSweep(context.Background(), service); err != nil || swept != 0 {
-				t.Fatalf("startup recovery = %d, %v", swept, err)
+			if status, err := service.RecoveryStatus(context.Background()); err != nil || status != (RecoveryStatusDTO{Jobs: 1, Records: 3}) {
+				t.Fatalf("reopened recovery status = %+v, %v", status, err)
 			}
 		}
 		encoded, err := json.Marshal(retainedRows(t, database))
@@ -240,11 +239,8 @@ func TestRecoveryDoesNotUseChangedBookmark(t *testing.T) {
 		t.Fatal(err)
 	}
 	for range 2 {
-		if swept, err := StartupCrashSweep(ctx, h.transfer); err != nil || swept != 0 {
-			t.Fatalf("startup recovery = %d, %v", swept, err)
-		}
-		if held, err := RecoverySweepStep(ctx, h.transfer); err != nil || !held {
-			t.Fatalf("recovery status = %v, %v", held, err)
+		if status, err := h.jobsSvc.RecoveryStatus(ctx); err != nil || status != (RecoveryStatusDTO{Jobs: 1, Records: 1}) {
+			t.Fatalf("recovery status = %+v, %v", status, err)
 		}
 	}
 	if len(h.mock.RequestLog()) != oldRequests || len(other.RequestLog()) != newRequests {
@@ -269,19 +265,19 @@ func TestRecoveryReadFailureIsNotEmpty(t *testing.T) {
 	h := newHarness(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := StartupCrashSweep(ctx, h.transfer); !errors.Is(err, context.Canceled) {
+	if _, err := h.transfer.jobs.RecoveryStatus(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled recovery = %v", err)
 	}
-	if _, err := RecoverySweepStep(ctx, h.transfer); !errors.Is(err, context.Canceled) {
+	if _, err := h.jobsSvc.RecoveryStatus(ctx); err == nil {
 		t.Fatalf("cancelled recovery status = %v", err)
 	}
 	if err := h.db.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := StartupCrashSweep(context.Background(), h.transfer); err == nil {
+	if _, err := h.transfer.jobs.RecoveryStatus(context.Background()); err == nil {
 		t.Fatal("unavailable recovery database reported success")
 	}
-	if _, err := RecoverySweepStep(context.Background(), h.transfer); err == nil {
+	if _, err := h.jobsSvc.RecoveryStatus(context.Background()); err == nil {
 		t.Fatal("unavailable recovery database reported no retained records")
 	}
 	if _, err := h.transfer.jobs.FailInterrupted(context.Background()); err == nil {

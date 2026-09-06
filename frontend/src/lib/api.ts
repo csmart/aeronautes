@@ -26,6 +26,7 @@ import type {
   AuditEventDTO,
   BookmarkDTO,
   CredentialStatusDTO,
+  RecoveryStatusDTO,
   CapabilitiesDTO,
   ContainerCreateDTO,
   ContainerDetailDTO,
@@ -53,6 +54,7 @@ export type {
   AuditEventDTO,
   BookmarkDTO,
   CredentialStatusDTO,
+  RecoveryStatusDTO,
   CapabilitiesDTO,
   ContainerCreateDTO,
   ContainerDetailDTO,
@@ -158,6 +160,7 @@ export interface Api {
   cancelJob(jobId: string): Promise<void>;
   rerunJob(jobId: string): Promise<string>;
   jobs(bookmarkId: string, activeOnly: boolean, limit: number): Promise<JobDTO[]>;
+  recoveryStatus(): Promise<RecoveryStatusDTO>;
   pickUploadFiles(): Promise<PickedFilesDTO | null>;
   pickDownloadDir(): Promise<PickedDirDTO | null>;
   preflightUpload(req: UploadRequestDTO): Promise<UploadPreflight>;
@@ -225,6 +228,7 @@ export const liveApi: Api = {
   rerunJob: (jobId) => TransferService.RerunJob(jobId),
   jobs: async (bookmarkId, activeOnly, limit) =>
     (await JobService.List(bookmarkId, activeOnly, limit)) ?? [],
+  recoveryStatus: () => JobService.RecoveryStatus(),
   pickUploadFiles: () => TransferService.PickUploadFiles(),
   pickDownloadDir: () => TransferService.PickDownloadDir(),
   preflightUpload: async (req) => {

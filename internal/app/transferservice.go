@@ -565,13 +565,6 @@ func (s *TransferService) recoveryRecorder(ctx context.Context, jobID, bookmarkI
 	}
 }
 
-// sweepCrashLitter keeps the historical entry point conservative while
-// recovery has no authority to authenticate or reclaim data (ADR 0020).
-func (s *TransferService) sweepCrashLitter(ctx context.Context) (int, error) {
-	_, err := s.jobs.RecoveryPending(ctx)
-	return 0, err
-}
-
 func terminalAuditResult(state jobs.State) audit.Result {
 	switch state {
 	case jobs.StateComplete:
@@ -618,7 +611,8 @@ type JobDTO struct {
 	Counters         jobs.Counters `json:"counters"`
 	Error            string        `json:"error"`
 	// Settings is the §45 effective-configuration JSON ("" when none).
-	Settings string `json:"settings"`
+	Settings        string `json:"settings"`
+	RecoveryRecords int64  `json:"recoveryRecords"`
 }
 
 // JobService is the read-only §47 drawer surface.
@@ -629,6 +623,21 @@ type JobService struct {
 // NewJobService builds the service.
 func NewJobService(jobStore *jobs.Store) *JobService {
 	return &JobService{jobs: jobStore}
+}
+
+type RecoveryStatusDTO struct {
+	Jobs    int64 `json:"jobs"`
+	Records int64 `json:"records"`
+}
+
+// RecoveryStatus counts retained records across all terminal jobs, even
+// those outside the recent-job list. No remote residue is verified.
+func (s *JobService) RecoveryStatus(ctx context.Context) (RecoveryStatusDTO, error) {
+	status, err := s.jobs.RecoveryStatus(ctx)
+	if err != nil {
+		return RecoveryStatusDTO{}, errors.New("recovery status is unavailable")
+	}
+	return RecoveryStatusDTO{Jobs: status.Jobs, Records: status.Records}, nil
 }
 
 // List returns jobs newest first; bookmarkID "" means all, matching
@@ -669,7 +678,7 @@ func jobDTO(j jobs.Job) JobDTO {
 		CreatedAt: formatTime(j.CreatedAt), StartedAt: formatTime(j.StartedAt),
 		FinishedAt: formatTime(j.FinishedAt),
 		Engine:     j.Engine, Counters: j.Counters, Error: j.Error,
-		Settings: j.Settings,
+		Settings: j.Settings, RecoveryRecords: j.RecoveryRecords,
 	}
 }
 
@@ -772,17 +781,4 @@ func canonicalEndpoint(raw string) string {
 	host = strings.TrimSuffix(host, ":443")
 	host = strings.TrimSuffix(host, ":80")
 	return strings.ToLower(u.Scheme) + "://" + host + strings.TrimSuffix(u.Path, "/")
-}
-
-// recoverySweepStep preserves the old entry point without remote work.
-// Pending records indicate uncertainty, not authority to reclaim data.
-func (s *TransferService) recoverySweepStep(ctx context.Context) (hadWork bool, err error) {
-	pending, err := s.jobs.RecoveryPending(ctx)
-	if err != nil {
-		return false, err
-	}
-	if len(pending) == 0 {
-		return false, nil
-	}
-	return true, nil
 }

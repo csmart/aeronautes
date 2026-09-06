@@ -20,6 +20,7 @@ import type {
   AuditEventDTO,
   BookmarkDTO,
   CredentialStatusDTO,
+  RecoveryStatusDTO,
   CapabilitiesDTO,
   ContainerCreateDTO,
   ContainerDetailDTO,
@@ -82,6 +83,10 @@ export class BrowserState {
   /** Bookmark filter for the drawer; "" = all accounts (§47 owner input). */
   jobsFilter = $state("");
   jobsError: string | null = $state(null);
+  recoveryStatus = $state<RecoveryStatusDTO | null>(null);
+  recoveryStatusLoading = $state(false);
+  recoveryStatusError = $state(false);
+  #recoveryStatusSeq = 0;
 
   // Transfer dialog (§27.1 Copy / §27.2 Mirror preview).
   transferOpen = $state(false);
@@ -448,6 +453,27 @@ export class BrowserState {
   // ---- Mutations (§65.2 items 6/7): thin, state-refreshing wrappers
   // over MutateService. Outcome handling — conflict banners, overwrite
   // choices — belongs to the editors; state here only stays coherent.
+
+  async loadRecoveryStatus(): Promise<void> {
+    const seq = ++this.#recoveryStatusSeq;
+    this.recoveryStatusLoading = true;
+    try {
+      const status = await this.#api.recoveryStatus();
+      if (seq === this.#recoveryStatusSeq) {
+        this.recoveryStatus = status;
+        this.recoveryStatusError = false;
+      }
+    } catch {
+      if (seq === this.#recoveryStatusSeq) {
+        this.recoveryStatus = null;
+        this.recoveryStatusError = true;
+      }
+    } finally {
+      if (seq === this.#recoveryStatusSeq) {
+        this.recoveryStatusLoading = false;
+      }
+    }
+  }
 
   async loadJobs() {
     try {

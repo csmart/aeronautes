@@ -28,3 +28,11 @@ export function Get(jobID: string): $CancellablePromise<$models.JobDTO | null> {
 export function List(bookmarkID: string, activeOnly: boolean, limit: number): $CancellablePromise<$models.JobDTO[] | null> {
     return $Call.ByID(3601380106, bookmarkID, activeOnly, limit);
 }
+
+/**
+ * RecoveryStatus counts retained records across all terminal jobs, even
+ * those outside the recent-job list. No remote residue is verified.
+ */
+export function RecoveryStatus(): $CancellablePromise<$models.RecoveryStatusDTO> {
+    return $Call.ByID(2621259355);
+}

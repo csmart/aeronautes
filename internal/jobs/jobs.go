@@ -96,6 +96,8 @@ type Job struct {
 	// Settings is the §45 effective-configuration JSON recorded at
 	// creation ("" when the job carries none).
 	Settings string
+	// Counts evidence rows, not remote objects or confirmed residue.
+	RecoveryRecords int64
 }
 
 // Store persists jobs.
@@ -220,7 +222,8 @@ const selectJob = `
 		created_at, COALESCE(started_at,''), COALESCE(finished_at,''),
 		COALESCE(execution_engine,''), COALESCE(counters_json,'{}'),
 		COALESCE(error,''), COALESCE(source_bookmark_id,''), COALESCE(dest_bookmark_id,''),
-		COALESCE(settings_json,'')
+		COALESCE(settings_json,''),
+		(SELECT COUNT(*) FROM job_recovery r WHERE r.job_id=jobs.id)
 	FROM jobs`
 
 // Get returns one job.
@@ -281,7 +284,7 @@ func scanJob(scan func(...any) error) (Job, error) {
 	var typ, state, created, started, finished, counters string
 	err := scan(&j.ID, &typ, &state, &j.Source, &j.Destination,
 		&created, &started, &finished, &j.Engine, &counters,
-		&j.Error, &j.SourceBookmarkID, &j.DestBookmarkID, &j.Settings)
+		&j.Error, &j.SourceBookmarkID, &j.DestBookmarkID, &j.Settings, &j.RecoveryRecords)
 	if err != nil {
 		return Job{}, err
 	}
@@ -386,6 +389,25 @@ func (s *Store) RecoveryAdd(ctx context.Context, r RecoveryRecord) error {
 			r.JobID, r.BookmarkID, string(r.Kind), r.Container, r.Prefix, r.Object)
 		return err
 	})
+}
+
+type RecoveryStatus struct {
+	Jobs    int64
+	Records int64
+}
+
+// RecoveryStatus aggregates all terminal history without materialising
+// the retained rows or limiting the count to the recent-job window.
+func (s *Store) RecoveryStatus(ctx context.Context) (RecoveryStatus, error) {
+	var status RecoveryStatus
+	err := s.db.Reader().QueryRowContext(ctx, `
+		SELECT COUNT(DISTINCT r.job_id), COUNT(*)
+		FROM job_recovery r JOIN jobs j ON j.id=r.job_id
+		WHERE j.state IN ('complete','partial','cancelled','failed')`).Scan(&status.Jobs, &status.Records)
+	if err != nil {
+		return RecoveryStatus{}, err
+	}
+	return status, nil
 }
 
 // RecoveryPending lists records whose job is TERMINAL — a live run

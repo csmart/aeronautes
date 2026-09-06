@@ -69,6 +69,7 @@ export type {
     PickedDirDTO,
     PickedFilesDTO,
     PrefixDetailDTO,
+    RecoveryStatusDTO,
     SLOManifestDTO,
     SLOSegmentDTO,
     SegmentOwnershipDTO,
