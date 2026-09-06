@@ -481,26 +481,15 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 	countersMu.Unlock()
 	flush(true)
 
-	// §28.6(b): the segment prefixes this job's commits now reference
-	// are recorded as exclusive-ownership proofs on the DESTINATION
-	// bookmark — the basis for any future segment cleanup.
+	// These records preserve creation provenance, not deletion authority.
 	s.recordOwnership(background, req.DestBookmarkID, jobID, report.CommittedPrefixes)
 
-	// Reconciliation runs on EVERY exit path (§26.4: after graceful
-	// cancellation too, never only after hard interruption). A clean
-	// reconciliation clears the crash-recovery records.
+	// A completed transfer cannot prove uncertain residue absent.
+	// Keep its recovery facts even when reconciliation reports no error.
 	if reconcile, err := executor.Reconcile(background, report); err != nil {
 		log.Printf("job %s reconcile: %v", jobID, err)
 	} else {
-		if reconcile.SweptStaged > 0 || reconcile.SweptSegments > 0 {
-			log.Printf("job %s reconcile: swept %d staged, %d segments", jobID, reconcile.SweptStaged, reconcile.SweptSegments)
-		}
-		if len(reconcile.Notes) == 0 {
-			// Records clear ONLY after a note-free sweep: anything the
-			// sweep could not resolve keeps its facts for the next
-			// startup pass instead of being tidied into oblivion.
-			_ = s.jobs.RecoveryClear(background, jobID)
-		} else {
+		if len(reconcile.Notes) != 0 {
 			log.Printf("job %s reconcile kept records: %s", jobID, strings.Join(reconcile.Notes, "; "))
 		}
 	}
@@ -576,77 +565,11 @@ func (s *TransferService) recoveryRecorder(ctx context.Context, jobID, bookmarkI
 	}
 }
 
-// sweepCrashLitter replays reconciliation for jobs that died before
-// their own could run (§65.8 item 2): every persisted staging prefix
-// and captured-minus-committed segment prefix of a TERMINAL job, under
-// the same live-manifest guard. Bookmarks that cannot authenticate
-// right now are skipped and retried later; records clear only after a
-// clean sweep.
-func (s *TransferService) sweepCrashLitter(ctx context.Context) (swept int, err error) {
-	pending, err := s.jobs.RecoveryPending(ctx)
-	if err != nil {
-		return 0, err
-	}
-	type group struct {
-		bookmarkID, dstContainer, stagingPrefix string
-		captured, committed                     []rclone.SegmentPrefix
-		committing                              map[rclone.SegmentPrefix]string
-	}
-	groups := map[string]*group{}
-	order := []string{}
-	for _, r := range pending {
-		g, ok := groups[r.JobID]
-		if !ok {
-			g = &group{bookmarkID: r.BookmarkID}
-			groups[r.JobID] = g
-			order = append(order, r.JobID)
-		}
-		switch r.Kind {
-		case jobs.RecoveryStaging:
-			g.dstContainer, g.stagingPrefix = r.Container, r.Prefix
-		case jobs.RecoveryCaptured:
-			g.captured = append(g.captured, rclone.SegmentPrefix{Container: r.Container, Prefix: r.Prefix}.Canonical())
-		case jobs.RecoveryCommitting:
-			if g.committing == nil {
-				g.committing = map[rclone.SegmentPrefix]string{}
-			}
-			g.committing[rclone.SegmentPrefix{Container: r.Container, Prefix: r.Prefix}.Canonical()] = r.Object
-		case jobs.RecoveryCommitted:
-			g.committed = append(g.committed, rclone.SegmentPrefix{Container: r.Container, Prefix: r.Prefix})
-		}
-	}
-	for _, jobID := range order {
-		g := groups[jobID]
-		session, sessionErr := s.connections.SessionFor(ctx, g.bookmarkID)
-		if sessionErr != nil {
-			log.Printf("crash sweep: job %s bookmark unavailable (%v); will retry", jobID, sessionErr)
-			continue
-		}
-		dstContainer := g.dstContainer
-		if dstContainer == "" && len(g.captured) > 0 {
-			// Upload jobs have no staging row; the engine's sidecar
-			// convention recovers the destination container.
-			dstContainer = strings.TrimSuffix(g.captured[0].Container, "_segments")
-		}
-		report, sweepErr := transfercopy.SweepLitter(ctx, session, transfercopy.SweepInput{
-			DstContainer: dstContainer, StagingPrefix: g.stagingPrefix,
-			Captured: g.captured, Committed: g.committed, Committing: g.committing,
-		})
-		if sweepErr != nil {
-			log.Printf("crash sweep: job %s: %v", jobID, sweepErr)
-			continue
-		}
-		swept += report.SweptStaged + report.SweptSegments
-		s.record(ctx, g.bookmarkID, "transfer.crash-sweep", "job "+jobID,
-			fmt.Sprintf("swept %d staged + %d segments; kept %d referenced prefixes; %d notes",
-				report.SweptStaged, report.SweptSegments, len(report.KeptPrefixes), len(report.Notes)), audit.ResultApplied)
-		if len(report.Notes) == 0 {
-			_ = s.jobs.RecoveryClear(ctx, jobID)
-		} else {
-			log.Printf("crash sweep: job %s kept records: %s", jobID, strings.Join(report.Notes, "; "))
-		}
-	}
-	return swept, nil
+// sweepCrashLitter keeps the historical entry point conservative while
+// recovery has no authority to authenticate or reclaim data (ADR 0020).
+func (s *TransferService) sweepCrashLitter(ctx context.Context) (int, error) {
+	_, err := s.jobs.RecoveryPending(ctx)
+	return 0, err
 }
 
 func terminalAuditResult(state jobs.State) audit.Result {
@@ -660,8 +583,8 @@ func terminalAuditResult(state jobs.State) audit.Result {
 	}
 }
 
-// CancelJob requests graceful cancellation (§26.4: the engine child gets
-// SIGINT and cleans up; reconciliation then sweeps).
+// CancelJob requests graceful cancellation. Child cleanup remains
+// best-effort, so subsequent reconciliation retains uncertain residue.
 func (s *TransferService) CancelJob(ctx context.Context, jobID string) error {
 	cancel, ok := s.runner.cancel(jobID)
 	if !ok {
@@ -851,13 +774,8 @@ func canonicalEndpoint(raw string) string {
 	return strings.ToLower(u.Scheme) + "://" + host + strings.TrimSuffix(u.Path, "/")
 }
 
-// recoverySweepStep is ONE supervised pass of the startup crash
-// sweeper, returning whether litter remained to act on. main.go runs
-// it forever (backing off when quiet) rather than a bounded attempt
-// count — a job can crash later in the same process (review F-11 /
-// grok follow-up 3). Unexported so it stays OFF the Wails bridge
-// (review R-13); main.go reaches it through RecoverySweepStep in
-// wiring.go, tests through the method directly.
+// recoverySweepStep preserves the old entry point without remote work.
+// Pending records indicate uncertainty, not authority to reclaim data.
 func (s *TransferService) recoverySweepStep(ctx context.Context) (hadWork bool, err error) {
 	pending, err := s.jobs.RecoveryPending(ctx)
 	if err != nil {
@@ -865,9 +783,6 @@ func (s *TransferService) recoverySweepStep(ctx context.Context) (hadWork bool, 
 	}
 	if len(pending) == 0 {
 		return false, nil
-	}
-	if _, err := s.sweepCrashLitter(ctx); err != nil {
-		return true, err
 	}
 	return true, nil
 }

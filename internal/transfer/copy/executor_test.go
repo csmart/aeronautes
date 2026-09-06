@@ -482,7 +482,7 @@ func TestVerifyCatchesSabotage(t *testing.T) {
 	}
 }
 
-func TestReconcileSweepsOnlyOwnedOrphans(t *testing.T) {
+func TestReconcileRetainsUncertainData(t *testing.T) {
 	w := newWorld(t)
 	ctx := context.Background()
 	executor := newExecutor(t, w, nil)
@@ -493,7 +493,7 @@ func TestReconcileSweepsOnlyOwnedOrphans(t *testing.T) {
 	w.dstMock.PutObject("backup_segments", completedPrefix+"00000000", swifttest.Object{Bytes: 4, ETag: "aaaa", Data: []byte("data")})
 	w.dstMock.PutObject("backup", "video.bin", swifttest.Object{Manifest: "backup_segments/" + completedPrefix})
 
-	// An interrupted upload: segments, no manifest anywhere.
+	// Missing local references cannot establish deletion authority.
 	orphanPrefix := "big.bin/2026-08-29-0000000000000000000002/"
 	for i := 0; i < 3; i++ {
 		w.dstMock.PutObject("backup_segments", fmt.Sprintf("%s%08d", orphanPrefix, i), swifttest.Object{Bytes: 4, ETag: "bbbb", Data: []byte("data")})
@@ -514,19 +514,21 @@ func TestReconcileSweepsOnlyOwnedOrphans(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out.SweptStaged != 1 || out.SweptSegments != 3 {
+	if out.SweptStaged != 0 || out.SweptSegments != 0 || len(out.Notes) == 0 {
 		t.Fatalf("reconcile = %+v", out)
 	}
 	// The completed object's segments survived (its prefix was kept).
 	if headDst(t, w, "video.bin").ContentLength != 4 {
 		t.Error("completed DLO broken by reconciliation")
 	}
-	if len(out.KeptPrefixes) != 1 || !strings.Contains(out.KeptPrefixes[0], completedPrefix) {
+	if len(out.KeptPrefixes) != 2 || !strings.Contains(out.KeptPrefixes[0], completedPrefix) {
 		t.Errorf("kept = %v", out.KeptPrefixes)
 	}
-	// Orphan segments gone.
-	if _, err := w.dst.ObjectDetail(ctx, "backup_segments", orphanPrefix+"00000000"); !swiftcontrol.IsNotFound(err) {
-		t.Error("orphan segment survived the sweep")
+	if _, err := w.dst.ObjectDetail(ctx, "backup_segments", orphanPrefix+"00000000"); err != nil {
+		t.Errorf("uncertain segment was not retained: %v", err)
+	}
+	if _, err := w.dst.ObjectDetail(ctx, "backup", staged); err != nil {
+		t.Errorf("uncertain staging object was not retained: %v", err)
 	}
 }
 

@@ -256,11 +256,9 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 			report, err := local.Upload(innerCtx, session, engine, "aeronautes_dst:"+req.Container, req.Container, req.Prefix, job.ID,
 				preflight, onProgress, s.recoveryRecorder(background, job.ID, req.BookmarkID))
 			if report != nil && err == nil && len(report.Failures) == 0 {
-				// Every upload verified: the captured segment prefixes
-				// are job-written and now referenced — record ownership
-				// and release the recovery rows.
+				// Verification does not prove cleanup completed or exclude
+				// outside references, so recovery records stay (ADR 0020).
 				s.recordOwnership(background, req.BookmarkID, job.ID, report.CapturedPrefixes)
-				_ = s.jobs.RecoveryClear(background, job.ID)
 			}
 			return report, err
 		})

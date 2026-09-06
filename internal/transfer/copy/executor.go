@@ -5,9 +5,8 @@
 // most make rclone Update it, which bulk-deletes the old manifest's
 // segments; staging makes that unreachable). Verification is Aeronautes' own (listing-diff plus
 // per-object HEADs, §28.4); engine exit codes are never trusted for
-// completeness. Reconciliation sweeps only names and segment prefixes
-// this job itself created: the phase invariant is zero destruction
-// paths.
+// completeness. Post-job reconciliation retains uncertain data and
+// records because creation provenance cannot exclude outside references.
 package copy
 
 import (
@@ -111,7 +110,7 @@ type Report struct {
 	CapturedPrefixes  []rclone.SegmentPrefix
 	CommittedPrefixes []rclone.SegmentPrefix
 	// StagedResidue lists staging names known to exist if execution was
-	// interrupted before cleanup; Reconcile sweeps them.
+	// interrupted before cleanup; recovery retains them.
 	StagedResidue []string
 	// OldManifests records overwritten destinations' previous DLO
 	// manifest values ("container/prefix") — never reclaimed in v1
@@ -774,7 +773,7 @@ func (e *Executor) markCommitted(manifest string) {
 
 func (e *Executor) cleanStaged(ctx context.Context, stagedName string) {
 	if err := e.cfg.Dest.DeleteObject(ctx, e.cfg.DstContainer, stagedName); err != nil && !swiftcontrol.IsNotFound(err) {
-		return // Reconcile retries via StagedResidue.
+		return // Keep the unresolved name for recovery; do not retry deletion.
 	}
 	for i, name := range e.report.StagedResidue {
 		if name == stagedName {

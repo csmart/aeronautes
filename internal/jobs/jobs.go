@@ -317,15 +317,15 @@ func nullable(s string) *string {
 // crash-recovery sweep (§65.6): a process that died mid-job must never
 // leave the drawer showing phantom running work. This is a deliberate
 // bulk bypass of the per-job transition rules: the legal paths assume a
-// live executor, and after a crash there is none. Staged litter is
-// swept by the next job's reconciliation; the message says so.
+// live executor, and after a crash there is none. Recovery records stay
+// because interruption establishes no authority to reclaim remote data.
 func (s *Store) FailInterrupted(ctx context.Context) (int64, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	var count int64
 	err := s.db.WriteTx(ctx, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx, `
 			UPDATE jobs SET state=?, finished_at=?,
-				error='interrupted by shutdown; any staged transfer litter is swept by reconciliation on the next run'
+			error='interrupted by shutdown; data and recovery records retained, remote residue unverified'
 			WHERE state NOT IN ('complete','partial','cancelled','failed')`,
 			string(StateFailed), now)
 		if err != nil {
@@ -353,7 +353,7 @@ const (
 	RecoveryCommitted RecoveryKind = "committed"
 )
 
-// RecoveryRecord is one persisted sweepable fact.
+// RecoveryRecord preserves intent or observed provenance, not deletion authority.
 type RecoveryRecord struct {
 	JobID      string
 	BookmarkID string
@@ -364,8 +364,7 @@ type RecoveryRecord struct {
 	Object string
 }
 
-// RecoveryAdd persists one record; duplicates are fine (the sweep
-// dedupes) but avoided cheaply.
+// RecoveryAdd avoids duplicate facts without discarding earlier evidence.
 func (s *Store) RecoveryAdd(ctx context.Context, r RecoveryRecord) error {
 	if r.JobID == "" || r.BookmarkID == "" || r.Container == "" || r.Prefix == "" {
 		return fmt.Errorf("recovery record needs job, bookmark, container, and prefix")
@@ -389,18 +388,9 @@ func (s *Store) RecoveryAdd(ctx context.Context, r RecoveryRecord) error {
 	})
 }
 
-// RecoveryClear removes a job's records — called when the job's OWN
-// reconciliation ran to completion (nothing left to recover).
-func (s *Store) RecoveryClear(ctx context.Context, jobID string) error {
-	return s.db.WriteTx(ctx, func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, `DELETE FROM job_recovery WHERE job_id=?`, jobID)
-		return err
-	})
-}
-
 // RecoveryPending lists records whose job is TERMINAL — a live run
-// still owns its records; a terminal job with records crashed before
-// its reconciliation could finish.
+// still owns its records. Even a completed job retains records because
+// transfer success does not establish safe reclamation (ADR 0020).
 func (s *Store) RecoveryPending(ctx context.Context) ([]RecoveryRecord, error) {
 	rows, err := s.db.Reader().QueryContext(ctx, `
 		SELECT r.job_id, r.bookmark_id, r.kind, r.container, r.prefix, r.object
@@ -426,8 +416,8 @@ func (s *Store) RecoveryPending(ctx context.Context) ([]RecoveryRecord, error) {
 
 // PruneTerminal deletes terminal jobs finished before the cutoff —
 // §51's retention, never touching non-terminal rows and never a job
-// that still holds crash-recovery records (those carry sweep facts the
-// startup reconciler needs). Returns how many jobs were pruned.
+// that still holds recovery records (uncertainty must retain its evidence).
+// Returns how many jobs were pruned.
 func (s *Store) PruneTerminal(ctx context.Context, before time.Time) (int64, error) {
 	cutoff := before.UTC().Format(time.RFC3339)
 	var pruned int64

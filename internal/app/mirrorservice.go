@@ -211,11 +211,10 @@ func (s *TransferService) runMirror(ctx context.Context, jobID string, req Mirro
 	countersMu.Unlock()
 	flush()
 
-	if reconcile, err := executor.Reconcile(background, report); err == nil && len(reconcile.Notes) == 0 {
-		// Records clear ONLY after a note-free sweep — same rule as Copy.
-		_ = s.jobs.RecoveryClear(background, jobID)
-	} else if err == nil {
+	if reconcile, err := executor.Reconcile(background, report); err == nil {
 		log.Printf("job %s reconcile kept records: %s", jobID, strings.Join(reconcile.Notes, "; "))
+	} else {
+		log.Printf("job %s reconcile: %v", jobID, err)
 	}
 	s.recordOwnership(background, req.DestBookmarkID, jobID, report.CommittedPrefixes)
 

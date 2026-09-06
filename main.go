@@ -10,7 +10,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/adrg/xdg"
 	"github.com/csmart/aeronautes/internal/app"
@@ -71,36 +70,6 @@ func main() {
 	jobRunner := app.NewJobRunner(jobStore, auditStore)
 	transferService := app.NewTransferServiceWithRunner(connections, jobStore, jobRunner)
 	app.WireEvidenceStore(transferService, evidenceStore)
-	// Crash litter from previous runs: sweep in the background, retrying
-	// while bookmarks come online (keychain credentials permit an
-	// immediate pass; session-only secrets succeed after connect).
-	go func() {
-		// Supervised for the process LIFETIME: neither a transient store
-		// error nor a momentarily-empty pending set retires the sweeper,
-		// because a job can crash later in this same run (review F-11 /
-		// grok follow-up 3 RECOVERY-EMPTY). It backs off once things are
-		// quiet but never returns except on process exit.
-		idle := 0
-		for {
-			hadWork, err := app.RecoverySweepStep(context.Background(), transferService)
-			switch {
-			case err != nil:
-				log.Printf("crash sweep: %v", err)
-				idle = 0
-			case hadWork:
-				idle = 0
-			default:
-				idle++
-			}
-			// Tight cadence while litter remains or bookmarks are still
-			// coming online; relaxed once quiet — but always checking.
-			if idle > 3 {
-				time.Sleep(15 * time.Minute)
-			} else {
-				time.Sleep(1 * time.Minute)
-			}
-		}
-	}()
 	app.WireFilePicker(transferService, wailsPicker{})
 	settingsService := app.NewSettingsService(database, jobRunner)
 	app.RunStartupRetention(context.Background(), settingsService, jobStore, auditStore)

@@ -4371,7 +4371,7 @@ The implementation now includes the bounded handler wrapper, the converted condi
 The [validation record](experiments/2026-09-06-http-response-barriers.md) records 465 passing top-level race tests with no skips, thirteen safeguard-removal controls and the unsupported Expect/100-Continue boundary.
 This is the first P03 seam; the wider fault matrix and P01/P04/P05 recovery and destructive-race containment remain open.
 
-The next P01/P04 design slice is [ADR 0020](adr/0020-recovery-containment.md), proposed for independent review before implementation.
+The P01/P04 containment contract is the independently reviewed [ADR 0020](adr/0020-recovery-containment.md).
 It replaces generated-prefix exclusivity with authority that excludes other references and relevant concurrent writers through deletion.
 Because the current workflow has no such proof, suspend automatic historical and post-job recovery deletion, including local upload's final staging-prefix sweep, retain all recovery rows across Copy, Mirror and upload, and remove the background remote sweep.
 Expose retained-record counts through local read-only job status, including a summary independent of the recent-job limit; unavailable reads remain unknown.
@@ -4379,7 +4379,10 @@ Completed jobs may retain records for unverified residue without changing the tr
 Verify outside DLO/SLO aliases, staging aliases, malformed and missing history, changed bookmark bindings, database failures and a separate process reopening the state database.
 Normal transfer-time cleanup remains P12/P15/P21 work.
 The separate P05 implementation must refuse unsupported overwrites and Mirror starts before their irreversible work, preserving conditional planned-new Copy.
-Review each logical implementation and require catching system evidence, all five PR checks and green master; this design commit does not claim those fixes are delivered.
+Review each logical implementation and require catching system evidence, all five PR checks and green master before delivery.
+The first backend slice now removes recovery deletion, automatic authentication, record clearing and the background sweep, while preserving interrupted-job classification and reporting retention in its error text.
+The [validation record](experiments/2026-09-06-recovery-retention.md) includes unchanged audit probes, independent mock and real-Swift aliases, service-level upload and bookmark-change checks, a separate process reopening SQLite and deliberately restored unsafe behaviour.
+Read-only global and per-job status with accurate UI wording remains the next separately reviewed slice; P04 is not complete until that visibility and protected delivery pass.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.

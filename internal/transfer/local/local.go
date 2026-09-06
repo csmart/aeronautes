@@ -414,17 +414,8 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 			progress()
 		}
 	}
-	// Staging litter: whatever did not commit cleanly is swept
-	// best-effort; leftovers stay for the startup sweep via the
-	// recovery rows.
-	for entry, listErr := range dst.Objects(ctx, container, swiftcontrol.ObjectListOptions{Deep: true, Prefix: stagePrefix}) {
-		if listErr != nil {
-			break
-		}
-		if object, ok := entry.(swiftcontrol.ObjectEntry); ok {
-			_ = dst.DeleteObject(ctx, container, object.Name)
-		}
-	}
+	// Outside manifests can refer to leftover staging objects. A prefix
+	// created by this upload cannot authorise reclamation (ADR 0020).
 	return report, nil
 }
 
