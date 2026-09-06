@@ -32,7 +32,8 @@ commit, phase by phase, following the design.
   temp name; Aeronautes commits natively — a DLO-manifest PUT for large objects, a server-side COPY
   for plain ones). (§28.6)
   Stage-and-commit alone does not protect a concurrent replacement.
-  ADR 0020 requires P05 to refuse unsupported overwrite and Mirror work; this is a containment requirement, not completed implementation.
+  Mirror starts are refused under ADR 0020.
+  P05's unsupported overwrite refusal remains pending its separate implementation.
 - **Listings are advisory (eventually consistent); HEAD is authoritative.** Verify with bounded
   retries; namespace comparison is a streaming merge-join over the sorted listings. (§15.2, §15.3, K-CON-001)
 - **Secrets never reach the frontend or SQLite**; rclone gets an invocation-local gateway token through named-remote env config, never the durable key or real Swift token, and never through argv. (§55, §26.2, ADR 0014, K-SEC-*)
@@ -94,6 +95,7 @@ the reference/first-polish platform. App id: `io.csmart.aeronautes`.
   §65.10 behavioral harness lands, no merge without a regression test (unit/SAIO); once it
   exists, every behavior-changing feature adds a system-matrix row and test, and every bug fix
   carries the system-level reproduction that failed before it. No system test, no merge.
+  The preceding dated capability list is historical: Mirror now supports comparison preview only and refuses every start until P14 establishes the required concurrency boundary.
 - **CI is live** (`.github/workflows/ci.yml`): Go, frontend, containerized-Swift integration, headless smoke and their aggregate gate are required checks on master through PRs.
   The six-target release matrix builds unsigned artifacts on dispatch/tag (§61.0).
 - **Highest-value early task: the disposable Phase-0 rclone-seam experiment** (§60) — it runs in

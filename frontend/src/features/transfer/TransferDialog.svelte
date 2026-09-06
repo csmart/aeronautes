@@ -1,10 +1,5 @@
-<!-- Copy / Mirror dialog (§27.1, §27.2). Both modes share the
-  /preview with its honest conservative counts and
-  disclosures. Copy starts from a preview; Mirror (destructive) shows
-  the full plan — copy set AND would-delete set — and arms only when
-  the destination container name is typed back. The delete
-  half is native, manifest-only, and only runs after the copy half
-  verifies. -->
+<!-- Mirror keeps its comparison preview while ADR 0020 prevents an
+  execution that cannot protect concurrent changes. -->
 <script lang="ts">
   import { trapFocus } from "../../lib/trapFocus";
   import type { BrowserState } from "../browser/browserState.svelte";
@@ -31,8 +26,6 @@
   let starting = $state(false);
   let error: string | null = $state(null);
   let startedJobId: string | null = $state(null);
-  // Mirror arming (§28.2): type the destination container name.
-  let mirrorConfirm = $state("");
 
   function request(): CopyRequestDTO {
     return {
@@ -75,13 +68,11 @@
   }
 
   async function start() {
+    if (mode !== "copy") return;
     starting = true;
     error = null;
     try {
-      startedJobId =
-        mode === "mirror"
-          ? await browser.startMirror({ ...request(), confirm: mirrorConfirm })
-          : await browser.startCopy(request());
+      startedJobId = await browser.startCopy(request());
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
@@ -109,6 +100,13 @@
       </div>
       <button class="close" onclick={onClose} aria-label="Close">✕</button>
     </header>
+
+    {#if mode === "mirror"}
+      <p class="warn" role="status">
+        Mirror is unavailable while concurrent changes cannot be protected.
+        Preview compares the two scopes; it does not start a transfer or delete objects.
+      </p>
+    {/if}
 
     <div class="scope num">
       <div class="side">
@@ -188,66 +186,52 @@
           <span class="count"><strong>{s.new}</strong> new</span>
           <span class="count"><strong>{s.changed}</strong> changed</span>
           <span class="count"><strong>{s.same}</strong> unchanged</span>
-          <span class="count conservative" title="Equality unprovable from listings: transferred conservatively, resolved per object">
+          <span class="count conservative" title="Equality is not established by listings">
             <strong>{s.unknown}</strong> unable to prove unchanged
           </span>
-          <span class="count"><strong>{formatBytes(s.transferBytes)}</strong> to transfer</span>
+          <span class="count"><strong>{formatBytes(s.transferBytes)}</strong> {mode === "copy" ? "to transfer" : "in comparison"}</span>
         </div>
-        <div class="notes">
-          {#if s.overwrites > 0}
-            <p>
-              {s.overwrites} existing destination object{s.overwrites === 1 ? "" : "s"} will be
-              overwritten via stage-and-commit.
+        {#if mode === "copy"}
+          <div class="notes">
+            {#if s.overwrites > 0}
+              <p>
+                {s.overwrites} existing destination object{s.overwrites === 1 ? "" : "s"} will be
+                overwritten via stage-and-commit.
+              </p>
+            {/if}
+            {#if s.nativeRouted > 0}
+              <p>
+                {s.nativeRouted} name{s.nativeRouted === 1 ? "" : "s"} the engine cannot carry
+                safely will go through the native path.
+              </p>
+            {/if}
+            {#if preview.largeObjectsAsDlo}
+              <p>
+                Large objects commit as destination DLOs: their reads depend on container-listing
+                consistency.
+              </p>
+            {/if}
+            {#if preview.versionedDestination}
+              <p class="warn">
+                The destination container is versioned: every overwrite archives a version — this
+                copy will accumulate versions by design.
+              </p>
+            {/if}
+            <p class="data-path">
+              {preview.dataPath}{preview.overwriteBytes > 0
+                ? ` · ${formatBytes(preview.overwriteBytes)} of the plan overwrites existing objects`
+                : ""}
             </p>
-          {/if}
-          {#if s.nativeRouted > 0}
-            <p>
-              {s.nativeRouted} name{s.nativeRouted === 1 ? "" : "s"} the engine cannot carry
-              safely will go through the native path.
-            </p>
-          {/if}
-          {#if preview.largeObjectsAsDlo}
-            <p>
-              Large objects commit as destination DLOs: their reads depend on container-listing
-              consistency.
-            </p>
-          {/if}
-          {#if preview.versionedDestination}
-            <p class="warn">
-              The destination container is versioned: every overwrite archives a version — this
-              copy will accumulate versions by design.
-            </p>
-          {/if}
-          <p class="data-path">
-            {preview.dataPath}{preview.overwriteBytes > 0
-              ? ` · ${formatBytes(preview.overwriteBytes)} of the plan overwrites existing objects`
-              : ""}
-          </p>
-        </div>
+          </div>
+        {/if}
 
         {#if mode === "mirror"}
           <div class="mirror num">
-            <h3>Would delete at the destination</h3>
+            <h3>Only at the destination</h3>
             <p class="would-delete">
               <strong>{s.destOnly}</strong> destination-only object{s.destOnly === 1 ? "" : "s"}
               · {formatBytes(s.destOnlyBytes)}
             </p>
-            <p class="warn">
-              The mirror removes these only after the copy half fully verifies. Deletion is
-              Aeronautes-native and manifest-only — segments are never followed — and an
-              unprovable equality is transferred, never deleted.
-            </p>
-            <label class="mirror-confirm">
-              <span>
-                Type the destination container
-                <span class="type-mono">{destContainer.trim()}</span> to arm the mirror:
-              </span>
-              <input
-                class="type-mono"
-                bind:value={mirrorConfirm}
-                placeholder={destContainer.trim()}
-              />
-            </label>
           </div>
         {/if}
       </div>
@@ -266,13 +250,7 @@
             {starting ? "Starting…" : "Start copy"}
           </button>
         {:else}
-          <button
-            class="primary mirror-start"
-            onclick={start}
-            disabled={!preview || starting || mirrorConfirm !== destContainer.trim() || destContainer.trim() === ""}
-          >
-            {starting ? "Starting…" : "Start mirror"}
-          </button>
+          <button disabled>Mirror unavailable</button>
         {/if}
       {/if}
     </footer>
@@ -474,29 +452,6 @@
   .would-delete {
     margin: 0 0 var(--space-1);
     font-size: var(--text-sm);
-  }
-
-  .mirror-confirm {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    font-size: var(--text-xs);
-    margin-top: var(--space-2);
-  }
-
-  .mirror-confirm input {
-    font: inherit;
-    font-size: var(--text-sm);
-    background: var(--color-bg-card);
-    color: var(--color-text);
-    border: 1px solid var(--color-danger);
-    border-radius: var(--radius-control);
-    padding: 2px var(--space-2);
-  }
-
-  footer .mirror-start {
-    background: var(--color-danger);
-    border-color: var(--color-danger);
   }
 
   footer {

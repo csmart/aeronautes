@@ -77,9 +77,9 @@ gates can reference stable IDs instead of re-reading ~11k words of prose.
 
 ## Mirror & comparison
 
-- **K-MIRROR-001** — Mirror MUST be executed as an Aeronautes-planned copy (rclone `copy` of the
-  forced selected set) plus Aeronautes-native destination-only deletion; rclone `sync` MUST NOT be
-  used, on any scope. (§27.2, §28.4)
+- **K-MIRROR-001** — Mirror MUST currently refuse the whole start before transfer or deletion (ADR 0020).
+  P14 must establish and test the external-writer boundary before execution is re-enabled.
+  Any eventual implementation MUST use an Aeronautes-planned copy (rclone `copy` of the forced selected set) plus Aeronautes-native destination-only deletion; rclone `sync` MUST NOT be used on any scope. (§27.2, §28.4)
 - **K-MIRROR-002** — Aeronautes MUST NOT delete a destination object on `Unknown` large-object equality.
   Different manifests do not prove different content. (§28.4)
 - **K-MIRROR-003** — Destructive Mirror semantics MUST be a first-class, clearly-labelled mode, never a
@@ -145,10 +145,8 @@ gates can reference stable IDs instead of re-reading ~11k words of prose.
 
 ## Testing
 
-- **K-TEST-001** — The object-name encoding suite MUST *pass* end-to-end through both the native client
-  and the rclone transfer path (forced-copy and Mirror-planned paths included), with a native
-  byte-preserving fallback for names rclone cannot preserve; names MUST NEVER be silently skipped or
-  normalized. (§14.3)
+- **K-TEST-001** — The object-name encoding suite MUST *pass* end-to-end through both the native client and the rclone forced-copy path, with a native byte-preserving fallback for names rclone cannot preserve; names MUST NEVER be silently skipped or normalized. (§14.3)
+  Mirror currently requires zero-effect refusal tests; its planned execution paths must pass the same encoding suite before P14 re-enables them.
 
 ## Phase gates → requirement IDs
 
@@ -165,7 +163,7 @@ Phase 0 does not implement.
 | Phase 3 — mutation | K-META-001..003, K-SEC-006 (audit redaction) |
 | Phase 4 — large-object read | K-SEG-001, K-SEG-002 (read-only inspect/classify) |
 | Phase 5 — transfers + Copy | K-SEC-001, K-SEC-007, K-SEC-008, K-XFER-001..015, K-CON-001, K-TEST-001 (copy paths), K-PLAT-004 |
-| Phase 6 — destructive + performance | K-MIRROR-001..003 (004 retired), K-DEL-001..003, K-SEG-003, K-SEG-004, K-PERF-003, K-TEST-001 (Mirror-planned path re-verified) |
+| Phase 6 — destructive + performance | K-MIRROR-001..003 (004 retired), K-DEL-001..003, K-SEG-003, K-SEG-004, K-PERF-003, K-TEST-001 (Mirror refusal now; planned execution paths gated before P14 re-enablement) |
 | Phase 7 — hardening | K-PLAT-003 (full six-target build/run/sign), a11y / virtualisation per §60 |
 
 The prose gates in `DESIGN.md` §60 should reference the IDs in this table rather than duplicate them.

@@ -24,7 +24,7 @@ func generationJobStart(t *testing.T, h *harness, kind, source string) (func() (
 	ids := []string{source}
 	var start func() (string, error)
 	switch kind {
-	case "copy", "mirror":
+	case "copy":
 		destination, mock := secondCluster(t, h)
 		mock.AddContainer("backup", "standard")
 		ids = append(ids, destination)
@@ -32,13 +32,7 @@ func generationJobStart(t *testing.T, h *harness, kind, source string) (func() (
 			SourceBookmarkID: source, SourceContainer: "media", SourcePrefix: "scope/",
 			DestBookmarkID: destination, DestContainer: "backup", DestPrefix: "scope/",
 		}
-		if kind == "copy" {
-			start = func() (string, error) { return h.transfer.StartCopy(t.Context(), request) }
-		} else {
-			start = func() (string, error) {
-				return h.transfer.StartMirror(t.Context(), MirrorRequestDTO{CopyRequestDTO: request, Confirm: "backup"})
-			}
-		}
+		start = func() (string, error) { return h.transfer.StartCopy(t.Context(), request) }
 	case "upload":
 		file := filepath.Join(t.TempDir(), "upload.txt")
 		if err := os.WriteFile(file, []byte("upload"), 0o600); err != nil {
@@ -84,7 +78,7 @@ func generationJobStart(t *testing.T, h *harness, kind, source string) (func() (
 }
 
 func TestQueuedJobsKeepCredentialGenerations(t *testing.T) {
-	for _, kind := range []string{"copy", "mirror", "upload", "download", "delete", "benchmark"} {
+	for _, kind := range []string{"copy", "upload", "download", "delete", "benchmark"} {
 		t.Run(kind, func(t *testing.T) {
 			h := newHarness(t)
 			h.connect(t)
@@ -141,7 +135,7 @@ func TestQueuedJobsKeepCredentialGenerations(t *testing.T) {
 }
 
 func TestFailedJobCreationReleasesGenerations(t *testing.T) {
-	for _, kind := range []string{"copy", "mirror", "upload", "download", "delete", "benchmark"} {
+	for _, kind := range []string{"copy", "upload", "download", "delete", "benchmark"} {
 		t.Run(kind, func(t *testing.T) {
 			h := newHarness(t)
 			h.connect(t)

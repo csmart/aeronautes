@@ -900,10 +900,10 @@ spike ran this suite through the pinned rclone (v1.74.3, Swift→Swift cross-acc
   Exit codes are useless for completeness; per-object verification of the planned set against
   destination listings (§28.4) is mandatory, not prudent.
 
-Any identity rclone cannot preserve is routed through the native path. Aeronautes must **never
-silently skip or normalize** an object name. (K-TEST-001 means the suite must *pass*
-end-to-end — including the forced-copy and Mirror-planned paths — with native fallback where
-needed, not merely "run".)
+Any identity rclone cannot preserve is routed through the native path.
+Aeronautes must **never silently skip or normalize** an object name.
+K-TEST-001 requires the end-to-end native and forced-copy suite to pass with native fallback where needed.
+Mirror currently has refusal coverage only; the same encoding suite must pass before P14 can re-enable execution.
 
 ---
 
@@ -1512,6 +1512,10 @@ C                               C
 
 User-facing term: **Mirror**.
 
+**Current availability:** comparison preview only.
+Every Mirror start is refused before authentication, job creation, transfer or deletion because the external-writer guarantee is unsupported (ADR 0020).
+The semantics below specify the eventual feature; P14 must establish and test the required concurrency boundary before execution is re-enabled.
+
 Do not make Mirror a tiny checkbox.
 
 Semantics:
@@ -1529,7 +1533,8 @@ C                               C
               Y                 deleted
 ```
 
-Internally, Mirror is executed as an Aeronautes-planned copy — rclone `copy` of the forced selected set (§28.4) — plus Aeronautes-native destination-only deletion. rclone `sync` is not used (§28.6a, §36).
+If re-enabled after P14, Mirror must use an Aeronautes-planned copy — rclone `copy` of the forced selected set (§28.4) — plus Aeronautes-native destination-only deletion.
+rclone `sync` is never permitted (§28.6a, §36).
 
 ### 27.3 Cross-account/cross-cluster
 
@@ -1545,7 +1550,8 @@ local → Swift
 Swift → local
 ```
 
-Cross-account copy/mirror is a **v1 feature**, not a distant add-on.
+Cross-account Copy is implemented.
+Cross-account Mirror remains a v1 product requirement with execution refused pending P14.
 
 ### 27.4 Object metadata on copy
 
@@ -1588,7 +1594,8 @@ Destination-only     1,114     4.3 GiB  (kept)
 
 ### 28.2 Mirror preview
 
-Destination-only becomes a destructive category.
+The current Mirror preview labels destination-only objects for comparison and offers no confirmation or execution control.
+The following destructive preview requirements apply before any future re-enablement under P14.
 
 Large/destructive jobs should support:
 
@@ -1633,6 +1640,7 @@ Therefore a naive MD5 comparison — including whatever an execution engine does
 - never let a Mirror **delete** a destination object on the basis of an ambiguous large-object equality result.
 
 This section governs both the preview counts and any decision to delegate execution.
+Mirror execution rules below are future re-enablement requirements; every current Mirror start refuses under ADR 0020.
 
 **Comparison model.** Represent every object comparison as a typed result plus evidence, not a boolean:
 
@@ -2468,7 +2476,7 @@ Conceptual decision table:
 | Small marker PUT | Aeronautes Swift client |
 | Upload/download | rclone |
 | Swift→Swift Copy | rclone stages, native conditional creation commits new names; P05 must refuse unsupported overwrite (§28.6, ADR 0020) |
-| Ordinary Mirror | P05 must refuse the start while its concurrency guarantee is unsupported; the eventual native delete boundary remains §28.6a (ADR 0020) |
+| Ordinary Mirror | Start is refused; comparison preview remains available. Re-enablement requires P14, and the eventual native delete boundary remains §28.6a (ADR 0020) |
 | Single object delete | Aeronautes-native, manifest-only; HEAD first (inspector-initiated, §28.6a) |
 | SLO delete | manifest-only default; +segments by explicit force with sharing risk disclosed (§34, ADR 0020) |
 | Recursive prefix delete | Aeronautes-native bulk/parallel delete; manifest-only (§28.6a) |
@@ -2867,8 +2875,8 @@ Measure:
 | Delete 100k | objects/sec |
 | Empty large container | objects/sec |
 | Swift→Swift Copy | GiB/s + objects/sec |
-| Mirror no changes | objects/sec checked |
-| Mirror changed population | GiB/s + objects/sec |
+| Mirror no changes (execution unavailable pending P14) | future gate: objects/sec checked |
+| Mirror changed population (execution unavailable pending P14) | future gate: GiB/s + objects/sec |
 | Cancel large job | cancellation latency |
 
 Compare where relevant:
@@ -3050,7 +3058,7 @@ Deliver:
 - comparison model + streaming merge-join preview (§15.2, §28.4);
 - Smart preflight;
 - staging, verification, post-job reconciliation;
-- **Mirror preview (read-only)** — the full destructive plan, counts, and warnings, with execution disabled until Phase 6;
+- **Mirror preview (read-only)** — comparison counts and an explicit unavailable notice; execution remains refused pending P14;
 - progress;
 - cancellation;
 - per-job settings;
@@ -3058,7 +3066,8 @@ Deliver:
 - 5 GiB production large-object default;
 - destination segment placement.
 
-Executable Mirror moves to Phase 6: its delete half is Aeronautes-native destruction, which is Phase 6's machinery — shipping it earlier would mean shipping ungated destruction.
+Mirror execution is currently refused under ADR 0020.
+The original Phase 6 implementation did not establish an enforceable external-writer boundary; P14 is required before re-enablement.
 
 Gate:
 
@@ -3078,7 +3087,7 @@ Deliver:
 - delete strategy engine (all-native, §31–§36);
 - bulk-delete path;
 - bounded native DELETE path;
-- **executable Mirror** (destination-only deletion, Aeronautes-native — preview shipped in Phase 5);
+- **Mirror execution remains gated** (currently refused under ADR 0020; P14 must establish its concurrency boundary before the native destination-only deletion can be re-enabled);
 - Empty Container;
 - Delete Container (native empty + native container DELETE, §33);
 - recursive prefix delete;
@@ -3093,7 +3102,8 @@ Gate:
 
 Large synthetic destructive jobs are bounded, cancellable, observable, and recoverable after partial failure.
 
-Mirror executes correctly against the shared-segment and race fixtures (§28.6, §58).
+Mirror refusal must have no effects across the selected namespace and shared backing objects.
+Before P14 re-enables execution, it must pass the shared-segment and external-writer race fixtures (§28.6, §58).
 
 ### Phase 7 — release hardening
 
@@ -4256,6 +4266,7 @@ The owner authorised implementation of the [5 September audit plan](https://gith
 Implement each logical fix with a failing-before/passing-after regression and independent local review before pushing.
 Keep the valuable-data release hold until the plan's safety and release gates have evidence.
 Earlier §65 implementation logs are historical evidence, not authority to resume unsafe cleanup.
+Earlier logs of executable Mirror also describe historical code; current availability is the refusal rule in §27.2 and K-MIRROR-001.
 In particular, the generated-prefix sweep rules in §65.8 item 2 and §65.9 item 5, and §65.10's scan-based re-enablement suggestions, are superseded by the P01/P04 contract in ADR 0020.
 
 The first commit sequence follows the plan's security-first order:
@@ -4426,6 +4437,11 @@ Use the acknowledged HTTP barrier where a still-supported conditional creation r
 Each implementation commit must build and pass its relevant tests; replacing a disabled feature's tests must not weaken coverage of the remaining transfer, queue, credential or recovery paths.
 Deliver both commits through all five PR checks on the current head and master, then verify the resulting master run.
 These refusals contain the audited paths; P11 through P16 and the wider valuable-data release hold remain open.
+
+The first P05 implementation now refuses every Mirror start before any service or storage work and removes its unreachable execution machinery.
+The comparison dialog exposes no Mirror execution path, and current availability is reconciled with the future P14 gate.
+The [validation record](experiments/2026-09-06-mirror-refusal.md) covers independent mock and real-Swift snapshots, unchanged records and audit history, frontend refusal, and deliberately restored unsafe behaviour.
+Copy overwrite refusal remains the next separate implementation commit.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.

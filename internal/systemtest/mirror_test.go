@@ -1,82 +1,71 @@
 package systemtest
 
 import (
-	"context"
+	"crypto/md5"
+	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/csmart/aeronautes/internal/app"
 )
 
-// TestMirrorConvergesAndDeletesOnlyDestOnly is the mirror matrix's
-// safety core: mirror makes the destination match the source — copying
-// missing/changed names and deleting ONLY the destination-only ones —
-// while the source stays untouched and nothing outside the intended set
-// moves. The delete half is where accidental data loss would show, so
-// the assertion is exact: exactly the dest-only names are removed.
-func TestMirrorConvergesAndDeletesOnlyDestOnly(t *testing.T) {
+func TestMirrorRefusesAllWorkRealSwift(t *testing.T) {
 	h := New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	src := h.Container(h.Primary, "mirsrc")
 	dst := h.Container(h.Secondary, "mirdst")
+	segments := h.Container(h.Secondary, "mirsegments")
+	outside := h.Container(h.Secondary, "miroutside")
+	h.Seed(h.Primary, src, "scope/same", []byte("shared"), nil)
+	h.Seed(h.Primary, src, "scope/new", []byte("only on source"), nil)
+	h.Seed(h.Primary, src, "scope/changed", []byte("updated source"), nil)
+	h.Seed(h.Secondary, dst, "scope/same", []byte("shared"), nil)
+	h.Seed(h.Secondary, dst, "scope/changed", []byte("concurrent writer"), nil)
+	h.Seed(h.Secondary, dst, "scope/dest-only", []byte("preserve me"), nil)
+	h.Seed(h.Secondary, outside, "sentinel", []byte("outside scope"), nil)
+	data := []byte("retained")
+	h.Seed(h.Secondary, segments, ".aeronautes/stage/other/batch/asset/0", data, nil)
+	manifest := segments + "/.aeronautes/stage/other/batch/asset/"
+	h.Seed(h.Secondary, dst, "scope/dlo", nil, map[string]string{"X-Object-Manifest": manifest})
+	h.Seed(h.Secondary, outside, "dlo-alias", nil, map[string]string{"X-Object-Manifest": manifest})
+	slo := fmt.Sprintf(`[{"path":%q,"etag":"%x","size_bytes":%d}]`, "/"+manifest+"0", md5.Sum(data), len(data))
+	h.SeedSLO(h.Secondary, dst, "scope/slo", slo)
+	h.SeedSLO(h.Secondary, outside, "slo-alias", slo)
+	h.Seed(h.Secondary, dst, "scope/link", nil, map[string]string{"X-Symlink-Target": outside + "/sentinel"})
 
-	// Source: A (present on both, identical), B (missing on dst), E
-	// (present on both but with DIFFERENT content — the "changed" case).
-	h.Seed(h.Primary, src, "A.txt", []byte("shared identical"), map[string]string{"X-Object-Meta-K": "a"})
-	h.Seed(h.Primary, src, "B.txt", []byte("only on source"), nil)
-	h.Seed(h.Primary, src, "E.txt", []byte("E: the CURRENT source content"), nil)
-	// Destination: A (identical), a STALE E that mirror must overwrite,
-	// plus dest-only C and D that mirror must delete.
-	h.Seed(h.Secondary, dst, "A.txt", []byte("shared identical"), map[string]string{"X-Object-Meta-K": "a"})
-	h.Seed(h.Secondary, dst, "E.txt", []byte("E: stale destination content"), nil)
-	h.Seed(h.Secondary, dst, "C.txt", []byte("dest-only, doomed"), nil)
-	h.Seed(h.Secondary, dst, "D.txt", []byte("dest-only, doomed too"), nil)
-
-	srcBefore := h.Snapshot(h.Primary, src)
-	// Witness the whole destination namespace so a sidecar/segment
-	// container mirror might create is inside the negative space, not just
-	// the target container (grok war-room: named-containers-only blind spot).
+	srcBefore := h.SnapshotNamespace(h.Primary)
 	dstBefore := h.SnapshotNamespace(h.Secondary)
-
-	rec := h.StartMirror(ctx, app.MirrorRequestDTO{
-		CopyRequestDTO: app.CopyRequestDTO{
-			SourceBookmarkID: h.Primary.BookmarkID, SourceContainer: src,
-			DestBookmarkID: h.Secondary.BookmarkID, DestContainer: dst,
-		},
-		Confirm: dst,
-	})
-	if rec.Err() != nil {
-		t.Fatal(rec.Err())
-	}
-	if job := h.AwaitJob(rec.JobID()); job.State != "complete" {
-		t.Fatalf("mirror job = %s: %s", job.State, job.Error)
-	}
-
-	srcAfter := h.Snapshot(h.Primary, src)
-	dstAfter := h.SnapshotNamespace(h.Secondary)
-
-	// Destination now equals the source set exactly: {A, B, E}, nothing else.
-	dst2, srcObjs := dstAfter.Containers[dst].Objects, srcAfter.Containers[src].Objects
-	if len(dst2) != 3 || dst2["A.txt"].Digest == "" || dst2["B.txt"].Digest == "" || dst2["E.txt"].Digest == "" {
-		names := []string{}
-		for n := range dst2 {
-			names = append(names, n)
+	for _, name := range []string{"dlo-alias", "slo-alias"} {
+		object := dstBefore.Containers[outside].Objects[name]
+		if object.Size != int64(len(data)) || object.Digest == "" || len(object.Segments) != 1 {
+			t.Fatalf("outside alias %s is not readable: %+v", name, object)
 		}
-		t.Fatalf("destination did not converge to {A,B,E}: %v", names)
 	}
-	// B (missing) and E (changed) both now carry source-identical content.
-	if dst2["B.txt"].Digest != srcObjs["B.txt"].Digest {
-		t.Fatal("mirrored B.txt content differs from source")
+	auditBefore, err := h.Audit.Recent(ctx, 100)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if dst2["E.txt"].Digest != srcObjs["E.txt"].Digest {
-		t.Fatal("mirror did not overwrite the stale E.txt with source content")
+	request := app.MirrorRequestDTO{CopyRequestDTO: app.CopyRequestDTO{
+		SourceBookmarkID: h.Primary.BookmarkID, SourceContainer: src, SourcePrefix: "scope/",
+		DestBookmarkID: h.Secondary.BookmarkID, DestContainer: dst, DestPrefix: "scope/",
+	}, Confirm: dst}
+	var receipt *Receipt
+	for range 2 {
+		receipt = h.StartMirror(ctx, request)
+		if receipt.JobID() != "" {
+			h.AwaitJob(receipt.JobID())
+		}
+		if receipt.JobID() != "" || receipt.Err() == nil || receipt.Err().Error() != "Mirror is unavailable while concurrent changes cannot be protected" {
+			t.Fatalf("Mirror was not refused before admission: id=%q, err=%v", receipt.JobID(), receipt.Err())
+		}
+		h.AssertNoCollateral(srcBefore, h.SnapshotNamespace(h.Primary))
+		h.AssertNoCollateral(dstBefore, h.SnapshotNamespace(h.Secondary))
+		if rows, err := h.Jobs.List(ctx, "", false, 100); err != nil || len(rows) != 0 {
+			t.Fatalf("refused Mirror created jobs: %+v, %v", rows, err)
+		}
+		if events, err := h.Audit.Recent(ctx, 100); err != nil || !reflect.DeepEqual(events, auditBefore) {
+			t.Fatalf("refused Mirror changed audit history: %+v, %v", events, err)
+		}
 	}
-	// The SOURCE is completely unchanged.
-	if d := diffOf(srcBefore, srcAfter); !d.Empty() {
-		t.Fatalf("source changed during a mirror:\n%s", d)
-	}
-	// The delete half removed EXACTLY the dest-only C and D, and the only
-	// other moves are the added B and the overwritten E — the
-	// accidental-deletion guard.
-	h.AssertNoCollateral(dstBefore, dstAfter, dst+"/B.txt", dst+"/E.txt", dst+"/C.txt", dst+"/D.txt")
-	rec.CreditHappy()
+	receipt.CreditRefusal()
 }

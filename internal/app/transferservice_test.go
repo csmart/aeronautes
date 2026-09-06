@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,7 +18,6 @@ import (
 	"time"
 
 	"github.com/csmart/aeronautes/internal/jobs"
-	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	"github.com/csmart/aeronautes/internal/swifttest"
 	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
 	"github.com/csmart/aeronautes/internal/transfer/rclone"
@@ -641,123 +639,6 @@ func TestSchedulerBudgetQueues(t *testing.T) {
 	}
 }
 
-func TestMirrorExecutes(t *testing.T) {
-	h := newHarness(t)
-	ctx := context.Background()
-	h.connect(t)
-	srcBookmark := h.transfer.connections.ActiveBookmarkID()
-	dstBookmark, dstMock := secondCluster(t, h)
-	h.installEngine(nil)
-
-	h.mock.AddContainer("media", "standard")
-	seedObject(h.mock, "media", "scope/keep-a.txt", "alpha", nil)
-	seedObject(h.mock, "media", "scope/keep-b.txt", "bravo", nil)
-	dstMock.AddContainer("backup", "standard")
-	seedObject(dstMock, "backup", "scope/keep-a.txt", "alpha", nil)
-	seedObject(dstMock, "backup", "scope/obsolete-1.txt", "old", nil)
-	seedObject(dstMock, "backup", "scope/obsolete-2.txt", "older", nil)
-	// The §28.6 fixture: a dest-only DLO INSIDE the mirror scope shares
-	// its segments with a manifest OUTSIDE it; the mirror deletes the
-	// manifest in scope and the outside sibling must keep assembling.
-	dstMock.AddContainer("backup_segments", "standard")
-	seedObject(dstMock, "backup_segments", "shared/0", strings.Repeat("s", 40), nil)
-	dstMock.PutObject("backup", "scope/obsolete-dlo.bin", swifttest.Object{Manifest: "backup_segments/shared/"})
-	dstMock.PutObject("backup", "outside/kept-dlo.bin", swifttest.Object{Manifest: "backup_segments/shared/"})
-
-	req := MirrorRequestDTO{
-		CopyRequestDTO: CopyRequestDTO{
-			SourceBookmarkID: srcBookmark, SourceContainer: "media", SourcePrefix: "scope/",
-			DestBookmarkID: dstBookmark, DestContainer: "backup", DestPrefix: "scope/",
-		},
-	}
-	// Refused without the typed confirmation.
-	if _, err := h.transfer.StartMirror(ctx, req); err == nil || !strings.Contains(err.Error(), "confirmation") {
-		t.Fatalf("unconfirmed mirror = %v", err)
-	}
-	req.Confirm = "backup"
-	jobID, err := h.transfer.StartMirror(ctx, req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	job := awaitTerminal(t, h, jobID)
-	if job.State != "complete" || job.Type != "mirror" {
-		t.Fatalf("job = %+v", job)
-	}
-	if pending, err := h.transfer.jobs.RecoveryPending(ctx); err != nil || len(pending) != 1 || pending[0].JobID != jobID {
-		t.Fatalf("completed mirror lost recovery intent: %+v, %v", pending, err)
-	}
-	if job.Counters.ObjectsDeleted != 3 { // two plain + the dest-only DLO manifest
-		t.Fatalf("deleted = %d, want 3 (counters %+v)", job.Counters.ObjectsDeleted, job.Counters)
-	}
-
-	session := h.transfer.connections.sessions[dstBookmark].session
-	for _, gone := range []string{"scope/obsolete-1.txt", "scope/obsolete-2.txt", "scope/obsolete-dlo.bin"} {
-		if _, err := session.ObjectDetail(ctx, "backup", gone); err == nil {
-			t.Errorf("%s survived the mirror", gone)
-		}
-	}
-	// The out-of-scope manifest still assembles: shared segments were
-	// never followed (manifest-only deletion).
-	d, err := session.ObjectDetail(ctx, "backup", "outside/kept-dlo.bin")
-	if err != nil || d.ContentLength != 40 {
-		t.Fatalf("kept-dlo = %+v %v (shared segments must survive)", d, err)
-	}
-	// And the copy half converged.
-	if _, err := session.ObjectDetail(ctx, "backup", "scope/keep-b.txt"); err != nil {
-		t.Error("copy half missed keep-b.txt")
-	}
-	if !strings.Contains(job.Settings, "deleteStrategy") {
-		t.Errorf("delete strategy not in effective config: %q", job.Settings)
-	}
-}
-
-func TestMirrorSkipsDeletionsWhenCopyFails(t *testing.T) {
-	h := newHarness(t)
-	ctx := context.Background()
-	h.connect(t)
-	srcBookmark := h.transfer.connections.ActiveBookmarkID()
-	dstBookmark, dstMock := secondCluster(t, h)
-	// An engine that silently drops one name: the copy half will fail
-	// verification, so the delete half must not run.
-	h.transfer.setEngineFactory(func(source transfercopy.RemoteSource, opts rclone.Options) (transfercopy.Engine, error) {
-		remotes, err := source(context.Background())
-		if err != nil {
-			return nil, err
-		}
-		byName := map[string]rclone.Remote{}
-		for _, r := range remotes {
-			byName[r.Name] = r
-		}
-		return &droppingEngine{httpEngine{remotes: byName}}, nil
-	})
-	h.mock.AddContainer("media", "standard")
-	seedObject(h.mock, "media", "dropped.txt", "never arrives", nil)
-	dstMock.AddContainer("backup", "standard")
-	seedObject(dstMock, "backup", "obsolete.txt", "must survive", nil)
-
-	jobID, err := h.transfer.StartMirror(ctx, MirrorRequestDTO{
-		CopyRequestDTO: CopyRequestDTO{
-			SourceBookmarkID: srcBookmark, SourceContainer: "media",
-			DestBookmarkID: dstBookmark, DestContainer: "backup",
-		},
-		Confirm: "backup",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	job := awaitTerminal(t, h, jobID)
-	if job.State != "partial" || !strings.Contains(job.Error, "NOT run") {
-		t.Fatalf("job = %+v", job)
-	}
-	if job.Counters.ObjectsDeleted != 0 {
-		t.Fatalf("deletions ran despite failed copy half: %+v", job.Counters)
-	}
-	session := h.transfer.connections.sessions[dstBookmark].session
-	if _, err := session.ObjectDetail(ctx, "backup", "obsolete.txt"); err != nil {
-		t.Fatal("dest-only object deleted despite unverified copy half")
-	}
-}
-
 // droppingEngine claims success while copying nothing.
 type droppingEngine struct{ httpEngine }
 
@@ -958,105 +839,6 @@ func TestRerunJob(t *testing.T) {
 	}
 }
 
-func TestStreamSpillChunksAndHostileNames(t *testing.T) {
-	write := func(t *testing.T, names []string) string {
-		t.Helper()
-		f, err := os.CreateTemp(t.TempDir(), "spill-*.jsonl")
-		if err != nil {
-			t.Fatal(err)
-		}
-		enc := json.NewEncoder(f)
-		for _, n := range names {
-			if err := enc.Encode(spilledDelete{Name: n}); err != nil {
-				t.Fatal(err)
-			}
-		}
-		f.Close()
-		return f.Name()
-	}
-	hostile := []string{"plain.txt", "line\nbreak.txt", "tab\tand \"quotes\".txt", "утф-8 πλήρης.bin"}
-	for _, tc := range []struct {
-		names, chunk int
-		want         []int
-	}{
-		{0, 3, nil},         // empty spill: handler never called
-		{3, 3, []int{3}},    // exactly one chunk
-		{4, 3, []int{3, 1}}, // boundary straddle
-	} {
-		names := make([]string, tc.names)
-		for i := range names {
-			names[i] = fmt.Sprintf("obj-%d", i)
-		}
-		var got []int
-		if err := streamSpill(write(t, names), tc.chunk, func(chunk []spilledDelete) error {
-			got = append(got, len(chunk))
-			return nil
-		}); err != nil {
-			t.Fatal(err)
-		}
-		if fmt.Sprint(got) != fmt.Sprint(tc.want) {
-			t.Errorf("names=%d chunk=%d → %v, want %v", tc.names, tc.chunk, got, tc.want)
-		}
-	}
-	// Hostile names round-trip byte-exact through the JSON lines.
-	var back []string
-	if err := streamSpill(write(t, hostile), 2, func(chunk []spilledDelete) error {
-		for _, entry := range chunk {
-			back = append(back, entry.Name)
-		}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if fmt.Sprint(back) != fmt.Sprint(hostile) {
-		t.Errorf("round-trip = %q, want %q", back, hostile)
-	}
-}
-
-func TestMirrorDeleteSetSpansChunks(t *testing.T) {
-	// More dest-only names than one delete chunk: the spill streams
-	// back in several chunks and the aggregate counters stay exact.
-	h := newHarness(t)
-	ctx := context.Background()
-	h.connect(t)
-	srcBookmark := h.transfer.connections.ActiveBookmarkID()
-	dstBookmark, dstMock := secondCluster(t, h)
-	h.installEngine(nil)
-
-	h.mock.AddContainer("media", "standard")
-	dstMock.AddContainer("backup", "standard")
-	total := mirrorDeleteChunk + 100
-	for i := 0; i < total-1; i++ {
-		seedObject(dstMock, "backup", fmt.Sprintf("scope/stale-%05d", i), "x", nil)
-	}
-	seedObject(dstMock, "backup", "scope/hostile\nname.txt", "x", nil)
-
-	jobID, err := h.transfer.StartMirror(ctx, MirrorRequestDTO{
-		CopyRequestDTO: CopyRequestDTO{
-			SourceBookmarkID: srcBookmark, SourceContainer: "media", SourcePrefix: "scope/",
-			DestBookmarkID: dstBookmark, DestContainer: "backup", DestPrefix: "scope/",
-		},
-		Confirm: "backup",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	job := awaitTerminal(t, h, jobID)
-	if job.State != "complete" {
-		t.Fatalf("job = %+v", job)
-	}
-	if job.Counters.ObjectsDeleted != int64(total) || job.Counters.ObjectsFailed != 0 {
-		t.Fatalf("deleted = %d failed = %d, want %d/0", job.Counters.ObjectsDeleted, job.Counters.ObjectsFailed, total)
-	}
-	session := h.transfer.connections.sessions[dstBookmark].session
-	for entry, err := range session.Objects(ctx, "backup", swiftcontrol.ObjectListOptions{Deep: true, Prefix: "scope/"}) {
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Fatalf("survivor: %+v", entry)
-	}
-}
-
 func TestCrashSweepCommitBoundary(t *testing.T) {
 	// The review-wave C-01 sequence, both sides of the boundary. A
 	// staged DLO's live manifest PUT LANDED but the process died before
@@ -1207,53 +989,6 @@ func TestOverlappingScopesRefused(t *testing.T) {
 	}
 }
 
-func TestMirrorSkipsReappearedSourceNames(t *testing.T) {
-	// H-06: a name planned destination-only whose SOURCE reappears
-	// before the delete half must be skipped — the destructive set is
-	// re-checked against the current source, not yesterday's plan.
-	h := newHarness(t)
-	ctx := context.Background()
-	h.connect(t)
-	srcBookmark := h.transfer.connections.ActiveBookmarkID()
-	dstBookmark, dstMock := secondCluster(t, h)
-	block := newEngineBarrier(t)
-	h.installEngine(block)
-
-	h.mock.AddContainer("media", "standard")
-	seedObject(h.mock, "media", "scope/copied.txt", "engine payload", nil)
-	dstMock.AddContainer("backup", "standard")
-	// Two dest-only names; "reborn.txt" will reappear at the source
-	// while the engine (blocked) holds the copy half open.
-	seedObject(dstMock, "backup", "scope/reborn.txt", "same bytes!", nil)
-	seedObject(dstMock, "backup", "scope/stale.txt", "leftover", nil)
-
-	jobID, err := h.transfer.StartMirror(ctx, MirrorRequestDTO{
-		CopyRequestDTO: CopyRequestDTO{
-			SourceBookmarkID: srcBookmark, SourceContainer: "media", SourcePrefix: "scope/",
-			DestBookmarkID: dstBookmark, DestContainer: "backup", DestPrefix: "scope/",
-		},
-		Confirm: "backup",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	block.waitUntilEntered(t)
-	seedObject(h.mock, "media", "scope/reborn.txt", "same bytes!", nil)
-	block.unblock()
-
-	job := awaitTerminal(t, h, jobID)
-	if job.State != "complete" || !strings.Contains(job.Error, "skipped") {
-		t.Errorf("job = %+v, want complete with a skip note", job)
-	}
-	session := h.transfer.connections.sessions[dstBookmark].session
-	if _, err := session.ObjectDetail(ctx, "backup", "scope/reborn.txt"); err != nil {
-		t.Fatal("reappeared-source object was deleted from the destination")
-	}
-	if _, err := session.ObjectDetail(ctx, "backup", "scope/stale.txt"); err == nil {
-		t.Fatal("genuinely stale object survived")
-	}
-}
-
 // fakePicker satisfies FilePicker for tests.
 type fakePicker struct {
 	files []string
@@ -1310,53 +1045,6 @@ func TestCrashSweepProductionSlashPair(t *testing.T) {
 	d, err := session.ObjectDetail(ctx, "backup", "video.bin")
 	if err != nil || d.ContentLength != 2*int64(len("live-bytes")) {
 		t.Fatalf("live DLO after sweep = %+v %v (C01-slash: its segments were destroyed)", d, err)
-	}
-}
-
-func TestMirrorSkipsReplacedDestination(t *testing.T) {
-	// F-02: a planned dest-only object REPLACED by another writer after
-	// planning must not be deleted — the plan's identity no longer
-	// matches, so the delete becomes a conflict skip.
-	h := newHarness(t)
-	ctx := context.Background()
-	h.connect(t)
-	srcBookmark := h.transfer.connections.ActiveBookmarkID()
-	dstBookmark, dstMock := secondCluster(t, h)
-	block := newEngineBarrier(t)
-	h.installEngine(block)
-
-	h.mock.AddContainer("media", "standard")
-	seedObject(h.mock, "media", "scope/copied.txt", "engine payload", nil)
-	dstMock.AddContainer("backup", "standard")
-	seedObject(dstMock, "backup", "scope/victim.txt", "old planned bytes", nil)
-	seedObject(dstMock, "backup", "scope/stale.txt", "leftover", nil)
-
-	jobID, err := h.transfer.StartMirror(ctx, MirrorRequestDTO{
-		CopyRequestDTO: CopyRequestDTO{
-			SourceBookmarkID: srcBookmark, SourceContainer: "media", SourcePrefix: "scope/",
-			DestBookmarkID: dstBookmark, DestContainer: "backup", DestPrefix: "scope/",
-		},
-		Confirm: "backup",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	block.waitUntilEntered(t)
-	// Another client replaces the planned victim with NEW content.
-	seedObject(dstMock, "backup", "scope/victim.txt", "someone else's brand-new data", nil)
-	block.unblock()
-
-	job := awaitTerminal(t, h, jobID)
-	if job.State != "complete" || !strings.Contains(job.Error, "replaced") {
-		t.Errorf("job = %+v, want complete with a replaced-skip note", job)
-	}
-	session := h.transfer.connections.sessions[dstBookmark].session
-	d, err := session.ObjectDetail(ctx, "backup", "scope/victim.txt")
-	if err != nil || d.ContentLength != int64(len("someone else's brand-new data")) {
-		t.Fatalf("replaced object = %+v %v (the other client's data was deleted)", d, err)
-	}
-	if _, err := session.ObjectDetail(ctx, "backup", "scope/stale.txt"); err == nil {
-		t.Fatal("genuinely stale object survived")
 	}
 }
 
