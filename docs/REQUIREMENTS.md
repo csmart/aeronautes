@@ -72,8 +72,9 @@ gates can reference stable IDs instead of re-reading ~11k words of prose.
   is Aeronautes-native and manifest-only, with HEAD-before-mutate where identity matters (§28.6a). (§28.6, §36, ADR 0004)
 - **K-XFER-015** — `--server-side-across-configs` MUST NEVER be enabled for two independently
   authenticated bookmarks. (§30)
-- **K-SEG-004** — Segment deletion requires `ExclusiveOwnershipProof` (a unique Aeronautes-recorded prefix);
-  `Confirmed` evidence MUST NOT be treated as exclusive. (§28.6, §24.1)
+- **K-SEG-004** — Automatic segment deletion requires `ExclusiveOwnershipProof` over the exact objects through the destructive effect, excluding other references and relevant concurrent writers.
+  Generated-prefix records and `Confirmed` evidence MUST NOT be promoted to exclusive authority: they prove creation and a reference respectively.
+  Recovery MUST retain uncertain data and records; explicit force cleanup remains a separate action with sharing risk disclosed. (§28.6, §24.1, ADR 0020)
 
 ## Mirror & comparison
 
