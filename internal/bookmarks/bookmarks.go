@@ -144,7 +144,7 @@ func (st *Store) SaveWithCA(ctx context.Context, b Bookmark, secret, caPEM []byt
 	}
 
 	st.mu.Lock()
-	err := st.db.WriteTx(ctx, func(tx *sql.Tx) error {
+	commitPossible, err := st.writePublication(ctx, func(tx *sql.Tx) error {
 		if !isNew {
 			var err error
 			previous, err = readRecord(ctx, tx, b.ID)
@@ -176,7 +176,7 @@ func (st *Store) SaveWithCA(ctx context.Context, b Bookmark, secret, caPEM []byt
 		return publishRecord(ctx, tx, previous, proposed, caPEM, isNew)
 	})
 	if err != nil {
-		if secret == nil {
+		if secret == nil && commitPossible {
 			err = st.publicationResult(ctx, previous, proposed, err, isNew)
 		}
 		st.mu.Unlock()
@@ -203,7 +203,7 @@ func (st *Store) SaveWithCA(ctx context.Context, b Bookmark, secret, caPEM []byt
 		// Keep its journal row and do not expose a backend's key-bearing error.
 		return Bookmark{}, errors.New("could not save the key; an unused key may remain in credential storage")
 	}
-	err = st.db.WriteTx(ctx, func(tx *sql.Tx) error {
+	commitPossible, err = st.writePublication(ctx, func(tx *sql.Tx) error {
 		if !isNew {
 			current, err := readRecord(ctx, tx, b.ID)
 			if err != nil {
@@ -216,7 +216,10 @@ func (st *Store) SaveWithCA(ctx context.Context, b Bookmark, secret, caPEM []byt
 		return publishRecord(ctx, tx, previous, proposed, caPEM, isNew)
 	})
 	if err != nil {
-		if err = st.publicationResult(ctx, previous, proposed, err, isNew); err != nil {
+		if commitPossible {
+			err = st.publicationResult(ctx, previous, proposed, err, isNew)
+		}
+		if err != nil {
 			return Bookmark{}, err
 		}
 	}
@@ -290,7 +293,7 @@ func (st *Store) Delete(ctx context.Context, id string) error {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	var previous record
-	err := st.db.WriteTx(ctx, func(tx *sql.Tx) error {
+	commitPossible, err := st.writePublication(ctx, func(tx *sql.Tx) error {
 		var err error
 		previous, err = readRecord(ctx, tx, id)
 		if err != nil {
@@ -308,7 +311,7 @@ func (st *Store) Delete(ctx context.Context, id string) error {
 		delete(st.unresolved, id)
 		return nil
 	}
-	if errors.Is(err, ErrNotFound) {
+	if !commitPossible {
 		return err
 	}
 	check, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)

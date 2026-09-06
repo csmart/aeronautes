@@ -45,6 +45,17 @@ func recordWork(ctx context.Context, tx *sql.Tx, r record, state string) error {
 	return err
 }
 
+// A failed begin or rejected callback cannot commit. Distinguish those from
+// a lost commit reply so a second read failure cannot pause an unchanged row.
+func (st *Store) writePublication(ctx context.Context, fn func(*sql.Tx) error) (commitPossible bool, err error) {
+	err = st.db.WriteTx(ctx, func(tx *sql.Tx) error {
+		err := fn(tx)
+		commitPossible = err == nil
+		return err
+	})
+	return commitPossible, err
+}
+
 func publishRecord(ctx context.Context, tx *sql.Tx, previous, proposed record, caPEM []byte, isNew bool) error {
 	if caPEM != nil {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO ca_certs (id, pem, added_at) VALUES (?, ?, ?)`,
