@@ -150,22 +150,6 @@ func samePublication(a, b record) bool {
 		a.generation == b.generation && a.revision == b.revision
 }
 
-// Available prevents new cache acquisition while a commit outcome cannot be
-// read back. Held-session revocation belongs to the generation-lifetime slice.
-func (st *Store) Available(ctx context.Context, id string) error {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	if !st.unresolved[id] {
-		return nil
-	}
-	_, err := readRecord(ctx, st.db.Reader(), id)
-	if err != nil && !errors.Is(err, ErrNotFound) {
-		return ErrPublicationUnresolved
-	}
-	delete(st.unresolved, id)
-	return err
-}
-
 // ConnectionConfig captures configuration, CA, reference and generation in
 // one SQL read. The lease covers the blocking external read, after which a
 // changed binding refuses acquisition instead of mixing generations.

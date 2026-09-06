@@ -790,7 +790,7 @@ func TestUnresolvedPublicationRetainsKeysAndPauses(t *testing.T) {
 	if _, err := st.Save(t.Context(), before, []byte("replacement")); !errors.Is(err, ErrPublicationUnresolved) {
 		t.Fatalf("unresolved Save = %v", err)
 	}
-	if err := st.Available(t.Context(), before.ID); !errors.Is(err, ErrPublicationUnresolved) {
+	if err := st.WithCurrentGeneration(t.Context(), before.ID, previous.generation, nil); !errors.Is(err, ErrPublicationUnresolved) {
 		t.Fatalf("unresolved bookmark usable: %v", err)
 	}
 	if value, err := st.secrets.Get(t.Context(), previous.ref); err != nil || string(value) != "original" {
@@ -804,8 +804,12 @@ func TestUnresolvedPublicationRetainsKeysAndPauses(t *testing.T) {
 		t.Fatalf("unresolved publication removed candidate: %q, %v", value, err)
 	}
 	fault.failRead = false
-	if err := st.Available(t.Context(), before.ID); err != nil {
-		t.Fatalf("restored state did not resolve pause: %v", err)
+	if err := st.WithCurrentGeneration(t.Context(), before.ID, previous.generation, nil); !errors.Is(err, ErrChanged) {
+		t.Fatalf("restored state did not refuse the obsolete generation: %v", err)
+	}
+	current := storedRecord(t, st, before.ID)
+	if err := st.WithCurrentGeneration(t.Context(), before.ID, current.generation, nil); err != nil {
+		t.Fatalf("restored current generation did not resolve pause: %v", err)
 	}
 	if got := pendingWork(t, st); len(got) != 1 || got[0].ref != previous.ref || got[0].state != "retired" {
 		t.Fatalf("committed retirement lost after unresolved response: %+v", got)
