@@ -150,9 +150,20 @@ Implement and review each logical slice separately:
 2. First add binding-change refusal with the editor explanation as an independently tested containment commit.
    Then add backend-aware prepared/retired references, immutable replacement and coherent credential snapshots as the next publication commit.
    Record unverified native provenance honestly and retain unused references until the cleanup prerequisites are implemented.
-3. Make logical deletion and cleanup status recoverable, including failed external deletion and legacy/session fallback.
-   Establish verified persistent-backend selection before using absence as proof of completed cleanup.
-4. Coordinate generation revocation, session publication and job admission, then close the remaining library request URL/token pairing gap.
+3. Make logical deletion and pending-work status recoverable while retaining all external references.
+   Keep session, legacy and unverified persistent provenance distinct across fallback and restart.
+4. First tag cached sessions with their captured generation and revalidate after blocking authentication and capability discovery, coordinating cache publication and lookup with bookmark changes.
+   This is a bounded containment slice: an authentication started before edit/delete must not install an obsolete cached session after that change.
+   It does not revoke already-held sessions or grant cleanup authority.
+   Then coordinate job admission and generation revocation through request admission and cancellation cleanup, and close the remaining library request URL/token pairing gap.
+5. Establish verified persistent-backend selection before using absence as proof of completed cleanup.
+   Enable physical cleanup and retry only after both native authority and the complete live-reference coordination above are proven.
+   Cover failed external deletion, a lost deletion response, changed defaults, unavailable original stores and legacy/session fallback without restoring deleted bookmark authority.
+
+The cache containment slice precedes physical cleanup because obsolete authentication can republish a session independently of keychain availability.
+Cleanup already depends on acquisition leases and admitted-job pins, so completing that lifetime coordination first removes a prerequisite instead of allowing a collector to run without it.
+Native selection may be investigated independently, but this ordering does not select a replacement for ADR 0012, weaken original-store absence proof or choose the vault in ADR 0006.
+The cache implementation must use one lock order, bookmark coordination before the connection cache, and release both before authentication, capability discovery or any other external I/O.
 
 Each slice must state which guarantees it implements and which remain open; P10 is complete only when the combined gates pass.
 The valuable-data release hold remains throughout.

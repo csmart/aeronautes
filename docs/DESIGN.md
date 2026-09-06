@@ -4263,7 +4263,12 @@ This does not yet revoke held sessions after a bookmark edit or bind stored keys
 
 The next P10 design slice is [ADR 0015](adr/0015-credential-bindings.md), accepted after independent local design review under the authorised remediation plan.
 It chooses credential reentry for an origin/account/trust change and defines immutable references, durable external-store work, recoverable deletion and generation-bound session/job admission.
-The commit sequence is durable SQLite settings, bound credential publication and snapshots, recoverable deletion, then coordinated session/job lifetime and the remaining request-pairing fix.
+The commit sequence is durable SQLite settings, bound credential publication and snapshots, recoverable logical deletion and status, coordinated cache/session/job lifetime and the remaining request-pairing fix, then physical cleanup with verified native authority.
+The next bounded lifetime slice tags cached sessions with their captured generation and checks that generation after blocking authentication/capability discovery and when publishing or reading the cache.
+Its oracle is that an authentication begun before edit/delete cannot republish an obsolete cached session after the change; already-held sessions and request/job admission remain separate required work.
+It uses the bookmark coordinator before the cache lock and releases both before external I/O.
+Cleanup remains disabled until both verified original-backend selection and the full acquisition/job/cancellation-cleanup reference set are coordinated, as ADR 0015 already requires.
+Investigating native selection can proceed independently; this order changes no backend, vault choice, erasure proof or final P10 guarantee.
 The first implementation requires effective WAL/FULL settings on every physical connection and refuses an ineffective setting before use.
 The [validation record](experiments/2026-09-06-sqlite-durability.md) includes the failing-before regressions, connection and migration checks, measured commit cost and proof limits.
 The subsequent binding guard refuses a blank-key edit that changes the complete auth URL, username, storage override or TLS trust, checking the current row inside the update transaction.
