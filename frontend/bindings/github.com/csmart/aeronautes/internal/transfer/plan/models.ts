@@ -3,8 +3,8 @@
 
 /**
  * Summary is the §65.4 preflight surface: honest conservative counts
- * (§28.4's preview contract), the stage-and-commit overwrite count, and
- * the native-routing count. Versioned-destination disclosure is the
+ * (§28.4's preview contract), existing-destination candidate counts, and
+ * candidate routing. Versioned-destination disclosure is the
  * caller's job — it comes from the destination container's headers, not
  * the join.
  */
@@ -16,22 +16,20 @@ export interface Summary {
     "destOnly": number;
 
     /**
-     * TransferObjects/TransferBytes cover New + Changed + Unknown —
-     * Unknown transfers conservatively unless the executor proves
-     * equality per object.
+     * These legacy field names cover New + Changed + Unknown comparison
+     * candidates, including refused objects. They are not transfer estimates.
      */
     "transferObjects": number;
     "transferBytes": number;
 
     /**
-     * Overwrites counts transfers whose destination name already exists:
-     * every one commits via §28.6 stage-and-commit, never a direct PUT.
+     * Overwrites counts Changed + Unknown existing-destination candidates.
+     * Changed is refused; Unknown needs resolution before a decision.
      */
     "overwrites": number;
 
     /**
-     * NativeRouted counts transfers the §14.3 classification forced down
-     * the native path.
+     * NativeRouted counts candidates requiring native handling if eligible.
      */
     "nativeRouted": number;
     "destOnlyBytes": number;

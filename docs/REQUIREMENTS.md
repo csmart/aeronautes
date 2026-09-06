@@ -41,8 +41,9 @@ gates can reference stable IDs instead of re-reading ~11k words of prose.
   native SLO composer is out of v1. (§25, §62)
 - **K-XFER-008** — rclone `Update` (overwrite) and `Remove` (delete) bulk-delete a large object's old
   referenced segments, so rclone MUST NOT overwrite or delete **any** existing destination object.
-  Every overwrite goes through the Aeronautes-owned stage-and-commit path (staged unique name +
-  native commit); every deletion is Aeronautes-native. (§28.6)
+  Current Copy MUST refuse changed existing destinations before staging, including uncertain pairs resolved as unequal; eligible new names use native conditional creation with no unconditional fallback.
+  Refused overwrites MUST be counted separately and produce a partial job without obscuring copied-object verification failures.
+  P14 must establish the final-effect concurrency boundary before overwrites can be re-enabled; every supported deletion remains Aeronautes-native. (§28.6, ADR 0020)
 - **K-XFER-009** — An Aeronautes-selected transfer set MUST be forced onto the wire (e.g. `--ignore-times`)
   and verified before any Mirror deletion; `--files-from` only filters the source and MUST NOT be
   relied on to override rclone's own equality test. `--ignore-existing` MUST NOT be used for a Copy

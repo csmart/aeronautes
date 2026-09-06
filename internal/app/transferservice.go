@@ -41,8 +41,7 @@ type CopyRequestDTO struct {
 // execution.
 type CopyPlanDTO struct {
 	Summary plan.Summary `json:"summary"`
-	// VersionedDestination: commits on this container archive a version
-	// per overwrite (§28.6 seam finding) — disclosed, not hidden.
+	// Versioning does not grant permission to overwrite an existing object.
 	VersionedDestination bool `json:"versionedDestination"`
 	// LargeObjectsAsDLO: large sources commit as destination DLOs whose
 	// reads depend on listing consistency (§28.6 disclosure).
@@ -51,8 +50,8 @@ type CopyPlanDTO struct {
 	// v1 always hairpins through this workstation — stated, never
 	// implied.
 	DataPath string `json:"dataPath"`
-	// OverwriteBytes are the planned bytes that land on EXISTING names
-	// (the changed set) — the blast radius of the overwrite half.
+	// OverwriteBytes counts listed source bytes in refused Changed rows;
+	// keeping the bridge field does not promise an overwrite or transfer.
 	OverwriteBytes int64 `json:"overwriteBytes"`
 }
 
@@ -231,7 +230,7 @@ func (s *TransferService) PlanCopy(ctx context.Context, req CopyRequestDTO) (*Co
 		Summary:              summary,
 		VersionedDestination: versioned,
 		LargeObjectsAsDLO:    largeConservative,
-		DataPath:             "workstation hairpin: every byte downloads to this machine and uploads again (no server-side path in v1)",
+		DataPath:             "eligible copies pass through this workstation: source download and destination upload",
 		OverwriteBytes:       overwriteBytes,
 	}, nil
 }
@@ -375,12 +374,28 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 	src, dst *swiftcontrol.Session, engine transfercopy.Engine) {
 
 	background := context.WithoutCancel(ctx) // store/reconcile writes survive cancel
+	var overwritesRefused int64
 	transition := func(state jobs.State) {
 		if err := s.jobs.Transition(background, jobID, state); err != nil {
 			log.Printf("job %s: %v", jobID, err)
 		}
 	}
 	finish := func(state jobs.State, message string) {
+		auditSummary := "job " + jobID
+		if overwritesRefused > 0 {
+			state = jobs.StatePartial
+			count := fmt.Sprintf("%d overwrites refused", overwritesRefused)
+			if overwritesRefused == 1 {
+				count = "1 overwrite refused"
+			}
+			refusal := count + ": overwriting existing destinations is unavailable while concurrent changes cannot be protected"
+			if message == "" {
+				message = refusal
+			} else {
+				message = refusal + "; " + message
+			}
+			auditSummary += " · " + count
+		}
 		if message != "" {
 			_ = s.jobs.SetError(background, jobID, message)
 		}
@@ -390,7 +405,7 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 		transition(state)
 		s.record(background, req.SourceBookmarkID, "transfer.copy."+string(state),
 			req.SourceContainer+"/"+req.SourcePrefix+" → "+req.DestContainer+"/"+req.DestPrefix,
-			"job "+jobID, terminalAuditResult(state))
+			auditSummary, terminalAuditResult(state))
 	}
 
 	transition(jobs.StatePlanning)
@@ -425,6 +440,8 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 				counters.ObjectsCopied++
 			case "failed":
 				counters.ObjectsFailed++
+			case "overwrite-refused":
+				counters.OverwritesRefused++
 			}
 			countersMu.Unlock()
 			flush(false)
@@ -439,10 +456,13 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 		finish(jobs.StateFailed, err.Error())
 		return
 	}
-	// The staging namespace is durable BEFORE anything is written: a
-	// crash from here on is sweepable at next startup (§65.8 item 2). A
-	// failed write fails the job closed — running without a sweepable
-	// record would strand litter invisibly.
+	defer func() {
+		if err := executor.Close(); err != nil {
+			log.Printf("job %s close refusal record: %v", jobID, err)
+		}
+	}()
+	// Persist creation intent before writes so an interrupted transfer
+	// retains visible recovery facts. This does not grant cleanup authority.
 	if err := s.jobs.RecoveryAdd(background, jobs.RecoveryRecord{
 		JobID: jobID, BookmarkID: req.DestBookmarkID, Kind: jobs.RecoveryStaging,
 		Container: req.DestContainer, Prefix: executor.StagingPrefix(),
@@ -471,11 +491,13 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 	if planErr == nil {
 		planErr = finishErr
 	}
+	overwritesRefused = report.OverwritesRefused
 
 	countersMu.Lock()
 	counters.ObjectsCopied = report.Copied
 	counters.BytesCopied = report.BytesCopied
 	counters.Overwrites = report.Overwrites
+	counters.OverwritesRefused = report.OverwritesRefused
 	counters.NativeRouted = report.NativeRouted
 	counters.ObjectsFailed = int64(len(report.Failures))
 	countersMu.Unlock()
@@ -496,7 +518,11 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 
 	if planErr != nil {
 		if errors.Is(planErr, context.Canceled) {
-			finish(jobs.StateCancelled, "")
+			message := ""
+			if overwritesRefused > 0 {
+				message = planErr.Error()
+			}
+			finish(jobs.StateCancelled, message)
 		} else {
 			finish(jobs.StateFailed, planErr.Error())
 		}
@@ -685,9 +711,8 @@ func jobDTO(j jobs.Job) JobDTO {
 // RerunJob starts a fresh copy of a TERMINAL copy job's scope. The
 // §28.4 machinery makes this cheap-idempotent — Same verdicts and
 // destination fingerprints skip everything already verified — so a
-// re-run after a Partial finishes only the remainder. Mirror jobs are
-// deliberately excluded: their delete half deserves the dialog's
-// typed confirmation, not a one-click repeat.
+// re-run can copy remaining new names but still refuses overwrites.
+// Mirror remains unavailable under ADR 0020.
 func (s *TransferService) RerunJob(ctx context.Context, jobID string) (string, error) {
 	job, err := s.jobs.Get(ctx, jobID)
 	if err != nil {
@@ -695,6 +720,9 @@ func (s *TransferService) RerunJob(ctx context.Context, jobID string) (string, e
 	}
 	if !jobs.Terminal(job.State) {
 		return "", fmt.Errorf("job %s is still %s — cancel it first if you want a fresh run", jobID, job.State)
+	}
+	if job.Type == jobs.TypeMirror {
+		return "", errors.New("Mirror is unavailable while concurrent changes cannot be protected")
 	}
 	if job.Type != jobs.TypeCopy {
 		return "", fmt.Errorf("re-run supports copy jobs; a %s needs its own dialog (destructive halves keep their typed confirmation)", job.Type)

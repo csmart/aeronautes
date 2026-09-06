@@ -1494,7 +1494,14 @@ Semantics:
 > Add missing objects and update changed objects.  
 > Keep destination-only objects.
 
-**Copy is not "non-destructive".** It preserves *destination-only* objects, but it **overwrites same-name changed objects**, and an overwrite irreversibly destroys the prior logical value unless destination versioning is enabled and proven. Overwriting a *large* object is worse: rclone's own Update path bulk-deletes the old object's referenced segments (§28.6), which can corrupt another manifest when segments are shared. So the impact preview must show overwrite counts/bytes, apply confirmation thresholds to high-impact updates, and never call Copy "non-destructive" — say "Copy preserves destination-only objects" instead.
+**Current availability:** Copy adds missing objects through conditional creation and refuses changed existing destinations before staging (ADR 0020).
+The update semantics above remain a product requirement gated on P14's concurrency protocol.
+An uncertain pair is checked: proven equality skips it, a missing destination permits conditional creation, and an unequal existing destination is refused.
+Any job containing a refused overwrite finishes `partial`, even if nothing copied or a later error or cancellation occurs.
+The job preserves actual copied totals, counts refused overwrites separately and excludes their exact execution-time identities from verification.
+The preview identifies changed objects as refused and uncertain objects as awaiting a decision; listed comparison bytes are not a transfer estimate.
+Versioning does not authorise an overwrite or change refusal behaviour.
+Copy preserves destination-only objects; do not describe this limited containment as proof that the whole transfer workflow is non-destructive or release-ready.
 
 Conceptually:
 
@@ -1729,7 +1736,8 @@ Copy and upload route engine writes through unique staging names and commit live
 A native manifest-only DELETE does not follow segments, but it can still remove a replacement at that name or an object another manifest references.
 Stage-and-commit alone does not preserve a writer arriving after the final HEAD.
 Planned-new commits use the established conditional-create path and refuse a concurrently created destination; an unconditional fallback is forbidden.
-ADR 0020 requires P05 containment of unsupported overwrite and destructive Mirror work until an enforceable concurrency protocol has been implemented and tested.
+P05 now refuses every Mirror start and every unsupported Copy overwrite before staging under ADR 0020.
+All remaining live Copy commits use conditional creation, with no unconditional fallback; re-enablement requires an enforceable, tested concurrency protocol.
 
 **HEAD-immediately-before-mutation is scoped to where identity matters, not a blanket rule.**
 An authoritative HEAD is required where semantics depend on current identity: commit checks, segment operations, inspector destructive actions and evidence recording.
@@ -1757,7 +1765,7 @@ ADR 0020 supersedes the earlier generated-prefix definition and requires P04 to 
 **Stage-and-commit protocol for overwriting a changed large object** (rclone moves the bytes; Aeronautes commits the tiny manifest — a DLO-header PUT, not an SLO composer, so it stays inside K-XFER-007):
 
 This protocol describes the data path, not a completed concurrency guarantee.
-P05 must refuse unsupported overwrites before staging; re-enabling them requires P14's reviewed final-effect boundary (ADR 0020).
+Current Copy refuses these overwrites before staging; re-enabling them requires P14's reviewed final-effect boundary (ADR 0020).
 
 1. HEAD/GET the live destination and persist the old manifest for reconciliation;
 2. `rclone copy` the source to a **new** unique staging name under an Aeronautes staging prefix, so rclone's `Update` never runs against the live name;
@@ -1767,13 +1775,17 @@ P05 must refuse unsupported overwrites before staging; re-enabling them requires
 6. native DELETE of the **staging manifest only** (never `rclone Remove`);
 7. reclaim old destination segments only under `ExclusiveOwnershipProof` (normally never).
 
-**Overwriting a changed *plain* object stages the same way.** rclone uploads the replacement to a unique staging name; Aeronautes verifies it, then commits with a **native server-side COPY** (single-remote, same account — not the §30 cross-config path) onto the live name, applying the §27.4 metadata set and fingerprint, verifies, and natively deletes the staging object. rclone therefore never `Update`s a live name even for plain objects, so a plan-time "plain" classification cannot be invalidated by a concurrent plain→DLO conversion (the (a) race).
+**Plain overwrites are also unavailable.**
+The earlier stage-and-server-side-COPY implementation was removed because the final COPY could replace an external writer after the last HEAD.
+Any future plain overwrite needs P14's final-effect boundary as well as staged verification and metadata preservation.
+Current planned-new plain commits read the staged bytes and use a destination-conditioned PUT, while staged DLO commits use a conditioned manifest PUT.
 
-Durable states `before-stage → staged → committed → cleaned`; restart is idempotent and must distinguish a safe retry from a second overwrite; handle a versioned destination and an intervening external write (re-HEAD before commit). This state machine is built and crash-tested in the Phase-0 seam experiment (§60) before the Phase-5 transfer abstraction is frozen. The same native DLO-manifest PUT is the large-object half of the §14.3 native-name fallback.
+The eventual durable states `before-stage → staged → committed → cleaned` must distinguish safe retry from a second overwrite and handle versioned destinations and external writers.
+Earlier seam observations do not establish that restart or concurrency guarantee; P12/P14 still own those gates.
 
 The planner MUST disclose in the plan/Impact rail when a destination object will be committed as a **DLO** (including SLO sources — logical replication, §25): a DLO's reads depend on container-listing consistency (§15.3), a real fidelity difference the operator must see before execution, not discover after.
 
-This governs Copy (overwrite of changed objects — plain and large, §27.1), Mirror (destination-only deletion, §28.4), Empty Container / recursive delete (§33, §32), and SLO/DLO delete (§34, §35).
+This governs conditional Copy creation (§27.1), future Copy overwrites and Mirror deletion if re-enabled under P14 (§28.4), Empty Container / recursive delete (§33, §32), and SLO/DLO delete (§34, §35).
 
 Acceptance fixtures: two DLOs sharing a prefix and two SLOs sharing a (direct and nested) segment — overwriting or deleting either manifest through any engine must leave the other fully downloadable and hash-correct; plus a **race** fixture that turns a plain destination object into a shared-prefix DLO after preflight but before deletion, proving the Aeronautes-native manifest-only delete path never bulk-deletes the shared segments. (Requirements K-XFER-008, K-XFER-014, K-SEG-004.)
 
@@ -2475,7 +2487,7 @@ Conceptual decision table:
 | Metadata/ACL/config | Aeronautes Swift client |
 | Small marker PUT | Aeronautes Swift client |
 | Upload/download | rclone |
-| Swift→Swift Copy | rclone stages, native conditional creation commits new names; P05 must refuse unsupported overwrite (§28.6, ADR 0020) |
+| Swift→Swift Copy | rclone stages eligible new names; native conditional creation commits them. Changed existing destinations are refused before staging (§28.6, ADR 0020) |
 | Ordinary Mirror | Start is refused; comparison preview remains available. Re-enablement requires P14, and the eventual native delete boundary remains §28.6a (ADR 0020) |
 | Single object delete | Aeronautes-native, manifest-only; HEAD first (inspector-initiated, §28.6a) |
 | SLO delete | manifest-only default; +segments by explicit force with sharing risk disclosed (§34, ADR 0020) |
@@ -3054,7 +3066,7 @@ Deliver:
 - local→Swift upload;
 - Swift→local download;
 - multi-file/directory upload;
-- Swift bookmark→Swift bookmark Copy (planned-new names + stage-and-commit overwrites, §28.6);
+- Swift bookmark→Swift bookmark Copy (conditional creation of new names; changed existing destinations refused before staging, §28.6);
 - comparison model + streaming merge-join preview (§15.2, §28.4);
 - Smart preflight;
 - staging, verification, post-job reconciliation;
@@ -3071,7 +3083,8 @@ The original Phase 6 implementation did not establish an enforceable external-wr
 
 Gate:
 
-Cross-account Copy works on real test accounts, including changed-object overwrites via stage-and-commit. Mirror preview shows correct destructive plans without executing them.
+Cross-account Copy must create eligible new objects conditionally and preserve refused existing destinations on real test accounts, with accurate partial outcomes and separate refused counts.
+Mirror preview must show the comparison and execution-unavailable notice without offering a destructive start.
 
 No persistent rclone credential file.
 
@@ -4441,7 +4454,11 @@ These refusals contain the audited paths; P11 through P16 and the wider valuable
 The first P05 implementation now refuses every Mirror start before any service or storage work and removes its unreachable execution machinery.
 The comparison dialog exposes no Mirror execution path, and current availability is reconciled with the future P14 gate.
 The [validation record](experiments/2026-09-06-mirror-refusal.md) covers independent mock and real-Swift snapshots, unchanged records and audit history, frontend refusal, and deliberately restored unsafe behaviour.
-Copy overwrite refusal remains the next separate implementation commit.
+The second P05 implementation now refuses changed Copy items on all routes and removes unconditional overwrite commits.
+Jobs with refused items retain a partial result and separate refused count, including after cancellation or another error.
+A bounded-memory record preserves exact execution-time refusal identities for verification and refuses incomplete or corrupt evidence.
+The [Copy validation record](experiments/2026-09-06-copy-refusal.md) covers the prior failure, mixed real-Swift plans, refusal volume, conditional-write races, local-upload preservation and deliberately removed safeguards.
+Independent local review and all five current-head/current-master checks remain required before delivery.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.

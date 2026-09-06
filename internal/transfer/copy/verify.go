@@ -23,12 +23,24 @@ type VerifyReport struct {
 
 // Verify is the independent completeness check (§28.4: never the
 // engine's exit code): a FRESH merge-join over both namespaces. Every
-// name must now prove Same — listing-grade, or by authoritative HEADs
+// name other than an execution-time refusal must now prove Same —
+// listing-grade, or by authoritative HEADs
 // plus the destination fingerprint for conservative rows. Destination-
 // only names are not this job's business (Copy never deletes).
 func (e *Executor) Verify(ctx context.Context, source, dest listingStream) (*VerifyReport, error) {
+	refused, err := e.refusals.reader(e.report.OverwritesRefused)
+	if err != nil {
+		return nil, err
+	}
 	report := &VerifyReport{}
-	_, err := plan.Copy(ctx, source, dest, e.cfg.SrcPrefix, e.cfg.DstPrefix, func(item plan.Item) error {
+	_, err = plan.Copy(ctx, source, dest, e.cfg.SrcPrefix, e.cfg.DstPrefix, func(item plan.Item) error {
+		excluded, err := refused.contains(item.Name)
+		if err != nil {
+			return err
+		}
+		if excluded {
+			return nil
+		}
 		switch item.Verdict {
 		case plan.VerdictSame:
 			report.Verified++
@@ -60,7 +72,10 @@ func (e *Executor) Verify(ctx context.Context, source, dest listingStream) (*Ver
 		return nil
 	})
 	if err != nil {
-		return report, err
+		return nil, err
+	}
+	if err := refused.finish(); err != nil {
+		return nil, err
 	}
 	return report, nil
 }

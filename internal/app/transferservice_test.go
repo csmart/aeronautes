@@ -291,7 +291,7 @@ func awaitJobAudit(t *testing.T, h *harness, jobID, operation string) {
 			t.Fatalf("waiting for %s audit for job %s: %v", operation, jobID, err)
 		}
 		for _, event := range events {
-			if event.Operation == operation && event.Summary == "job "+jobID {
+			if event.Operation == operation && (event.Summary == "job "+jobID || strings.HasPrefix(event.Summary, "job "+jobID+" · ")) {
 				return
 			}
 		}
@@ -345,14 +345,14 @@ func TestPlanAndStartCopyAcrossBookmarks(t *testing.T) {
 		t.Fatal(err)
 	}
 	job := awaitTerminal(t, h, jobID)
-	if job.State != "complete" {
+	if job.State != "partial" {
 		t.Fatalf("job = %+v", job)
 	}
-	if job.Counters.ObjectsCopied != 2 || job.Counters.ObjectsVerified == 0 {
+	if job.Counters.ObjectsCopied != 1 || job.Counters.ObjectsVerified != 2 || job.Counters.ObjectsFailed != 0 || job.Counters.OverwritesRefused != 1 || job.Counters.Overwrites != 0 {
 		t.Errorf("counters = %+v", job.Counters)
 	}
 
-	// The overwrite committed and metadata rode the §27.4 apply.
+	// Eligible creation still carries source metadata alongside refusals.
 	d, err := h.transfer.connections.sessions[dstBookmark].session.ObjectDetail(ctx, "backup", "one.txt")
 	if err != nil {
 		t.Fatal(err)
@@ -362,7 +362,7 @@ func TestPlanAndStartCopyAcrossBookmarks(t *testing.T) {
 	}
 
 	// Audit: a start and a terminal event.
-	awaitJobAudit(t, h, jobID, "transfer.copy.complete")
+	awaitJobAudit(t, h, jobID, "transfer.copy.partial")
 	events, err := h.auditSvc.Recent(ctx, 10)
 	if err != nil {
 		t.Fatal(err)
@@ -372,8 +372,11 @@ func TestPlanAndStartCopyAcrossBookmarks(t *testing.T) {
 		if e.Operation == "transfer.copy.start" {
 			sawStart = true
 		}
-		if e.Operation == "transfer.copy.complete" {
+		if e.Operation == "transfer.copy.partial" {
 			sawDone = true
+			if e.Result != "verify_mismatch" || !strings.Contains(e.Summary, "1 overwrite refused") {
+				t.Errorf("refusal missing from terminal audit: %+v", e)
+			}
 		}
 	}
 	if !sawStart || !sawDone {
@@ -836,6 +839,20 @@ func TestRerunJob(t *testing.T) {
 	}
 	if len(*seen) < 1 || (*seen)[len(*seen)-1].Transfers != 9 {
 		t.Fatalf("engine options on rerun: %+v", *seen)
+	}
+}
+
+func TestRerunHistoricalMirrorIsUnavailable(t *testing.T) {
+	h := newHarness(t)
+	job, err := h.transfer.jobs.Create(t.Context(), jobs.Job{Type: jobs.TypeMirror})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.transfer.jobs.Transition(t.Context(), job.ID, jobs.StateCancelled); err != nil {
+		t.Fatal(err)
+	}
+	if id, err := h.transfer.RerunJob(t.Context(), job.ID); id != "" || err == nil || !strings.Contains(err.Error(), "Mirror is unavailable") {
+		t.Fatalf("historical Mirror rerun did not explain refusal: %q, %v", id, err)
 	}
 }
 

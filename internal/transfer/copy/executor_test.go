@@ -169,6 +169,11 @@ func newExecutor(t *testing.T, w *world, engine Engine) *Executor {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		if err := e.Close(); err != nil {
+			t.Error(err)
+		}
+	})
 	return e
 }
 
@@ -234,7 +239,7 @@ func TestSilentDropDetected(t *testing.T) {
 	}
 }
 
-func TestLargeOverwriteStageAndCommit(t *testing.T) {
+func TestLargePlannedNewStageAndCommit(t *testing.T) {
 	w := newWorld(t)
 	ctx := context.Background()
 
@@ -248,7 +253,7 @@ func TestLargeOverwriteStageAndCommit(t *testing.T) {
 		Bytes: int64(len(sharedSegment)), ETag: hex.EncodeToString(sum[:]), Data: sharedSegment,
 	})
 	oldManifest := "backup_segments/old/live.bin/"
-	w.dstMock.PutObject("backup", "live.bin", swifttest.Object{
+	w.dstMock.PutObject("backup", "previous.bin", swifttest.Object{
 		Manifest: oldManifest, ContentType: "application/octet-stream",
 	})
 	w.dstMock.PutObject("backup", "sibling.bin", swifttest.Object{
@@ -262,14 +267,13 @@ func TestLargeOverwriteStageAndCommit(t *testing.T) {
 	engine := &fakeEngine{w: w, chunk: 2000, interruptAfter: -1}
 	executor := newExecutor(t, w, engine)
 	report, err := executor.Run(ctx, []plan.Item{{
-		Name: "live.bin", Verdict: plan.VerdictChanged, Route: plan.RouteRclone,
+		Name: "live.bin", Verdict: plan.VerdictNew, Route: plan.RouteRclone,
 		SourceBytes: 5000, DestBytes: int64(len(sharedSegment)),
-		DestETag: "d41d8cd98f00b204e9800998ecf8427e", // plan-time etag of the zero-byte manifest
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Copied != 1 || report.Overwrites != 1 || len(report.Failures) != 0 {
+	if report.Copied != 1 || report.Overwrites != 0 || report.OverwritesRefused != 0 || len(report.Failures) != 0 {
 		t.Fatalf("report = %+v", report)
 	}
 
@@ -285,14 +289,10 @@ func TestLargeOverwriteStageAndCommit(t *testing.T) {
 	if live.Meta["Kind"] != "video" || live.Meta["Aeronautes-Fingerprint"] == "" {
 		t.Errorf("metadata = %v", live.Meta)
 	}
-	// Old manifest recorded as evidence; old SHARED segments untouched;
-	// the sibling still assembles.
-	if report.OldManifests["live.bin"] != oldManifest {
-		t.Errorf("old manifest = %v", report.OldManifests)
-	}
+	// Unrelated DLOs retain their shared backing objects.
 	sibling := headDst(t, w, "sibling.bin")
 	if sibling.ContentLength != int64(len(sharedSegment)) {
-		t.Fatalf("shared segments were harmed by the overwrite: %+v", sibling)
+		t.Fatalf("shared segments were harmed by the copy: %+v", sibling)
 	}
 	// Staging litter cleaned: manifest gone, no residue; committed
 	// prefix recorded so reconciliation keeps it.
@@ -302,40 +302,12 @@ func TestLargeOverwriteStageAndCommit(t *testing.T) {
 	if len(report.CommittedPrefixes) != 1 || len(report.CapturedPrefixes) != 1 {
 		t.Errorf("prefixes: captured %v committed %v", report.CapturedPrefixes, report.CommittedPrefixes)
 	}
-	if _, err := w.dst.ObjectDetail(ctx, "backup", executor.StagingPrefix()+"000001"); !swiftcontrol.IsNotFound(err) {
+	if _, err := w.dst.ObjectDetail(ctx, "backup", executor.StagingPrefix()+"batch/live.bin"); !swiftcontrol.IsNotFound(err) {
 		t.Errorf("staged manifest still present: %v", err)
 	}
 }
 
-func TestPlainOverwriteCommitsByServerCopy(t *testing.T) {
-	w := newWorld(t)
-	ctx := context.Background()
-	seed(w.srcMock, "media", "doc.txt", []byte("new content"), map[string]string{"Rev": "2"})
-	seed(w.dstMock, "backup", "doc.txt", []byte("old content"), nil)
-	oldETag := headDst(t, w, "doc.txt").ETag
-
-	engine := &fakeEngine{w: w, interruptAfter: -1}
-	report, err := newExecutor(t, w, engine).Run(ctx, []plan.Item{{
-		Name: "doc.txt", Verdict: plan.VerdictChanged, Route: plan.RouteRclone,
-		SourceBytes: 11, DestBytes: 11, DestETag: oldETag,
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.Copied != 1 || report.Overwrites != 1 || len(report.Failures) != 0 {
-		t.Fatalf("report = %+v", report)
-	}
-	d := headDst(t, w, "doc.txt")
-	sum := md5.Sum([]byte("new content"))
-	if d.ETag != hex.EncodeToString(sum[:]) || d.Meta["Rev"] != "2" {
-		t.Errorf("committed = etag %s meta %v", d.ETag, d.Meta)
-	}
-	if len(report.StagedResidue) != 0 {
-		t.Errorf("staging not cleaned: %v", report.StagedResidue)
-	}
-}
-
-func TestInterveningWriteConflicts(t *testing.T) {
+func TestRefusalPreservesReplacedDestination(t *testing.T) {
 	w := newWorld(t)
 	seed(w.srcMock, "media", "doc.txt", []byte("source-v2"), nil)
 	seed(w.dstMock, "backup", "doc.txt", []byte("external!"), nil)
@@ -348,10 +320,10 @@ func TestInterveningWriteConflicts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Conflicts) != 1 || report.Copied != 0 {
+	if report.OverwritesRefused != 1 || len(report.Conflicts) != 0 || report.Copied != 0 {
 		t.Fatalf("report = %+v", report)
 	}
-	// The external write survived; staging was cleaned.
+	// Refusal must preserve the competing writer without creating staging.
 	d := headDst(t, w, "doc.txt")
 	sum := md5.Sum([]byte("external!"))
 	if d.ETag != hex.EncodeToString(sum[:]) {
@@ -370,7 +342,7 @@ func TestUnknownResolution(t *testing.T) {
 	seed(w.dstMock, "backup", "equal.txt", []byte("same"), nil)
 	// fresh.txt: destination vanished since planning → runs as new.
 	seed(w.srcMock, "media", "fresh.txt", []byte("fresh"), nil)
-	// diff.txt: differs → overwrite.
+	// Unequal existing destinations are refused after HEAD resolution.
 	seed(w.srcMock, "media", "diff.txt", []byte("aaaa"), nil)
 	seed(w.dstMock, "backup", "diff.txt", []byte("bbbb"), nil)
 
@@ -384,14 +356,12 @@ func TestUnknownResolution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.SkippedEqual != 1 || report.Copied != 2 || len(report.Failures) != 0 {
+	if report.SkippedEqual != 1 || report.Copied != 1 || report.OverwritesRefused != 1 || report.Overwrites != 0 || len(report.Failures) != 0 {
 		t.Fatalf("report = %+v", report)
 	}
-	if headDst(t, w, "diff.txt").ETag == "" {
-	}
-	sum := md5.Sum([]byte("aaaa"))
+	sum := md5.Sum([]byte("bbbb"))
 	if headDst(t, w, "diff.txt").ETag != hex.EncodeToString(sum[:]) {
-		t.Error("diff.txt not overwritten")
+		t.Error("refused diff.txt changed")
 	}
 	if headDst(t, w, "fresh.txt").ContentLength != 5 {
 		t.Error("fresh.txt not copied")
@@ -649,7 +619,7 @@ func (r *recordingEngine) CopyTo(ctx context.Context, src, dst string, onEvent f
 
 func TestEngineNeverReceivesLiveNames(t *testing.T) {
 	// K-XFER-014's absolute boundary, mechanized: every engine write —
-	// planned-new batches and staged overwrites alike — carries the job
+	// planned-new batches only — carries the job
 	// staging namespace, never a live destination path.
 	w := newWorld(t)
 	seed(w.srcMock, "media", "new-a.txt", []byte("alpha"), nil)
@@ -667,7 +637,7 @@ func TestEngineNeverReceivesLiveNames(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Copied != 3 || len(report.Failures) != 0 {
+	if report.Copied != 2 || report.OverwritesRefused != 1 || len(report.Failures) != 0 {
 		t.Fatalf("report = %+v", report)
 	}
 	if len(rec.dsts) == 0 {
@@ -678,12 +648,15 @@ func TestEngineNeverReceivesLiveNames(t *testing.T) {
 			t.Errorf("engine received a live destination %q", dst)
 		}
 	}
-	// The staged copies COMMITTED: live names exist, staging is clean.
+	// New names committed; the refused existing name remains unchanged.
 	ctx := context.Background()
 	for _, name := range []string{"new-a.txt", "new-b.txt", "changed.txt"} {
 		if _, err := w.dst.ObjectDetail(ctx, "backup", name); err != nil {
 			t.Errorf("%s missing after staged commit: %v", name, err)
 		}
+	}
+	if headDst(t, w, "changed.txt").ETag != md5hex("old") {
+		t.Error("refused changed name was modified")
 	}
 	if len(report.StagedResidue) != 0 {
 		t.Errorf("staging residue after clean run: %v", report.StagedResidue)
@@ -787,13 +760,12 @@ func TestStagedSegmentCompletenessGate(t *testing.T) {
 	// chunking engine that drops one segment.
 	w := newWorld(t)
 	seed(w.srcMock, "media", "big.bin", bytes.Repeat([]byte("b"), 5000), nil)
-	seed(w.dstMock, "backup", "big.bin", []byte("old"), nil) // forces staged overwrite
 	w.dstMock.AddContainer("backup_segments", "standard")
 
 	engine := &segmentDroppingEngine{fakeEngine{w: w, chunk: 1024, interruptAfter: -1}}
 	e := newExecutor(t, w, engine)
 	report, err := e.Run(context.Background(), []plan.Item{
-		{Name: "big.bin", Verdict: plan.VerdictChanged, Route: plan.RouteRclone, SourceBytes: 5000, DestETag: md5hex("old")},
+		{Name: "big.bin", Verdict: plan.VerdictNew, Route: plan.RouteRclone, SourceBytes: 5000},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -801,9 +773,9 @@ func TestStagedSegmentCompletenessGate(t *testing.T) {
 	if report.Copied != 0 || len(report.Failures) != 1 {
 		t.Fatalf("report = %+v, want the truncated stage to fail", report)
 	}
-	// The live destination still holds the OLD object.
+	// Incomplete staged bytes must never become a new live object.
 	live, err := w.dst.ObjectDetail(context.Background(), "backup", "big.bin")
-	if err != nil || live.ContentLength != 3 {
+	if !swiftcontrol.IsNotFound(err) {
 		t.Fatalf("live = %+v %v (truncated commit went live)", live, err)
 	}
 }
@@ -815,8 +787,8 @@ type segmentDroppingEngine struct {
 	fakeEngine
 }
 
-func (s *segmentDroppingEngine) CopyTo(ctx context.Context, src, dst string, onEvent func(rclone.Event)) (*rclone.Result, error) {
-	result, err := s.fakeEngine.CopyTo(ctx, src, dst, onEvent)
+func (s *segmentDroppingEngine) Copy(ctx context.Context, src, dst string, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
+	result, err := s.fakeEngine.Copy(ctx, src, dst, names, onEvent)
 	if err == nil && len(result.SegmentPrefixes) > 0 {
 		p := result.SegmentPrefixes[0]
 		var names []string
@@ -866,12 +838,7 @@ func TestSymlinkCopiedAsSymlink(t *testing.T) {
 	}
 }
 
-func TestPlannedNewCommitsAreConditional(t *testing.T) {
-	// F-04: the planned-new commit carries If-None-Match:* (measured on
-	// SAIO: 201/412, first writer wins), so an object appearing between
-	// the re-HEAD and the PUT is a CONFLICT — never an overwrite. The
-	// racing writer is simulated by an engine whose stage step also
-	// plants the live destination.
+func TestReheadRefusesDestinationCreatedDuringStaging(t *testing.T) {
 	w := newWorld(t)
 	seed(w.srcMock, "media", "raced.txt", []byte("mine"), nil)
 	e := newExecutor(t, w, &liveRacingEngine{fakeEngine{w: w, interruptAfter: -1}})
@@ -890,12 +857,8 @@ func TestPlannedNewCommitsAreConditional(t *testing.T) {
 	}
 }
 
-// liveRacingEngine stages normally, then plants a live destination the
-// instant AFTER the executor's commit re-HEAD would have seen absence —
-// by winning the race during the stage copy itself. The plain-commit
-// path uses server-side COPY (unconditional), so the fixture routes the
-// race through the re-HEAD; the conditional-PUT paths are additionally
-// covered because a DLO/symlink/native commit hits 412.
+// This writer arrives during staging, before the final destination HEAD.
+// The acknowledged response-barrier tests cover the later race window.
 type liveRacingEngine struct {
 	fakeEngine
 }

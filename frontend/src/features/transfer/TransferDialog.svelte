@@ -106,6 +106,11 @@
         Mirror is unavailable while concurrent changes cannot be protected.
         Preview compares the two scopes; it does not start a transfer or delete objects.
       </p>
+    {:else}
+      <p class="warn" role="status">
+        Copy adds missing objects. Existing changed objects are refused because concurrent
+        changes cannot be protected.
+      </p>
     {/if}
 
     <div class="scope num">
@@ -184,42 +189,44 @@
       <div class="preview num">
         <div class="counts">
           <span class="count"><strong>{s.new}</strong> new</span>
-          <span class="count"><strong>{s.changed}</strong> changed</span>
+          <span class="count"><strong>{s.changed}</strong> {mode === "copy" ? `${s.changed === 1 ? "overwrite" : "overwrites"} refused` : "changed"}</span>
           <span class="count"><strong>{s.same}</strong> unchanged</span>
           <span class="count conservative" title="Equality is not established by listings">
             <strong>{s.unknown}</strong> unable to prove unchanged
           </span>
-          <span class="count"><strong>{formatBytes(s.transferBytes)}</strong> {mode === "copy" ? "to transfer" : "in comparison"}</span>
+          <span class="count" title="Listed source bytes for new, changed and uncertain objects; not a transfer estimate">
+            <strong>{formatBytes(s.transferBytes)}</strong> listed bytes in comparison
+          </span>
         </div>
         {#if mode === "copy"}
           <div class="notes">
-            {#if s.overwrites > 0}
+            {#if s.unknown > 0}
               <p>
-                {s.overwrites} existing destination object{s.overwrites === 1 ? "" : "s"} will be
-                overwritten via stage-and-commit.
+                {s.unknown} uncertain object{s.unknown === 1 ? "" : "s"} will be checked.
+                Equal objects are skipped; unequal existing destinations are refused.
+                A missing destination can be created conditionally.
               </p>
             {/if}
             {#if s.nativeRouted > 0}
               <p>
-                {s.nativeRouted} name{s.nativeRouted === 1 ? "" : "s"} the engine cannot carry
-                safely will go through the native path.
+                {s.nativeRouted} name{s.nativeRouted === 1 ? "" : "s"} require native handling
+                if eligible for copying.
               </p>
             {/if}
             {#if preview.largeObjectsAsDlo}
               <p>
-                Large objects commit as destination DLOs: their reads depend on container-listing
+                Eligible large objects become destination DLOs: their reads depend on container-listing
                 consistency.
               </p>
             {/if}
             {#if preview.versionedDestination}
               <p class="warn">
-                The destination container is versioned: every overwrite archives a version — this
-                copy will accumulate versions by design.
+                The destination container is versioned. Existing changed objects are still refused.
               </p>
             {/if}
             <p class="data-path">
               {preview.dataPath}{preview.overwriteBytes > 0
-                ? ` · ${formatBytes(preview.overwriteBytes)} of the plan overwrites existing objects`
+                ? ` · ${formatBytes(preview.overwriteBytes)} listed bytes in refused changed objects`
                 : ""}
             </p>
           </div>

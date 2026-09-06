@@ -28,12 +28,10 @@ commit, phase by phase, following the design.
 - **Automatic segment deletion needs `ExclusiveOwnershipProof`** through the destructive effect.
   Generated prefixes prove creation and `Confirmed` proves a reference; neither excludes sharing or concurrent writers.
   Recovery retains uncertain data and records under ADR 0020; explicit force cleanup is a separate action. (§28.6, K-SEG-004)
-- **Overwriting any changed object uses the stage-and-commit protocol** (rclone stages to a unique
-  temp name; Aeronautes commits natively — a DLO-manifest PUT for large objects, a server-side COPY
-  for plain ones). (§28.6)
-  Stage-and-commit alone does not protect a concurrent replacement.
-  Mirror starts are refused under ADR 0020.
-  P05's unsupported overwrite refusal remains pending its separate implementation.
+- **Changed existing Copy destinations are refused before staging**, including uncertain pairs resolved as unequal.
+  Eligible new names use conditional native creation; unconditional fallback is forbidden.
+  A refused overwrite produces a partial job, is counted separately and cannot consume copied-object verification evidence.
+  Mirror starts are refused under ADR 0020; P14 must establish the concurrency boundary before either capability is restored. (§28.6)
 - **Listings are advisory (eventually consistent); HEAD is authoritative.** Verify with bounded
   retries; namespace comparison is a streaming merge-join over the sorted listings. (§15.2, §15.3, K-CON-001)
 - **Secrets never reach the frontend or SQLite**; rclone gets an invocation-local gateway token through named-remote env config, never the durable key or real Swift token, and never through argv. (§55, §26.2, ADR 0014, K-SEC-*)
@@ -95,7 +93,7 @@ the reference/first-polish platform. App id: `io.csmart.aeronautes`.
   §65.10 behavioral harness lands, no merge without a regression test (unit/SAIO); once it
   exists, every behavior-changing feature adds a system-matrix row and test, and every bug fix
   carries the system-level reproduction that failed before it. No system test, no merge.
-  The preceding dated capability list is historical: Mirror now supports comparison preview only and refuses every start until P14 establishes the required concurrency boundary.
+  The preceding dated capability list is historical: Copy now refuses overwrites, and Mirror supports comparison preview only and refuses every start until P14 establishes the required concurrency boundary.
 - **CI is live** (`.github/workflows/ci.yml`): Go, frontend, containerized-Swift integration, headless smoke and their aggregate gate are required checks on master through PRs.
   The six-target release matrix builds unsigned artifacts on dispatch/tag (§61.0).
 - **Highest-value early task: the disposable Phase-0 rclone-seam experiment** (§60) — it runs in

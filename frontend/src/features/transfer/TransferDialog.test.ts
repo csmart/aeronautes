@@ -33,6 +33,50 @@ function show() {
   return api;
 }
 
+it("distinguishes refused overwrites from uncertain comparison candidates", async () => {
+  show();
+  expect(document.body.textContent).toContain("Existing changed objects are refused");
+  button("Preview")!.click();
+  await vi.waitFor(() => expect(document.querySelector(".preview")).not.toBeNull());
+  const text = document.body.textContent!;
+  expect(text).toMatch(/1\s+overwrite refused/);
+  expect(text).toMatch(/1 uncertain object\s+will be checked/);
+  expect(text).toContain("unequal existing destinations are refused");
+  expect(text).toContain("listed bytes in comparison");
+  expect(text).toContain("listed bytes in refused changed objects");
+  expect(text).not.toContain("will be overwritten");
+  expect(text).not.toContain("to transfer");
+});
+
+it("keeps overwrite refusal visible for a versioned destination", async () => {
+  show();
+  const container = document.querySelector<HTMLInputElement>('input[placeholder="container"]')!;
+  container.value = "versioned";
+  container.dispatchEvent(new Event("input", { bubbles: true }));
+  flushSync();
+  button("Preview")!.click();
+  await vi.waitFor(() => expect(document.querySelector(".preview")).not.toBeNull());
+  expect(document.body.textContent).toContain("Existing changed objects are still refused");
+  expect(document.body.textContent).not.toContain("accumulate versions");
+});
+
+it("keeps a cancelled fixture copy partial after an overwrite refusal", async () => {
+  const api = newFakeApi();
+  const id = await api.startCopy({
+    sourceBookmarkId: "a", sourceContainer: "src", sourcePrefix: "",
+    destBookmarkId: "b", destContainer: "dst", destPrefix: "", profile: "",
+    settings: { chunkSize: "", transfers: 0, checkers: 0, tpsLimit: 0, bwLimit: "" },
+  });
+  await api.cancelJob(id);
+  const [job] = await api.jobs("", false, 50);
+  expect(job.state).toBe("partial");
+  expect(job.counters.overwritesRefused).toBe(1);
+  expect(job.counters.overwrites).toBe(0);
+  expect(job.counters.objectsCopied).toBe(2);
+  expect(job.error).toContain("1 overwrite refused");
+  expect(job.error).toContain("context canceled");
+});
+
 it("keeps Mirror comparison available without an execution or confirmation flow", async () => {
   const api = show();
   button("Mirror")!.click();

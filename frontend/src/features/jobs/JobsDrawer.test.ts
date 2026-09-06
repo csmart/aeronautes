@@ -21,6 +21,24 @@ function show(browser: BrowserState) {
   flushSync();
 }
 
+it("shows refused overwrites separately from copied and failed objects", async () => {
+  const api = newFakeApi();
+  const job: JobDTO = {
+    id: "partial", type: "copy", state: "partial", source: "source/", destination: "dest/",
+    sourceBookmarkId: "a", destBookmarkId: "b", createdAt: "", startedAt: "", finishedAt: "",
+    engine: "native", settings: "", error: "261 overwrites refused; 1 unverified", recoveryRecords: 1,
+    counters: { objectsPlanned: 263, objectsCopied: 2, objectsVerified: 1, objectsFailed: 1,
+      bytesPlanned: 1000, bytesCopied: 16, overwrites: 0, overwritesRefused: 261, nativeRouted: 1, objectsDeleted: 0 },
+  };
+  api.jobs = async () => [job];
+  show(new BrowserState(api));
+  await vi.waitFor(() => expect(document.querySelector(".badge")?.textContent).toBe("partial"));
+  const counts = document.querySelector(".counts")?.textContent;
+  expect(counts).toContain("261 overwrites refused");
+  expect(counts).toContain("1 failed");
+  expect(counts).toMatch(/2\s*\/263/);
+});
+
 it("shows global and per-job retained records without changing a completed result", async () => {
   const api = newFakeApi();
   const job: JobDTO = {
@@ -28,7 +46,7 @@ it("shows global and per-job retained records without changing a completed resul
     sourceBookmarkId: "a", destBookmarkId: "b", createdAt: "", startedAt: "", finishedAt: "",
     engine: "native", settings: "", error: "", recoveryRecords: 3,
     counters: { objectsPlanned: 1, objectsCopied: 1, objectsVerified: 1, objectsFailed: 0,
-      bytesPlanned: 8, bytesCopied: 8, overwrites: 0, nativeRouted: 1, objectsDeleted: 0 },
+      bytesPlanned: 8, bytesCopied: 8, overwrites: 0, overwritesRefused: 0, nativeRouted: 1, objectsDeleted: 0 },
   };
   api.jobs = async () => [job];
   api.recoveryStatus = async () => ({ jobs: 7, records: 21 });

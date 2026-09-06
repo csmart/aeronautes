@@ -75,9 +75,8 @@ export function PreflightUpload(req: $models.UploadRequestDTO): $CancellableProm
  * RerunJob starts a fresh copy of a TERMINAL copy job's scope. The
  * §28.4 machinery makes this cheap-idempotent — Same verdicts and
  * destination fingerprints skip everything already verified — so a
- * re-run after a Partial finishes only the remainder. Mirror jobs are
- * deliberately excluded: their delete half deserves the dialog's
- * typed confirmation, not a one-click repeat.
+ * re-run can copy remaining new names but still refuses overwrites.
+ * Mirror remains unavailable under ADR 0020.
  */
 export function RerunJob(jobID: string): $CancellablePromise<string> {
     return $Call.ByID(2171765979, jobID);

@@ -315,7 +315,8 @@ describe("jobs drawer state", () => {
 
     await s.cancelJob(id);
     expect(s.activeJobs).toEqual([]);
-    expect(s.jobs[0].state).toBe("cancelled");
+    expect(s.jobs[0].state).toBe("partial");
+    expect(s.jobs[0].counters.overwritesRefused).toBe(1);
   });
 
   it("previews a copy plan with disclosures", async () => {

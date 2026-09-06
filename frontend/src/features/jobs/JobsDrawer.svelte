@@ -268,6 +268,9 @@
                   {#if job.counters.objectsFailed > 0}
                     · <em class="bad">{job.counters.objectsFailed} failed</em>
                   {/if}
+                  {#if job.counters.overwritesRefused > 0}
+                    · <em class="bad">{job.counters.overwritesRefused} {job.counters.overwritesRefused === 1 ? "overwrite" : "overwrites"} refused</em>
+                  {/if}
                 </span>
                 <span class="when">
                   {#if browser.jobRates[job.id] > 0 && isActive(job)}

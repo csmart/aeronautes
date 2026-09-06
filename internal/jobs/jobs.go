@@ -69,10 +69,11 @@ type Counters struct {
 	ObjectsFailed   int64 `json:"objectsFailed"`
 	BytesPlanned    int64 `json:"bytesPlanned"`
 	BytesCopied     int64 `json:"bytesCopied"`
-	// Overwrites counts stage-and-commit objects; NativeRouted counts
-	// names the §14.3 classification sent down the native path.
-	Overwrites   int64 `json:"overwrites"`
-	NativeRouted int64 `json:"nativeRouted"`
+	// Overwrites remains for historical jobs; current Copy refuses them.
+	// Refusals are separate from failed or verified copy attempts.
+	Overwrites        int64 `json:"overwrites"`
+	OverwritesRefused int64 `json:"overwritesRefused"`
+	NativeRouted      int64 `json:"nativeRouted"`
 	// ObjectsDeleted counts a Mirror's destination-only deletions.
 	ObjectsDeleted int64 `json:"objectsDeleted"`
 }

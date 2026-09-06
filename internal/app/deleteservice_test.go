@@ -315,15 +315,11 @@ func TestCopyJobOwnershipRoundTrip(t *testing.T) {
 	dstBookmark, dstMock := secondCluster(t, h)
 	deleteSvc := NewDeleteService(h.transfer.connections, h.transfer.jobs, h.transfer.runner, h.evidence)
 
-	// A source big enough for the chunking engine: the copy commits a
-	// destination DLO whose prefix becomes an ownership proof.
+	// Chunked creation records the generated prefix for later inspection.
 	h.installChunkingEngine(nil, 1024)
 	h.mock.AddContainer("media", "standard")
 	seedObject(h.mock, "media", "video.bin", strings.Repeat("v", 5000), nil)
-	// Overwrite path: an existing destination object forces
-	// stage-and-commit, whose committed prefix is the recorded proof.
 	dstMock.AddContainer("backup", "standard")
-	seedObject(dstMock, "backup", "video.bin", "old tiny version bytes!!", nil)
 
 	jobID, err := h.transfer.StartCopy(ctx, CopyRequestDTO{
 		SourceBookmarkID: srcBookmark, SourceContainer: "media",
@@ -343,9 +339,8 @@ func TestCopyJobOwnershipRoundTrip(t *testing.T) {
 		t.Fatalf("ownership rows = %+v", owned)
 	}
 
-	// The copied DLO is provably ours: the evidence shows Proven, and a
-	// forced segments-delete (Force now required for all — review R-02)
-	// sweeps exactly the owned prefix.
+	// Recorded creation is not exclusivity; segment deletion still needs
+	// explicit force even when the legacy status field reports Proven.
 	status, err := deleteSvc.CheckSegmentOwnership(ctx, SegmentsDeleteRequestDTO{
 		BookmarkID: dstBookmark, Container: "backup", Name: "video.bin",
 	})

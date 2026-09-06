@@ -13,10 +13,11 @@ export interface Counters {
     "bytesCopied": number;
 
     /**
-     * Overwrites counts stage-and-commit objects; NativeRouted counts
-     * names the §14.3 classification sent down the native path.
+     * Overwrites remains for historical jobs; current Copy refuses them.
+     * Refusals are separate from failed or verified copy attempts.
      */
     "overwrites": number;
+    "overwritesRefused": number;
     "nativeRouted": number;
 
     /**
