@@ -1,6 +1,7 @@
 <!-- Bookmark create/edit modal (§11). The API key field is write-only:
   it crosses the bridge once at save and is never readable back. -->
 <script lang="ts">
+  import { onDestroy, untrack } from "svelte";
   import { trapFocus } from "../../lib/trapFocus";
   import type { BookmarkDTO } from "../../lib/api";
   import type { BrowserState } from "./browserState.svelte";
@@ -15,6 +16,22 @@
     onClose: () => void;
   } = $props();
 
+  // The form must not borrow a replacement prop's bookmark identity.
+  // svelte-ignore state_referenced_locally
+  const target = { browser, existing };
+  let closed = $state(false);
+  let savedBookmark = $state<BookmarkDTO | null>(null);
+  const bookmark = $derived(savedBookmark ?? target.existing);
+  function isCurrent() { return !closed && browser === target.browser && existing === target.existing; }
+  function close() {
+    if (closed) return;
+    closed = true;
+    apiKey = "";
+    onClose();
+  }
+  onDestroy(() => { closed = true; apiKey = ""; });
+  $effect(() => { if (!isCurrent()) untrack(close); });
+
   // The modal is mounted fresh per open ({#if} in BrowserScreen), so
   // capturing the prop's initial values is exactly right.
   /* svelte-ignore state_referenced_locally */
@@ -27,127 +44,148 @@
   /* svelte-ignore state_referenced_locally */
   let tlsMode = $state(existing?.tlsMode ?? "system");
   let caPem = $state("");
-  let saving = $state(false);
+  let action = $state<"save" | "connect" | "delete" | null>(null);
+  const saving = $derived(action !== null);
   let error: string | null = $state(null);
   let confirmingDelete = $state(false);
 
   async function remove() {
-    if (!existing) {
+    if (saving || !isCurrent() || !bookmark) {
       return;
     }
-    saving = true;
+    action = "delete";
     error = null;
     try {
-      await browser.deleteBookmark(existing.id);
-      onClose();
+      await browser.deleteBookmark(bookmark.id);
+      if (isCurrent()) close();
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
-      confirmingDelete = false;
+      if (isCurrent()) {
+        error = err instanceof Error ? err.message : String(err);
+        confirmingDelete = false;
+      }
     } finally {
-      saving = false;
+      if (isCurrent()) action = null;
     }
   }
 
   async function save(connect: boolean) {
-    saving = true;
+    if (saving || !isCurrent()) return;
+    action = "save";
     error = null;
     try {
-      const saved = await browser.saveBookmark(
+      const pending = browser.saveBookmark(
         {
-          id: existing?.id ?? "",
+          id: bookmark?.id ?? "",
           displayName,
           authUrl,
           username,
-          storageUrlOverride: existing?.storageUrlOverride ?? "",
+          storageUrlOverride: bookmark?.storageUrlOverride ?? "",
           tlsMode,
           caPem,
-          hasCa: existing?.hasCa ?? false,
-          hasCredential: existing?.hasCredential ?? false,
+          hasCa: bookmark?.hasCa ?? false,
+          hasCredential: bookmark?.hasCredential ?? false,
         },
         apiKey,
       );
+      // An active-bookmark save resets the connection synchronously itself.
+      const scope = browser.scopeRevision;
+      const saved = await pending;
+      if (!isCurrent()) return;
+      savedBookmark = saved;
       if (connect) {
-        await browser.connect(saved.id);
+        if (scope !== browser.scopeRevision) {
+          error = "Saved. The connection changed; select the bookmark to connect.";
+          return;
+        }
+        action = "connect";
+        const connected = await browser.connect(saved.id, isCurrent);
+        if (!isCurrent()) return;
+        if (!connected) {
+          error = "Saved. The connection attempt was interrupted; connect again.";
+          return;
+        }
       }
-      onClose();
+      close();
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      if (isCurrent()) error = err instanceof Error ? err.message : String(err);
     } finally {
-      saving = false;
+      if (isCurrent()) action = null;
     }
   }
 </script>
 
-<div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && onClose()}>
+<div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && close()}>
   <form
     class="editor"
     use:trapFocus
-    aria-label={existing ? "Edit bookmark" : "Add bookmark"}
+    aria-label={bookmark ? "Edit bookmark" : "Add bookmark"}
     onsubmit={(e) => {
       e.preventDefault();
       save(true);
     }}
   >
-    <h2 class="title">{existing ? "Edit bookmark" : "Add bookmark"}</h2>
+    <h2 class="title">{bookmark ? "Edit bookmark" : "Add bookmark"}</h2>
 
-    <label class="field">
-      <span>Display name</span>
-      <!-- svelte-ignore a11y_autofocus -->
-      <input bind:value={displayName} autofocus required placeholder="Prod AU" />
-    </label>
-    <label class="field">
-      <span>Auth URL <span class="hint">(TempAuth v1)</span></span>
-      <input
-        class="type-mono"
-        bind:value={authUrl}
-        required
-        placeholder="https://swift.example/auth/v1.0"
-      />
-    </label>
-    <label class="field">
-      <span>Username</span>
-      <input class="type-mono" bind:value={username} required placeholder="account:user" />
-    </label>
-    <label class="field">
-      <span>API key</span>
-      <input
-        class="type-mono"
-        type="password"
-        bind:value={apiKey}
-        autocomplete="off"
-        required={!existing?.hasCredential}
-      />
-      {#if existing?.hasCredential}
-        <span class="hint">
-          Leave blank to keep the stored key when the auth URL, username and TLS trust
-          stay the same. Re-enter the key when changing them or the storage override.
-          Old keys may remain in credential storage after replacement or deletion.
-        </span>
-      {/if}
-    </label>
-    <label class="field">
-      <span>TLS</span>
-      <select bind:value={tlsMode}>
-        <option value="system">System trust store</option>
-        <option value="custom_ca">Custom CA (verify against exactly this bundle)</option>
-        <option value="insecure">Insecure (skip verification — labs only)</option>
-      </select>
-    </label>
-
-    {#if tlsMode === "custom_ca"}
+    <fieldset class="fields" disabled={saving || !isCurrent()} aria-label="Bookmark settings">
       <label class="field">
-        <span>
-          CA bundle (PEM){existing?.hasCa ? " — leave empty to keep the stored bundle" : ""}
-        </span>
-        <textarea
-          class="type-mono ca"
-          bind:value={caPem}
-          placeholder="-----BEGIN CERTIFICATE----- …"
-          rows="5"
-          required={!existing?.hasCa}
-        ></textarea>
+        <span>Display name</span>
+        <!-- svelte-ignore a11y_autofocus -->
+        <input bind:value={displayName} autofocus required placeholder="Prod AU" />
       </label>
-    {/if}
+      <label class="field">
+        <span>Auth URL <span class="hint">(TempAuth v1)</span></span>
+        <input
+          class="type-mono"
+          bind:value={authUrl}
+          required
+          placeholder="https://swift.example/auth/v1.0"
+        />
+      </label>
+      <label class="field">
+        <span>Username</span>
+        <input class="type-mono" bind:value={username} required placeholder="account:user" />
+      </label>
+      <label class="field">
+        <span>API key</span>
+        <input
+          class="type-mono"
+          type="password"
+          bind:value={apiKey}
+          autocomplete="off"
+          required={!bookmark?.hasCredential}
+        />
+        {#if bookmark?.hasCredential}
+          <span class="hint">
+            Leave blank to keep the stored key when the auth URL, username and TLS trust
+            stay the same. Re-enter the key when changing them or the storage override.
+            Old keys may remain in credential storage after replacement or deletion.
+          </span>
+        {/if}
+      </label>
+      <label class="field">
+        <span>TLS</span>
+        <select bind:value={tlsMode}>
+          <option value="system">System trust store</option>
+          <option value="custom_ca">Custom CA (verify against exactly this bundle)</option>
+          <option value="insecure">Insecure (skip verification — labs only)</option>
+        </select>
+      </label>
+
+      {#if tlsMode === "custom_ca"}
+        <label class="field">
+          <span>
+            CA bundle (PEM){bookmark?.hasCa ? " — leave empty to keep the stored bundle" : ""}
+          </span>
+          <textarea
+            class="type-mono ca"
+            bind:value={caPem}
+            placeholder="-----BEGIN CERTIFICATE----- …"
+            rows="5"
+            required={!bookmark?.hasCa}
+          ></textarea>
+        </label>
+      {/if}
+    </fieldset>
 
     {#if browser.secretBackend === "session"}
       <p class="warning">
@@ -161,32 +199,42 @@
     {/if}
 
     <div class="actions">
-      {#if existing}
+      {#if bookmark}
         {#if confirmingDelete}
-          <button type="button" class="danger" onclick={remove} disabled={saving}>
+          <button type="button" class="danger" onclick={remove} disabled={saving || !isCurrent()}>
             Really delete
           </button>
         {:else}
-          <button type="button" class="danger-soft" onclick={() => (confirmingDelete = true)} disabled={saving}>
+          <button type="button" class="danger-soft" onclick={() => { if (isCurrent()) confirmingDelete = true; }} disabled={saving || !isCurrent()}>
             Delete…
           </button>
         {/if}
       {/if}
       <span class="spacer"></span>
-      <button type="button" class="secondary" onclick={onClose} disabled={saving}>
+      <button type="button" class="secondary" onclick={close} disabled={saving}>
         Cancel
       </button>
-      <button type="button" class="secondary" onclick={() => save(false)} disabled={saving}>
+      <button type="button" class="secondary" onclick={() => save(false)} disabled={saving || !isCurrent()}>
         Save
       </button>
-      <button type="submit" class="primary" disabled={saving}>
-        {saving ? "Connecting…" : "Save & connect"}
+      <button type="submit" class="primary" disabled={saving || !isCurrent()}>
+        {action === "save" ? "Saving…" : action === "delete" ? "Deleting…" : action === "connect" ? "Connecting…" : "Save & connect"}
       </button>
     </div>
   </form>
 </div>
 
 <style>
+  .fields {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
   .scrim {
     position: fixed;
     inset: 0;

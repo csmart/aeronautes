@@ -123,7 +123,8 @@ describe.each(["upload", "download"] as const)("%s preflight binding", (mode) =>
   it.each(["picker", "preflight", "ready"] as Stage[])("invalidates the same-bookmark reconnect at %s", async (stage) => {
     const f = show(mode); await f.reach(stage);
     await expect(f.browser.connect("source")).rejects.toThrow("reconnect failed");
-    expect([f.browser.containerName, f.browser.prefix]).toEqual(["media", "selected/"]);
+    expect([f.browser.connectedBookmarkId, f.browser.containerName, f.browser.prefix]).toEqual([null, null, ""]);
+    f.browser.connectedBookmarkId = "source"; f.browser.containerName = "media"; f.browser.prefix = "selected/";
     if (stage === "picker") {
       await f.resolvePicker();
       expect(f.api.preflightUpload).not.toHaveBeenCalled();
@@ -285,7 +286,7 @@ describe.each(["upload", "download"] as const)("%s preflight binding", (mode) =>
     expectDisarmed(f);
     expect(mode === "upload" ? f.api.pickUploadFiles : f.api.pickDownloadDir).toHaveBeenCalledTimes(1);
     reconnect.reject(new Error("failed reconnect")); expect(await pending).toBe("failed reconnect"); await settle();
-    expect(f.pickButton().disabled).toBe(false);
+    expect(f.pickButton().disabled).toBe(true);
   });
 
   it.each(["success", "failure"])("ignores a late Start %s after scope changes", async (outcome) => {
