@@ -1593,14 +1593,25 @@ func TestBenchmarkRealSwift(t *testing.T) {
 	}
 }
 
+func saioProxyTarget(t *testing.T) *url.URL {
+	t.Helper()
+	auth, err := url.Parse(os.Getenv("AERONAUTES_SAIO_AUTH_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if auth.Scheme == "" || auth.Host == "" {
+		t.Fatal("SAIO proxy needs the configured authentication endpoint")
+	}
+	// The proxy serves both auth and storage paths, so its target is
+	// the configured origin rather than the auth endpoint's path.
+	return &url.URL{Scheme: auth.Scheme, Host: auth.Host}
+}
+
 // tlsFront starts an HTTPS reverse proxy in front of the SAIO, its
 // auth response rewritten so the storage URL stays behind TLS.
 func tlsFront(t *testing.T) (baseURL string, caPEM []byte, caFile string) {
 	t.Helper()
-	backend, err := url.Parse("http://127.0.0.1:8080")
-	if err != nil {
-		t.Fatal(err)
-	}
+	backend := saioProxyTarget(t)
 	proxy := httputil.NewSingleHostReverseProxy(backend)
 	server := httptest.NewUnstartedServer(proxy)
 	server.StartTLS()
@@ -1611,7 +1622,7 @@ func tlsFront(t *testing.T) (baseURL string, caPEM []byte, caFile string) {
 		// deployment that ignores Host would name the backend outright.
 		// Rewrite both shapes onto the TLS front.
 		if storage := resp.Header.Get("X-Storage-Url"); storage != "" {
-			storage = strings.Replace(storage, "http://127.0.0.1:8080", server.URL, 1)
+			storage = strings.Replace(storage, backend.String(), server.URL, 1)
 			storage = strings.Replace(storage, "http://"+server.Listener.Addr().String(), server.URL, 1)
 			resp.Header.Set("X-Storage-Url", storage)
 		}
@@ -1892,10 +1903,7 @@ func TestTokenRefreshAcrossSpawnsRealSwift(t *testing.T) {
 	ctx := context.Background()
 
 	var authCalls int64
-	backend, err := url.Parse("http://127.0.0.1:8080")
-	if err != nil {
-		t.Fatal(err)
-	}
+	backend := saioProxyTarget(t)
 	proxy := httputil.NewSingleHostReverseProxy(backend)
 	proxy.ModifyResponse = func(resp *http.Response) error {
 		if resp.Header.Get("X-Auth-Token") != "" {
