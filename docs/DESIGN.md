@@ -4323,6 +4323,12 @@ After design approval, implement the isolated fixture, required Linux lane and d
 These observations do not establish original-store authority, bounded native prompts or completed cleanup; retain the existing conservative journal policy and valuable-data hold.
 The [keychain validation record](experiments/2026-09-06-keychain-writes.md) separates protocol fault injection, publication/barrier regressions, cross-compilation and the remaining native platform proof.
 
+The next harness prerequisite is P02 / TEST-01, following [ADR 0018](adr/0018-snapshot-representations.md).
+The archived gzip/plain probe still fails after the keychain slice because the independent oracle implicitly decodes and loses the stored encoding header.
+After local design approval, preserve content-coded bytes and encoding evidence as one reviewed fix, then reject incomplete snapshot responses as a second reviewed fix.
+This follows the existing P02/P03 and P01/P04/P05 containment sequence while leaving native P10 authority, bounded prompts and physical cleanup explicitly open.
+The oracle's representation and refusal tests must pass before its expanded snapshots are used to certify recovery safety.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
