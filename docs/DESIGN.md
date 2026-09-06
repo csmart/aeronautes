@@ -4379,13 +4379,53 @@ Completed jobs may retain records for unverified residue without changing the tr
 Verify outside DLO/SLO aliases, staging aliases, malformed and missing history, changed bookmark bindings, database failures and a separate process reopening the state database.
 Normal transfer-time cleanup remains P12/P15/P21 work.
 The separate P05 implementation must refuse unsupported overwrites and Mirror starts before their irreversible work, preserving conditional planned-new Copy.
+
 Review each logical implementation and require catching system evidence, all five PR checks and green master before delivery.
 The first backend slice now removes recovery deletion, automatic authentication, record clearing and the background sweep, while preserving interrupted-job classification and reporting retention in its error text.
 The [validation record](experiments/2026-09-06-recovery-retention.md) includes unchanged audit probes, independent mock and real-Swift aliases, service-level upload and bookmark-change checks, a separate process reopening SQLite and deliberately restored unsafe behaviour.
 The status slice now replaces the unused startup hooks with local-only `JobService.RecoveryStatus` counts across all terminal jobs and a per-job count in Get/List.
 The jobs drawer shows both counts, preserves the transfer result, labels remote residue unverified and displays unavailable reads as unknown.
 The summary is independent of the account filter and recent-job window, and older frontend responses cannot replace newer results.
-The validation record includes two service scenarios, drawer tests and deliberately broken status variants; P04 still requires independent approval and protected delivery before completion.
+The validation record includes two service scenarios, drawer tests and deliberately broken status variants.
+P04 passed independent local review, all five [PR34 checks](https://github.com/csmart/aeronautes/actions/runs/34038987138) and all five [master checks](https://github.com/csmart/aeronautes/actions/runs/34039597466) after its protected merge.
+
+P05 follows ADR 0020 in two implementation commits, each with its own local review:
+
+1. Refuse every Mirror start before authentication, engine construction or job creation, and remove the now-unreachable Mirror execution and delete-spill machinery.
+   Keep the bridge method and request shape so existing callers receive an explicit unavailable error.
+   A refused start creates no job, pins, recovery records or audit event; it is not an applied transfer.
+   Keep the read-only comparison preview, remove the misleading confirmation and enabled start flow, and explain that Mirror cannot protect concurrent changes.
+   Reconcile §27.2, §48's Mirror strategy row, §59's Mirror performance rows, the Phase 6 deliverable and gate, K-MIRROR-001, K-TEST-001 and the REQUIREMENTS phase map with this refusal; retain eventual execution only as a gated specification pending P14.
+   Replace tests of disabled execution with whole-operation refusal tests covering source, destination, backing objects, job records, credential pins and engine admission.
+   Preserve the Mirror happy-path matrix gap until a supported concurrency protocol re-enables it; refusal does not earn success credit.
+2. Refuse changed Copy items before staging on both engine and native routes, including unknown pairs that resolve to unequal existing destinations.
+   Remove unconditional overwrite branches from native, staged and symlink commits so the remaining live writes always use conditional creation.
+   Preserve known-equal skips, new-name Copy and the existing local-upload preflight refusal and conditional-create paths.
+   Update the preview to describe refused changes and uncertain comparison counts, and preserve partial results when eligible new names were copied alongside refusals.
+   Reconcile §27.1, §28.6, §48's Copy strategy row, the Phase 5 gate, K-XFER-008 and the applicable agent instructions so none advertises implemented overwrite availability.
+   Cover plain, DLO, SLO and symlink destinations, native names, mixed plans and local-upload admission with independent storage observations and competing-writer controls.
+
+Any Copy job that refuses an overwrite terminates as `partial`, including a job with no copied objects or one later cancelled or stopped by another error.
+Its error text states the refused count and reason and retains any later cancellation or failure detail.
+Add an `overwritesRefused` counter that counts each refused plan item once, independently of the bounded failure examples and of verification results; do not also insert a refusal as an execution failure.
+`objectsCopied` and `bytesCopied` retain the executor's actual completed-copy totals, and `overwrites` stays zero under containment.
+Exclude the exact refused names from post-job verification and its verified/failed counters and examples.
+Remember that execution decision with bounded memory; do not reclassify a fresh listing as a substitute for the original refusal set.
+An unavailable, incomplete or corrupt refusal record fails verification closed and remains visible in the partial error; it must not silently hide any copied object's mismatch.
+Test more refusals than the existing 200-example cap together with a real copied-object mismatch so refusal volume cannot mask that mismatch.
+The terminal audit operation is `transfer.copy.partial` with the existing `verify_mismatch` result and detail identifying the job and refused count.
+Document that this coarse result also covers an incomplete transfer with refused items and does not prove that any write succeeded; a more precise audit vocabulary remains P13 work.
+Do not create a separate applied event for a refused item or imply that the existing job/audit append gap is now durable; P12/P13 still own that wider contract.
+The job drawer must display refused overwrites separately and retain the partial result.
+Regenerate bindings for changed bridge models and verify the drift gate before review.
+
+Record the original DS-02/03 failures before changing their execution paths.
+Their archived probes require reaching the unsafe final HEAD, so early refusal makes that mechanism unreachable rather than turning those unchanged probes into passing regressions.
+Maintained regressions must instead fail on the prior implementation, verify explicit refusal and preserved storage afterwards, and reject deliberately restored admission or missing conditional-create headers.
+Use the acknowledged HTTP barrier where a still-supported conditional creation reaches its final request boundary, with an independent backend witness.
+Each implementation commit must build and pass its relevant tests; replacing a disabled feature's tests must not weaken coverage of the remaining transfer, queue, credential or recovery paths.
+Deliver both commits through all five PR checks on the current head and master, then verify the resulting master run.
+These refusals contain the audited paths; P11 through P16 and the wider valuable-data release hold remain open.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
