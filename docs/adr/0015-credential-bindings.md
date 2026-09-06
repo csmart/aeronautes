@@ -1,7 +1,8 @@
 # ADR 0015 — credential bindings and bookmark lifetime
 
 **Status:** Design accepted after independent local review under the authorised P10 remediation plan.
-The durable SQLite prerequisite and blank-key binding guard are implemented; credential publication, recovery and generation lifetime remain open.
+The durable SQLite prerequisite, blank-key binding guard and conservative credential publication are implemented.
+Verified cleanup, recovery and full generation lifetime remain open.
 **Scope:** Audit P10, SEC-01/04 and W-05/W-15; DESIGN §§11, 12, 51 and 55; K-SEC-002/003/005/008.
 
 ## Context
@@ -159,8 +160,11 @@ The SQLite prerequisite's [validation and measured write cost](../experiments/20
 The binding guard compares the current persisted row inside the bookmark update transaction and ignores caller-supplied credential presence.
 The service publishes an imported CA in that same transaction, so a refused edit or injected bookmark-write failure leaves no imported CA row.
 Permanent service regressions cover the retarget receiver, retained live connection, explicit replacement, CA reimport and failed CA publication; store regressions cover every binding field, cosmetic edits and stale edits.
-This containment does not repair explicit-key replacement ordering: the existing fixed reference is still written before the SQL update, so failure or concurrent acquisition can still mix a replacement key with old configuration.
-Immutable references, coherent acquisition, recovery and held-session revocation remain the next implementation work.
+The subsequent publication slice uses immutable replacements, durably prepared work, a generation/revision comparison and a single configuration/reference/CA read with an acquisition lease.
+Logical deletion retains the selected reference independently of the removed bookmark, and no physical cleanup runs yet.
+The [publication validation record](../experiments/2026-09-06-credential-publication.md) distinguishes the red service reproductions, injected boundary failures, database/adapter reopen proof and remaining native/lifetime gates.
+Retired and unused keys remain in credential storage; the editor and README disclose this interim behaviour alongside the valuable-data release hold.
+Verified native cleanup, visible pending-work status, held/authenticating-session revocation and job admission/pins remain open.
 
 Permanent regressions must cover the service-level retarget attack with zero requests to the new receiver, explicit reentry, URL/port/account/override/TLS changes, and identical-byte CA reimport.
 Inject failure before and after each SQL/keychain boundary, including a Put that takes effect and then fails, publication failure, ambiguous commit and failed cleanup.

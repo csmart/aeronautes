@@ -12,6 +12,7 @@ package secrets
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 )
 
@@ -23,10 +24,38 @@ var ErrNotFound = errors.New("secret not found")
 // bytes. Implementations must be safe for concurrent use and must never
 // write values to logs, SQLite, or the frontend.
 type SecretStore interface {
+	// Origin identifies this adapter lifetime, not a verified native store.
+	Origin() Origin
 	// Get returns the secret's value, or ErrNotFound.
 	Get(ctx context.Context, name string) ([]byte, error)
 	// Put stores or replaces the secret.
 	Put(ctx context.Context, name string, value []byte) error
 	// Delete removes the secret; ErrNotFound if it does not exist.
 	Delete(ctx context.Context, name string) error
+}
+
+// Origin is internal routing metadata. A keychain adapter can follow a
+// changed OS default, so its instance does not prove persistent authority.
+type Origin struct {
+	Kind     Backend
+	Instance string
+}
+
+func newOrigin(kind Backend) Origin {
+	return Origin{Kind: kind, Instance: rand.Text()}
+}
+
+// ReadableBy preserves legacy reads but prevents a fresh session fallback
+// from impersonating the memory store that accepted a recorded value.
+func (o Origin) ReadableBy(active Origin) bool {
+	switch o.Kind {
+	case "":
+		return o.Instance == ""
+	case BackendSession:
+		return o.Instance != "" && o == active
+	case BackendKeychain:
+		return o.Instance != "" && active.Kind == BackendKeychain && active.Instance != ""
+	default:
+		return false
+	}
 }

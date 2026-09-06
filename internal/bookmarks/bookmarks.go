@@ -1,8 +1,7 @@
 // Package bookmarks stores saved Swift endpoints (DESIGN.md §11): the
 // non-secret half in SQLite, the credential in the SecretStore under the
 // name recorded as secret_ref. Whether that credential survives a restart
-// is the backend's property (OS keychain vs session-only) — this package
-// never sees the difference and never sees a secret column (K-SEC-003).
+// is recorded as backend provenance, never as a secret column (K-SEC-003).
 package bookmarks
 
 import (
@@ -14,6 +13,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/csmart/aeronautes/internal/db"
@@ -70,25 +70,35 @@ func (b Bookmark) SwiftConfig(apiKey, caPEM []byte) swiftcontrol.Config {
 
 // Store persists bookmarks.
 type Store struct {
-	db      *db.DB
+	db      stateDB
 	secrets secrets.SecretStore
+	// Cleanup must eventually share this coordination so it cannot claim
+	// a key while an external write or snapshot read still uses it.
+	mu         sync.Mutex
+	preparing  map[string]bool
+	leases     map[string]int
+	unresolved map[string]bool
+}
+
+type stateDB interface {
+	Reader() *sql.DB
+	WriteTx(context.Context, func(*sql.Tx) error) error
 }
 
 // NewStore builds a Store over the state database and the active secret
 // backend.
 func NewStore(d *db.DB, s secrets.SecretStore) *Store {
-	return &Store{db: d, secrets: s}
+	return &Store{db: d, secrets: s, preparing: map[string]bool{}, leases: map[string]int{}, unresolved: map[string]bool{}}
 }
 
-// Save inserts (empty ID) or updates a bookmark. A non-nil secret is
-// stored in the SecretStore under bookmark/<id>; nil keeps any existing
-// credential only while its authentication and trust binding stays the same.
+// Save inserts (empty ID) or updates a bookmark. Every replacement key
+// gets an immutable reference; nil retains a key only for the same binding.
 func (st *Store) Save(ctx context.Context, b Bookmark, secret []byte) (Bookmark, error) {
 	return st.SaveWithCA(ctx, b, secret, nil)
 }
 
-// SaveWithCA publishes an optional new CA bundle with the bookmark, so
-// a refused edit cannot leave behind a partially applied trust change.
+// SaveWithCA publishes trust, configuration and the selected key together.
+// External writes use a durably prepared, unpublished reference.
 func (st *Store) SaveWithCA(ctx context.Context, b Bookmark, secret, caPEM []byte) (Bookmark, error) {
 	if err := validate(b); err != nil {
 		return Bookmark{}, err
@@ -96,7 +106,7 @@ func (st *Store) SaveWithCA(ctx context.Context, b Bookmark, secret, caPEM []byt
 	if caPEM != nil {
 		caPEM = bytes.Clone(caPEM)
 		if !x509.NewCertPool().AppendCertsFromPEM(caPEM) {
-			return Bookmark{}, fmt.Errorf("custom CA: no certificates found in PEM data")
+			return Bookmark{}, errors.New("custom CA: no certificates found in PEM data")
 		}
 		if b.TLSMode == swiftcontrol.TLSModeCustomCA {
 			b.TLSCAID = newID()
@@ -104,7 +114,6 @@ func (st *Store) SaveWithCA(ctx context.Context, b Bookmark, secret, caPEM []byt
 			caPEM = nil
 		}
 	}
-
 	now := time.Now().UTC().Truncate(time.Second)
 	isNew := b.ID == ""
 	if isNew {
@@ -122,82 +131,96 @@ func (st *Store) SaveWithCA(ctx context.Context, b Bookmark, secret, caPEM []byt
 		b.TLSMode = swiftcontrol.TLSModeSystem
 	}
 
-	b.HasCredential = secret != nil
+	var previous, proposed record
+	proposed.Bookmark = b
+	proposed.generation, proposed.revision = 1, 1
 	if secret != nil {
-		if err := st.secrets.Put(ctx, secretName(b.ID), secret); err != nil {
-			return Bookmark{}, fmt.Errorf("store credential: %w", err)
+		proposed.ref = secretName(b.ID) + "/" + newID()
+		proposed.origin = st.secrets.Origin()
+		if proposed.origin.Instance == "" ||
+			(proposed.origin.Kind != secrets.BackendSession && proposed.origin.Kind != secrets.BackendKeychain) {
+			return Bookmark{}, errors.New("credential backend has no usable provenance")
 		}
 	}
 
+	st.mu.Lock()
 	err := st.db.WriteTx(ctx, func(tx *sql.Tx) error {
-		if !isNew && secret == nil {
-			current, err := scanBookmark(tx.QueryRowContext(ctx, selectColumns+` WHERE id=?`, b.ID).Scan)
-			if errors.Is(err, sql.ErrNoRows) {
-				return ErrNotFound
-			}
+		if !isNew {
+			var err error
+			previous, err = readRecord(ctx, tx, b.ID)
 			if err != nil {
 				return err
 			}
-			if current.HasCredential {
-				if err := retainCredentialBinding(ctx, tx, current, b, caPEM); err != nil {
-					return err
-				}
+			delete(st.unresolved, b.ID)
+			proposed.CreatedAt = previous.CreatedAt
+			proposed.revision = previous.revision + 1
+			proposed.generation = previous.generation
+			bindingErr := retainCredentialBinding(ctx, tx, previous.Bookmark, b, caPEM)
+			if bindingErr != nil && !errors.Is(bindingErr, errKeyReentry) {
+				return bindingErr
+			}
+			if secret == nil && previous.HasCredential && bindingErr != nil {
+				return bindingErr
+			}
+			if secret != nil || bindingErr != nil {
+				proposed.generation++
+			}
+			if secret == nil {
+				proposed.ref, proposed.origin = previous.ref, previous.origin
 			}
 		}
-		if caPEM != nil {
-			if _, err := tx.ExecContext(ctx, `INSERT INTO ca_certs (id, pem, added_at) VALUES (?, ?, ?)`,
-				b.TLSCAID, string(caPEM), now.Format(time.RFC3339)); err != nil {
-				return err
-			}
+		proposed.HasCredential = proposed.ref != ""
+		if secret != nil {
+			return recordWork(ctx, tx, proposed, "prepared")
 		}
-		if isNew {
-			var ref *string
-			if b.HasCredential {
-				r := secretName(b.ID)
-				ref = &r
-			}
-			_, err := tx.ExecContext(ctx, `
-				INSERT INTO bookmarks (id, display_name, auth_url, username,
-					storage_url_override, secret_ref, tls_mode, tls_ca_id,
-					performance_profile, segment_placement, chunk_size_bytes,
-					created_at, updated_at)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-				b.ID, b.DisplayName, b.AuthURL, b.Username,
-				nullable(b.StorageURLOverride), ref, string(b.TLSMode), nullable(b.TLSCAID),
-				b.PerformanceProfile, string(b.SegmentPlacement), nullableInt(b.ChunkSizeBytes),
-				b.CreatedAt.Format(time.RFC3339), b.UpdatedAt.Format(time.RFC3339))
-			return err
-		}
-
-		res, err := tx.ExecContext(ctx, `
-			UPDATE bookmarks SET display_name=?, auth_url=?, username=?,
-				storage_url_override=?, tls_mode=?, tls_ca_id=?,
-				performance_profile=?, segment_placement=?, chunk_size_bytes=?,
-				secret_ref=CASE WHEN ? THEN ? ELSE secret_ref END,
-				updated_at=?
-			WHERE id=?`,
-			b.DisplayName, b.AuthURL, b.Username,
-			nullable(b.StorageURLOverride), string(b.TLSMode), nullable(b.TLSCAID),
-			b.PerformanceProfile, string(b.SegmentPlacement), nullableInt(b.ChunkSizeBytes),
-			secret != nil, secretName(b.ID),
-			b.UpdatedAt.Format(time.RFC3339),
-			b.ID)
-		if err != nil {
-			return err
-		}
-		n, err := res.RowsAffected()
-		if err != nil {
-			return err
-		}
-		if n == 0 {
-			return ErrNotFound
-		}
-		return nil
+		return publishRecord(ctx, tx, previous, proposed, caPEM, isNew)
 	})
 	if err != nil {
-		return Bookmark{}, err
+		if secret == nil {
+			err = st.publicationResult(ctx, previous, proposed, err, isNew)
+		}
+		st.mu.Unlock()
+		if err != nil {
+			return Bookmark{}, err
+		}
+		return proposed.Bookmark, nil
 	}
-	return st.Get(ctx, b.ID)
+	if secret == nil {
+		st.mu.Unlock()
+		return proposed.Bookmark, nil
+	}
+	st.preparing[proposed.ref] = true
+	st.mu.Unlock()
+
+	// The writer and coordinator remain free while an OS prompt is open.
+	putErr := st.secrets.Put(ctx, proposed.ref, secret)
+
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	defer delete(st.preparing, proposed.ref)
+	if putErr != nil {
+		// The backend may have accepted the write before reporting failure.
+		// Keep its journal row and do not expose a backend's key-bearing error.
+		return Bookmark{}, errors.New("could not save the key; an unused key may remain in credential storage")
+	}
+	err = st.db.WriteTx(ctx, func(tx *sql.Tx) error {
+		if !isNew {
+			current, err := readRecord(ctx, tx, b.ID)
+			if err != nil {
+				return err
+			}
+			if current.generation != previous.generation || current.revision != previous.revision {
+				return ErrChanged
+			}
+		}
+		return publishRecord(ctx, tx, previous, proposed, caPEM, isNew)
+	})
+	if err != nil {
+		if err = st.publicationResult(ctx, previous, proposed, err, isNew); err != nil {
+			return Bookmark{}, err
+		}
+	}
+	return proposed.Bookmark, nil
 }
 
 var errKeyReentry = errors.New("re-enter the API key when changing the auth URL, username, storage override or TLS trust")
@@ -261,41 +284,63 @@ func (st *Store) List(ctx context.Context) ([]Bookmark, error) {
 	return out, rows.Err()
 }
 
-// Delete removes the bookmark and its stored credential.
+// Delete removes logical authority and durably tracks the selected key.
+// Physical removal waits for verified backend and live-reference cleanup.
 func (st *Store) Delete(ctx context.Context, id string) error {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	var previous record
 	err := st.db.WriteTx(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, `DELETE FROM bookmarks WHERE id=?`, id)
+		var err error
+		previous, err = readRecord(ctx, tx, id)
 		if err != nil {
 			return err
 		}
-		n, err := res.RowsAffected()
-		if err != nil {
-			return err
+		if previous.ref != "" {
+			if err := recordWork(ctx, tx, previous, "retired"); err != nil {
+				return err
+			}
 		}
-		if n == 0 {
-			return ErrNotFound
-		}
-		return nil
+		_, err = tx.ExecContext(ctx, `DELETE FROM bookmarks WHERE id=?`, id)
+		return err
 	})
-	if err != nil {
+	if err == nil {
+		delete(st.unresolved, id)
+		return nil
+	}
+	if errors.Is(err, ErrNotFound) {
 		return err
 	}
-	if err := st.secrets.Delete(ctx, secretName(id)); err != nil && !errors.Is(err, secrets.ErrNotFound) {
-		return fmt.Errorf("bookmark deleted but credential removal failed: %w", err)
+	check, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	_, readErr := readRecord(check, st.db.Reader(), id)
+	if errors.Is(readErr, ErrNotFound) {
+		if previous.ref != "" {
+			var count int
+			if queryErr := st.db.Reader().QueryRowContext(check,
+				`SELECT COUNT(*) FROM credential_work WHERE secret_ref=? AND state='retired'`, previous.ref).Scan(&count); queryErr != nil || count != 1 {
+				st.unresolved[id] = true
+				return ErrPublicationUnresolved
+			}
+		}
+		delete(st.unresolved, id)
+		return nil
 	}
-	return nil
+	if readErr != nil {
+		st.unresolved[id] = true
+		return ErrPublicationUnresolved
+	}
+	return err
 }
 
-// Credential fetches the bookmark's API key from the SecretStore.
+// Credential is an internal convenience; connection users must acquire the
+// complete ConnectionConfig rather than separately fetching bookmark fields.
 func (st *Store) Credential(ctx context.Context, id string) ([]byte, error) {
-	b, err := st.Get(ctx, id)
+	config, _, err := st.ConnectionConfig(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	if !b.HasCredential {
-		return nil, secrets.ErrNotFound
-	}
-	return st.secrets.Get(ctx, secretName(id))
+	return []byte(config.APIKey), nil
 }
 
 func secretName(id string) string {
@@ -347,29 +392,38 @@ const selectColumns = `
 		COALESCE(storage_url_override, ''), secret_ref IS NOT NULL,
 		tls_mode, COALESCE(tls_ca_id, ''), performance_profile,
 		segment_placement, COALESCE(chunk_size_bytes, 0),
-		created_at, updated_at
+		created_at, updated_at, COALESCE(secret_ref, ''), origin_kind,
+		origin_instance, generation, revision,
+		(SELECT pem FROM ca_certs WHERE id=bookmarks.tls_ca_id)
 	FROM bookmarks`
 
 func scanBookmark(scan func(...any) error) (Bookmark, error) {
-	var b Bookmark
+	r, err := scanRecord(scan)
+	return r.Bookmark, err
+}
+
+func scanRecord(scan func(...any) error) (record, error) {
+	var r record
+	b := &r.Bookmark
 	var tlsMode, placement, created, updated string
 	err := scan(&b.ID, &b.DisplayName, &b.AuthURL, &b.Username,
 		&b.StorageURLOverride, &b.HasCredential,
 		&tlsMode, &b.TLSCAID, &b.PerformanceProfile,
 		&placement, &b.ChunkSizeBytes,
-		&created, &updated)
+		&created, &updated, &r.ref, &r.origin.Kind, &r.origin.Instance,
+		&r.generation, &r.revision, &r.ca)
 	if err != nil {
-		return Bookmark{}, err
+		return record{}, err
 	}
 	b.TLSMode = swiftcontrol.TLSMode(tlsMode)
 	b.SegmentPlacement = SegmentPlacement(placement)
 	if b.CreatedAt, err = time.Parse(time.RFC3339, created); err != nil {
-		return Bookmark{}, fmt.Errorf("bookmark %s: bad created_at: %w", b.ID, err)
+		return record{}, fmt.Errorf("bookmark %s: bad created_at: %w", b.ID, err)
 	}
 	if b.UpdatedAt, err = time.Parse(time.RFC3339, updated); err != nil {
-		return Bookmark{}, fmt.Errorf("bookmark %s: bad updated_at: %w", b.ID, err)
+		return record{}, fmt.Errorf("bookmark %s: bad updated_at: %w", b.ID, err)
 	}
-	return b, nil
+	return r, nil
 }
 
 func nullable(s string) *string {

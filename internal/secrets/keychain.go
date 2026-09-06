@@ -18,7 +18,7 @@ const service = "aeronautes"
 // Secret Service on Linux, Credential Manager on Windows, Keychain on
 // macOS, via zalando/go-keyring. Values are base64-wrapped so arbitrary
 // bytes survive the string-shaped keyring API.
-type KeychainStore struct{}
+type KeychainStore struct{ origin Origin }
 
 // NewKeychainStore probes the OS keychain with a write/read/delete
 // round-trip and returns the store only when the keychain actually
@@ -40,8 +40,10 @@ func NewKeychainStore() (*KeychainStore, error) {
 	if err := keyring.Delete(service, probe); err != nil {
 		return nil, fmt.Errorf("keychain delete failed: %w", err)
 	}
-	return &KeychainStore{}, nil
+	return &KeychainStore{origin: newOrigin(BackendKeychain)}, nil
 }
+
+func (s *KeychainStore) Origin() Origin { return s.origin }
 
 // Get returns the named secret.
 func (*KeychainStore) Get(_ context.Context, name string) ([]byte, error) {

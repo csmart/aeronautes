@@ -12,12 +12,15 @@ import (
 type SessionStore struct {
 	mu     sync.RWMutex
 	values map[string][]byte
+	origin Origin
 }
 
 // NewSessionStore returns an empty session-only store.
 func NewSessionStore() *SessionStore {
-	return &SessionStore{values: map[string][]byte{}}
+	return &SessionStore{values: map[string][]byte{}, origin: newOrigin(BackendSession)}
 }
+
+func (s *SessionStore) Origin() Origin { return s.origin }
 
 func (s *SessionStore) Get(_ context.Context, name string) ([]byte, error) {
 	s.mu.RLock()
