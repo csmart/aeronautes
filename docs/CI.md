@@ -10,7 +10,7 @@ The README status badge shows master push runs so that a green PR cannot hide a 
 
 | Check | Evidence |
 | --- | --- |
-| Go — fmt, vet, build, test (race) | Formatting, vet, application build, binding drift, Go race tests |
+| Go — fmt, vet, build, test (race) | Formatting, vet, application build, binding drift, Go race tests and isolated keychain protocol tests |
 | Frontend — lint, build, test | Type checking, frontend build and tests |
 | Integration — containerized Swift (SAIO) | Internal race tests against two Swift accounts with the pinned official rclone |
 | Smoke — headless app against mock Swift | Built desktop application under Xvfb, including a real engine copy |
@@ -20,6 +20,11 @@ The aggregate uses `always()` so that a failed dependency cannot silently skip i
 It refuses failed, cancelled, skipped or missing job results.
 Its shell regression test exercises each refusal for all four required jobs and runs in the aggregate job.
 GitHub otherwise accepts skipped status checks as satisfying a merge requirement; see [GitHub's required-check troubleshooting](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks).
+
+The Go job installs `dbus` and runs `make test-secret-service` with `AERONAUTES_REQUIRE_SECRET_SERVICE_FIXTURE=1`.
+Its Linux test package uses a separate binary with a per-run private daemon, no service activation, a short socket path in a mode-0700 directory, and bounded startup and teardown.
+A missing daemon fails this required lane; an ordinary local suite without the requirement flag reports explicit skips when the tool is absent.
+These tests exercise the pinned client against a synthetic Secret Service and cannot satisfy the native desktop keychain gates.
 
 ## Merge procedure
 

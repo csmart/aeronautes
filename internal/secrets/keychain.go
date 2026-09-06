@@ -56,7 +56,7 @@ func (*KeychainStore) Get(_ context.Context, name string) ([]byte, error) {
 	}
 	value, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
-		return nil, fmt.Errorf("keychain entry %q is not aeronautes-encoded: %w", name, err)
+		return nil, fmt.Errorf("keychain entry is not aeronautes-encoded: %w", err)
 	}
 	return value, nil
 }

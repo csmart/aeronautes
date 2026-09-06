@@ -1,6 +1,6 @@
 # ADR 0017 — verify keychain write acknowledgements
 
-**Status:** Proposed; implementation follows independent local review.
+**Status:** Design accepted after independent local review; implementation is staged below.
 **Scope:** P10 credential publication and the startup health probe in ADR 0012.
 
 ## Context and oracle
@@ -66,7 +66,7 @@ The library's unbounded prompt waits and ignored caller contexts remain separate
    Then implement the narrow adapter verification and exact startup health check as its own reviewed logical fix.
    Keep the public interface, dependency version, native selectors and credential journal schema unchanged.
 3. Run the new package in an explicit protocol-fixture step in the required `Go — fmt, vet, build, test (race)` job, installing `dbus` explicitly in that job.
-   The CI-required fixture mode must fail when the daemon is missing; optional local runs may report an explicit skip.
+   `make test-secret-service` sets `AERONAUTES_REQUIRE_SECRET_SERVICE_FIXTURE=1`, making a missing daemon fail the CI-required lane; optional local runs may report an explicit skip.
    Native keychain integration tests remain in their existing separate binary and are not satisfied by the synthetic service.
 4. Run focused race tests, meaningful failure controls and the application verification required by the affected paths; record the results and remaining native proof limits.
    Obtain independent local approval before pushing, require all five green PR checks on the current base, merge normally, and verify master.
@@ -77,3 +77,5 @@ Each credential write adds one keychain read, and startup adds one lookup after 
 The cross-platform read-back adds one `security` subprocess per credential write on macOS, even though the reproduced dismissal defect is in the Linux client.
 Bookmark writes are infrequent; correctness takes priority over this extra call.
 Measure or revisit latency with native platform evidence rather than claiming a synthetic fixture establishes prompt or desktop performance.
+
+The [validation record](../experiments/2026-09-06-keychain-writes.md) distinguishes completed implementation steps from the remaining write, native authority and cleanup work.
