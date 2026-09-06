@@ -4328,7 +4328,8 @@ The archived gzip/plain probe still fails after the keychain slice because the i
 After local design approval, preserve content-coded bytes and encoding evidence as one reviewed fix, then reject incomplete snapshot responses as a second reviewed fix.
 The first fix now uses an owned transport without automatic decompression and records ordered encoding headers for objects and backing segments.
 Its [validation record](experiments/2026-09-06-snapshot-representations.md) includes the original failing probe, same-decoded-content and header-only controls, real-Swift gzip evidence and safeguards deliberately removed.
-Incomplete-response refusal remains the next separately reviewed implementation.
+The second fix now requires complete HTTP 200 responses without Content-Range for object, segment, manifest and JSON listing reads, preserving empty-array pages and missing-container observations.
+An acknowledged header/body barrier verifies refusal before a partial response's body finishes, and the final tests reject partial, truncated and unsupported structured evidence across every affected read path.
 This follows the existing P02/P03 and P01/P04/P05 containment sequence while leaving native P10 authority, bounded prompts and physical cleanup explicitly open.
 The oracle's representation and refusal tests must pass before its expanded snapshots are used to certify recovery safety.
 
