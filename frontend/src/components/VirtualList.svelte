@@ -85,6 +85,10 @@
     scrollTop = el.scrollTop;
   }
 
+  $effect(() => {
+    if (selected >= 0 && selected < items.length) ensureVisible(selected);
+  });
+
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();

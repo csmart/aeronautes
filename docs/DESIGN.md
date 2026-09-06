@@ -4620,6 +4620,15 @@ The two selected original page probes now pass, while the unchanged Find cancell
 This paging slice still requires independent local review and all five PR/master checks before delivery.
 Find frontend lifecycle and backend scan bounds remain the next two P08 implementations; P22/P24 wider completeness and resource work and the valuable-data release hold remain open.
 
+The second P08 implementation now gives each frontend Find intent an immutable scope and separate generation, retiring startup, polling and cancellation completions after Stop, close, navigation or replacement.
+Both close controls, destruction and BrowserState prop changes share panel ownership and cleanup.
+Cancellation uncertainty is visible, stopped results retain their original scope, and polling errors preserve counts, matches and the buffer-full flag.
+Result clicks use one parent page and the existing exact-object HEAD path, with an advisory object row when the match is absent from the page or folded into a virtual prefix.
+The selected object remains distinct from a same-name prefix, becomes visible in the virtual list, and stays unavailable for editing if HEAD fails or returns another identity.
+The [Find validation record](experiments/2026-09-06-find-binding.md) records 718 passing frontend cases, 100-case parent pairing and 42 independent broken-safeguard controls, with no Go service-scenario credit.
+It preserves the original Find probe's remaining timing-assumption failure and separately proves late-id cancellation after explicit bridge admission.
+Backend Find admission, retention, idle expiry and shutdown cleanup remain the third P08 slice; the broader authority, resource and valuable-data release gates remain open.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.

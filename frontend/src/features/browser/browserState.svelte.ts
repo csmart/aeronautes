@@ -67,6 +67,16 @@ interface PageRequest {
   marker: string;
 }
 
+interface FindRequest {
+  readonly scope: number;
+  readonly seq: number;
+  readonly bookmark: string;
+  readonly container: string;
+  readonly prefix: string;
+  started: boolean;
+  id: string | null;
+}
+
 function requireAdvancingMarker(previous: string, next: string) {
   if (next === "") return;
   // Swift orders UTF-8 names; JavaScript's UTF-16 comparison differs for
@@ -109,6 +119,7 @@ export class BrowserState {
   get connectedBookmarkId(): string | null { return this.#connectedBookmarkId; }
   set connectedBookmarkId(value: string | null) {
     if (value !== this.#connectedBookmarkId) {
+      this.#clearFind();
       this.#scopeRevision++;
       this.#connectionRevision++;
     }
@@ -156,10 +167,23 @@ export class BrowserState {
   #lastPoll: Record<string, { bytes: number; at: number }> = {};
 
   // Find in container (§16): explicit scan, never per-keystroke.
-  findOpen = $state(false);
+  #findOpen = $state(false);
+  #findPanelRevision = $state(0);
+  get findPanelRevision(): number { return this.#findPanelRevision; }
+  get findOpen(): boolean { return this.#findOpen; }
+  set findOpen(value: boolean) {
+    if (!value) this.closeFind();
+    else if (!this.#findOpen) {
+      this.#findPanelRevision++;
+      this.#findOpen = true;
+    }
+  }
   findStatus: FindStatusDTO | null = $state(null);
   findRunning = $state(false);
-  #findId: string | null = null;
+  findNotice: string | null = $state(null);
+  #findSeq = 0;
+  #findRequest: FindRequest | null = null;
+  #findResults: FindRequest | null = null;
 
   // Containers pane.
   mode: ContainerMode = $state("logical");
@@ -186,7 +210,10 @@ export class BrowserState {
   #containerName: string | null = $state(null);
   get containerName(): string | null { return this.#containerName; }
   set containerName(value: string | null) {
-    if (value !== this.#containerName) this.#scopeRevision++;
+    if (value !== this.#containerName) {
+      this.#clearFind();
+      this.#scopeRevision++;
+    }
     this.#containerName = value;
   }
   /** The open container's §53 HEAD detail; null while loading/closed. */
@@ -197,12 +224,15 @@ export class BrowserState {
   #prefix = $state("");
   get prefix(): string { return this.#prefix; }
   set prefix(value: string) {
-    if (value !== this.#prefix) this.#scopeRevision++;
+    if (value !== this.#prefix) {
+      this.#clearFind();
+      this.#scopeRevision++;
+    }
     this.#prefix = value;
   }
   #filter = $state("");
 
-  /** Loaded-row filter. Setting it re-anchors the selection BY NAME:
+  /** Loaded-row filter. Setting it re-anchors the selection BY IDENTITY:
    * the selected identity survives a filter change, and when it is
    * filtered out the selection (and dependent detail state) clears —
    * an index can never silently point at a different object (the
@@ -212,12 +242,12 @@ export class BrowserState {
   }
 
   set filter(value: string) {
-    const selectedName = this.selectedEntry?.name ?? null;
+    const selected = this.selectedEntry;
     this.#filter = value;
-    if (selectedName === null) {
+    if (selected === null) {
       return;
     }
-    const idx = this.visibleEntries.findIndex((e) => e.name === selectedName);
+    const idx = this.visibleEntries.findIndex((e) => e.name === selected.name && e.kind === selected.kind);
     if (idx === this.selectedIndex) {
       return;
     }
@@ -313,8 +343,6 @@ export class BrowserState {
     this.localTransfer = null;
     this.deleteOpen = false;
     this.findOpen = false;
-    this.findStatus = null;
-    void this.cancelFind();
   }
 
   #beginBookmarkChange(id: string) {
@@ -553,6 +581,7 @@ export class BrowserState {
   }
 
   async #loadEntries(prefix: string) {
+    this.#clearFind();
     const seq = ++this.#listSeq;
     this.#entriesPage = null;
     this.#entriesPageError = null;
@@ -803,27 +832,31 @@ export class BrowserState {
   }
 
   async startFind(query: string) {
-    if (this.containerName === null || this.connecting || !this.connectedBookmarkId) {
+    if (this.containerName === null || this.connecting || !this.connectedBookmarkId || query.trim() === "") {
       return;
     }
-    const connection = this.#connectionRevision;
-    const container = this.containerName;
-    const prefix = this.prefix;
-    await this.cancelFind();
-    if (connection !== this.#connectionRevision) return;
+    const cancellation = this.cancelFind();
+    const request: FindRequest = {
+      scope: this.#scopeRevision, seq: ++this.#findSeq, bookmark: this.connectedBookmarkId,
+      container: this.containerName, prefix: this.prefix, started: false, id: null,
+    };
+    this.#findRequest = request;
+    this.#findResults = request;
     this.findStatus = null;
+    this.findNotice = null;
     this.findRunning = true;
-    let id: string | null = null;
     try {
-      id = await this.#api.startFind(container, prefix, query);
-      if (connection !== this.#connectionRevision) {
-        await this.#api.cancelFind(id).catch(() => {});
+      await cancellation;
+      if (!this.#currentFind(request)) return;
+      request.started = true;
+      request.id = await this.#api.startFind(request.container, request.prefix, query);
+      if (!this.#currentFind(request)) {
+        await this.#cancelFindRequest(request);
         return;
       }
-      this.#findId = id;
-      while (this.findRunning && this.#findId === id && connection === this.#connectionRevision) {
-        const status = await this.#api.findStatus(id);
-        if (connection !== this.#connectionRevision || this.#findId !== id) return;
+      while (this.#currentFind(request)) {
+        const status = await this.#api.findStatus(request.id);
+        if (!this.#currentFind(request)) return;
         this.findStatus = status;
         if (status.done) {
           break;
@@ -831,26 +864,101 @@ export class BrowserState {
         await new Promise((resolve) => setTimeout(resolve, 400));
       }
     } catch (error) {
-      if (connection === this.#connectionRevision && (id === null || this.#findId === id)) {
+      if (this.#currentFind(request)) {
         this.findStatus = {
           scanned: this.findStatus?.scanned ?? 0,
           matches: this.findStatus?.matches ?? [],
-          truncated: false,
+          truncated: this.findStatus?.truncated ?? false,
           done: true,
           error: messageOf(error),
           objectsPerSecond: 0,
         };
+      } else if (request.id === null && this.#currentFindResults(request)) {
+        this.findNotice = "Scan startup did not return an id; cancellation could not be confirmed.";
       }
     } finally {
-      if (connection === this.#connectionRevision && (id === null || this.#findId === id)) this.findRunning = false;
+      if (this.#currentFind(request)) this.findRunning = false;
     }
   }
 
   async cancelFind() {
+    this.#findSeq++;
     this.findRunning = false;
-    const id = this.#findId;
-    this.#findId = null;
-    if (id !== null) await this.#api.cancelFind(id).catch(() => {});
+    const request = this.#findRequest;
+    this.#findRequest = null;
+    if (request === null) return;
+    this.findNotice = !request.started ? "Scan start cancelled."
+      : request.id === null ? "Stop requested; waiting for scan startup." : "Requesting cancellation…";
+    await this.#cancelFindRequest(request);
+  }
+
+  #currentFindScope(request: FindRequest): boolean {
+    return !this.connecting && request.scope === this.#scopeRevision
+      && request.bookmark === this.connectedBookmarkId && request.container === this.containerName && request.prefix === this.prefix;
+  }
+
+  #currentFind(request: FindRequest): boolean {
+    return request === this.#findRequest && request.seq === this.#findSeq && this.#currentFindScope(request);
+  }
+
+  #currentFindResults(request: FindRequest): boolean {
+    return request === this.#findResults && this.#currentFindScope(request);
+  }
+
+  async #cancelFindRequest(request: FindRequest) {
+    if (request.id === null) return;
+    try {
+      await this.#api.cancelFind(request.id);
+      if (this.#currentFindResults(request)) this.findNotice = "Cancellation requested.";
+    } catch (error) {
+      if (this.#currentFindResults(request)) this.findNotice = "Could not confirm that the scan stopped: " + messageOf(error);
+    }
+  }
+
+  #clearFind() {
+    void this.cancelFind();
+    this.#findResults = null;
+    this.findStatus = null;
+    this.findNotice = null;
+  }
+
+  closeFind(panelRevision = this.#findPanelRevision) {
+    if (panelRevision !== this.#findPanelRevision) return;
+    this.#findPanelRevision++;
+    this.#findOpen = false;
+    this.#clearFind();
+  }
+
+  async openFindMatch(name: string, ownsPanel = () => true): Promise<boolean> {
+    const origin = this.#findResults;
+    const match = this.findStatus?.matches?.find((row) => row.name === name);
+    if (!origin || !match || !this.#currentFindResults(origin) || !ownsPanel()) return false;
+    const selected = { ...match };
+    const selection = this.#detailSeq;
+    const cancellation = this.cancelFind();
+    const stopping = this.#findSeq;
+    await cancellation;
+    if (!this.#currentFindResults(origin) || !ownsPanel() || stopping !== this.#findSeq || selection !== this.#detailSeq) return false;
+    const listing = this.goTo(parentPrefix(selected.name));
+    const scope = this.#scopeRevision;
+    const list = this.#listSeq;
+    const intent = this.#findSeq;
+    const detail = this.#detailSeq;
+    await listing;
+    if (!ownsPanel() || this.connecting || scope !== this.#scopeRevision || list !== this.#listSeq
+      || intent !== this.#findSeq || detail !== this.#detailSeq) return false;
+    if (this.entriesError) throw new Error(this.entriesError);
+    let index = this.entries.findIndex((row) => row.kind === "object" && row.name === selected.name);
+    if (index < 0) {
+      // A delimiter page can omit this exact object or fold it into a prefix.
+      // The match is advisory; normal selection still performs its own HEAD.
+      index = this.entries.length;
+      this.entries = [...this.entries, { kind: "object", name: selected.name, bytes: selected.bytes,
+        etag: "", lastModified: "", contentType: "", sloListed: false }];
+    }
+    this.filter = "";
+    this.select(index);
+    return true;
   }
 
   async previewDelete(req: DeleteRequestDTO): Promise<DeletePreviewDTO> {

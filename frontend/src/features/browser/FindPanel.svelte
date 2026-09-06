@@ -1,32 +1,46 @@
 <!-- Find in container (§16): an explicit cancellable scan with honest
   progress — scanned count and throughput — and streamed matches.
-  Clicking a match navigates to its parent prefix. -->
+  A result must retain its original scope until selection takes ownership. -->
 <script lang="ts">
-  import { onDestroy } from "svelte";
+  import { onDestroy, untrack } from "svelte";
   import type { BrowserState } from "../browser/browserState.svelte";
   import { formatBytes } from "../../lib/format";
-  import { parentPrefix } from "../../lib/listing";
 
   let { browser, onClose }: { browser: BrowserState; onClose: () => void } = $props();
 
   let query = $state("");
+  let navigating = $state(false);
+  let navigationError: string | null = $state(null);
+  const owner = untrack(() => browser);
+  const panelRevision = owner.findPanelRevision;
   let closed = false;
-  onDestroy(() => { closed = true; });
+  onDestroy(() => { closed = true; owner.closeFind(panelRevision); });
+
+  $effect(() => {
+    if (browser !== owner) owner.closeFind(panelRevision);
+  });
+
+  function ownsPanel() {
+    return !closed && browser === owner && panelRevision === owner.findPanelRevision;
+  }
 
   async function go(name: string) {
-    if (closed || browser.connecting || !browser.connectedBookmarkId) return;
-    const scope = browser.scopeRevision;
-    await browser.cancelFind();
-    if (closed || scope !== browser.scopeRevision) return;
-    closed = true;
-    onClose();
-    await browser.goTo(parentPrefix(name));
+    if (!ownsPanel() || navigating) return;
+    navigating = true;
+    navigationError = null;
+    try {
+      if (await browser.openFindMatch(name, ownsPanel) && ownsPanel()) close();
+    } catch (error) {
+      if (ownsPanel()) navigationError = error instanceof Error ? error.message : String(error);
+    } finally {
+      if (ownsPanel()) navigating = false;
+    }
   }
 
   function close() {
-    if (closed) return;
+    if (!ownsPanel()) return;
     closed = true;
-    void browser.cancelFind();
+    browser.closeFind(panelRevision);
     onClose();
   }
 </script>
@@ -36,7 +50,7 @@
     class="controls"
     onsubmit={(e) => {
       e.preventDefault();
-      if (!closed && query.trim() !== "") void browser.startFind(query);
+      if (ownsPanel() && !navigating && !browser.findRunning && query.trim() !== "") void browser.startFind(query);
     }}
   >
     <input
@@ -44,20 +58,27 @@
       placeholder="find in {browser.containerName}/{browser.prefix}…"
       bind:value={query}
     />
-    <button type="submit" disabled={browser.findRunning || query.trim() === ""}>
+    <button type="submit" disabled={browser.findRunning || navigating || query.trim() === ""}>
       {browser.findRunning ? "Scanning…" : "Find"}
     </button>
     {#if browser.findRunning}
-      <button type="button" onclick={() => browser.cancelFind()}>Stop</button>
+      <button type="button" onclick={() => { if (ownsPanel()) void browser.cancelFind(); }}>Stop</button>
     {/if}
     <button type="button" class="close" onclick={close} aria-label="Close find">✕</button>
   </form>
+
+  {#if browser.findNotice}
+    <p class="stats" role="status">{browser.findNotice}</p>
+  {/if}
+  {#if navigationError}
+    <p class="stats bad" role="alert">Could not open the result: {navigationError}</p>
+  {/if}
 
   {#if browser.findStatus}
     {@const status = browser.findStatus}
     <p class="stats" aria-live="polite">
       {status.scanned} scanned
-      {#if status.objectsPerSecond > 0}
+      {#if browser.findRunning && status.objectsPerSecond > 0}
         · {Math.round(status.objectsPerSecond)}/s
       {/if}
       · {status.matches?.length ?? 0} match{(status.matches?.length ?? 0) === 1 ? "" : "es"}
@@ -65,7 +86,7 @@
         · <em class="warn">buffer full — narrow the query</em>
       {/if}
       {#if !status.done}
-        · scanning…
+        · {browser.findRunning ? "scanning…" : "updates stopped"}
       {/if}
       {#if status.error}
         · <em class="bad">{status.error}</em>
@@ -73,7 +94,7 @@
     </p>
     <div class="matches">
       {#each status.matches ?? [] as match (match.name)}
-        <button class="match" onclick={() => go(match.name)}>
+        <button class="match" disabled={navigating} onclick={() => go(match.name)}>
           <span class="type-mono name">{match.name}</span>
           <span class="size">{formatBytes(match.bytes)}</span>
         </button>
@@ -134,6 +155,7 @@
     margin: 0;
     font-size: var(--text-xs);
     color: var(--color-text-secondary);
+    overflow-wrap: anywhere;
   }
 
   .warn {
