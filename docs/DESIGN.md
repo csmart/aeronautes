@@ -4267,6 +4267,8 @@ The commit sequence is durable SQLite settings, bound credential publication and
 The next bounded lifetime slice tags cached sessions with their captured generation and checks that generation after blocking authentication/capability discovery and when publishing or reading the cache.
 Its oracle is that an authentication begun before edit/delete cannot republish an obsolete cached session after the change; already-held sessions and request/job admission remain separate required work.
 It uses the bookmark coordinator before the cache lock and releases both before external I/O.
+Every existing path must use that single nesting; specifically, remove `Connections.Session`'s current cache-lock-to-`Store.Available` nesting before adding the reverse path.
+The final generation recheck and cache installation must happen together under both locks, so a bookmark change cannot publish and invalidate between them.
 Cleanup remains disabled until both verified original-backend selection and the full acquisition/job/cancellation-cleanup reference set are coordinated, as ADR 0015 already requires.
 Investigating native selection can proceed independently; this order changes no backend, vault choice, erasure proof or final P10 guarantee.
 The first implementation requires effective WAL/FULL settings on every physical connection and refuses an ineffective setting before use.

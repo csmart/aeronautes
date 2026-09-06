@@ -164,6 +164,8 @@ The cache containment slice precedes physical cleanup because obsolete authentic
 Cleanup already depends on acquisition leases and admitted-job pins, so completing that lifetime coordination first removes a prerequisite instead of allowing a collector to run without it.
 Native selection may be investigated independently, but this ordering does not select a replacement for ADR 0012, weaken original-store absence proof or choose the vault in ADR 0006.
 The cache implementation must use one lock order, bookmark coordination before the connection cache, and release both before authentication, capability discovery or any other external I/O.
+Convert every existing path to that nesting, including `Connections.Session`, which currently holds the cache mutex while calling `Store.Available`; remove that reverse nesting before adding any bookmark-coordinator-to-cache path.
+The final generation recheck and cache installation are one atomic step under bookmark coordination with the cache mutex nested inside, so an edit either precedes the check and refuses the obsolete session or follows installation and removes it through the service's invalidation.
 
 Each slice must state which guarantees it implements and which remain open; P10 is complete only when the combined gates pass.
 The valuable-data release hold remains throughout.
