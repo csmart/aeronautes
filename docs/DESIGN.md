@@ -4276,6 +4276,9 @@ The [subsequent PR run](https://github.com/csmart/aeronautes/actions/runs/339916
 The deadline test now drains that bounded response and still requires socket closure and listener refusal within the existing deadline; disabling revocation must fail.
 The real-Swift TLS and token-expiry proxies now use the configured authentication origin; a hard-coded port previously sent them to a different fixture when the configured port changed.
 Integration CI runs on a different host port to exercise this endpoint configuration in every PR.
+That PR exposed another timing assumption: Mirror tests changed their fixtures after a sleep, which could precede planning on a busy runner.
+The affected Mirror, cancellation and queue tests now wait for an acknowledged engine barrier, with bounded entry waits and cleanup release.
+This is a focused test seam; the wider P02/P03 fault and HTTP barrier harness remains open.
 
 The owner requires a successful pipeline on every PR before merge and verification of master after merge.
 The CI protection slice removes the coverage bot's direct master pushes, adds an aggregate gate that rejects any required job without success, and removes the obsolete checks that skipped absent application code.
