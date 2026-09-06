@@ -4543,6 +4543,13 @@ Run frontend check, production build and the complete frontend suite for every i
 If the connection work requires a changed Go API or authority contract, record and review that additional design before implementation and add the corresponding service-level reproduction.
 P10 native authority and cleanup, P11 backend capability/replay/expiry, P14 external writers, P15 ownership, P08's remaining lifecycle work and the valuable-data release hold remain open.
 
+The first P07 implementation now binds inspector reads and mutation result publication to scope, resource identity and the corresponding detail request generation.
+Object and prefix mutations require a consistent current detail; container working copies retain their connection identity independently of prefix navigation.
+New reads and mutations supersede older results, including late SLO/DLO subordinate replies, without discarding the original mutation outcome or its existing audit refresh.
+The [inspector validation record](experiments/2026-09-06-detail-binding.md) includes the UI matrix, parent reproduction and independent removed-safeguard controls.
+The archived UI-02 probe now passes; UI-05 still fails because the separately planned dialog and connection-reset implementations have not landed.
+This is the first P07 slice only, and requires independent local review and the normal PR/master checks before delivery.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
