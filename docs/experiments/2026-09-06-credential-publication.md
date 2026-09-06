@@ -26,6 +26,7 @@ It keeps both possible keys and the durable evidence.
 This does not yet revoke a pointer already held outside the connection registry.
 
 Logical deletion records its selected reference independently of the bookmark row.
+Prepared and retired work records carry their own creation time, rather than inheriting the previous bookmark update time.
 No physical key deletion or automatic collector runs in this slice.
 The editor and README disclose that old keys can remain, and the valuable-data release hold remains in place.
 
@@ -52,6 +53,7 @@ The editor and README disclose that old keys can remain, and the valuable-data r
 | A different session lifetime has the same reference name | The new memory store cannot supply that key or replace its recorded cleanup provenance |
 | Database and persistent fixture reopen, then session fallback | Published and unused synthetic keys are found through a new adapter lifetime; a same-name key in fallback memory is refused and every pending record survives |
 | Service deletion | Active/cache acquisition is invalidated while the independent physical-cleanup record remains |
+| Retirement timestamp | Replacement and deletion of a bookmark last updated in 2001 record the current operation's time; the previous implementation backdated both records to 2001 |
 
 The first three red results are recorded separately from the later fault and concurrency tests.
 The persistent fixture stores only synthetic values in a private temporary file outside SQLite.

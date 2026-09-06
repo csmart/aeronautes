@@ -41,7 +41,7 @@ func recordWork(ctx context.Context, tx *sql.Tx, r record, state string) error {
 		INSERT INTO credential_work (secret_ref, bookmark_id, origin_kind,
 			origin_instance, state, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
 		r.ref, r.ID, string(r.origin.Kind), r.origin.Instance, state,
-		r.UpdatedAt.Format(time.RFC3339))
+		time.Now().UTC().Format(time.RFC3339))
 	return err
 }
 
