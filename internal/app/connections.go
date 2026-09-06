@@ -28,82 +28,151 @@ type Connections struct {
 	store *bookmarks.Store
 
 	mu           sync.Mutex
-	active       *swiftcontrol.Session
+	active       cachedSession
 	activeID     string
 	capabilities *swiftcontrol.Capabilities
-	sessions     map[string]*swiftcontrol.Session
+	sessions     map[string]cachedSession
 	caDir        string
+	caMu         sync.Mutex
+}
+
+type cachedSession struct {
+	session    *swiftcontrol.Session
+	generation int64
 }
 
 // NewConnections builds the registry over the bookmark store.
 func NewConnections(store *bookmarks.Store) *Connections {
-	return &Connections{store: store, sessions: map[string]*swiftcontrol.Session{}}
+	return &Connections{store: store, sessions: map[string]cachedSession{}}
 }
 
 // open authenticates one bookmark into a fresh session.
-func (c *Connections) open(ctx context.Context, bookmarkID string) (*swiftcontrol.Session, error) {
-	config, _, err := c.store.ConnectionConfig(ctx, bookmarkID)
+func (c *Connections) open(ctx context.Context, bookmarkID string) (cachedSession, error) {
+	config, generation, err := c.store.ConnectionConfig(ctx, bookmarkID)
 	if err != nil {
 		if errors.Is(err, secrets.ErrNotFound) {
-			return nil, fmt.Errorf("saved key is unavailable; unlock credential storage or re-enter it: %w", err)
+			return cachedSession{}, fmt.Errorf("saved key is unavailable; unlock credential storage or re-enter it: %w", err)
 		}
-		return nil, err
+		return cachedSession{}, err
 	}
 	session, err := swiftcontrol.New(config)
 	if err != nil {
-		return nil, err
+		return cachedSession{}, err
 	}
 	if err := session.Authenticate(ctx); err != nil {
-		return nil, err
+		return cachedSession{}, err
 	}
-	return session, nil
+	if err := c.store.WithCurrentGeneration(ctx, bookmarkID, generation, nil); err != nil {
+		return cachedSession{}, err
+	}
+	return cachedSession{session: session, generation: generation}, nil
 }
 
 // Connect authenticates the bookmark and makes it the active session.
 func (c *Connections) Connect(ctx context.Context, bookmarkID string) error {
-	session, err := c.open(ctx, bookmarkID)
+	entry, err := c.open(ctx, bookmarkID)
 	if err != nil {
 		return err
 	}
 	// Capability discovery at connect (§10): what this cluster supports
 	// gates what the UI offers. An unreadable /info yields the Unknown
 	// mode, never an error — Unknown is not Unsupported.
-	capabilities, err := session.FetchCapabilities(ctx)
+	capabilities, err := entry.session.FetchCapabilities(ctx)
 	if err != nil {
 		return err
 	}
 
-	c.mu.Lock()
-	c.active = session
-	c.activeID = bookmarkID
-	c.capabilities = capabilities
-	c.sessions[bookmarkID] = session
-	c.mu.Unlock()
-	return nil
+	return c.guardCache(ctx, bookmarkID, entry.generation, func() error {
+		c.active = entry
+		c.activeID = bookmarkID
+		c.capabilities = capabilities
+		c.sessions[bookmarkID] = entry
+		return nil
+	})
 }
 
 // SessionFor returns a live session for the bookmark, authenticating on
 // first use and caching it (transfers hold sessions for BOTH ends —
 // neither needs to be the active browse connection).
 func (c *Connections) SessionFor(ctx context.Context, bookmarkID string) (*swiftcontrol.Session, error) {
-	if err := c.store.Available(ctx, bookmarkID); err != nil {
-		return nil, err
-	}
 	c.mu.Lock()
-	if session, ok := c.sessions[bookmarkID]; ok {
-		c.mu.Unlock()
-		return session, nil
-	}
+	entry, found := c.sessions[bookmarkID]
 	c.mu.Unlock()
+	if found {
+		err := c.guardCache(ctx, bookmarkID, entry.generation, func() error {
+			if c.sessions[bookmarkID] != entry {
+				return bookmarks.ErrChanged
+			}
+			return nil
+		})
+		if err != nil {
+			c.forgetObsolete(bookmarkID, entry, err)
+			return nil, err
+		}
+		return entry.session, nil
+	}
 
-	session, err := c.open(ctx, bookmarkID)
+	entry, err := c.open(ctx, bookmarkID)
 	if err != nil {
 		return nil, err
 	}
+	if err := c.guardCache(ctx, bookmarkID, entry.generation, func() error {
+		c.sessions[bookmarkID] = entry
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return entry.session, nil
+}
+
+// The store coordinator stays held across the cache action, so an edit
+// cannot publish and invalidate between the recheck and installation.
+func (c *Connections) guardCache(ctx context.Context, id string, generation int64, use func() error) error {
+	return c.store.WithCurrentGeneration(ctx, id, generation, func() error {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return use()
+	})
+}
+
+func (c *Connections) forgetObsolete(id string, entry cachedSession, cause error) {
+	if !errors.Is(cause, bookmarks.ErrChanged) && !errors.Is(cause, bookmarks.ErrNotFound) {
+		return
+	}
 	c.mu.Lock()
-	c.sessions[bookmarkID] = session
+	defer c.mu.Unlock()
+	// A failed lookup must not evict a newer connection installed while
+	// this caller was waiting to validate its older snapshot.
+	if c.sessions[id] == entry {
+		delete(c.sessions, id)
+	}
+	if c.activeID == id && c.active == entry {
+		c.active = cachedSession{}
+		c.activeID = ""
+		c.capabilities = nil
+	}
+}
+
+func (c *Connections) activeSnapshot() (cachedSession, string, *swiftcontrol.Capabilities, error) {
+	c.mu.Lock()
+	entry, id := c.active, c.activeID
 	c.mu.Unlock()
-	return session, nil
+	if entry.session == nil {
+		return cachedSession{}, "", nil, ErrNotConnected
+	}
+	var capabilities *swiftcontrol.Capabilities
+	err := c.guardCache(context.Background(), id, entry.generation, func() error {
+		if c.active != entry || c.activeID != id {
+			return ErrNotConnected
+		}
+		capabilities = c.capabilities
+		return nil
+	})
+	if err != nil {
+		c.forgetObsolete(id, entry, err)
+		return cachedSession{}, "", nil, err
+	}
+	return entry, id, capabilities, nil
 }
 
 // Invalidate drops any cached session (and, when it is the active
@@ -119,7 +188,7 @@ func (c *Connections) Invalidate(bookmarkID string) {
 		// The active browse pointer is the SAME staleness: drop it too,
 		// so Session() answers nil and the UI reconnects against the
 		// stored configuration instead of the old cluster.
-		c.active = nil
+		c.active = cachedSession{}
 		c.activeID = ""
 		c.capabilities = nil
 	}
@@ -168,8 +237,12 @@ func (c *Connections) TLSRemote(tls swiftcontrol.TLSConfig) (insecure bool, caFi
 		return true, "", nil
 	case swiftcontrol.TLSModeCustomCA:
 		c.mu.Lock()
-		defer c.mu.Unlock()
 		dir := c.caDir
+		c.mu.Unlock()
+		// Keep concurrent materialisation ordered without holding the
+		// cache mutex across file I/O and blocking bookmark publication.
+		c.caMu.Lock()
+		defer c.caMu.Unlock()
 		if dir == "" {
 			dir = filepath.Join(os.TempDir(), "aeronautes-ca")
 		}
@@ -207,41 +280,31 @@ func (c *Connections) TLSRemote(tls swiftcontrol.TLSConfig) (insecure bool, caFi
 // Capabilities returns the active connection's capability snapshot, nil
 // when not connected.
 func (c *Connections) Capabilities() *swiftcontrol.Capabilities {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.capabilities
+	_, _, capabilities, _ := c.activeSnapshot()
+	return capabilities
 }
 
 // Session returns the active session.
 func (c *Connections) Session() (*swiftcontrol.Session, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.active == nil {
-		return nil, ErrNotConnected
-	}
-	if err := c.store.Available(context.Background(), c.activeID); err != nil {
-		return nil, err
-	}
-	return c.active, nil
+	entry, _, _, err := c.activeSnapshot()
+	return entry.session, err
 }
 
 // ActiveBookmarkID returns the connected bookmark's id, "" when none —
 // the scope key for evidence and other per-endpoint state.
 func (c *Connections) ActiveBookmarkID() string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.activeID
+	_, id, _, _ := c.activeSnapshot()
+	return id
 }
 
 // AccountName derives the display account name from the active session's
 // storage URL suffix (…/v1/AUTH_demo → AUTH_demo).
 func (c *Connections) AccountName() string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.active == nil {
+	session, err := c.Session()
+	if err != nil {
 		return ""
 	}
-	url := c.active.StorageURL()
+	url := session.StorageURL()
 	if i := strings.LastIndex(url, "/"); i >= 0 {
 		return url[i+1:]
 	}

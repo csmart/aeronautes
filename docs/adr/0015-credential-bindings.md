@@ -184,7 +184,11 @@ The frontend refreshes after successful and failed save/delete attempts and when
 The [status validation record](../experiments/2026-09-06-credential-status.md) covers these boundaries; the counts describe recorded work and are not proof that native keys exist or were erased.
 Verified native cleanup, held/authenticating-session revocation and job admission/pins remain open.
 Removing matching legacy values from the current session store is also deferred; this slice makes no external Delete call, even for memory-only values.
-Cache entries do not yet record the generation returned by acquisition, so the generation-tagged cache and lookup rules above remain part of the lifetime slice.
+The cache containment slice now records the captured generation and refuses obsolete results after authentication and capability discovery.
+Final validation and cache installation share the publication coordinator, with only the cache update nested under the cache mutex.
+Cache reads validate their generation and identity again before returning a session or active connection details; unavailable reads refuse use.
+The [cache validation record](../experiments/2026-09-06-cache-generations.md) covers delayed authentication, replacement and deletion, unavailable reads, and lock-order negative controls.
+This closes obsolete cache publication and lookup, while sessions already returned to callers still need request admission and revocation before the full lifetime rule is met.
 
 Permanent regressions must cover the service-level retarget attack with zero requests to the new receiver, explicit reentry, URL/port/account/override/TLS changes, and identical-byte CA reimport.
 Inject failure before and after each SQL/keychain boundary, including a Put that takes effect and then fails, publication failure, ambiguous commit and failed cleanup.

@@ -4285,12 +4285,17 @@ It distinguishes a session-store lifetime from an unverified native-keychain ada
 It retains unused references and journal records until cleanup can prove both the original backend and the absence of live users; a fallback or a negative lookup through a changed OS default is not deletion evidence.
 The [validation record](experiments/2026-09-06-credential-publication.md) records the failure/concurrency oracles and the limited database/adapter reopen proof.
 The editor and README disclose retained keys; held/authenticating-session revocation, job admission/pins and the wider P12/P13 recovery contract remain open.
-Removal from the current session store is deferred along with persistent key cleanup, and cache entries do not yet carry generation tags.
+Removal from the current session store is deferred along with persistent key cleanup.
 The status bar now exposes recorded credential cleanup work, including references belonging to deleted bookmarks and unfinished saves.
 The journal-only read distinguishes active saves under the publication coordinator, never changes cleanup evidence and exposes only counts through the bridge.
 Status refreshes after every save/delete attempt and on opening its view, rejects stale responses and reports unavailable reads as unknown.
 The [status validation record](experiments/2026-09-06-credential-status.md) describes the recovery, concurrency, service and frontend proof.
 Verified persistent-backend selection and bounded recovery remain prerequisites for completing P10; a status count does not establish safe cleanup or native erasure.
+Cached sessions now carry the generation captured with their credential configuration, and authentication or capability discovery that spans a binding replacement or deletion cannot install an obsolete entry.
+Final validation and cache installation share bookmark coordination; cache readers release their mutex before acquiring that coordinator and verify the same cached identity before returning it.
+Unreadable generations refuse access, while cosmetic edits retain the generation and allow authentication to finish.
+The [cache validation record](experiments/2026-09-06-cache-generations.md) includes acknowledged HTTP and database barriers, the original failing service regressions and negative controls for lock inversion and uncoordinated cache use.
+Held-session request admission, job pins, cancellation cleanup and native cleanup authority remain open; cache containment does not revoke pointers already held by a caller.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.

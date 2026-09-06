@@ -90,7 +90,7 @@ func TestDeletePrefixJob(t *testing.T) {
 		t.Errorf("effective config = %q", job.Settings)
 	}
 	// Survivors: kept.txt and the sibling manifest, still assembling.
-	d, err := h.transfer.connections.sessions[bookmark].ObjectDetail(ctx, "media", "sibling")
+	d, err := h.transfer.connections.sessions[bookmark].session.ObjectDetail(ctx, "media", "sibling")
 	if err != nil || d.ContentLength != 64 {
 		t.Fatalf("sibling = %+v %v (shared segments must survive)", d, err)
 	}
@@ -102,7 +102,7 @@ func TestEmptyAndDeleteContainerJobs(t *testing.T) {
 	h.mock.AddContainer("media", "standard")
 	seedObject(h.mock, "media", "one.txt", "1", nil)
 	seedObject(h.mock, "media", "two.txt", "22", nil)
-	session := h.transfer.connections.sessions[bookmark]
+	session := h.transfer.connections.sessions[bookmark].session
 	// Container config that must survive Empty (§33): empty base
 	// fingerprint = unconditional apply in the mutate flow.
 	if _, err := h.mutate.UpdateContainer(ctx, "media", "", ContainerEditDTO{
@@ -205,7 +205,7 @@ func TestSegmentDeleteDLOOwnership(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "Backstage force") {
 		t.Fatalf("unproven delete = %v", err)
 	}
-	session := h.transfer.connections.sessions[bookmark]
+	session := h.transfer.connections.sessions[bookmark].session
 	if _, err := session.ObjectDetail(ctx, "media", "theirs.bin"); err != nil {
 		t.Fatal("refusal deleted the manifest anyway")
 	}
@@ -298,7 +298,7 @@ func TestSegmentDeleteSLO(t *testing.T) {
 	if !result.ManifestDeleted || result.SegmentsDeleted != 2 {
 		t.Fatalf("result = %+v", result)
 	}
-	session := h.transfer.connections.sessions[bookmark]
+	session := h.transfer.connections.sessions[bookmark].session
 	if _, err := session.ObjectDetail(ctx, "parts", "elsewhere/x"); err != nil {
 		t.Fatal("uninvolved segment deleted")
 	}
@@ -526,7 +526,7 @@ func TestSegmentDeleteRefusesSwappedManifest(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "changed since") {
 		t.Fatalf("swapped manifest delete = %v, want identity refusal", err)
 	}
-	session := h.transfer.connections.sessions[bookmark]
+	session := h.transfer.connections.sessions[bookmark].session
 	if _, err := session.ObjectDetail(ctx, "media", "swap.slo"); err != nil {
 		t.Fatal("the replacement manifest was deleted despite the refusal")
 	}
@@ -592,7 +592,7 @@ func TestProvenSegmentsStillNeedForce(t *testing.T) {
 	}); err == nil || !strings.Contains(err.Error(), "Backstage force") {
 		t.Fatalf("proven-without-force = %v, want force-required refusal", err)
 	}
-	session := h.transfer.connections.sessions[bookmark]
+	session := h.transfer.connections.sessions[bookmark].session
 	if _, err := session.ObjectDetail(ctx, "media", "proven.slo"); err != nil {
 		t.Fatal("proven-without-force refusal still deleted the manifest")
 	}

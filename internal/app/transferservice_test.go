@@ -355,7 +355,7 @@ func TestPlanAndStartCopyAcrossBookmarks(t *testing.T) {
 	}
 
 	// The overwrite committed and metadata rode the §27.4 apply.
-	d, err := h.transfer.connections.sessions[dstBookmark].ObjectDetail(ctx, "backup", "one.txt")
+	d, err := h.transfer.connections.sessions[dstBookmark].session.ObjectDetail(ctx, "backup", "one.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -687,7 +687,7 @@ func TestMirrorExecutes(t *testing.T) {
 		t.Fatalf("deleted = %d, want 3 (counters %+v)", job.Counters.ObjectsDeleted, job.Counters)
 	}
 
-	session := h.transfer.connections.sessions[dstBookmark]
+	session := h.transfer.connections.sessions[dstBookmark].session
 	for _, gone := range []string{"scope/obsolete-1.txt", "scope/obsolete-2.txt", "scope/obsolete-dlo.bin"} {
 		if _, err := session.ObjectDetail(ctx, "backup", gone); err == nil {
 			t.Errorf("%s survived the mirror", gone)
@@ -749,7 +749,7 @@ func TestMirrorSkipsDeletionsWhenCopyFails(t *testing.T) {
 	if job.Counters.ObjectsDeleted != 0 {
 		t.Fatalf("deletions ran despite failed copy half: %+v", job.Counters)
 	}
-	session := h.transfer.connections.sessions[dstBookmark]
+	session := h.transfer.connections.sessions[dstBookmark].session
 	if _, err := session.ObjectDetail(ctx, "backup", "obsolete.txt"); err != nil {
 		t.Fatal("dest-only object deleted despite unverified copy half")
 	}
@@ -853,7 +853,7 @@ func TestCrashLitterSweep(t *testing.T) {
 	if swept != 3 { // 1 staged + 2 orphan segments
 		t.Fatalf("swept = %d, want 3", swept)
 	}
-	session := h.transfer.connections.sessions[bookmark]
+	session := h.transfer.connections.sessions[bookmark].session
 	if _, err := session.ObjectDetail(ctx, "backup", staging+"000001"); err == nil {
 		t.Fatal("stranded staged object survived")
 	}
@@ -1046,7 +1046,7 @@ func TestMirrorDeleteSetSpansChunks(t *testing.T) {
 	if job.Counters.ObjectsDeleted != int64(total) || job.Counters.ObjectsFailed != 0 {
 		t.Fatalf("deleted = %d failed = %d, want %d/0", job.Counters.ObjectsDeleted, job.Counters.ObjectsFailed, total)
 	}
-	session := h.transfer.connections.sessions[dstBookmark]
+	session := h.transfer.connections.sessions[dstBookmark].session
 	for entry, err := range session.Objects(ctx, "backup", swiftcontrol.ObjectListOptions{Deep: true, Prefix: "scope/"}) {
 		if err != nil {
 			t.Fatal(err)
@@ -1123,7 +1123,7 @@ func TestCrashSweepCommitBoundary(t *testing.T) {
 	}
 
 	// Case A: the live DLO still assembles — its segments survived.
-	session := h.transfer.connections.sessions[bookmark]
+	session := h.transfer.connections.sessions[bookmark].session
 	d, err := session.ObjectDetail(ctx, "backup", "video.bin")
 	if err != nil || d.ContentLength != 3*int64(len("segment-bytes")) {
 		t.Fatalf("live DLO after sweep = %+v %v (its segments were destroyed)", d, err)
@@ -1246,7 +1246,7 @@ func TestMirrorSkipsReappearedSourceNames(t *testing.T) {
 	if job.State != "complete" || !strings.Contains(job.Error, "skipped") {
 		t.Errorf("job = %+v, want complete with a skip note", job)
 	}
-	session := h.transfer.connections.sessions[dstBookmark]
+	session := h.transfer.connections.sessions[dstBookmark].session
 	if _, err := session.ObjectDetail(ctx, "backup", "scope/reborn.txt"); err != nil {
 		t.Fatal("reappeared-source object was deleted from the destination")
 	}
@@ -1307,7 +1307,7 @@ func TestCrashSweepProductionSlashPair(t *testing.T) {
 	if _, err := h.transfer.sweepCrashLitter(ctx); err != nil {
 		t.Fatal(err)
 	}
-	session := h.transfer.connections.sessions[bookmark]
+	session := h.transfer.connections.sessions[bookmark].session
 	d, err := session.ObjectDetail(ctx, "backup", "video.bin")
 	if err != nil || d.ContentLength != 2*int64(len("live-bytes")) {
 		t.Fatalf("live DLO after sweep = %+v %v (C01-slash: its segments were destroyed)", d, err)
@@ -1351,7 +1351,7 @@ func TestMirrorSkipsReplacedDestination(t *testing.T) {
 	if job.State != "complete" || !strings.Contains(job.Error, "replaced") {
 		t.Errorf("job = %+v, want complete with a replaced-skip note", job)
 	}
-	session := h.transfer.connections.sessions[dstBookmark]
+	session := h.transfer.connections.sessions[dstBookmark].session
 	d, err := session.ObjectDetail(ctx, "backup", "scope/victim.txt")
 	if err != nil || d.ContentLength != int64(len("someone else's brand-new data")) {
 		t.Fatalf("replaced object = %+v %v (the other client's data was deleted)", d, err)
@@ -1403,7 +1403,7 @@ func TestRecoverySweepStepNeverRetiresOnEmpty(t *testing.T) {
 	if err != nil || !hadWork {
 		t.Fatalf("post-crash step = (%v, %v), want (true, nil)", hadWork, err)
 	}
-	session := h.transfer.connections.sessions[bookmark]
+	session := h.transfer.connections.sessions[bookmark].session
 	if _, err := session.ObjectDetail(ctx, "backup_segments", prefix+"00000000"); err == nil {
 		t.Fatal("orphan litter survived the later sweep")
 	}

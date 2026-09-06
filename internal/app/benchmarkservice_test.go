@@ -43,7 +43,7 @@ func TestBenchmarkRunsAndFeedsAuto(t *testing.T) {
 		}
 	}
 	// The temporary container is gone.
-	session := h.transfer.connections.sessions[bookmark]
+	session := h.transfer.connections.sessions[bookmark].session
 	for entry, err := range session.Containers(ctx, swiftcontrol.ListOptions{Prefix: "aeronautes-benchmark-"}) {
 		if err != nil {
 			t.Fatal(err)
