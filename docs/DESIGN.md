@@ -4458,6 +4458,44 @@ The second P05 implementation now refuses changed Copy items on all routes and r
 Jobs with refused items retain a partial result and separate refused count, including after cancellation or another error.
 A bounded-memory record preserves exact execution-time refusal identities for verification and refuses incomplete or corrupt evidence.
 The [Copy validation record](experiments/2026-09-06-copy-refusal.md) covers the prior failure, mixed real-Swift plans, refusal volume, conditional-write races, local-upload preservation and deliberately removed safeguards.
+
+P06 binds frontend preview completion to the current intent under UI-01 and the audit plan.
+The original mounted Copy and Delete probes still fail after P05: a late response can arm an operation whose destination or destructive mode changed while the preview was pending.
+The oracle is that only a successful preview for the exact current request, UI scope revision and dialog lifetime can enable submission.
+Submitting must consume that preview and send its captured request; it must not rebuild a different request from the current controls.
+Delete confirmation is entered after preview and must match the captured container, while every scope or mode change clears that confirmation.
+
+Implement P06 as two separately reviewed logical fixes:
+
+1. Bind Copy/Mirror comparison and destructive-job previews to immutable request snapshots and a monotonically advancing dialog intent generation.
+   Invalidate on destination account, container, prefix, mode, profile and every per-job input event, including changes made before blur and changes subsequently reversed.
+   Add a small UI scope revision that advances synchronously when the connected bookmark, open container or prefix changes and when a reconnect attempt starts, including reconnecting to the same bookmark.
+   A preview must match both the captured scope revision and current request before publishing a result or enabling Start.
+   Clear prior previews before every new request; stale success, error and finalisation callbacks must not alter a newer request's result, error or busy state.
+   Closing or unmounting ends the dialog lifetime immediately and invalidates pending work.
+   Check the same conditions in the Start handler, consume its snapshot synchronously before awaiting the bridge, and prevent duplicate submission even if a disabled button receives a synthetic event.
+   Preserve Mirror's unavailable state through every mode transition; returning from Mirror to Copy requires a new Copy preview.
+2. Apply the same intent and lifetime contract to local upload/download picking and preflight.
+   Capture the remote scope before opening the picker, then bind the returned opaque token and the complete typed upload/download request to that attempt.
+   A scope or mode change during either picker or preflight invalidates the attempt, and a late picker result must not launch a preflight for a different scope.
+   Pass the captured request through BrowserState to both preflight and Start instead of reconstructing it from the live browser scope.
+   Only a current successful report without rejection may enable submission, and a new selection, cancelled picker, failed preflight or consumed submission requires a fresh preflight.
+
+Use the existing production components and BrowserState with a recording Api boundary and deterministic deferred replies for the separate UI-to-bridge harness required by §65.10 rule 4.
+Record the affected UI scenarios and their test names in a small matrix with each implementation; these tests do not earn Go service-scenario credit.
+Cover the original two audit reproductions, source and destination changes, all relevant settings and modes, change-and-revert, same-bookmark reconnect, close/reopen, late success and failure, overlapping requests, confirmation invalidation and duplicate Start.
+For local transfers, hold both picker and preflight separately, prove the exact preview/start arguments including tokens and settings, and retain the rejection and cancellation controls.
+Positive controls must show that an unchanged current request still starts exactly once and that only the current request owns result, error and busy state.
+Run the maintained reproductions against the previous implementation, then prove that deliberately removed generation, scope, lifetime or submission safeguards are caught.
+Keep the two archived UI-01 probes as additional before/after evidence; adapting their obsolete Copy summary label must be disclosed separately from the unchanged safety assertions.
+Run the frontend check, build and full suite for each implementation, and require the normal five PR checks and subsequent master checks before delivery.
+
+This is frontend intent binding, not a server-issued plan capability or proof that remote objects stayed unchanged after preview.
+P11 still owns backend replay, expiry, authority and current-binding validation; P14 still owns external-writer protection.
+P07 owns bookmark invalidation and general asynchronous mutation completion, including inspector/manifest deletion identity; P08 owns paging and Find lifetimes.
+P23 owns destination-name byte preservation, so this slice does not silently expand into changing the existing input normalisation policy.
+P18–P21 and P30 retain local filesystem, materialisation and native-picker obligations.
+No native accessibility, platform picker or valuable-data release guarantee follows from these frontend tests.
 Independent local review and all five current-head/current-master checks remain required before delivery.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
