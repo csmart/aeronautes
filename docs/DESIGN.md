@@ -4571,6 +4571,47 @@ The two selected archived UI-02/05 probes now pass; this does not mark the other
 This final P07 frontend slice still requires independent local review and all five PR/master checks before delivery.
 Ordinary paging and the full Find lifecycle remain P08; backend authority, durable outcomes, external writers, ownership and the valuable-data release hold remain open.
 
+P08 isolates pagination and Find lifecycle under UI-03/06 and the scan-retention portion of PERF-01.
+On the reviewed P07 tree, the original cross-container page probe passes, while duplicate Load more and Stop-before-start-return still fail their intended assertions.
+Those are three selected archived probes with nine others unselected, not a fresh passing claim for the whole audit.
+The oracle is those maintained regressions, the paged listing/selection contract in §14.2, the explicit cancellable bounded scan in §16, and K-UI-005.
+
+Implement P08 as three separately reviewed logical fixes:
+
+1. Bind container and object pagination to its original connection, namespace, initial-list generation and requested marker.
+   Admit at most one page request for the current listing, including synthetic duplicate clicks.
+   Initial reload, navigation and reconnect retire old page success/error/finalisation even when the visible names return or an identical prefix is reloaded.
+   A page cannot append after a newer initial list or replace that list's current marker.
+   Preserve unique row identity when appending overlapping page data, without conflating virtual prefixes with object rows.
+   Expose pending Load more state and an explicit paging error with retry, preserving the loaded rows, selection and failed request's marker.
+   Refuse load-more admission while the initial list is pending or failed, and do not accept a stale or non-advancing marker as progress.
+   Keep initial-list errors distinct from later-page errors so a page failure does not hide usable rows.
+2. Give each frontend Find intent its own generation and immutable bookmark/container/prefix identity.
+   Stop, a replacement start, either close control, component destruction, navigation and reconnect retire that intent immediately, including while startup has not returned its id.
+   Cancel every late-started retired id without polling it; stale polls, errors, cancellation completions and finalisation cannot affect a newer scan.
+   Route the main Find toggle and panel close through the same cleanup, and retain stopped results only while their original scope remains current.
+   A failed cancellation must not be presented as proof that backend work has stopped.
+   Clicking a result must navigate and select the exact captured object, including one beyond the first listing page, through bounded targeted retrieval without scanning all preceding pages.
+   Preserve object-name bytes, distinguish the object from a same-named virtual prefix, retire late navigation/selection and report a disappeared result truthfully.
+   Do not issue a HEAD for every listing row or let a result from another scope borrow the current container.
+3. Bound the process-local Find service independently of renderer cleanup.
+   Keep the existing 1,000-match bound per scan, admit at most four scan workers and retain at most sixteen scan records including running scans.
+   Expire a scan after five minutes without a successful status poll, cancel its context and release its retained results even when no later API call arrives.
+   Successful polling renews that idle lease so an actively observed large namespace scan has no new fixed duration limit.
+   At the retained-record limit, evict the oldest completed record before admitting another scan; refuse overload explicitly when worker capacity is exhausted.
+   Cancelling, expiring or forgetting an id must not free its worker slot until the actual worker exits, so repeated start/cancel cannot bypass the concurrency bound.
+   Cancel service-owned scans on application shutdown and test completion, and make unknown, cancelled and expired ids return an explicit status error.
+   These are read-only ephemeral scans, not durable jobs or new mutation capabilities; retain the existing case-insensitive substring semantics and truthful counts/throughput.
+
+For frontend slices, mount the production components with BrowserState and a recording Api boundary, hold replies deterministically and keep a separate UI scenario matrix.
+Cover both page completion orders, same-name accounts, refresh/navigation return, duplicate clicks, current failure/retry and selection preservation.
+Cover Find start/stop/start, delayed startup and cancellation, both close controls, unmount, navigation, expired status, exact result selection beyond the first page and current success/error controls.
+The backend slice must add service-level before/after reproductions, exact request barriers for admitted work, deterministic lease expiry and independent removal of admission, cancellation, expiry and worker-slot guards.
+Exercise real Find service entry points against the owned mock and SAIO fixtures; snapshot both account namespaces before and after and keep any service-scenario credit separate from frontend evidence.
+Record the precise shutdown and timing seam before implementation if it needs an additional service or bridge contract, and review that extension first.
+Every implementation needs its relevant full suites, independent local review and all five PR/master checks; absent or failing required evidence cannot be replaced by a rerun or a synthetic passing claim.
+P22 listing completeness and total retained UI rows, P24 wider queue/resource budgets, P10/P11 authority, P13 outcomes, P14 writers, P15 ownership and the valuable-data release hold remain open.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
