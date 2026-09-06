@@ -1,7 +1,7 @@
 # Preview intent binding
 
 Date: 2026-09-06.
-Scope: the first P06 implementation, Copy/Mirror comparison and container/prefix Delete dialogs.
+Scope: P06's two implementations, Copy/Mirror comparison and container/prefix Delete dialogs, followed by local picking and preflight.
 Oracle: [DESIGN §65.11](../DESIGN.md#6511-audit-remediation), approved as the P06 sequence, and [UI-01](../audits/2026-09-05/ui-product.md#ui-01--p1-a-late-preview-can-authorize-a-different-destructive-operation).
 The preceding implementation is the frontend tree at `350e1dccca723dbd`, identical to merged P05 master `f8ca5acee84257d1150cd0750276f1df5401a27d`.
 
@@ -82,15 +82,80 @@ The submitted tree is unchanged, every variant loads, and each exits with assert
 The first two controls independently exercise scope history with an identical request and dialog history with an unchanged browser scope.
 The synchronous Start test separately catches relying only on the later reactive effect.
 
-## Verification and limits
+## Copy/Delete verification and limits
 
 The full frontend suite passes 164 tests across 12 files, with no failures or skips and 37.09% whole-source statement coverage.
 Svelte/TypeScript check reports zero errors and warnings; the frontend production build and `go build ./...` pass.
 No Go source or bridge model changed, so the existing Go scenario ledger is not enlarged and the Go runtime suite is left to the required PR checks.
 The local runtime artifacts are the `p06-copy-delete-verified.*`, `p06-preview-controls/`, `p06-adapted-before.*` and `p06-adapted-after.*` records under the task's temporary evidence directory.
 
-The local picker/preflight half of P06 remains the next implementation commit.
+At this checkpoint, local picker/preflight binding remained the next implementation commit, recorded below.
 This frontend protection does not establish a backend one-shot plan, replay/expiry refusal or unchanged remote data; P11 and P14 remain open.
 Bookmark lifecycle and inspector/manifest deletion are P07; paging/Find are P08; destination-name normalisation is P23.
 Local filesystem and native-picker obligations remain P18–P21/P30, and these mounted tests establish no native accessibility or platform picker behaviour.
 The valuable-data release hold remains.
+
+## Local picker and preflight binding
+
+The second implementation uses `c5960d05d611bf46`, the approved Copy/Delete commit, as its baseline.
+It captures the remote account, container, prefix and settings before opening the native picker.
+The returned opaque token is admitted only while that intent is still current, then frozen with the complete typed request passed to both preflight and Start.
+BrowserState's four local-transfer wrappers now forward that request without reconstructing its scope.
+The existing Go request models and bridge API are unchanged.
+
+A separate local-dialog revision advances when the existing upload/download/open state changes.
+It catches a mode change and return, or close and reopen, before the parent rerenders without invalidating unrelated Copy/Delete dialogs.
+Current scope, mode, revisions, browser identity and dialog lifetime are checked before preflight, before publishing its report and inside Start.
+Old picker replies cannot initiate preflight, and old report/error/finalisation replies cannot replace a newer attempt's state.
+Only a successful current report without rejection may start; the snapshot is consumed before submission.
+Cancelled, empty or failed selections and preflights cannot reuse an earlier report.
+One pending Start blocks a new picker until it finishes, and a late Start result cannot describe a changed intent.
+
+The [local UI tests](../../frontend/src/features/transfer/LocalTransferDialog.test.ts) add 108 mounted production-component cases and two BrowserState request-forwarding contract cases.
+The props read the same `browser.localTransfer` state used by BrowserScreen, including changes made before a reactive effect can run.
+
+| Scenario | Maintained test family | Required observation |
+| --- | --- | --- |
+| Remote scope history | `invalidates $field change, revert=$revert, stage=$stage` | Account, container and prefix changes at picker, preflight and ready stages disarm, including same-turn return |
+| Connection identity | `invalidates the same-bookmark reconnect at %s`; `refuses picking and Start throughout reconnect` | Equal visible fields cannot preserve an old report or admit a new picker during reconnect |
+| Mode and open-state history | `invalidates mode changes, revert=$revert, stage=$stage`; `rechecks %s in Start before reactive invalidation` | Upload/download changes, mode return and close/reopen invalidate before rerender |
+| Captured submission | `consumes and starts the exact scope, settings and opaque token once` | One call with the preflight's exact request, and no preview reuse after uncertain Start failure |
+| Request forwarding | `forwards the complete captured %s request without rebuilding its scope` | All settings, token and resource bytes survive independently of current BrowserState fields |
+| Obsolete replies | `only the newest attempt owns $stage $outcome and busy state`; `ignores an old successful preflight after the replacement report rejects` | Old picker/preflight success, failure and finalisation cannot override the current attempt |
+| Closure | `ends the picker lifetime on %s close`; `ignores late preflight %s after closing`; `does not preflight an unmounted picker or arm a reopened dialog` | Close button, scrim, parent close/reopen and unmount retire pending work |
+| Failed or empty selection | `cannot reuse the old report after picker %s`; `refuses an empty upload selection`; `refuses an empty directory token` | Cancellation, error, null/empty file lists and empty tokens never reuse a report or launch invalid preflight |
+| Current report outcomes | `shows a current rejection without enabling Start`; `allows a current warning and displays the accepted job`; `keeps a failed preflight disarmed and allows a fresh attempt` | Rejection, warning, success and error/retry retain their intended behaviour |
+| Duplicate and late work | `refuses a second picker while the current picker is pending`; `ignores a late Start %s after scope changes` | Synthetic duplicate clicks cannot open a second picker or retarget a pending submission |
+
+All 110 cases pass after the change.
+Against the preceding two production files, the same tests produce 100 assertion failures and ten passing controls, with no skips or setup failures.
+Two of those failures exercise the new complete-request wrapper contract; the remaining 98 are mounted UI assertions.
+The 86-case first run is an intermediate subset, not additional failures.
+
+Thirteen independent scratch variants also load and fail their assertions without skips, setup errors or unhandled rejections:
+
+| Deliberately broken behaviour | Failing cases |
+| --- | ---: |
+| Hide changes to the remote scope revision | 46 |
+| Hide changes to the local dialog revision | 4 |
+| Admit obsolete picker replies into preflight | 28 |
+| Publish an obsolete successful report | 2 |
+| Publish an obsolete error | 6 |
+| Let obsolete finalisation clear the current busy state | 8 |
+| Delay close invalidation until parent unmount | 8 |
+| Remove the unmount guard | 2 |
+| Remove Start's current-intent check | 10 |
+| Retain a submitted report and remove the pending-Start guard | 4 |
+| Admit empty picker tokens | 2 |
+| Rebuild wrapper scope from current browser fields | 2 |
+| Remove the handler's duplicate-picker guard | 8 |
+
+The separate local revision is independently necessary: its four failures are the same-turn mode-return and close/reopen Start cases for both directions.
+The final full frontend suite passes 274 tests across 13 files, with no failures or skips and 41.98% whole-source statement coverage.
+The Svelte/TypeScript check has zero errors and warnings; the frontend production build and `go build ./...` pass.
+The `p06-local-final.*` and `p06-local-controls/` artifacts record the final suite, paired baseline and each mutation under the task's temporary evidence directory.
+
+This completes the defined frontend P06 request/lifetime work, including local picker admission.
+It does not cancel an outstanding native picker, revoke its Go-side token, prove native picker serialisation or stop an already submitted job; those capabilities need their own authority and platform evidence.
+The Go service scenario ledger is unchanged, and P07/P08/P11/P14/P18–P21/P23/P30 remain open as described above.
+UI-01's backend authority requirement and the valuable-data release hold remain.
