@@ -4663,7 +4663,7 @@ The third P08 slice uses the following timing and shutdown contract before chang
    Keep the existing 1,000-match bound, case-insensitive substring matching, literal names, error reporting and truthful scanned counts and throughput.
    Unknown, cancelled and expired ids produce explicit status errors; cancelling an already absent id stays idempotent.
 5. Implement Wails' `ServiceShutdown() error` lifecycle hook directly on FindService, keeping Wails imports in the shell.
-   The pinned Wails v3 beta.15 runtime and binding generator both reserve this method name and exclude it from the renderer bridge.
+   The pinned Wails v3 beta.16 runtime and binding generator both reserve this method name and exclude it from the renderer bridge.
    The action-inventory test must recognise this specific lifecycle method with its expected signature, while continuing to reject every unaccounted renderer method.
    Verify its binding exclusion against the pinned dependency and retain the three-method Find bridge surface; do not credit shutdown as a renderer action.
 6. Shutdown closes admission, stops all retained timers, releases results and requests cancellation of all service-owned scans, including workers whose records were already removed.

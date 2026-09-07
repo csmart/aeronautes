@@ -25,7 +25,7 @@ This supports delivering the frontend package first without changing its bridge 
 ## Go module and tool alignment
 
 The [Wails beta.16 release](https://github.com/wailsapp/wails/releases/tag/v3.0.0-beta.16) changes macOS systray click handling and notarisation setup, plus upstream CI.
-The application currently pins its CLI in `Makefile`, the CI binding-generation step and the Windows release step, all still beta.15.
+At initial inspection, the application pinned its CLI in `Makefile`, the CI binding-generation step and the Windows release step, all at beta.15.
 The [Wails CLI contract](https://v3.wails.io/guides/cli/#update-cli) calls for matching CLI and Go module versions.
 The Go update must align all three pins and revalidate the generated binding surface, including the reserved `ServiceShutdown` exclusion used by Find cleanup.
 The downloaded beta.16 runtime and generator source still reserve that method; the generated application bindings must be checked separately.
@@ -77,5 +77,35 @@ Go vet and build also pass.
 
 The frontend records are `dep-runtime-install-v1.log/.exit`, `dep-runtime-ui-check-v1.log/.exit`, `dep-runtime-ui-full-v1.json/.log/.exit`, `dep-runtime-ui-coverage-v1.json` and `dep-runtime-ui-build-v1.log/.exit` in the same temporary directory.
 This update preserves the existing Go module and matching CLI pins; their beta.16 alignment belongs to the next planned slice.
-Independent implementation review and fresh PR30/master delivery remain pending.
+Independent local review approved the complete plan and runtime implementation range.
+PR30 then passed all five [PR checks](https://github.com/csmart/aeronautes/actions/runs/34098394386) and merged through the protected rebase procedure.
+Master `7e268030af49f39e81d2e2ce85cfee5ad312657f` passed all five [master checks](https://github.com/csmart/aeronautes/actions/runs/34099335002).
+The merged tree exactly matches the reviewed source and preserves the separate plan and runtime commits.
 The release test prerequisite, SQLite update and wider audit work remain open.
+
+## Wails Go and CLI refresh
+
+This slice starts from that green master and updates the Wails Go module and all three CLI pins to beta.16.
+The frontend runtime already matches through PR30.
+The existing application behaviour, bound-service inventory and Find lifecycle contract remain the oracle; no application source or test assertions change.
+`go mod tidy`, required by the normal Wails binding/build tasks, also records the existing direct Godbus test import as direct and removes unused checksums for the locally replaced Swift module.
+Neither module's version changes, and the local Swift replacement and its source are unchanged.
+SQLite remains 1.57.0 for its separate reviewed slice.
+
+The isolated beta.16 CLI successfully runs the actual clean binding-generation task: 12 services and 49 methods, with no diff anywhere in the generated bindings.
+Find still exposes only `CancelFind`, `FindStatus` and `StartFind`; `ServiceShutdown` is absent from its renderer API.
+The production Linux app builds through `wails3 task build`, and its compiled module metadata confirms beta.16 and the production build tag.
+`dep-wails-alignment-v1.json` records the CLI and app hashes, generated-method check and changed-file hashes; `dep-wails-base-v1.json` records the preserved base tree and uncommitted input hashes.
+The raw CLI/app metadata and actual binding/build logs are retained alongside those records.
+Module checksum verification, Go vet and the CGO-disabled internal build all pass.
+
+The full internal race suite passes 577 top-level tests, 1,180 leaf cases and all 20 packages, with no failures or skips and 84.7% combined statement coverage.
+It includes both owned SAIO accounts and the verified rclone pin with the optional matrix enabled.
+`dep-wails-go-full-v1.json/.exit`, its summary and `dep-wails-go-cover-v1.out` retain the actual process and coverage evidence.
+`dep-wails-scenario-coverage-v1.json` reconciles the actual process exit, expected package set and producer environment: valid process, stream and contract, 28/110 cells and 39/49 actions with gaps.
+The unchanged frontend passes all 754 tests in 20 files, with no failures or skips and 77.73% statement coverage; checking reports zero errors and warnings, and the production build passes.
+`dep-wails-ui-full-v1.json/.log/.exit`, `dep-wails-ui-coverage-v1.json` and `dep-wails-ui-check-v1.log/.exit` preserve that evidence under `/tmp/aeronautes-remediation-20260905`.
+
+Local desktop smoke was not run because this host lacks Xvfb, xdotool and ImageMagick; the required CI smoke remains a delivery gate.
+Independent implementation review, final PR29 checks, the unsigned six-target build matrix and master checks remain pending.
+This dependency maintenance does not close native platform validation or the wider valuable-data release hold.
