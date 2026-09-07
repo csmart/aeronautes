@@ -95,6 +95,12 @@ The source gate reconstructs all 38 checked Swift files and passes all fifteen r
 An initial source-gate attempt used the system Go/cache and hit sandbox DNS denial; the configured cached Go environment passes, and the setup failure is not regression evidence.
 Frontend code and bindings are unchanged; the required frontend and app-smoke PR checks still apply.
 
+The first [PR45 pipeline](https://github.com/csmart/aeronautes/actions/runs/34080543841) passed frontend, SAIO and smoke but failed the Go lane's three new mock Copy tests because that lane did not install rclone.
+The Go lane now uses the same checksum-verified pinned-binary fetch and environment setup already used by SAIO.
+The unchanged compiled tests reproduce all three missing-binary failures with an empty search path, then pass all three with the freshly fetched and verified pin.
+`p22-go-ci-before.json/.exit` and `p22-go-ci-after.json/.exit` preserve this configuration reproduction; it is separate from the production regression and guard evidence above.
+The test assertions, production source and merge protections are unchanged by the CI dependency fix.
+
 P22 and DS-13 remain open for the pinned engine's short-page compatibility work under the reviewed follow-up plan.
 This slice does not establish wider response/RSS budgets, current native authority, durable plans/outcomes, external-writer protection, segment ownership, native-platform behaviour or readiness for valuable user data.
 Local review, all five current-head/current-master PR checks, protected merge and all five resulting master checks remain required for delivery.

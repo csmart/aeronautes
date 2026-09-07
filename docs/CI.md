@@ -22,6 +22,8 @@ Its shell regression test exercises each refusal for all four required jobs and 
 GitHub otherwise accepts skipped status checks as satisfying a merge requirement; see [GitHub's required-check troubleshooting](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks).
 
 The Go job installs `dbus` and runs `make test-secret-service` with `AERONAUTES_REQUIRE_SECRET_SERVICE_FIXTURE=1`.
+It also fetches the official pinned rclone, verifies the archive and embedded binary checksums, and exposes it to the test process through PATH and `AERONAUTES_OFFICIAL_RCLONE_DIR`.
+Mock Copy tests exercise the actual transfer runner and require this dependency even without a SAIO endpoint.
 Its Linux test package uses a separate binary with a per-run private daemon, no service activation, a short socket path in a mode-0700 directory, and bounded startup and teardown.
 A missing daemon fails this required lane; an ordinary local suite without the requirement flag reports explicit skips when the tool is absent.
 These tests exercise the pinned client against a synthetic Secret Service and cannot satisfy the native desktop keychain gates.

@@ -69,6 +69,11 @@ jobs:
             echo '::error::generated bindings drifted from the Go services — run wails3 task common:generate:bindings and commit'
             exit 1
           }
+      - name: Fetch pinned rclone (verified)
+        run: |
+          ./scripts/fetch-rclone.sh linux amd64 "$RUNNER_TEMP/rclone-pin"
+          echo "$RUNNER_TEMP/rclone-pin" >> "$GITHUB_PATH"
+          echo "AERONAUTES_OFFICIAL_RCLONE_DIR=$RUNNER_TEMP/rclone-pin" >> "$GITHUB_ENV"
       - name: go test -race
         run: go test -race -count=1 ./...
 
