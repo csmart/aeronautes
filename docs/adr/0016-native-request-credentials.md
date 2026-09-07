@@ -48,17 +48,18 @@ A directory replacement is outside `go mod verify`'s source checks, and `go mod 
 A changed `require` version can also keep building the same local copy.
 Neither a successful build nor those module commands establish this copy's provenance.
 
-Record the module path `github.com/ncw/swift/v2`, version `v2.0.5`, upstream revision, Go module `h1:` source sum, module-file sum and patch filename in `third_party/ncw-swift/UPSTREAM.json`.
+Record the module path `github.com/ncw/swift/v2`, version `v2.0.5`, upstream revision, Go module `h1:` source sum, module-file sum and ordered patch filenames in `third_party/ncw-swift/UPSTREAM.json`.
 The pinned source sum is `h1:9o5Gsd7bInAFEqsGPcaUdsboMbqf8lnNtxqWKFT9iz8=`.
 The checker compares the recorded revision when the proxy supplies origin metadata; the source and module-file sums remain the authority when that metadata is absent.
-Keep the complete local delta in `third_party/ncw-swift/credential-pairing.patch` and the imported module in the separate `source` subdirectory, so metadata is outside the compared tree.
+Keep this credential delta in `third_party/ncw-swift/credential-pairing.patch` and the imported module in the separate `source` subdirectory, so metadata is outside the compared tree.
+[ADR 0021](0021-complete-listing-pages.md) adds `listing-response.patch` after the unchanged credential patch; together they record the complete local delta.
 
 Implement `scripts/check-swift-source.py` with these required checks:
 
 1. Read the application's module configuration and refuse a required version or replacement path that differs from the recorded base and `./third_party/ncw-swift/source`.
 2. Obtain the exact recorded module version through `go mod download -json` in a temporary module context, outside the application's replacement.
    Verify the archive contents against the recorded Go `h1:` sum; do not rely on a possibly modified expanded cache directory or the application's `go mod verify` result.
-3. Extract the verified source into a temporary directory, apply only the recorded patch there, and require an empty recursive file/content difference against the checked-in `source` tree.
+3. Extract the verified source into a temporary directory, apply only the recorded patches in order, and require an empty recursive file/content difference against the checked-in `source` tree.
    Missing, changed or unexpected files, an unapplicable patch, and failed download or checksum verification all fail the command.
 
 The local `make verify-swift-source` target must run that script, and the required `Go — fmt, vet, build, test (race)` job must run the same target without allowing failure.

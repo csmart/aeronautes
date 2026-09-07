@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the reviewed ncw/swift source and patch (ADR 0016)."""
+"""Verify the reviewed ncw/swift source and patches (ADRs 0016 and 0021)."""
 
 import base64
 import hashlib
@@ -14,6 +14,7 @@ import zipfile
 
 MODULE = "github.com/ncw/swift/v2"
 REPLACEMENT = "./third_party/ncw-swift/source"
+PATCHES = ["credential-pairing.patch", "listing-response.patch"]
 
 
 def run(args, cwd):
@@ -102,8 +103,13 @@ def check(root):
     dependency = root / "third_party/ncw-swift"
     upstream = json.loads((dependency / "UPSTREAM.json").read_text())
     check_module(root, upstream)
-    if upstream["patch"] != "credential-pairing.patch":
-        raise ValueError("unexpected patch filename")
+    if upstream.get("patches") != PATCHES or "patch" in upstream:
+        raise ValueError("unexpected ordered patch sequence")
+    if {path.name for path in dependency.glob("*.patch")} - set(PATCHES):
+        raise ValueError("unrecorded Swift patch")
+    for name in PATCHES:
+        if (dependency / name).is_symlink():
+            raise ValueError("Swift patch must not be a symlink")
     with tempfile.TemporaryDirectory(prefix="aeronautes-swift-source-") as temp:
         temp = Path(temp)
         # Download outside the application: directory replacements bypass the
@@ -120,8 +126,9 @@ def check(root):
             path = expected / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(data)
-        run(["git", "apply", "--no-index", "--whitespace=error-all",
-             str(dependency / upstream["patch"])], expected)
+        for name in upstream["patches"]:
+            run(["git", "apply", "--no-index", "--whitespace=error-all",
+                 str(dependency / name)], expected)
         actual_files = source_files(dependency / "source")
         expected_files = source_files(expected)
         differences = sorted(
@@ -129,7 +136,7 @@ def check(root):
             if actual_files.get(name) != expected_files.get(name)
         )
         if differences:
-            raise ValueError("Swift source differs from upstream plus patch: "
+            raise ValueError("Swift source differs from upstream plus patches: "
                              + ", ".join(differences))
     return len(expected_files)
 
@@ -144,7 +151,7 @@ def main():
             print(error.stdout, file=sys.stderr)
             print(error.stderr, file=sys.stderr)
         return 1
-    print(f"Swift source verified: {count} files match upstream plus the recorded patch")
+    print(f"Swift source verified: {count} files match upstream plus the recorded patches")
     return 0
 
 

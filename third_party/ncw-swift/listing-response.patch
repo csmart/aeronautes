@@ -1,0 +1,353 @@
+diff --git a/listing_response_test.go b/listing_response_test.go
+new file mode 100644
+index 0000000000000000..a5a46f7280fd6cd0
+--- /dev/null
++++ b/listing_response_test.go
+@@ -0,0 +1,159 @@
++package swift
++
++import (
++	"context"
++	"encoding/json"
++	"errors"
++	"io"
++	"net/http"
++	"strings"
++	"testing"
++	"testing/iotest"
++)
++
++type listingResponseTransport func(*http.Request) (*http.Response, error)
++
++func (f listingResponseTransport) RoundTrip(r *http.Request) (*http.Response, error) {
++	return f(r)
++}
++
++type listingResponseBody struct {
++	reader   io.Reader
++	closeErr error
++	onClose  func()
++	closed   int
++}
++
++func (b *listingResponseBody) Read(p []byte) (int, error) { return b.reader.Read(p) }
++
++func (b *listingResponseBody) Close() error {
++	b.closed++
++	if b.onClose != nil {
++		b.onClose()
++	}
++	return b.closeErr
++}
++
++type listingResponseFailure struct {
++	err   error
++	reads int
++}
++
++func (r *listingResponseFailure) Read([]byte) (int, error) {
++	r.reads++
++	return 0, r.err
++}
++
++func TestListingResponseLifecycle(t *testing.T) {
++	const good = `[{"name":"one","bytes":4,"last_modified":"2026-08-28T10:00:00.123456Z"}]`
++	for _, kind := range []string{"containers", "objects"} {
++		t.Run(kind, func(t *testing.T) {
++			for _, fault := range []string{
++				"valid", "empty", "read-error", "close-error", "cancel-at-close",
++				"decode-and-close-error", "partial-status", "content-range",
++				"invalid-shape", "invalid-suffix",
++				"split-valid", "split-empty", "cancel-before-body",
++			} {
++				t.Run(fault, func(t *testing.T) {
++					ctx, cancel := context.WithCancel(context.Background())
++					defer cancel()
++					closeFailure := errors.New("listing close failed")
++					later := &listingResponseFailure{err: io.ErrUnexpectedEOF}
++					body := &listingResponseBody{reader: strings.NewReader(good)}
++					headers := make(http.Header)
++					status, wantRows := http.StatusOK, 0
++					var wantError error
++					decodeError, prompt, valid := false, false, false
++					switch fault {
++					case "valid":
++						valid, wantRows = true, 1
++					case "empty":
++						valid = true
++						body.reader = strings.NewReader("[]")
++					case "split-valid":
++						valid, wantRows = true, 1
++						body.reader = iotest.OneByteReader(strings.NewReader(" \t" + good + "\r\n"))
++					case "split-empty":
++						valid = true
++						body.reader = iotest.OneByteReader(strings.NewReader(" \t[]\r\n"))
++					case "cancel-before-body":
++						body.reader, prompt, wantError = later, true, context.Canceled
++					case "read-error":
++						body.reader = io.MultiReader(strings.NewReader(good), later)
++						wantError = io.ErrUnexpectedEOF
++					case "close-error":
++						body.closeErr, wantError = closeFailure, closeFailure
++					case "cancel-at-close":
++						body.onClose, wantError = cancel, context.Canceled
++					case "decode-and-close-error":
++						body.reader = strings.NewReader(strings.Replace(good, `"bytes":4`, `"bytes":"invalid"`, 1))
++						body.closeErr, decodeError = closeFailure, true
++					case "partial-status":
++						status, body.reader, prompt = http.StatusPartialContent, later, true
++					case "content-range":
++						headers.Set("Content-Range", "")
++						body.reader, prompt = later, true
++					case "invalid-shape":
++						body.reader, prompt = io.MultiReader(strings.NewReader(`"`), later), true
++					case "invalid-suffix":
++						body.reader, prompt = io.MultiReader(strings.NewReader(good+" ["), later), true
++					}
++					calls := 0
++					connection := &Connection{
++						StorageUrl: "http://storage.invalid/v1/AUTH_fixture",
++						AuthToken:  "fixture-token",
++						Transport: listingResponseTransport(func(request *http.Request) (*http.Response, error) {
++							calls++
++							if fault == "cancel-before-body" {
++								cancel()
++							}
++							if request.Method != http.MethodGet || request.URL.Query().Get("format") != "json" {
++								t.Errorf("unexpected listing request: %s %s", request.Method, request.URL)
++							}
++							return &http.Response{StatusCode: status, Header: headers, Body: body, Request: request}, nil
++						}),
++					}
++					var rows int
++					var err error
++					if kind == "containers" {
++						var page []Container
++						page, err = connection.Containers(ctx, nil)
++						rows = len(page)
++						if err != nil && page != nil {
++							t.Error("failed container page returned rows")
++						}
++					} else {
++						var page []Object
++						page, err = connection.Objects(ctx, "owned", nil)
++						rows = len(page)
++						if err != nil && page != nil {
++							t.Error("failed object page returned rows")
++						}
++					}
++					if calls != 1 || body.closed != 1 {
++						t.Fatalf("requests=%d body closes=%d, want one each", calls, body.closed)
++					}
++					if prompt && later.reads != 0 {
++						t.Fatal("known invalid response read its remaining body")
++					}
++					if valid {
++						if err != nil || rows != wantRows {
++							t.Fatalf("valid listing: rows=%d err=%v", rows, err)
++						}
++						return
++					}
++					if err == nil || rows != 0 {
++						t.Fatalf("invalid listing accepted: rows=%d err=%v", rows, err)
++					}
++					if wantError != nil && !errors.Is(err, wantError) {
++						t.Fatalf("listing error=%v, want %v", err, wantError)
++					}
++					var typeError *json.UnmarshalTypeError
++					if decodeError && !errors.As(err, &typeError) {
++						t.Fatalf("primary decode error was lost: %v", err)
++					}
++				})
++			}
++		})
++	}
++}
+diff --git a/swift.go b/swift.go
+index 0d543619153ebf29..552c0104c5221ecf 100644
+--- a/swift.go
++++ b/swift.go
+@@ -1,6 +1,6 @@
+-// Aeronautes carries a credential-pairing correction here. See
+-// docs/adr/0016-native-request-credentials.md and the sibling
+-// credential-pairing.patch for the reason and complete upstream delta.
++// Aeronautes must not accept mixed credentials or incomplete listings.
++// See docs/adr/0016-native-request-credentials.md and
++// docs/adr/0021-complete-listing-pages.md; the sibling patches record both fixes.
+ 
+ package swift
+ 
+@@ -939,6 +939,75 @@ func readJson(resp *http.Response, result interface{}) (err error) {
+ 	return decoder.Decode(result)
+ }
+ 
++// A decoded prefix is not proof that Swift sent a complete listing.
++// Keep this stricter contract separate from unrelated JSON endpoints.
++func readListingJSON(ctx context.Context, resp *http.Response, row func(*json.Decoder) error) (err error) {
++	defer func() {
++		closeErr := resp.Body.Close()
++		if err == nil {
++			err = ctx.Err()
++		}
++		if err == nil {
++			err = closeErr
++		}
++	}()
++	if err := ctx.Err(); err != nil {
++		return err
++	}
++	if resp.StatusCode != http.StatusOK || len(resp.Header.Values("Content-Range")) != 0 {
++		return fmt.Errorf("listing requires a complete HTTP 200 response")
++	}
++	reader := bufio.NewReader(resp.Body)
++	for {
++		first, err := reader.ReadByte()
++		if err != nil {
++			return err
++		}
++		if strings.ContainsRune(" \t\r\n", rune(first)) {
++			continue
++		}
++		if first != '[' {
++			return fmt.Errorf("listing requires a JSON array")
++		}
++		if err := reader.UnreadByte(); err != nil {
++			return err
++		}
++		break
++	}
++	decoder := json.NewDecoder(reader)
++	if _, err := decoder.Token(); err != nil {
++		return err
++	}
++	for decoder.More() {
++		if err := ctx.Err(); err != nil {
++			return err
++		}
++		if err := row(decoder); err != nil {
++			return err
++		}
++	}
++	if token, err := decoder.Token(); err != nil {
++		return err
++	} else if token != json.Delim(']') {
++		return fmt.Errorf("listing array did not end")
++	}
++	// Inspect read-ahead bytes too, without allocating or decoding another
++	// JSON value from an already invalid suffix.
++	tail := bufio.NewReader(io.MultiReader(decoder.Buffered(), reader))
++	for {
++		b, err := tail.ReadByte()
++		if err == io.EOF {
++			return nil
++		}
++		if err != nil {
++			return err
++		}
++		if !strings.ContainsRune(" \t\r\n", rune(b)) {
++			return fmt.Errorf("listing has trailing data")
++		}
++	}
++}
++
+ /* ------------------------------------------------------------ */
+ 
+ // ContainersOpts is options for Containers() and ContainerNames()
+@@ -1011,9 +1080,22 @@ func (c *Connection) Containers(ctx context.Context, opts *ContainersOpts) ([]Co
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-	var containers []Container
+-	err = readJson(resp, &containers)
+-	return containers, err
++	containers := make([]Container, 0)
++	err = readListingJSON(ctx, resp, func(decoder *json.Decoder) error {
++		var container *Container
++		if err := decoder.Decode(&container); err != nil {
++			return err
++		}
++		if container == nil {
++			return fmt.Errorf("listing contains a null container")
++		}
++		containers = append(containers, *container)
++		return nil
++	})
++	if err != nil {
++		return nil, err
++	}
++	return containers, nil
+ }
+ 
+ // containersAllOpts makes a copy of opts if set or makes a new one and
+@@ -1181,8 +1263,21 @@ func (c *Connection) Objects(ctx context.Context, container string, opts *Object
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-	var objects []Object
+-	err = readJson(resp, &objects)
++	objects := make([]Object, 0)
++	err = readListingJSON(ctx, resp, func(decoder *json.Decoder) error {
++		var object *Object
++		if err := decoder.Decode(&object); err != nil {
++			return err
++		}
++		if object == nil {
++			return fmt.Errorf("listing contains a null object")
++		}
++		objects = append(objects, *object)
++		return nil
++	})
++	if err != nil {
++		return nil, err
++	}
+ 	// Convert Pseudo directories and dates
+ 	for i := range objects {
+ 		object := &objects[i]
+@@ -1192,17 +1287,14 @@ func (c *Connection) Objects(ctx context.Context, container string, opts *Object
+ 			object.ContentType = "application/directory"
+ 		}
+ 		if object.ServerLastModified != "" {
+-			// e.g. 2012-11-11T14:49:47, 2012-11-11T14:49:47Z, 2012-11-11T14:49:47.887250, or 2012-11-11T14:49:47.887250Z
+-			// Remove the Z suffix and fractional seconds if present. This then keeps it consistent with Object which
+-			// can only return timestamps accurate to 1 second
+-			//
+-			// The TimeFormat will parse fractional seconds if desired though
++			// Validate the entire timestamp before keeping the existing
++			// second precision; removing a malformed fraction hides errors.
+ 			lastModified := strings.TrimSuffix(object.ServerLastModified, "Z")
+-			datetime := strings.SplitN(lastModified, ".", 2)[0]
+-			object.LastModified, err = time.Parse(TimeFormat, datetime)
++			object.LastModified, err = time.Parse(TimeFormat, lastModified)
+ 			if err != nil {
+ 				return nil, err
+ 			}
++			object.LastModified = object.LastModified.Truncate(time.Second)
+ 		}
+ 		if object.SLOHash != "" {
+ 			object.ObjectType = StaticLargeObjectType
+diff --git a/swift_test.go b/swift_test.go
+index 1c71fd40db7244d2..ea22d3dddb8dfc41 100644
+--- a/swift_test.go
++++ b/swift_test.go
+@@ -2475,7 +2475,7 @@ func TestDLOCreateMissingSegmentsInList(t *testing.T) {
+ 			w.Header().Set(k, v[0])
+ 		}
+ 		w.WriteHeader(recorder.Code)
+-		_, _ = w.Write([]byte("null\n"))
++		_, _ = w.Write([]byte("[]\n"))
+ 	})
+ 	defer srv.UnsetOverride(listURL)
+ 
+diff --git a/swifttest/server.go b/swifttest/server.go
+index dc3f29e55e6b2e18..2e623c621967dfb8 100644
+--- a/swifttest/server.go
++++ b/swifttest/server.go
+@@ -293,7 +293,7 @@ func (r containerResource) get(a *action) interface{} {
+ 
+ 	if format == "json" {
+ 		a.w.Header().Set("Content-Type", "application/json")
+-		var resp []interface{}
++		resp := make([]interface{}, 0)
+ 		for _, item := range objects {
+ 			if obj, ok := item.(*object); ok {
+ 				resp = append(resp, obj.Key())

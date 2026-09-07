@@ -112,8 +112,8 @@ var inventory = map[string]Action{
 	"BrowseService.Connect":      {Kind: Session},
 	"BrowseService.Account":      {Kind: Read},
 	"BrowseService.Capabilities": {Kind: Read},
-	"BrowseService.Containers":   {Kind: Read},
-	"BrowseService.Objects":      {Kind: Read},
+	"BrowseService.Containers":   {Kind: Read, Scenarios: []string{"happy", "refusal"}},
+	"BrowseService.Objects":      {Kind: Read, Scenarios: []string{"happy", "refusal"}},
 	// InspectorService
 	"InspectorService.Container":   {Kind: Read},
 	"InspectorService.Object":      {Kind: Read},

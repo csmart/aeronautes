@@ -295,6 +295,10 @@ Both container and object iterators return only the first of two names when the 
 Two object-response cases also return a row with no error: a complete JSON value inside a truncated HTTP body, and an invalid numeric field beside a valid timestamp.
 The pinned library ignores errors while draining after its first JSON value, and date conversion can overwrite a prior decode error.
 These are controlled local reproductions, not live provider observations.
+
+P22's first response slice now refuses incomplete or malformed pages before publication, with [public-session, dependency and two-account system evidence](../../experiments/2026-09-07-listing-responses.md).
+The original two response probes pass; both short-page probes still fail pending the separately reviewed continuation/marker slice.
+DS-13 remains open until that slice verifies complete planning and fresh verification across short pages.
 The proposed correction and its separately reviewed implementation sequence are recorded in [ADR 0021](../../adr/0021-complete-listing-pages.md).
 
 ## Product-contract and evidence gaps
