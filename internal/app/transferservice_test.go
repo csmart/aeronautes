@@ -654,6 +654,11 @@ func TestFindInContainer(t *testing.T) {
 	ctx := context.Background()
 	h.connect(t)
 	find := NewFindService(h.transfer.connections)
+	t.Cleanup(func() {
+		if err := find.ServiceShutdown(); err != nil {
+			t.Errorf("Find cleanup: %v", err)
+		}
+	})
 	h.mock.AddContainer("media", "standard")
 	for i := 0; i < 40; i++ {
 		seedObject(h.mock, "media", fmt.Sprintf("photos/img-%04d.jpg", i), "x", nil)

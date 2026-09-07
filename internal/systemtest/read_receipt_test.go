@@ -18,6 +18,9 @@ func TestReadReceiptRejectsFalseCredit(t *testing.T) {
 			r.action = "BookmarkService.Save"
 		case "unknown":
 			r.action = "MissingService.Read"
+		case "async-find":
+			r.action = "FindService.StartFind"
+			r.scanID = "not-completed"
 		}
 		r.CreditRead()
 		return
@@ -26,7 +29,7 @@ func TestReadReceiptRejectsFalseCredit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, probe := range []string{"failed", "mutate", "unknown"} {
+	for _, probe := range []string{"failed", "mutate", "unknown", "async-find"} {
 		cmd := exec.Command(self, "-test.run=^TestReadReceiptRejectsFalseCredit$")
 		cmd.Env = append(os.Environ(), "AERONAUTES_READ_RECEIPT_PROBE="+probe)
 		out, err := cmd.CombinedOutput()

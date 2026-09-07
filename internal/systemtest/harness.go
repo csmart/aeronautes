@@ -57,6 +57,7 @@ type Harness struct {
 	Delete    *app.DeleteService
 	Jobs      *app.JobService
 	Audit     *app.AuditService
+	Find      *app.FindService
 
 	Primary   *Account // the active browse/inspect/mutate account
 	Secondary *Account // for cross-account Copy/Mirror
@@ -97,6 +98,7 @@ func New(t *testing.T) *Harness {
 		Delete:    app.NewDeleteService(connections, jobStore, runner, ev),
 		Jobs:      app.NewJobService(jobStore),
 		Audit:     app.NewAuditService(auditStore),
+		Find:      app.NewFindService(connections),
 	}
 
 	// Checked db close: a close/durability error fails the test (so its
@@ -140,6 +142,7 @@ func New(t *testing.T) *Harness {
 	// registers later) and before the disposition capture registered above
 	// — so a leak fails the test and blocks credit.
 	t.Cleanup(h.assertNoResidue)
+	t.Cleanup(h.CloseFind)
 	return h
 }
 
@@ -191,11 +194,13 @@ func (h *Harness) assertNoResidue() {
 // action compiles and is caught at run time by the checks below, not by the
 // compiler.
 type Receipt struct {
-	h       *Harness
-	action  string
-	jobID   string // set for job-running actions
-	outcome string // set for synchronous mutates (result.Outcome)
-	err     error  // the call's returned error
+	h          *Harness
+	action     string
+	jobID      string // set for job-running actions
+	outcome    string // set for synchronous mutates (result.Outcome)
+	err        error  // the call's returned error
+	scanID     string
+	findStatus *app.FindStatusDTO
 
 	// consumed guards single use. It is atomic so a test that races two
 	// Credit* calls on one receipt gets a deterministic single winner
@@ -299,7 +304,7 @@ func (r *Receipt) CreditRefusal() {
 
 func (r *Receipt) CreditRead() {
 	r.h.T.Helper()
-	if r.err != nil || scenariocontract.All()[r.action].Kind != scenariocontract.Read {
+	if r.err != nil || r.action == "FindService.StartFind" || scenariocontract.All()[r.action].Kind != scenariocontract.Read {
 		r.h.T.Fatalf("CreditRead %s: not a successful read (%v)", r.action, r.err)
 	}
 	r.emit("happy", "read completed")

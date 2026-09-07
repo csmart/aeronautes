@@ -156,8 +156,8 @@ var inventory = map[string]Action{
 	"JobService.List":           {Kind: Read},
 	"JobService.RecoveryStatus": {Kind: Read, Scenarios: []string{"happy", "refusal"}},
 	// FindService — StartFind launches a cancellable async scan.
-	"FindService.StartFind":  {Kind: Read, Scenarios: []string{"happy", "cancel"}},
-	"FindService.FindStatus": {Kind: Read},
+	"FindService.StartFind":  {Kind: Read, Scenarios: []string{"happy", "cancel", "refusal"}},
+	"FindService.FindStatus": {Kind: Read, Scenarios: []string{"happy", "refusal"}},
 	"FindService.CancelFind": {Kind: Session},
 	// SettingsService
 	"SettingsService.Get": {Kind: Read},
