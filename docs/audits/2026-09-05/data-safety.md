@@ -309,6 +309,8 @@ The native continuation slice must preserve this limitation as explicit evidence
 Investigate and review the engine decision separately before changing it; native-only success does not satisfy the full P22 acceptance.
 The [selected-set follow-up experiment](../../experiments/2026-09-07-selected-set-copy.md) passes both original complete-Copy assertions when only `--no-traverse` is added, and fails both again when that option is removed.
 [ADR 0022](../../adr/0022-complete-rclone-selection.md) records the proposed shared-runner correction and its required remote/local regression evidence; DS-13 is still open pending implementation, review and delivery.
+After independent design review, that correction now has [maintained complete mixed-engine, large-object and local-transfer evidence](../../experiments/2026-09-07-selected-set-copy.md#maintained-implementation-and-evidence), with eight parent/removed-option assertion failures and twelve corrected passes.
+Independent implementation review and all five PR/master checks remain the DS-13 delivery gate.
 
 ## Product-contract and evidence gaps
 

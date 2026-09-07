@@ -74,6 +74,7 @@ The plan does not add approval prompts to ordinary harmless browsing.
 | P17 | Distinguish content equality from replication equality; complete metadata-only and symlink fidelity (DS-09; W-12), after P16 | User metadata, content headers, expiry, link target/account and dangling links follow the declared semantics without needless content transfer; changed destination remains a conflict |
 
 P12/P13 should introduce the smallest shared contract needed by Copy and local upload, then migrate sibling paths in separate reviewed commits.
+The [P22 DLO fixture](../../experiments/2026-09-07-selected-set-copy.md#maintained-implementation-and-evidence) also records a planned-byte accounting gap for P13: a complete six-name Copy plans twenty-seven bytes from listing sizes but copies and independently verifies thirty-three logical bytes.
 Do not create a general workflow engine.
 The audit's modelled WAL lost-history case and an actual process kill must remain separately labelled tests.
 
@@ -93,6 +94,7 @@ P22 now includes the [controlled pinned-rclone short-page omission](../../experi
 Deliver the reviewed native response and continuation fixes separately, retain the mixed-engine partial result and uncapped control, then review the engine decision needed for complete selected-set execution under the same provider cap.
 Do not close P22 from native-only success or weaken its full-namespace acceptance.
 The subsequent [selected-set experiment](../../experiments/2026-09-07-selected-set-copy.md) isolates `--no-traverse` as a candidate correction; [ADR 0022](../../adr/0022-complete-rclone-selection.md) requires separate design review, shared remote/local caller regressions and complete capped mixed-engine verification before closure.
+That reviewed correction now passes the maintained remote/local regressions and full internal SAIO race suite; P22 closure still depends on independent implementation review and all five PR/master checks.
 Linux success is insufficient for Windows/macOS namespace claims.
 Download/upload UI should show a bounded selected-name summary, explicit account and exact scope tied to the backend plan.
 

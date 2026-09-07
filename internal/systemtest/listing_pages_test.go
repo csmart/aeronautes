@@ -12,7 +12,6 @@ import (
 	"reflect"
 	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -285,14 +284,7 @@ func listingCopy(t *testing.T, h *Harness, mode string) {
 	if job.Counters.ObjectsPlanned != 3 || job.Counters.BytesPlanned != 12 || job.Counters.NativeRouted != wantNative || job.Counters.Overwrites != 0 || job.Counters.OverwritesRefused != 0 {
 		t.Fatalf("listing pages changed the selected Copy plan: %+v", job)
 	}
-	if mode == "mixed-short" {
-		if job.State != "partial" || job.Counters.ObjectsCopied != 2 || job.Counters.BytesCopied != 8 || job.Counters.ObjectsVerified != 2 || job.Counters.ObjectsFailed == 0 {
-			t.Fatalf("pinned-rclone short-page omission was not reported as partial: %+v", job)
-		}
-		if !strings.Contains(job.Error, "b%2F +日本語") || !strings.Contains(job.Error, "staged object is missing") || !strings.Contains(job.Error, "unverified") {
-			t.Fatalf("missing staged name or failed verification was hidden: %+v", job)
-		}
-	} else if job.State != "complete" || job.Counters.ObjectsCopied != 3 || job.Counters.BytesCopied != 12 || job.Counters.ObjectsVerified != 3 || job.Counters.ObjectsFailed != 0 {
+	if job.State != "complete" || job.Counters.ObjectsCopied != 3 || job.Counters.BytesCopied != 12 || job.Counters.ObjectsVerified != 3 || job.Counters.ObjectsFailed != 0 {
 		t.Fatalf("listing pages truncated Copy or fresh verification: %+v", job)
 	}
 	afterA, afterB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
@@ -301,12 +293,6 @@ func listingCopy(t *testing.T, h *Harness, mode string) {
 	for _, name := range names {
 		want := beforeA.Containers[primary].Objects[name]
 		got, found := afterB.Containers[secondary].Objects[name]
-		if mode == "mixed-short" && name == names[1] {
-			if found {
-				t.Fatalf("characterised missing name %q was unexpectedly copied: %+v", name, got)
-			}
-			continue
-		}
 		allowed = append(allowed, secondary+"/"+name)
 		if !found || got.Size != want.Size || got.Digest != want.Digest {
 			t.Fatalf("copied name %q is missing or differs: got=%+v want=%+v", name, got, want)
@@ -323,10 +309,6 @@ func listingCopy(t *testing.T, h *Harness, mode string) {
 	}
 	if mode != "mixed-normal" && terminalReads < 2 {
 		t.Fatalf("source tail reached only %d times across planning and fresh verification", terminalReads)
-	}
-	if mode == "mixed-short" {
-		// This is a known engine limitation, not successful Copy evidence.
-		return
 	}
 	receipt.CreditHappy()
 }
