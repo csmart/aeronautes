@@ -4763,6 +4763,41 @@ All five [resulting master checks](https://github.com/csmart/aeronautes/actions/
 P22/DS-13 is closed for the defined provider-pagination and complete selected-set contract.
 Wider authority, durability, concurrency, ownership, local-filesystem, resource and release work remains open.
 
+P23 follows the delivered P22 work with exact input semantics for UI-04, UI-07 and UI-14.
+Its oracle is K-TEST-001, the literal Swift prefix contract in §16, the complete metadata working copy in §17, and the existing bound transfer request validation.
+The [current-master reproductions](experiments/2026-09-07-literal-inputs.md) retain all four original frontend failures and distinguish them from the separate real-Swift metadata-header observations.
+This enforces the existing identity and working-copy contracts; it does not add a new transfer mode or relax the current mutation restrictions.
+
+Implement and independently review these logical slices in order:
+
+1. Preserve the exact destination container and prefix entered in the transfer dialog through preview, request ownership and Copy start.
+   Show quoted source/destination scope text with whitespace preserved, distinguishing an empty prefix from a whitespace-bearing one.
+   Keep the existing empty-or-slash-terminated transfer-prefix rule: an unsupported literal input must produce the backend error rather than becoming root or gaining a slash.
+   Reject slash-bearing container names at transfer request admission, consistent with container creation and Swift's container-name contract; do not trim otherwise valid spaces into another container.
+   Cover Copy and Mirror comparison requests, stale previews and late errors, whitespace-only inputs and valid prefixes containing spaces, repeated separators, percent escapes and Unicode.
+   Pair the mounted frontend regression with actual bound-service Copy/refusal cases through both engines on mock Swift and SAIO, checking complete source/destination namespaces and exact intended names/bytes.
+   The frontend test must catch the original normalization; the Go observations separately establish execution and refusal semantics, without claiming a native desktop end-to-end test.
+2. Pass the browser's Prefix field literally to the existing listing service.
+   Keep folder activation and parent navigation separate from literal filtering, and render an incomplete final prefix component explicitly in the breadcrumbs without inventing a slash or folder.
+   Verify typed prefixes, row labels, navigation, page continuation, selection identity and scope invalidation with names containing spaces, repeated separators and Unicode.
+   Add bound Browse observations against the real provider with exact matching names and unchanged namespaces; preserve lazy listing and avoid per-row HEAD requests.
+   Partial filter prefixes remain subject to each mutation or transfer service's existing validation; browser filtering does not authorise broader writes.
+3. Make metadata row conversion and diffing depend only on own string properties, using a dictionary that safely retains inherited JavaScript property names.
+   Apply the provider's existing case-insensitive key identity to duplicate detection and diff membership, preserving the entered spelling and values in the complete working copy.
+   Do not trim a nonempty key into another key or silently discard it; only a row with both key and value empty may be ignored.
+   Cover `__proto__`, `constructor`, `toString`, case variants, undefined entries, add/change/remove and JSON serialization through mounted object/container editors.
+   Keep stale-editor admission, complete save payloads, visible removals and error ownership from P06/P07.
+4. Validate metadata-key identity in Go before any object/container metadata mutation or container creation.
+   The [Swift API contract](https://docs.openstack.org/api-ref/object-store/#create-or-update-object-metadata) permits ASCII HTTP token names and defines case-insensitive identity; underscores do not retain their literal spelling.
+   Refuse empty names, invalid token characters, underscore-bearing keys and duplicate case variants explicitly before sending any mutation, leaving provider length/count limits and existing special metadata families intact.
+   Test direct bound calls as well as visible editor error handling, and preserve the original input on rejection.
+   Require unchanged independent namespaces for every refusal, plus actual Swift round trips for supported keys and retained unrelated plain/DLO metadata.
+   Keep the raw provider observations separate from the application guard tests; a successful HTTP status with a dropped or renamed key cannot count as a preserved working copy.
+
+Each slice needs catching parent regressions, focused broken-behaviour controls, relevant full suites, accurate evidence, independent local review and all five PR/master checks.
+Metadata dictionary repair alone does not close UI-14 until unsupported wire identities also refuse before mutation.
+P23 does not close backend plan authority, external-writer races, metadata-only replication, local namespace/platform, accessibility or valuable-data release gates.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
