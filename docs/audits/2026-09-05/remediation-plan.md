@@ -95,6 +95,10 @@ The native response and continuation fixes landed separately through PR44/45, pr
 The subsequent [selected-set experiment and maintained evidence](../../experiments/2026-09-07-selected-set-copy.md) establish the [ADR 0022](../../adr/0022-complete-rclone-selection.md) correction under the same provider cap across remote/local callers.
 Independent implementation review, all five [PR46 checks](https://github.com/csmart/aeronautes/actions/runs/34086202150), protected merge and all five [resulting master checks](https://github.com/csmart/aeronautes/actions/runs/34086884737) close P22/DS-13 for the defined pagination/completeness contract.
 The merged tree matches the reviewed source exactly; wider resource, accounting, platform and valuable-data release gates remain open.
+P23 now has a [current-master reproduction record](../../experiments/2026-09-07-literal-inputs.md) and a four-slice implementation sequence in DESIGN §65.11.
+Preserve transfer input, then literal browser filtering, then metadata dictionaries and Go wire-identity validation, with independent review between logical commits.
+All four original P23 frontend probes still fail; raw SAIO observations separately confirm that a successful metadata POST does not establish literal underscore-key preservation.
+P23 and UI-04/07/14 remain open pending the maintained regressions, implementation and delivery gates.
 Linux success is insufficient for Windows/macOS namespace claims.
 Download/upload UI should show a bounded selected-name summary, explicit account and exact scope tied to the backend plan.
 
