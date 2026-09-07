@@ -4812,6 +4812,26 @@ The [maintained transfer evidence](experiments/2026-09-07-literal-inputs.md#lite
 The original transfer-prefix probe passes; browser filtering and metadata probes remain red.
 Independent local review and all five PR/master checks remain pending for this transfer slice, so P23 is not closed.
 
+The owner's Dependabot PR29/30 request adds a bounded dependency-maintenance sequence alongside the audit work.
+The [dependency observations](experiments/2026-09-07-dependency-refresh.md) record the stale PR bases, published-runtime comparison, upstream contracts and release test prerequisite.
+Keep these logical changes separately reviewable:
+
+1. Refresh PR30 onto the delivered current master and preserve its exact frontend runtime and lockfile update.
+   The published archives differ only in their package version, so frontend-first delivery leaves bridge code unchanged.
+   Require a clean lockfile install, Svelte checking, full frontend tests and build, plus the current Go/SAIO and mandatory PR checks.
+2. Refresh PR29 onto the subsequent current master and update the Wails Go module together with its three CLI pins.
+   Verify module checksums, generated bindings, `ServiceShutdown` exclusion and the complete current application suites.
+3. Update SQLite and its declared libc/memory versions in a separate logical commit, retaining WAL/FULL, the default lock mode and all current data-safety restrictions.
+   Verify the resolved dependency graph and the existing database durability, rollback, migration, recovery and bound-service tests.
+   Do not claim that a dependency bump closes P12/P13 or native platform evidence gaps.
+4. Repair the reproduced missing-rclone prerequisite in the release test lane in a separate CI commit, then dispatch its six-target unsigned build matrix for the final Go dependency head.
+   Reuse the verified pin fetch and retain the same missing-tool failure; no tag or public release is needed.
+
+Each authored or rewritten final commit/range needs independent local approval before pushing.
+Update only the named Dependabot source branch with a lease on its observed remote head when history must be refreshed.
+Require all five successful checks at the exact PR head with current master incorporated, use protected merge, and verify all five resulting master checks.
+Resume the remaining P23 browser and metadata slices after this bounded dependency work.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
