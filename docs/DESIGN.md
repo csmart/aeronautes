@@ -4845,6 +4845,11 @@ PR30 passed all five PR/master checks, and PR29 passed all five [PR checks](http
 Master `e3c32f6967d33762f83f4bc696926a419697aa1f` passed all five [master checks](https://github.com/csmart/aeronautes/actions/runs/34106588274); its tree matches the reviewed PR29 head, with the three logical commits preserved.
 The [delivery record](experiments/2026-09-07-dependency-refresh.md#protected-delivery) distinguishes these successful builds from the remaining native functional and valuable-data release gates.
 
+The P23 browser prerequisite now corrects delimiter continuation in both mock fixtures using the provider's complete-group equality rule.
+Its [maintained evidence](experiments/2026-09-07-literal-inputs.md#maintained-delimiter-fixture-repair) records 15 catching parent assertions, 50 passing corrected cases, eight caught broken variants and the full 583-top-level/1,230-leaf internal race run with valid scenario reconciliation.
+The preserved browser tests still expose the ten application exact-match failures after this fixture-only correction.
+Independent implementation review and PR/master delivery remain pending, and the browser/metadata slices remain open.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
