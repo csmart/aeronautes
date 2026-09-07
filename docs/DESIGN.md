@@ -4776,7 +4776,8 @@ Decode the container component exactly once after splitting the escaped route, r
 Require direct HTTP create/list/read/delete regressions, escaped-slash and double-decoding controls, and the bound transfer observation on both mock Swift and SAIO; do not weaken the independent namespace oracle or receipt-credit rules.
 The implemented fixture correction also decodes the container in COPY's escaped destination header, keeping that lookup consistent with the request route.
 The [maintained evidence](experiments/2026-09-07-literal-inputs.md#maintained-fixture-repair) records 18 parent assertion failures, 31 passing corrected cases and ten independently caught broken variants.
-Local implementation review and PR/master delivery remain pending; the application slices below remain open.
+The fixture prerequisite is delivered through [PR47](https://github.com/csmart/aeronautes/pull/47), with independent review and all five PR/master checks passing.
+Its merged tree matches the reviewed source exactly.
 
 1. Preserve the exact destination container and prefix entered in the transfer dialog through preview, request ownership and Copy start.
    Show quoted source/destination scope text with whitespace preserved, distinguishing an empty prefix from a whitespace-bearing one.
@@ -4805,6 +4806,11 @@ Local implementation review and PR/master delivery remain pending; the applicati
 Each slice needs catching parent regressions, focused broken-behaviour controls, relevant full suites, accurate evidence, independent local review and all five PR/master checks.
 Metadata dictionary repair alone does not close UI-14 until unsupported wire identities also refuse before mutation.
 P23 does not close backend plan authority, external-writer races, metadata-only replication, local namespace/platform, accessibility or valuable-data release gates.
+
+The first application slice now preserves literal transfer scope and rejects slash-bearing containers before session resolution or job creation.
+The [maintained transfer evidence](experiments/2026-09-07-literal-inputs.md#literal-transfer-requests-and-refusal) records catching parent regressions, seven frontend and two admission controls, 754 passing frontend tests and the full 577-top-level/1,180-leaf internal Go race run on mock Swift and SAIO.
+The original transfer-prefix probe passes; browser filtering and metadata probes remain red.
+Independent local review and all five PR/master checks remain pending for this transfer slice, so P23 is not closed.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.

@@ -97,10 +97,11 @@ Independent implementation review, all five [PR46 checks](https://github.com/csm
 The merged tree matches the reviewed source exactly; wider resource, accounting, platform and valuable-data release gates remain open.
 P23 now has a [current-master reproduction record](../../experiments/2026-09-07-literal-inputs.md) and a four-slice implementation sequence in DESIGN §65.11.
 Preserve transfer input, then literal browser filtering, then metadata dictionaries and Go wire-identity validation, with independent review between logical commits.
-All four original P23 frontend probes still fail; raw SAIO observations separately confirm that a successful metadata POST does not establish literal underscore-key preservation.
-P23 and UI-04/07/14 remain open pending the maintained regressions, implementation and delivery gates.
-The planned fixture prerequisite now corrects literal container decoding in mock request routes and COPY destination headers, with direct HTTP and bound mock/SAIO observations in the same record.
-The fixture implementation has passed its focused regressions, controls and full internal race suite; local implementation review and PR/master delivery are still pending.
+The fixture prerequisite is delivered through [PR47](https://github.com/csmart/aeronautes/pull/47), with independent review and all five PR/master checks passing; its merged tree matches the reviewed source exactly.
+The [transfer implementation](../../experiments/2026-09-07-literal-inputs.md#literal-transfer-requests-and-refusal) preserves literal request strings and quoted scope, rejects slash-bearing containers before job admission and retains the existing prefix and Mirror restrictions.
+Its maintained parent regressions, broken-behaviour controls, full frontend suite and full mock/SAIO Go race suite pass their intended checks; independent local review and PR/master delivery remain pending for UI-04.
+The original transfer-prefix probe now passes while the other three original P23 probes still fail; raw SAIO observations separately confirm that a successful metadata POST does not establish literal underscore-key preservation.
+P23, UI-07 and UI-14 remain open for literal browser filtering, metadata dictionaries and wire-identity validation.
 Linux success is insufficient for Windows/macOS namespace claims.
 Download/upload UI should show a bounded selected-name summary, explicit account and exact scope tied to the backend plan.
 

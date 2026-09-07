@@ -1,7 +1,7 @@
 # P23 literal-input reproductions — 7 September 2026
 
-These observations prepare the P23 sequence in DESIGN §65.11 after the delivered P22 work.
-They do not change production code or close UI-04, UI-07 or UI-14.
+This record follows the P23 sequence in DESIGN §65.11 after the delivered P22 work.
+The initial observations precede implementation; subsequent sections identify each maintained correction and its delivery state.
 
 ## Original frontend probes on current master
 
@@ -115,6 +115,60 @@ The raw event stream and process exit are `p23-fixture-full-v2.json` and `.exit`
 Frontend build, Go build, Go vet and the 38-file upstream Swift source check also pass.
 The earlier full run preceded the COPY-header correction and does not substitute for this final verification.
 
-This prerequisite does not fix the transfer dialog or its application admission guard.
-The four original frontend P23 failures remain outstanding, and all application slices still need their own reviewed implementation and delivery.
+Independent review approved this prerequisite, which was delivered through [PR47](https://github.com/csmart/aeronautes/pull/47).
+All five [PR checks](https://github.com/csmart/aeronautes/actions/runs/34092324766) and all five [master checks](https://github.com/csmart/aeronautes/actions/runs/34093089713) passed.
+The protected rebase merge preserves its four logical commits; master `e6e01f650da57478eaae5e88abad099e54413a22` has exactly the reviewed `dc3633cb8c841fdccd919444e5bf5f7a9e19703e` tree.
+The prerequisite itself does not fix the transfer dialog or its application admission guard.
 The mock's separate DLO and symlink reference-header parsing has not been validated for escaped container names by these plain-object cases; no general header-fidelity claim is made.
+
+## Literal transfer requests and refusal
+
+The transfer dialog now preserves destination container and prefix strings through preview, prepared-request ownership and Copy start.
+Quoted source and destination scope text distinguishes `"" (container root)` from `"   "`, with markup escaped as text.
+Changing only whitespace invalidates the prepared request, and a late error from an earlier scope cannot replace the current preview.
+Non-resource settings retain their existing parsing.
+
+Go admission rejects a slash in either container name before resolving sessions or creating a job.
+The existing prefix rule remains unchanged: a nonempty transfer prefix must end with `/`.
+An unsupported literal prefix reaches the normal validation error and stays visible in the editor, rather than being trimmed into root or another prefix.
+Mirror remains comparison-only with every start refused, and Copy still refuses changed existing destinations.
+
+| Maintained test surface | Cases | Observation |
+| --- | ---: | --- |
+| Mounted transfer dialog | 30 | Literal Copy/Mirror preview payloads, Copy start matching the captured request values, quoted scope, escaped markup, refusal display and stale-preview/error ownership |
+| Go transfer admission | 14 | Eight slash-container refusals and six accepted literal scope shapes |
+| Bound PlanCopy and StartCopy, mock and SAIO | 14 | Previously delivered exact-name, byte, counter, routing and owned-namespace checks remain intact |
+| Bound invalid source/destination scopes, mock and SAIO | 16 | Preview refusal, no Copy/Mirror job, no recorded jobs and unchanged independent owned namespaces |
+
+The final mounted assertions on the original component fail 23 cases and pass seven, with exit 1 and no skips or setup errors.
+The corrected component passes all 30.
+Seven separate broken variants are caught: trimming the prefix, trimming the container, refusing space-only container admission, omitting the root label, trimming displayed scope, changing scope values at Start and interpreting scope markup.
+Each control fails a concrete assertion with exit 1; the Start comparison uses a captured value snapshot and permits an identical cloned request.
+`p23-transfer-ui-controls.py` and `p23-transfer-ui-controls-v1/` preserve the parent, positive and seven control runs, actual exits and source/test hashes.
+
+On the corrected fixture but original application admission, the maintained Go cases produce 16 assertion failures and 28 passes, with no skips.
+These are the eight unit and eight bound slash-container failures, independent of the earlier mock decoding defect.
+The corrected focused run passes all 44 leaf cases across 32 top-level tests and two packages.
+The raw records are `p23-transfer-go-before-v3.json/.exit` and `p23-transfer-go-after-v1.json/.exit`.
+Two separate overlays remove the container or prefix guard: the former catches 16 failing leaf assertions and the latter eight bound refusal failures.
+`p23-transfer-go-controls.py` and `p23-transfer-go-controls-v1/` preserve both actual exits, assertions and unchanged implementation/test hashes.
+
+The full frontend run passes 754 tests in 20 files, with no failures or skips and 77.73% statement coverage.
+Its final record is `p23-transfer-ui-full-v2.json/.log/.exit`, with `p23-transfer-ui-coverage-v2.json` retaining coverage.
+Svelte/TypeScript checking and the frontend production build pass.
+The full internal Go race run passes 577 top-level tests, 1,180 leaf cases and all 20 packages, with no failures or skips and 84.7% combined statement coverage.
+It uses both owned SAIO accounts, the verified rclone pin and the optional rclone matrix.
+`p23-transfer-go-full-v1.json/.exit` and `p23-transfer-go-cover-v1.out` retain its actual event stream, exit and profile.
+`p23-transfer-scenario-coverage-v1.json` reconciles that stream, actual exit and expected packages with the producer configuration: valid process, stream and contract, 28/110 covered cells and 39/49 actions still having gaps.
+Go build, Go vet and the 38-file upstream Swift source check pass.
+
+The four unchanged original frontend probes now produce one pass and three intended assertion failures; eight other archived cases remain unselected.
+The exact destination-prefix probe passes, while literal browser filtering and the two metadata dictionary probes still fail.
+`p23-original-after-transfer-v1.json/.log/.exit` and `p23-original-after-transfer-inputs.json` retain that mixed result and the import-only adaptation.
+The original transfer probe's unslashed prefix demonstrates preserved UI bytes; the separate bound Go refusal tests establish that unsupported input cannot execute.
+
+All records above are under `/tmp/aeronautes-remediation-20260905`.
+The implementation started on the reviewed fixture tree and moved onto its identical merged master tree with source/test hashes unchanged; `p23-transfer-base-switch.json` records that comparison.
+This is mounted frontend and bound Go evidence, not native desktop end-to-end, visual layout or six-platform validation.
+The transfer implementation still needs independent local review and all five PR/master checks before UI-04 delivery can be closed.
+P23, UI-07, UI-14 and the wider valuable-data release hold remain open.
