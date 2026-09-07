@@ -111,7 +111,10 @@ Raw SAIO observations separately confirm that a successful metadata POST does no
 Independent local review and all five PR/master checks passed for [PR50](https://github.com/csmart/aeronautes/pull/50), closing the defined UI-07 browser scope; the merged tree matches the reviewed source exactly.
 P23 and UI-14 remain open for metadata dictionaries and wire-identity validation.
 The [metadata editor implementation](../../experiments/2026-09-07-literal-inputs.md#metadata-working-copy-regressions) now passes 65 focused cases and the full 849-test frontend suite, with 17 broken variants caught independently.
-It preserves complete literal working copies and accurate diffs; the Go key/value admission guard and joint reviewed delivery remain required before UI-14/P23 can close.
+It preserves complete literal working copies and accurate diffs, and independent local review approved that frontend commit.
+The [Go admission implementation](../../experiments/2026-09-07-literal-inputs.md#metadata-admission-and-provider-round-trips) now refuses unsupported metadata before object/container writes and container creation, with 132 passing bound cases on both providers, 23 validator cases and 16 caught broken variants.
+The full internal race suite passes 590 top-level tests and 1,401 leaf cases in 20 packages without skips; valid scenario coverage is 32/110 with 38/49 actions still gapped.
+Independent Go review and all five PR/master checks on joint metadata delivery remain required before UI-14/P23 can close.
 Linux success is insufficient for Windows/macOS namespace claims.
 Download/upload UI should show a bounded selected-name summary, explicit account and exact scope tied to the backend plan.
 

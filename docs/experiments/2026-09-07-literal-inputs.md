@@ -376,7 +376,7 @@ The maintained helper and mounted object/container editor regressions establish 
 `metadataIdentity.test.ts` mounts the real edit panels with `BrowserState`, changes input fields and observes complete requests at the API boundary.
 The API stub returns a deliberate rejection so the tests can assert that the entered keys, values and error remain visible and that the editor stays open.
 Those stubbed errors test frontend handling only; they do not establish Go admission or provider refusal.
-The Go key/value guard and its bound mock/SAIO regressions remain a separate required implementation before joint delivery.
+The Go key/value guard and its bound mock/SAIO regressions are a separate implementation, recorded below, that must accompany this frontend slice in joint delivery.
 
 The 25 helper cases cover own string-valued entries, inherited-property names, undefined/non-string entries, case-insensitive diff membership, spelling from the relevant side, literal keys and duplicate detection.
 The 40 mounted cases cover both edit panels: complete payloads including `__proto__`, `constructor` and `toString`; additions, changes and visible removals; case-only renames; literal whitespace/empty/Unicode/unsupported keys; escaped HTML-like text; empty values; untouched blank rows; and duplicate case variants and empty keys.
@@ -422,4 +422,68 @@ The original archived P23 probes now report four selected passes and eight unsel
 `p23-original-after-metadata-ui-v1.json/.log/.exit` and its input record retain that selection and source hashes.
 All records named here are under `/tmp/aeronautes-remediation-20260905`.
 This frontend slice adds no Go action-coverage claim or native desktop functional evidence.
-Independent local review, the Go admission implementation and all five PR/master checks on their joint delivery remain required; UI-14, P23 and the wider valuable-data release hold remain open.
+Independent local review approved the frontend commit `98bdac7fd0bf86c771d1501890901e116c06e8bd`, independently running all 849 frontend tests, the check/build and a prototype-loss control that fails five cases.
+The Go admission review and all five PR/master checks on joint delivery remain required; UI-14, P23 and the wider valuable-data release hold remain open.
+
+## Metadata admission and provider round trips
+
+The Go slice applies one private validator at object metadata update, container update and container creation before any write.
+It rejects empty or non-ASCII HTTP-token keys, underscores and case duplicates without changing the input map.
+It also rejects boundary ASCII spaces/tabs and invalid HTTP control bytes, and rejects empty container values because Swift interprets them as removal.
+Supported values remain literal, including empty object values, interior spaces/tabs, percent text and Unicode whitespace.
+Explicit omission still removes a key from the complete working copy.
+Provider length/count limits, special metadata families, fingerprints, capabilities and manifest policies retain their existing behaviour.
+
+The bound tests use the actual mutation services through both mock Swift and SAIO.
+An application-only proxy traces every non-GET/non-HEAD request; fixture setup and independent namespace snapshots use the direct provider URL.
+For each refusal, the tests require an error, no outgoing write and unchanged complete owned primary and secondary namespaces.
+This prevents an applied write followed by a verification error from being counted as safe refusal.
+The 124 refusal cases cover 20 object inputs and 21 inputs for each container operation on each provider.
+The eight round-trip cases cover plain and DLO metadata updates, container updates and container creation on both providers.
+They verify exact supported metadata, explicit removal, empty object values, known body bytes, content headers, DLO manifests/segments, unrelated objects, container metadata families and the secondary account.
+Each successful call must send exactly one intended POST or PUT.
+Creation additionally checks the returned detail DTO against the independent namespace; it does not fabricate an `applied` outcome absent from that API.
+
+With only the maintained harness tests added to unchanged parent `98bdac7f`, 58 of 132 cases fail intended assertions and 74 pass, without skips.
+The 58 failures are 18 object-update, 20 container-update and 20 container-create cases; all eight supported round trips already pass.
+The remaining 66 refusal cases were already blocked by the HTTP transport.
+After the guard, all 132 bound cases pass without skips, and 23 validator cases separately cover map preservation, supported token punctuation and all disallowed header control bytes.
+`p23-metadata-go-before-v1`, `p23-metadata-go-after-v1` and `p23-metadata-unit-v1` retain actual JSON events, process exits and summaries.
+
+Sixteen independent broken variants each fail maintained assertions with actual exit status 1:
+
+| Broken behaviour | Failing cases |
+|---|---:|
+| Omit object validation | 18 |
+| Validate objects only after writing | 18 |
+| Omit container-update validation | 20 |
+| Validate container updates only after writing | 20 |
+| Omit container-create validation | 20 |
+| Validate container creation only after writing | 20 |
+| Allow underscore keys | 14 |
+| Allow case duplicates | 7 |
+| Allow an empty key | 7 |
+| Omit token validation | 5 |
+| Omit control-byte validation | 1 |
+| Allow boundary ASCII whitespace | 34 |
+| Allow empty container values | 5 |
+| Refuse supported empty object values | 4 |
+| Treat Unicode whitespace as removable HTTP whitespace | 9 |
+| Refuse supported interior tabs | 9 |
+
+The positive control passes all 155 selected bound/validator cases; the parent-entry-point replay fails the same 58 of 132 bound cases.
+The control script checks complete selection, actual assertion failures, no skips/build errors/panics/races/timeouts and unchanged author source/test hashes.
+`p23-metadata-go-controls.py` and `p23-metadata-go-controls-v1/` retain all eighteen executions and their Go overlay/source hashes without modifying the author files.
+
+The full mock/SAIO internal race run with pinned rclone passes 590 top-level tests and 1,401 leaf cases in 20 packages, without failures or skips, at 84.9% statement coverage.
+`p23-metadata-full-v1.json/.exit`, its summary and `p23-metadata-cover-v1.out` retain the evidence.
+Reconciliation uses the actual test exit, complete JSON stream, 20 expected packages and the same producer environment, including the configured SAIO endpoint.
+`p23-metadata-scenario-coverage-v2.json` is valid and credits 32/110 required cells, with 38/49 actions still having gaps.
+The earlier v1 report omitted the SAIO environment during reconciliation and is retained for diagnosis, not cited as the configured-provider report.
+The four newly credited cells are object metadata refusal, container-update happy/refusal and container-create refusal.
+Successful container creation is tested but its happy cell remains open because the current receipt requires an actual applied outcome and creation returns a detail DTO.
+No action inventory, required scenario or receipt-credit rule is weakened.
+Go vet, application-package build, CGO-disabled internal build and whitespace checks also pass.
+The approved frontend source is unchanged from the 849-test, check/build evidence above.
+All records named here are under `/tmp/aeronautes-remediation-20260905`.
+Independent local Go review and all five PR/master checks on the combined metadata head remain required; UI-14/P23 closure and wider native-platform, accessibility and valuable-data release gates are not claimed here.

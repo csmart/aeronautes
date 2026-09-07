@@ -63,6 +63,9 @@ type ObjectUpdateResult struct {
 // "" skips conflict detection (first write after a fresh read still
 // preflights for the manifest state).
 func (s *Session) UpdateObjectMetadata(ctx context.Context, container, name, baseFingerprint string, edit ObjectMetadataEdit) (*ObjectUpdateResult, error) {
+	if err := validateMetadata(edit.Meta, true); err != nil {
+		return nil, err
+	}
 	before, err := s.ObjectDetail(ctx, container, name)
 	if err != nil {
 		return nil, err

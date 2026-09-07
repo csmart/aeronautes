@@ -30,6 +30,9 @@ func (s *Session) CreateContainer(ctx context.Context, create ContainerCreateReq
 	if create.Name == "" || strings.Contains(create.Name, "/") {
 		return nil, fmt.Errorf("container name %q is invalid", create.Name)
 	}
+	if err := validateMetadata(create.Meta, false); err != nil {
+		return nil, err
+	}
 	if _, err := s.ContainerDetail(ctx, create.Name); err == nil {
 		return nil, fmt.Errorf("container %q: %w", create.Name, ErrAlreadyExists)
 	} else {
