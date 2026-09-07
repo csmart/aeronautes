@@ -204,17 +204,22 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.handleAccount(w, r)
 	case strings.HasPrefix(ep, accountPath+"/"):
 		rest := strings.TrimPrefix(ep, accountPath+"/")
-		slash := strings.Index(rest, "/")
-		if slash == -1 {
-			s.handleContainer(w, r, rest)
+		container, object, hasObject := strings.Cut(rest, "/")
+		container, err := url.PathUnescape(container)
+		if err != nil || strings.Contains(container, "/") {
+			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		name, err := url.PathUnescape(rest[slash+1:])
+		if !hasObject {
+			s.handleContainer(w, r, container)
+			return
+		}
+		name, err := url.PathUnescape(object)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		s.handleObject(w, r, rest[:slash], name)
+		s.handleObject(w, r, container, name)
 	default:
 		w.WriteHeader(http.StatusNotFound)
 	}
@@ -882,7 +887,12 @@ func (s *Server) copyObject(w http.ResponseWriter, r *http.Request, container, n
 		return
 	}
 	trimmed := strings.TrimPrefix(destination, "/")
-	dstContainer, dstName := trimmed[:slash], trimmed[slash+1:]
+	dstContainer, err := url.PathUnescape(trimmed[:slash])
+	if err != nil || strings.Contains(dstContainer, "/") {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	dstName := trimmed[slash+1:]
 	if unescaped, err := url.PathUnescape(dstName); err == nil {
 		dstName = unescaped
 	}

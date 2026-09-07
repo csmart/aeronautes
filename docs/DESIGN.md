@@ -4774,6 +4774,9 @@ Before the transfer slice, repair the mock Swift route's container decoding in a
 The new literal-container reproduction shows that the mock currently stores escaped path components as container names, unlike the real provider.
 Decode the container component exactly once after splitting the escaped route, reject a decoded slash as an invalid container name, and preserve the existing literal object-path handling.
 Require direct HTTP create/list/read/delete regressions, escaped-slash and double-decoding controls, and the bound transfer observation on both mock Swift and SAIO; do not weaken the independent namespace oracle or receipt-credit rules.
+The implemented fixture correction also decodes the container in COPY's escaped destination header, keeping that lookup consistent with the request route.
+The [maintained evidence](experiments/2026-09-07-literal-inputs.md#maintained-fixture-repair) records 18 parent assertion failures, 31 passing corrected cases and ten independently caught broken variants.
+Local implementation review and PR/master delivery remain pending; the application slices below remain open.
 
 1. Preserve the exact destination container and prefix entered in the transfer dialog through preview, request ownership and Copy start.
    Show quoted source/destination scope text with whitespace preserved, distinguishing an empty prefix from a whitespace-bearing one.

@@ -76,3 +76,45 @@ The earlier `p23-transfer-go-before-v1` run used unsupported subtest receipt cre
 Repair the mock route in a separate reviewed prerequisite before the application transfer change.
 Keep the independent oracle, receipt rules and actual-provider assertions intact, and require literal percent escapes to be decoded once while an encoded slash in a container component is refused.
 This is a fixture contract repair, not evidence that the real Swift provider changes container names or that P23 is complete.
+
+## Maintained fixture repair
+
+The mock now decodes the container component once after splitting an escaped request path, and rejects a decoded slash before dispatch.
+Its server-side COPY destination header needs the same decoding: the client escapes that container too, so retaining the escaped header component would leave COPY looking up a different container from the corrected route.
+Five direct COPY cases reproduced that missing lookup, and three encoded-slash cases reproduced the missing explicit refusal, before the header correction.
+The record is `p23-fixture-copy-before-v2.json` and `.exit` under the same temporary evidence directory.
+Object components retain their existing separate decoding.
+
+| Maintained test surface | Cases | Independent observation |
+| --- | ---: | --- |
+| Direct mock HTTP container/object operations | 5 | Exact account and object listing names, known GET bytes, container count and deletion |
+| Direct mock encoded-slash container refusal | 4 | HTTP 400 and unchanged empty account inventory |
+| Direct mock COPY to literal containers | 5 | A known literal fixture container receives the exact object name and bytes |
+| Direct mock COPY encoded-slash refusal | 3 | HTTP 400, unchanged account inventory and known source bytes |
+| Bound PlanCopy and StartCopy, mock and SAIO | 14 | Exact scope, two objects and eleven bytes, expected native routing, complete owned namespaces and unchanged collateral |
+
+The bound cases cover root, leading source/destination spaces, space-only prefix components, repeated separators, percent escapes, Unicode and trailing container spaces.
+The trailing-space container cases retain separate containers with the trimmed name and sentinel bytes, so choosing the trimmed container cannot pass the independent observation.
+Each mixed-path copy includes an rclone-eligible object and a newline-bearing native object; repeated-separator scopes route both objects natively.
+These are direct fixture and bound Go observations, not mounted frontend or native desktop end-to-end evidence.
+
+Replaying the final tests with only the original mock source substituted produces 18 assertion failures and 13 passes, with no skips.
+The final corrected run passes all 31 leaf cases across 18 top-level tests and two packages.
+The raw before/after records are `p23-fixture-parent-v3.json/.exit` and `p23-fixture-after-v2.json/.exit`.
+The parent overlay and `p23-fixture-parent-v3-inputs.json` identify the unchanged test hashes and original mock source.
+The earlier focused runs remain diagnostic history rather than the final test totals.
+
+Ten independent broken variants are caught by the maintained tests: missing or repeated container decoding, query decoding that changes a plus, missing encoded-slash refusal, trimming a container, and missing object decoding, including the corresponding COPY-header guards.
+`p23-fixture-controls-v2.py` records the commands; `p23-fixture-controls-v2/` retains each overlay, actual exit, assertion output, final source/test hashes and the results table.
+The overlays leave the repository implementation and assertions unchanged.
+
+The final full internal race run passes 559 top-level tests, 1,150 leaf cases and all 20 packages, with no failures or skips and 84.7% combined statement coverage.
+It uses both local SAIO accounts and the verified pinned rclone, including the optional rclone matrix.
+The raw event stream and process exit are `p23-fixture-full-v2.json` and `.exit`; `p23-fixture-cover-v2.out` is the combined profile.
+`p23-fixture-scenario-coverage-v2.json` reconciles that actual stream, exit and expected package set with the producer's SAIO configuration: valid process, stream and contract, 28/110 covered cells and 39/49 actions still having gaps.
+Frontend build, Go build, Go vet and the 38-file upstream Swift source check also pass.
+The earlier full run preceded the COPY-header correction and does not substitute for this final verification.
+
+This prerequisite does not fix the transfer dialog or its application admission guard.
+The four original frontend P23 failures remain outstanding, and all application slices still need their own reviewed implementation and delivery.
+The mock's separate DLO and symlink reference-header parsing has not been validated for escaped container names by these plain-object cases; no general header-fidelity claim is made.
