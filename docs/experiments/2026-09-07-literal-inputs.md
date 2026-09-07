@@ -192,6 +192,17 @@ The preliminary run has twelve failing and four passing leaf cases, with no skip
 
 The shared mock and the separate swiftcontrol test fixture both skip every object beneath any slash-terminated marker before deriving the delimiter row.
 That overbroad shortcut confuses the query's own object with an already returned child-prefix group.
-Correct the fixture first by deriving each child-prefix name and excluding it only when that row does not advance beyond the marker.
+The first proposed correction would have excluded every derived group that did not advance beyond the marker; direct provider observations below disprove that assumption.
 Direct HTTP tests must distinguish an own marker from child-group continuation, including markers inside a group or before the filter, while the bound mock/SAIO comparison retains exact child names and unchanged owned namespaces.
 This prerequisite changes test fixtures only; the exact-match application defect and the remaining browser/metadata work stay open.
+
+The first direct HTTP run checks eleven marker shapes through each mock fixture and both mock/SAIO harnesses, plus three bound own-marker cases on each provider.
+On SAIO, markers `scope/a/o` and `scope/a/one/` under `scope/` return the enclosing `scope/a/` group; a root marker `scope/a` similarly returns `scope/`.
+Both existing fixtures already match those three provider results, so their initial expectations were wrong.
+The `p23-marker-before-v1.json/.exit` run has 27 failing and 23 passing leaf cases, but twelve failures reflect that incorrect expectation repeated across four surfaces; retain it as diagnostic evidence, not the final negative baseline.
+The initial test files and hashes are preserved in `p23-marker-initial-tests/` under the same temporary directory.
+
+The revised fixture correction excludes a child group only when its complete derived name equals the requested marker.
+This preserves the observed distinction between an own-prefix object, a completed child group and an arbitrary marker inside a group.
+Correct the three direct HTTP expectations to the observed provider behaviour, and require bound Browse to retain its existing refusal of non-advancing pages without returning partial rows.
+Rerun the corrected tests on the unchanged parent before changing the fixtures; application source, assertions about exact literal names and the independent namespace oracle remain intact.
