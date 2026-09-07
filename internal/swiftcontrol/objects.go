@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"iter"
+	"strings"
 	"time"
 
 	"github.com/ncw/swift/v2"
@@ -67,8 +68,8 @@ type ObjectListOptions struct {
 // view the server groups everything below each child prefix into one
 // subdir row — including any object named exactly at the boundary
 // (verified against real Swift; §14.1) — and an object named exactly at
-// the *listing's own* prefix is skipped here: it belongs to this level's
-// PrefixDetail, not to the child rows. Deep mode reports every real
+// a slash-terminated folder's own prefix is skipped here: it belongs to
+// that folder's PrefixDetail, not to its child rows. Deep mode reports every real
 // object verbatim.
 func (s *Session) Objects(ctx context.Context, container string, opts ObjectListOptions) iter.Seq2[ListingEntry, error] {
 	pageSize := opts.PageSize
@@ -125,8 +126,8 @@ func (s *Session) Objects(ctx context.Context, container string, opts ObjectList
 					if !yield(PrefixEntry{Prefix: row.Name}, nil) {
 						return
 					}
-				case !opts.Deep && row.Name == opts.Prefix:
-					// This level's own marker/self object.
+				case !opts.Deep && strings.HasSuffix(opts.Prefix, "/") && row.Name == opts.Prefix:
+					// The folder's own object belongs to PrefixDetail.
 					continue
 				default:
 					if !yield(objectEntry(row), nil) {

@@ -13,6 +13,7 @@ export default defineConfig({
   resolve: process.env.VITEST ? { conditions: ["browser"] } : undefined,
   test: {
     environment: "jsdom",
+    css: true,
     include: ["src/**/*.test.ts"],
     coverage: {
       // Whole-source accounting: untested files count as 0%, so the

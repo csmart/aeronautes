@@ -53,6 +53,14 @@ describe("delimiterView (real-Swift grouping, §14.1)", () => {
     ]);
   });
 
+  it.each(["external", "  ", "  scope //雪 %2F "])("keeps a plain object exactly matching %j", (prefix) => {
+    expect(delimiterView([obj(prefix), obj(prefix + "!"), obj(prefix + "/child"), obj("outside")], prefix)).toEqual([
+      expect.objectContaining({ kind: "object", name: prefix }),
+      expect.objectContaining({ kind: "object", name: prefix + "!" }),
+      { kind: "prefix", prefix: prefix + "/" },
+    ]);
+  });
+
   it("walks repeated slashes one level at a time", () => {
     const objects = [obj("weird/repeated//slash")];
     expect(delimiterView(objects, "weird/")).toEqual([
@@ -79,6 +87,17 @@ describe("delimiterView (real-Swift grouping, §14.1)", () => {
 });
 
 describe("prefix navigation helpers", () => {
+  it.each([
+    { prefix: "external", parent: "", crumbs: [] },
+    { prefix: "  ", parent: "", crumbs: [] },
+    { prefix: "  scope //雪 %2F", parent: "  scope //", crumbs: [
+      { label: "  scope ", prefix: "  scope /" }, { label: "", prefix: "  scope //" },
+    ] },
+  ])("keeps incomplete prefix $prefix separate from folder navigation", ({ prefix, parent, crumbs }) => {
+    expect(parentPrefix(prefix)).toBe(parent);
+    expect(breadcrumbs(prefix)).toEqual(crumbs);
+  });
+
   it("builds breadcrumbs from a prefix", () => {
     expect(breadcrumbs("")).toEqual([]);
     expect(breadcrumbs("a/b/")).toEqual([
