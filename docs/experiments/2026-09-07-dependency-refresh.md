@@ -1,7 +1,7 @@
 # Dependency refresh observations — 7 September 2026
 
 The owner requested attention to the open Dependabot updates during audit remediation.
-This preparation has not changed either PR source head.
+The initial inspection below preceded any branch refresh.
 
 | PR | Proposed update | Original head | Original CI | Commits behind master `e6e01f65` |
 | --- | --- | --- | --- | ---: |
@@ -51,5 +51,31 @@ Retain the failure when the tool is absent; do not convert required coverage int
 A manual release workflow run builds unsigned artifacts without creating a tag or publishing a public release.
 Passing that build matrix would establish build evidence, not native functional or valuable-data release approval.
 
-The commit sequence and delivery gates are recorded in DESIGN §65.11.
-Implementation, independent local review and new PR/master checks remain pending.
+The commit sequence and delivery gates are recorded in DESIGN §65.11 and have independent local approval.
+The following sections record implementation separately from that plan approval.
+
+## Frontend runtime refresh
+
+PR30's exact two dependency files have been applied on master `4f0cee2943215511e37d3e0a58329fe8bfd3f645`, with the approved plan as their parent commit.
+This base delivered [PR48](https://github.com/csmart/aeronautes/pull/48) through independent local review, all five [PR checks](https://github.com/csmart/aeronautes/actions/runs/34095697995) and all five [master checks](https://github.com/csmart/aeronautes/actions/runs/34096695188).
+Its tree matches the reviewed transfer source exactly.
+
+A clean `npm ci` succeeds without changing the dependency files.
+Their complete contents match original PR30 head `efbc022a3f52a8e646e3e5ca38aceeb9320e3226`, and all 59 installed runtime files match the beta.16 published archive.
+`dep-runtime-installed-v1.json` records the base, plan, original head, dependency hashes and installed-file comparison.
+The full frontend suite passes 754 tests in 20 files, with no failures or skips and 77.73% statement coverage.
+Svelte checking reports zero errors and warnings, and the production build passes.
+All three produced frontend files are byte-identical to the previously reviewed transfer bundle; `dep-runtime-bundle-v1.json` records their names and hashes.
+This matches the published package comparison: the selected package version changes while its executable frontend code stays the same.
+The unchanged application behaviour also passed the pre-update suite.
+
+The full internal Go race suite passes 577 top-level tests, 1,180 leaf cases and all 20 packages, with no failures or skips and 84.7% combined statement coverage.
+It uses both owned SAIO accounts and the verified rclone pin, including the optional matrix.
+`dep-runtime-go-full-v1.json/.exit` and `dep-runtime-go-cover-v1.out` retain the actual events, process exit and profile.
+`dep-runtime-scenario-coverage-v1.json` reconciles the actual exit, events and expected package set with the producer configuration: valid process, stream and contract, 28/110 covered cells and 39/49 actions still having gaps.
+Go vet and build also pass.
+
+The frontend records are `dep-runtime-install-v1.log/.exit`, `dep-runtime-ui-check-v1.log/.exit`, `dep-runtime-ui-full-v1.json/.log/.exit`, `dep-runtime-ui-coverage-v1.json` and `dep-runtime-ui-build-v1.log/.exit` in the same temporary directory.
+This update preserves the existing Go module and matching CLI pins; their beta.16 alignment belongs to the next planned slice.
+Independent implementation review and fresh PR30/master delivery remain pending.
+The release test prerequisite, SQLite update and wider audit work remain open.
