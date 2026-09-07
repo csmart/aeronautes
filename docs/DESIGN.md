@@ -4758,7 +4758,10 @@ Eight final parent assertions fail and four controls pass; all twelve pass with 
 The full internal SAIO race suite, including the optional pinned-engine observations, passes 541 top-level tests and 1,119 leaf cases across twenty packages with no skips and 84.3% combined statement coverage.
 Valid scenario reconciliation reaches 28/110 cells, with 39/49 actions still having gaps.
 The DLO fixture's planned-byte estimate still excludes its logical content, while actual copied bytes and independent destination bytes are complete; that accounting gap stays assigned to P13.
-P22/DS-13 still require independent implementation review and all five PR/master checks before closure; wider authority, durability, concurrency, ownership, local-filesystem, resource and release work remains open.
+The engine slice passed independent implementation review and all five [PR46 checks](https://github.com/csmart/aeronautes/actions/runs/34086202150) before protected merge.
+All five [resulting master checks](https://github.com/csmart/aeronautes/actions/runs/34086884737) passed on `c7b669e422465754e9674f51e3e364986c905277`; its tree exactly matches the reviewed source `96cf94d454c630d47b34e898d791a8273625eb99`, with both logical commits preserved.
+P22/DS-13 is closed for the defined provider-pagination and complete selected-set contract.
+Wider authority, durability, concurrency, ownership, local-filesystem, resource and release work remains open.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.

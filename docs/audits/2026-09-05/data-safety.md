@@ -278,7 +278,7 @@ Acceptance: measure peak RSS and recoverable state for large synthetic namespace
 
 ### DS-13 — High: short provider pages can silently truncate plans and verification
 
-Disposition: statically revalidated W-13/R-16; no live provider test in this audit.
+Disposition: resolved by P22 on 7 September after independent review and protected PR/master delivery; the original audit statically revalidated W-13/R-16 without a live provider test.
 Code: `internal/swiftcontrol/objects.go:112`, `internal/swiftcontrol/containers.go:63`.
 Oracle: K-PERF-001, K-CON-001, provider pagination compatibility and completeness.
 
@@ -299,7 +299,7 @@ These are controlled local reproductions, not live provider observations.
 P22's first response slice now refuses incomplete or malformed pages before publication, with [public-session, dependency and two-account system evidence](../../experiments/2026-09-07-listing-responses.md).
 The subsequent [native continuation slice](../../experiments/2026-09-07-listing-continuation.md) also passes both original short-page probes, validates strict raw marker progress and literal scope, and preserves lazy stopping and cancellation.
 Its controlled Browse, Find, preview and native-routed Copy/verification cases cover the previously hidden tail; all four original listing probes now pass.
-DS-13 remains open until native continuation and mixed-engine execution/verification cover the complete intended namespace across short pages.
+At native-slice delivery, DS-13 remained open until mixed-engine execution/verification also covered the complete intended namespace across short pages.
 The proposed correction and its separately reviewed implementation sequence are recorded in [ADR 0021](../../adr/0021-complete-listing-pages.md).
 
 The continuation prototype exposed an additional [controlled mixed-engine omission](../../experiments/2026-09-07-short-page-copy.md).
@@ -308,9 +308,11 @@ Removing only the proxy cap lets the same mixed Copy complete on both mock Swift
 The native continuation slice must preserve this limitation as explicit evidence, alongside complete native-routed Copy and preview cases; it must not silently restrict the cap to native requests or credit the mixed partial as success.
 Investigate and review the engine decision separately before changing it; native-only success does not satisfy the full P22 acceptance.
 The [selected-set follow-up experiment](../../experiments/2026-09-07-selected-set-copy.md) passes both original complete-Copy assertions when only `--no-traverse` is added, and fails both again when that option is removed.
-[ADR 0022](../../adr/0022-complete-rclone-selection.md) records the proposed shared-runner correction and its required remote/local regression evidence; DS-13 is still open pending implementation, review and delivery.
+[ADR 0022](../../adr/0022-complete-rclone-selection.md) records the shared-runner correction and its required remote/local regression evidence.
 After independent design review, that correction now has [maintained complete mixed-engine, large-object and local-transfer evidence](../../experiments/2026-09-07-selected-set-copy.md#maintained-implementation-and-evidence), with eight parent/removed-option assertion failures and twelve corrected passes.
-Independent implementation review and all five PR/master checks remain the DS-13 delivery gate.
+The engine implementation passed independent local review and all five [PR46 checks](https://github.com/csmart/aeronautes/actions/runs/34086202150) before its protected merge; all five [resulting master checks](https://github.com/csmart/aeronautes/actions/runs/34086884737) passed.
+Master `c7b669e422465754e9674f51e3e364986c905277` exactly matches the reviewed source tree.
+DS-13 is closed for the defined pagination/completeness contract; the DLO planned-byte estimate remains P13 work, and the wider safety and valuable-data release hold remains.
 
 ## Product-contract and evidence gaps
 
