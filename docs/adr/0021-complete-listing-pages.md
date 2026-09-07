@@ -80,10 +80,17 @@ Independent snapshots bypass the modifying proxy and witness both account namesp
 
 Add explicit Browse container/object refusal requirements and invocation-specific read/refusal receipts without changing the renderer surface.
 For Find, use its matching terminal status and existing cancellation receipts; a failed asynchronous scan cannot receive successful-start credit.
-Verify complete preview and eligible new-name Copy/verification across forced short pages, with expected destination bytes and unchanged source/collateral state.
+Verify complete mixed-name preview and eligible native-routed new-name Copy/verification across forced short pages, with expected destination bytes and unchanged source/collateral state.
+Keep the provider cap active for every selected source and destination JSON listing, including requests from rclone.
+The [mixed-engine experiment](../experiments/2026-09-07-short-page-copy.md) found a separate pinned-rclone limitation: the corrected native plan sees three names, but rclone omits one planned file under the cap and the job reports partial.
+Retain that mixed-engine case as an explicit partial-outcome characterisation, paired with the same mixed Copy succeeding without the cap; it earns no successful-Copy credit.
+Native-only success does not establish complete mixed-engine provider compatibility or close P22/DS-13.
 Keep source, system, frontend and real-engine evidence separately accounted and reconcile only final passing scenario witnesses.
 
 Deliver two separately reviewed implementation commits: complete listing responses and their upstream-source verification, then continuation/marker validation and its affected consumers.
 Each carries its system reproduction and relevant full tests.
+After native continuation, investigate how the pinned engine can execute the complete selected set despite short pages.
+Record and independently review any required engine/flag decision before changing that boundary; preserve staging, credentials, encoding, conditional commit, verification and refusal rules.
+The wider P22 acceptance remains complete execution and verification of the intended namespace, with both engines tested against the same provider scenario.
 Require the five latest-head/current-master PR checks, normal protected merge and all five master checks.
 P10/P11 authority, P12/P13 durability/outcomes, P14 writers, P15 ownership, P24 wider budgets and the valuable-data release hold remain open.
