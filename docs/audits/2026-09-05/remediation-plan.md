@@ -90,11 +90,11 @@ The audit's modelled WAL lost-history case and an actual process kill must remai
 | P23 | Preserve exact prefix and metadata-input semantics (UI-04/07/14), independent of P18 | Spaces are not trimmed into root scope; literal server prefixes remain literal; inherited property names cannot disappear or corrupt diffs; unsupported Swift keys fail explicitly |
 
 The local filesystem oracle must snapshot the selected root and relevant outside sentinels.
-P22 now includes the [controlled pinned-rclone short-page omission](../../experiments/2026-09-07-short-page-copy.md) found during native continuation testing.
-Deliver the reviewed native response and continuation fixes separately, retain the mixed-engine partial result and uncapped control, then review the engine decision needed for complete selected-set execution under the same provider cap.
-Do not close P22 from native-only success or weaken its full-namespace acceptance.
-The subsequent [selected-set experiment](../../experiments/2026-09-07-selected-set-copy.md) isolates `--no-traverse` as a candidate correction; [ADR 0022](../../adr/0022-complete-rclone-selection.md) requires separate design review, shared remote/local caller regressions and complete capped mixed-engine verification before closure.
-That reviewed correction now passes the maintained remote/local regressions and full internal SAIO race suite; P22 closure still depends on independent implementation review and all five PR/master checks.
+P22 is delivered, including the [controlled pinned-rclone short-page omission](../../experiments/2026-09-07-short-page-copy.md) found during native continuation testing.
+The native response and continuation fixes landed separately through PR44/45, preserving the mixed-engine partial result and uncapped control until the engine decision received its own design review.
+The subsequent [selected-set experiment and maintained evidence](../../experiments/2026-09-07-selected-set-copy.md) establish the [ADR 0022](../../adr/0022-complete-rclone-selection.md) correction under the same provider cap across remote/local callers.
+Independent implementation review, all five [PR46 checks](https://github.com/csmart/aeronautes/actions/runs/34086202150), protected merge and all five [resulting master checks](https://github.com/csmart/aeronautes/actions/runs/34086884737) close P22/DS-13 for the defined pagination/completeness contract.
+The merged tree matches the reviewed source exactly; wider resource, accounting, platform and valuable-data release gates remain open.
 Linux success is insufficient for Windows/macOS namespace claims.
 Download/upload UI should show a bounded selected-name summary, explicit account and exact scope tied to the backend plan.
 
