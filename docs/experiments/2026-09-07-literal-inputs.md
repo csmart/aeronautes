@@ -242,5 +242,95 @@ The application and frontend are unchanged from the delivered dependency master.
 A separate replay of the preserved browser tests with only the corrected shared fixture overlaid has ten intended application failures and six passes: the two mock-only own-marker failures are gone, while exact plain matches still fail on both providers.
 `p23-browser-after-marker-v1.json/.exit` and its overlay preserve that separation, and the parked browser test hashes remain unchanged.
 Frontend tests were not rerun for this Go fixture-only slice; its browser implementation, metadata work and native visual validation remain separate.
-Independent implementation review and all five PR/master checks remain required before this fixture prerequisite is delivered.
+Independent local review approved fixture source `10996fe662e5be16272ab7008994d110e237aba1` and its complete four-commit range.
+[PR49](https://github.com/csmart/aeronautes/pull/49) passed all five [PR checks](https://github.com/csmart/aeronautes/actions/runs/34112498074) before protected merge.
+All five [master checks](https://github.com/csmart/aeronautes/actions/runs/34113783241) passed on `a27a9c1ac3141023a6b287174a64a90721511b9b`.
+The merged tree is exactly `46f24a6708ea2020cdc1aa737fce5fa7a82352a6`, matching the reviewed source, and range comparison preserves all four logical commits without patch changes.
+This fixture prerequisite is delivered; the browser and metadata application work is separate.
 P23, UI-07, UI-14 and the wider valuable-data release hold remain open.
+
+## Literal browser filtering and navigation
+
+The application slice starts from the delivered fixture master `a27a9c1ac3141023a6b287174a64a90721511b9b`.
+Its oracle is the literal Swift `prefix=` contract in DESIGN §16, exact name identity in K-TEST-001 and selection-only authoritative reads in §14.2/K-PERF-002.
+The Prefix field no longer appends a slash, and labels remove only the complete directory portion of the filter.
+The incomplete final component appears as escaped, quoted text rather than a navigable folder; complete folder components retain their whitespace and empty components remain navigable.
+Plain object labels no longer gain an incidental trailing space, while the optional SLO badge keeps its text separator.
+The Go adapter and frontend fake exclude only a slash-terminated folder's own object, retaining a plain object that exactly matches an unslashed filter.
+Existing page validation, lazy continuation, selection ownership and mutation/transfer admission remain in place.
+
+The preserved browser tests were copied into a new worktree without overwriting newer fixture changes.
+`p23-browser-restored.json` records the source, base and four verified test-file hashes.
+The final test setup enables CSS processing and proves that the existing object-name `white-space: pre` rule is loaded before checking breadcrumb and filter styles.
+The preliminary `ui-before-v1` style failure did not load component CSS and is not itself rendering evidence.
+The maintained tests also check the SLO separator and establish that the old selection/detail and page requests are pending before testing their retirement.
+The Go test emits only one successful read receipt per top-level action/scenario after every case and both namespace comparisons pass.
+Its earlier parked multiple-receipt loop was corrected before any successful implementation run.
+
+With application source still unchanged, the final frontend/helper regression run has 25 assertion failures and 16 passes across 41 cases, with no skips.
+The separate bound Go run has ten assertion failures and six passes across sixteen cases on mock Swift and real Swift, with no skips.
+The own-folder and root cases already pass after the delivered fixture repair; the five exact unslashed object matches fail on each provider.
+`p23-browser-ui-before-v2.json/.log/.exit`, `p23-browser-go-before-v2.json/.exit` and `p23-browser-parent-inputs-v2.json` retain the actual final baseline and exact source/test hashes.
+All 41 frontend/helper cases and all sixteen bound Go cases pass after the correction, recorded in `p23-browser-ui-after-v1` and `p23-browser-go-after-v1`.
+
+Mounted tests cover eleven typed prefixes, exact object and folder labels, selection identity, the SLO badge, quoted incomplete components, HTML-like text, spaced/empty breadcrumb navigation, activation, Up, root, page continuation and late page/detail success and failure.
+The bound Browse tests cover exact plain names, space-only and trailing-space filters, repeated separators, Unicode, literal percent escapes, folder self-objects, leading empty folders and root.
+One-row provider pages and two-row bridge pages must return the exact names, kinds and object byte counts, preserve every raw continuation marker, stop lazily and reach an empty terminal provider response.
+Application-only request traces reject any per-row object HEAD; independent observations bypass that trace and compare the complete owned namespaces on both accounts before and after each top-level test.
+The HEAD-injection control below fails all sixteen cases, proving that those traces detect the forbidden reads.
+
+Fifteen independent frontend variants are caught in an isolated copy with unchanged tests:
+
+| Broken behaviour | Failing cases |
+| --- | ---: |
+| Append a slash to typed input | 10 |
+| Trim typed input | 9 |
+| Remove the incomplete component from leaf labels | 6 |
+| Add an incidental label space | 6 |
+| Hide the partial filter | 4 |
+| Render the filter as a folder button | 5 |
+| Interpret filter text as HTML | 1 |
+| Trim the filter caption | 2 |
+| Collapse breadcrumb spaces | 1 |
+| Collapse filter-caption spaces | 4 |
+| Drop exact unslashed matches in the fake | 3 |
+| Include the folder's self-object in the fake | 1 |
+| Publish a stale successful page | 1 |
+| Publish stale object detail | 1 |
+| Retain the old local page filter | 2 |
+
+The isolated parent also reproduces 25 failures/16 passes, and its positive control passes all 41 cases.
+`p23-browser-ui-controls.py` and `p23-browser-ui-controls-v2/` preserve commands, hashes, actual exits and assertion messages.
+The first control setup stopped before running tests because a requested source replacement matched both success and error guards; version 2 scopes it to the successful-page guard.
+That setup error is not a caught product fault and is not included in the fifteen variants.
+
+Five separate Go overlays are caught with unchanged maintained tests on both providers:
+
+| Broken behaviour | Failing cases |
+| --- | ---: |
+| Include the folder's self-object | 4 |
+| Trim the provider query prefix | 6 |
+| HEAD every object row | 16 |
+| End after a short provider page | 16 |
+| Trim the continuation marker | 8 |
+
+The original Go adapter separately reproduces ten failures/six passes.
+`p23-browser-go-controls.py` and `p23-browser-go-controls-v1/` preserve the overlays, commands, actual exits, hashes and assertions.
+Every broken variant exits with assertion failures, without build failures, skipped cases, timeouts or race reports; the author source and test hashes remain unchanged.
+
+The full frontend suite passes 788 tests in 21 files, with no failures or skips and 78.02% statement coverage (3,185/4,082).
+`p23-browser-frontend-full-v1.json/.log/.exit` and `p23-browser-frontend-coverage-v1.json` retain that evidence.
+Svelte checking reports zero errors and warnings, and the production frontend build succeeds.
+The complete internal Go race run passes 585 top-level tests, 1,246 leaf cases and all twenty packages, with no failures or skips and 84.7% combined statement coverage.
+It uses both owned SAIO accounts, the verified rclone pin and the optional rclone matrix.
+`p23-browser-full-v1.json/.exit`, its summary and `p23-browser-cover-v1.out/.txt` retain the actual process and coverage evidence.
+`p23-browser-scenario-coverage-v1.json` reconciles that actual exit and event stream against the expected package set and producer environment: valid process, stream and contract, 28/110 covered cells and 39/49 actions still having gaps.
+Go vet, application build, the CGO-disabled internal build and whitespace checks also pass.
+
+The unchanged original P23 probes now report two passes and two intended metadata assertion failures; eight other archived cases remain unselected.
+The transfer-prefix and browser-prefix probes pass, while metadata `__proto__` retention and own-property diff membership still fail.
+`p23-original-after-browser-v1.json/.log/.exit` and its input record preserve that mixed result with only absolute imports adapted to the fixed isolated frontend.
+All temporary records above are under `/tmp/aeronautes-remediation-20260905`.
+This is CSS-enabled mounted-component and bound Go/provider evidence, not native desktop end-to-end or six-platform functional approval.
+Independent local review and all five PR/master checks remain required for browser delivery and closure of the defined UI-07 scope.
+P23, UI-14, metadata wire-identity validation and the wider valuable-data release hold remain open.

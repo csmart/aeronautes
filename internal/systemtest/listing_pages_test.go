@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -24,8 +25,18 @@ type listingPageRequest struct {
 }
 
 type listingPageTrace struct {
-	mu       sync.Mutex
-	requests []listingPageRequest
+	mu          sync.Mutex
+	requests    []listingPageRequest
+	objectHeads []string
+}
+
+func (trace *listingPageTrace) assertNoObjectHeads(t *testing.T) {
+	t.Helper()
+	trace.mu.Lock()
+	defer trace.mu.Unlock()
+	if len(trace.objectHeads) != 0 {
+		t.Fatalf("listing issued object HEAD requests: %q", trace.objectHeads)
+	}
 }
 
 func (trace *listingPageTrace) snapshot() []listingPageRequest {
@@ -69,6 +80,13 @@ func limitListingPages(t *testing.T, h *Harness, account *Account, container, mo
 	direct := proxy.Director
 	proxy.Director = func(request *http.Request) {
 		direct(request)
+		// Only the application's configured connection uses this proxy;
+		// independent namespace observations go directly to the provider.
+		if request.Method == http.MethodHead && strings.HasPrefix(request.URL.EscapedPath(), selectedPath+"/") {
+			trace.mu.Lock()
+			trace.objectHeads = append(trace.objectHeads, request.URL.EscapedPath())
+			trace.mu.Unlock()
+		}
 		query := request.URL.Query()
 		if request.Method != http.MethodGet || request.URL.EscapedPath() != selectedPath || query.Get("format") != "json" {
 			return

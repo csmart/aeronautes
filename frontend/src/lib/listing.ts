@@ -2,7 +2,7 @@
 // semantics as the Go layer implements them (§14, verified via §57.3):
 // name-sorted rows; every name below a child prefix — boundary objects,
 // markers, folder-ish real objects included — folds into one subdir row;
-// the object at the query prefix's own name is not a child row. Used by
+// the object at a slash-terminated folder's own name is not a child row. Used by
 // the test fake so navigation logic is exercised with correct semantics.
 
 import type { ListingEntry, ObjectEntry } from "./types";
@@ -30,9 +30,8 @@ function toObjectEntry(o: FixtureObject): ObjectEntry {
 }
 
 /**
- * One delimiter page of `objects` under `prefix` ("" for the container
- * root; otherwise must end with "/"). Rows come back name-sorted the way
- * the server would return them.
+ * One delimiter page under a literal `prefix` ("" for the container root).
+ * Rows come back name-sorted the way the server would return them.
  */
 export function delimiterView(
   objects: FixtureObject[],
@@ -46,8 +45,8 @@ export function delimiterView(
   const emitted = new Set<string>();
 
   for (const o of sorted) {
-    if (o.name === prefix) {
-      // This level's own marker/self object: PrefixDetail's business.
+    if (prefix.endsWith("/") && o.name === prefix) {
+      // The folder's own object belongs to PrefixDetail, not its children.
       continue;
     }
     const rest = o.name.slice(prefix.length);

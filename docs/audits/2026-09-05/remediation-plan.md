@@ -101,8 +101,12 @@ The fixture prerequisite is delivered through [PR47](https://github.com/csmart/a
 The [transfer implementation](../../experiments/2026-09-07-literal-inputs.md#literal-transfer-requests-and-refusal) preserves literal request strings and quoted scope, rejects slash-bearing containers before job admission and retains the existing prefix and Mirror restrictions.
 Its maintained parent regressions, broken-behaviour controls, full frontend suite and full mock/SAIO Go race suite pass their intended checks.
 Independent local review and all five PR/master checks passed for [PR48](https://github.com/csmart/aeronautes/pull/48), closing the defined UI-04 transfer-input scope.
-The original transfer-prefix probe now passes while the other three original P23 probes still fail; raw SAIO observations separately confirm that a successful metadata POST does not establish literal underscore-key preservation.
-P23, UI-07 and UI-14 remain open for literal browser filtering, metadata dictionaries and wire-identity validation.
+The delimiter-marker fixture prerequisite is also delivered through [PR49](https://github.com/csmart/aeronautes/pull/49), with independent review, all five PR/master checks and an exact merged-tree comparison.
+The [browser implementation](../../experiments/2026-09-07-literal-inputs.md#literal-browser-filtering-and-navigation) now preserves literal filters, complete leaf labels, folder navigation and exact matching objects.
+Its parent regressions and 20 broken-behaviour controls catch their intended faults; all 788 frontend tests and the full 585-top-level mock/SAIO Go race suite pass without skips.
+The original transfer and browser probes pass while the two metadata probes still fail; eight other archived cases remain unselected.
+Raw SAIO observations separately confirm that a successful metadata POST does not establish literal underscore-key preservation.
+UI-07 remains pending independent browser review and all five PR/master checks; P23 and UI-14 remain open for metadata dictionaries and wire-identity validation.
 Linux success is insufficient for Windows/macOS namespace claims.
 Download/upload UI should show a bounded selected-name summary, explicit account and exact scope tied to the backend plan.
 

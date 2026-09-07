@@ -25,14 +25,16 @@
   }
 
   const crumbs = $derived(breadcrumbs(browser.prefix));
+  const directoryLength = $derived(browser.prefix.lastIndexOf("/") + 1);
+  const partialPrefix = $derived(browser.prefix.slice(directoryLength));
 
   function shortName(entry: ListingRowDTO): string {
-    return entry.name.slice(browser.prefix.length);
+    return entry.name.slice(directoryLength);
   }
 
   function applyPrefix() {
     const value = prefixInput?.value ?? "";
-    browser.goTo(value === "" || value.endsWith("/") ? value : value + "/");
+    browser.goTo(value);
   }
 
   function timestamp(iso: string): string {
@@ -60,6 +62,9 @@
           {crumb.label === "" ? "␣" : crumb.label}
         </button>
       {/each}
+      {#if partialPrefix !== ""}
+        <span class="prefix-filter">Prefix: {JSON.stringify(partialPrefix)}</span>
+      {/if}
     </nav>
 
     <div class="fields">
@@ -202,12 +207,7 @@
                   stroke-width="1.3"
                 />
               </svg>
-              <span class="name">
-                {shortName(entry)}
-                {#if entry.sloListed}
-                  <span class="badge">SLO</span>
-                {/if}
-              </span>
+              <span class="name">{shortName(entry)}{#if entry.sloListed}{" "}<span class="badge">SLO</span>{/if}</span>
               <span class="size num">{formatBytes(entry.bytes)}</span>
               <span class="modified num">{timestamp(entry.lastModified)}</span>
             {/if}
@@ -285,6 +285,7 @@
     border: none;
     border-radius: var(--radius-control);
     cursor: pointer;
+    white-space: pre;
   }
 
   .crumb:hover {
@@ -299,6 +300,13 @@
 
   .crumb-sep {
     color: var(--color-text-faint);
+  }
+
+  .prefix-filter {
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
 
   .fields {

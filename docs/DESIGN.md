@@ -833,8 +833,8 @@ the boundary, whether it is a marker or a real object wearing a folder suit. So 
 listing alone cannot distinguish marker-backed from implied, and a folder-ish real object is
 invisible at its own level. The answer is a **selection-triggered `PrefixDetail`** (one HEAD of the
 exact prefix name, §14.2): it reports marker-backed vs implied and surfaces any real self-object.
-Inside a prefix, the object at the prefix's own name is not shown as a child row (it belongs to
-that prefix's detail); Deep listings report every real object verbatim for jobs.
+Inside a slash-terminated virtual folder, the object at the folder's own name is not shown as a child row (it belongs to that folder's detail).
+A plain object exactly matching an unslashed filter remains visible; Deep listings report every real object verbatim for jobs.
 
 UI:
 
@@ -4848,7 +4848,15 @@ The [delivery record](experiments/2026-09-07-dependency-refresh.md#protected-del
 The P23 browser prerequisite now corrects delimiter continuation in both mock fixtures using the provider's complete-group equality rule.
 Its [maintained evidence](experiments/2026-09-07-literal-inputs.md#maintained-delimiter-fixture-repair) records 15 catching parent assertions, 50 passing corrected cases, eight caught broken variants and the full 583-top-level/1,230-leaf internal race run with valid scenario reconciliation.
 The preserved browser tests still expose the ten application exact-match failures after this fixture-only correction.
-Independent implementation review and PR/master delivery remain pending, and the browser/metadata slices remain open.
+Independent local review approved the full fixture range, and all five [PR49 checks](https://github.com/csmart/aeronautes/actions/runs/34112498074) passed before protected merge.
+All five [master checks](https://github.com/csmart/aeronautes/actions/runs/34113783241) passed on `a27a9c1ac3141023a6b287174a64a90721511b9b`; its tree matches the reviewed source `10996fe662e5be16272ab7008994d110e237aba1`, with all four logical commits preserved.
+
+The browser application slice now passes the Prefix field literally, preserves complete leaf labels and renders the incomplete final component as a quoted filter rather than a folder.
+The Go listing adapter and frontend fake retain exact unslashed object matches while keeping a virtual folder's own object in its detail view.
+The [maintained browser evidence](experiments/2026-09-07-literal-inputs.md#literal-browser-filtering-and-navigation) records 25 frontend and ten bound-service parent failures, 20 caught broken variants, 788 passing frontend tests and the full 585-top-level/1,246-leaf internal race run with valid scenario reconciliation.
+The original transfer and browser probes pass, while the two metadata probes remain red.
+Independent local review and all five PR/master checks are still required before closing the UI-07 browser scope.
+The metadata slices, P23 as a whole and the wider valuable-data release hold remain open.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
