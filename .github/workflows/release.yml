@@ -34,6 +34,11 @@ jobs:
       # package (main included) can even parse.
       - name: frontend install + build
         run: cd frontend && npm ci && npm run build
+      - name: Fetch pinned rclone (verified)
+        run: |
+          ./scripts/fetch-rclone.sh linux amd64 "$RUNNER_TEMP/rclone-pin"
+          echo "$RUNNER_TEMP/rclone-pin" >> "$GITHUB_PATH"
+          echo "AERONAUTES_OFFICIAL_RCLONE_DIR=$RUNNER_TEMP/rclone-pin" >> "$GITHUB_ENV"
       - run: go test -race -count=1 ./...
       - run: cd frontend && npm run check && npm test
 

@@ -28,6 +28,11 @@ Its Linux test package uses a separate binary with a per-run private daemon, no 
 A missing daemon fails this required lane; an ordinary local suite without the requirement flag reports explicit skips when the tool is absent.
 These tests exercise the pinned client against a synthetic Secret Service and cannot satisfy the native desktop keychain gates.
 
+The release workflow's test job also fetches and verifies the official rclone pin before running Go tests.
+It exposes the binary through the same PATH and `AERONAUTES_OFFICIAL_RCLONE_DIR` settings as ordinary CI because the mock Copy tests need the real runner there too.
+Fetching sidecars in the later packaging jobs cannot supply this earlier, separate test job.
+Manual release dispatch builds unsigned artifacts for all six targets; it does not create a tag or publish a GitHub release.
+
 ## Merge procedure
 
 1. Finish the implementation, relevant local verification and independent local review.

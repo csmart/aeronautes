@@ -135,6 +135,26 @@ Module verification, Go vet, the production Linux app build and the CGO-disabled
 The frontend source, dependencies, bindings and bundle are unchanged from the Wails slice's 754-test run; it was not rerun for this Go-only update.
 All records use the same temporary evidence directory.
 
-Independent SQLite review and the separately planned release test prerequisite repair remain pending.
+Independent SQLite review approved the update after checking the compiled dependency set, effective WAL/FULL refusal, historical migrations and the full internal race suite with SAIO and the rclone matrix.
 Final PR29 delivery requires the unsigned build matrix, all five current PR checks, a protected merge and all five master checks.
 The upgrade does not close P12 durability or P13 outcome/accounting gaps, restore refused transfers, or lift the valuable-data release hold.
+
+## Release test setup repair
+
+The release workflow's test job now runs the same verified rclone fetch step as ordinary CI, before its existing Go race command.
+It exports the verified binary through `GITHUB_PATH` and `AERONAUTES_OFFICIAL_RCLONE_DIR` through `GITHUB_ENV` for subsequent steps.
+The later packaging jobs still supply their own platform sidecars.
+Application code, tests, assertions, package commands and merge protections are unchanged.
+
+The missing-tool failure is reproduced again on the reviewed Wails/SQLite source `20a89ff1576c96592500598465af7d0be0bc0084` using one compiled race-test binary.
+`TestShortListingNativeCopyMock` fails specifically because the pinned rclone is missing, with exit 1 and no skipped tests.
+The exact new workflow shell body is then extracted, checked against the ordinary CI step and executed with fresh runner-temporary PATH and environment files.
+The unchanged fetch script verifies the downloaded archive and binary, and the emitted files identify the expected pin directory.
+Running the identical test binary with those exported settings passes the same test with exit 0 and no skips.
+This is a configuration reproduction; no application assertion is weakened or replaced.
+
+`dep-release-inputs-v1.json` records the source and binary hashes, and `dep-release-before-v1.json/.exit` and `dep-release-after-v1.json/.exit` retain the actual events and exits.
+`dep-release-step-proof-v1.json`, `dep-release-fetch-step-v1.sh` and `dep-release-fetch-v1.log/.exit` record the extracted step, exported settings and verified binary hash in the same temporary evidence directory.
+Actionlint passes both the CI and release workflows before and after the repair; the extracted shell also passes `bash -n`.
+The full Go and frontend evidence from the preceding dependency slices remains applicable to their unchanged application code and bundle.
+Independent review of the complete rebuilt PR29 range is the next gate, before updating its named branch and running the required PR checks and unsigned six-target build matrix.
