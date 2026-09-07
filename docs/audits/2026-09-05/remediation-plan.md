@@ -87,7 +87,7 @@ The audit's modelled WAL lost-history case and an actual process kill must remai
 | P20 | Honour cancellation at local placement/native-write boundaries and record partial results (DS-07), after P13/P18 | Cancel before/after staging, between placements and during cleanup yields exactly the allowed filesystem delta and durable partial/cancelled outcome |
 | P21 | Share resolved chunk/admission settings and local-upload commit/verification/cleanup gates (DS-10/11, known local DLO completeness gap), after P12/P16 | Above-max explicit chunks refuse before job creation; defaults cap correctly; corrupt/incomplete DLO uploads cannot commit; cleanup failure never loses recovery intent |
 | P22 | Correct provider pagination and guard nonprogress (DS-13; W-13), independent of local UI fixes | Short nonempty pages followed by data are complete; repeated/backward markers and malformed/truncated bodies fail visibly; execution and independent verification cover the same full intended namespace |
-| P23 | Preserve exact prefix and metadata-input semantics (UI-04/07/14), independent of P18 | Spaces are not trimmed into root scope; literal server prefixes remain literal; inherited property names cannot disappear or corrupt diffs; unsupported Swift keys fail explicitly |
+| P23 | Preserve exact prefix and metadata-input semantics (UI-04/07/14), independent of P18 | Spaces are not trimmed into root scope; literal server prefixes remain literal; inherited property names cannot disappear or corrupt diffs; unsupported Swift keys and raw-header values fail before writes |
 
 The local filesystem oracle must snapshot the selected root and relevant outside sentinels.
 P22 is delivered, including the [controlled pinned-rclone short-page omission](../../experiments/2026-09-07-short-page-copy.md) found during native continuation testing.
@@ -97,6 +97,8 @@ Independent implementation review, all five [PR46 checks](https://github.com/csm
 The merged tree matches the reviewed source exactly; wider resource, accounting, platform and valuable-data release gates remain open.
 P23 now has a [current-master reproduction record](../../experiments/2026-09-07-literal-inputs.md) and a four-slice implementation sequence in DESIGN §65.11.
 Preserve transfer input, then literal browser filtering, then metadata dictionaries and Go wire-identity validation, with independent review between logical commits.
+Deliver the two metadata commits together so the Go admission guard accompanies the frontend's literal working copy.
+The [raw metadata-value observations](../../experiments/2026-09-07-literal-inputs.md#raw-metadata-value-observations) also require explicit refusal of boundary ASCII whitespace and empty container values while retaining supported empty object values; no implicit value codec is planned.
 The fixture prerequisite is delivered through [PR47](https://github.com/csmart/aeronautes/pull/47), with independent review and all five PR/master checks passing; its merged tree matches the reviewed source exactly.
 The [transfer implementation](../../experiments/2026-09-07-literal-inputs.md#literal-transfer-requests-and-refusal) preserves literal request strings and quoted scope, rejects slash-bearing containers before job admission and retains the existing prefix and Mirror restrictions.
 Its maintained parent regressions, broken-behaviour controls, full frontend suite and full mock/SAIO Go race suite pass their intended checks.
