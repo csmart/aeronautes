@@ -298,8 +298,14 @@ These are controlled local reproductions, not live provider observations.
 
 P22's first response slice now refuses incomplete or malformed pages before publication, with [public-session, dependency and two-account system evidence](../../experiments/2026-09-07-listing-responses.md).
 The original two response probes pass; both short-page probes still fail pending the separately reviewed continuation/marker slice.
-DS-13 remains open until that slice verifies complete planning and fresh verification across short pages.
+DS-13 remains open until native continuation and mixed-engine execution/verification cover the complete intended namespace across short pages.
 The proposed correction and its separately reviewed implementation sequence are recorded in [ADR 0021](../../adr/0021-complete-listing-pages.md).
+
+The continuation prototype exposed an additional [controlled mixed-engine omission](../../experiments/2026-09-07-short-page-copy.md).
+With all selected listing requests capped to one row, the native plan sees three names but pinned rclone omits one of its two planned files; Aeronautes detects the missing stage and reports a partial job.
+Removing only the proxy cap lets the same mixed Copy complete on both mock Swift and SAIO.
+The native continuation slice must preserve this limitation as explicit evidence, alongside complete native-routed Copy and preview cases; it must not silently restrict the cap to native requests or credit the mixed partial as success.
+Investigate and review the engine decision separately before changing it; native-only success does not satisfy the full P22 acceptance.
 
 ## Product-contract and evidence gaps
 

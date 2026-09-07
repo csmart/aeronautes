@@ -4698,7 +4698,7 @@ Four preserved local HTTP cases on the PR42 source fail their intended assertion
 The oracle is the ADR's complete-response and continuation contract, K-PERF-001, K-CON-001 and the independent snapshot reader.
 Standard Swift's documented short-page termination remains distinct from the additional provider compatibility this contract supports.
 
-After independent design review, implement two separately reviewed logical fixes:
+Continue in separately reviewed logical steps:
 
 1. Require complete native container/object listing responses before returning a page.
    Accept only HTTP 200 without Content-Range and exactly one complete JSON array; propagate read/decode/date/close/cancellation failures and reject trailing values, invalid shapes and partial bodies.
@@ -4710,7 +4710,14 @@ After independent design review, implement two separately reviewed logical fixes
    Validate raw row names across and within pages before yielding any row from that page, requiring strict marker progress and literal prefix scope.
    Preserve deep versus delimiter semantics and advance over filtered self-only pages.
    Keep lazy consumer stopping, cancellation and default request sizes, with no whole-namespace accumulation, per-row HEAD, silent sorting/deduplication or speculative retry.
-   Verify Browse, Find, preview and eligible Copy/verification against forced short pages, with independent two-account snapshots and exact expected names/bytes.
+   Verify Browse, Find, mixed-name preview and eligible native-routed Copy/verification against forced short pages, with independent two-account snapshots and exact expected names/bytes.
+   Retain the provider cap for all selected source/destination listings, including rclone requests.
+   Preserve the observed mixed-engine partial result and paired uncapped success as separate characterisation evidence; an incomplete Copy earns no successful-Copy credit.
+3. Investigate the pinned engine's short-page omission after native continuation.
+   The [controlled experiment](experiments/2026-09-07-short-page-copy.md) sees a complete three-name native plan but a missing rclone-staged file under the cap; removing only the cap makes the same mixed Copy complete.
+   Record and review any required engine/flag decision before implementation, then prove complete selected-set execution and fresh verification with both engines under the same provider cap.
+   Preserve staging, credentials, encoding, conditional commit, verification and refusal rules.
+   Native-only completion does not close P22 or DS-13.
 
 Each implementation needs catching parent regressions, independently broken guards, valid scenario reconciliation, relevant full suites, independent local review and the five PR/master checks.
 Partial earlier work is not rolled back by a later listing error; durable outcome redesign and external-writer atomicity remain separate.
@@ -4721,7 +4728,8 @@ The [validation record](experiments/2026-09-07-listing-responses.md) records the
 The final internal race run passes 514 top-level tests and 1,041 leaf cases across twenty packages at 84.2% combined statement coverage; the optional rclone matrix is skipped.
 Scenario reconciliation is valid at 23/110 cells, with 42/49 actions still having gaps.
 The original truncated-body and invalid-field probes pass, while both short-page probes remain failing evidence for the next slice.
-This response slice still requires independent local review and all five PR/master checks; DS-13 and the wider release hold remain open.
+The response slice passed independent local review and all five PR checks before the protected [PR44 merge](https://github.com/csmart/aeronautes/pull/44); all five [resulting master checks](https://github.com/csmart/aeronautes/actions/runs/34077426616) passed.
+DS-13 and the wider release hold remain open.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.

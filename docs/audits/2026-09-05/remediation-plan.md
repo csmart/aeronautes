@@ -89,6 +89,9 @@ The audit's modelled WAL lost-history case and an actual process kill must remai
 | P23 | Preserve exact prefix and metadata-input semantics (UI-04/07/14), independent of P18 | Spaces are not trimmed into root scope; literal server prefixes remain literal; inherited property names cannot disappear or corrupt diffs; unsupported Swift keys fail explicitly |
 
 The local filesystem oracle must snapshot the selected root and relevant outside sentinels.
+P22 now includes the [controlled pinned-rclone short-page omission](../../experiments/2026-09-07-short-page-copy.md) found during native continuation testing.
+Deliver the reviewed native response and continuation fixes separately, retain the mixed-engine partial result and uncapped control, then review the engine decision needed for complete selected-set execution under the same provider cap.
+Do not close P22 from native-only success or weaken its full-namespace acceptance.
 Linux success is insufficient for Windows/macOS namespace claims.
 Download/upload UI should show a bounded selected-name summary, explicit account and exact scope tied to the backend plan.
 
