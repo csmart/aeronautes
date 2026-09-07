@@ -369,3 +369,57 @@ Duplicate empty-key rows with nonempty values need an explicit duplicate result 
 The dictionary and Go admission fixes remain separate reviewed commits and will be delivered together; neither this probe nor the plan closes UI-14.
 
 The script and actual observations are `/tmp/aeronautes-remediation-20260905/p23-metadata-value-probe.py` and `p23-metadata-value-observations.json`.
+
+## Metadata working-copy regressions
+
+The maintained helper and mounted object/container editor regressions establish the frontend part of the approved metadata plan.
+`metadataIdentity.test.ts` mounts the real edit panels with `BrowserState`, changes input fields and observes complete requests at the API boundary.
+The API stub returns a deliberate rejection so the tests can assert that the entered keys, values and error remain visible and that the editor stays open.
+Those stubbed errors test frontend handling only; they do not establish Go admission or provider refusal.
+The Go key/value guard and its bound mock/SAIO regressions remain a separate required implementation before joint delivery.
+
+The 25 helper cases cover own string-valued entries, inherited-property names, undefined/non-string entries, case-insensitive diff membership, spelling from the relevant side, literal keys and duplicate detection.
+The 40 mounted cases cover both edit panels: complete payloads including `__proto__`, `constructor` and `toString`; additions, changes and visible removals; case-only renames; literal whitespace/empty/Unicode/unsupported keys; escaped HTML-like text; empty values; untouched blank rows; and duplicate case variants and empty keys.
+Only a completely unused row is ignored.
+Duplicate absence now uses `null`, so duplicate empty-key rows with nonempty values cannot accidentally pass either panel's save guard or disappear from the error display.
+P06/P07 editor baseline, lifetime and late-result ownership remain unchanged.
+
+On the unchanged parent, the final maintained setup reports 41 assertion failures and 24 passes across 65 cases, without skipped tests.
+`p23-metadata-ui-before-v2.json/.log/.exit` preserves that result, and `p23-metadata-ui-parent-inputs.json` records the parent source and final test hashes.
+The earlier v1 had the same counts; v2 makes the absent duplicate-message assertion report the missing text explicitly.
+After the four production-file changes, `p23-metadata-ui-after-v1.json/.log/.exit` reports all 65 passing.
+
+Seventeen independent broken variants each fail maintained assertions with actual exit status 1:
+
+| Broken behaviour | Failing cases |
+|---|---:|
+| Lose `__proto__` in an ordinary output object | 5 |
+| Trim entered keys | 10 |
+| Drop empty keys with nonempty values | 7 |
+| Change saved key spelling to lowercase | 39 |
+| Trim entered values | 23 |
+| Detect duplicates case-sensitively | 5 |
+| Include non-string values | 1 |
+| Include inherited properties | 7 |
+| Compare base keys case-sensitively | 16 |
+| Compare working keys case-sensitively | 18 |
+| Use inherited-property membership for additions | 14 |
+| Use inherited-property membership for removals | 9 |
+| Hide the duplicate-empty-key message | 2 |
+| Admit duplicate empty keys in the object panel | 1 |
+| Admit duplicate empty keys in the container panel | 1 |
+| Drop the complete object working copy | 17 |
+| Drop the complete container working copy | 17 |
+
+The isolated positive control passes all 65; the parent replay fails the same 41.
+The control script checks for actual assertion failures, complete test selection, no skipped cases and unchanged author source/test hashes, then restores its isolated copy to the fixed source.
+`p23-metadata-ui-controls.py` and `p23-metadata-ui-controls-v1/` retain all nineteen executions, including the passing positive control separately from the seventeen broken variants and parent.
+
+The full frontend run passes 849 tests in 22 files, without failures or skips, and reports 79.01% statement coverage.
+`p23-metadata-frontend-full-v1.json/.log/.exit` and `p23-metadata-frontend-coverage-v1.json` retain the actual results.
+The locked offline install, Svelte check with zero errors/warnings, production build and whitespace check also pass.
+The original archived P23 probes now report four selected passes and eight unselected cases, with only absolute imports redirected to the isolated fixed frontend.
+`p23-original-after-metadata-ui-v1.json/.log/.exit` and its input record retain that selection and source hashes.
+All records named here are under `/tmp/aeronautes-remediation-20260905`.
+This frontend slice adds no Go action-coverage claim or native desktop functional evidence.
+Independent local review, the Go admission implementation and all five PR/master checks on their joint delivery remain required; UI-14, P23 and the wider valuable-data release hold remain open.
