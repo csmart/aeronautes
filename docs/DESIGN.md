@@ -4855,7 +4855,9 @@ The browser application slice now passes the Prefix field literally, preserves c
 The Go listing adapter and frontend fake retain exact unslashed object matches while keeping a virtual folder's own object in its detail view.
 The [maintained browser evidence](experiments/2026-09-07-literal-inputs.md#literal-browser-filtering-and-navigation) records 25 frontend and ten bound-service parent failures, 20 caught broken variants, 788 passing frontend tests and the full 585-top-level/1,246-leaf internal race run with valid scenario reconciliation.
 The original transfer and browser probes pass, while the two metadata probes remain red.
-Independent local review and all five PR/master checks are still required before closing the UI-07 browser scope.
+Independent local review approved the browser commit, and all five [PR50 checks](https://github.com/csmart/aeronautes/actions/runs/34116583674) passed before protected merge.
+All five [master checks](https://github.com/csmart/aeronautes/actions/runs/34117458281) passed on `73dc0c5e7421ccdd36e07e6ac16e9ff5b633e398`; its tree exactly matches the reviewed source `6b51743f8501df0e1c2e3ab9d8d0b7b79760c148`.
+UI-07 is delivered for the defined literal-filtering and navigation scope.
 The metadata slices, P23 as a whole and the wider valuable-data release hold remain open.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
