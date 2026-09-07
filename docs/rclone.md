@@ -97,6 +97,7 @@ go test -overlay=<printed-overlay-path> -count=1 -run '^TestRcloneMatrix$' -v ./
 |---|---|---|
 | `--files-from-raw <list>` | the planned selected set (§28.4). **`--files-from0` does not exist in 1.74.3**; raw is unprocessed but newline-delimited, so newline-bearing names can never ride rclone — they route native (§14.3) | ✓ space-edged names exact through raw list |
 | `--ignore-times` | forced-set contract: transfer exactly the planned set, no mtime skipping (§28.4) | ✓ re-copied unchanged objects |
+| `--no-traverse` with `--files-from-raw` | selected names are addressed directly; applies to remote Copy and local upload/download under [ADR 0022](adr/0022-complete-rclone-selection.md) | [Disposable before/candidate/restored experiment](experiments/2026-09-07-selected-set-copy.md) catches the short-page omission on mock Swift and SAIO; maintained shared-caller validation is still required |
 | `--use-json-log -vv` | progress + **generated segment prefix capture** (`Uploading segment file "<obj>/<ts>-<random>/<seq>" into "<container>_segments"`) feeding §26.4 ownership evidence | ✓ prefix captured in real time |
 | `--retries N --low-level-retries N` | bounded failure budget (§26.2: control must return quickly) | ✓ 401 returns in ~2.6 s default, ~50 ms at 1/1 |
 | `--transfers`, `--checkers`, `--tpslimit`, `--bwlimit` | performance profile (§40–41) | ✓ bwlimit throttling exercised |

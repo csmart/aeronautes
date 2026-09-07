@@ -307,6 +307,8 @@ With all selected listing requests capped to one row, the native plan sees three
 Removing only the proxy cap lets the same mixed Copy complete on both mock Swift and SAIO.
 The native continuation slice must preserve this limitation as explicit evidence, alongside complete native-routed Copy and preview cases; it must not silently restrict the cap to native requests or credit the mixed partial as success.
 Investigate and review the engine decision separately before changing it; native-only success does not satisfy the full P22 acceptance.
+The [selected-set follow-up experiment](../../experiments/2026-09-07-selected-set-copy.md) passes both original complete-Copy assertions when only `--no-traverse` is added, and fails both again when that option is removed.
+[ADR 0022](../../adr/0022-complete-rclone-selection.md) records the proposed shared-runner correction and its required remote/local regression evidence; DS-13 is still open pending implementation, review and delivery.
 
 ## Product-contract and evidence gaps
 
