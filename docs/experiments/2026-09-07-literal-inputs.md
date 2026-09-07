@@ -57,3 +57,22 @@ It does not exercise the bound application mutation methods, DLO preservation, c
 The script and raw observations are `/tmp/aeronautes-remediation-20260905/p23-metadata-wire-probe.py` and `p23-metadata-wire-observations.json`.
 The record includes all eight header observations, five known-body digests and successful cleanup verification, without credentials.
 The maintained application tests must separately prove complete working-copy serialization, supported-key round trips and pre-mutation refusal with independent namespace snapshots.
+
+## Container identity in the mock fixture
+
+The transfer test preparation exposed a fixture mismatch before any production changes.
+The mock routes an escaped container path component directly into its storage map, so spaces, Unicode and literal percent escapes acquire different names in the account listing.
+Object path components already receive a separate decode.
+Five direct HTTP tests create a container and object, then compare the account listing with the known submitted container name.
+All five fail that identity assertion: for example, `"trailing  "` is listed as `"trailing%20%20"` and `"%2F +%20"` becomes `"%252F%20+%2520"`.
+The unmodified-source record is `/tmp/aeronautes-remediation-20260905/p23-fixture-before-v1.json` and `.exit`, with exit 1, five assertion failures and no skipped cases.
+
+The corrected bound-service baseline is `p23-transfer-go-before-v2.json` and `.exit` in the same directory.
+It has 27 passing leaf tests and 17 assertion failures: eight unit and eight bound-service failures expose the missing slash-container admission guard, while the remaining failure is the mock's escaped-container identity mismatch.
+The equivalent trailing-space container copy passes on SAIO with both engines and independently checked destination bytes.
+These snapshots cover all containers within each test's owned namespace, including derived sidecars, rather than the whole account.
+The earlier `p23-transfer-go-before-v1` run used unsupported subtest receipt credit and preview refusal credit; retain it for diagnosis, but do not count it as valid negative evidence.
+
+Repair the mock route in a separate reviewed prerequisite before the application transfer change.
+Keep the independent oracle, receipt rules and actual-provider assertions intact, and require literal percent escapes to be decoded once while an encoded slash in a container component is refused.
+This is a fixture contract repair, not evidence that the real Swift provider changes container names or that P23 is complete.
