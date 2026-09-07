@@ -2475,7 +2475,7 @@ func TestDLOCreateMissingSegmentsInList(t *testing.T) {
 			w.Header().Set(k, v[0])
 		}
 		w.WriteHeader(recorder.Code)
-		_, _ = w.Write([]byte("null\n"))
+		_, _ = w.Write([]byte("[]\n"))
 	})
 	defer srv.UnsetOverride(listURL)
 

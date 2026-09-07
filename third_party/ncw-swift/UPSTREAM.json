@@ -4,5 +4,8 @@
   "revision": "3ff07f8f0968c964c685bc53f57cb5c57a3cae61",
   "sum": "h1:9o5Gsd7bInAFEqsGPcaUdsboMbqf8lnNtxqWKFT9iz8=",
   "goModSum": "h1:cbAO76/ZwcFrFlHdXPjaqWZ9R7Hdar7HpjRXBfbjigk=",
-  "patch": "credential-pairing.patch"
+  "patches": [
+    "credential-pairing.patch",
+    "listing-response.patch"
+  ]
 }

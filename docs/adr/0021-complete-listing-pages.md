@@ -1,6 +1,6 @@
 # ADR 0021: complete native listing pages
 
-**Status:** Proposed for independent review before implementation under P22.
+**Status:** Accepted after independent design review; response implementation precedes continuation under P22.
 **Scope:** Audit DS-13 / W-13 / R-16, native container and object listings, DESIGN §§14–16 and 43.5, K-PERF-001 and K-CON-001.
 
 ## Evidence and decision
@@ -12,7 +12,7 @@ The library reads one JSON value and ignores errors while draining the rest; obj
 These are local HTTP reproductions against the real session and pinned library, not observations of a deployed provider.
 
 The [Swift API reference](https://docs.openstack.org/api-ref/object-store/) describes a short page as exhaustion for conforming deployments and JSON empty listings as HTTP 200 containing an empty array.
-This proposal deliberately uses an extra terminal request to support the audit's nonstandard short-page case without a separate opt-in.
+This decision deliberately uses an extra terminal request to support the audit's nonstandard short-page case without a separate opt-in.
 A short nonempty page is not sufficient evidence of exhaustion under Aeronautes' supported provider contract.
 This refines the deferred compatibility policy in §43.5; it does not claim that standard Swift requires short nonterminal pages.
 

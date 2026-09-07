@@ -1,0 +1,3 @@
+# Unified patch context requires spaces before tabs; the source gate checks
+# the applied code with git apply --whitespace=error-all.
+third_party/ncw-swift/*.patch -whitespace

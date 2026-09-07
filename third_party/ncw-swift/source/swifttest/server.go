@@ -293,7 +293,7 @@ func (r containerResource) get(a *action) interface{} {
 
 	if format == "json" {
 		a.w.Header().Set("Content-Type", "application/json")
-		var resp []interface{}
+		resp := make([]interface{}, 0)
 		for _, item := range objects {
 			if obj, ok := item.(*object); ok {
 				resp = append(resp, obj.Key())

@@ -1,6 +1,6 @@
-// Aeronautes carries a credential-pairing correction here. See
-// docs/adr/0016-native-request-credentials.md and the sibling
-// credential-pairing.patch for the reason and complete upstream delta.
+// Aeronautes must not accept mixed credentials or incomplete listings.
+// See docs/adr/0016-native-request-credentials.md and
+// docs/adr/0021-complete-listing-pages.md; the sibling patches record both fixes.
 
 package swift
 
@@ -939,6 +939,75 @@ func readJson(resp *http.Response, result interface{}) (err error) {
 	return decoder.Decode(result)
 }
 
+// A decoded prefix is not proof that Swift sent a complete listing.
+// Keep this stricter contract separate from unrelated JSON endpoints.
+func readListingJSON(ctx context.Context, resp *http.Response, row func(*json.Decoder) error) (err error) {
+	defer func() {
+		closeErr := resp.Body.Close()
+		if err == nil {
+			err = ctx.Err()
+		}
+		if err == nil {
+			err = closeErr
+		}
+	}()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if resp.StatusCode != http.StatusOK || len(resp.Header.Values("Content-Range")) != 0 {
+		return fmt.Errorf("listing requires a complete HTTP 200 response")
+	}
+	reader := bufio.NewReader(resp.Body)
+	for {
+		first, err := reader.ReadByte()
+		if err != nil {
+			return err
+		}
+		if strings.ContainsRune(" \t\r\n", rune(first)) {
+			continue
+		}
+		if first != '[' {
+			return fmt.Errorf("listing requires a JSON array")
+		}
+		if err := reader.UnreadByte(); err != nil {
+			return err
+		}
+		break
+	}
+	decoder := json.NewDecoder(reader)
+	if _, err := decoder.Token(); err != nil {
+		return err
+	}
+	for decoder.More() {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := row(decoder); err != nil {
+			return err
+		}
+	}
+	if token, err := decoder.Token(); err != nil {
+		return err
+	} else if token != json.Delim(']') {
+		return fmt.Errorf("listing array did not end")
+	}
+	// Inspect read-ahead bytes too, without allocating or decoding another
+	// JSON value from an already invalid suffix.
+	tail := bufio.NewReader(io.MultiReader(decoder.Buffered(), reader))
+	for {
+		b, err := tail.ReadByte()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if !strings.ContainsRune(" \t\r\n", rune(b)) {
+			return fmt.Errorf("listing has trailing data")
+		}
+	}
+}
+
 /* ------------------------------------------------------------ */
 
 // ContainersOpts is options for Containers() and ContainerNames()
@@ -1011,9 +1080,22 @@ func (c *Connection) Containers(ctx context.Context, opts *ContainersOpts) ([]Co
 	if err != nil {
 		return nil, err
 	}
-	var containers []Container
-	err = readJson(resp, &containers)
-	return containers, err
+	containers := make([]Container, 0)
+	err = readListingJSON(ctx, resp, func(decoder *json.Decoder) error {
+		var container *Container
+		if err := decoder.Decode(&container); err != nil {
+			return err
+		}
+		if container == nil {
+			return fmt.Errorf("listing contains a null container")
+		}
+		containers = append(containers, *container)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return containers, nil
 }
 
 // containersAllOpts makes a copy of opts if set or makes a new one and
@@ -1181,8 +1263,21 @@ func (c *Connection) Objects(ctx context.Context, container string, opts *Object
 	if err != nil {
 		return nil, err
 	}
-	var objects []Object
-	err = readJson(resp, &objects)
+	objects := make([]Object, 0)
+	err = readListingJSON(ctx, resp, func(decoder *json.Decoder) error {
+		var object *Object
+		if err := decoder.Decode(&object); err != nil {
+			return err
+		}
+		if object == nil {
+			return fmt.Errorf("listing contains a null object")
+		}
+		objects = append(objects, *object)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
 	// Convert Pseudo directories and dates
 	for i := range objects {
 		object := &objects[i]
@@ -1192,17 +1287,14 @@ func (c *Connection) Objects(ctx context.Context, container string, opts *Object
 			object.ContentType = "application/directory"
 		}
 		if object.ServerLastModified != "" {
-			// e.g. 2012-11-11T14:49:47, 2012-11-11T14:49:47Z, 2012-11-11T14:49:47.887250, or 2012-11-11T14:49:47.887250Z
-			// Remove the Z suffix and fractional seconds if present. This then keeps it consistent with Object which
-			// can only return timestamps accurate to 1 second
-			//
-			// The TimeFormat will parse fractional seconds if desired though
+			// Validate the entire timestamp before keeping the existing
+			// second precision; removing a malformed fraction hides errors.
 			lastModified := strings.TrimSuffix(object.ServerLastModified, "Z")
-			datetime := strings.SplitN(lastModified, ".", 2)[0]
-			object.LastModified, err = time.Parse(TimeFormat, datetime)
+			object.LastModified, err = time.Parse(TimeFormat, lastModified)
 			if err != nil {
 				return nil, err
 			}
+			object.LastModified = object.LastModified.Truncate(time.Second)
 		}
 		if object.SLOHash != "" {
 			object.ObjectType = StaticLargeObjectType

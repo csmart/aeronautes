@@ -136,7 +136,7 @@ func (f *fakeSwift) handleListing(w http.ResponseWriter, r *http.Request) {
 	f.mu.Unlock()
 	sort.Strings(names)
 
-	var rows []listingRow
+	rows := make([]listingRow, 0)
 	emittedSubdir := map[string]bool{}
 	for _, name := range names {
 		if len(rows) == limit {

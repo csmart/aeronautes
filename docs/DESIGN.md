@@ -4716,6 +4716,13 @@ Each implementation needs catching parent regressions, independently broken guar
 Partial earlier work is not rolled back by a later listing error; durable outcome redesign and external-writer atomicity remain separate.
 This work does not re-enable overwrite or Mirror execution and does not clear the valuable-data release hold.
 
+P22 response validation is implemented before the separate continuation slice.
+The [validation record](experiments/2026-09-07-listing-responses.md) records the checked second upstream patch, complete-response failures, fourteen independent broken-guard controls and thirty controlled two-account Browse/Find refusal scenarios on mock Swift and SAIO.
+The final internal race run passes 514 top-level tests and 1,041 leaf cases across twenty packages at 84.2% combined statement coverage; the optional rclone matrix is skipped.
+Scenario reconciliation is valid at 23/110 cells, with 42/49 actions still having gaps.
+The original truncated-body and invalid-field probes pass, while both short-page probes remain failing evidence for the next slice.
+This response slice still requires independent local review and all five PR/master checks; DS-13 and the wider release hold remain open.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.

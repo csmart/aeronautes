@@ -45,7 +45,7 @@ func (f *fakeContainerList) handle(w http.ResponseWriter, r *http.Request) {
 		Count int64  `json:"count"`
 		Bytes int64  `json:"bytes"`
 	}
-	var out []row
+	out := make([]row, 0)
 	for i, name := range f.names {
 		if name <= marker || !strings.HasPrefix(name, prefix) {
 			continue

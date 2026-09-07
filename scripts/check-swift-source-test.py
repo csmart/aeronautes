@@ -27,8 +27,8 @@ class SourceGateTests(unittest.TestCase):
         self.dependency = self.root / "third_party/ncw-swift"
         shutil.copytree(ROOT / "third_party/ncw-swift", self.dependency)
 
-    def test_recorded_source_and_patch_pass(self):
-        self.assertEqual(SOURCE.check(self.root), 37)
+    def test_recorded_source_and_patches_pass(self):
+        self.assertEqual(SOURCE.check(self.root), 38)
 
     def test_source_drift_is_refused(self):
         for mutation in ("changed", "missing", "extra"):
@@ -96,12 +96,65 @@ class SourceGateTests(unittest.TestCase):
             SOURCE.check(self.root)
 
     def test_missing_or_unapplicable_patch_is_refused(self):
-        patch = self.dependency / "credential-pairing.patch"
-        patch.unlink()
-        with self.assertRaises(SOURCE.subprocess.CalledProcessError):
+        for name in ("credential-pairing.patch", "listing-response.patch"):
+            with self.subTest(patch=name):
+                patch = self.dependency / name
+                original = patch.read_bytes()
+                patch.unlink()
+                with self.assertRaises(SOURCE.subprocess.CalledProcessError):
+                    SOURCE.check(self.root)
+                patch.write_text("--- a/missing.go\n+++ b/missing.go\n@@ -1 +1 @@\n-old\n+new\n")
+                with self.assertRaises(SOURCE.subprocess.CalledProcessError):
+                    SOURCE.check(self.root)
+                patch.write_bytes(original)
+
+    def test_ordered_patch_sequence_is_required(self):
+        path = self.dependency / "UPSTREAM.json"
+        original = json.loads(path.read_text())
+        for patches in (None, "listing-response.patch", [],
+                        ["listing-response.patch", "credential-pairing.patch"],
+                        ["credential-pairing.patch"],
+                        ["credential-pairing.patch", "credential-pairing.patch"],
+                        ["credential-pairing.patch", "unreviewed.patch"]):
+            with self.subTest(patches=patches):
+                record = dict(original, patches=patches)
+                path.write_text(json.dumps(record))
+                with self.assertRaisesRegex(ValueError, "ordered patch sequence"):
+                    SOURCE.check(self.root)
+        path.write_text(json.dumps(dict(original, patch="credential-pairing.patch")))
+        with self.assertRaisesRegex(ValueError, "ordered patch sequence"):
             SOURCE.check(self.root)
-        patch.write_text("--- a/missing.go\n+++ b/missing.go\n@@ -1 +1 @@\n-old\n+new\n")
-        with self.assertRaises(SOURCE.subprocess.CalledProcessError):
+
+    def test_altered_patch_is_refused(self):
+        for name in ("credential-pairing.patch", "listing-response.patch"):
+            with self.subTest(patch=name):
+                patch = self.dependency / name
+                original = patch.read_bytes()
+                anchor = (
+                    b"+// The callback selects a URL"
+                    if name == "credential-pairing.patch"
+                    else b"+// Aeronautes"
+                )
+                changed = original.replace(anchor, b"+// Changed", 1)
+                self.assertNotEqual(changed, original)
+                patch.write_bytes(changed)
+                try:
+                    with self.assertRaisesRegex(ValueError, "source differs"):
+                        SOURCE.check(self.root)
+                finally:
+                    patch.write_bytes(original)
+
+    def test_unrecorded_patch_is_refused(self):
+        (self.dependency / "unreviewed.patch").write_text("unrecorded")
+        with self.assertRaisesRegex(ValueError, "unrecorded Swift patch"):
+            SOURCE.check(self.root)
+
+    def test_patch_symlink_is_refused(self):
+        patch = self.dependency / "listing-response.patch"
+        moved = self.dependency / "moved.patch.txt"
+        patch.rename(moved)
+        patch.symlink_to(moved)
+        with self.assertRaisesRegex(ValueError, "patch must not be a symlink"):
             SOURCE.check(self.root)
 
     def test_archive_contents_are_checked_independently(self):
