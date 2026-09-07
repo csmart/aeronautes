@@ -486,4 +486,19 @@ No action inventory, required scenario or receipt-credit rule is weakened.
 Go vet, application-package build, CGO-disabled internal build and whitespace checks also pass.
 The approved frontend source is unchanged from the 849-test, check/build evidence above.
 All records named here are under `/tmp/aeronautes-remediation-20260905`.
-Independent local Go review and all five PR/master checks on the combined metadata head remain required; UI-14/P23 closure and wider native-platform, accessibility and valuable-data release gates are not claimed here.
+The implementation evidence above preceded the independent Go review and combined delivery recorded below.
+
+## Metadata delivery
+
+Independent local review approved the frontend working-copy commit and the Go admission commit separately, including independent full-suite runs and broken-behaviour controls.
+Both commits were delivered together through [PR51](https://github.com/csmart/aeronautes/pull/51), following transfer PR48 and browser PR50.
+All five [PR checks](https://github.com/csmart/aeronautes/actions/runs/34124455916) passed on source `0fae42120e90552f61f89f18a6b95726e13c4f11` with the current master incorporated before the protected merge on 7 September 2026.
+All five [resulting master checks](https://github.com/csmart/aeronautes/actions/runs/34125252087) passed on `f012521a1976ab8e7d9c0c0bf995231c69b5671c`.
+The source and merged tree are both `73f9ffce99fe7292f6ee77e04c55fe9a4598c524`; the browser-delivery note, metadata plan, frontend and Go commits retain four equivalent logical patches after the rebase merge.
+This closes UI-14 and P23 for the defined literal transfer, browser and metadata-input contract.
+It does not close backend plan authority, durability, outcome accounting, external-writer races, metadata-only replication, native-platform validation, accessibility or the valuable-data release hold.
+The scenario result remains 32/110 required cells, with 38/49 actions still having gaps and no invented container-creation applied outcome.
+
+The temporary `/tmp/aeronautes-remediation-20260905` files referenced above were no longer present when this delivery status was recorded after the handoff.
+Their test counts and control results describe the earlier author and independent review runs, not a fresh rerun or a currently available raw-log archive.
+The maintained tests and committed review records remain available; GitHub job status and Git tree/patch identity were rechecked for this delivery record.

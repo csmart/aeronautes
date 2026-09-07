@@ -106,15 +106,18 @@ Independent local review and all five PR/master checks passed for [PR48](https:/
 The delimiter-marker fixture prerequisite is also delivered through [PR49](https://github.com/csmart/aeronautes/pull/49), with independent review, all five PR/master checks and an exact merged-tree comparison.
 The [browser implementation](../../experiments/2026-09-07-literal-inputs.md#literal-browser-filtering-and-navigation) now preserves literal filters, complete leaf labels, folder navigation and exact matching objects.
 Its parent regressions and 20 broken-behaviour controls catch their intended faults; all 788 frontend tests and the full 585-top-level mock/SAIO Go race suite pass without skips.
-The original transfer and browser probes pass while the two metadata probes still fail; eight other archived cases remain unselected.
+At browser delivery, the original transfer and browser probes passed while the two metadata probes still failed; eight other archived cases remained unselected.
 Raw SAIO observations separately confirm that a successful metadata POST does not establish literal underscore-key preservation.
 Independent local review and all five PR/master checks passed for [PR50](https://github.com/csmart/aeronautes/pull/50), closing the defined UI-07 browser scope; the merged tree matches the reviewed source exactly.
-P23 and UI-14 remain open for metadata dictionaries and wire-identity validation.
+The subsequent metadata slices complete the remaining P23/UI-14 dictionaries and wire-identity validation.
 The [metadata editor implementation](../../experiments/2026-09-07-literal-inputs.md#metadata-working-copy-regressions) now passes 65 focused cases and the full 849-test frontend suite, with 17 broken variants caught independently.
 It preserves complete literal working copies and accurate diffs, and independent local review approved that frontend commit.
 The [Go admission implementation](../../experiments/2026-09-07-literal-inputs.md#metadata-admission-and-provider-round-trips) now refuses unsupported metadata before object/container writes and container creation, with 132 passing bound cases on both providers, 23 validator cases and 16 caught broken variants.
 The full internal race suite passes 590 top-level tests and 1,401 leaf cases in 20 packages without skips; valid scenario coverage is 32/110 with 38/49 actions still gapped.
-Independent Go review and all five PR/master checks on joint metadata delivery remain required before UI-14/P23 can close.
+Independent local review approved both metadata commits, delivered together through [PR51](https://github.com/csmart/aeronautes/pull/51).
+All five [PR checks](https://github.com/csmart/aeronautes/actions/runs/34124455916) and all five [resulting master checks](https://github.com/csmart/aeronautes/actions/runs/34125252087) passed; the merged tree matches the reviewed source exactly, with all four logical commits preserved.
+The [delivery record](../../experiments/2026-09-07-literal-inputs.md#metadata-delivery) closes UI-14/P23 for the defined literal-input contract, following the delivered UI-04 transfer and UI-07 browser slices.
+The wider authority, durability, outcome, concurrency, local-platform, accessibility and valuable-data release gates remain open.
 Linux success is insufficient for Windows/macOS namespace claims.
 Download/upload UI should show a bounded selected-name summary, explicit account and exact scope tied to the backend plan.
 
