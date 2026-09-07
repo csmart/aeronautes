@@ -935,6 +935,9 @@ Default mode: `Auto`.
 
 For compatible Swift deployments, start by trying a high page size (up to 10,000) and adapt/fallback if provider behaviour requires it.
 
+The complete native response and continuation contract is recorded in [ADR 0021](adr/0021-complete-listing-pages.md) for the P22 implementation.
+A short nonempty page continues to another marker request; only a complete empty array establishes exhaustion under that provider-compatible contract.
+
 This is intentionally independent of rclone's own listing implementation.
 
 Aeronautes should outperform generic tooling where Swift-specific optimisation allows it.
@@ -2321,6 +2324,9 @@ Experimental
 Expert controls for known non-standard pagination/provider behaviour.
 
 These should be typed settings, not raw rclone flags.
+
+P22's [ADR 0021](adr/0021-complete-listing-pages.md) makes safe short-page continuation part of the native listing contract rather than an opt-in compatibility setting.
+It requires complete responses and strict marker progress; it does not silently sort, deduplicate or restart an invalid listing.
 
 ---
 
@@ -4685,6 +4691,30 @@ Valid scenario reconciliation reaches 19/108 cells, with 44/49 actions still hav
 Binding generation preserves the existing forty-nine renderer methods and three-method Find surface.
 This implementation still requires independent local review and all five PR/master checks before delivery.
 P22/P24 wider completeness and resource work, authority, durable outcomes, concurrent writers, ownership and the valuable-data release hold remain open.
+
+P22 follows P08 with native listing completeness under [ADR 0021](adr/0021-complete-listing-pages.md).
+It is independent of the remaining native authority and durable-plan decisions; P10 and P11 remain incomplete.
+Four preserved local HTTP cases on the PR42 source fail their intended assertions: container/object short pages hide a tail, and truncated-body/invalid-field object responses lose the error beside a valid date.
+The oracle is the ADR's complete-response and continuation contract, K-PERF-001, K-CON-001 and the independent snapshot reader.
+Standard Swift's documented short-page termination remains distinct from the additional provider compatibility this contract supports.
+
+After independent design review, implement two separately reviewed logical fixes:
+
+1. Require complete native container/object listing responses before returning a page.
+   Accept only HTTP 200 without Content-Range and exactly one complete JSON array; propagate read/decode/date/close/cancellation failures and reject trailing values, invalid shapes and partial bodies.
+   Add a narrow listing patch to the verified upstream source, preserve the existing credential-pairing patch, and make the source checker reconstruct the exact ordered patch sequence.
+   Keep unrelated JSON endpoints, request authentication, retry policy and rclone unchanged.
+   Add paired public-session and two-account bound-service fault reproductions, nested upstream tests and source-checker refusal tests.
+   Correct invalid null-emitting mock terminators to empty arrays as fixture repairs, preserving explicit null-refusal tests.
+2. Continue native container/object streams until an accepted empty array.
+   Validate raw row names across and within pages before yielding any row from that page, requiring strict marker progress and literal prefix scope.
+   Preserve deep versus delimiter semantics and advance over filtered self-only pages.
+   Keep lazy consumer stopping, cancellation and default request sizes, with no whole-namespace accumulation, per-row HEAD, silent sorting/deduplication or speculative retry.
+   Verify Browse, Find, preview and eligible Copy/verification against forced short pages, with independent two-account snapshots and exact expected names/bytes.
+
+Each implementation needs catching parent regressions, independently broken guards, valid scenario reconciliation, relevant full suites, independent local review and the five PR/master checks.
+Partial earlier work is not rolled back by a later listing error; durable outcome redesign and external-writer atomicity remain separate.
+This work does not re-enable overwrite or Mirror execution and does not clear the valuable-data release hold.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.

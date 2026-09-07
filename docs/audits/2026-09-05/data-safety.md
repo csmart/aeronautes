@@ -290,6 +290,13 @@ The independent system-test oracle already has stronger paging validation, but t
 Suggested remedy: implement the accepted provider-compatible continuation contract with monotonic-marker and nonprogress guards, rather than treating a requested page size as proof of exhaustion.
 Acceptance: short nonempty pages followed by data, eventual empty termination, repeated pages, backward markers, cancellation, and truncated HTTP bodies; both production iterator and independent oracle must agree on the complete namespace.
 
+Follow-up reproduction on 7 September, before P22 implementation: four local HTTP cases on the PR42 source fail their intended assertions under the race detector.
+Both container and object iterators return only the first of two names when the provider returns one name per page despite a larger requested limit.
+Two object-response cases also return a row with no error: a complete JSON value inside a truncated HTTP body, and an invalid numeric field beside a valid timestamp.
+The pinned library ignores errors while draining after its first JSON value, and date conversion can overwrite a prior decode error.
+These are controlled local reproductions, not live provider observations.
+The proposed correction and its separately reviewed implementation sequence are recorded in [ADR 0021](../../adr/0021-complete-listing-pages.md).
+
 ## Product-contract and evidence gaps
 
 The authoritative design needs reconciliation before architecture work.
