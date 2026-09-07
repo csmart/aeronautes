@@ -242,6 +242,12 @@ The outcome can therefore be `complete` with unrecoverable-from-records staging 
 Suggested remedy: reuse one cleanup result and durable-state policy across local upload and Copy; clear intent only after each created identity is accounted for or retained with a durable reason.
 Acceptance: fail the first and last staging DELETE, truncate the staging listing, reject the committed-record write, and crash between commit and cleanup; the next process retains and reports every unresolved identity.
 
+Current remediation status: P04 has removed the final staging sweep and stopped successful uploads from clearing their recovery rows.
+The [8 September bound-service reproductions](../../experiments/2026-09-08-upload-recovery.md) verify retained facts on mock Swift and SAIO, including an in-process database reopen.
+They also reproduce the remaining ignored committed-record and staging-delete errors: the job is incorrectly `complete`, and a rejected committed record does not prevent staging deletion.
+[ADR 0023](../../adr/0023-upload-post-commit-errors.md) proposes a bounded error-reporting and cleanup-admission follow-up; DS-10 and the broader P12/P21 gates remain open.
+The original record-clearing description above is the audit-time defect, not the current implementation.
+
 ### DS-11 — Medium: local upload bypasses the destination chunk-size cap
 
 Disposition: new explicit parity finding, directly reproduced through StartUpload.
