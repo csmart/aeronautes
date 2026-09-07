@@ -206,3 +206,41 @@ The revised fixture correction excludes a child group only when its complete der
 This preserves the observed distinction between an own-prefix object, a completed child group and an arbitrary marker inside a group.
 Correct the three direct HTTP expectations to the observed provider behaviour, and require bound Browse to retain its existing refusal of non-advancing pages without returning partial rows.
 Rerun the corrected tests on the unchanged parent before changing the fixtures; application source, assertions about exact literal names and the independent namespace oracle remain intact.
+
+## Maintained delimiter fixture repair
+
+The shared Swift mock and the separate swiftcontrol test fixture now exclude a delimiter group only when its complete derived name equals the marker.
+They retain children after the query's own real object and preserve the actual provider's enclosing-group responses for arbitrary interior markers.
+The [upstream container backend](https://github.com/openstack/swift/blob/master/swift/container/backend.py) corroborates this equality rule; the fetched source and checksum are retained in `p23-marker-upstream-backend.py` and `p23-marker-upstream.json`.
+The existing Go `validateListingName` guard remains unchanged and refuses those non-advancing provider pages before bound Browse publishes rows.
+
+Eleven direct HTTP shapes run through each mock fixture and the mock/SAIO harnesses, covering own markers, completed groups, interior markers, markers before a partial filter, deep listings, repeated separators, spaces, percent escapes and Unicode.
+The two harness runs also assert bound refusal for each of the three non-advancing responses.
+Three further bound Browse cases per provider require exact child names and bytes, raw marker continuation, two-row bridge bounds and termination through one-row provider pages.
+Independent snapshots cover every container in the owned namespace on both accounts before and after each harness test.
+The raw HTTP checks do not claim application-action credit; the bound successful reads emit one receipt claim per top-level action/scenario after the observations pass.
+
+Replaying the final maintained tests with only the two original fixture bodies substituted produces 15 assertion failures and 35 passes, with no skips.
+All 50 cases pass with the correction in the final full run.
+`p23-marker-parent-v3.json/.exit` and its two-file overlay retain the final parent evidence.
+The earlier `p23-marker-before-v2` baseline has the same 15/35 result before the fixture edit; the initial `before-v1` expectations remain diagnostic history as described above.
+
+Eight independent broken variants are caught: restoring either original shortcut, inventing a stricter provider comparison in either fixture, repeating a completed group in either fixture, emitting duplicate groups and removing the existing Go page-order guard.
+The page-guard variant produces six bound refusal failures on mock Swift and SAIO, identifying the actual Go guard rather than relying on an unrelated error or a frontend check.
+`p23-marker-controls-v2.py` and `p23-marker-controls-v2/` retain the exact commands, overlays, source/test hashes, process exits and results.
+The final implementation and test hashes match that control record.
+
+The final internal race run passes 583 top-level tests, 1,230 leaf cases and all 20 packages, with no failures or skips and 84.7% combined statement coverage.
+It uses both owned SAIO accounts and the verified pinned rclone, including the optional matrix.
+`p23-marker-full-v2.json/.exit`, its summary and `p23-marker-cover-v2.out/.txt` retain the actual events, exit and coverage.
+`p23-marker-scenario-coverage-v2.json` reconciles the actual exit, complete expected package set and producer environment: valid process, stream and contract, 28/110 covered cells and 39/49 actions still having gaps.
+The initial full run passed its tests but emitted duplicate coverage claims from the new test, so it was rejected by the reconciler and is not the final scenario evidence.
+`p23-marker-scenario-rejection-v1.txt` records that bookkeeping error; the final test emits one successful receipt only after all cases and namespace checks pass.
+Go vet, the CGO-disabled internal build and whitespace checks also pass.
+
+The application and frontend are unchanged from the delivered dependency master.
+A separate replay of the preserved browser tests with only the corrected shared fixture overlaid has ten intended application failures and six passes: the two mock-only own-marker failures are gone, while exact plain matches still fail on both providers.
+`p23-browser-after-marker-v1.json/.exit` and its overlay preserve that separation, and the parked browser test hashes remain unchanged.
+Frontend tests were not rerun for this Go fixture-only slice; its browser implementation, metadata work and native visual validation remain separate.
+Independent implementation review and all five PR/master checks remain required before this fixture prerequisite is delivered.
+P23, UI-07, UI-14 and the wider valuable-data release hold remain open.
