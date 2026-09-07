@@ -4731,6 +4731,14 @@ The original truncated-body and invalid-field probes pass, while both short-page
 The response slice passed independent local review and all five PR checks before the protected [PR44 merge](https://github.com/csmart/aeronautes/pull/44); all five [resulting master checks](https://github.com/csmart/aeronautes/actions/runs/34077426616) passed.
 DS-13 and the wider release hold remain open.
 
+P22 native continuation now follows every accepted nonempty page to an empty array and validates the whole raw page before publication.
+Strict marker progress, literal prefix scope, delimiter self-row advancement, lazy stopping and cancellation have [maintained regressions and independent broken-guard evidence](experiments/2026-09-07-listing-continuation.md).
+Two-account mock/SAIO scenarios cover complete Browse, Find, mixed preview and native-routed Copy/verification, plus later-page refusals.
+The final internal race run passes 533 top-level tests and 1,111 leaf cases across twenty packages at 84.3% combined statement coverage; only the separately gated rclone matrix is skipped.
+Scenario reconciliation is valid at 24/110 cells, with 41/49 actions still having gaps.
+The globally capped mixed Copy remains a detected partial beside its uncapped success control; the separately reviewed engine decision is the next P22 step.
+The four original listing audit probes now pass, but P22/DS-13 and the valuable-data release hold remain open.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.

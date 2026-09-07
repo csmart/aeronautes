@@ -2,6 +2,7 @@ package swiftcontrol
 
 import (
 	"context"
+	"fmt"
 	"iter"
 	"time"
 
@@ -82,6 +83,10 @@ func (s *Session) Objects(ctx context.Context, container string, opts ObjectList
 	return func(yield func(ListingEntry, error) bool) {
 		marker := opts.Marker
 		for {
+			if err := ctx.Err(); err != nil {
+				yield(nil, Normalize(err))
+				return
+			}
 			page, err := s.conn.Objects(ctx, container, &swift.ObjectsOpts{
 				Limit:     pageSize,
 				Prefix:    opts.Prefix,
@@ -92,8 +97,29 @@ func (s *Session) Objects(ctx context.Context, container string, opts ObjectList
 				yield(nil, Normalize(err))
 				return
 			}
+			if len(page) == 0 {
+				return
+			}
+			// The raw page owns marker progress, including self rows that
+			// the delimiter view will filter out below.
+			last := marker
+			for _, row := range page {
+				if err := validateListingName(row.Name, opts.Prefix, last); err != nil {
+					yield(nil, Normalize(err))
+					return
+				}
+				if opts.Deep && row.PseudoDirectory {
+					yield(nil, Normalize(fmt.Errorf("deep listing contains a prefix row %q", row.Name)))
+					return
+				}
+				last = row.Name
+			}
 
 			for _, row := range page {
+				if err := ctx.Err(); err != nil {
+					yield(nil, Normalize(err))
+					return
+				}
 				switch {
 				case row.PseudoDirectory:
 					if !yield(PrefixEntry{Prefix: row.Name}, nil) {
@@ -109,10 +135,7 @@ func (s *Session) Objects(ctx context.Context, container string, opts ObjectList
 				}
 			}
 
-			if len(page) < pageSize {
-				return
-			}
-			marker = page[len(page)-1].Name
+			marker = last
 		}
 	}
 }

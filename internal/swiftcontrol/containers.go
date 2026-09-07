@@ -2,7 +2,9 @@ package swiftcontrol
 
 import (
 	"context"
+	"fmt"
 	"iter"
+	"strings"
 
 	"github.com/ncw/swift/v2"
 )
@@ -42,6 +44,10 @@ func (s *Session) Containers(ctx context.Context, opts ListOptions) iter.Seq2[Co
 	return func(yield func(ContainerEntry, error) bool) {
 		marker := opts.Marker
 		for {
+			if err := ctx.Err(); err != nil {
+				yield(ContainerEntry{}, Normalize(err))
+				return
+			}
 			page, err := s.conn.Containers(ctx, &swift.ContainersOpts{
 				Limit:  pageSize,
 				Prefix: opts.Prefix,
@@ -51,19 +57,40 @@ func (s *Session) Containers(ctx context.Context, opts ListOptions) iter.Seq2[Co
 				yield(ContainerEntry{}, Normalize(err))
 				return
 			}
+			if len(page) == 0 {
+				return
+			}
+			// Validate before publication so a bad later row cannot make
+			// part of this page look accepted.
+			last := marker
+			for _, row := range page {
+				if err := validateListingName(row.Name, opts.Prefix, last); err != nil {
+					yield(ContainerEntry{}, Normalize(err))
+					return
+				}
+				last = row.Name
+			}
 			for _, c := range page {
+				if err := ctx.Err(); err != nil {
+					yield(ContainerEntry{}, Normalize(err))
+					return
+				}
 				entry := ContainerEntry{Name: c.Name, Count: c.Count, Bytes: c.Bytes}
 				if !yield(entry, nil) {
 					return
 				}
 			}
-			// A short page means the listing is exhausted. (Servers that
-			// return short pages while holding more data are the §43.5
-			// compatibility case, handled by typed settings later.)
-			if len(page) < pageSize {
-				return
-			}
-			marker = page[len(page)-1].Name
+			marker = last
 		}
 	}
+}
+
+func validateListingName(name, prefix, previous string) error {
+	if name <= previous {
+		return fmt.Errorf("listing name %q did not advance after %q", name, previous)
+	}
+	if !strings.HasPrefix(name, prefix) {
+		return fmt.Errorf("listing name %q is outside prefix %q", name, prefix)
+	}
+	return nil
 }
