@@ -25,3 +25,9 @@ trustworthy completeness signal.
   decision), recorded there.
 - The table is re-verified by re-running the seam suite on any pin upgrade; entries marked
   pin-specific (dot-segment safety) are the first suspects.
+
+## Selected-set amendment — 7 September 2026
+
+[ADR 0022](0022-complete-rclone-selection.md) adds the source traversal decision to the selected-set contract: `--files-from-raw` plus `--no-traverse` and `--ignore-times`.
+The controlled short-page experiment motivates this addition without changing the pin, raw-name policy, staging or independent verification.
+Its separate design review precedes implementation and maintained shared-caller validation.

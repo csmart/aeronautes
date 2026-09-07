@@ -91,6 +91,7 @@ Deliver two separately reviewed implementation commits: complete listing respons
 Each carries its system reproduction and relevant full tests.
 After native continuation, investigate how the pinned engine can execute the complete selected set despite short pages.
 Record and independently review any required engine/flag decision before changing that boundary; preserve staging, credentials, encoding, conditional commit, verification and refusal rules.
+The separate follow-up is [ADR 0022](0022-complete-rclone-selection.md): after its design review, correct selected-set execution and update the maintained capped mixed Copy to require completeness while preserving the earlier partial experiment as historical evidence.
 The wider P22 acceptance remains complete execution and verification of the intended namespace, with both engines tested against the same provider scenario.
 Require the five latest-head/current-master PR checks, normal protected merge and all five master checks.
 P10/P11 authority, P12/P13 durability/outcomes, P14 writers, P15 ownership, P24 wider budgets and the valuable-data release hold remain open.

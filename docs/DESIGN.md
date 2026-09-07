@@ -1704,6 +1704,11 @@ Mirror:
 
 **A generated file list does not override rclone's own comparison.** `--files-from` only *filters the source namespace*; rclone still applies its destination equality test and will skip an object it considers identical — including one Aeronautes classified `Unknown` and needs transferred. So an Aeronautes-selected transfer set must be forced with a pinned, tested force-transfer mode (`--ignore-times`, or an equivalent per-object path), then the result **verified** before any Mirror deletion. Note the flag reality: rclone skips identical objects by default; `--ignore-existing` skips *changed* objects (wrong for Copy — never use it for the selected set). On restart, Aeronautes rebuilds the forced list from **unverified** objects only — subtract any destination object that already has a current Aeronautes verification record — so a verified object is never pointlessly re-staged and re-committed. rclone's default skip-identical is not sufficient for `Unknown` objects, so this subtraction is Aeronautes' job, not a flag. Every flag the planner depends on here goes into the Phase-0 seam experiment and the `docs/rclone.md` allowlist (§44.1).
 
+The selected-file invocation also needs the traversal decision in [ADR 0022](adr/0022-complete-rclone-selection.md).
+Pair `--files-from-raw` with `--no-traverse` and `--ignore-times` so the pinned engine addresses the selected names directly instead of rediscovering source membership through provider listings.
+This applies to remote Copy and local upload/download; single-object `CopyTo` is unchanged.
+Missing selected sources may still be omitted without an engine error, so stage checks and independent completion verification remain required.
+
 The preview must be honest about the conservative set, e.g.:
 
 ```text
@@ -4715,7 +4720,13 @@ Continue in separately reviewed logical steps:
    Preserve the observed mixed-engine partial result and paired uncapped success as separate characterisation evidence; an incomplete Copy earns no successful-Copy credit.
 3. Investigate the pinned engine's short-page omission after native continuation.
    The [controlled experiment](experiments/2026-09-07-short-page-copy.md) sees a complete three-name native plan but a missing rclone-staged file under the cap; removing only the cap makes the same mixed Copy complete.
-   Record and review any required engine/flag decision before implementation, then prove complete selected-set execution and fresh verification with both engines under the same provider cap.
+   Record and independently review [ADR 0022](adr/0022-complete-rclone-selection.md) and its [before/candidate/restored experiment](experiments/2026-09-07-selected-set-copy.md) before changing the runner.
+   Then add `--no-traverse` to the shared selected-set `Runner.Copy` invocation and its argument/flag-surface regression, leaving single-object `CopyTo` unchanged.
+   Replace the capped mixed Copy's partial expectation with complete selected-set execution and fresh verification through both engines, preserving the global cap and independent snapshots.
+   Retain the earlier partial experiment as historical evidence and the uncapped control as a maintained test.
+   Add actual bound-service upload/download cases through the existing picker seam, with exact local/Swift bytes and unchanged source/outside sentinels; exercise nested and plain/large-object remote selections as well.
+   Replay the maintained regressions on the parent and with the option removed; run the full relevant internal race suite, pinned-engine encoding/large-object/local cases and source gates, then reconcile actual passing scenarios.
+   Inspect the optional rclone matrix's observations separately; its passing process is not semantic approval.
    Preserve staging, credentials, encoding, conditional commit, verification and refusal rules.
    Native-only completion does not close P22 or DS-13.
 
@@ -4738,6 +4749,7 @@ The final internal race run passes 533 top-level tests and 1,111 leaf cases acro
 Scenario reconciliation is valid at 24/110 cells, with 41/49 actions still having gaps.
 The globally capped mixed Copy remains a detected partial beside its uncapped success control; the separately reviewed engine decision is the next P22 step.
 The four original listing audit probes now pass, but P22/DS-13 and the valuable-data release hold remain open.
+The continuation slice passed local review and all five [PR45 checks](https://github.com/csmart/aeronautes/actions/runs/34081561721) before protected merge; all five [resulting master checks](https://github.com/csmart/aeronautes/actions/runs/34082478716) passed.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.

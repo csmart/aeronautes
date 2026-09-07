@@ -92,6 +92,7 @@ The local filesystem oracle must snapshot the selected root and relevant outside
 P22 now includes the [controlled pinned-rclone short-page omission](../../experiments/2026-09-07-short-page-copy.md) found during native continuation testing.
 Deliver the reviewed native response and continuation fixes separately, retain the mixed-engine partial result and uncapped control, then review the engine decision needed for complete selected-set execution under the same provider cap.
 Do not close P22 from native-only success or weaken its full-namespace acceptance.
+The subsequent [selected-set experiment](../../experiments/2026-09-07-selected-set-copy.md) isolates `--no-traverse` as a candidate correction; [ADR 0022](../../adr/0022-complete-rclone-selection.md) requires separate design review, shared remote/local caller regressions and complete capped mixed-engine verification before closure.
 Linux success is insufficient for Windows/macOS namespace claims.
 Download/upload UI should show a bounded selected-name summary, explicit account and exact scope tied to the backend plan.
 
