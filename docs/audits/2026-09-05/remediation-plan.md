@@ -99,6 +99,8 @@ P23 now has a [current-master reproduction record](../../experiments/2026-09-07-
 Preserve transfer input, then literal browser filtering, then metadata dictionaries and Go wire-identity validation, with independent review between logical commits.
 All four original P23 frontend probes still fail; raw SAIO observations separately confirm that a successful metadata POST does not establish literal underscore-key preservation.
 P23 and UI-04/07/14 remain open pending the maintained regressions, implementation and delivery gates.
+The planned fixture prerequisite now corrects literal container decoding in mock request routes and COPY destination headers, with direct HTTP and bound mock/SAIO observations in the same record.
+The fixture implementation has passed its focused regressions, controls and full internal race suite; local implementation review and PR/master delivery are still pending.
 Linux success is insufficient for Windows/macOS namespace claims.
 Download/upload UI should show a bounded selected-name summary, explicit account and exact scope tied to the backend plan.
 
