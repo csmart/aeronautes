@@ -4872,7 +4872,12 @@ The metadata dictionary slice now preserves literal keys and values through comp
 Rows and diffs use own string-valued entries, case-insensitive identity and the relevant side's spelling; duplicate empty-key rows refuse visibly without calling the backend.
 The [maintained editor evidence](experiments/2026-09-07-literal-inputs.md#metadata-working-copy-regressions) records 41 catching parent failures, 65 passing focused cases, 17 caught broken variants and all 849 frontend tests passing without skips.
 All four selected original P23 frontend probes now pass; eight other archived cases remain unselected.
-The Go key/value admission guard is still required before delivering these metadata commits together or closing UI-14/P23.
+Independent local review approved the frontend commit.
+The Go admission slice now validates all three metadata mutation entry points before writes, refusing unsupported key identity and raw-header values while preserving supported values literally.
+The [maintained Go evidence](experiments/2026-09-07-literal-inputs.md#metadata-admission-and-provider-round-trips) records 58 catching parent failures, 132 passing bound cases on mock Swift and SAIO, 23 validator cases and 16 caught broken variants.
+The full internal race suite passes 590 top-level tests and 1,401 leaf cases in 20 packages, without failures or skips, at 84.9% statement coverage.
+Valid scenario reconciliation now credits 32/110 cells, with 38/49 actions still having gaps; container creation has no invented applied-outcome credit.
+Independent review of the Go slice and all five PR/master checks on joint metadata delivery remain required before UI-14/P23 can close.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.

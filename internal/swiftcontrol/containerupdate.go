@@ -48,6 +48,9 @@ type ContainerUpdateResult struct {
 // EditableFingerprint of the working copy the edit was built from; ""
 // skips conflict detection.
 func (s *Session) UpdateContainer(ctx context.Context, name, baseFingerprint string, edit ContainerEdit) (*ContainerUpdateResult, error) {
+	if err := validateMetadata(edit.Meta, false); err != nil {
+		return nil, err
+	}
 	before, err := s.ContainerDetail(ctx, name)
 	if err != nil {
 		return nil, err
