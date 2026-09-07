@@ -81,7 +81,7 @@ Independent local review approved the complete plan and runtime implementation r
 PR30 then passed all five [PR checks](https://github.com/csmart/aeronautes/actions/runs/34098394386) and merged through the protected rebase procedure.
 Master `7e268030af49f39e81d2e2ce85cfee5ad312657f` passed all five [master checks](https://github.com/csmart/aeronautes/actions/runs/34099335002).
 The merged tree exactly matches the reviewed source and preserves the separate plan and runtime commits.
-The release test prerequisite, SQLite update and wider audit work remain open.
+At runtime delivery, the release test prerequisite and SQLite update remained for the following slices.
 
 ## Wails Go and CLI refresh
 
@@ -109,7 +109,7 @@ The unchanged frontend passes all 754 tests in 20 files, with no failures or ski
 Local desktop smoke was not run because this host lacks Xvfb, xdotool and ImageMagick; the required CI smoke remains a delivery gate.
 Independent local review approved the Wails implementation after regenerating identical bindings, checking the inventory and running the full internal race suite with SAIO and the rclone matrix.
 A fresh `go mod tidy` on the reviewed author head leaves the worktree clean; its log and actual exit are `dep-wails-post-review-tidy-v1.log/.exit`.
-Final PR29 checks, the unsigned six-target build matrix and master checks remain pending.
+The final PR29 checks, unsigned six-target build matrix and master checks are recorded in [protected delivery](#protected-delivery).
 This dependency maintenance does not close native platform validation or the wider valuable-data release hold.
 
 ## SQLite refresh
@@ -136,7 +136,7 @@ The frontend source, dependencies, bindings and bundle are unchanged from the Wa
 All records use the same temporary evidence directory.
 
 Independent SQLite review approved the update after checking the compiled dependency set, effective WAL/FULL refusal, historical migrations and the full internal race suite with SAIO and the rclone matrix.
-Final PR29 delivery requires the unsigned build matrix, all five current PR checks, a protected merge and all five master checks.
+Final PR29 delivery retained the unsigned build matrix, all five current PR checks, protected merge and all five master checks as mandatory gates; the results are recorded below.
 The upgrade does not close P12 durability or P13 outcome/accounting gaps, restore refused transfers, or lift the valuable-data release hold.
 
 ## Release test setup repair
@@ -157,4 +157,22 @@ This is a configuration reproduction; no application assertion is weakened or re
 `dep-release-step-proof-v1.json`, `dep-release-fetch-step-v1.sh` and `dep-release-fetch-v1.log/.exit` record the extracted step, exported settings and verified binary hash in the same temporary evidence directory.
 Actionlint passes both the CI and release workflows before and after the repair; the extracted shell also passes `bash -n`.
 The full Go and frontend evidence from the preceding dependency slices remains applicable to their unchanged application code and bundle.
-Independent review of the complete rebuilt PR29 range is the next gate, before updating its named branch and running the required PR checks and unsigned six-target build matrix.
+Independent local review approved the complete rebuilt PR29 range, including the release prerequisite repair, before its named source branch was updated with an explicit lease on the previously observed head.
+
+## Protected delivery
+
+[PR29](https://github.com/csmart/aeronautes/pull/29) retained separate Wails, SQLite and release-test commits at reviewed head `e79a7a2790468187bcb78787c8e3dc0c6aa7c2c4`, based on the delivered PR30 master.
+All five [PR checks](https://github.com/csmart/aeronautes/actions/runs/34104869709) passed on that exact head with current master incorporated.
+The [manual unsigned release run](https://github.com/csmart/aeronautes/actions/runs/34104931566) passed its test job and all six Linux, macOS and Windows build targets, covering amd64 and arm64.
+The six expected artifacts were present, nonempty and unexpired for that run and head when checked before merge.
+No tag or public release was created.
+
+The effective master ruleset was read back and matched the reviewed configuration, including the strict base requirement, five Actions checks and absence of bypass actors.
+The protected rebase merge completed on 7 September 2026 at 09:32:20 UTC.
+All five [master checks](https://github.com/csmart/aeronautes/actions/runs/34106588274) passed on `e3c32f6967d33762f83f4bc696926a419697aa1f`.
+Its tree `8df21116da0f50c1718cf872cd5e7155b3203516` exactly matches the reviewed head, and range comparison confirms that all three logical commits were preserved unchanged.
+`dep-go-pr-status.json`, `dep-go-release-status.json`, `dep-go-merge.json`, `dep-go-master-status.json` and `dep-go-effective-rules.json` retain the API evidence in the same temporary directory.
+
+Both Dependabot updates are delivered without a bypass, direct master push, failed-check rerun or post-push code repair.
+The successful desktop smoke and six-target build matrix do not establish native functional validation on all six platforms or valuable-data release approval.
+P12, P13, the remaining P23 browser/metadata slices and the broader audit hold remain open.

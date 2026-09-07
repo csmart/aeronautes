@@ -4810,7 +4810,9 @@ P23 does not close backend plan authority, external-writer races, metadata-only 
 The first application slice now preserves literal transfer scope and rejects slash-bearing containers before session resolution or job creation.
 The [maintained transfer evidence](experiments/2026-09-07-literal-inputs.md#literal-transfer-requests-and-refusal) records catching parent regressions, seven frontend and two admission controls, 754 passing frontend tests and the full 577-top-level/1,180-leaf internal Go race run on mock Swift and SAIO.
 The original transfer-prefix probe passes; browser filtering and metadata probes remain red.
-Independent local review and all five PR/master checks remain pending for this transfer slice, so P23 is not closed.
+The transfer slice passed independent local review and all five [PR48 checks](https://github.com/csmart/aeronautes/actions/runs/34095697995) before protected merge.
+All five [master checks](https://github.com/csmart/aeronautes/actions/runs/34096695188) passed, and the merged tree matches the reviewed source exactly.
+UI-04 is delivered for this scope; P23 remains open for browser filtering and metadata identity.
 
 The owner's Dependabot PR29/30 request adds a bounded dependency-maintenance sequence alongside the audit work.
 The [dependency observations](experiments/2026-09-07-dependency-refresh.md) record the stale PR bases, published-runtime comparison, upstream contracts and release test prerequisite.
@@ -4831,6 +4833,11 @@ Each authored or rewritten final commit/range needs independent local approval b
 Update only the named Dependabot source branch with a lease on its observed remote head when history must be refreshed.
 Require all five successful checks at the exact PR head with current master incorporated, use protected merge, and verify all five resulting master checks.
 Resume the remaining P23 browser and metadata slices after this bounded dependency work.
+
+Both dependency PRs are delivered through independent local review and the protected merge procedure.
+PR30 passed all five PR/master checks, and PR29 passed all five [PR checks](https://github.com/csmart/aeronautes/actions/runs/34104869709) plus the test job and all six targets in the [unsigned release build](https://github.com/csmart/aeronautes/actions/runs/34104931566) before merging.
+Master `e3c32f6967d33762f83f4bc696926a419697aa1f` passed all five [master checks](https://github.com/csmart/aeronautes/actions/runs/34106588274); its tree matches the reviewed PR29 head, with the three logical commits preserved.
+The [delivery record](experiments/2026-09-07-dependency-refresh.md#protected-delivery) distinguishes these successful builds from the remaining native functional and valuable-data release gates.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
