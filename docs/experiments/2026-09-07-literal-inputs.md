@@ -175,3 +175,23 @@ Independent local review approved transfer source `198b3042b93d8e6367d348855fc17
 All five [master checks](https://github.com/csmart/aeronautes/actions/runs/34096695188) passed on `4f0cee2943215511e37d3e0a58329fe8bfd3f645`, whose tree matches the reviewed source exactly.
 UI-04 is delivered for the defined literal transfer-input and admission scope.
 P23, UI-07, UI-14 and the wider valuable-data release hold remain open.
+
+## Browser baseline and delimiter fixture prerequisite
+
+The next slice starts from green dependency master `e3c32f6967d33762f83f4bc696926a419697aa1f`, with the delivery-only documentation commit `afdaf5631070c41f0c876a80904cf28803f24a3f` on top.
+Before any application change, the new mounted frontend/helper tests have 24 assertion failures and 15 passes, with no skips.
+They reproduce added slashes, truncated leaf labels, an incidental rendered trailing space, absent partial-prefix breadcrumbs, collapsed breadcrumb whitespace and loss of an exact matching object in the fake listing.
+`p23-browser-ui-before-v1.json/.log/.exit` retains that preliminary run under `/tmp/aeronautes-remediation-20260905`.
+These are development regressions, not final implementation totals or native visual evidence.
+
+The bound Browse tests exercise eight literal filter shapes on both mock Swift and SAIO, with one-row provider pages, two-row bridge pages and independent namespace snapshots.
+Five unslashed exact-name cases fail on each provider because the application drops the matching plain object and fetches an extra page to fill the result.
+The slash-terminated own-marker cases pass on SAIO but fail on the mock: after returning the query prefix's own real object, the mock treats that marker as an instruction to omit all its children.
+The root control passes on both providers.
+The preliminary run has twelve failing and four passing leaf cases, with no skips; `p23-browser-go-before-v1.json/.exit` retains the actual events and process exit.
+
+The shared mock and the separate swiftcontrol test fixture both skip every object beneath any slash-terminated marker before deriving the delimiter row.
+That overbroad shortcut confuses the query's own object with an already returned child-prefix group.
+Correct the fixture first by deriving each child-prefix name and excluding it only when that row does not advance beyond the marker.
+Direct HTTP tests must distinguish an own marker from child-group continuation, including markers inside a group or before the filter, while the bound mock/SAIO comparison retains exact child names and unchanged owned namespaces.
+This prerequisite changes test fixtures only; the exact-match application defect and the remaining browser/metadata work stay open.

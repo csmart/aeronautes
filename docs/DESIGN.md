@@ -4787,6 +4787,10 @@ Its merged tree matches the reviewed source exactly.
    Pair the mounted frontend regression with actual bound-service Copy/refusal cases through both engines on mock Swift and SAIO, checking complete source/destination namespaces and exact intended names/bytes.
    The frontend test must catch the original normalization; the Go observations separately establish execution and refusal semantics, without claiming a native desktop end-to-end test.
 2. Pass the browser's Prefix field literally to the existing listing service.
+   First repair the mock delimiter continuation in a separate reviewed fixture commit: the bound reproduction returns children after the query's own marker on SAIO but incorrectly ends the listing on the mock.
+   Compare each emitted child-prefix name with the requested marker, rather than treating every slash-terminated marker as an excluded subtree.
+   Keep the shared mock and the swiftcontrol test fixture consistent, with direct HTTP tests for own markers, completed child groups, markers inside/before a group, literal partial prefixes and repeated separators.
+   Require actual-provider observations and unchanged namespaces; do not change application listing guards or credit the still-failing browser cases as fixed.
    Keep folder activation and parent navigation separate from literal filtering, and render an incomplete final prefix component explicitly in the breadcrumbs without inventing a slash or folder.
    Verify typed prefixes, row labels, navigation, page continuation, selection identity and scope invalidation with names containing spaces, repeated separators and Unicode.
    Add bound Browse observations against the real provider with exact matching names and unchanged namespaces; preserve lazy listing and avoid per-row HEAD requests.
