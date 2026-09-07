@@ -107,5 +107,34 @@ The unchanged frontend passes all 754 tests in 20 files, with no failures or ski
 `dep-wails-ui-full-v1.json/.log/.exit`, `dep-wails-ui-coverage-v1.json` and `dep-wails-ui-check-v1.log/.exit` preserve that evidence under `/tmp/aeronautes-remediation-20260905`.
 
 Local desktop smoke was not run because this host lacks Xvfb, xdotool and ImageMagick; the required CI smoke remains a delivery gate.
-Independent implementation review, final PR29 checks, the unsigned six-target build matrix and master checks remain pending.
+Independent local review approved the Wails implementation after regenerating identical bindings, checking the inventory and running the full internal race suite with SAIO and the rclone matrix.
+A fresh `go mod tidy` on the reviewed author head leaves the worktree clean; its log and actual exit are `dep-wails-post-review-tidy-v1.log/.exit`.
+Final PR29 checks, the unsigned six-target build matrix and master checks remain pending.
 This dependency maintenance does not close native platform validation or the wider valuable-data release hold.
+
+## SQLite refresh
+
+This separate slice updates SQLite from 1.57.0 to 1.58.0, with its required libc 1.75.6 and memory 1.12.1.
+The checksums include the updated transitive tooling graph; `dep-sqlite-modules-v2.json/.exit` records all 173 selected modules.
+The initial graph listing could not fetch uncached metadata inside the network sandbox; the network-enabled retry succeeds without changing the proposed versions.
+The newly built production app's module metadata confirms that its only compiled module changes from the Wails slice are SQLite, libc and memory.
+`dep-sqlite-alignment-v1.json` records those exact before/after versions and checksums, module-file hashes and the app hash; the raw metadata is `dep-sqlite-app-version-v1.txt`.
+
+Application source, database settings, schema migrations, generated bindings and test assertions are unchanged.
+The new upstream OFD lock opt-in is not enabled by this change, and its environment variable is unset in the validation environment.
+WAL and synchronous FULL remain required on every connection.
+The existing tests for initial/replacement connections, ineffective durability refusal, each historical schema upgrade, writer serialisation, injected rollback, process reopening and retained recovery status all pass against the new driver.
+`dep-sqlite-compatibility-tests-v1.json` indexes those test terminals within the full event stream; it is not a separate test run.
+The same existing suite also passed with SQLite 1.57.0 in the preceding Wails validation.
+
+The full internal race run passes 577 top-level tests, 1,180 leaf cases and all 20 packages, with no failures or skips and 84.7% combined statement coverage.
+It includes both owned SAIO accounts and the verified rclone matrix.
+`dep-sqlite-go-full-v1.json/.exit`, its summary and `dep-sqlite-go-cover-v1.out` preserve the actual evidence.
+`dep-sqlite-scenario-coverage-v1.json` reconciles the actual exit, expected packages and producer environment: valid process, stream and contract, 28/110 cells and 39/49 actions still having gaps.
+Module verification, Go vet, the production Linux app build and the CGO-disabled internal build pass.
+The frontend source, dependencies, bindings and bundle are unchanged from the Wails slice's 754-test run; it was not rerun for this Go-only update.
+All records use the same temporary evidence directory.
+
+Independent SQLite review and the separately planned release test prerequisite repair remain pending.
+Final PR29 delivery requires the unsigned build matrix, all five current PR checks, a protected merge and all five master checks.
+The upgrade does not close P12 durability or P13 outcome/accounting gaps, restore refused transfers, or lift the valuable-data release hold.
