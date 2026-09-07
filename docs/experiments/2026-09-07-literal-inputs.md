@@ -337,3 +337,35 @@ All five [PR50 checks](https://github.com/csmart/aeronautes/actions/runs/3411658
 Merged master `73dc0c5e7421ccdd36e07e6ac16e9ff5b633e398` has the identical reviewed source tree `3327e0ca311d04a6a1e055a39f4a225e0cc852c1`; the one-commit range comparison is unchanged.
 The browser slice is delivered and UI-07 is closed for this defined scope.
 P23, UI-14, metadata wire-identity validation and the wider valuable-data release hold remain open.
+
+## Raw metadata-value observations
+
+Before the metadata implementation, a disposable raw HTTP probe sent seven ASCII values through container creation, object metadata POST and container metadata POST on the owned local SAIO account.
+These 21 observations bypass Aeronautes and establish provider behaviour only; they are not application regression tests or action-coverage claims.
+Each object kept its known body bytes and an unrelated `Keep` metadata sentinel.
+The seven uniquely named containers and their objects were removed afterwards, with absence verified.
+
+| Submitted value | Object metadata POST | Container creation and metadata POST |
+|---|---|---|
+| Empty string | Existing empty value retained | Header absent |
+| One or two ASCII spaces | Existing empty value retained | Header absent |
+| Leading ASCII space | Space stripped | Space stripped |
+| Trailing ASCII space | Space stripped | Space stripped |
+| Two interior spaces | Preserved | Preserved |
+| Ordinary text | Preserved | Preserved |
+
+The [container metadata contract](https://docs.openstack.org/api-ref/object-store/#create-update-or-delete-container-metadata) defines an empty value as removal and advises UTF-8 then URL encoding for values.
+Aeronautes currently passes values as raw headers and compares returned header values; this probe observes that existing representation and does not rule out other encodings.
+An implicit codec change could reinterpret existing percent-bearing metadata and needs its own compatibility contract.
+The Go 1.27.1 transport source separately calls [`textproto.TrimString`](https://go.dev/src/net/http/header.go) when writing headers; its [ASCII-space definition](https://go.dev/src/net/textproto/textproto.go) includes space and tab.
+The transport rejects the remaining ASCII control bytes, including CR/LF and DEL, as invalid field values.
+These sources support checking raw-header values before mutation without generalising the ASCII-space probe to Unicode whitespace.
+
+The planned admission guard must retain empty object values, refuse empty container values, refuse boundary ASCII spaces/tabs and invalid header control bytes, and preserve supported values exactly.
+Removing a container key remains an explicit omission from the complete working copy.
+Maintained bound tests on both mock Swift and SAIO must separately prove refused calls emit no mutation, leave both owned namespaces unchanged, and preserve supported object/container values and unrelated DLO metadata.
+Mounted editor tests must keep rejected input visible and send complete metadata maps, including JavaScript inherited-property names, without silently discarding invalid names.
+Duplicate empty-key rows with nonempty values need an explicit duplicate result because the existing empty-string sentinel cannot represent that error.
+The dictionary and Go admission fixes remain separate reviewed commits and will be delivered together; neither this probe nor the plan closes UI-14.
+
+The script and actual observations are `/tmp/aeronautes-remediation-20260905/p23-metadata-value-probe.py` and `p23-metadata-value-observations.json`.

@@ -4800,17 +4800,25 @@ Its merged tree matches the reviewed source exactly.
 3. Make metadata row conversion and diffing depend only on own string properties, using a dictionary that safely retains inherited JavaScript property names.
    Apply the provider's existing case-insensitive key identity to duplicate detection and diff membership, preserving the entered spelling and values in the complete working copy.
    Do not trim a nonempty key into another key or silently discard it; only a row with both key and value empty may be ignored.
+   Represent the absence of a duplicate explicitly, so duplicate empty-key rows with nonempty values also produce a visible refusal without sending a save request.
    Cover `__proto__`, `constructor`, `toString`, case variants, undefined entries, add/change/remove and JSON serialization through mounted object/container editors.
    Keep stale-editor admission, complete save payloads, visible removals and error ownership from P06/P07.
-4. Validate metadata-key identity in Go before any object/container metadata mutation or container creation.
+4. Validate metadata keys and raw-header values in Go before any object/container metadata mutation or container creation.
    The [Swift API contract](https://docs.openstack.org/api-ref/object-store/#create-or-update-object-metadata) permits ASCII HTTP token names and defines case-insensitive identity; underscores do not retain their literal spelling.
    Refuse empty names, invalid token characters, underscore-bearing keys and duplicate case variants explicitly before sending any mutation, leaving provider length/count limits and existing special metadata families intact.
+   Retain supported values literally, including empty object values and interior spaces; an empty container value must refuse because that header means removal, not an existing empty field.
+   Refuse leading/trailing ASCII spaces or tabs, which the current HTTP transport strips, and invalid header control bytes before writing; do not trim Unicode whitespace or introduce an implicit value encoder/decoder.
+   The [raw-value observations](experiments/2026-09-07-literal-inputs.md#raw-metadata-value-observations) establish the ASCII-space and object/container distinctions; transport-source inspection separately establishes tab trimming and invalid control bytes.
    Test direct bound calls as well as visible editor error handling, and preserve the original input on rejection.
    Require unchanged independent namespaces for every refusal, plus actual Swift round trips for supported keys and retained unrelated plain/DLO metadata.
+   Cover all three mutation entry points, explicit container-key removal, supported empty object values, interior whitespace, literal percent-bearing values and Unicode against mock Swift and SAIO.
+   Trace application writes independently of setup and snapshot reads, so a post-write verification error cannot satisfy a before-write refusal assertion.
    Keep the raw provider observations separate from the application guard tests; a successful HTTP status with a dropped or renamed key cannot count as a preserved working copy.
 
-Each slice needs catching parent regressions, focused broken-behaviour controls, relevant full suites, accurate evidence, independent local review and all five PR/master checks.
-Metadata dictionary repair alone does not close UI-14 until unsupported wire identities also refuse before mutation.
+Each slice needs catching parent regressions, focused broken-behaviour controls, relevant full suites, accurate evidence and independent local review.
+Deliver the separately reviewed metadata dictionary and Go admission commits together in one PR, requiring all five PR/master checks for their combined final head.
+This keeps literal frontend preservation from shipping before unsupported input is refused at the mutation boundary.
+Metadata dictionary repair alone does not close UI-14 until unsupported wire identities and raw-header values also refuse before mutation.
 P23 does not close backend plan authority, external-writer races, metadata-only replication, local namespace/platform, accessibility or valuable-data release gates.
 
 The first application slice now preserves literal transfer scope and rejects slash-bearing containers before session resolution or job creation.
