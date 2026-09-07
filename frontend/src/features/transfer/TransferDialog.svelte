@@ -39,7 +39,7 @@
   let prepared = $state.raw<{ intent: Intent; plan: CopyPlanDTO } | null>(null);
   const preview = $derived(prepared && isCurrent(prepared.intent) ? prepared.plan : null);
   const canPreview = $derived(!closed && !previewing && !starting && !browser.connecting
-    && !!browser.connectedBookmarkId && !!browser.containerName && !!destContainer.trim());
+    && !!browser.connectedBookmarkId && !!browser.containerName && destContainer !== "");
 
   function request(): CopyRequestDTO {
     return {
@@ -47,8 +47,8 @@
       sourceContainer: browser.containerName ?? "",
       sourcePrefix: browser.prefix,
       destBookmarkId,
-      destContainer: destContainer.trim(),
-      destPrefix: destPrefix.trim(),
+      destContainer,
+      destPrefix,
       profile,
       settings: {
         chunkSize: chunkSize.trim(),
@@ -165,12 +165,16 @@
     <div class="scope num">
       <div class="side">
         <span class="side-label">Source</span>
-        <span class="type-mono">{browser.containerName ?? "—"}/{browser.prefix}</span>
+        <div class="scope-text type-mono" role="group" aria-label="Source scope">
+          <span>Container: {browser.containerName == null ? "—" : JSON.stringify(browser.containerName)}</span>
+          <span>Prefix: {JSON.stringify(browser.prefix)}{browser.prefix === "" ? " (container root)" : ""}</span>
+        </div>
       </div>
       <span class="arrow">→</span>
       <div class="side fields">
         <span class="side-label">Destination</span>
         <select
+          aria-label="Destination bookmark"
           value={destBookmarkId}
           onchange={(e) => {
             destBookmarkId = e.currentTarget.value;
@@ -183,6 +187,7 @@
         </select>
         <input
           class="type-mono"
+          aria-label="Destination container"
           placeholder="container"
           value={destContainer}
           oninput={(e) => {
@@ -192,6 +197,7 @@
         />
         <input
           class="type-mono"
+          aria-label="Destination prefix"
           placeholder="prefix/ (optional)"
           value={destPrefix}
           oninput={(e) => {
@@ -199,6 +205,10 @@
             invalidate();
           }}
         />
+        <div class="scope-text type-mono" role="group" aria-label="Destination scope">
+          <span>Container: {JSON.stringify(destContainer)}</span>
+          <span>Prefix: {JSON.stringify(destPrefix)}{destPrefix === "" ? " (container root)" : ""}</span>
+        </div>
       </div>
     </div>
 
@@ -378,6 +388,8 @@
   }
 
   .side {
+    flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
@@ -388,12 +400,16 @@
     color: var(--color-text-faint);
   }
 
-  .fields {
-    flex: 1;
+  .scope-text {
+    display: flex;
+    flex-direction: column;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
 
   .fields select,
   .fields input {
+    min-width: 0;
     font: inherit;
     font-size: var(--text-sm);
     background: var(--color-bg-card);

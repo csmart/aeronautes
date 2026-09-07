@@ -140,6 +140,11 @@ func validateCopyRequest(req CopyRequestDTO) error {
 	if req.SourceContainer == "" || req.DestContainer == "" {
 		return errors.New("both containers are required")
 	}
+	for _, name := range []string{req.SourceContainer, req.DestContainer} {
+		if strings.Contains(name, "/") {
+			return fmt.Errorf("container name %q must not contain '/'", name)
+		}
+	}
 	for _, p := range []string{req.SourcePrefix, req.DestPrefix} {
 		if p != "" && !strings.HasSuffix(p, "/") {
 			return fmt.Errorf("prefix %q must be empty or end with '/'", p)
