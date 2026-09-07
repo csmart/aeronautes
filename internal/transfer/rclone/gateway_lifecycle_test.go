@@ -89,22 +89,45 @@ func TestGatewayCancelDeadlineRevokesWithoutChildExit(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("request did not pass the header-read phase before cancellation")
 	}
+	deadline := time.Now().Add(childCancelGrace + 2*time.Second)
 	cancel()
 	// No child exits and the invocation cleanup is deliberately withheld.
 	// A cancelled upstream request can flush an error before Close reaches
 	// the socket. Drain that bounded response, then require closure at the
 	// kill deadline independently of child exit.
-	if err := conn.SetReadDeadline(time.Now().Add(childCancelGrace + 2*time.Second)); err != nil {
+	if err := conn.SetReadDeadline(deadline); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := io.CopyN(io.Discard, conn, 32<<10); err == nil {
 		t.Fatal("cancelled gateway sent 32 KiB without closing")
 	} else if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
 		t.Fatal("gateway relied on child exit instead of its cancellation deadline")
+	} else if !errors.Is(err, io.EOF) && !errors.Is(err, syscall.ECONNRESET) {
+		t.Fatalf("checking revoked gateway socket: %v", err)
 	}
-	if next, err := net.DialTimeout("tcp", endpoint.Host, time.Second); err == nil {
-		next.Close()
-		t.Fatal("cancel deadline left the listener usable")
+	// Server.Close disables keep-alives before closing the listener. A
+	// cancelled handler can therefore close this socket while the listener
+	// is still shutting down; both must finish within the original bound.
+	wait, stop := context.WithDeadline(t.Context(), deadline)
+	defer stop()
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		next, err := (&net.Dialer{Timeout: time.Second}).DialContext(wait, "tcp", endpoint.Host)
+		if errors.Is(err, syscall.ECONNREFUSED) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("checking revoked gateway listener: %v", err)
+		}
+		if err := next.Close(); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-wait.Done():
+			t.Fatal("cancel deadline left the listener usable")
+		case <-tick.C:
+		}
 	}
 }
 
