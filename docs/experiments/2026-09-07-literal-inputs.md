@@ -332,5 +332,8 @@ The transfer-prefix and browser-prefix probes pass, while metadata `__proto__` r
 `p23-original-after-browser-v1.json/.log/.exit` and its input record preserve that mixed result with only absolute imports adapted to the fixed isolated frontend.
 All temporary records above are under `/tmp/aeronautes-remediation-20260905`.
 This is CSS-enabled mounted-component and bound Go/provider evidence, not native desktop end-to-end or six-platform functional approval.
-Independent local review and all five PR/master checks remain required for browser delivery and closure of the defined UI-07 scope.
+Independent local review approved source `6b51743f8501df0e1c2e3ab9d8d0b7b79760c148` after independently running the full Go/frontend suites and its own broken-behaviour controls.
+All five [PR50 checks](https://github.com/csmart/aeronautes/actions/runs/34116583674) passed before protected rebase merge, followed by all five [master checks](https://github.com/csmart/aeronautes/actions/runs/34117458281).
+Merged master `73dc0c5e7421ccdd36e07e6ac16e9ff5b633e398` has the identical reviewed source tree `3327e0ca311d04a6a1e055a39f4a225e0cc852c1`; the one-commit range comparison is unchanged.
+The browser slice is delivered and UI-07 is closed for this defined scope.
 P23, UI-14, metadata wire-identity validation and the wider valuable-data release hold remain open.
