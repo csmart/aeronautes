@@ -99,9 +99,8 @@ func TestContainersPaginates(t *testing.T) {
 	if got[0].Count != 1 || got[0].Bytes != 100 {
 		t.Errorf("entry 0 = %+v, want count 1 / bytes 100", got[0])
 	}
-	// 5 items at page size 2: pages of 2, 2, 1 — the short page ends it.
-	if list.requests != 3 {
-		t.Errorf("server saw %d listing requests, want 3", list.requests)
+	if list.requests != 4 {
+		t.Errorf("server saw %d listing requests, want 4 including the empty terminator", list.requests)
 	}
 }
 

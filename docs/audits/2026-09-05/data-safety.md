@@ -297,7 +297,8 @@ The pinned library ignores errors while draining after its first JSON value, and
 These are controlled local reproductions, not live provider observations.
 
 P22's first response slice now refuses incomplete or malformed pages before publication, with [public-session, dependency and two-account system evidence](../../experiments/2026-09-07-listing-responses.md).
-The original two response probes pass; both short-page probes still fail pending the separately reviewed continuation/marker slice.
+The subsequent [native continuation slice](../../experiments/2026-09-07-listing-continuation.md) also passes both original short-page probes, validates strict raw marker progress and literal scope, and preserves lazy stopping and cancellation.
+Its controlled Browse, Find, preview and native-routed Copy/verification cases cover the previously hidden tail; all four original listing probes now pass.
 DS-13 remains open until native continuation and mixed-engine execution/verification cover the complete intended namespace across short pages.
 The proposed correction and its separately reviewed implementation sequence are recorded in [ADR 0021](../../adr/0021-complete-listing-pages.md).
 

@@ -15,3 +15,8 @@ func (h *Harness) BrowseObjects(ctx context.Context, container, prefix, marker s
 	page, err := h.Browse.Objects(ctx, container, prefix, marker, limit)
 	return page, &Receipt{h: h, action: "BrowseService.Objects", err: err}
 }
+
+func (h *Harness) PlanCopy(ctx context.Context, request app.CopyRequestDTO) (*app.CopyPlanDTO, *Receipt) {
+	plan, err := h.Transfer.PlanCopy(ctx, request)
+	return plan, &Receipt{h: h, action: "TransferService.PlanCopy", err: err}
+}

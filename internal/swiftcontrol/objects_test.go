@@ -337,8 +337,8 @@ func TestObjectsPaginationAndEarlyBreak(t *testing.T) {
 	if len(entries) != 7 {
 		t.Fatalf("streamed %d entries, want 7", len(entries))
 	}
-	if f.requests != 3 {
-		t.Errorf("server saw %d listing requests, want 3 (3+3+1)", f.requests)
+	if f.requests != 4 {
+		t.Errorf("server saw %d listing requests, want 4 (3+3+1+0)", f.requests)
 	}
 
 	f.requests = 0
