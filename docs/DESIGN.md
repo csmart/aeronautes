@@ -4770,6 +4770,11 @@ This enforces the existing identity and working-copy contracts; it does not add 
 
 Implement and independently review these logical slices in order:
 
+Before the transfer slice, repair the mock Swift route's container decoding in a separate test-fixture commit.
+The new literal-container reproduction shows that the mock currently stores escaped path components as container names, unlike the real provider.
+Decode the container component exactly once after splitting the escaped route, reject a decoded slash as an invalid container name, and preserve the existing literal object-path handling.
+Require direct HTTP create/list/read/delete regressions, escaped-slash and double-decoding controls, and the bound transfer observation on both mock Swift and SAIO; do not weaken the independent namespace oracle or receipt-credit rules.
+
 1. Preserve the exact destination container and prefix entered in the transfer dialog through preview, request ownership and Copy start.
    Show quoted source/destination scope text with whitespace preserved, distinguishing an empty prefix from a whitespace-bearing one.
    Keep the existing empty-or-slash-terminated transfer-prefix rule: an unsupported literal input must produce the backend error rather than becoming root or gaining a slash.
