@@ -22,7 +22,7 @@
   const diff = $derived(diffMeta(base, current.meta));
 
   /** The complete intended metadata set, or a duplicate-key error. */
-  export function value(): { meta: Record<string, string>; duplicate: string } {
+  export function value(): ReturnType<typeof metaFromRows> {
     return metaFromRows(rows);
   }
 
@@ -49,7 +49,7 @@
   {/each}
   <button class="add" onclick={addRow}>+ add key</button>
 
-  {#if current.duplicate}
+  {#if current.duplicate !== null}
     <p class="dup">Duplicate key “{current.duplicate}” — metadata names are case-insensitive.</p>
   {:else if !isDiffEmpty(diff)}
     <p class="diff num">

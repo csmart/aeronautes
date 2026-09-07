@@ -110,6 +110,8 @@ The original transfer and browser probes pass while the two metadata probes stil
 Raw SAIO observations separately confirm that a successful metadata POST does not establish literal underscore-key preservation.
 Independent local review and all five PR/master checks passed for [PR50](https://github.com/csmart/aeronautes/pull/50), closing the defined UI-07 browser scope; the merged tree matches the reviewed source exactly.
 P23 and UI-14 remain open for metadata dictionaries and wire-identity validation.
+The [metadata editor implementation](../../experiments/2026-09-07-literal-inputs.md#metadata-working-copy-regressions) now passes 65 focused cases and the full 849-test frontend suite, with 17 broken variants caught independently.
+It preserves complete literal working copies and accurate diffs; the Go key/value admission guard and joint reviewed delivery remain required before UI-14/P23 can close.
 Linux success is insufficient for Windows/macOS namespace claims.
 Download/upload UI should show a bounded selected-name summary, explicit account and exact scope tied to the backend plan.
 

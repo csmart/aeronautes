@@ -44,7 +44,7 @@
   async function save(force: boolean) {
     if (saving || !currentBaseline) return;
     const { meta, duplicate } = editor!.value();
-    if (duplicate !== "") {
+    if (duplicate !== null) {
       error = `duplicate key "${duplicate}"`;
       return;
     }

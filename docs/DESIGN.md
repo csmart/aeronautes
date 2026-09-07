@@ -4868,6 +4868,12 @@ All five [master checks](https://github.com/csmart/aeronautes/actions/runs/34117
 UI-07 is delivered for the defined literal-filtering and navigation scope.
 The metadata slices, P23 as a whole and the wider valuable-data release hold remain open.
 
+The metadata dictionary slice now preserves literal keys and values through complete editor requests, including JavaScript inherited-property names.
+Rows and diffs use own string-valued entries, case-insensitive identity and the relevant side's spelling; duplicate empty-key rows refuse visibly without calling the backend.
+The [maintained editor evidence](experiments/2026-09-07-literal-inputs.md#metadata-working-copy-regressions) records 41 catching parent failures, 65 passing focused cases, 17 caught broken variants and all 849 frontend tests passing without skips.
+All four selected original P23 frontend probes now pass; eight other archived cases remain unselected.
+The Go key/value admission guard is still required before delivering these metadata commits together or closing UI-14/P23.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.

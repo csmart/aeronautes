@@ -10,23 +10,29 @@ export interface MetaDiff {
   removed: string[];
 }
 
+function ownEntries(meta: { [key: string]: string | undefined }): [string, string][] {
+  return Object.entries(meta).filter((entry): entry is [string, string] => typeof entry[1] === "string");
+}
+
 export function diffMeta(
   base: { [key: string]: string | undefined },
   working: { [key: string]: string | undefined },
 ): MetaDiff {
   const diff: MetaDiff = { added: [], changed: [], removed: [] };
-  for (const [key, value] of Object.entries(working)) {
-    if (value === undefined) {
-      continue;
-    }
-    if (!(key in base)) {
+  const baseEntries = ownEntries(base);
+  const workingEntries = ownEntries(working);
+  const original = new Map(baseEntries.map(([key, value]) => [key.toLowerCase(), value]));
+  const intended = new Set(workingEntries.map(([key]) => key.toLowerCase()));
+  for (const [key, value] of workingEntries) {
+    const folded = key.toLowerCase();
+    if (!original.has(folded)) {
       diff.added.push(key);
-    } else if (base[key] !== value) {
+    } else if (original.get(folded) !== value) {
       diff.changed.push(key);
     }
   }
-  for (const key of Object.keys(base)) {
-    if (!(key in working) || working[key] === undefined) {
+  for (const [key] of baseEntries) {
+    if (!intended.has(key.toLowerCase())) {
       diff.removed.push(key);
     }
   }
@@ -47,23 +53,22 @@ export interface MetaRow {
 }
 
 export function rowsFromMeta(meta: { [key: string]: string | undefined }): MetaRow[] {
-  return Object.entries(meta)
-    .filter((kv): kv is [string, string] => kv[1] !== undefined)
+  return ownEntries(meta)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => ({ key, value }));
 }
 
 /**
- * Collapse editor rows back into the intended metadata set. Blank keys
- * are dropped; a duplicated key is an error the editor must surface
- * rather than letting one row silently win.
+ * Unsupported keys must reach backend admission without silently changing
+ * the working copy. Only an unused row can be ignored; case variants cannot
+ * be represented as distinct Swift metadata keys.
  */
-export function metaFromRows(rows: MetaRow[]): { meta: Record<string, string>; duplicate: string } {
-  const meta: Record<string, string> = {};
+export function metaFromRows(rows: MetaRow[]): { meta: Record<string, string>; duplicate: string | null } {
+  const meta: Record<string, string> = Object.create(null);
   const seen = new Set<string>();
   for (const row of rows) {
-    const key = row.key.trim();
-    if (key === "") {
+    const key = row.key;
+    if (key === "" && row.value === "") {
       continue;
     }
     const folded = key.toLowerCase();
@@ -73,5 +78,5 @@ export function metaFromRows(rows: MetaRow[]): { meta: Record<string, string>; d
     seen.add(folded);
     meta[key] = row.value;
   }
-  return { meta, duplicate: "" };
+  return { meta, duplicate: null };
 }

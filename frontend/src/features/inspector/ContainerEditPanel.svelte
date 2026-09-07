@@ -78,7 +78,7 @@
       return;
     }
     const { meta, duplicate } = editor!.value();
-    if (duplicate !== "") {
+    if (duplicate !== null) {
       error = `duplicate key "${duplicate}"`;
       return;
     }
