@@ -4877,7 +4877,11 @@ The Go admission slice now validates all three metadata mutation entry points be
 The [maintained Go evidence](experiments/2026-09-07-literal-inputs.md#metadata-admission-and-provider-round-trips) records 58 catching parent failures, 132 passing bound cases on mock Swift and SAIO, 23 validator cases and 16 caught broken variants.
 The full internal race suite passes 590 top-level tests and 1,401 leaf cases in 20 packages, without failures or skips, at 84.9% statement coverage.
 Valid scenario reconciliation now credits 32/110 cells, with 38/49 actions still having gaps; container creation has no invented applied-outcome credit.
-Independent review of the Go slice and all five PR/master checks on joint metadata delivery remain required before UI-14/P23 can close.
+Independent local review approved both metadata commits, which were delivered together through [PR51](https://github.com/csmart/aeronautes/pull/51).
+All five [PR checks](https://github.com/csmart/aeronautes/actions/runs/34124455916) passed on the reviewed source `0fae42120e90552f61f89f18a6b95726e13c4f11` before protected merge.
+All five [master checks](https://github.com/csmart/aeronautes/actions/runs/34125252087) passed on `f012521a1976ab8e7d9c0c0bf995231c69b5671c`; its tree exactly matches the reviewed source, with all four logical commits preserved.
+The [delivery record](experiments/2026-09-07-literal-inputs.md#metadata-delivery) closes UI-14 and P23 for the defined literal transfer, browser and metadata-input contract.
+Backend authority, durability, outcome accounting, external writers, local-platform validation, accessibility and the wider valuable-data release hold remain open.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
