@@ -170,5 +170,8 @@ The original transfer probe's unslashed prefix demonstrates preserved UI bytes; 
 All records above are under `/tmp/aeronautes-remediation-20260905`.
 The implementation started on the reviewed fixture tree and moved onto its identical merged master tree with source/test hashes unchanged; `p23-transfer-base-switch.json` records that comparison.
 This is mounted frontend and bound Go evidence, not native desktop end-to-end, visual layout or six-platform validation.
-The transfer implementation still needs independent local review and all five PR/master checks before UI-04 delivery can be closed.
+Independent local review approved transfer source `198b3042b93d8e6367d348855fc1743823f93be2` after inspecting the implementation, maintained tests and broken-behaviour controls.
+[PR48](https://github.com/csmart/aeronautes/pull/48) passed all five [PR checks](https://github.com/csmart/aeronautes/actions/runs/34095697995) before protected merge.
+All five [master checks](https://github.com/csmart/aeronautes/actions/runs/34096695188) passed on `4f0cee2943215511e37d3e0a58329fe8bfd3f645`, whose tree matches the reviewed source exactly.
+UI-04 is delivered for the defined literal transfer-input and admission scope.
 P23, UI-07, UI-14 and the wider valuable-data release hold remain open.

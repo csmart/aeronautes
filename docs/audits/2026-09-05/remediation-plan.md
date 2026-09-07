@@ -99,7 +99,8 @@ P23 now has a [current-master reproduction record](../../experiments/2026-09-07-
 Preserve transfer input, then literal browser filtering, then metadata dictionaries and Go wire-identity validation, with independent review between logical commits.
 The fixture prerequisite is delivered through [PR47](https://github.com/csmart/aeronautes/pull/47), with independent review and all five PR/master checks passing; its merged tree matches the reviewed source exactly.
 The [transfer implementation](../../experiments/2026-09-07-literal-inputs.md#literal-transfer-requests-and-refusal) preserves literal request strings and quoted scope, rejects slash-bearing containers before job admission and retains the existing prefix and Mirror restrictions.
-Its maintained parent regressions, broken-behaviour controls, full frontend suite and full mock/SAIO Go race suite pass their intended checks; independent local review and PR/master delivery remain pending for UI-04.
+Its maintained parent regressions, broken-behaviour controls, full frontend suite and full mock/SAIO Go race suite pass their intended checks.
+Independent local review and all five PR/master checks passed for [PR48](https://github.com/csmart/aeronautes/pull/48), closing the defined UI-04 transfer-input scope.
 The original transfer-prefix probe now passes while the other three original P23 probes still fail; raw SAIO observations separately confirm that a successful metadata POST does not establish literal underscore-key preservation.
 P23, UI-07 and UI-14 remain open for literal browser filtering, metadata dictionaries and wire-identity validation.
 Linux success is insufficient for Windows/macOS namespace claims.
