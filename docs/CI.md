@@ -67,3 +67,9 @@ Both repairs passed independent local review and [PR CI](https://github.com/csma
 The [first repaired master run](https://github.com/csmart/aeronautes/actions/runs/33993862798) passed all four test jobs, then its badge push started another master run and cancelled the finishing workflow through the concurrency rule.
 The incident did not result from skipping PR17's pipeline.
 The protection review also found that strict latest-base checks were off and the coverage bot could bypass PRs with a deploy key; this slice closes those separate gaps.
+
+[PR42](https://github.com/csmart/aeronautes/pull/42) also passed all five required jobs before its protected merge, but [master run 34071011273](https://github.com/csmart/aeronautes/actions/runs/34071011273) exposed a remaining gateway-test ordering assumption.
+An active socket can close while the listener is still shutting down, so an immediate successful dial does not prove the cancellation deadline was missed.
+The test now checks socket closure and listener refusal independently against one shared absolute deadline, retaining the existing allowance.
+The [controlled reproduction and refusal controls](experiments/2026-09-07-gateway-deadline.md) distinguish an allowed shutdown interval from absent or late revocation.
+This is a test synchronisation repair; feature delivery stopped until the repair passes the protected PR and master checks.

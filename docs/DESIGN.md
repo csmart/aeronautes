@@ -4692,6 +4692,9 @@ Those tests now wait boundedly for the exact operation and job identity before c
 This corrects test synchronisation only; the P12/P13 durable outcome and audit contract remains open.
 The [subsequent PR run](https://github.com/csmart/aeronautes/actions/runs/33991688319) exposed a second test ordering assumption: gateway cancellation can flush an HTTP 502 before closing the child socket.
 The deadline test now drains that bounded response and still requires socket closure and listener refusal within the existing deadline; disabling revocation must fail.
+The later [PR42 master failure](https://github.com/csmart/aeronautes/actions/runs/34071011273) exposed the remaining assumption that socket closure implies listener closure has already finished.
+The test now observes each independently against one shared absolute deadline; a controlled 250 ms listener-close delay reproduces the old failure, while absent revocation or a three-second delay still fails the corrected test.
+The [validation record](experiments/2026-09-07-gateway-deadline.md) preserves the before/after evidence and unchanged production cancellation contract.
 The real-Swift TLS and token-expiry proxies now use the configured authentication origin; a hard-coded port previously sent them to a different fixture when the configured port changed.
 Integration CI runs on a different host port to exercise this endpoint configuration in every PR.
 That PR exposed another timing assumption: Mirror tests changed their fixtures after a sleep, which could precede planning on a busy runner.
