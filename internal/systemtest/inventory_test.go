@@ -33,7 +33,16 @@ func TestInventoryCoversEveryBoundAction(t *testing.T) {
 	for svcName, svc := range boundServices() {
 		typ := reflect.TypeOf(svc)
 		for i := 0; i < typ.NumMethod(); i++ {
-			key := svcName + "." + typ.Method(i).Name
+			method := typ.Method(i)
+			key := svcName + "." + method.Name
+			// Wails reserves this lifecycle hook in both the runtime and
+			// generator; it must not inflate renderer scenario coverage.
+			if key == "FindService.ServiceShutdown" {
+				if method.Type != reflect.TypeFor[func(*app.FindService) error]() {
+					t.Errorf("Find lifecycle hook has unexpected signature: %v", method.Type)
+				}
+				continue
+			}
 			live[key] = true
 			if _, ok := contract[key]; !ok {
 				t.Errorf("bound bridge method %s has no contract row — add it (and its scenarios) to scenariocontract", key)

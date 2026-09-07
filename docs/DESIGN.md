@@ -4675,6 +4675,17 @@ Add explicit refusal requirements for StartFind admission and FindStatus lookup 
 Keep deterministic clock/worker tests, UI-to-bridge cases and actual SAIO service-scenario coverage separately accounted.
 Review this contract before runtime changes, then independently review each implementation commit and require the same five current-head/current-master PR and master checks.
 
+The third P08 implementation now bounds Find to four actual workers and sixteen retained records, with completed-only eviction and a renewed five-minute idle lease.
+Timer callbacks and polls share the same state guard; expiry retires records without another API call and cannot undo a newer lease or retire a different record.
+Retirement releases timers and match buffers while actual worker exit owns slot release.
+The reserved Wails shutdown hook closes admission and checks worker drain within five seconds, reporting an error instead of claiming cancellation alone finished cleanup.
+The [backend Find validation record](experiments/2026-09-07-find-scan-lifetimes.md) preserves the two failing public-API parent reproductions, deterministic lifecycle tests, thirty-two independently broken safeguards and the same three two-account scenarios on mock Swift and SAIO.
+The full internal SAIO race run passes 504 top-level tests across twenty packages with 84.2% statement coverage; only the separately gated rclone compatibility matrix is skipped.
+Valid scenario reconciliation reaches 19/108 cells, with 44/49 actions still having gaps; asynchronous starts need matching terminal-status or cancellation evidence before credit.
+Binding generation preserves the existing forty-nine renderer methods and three-method Find surface.
+This implementation still requires independent local review and all five PR/master checks before delivery.
+P22/P24 wider completeness and resource work, authority, durable outcomes, concurrent writers, ownership and the valuable-data release hold remain open.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
