@@ -316,11 +316,22 @@ type Report struct {
 	Bytes        int64
 	NativeRouted int64
 	Failures     []Failure
+	// A verified copy still counts when bookkeeping or cleanup fails.
+	// Bound the examples without truncating the issue count (ADR 0023).
+	PostCommitIssues       int64
+	PostCommitIssueSamples []Failure
 	// CapturedPrefixes: large uploads segment like any engine write.
 	CapturedPrefixes []rclone.SegmentPrefix
 }
 
 const maxFailures = 200
+
+func (r *Report) postCommitIssue(name, stage string, err error) {
+	r.PostCommitIssues++
+	if len(r.PostCommitIssueSamples) < maxFailures {
+		r.PostCommitIssueSamples = append(r.PostCommitIssueSamples, Failure{Name: name, Stage: stage, Err: err.Error()})
+	}
+}
 
 // Upload runs a preflighted upload. Engine-safe files batch per parent
 // directory (rclone copies FROM a directory) into the job STAGING
@@ -448,6 +459,7 @@ func commitStagedUpload(ctx context.Context, dst *swiftcontrol.Session, containe
 		fail(item.Name, "commit-rehead", err)
 		return
 	}
+	commitRecordFailed := false
 	if staged.Class == swiftcontrol.ClassDLO {
 		if slash := strings.Index(staged.Manifest, "/"); slash > 0 && onRecovery != nil {
 			intent := rclone.SegmentPrefix{Container: staged.Manifest[:slash], Prefix: staged.Manifest[slash+1:]}.Canonical()
@@ -467,7 +479,10 @@ func commitStagedUpload(ctx context.Context, dst *swiftcontrol.Session, containe
 		}
 		if slash := strings.Index(staged.Manifest, "/"); slash > 0 && onRecovery != nil {
 			intent := rclone.SegmentPrefix{Container: staged.Manifest[:slash], Prefix: staged.Manifest[slash+1:]}.Canonical()
-			_ = onRecovery("committed", intent.Container, intent.Prefix, "")
+			if err := onRecovery("committed", intent.Container, intent.Prefix, ""); err != nil {
+				report.postCommitIssue(item.Name, "commit-record", err)
+				commitRecordFailed = true
+			}
 		}
 	} else {
 		// Planned-new plain commit: conditional live PUT, not an
@@ -496,7 +511,13 @@ func commitStagedUpload(ctx context.Context, dst *swiftcontrol.Session, containe
 	case live.ContentLength != item.Size:
 		fail(item.Name, "verify", fmt.Errorf("size %d != local %d", live.ContentLength, item.Size))
 	default:
-		_ = dst.DeleteObject(ctx, container, stagedName)
+		// Failed persistence removes cleanup authority, but does not
+		// invalidate a successful live HEAD check.
+		if !commitRecordFailed {
+			if err := dst.DeleteObject(ctx, container, stagedName); err != nil && !swiftcontrol.IsNotFound(err) {
+				report.postCommitIssue(item.Name, "staging-cleanup", fmt.Errorf("delete staging object %q: %w", stagedName, err))
+			}
+		}
 		report.Done++
 		report.Bytes += item.Size
 	}

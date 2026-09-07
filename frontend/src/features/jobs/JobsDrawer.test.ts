@@ -61,6 +61,27 @@ it("shows global and per-job retained records without changing a completed resul
   expect([...document.querySelectorAll("button")].some((b) => /clear|reclaim|clean up/i.test(b.textContent ?? ""))).toBe(false);
 });
 
+it("shows upload cleanup issues without inventing a failed transfer", async () => {
+  const api = newFakeApi();
+  const job: JobDTO = {
+    id: "upload", type: "upload", state: "partial", source: "1 local file", destination: "dest/live/",
+    sourceBookmarkId: "", destBookmarkId: "b", createdAt: "", startedAt: "", finishedAt: "",
+    engine: "rclone+native", settings: "", recoveryRecords: 4,
+    error: "1 post-commit issue (first: live/file: staging-cleanup: delete staging object failed)",
+    counters: { objectsPlanned: 1, objectsCopied: 1, objectsVerified: 1, objectsFailed: 0,
+      bytesPlanned: 8, bytesCopied: 8, overwrites: 0, overwritesRefused: 0, nativeRouted: 0, objectsDeleted: 0 },
+  };
+  api.jobs = async () => [job];
+  api.recoveryStatus = async () => ({ jobs: 1, records: 4 });
+  show(new BrowserState(api));
+  await vi.waitFor(() => expect(document.querySelector(".badge")?.textContent).toBe("partial"));
+  expect(document.querySelector("p.error")?.textContent).toBe(job.error);
+  expect(document.querySelector(".counts")?.textContent).toMatch(/1\s*\/1/);
+  expect(document.querySelector(".counts")?.textContent).not.toContain("failed");
+  expect(document.querySelector(".recovery-row")?.textContent)
+    .toContain("4 recovery records retained; remote residue is unverified");
+});
+
 it("shows an unavailable read as unknown and refreshes through the drawer poll", async () => {
   vi.useFakeTimers();
   const api = newFakeApi();

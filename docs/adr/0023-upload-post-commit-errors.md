@@ -1,6 +1,6 @@
 # ADR 0023 — report upload errors after commit
 
-**Status:** Proposed for independent local review under the authorised audit remediation plan.
+**Status:** Accepted after independent design review on 8 September 2026 under the authorised audit remediation plan.
 **Scope:** The first local-upload P12/P21 error-handling slice after ADR 0020 containment.
 
 ## Problem and oracle

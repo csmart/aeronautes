@@ -372,6 +372,19 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 		s.record(background, bookmarkID, "transfer.local."+string(state), "job "+jobID, "", terminalAuditResult(state))
 	}
 	switch {
+	case report != nil && report.PostCommitIssues > 0:
+		message := fmt.Sprintf("%d post-commit issues", report.PostCommitIssues)
+		if len(report.PostCommitIssueSamples) > 0 {
+			first := report.PostCommitIssueSamples[0]
+			message += fmt.Sprintf(" (first: %s: %s: %s)", first.Name, first.Stage, first.Err)
+		}
+		if len(report.Failures) > 0 {
+			message += fmt.Sprintf("; %d failed (first: %s: %s)", len(report.Failures), report.Failures[0].Name, report.Failures[0].Err)
+		}
+		if err != nil {
+			message += "; " + err.Error()
+		}
+		finish(jobs.StatePartial, message)
 	case err != nil && errors.Is(err, context.Canceled):
 		finish(jobs.StateCancelled, "")
 	case err != nil:

@@ -75,7 +75,8 @@ The plan does not add approval prompts to ordinary harmless browsing.
 
 P12/P13 should introduce the smallest shared contract needed by Copy and local upload, then migrate sibling paths in separate reviewed commits.
 The [current local-upload reproductions](../../experiments/2026-09-08-upload-recovery.md) confirm P04's retained records while exposing ignored committed-record and staging-delete errors through the actual services on mock Swift and SAIO.
-[ADR 0023](../../adr/0023-upload-post-commit-errors.md) proposes the first bounded P12/P21 follow-up: retain uncertainty, prevent the affected cleanup after persistence refusal and expose post-commit issues without corrupting successful-transfer counts.
+[ADR 0023](../../adr/0023-upload-post-commit-errors.md) defines the independently reviewed first bounded P12/P21 follow-up: retain uncertainty, prevent the affected cleanup after persistence refusal and expose post-commit issues without corrupting successful-transfer counts.
+The [maintained implementation and regressions](../../experiments/2026-09-08-upload-recovery.md#maintained-implementation-and-evidence) exercise both providers, exact recovery facts and collateral, child-process reopening and independent error/counter controls; implementation review and protected delivery remain required.
 Its review and implementation sequence keeps the complete identity ledger, sibling Copy migration, audit atomicity, terminal-write failures and reclamation authority open.
 The [P22 DLO fixture](../../experiments/2026-09-07-selected-set-copy.md#maintained-implementation-and-evidence) also records a planned-byte accounting gap for P13: a complete six-name Copy plans twenty-seven bytes from listing sizes but copies and independently verifies thirty-three logical bytes.
 Do not create a general workflow engine.

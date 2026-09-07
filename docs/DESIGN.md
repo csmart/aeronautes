@@ -4885,9 +4885,9 @@ Backend authority, durability, outcome accounting, external writers, local-platf
 
 P12/P21 resumes with the [current local-upload fault reproductions](experiments/2026-09-08-upload-recovery.md).
 The earlier P04 record-retention containment holds, but committed-record refusal and staging DELETE failure still produce an incorrectly complete job on mock Swift and SAIO.
-[ADR 0023](adr/0023-upload-post-commit-errors.md) proposes the first bounded follow-up: count and display post-commit issues separately from transfer failures, prohibit the affected staging deletion after a rejected committed record, preserve successful live verification counts and retain every recovery fact.
-Review that decision before implementation, then maintain the bound-service fault/control cases, actual child-process reopen, bounded samples with exact issue totals and deliberately broken controls.
-The implementation must pass relevant full suites and independent review before all five PR/master delivery checks.
+[ADR 0023](adr/0023-upload-post-commit-errors.md) defines the independently reviewed first bounded follow-up: count and display post-commit issues separately from transfer failures, prohibit the affected staging deletion after a rejected committed record, preserve successful live verification counts and retain every recovery fact.
+The [maintained implementation](experiments/2026-09-08-upload-recovery.md#maintained-implementation-and-evidence) exercises both providers, exact collateral and recovery facts, child-process database reopening, bounded samples with exact issue totals and deliberately broken controls.
+Implementation approval and all five PR/master delivery checks remain required.
 This slice does not restore automatic reclamation or close the wider durable outcome, audit, ownership, local-verification or valuable-data release gates.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.

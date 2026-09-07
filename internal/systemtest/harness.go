@@ -44,10 +44,12 @@ type Account struct {
 
 // Harness wires the service layer and both accounts for one test.
 type Harness struct {
-	T       *testing.T
-	ctx     context.Context
-	ns      string
-	counter int64
+	T         *testing.T
+	ctx       context.Context
+	ns        string
+	counter   int64
+	database  *db.DB
+	statePath string
 
 	Bookmarks *app.BookmarkService
 	Browse    *app.BrowseService
@@ -73,7 +75,8 @@ func New(t *testing.T) *Harness {
 		t.Skip("AERONAUTES_SAIO_AUTH_URL not set")
 	}
 	ctx := context.Background()
-	database, err := db.Open(ctx, filepath.Join(t.TempDir(), "state.sqlite"))
+	statePath := filepath.Join(t.TempDir(), "state.sqlite")
+	database, err := db.Open(ctx, statePath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,6 +92,7 @@ func New(t *testing.T) *Harness {
 
 	h := &Harness{
 		T: t, ctx: ctx,
+		database: database, statePath: statePath,
 		ns:        fmt.Sprintf("st%d", time.Now().UnixNano()),
 		Bookmarks: app.NewBookmarkService(store, connections, jobStore),
 		Browse:    app.NewBrowseService(connections, ev),
