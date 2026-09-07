@@ -1,6 +1,6 @@
 # ADR 0022: execute the complete rclone selected set
 
-**Status:** Proposed for independent review before changing the runner.
+**Status:** Accepted after independent design review; implementation and delivery evidence follow.
 **Scope:** P22 / DS-13, the pinned rclone selected-file invocation, DESIGN §§14.3, 26 and 28.4, K-XFER-009/014, K-PERF-001/002, K-CON-001 and K-TEST-001.
 
 ## Evidence

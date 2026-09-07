@@ -83,7 +83,7 @@ func TestCopyHygieneAndContract(t *testing.T) {
 	if strings.Contains(argv, "SECRET") {
 		t.Fatalf("token leaked into argv:\n%s", argv)
 	}
-	for _, want := range []string{"copy", "--ignore-times", "--files-from-raw", "--use-json-log", "-vv",
+	for _, want := range []string{"copy", "--no-traverse", "--ignore-times", "--files-from-raw", "--use-json-log", "-vv",
 		"--retries", "--low-level-retries", "--swift-chunk-size", "1Mi", "--transfers", "4", "--bwlimit", "10M", "--config"} {
 		if !strings.Contains(argv, want) {
 			t.Errorf("argv missing %q", want)

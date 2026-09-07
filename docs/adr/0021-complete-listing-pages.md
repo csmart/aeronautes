@@ -83,7 +83,7 @@ For Find, use its matching terminal status and existing cancellation receipts; a
 Verify complete mixed-name preview and eligible native-routed new-name Copy/verification across forced short pages, with expected destination bytes and unchanged source/collateral state.
 Keep the provider cap active for every selected source and destination JSON listing, including requests from rclone.
 The [mixed-engine experiment](../experiments/2026-09-07-short-page-copy.md) found a separate pinned-rclone limitation: the corrected native plan sees three names, but rclone omits one planned file under the cap and the job reports partial.
-Retain that mixed-engine case as an explicit partial-outcome characterisation, paired with the same mixed Copy succeeding without the cap; it earns no successful-Copy credit.
+For the native continuation slice, retain that mixed-engine case as an explicit partial-outcome characterisation, paired with the same mixed Copy succeeding without the cap; it earns no successful-Copy credit.
 Native-only success does not establish complete mixed-engine provider compatibility or close P22/DS-13.
 Keep source, system, frontend and real-engine evidence separately accounted and reconcile only final passing scenario witnesses.
 

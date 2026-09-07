@@ -316,7 +316,9 @@ func (r *Runner) Copy(ctx context.Context, remotes []Remote, src, dst string, na
 	if err := os.WriteFile(listPath, []byte(strings.Join(names, "\n")+"\n"), 0o600); err != nil {
 		return nil, err
 	}
-	args := []string{"copy", "--ignore-times", "--use-json-log", "-vv", "--stats", "1s",
+	// A filtered source traversal can lose planned names on short pages;
+	// files-from-raw plus no-traverse keeps the application's selection.
+	args := []string{"copy", "--no-traverse", "--ignore-times", "--use-json-log", "-vv", "--stats", "1s",
 		"--files-from-raw", listPath, "--config", configPath}
 	args = append(args, r.pacingArgs()...)
 	// Flags close before "--": nothing in a path can ever be parsed as

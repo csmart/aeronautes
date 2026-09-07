@@ -4747,9 +4747,18 @@ Strict marker progress, literal prefix scope, delimiter self-row advancement, la
 Two-account mock/SAIO scenarios cover complete Browse, Find, mixed preview and native-routed Copy/verification, plus later-page refusals.
 The final internal race run passes 533 top-level tests and 1,111 leaf cases across twenty packages at 84.3% combined statement coverage; only the separately gated rclone matrix is skipped.
 Scenario reconciliation is valid at 24/110 cells, with 41/49 actions still having gaps.
-The globally capped mixed Copy remains a detected partial beside its uncapped success control; the separately reviewed engine decision is the next P22 step.
+At native-slice delivery, the globally capped mixed Copy remained a detected partial beside its uncapped success control; the separately reviewed engine decision was the next P22 step.
 The four original listing audit probes now pass, but P22/DS-13 and the valuable-data release hold remain open.
 The continuation slice passed local review and all five [PR45 checks](https://github.com/csmart/aeronautes/actions/runs/34081561721) before protected merge; all five [resulting master checks](https://github.com/csmart/aeronautes/actions/runs/34082478716) passed.
+
+The subsequent engine slice implements [ADR 0022](adr/0022-complete-rclone-selection.md) after independent design review.
+Shared selected-set `Runner.Copy` now pairs `--no-traverse` with `--files-from-raw` and `--ignore-times`, preserving the application-owned selection across short provider pages.
+The [maintained evidence](experiments/2026-09-07-selected-set-copy.md#maintained-implementation-and-evidence) covers complete capped mixed Copy, nested and genuine DLO/SLO sources, and bound-service upload/download with independent Swift/filesystem observations.
+Eight final parent assertions fail and four controls pass; all twelve pass with the correction, and removing only the option reproduces the same eight failures.
+The full internal SAIO race suite, including the optional pinned-engine observations, passes 541 top-level tests and 1,119 leaf cases across twenty packages with no skips and 84.3% combined statement coverage.
+Valid scenario reconciliation reaches 28/110 cells, with 39/49 actions still having gaps.
+The DLO fixture's planned-byte estimate still excludes its logical content, while actual copied bytes and independent destination bytes are complete; that accounting gap stays assigned to P13.
+P22/DS-13 still require independent implementation review and all five PR/master checks before closure; wider authority, durability, concurrency, ownership, local-filesystem, resource and release work remains open.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
