@@ -102,5 +102,16 @@ All 852 frontend tests pass in 22 files at 79.33% statement coverage, with no Sv
 Frontend build, Go vet, the native Linux build, the CGO-disabled internal build and patched Swift source verification pass.
 Raw events, exits, source/overlay hashes, controls, checks and the reconciled report are retained under `/home/csmart/code/.aeronautes-work/20260908/copy-completion-*`.
 
-Independent implementation review and protected PR/master checks remain required before delivery.
 Only the existing Copy job summary and admission contract are implemented here; the identity, outcome, durability, verification, authority, native and valuable-data gates above remain open.
+
+## Delivery
+
+Independent local reviews approved all three commits before pushing [PR56](https://github.com/csmart/aeronautes/pull/56).
+The reviewer independently ran the full Go race and frontend suites and tested deliberately broken admission, recovery ordering, atomic completion, audit authority, refusal, verification and queued-cancellation rules.
+Removing only one admission-availability guard leaves the other effective; defeating both guards makes the queued-admission regression fail.
+All five actual jobs in [PR CI](https://github.com/csmart/aeronautes/actions/runs/34193597156) succeeded at reviewed source `c8edb9c0cf5a605efb247d3065d32a9fb2d067fc` with current base `b5ca0f3ac4663e5b496ab210be6b3bdd60b3a694`.
+The protected merge used that exact source head with the reviewed ruleset and no bypass actors.
+All five actual jobs in [master CI](https://github.com/csmart/aeronautes/actions/runs/34194394460) succeeded at `efbbc00cda33bbd1c79c8ae284c41bcc245c7af3`.
+The merged tree `fbdc99a22e5ea1c5db96e957c99e8422bcc46b64` exactly matches the reviewed source, and range comparison confirms all three logical patches were preserved.
+The local record `/home/csmart/code/.aeronautes-work/20260908/copy-completion-delivery.json` retains the source, master, tree, review and pipeline identities.
+Only the defined Copy completion and admission slice is delivered; the broader outcome, durability, native and valuable-data gates remain open.
