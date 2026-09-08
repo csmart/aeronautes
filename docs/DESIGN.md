@@ -4975,6 +4975,10 @@ Interrupted-result projection, backend/UI rerun refusal and checked Copy recordi
 Independent local review and all five protected PR/master checks passed for [PR60](https://github.com/csmart/aeronautes/pull/60); its [delivery record](experiments/2026-09-08-transfer-item-access.md#delivery) confirms the exact reviewed tree and five preserved logical commits.
 This delivers complete access and the finite integration-suite budget correction while leaving the remaining ADR 0030 slices and valuable-data hold open.
 
+The next ADR 0030 slice now implements [interrupted-record projection and guarded reruns](experiments/2026-09-08-interrupted-item-records.md), with whole-transaction rollback and a shared-store unavailable latch on startup projection failure.
+Its maintained system reproductions, bounded complete-record checks and backend/UI refusals preserve historical facts before any new rerun admission; permitted reruns still use fresh current planning.
+Actual transfer callers remain version zero until the separately reviewed checked Copy migration; this slice does not close the complete outcome, authority or valuable-data gates.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.

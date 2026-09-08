@@ -192,7 +192,7 @@ func TestRecoveryRecordsAfterProcessReopen(t *testing.T) {
 		t.Fatalf("reopened process lost recovery evidence: %+v", reopened)
 	}
 	got, err := h.jobsSvc.Get(context.Background(), job.ID)
-	if err != nil || got.State != "failed" || got.Error != "interrupted by shutdown; data and recovery records retained, remote residue unverified" {
+	if err != nil || got.State != "failed" || got.Error != "interrupted by shutdown; data and recovery records retained, remote residue unverified; counters show the last saved progress" {
 		t.Fatalf("interrupted job = %+v, %v", got, err)
 	}
 	if delta := oracle.Diff(before, retainedSnapshot(t, witness)); !delta.Empty() {

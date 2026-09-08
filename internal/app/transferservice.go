@@ -752,15 +752,12 @@ func jobDTO(j jobs.Job) JobDTO {
 	}
 }
 
-// RerunJob starts a fresh copy of a TERMINAL copy job's scope. The
-// §28.4 machinery makes this cheap-idempotent — Same verdicts and
-// destination fingerprints skip everything already verified — so a
-// re-run can copy remaining new names but still refuses overwrites.
-// Mirror remains unavailable under ADR 0020.
+// RerunJob requires inspectable prior facts before normal fresh planning;
+// a terminal state alone cannot establish that earlier effects are known.
 func (s *TransferService) RerunJob(ctx context.Context, jobID string) (string, error) {
 	job, err := s.jobs.Get(ctx, jobID)
 	if err != nil {
-		return "", err
+		return "", errRerunRecordsUnavailable
 	}
 	if !jobs.Terminal(job.State) {
 		return "", fmt.Errorf("job %s is still %s — cancel it first if you want a fresh run", jobID, job.State)
@@ -770,6 +767,9 @@ func (s *TransferService) RerunJob(ctx context.Context, jobID string) (string, e
 	}
 	if job.Type != jobs.TypeCopy {
 		return "", fmt.Errorf("re-run supports copy jobs; a %s needs its own dialog (destructive halves keep their typed confirmation)", job.Type)
+	}
+	if err := s.checkRerunItems(ctx, jobID); err != nil {
+		return "", err
 	}
 	srcContainer, srcPrefix, ok := splitLocator(job.Source)
 	if !ok {

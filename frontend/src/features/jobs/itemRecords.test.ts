@@ -79,6 +79,33 @@ async function settleResponse() {
   flushSync();
 }
 
+it.each([
+  "re-run is unavailable because retained item records cannot be read; inspect retained data before starting a fresh Copy",
+  "re-run is unavailable because item records were not captured; inspect retained data before starting a fresh Copy",
+  "re-run is unavailable because prior item effects remain unresolved; inspect the retained item records before starting a fresh Copy",
+  "re-run is unavailable because reported copies remain unverified; inspect the retained item records before starting a fresh Copy",
+])("shows the backend rerun refusal without admitting fallback work: %s", async (reason) => {
+  const api = newFakeApi();
+  api.rerunJob = vi.fn(async () => { throw new Error(reason); });
+  api.startCopy = vi.fn(async () => "unsafe-fallback");
+  api.jobItems = async () => ({ status: "available", items: [item(0)], nextCursor: "" });
+  api.jobItemTotals = async () => totals({ items: 1, failed: 1 });
+  const interrupted = job("interrupted");
+  interrupted.error = "interrupted by shutdown; data and recovery records retained, remote residue unverified; other counters show the last saved progress";
+  interrupted.counters.objectsFailed = 1;
+  await show(api, [interrupted]);
+  expand("interrupted");
+  await vi.waitFor(() => expect(document.querySelector(".item-record")).not.toBeNull());
+  click("Re-run");
+  await vi.waitFor(() => expect(document.querySelector('[role="alert"]')?.textContent).toBe(reason));
+  await settleResponse();
+  expect(api.rerunJob).toHaveBeenCalledExactlyOnceWith("interrupted");
+  expect(api.startCopy).not.toHaveBeenCalled();
+  expect(document.querySelectorAll(".job")).toHaveLength(1);
+  expect(document.querySelector(".error")?.textContent).toBe(interrupted.error);
+  expect(document.querySelector(".item-record summary code")?.textContent).toBe('"item-0"');
+});
+
 it("reaches every item through older history while bounding both displayed pages", async () => {
   const api = newFakeApi();
   const retainedJobs = Array.from({ length: 153 }, (_, i) => job(`job-${i}`));

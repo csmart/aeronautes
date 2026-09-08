@@ -112,7 +112,7 @@ func completionReopen(t *testing.T, h *Harness, id string, want uploadRecoverySt
 		wantInterrupted = 1
 		job := *want.Job
 		job.State = "failed"
-		job.Error = "interrupted by shutdown; data and recovery records retained, remote residue unverified"
+		job.Error = "interrupted by shutdown; data and recovery records retained, remote residue unverified; counters show the last saved progress"
 		finished, err := time.Parse(time.RFC3339, got.After.Job.FinishedAt)
 		if err != nil || finished.Before(started) || finished.After(time.Now().UTC()) {
 			t.Fatalf("invalid restart finish time: %q", got.After.Job.FinishedAt)

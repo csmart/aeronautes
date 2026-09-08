@@ -350,6 +350,11 @@ func (h *Harness) StartCopy(ctx context.Context, req app.CopyRequestDTO) *Receip
 	return &Receipt{h: h, action: "TransferService.StartCopy", jobID: jobID, err: err}
 }
 
+func (h *Harness) RerunJob(ctx context.Context, id string) *Receipt {
+	jobID, err := h.Transfer.RerunJob(ctx, id)
+	return &Receipt{h: h, action: "TransferService.RerunJob", jobID: jobID, err: err}
+}
+
 func (h *Harness) StartMirror(ctx context.Context, req app.MirrorRequestDTO) *Receipt {
 	jobID, err := h.Transfer.StartMirror(ctx, req)
 	return &Receipt{h: h, action: "TransferService.StartMirror", jobID: jobID, err: err}

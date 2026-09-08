@@ -258,7 +258,7 @@
           </form>
         {/if}
         {#if rerunError}
-          <p class="empty bad">{rerunError}</p>
+          <p class="empty bad" role="alert">{rerunError}</p>
         {/if}
         {#if browser.jobsError}
           <p class="empty">jobs unavailable: {browser.jobsError}</p>
@@ -303,7 +303,7 @@
                   {:else if job.type === "copy"}
                     <button
                       class="rerun"
-                      title="Start a fresh run of this scope: it replans from current listings; objects that prove equal are skipped"
+                      title="Start a fresh Copy after checking retained item records for unresolved effects and unverified copies; the new job replans the current scope"
                       onclick={() => rerun(job)}>Re-run</button
                     >
                   {/if}

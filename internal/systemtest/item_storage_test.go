@@ -267,7 +267,9 @@ func TestTransferItemStorageReopen(t *testing.T) {
 	for id, job := range want.Jobs {
 		actual := got.After.Jobs[id]
 		if id == request.Pending {
-			if actual.State != "failed" || actual.FinishedAt == "" || actual.Counters != job.Counters || actual.Error == "" {
+			counters := job.Counters
+			counters.ObjectsFailed = got.After.Totals[id].Failed
+			if actual.State != "failed" || actual.FinishedAt == "" || actual.Counters != counters || actual.Error == "" {
 				t.Fatalf("restart invented terminal counter projection: %+v", actual)
 			}
 		} else if !reflect.DeepEqual(actual, job) {
