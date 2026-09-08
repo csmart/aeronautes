@@ -130,6 +130,27 @@ It reproduced all fifteen leaves: eight expected failures and seven passing cont
 All three archive hashes match both the original executed probes and the replay's overlay inputs.
 Its producer is `upload-archives-before-v1`; these repeated cases add no independent scenario credit.
 
+## Protected delivery
+
+[PR63](https://github.com/csmart/aeronautes/pull/63) delivered the reviewed prerequisites, checked Copy delivery record and accepted ADR 0031.
+Independent local reviews approved its three logical commits before push.
+Protected rebase merging preserved `400ec583` as `c72d2f54`, `acab23d8` as `f4d373bd`, and source head `1891f8fd452a7622293564e21a31784bbb200a4b` as master `73707f950cc28779a2edcbf8904c443a2f631a80`.
+Every patch matches and both heads have tree `4e1e8596a765cb8fc177097b58fd3abb57dc5def`.
+The change was documentation only; all 295 Go/SQL inputs match the checked Copy implementation.
+
+All five actual checks succeeded on the latest source with current master incorporated and again on the resulting master: Go, frontend, owned real-Swift integration, headless smoke and the aggregate gate.
+Neither a missing check nor an older green run was accepted.
+
+| Run | System package | Whole integration job |
+| --- | ---: | ---: |
+| [PR63](https://github.com/csmart/aeronautes/actions/runs/34274377123) | 776.857 s | 987 s |
+| [Resulting master](https://github.com/csmart/aeronautes/actions/runs/34276154657) | 751.064 s | 955 s |
+
+Both complete integration logs contain zero failed tests and only the existing optional engine-matrix and keychain round-trip skips.
+Those optional skips are distinct from the mandatory owned Swift job, which ran successfully.
+The finite 1,200-second package and 1,500-second job limits were unchanged.
+This delivery records the before evidence and accepted contract; it does not enable upload item recording.
+
 ## Next contract and limits
 
 Review the concrete source-path prerequisite and upload recording contract before changing execution hooks or enabling version-one upload jobs.
