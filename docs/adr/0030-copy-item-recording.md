@@ -172,7 +172,7 @@ Each delivered PR needs all five latest actual checks with current master incorp
 
 Step two is [delivered through PR60](../experiments/2026-09-08-transfer-item-access.md#delivery).
 Step three is [delivered through PR61](../experiments/2026-09-08-interrupted-item-records.md#delivery), with independent implementation review and all five protected PR/master checks complete.
-Step four now has a [checked Copy implementation and maintained actual-service evidence](../experiments/2026-09-08-checked-copy-records.md), pending independent implementation review and protected delivery.
+Step four is [delivered through PR62](../experiments/2026-09-08-checked-copy-records.md#delivery), with independent implementation review, all five protected PR/master checks and exact reviewed/merged tree identity complete.
 Only new Copy jobs opt into version-one records; historical jobs and local transfer callers are not silently upgraded.
 Separate local upload and download migrations remain step five.
 

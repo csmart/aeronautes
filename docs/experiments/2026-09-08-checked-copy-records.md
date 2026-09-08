@@ -27,6 +27,7 @@ Each selected source name is acknowledged before buffering or native execution.
 Changed names record refusals without staging; unchanged names record a separate comparison and execution fact without becoming planned transfers.
 Required item-write failures latch the shared store against public status/record reads and admission of every new job family, and stop this executor's subsequent dependent work.
 Buffered names whose engine invocation never started can record `not_attempted` while storage remains writable; engine-started names with missing final observations remain unresolved.
+Abandonment starts with an engine/incomplete diagnostic; typed cancellation, timeout or recognised Swift errors retain their classified code.
 
 The shared [streaming planner](../../internal/transfer/plan/plan.go) now emits and acknowledges the current item before reading its next input row.
 Previously, a later listing failure could discard the current comparison, and a refused recording callback was reached only after reading ahead.
@@ -90,7 +91,7 @@ Scenario reconciliation remains valid at 40/116 cells, with gaps in 38/52 action
 All 878 frontend tests across 23 files passed with 81.42% combined statement coverage.
 Svelte/TypeScript checks, frontend production build, vet, native application build, CGO-disabled internal build, upstream Swift core tests and Swift-source provenance checks passed.
 All 22 binding files were unchanged after regeneration.
-Independent local review and all five latest protected PR/master checks are still required before delivery.
+The protected delivery below records the independently reviewed source and complete PR/master results.
 
 Twenty-five negative-control runs using 24 distinct broken Go overlays fail their matching behavioural assertions without compilation errors, races, timeout substitutions or test skips.
 The affected-cleanup variant is checked both in an executor fixture and through the actual mock DLO service case.
@@ -111,3 +112,25 @@ Advisory listing bytes and current verification do not establish stronger conten
 WAL/FULL SQLite and orderly child reopening do not establish full application restart, lost-suffix recovery, fsync or power-loss durability.
 Local caller migrations, remote authority and identity, concurrent writers, stronger verification, filesystem safety, export/retention policy, native child lifetime and all six platform targets remain separate work.
 Mirror starts, changed Copy overwrites and automatic recovery reclamation remain refused, and the [valuable-data release hold](../audits/2026-09-05/remediation-plan.md#acceptance-gates-and-completion) remains in force.
+
+## Delivery
+
+Independent local review approved the preceding delivery record, the checked Copy implementation and the measured integration-budget correction before they were pushed.
+All five [PR62 checks](https://github.com/csmart/aeronautes/actions/runs/34266734740) passed on final source `8fa7b5fad0843205e861a9861b51a5535f55a476` with current master `44623f5dcc1232c2e06c44a6122ef1488bf05864` incorporated.
+The [protected PR62 merge](https://github.com/csmart/aeronautes/pull/62) produced master `9923de8a010650853909f9132cab89e5c49adf82`; all five [resulting master checks](https://github.com/csmart/aeronautes/actions/runs/34268481870) passed.
+The merged tree `b70b7c1ff7f0c523f6263adf4cf4006f1d4f3b85` exactly matches the reviewed source, and all three logical patches were preserved without changes.
+The actual Copy implementation is `c3a98bfb2f04af0815d646add7d519c688d1f318`, whose 295 Go/SQL files match the successful full local producer and remain unchanged by the budget correction.
+
+| Integration run | System-test package | Whole job |
+| --- | ---: | ---: |
+| Latest PR62 head | 768.840 seconds | 16 minutes 8 seconds |
+| Resulting master | 789.680 seconds | 16 minutes 32 seconds |
+
+Both completed integration streams contain 2,128 named passes, no failures and the two existing optional test skips, `TestRcloneMatrix` and `TestKeychainRoundTrip`.
+The required Go job separately runs the isolated Secret Service protocol check; the local full producer includes both fixtures with zero skips.
+The [first failed PR62 run and reviewed correction](2026-09-08-integration-time-budget.md#pr62-measured-growth) remain explicit evidence: its fifteen-minute package alarm was not an assertion failure, and its invalid producer receives no scenario credit.
+The twenty-minute package and twenty-five-minute job limits remain finite; future growth requires measured diagnosis and may need separate test scheduling work.
+
+This delivers ADR 0030 step four and the Copy portion of the retained-identity correction within DS-08.
+Local upload/download, complete per-effect history, remote authority and identity, native lifetime, stronger verification, filesystem safety and physical durability remain open.
+No complete audit package or valuable-data release gate is closed by this delivery.

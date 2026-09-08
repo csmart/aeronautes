@@ -4970,21 +4970,22 @@ The wider valuable-data hold remains open.
 
 The first ADR 0030 implementation slice adds [bounded job-history and item access](experiments/2026-09-08-transfer-item-access.md).
 It exposes retained jobs beyond the newest fifty, string item cursors, exact quoted locations and separate observations, with explicit uncaptured/empty/unavailable states, overlapping facets and completion refresh.
-The maintained read-service fixtures deliberately construct version-one records; actual Copy/upload/download callers still use version zero.
-Interrupted-result projection, backend/UI rerun refusal and checked Copy recording follow in the reviewed sequence; no caller outcome or valuable-data gate is closed by these reads.
+The maintained read-service fixtures deliberately construct version-one records; actual Copy/upload/download callers still used version zero at that step.
+Interrupted-result projection, backend/UI rerun refusal and checked Copy recording followed in the reviewed sequence; no caller outcome or valuable-data gate was closed by these reads.
 Independent local review and all five protected PR/master checks passed for [PR60](https://github.com/csmart/aeronautes/pull/60); its [delivery record](experiments/2026-09-08-transfer-item-access.md#delivery) confirms the exact reviewed tree and five preserved logical commits.
 This delivers complete access and the finite integration-suite budget correction while leaving the remaining ADR 0030 slices and valuable-data hold open.
 
-The next ADR 0030 slice now implements [interrupted-record projection and guarded reruns](experiments/2026-09-08-interrupted-item-records.md), with whole-transaction rollback and a shared-store unavailable latch on startup projection failure.
+The next ADR 0030 slice delivered [interrupted-record projection and guarded reruns](experiments/2026-09-08-interrupted-item-records.md), with whole-transaction rollback and a shared-store unavailable latch on startup projection failure.
 Its maintained system reproductions, bounded complete-record checks and backend/UI refusals preserve historical facts before any new rerun admission; permitted reruns still use fresh current planning.
-Actual transfer callers remain version zero until the separately reviewed checked Copy migration; this slice does not close the complete outcome, authority or valuable-data gates.
+Actual transfer callers remained version zero until the separately reviewed checked Copy migration; this slice did not close the complete outcome, authority or valuable-data gates.
 Independent local review and all five protected PR/master checks passed for [PR61](https://github.com/csmart/aeronautes/pull/61); its [delivery record](experiments/2026-09-08-interrupted-item-records.md#delivery) confirms the exact reviewed tree and two preserved logical commits.
-This delivers the interruption/rerun prerequisite while checked Copy recording and the wider valuable-data gates remain open.
+This delivered the interruption/rerun prerequisite while checked Copy recording and the wider valuable-data gates remained open.
 
-The next slice implements [checked Copy item recording](experiments/2026-09-08-checked-copy-records.md) for new Copy jobs, with admission before effects, typed final execution and verification facts, and distinct failures and audit facets from one terminal transaction.
+[Checked Copy item recording](experiments/2026-09-08-checked-copy-records.md) is delivered for new Copy jobs, with admission before effects, typed final execution and verification facts, and distinct failures and audit facets from one terminal transaction.
 The streaming planner acknowledges each item before reading ahead, and planning failure stops buffered dispatch before executor finish.
 Maintained mock and two-account SAIO tests cover complete failure identities, SQL refusal before and after effects, retained DLO staging and segments, unchanged names, owned collateral and orderly reopening.
-The complete race run, twenty-five negative-control runs, frontend/build checks and measured recording costs are recorded in that evidence; independent implementation review and protected PR/master delivery remain required.
+The complete race run, twenty-five negative-control runs, frontend/build checks and measured recording costs are recorded in that evidence.
+Independent local review and all five protected PR/master checks passed for [PR62](https://github.com/csmart/aeronautes/pull/62); its [delivery record](experiments/2026-09-08-checked-copy-records.md#delivery) confirms the exact reviewed tree, three preserved logical commits and measured integration durations.
 Historical and local transfers remain unrecorded, and the wider outcome, authority, durability and valuable-data gates stay open.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
