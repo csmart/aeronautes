@@ -4289,6 +4289,9 @@ Conflicting ownership/concurrency/durability contracts must be resolved in this 
 The owner authorised implementation of the [5 September audit plan](https://github.com/csmart/aeronautes/blob/c3da04c45fd214ed166118c0debc12d3a9996763/docs/audits/2026-09-05/remediation-plan.md).
 Implement each logical fix with a failing-before/passing-after regression and independent local review before pushing.
 Keep the valuable-data release hold until the plan's safety and release gates have evidence.
+On 8 September the owner reaffirmed safe operation on valuable data as the first milestone.
+The [current execution order and finding dispositions](audits/2026-09-05/remediation-plan.md#execution-order-for-valuable-data-safety) reconcile delivered slices and prioritise P12/P13 recovery and exact outcomes, with bounded P21 callers and authority, verification, containment and native-lifetime prerequisites at each dependent effect.
+The plan retains every finding, the ADR 0020 refusals, accepted v1 scope and all six platform gates; the following dated implementation sequences remain historical context.
 Earlier §65 implementation logs are historical evidence, not authority to resume unsafe cleanup.
 Earlier logs of executable Mirror also describe historical code; current availability is the refusal rule in §27.2 and K-MIRROR-001.
 In particular, the generated-prefix sweep rules in §65.8 item 2 and §65.9 item 5, and §65.10's scan-based re-enablement suggestions, are superseded by the P01/P04 contract in ADR 0020.
