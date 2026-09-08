@@ -361,13 +361,54 @@ func (s *TransferService) StartCopy(ctx context.Context, req CopyRequestDTO) (st
 	jobCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	s.runner.register(job.ID, cancel)
 
-	s.record(ctx, req.SourceBookmarkID, "transfer.copy.start",
-		job.Source+" → "+job.Destination, "job "+job.ID+" · "+job.Settings, audit.ResultApplied)
-	s.launch(jobCtx, job.ID, req.SourceBookmarkID, releasePins, func(runCtx context.Context) {
+	if err := s.runner.audit.Append(ctx, audit.Event{
+		BookmarkID: req.SourceBookmarkID, Operation: "transfer.copy.start",
+		Resource: job.Source + " → " + job.Destination, Summary: "job " + job.ID + " · " + job.Settings,
+		Result: audit.ResultApplied,
+	}); err != nil {
+		cancel()
+		s.finishCopy(context.WithoutCancel(ctx), job.ID, req, job.Counters, jobs.StateFailed, "start audit unavailable before first write: "+err.Error())
+		return "", fmt.Errorf("start audit unavailable: %w", err)
+	}
+	s.runner.launchWithQueuedOutcome(jobCtx, job.ID, req.SourceBookmarkID, releasePins, func(runCtx context.Context) {
 		s.runCopy(runCtx, job.ID, req, src, dst, engine)
+	}, func(background context.Context) {
+		s.finishCopy(background, job.ID, req, job.Counters, jobs.StateCancelled, "")
 	})
 	releasePins = nil
 	return job.ID, nil
+}
+
+func (s *TransferService) finishCopy(ctx context.Context, jobID string, req CopyRequestDTO, counters jobs.Counters, state jobs.State, message string) {
+	auditSummary := "job " + jobID
+	if counters.OverwritesRefused > 0 {
+		state = jobs.StatePartial
+		count := fmt.Sprintf("%d overwrites refused", counters.OverwritesRefused)
+		if counters.OverwritesRefused == 1 {
+			count = "1 overwrite refused"
+		}
+		refusal := count + ": overwriting existing destinations is unavailable while concurrent changes cannot be protected"
+		if message == "" {
+			message = refusal
+		} else {
+			message = refusal + "; " + message
+		}
+		auditSummary += " · " + count
+	}
+	// A completed body cannot accept cancellation even when its final
+	// transaction fails and the shared store reports unavailability.
+	s.runner.release(jobID)
+	err := s.jobs.Finish(ctx, jobID, jobs.Completion{
+		State: state, Counters: counters, Error: message,
+		Audit: audit.Event{
+			BookmarkID: req.SourceBookmarkID, Operation: "transfer.copy." + string(state),
+			Resource: req.SourceContainer + "/" + req.SourcePrefix + " → " + req.DestContainer + "/" + req.DestPrefix,
+			Summary:  auditSummary, Result: terminalAuditResult(state),
+		},
+	}, s.runner.audit)
+	if err != nil {
+		log.Printf("job %s terminal outcome was not saved: %v", jobID, err)
+	}
 }
 
 // runCopy is the job goroutine: Planning → Running (single-pass plan
@@ -380,49 +421,36 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 
 	background := context.WithoutCancel(ctx) // store/reconcile writes survive cancel
 	var overwritesRefused int64
-	transition := func(state jobs.State) {
-		if err := s.jobs.Transition(background, jobID, state); err != nil {
-			log.Printf("job %s: %v", jobID, err)
-		}
-	}
-	finish := func(state jobs.State, message string) {
-		auditSummary := "job " + jobID
-		if overwritesRefused > 0 {
-			state = jobs.StatePartial
-			count := fmt.Sprintf("%d overwrites refused", overwritesRefused)
-			if overwritesRefused == 1 {
-				count = "1 overwrite refused"
-			}
-			refusal := count + ": overwriting existing destinations is unavailable while concurrent changes cannot be protected"
-			if message == "" {
-				message = refusal
-			} else {
-				message = refusal + "; " + message
-			}
-			auditSummary += " · " + count
-		}
-		if message != "" {
-			_ = s.jobs.SetError(background, jobID, message)
-		}
-		// Deregister BEFORE the terminal state becomes visible: a job
-		// that reads terminal must no longer be cancel-addressable.
-		s.runner.release(jobID)
-		transition(state)
-		s.record(background, req.SourceBookmarkID, "transfer.copy."+string(state),
-			req.SourceContainer+"/"+req.SourcePrefix+" → "+req.DestContainer+"/"+req.DestPrefix,
-			auditSummary, terminalAuditResult(state))
-	}
-
-	transition(jobs.StatePlanning)
-
 	counters := jobs.Counters{}
 	var countersMu sync.Mutex
+	finish := func(state jobs.State, message string) {
+		countersMu.Lock()
+		snapshot := counters
+		countersMu.Unlock()
+		s.finishCopy(background, jobID, req, snapshot, state, message)
+	}
+	admit := func(state jobs.State) bool {
+		if s.jobs.Available() != nil {
+			s.runner.release(jobID)
+			return false
+		}
+		if err := s.jobs.Transition(background, jobID, state); err != nil {
+			finish(jobs.StateFailed, "job admission unavailable before first write: "+err.Error())
+			return false
+		}
+		return true
+	}
+
+	if !admit(jobs.StatePlanning) {
+		return
+	}
+
 	lastFlush := time.Time{}
-	flush := func(force bool) {
+	flush := func() {
 		countersMu.Lock()
 		snapshot := counters
 		now := time.Now()
-		flushable := force || now.Sub(lastFlush) >= 500*time.Millisecond
+		flushable := now.Sub(lastFlush) >= 500*time.Millisecond
 		if flushable {
 			lastFlush = now
 		}
@@ -449,7 +477,7 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 				counters.OverwritesRefused++
 			}
 			countersMu.Unlock()
-			flush(false)
+			flush()
 		},
 		OnAuthFailure: func() {
 			src.ForceReauth()
@@ -475,7 +503,9 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 		finish(jobs.StateFailed, "recovery store unavailable before first write: "+err.Error())
 		return
 	}
-	transition(jobs.StateRunning)
+	if !admit(jobs.StateRunning) {
+		return
+	}
 
 	planned := func(item plan.Item) error {
 		countersMu.Lock()
@@ -506,7 +536,6 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 	counters.NativeRouted = report.NativeRouted
 	counters.ObjectsFailed = int64(len(report.Failures))
 	countersMu.Unlock()
-	flush(true)
 
 	// These records preserve creation provenance, not deletion authority.
 	s.recordOwnership(background, req.DestBookmarkID, jobID, report.CommittedPrefixes)
@@ -534,7 +563,14 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 		return
 	}
 
-	transition(jobs.StateVerifying)
+	if err := s.jobs.Transition(background, jobID, jobs.StateVerifying); err != nil {
+		message := "verification state could not be saved: " + err.Error()
+		if len(report.Failures) > 0 {
+			message += fmt.Sprintf("; %d failed (first: %s: %s)", len(report.Failures), report.Failures[0].Name, report.Failures[0].Err)
+		}
+		finish(jobs.StatePartial, message)
+		return
+	}
 	verify, err := executor.Verify(background,
 		src.Objects(background, req.SourceContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.SourcePrefix}),
 		dst.Objects(background, req.DestContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.DestPrefix}))
@@ -546,7 +582,6 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 	counters.ObjectsVerified = verify.Verified
 	counters.ObjectsFailed = int64(len(report.Failures) + len(verify.Failures))
 	countersMu.Unlock()
-	flush(true)
 
 	switch {
 	case len(report.Failures) > 0 || len(verify.Failures) > 0 || len(report.Conflicts) > 0:

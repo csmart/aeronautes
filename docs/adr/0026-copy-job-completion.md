@@ -1,6 +1,6 @@
 # ADR 0026 — save Copy job completion atomically
 
-**Status:** Proposed under the authorised audit remediation plan; independent local design review is required before implementation.
+**Status:** Accepted after independent local design review under the authorised audit remediation plan.
 **Scope:** The separate Copy admission and terminal-summary migration scheduled by ADR 0024.
 
 ## Problem and oracle

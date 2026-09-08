@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/csmart/aeronautes/internal/app"
 )
@@ -61,6 +60,22 @@ func TestCopyRefusesOverwritesRealSwift(t *testing.T) {
 	if !strings.Contains(job.Error, "210 overwrites refused") || !strings.Contains(job.Error, "concurrent changes cannot be protected") {
 		t.Fatalf("refusal detail missing: %q", job.Error)
 	}
+	events, err := h.Audit.Recent(t.Context(), 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	matched := 0
+	for _, event := range events {
+		if event.Operation == "transfer.copy.partial" && event.Summary == "job "+receipt.JobID()+" · 210 overwrites refused" {
+			if event.Result != "verify_mismatch" {
+				t.Fatalf("partial audit result: %+v", event)
+			}
+			matched++
+		}
+	}
+	if matched != 1 {
+		t.Fatalf("terminal Copy lacks its matching atomic audit: %d events", matched)
+	}
 	srcAfter, dstAfter := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
 	h.AssertNoCollateral(srcBefore, srcAfter)
 	h.AssertNoCollateral(dstBefore, dstAfter, dst+"/scope/z-new", dst+"/scope/z-native\nnew")
@@ -69,31 +84,6 @@ func TestCopyRefusesOverwritesRealSwift(t *testing.T) {
 		if got.Size != want.Size || got.Digest != want.Digest {
 			t.Fatalf("eligible object was not copied faithfully: %s: %+v", name, got)
 		}
-	}
-	// The existing audit append follows the terminal row. Await its exact
-	// job identity without claiming that those writes are atomic.
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		events, err := h.Audit.Recent(t.Context(), 20)
-		if err != nil {
-			t.Fatal(err)
-		}
-		found := false
-		for _, event := range events {
-			if event.Operation == "transfer.copy.partial" && event.Summary == "job "+receipt.JobID()+" · 210 overwrites refused" {
-				if event.Result != "verify_mismatch" {
-					t.Fatalf("partial audit result: %+v", event)
-				}
-				found = true
-			}
-		}
-		if found {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("missing partial Copy audit")
-		}
-		time.Sleep(10 * time.Millisecond)
 	}
 	receipt.CreditPartial()
 }
