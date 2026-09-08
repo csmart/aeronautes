@@ -731,6 +731,18 @@ export function newFakeApi(): Api {
       return { manifestDeleted: true, segmentsDeleted: 3, segmentsFailed: 0, basis: req.force ? "backstage-forced" : "exclusive-ownership" };
     },
     recoveryStatus: async () => ({ jobs: 0, records: 0 }),
+    job: async (id) => jobs.find((j) => j.id === id) ?? null,
+    jobHistory: async (bookmarkId, cursor, limit) => {
+      const ordered = jobs.filter((j) => !bookmarkId || j.sourceBookmarkId === bookmarkId || j.destBookmarkId === bookmarkId)
+        .slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+      const index = cursor ? ordered.findIndex((j) => j.id === cursor) : -1;
+      if (cursor && index === -1) throw new Error("invalid job history page or cursor");
+      const page = ordered.slice(index + 1, index + 1 + limit);
+      return { jobs: page, nextCursor: index + 1 + page.length < ordered.length ? page.at(-1)!.id : "" };
+    },
+    jobItems: async () => ({ status: "not_captured", items: [], nextCursor: "" }),
+    jobItemTotals: async () => ({ status: "not_captured", items: 0, planned: 0, admitted: 0,
+      failed: 0, conflicts: 0, refused: 0, unresolved: 0, unverified: 0, problems: 0 }),
     jobs: async (bookmarkId, activeOnly, limit) =>
       jobs
         .filter(

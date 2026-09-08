@@ -731,9 +731,21 @@ export class BrowserState {
     }
   }
 
+  #jobsSeq = 0;
+  #jobsLoadedFilter: string | null = null;
+
   async loadJobs() {
+    const seq = ++this.#jobsSeq;
+    const filter = this.jobsFilter;
+    if (filter !== this.#jobsLoadedFilter) {
+      this.jobs = [];
+      this.jobRates = {};
+      this.jobsError = null;
+      this.#jobsLoadedFilter = filter;
+    }
     try {
-      const jobs = await this.#api.jobs(this.jobsFilter, false, 50);
+      const jobs = await this.#api.jobs(filter, false, 50);
+      if (seq !== this.#jobsSeq || filter !== this.jobsFilter) return;
       const now = Date.now();
       const rates: Record<string, number> = {};
       for (const job of jobs) {
@@ -748,8 +760,24 @@ export class BrowserState {
       this.jobRates = rates;
       this.jobsError = null;
     } catch (error) {
-      this.jobsError = messageOf(error);
+      if (seq === this.#jobsSeq && filter === this.jobsFilter) this.jobsError = messageOf(error);
     }
+  }
+
+  jobHistory(bookmarkId: string, cursor: string, limit: number) {
+    return this.#api.jobHistory(bookmarkId, cursor, limit);
+  }
+
+  job(jobId: string) {
+    return this.#api.job(jobId);
+  }
+
+  jobItems(jobId: string, cursor: string, limit: number) {
+    return this.#api.jobItems(jobId, cursor, limit);
+  }
+
+  jobItemTotals(jobId: string) {
+    return this.#api.jobItemTotals(jobId);
   }
 
   async startBenchmark(confirm: string): Promise<string> {

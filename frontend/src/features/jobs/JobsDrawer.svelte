@@ -8,11 +8,13 @@
   import type { BrowserState } from "../browser/browserState.svelte";
   import type { JobDTO } from "../../lib/api";
   import { formatBytes } from "../../lib/format";
+  import JobHistory from "./JobHistory.svelte";
+  import JobItems from "./JobItems.svelte";
 
   let { browser }: { browser: BrowserState } = $props();
 
   let open = $state(false);
-  let tab: "jobs" | "changes" = $state("jobs");
+  let tab: "jobs" | "history" | "changes" = $state("jobs");
   let expanded: string | null = $state(null);
   let budgetSaving = $state(false);
   // §42 benchmark: typed-account consent inline.
@@ -21,6 +23,11 @@
   let benchError: string | null = $state(null);
 
   const TERMINAL = ["complete", "partial", "cancelled", "failed"];
+
+  $effect(() => {
+    browser.jobsFilter;
+    expanded = null;
+  });
 
   function isActive(job: JobDTO): boolean {
     return !TERMINAL.includes(job.state);
@@ -147,6 +154,12 @@
         >
         <button
           role="tab"
+          class:active={tab === "history"}
+          aria-selected={tab === "history"}
+          onclick={() => (tab = "history")}>Job history</button
+        >
+        <button
+          role="tab"
           class:active={tab === "changes"}
           aria-selected={tab === "changes"}
           onclick={() => {
@@ -177,6 +190,8 @@
           >
             Benchmark…
           </button>
+        {/if}
+        {#if tab === "jobs" || tab === "history"}
           <label class="filter">
             <span>Account</span>
             <select
@@ -282,26 +297,25 @@
                     {timeOf(job.finishedAt) || timeOf(job.startedAt)}
                   {/if}
                 </span>
-                {#if isActive(job)}
-                  <button class="cancel" onclick={() => cancel(job)}>Cancel</button>
-                {:else}
-                  <span class="row-actions">
-                    {#if job.type === "copy"}
-                      <button
-                        class="rerun"
-                        title="Start a fresh run of this scope: it replans from current listings; objects that prove equal are skipped"
-                        onclick={() => rerun(job)}>Re-run</button
-                      >
-                    {/if}
+                <span class="row-actions">
+                  {#if isActive(job)}
+                    <button class="cancel" onclick={() => cancel(job)}>Cancel</button>
+                  {:else if job.type === "copy"}
                     <button
-                      class="details"
-                      onclick={() => (expanded = expanded === job.id ? null : job.id)}
-                      aria-expanded={expanded === job.id}
+                      class="rerun"
+                      title="Start a fresh run of this scope: it replans from current listings; objects that prove equal are skipped"
+                      onclick={() => rerun(job)}>Re-run</button
                     >
-                      {expanded === job.id ? "▾" : "▸"}
-                    </button>
-                  </span>
-                {/if}
+                  {/if}
+                  <button
+                    class="details"
+                    aria-label="Item details for job {job.id}"
+                    onclick={() => (expanded = expanded === job.id ? null : job.id)}
+                    aria-expanded={expanded === job.id}
+                  >
+                    {expanded === job.id ? "▾" : "▸"}
+                  </button>
+                </span>
                 {#if progressOf(job) !== null}
                   <div class="progress" style="--p: {(progressOf(job) ?? 0) * 100}%"></div>
                 {/if}
@@ -324,11 +338,14 @@
                       <span class="config-row"><span class="k">settings</span><span>defaults</span></span>
                     {/if}
                   </div>
+                  {#key job.id}<JobItems {browser} {job} />{/key}
                 {/if}
               </div>
             {/each}
           </div>
         {/if}
+      {:else if tab === "history"}
+        <JobHistory {browser} />
       {:else}
         <div class="audit-filters num">
           <input

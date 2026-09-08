@@ -21,6 +21,21 @@ export function Get(jobID: string): $CancellablePromise<$models.JobDTO | null> {
     return $Call.ByID(3943386922, jobID);
 }
 
+export function History(bookmarkID: string, cursor: string, limit: number): $CancellablePromise<$models.JobHistoryDTO> {
+    return $Call.ByID(2144743990, bookmarkID, cursor, limit);
+}
+
+export function ItemTotals(jobID: string): $CancellablePromise<$models.JobItemTotalsDTO> {
+    return $Call.ByID(2590407842, jobID);
+}
+
+/**
+ * Items keeps SQLite cursors as decimal strings across the JavaScript boundary.
+ */
+export function Items(jobID: string, cursor: string, limit: number): $CancellablePromise<$models.JobItemPageDTO> {
+    return $Call.ByID(1806834634, jobID, cursor, limit);
+}
+
 /**
  * List returns jobs newest first; bookmarkID "" means all, matching
  * either end otherwise (§47 owner input: filter by account).

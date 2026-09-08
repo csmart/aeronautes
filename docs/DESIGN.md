@@ -4968,6 +4968,11 @@ The plan includes exact source/destination/staging identities, the shared record
 Each implementation slice needs actual boundary evidence and independent local review before the next, followed by protected PR/master verification.
 The wider valuable-data hold remains open.
 
+The first ADR 0030 implementation slice adds [bounded job-history and item access](experiments/2026-09-08-transfer-item-access.md).
+It exposes retained jobs beyond the newest fifty, string item cursors, exact quoted locations and separate observations, with explicit uncaptured/empty/unavailable states, overlapping facets and completion refresh.
+The maintained read-service fixtures deliberately construct version-one records; actual Copy/upload/download callers still use version zero.
+Interrupted-result projection, backend/UI rerun refusal and checked Copy recording follow in the reviewed sequence; no caller outcome or valuable-data gate is closed by these reads.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
