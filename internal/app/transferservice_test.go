@@ -453,7 +453,8 @@ func TestCancelCopyJob(t *testing.T) {
 		t.Fatal(err)
 	}
 	job := awaitTerminal(t, h, jobID)
-	if job.State != "cancelled" {
+	want := jobs.Counters{ObjectsPlanned: 1, BytesPlanned: int64(len("will not arrive")), ObjectsFailed: 1}
+	if job.State != "partial" || job.Counters != want || job.Error != "1 failed (first: stuck.txt: engine child cancelled); context canceled" {
 		t.Fatalf("job = %+v", job)
 	}
 	// Cancelling a finished job is refused.

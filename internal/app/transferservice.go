@@ -551,7 +551,11 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 	}
 
 	if planErr != nil {
-		if errors.Is(planErr, context.Canceled) {
+		if len(report.Failures) > 0 {
+			finish(jobs.StatePartial, fmt.Sprintf("%d failed (first: %s: %s); %s", len(report.Failures), report.Failures[0].Name, report.Failures[0].Err, planErr.Error()))
+		} else if report.Copied > 0 {
+			finish(jobs.StatePartial, planErr.Error())
+		} else if errors.Is(planErr, context.Canceled) {
 			message := ""
 			if overwritesRefused > 0 {
 				message = planErr.Error()

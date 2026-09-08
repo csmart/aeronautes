@@ -1,6 +1,6 @@
 # ADR 0027 — preserve Copy outcomes on interruption
 
-**Status:** Proposed for independent local design review under the authorised audit remediation plan.
+**Status:** Accepted after independent local design review under the authorised audit remediation plan.
 **Scope:** The separate earlier-outcome reporting follow-up scheduled by ADR 0026.
 
 ## Problem and oracle
@@ -45,7 +45,8 @@ The fixture proxy requests one-object server pages, leaving the application list
 The planner advances its source iterator before emitting an item, so the barrier deliberately holds the page after a lookahead engine name: earlier native outcomes and refusals are already reported while the lookahead name has not been executed.
 Actual CancelJob cancels that selected response, or a controlled HTTP 403 response supplies the later non-cancellation error.
 Retain success, refusal-only and before-work cancellation/error controls.
-Check exact counters, first failure and full later reason, both complete account namespaces and intended bytes, shared DLO/SLO aliases, other-job staging and unselected names, source audit authority while the destination bookmark is active, retained destination recovery identities and cancellation deregistration.
+Check exact counters, first failure and full later reason, both complete fixture namespaces and intended bytes, shared DLO/SLO aliases, other-job staging and unselected names, source audit authority while the destination bookmark is active, retained destination recovery identities and cancellation deregistration.
+Each namespace snapshot covers containers under that harness's unique prefix, including derived sidecars; it does not observe containers outside that prefix.
 Wait for captured binding release, then compare orderly child-process database reopening without remote requests.
 The remote newline names require native routing but do not require newline-containing local files or a Windows fixture skip.
 
