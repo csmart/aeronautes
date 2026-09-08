@@ -1,11 +1,13 @@
 package systemtest
 
 import (
+	"context"
 	"crypto/md5"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -13,6 +15,7 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -26,6 +29,62 @@ type uploadSourceCase struct {
 	noncanonical bool
 	native       bool
 	fileSymlink  bool
+}
+
+func TestUploadSourceAbortScope(t *testing.T) {
+	const path = "/v1/AUTH_owned/destination/.aeronautes/stage/job/batch/selected-link"
+	for _, tc := range []struct {
+		name, fault, method, path string
+		err                       error
+		cancelled, want           bool
+	}{
+		{name: "cancelled_body", err: context.Canceled, cancelled: true, want: true},
+		{name: "active_context", err: context.Canceled},
+		{name: "unexpected_eof", err: io.ErrUnexpectedEOF, want: true},
+		{name: "upstream_eof", err: &net.OpError{Op: "readfrom", Net: "tcp", Err: io.ErrUnexpectedEOF}, want: true},
+		{name: "body_reset", err: &net.OpError{Op: "readfrom", Net: "tcp", Err: syscall.ECONNRESET}, want: true},
+		{name: "body_broken_pipe", err: &net.OpError{Op: "write", Net: "tcp", Err: syscall.EPIPE}, want: true},
+		{name: "response_reset", err: &net.OpError{Op: "read", Net: "tcp", Err: syscall.ECONNRESET}},
+		{name: "dial_reset", err: &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNRESET}},
+		{name: "unscoped_reset", err: syscall.ECONNRESET},
+		{name: "plain_eof", err: io.EOF},
+		{name: "deadline", err: context.DeadlineExceeded, cancelled: true},
+		{name: "similar_text", err: fmt.Errorf("unexpected EOF")},
+		{name: "no_error"},
+		{name: "other_fault", fault: "none", err: io.ErrUnexpectedEOF},
+		{name: "other_method", method: http.MethodDelete, err: io.ErrUnexpectedEOF},
+		{name: "other_account", path: strings.Replace(path, "AUTH_owned", "AUTH_other", 1), err: io.ErrUnexpectedEOF},
+		{name: "other_container", path: strings.Replace(path, "destination", "other", 1), err: io.ErrUnexpectedEOF},
+		{name: "live_name", path: "/v1/AUTH_owned/destination/scope/selected-link", err: io.ErrUnexpectedEOF},
+		{name: "other_file", path: strings.Replace(path, "selected-link", "other", 1), err: io.ErrUnexpectedEOF},
+		{name: "empty_job", path: strings.Replace(path, "/job/", "//", 1), err: io.ErrUnexpectedEOF},
+		{name: "nested_job", path: strings.Replace(path, "/job/", "/job/extra/", 1), err: io.ErrUnexpectedEOF},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fault, method, target := tc.fault, tc.method, tc.path
+			if fault == "" {
+				fault = "source-link"
+			}
+			if method == "" {
+				method = http.MethodPut
+			}
+			if target == "" {
+				target = path
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			if tc.cancelled {
+				cancel()
+			}
+			request, err := http.NewRequestWithContext(ctx, method, "http://fixture"+target, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := uploadSourceAbort(fault, "/v1/AUTH_owned", "destination", request, tc.err); got != tc.want {
+				t.Fatalf("source abort classification: got=%t want=%t error=%v", got, tc.want, tc.err)
+			}
+		})
+	}
 }
 
 func uploadSourcePaths(t *testing.T, h *Harness, tc uploadSourceCase) {
@@ -189,30 +248,36 @@ func uploadSourcePaths(t *testing.T, h *Harness, tc uploadSourceCase) {
 			wantStage = 1
 		}
 	}
-	wantStagePuts := wantStage
 	if !copied {
-		wantStagePuts = 1
-	}
-	if stagePuts != wantStagePuts || livePuts != wantLive || stageDeletes != wantStage || len(trace.writeSnapshot()) != wantStagePuts+wantStage+wantLive {
-		t.Errorf("actual engine stage/commit trace differs: stage_puts=%d live_puts=%d stage_deletes=%d writes=%v", stagePuts, livePuts, stageDeletes, trace.writeSnapshot())
-	}
-	if !copied {
-		// Engine exit does not acknowledge the proxy's cancellation handler.
-		select {
-		case <-trace.stagePutCancelled:
-		case <-time.After(5 * time.Second):
-			t.Fatal("source-read cancellation was not acknowledged")
+		// Engine exit does not acknowledge each attempted body's proxy callback.
+		deadline := time.NewTimer(5 * time.Second)
+		defer deadline.Stop()
+		for {
+			trace.mu.Lock()
+			aborted := trace.abortedStagePuts
+			trace.mu.Unlock()
+			if aborted >= stagePuts {
+				break
+			}
+			select {
+			case <-trace.stagePutAborted:
+			case <-deadline.C:
+				t.Fatalf("source-read aborts were not acknowledged: got=%d want=%d", aborted, stagePuts)
+			}
 		}
 	}
 	trace.mu.Lock()
-	cancelledStagePuts := trace.cancelledStagePuts
+	abortedStagePuts := trace.abortedStagePuts
 	trace.mu.Unlock()
-	wantCancelled := 0
+	stageOK := stagePuts == wantStage && abortedStagePuts == 0
 	if !copied {
-		wantCancelled = 1
+		// Runner.pacingArgs supplies two low-level retries; an aborted body
+		// can be retried when rclone sees a transport failure before its size error.
+		const lowLevelRetries = 2
+		stageOK = stagePuts >= 1 && stagePuts <= 1+lowLevelRetries && abortedStagePuts == stagePuts
 	}
-	if cancelledStagePuts != wantCancelled {
-		t.Errorf("source-read cancellation witness differs: got=%d want=%d", cancelledStagePuts, wantCancelled)
+	if !stageOK || livePuts != wantLive || stageDeletes != wantStage || len(trace.writeSnapshot()) != stagePuts+wantStage+wantLive {
+		t.Errorf("actual engine stage/commit trace differs: stage_puts=%d aborted=%d live_puts=%d stage_deletes=%d writes=%v", stagePuts, abortedStagePuts, livePuts, stageDeletes, trace.writeSnapshot())
 	}
 	if err := h.Transfer.CancelJob(t.Context(), id); err == nil {
 		t.Error("terminal source upload accepts cancellation")
@@ -233,8 +298,8 @@ func uploadSourcePaths(t *testing.T, h *Harness, tc uploadSourceCase) {
 	if !reflect.DeepEqual(localBefore, snapshotListingLocal(t, root)) {
 		t.Error("source upload changed owned local files or links")
 	}
-	t.Logf("upload source service observation case=%s selected=%q uploaded=%q copied=%d bytes=%d stage_puts=%d live_puts=%d stage_deletes=%d",
-		tc.name, selected, body, saved.Job.Counters.ObjectsCopied, saved.Job.Counters.BytesCopied, stagePuts, livePuts, stageDeletes)
+	t.Logf("upload source service observation case=%s selected=%q uploaded=%q copied=%d bytes=%d stage_puts=%d live_puts=%d stage_deletes=%d aborted=%d",
+		tc.name, selected, body, saved.Job.Counters.ObjectsCopied, saved.Job.Counters.BytesCopied, stagePuts, livePuts, stageDeletes, abortedStagePuts)
 	requests := trace.requestCount()
 	uploadRecoveryReopen(t, h, id, saved)
 	if requests != trace.requestCount() {

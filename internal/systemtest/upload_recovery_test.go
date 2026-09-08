@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -17,6 +19,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -154,12 +157,32 @@ func uploadRecoveryReopen(t *testing.T, h *Harness, jobID string, want uploadRec
 }
 
 type uploadDeleteTrace struct {
-	cancelledStagePuts int
-	stagePutCancelled  chan struct{}
-	mu                 sync.Mutex
-	paths              []string
-	writes             []string
-	requests           int
+	abortedStagePuts int
+	stagePutAborted  chan struct{}
+	mu               sync.Mutex
+	paths            []string
+	writes           []string
+	requests         int
+}
+
+func uploadSourceAbort(fault, storagePath, dest string, request *http.Request, err error) bool {
+	if fault != "source-link" || request.Method != http.MethodPut {
+		return false
+	}
+	stage, ok := strings.CutPrefix(request.URL.Path, storagePath+"/"+dest+"/.aeronautes/stage/")
+	if !ok {
+		return false
+	}
+	job, ok := strings.CutSuffix(stage, "/batch/selected-link")
+	if !ok || job == "" || strings.Contains(job, "/") {
+		return false
+	}
+	if errors.Is(err, context.Canceled) && errors.Is(request.Context().Err(), context.Canceled) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	var op *net.OpError
+	return errors.As(err, &op) && (op.Op == "write" || op.Op == "readfrom") &&
+		(errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE))
 }
 
 func (trace *uploadDeleteTrace) requestCount() int {
@@ -194,7 +217,7 @@ func uploadRecoveryProxy(t *testing.T, h *Harness, dest string, test uploadRecov
 	t.Cleanup(transport.CloseIdleConnections)
 	proxy := httputil.NewSingleHostReverseProxy(&target)
 	proxy.Transport = transport
-	trace := &uploadDeleteTrace{stagePutCancelled: make(chan struct{}, 1)}
+	trace := &uploadDeleteTrace{stagePutAborted: make(chan struct{}, 1)}
 	proxy.ModifyResponse = func(response *http.Response) error {
 		if test.fault == "committed-verify" && response.Request.Method == http.MethodHead && strings.HasSuffix(response.Request.URL.Path, "/live/000.bin") && response.StatusCode == http.StatusOK {
 			response.Header.Set("Content-Length", "1")
@@ -205,20 +228,17 @@ func uploadRecoveryProxy(t *testing.T, h *Harness, dest string, test uploadRecov
 	proxy.ErrorHandler = func(w http.ResponseWriter, request *http.Request, err error) {
 		// The selected-link fixture makes rclone abort its staged body when
 		// the followed file size differs from the link's own size.
-		if test.fault == "source-link" && request.Method == http.MethodPut &&
-			strings.HasPrefix(request.URL.Path, storage.Path+"/"+dest+"/.aeronautes/stage/") &&
-			strings.HasSuffix(request.URL.Path, "/batch/selected-link") &&
-			errors.Is(err, context.Canceled) && errors.Is(request.Context().Err(), context.Canceled) {
+		if uploadSourceAbort(test.fault, storage.Path, dest, request, err) {
 			trace.mu.Lock()
-			trace.cancelledStagePuts++
+			trace.abortedStagePuts++
 			trace.mu.Unlock()
 			select {
-			case trace.stagePutCancelled <- struct{}{}:
+			case trace.stagePutAborted <- struct{}{}:
 			default:
 			}
-			return
+		} else {
+			t.Errorf("upload fault proxy: %v", err)
 		}
-		t.Errorf("upload fault proxy: %v", err)
 		http.Error(w, "fixture proxy failed", http.StatusBadGateway)
 	}
 	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
