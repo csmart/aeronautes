@@ -86,6 +86,22 @@ Absent real-Swift configuration can skip that provider and is not the complete e
 Raw commands, exits, source/overlay hashes, event streams and all eight parsed observations are retained under `/home/csmart/code/.aeronautes-work/20260908/copy-failure-identity-*`.
 The complete producer is `copy-failure-identity-before-v1`; the earlier four-case `copy-failure-identity-smoke-v1` check is not added to its case total.
 
+## Replay before the Copy caller migration
+
+The same byte-identical archived probe was replayed after [PR59](https://github.com/csmart/aeronautes/pull/59), on master `1d4bd66f4f152ae05d277780e4b2f815745ad478`.
+Its source and all 275 application Go/SQL input hashes were recorded, and the sole overlay still adds the archived test file without replacing application code.
+The Go 1.27.1 race command, test selection, pinned rclone and both owned providers match the reproduction above; use that newer master commit when replaying this run.
+
+All eight leaf cases retain the same results: six intended failed-count assertions and two passing controls, with no skipped cases or unexpected diagnostics.
+Unique failures of one, 201 and 401 still report as two, 400 and 400; only the first failed identity appears in existing summaries, and the engine-safe control remains copied and verified with ten bytes.
+All selected GET refusals, complete owned collateral, audit/recovery comparisons and orderly child-reopen checks still run.
+The recorded source and overlay hashes match after execution.
+This confirms that the shared storage and listing prerequisites did not silently migrate the Copy caller.
+
+The local producer is `copy-item-identity-before-v1`, with its inputs, exit, event stream and parsed observations retained outside the repository.
+The repository archive above remains sufficient to reproduce the test; no replacement probe source is required.
+[ADR 0030](../adr/0030-copy-item-recording.md) specifies the next concrete caller/UI, interrupted-record and rerun contract for independent review.
+
 ## Next contract and limits
 
 Review the smallest durable logical item-admission and outcome contract before changing storage or migrating callers, as required by the [remediation order](../audits/2026-09-05/remediation-plan.md#execution-order-for-valuable-data-safety).

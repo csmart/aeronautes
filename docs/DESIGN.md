@@ -4961,6 +4961,13 @@ Independent implementation review and all five protected PR/master checks passed
 Preserve valid Unicode, complete-page and continuation semantics, owned collateral and recovery evidence; the later Copy adapter/UI/restart plan must still define the recording-latch scope, comparison mapping and unresolved-rerun refusal.
 This prerequisite does not close the caller migration, wider audit or valuable-data hold.
 
+[ADR 0030](adr/0030-copy-item-recording.md) now specifies the concrete Copy caller migration against the [current-master replay](experiments/2026-09-08-copy-failure-identities.md#replay-before-the-copy-caller-migration).
+Review this contract before changing execution hooks or opting actual jobs into records.
+Its commit sequence first adds complete bounded item access in the service and drawer, then interrupted-result projection and rerun refusal, then checked Copy admission/execution/verification and atomic item-derived completion.
+The plan includes exact source/destination/staging identities, the shared recording-latch scope, typed diagnostics, comparison-only names and post-copy issue ordering; local transfers follow separately.
+Each implementation slice needs actual boundary evidence and independent local review before the next, followed by protected PR/master verification.
+The wider valuable-data hold remains open.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
