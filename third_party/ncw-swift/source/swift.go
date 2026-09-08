@@ -1,6 +1,7 @@
-// Aeronautes must not accept mixed credentials or incomplete listings.
+// Aeronautes must not accept mixed credentials, incomplete listings or changed identities.
 // See docs/adr/0016-native-request-credentials.md and
-// docs/adr/0021-complete-listing-pages.md; the sibling patches record both fixes.
+// docs/adr/0021-complete-listing-pages.md and 0029-listing-identity-decoding.md;
+// the sibling patches record these fixes.
 
 package swift
 
@@ -13,6 +14,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"hash"
@@ -941,7 +943,7 @@ func readJson(resp *http.Response, result interface{}) (err error) {
 
 // A decoded prefix is not proof that Swift sent a complete listing.
 // Keep this stricter contract separate from unrelated JSON endpoints.
-func readListingJSON(ctx context.Context, resp *http.Response, row func(*json.Decoder) error) (err error) {
+func readListingJSON(ctx context.Context, resp *http.Response, row func(json.RawMessage) error) (err error) {
 	defer func() {
 		closeErr := resp.Body.Close()
 		if err == nil {
@@ -982,7 +984,14 @@ func readListingJSON(ctx context.Context, resp *http.Response, row func(*json.De
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := row(decoder); err != nil {
+		var raw json.RawMessage
+		if err := decoder.Decode(&raw); err != nil {
+			return err
+		}
+		if !jsontext.Value(raw).IsValid() || !validListingIdentityMembers(raw) {
+			return fmt.Errorf("listing row requires valid Unicode and unambiguous identity fields")
+		}
+		if err := row(raw); err != nil {
 			return err
 		}
 	}
@@ -1006,6 +1015,34 @@ func readListingJSON(ctx context.Context, resp *http.Response, row func(*json.De
 			return fmt.Errorf("listing has trailing data")
 		}
 	}
+}
+
+// Legacy struct matching folds field names even after strict JSON validation.
+// Multiple spellings must not silently select a later object identity.
+func validListingIdentityMembers(raw json.RawMessage) bool {
+	if jsontext.Value(raw).Kind() != '{' {
+		return true
+	}
+	var members map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &members); err != nil {
+		return false
+	}
+	var nameSeen, subdirSeen bool
+	for member := range members {
+		switch {
+		case strings.EqualFold(member, "name"):
+			if nameSeen {
+				return false
+			}
+			nameSeen = true
+		case strings.EqualFold(member, "subdir"):
+			if subdirSeen {
+				return false
+			}
+			subdirSeen = true
+		}
+	}
+	return true
 }
 
 /* ------------------------------------------------------------ */
@@ -1081,9 +1118,9 @@ func (c *Connection) Containers(ctx context.Context, opts *ContainersOpts) ([]Co
 		return nil, err
 	}
 	containers := make([]Container, 0)
-	err = readListingJSON(ctx, resp, func(decoder *json.Decoder) error {
+	err = readListingJSON(ctx, resp, func(raw json.RawMessage) error {
 		var container *Container
-		if err := decoder.Decode(&container); err != nil {
+		if err := json.Unmarshal(raw, &container); err != nil {
 			return err
 		}
 		if container == nil {
@@ -1264,9 +1301,9 @@ func (c *Connection) Objects(ctx context.Context, container string, opts *Object
 		return nil, err
 	}
 	objects := make([]Object, 0)
-	err = readListingJSON(ctx, resp, func(decoder *json.Decoder) error {
+	err = readListingJSON(ctx, resp, func(raw json.RawMessage) error {
 		var object *Object
-		if err := decoder.Decode(&object); err != nil {
+		if err := json.Unmarshal(raw, &object); err != nil {
 			return err
 		}
 		if object == nil {

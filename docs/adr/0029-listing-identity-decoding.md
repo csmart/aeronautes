@@ -1,6 +1,6 @@
 # ADR 0029 — preserve listing identity during decoding
 
-**Status:** Proposed; implementation requires independent local design review.
+**Status:** Accepted after independent local design review on 8 September 2026, including its identity-alias follow-up.
 **Scope:** A native listing prerequisite for the P12/P13 Copy item-record migration, alongside the P22 complete-page contract.
 
 ## Problem and oracle
@@ -22,7 +22,7 @@ No item recorder can repair an identity already changed by the listing decoder.
 ## Decision
 
 Validate each raw JSON listing row before decoding its fields into application strings.
-Use the existing Go 1.27 standard library's [`jsontext.Value.IsValid`](https://pkg.go.dev/encoding/json/jsontext#Value.IsValid) with its strict defaults.
+Use [`jsontext.Value.IsValid`](https://pkg.go.dev/encoding/json/jsontext#Value.IsValid) from the standard library's `jsonv2` package set, enabled by default in Go 1.27, with its strict defaults.
 It checks UTF-8, Unicode escape validity and duplicate JSON member names, including equivalent escaped member names.
 Reject a row that fails these checks with a constant diagnostic that contains none of its provider-supplied text.
 Do not allow invalid UTF-8 or duplicate names through validation options.
@@ -37,8 +37,11 @@ Do not reject all replacement characters, normalise names, invent an escape sche
 Do not add retries, per-row HEAD requests, namespace accumulation or a permissive fallback.
 
 The strict check applies to raw member names and string values throughout the row, including unknown fields, so later typed conversion cannot silently replace malformed Unicode in accepted row data.
-Other established typed-field mappings remain unchanged.
-This does not certify every possible semantic ambiguity, including differently cased field aliases in legacy struct matching, or the independent rclone parser and unrelated JSON endpoints.
+Before typed conversion, also reject multiple top-level identity members that match `name` or `subdir` under the legacy decoder's case-insensitive matching.
+A pair such as `name` and `Name` passes syntactic duplicate validation but would still select a later identity through legacy struct matching.
+Apply the collision check to decoded member names, including escaped spellings and Unicode case-fold equivalents, independently of their order or values.
+Preserve a single supported spelling's existing mapping and keep `name` and `subdir` as separate field identities.
+Other established typed-field mappings remain unchanged; this is not a general schema redesign or a claim about the independent rclone parser and unrelated JSON endpoints.
 The complete item-record adapter, resource budgets and wider provider response contracts remain separate gates.
 
 ## Pinned source and compatibility
@@ -50,7 +53,9 @@ The copied source, including its new tests, must equal the verified upstream arc
 Extend the source-checker tests to reject missing, reordered, altered and unrecorded patches.
 
 The application already requires Go 1.27.0 and the tested toolchain is Go 1.27.1.
-Declare Go 1.27.0 in this application-owned local Swift fork because its new standard-library import requires that version; include the module-file change in the new patch.
+Declare Go 1.27.0 in this application-owned local Swift fork to state its minimum tested toolchain and satisfy the standard-library version checks in vet; include the module-file change in the new patch.
+Keep the import unconditional, so an explicitly disabled `jsonv2` experiment fails the build rather than selecting a permissive fallback.
+The module directive records the compiler requirement; it is not itself the experiment or import gate.
 The upstream version, revision and archive checksums remain unchanged.
 This is an application-local patch, not an assertion that upstream Swift supports the change or has raised its own compiler requirement.
 No application dependency, workflow, binding or platform scope changes are needed.
@@ -65,7 +70,7 @@ Maximum response/row bytes and process memory are still P24 requirements; do not
 2. Add the narrow raw-row validation and third checked source patch in one implementation commit.
    Include nested-library lifecycle tests, session-level encoding cases and the actual Copy regression on both owned providers.
 3. Require malformed UTF-8, overlong/truncated sequences, encoded surrogate bytes, lone/reversed/unpaired escaped surrogates, ordinary and escaped duplicate members to fail before publication.
-   Cover malformed later rows, unknown fields, pseudo-directory names, container names, split readers, cancellation and body close errors.
+   Cover malformed later rows, unknown fields, pseudo-directory names, container names, case-folded identity collisions and their single-spelling controls, split readers, cancellation and body close errors.
    Keep the valid Unicode, marker and complete-page controls.
 4. The actual Copy test must retain zero destination mutations for a failed first page, an honest terminal job/audit result, source audit authority, destination recovery identities, the complete owned fixture namespace and shared DLO/SLO aliases.
    Valid-name controls must still copy and verify their exact expected bytes.

@@ -96,16 +96,18 @@ class SourceGateTests(unittest.TestCase):
             SOURCE.check(self.root)
 
     def test_missing_or_unapplicable_patch_is_refused(self):
-        for name in ("credential-pairing.patch", "listing-response.patch"):
+        for name in SOURCE.PATCHES:
             with self.subTest(patch=name):
                 patch = self.dependency / name
                 original = patch.read_bytes()
                 patch.unlink()
-                with self.assertRaises(SOURCE.subprocess.CalledProcessError):
+                with self.assertRaises(SOURCE.subprocess.CalledProcessError) as caught:
                     SOURCE.check(self.root)
+                self.assertEqual(caught.exception.cmd[:2], ["git", "apply"])
                 patch.write_text("--- a/missing.go\n+++ b/missing.go\n@@ -1 +1 @@\n-old\n+new\n")
-                with self.assertRaises(SOURCE.subprocess.CalledProcessError):
+                with self.assertRaises(SOURCE.subprocess.CalledProcessError) as caught:
                     SOURCE.check(self.root)
+                self.assertEqual(caught.exception.cmd[:2], ["git", "apply"])
                 patch.write_bytes(original)
 
     def test_ordered_patch_sequence_is_required(self):
@@ -114,6 +116,9 @@ class SourceGateTests(unittest.TestCase):
         for patches in (None, "listing-response.patch", [],
                         ["listing-response.patch", "credential-pairing.patch"],
                         ["credential-pairing.patch"],
+                        ["credential-pairing.patch", "listing-response.patch"],
+                        ["credential-pairing.patch", "listing-fidelity.patch", "listing-response.patch"],
+                        ["credential-pairing.patch", "listing-response.patch", "listing-fidelity.patch", "listing-fidelity.patch"],
                         ["credential-pairing.patch", "credential-pairing.patch"],
                         ["credential-pairing.patch", "unreviewed.patch"]):
             with self.subTest(patches=patches):
@@ -126,16 +131,16 @@ class SourceGateTests(unittest.TestCase):
             SOURCE.check(self.root)
 
     def test_altered_patch_is_refused(self):
-        for name in ("credential-pairing.patch", "listing-response.patch"):
+        anchors = {
+            "credential-pairing.patch": b"+// The callback selects a URL",
+            "listing-response.patch": b"+\t\t\tobject.LastModified = object.LastModified.Truncate(time.Second)",
+            "listing-fidelity.patch": b"+// Aeronautes",
+        }
+        for name, anchor in anchors.items():
             with self.subTest(patch=name):
                 patch = self.dependency / name
                 original = patch.read_bytes()
-                anchor = (
-                    b"+// The callback selects a URL"
-                    if name == "credential-pairing.patch"
-                    else b"+// Aeronautes"
-                )
-                changed = original.replace(anchor, b"+// Changed", 1)
+                changed = original.replace(anchor, anchor + b" // changed", 1)
                 self.assertNotEqual(changed, original)
                 patch.write_bytes(changed)
                 try:
@@ -150,12 +155,18 @@ class SourceGateTests(unittest.TestCase):
             SOURCE.check(self.root)
 
     def test_patch_symlink_is_refused(self):
-        patch = self.dependency / "listing-response.patch"
-        moved = self.dependency / "moved.patch.txt"
-        patch.rename(moved)
-        patch.symlink_to(moved)
-        with self.assertRaisesRegex(ValueError, "patch must not be a symlink"):
-            SOURCE.check(self.root)
+        for name in SOURCE.PATCHES:
+            with self.subTest(patch=name):
+                patch = self.dependency / name
+                moved = self.dependency / "moved.patch.txt"
+                patch.rename(moved)
+                patch.symlink_to(moved)
+                try:
+                    with self.assertRaisesRegex(ValueError, "patch must not be a symlink"):
+                        SOURCE.check(self.root)
+                finally:
+                    patch.unlink()
+                    moved.rename(patch)
 
     def test_archive_contents_are_checked_independently(self):
         upstream = json.loads((self.dependency / "UPSTREAM.json").read_text())
