@@ -1,0 +1,59 @@
+package local
+
+import (
+	"io"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestUploadCapturedPathProbe(t *testing.T) {
+	for _, native := range []bool{false, true} {
+		name := "engine"
+		if native {
+			name = "native_control"
+		}
+		t.Run(name, func(t *testing.T) {
+			s, _ := session(t)
+			root, other := t.TempDir(), t.TempDir()
+			if err := os.Mkdir(filepath.Join(other, "child"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(filepath.Join(other, "child"), filepath.Join(root, "link")); err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, root, "item", "bravo")
+			writeFile(t, other, "item", "alpha")
+			// Joining would erase the pathname whose resolution is under test.
+			captured := root + string(filepath.Separator) + "link" + string(filepath.Separator) + ".." + string(filepath.Separator) + "item"
+			selected, err := os.ReadFile(captured)
+			if err != nil || string(selected) != "alpha" {
+				t.Fatalf("owned selected-path fixture: %q %v", selected, err)
+			}
+			pre, err := PreflightUpload(t.Context(), s, "media", "live/", []string{captured})
+			if err != nil || pre.Rejected() || len(pre.Items) != 1 || pre.Items[0].Path != captured || pre.Items[0].Route != "rclone" {
+				t.Fatalf("captured preflight path: %+v %v", pre, err)
+			}
+			if native {
+				pre.Items[0].Route = "native"
+			}
+			report, err := Upload(t.Context(), s, &fsEngine{s}, "aeronautes_dst:media", "media", "live/", "probe-path", pre, nil, nil)
+			if err != nil || report.Done != 1 || len(report.Failures) != 0 {
+				t.Fatalf("upload did not reach the content witness: %+v %v", report, err)
+			}
+			body, _, err := s.OpenObject(t.Context(), "media", "live/item")
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, readErr := io.ReadAll(body)
+			closeErr := body.Close()
+			if readErr != nil || closeErr != nil {
+				t.Fatalf("uploaded content witness: %v %v", readErr, closeErr)
+			}
+			t.Logf("source path route=%s selected=%q uploaded=%q copied=%d bytes=%d", name, selected, got, report.Done, report.Bytes)
+			if string(got) != string(selected) {
+				t.Errorf("uploaded bytes differ from backend-captured source: selected=%q uploaded=%q", selected, got)
+			}
+		})
+	}
+}

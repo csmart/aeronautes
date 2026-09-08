@@ -1,0 +1,140 @@
+package local
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"testing"
+
+	"github.com/csmart/aeronautes/internal/swiftcontrol"
+	"github.com/csmart/aeronautes/internal/swifttest"
+	"github.com/csmart/aeronautes/internal/transfer/rclone"
+)
+
+type uploadRecoveryBoundaryProbeEngine struct {
+	calls int
+	run   func(context.Context, string, string, []string, func(rclone.Event)) (*rclone.Result, error)
+}
+
+func (e *uploadRecoveryBoundaryProbeEngine) Copy(ctx context.Context, src, dst string, names []string, event func(rclone.Event)) (*rclone.Result, error) {
+	e.calls++
+	return e.run(ctx, src, dst, names, event)
+}
+
+func TestUploadRecoveryBoundaryProbeAuth(t *testing.T) {
+	for _, refuse := range []bool{false, true} {
+		t.Run(fmt.Sprintf("refuse_%t", refuse), func(t *testing.T) {
+			s, mock := session(t)
+			seed(mock, "media", "unselected", "untouched")
+			path := writeFile(t, t.TempDir(), "item", "owned bytes")
+			pre, err := PreflightUpload(t.Context(), s, "media", "live/", []string{path})
+			if err != nil || pre.Rejected() {
+				t.Fatalf("preflight: %+v %v", pre, err)
+			}
+			engine := &uploadRecoveryBoundaryProbeEngine{}
+			engine.run = func(ctx context.Context, src, dst string, names []string, event func(rclone.Event)) (*rclone.Result, error) {
+				if engine.calls == 1 {
+					event(rclone.Event{Msg: `Uploading segment file "probe/segment/00000000" into "media_segments"`})
+					return &rclone.Result{ExitCode: 1, Errors: []string{"401 unauthorized"}}, nil
+				}
+				return (&fsEngine{s}).Copy(ctx, src, dst, names, event)
+			}
+			writes := 0
+			report, runErr := Upload(t.Context(), s, engine, "aeronautes_dst:media", "media", "live/", "probe-auth", pre, nil,
+				func(kind, container, prefix, object string) error {
+					if kind != "captured" || container != "media_segments" || prefix != "probe/segment/" || object != "" {
+						t.Fatalf("unexpected record: %q %q %q %q", kind, container, prefix, object)
+					}
+					writes++
+					if refuse {
+						return errors.New("fixture capture refused")
+					}
+					return nil
+				})
+			t.Logf("boundary auth refuse=%t engine_calls=%d record_calls=%d report=%+v error=%v", refuse, engine.calls, writes, report, runErr)
+			if writes != 1 || report == nil {
+				t.Fatalf("capture boundary not reached once: %d %+v", writes, report)
+			}
+			if !refuse && (engine.calls != 2 || report.Done != 1 || len(report.Failures) != 0 || runErr != nil) {
+				t.Fatalf("ordinary bounded auth retry failed: %+v %v calls=%d", report, runErr, engine.calls)
+			}
+			if refuse && engine.calls != 1 {
+				t.Errorf("required captured-record refusal admitted another engine invocation: calls=%d", engine.calls)
+			}
+			if refuse && report.Done != 0 {
+				t.Errorf("refused capture admitted a live copy: %+v", report)
+			}
+			if detail, err := s.ObjectDetail(t.Context(), "media", "unselected"); err != nil || detail.ContentLength != 9 {
+				t.Errorf("unselected sentinel changed: %+v %v", detail, err)
+			}
+		})
+	}
+}
+
+func TestUploadRecoveryBoundaryProbeDLO(t *testing.T) {
+	for _, refuse := range []string{"none", "committing", "committed"} {
+		t.Run(refuse, func(t *testing.T) {
+			s, mock := session(t)
+			mock.AddContainer("media_segments", "standard")
+			seed(mock, "media", "unselected", "untouched")
+			dir := t.TempDir()
+			paths := []string{writeFile(t, dir, "a", "alpha"), writeFile(t, dir, "b", "bravo")}
+			pre, err := PreflightUpload(t.Context(), s, "media", "live/", paths)
+			if err != nil || pre.Rejected() {
+				t.Fatalf("preflight: %+v %v", pre, err)
+			}
+			engine := &uploadRecoveryBoundaryProbeEngine{run: func(_ context.Context, _, dst string, names []string, _ func(rclone.Event)) (*rclone.Result, error) {
+				stage := strings.TrimPrefix(dst, "aeronautes_dst:media/") + "/"
+				for _, name := range names {
+					body := map[string]string{"a": "alpha", "b": "bravo"}[name]
+					seed(mock, "media_segments", "probe/"+name+"/00000000", body)
+					mock.PutObject("media", stage+name, swifttest.Object{Manifest: "media_segments/probe/" + name + "/", ContentType: "application/octet-stream"})
+				}
+				return &rclone.Result{}, nil
+			}}
+			refusals := 0
+			report, runErr := Upload(t.Context(), s, engine, "aeronautes_dst:media", "media", "live/", "probe-dlo", pre, nil,
+				func(kind, _, _, _ string) error {
+					if kind == refuse {
+						refusals++
+						return errors.New("fixture recovery record refused")
+					}
+					return nil
+				})
+			live := 0
+			stages := 0
+			for _, name := range []string{"a", "b"} {
+				for object, count := range map[string]*int{"live/" + name: &live, ".aeronautes/stage/probe-dlo/batch/" + name: &stages} {
+					detail, err := s.ObjectDetail(t.Context(), "media", object)
+					if err == nil {
+						*count++
+						if detail.ContentLength != 5 {
+							t.Errorf("unexpected logical length: %q %+v", object, detail)
+						}
+					} else if !swiftcontrol.IsNotFound(err) {
+						t.Errorf("object witness: %q %v", object, err)
+					}
+				}
+			}
+			t.Logf("boundary dlo refuse=%s engine_calls=%d refusals=%d live=%d stages=%d report=%+v error=%v", refuse, engine.calls, refusals, live, stages, report, runErr)
+			if engine.calls != 1 || report == nil {
+				t.Fatalf("expected one staged batch: calls=%d report=%+v", engine.calls, report)
+			}
+			switch refuse {
+			case "none":
+				if live != 2 || stages != 0 || report.Done != 2 || report.PostCommitIssues != 0 || len(report.Failures) != 0 || runErr != nil {
+					t.Errorf("ordinary DLO control failed: live=%d stages=%d report=%+v error=%v", live, stages, report, runErr)
+				}
+			case "committing":
+				if refusals != 1 || live != 0 || stages != 2 {
+					t.Errorf("required committing-record refusal did not stop later commit work: refusals=%d live=%d stages=%d", refusals, live, stages)
+				}
+			case "committed":
+				if refusals != 1 || live != 1 || stages != 2 || report.Done != 1 || report.PostCommitIssues != 1 {
+					t.Errorf("required committed-record refusal did not stop the next live commit: refusals=%d live=%d stages=%d report=%+v", refusals, live, stages, report)
+				}
+			}
+		})
+	}
+}
