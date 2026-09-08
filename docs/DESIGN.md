@@ -4956,7 +4956,8 @@ This delivers only the shared storage foundation; complete caller/UI/restart mig
 The [listing identity reproduction](experiments/2026-09-08-listing-fidelity.md) exposes a prerequisite to the Copy record migration: malformed Unicode and duplicate identity fields can reach native copies under rewritten or ambiguous names and still report complete.
 [ADR 0029](adr/0029-listing-identity-decoding.md) defines the independently reviewed raw-row validation contract before typed decoding through a third verified Swift-source patch.
 The maintained decoder rejects malformed Unicode, duplicate JSON members and colliding identity aliases before publishing any row from the affected page.
-Session, library lifecycle and actual Copy regressions check the contract, including deliberately broken decoder variants; independent implementation review and protected PR/master verification remain delivery gates.
+Session, library lifecycle and actual Copy regressions check the contract, including deliberately broken decoder variants.
+Independent implementation review and all five protected PR/master checks passed for [PR59](https://github.com/csmart/aeronautes/pull/59); its [delivery record](experiments/2026-09-08-listing-fidelity.md#delivery) confirms the exact reviewed tree and three preserved logical commits.
 Preserve valid Unicode, complete-page and continuation semantics, owned collateral and recovery evidence; the later Copy adapter/UI/restart plan must still define the recording-latch scope, comparison mapping and unresolved-rerun refusal.
 This prerequisite does not close the caller migration, wider audit or valuable-data hold.
 

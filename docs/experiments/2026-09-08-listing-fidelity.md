@@ -84,6 +84,7 @@ No root dependency, workflow, binding or caller version opt-in changes are inclu
 Independent design review also identified differently cased field aliases such as `name` and `Name`.
 A supplementary pre-fix probe added ordinary and escaped case aliases on both providers: twenty actual-service leaves produced fourteen expected failures and six valid controls, with no skips or unexpected diagnostics and all twenty reopen/collateral witnesses.
 Its source SHA-256 is `d452340ec52a7cbf258b8386ef20a15b90145dc17d7309255a62481b3afabd8b`.
+That supplementary source and its raw run records are retained in the local evidence workspace outside this repository; the two linked original probes remain the repository's inert replay archives.
 This expanded run supersedes the sixteen-case total for the added coverage; the earlier archives remain unchanged and the runs are not added together.
 
 The maintained [session regressions](../../internal/swiftcontrol/listing_fidelity_test.go) cover 141 leaf cases across containers, objects and prefixes: the original Unicode table plus duplicate fields, unknown/nested data, identity aliases in both orders, their single-spelling controls and preserved prefix semantics.
@@ -99,7 +100,9 @@ These are assertion failures with no skipped cases, build failure, timeout, pani
 The parent decoder fails 96 of the 141 maintained session leaves and fourteen of the twenty actual Copy leaves, with the 45 session and six Copy controls passing.
 
 The final Go 1.27.1 run uses the CI coverage package set, race detection, pinned rclone, required Secret Service and both owned Swift accounts.
-It passes 630 top-level tests, 1,852 leaf cases and 2,007 named tests across all twenty packages, with zero failures or skips and 85.6% statement coverage; source hashes match the tested files.
+It passes 630 top-level tests, 1,852 leaf cases and 2,007 named tests across all twenty packages, with zero failures or skips and 85.6% statement coverage.
+The run was recorded before the implementation commit, so its HEAD metadata names parent `2bc35e072e66a0a90a7c53eaf0fcfe890d600f1b`.
+All 275 recorded source hashes, covering 265 Go files and ten SQL migrations, match the committed contents of reviewed implementation `423d1e7ea556c03e1c1845478e0bd23d36af5731` exactly.
 All 852 frontend tests across 22 files pass at 79.33% statement coverage, alongside type checking, frontend and native Linux builds, the CGO-disabled internal build and vet.
 The nested Swift suite passes, and the provenance gate verifies all 38 source files plus its fifteen checker tests, including missing, reordered, altered and symlinked third patches.
 The scenario report remains 32 of 110 cells covered with 38 of 49 actions carrying gaps; these regressions add no scenario-matrix credit.
@@ -111,6 +114,20 @@ It does not establish rclone's independent JSON parsing, a complete per-effect l
 The child check is an orderly database reopen, not full application restart, process kill, orphan-child control, fsync or power-loss evidence.
 No common fault/barrier framework, scenario-coverage credit or valuable-data clearance is claimed.
 
-Complete independent implementation review and protected PR/master verification before delivery.
-Then complete the separately reviewed Copy adapter, item-access UI, interrupted-result projection and unresolved-rerun refusal, followed by local upload/download migrations.
+Complete the separately reviewed Copy adapter, item-access UI, interrupted-result projection and unresolved-rerun refusal, followed by local upload/download migrations.
 The wider P12/P13/P22 work and valuable-data release hold remain open.
+
+## Delivery
+
+[PR59](https://github.com/csmart/aeronautes/pull/59) delivered this native listing prerequisite after independent local review of all three logical commits.
+The reviewer independently passed the full internal race suite with 2,007 named tests across twenty packages and no test skips, passed all 852 frontend tests, reproduced the parent decoder's 96 session and fourteen actual Copy failures and detected thirteen meaningful broken variants.
+Additional checks covered the subdirectory alias guard, same-value collisions and refusal of an affected later page while preserving earlier complete pages.
+Moving validation after the callback was an equivalent negative-control variant under the existing typed callers' whole-page discard contract; it was not detected and is not counted as a broken rule.
+
+All five actual [PR checks](https://github.com/csmart/aeronautes/actions/runs/34225183809) passed on reviewed source `423d1e7ea556c03e1c1845478e0bd23d36af5731` with current base `17cbe69058aa20fe1d0d6330c64f5103f1228e58` incorporated.
+The protected rebase merge at 12:31:37 UTC on 8 September 2026 produced master `1d4bd66f4f152ae05d277780e4b2f815745ad478`.
+All five [master checks](https://github.com/csmart/aeronautes/actions/runs/34226579443) passed on that commit.
+The merged tree `bd6bfd9a58dd53499d2ee9b55714e2244fdc88f3` exactly matches the reviewed source, and all three patches match individually after the merge.
+
+Copy and local transfer callers still use unrecorded jobs.
+The shared item storage and native listing corrections are delivered prerequisites, with the caller/UI/restart migrations and wider valuable-data gates still required.
