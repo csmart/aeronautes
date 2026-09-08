@@ -77,6 +77,12 @@ func (r *jobRunner) cancel(jobID string) (context.CancelFunc, bool) {
 // until a slot frees; cancellation while queued is honoured without
 // ever starting.
 func (r *jobRunner) launch(ctx context.Context, jobID, bookmarkID string, releasePins func(), body func(ctx context.Context)) {
+	r.launchWithQueuedOutcome(ctx, jobID, bookmarkID, releasePins, body, nil)
+}
+
+// Local transfers retain their final counters and audit contract even
+// when cancellation prevents the execution body from ever starting.
+func (r *jobRunner) launchWithQueuedOutcome(ctx context.Context, jobID, bookmarkID string, releasePins func(), body, queuedCancel func(context.Context)) {
 	go func() {
 		// Terminal rows and cancellation deregistration can precede
 		// cleanup. The binding survives until the whole body has returned,
@@ -84,12 +90,24 @@ func (r *jobRunner) launch(ctx context.Context, jobID, bookmarkID string, releas
 		defer releasePins()
 		background := context.WithoutCancel(ctx)
 		if !r.acquireSlot(ctx) {
+			if r.jobs.Available() != nil {
+				r.release(jobID)
+				return
+			}
+			if queuedCancel != nil {
+				queuedCancel(background)
+				return
+			}
 			_ = r.jobs.Transition(background, jobID, jobs.StateCancelled)
 			r.record(background, bookmarkID, "transfer.cancelled-queued", "job "+jobID, "cancelled before a job slot freed", audit.ResultApplied)
 			r.release(jobID)
 			return
 		}
 		defer r.releaseSlot()
+		if r.jobs.Available() != nil {
+			r.release(jobID)
+			return
+		}
 		body(ctx)
 	}()
 }

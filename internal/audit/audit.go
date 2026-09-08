@@ -84,6 +84,14 @@ func NewStoreWithCap(d *db.DB, keep int) *Store {
 // error the caller surfaces (a mutation that cannot be accounted for
 // should be loud), but the mutation itself has already happened.
 func (s *Store) Append(ctx context.Context, e Event) error {
+	return s.db.WriteTx(ctx, func(tx *sql.Tx) error {
+		return s.AppendTx(ctx, tx, e)
+	})
+}
+
+// AppendTx lets a job's terminal snapshot and audit share one commit.
+// The caller owns the transaction and must roll it back on any error.
+func (s *Store) AppendTx(ctx context.Context, tx *sql.Tx, e Event) error {
 	if e.Operation == "" || e.Resource == "" || e.Result == "" {
 		return fmt.Errorf("audit event needs operation, resource, and result: %+v", e)
 	}
@@ -111,22 +119,20 @@ func (s *Store) Append(ctx context.Context, e Event) error {
 		bookmark = &e.BookmarkID
 	}
 
-	return s.db.WriteTx(ctx, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, `
+	if _, err := tx.ExecContext(ctx, `
 			INSERT INTO audit_events (at, bookmark_id, operation, resource, summary, result, transaction_ids_json)
 			VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			at.Format(time.RFC3339), bookmark, e.Operation, e.Resource,
-			e.Summary, string(e.Result), transIDs); err != nil {
-			return err
-		}
-		// Compact beyond the cap, oldest first (§51). An export path is
-		// added with the audit UI; compaction is deliberately simple.
-		_, err := tx.ExecContext(ctx, `
+		at.Format(time.RFC3339), bookmark, e.Operation, e.Resource,
+		e.Summary, string(e.Result), transIDs); err != nil {
+		return err
+	}
+	// Retention shares the transaction so a failed compaction cannot
+	// leave the caller's job snapshot committed without its audit.
+	_, err := tx.ExecContext(ctx, `
 			DELETE FROM audit_events WHERE id IN (
 				SELECT id FROM audit_events ORDER BY id DESC LIMIT -1 OFFSET ?
 			)`, s.keep)
-		return err
-	})
+	return err
 }
 
 // Recent returns the newest events, newest first, at most limit.

@@ -41,3 +41,40 @@ Raw commands, exact source/overlay hashes, JSON test events, exit codes and extr
 The system-test observation parser needed to join Go test output chunks before decoding a long JSON line; that extraction correction did not change the probes or their successful producer exits.
 [ADR 0024](../adr/0024-local-job-completion.md) defines the bounded atomic-summary and admission follow-up.
 Its first implementation does not close P12/P13, establish per-identity outcomes or lift the valuable-data release hold.
+
+## Maintained implementation and evidence
+
+The local slice implements ADR 0024 in the shared jobs/audit stores and the upload/download runner.
+Final state, counters, error and finish time share one transaction with the terminal audit and its existing retention policy.
+Rejected completion writes latch a fixed non-secret diagnostic, refuse new job records and make job Get/List unavailable.
+Planning, running, start-audit and upload recovery-admission failures stop before execution; a refused verification transition cannot produce a clean completion.
+Queued local cancellation uses the same atomic completion path and releases its cancellation registration and credential pins.
+Other queued job families retain their prior cancellation accounting, but every queued execution body checks the shared availability latch.
+The collapsed drawer reports unavailable status instead of repeating a stale active-job count or saying there are no active transfers.
+
+The maintained proof includes:
+
+- `internal/jobs/completion_test.go`: independent durable-state reads after refusal of each final field, audit append or retention; audit validation, illegal/missing/closed-store cases, the matching successful snapshot and prevention of terminal replacement.
+- `internal/app/localcompletion_test.go`: local admission and verification refusals, shared-latch queue admission, cancellation deregistration and six actual upload/download queued-cancellation cases with acknowledged credential-pin release.
+- `internal/systemtest/local_completion_test.go`: forty leaf cases through actual upload/download services on mock Swift and two-account SAIO, including plain and DLO controls, admission refusals, terminal-write failures and refused subsequent starts.
+- Complete independent account and local-file snapshots, exact plain/DLO bytes and backing identities, untouched other-account/other-job/segment-store sentinels, exact recovery identities and terminal audit bookmark/job/result checks.
+- A separate process reads the exact persisted state, applies the existing interrupted-job handling and returns both snapshots for comparison, with no new service storage requests or collateral changes.
+  The injected refusal is removed before the checked close/reopen; this models a usable database at restart, not successful repair after a real disk failure.
+  Missing terminal observations remain missing; restart preserves advisory counters and retained facts rather than inventing a completed outcome.
+- Two frontend regressions prove visible unavailability with either an empty or stale active-job snapshot, including the collapsed drawer.
+
+The final full internal run passes 601 top-level tests and 1,508 leaf cases in twenty packages, with no failures or skips and 85.2% statement coverage.
+It uses the pinned engine, required keychain fixture and two-account SAIO under Go 1.27.1 with `-race -count=1`.
+All tested Go source hashes match the implementation after that run.
+Scenario reconciliation is valid at schema 3 and remains 32/110 cells, with 38/49 actions having gaps; these regressions do not invent additional scenario credit.
+All 852 frontend tests pass across 22 files, at 79.33% statement coverage; Svelte reports zero errors and warnings.
+Frontend build, Go vet, Linux native build, the CGO-disabled internal build, patched Swift source checks and upstream Swift core race tests pass.
+
+The parent local-caller overlay fails all 34 injected service-fault cases and four of six no-fault cases that expose its existing job-before-audit visibility gap; two no-fault cases pass.
+This restores the exact old local caller while retaining the new primitive and test APIs, and is not described as a full parent-tree build.
+Deliberately broken variants also catch lost final counters/error, omitted or separately committed audits, missing/unsafe diagnostics, ignored admission and admitted new/queued work, and a hidden UI error.
+The original direct-finaliser probes and current-master upload probes remain separately retained as pre-change observations.
+Raw runs, source/overlay hashes, checks, negative controls and the valid scenario report are retained locally under `/home/csmart/code/.aeronautes-work/20260908/terminal-*`.
+
+Earlier failures hidden by later errors/cancellation, sibling Copy completion, per-identity durable intents/outcomes, real crash/fsync/lost-history evidence and other mutation families remain open.
+This bounded summary implementation does not authorise retry, cleanup, overwrite/Mirror re-enablement or valuable-data use.
