@@ -33,8 +33,8 @@ func copyInterruptionProxy(t *testing.T, h *Harness, container string, tc copyIn
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The planner reads ahead before emitting the current item, so this
-	// page leaves y unattempted after the earlier native outcomes return.
+	// This page follows y's acknowledged admission but precedes the engine
+	// flush, so a failed read must leave y recorded as never dispatched.
 	marker := "scope/y-engine.bin"
 	if tc.beforeWork {
 		marker = ""
@@ -232,13 +232,36 @@ func copyInterruptionRun(t *testing.T, h *Harness, tc copyInterruptionCase) {
 		if tc.interruption == "cancel" {
 			wantState = "cancelled"
 		}
+	} else {
+		want.ObjectsPlanned++
+		want.BytesPlanned += 10
 	}
 	if saved.Job.State != wantState || saved.Job.Counters != want || saved.Job.StartedAt == "" || saved.Job.FinishedAt == "" {
 		t.Errorf("Copy interruption lost reported outcomes: got=%+v want=%s %+v", saved.Job, wantState, want)
 	}
+	wantTotals := jobs.ItemTotals{Items: want.ObjectsPlanned, Planned: want.ObjectsPlanned,
+		Admitted: want.ObjectsPlanned - want.OverwritesRefused, Failed: want.ObjectsFailed,
+		Refused: want.OverwritesRefused, Problems: want.ObjectsFailed + want.OverwritesRefused}
+	if tc.interruption != "none" {
+		wantTotals.Unverified = want.ObjectsCopied
+		if !tc.beforeWork {
+			wantTotals.Problems++
+		}
+	}
+	if !saved.ItemsCaptured || saved.ItemTotals != wantTotals || int64(len(saved.Items)) != wantTotals.Items {
+		t.Fatalf("Copy interruption lost acknowledged facts: captured=%v totals=%+v rows=%d want=%+v", saved.ItemsCaptured, saved.ItemTotals, len(saved.Items), wantTotals)
+	}
+	if tc.interruption != "none" && !tc.beforeWork {
+		buffered := saved.Items[len(saved.Items)-1]
+		if buffered.Key != "y-engine.bin" || !buffered.Admitted || buffered.Execution == nil || buffered.Verification != nil ||
+			buffered.Execution.Result != jobs.ItemNotAttempted || buffered.Execution.Effect != jobs.EffectNotAttempted || buffered.Staging == nil ||
+			buffered.Staging.Object != "scope/.aeronautes/stage/"+id+"/batch/y-engine.bin" {
+			t.Fatalf("planning interruption dispatched or lost acknowledged buffer: %+v", buffered)
+		}
+	}
 	var fragments []string
 	if tc.failed {
-		fragments = append(fragments, "1 failed (first: b-native\nfailed:")
+		fragments = append(fragments, "execution failed (example: b-native\nfailed:")
 	}
 	if tc.refused {
 		fragments = append(fragments, "1 overwrite refused")
@@ -269,6 +292,8 @@ func copyInterruptionRun(t *testing.T, h *Harness, tc copyInterruptionCase) {
 	if tc.refused {
 		summary += " · 1 overwrite refused"
 	}
+	summary += fmt.Sprintf(" · item outcomes: %d failed names, 0 conflicts, %d refusals, 0 unresolved, %d unverified, %d with problems",
+		wantTotals.Failed, wantTotals.Refused, wantTotals.Unverified, wantTotals.Problems)
 	if len(saved.Audit) != 1 || saved.Audit[0].Operation != "transfer.copy."+wantState || saved.Audit[0].Result != result || saved.Audit[0].Summary != summary || saved.Audit[0].BookmarkID != h.Primary.BookmarkID || saved.Audit[0].Resource != src+"/scope/ → "+dst+"/scope/" {
 		t.Errorf("Copy interruption audit lost outcome or authority: %+v", saved.Audit)
 	}

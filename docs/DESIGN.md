@@ -4981,6 +4981,12 @@ Actual transfer callers remain version zero until the separately reviewed checke
 Independent local review and all five protected PR/master checks passed for [PR61](https://github.com/csmart/aeronautes/pull/61); its [delivery record](experiments/2026-09-08-interrupted-item-records.md#delivery) confirms the exact reviewed tree and two preserved logical commits.
 This delivers the interruption/rerun prerequisite while checked Copy recording and the wider valuable-data gates remain open.
 
+The next slice implements [checked Copy item recording](experiments/2026-09-08-checked-copy-records.md) for new Copy jobs, with admission before effects, typed final execution and verification facts, and distinct failures and audit facets from one terminal transaction.
+The streaming planner acknowledges each item before reading ahead, and planning failure stops buffered dispatch before executor finish.
+Maintained mock and two-account SAIO tests cover complete failure identities, SQL refusal before and after effects, retained DLO staging and segments, unchanged names, owned collateral and orderly reopening.
+The complete race run, twenty-five negative-control runs, frontend/build checks and measured recording costs are recorded in that evidence; independent implementation review and protected PR/master delivery remain required.
+Historical and local transfers remain unrecorded, and the wider outcome, authority, durability and valuable-data gates stay open.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.

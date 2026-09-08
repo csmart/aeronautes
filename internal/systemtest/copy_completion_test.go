@@ -1,6 +1,7 @@
 package systemtest
 
 import (
+	"bytes"
 	"context"
 	"crypto/md5"
 	"crypto/sha256"
@@ -8,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -25,13 +27,17 @@ import (
 	"github.com/csmart/aeronautes/internal/bookmarks"
 	"github.com/csmart/aeronautes/internal/db"
 	"github.com/csmart/aeronautes/internal/jobs"
+	"github.com/csmart/aeronautes/internal/swifttest"
 )
 
 type copyCompletionState struct {
-	Job    *app.JobDTO
-	Rows   []jobs.RecoveryRecord
-	Status app.RecoveryStatusDTO
-	Audit  []audit.Event
+	Job           *app.JobDTO
+	Rows          []jobs.RecoveryRecord
+	Status        app.RecoveryStatusDTO
+	Audit         []audit.Event
+	ItemsCaptured bool
+	Items         []jobs.ItemRecord
+	ItemTotals    jobs.ItemTotals
 }
 
 func copyCompletionRead(t *testing.T, database *db.DB, id string) copyCompletionState {
@@ -50,6 +56,28 @@ func copyCompletionRead(t *testing.T, database *db.DB, id string) copyCompletion
 		t.Fatal(err)
 	}
 	state := copyCompletionState{Job: job, Status: status}
+	store := jobs.NewStore(database)
+	totals, err := store.ReadItemTotals(t.Context(), id)
+	if err != nil && !errors.Is(err, jobs.ErrItemRecordsNotCaptured) {
+		t.Fatal(err)
+	}
+	if err == nil {
+		state.ItemsCaptured, state.ItemTotals = true, totals
+		for cursor := int64(0); ; {
+			page, err := store.ReadItems(t.Context(), id, cursor, 100)
+			if err != nil || len(page.Items) > 100 {
+				t.Fatalf("copy retained item page: %+v %v", page, err)
+			}
+			state.Items = append(state.Items, page.Items...)
+			if page.NextCursor == 0 {
+				break
+			}
+			if page.NextCursor <= cursor {
+				t.Fatal("copy retained item cursor did not advance")
+			}
+			cursor = page.NextCursor
+		}
+	}
 	for _, row := range uploadRecoveryRows(t, database) {
 		if row.JobID == id {
 			state.Rows = append(state.Rows, row)
@@ -158,6 +186,10 @@ func copyCompletionReopen(t *testing.T, h *Harness, id string, want copyCompleti
 		job := *want.Job
 		job.State = "failed"
 		job.Error = "interrupted by shutdown; data and recovery records retained, remote residue unverified; counters show the last saved progress"
+		if want.ItemsCaptured {
+			job.Error = "interrupted by shutdown; data and recovery records retained, remote residue unverified; other counters show the last saved progress"
+			job.Counters.ObjectsFailed = want.ItemTotals.Failed
+		}
 		finished, err := time.Parse(time.RFC3339, got.After.Job.FinishedAt)
 		if err != nil || finished.Before(started) || finished.After(time.Now().UTC()) {
 			t.Fatalf("invalid restart finish time: %q", got.After.Job.FinishedAt)
@@ -173,7 +205,7 @@ func copyCompletionReopen(t *testing.T, h *Harness, id string, want copyCompleti
 	}
 }
 
-func copyCompletionProxy(t *testing.T, h *Harness, account *Account, refusedGet string) *uploadDeleteTrace {
+func copyCompletionProxy(t *testing.T, h *Harness, account *Account, refusedGet string, barriers ...*swifttest.HTTPResponseBarrier) *uploadDeleteTrace {
 	t.Helper()
 	storage, err := url.Parse(account.storageURL)
 	if err != nil {
@@ -191,6 +223,10 @@ func copyCompletionProxy(t *testing.T, h *Harness, account *Account, refusedGet 
 		t.Errorf("copy proxy: %v", err)
 		http.Error(w, "fixture proxy failed", http.StatusBadGateway)
 	}
+	var handler http.Handler = proxy
+	for _, barrier := range barriers {
+		handler = barrier.Wrap(handler)
+	}
 	trace := &uploadDeleteTrace{}
 	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		trace.mu.Lock()
@@ -203,9 +239,23 @@ func copyCompletionProxy(t *testing.T, h *Harness, account *Account, refusedGet 
 			http.Error(w, "fixture source read refusal", http.StatusForbidden)
 			return
 		}
-		proxy.ServeHTTP(w, r)
+		if len(barriers) != 0 && len(r.Header.Values("Expect")) != 0 {
+			// Finish the request handshake before holding the final response;
+			// otherwise net/http can bypass the barrier with an interim 100.
+			prepared, err := copyCompletionContinue(r)
+			if err != nil {
+				t.Errorf("copy barrier request: %v", err)
+				http.Error(w, "fixture request failed", http.StatusBadRequest)
+				return
+			}
+			r = prepared
+		}
+		handler.ServeHTTP(w, r)
 	}))
 	t.Cleanup(front.Close)
+	for _, barrier := range barriers {
+		t.Cleanup(barrier.Close)
+	}
 	list, err := h.Bookmarks.List(t.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -225,6 +275,27 @@ func copyCompletionProxy(t *testing.T, h *Harness, account *Account, refusedGet 
 		t.Fatal("owned copy bookmark missing")
 	}
 	return trace
+}
+
+func copyCompletionContinue(r *http.Request) (*http.Request, error) {
+	expect := r.Header.Values("Expect")
+	if len(expect) != 1 || !strings.EqualFold(strings.TrimSpace(expect[0]), "100-continue") {
+		return nil, fmt.Errorf("unsupported fixture expectation")
+	}
+	const limit = 64 << 10
+	body, readErr := io.ReadAll(io.LimitReader(r.Body, limit+1))
+	closeErr := r.Body.Close()
+	if err := errors.Join(readErr, closeErr); err != nil {
+		return nil, err
+	}
+	if len(body) > limit || (r.ContentLength >= 0 && r.ContentLength != int64(len(body))) {
+		return nil, fmt.Errorf("fixture request body size invalid: %d", len(body))
+	}
+	prepared := r.Clone(r.Context())
+	prepared.Header.Del("Expect")
+	prepared.Body = io.NopCloser(bytes.NewReader(body))
+	prepared.ContentLength = int64(len(body))
+	return prepared, nil
 }
 
 func copyCompletionAwaitPins(t *testing.T, h *Harness, accounts ...*Account) {
@@ -397,6 +468,15 @@ func copyCompletionRun(t *testing.T, h *Harness, fault string) {
 			wantCounters.ObjectsFailed = 1
 		}
 	}
+	wantTotals := jobs.ItemTotals{Items: wantCounters.ObjectsPlanned, Planned: wantCounters.ObjectsPlanned,
+		Admitted: wantCounters.ObjectsPlanned - wantCounters.OverwritesRefused, Failed: wantCounters.ObjectsFailed,
+		Refused: wantCounters.OverwritesRefused, Problems: wantCounters.ObjectsFailed + wantCounters.OverwritesRefused}
+	if verifyingRefused {
+		wantTotals.Unverified = wantCounters.ObjectsCopied
+	}
+	if !state.ItemsCaptured || state.ItemTotals != wantTotals || int64(len(state.Items)) != wantTotals.Items {
+		t.Fatalf("Copy completion lost recorded outcomes: captured=%v totals=%+v rows=%d want=%+v", state.ItemsCaptured, state.ItemTotals, len(state.Items), wantTotals)
+	}
 	if !unavailable {
 		if state.Job.State != wantState || state.Job.Counters != wantCounters {
 			t.Errorf("copy terminal snapshot differs: %+v want=%s %+v", state.Job, wantState, wantCounters)
@@ -411,6 +491,8 @@ func copyCompletionRun(t *testing.T, h *Harness, fault string) {
 		if refused {
 			summary += " · 1 overwrite refused"
 		}
+		summary += fmt.Sprintf(" · item outcomes: %d failed names, 0 conflicts, %d refusals, 0 unresolved, %d unverified, %d with problems",
+			wantTotals.Failed, wantTotals.Refused, wantTotals.Unverified, wantTotals.Problems)
 		if len(state.Audit) != 1 || state.Audit[0].Operation != "transfer.copy."+wantState || state.Audit[0].Result != result || state.Audit[0].Summary != summary || state.Audit[0].Resource != src+"/scope/ → "+dst+"/scope/" || state.Audit[0].BookmarkID != h.Primary.BookmarkID {
 			t.Errorf("copy audit differs: %+v", state.Audit)
 		}
@@ -422,7 +504,7 @@ func copyCompletionRun(t *testing.T, h *Harness, fault string) {
 				t.Errorf("copy accounting reason lost: %+v", state.Job)
 			}
 		}
-		if fault == "verifying_failed" && (!strings.Contains(state.Job.Error, "1 failed (first: "+names[0]+":") || !strings.Contains(state.Job.Error, "verification state could not be saved:")) {
+		if fault == "verifying_failed" && (!strings.Contains(state.Job.Error, "execution failed (example: "+names[0]+":") || !strings.Contains(state.Job.Error, "verification state could not be saved:")) {
 			t.Errorf("Copy verification refusal lost earlier failure or later reason: %q", state.Job.Error)
 		}
 		if wantState == "complete" && state.Job.Error != "" {
@@ -592,7 +674,7 @@ func copyCompletionQueued(t *testing.T, h *Harness, fault string) {
 		if visibleErr != nil || visible.State != "cancelled" || state.Job.State != "cancelled" || state.Job.FinishedAt == "" || state.Job.Error != "" {
 			t.Errorf("queued Copy result differs: %+v %v %+v", visible, visibleErr, state)
 		}
-		if len(state.Audit) != 1 || state.Audit[0].Operation != "transfer.copy.cancelled" || state.Audit[0].Result != audit.ResultFailed || state.Audit[0].BookmarkID != h.Primary.BookmarkID || state.Audit[0].Resource != src+"/scope/ → "+dst+"/scope/" || state.Audit[0].Summary != "job "+id {
+		if len(state.Audit) != 1 || state.Audit[0].Operation != "transfer.copy.cancelled" || state.Audit[0].Result != audit.ResultFailed || state.Audit[0].BookmarkID != h.Primary.BookmarkID || state.Audit[0].Resource != src+"/scope/ → "+dst+"/scope/" || state.Audit[0].Summary != "job "+id+" · item outcomes: 0 failed names, 0 conflicts, 0 refusals, 0 unresolved, 0 unverified, 0 with problems" {
 			t.Errorf("queued Copy audit differs: %+v", state.Audit)
 		}
 	} else {
@@ -605,6 +687,9 @@ func copyCompletionQueued(t *testing.T, h *Harness, fault string) {
 	}
 	if state.Job.StartedAt != "" || state.Job.Counters != queued.Counters || len(state.Rows) != 0 || state.Status != (app.RecoveryStatusDTO{}) {
 		t.Errorf("queued Copy invented execution evidence: %+v", state)
+	}
+	if !state.ItemsCaptured || len(state.Items) != 0 || state.ItemTotals != (jobs.ItemTotals{}) {
+		t.Fatalf("queued Copy did not retain explicit recorded-empty history: %+v", state)
 	}
 	if err := h.Transfer.CancelJob(t.Context(), id); err == nil {
 		t.Error("queued Copy retained cancellation registration")

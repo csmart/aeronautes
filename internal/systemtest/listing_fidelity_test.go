@@ -169,8 +169,23 @@ func copyListingFidelityRun(t *testing.T, h *Harness, tc copyListingFidelityCase
 		wantState, wantResult = "complete", audit.ResultApplied
 		wantCounters = jobs.Counters{ObjectsPlanned: 2, BytesPlanned: 15, ObjectsCopied: 2, BytesCopied: 15, ObjectsVerified: 2, NativeRouted: 2}
 	}
-	if saved.Job.State != wantState || saved.Job.Counters != wantCounters || len(saved.Audit) != 1 || saved.Audit[0].Result != wantResult || saved.Audit[0].Summary != "job "+id {
+	wantSummary := "job " + id + " · item outcomes: 0 failed names, 0 conflicts, 0 refusals, 0 unresolved, 0 unverified, 0 with problems"
+	if saved.Job.State != wantState || saved.Job.Counters != wantCounters || len(saved.Audit) != 1 || saved.Audit[0].Result != wantResult || saved.Audit[0].Summary != wantSummary {
 		t.Errorf("EXPECTED FIDELITY OUTCOME: got=%+v audit=%+v want=%s %+v %s", saved.Job, saved.Audit, wantState, wantCounters, wantResult)
+	}
+	wantTotals := jobs.ItemTotals{}
+	if tc.valid {
+		wantTotals = jobs.ItemTotals{Items: 2, Planned: 2, Admitted: 2}
+	}
+	if !saved.ItemsCaptured || saved.ItemTotals != wantTotals || int64(len(saved.Items)) != wantTotals.Items {
+		t.Errorf("listing fidelity changed retained item facts: captured=%v totals=%+v rows=%d", saved.ItemsCaptured, saved.ItemTotals, len(saved.Items))
+	}
+	for _, item := range saved.Items {
+		if (item.Source.Object != "scope/a\ncontrol" && item.Source.Object != tc.object) || item.Key != strings.TrimPrefix(item.Source.Object, "scope/") ||
+			item.Destination.Object != item.Source.Object || item.Execution == nil || item.Verification == nil ||
+			item.Execution.Result != jobs.ItemCopied || item.Verification.Result != jobs.ItemVerified || item.Staging != nil {
+			t.Errorf("valid Unicode identity or native outcome was not retained: %+v", item)
+		}
 	}
 	wantRecovery := []jobs.RecoveryRecord{{JobID: id, BookmarkID: h.Secondary.BookmarkID, Kind: jobs.RecoveryStaging, Container: dst, Prefix: "scope/.aeronautes/stage/" + id + "/"}}
 	if !reflect.DeepEqual(saved.Rows, wantRecovery) || saved.Status != (app.RecoveryStatusDTO{Jobs: 1, Records: 1}) || saved.Job.RecoveryRecords != 1 {

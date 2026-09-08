@@ -59,6 +59,13 @@ func TestConditionalCreationPreservesRacers(t *testing.T) {
 				route = plan.RouteNative
 			}
 			executor := newExecutor(t, w, engine)
+			var observations []Observation
+			executor.cfg.Recorder = &Recorder{Admit: func(Admission) error { return nil },
+				Execute: func(_ string, observation Observation) error {
+					observations = append(observations, observation)
+					return nil
+				},
+				Verify: func(string, Observation) error { return nil }}
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			type result struct {
 				report *Report
@@ -102,6 +109,10 @@ func TestConditionalCreationPreservesRacers(t *testing.T) {
 			}
 			if err := barrier.Err(); err != nil {
 				t.Fatal(err)
+			}
+			want := Observation{Result: ResultConflict, Effect: EffectUnresolved, Diagnostic: Diagnostic{Stage: StageCommit, Code: CodeConflict, HTTPStatus: 412}}
+			if !reflect.DeepEqual(observations, []Observation{want}) {
+				t.Errorf("invoked conditional PUT claimed no attempted effect: %+v", observations)
 			}
 			if diff := oracle.Diff(expected, refusalSnapshot(t, witness, "backup", "backup_segments", "unrelated")); !diff.Empty() {
 				t.Errorf("conditional write harmed a competing writer or backing data: %s", diff)

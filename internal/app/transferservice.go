@@ -346,13 +346,14 @@ func (s *TransferService) StartCopy(ctx context.Context, req CopyRequestDTO) (st
 	}
 
 	job, err := s.jobs.Create(ctx, jobs.Job{
-		Type:             jobs.TypeCopy,
-		Source:           req.SourceContainer + "/" + req.SourcePrefix,
-		Destination:      req.DestContainer + "/" + req.DestPrefix,
-		SourceBookmarkID: req.SourceBookmarkID,
-		DestBookmarkID:   req.DestBookmarkID,
-		Engine:           "rclone+native",
-		Settings:         s.effectiveConfigJSON(req),
+		Type:               jobs.TypeCopy,
+		ItemRecordsVersion: 1,
+		Source:             req.SourceContainer + "/" + req.SourcePrefix,
+		Destination:        req.DestContainer + "/" + req.DestPrefix,
+		SourceBookmarkID:   req.SourceBookmarkID,
+		DestBookmarkID:     req.DestBookmarkID,
+		Engine:             "rclone+native",
+		Settings:           s.effectiveConfigJSON(req),
 	})
 	if err != nil {
 		return "", err
@@ -380,6 +381,19 @@ func (s *TransferService) StartCopy(ctx context.Context, req CopyRequestDTO) (st
 }
 
 func (s *TransferService) finishCopy(ctx context.Context, jobID string, req CopyRequestDTO, counters jobs.Counters, state jobs.State, message string) {
+	totals, totalsErr := s.jobs.ReadItemTotals(ctx, jobID)
+	if totalsErr != nil {
+		if message != "" {
+			message += "; "
+		}
+		message += totalsErr.Error()
+		if state == jobs.StateComplete {
+			state = jobs.StatePartial
+		}
+	} else if state == jobs.StateComplete && (totals.Failed != 0 || totals.Conflicts != 0 || totals.Refused != 0 || totals.Unresolved != 0 || totals.Unverified != 0 || totals.Problems != 0) {
+		state = jobs.StatePartial
+		message = "retained item outcomes contain failures or uncertainty"
+	}
 	auditSummary := "job " + jobID
 	if counters.OverwritesRefused > 0 {
 		state = jobs.StatePartial
@@ -398,7 +412,7 @@ func (s *TransferService) finishCopy(ctx context.Context, jobID string, req Copy
 	// A completed body cannot accept cancellation even when its final
 	// transaction fails and the shared store reports unavailability.
 	s.runner.release(jobID)
-	err := s.jobs.Finish(ctx, jobID, jobs.Completion{
+	err := s.jobs.FinishFromItems(ctx, jobID, jobs.Completion{
 		State: state, Counters: counters, Error: message,
 		Audit: audit.Event{
 			BookmarkID: req.SourceBookmarkID, Operation: "transfer.copy." + string(state),
@@ -423,7 +437,19 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 	var overwritesRefused int64
 	counters := jobs.Counters{}
 	var countersMu sync.Mutex
+	var executor *transfercopy.Executor
 	finish := func(state jobs.State, message string) {
+		if executor != nil {
+			if err := executor.Close(); err != nil {
+				if message != "" {
+					message += "; "
+				}
+				message += "refusal record closure: " + err.Error()
+				if state == jobs.StateComplete {
+					state = jobs.StatePartial
+				}
+			}
+		}
 		countersMu.Lock()
 		snapshot := counters
 		countersMu.Unlock()
@@ -460,12 +486,14 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 		}
 	}
 
-	executor, err := transfercopy.New(transfercopy.Config{
+	var err error
+	executor, err = transfercopy.New(transfercopy.Config{
 		Source: src, Dest: dst, Engine: engine,
 		SrcSpec: "aeronautes_src:" + req.SourceContainer, DstSpec: "aeronautes_dst:" + req.DestContainer,
 		SrcContainer: req.SourceContainer, DstContainer: req.DestContainer,
 		SrcPrefix: req.SourcePrefix, DstPrefix: req.DestPrefix,
-		JobID: jobID,
+		JobID:    jobID,
+		Recorder: s.copyItemRecorder(background, jobID, req),
 		OnItem: func(outcome transfercopy.ItemOutcome) {
 			countersMu.Lock()
 			switch outcome.Outcome {
@@ -522,10 +550,9 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 		src.Objects(ctx, req.SourceContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.SourcePrefix}),
 		dst.Objects(ctx, req.DestContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.DestPrefix}),
 		req.SourcePrefix, req.DestPrefix, planned)
+	executor.Stop(planErr)
 	report, finishErr := executor.Finish(ctx)
-	if planErr == nil {
-		planErr = finishErr
-	}
+	planErr = finishErr
 	overwritesRefused = report.OverwritesRefused
 
 	countersMu.Lock()
@@ -534,7 +561,6 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 	counters.Overwrites = report.Overwrites
 	counters.OverwritesRefused = report.OverwritesRefused
 	counters.NativeRouted = report.NativeRouted
-	counters.ObjectsFailed = int64(len(report.Failures))
 	countersMu.Unlock()
 
 	// These records preserve creation provenance, not deletion authority.
@@ -543,7 +569,7 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 	// A completed transfer cannot prove uncertain residue absent.
 	// Keep its recovery facts even when reconciliation reports no error.
 	if reconcile, err := executor.Reconcile(background, report); err != nil {
-		log.Printf("job %s reconcile: %v", jobID, err)
+		planErr = errors.Join(planErr, fmt.Errorf("reconciliation: %w", err))
 	} else {
 		if len(reconcile.Notes) != 0 {
 			log.Printf("job %s reconcile kept records: %s", jobID, strings.Join(reconcile.Notes, "; "))
@@ -552,7 +578,7 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 
 	if planErr != nil {
 		if len(report.Failures) > 0 {
-			finish(jobs.StatePartial, fmt.Sprintf("%d failed (first: %s: %s); %s", len(report.Failures), report.Failures[0].Name, report.Failures[0].Err, planErr.Error()))
+			finish(jobs.StatePartial, fmt.Sprintf("execution failed (example: %s: %s); %s", report.Failures[0].Name, report.Failures[0].Err, planErr.Error()))
 		} else if report.Copied > 0 {
 			finish(jobs.StatePartial, planErr.Error())
 		} else if errors.Is(planErr, context.Canceled) {
@@ -570,7 +596,7 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 	if err := s.jobs.Transition(background, jobID, jobs.StateVerifying); err != nil {
 		message := "verification state could not be saved: " + err.Error()
 		if len(report.Failures) > 0 {
-			message += fmt.Sprintf("; %d failed (first: %s: %s)", len(report.Failures), report.Failures[0].Name, report.Failures[0].Err)
+			message += fmt.Sprintf("; execution failed (example: %s: %s)", report.Failures[0].Name, report.Failures[0].Err)
 		}
 		finish(jobs.StatePartial, message)
 		return
@@ -578,23 +604,26 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 	verify, err := executor.Verify(background,
 		src.Objects(background, req.SourceContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.SourcePrefix}),
 		dst.Objects(background, req.DestContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.DestPrefix}))
-	if err != nil {
-		finish(jobs.StateFailed, "verification: "+err.Error())
-		return
-	}
 	countersMu.Lock()
 	counters.ObjectsVerified = verify.Verified
-	counters.ObjectsFailed = int64(len(report.Failures) + len(verify.Failures))
 	countersMu.Unlock()
+	if err != nil {
+		state := jobs.StateFailed
+		if report.Copied > 0 || len(report.Failures) > 0 || len(verify.Failures) > 0 {
+			state = jobs.StatePartial
+		}
+		finish(state, "verification: "+err.Error())
+		return
+	}
 
 	switch {
 	case len(report.Failures) > 0 || len(verify.Failures) > 0 || len(report.Conflicts) > 0:
 		parts := []string{}
 		if n := len(report.Failures); n > 0 {
-			parts = append(parts, fmt.Sprintf("%d failed (first: %s: %s)", n, report.Failures[0].Name, report.Failures[0].Err))
+			parts = append(parts, fmt.Sprintf("execution failed (example: %s: %s)", report.Failures[0].Name, report.Failures[0].Err))
 		}
 		if n := len(verify.Failures); n > 0 {
-			parts = append(parts, fmt.Sprintf("%d unverified (first: %s)", n, verify.Failures[0].Name))
+			parts = append(parts, fmt.Sprintf("verification failed (example: %s)", verify.Failures[0].Name))
 		}
 		if n := len(report.Conflicts); n > 0 {
 			parts = append(parts, fmt.Sprintf("%d conflicts (destination changed externally)", n))

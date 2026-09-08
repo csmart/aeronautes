@@ -6,7 +6,7 @@
 ## Problem and oracle
 
 The [archived actual-service failure-identity reproduction](../experiments/2026-09-08-copy-failure-identities.md) requires one, 201 and 401 failed source names to count once each and remain individually accessible.
-The current Copy caller still reports two, 400 and 400, retains only bounded samples and has no item query in the job drawer.
+Before this migration the Copy caller reported two, 400 and 400, retained only bounded samples and had no item query in the job drawer.
 [ADR 0028](0028-transfer-item-records.md) supplies immutable logical records and guarded completion; [ADR 0029](0029-listing-identity-decoding.md) supplies lossless native listing identities.
 Neither foundation enables recording in an actual transfer.
 The oracle is the existing actual-service fixture and its independent namespace, audit, recovery and reopening assertions, together with ADR 0028 and [DESIGN](../DESIGN.md) §§46/47/50/51.
@@ -172,7 +172,9 @@ Each delivered PR needs all five latest actual checks with current master incorp
 
 Step two is [delivered through PR60](../experiments/2026-09-08-transfer-item-access.md#delivery).
 Step three is [delivered through PR61](../experiments/2026-09-08-interrupted-item-records.md#delivery), with independent implementation review and all five protected PR/master checks complete.
-Step four remains the next caller migration; no current transfer is silently upgraded to recorded history.
+Step four now has a [checked Copy implementation and maintained actual-service evidence](../experiments/2026-09-08-checked-copy-records.md), pending independent implementation review and protected delivery.
+Only new Copy jobs opt into version-one records; historical jobs and local transfer callers are not silently upgraded.
+Separate local upload and download migrations remain step five.
 
 ## Required migration evidence and limits
 

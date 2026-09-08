@@ -64,7 +64,8 @@ type Config struct {
 	// OnEvent receives engine events (progress streaming); optional.
 	OnEvent func(rclone.Event)
 	// OnItem is told each item's outcome as it happens; optional.
-	OnItem func(ItemOutcome)
+	OnItem   func(ItemOutcome)
+	Recorder *Recorder
 	// OnAuthFailure invalidates the endpoint tokens before the one
 	// auth-shaped retry: the fresh child must authenticate anew, never
 	// replay the rejected token (review F-06). Optional.
@@ -130,10 +131,14 @@ type Executor struct {
 	// bytes may keep landing, but nothing COMMITS past a boundary the
 	// sweep could not replay (§65.9 item 5 fail-closed rule).
 	recoveryBroken error
+	stopped        error
 }
 
 // New validates the config and builds an executor.
 func New(cfg Config) (*Executor, error) {
+	if cfg.Recorder != nil && (cfg.Recorder.Admit == nil || cfg.Recorder.Execute == nil || cfg.Recorder.Verify == nil) {
+		return nil, errors.New("item recording needs admission, execution and verification acknowledgements")
+	}
 	if cfg.Source == nil || cfg.Dest == nil {
 		return nil, errors.New("executor needs both sessions")
 	}
@@ -166,11 +171,23 @@ func (e *Executor) StagingPrefix() string { return e.stage }
 // Handle consumes one plan item — wire it as plan.Copy's emit callback
 // so planning streams straight into execution with bounded memory.
 func (e *Executor) Handle(ctx context.Context, item plan.Item) error {
+	if e.stopped != nil {
+		return e.stopped
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if item.Verdict == plan.VerdictDestOnly {
+		return nil
+	}
+	if err := e.admitItem(item); err != nil {
+		return err
+	}
 	switch item.Verdict {
-	case plan.VerdictSame, plan.VerdictDestOnly:
+	case plan.VerdictSame:
+		if e.cfg.Recorder != nil {
+			return e.stop(e.cfg.Recorder.Execute(item.Name, Observation{Result: ResultSame, Effect: EffectNotAttempted}))
+		}
 		return nil
 	case plan.VerdictUnknown:
 		return e.runUnknown(ctx, item)
@@ -187,7 +204,13 @@ func (e *Executor) Handle(ctx context.Context, item plan.Item) error {
 // cancellation mid-run.
 func (e *Executor) Finish(ctx context.Context) (*Report, error) {
 	err := e.flushBatch(ctx)
-	return e.report, errors.Join(err, e.refusals.broken)
+	return e.report, errors.Join(err, e.stopped, e.recoveryBroken, e.refusals.broken)
+}
+
+// Stop prevents a later Finish from dispatching buffered work after planning
+// fails. Already admitted, unstarted items can still save their final facts.
+func (e *Executor) Stop(cause error) {
+	e.stop(cause)
 }
 
 // Run accepts the same strictly name-ordered items as plan.Copy so
@@ -195,18 +218,11 @@ func (e *Executor) Finish(ctx context.Context) (*Report, error) {
 func (e *Executor) Run(ctx context.Context, items []plan.Item) (*Report, error) {
 	for _, item := range items {
 		if err := e.Handle(ctx, item); err != nil {
-			report, _ := e.Finish(ctx)
-			return report, err
+			e.Stop(err)
+			return e.Finish(ctx)
 		}
 	}
 	return e.Finish(ctx)
-}
-
-func (e *Executor) fail(name, stage string, err error) {
-	if len(e.report.Failures) < maxFailures {
-		e.report.Failures = append(e.report.Failures, Failure{Name: name, Stage: stage, Err: err.Error()})
-	}
-	e.emit(name, "failed", stage+": "+err.Error())
 }
 
 func (e *Executor) emit(name, outcome, detail string) {
@@ -220,8 +236,7 @@ func (e *Executor) emit(name, outcome, detail string) {
 func (e *Executor) runUnknown(ctx context.Context, item plan.Item) error {
 	src, err := e.cfg.Source.ObjectDetail(ctx, e.cfg.SrcContainer, e.cfg.SrcPrefix+item.Name)
 	if err != nil {
-		e.fail(item.Name, "resolve-head-source", err)
-		return nil
+		return e.observe(item.Name, failed(EffectNotAttempted, StageSourceRead, CodeUnknown, "resolve-head-source", err))
 	}
 	dst, err := e.cfg.Dest.ObjectDetail(ctx, e.cfg.DstContainer, e.cfg.DstPrefix+item.Name)
 	if err != nil {
@@ -229,13 +244,10 @@ func (e *Executor) runUnknown(ctx context.Context, item plan.Item) error {
 			item.SourceBytes = src.ContentLength
 			return e.runNew(ctx, item)
 		}
-		e.fail(item.Name, "resolve-head-dest", err)
-		return nil
+		return e.observe(item.Name, failed(EffectNotAttempted, StagePlanning, CodeUnknown, "resolve-head-dest", err))
 	}
 	if provenEqual(src, dst) {
-		e.report.SkippedEqual++
-		e.emit(item.Name, "skipped-equal", "")
-		return nil
+		return e.observe(item.Name, executionResult{Observation: Observation{Result: ResultSame, Effect: EffectNotAttempted}})
 	}
 	return e.refuseOverwrite(item)
 }
@@ -261,8 +273,7 @@ func provenEqual(src, dst *swiftcontrol.ObjectDetail) bool {
 func (e *Executor) runNew(ctx context.Context, item plan.Item) error {
 	if item.Route == plan.RouteNative {
 		e.report.NativeRouted++
-		e.nativeCopy(ctx, item)
-		return nil
+		return e.observe(item.Name, e.nativeCopy(ctx, item))
 	}
 	e.batch = append(e.batch, item.Name)
 	e.batchBytes += item.SourceBytes
@@ -280,19 +291,20 @@ func (e *Executor) flushBatch(ctx context.Context) error {
 	if len(e.batch) == 0 {
 		return nil
 	}
-	if err := ctx.Err(); err != nil {
-		// Cancelled before this batch started: the names are simply not
-		// copied — never spawn an engine child after cancellation.
+	if err := errors.Join(e.stopped, ctx.Err()); err != nil {
+		names := e.batch
 		e.batch = nil
 		e.batchBytes = 0
-		return err
+		return e.abandonBatch(names, err)
 	}
 	names := e.batch
 	e.batch = nil
 	e.batchBytes = 0
 	if e.cfg.Engine == nil {
 		for _, name := range names {
-			e.fail(name, "engine", errors.New("no engine configured"))
+			if err := e.observe(name, failed(EffectNotAttempted, StageEngine, CodeUnsupported, "engine", errors.New("no engine configured"))); err != nil {
+				return err
+			}
 		}
 		return nil
 	}
@@ -311,9 +323,17 @@ func (e *Executor) flushBatch(ctx context.Context) error {
 		if result != nil {
 			e.capturePrefixes(result.SegmentPrefixes)
 		}
+		if e.recoveryBroken != nil {
+			if result != nil {
+				err = errors.Join(err, ResultFailure(result))
+			}
+			return e.stop(errors.Join(err, e.recoveryBroken))
+		}
 		if err != nil {
 			for _, name := range names {
-				e.fail(name, "engine-copy", err)
+				if recordErr := e.observe(name, failed(EffectUnresolved, StageEngine, CodeUnknown, "engine-copy", err)); recordErr != nil {
+					return errors.Join(err, recordErr)
+				}
 			}
 			return nil
 		}
@@ -331,7 +351,15 @@ func (e *Executor) flushBatch(ctx context.Context) error {
 			continue
 		}
 		for _, name := range names {
-			e.fail(name, "engine-status", failure)
+			code := CodeUnknown
+			if result != nil && result.Cancelled {
+				code = CodeCancelled
+			} else if result != nil && result.LogStreamErr != "" {
+				code = CodeIncomplete
+			}
+			if err := e.observe(name, failed(EffectUnresolved, StageEngine, code, "engine-status", failure)); err != nil {
+				return errors.Join(failure, err)
+			}
 		}
 		return ctx.Err()
 	}
@@ -339,7 +367,9 @@ func (e *Executor) flushBatch(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		e.commitStaged(ctx, plan.Item{Name: name}, batchPrefix+name)
+		if err := e.observe(name, e.commitStaged(ctx, plan.Item{Name: name}, batchPrefix+name)); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -426,57 +456,49 @@ func metadataHeaders(src *swiftcontrol.ObjectDetail, metaPrefix string) map[stri
 
 // Native fallback preserves names the engine cannot carry. Conditional
 // creation protects a destination that appeared after the advisory plan.
-func (e *Executor) nativeCopy(ctx context.Context, item plan.Item) {
+func (e *Executor) nativeCopy(ctx context.Context, item plan.Item) (result executionResult) {
 	srcName := e.cfg.SrcPrefix + item.Name
 	dstName := e.cfg.DstPrefix + item.Name
 
 	body, src, err := e.cfg.Source.OpenObject(ctx, e.cfg.SrcContainer, srcName)
 	if err != nil {
-		e.fail(item.Name, "native-get", err)
-		return
+		return failed(EffectNotAttempted, StageSourceRead, CodeUnknown, "native-get", err)
 	}
-	defer body.Close()
+	defer func() { result.addProblem(StageSourceRead, body.Close()) }()
 	if src.FollowedSymlink {
-		e.copySymlink(ctx, item, srcName, dstName)
-		return
+		return e.copySymlink(ctx, srcName, dstName, EffectNotAttempted)
 	}
 	if src.ContentLength > maxSinglePut {
-		e.fail(item.Name, "native-size", fmt.Errorf(
+		return failed(EffectNotAttempted, StageSourceRead, CodeUnsupported, "native-size", fmt.Errorf(
 			"logical size %d exceeds the single-PUT limit and the name cannot ride the engine (v1 limitation)", src.ContentLength))
-		return
 	}
 	headers := metadataHeaders(src, "X-Object-Meta-")
 	headers["X-Object-Meta-"+fingerprintMetaKey] = fingerprint(src.ContentLength, src.ETag)
 	headers["If-None-Match"] = "*"
 	if _, err := e.cfg.Dest.PutObject(ctx, e.cfg.DstContainer, dstName, body, src.ContentType, headers); err != nil {
 		if swiftcontrol.IsPreconditionFailed(err) {
-			e.report.Conflicts = append(e.report.Conflicts, item.Name)
-			e.emit(item.Name, "conflict", "destination appeared at commit time")
-			return
+			return conflict(EffectUnresolved, err, "destination appeared at commit time")
 		}
-		e.fail(item.Name, "native-put", err)
-		return
+		return failed(EffectUnresolved, StageCommit, CodeUnknown, "native-put", err)
 	}
 	dst, err := e.cfg.Dest.ObjectDetail(ctx, e.cfg.DstContainer, dstName)
 	if err != nil {
-		e.fail(item.Name, "native-verify", err)
-		return
+		return failed(EffectUnresolved, StageVerification, CodeUnknown, "native-verify", err)
 	}
 	if err := verifyCopied(src, dst); err != nil {
-		e.fail(item.Name, "native-verify", err)
-		return
+		return failed(EffectUnresolved, StageVerification, CodeUnverified, "native-verify", err)
 	}
-	e.report.Copied++
-	e.report.BytesCopied += src.ContentLength
-	e.emit(item.Name, "copied", "native")
+	return copied(src.ContentLength, "native")
 }
 
 // Refusal is an execution decision, separate from copied-object errors.
 // Persist its exact relative identity before allowing planning to continue.
 func (e *Executor) refuseOverwrite(item plan.Item) error {
-	e.report.OverwritesRefused++
-	e.emit(item.Name, "overwrite-refused", "overwriting existing destinations is unavailable while concurrent changes cannot be protected")
-	return e.refusals.append(item.Name)
+	result := executionResult{Observation: Observation{Result: ResultRefused, Effect: EffectNotAttempted,
+		Diagnostic: diagnostic(StagePlanning, CodeUnsupported, nil)},
+		detail: "overwriting existing destinations is unavailable while concurrent changes cannot be protected"}
+	result.addProblem(StageRecording, e.refusals.append(item.Name))
+	return e.observe(item.Name, result)
 }
 
 // Close removes only this executor's private local refusal record.
@@ -488,42 +510,40 @@ func (e *Executor) Close() error {
 // Staged bytes must verify before becoming visible at a new live name.
 // Every commit uses conditional PUT: Swift conditions server-side COPY
 // against its source, which cannot protect a destination's competing writer.
-func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName string) {
+func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName string) (result executionResult) {
 	srcName := e.cfg.SrcPrefix + item.Name
 	dstName := e.cfg.DstPrefix + item.Name
 
 	if e.recoveryBroken != nil {
 		// A safety fact failed to persist: nothing commits past a
 		// boundary the crash sweep could not replay.
-		e.fail(item.Name, "recovery-store", e.recoveryBroken)
-		return
+		result = failed(EffectUnresolved, StageRecording, CodeUnknown, "recovery-store", e.recoveryBroken)
+		result.addProblem(StageRecording, e.recoveryBroken)
+		return result
 	}
 
 	src, err := e.cfg.Source.ObjectDetail(ctx, e.cfg.SrcContainer, srcName)
 	if err != nil {
-		e.fail(item.Name, "stage-head-source", err)
-		return
+		return failed(EffectUnresolved, StageSourceRead, CodeUnknown, "stage-head-source", err)
 	}
 	if src.FollowedSymlink {
 		// The source is a Swift symlink: the staged bytes are the
 		// followed TARGET's — faithful §17.1 semantics copy the LINK.
-		e.copySymlink(ctx, item, srcName, e.cfg.DstPrefix+item.Name)
-		e.cleanStaged(ctx, stagedName)
-		return
+		result = e.copySymlink(ctx, srcName, dstName, EffectUnresolved)
+		result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
+		return result
 	}
 	staged, err := e.cfg.Dest.ObjectDetail(ctx, e.cfg.DstContainer, stagedName)
 	if err != nil {
 		if swiftcontrol.IsNotFound(err) {
-			e.fail(item.Name, "stage-verify", errors.New("engine reported success but the staged object is missing (silent drop)"))
-			return
+			return failed(EffectUnresolved, StageStaging, CodeMissing, "stage-verify", errors.New("engine reported success but the staged object is missing (silent drop)"))
 		}
-		e.fail(item.Name, "stage-verify", fmt.Errorf("staged object missing: %w", err))
-		return
+		return failed(EffectUnresolved, StageStaging, CodeUnknown, "stage-verify", fmt.Errorf("staged object missing: %w", err))
 	}
 	if err := verifyCopied(src, staged); err != nil {
-		e.fail(item.Name, "stage-verify", err)
-		e.cleanStaged(ctx, stagedName)
-		return
+		result = failed(EffectUnresolved, StageStaging, CodeUnverified, "stage-verify", err)
+		result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
+		return result
 	}
 
 	if staged.Class == swiftcontrol.ClassDLO {
@@ -531,21 +551,18 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 		// BEFORE the commit — a truncated upload whose manifest HEAD
 		// happens to sum right transiently must not become live.
 		if err := e.verifyStagedSegments(ctx, staged, src.ContentLength); err != nil {
-			e.fail(item.Name, "stage-segments", err)
-			return
+			return failed(EffectUnresolved, StageStaging, CodeIncomplete, "stage-segments", err)
 		}
 	}
 
 	_, err = e.cfg.Dest.ObjectDetail(ctx, e.cfg.DstContainer, dstName)
 	if err != nil && !swiftcontrol.IsNotFound(err) {
-		e.fail(item.Name, "commit-rehead", err)
-		return
+		return failed(EffectUnresolved, StageCommit, CodeUnknown, "commit-rehead", err)
 	}
 	if err == nil {
-		e.report.Conflicts = append(e.report.Conflicts, item.Name)
-		e.emit(item.Name, "conflict", "destination appeared since planning")
-		e.cleanStaged(ctx, stagedName)
-		return
+		result = conflict(EffectUnresolved, nil, "destination appeared since planning")
+		result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
+		return result
 	}
 
 	headers := metadataHeaders(src, "X-Object-Meta-")
@@ -560,9 +577,9 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 			intent := rclone.SegmentPrefix{Container: staged.Manifest[:slash], Prefix: staged.Manifest[slash+1:]}.Canonical()
 			if err := e.cfg.OnRecovery("committing", intent.Container, intent.Prefix,
 				e.cfg.DstContainer+"/"+dstName); err != nil {
-				e.fail(item.Name, "commit-intent", err)
-				e.cleanStaged(ctx, stagedName)
-				return
+				result = failed(EffectUnresolved, StageRecording, CodeUnknown, "commit-intent", err)
+				result.addProblem(StageRecording, err)
+				return result
 			}
 		}
 		// Manifest-swap PUT: the live name becomes a DLO pointing at the
@@ -570,15 +587,17 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 		headers["X-Object-Manifest"] = staged.Manifest
 		if _, err := e.cfg.Dest.PutObject(ctx, e.cfg.DstContainer, dstName, strings.NewReader(""), src.ContentType, headers); err != nil {
 			if swiftcontrol.IsPreconditionFailed(err) {
-				e.report.Conflicts = append(e.report.Conflicts, item.Name)
-				e.emit(item.Name, "conflict", "destination appeared at commit time")
-				e.cleanStaged(ctx, stagedName)
-				return
+				result = conflict(EffectUnresolved, err, "destination appeared at commit time")
+				result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
+				return result
 			}
-			e.fail(item.Name, "commit-manifest", err)
-			return
+			return failed(EffectUnresolved, StageCommit, CodeUnknown, "commit-manifest", err)
 		}
-		e.markCommitted(staged.Manifest)
+		if err := e.markCommitted(staged.Manifest); err != nil {
+			// Verify the reported copy, but retain its staging and stop commits
+			// when the post-PUT recovery fact could not be acknowledged.
+			defer func() { result.addProblem(StageRecording, err) }()
+		}
 	} else {
 		// Planned-new plain commit: server-side COPY cannot be
 		// destination-conditioned (Swift evaluates If-None-Match on the
@@ -589,77 +608,73 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 		// means the racer won and we CONFLICT rather than clobber.
 		body, _, err := e.cfg.Dest.OpenObject(ctx, e.cfg.DstContainer, stagedName)
 		if err != nil {
-			e.fail(item.Name, "commit-open-staged", err)
-			return
+			return failed(EffectUnresolved, StageStaging, CodeUnknown, "commit-open-staged", err)
 		}
 		putHeaders := map[string]string{"If-None-Match": "*"}
 		for k, v := range headers {
 			putHeaders[k] = v
 		}
 		_, putErr := e.cfg.Dest.PutObject(ctx, e.cfg.DstContainer, dstName, body, staged.ContentType, putHeaders)
-		body.Close()
+		closeErr := body.Close()
+		defer func() { result.addProblem(StageStaging, closeErr) }()
 		if putErr != nil {
 			if swiftcontrol.IsPreconditionFailed(putErr) {
-				e.report.Conflicts = append(e.report.Conflicts, item.Name)
-				e.emit(item.Name, "conflict", "destination appeared at commit time")
-				e.cleanStaged(ctx, stagedName)
-				return
+				result = conflict(EffectUnresolved, putErr, "destination appeared at commit time")
+				result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
+				return result
 			}
-			e.fail(item.Name, "commit-put", putErr)
-			return
+			return failed(EffectUnresolved, StageCommit, CodeUnknown, "commit-put", putErr)
 		}
 	}
 
 	committed, err := e.cfg.Dest.ObjectDetail(ctx, e.cfg.DstContainer, dstName)
 	if err != nil {
-		e.fail(item.Name, "commit-verify", err)
-		return
+		return failed(EffectUnresolved, StageVerification, CodeUnknown, "commit-verify", err)
 	}
 	if err := verifyCopied(src, committed); err != nil {
-		e.fail(item.Name, "commit-verify", err)
-		return
+		return failed(EffectUnresolved, StageVerification, CodeUnverified, "commit-verify", err)
 	}
 
-	e.cleanStaged(ctx, stagedName)
-	e.report.Copied++
-	e.report.BytesCopied += src.ContentLength
-	e.emit(item.Name, "copied", "stage-and-commit")
+	result = copied(src.ContentLength, "stage-and-commit")
+	if e.recoveryBroken == nil {
+		result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
+	}
+	return result
 }
 
 // markCommitted records that a captured segment prefix is now referenced
 // by a committed manifest ("container/prefix"), so reconciliation never
 // sweeps it.
-func (e *Executor) markCommitted(manifest string) {
+func (e *Executor) markCommitted(manifest string) error {
 	if slash := strings.Index(manifest, "/"); slash > 0 {
 		p := rclone.SegmentPrefix{Container: manifest[:slash], Prefix: manifest[slash+1:]}.Canonical()
 		if !e.printed[p] {
 			// Never promote a manifest this job did not OBSERVE its own
 			// child create: an unobserved prefix is not ours to own
 			// (§28.6(b) — the review wave's H-01).
-			return
+			return nil
 		}
 		e.report.CommittedPrefixes = append(e.report.CommittedPrefixes, p)
 		if e.cfg.OnRecovery != nil {
-			// Best-effort: the committing record already guards this
-			// boundary (the sweep re-HEADs the live name it carries) —
-			// but the key it writes is the CANONICAL one.
 			if err := e.cfg.OnRecovery("committed", p.Container, p.Prefix, ""); err != nil && e.recoveryBroken == nil {
 				e.recoveryBroken = fmt.Errorf("committed record: %w", err)
 			}
 		}
 	}
+	return e.recoveryBroken
 }
 
-func (e *Executor) cleanStaged(ctx context.Context, stagedName string) {
+func (e *Executor) cleanStaged(ctx context.Context, stagedName string) error {
 	if err := e.cfg.Dest.DeleteObject(ctx, e.cfg.DstContainer, stagedName); err != nil && !swiftcontrol.IsNotFound(err) {
-		return // Keep the unresolved name for recovery; do not retry deletion.
+		return err
 	}
 	for i, name := range e.report.StagedResidue {
 		if name == stagedName {
 			e.report.StagedResidue = append(e.report.StagedResidue[:i], e.report.StagedResidue[i+1:]...)
-			return
+			return nil
 		}
 	}
+	return nil
 }
 
 // verifyStagedSegments lists the staged DLO's generated prefix and
@@ -703,25 +718,20 @@ func (e *Executor) verifyStagedSegments(ctx context.Context, staged *swiftcontro
 // user metadata land at the destination in one empty-body PUT; the
 // target itself moves (or not) as its own listed name. A dangling
 // destination link is legal Swift and reported honestly.
-func (e *Executor) copySymlink(ctx context.Context, item plan.Item, srcName, dstName string) {
+func (e *Executor) copySymlink(ctx context.Context, srcName, dstName string, priorEffect Effect) executionResult {
 	link, err := e.cfg.Source.SymlinkGet(ctx, e.cfg.SrcContainer, srcName)
 	if err != nil {
-		e.fail(item.Name, "symlink-head", err)
-		return
+		return failed(priorEffect, StageSourceRead, CodeUnknown, "symlink-head", err)
 	}
 	if link.SymlinkTarget == "" {
-		e.fail(item.Name, "symlink-head", errors.New("followed a symlink but ?symlink=get shows no target"))
-		return
+		return failed(priorEffect, StageSourceRead, CodeIncomplete, "symlink-head", errors.New("followed a symlink but ?symlink=get shows no target"))
 	}
 	_, err = e.cfg.Dest.ObjectDetail(ctx, e.cfg.DstContainer, dstName)
 	if err != nil && !swiftcontrol.IsNotFound(err) {
-		e.fail(item.Name, "symlink-rehead", err)
-		return
+		return failed(priorEffect, StageCommit, CodeUnknown, "symlink-rehead", err)
 	}
 	if err == nil {
-		e.report.Conflicts = append(e.report.Conflicts, item.Name)
-		e.emit(item.Name, "conflict", "destination appeared since planning")
-		return
+		return conflict(priorEffect, nil, "destination appeared since planning")
 	}
 
 	// No leading slash: real Swift silently stores a plain object when
@@ -738,18 +748,16 @@ func (e *Executor) copySymlink(ctx context.Context, item plan.Item, srcName, dst
 	}
 	if _, err := e.cfg.Dest.PutObject(ctx, e.cfg.DstContainer, dstName, strings.NewReader(""), link.ContentType, headers); err != nil {
 		if swiftcontrol.IsPreconditionFailed(err) {
-			e.report.Conflicts = append(e.report.Conflicts, item.Name)
-			e.emit(item.Name, "conflict", "destination appeared at commit time")
-			return
+			return conflict(EffectUnresolved, err, "destination appeared at commit time")
 		}
-		e.fail(item.Name, "symlink-put", err)
-		return
+		return failed(EffectUnresolved, StageCommit, CodeUnknown, "symlink-put", err)
 	}
 	written, err := e.cfg.Dest.SymlinkGet(ctx, e.cfg.DstContainer, dstName)
-	if err != nil || written.SymlinkTarget != link.SymlinkTarget {
-		e.fail(item.Name, "symlink-verify", fmt.Errorf("destination link does not carry the target (%v)", err))
-		return
+	if err != nil {
+		return failed(EffectUnresolved, StageVerification, CodeUnknown, "symlink-verify", err)
 	}
-	e.report.Copied++
-	e.emit(item.Name, "copied", "symlink")
+	if written.SymlinkTarget != link.SymlinkTarget {
+		return failed(EffectUnresolved, StageVerification, CodeUnverified, "symlink-verify", errors.New("destination link does not carry the target"))
+	}
+	return copied(0, "symlink")
 }

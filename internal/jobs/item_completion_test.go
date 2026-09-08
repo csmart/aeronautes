@@ -3,6 +3,7 @@ package jobs
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -111,6 +112,12 @@ func TestItemCompletionRefusesIncompleteFacts(t *testing.T) {
 			if s.Available() == nil {
 				t.Fatal("later save incorrectly cleared the process diagnostic")
 			}
+			events, err := trail.Recent(t.Context(), 10)
+			wantSummary := fmt.Sprintf(" · item outcomes: %d failed names, %d conflicts, %d refusals, %d unresolved, %d unverified, %d with problems",
+				want.Failed, want.Conflicts, want.Refused, want.Unresolved, want.Unverified, want.Problems)
+			if err != nil || len(events) != 1 || events[0].Summary != wantSummary {
+				t.Fatalf("terminal audit disagrees with retained facets: %+v want=%q %v", events, wantSummary, err)
+			}
 		})
 	}
 }
@@ -125,6 +132,9 @@ func TestItemCompletionTransactionRollback(t *testing.T) {
 				t.Fatal(err)
 			}
 			if err := s.RecordExecution(t.Context(), job.ID, intent.Key, itemProblem(ItemFailed, StageSourceRead, CodeForbidden)); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.RecordComparison(t.Context(), job.ID, intent.ItemIdentity, itemProblem(ItemFailed, StageVerification, CodeUnverified)); err != nil {
 				t.Fatal(err)
 			}
 			before, err := s.Get(t.Context(), job.ID)
@@ -164,6 +174,15 @@ func TestItemCompletionTransactionRollback(t *testing.T) {
 			itemSQL(t, s, `DROP TRIGGER refuse_finish`)
 			if err := s.FinishFromItems(t.Context(), job.ID, itemCompletion(job, StatePartial), trail); err != nil {
 				t.Fatalf("admitted work could not save after storage recovery: %v", err)
+			}
+			got, err = observer.Get(t.Context(), job.ID)
+			if err != nil || got.Counters.ObjectsFailed != 1 || got.Counters.ObjectsCopied != 1 {
+				t.Fatalf("terminal snapshot used caller or phase counts: %+v %v", got, err)
+			}
+			events, err = trail.Recent(t.Context(), 10)
+			if err != nil || len(events) != 1 || events[0].Operation != "transfer.copy.partial" ||
+				events[0].Summary != " · item outcomes: 1 failed names, 0 conflicts, 0 refusals, 0 unresolved, 0 unverified, 1 with problems" {
+				t.Fatalf("audit facets did not commit with the distinct failed counter: %+v %v", events, err)
 			}
 		})
 	}

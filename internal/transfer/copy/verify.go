@@ -28,56 +28,65 @@ type VerifyReport struct {
 // plus the destination fingerprint for conservative rows. Destination-
 // only names are not this job's business (Copy never deletes).
 func (e *Executor) Verify(ctx context.Context, source, dest listingStream) (*VerifyReport, error) {
+	report := &VerifyReport{}
+	if e.stopped != nil {
+		return report, e.stopped
+	}
 	refused, err := e.refusals.reader(e.report.OverwritesRefused)
 	if err != nil {
-		return nil, err
+		return report, err
 	}
-	report := &VerifyReport{}
 	_, err = plan.Copy(ctx, source, dest, e.cfg.SrcPrefix, e.cfg.DstPrefix, func(item plan.Item) error {
 		excluded, err := refused.contains(item.Name)
 		if err != nil {
 			return err
 		}
-		if excluded {
+		if excluded || item.Verdict == plan.VerdictDestOnly {
 			return nil
 		}
-		switch item.Verdict {
-		case plan.VerdictSame:
+		observation, failure := e.verifyItem(ctx, item)
+		if failure == nil {
 			report.Verified++
-		case plan.VerdictDestOnly:
-			// Staging litter under this job's own prefix is expected here
-			// when verification runs before cleanup; everything else is
-			// simply outside the copy scope.
-		case plan.VerdictUnknown:
-			src, err := e.cfg.Source.ObjectDetail(ctx, e.cfg.SrcContainer, e.cfg.SrcPrefix+item.Name)
-			if err != nil {
-				report.fail(item.Name, "verify-head-source", err)
-				return nil
-			}
-			dst, err := e.cfg.Dest.ObjectDetail(ctx, e.cfg.DstContainer, e.cfg.DstPrefix+item.Name)
-			if err != nil {
-				report.fail(item.Name, "verify-head-dest", err)
-				return nil
-			}
-			if provenEqual(src, dst) {
-				report.Verified++
-			} else {
-				report.fail(item.Name, "verify", errors.New("equality unprovable after copy"))
-			}
-		case plan.VerdictNew:
-			report.fail(item.Name, "verify", errors.New("still missing at the destination"))
-		case plan.VerdictChanged:
-			report.fail(item.Name, "verify", errors.New("destination still differs from source"))
+		} else {
+			report.fail(item.Name, "verify", failure)
+		}
+		if e.cfg.Recorder != nil {
+			return e.stop(e.cfg.Recorder.Verify(item.Name, observation))
 		}
 		return nil
 	})
-	if err != nil {
-		return nil, err
+	return report, errors.Join(err, refused.finish())
+}
+
+func (e *Executor) verifyItem(ctx context.Context, item plan.Item) (Observation, error) {
+	var err error
+	code := CodeUnverified
+	switch item.Verdict {
+	case plan.VerdictSame:
+		return Observation{Result: ResultVerified, Effect: EffectNotAttempted}, nil
+	case plan.VerdictUnknown:
+		var src, dst *swiftcontrol.ObjectDetail
+		src, err = e.cfg.Source.ObjectDetail(ctx, e.cfg.SrcContainer, e.cfg.SrcPrefix+item.Name)
+		if err == nil {
+			dst, err = e.cfg.Dest.ObjectDetail(ctx, e.cfg.DstContainer, e.cfg.DstPrefix+item.Name)
+		}
+		if err != nil {
+			code = CodeUnknown
+		} else if provenEqual(src, dst) {
+			return Observation{Result: ResultVerified, Effect: EffectNotAttempted}, nil
+		} else {
+			err = errors.New("equality unprovable after copy")
+		}
+	case plan.VerdictNew:
+		err = errors.New("still missing at the destination")
+	case plan.VerdictChanged:
+		err = errors.New("destination still differs from source")
+	default:
+		err = errors.New("unsupported verification verdict")
+		code = CodeUnsupported
 	}
-	if err := refused.finish(); err != nil {
-		return nil, err
-	}
-	return report, nil
+	return Observation{Result: ResultFailed, Effect: EffectNotAttempted,
+		Diagnostic: diagnostic(StageVerification, code, err)}, err
 }
 
 func (r *VerifyReport) fail(name, stage string, err error) {

@@ -157,29 +157,33 @@ func Copy(ctx context.Context, source, dest iter.Seq2[swiftcontrol.ListingEntry,
 			return summary, err
 		}
 		var item Item
+		var advanceSource, advanceDest bool
 		switch {
 		case !dst.ok || (src.ok && src.rel < dst.rel):
 			item = classifyNew(src.row, src.rel, srcPrefix, dstPrefix)
-			if err := src.advance(); err != nil {
-				return summary, err
-			}
+			advanceSource = true
 		case !src.ok || dst.rel < src.rel:
 			item = Item{Name: dst.rel, Verdict: VerdictDestOnly, DestBytes: dst.row.Bytes, DestETag: dst.row.ETag}
-			if err := dst.advance(); err != nil {
-				return summary, err
-			}
+			advanceDest = true
 		default:
 			item = classifyPair(src.row, dst.row, src.rel, srcPrefix, dstPrefix)
-			if err := src.advance(); err != nil {
-				return summary, err
-			}
-			if err := dst.advance(); err != nil {
-				return summary, err
-			}
+			advanceSource, advanceDest = true, true
 		}
 		summary.add(item)
 		if emit != nil {
 			if err := emit(item); err != nil {
+				return summary, err
+			}
+		}
+		// A checked consumer must retain this result before another read
+		// can fail or begin work past a refused acknowledgement.
+		if advanceSource {
+			if err := src.advance(); err != nil {
+				return summary, err
+			}
+		}
+		if advanceDest {
+			if err := dst.advance(); err != nil {
 				return summary, err
 			}
 		}

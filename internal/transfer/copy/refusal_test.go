@@ -191,8 +191,15 @@ func TestVerificationRefusesDamagedRefusalRecords(t *testing.T) {
 				}
 			}
 			verified, err := verifyRefusalFixture(t, w, executor)
-			if err == nil || verified != nil {
-				t.Fatalf("damaged refusal record produced verification evidence: %+v, %v", verified, err)
+			wantFailures := 0
+			if damage == "substituted-name" {
+				wantFailures = 1
+			}
+			if err == nil || verified == nil || verified.Verified != 0 || len(verified.Failures) != wantFailures {
+				t.Fatalf("damaged refusal record lost its error or partial observations: %+v, %v", verified, err)
+			}
+			if wantFailures == 1 && verified.Failures[0].Name != "b" {
+				t.Fatalf("partial verification changed the observed identity: %+v", verified)
 			}
 		})
 	}
@@ -207,7 +214,7 @@ func TestRefusalRecordErrorsStayVisible(t *testing.T) {
 	if report, err := executor.Finish(t.Context()); err == nil || report.OverwritesRefused != 1 || len(report.Failures) != 0 {
 		t.Fatalf("record failure lost the refused item: %+v, %v", report, err)
 	}
-	if verified, err := verifyRefusalFixture(t, w, executor); err == nil || verified != nil {
+	if verified, err := verifyRefusalFixture(t, w, executor); err == nil || verified == nil || verified.Verified != 0 || len(verified.Failures) != 0 {
 		t.Fatalf("failed refusal persistence was hidden: %+v, %v", verified, err)
 	}
 }
@@ -231,7 +238,7 @@ func TestVerificationChecksRefusalsAbsentFromFreshScope(t *testing.T) {
 			// must still validate their complete execution-time record.
 			report, err := verifyRefusalFixture(t, w, executor)
 			if corrupt {
-				if err == nil || report != nil {
+				if err == nil || report == nil || report.Verified != 0 || len(report.Failures) != 0 {
 					t.Fatalf("absent names concealed a corrupt refusal record: %+v, %v", report, err)
 				}
 			} else if err != nil || report == nil || report.Verified != 0 || len(report.Failures) != 0 {
@@ -254,7 +261,7 @@ func TestRefusalRecordClosesAfterVerification(t *testing.T) {
 	if _, err := os.Stat(name); !os.IsNotExist(err) {
 		t.Fatalf("closed executor left its local refusal record: %v", err)
 	}
-	if report, err := verifyRefusalFixture(t, w, executor); err == nil || report != nil {
+	if report, err := verifyRefusalFixture(t, w, executor); err == nil || report == nil || report.Verified != 0 || len(report.Failures) != 0 {
 		t.Fatalf("unavailable refusal record produced verification: %+v, %v", report, err)
 	}
 }
