@@ -244,10 +244,11 @@ Acceptance: fail the first and last staging DELETE, truncate the staging listing
 
 Current remediation status: P04 has removed the final staging sweep and stopped successful uploads from clearing their recovery rows.
 The [8 September bound-service reproductions](../../experiments/2026-09-08-upload-recovery.md) verify retained facts on mock Swift and SAIO, including an in-process database reopen.
-They also reproduce the remaining ignored committed-record and staging-delete errors: the job is incorrectly `complete`, and a rejected committed record does not prevent staging deletion.
+Before the follow-up fix, they also reproduced ignored committed-record and staging-delete errors: the job was incorrectly `complete`, and a rejected committed record did not prevent staging deletion.
 [ADR 0023](../../adr/0023-upload-post-commit-errors.md) defines the independently reviewed error-reporting and cleanup-admission follow-up.
 Its [maintained implementation and regressions](../../experiments/2026-09-08-upload-recovery.md#maintained-implementation-and-evidence) now retain staging after committed-record refusal and report post-commit issues visibly without inventing failed transfers.
-Independent implementation approval and protected delivery remain required; DS-10 and the broader P12/P21 gates remain open.
+Independent implementation review and all five PR/master checks passed for [PR52](https://github.com/csmart/aeronautes/pull/52); the [delivery record](../../experiments/2026-09-08-upload-recovery.md#delivery) verifies the exact reviewed/merged tree.
+DS-10 and the broader P12/P21 gates remain open, including interruption recovery, complete durable identities, stronger verification and shared cleanup policy.
 The original record-clearing description above is the audit-time defect, not the current implementation.
 
 ### DS-11 — Medium: local upload bypasses the destination chunk-size cap
