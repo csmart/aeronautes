@@ -1533,12 +1533,12 @@ func TestContainers(t *testing.T) {
 			if container.Count == 1 && container.Bytes == CONTENT_SIZE {
 				break
 			}
-			t.Errorf("Bad size of Container %q: %q", CONTAINER, container)
+			t.Errorf("Bad size of Container %q: %+v", CONTAINER, container)
 			break
 		}
 	}
 	if !ok {
-		t.Errorf("Didn't find container %q in listing %q", CONTAINER, containers)
+		t.Errorf("Didn't find container %q in listing %+v", CONTAINER, containers)
 	}
 }
 

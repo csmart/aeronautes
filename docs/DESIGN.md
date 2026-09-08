@@ -4954,8 +4954,9 @@ Independent implementation review and all five protected PR/master checks passed
 This delivers only the shared storage foundation; complete caller/UI/restart migrations and the valuable-data hold remain open.
 
 The [listing identity reproduction](experiments/2026-09-08-listing-fidelity.md) exposes a prerequisite to the Copy record migration: malformed Unicode and duplicate identity fields can reach native copies under rewritten or ambiguous names and still report complete.
-[ADR 0029](adr/0029-listing-identity-decoding.md) proposes strict raw-row validation before typed decoding through a third verified Swift-source patch.
-First review that decision and the archived session/actual-service probes, then implement and independently review the decoder change, maintained regressions and broken-rule controls before protected PR/master delivery.
+[ADR 0029](adr/0029-listing-identity-decoding.md) defines the independently reviewed raw-row validation contract before typed decoding through a third verified Swift-source patch.
+The maintained decoder rejects malformed Unicode, duplicate JSON members and colliding identity aliases before publishing any row from the affected page.
+Session, library lifecycle and actual Copy regressions check the contract, including deliberately broken decoder variants; independent implementation review and protected PR/master verification remain delivery gates.
 Preserve valid Unicode, complete-page and continuation semantics, owned collateral and recovery evidence; the later Copy adapter/UI/restart plan must still define the recording-latch scope, comparison mapping and unresolved-rerun refusal.
 This prerequisite does not close the caller migration, wider audit or valuable-data hold.
 

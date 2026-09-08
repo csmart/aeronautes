@@ -6,6 +6,7 @@
   "goModSum": "h1:cbAO76/ZwcFrFlHdXPjaqWZ9R7Hdar7HpjRXBfbjigk=",
   "patches": [
     "credential-pairing.patch",
-    "listing-response.patch"
+    "listing-response.patch",
+    "listing-fidelity.patch"
   ]
 }

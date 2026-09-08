@@ -46,6 +46,7 @@ func (r *listingResponseFailure) Read([]byte) (int, error) {
 
 func TestListingResponseLifecycle(t *testing.T) {
 	const good = `[{"name":"one","bytes":4,"last_modified":"2026-08-28T10:00:00.123456Z"}]`
+	const invalidIdentity = "[{\"name\":\"one\"},{\"name\":\"provider-secret\xff\"}]"
 	for _, kind := range []string{"containers", "objects"} {
 		t.Run(kind, func(t *testing.T) {
 			for _, fault := range []string{
@@ -53,6 +54,9 @@ func TestListingResponseLifecycle(t *testing.T) {
 				"decode-and-close-error", "partial-status", "content-range",
 				"invalid-shape", "invalid-suffix",
 				"split-valid", "split-empty", "cancel-before-body",
+				"invalid-identity", "split-invalid-identity", "lone-surrogate",
+				"duplicate-member", "case-alias", "identity-and-close-error",
+				"identity-and-cancel-at-close", "split-valid-unicode",
 			} {
 				t.Run(fault, func(t *testing.T) {
 					ctx, cancel := context.WithCancel(context.Background())
@@ -64,6 +68,7 @@ func TestListingResponseLifecycle(t *testing.T) {
 					status, wantRows := http.StatusOK, 0
 					var wantError error
 					decodeError, prompt, valid := false, false, false
+					identityError := false
 					switch fault {
 					case "valid":
 						valid, wantRows = true, 1
@@ -73,6 +78,9 @@ func TestListingResponseLifecycle(t *testing.T) {
 					case "split-valid":
 						valid, wantRows = true, 1
 						body.reader = iotest.OneByteReader(strings.NewReader(" \t" + good + "\r\n"))
+					case "split-valid-unicode":
+						valid, wantRows = true, 1
+						body.reader = iotest.OneByteReader(strings.NewReader(strings.Replace(good, "one", `�日本語\ud83d\ude80`, 1)))
 					case "split-empty":
 						valid = true
 						body.reader = iotest.OneByteReader(strings.NewReader(" \t[]\r\n"))
@@ -97,6 +105,29 @@ func TestListingResponseLifecycle(t *testing.T) {
 						body.reader, prompt = io.MultiReader(strings.NewReader(`"`), later), true
 					case "invalid-suffix":
 						body.reader, prompt = io.MultiReader(strings.NewReader(good+" ["), later), true
+					case "invalid-identity", "split-invalid-identity", "identity-and-close-error", "identity-and-cancel-at-close":
+						identityError, prompt = true, true
+						var reader io.Reader = strings.NewReader(invalidIdentity)
+						if fault == "split-invalid-identity" {
+							reader = iotest.OneByteReader(reader)
+						}
+						body.reader = io.MultiReader(reader, later)
+						if fault == "identity-and-close-error" {
+							body.closeErr = closeFailure
+						}
+						if fault == "identity-and-cancel-at-close" {
+							body.onClose = cancel
+						}
+					case "lone-surrogate", "duplicate-member", "case-alias":
+						identityError, prompt = true, true
+						row := `{"name":"provider-secret\ud800"}`
+						if fault == "duplicate-member" {
+							row = `{"name":"provider-secret","\u006eame":"later"}`
+						}
+						if fault == "case-alias" {
+							row = `{"Name":"provider-secret","name":"later"}`
+						}
+						body.reader = io.MultiReader(strings.NewReader(`[{"name":"one"},`+row+`]`), later)
 					}
 					calls := 0
 					connection := &Connection{
@@ -151,6 +182,9 @@ func TestListingResponseLifecycle(t *testing.T) {
 					var typeError *json.UnmarshalTypeError
 					if decodeError && !errors.As(err, &typeError) {
 						t.Fatalf("primary decode error was lost: %v", err)
+					}
+					if identityError && err.Error() != "listing row requires valid Unicode and unambiguous identity fields" {
+						t.Fatalf("primary identity error was lost or exposed provider text: %v", err)
 					}
 				})
 			}

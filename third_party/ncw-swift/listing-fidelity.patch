@@ -1,0 +1,214 @@
+diff --git a/go.mod b/go.mod
+index c8b83223481d0014..23d85087bc5ce5ed 100644
+--- a/go.mod
++++ b/go.mod
+@@ -1,3 +1,3 @@
+ module github.com/ncw/swift/v2
+ 
+-go 1.16
++go 1.27.0
+diff --git a/listing_response_test.go b/listing_response_test.go
+index a5a46f7280fd6cd0..0ef6bf89f5553923 100644
+--- a/listing_response_test.go
++++ b/listing_response_test.go
+@@ -46,6 +46,7 @@ func (r *listingResponseFailure) Read([]byte) (int, error) {
+ 
+ func TestListingResponseLifecycle(t *testing.T) {
+ 	const good = `[{"name":"one","bytes":4,"last_modified":"2026-08-28T10:00:00.123456Z"}]`
++	const invalidIdentity = "[{\"name\":\"one\"},{\"name\":\"provider-secret\xff\"}]"
+ 	for _, kind := range []string{"containers", "objects"} {
+ 		t.Run(kind, func(t *testing.T) {
+ 			for _, fault := range []string{
+@@ -53,6 +54,9 @@ func TestListingResponseLifecycle(t *testing.T) {
+ 				"decode-and-close-error", "partial-status", "content-range",
+ 				"invalid-shape", "invalid-suffix",
+ 				"split-valid", "split-empty", "cancel-before-body",
++				"invalid-identity", "split-invalid-identity", "lone-surrogate",
++				"duplicate-member", "case-alias", "identity-and-close-error",
++				"identity-and-cancel-at-close", "split-valid-unicode",
+ 			} {
+ 				t.Run(fault, func(t *testing.T) {
+ 					ctx, cancel := context.WithCancel(context.Background())
+@@ -64,6 +68,7 @@ func TestListingResponseLifecycle(t *testing.T) {
+ 					status, wantRows := http.StatusOK, 0
+ 					var wantError error
+ 					decodeError, prompt, valid := false, false, false
++					identityError := false
+ 					switch fault {
+ 					case "valid":
+ 						valid, wantRows = true, 1
+@@ -73,6 +78,9 @@ func TestListingResponseLifecycle(t *testing.T) {
+ 					case "split-valid":
+ 						valid, wantRows = true, 1
+ 						body.reader = iotest.OneByteReader(strings.NewReader(" \t" + good + "\r\n"))
++					case "split-valid-unicode":
++						valid, wantRows = true, 1
++						body.reader = iotest.OneByteReader(strings.NewReader(strings.Replace(good, "one", `�日本語\ud83d\ude80`, 1)))
+ 					case "split-empty":
+ 						valid = true
+ 						body.reader = iotest.OneByteReader(strings.NewReader(" \t[]\r\n"))
+@@ -97,6 +105,29 @@ func TestListingResponseLifecycle(t *testing.T) {
+ 						body.reader, prompt = io.MultiReader(strings.NewReader(`"`), later), true
+ 					case "invalid-suffix":
+ 						body.reader, prompt = io.MultiReader(strings.NewReader(good+" ["), later), true
++					case "invalid-identity", "split-invalid-identity", "identity-and-close-error", "identity-and-cancel-at-close":
++						identityError, prompt = true, true
++						var reader io.Reader = strings.NewReader(invalidIdentity)
++						if fault == "split-invalid-identity" {
++							reader = iotest.OneByteReader(reader)
++						}
++						body.reader = io.MultiReader(reader, later)
++						if fault == "identity-and-close-error" {
++							body.closeErr = closeFailure
++						}
++						if fault == "identity-and-cancel-at-close" {
++							body.onClose = cancel
++						}
++					case "lone-surrogate", "duplicate-member", "case-alias":
++						identityError, prompt = true, true
++						row := `{"name":"provider-secret\ud800"}`
++						if fault == "duplicate-member" {
++							row = `{"name":"provider-secret","\u006eame":"later"}`
++						}
++						if fault == "case-alias" {
++							row = `{"Name":"provider-secret","name":"later"}`
++						}
++						body.reader = io.MultiReader(strings.NewReader(`[{"name":"one"},`+row+`]`), later)
+ 					}
+ 					calls := 0
+ 					connection := &Connection{
+@@ -152,6 +183,9 @@ func TestListingResponseLifecycle(t *testing.T) {
+ 					if decodeError && !errors.As(err, &typeError) {
+ 						t.Fatalf("primary decode error was lost: %v", err)
+ 					}
++					if identityError && err.Error() != "listing row requires valid Unicode and unambiguous identity fields" {
++						t.Fatalf("primary identity error was lost or exposed provider text: %v", err)
++					}
+ 				})
+ 			}
+ 		})
+diff --git a/swift.go b/swift.go
+index 552c0104c5221ecf..5d572d342bd2a28d 100644
+--- a/swift.go
++++ b/swift.go
+@@ -1,6 +1,7 @@
+-// Aeronautes must not accept mixed credentials or incomplete listings.
++// Aeronautes must not accept mixed credentials, incomplete listings or changed identities.
+ // See docs/adr/0016-native-request-credentials.md and
+-// docs/adr/0021-complete-listing-pages.md; the sibling patches record both fixes.
++// docs/adr/0021-complete-listing-pages.md and 0029-listing-identity-decoding.md;
++// the sibling patches record these fixes.
+ 
+ package swift
+ 
+@@ -13,6 +14,7 @@ import (
+ 	"crypto/sha1"
+ 	"encoding/hex"
+ 	"encoding/json"
++	"encoding/json/jsontext"
+ 	"errors"
+ 	"fmt"
+ 	"hash"
+@@ -941,7 +943,7 @@ func readJson(resp *http.Response, result interface{}) (err error) {
+ 
+ // A decoded prefix is not proof that Swift sent a complete listing.
+ // Keep this stricter contract separate from unrelated JSON endpoints.
+-func readListingJSON(ctx context.Context, resp *http.Response, row func(*json.Decoder) error) (err error) {
++func readListingJSON(ctx context.Context, resp *http.Response, row func(json.RawMessage) error) (err error) {
+ 	defer func() {
+ 		closeErr := resp.Body.Close()
+ 		if err == nil {
+@@ -982,7 +984,14 @@ func readListingJSON(ctx context.Context, resp *http.Response, row func(*json.De
+ 		if err := ctx.Err(); err != nil {
+ 			return err
+ 		}
+-		if err := row(decoder); err != nil {
++		var raw json.RawMessage
++		if err := decoder.Decode(&raw); err != nil {
++			return err
++		}
++		if !jsontext.Value(raw).IsValid() || !validListingIdentityMembers(raw) {
++			return fmt.Errorf("listing row requires valid Unicode and unambiguous identity fields")
++		}
++		if err := row(raw); err != nil {
+ 			return err
+ 		}
+ 	}
+@@ -1008,6 +1017,34 @@ func readListingJSON(ctx context.Context, resp *http.Response, row func(*json.De
+ 	}
+ }
+ 
++// Legacy struct matching folds field names even after strict JSON validation.
++// Multiple spellings must not silently select a later object identity.
++func validListingIdentityMembers(raw json.RawMessage) bool {
++	if jsontext.Value(raw).Kind() != '{' {
++		return true
++	}
++	var members map[string]json.RawMessage
++	if err := json.Unmarshal(raw, &members); err != nil {
++		return false
++	}
++	var nameSeen, subdirSeen bool
++	for member := range members {
++		switch {
++		case strings.EqualFold(member, "name"):
++			if nameSeen {
++				return false
++			}
++			nameSeen = true
++		case strings.EqualFold(member, "subdir"):
++			if subdirSeen {
++				return false
++			}
++			subdirSeen = true
++		}
++	}
++	return true
++}
++
+ /* ------------------------------------------------------------ */
+ 
+ // ContainersOpts is options for Containers() and ContainerNames()
+@@ -1081,9 +1118,9 @@ func (c *Connection) Containers(ctx context.Context, opts *ContainersOpts) ([]Co
+ 		return nil, err
+ 	}
+ 	containers := make([]Container, 0)
+-	err = readListingJSON(ctx, resp, func(decoder *json.Decoder) error {
++	err = readListingJSON(ctx, resp, func(raw json.RawMessage) error {
+ 		var container *Container
+-		if err := decoder.Decode(&container); err != nil {
++		if err := json.Unmarshal(raw, &container); err != nil {
+ 			return err
+ 		}
+ 		if container == nil {
+@@ -1264,9 +1301,9 @@ func (c *Connection) Objects(ctx context.Context, container string, opts *Object
+ 		return nil, err
+ 	}
+ 	objects := make([]Object, 0)
+-	err = readListingJSON(ctx, resp, func(decoder *json.Decoder) error {
++	err = readListingJSON(ctx, resp, func(raw json.RawMessage) error {
+ 		var object *Object
+-		if err := decoder.Decode(&object); err != nil {
++		if err := json.Unmarshal(raw, &object); err != nil {
+ 			return err
+ 		}
+ 		if object == nil {
+diff --git a/swift_test.go b/swift_test.go
+index ea22d3dddb8dfc41..50ab4bd199d32736 100644
+--- a/swift_test.go
++++ b/swift_test.go
+@@ -1533,12 +1533,12 @@ func TestContainers(t *testing.T) {
+ 			if container.Count == 1 && container.Bytes == CONTENT_SIZE {
+ 				break
+ 			}
+-			t.Errorf("Bad size of Container %q: %q", CONTAINER, container)
++			t.Errorf("Bad size of Container %q: %+v", CONTAINER, container)
+ 			break
+ 		}
+ 	}
+ 	if !ok {
+-		t.Errorf("Didn't find container %q in listing %q", CONTAINER, containers)
++		t.Errorf("Didn't find container %q in listing %+v", CONTAINER, containers)
+ 	}
+ }
+ 
