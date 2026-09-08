@@ -174,6 +174,21 @@ func (i ItemIntent) valid() bool {
 	return i.ItemIdentity.valid() && i.ListedBytes >= 0 && (i.Staging == nil || i.Staging.valid())
 }
 
+// Validate permits refusal before a write; invalid writes still latch the store.
+func (i ItemIdentity) Validate() error {
+	if !i.valid() {
+		return ErrInvalidItemRecord
+	}
+	return nil
+}
+
+func (i ItemIntent) Validate() error {
+	if !i.valid() {
+		return ErrInvalidItemRecord
+	}
+	return nil
+}
+
 func (d ItemDiagnostic) valid() bool {
 	if d == (ItemDiagnostic{}) {
 		return true

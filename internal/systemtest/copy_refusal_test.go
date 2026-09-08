@@ -66,7 +66,7 @@ func TestCopyRefusesOverwritesRealSwift(t *testing.T) {
 	}
 	matched := 0
 	for _, event := range events {
-		if event.Operation == "transfer.copy.partial" && event.Summary == "job "+receipt.JobID()+" · 210 overwrites refused" {
+		if event.Operation == "transfer.copy.partial" && event.Summary == "job "+receipt.JobID()+" · 210 overwrites refused · item outcomes: 0 failed names, 0 conflicts, 210 refusals, 0 unresolved, 0 unverified, 210 with problems" {
 			if event.Result != "verify_mismatch" {
 				t.Fatalf("partial audit result: %+v", event)
 			}

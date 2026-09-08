@@ -74,6 +74,8 @@ func (s *Store) finish(ctx context.Context, id string, result Completion, trail 
 				return ErrIncompleteItemRecords
 			}
 			result.Counters.ObjectsFailed = totals.Failed
+			result.Audit.Summary += fmt.Sprintf(" · item outcomes: %d failed names, %d conflicts, %d refusals, %d unresolved, %d unverified, %d with problems",
+				totals.Failed, totals.Conflicts, totals.Refused, totals.Unresolved, totals.Unverified, totals.Problems)
 		}
 		if !transitionLegal(current, result.State) {
 			return fmt.Errorf("job %s: illegal transition %s → %s", id, current, result.State)

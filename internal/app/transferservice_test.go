@@ -12,12 +12,12 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/swifttest"
 	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
@@ -455,7 +455,7 @@ func TestCancelCopyJob(t *testing.T) {
 	}
 	job := awaitTerminal(t, h, jobID)
 	want := jobs.Counters{ObjectsPlanned: 1, BytesPlanned: int64(len("will not arrive")), ObjectsFailed: 1}
-	if job.State != "partial" || job.Counters != want || job.Error != "1 failed (first: stuck.txt: engine child cancelled); context canceled" {
+	if job.State != "partial" || job.Counters != want || job.Error != "execution failed (example: stuck.txt: engine child cancelled); context canceled" {
 		t.Fatalf("job = %+v", job)
 	}
 	// Cancelling a finished job is refused.
@@ -824,44 +824,18 @@ func TestRerunJob(t *testing.T) {
 		t.Fatal("missing job accepted")
 	}
 
-	beforeSource, beforeTarget := len(h.mock.RequestLog()), len(dstMock.RequestLog())
-	if id, err := h.transfer.RerunJob(ctx, first); id != "" || err != errRerunRecordsNotCaptured {
-		t.Fatalf("actual unrecorded Copy was rerunnable: %q %v", id, err)
-	}
-	if len(h.mock.RequestLog()) != beforeSource || len(dstMock.RequestLog()) != beforeTarget {
-		t.Fatal("uncaptured rerun contacted Swift")
-	}
-
-	// Transfer callers have not opted in yet. Construct separate historical
-	// facts without upgrading the actual first Copy or inventing its history.
 	prior, err := h.transfer.jobs.Get(ctx, first)
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || prior.ItemRecordsVersion != 1 {
+		t.Fatalf("actual Copy did not capture item history: %+v %v", prior, err)
 	}
-	prior.ItemRecordsVersion = 1
-	prior.StartedAt, prior.FinishedAt = time.Time{}, time.Time{}
-	prior, err = h.transfer.jobs.Create(ctx, prior)
-	if err != nil {
-		t.Fatal(err)
+	beforeItems, err := h.transfer.jobs.ReadItems(ctx, first, 0, 100)
+	if err != nil || len(beforeItems.Items) != 2 || beforeItems.NextCursor != 0 {
+		t.Fatalf("actual Copy history incomplete: %+v %v", beforeItems, err)
 	}
-	for _, key := range []string{"a.txt", "b.txt"} {
-		intent := jobs.ItemIntent{ItemIdentity: jobs.ItemIdentity{Key: key,
-			Source:      jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: srcBookmark, Container: "media", Object: "scope/" + key},
-			Destination: jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: dstBookmark, Container: "backup", Object: "mirror/" + key}}, Planned: true, Admitted: true}
-		if err := h.transfer.jobs.AdmitItems(ctx, prior.ID, []jobs.ItemIntent{intent}); err != nil {
-			t.Fatal(err)
+	for _, item := range beforeItems.Items {
+		if !item.Admitted || item.Execution == nil || item.Execution.Result != jobs.ItemCopied || item.Verification == nil || item.Verification.Result != jobs.ItemVerified {
+			t.Fatalf("actual Copy history does not establish inspected outcomes: %+v", item)
 		}
-		if err := h.transfer.jobs.RecordExecution(ctx, prior.ID, key, jobs.ItemObservation{Result: jobs.ItemCopied, Effect: jobs.EffectReportedApplied, CopiedBytes: 5}); err != nil {
-			t.Fatal(err)
-		}
-		if err := h.transfer.jobs.RecordComparison(ctx, prior.ID, intent.ItemIdentity, jobs.ItemObservation{Result: jobs.ItemVerified, Effect: jobs.EffectNotAttempted}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	completion := jobs.Completion{State: jobs.StateCancelled, Counters: prior.Counters,
-		Audit: audit.Event{Operation: "transfer.fixture", Resource: "constructed prior facts", Result: audit.ResultFailed}}
-	if err := h.transfer.jobs.FinishFromItems(ctx, prior.ID, completion, audit.NewStore(h.db)); err != nil {
-		t.Fatal(err)
 	}
 	seedObject(h.mock, "media", "scope/new.txt", "new current source", nil)
 	rerun, err := h.transfer.RerunJob(ctx, prior.ID)
@@ -885,6 +859,10 @@ func TestRerunJob(t *testing.T) {
 	}
 	if len(*seen) < 1 || (*seen)[len(*seen)-1].Transfers != 9 {
 		t.Fatalf("engine options on rerun: %+v", *seen)
+	}
+	afterItems, err := h.transfer.jobs.ReadItems(ctx, first, 0, 100)
+	if err != nil || !reflect.DeepEqual(beforeItems, afterItems) {
+		t.Fatalf("fresh rerun rewrote its predecessor: %+v %v", afterItems, err)
 	}
 }
 
