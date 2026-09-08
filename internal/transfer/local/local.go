@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
@@ -63,6 +64,14 @@ func rejected(problems []Problem) bool {
 
 func (p *UploadPreflight) Rejected() bool { return rejected(p.Problems) }
 
+const uploadPathRefusal = "the selected file path cannot be used unchanged; select it again using an absolute UTF-8 path without dot or empty components"
+
+func validUploadPath(path string) bool {
+	// Grouping cleans the parent path; a changed spelling can resolve to
+	// another file when a symlink precedes '..'. Never substitute that file.
+	return utf8.ValidString(path) && filepath.IsAbs(path) && filepath.Clean(path) == path
+}
+
 // PreflightUpload maps the selected files onto container/prefix and
 // reports every problem before anything is written: unreadable or
 // non-regular paths, duplicate basenames in the selection, and names
@@ -75,7 +84,14 @@ func PreflightUpload(ctx context.Context, dst *swiftcontrol.Session, container, 
 	}
 	report := &UploadPreflight{}
 	seen := map[string]string{}
-	for _, path := range paths {
+	for index, path := range paths {
+		if !validUploadPath(path) {
+			report.Problems = append(report.Problems, Problem{
+				Name: fmt.Sprintf("selection %d", index+1), Kind: "source-path",
+				Detail: uploadPathRefusal, Reject: true,
+			})
+			continue
+		}
 		base := filepath.Base(path)
 		name := prefix + base
 		info, err := os.Stat(path)
@@ -352,6 +368,11 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 	}
 	if stageID == "" {
 		return nil, errors.New("upload needs a stage id (the job id)")
+	}
+	for _, item := range preflight.Items {
+		if !validUploadPath(item.Path) {
+			return nil, errors.New(uploadPathRefusal)
+		}
 	}
 	report := &Report{}
 	fail := func(name, stage string, err error) {

@@ -212,7 +212,7 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 		return "", err
 	}
 	if preflight.Rejected() {
-		return "", errors.New("preflight found collisions; resolve them and retry (nothing was written)")
+		return "", errors.New("preflight found problems; resolve them and retry (nothing was written)")
 	}
 	if err := req.Settings.Validate(); err != nil {
 		return "", err

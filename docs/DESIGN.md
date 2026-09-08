@@ -4992,12 +4992,13 @@ The next local caller is upload, with [archived before-fix prerequisites](experi
 The actual services still truncate 201 and 401 failed uploads to 200 on mock Swift and SAIO; supplementary local/mock probes expose later work after recovery refusal and a same-length source-path mismatch.
 These differently scoped reproductions require a concrete upload design and actual boundary evidence before caller opt-in; they do not close a valuable-data gate.
 
-[ADR 0031](adr/0031-upload-item-recording.md) proposes the concrete upload contract for independent review.
+[ADR 0031](adr/0031-upload-item-recording.md) defines the independently accepted upload contract.
 Its commit sequence first proves and corrects the captured-path grouping prerequisite, then adds checked upload admission/final observations and the version-one service/completion adapter together.
 Each logical implementation change requires its own review before the next; download remains version zero until its separate migration.
 Required record failures stop later retry/commit work, while actual live HEAD results preserve copied bytes and post-commit issues remain exact independently of samples.
 The maintained proof must include ordinary local filenames, real SQL faults, exact local/remote collateral, complete item pages and orderly child reopening with all item facts, followed by full checks and protected PR/master delivery.
-This draft changes no runtime and leaves filesystem authority, stronger verification, physical durability and the valuable-data hold open.
+The first [bounded source-path correction](experiments/2026-09-08-upload-source-paths.md) refuses unsafe captured spellings before transfer work, with actual-service content and collateral witnesses on both providers.
+Upload item recording remains unimplemented, and filesystem authority, stronger verification, physical durability and the valuable-data hold remain open.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.

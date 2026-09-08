@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -153,10 +154,12 @@ func uploadRecoveryReopen(t *testing.T, h *Harness, jobID string, want uploadRec
 }
 
 type uploadDeleteTrace struct {
-	mu       sync.Mutex
-	paths    []string
-	writes   []string
-	requests int
+	cancelledStagePuts int
+	stagePutCancelled  chan struct{}
+	mu                 sync.Mutex
+	paths              []string
+	writes             []string
+	requests           int
 }
 
 func (trace *uploadDeleteTrace) requestCount() int {
@@ -191,6 +194,7 @@ func uploadRecoveryProxy(t *testing.T, h *Harness, dest string, test uploadRecov
 	t.Cleanup(transport.CloseIdleConnections)
 	proxy := httputil.NewSingleHostReverseProxy(&target)
 	proxy.Transport = transport
+	trace := &uploadDeleteTrace{stagePutCancelled: make(chan struct{}, 1)}
 	proxy.ModifyResponse = func(response *http.Response) error {
 		if test.fault == "committed-verify" && response.Request.Method == http.MethodHead && strings.HasSuffix(response.Request.URL.Path, "/live/000.bin") && response.StatusCode == http.StatusOK {
 			response.Header.Set("Content-Length", "1")
@@ -198,11 +202,25 @@ func uploadRecoveryProxy(t *testing.T, h *Harness, dest string, test uploadRecov
 		}
 		return nil
 	}
-	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
+	proxy.ErrorHandler = func(w http.ResponseWriter, request *http.Request, err error) {
+		// The selected-link fixture makes rclone abort its staged body when
+		// the followed file size differs from the link's own size.
+		if test.fault == "source-link" && request.Method == http.MethodPut &&
+			strings.HasPrefix(request.URL.Path, storage.Path+"/"+dest+"/.aeronautes/stage/") &&
+			strings.HasSuffix(request.URL.Path, "/batch/selected-link") &&
+			errors.Is(err, context.Canceled) && errors.Is(request.Context().Err(), context.Canceled) {
+			trace.mu.Lock()
+			trace.cancelledStagePuts++
+			trace.mu.Unlock()
+			select {
+			case trace.stagePutCancelled <- struct{}{}:
+			default:
+			}
+			return
+		}
 		t.Errorf("upload fault proxy: %v", err)
 		http.Error(w, "fixture proxy failed", http.StatusBadGateway)
 	}
-	trace := &uploadDeleteTrace{}
 	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		trace.mu.Lock()
 		trace.requests++

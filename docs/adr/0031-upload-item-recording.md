@@ -1,6 +1,6 @@
 # ADR 0031 — checked upload item records
 
-**Status:** Proposed for independent local review under the authorised audit remediation plan.
+**Status:** Accepted after independent local review under the authorised audit remediation plan.
 **Scope:** The local-upload caller migration in [ADR 0030](0030-copy-item-recording.md) step five, including its bounded source-path prerequisite.
 Download remains a separate migration.
 
@@ -19,7 +19,7 @@ It does not establish complete per-request history, stable filesystem object ide
 
 Before any source stat/open, grouping or upload admission, require a valid UTF-8 absolute backend-captured path whose spelling is already unchanged by the host's `filepath.Clean`.
 Reject the whole selection during the existing complete preflight when any path fails that check.
-Use a constant refusal reason rather than a lossy rendering of an invalid pathname.
+Use a safe selection-index label for the problem name and a constant refusal reason for its detail, rather than a lossy rendering of an invalid pathname.
 Do not clean, resolve symlinks, normalise Unicode or substitute a new spelling in the retained selection.
 Preserve valid replacement characters, case and supported control characters exactly.
 Apply the same guard at execution entry so an internal preflight value cannot bypass it.
@@ -31,6 +31,11 @@ An operator can select the file through a supported canonical spelling in a fres
 Do not silently route a rejected representation through native upload merely to make it succeed.
 For accepted paths, the engine's parent and basename must refer to the unchanged captured spelling; retain the exact path and prove the selected bytes in an actual-service fixture.
 Existing duplicate-name, regular-file, destination-absence and conditional-create rules remain required.
+
+A selected file that is itself a symlink can satisfy this spelling guard; it does not gain a new routing policy.
+The [maintained service fixture](../experiments/2026-09-08-upload-source-paths.md) shows native upload following its captured path, while pinned rclone attempts a staging PUT and then fails when the followed file size differs from the link size.
+The engine fixture records no live copy and retains recovery intent; it does not prove that every symlink is skipped or that an invoked staging write had no effect.
+The later checked caller must record the failed engine invocation with unresolved staging effects and no invented live verification, while a successful native case retains its actual copied and verified observations.
 
 This is a bounded correction to pathname grouping.
 It does not stop symlink targets, parents or files being replaced after selection/preflight, establish an approved root capability, or prove native-dialog behaviour on all six platforms.
@@ -121,6 +126,7 @@ The legacy job-error/audit paths still require their wider SEC-08 work.
 Create only new uploads with `ItemRecordsVersion=1`; leave historical jobs and new downloads at version zero.
 Carry the immutable record version through the shared local runner and every terminal path, including failed recovery/start-audit admission, planning/running refusal and queued cancellation.
 Version-one upload completion must use `FinishFromItems`; an unmigrated download must keep ordinary `Finish`.
+The store enforces those modes with `ErrItemCompletionRequired` for ordinary version-one completion and `ErrItemRecordsNotCaptured` for item-based version-zero completion.
 Release the completed body's cancellation registration even when final persistence fails.
 
 Use retained facets to prevent `complete` when any failed, conflicting, refused, unresolved, unverified or problematic name remains.
@@ -132,6 +138,7 @@ Copied/verified/byte counters still come from the upload's actual successful liv
 Post-commit issue totals remain independent of per-name facets and sampled text.
 
 Use the already delivered bounded item pages and quoted local-location DTO/view to expose every retained upload identity, both phases, missing facts and overlapping facets.
+Display-only exposure of the operator's own captured absolute path is intended in retained history; the preflight DTO still blanks executable paths under [ADR 0011](0011-typed-service-surface.md).
 Verify actual uploaded paths through the service and UI, including page boundaries beyond 200 and exact control/Unicode display.
 Do not infer safety from a displayed path or accept it back as a new selection.
 Keep backend and UI rerun refusal for upload/download: a fresh local dialog and current preflight remain required.
@@ -145,6 +152,7 @@ The existing version-one interrupted projection must preserve upload records and
 2. Implement the bounded pathname refusal as its own logical change, with maintained preflight/executor and actual-service regressions before upload opt-in.
    Assert no job/engine dispatch or remote writes for the refused selection, unchanged selected/unselected local files and complete owned remote collateral.
    Cover relative, dot-segment, invalid UTF-8 and accepted exact Unicode/native/engine paths, without normalising identity or claiming that clean paths cannot race.
+   Include a selected file that is itself a symlink on both routes and preserve the actually witnessed staging effects.
 3. Add checked upload execution and the application adapter/completion migration together, after the source prerequisite passes independent review.
    Keep the first actual caller, its fault seams and regressions in the same logical change; do not ship a version-one caller with unchecked callbacks or terminal paths.
    Preserve existing local interruption and more-than-200 post-commit issue regressions, and add an explicit version-zero download control for the shared runner.
