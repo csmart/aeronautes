@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/csmart/aeronautes/internal/db"
@@ -103,7 +104,9 @@ type Job struct {
 
 // Store persists jobs.
 type Store struct {
-	db *db.DB
+	db          *db.DB
+	healthMu    sync.RWMutex
+	unavailable error
 }
 
 // NewStore builds a Store over the state database.
@@ -113,6 +116,9 @@ func NewStore(d *db.DB) *Store {
 
 // Create inserts a new job in StateQueued and returns it with its id.
 func (s *Store) Create(ctx context.Context, j Job) (Job, error) {
+	if err := s.Available(); err != nil {
+		return Job{}, err
+	}
 	if j.Type == "" {
 		return Job{}, fmt.Errorf("job needs a type")
 	}
@@ -129,6 +135,9 @@ func (s *Store) Create(ctx context.Context, j Job) (Job, error) {
 		return Job{}, err
 	}
 	err = s.db.WriteTx(ctx, func(tx *sql.Tx) error {
+		if err := s.Available(); err != nil {
+			return err
+		}
 		_, err := tx.ExecContext(ctx, `
 			INSERT INTO jobs (id, type, state, source, destination, created_at,
 				execution_engine, counters_json, source_bookmark_id, dest_bookmark_id, settings_json)
@@ -229,6 +238,9 @@ const selectJob = `
 
 // Get returns one job.
 func (s *Store) Get(ctx context.Context, id string) (Job, error) {
+	if err := s.Available(); err != nil {
+		return Job{}, err
+	}
 	row := s.db.Reader().QueryRowContext(ctx, selectJob+` WHERE id=?`, id)
 	j, err := scanJob(row.Scan)
 	if err == sql.ErrNoRows {
@@ -248,6 +260,9 @@ type Filter struct {
 
 // List returns jobs newest first.
 func (s *Store) List(ctx context.Context, f Filter) ([]Job, error) {
+	if err := s.Available(); err != nil {
+		return nil, err
+	}
 	query := selectJob + ` WHERE 1=1`
 	var args []any
 	if f.BookmarkID != "" {

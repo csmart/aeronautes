@@ -4899,6 +4899,9 @@ The next bounded P12/P13 sequence is specified in [ADR 0024](adr/0024-local-job-
 First review the shared durability contract, then implement atomic local terminal summaries, checked upload/download admission and visible persistence unavailability.
 Preserve earlier failures alongside later terminal reasons and migrate Copy separately after that local slice passes its review and delivery gates.
 This is a job-summary foundation; exact per-identity outcomes, other callers, real crash boundaries and the valuable-data hold remain open.
+The local implementation and its [maintained evidence](experiments/2026-09-08-terminal-persistence.md#maintained-implementation-and-evidence) now cover atomic terminal summaries, checked admission, queued local cancellation and explicit persistence unavailability.
+The full internal race suite passes 601 top-level tests and 1,508 leaf cases without skips; all 852 frontend tests and the local build checks pass.
+Independent implementation review and protected PR/master pipeline verification remain required delivery gates.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.

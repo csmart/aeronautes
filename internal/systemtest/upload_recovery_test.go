@@ -155,6 +155,7 @@ func uploadRecoveryReopen(t *testing.T, h *Harness, jobID string, want uploadRec
 type uploadDeleteTrace struct {
 	mu       sync.Mutex
 	paths    []string
+	writes   []string
 	requests int
 }
 
@@ -168,6 +169,12 @@ func (trace *uploadDeleteTrace) snapshot() []string {
 	trace.mu.Lock()
 	defer trace.mu.Unlock()
 	return append([]string(nil), trace.paths...)
+}
+
+func (trace *uploadDeleteTrace) writeSnapshot() []string {
+	trace.mu.Lock()
+	defer trace.mu.Unlock()
+	return append([]string(nil), trace.writes...)
 }
 
 func uploadRecoveryProxy(t *testing.T, h *Harness, dest string, test uploadRecoveryCase) *uploadDeleteTrace {
@@ -199,6 +206,9 @@ func uploadRecoveryProxy(t *testing.T, h *Harness, dest string, test uploadRecov
 	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		trace.mu.Lock()
 		trace.requests++
+		if r.Method == http.MethodPut || r.Method == http.MethodPost || r.Method == http.MethodDelete {
+			trace.writes = append(trace.writes, r.Method+" "+r.URL.Path)
+		}
 		trace.mu.Unlock()
 		if test.fault == "mixed" && r.Method == http.MethodPut && r.URL.Path == storage.Path+"/"+dest+"/live/001.bin" {
 			http.Error(w, "injected live write refusal", http.StatusForbidden)

@@ -21,6 +21,29 @@ function show(browser: BrowserState) {
   flushSync();
 }
 
+it.each([false, true])("shows unavailable status over a stale active count (%s)", async (stale) => {
+  const api = newFakeApi();
+  api.jobs = async () => { throw new Error("final result could not be saved; inspect retained data before retrying"); };
+  const browser = new BrowserState(api);
+  if (stale) {
+    browser.jobs = [{ id: "stale", state: "running", type: "upload", source: "local", destination: "dest/",
+      sourceBookmarkId: "", destBookmarkId: "b", createdAt: "", startedAt: "", finishedAt: "",
+      engine: "rclone+native", settings: "", error: "", recoveryRecords: 1,
+      counters: { objectsPlanned: 1, objectsCopied: 0, objectsVerified: 0, objectsFailed: 0,
+        bytesPlanned: 8, bytesCopied: 0, overwrites: 0, overwritesRefused: 0, nativeRouted: 0, objectsDeleted: 0 },
+    }];
+  }
+  show(browser);
+  await vi.waitFor(() => expect(document.querySelector(".bar")?.textContent).toContain("Job status unavailable"));
+  expect(document.querySelector(".bar")?.textContent).not.toContain("No active transfers");
+  expect(document.querySelector(".bar")?.textContent).not.toContain("1 active job");
+  expect(document.querySelector(".rows")).toBeNull();
+  expect(document.body.textContent).toContain("inspect retained data before retrying");
+  document.querySelector<HTMLButtonElement>(".bar")!.click();
+  flushSync();
+  expect(document.querySelector(".bar")?.textContent).toContain("Job status unavailable");
+});
+
 it("shows refused overwrites separately from copied and failed objects", async () => {
   const api = newFakeApi();
   const job: JobDTO = {

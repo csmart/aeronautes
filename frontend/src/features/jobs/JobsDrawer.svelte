@@ -116,7 +116,9 @@
 <div class="drawer num">
   <button class="bar" onclick={() => (open = !open)} aria-expanded={open}>
     <span aria-live="polite">
-      {#if browser.activeJobs.length > 0}
+      {#if browser.jobsError}
+        Job status unavailable
+      {:else if browser.activeJobs.length > 0}
         {browser.activeJobs.length} active
         {browser.activeJobs.length === 1 ? "job" : "jobs"}
       {:else}

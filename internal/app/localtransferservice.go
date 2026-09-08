@@ -237,20 +237,22 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 	}
 	jobCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	s.runner.register(job.ID, cancel)
-	// Upload jobs carry the same durable staging record as Copy: a
-	// crash strands sweepable litter, never invisible litter.
+	// Retained staging intent makes uncertain residue visible after a
+	// crash; it does not prove that reclaiming that residue is safe.
 	if err := s.jobs.RecoveryAdd(context.WithoutCancel(ctx), jobs.RecoveryRecord{
 		JobID: job.ID, BookmarkID: req.BookmarkID, Kind: jobs.RecoveryStaging,
 		Container: req.Container, Prefix: ".aeronautes/stage/" + job.ID + "/",
 	}); err != nil {
-		s.runner.release(job.ID)
-		_ = s.jobs.SetError(context.WithoutCancel(ctx), job.ID, "recovery store unavailable before first write: "+err.Error())
-		_ = s.jobs.Transition(context.WithoutCancel(ctx), job.ID, jobs.StateFailed)
+		cancel()
+		s.finishLocal(context.WithoutCancel(ctx), job.ID, req.BookmarkID, job.Counters, jobs.StateFailed, "recovery store unavailable before first write: "+err.Error())
 		return "", fmt.Errorf("recovery store unavailable: %w", err)
 	}
-	s.record(ctx, req.BookmarkID, "transfer.upload.start", job.Source+" → "+job.Destination, "job "+job.ID+" · "+job.Settings, audit.ResultApplied)
+	if err := s.startLocalAudit(ctx, job, req.BookmarkID, "transfer.upload.start"); err != nil {
+		cancel()
+		return "", err
+	}
 
-	s.launch(jobCtx, job.ID, req.BookmarkID, releasePins, func(runCtx context.Context) {
+	s.runner.launchWithQueuedOutcome(jobCtx, job.ID, req.BookmarkID, releasePins, func(runCtx context.Context) {
 		s.runLocal(runCtx, job.ID, req.BookmarkID, job.Counters, func(innerCtx context.Context, onProgress func(done, total, bytes int64)) (*local.Report, error) {
 			background := context.WithoutCancel(innerCtx)
 			report, err := local.Upload(innerCtx, session, engine, "aeronautes_dst:"+req.Container, req.Container, req.Prefix, job.ID,
@@ -262,6 +264,8 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 			}
 			return report, err
 		})
+	}, func(cancelCtx context.Context) {
+		s.finishLocal(cancelCtx, job.ID, req.BookmarkID, job.Counters, jobs.StateCancelled, "")
 	})
 	releasePins = nil
 	return job.ID, nil
@@ -316,15 +320,45 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 	}
 	jobCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	s.runner.register(job.ID, cancel)
-	s.record(ctx, req.BookmarkID, "transfer.download.start", job.Source+" → "+job.Destination, "job "+job.ID+" · "+job.Settings, audit.ResultApplied)
+	if err := s.startLocalAudit(ctx, job, req.BookmarkID, "transfer.download.start"); err != nil {
+		cancel()
+		return "", err
+	}
 
-	s.launch(jobCtx, job.ID, req.BookmarkID, releasePins, func(runCtx context.Context) {
+	s.runner.launchWithQueuedOutcome(jobCtx, job.ID, req.BookmarkID, releasePins, func(runCtx context.Context) {
 		s.runLocal(runCtx, job.ID, req.BookmarkID, job.Counters, func(innerCtx context.Context, onProgress func(done, total, bytes int64)) (*local.Report, error) {
 			return local.Download(innerCtx, session, engine, "aeronautes_src:"+req.Container, req.Container, req.Prefix, destDir, job.ID, preflight, onProgress)
 		})
+	}, func(cancelCtx context.Context) {
+		s.finishLocal(cancelCtx, job.ID, req.BookmarkID, job.Counters, jobs.StateCancelled, "")
 	})
 	releasePins = nil
 	return job.ID, nil
+}
+
+func (s *TransferService) startLocalAudit(ctx context.Context, job jobs.Job, bookmarkID, operation string) error {
+	err := s.runner.audit.Append(ctx, audit.Event{
+		BookmarkID: bookmarkID, Operation: operation, Resource: job.Source + " → " + job.Destination,
+		Summary: "job " + job.ID + " · " + job.Settings, Result: audit.ResultApplied,
+	})
+	if err != nil {
+		s.finishLocal(context.WithoutCancel(ctx), job.ID, bookmarkID, job.Counters, jobs.StateFailed, "start audit unavailable before first write: "+err.Error())
+		return fmt.Errorf("start audit unavailable: %w", err)
+	}
+	return nil
+}
+
+func (s *TransferService) finishLocal(ctx context.Context, jobID, bookmarkID string, counters jobs.Counters, state jobs.State, message string) {
+	// A completed body must no longer accept cancellation, even when
+	// persistence fails and the shared store reports unavailability.
+	s.runner.release(jobID)
+	err := s.jobs.Finish(ctx, jobID, jobs.Completion{
+		State: state, Counters: counters, Error: message,
+		Audit: audit.Event{BookmarkID: bookmarkID, Operation: "transfer.local." + string(state), Resource: "job " + jobID, Result: terminalAuditResult(state)},
+	}, s.runner.audit)
+	if err != nil {
+		log.Printf("job %s terminal outcome was not saved: %v", jobID, err)
+	}
 }
 
 // runLocal is the shared local-transfer job goroutine: preflight was
@@ -335,15 +369,21 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 	run func(ctx context.Context, onProgress func(done, total, bytes int64)) (*local.Report, error)) {
 
 	background := context.WithoutCancel(ctx)
-	transition := func(state jobs.State) {
+	counters := base
+	finish := func(state jobs.State, message string) {
+		s.finishLocal(background, jobID, bookmarkID, counters, state, message)
+	}
+	for _, state := range []jobs.State{jobs.StatePlanning, jobs.StateRunning} {
+		if err := s.jobs.Available(); err != nil {
+			s.runner.release(jobID)
+			return
+		}
 		if err := s.jobs.Transition(background, jobID, state); err != nil {
-			log.Printf("job %s: %v", jobID, err)
+			finish(jobs.StateFailed, "job admission unavailable before first write: "+err.Error())
+			return
 		}
 	}
-	transition(jobs.StatePlanning)
-	transition(jobs.StateRunning)
 
-	counters := base
 	report, err := run(ctx, func(done, total, bytes int64) {
 		// Progress flushes are best-effort; the terminal flush is exact.
 		// Bytes stream live so the drawer's rate and ETA work for local
@@ -358,18 +398,6 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 		counters.BytesCopied = report.Bytes
 		counters.NativeRouted = report.NativeRouted
 		counters.ObjectsFailed = int64(len(report.Failures))
-	}
-	_ = s.jobs.UpdateCounters(background, jobID, counters)
-
-	finish := func(state jobs.State, message string) {
-		if message != "" {
-			_ = s.jobs.SetError(background, jobID, message)
-		}
-		// Deregister BEFORE the terminal state becomes visible: a job
-		// that reads terminal must no longer be cancel-addressable.
-		s.runner.release(jobID)
-		transition(state)
-		s.record(background, bookmarkID, "transfer.local."+string(state), "job "+jobID, "", terminalAuditResult(state))
 	}
 	switch {
 	case report != nil && report.PostCommitIssues > 0:
@@ -390,7 +418,14 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 	case err != nil:
 		finish(jobs.StateFailed, err.Error())
 	default:
-		transition(jobs.StateVerifying)
+		if err := s.jobs.Transition(background, jobID, jobs.StateVerifying); err != nil {
+			message := "verification state could not be saved: " + err.Error()
+			if report != nil && len(report.Failures) > 0 {
+				message += fmt.Sprintf("; %d failed (first: %s: %s)", len(report.Failures), report.Failures[0].Name, report.Failures[0].Err)
+			}
+			finish(jobs.StatePartial, message)
+			return
+		}
 		if len(report.Failures) > 0 {
 			finish(jobs.StatePartial, fmt.Sprintf("%d failed (first: %s: %s)",
 				len(report.Failures), report.Failures[0].Name, report.Failures[0].Err))
