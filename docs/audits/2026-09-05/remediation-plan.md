@@ -1,17 +1,55 @@
 # Remediation plan
 
 This plan addresses the [5 September 2026 audit](README.md) of `cc6465ac69ec00756d9976bbf6cf7531b07da66d` and the still-open DESIGN §65.10 W/R backlog.
-It is a proposed execution sequence, not a declaration that the defects have been fixed or that new locked product decisions have been accepted.
+The owner authorised remediation and, on 8 September, made **safe operation on valuable data** the first milestone.
+The current disposition is recorded against delivered master `ae3ecd4962cbbc830d8e9f30f42aabc92c45364e`, including [PR52's bounded upload fix](../../experiments/2026-09-08-upload-recovery.md#delivery).
+The domain reports preserve audit-time defects and experiments; the [finding register below](#finding-to-plan-coverage) distinguishes delivered fixes, containment, remaining safety blockers and later work.
+An implementation-order change does not accept a new locked product decision, close a finding or waive a release requirement.
 Keep the existing valuable-data release hold until the safety and release gates below have evidence.
 Implement through the project's commit/review discipline, with a catching regression for every fix and an independent system reproduction once the relevant harness layer exists.
 
-**Proposed execution priority: start P09/P10 as the first independent security slices**, while P01/P02/P03 establish the decisions, corrected oracle and minimum deterministic HTTP barrier layer.
-Follow with P04/P05 recovery and destructive-race containment without waiting for a universal fault framework or the complete scenario matrix.
-The phase labels group related work; they do not postpone credential-origin and token-redirect fixes until Phase A has finished.
-Confirm this security-first ordering with the owner before P-series implementation; the audit does not itself change an earlier agreed implementation order.
-UI-intent fixes can proceed in separate bounded slices while the deeper mutation contract is settled.
+## Execution order for valuable-data safety
+
+P09's endpoint/redirect fixes, core P10 credential/session safeguards, P02's snapshot corrections, the minimum P03 HTTP seam, P04/P05 containment, P06–P08's defined UI/Find fixes and P22/P23 are present in this master.
+P10 and P03 still have the residual obligations listed below; delivered slices do not complete their wider packages.
+The latest full local evidence is 594 top-level Go tests and 1,439 leaf cases without skips, plus 850 frontend tests.
+The [same evidence record](../../experiments/2026-09-08-upload-recovery.md#maintained-implementation-and-evidence) reports valid scenario reconciliation of 32/110 cells with 38/49 actions still gapped.
+These are dated observations, not a percentage of safety achieved or a passing release gate.
+
+1. **Continue P12/P13, with bounded P21 upload callers.**
+   Start by reproducing terminal job/audit persistence failures and incomplete failure reporting on current master, including earlier transfer failures followed by a later error without a post-commit issue.
+   Review the smallest durable intent/outcome contract before changing storage or migrating sibling paths.
+   Split intent admission, terminal outcomes, audit persistence and Copy/upload migration into coherent reviewed commits; retain exact identities beyond display samples and account for unknown effects after lost responses.
+   The already delivered upload error summary is a prerequisite, not an exact durable outcome ledger.
+2. **Bring authority, verification and filesystem prerequisites alongside their first dependent effect.**
+   P10/P11 own native credential/recovery authority and backend-held plans; P16/P17 own current-identity verification and replication fidelity; P18/P19 own selected-root and full-path identity.
+   A bounded persistence/reporting fix may proceed under retention, but cannot enable reclamation, retry, placement or mutation whose prerequisite remains unproved.
+   Record any missing local-filesystem, concurrency or capability decision before its dependent code.
+3. **Complete the enabled mutation and cancellation paths after those prerequisites.**
+   P15/P20/P21/P26 must prove exact destructive scope, protection of shared backing data under the accepted authority contract, local placement, upload completeness and supported versioning semantics, using P14 where an enforceable concurrent-writer protocol is required.
+   Keep Mirror starts, existing-destination transfer overwrites and automatic recovery reclamation refused under ADR 0020.
+   Restoring those capabilities has a separate evidence gate; current refusal tests and the safety of still-enabled sibling paths remain mandatory.
+4. **Attach supporting safety work to these slices.**
+   P03/P34 fault and regression gates, P24 resource bounds, P28 truthful outcomes, P29 safe keyboard/focus/labels and P30 child quiescence must arrive when the affected operation needs them.
+   Resource exhaustion, hidden cancellation failure, misleading scope, unreadable confirmation and a child writing after its parent dies are safety concerns regardless of their original phase label.
+   Extend the harness for a concrete required scenario, keeping process kill, orderly reopen, modelled history loss and native-platform evidence distinct.
+5. **Close the artifact and deployment gates before claiming valuable-data readiness.**
+   P31–P35 must establish current dependency dispositions, the accepted engine, exact source/artifact identity, installation and recovery procedures, required native journeys and representative deployed-Swift evidence.
+   Native work and advisory triage may start earlier when their prerequisites are available.
+   Linux is the first implementation platform; the accepted six-target requirement and every advertised operation remain unchanged.
+6. **Sequence broader product work after the relevant safety foundations.**
+   Throughput optimisation, additional convenience/layout work and absent capabilities in P25/P27 follow their safety prerequisites.
+   The register identifies the parts that can wait because they add capability or convenience without supplying a safety guarantee to an enabled path.
+   They retain their accepted v1 gates; a narrower product/platform scope requires its own explicit DESIGN/ADR decision.
+
+This is a dependency order, not a requirement to finish an entire package before any independent bounded fix.
+The phase tables below retain their IDs and detailed acceptance tests; they no longer describe a fresh start at P09.
+Progress reports should name the remaining safety blockers and their missing evidence, separately from delivered containment and later product work.
 
 ## Decisions to record before dependent code
+
+ADR 0015 already governs credential publication and WAL/FULL settings, and ADR 0020 accepts conservative recovery and transfer refusals.
+Those decisions remain in force while the stronger protocols and the other decisions below are completed; the table does not reopen their accepted containment policy.
 
 | Decision | Evidence/problem | Safest interim behaviour | Needed outcome |
 | --- | --- | --- | --- |
@@ -46,7 +84,7 @@ Acceptance tests named here add to the detailed tests in each finding.
 
 Phase A is complete when the dangerous paths are either demonstrably safe under an explicit contract or visibly unavailable under that contract.
 A warning or typed confirmation alone does not satisfy the containment gate.
-These changes are proposed; the audit itself has not disabled or changed any operation.
+P04/P05 containment is now implemented under [ADR 0020](../../adr/0020-recovery-containment.md); the original audit alone did not change operation availability.
 
 ### Phase B — identity, credentials and authority
 
@@ -155,7 +193,7 @@ A token contrast calculation or jsdom test is not a whole-app conformance claim.
 
 P30 does not need to wait for product-polish Phase E.
 P31 advisory triage and P33 stamping can also run earlier once their dependencies are met.
-The phase order is the risk-priority path; it is not a reason to delay independent, bounded fixes.
+Use the current execution order above and each package's prerequisites; phase labels are not a reason to delay independent, bounded safety fixes.
 Native implementation changes still require native evidence rather than a cross-compilation-only approval.
 
 ## The fault/barrier harness is included
@@ -188,23 +226,55 @@ Leave a broader general fault-testing platform separate unless an acceptance tes
 
 ## Finding-to-plan coverage
 
-| Findings | Work packages |
-| --- | --- |
-| DS-01 / DS-02 / DS-03 | P01–05, P11–15 |
-| DS-04 / DS-09 | P16–17 |
-| DS-05 / DS-06 / DS-07 | P18–20, P30 |
-| DS-08 / DS-10 / DS-11 | P12–13, P21, P28 |
-| DS-12 / DS-13 | P22, P24 |
-| UI-01 / UI-02 / UI-03 / UI-05 / UI-06 | P06–08, P11 |
-| UI-04 / UI-07 / UI-14 | P23 |
-| UI-08 / UI-09 / UI-10 | P27–28 |
-| UI-11 / UI-12 / UI-13 | P24, P29 |
-| SEC-01 / SEC-04 / SEC-07 | P10–11 |
-| SEC-02 / SEC-05 | P09, P31 |
-| SEC-03 / SEC-06 / SEC-08 | P12–13, P28, P30 |
-| SEC-09 / SEC-10 / SEC-11 / SEC-12 | P31–34 |
-| TEST-01 / TEST-02 / TEST-03 / TEST-04 | P02–03, P12, P29–30, P34 |
-| PERF-01 / PERF-02 / DOC-01 | P08, P24–25, P35 |
+**Blocking** means an unresolved obligation for valuable-data operation or its required release evidence.
+**Contained** means the affected authority is withheld under an accepted contract; it is not a repaired implementation or permission to relax the refusal tests.
+**Delivered scope** identifies the original finding's bounded fix and leaves sibling guarantees explicit.
+**Later capability** changes implementation order only; it does not remove accepted v1 scope or make an untested operation safe.
+The original finding IDs are all retained here, including completed fixes whose regressions must continue to run.
+
+| Findings | Current disposition | Remaining work and closing evidence |
+| --- | --- | --- |
+| DS-01 / SEC-03 | Contained; wider recovery blocking | P01/P04 retain records and refuse automatic reclamation; WAL/FULL is enforced. P12 still needs required durable facts, rejected write/sync and lost-history cases, real crash/restart and safe recovery. Missing history must preserve live aliases; P10/P15/P30 authority and writer quiescence are prerequisites to reclamation. |
+| DS-02 / DS-03 | Contained; re-enablement gated | P05 refuses Mirror starts and existing-destination overwrites under ADR 0020. Keep zero-effect refusal and conditional-new-name race tests. P14 may restore only operations with a reviewed enforceable protocol after P11/P12; this does not certify enabled manual deletion or metadata changes. |
+| DS-04 | Blocking | P16 must reject same-size corruption, reordered/missing segments, stale fingerprints and changed source/destination identities. Independent ordered content evidence must establish the promised verification strength; weak or unknown equality cannot authorise destructive follow-up. |
+| DS-05 | Blocking | P18 must bind the selected local root and prevent existing or raced parent symlink/reparse escape on both engines. Native selected-root and outside-sentinel snapshots must show exactly the permitted delta. |
+| DS-06 | Blocking | P19 must apply collision identity to every ancestor and full path, including case, Unicode and platform-reserved names. Real target filesystems must reject the complete unsafe plan before any placement. |
+| DS-07 / SEC-06 | Blocking | P20/P30 must establish cancellation at native writes/placements, exact partial outcomes and child quiescence before recovery. Native parent-kill tests on all six targets must prove no later child writes; an orderly database reopen or cross-build is insufficient. |
+| DS-08 / SEC-08 | Blocking | P12/P13/P28 must persist one outcome per identity and durable intent/outcome audit facts, retain every failure beyond 200 examples, distinguish known/unknown effects and handle job/audit/spill/DB failures visibly. Validate exact counts and planned logical bytes, malformed/unordered bulk replies, restart and retention/export/backup/restore. |
+| DS-09 | Blocking | P17 after P16 must distinguish content equality from replication equality and preserve declared metadata, content headers, expiry and symlink target/account semantics, including dangling links. Changed existing destinations remain refused until P14 permits them. |
+| DS-10 | Partly delivered; blocking | P04 retains recovery facts and PR52 delivers post-commit reporting and cleanup refusal after rejected committed records. P12/P13/P21 still need crash boundaries, exact durable identities, terminal-write failure handling and shared Copy/upload cleanup policy; P15/P16 still own cleanup authority and stronger verification. |
+| DS-11 | Blocking | P21 must share resolved chunk limits/defaults and admission across local/remote uploads. Oversize explicit settings refuse before job creation; incomplete or corrupt DLO content cannot commit. |
+| DS-12 / PERF-01 | Partly delivered; blocking | P08 bounds Find workers and retained scans. P24 must also bound full namespace inventories, browser retention, queues, child batches and aggregate endpoint resources without truncating correctness. Measure RSS as names/jobs grow and prove cancellation/expiry releases resources. |
+| DS-13 | Delivered scope | P22/ADR 0022 delivers native pagination and complete rclone selection through PR44–46. Preserve short-page, nonprogress, actual-engine and full intended-set regressions. Planned-byte accounting and wider resource bounds remain P13/P24 above. |
+| UI-01 / UI-02 / UI-05 | Delivered scope | P06/P07 bind frontend requests, completions and connection state to current identity/lifetime. Preserve deferred-response and duplicate-submit controls; P10/P11 backend authority and P14 external writers remain separate blocking work. |
+| UI-03 / UI-06 | Delivered scope | P08 delivers page ownership/deduplication and Find start/stop/expiry/admission. Preserve those regressions; total browser/queue retention remains P24. |
+| UI-04 / UI-07 / UI-14 | Delivered scope | P23 delivers literal transfer/browser inputs and metadata working-copy/wire-identity admission through PR48/50/51. Preserve all original probes and refusal controls; this does not prove replication fidelity or backend plan authority. |
+| UI-08 | Later capability; v1 gate retained | P27 adds exact-object deletion after P11/P14/P15. Its absence does not grant a prefix-delete substitute: retain explicit unavailability until exact plain/empty/link/manifest identities, final-hop races and same-prefix siblings are tested. Deliver or explicitly re-scope the promised capability before claiming v1 complete. |
+| UI-09 | Partly delivered; blocking | PR52 exposes the bounded upload issue summary. P13/P28 must provide complete failure access, operation-specific counters, live effective settings, transaction IDs and account-bound audit views. Test identical names in two accounts and earlier failures followed by a later terminal reason; display samples cannot replace the durable ledger. |
+| UI-10 | Partly delivered; blocking | Paging, Find and retained-record status have explicit failure states. P28 must complete cancellation, settings, bookmark and audit error handling; failed/unavailable/stale reads must remain distinct from an empty or successful result, including retry controls. |
+| UI-11 | Blocking | P29 must prevent global keys or background focus from changing destructive intent and connect labels to sensitive controls. Prove modal isolation, selects, keyboard submission and native assistive-technology journeys. Additional convenience shortcuts can follow these safeguards because they do not supply mutation authority; the accepted keyboard contract remains open. |
+| UI-12 | Blocking | P29 must make scope, counts, warnings and action labels legible in both themes against the accepted contrast target, with actual rendering and focus/error/disabled states. Palette preference alone cannot defer this evidence. |
+| UI-13 | Blocking safety portion; broader layout later | P24/P29 must keep full names, confirmations, cancellation and errors accessible at supported small windows/zoom and bound large-namespace retention. Extra pane customisation follows those checks because it adds layout flexibility; the accepted responsive-layout gate remains open. |
+| SEC-01 / SEC-04 | Partly delivered; blocking | P10 delivers binding/publication, generation admission, request pairing and verified keychain writes. Verified original native-backend selection, bounded prompts, historical recovery authority and physical cleanup remain open; test SQL/keychain faults and native lifetime on each supported platform without deleting live authority or treating a changed backend as erasure proof. |
+| SEC-02 / SEC-05 | Delivered scope | P09/ADR 0014 delivers endpoint and child redirect policy. Retain native/real-engine redirect, TLS and retry regressions; P30 child lifetime and P31 shipped-sidecar advisory dispositions remain blocking. |
+| SEC-07 | Blocking | P11 after P10 must bind immutable backend plans and narrow one-shot capabilities to operation, account, object set, local resource and current generation. Direct bridge calls, expiry, replay, queued starts and forged force/public-ACL approvals must refuse widened authority. |
+| SEC-09 / TEST-02 | Partly delivered; blocking | P34 must make required per-action scenarios, engine observations and exact-source artifact evidence release gates. Existing five-job CI is necessary but insufficient; missing tools, skipped lanes, dropped critical regressions, failed producers or mismatched artifacts must block release. |
+| SEC-10 | Blocking release evidence | P33 must stamp source/version consistently through About, native/package metadata and filenames. Two fixture releases must identify distinct matching artifacts with checksums/provenance. |
+| SEC-11 | Blocking release evidence | P31 must refresh advisory evidence for every shipped sidecar/dependency scope and record enabled-path dispositions. Engine updates need the full name/TLS/redirect/staging/retry/cancellation/large-object compatibility gate on all shipped targets; an old advisory count or version bump alone is insufficient. |
+| SEC-12 | Blocking release evidence | P32 must prove that clean installation and ordinary upgrade supply the exact accepted engine on advertised Linux distributions, or refuse unsupported transfers visibly with an actionable repair path. Keep checksum/version refusal. |
+| TEST-01 | Delivered scope | P02/ADR 0018 preserves encoded bytes and headers and refuses incomplete snapshots. Keep representation and partial-response negative controls before relying on the oracle for new safety claims. |
+| TEST-03 | Partly delivered; blocking | P03 supplies the minimum HTTP barrier/response-loss seam and later fixtures add bounded faults. P12/P18/P20/P30/P34 still need the required commit, persistence, placement and child-lifetime boundaries, full collateral/durable-state comparisons and deliberately broken controls. Add each seam with its first real caller; no universal fault framework is a prerequisite. |
+| TEST-04 | Blocking release evidence | P29/P30/P34 must run the required production-bundle UI, native keychain/picker/filesystem/process and accessibility journeys on all six OS/architecture targets, with representative deployed-Swift evidence. A mock, jsdom result or successful cross-build cannot replace them. |
+| PERF-02 | Blocking safety measurements; optimisation later | P24/P25 must establish operator ceilings, endpoint/control-plane responsiveness and safe benchmark cleanup under representative sustained load before valuable-data use. Throughput tuning and adaptive Auto follow those bounded measurements because they optimise the established safe envelope; K-PERF-003 and the accepted performance contract remain open. |
+| DOC-01 | Partly delivered; blocking release evidence | P35 must keep supported/refused/deferred operations, concurrency/durability limits and source-specific proof consistent across DESIGN/ADRs/README/requirements/UI. Security/update ownership, third-party notices, support diagnostics and tested upgrade/rollback/backup/restore remain required; historical phase-complete prose cannot grant safety. |
+
+The prior backlog also carries cross-cutting requirements that are not new audit IDs:
+
+| Existing work | Current disposition | Remaining work and closing evidence |
+| --- | --- | --- |
+| P15 segment/destructive identity and job scope | Blocking | After P11/P13, exact force prefixes must not widen to siblings; equal-ETag empty-DLO manifest swaps and another job's staging names must be protected. Normal transfer cleanup and explicit destructive paths need exact allowed-effect and unchanged-collateral comparisons for nested/shared DLO/SLO backing bytes under the accepted authority contract; creation provenance never proves exclusivity. |
+| P26 supported versioning | Blocking for enabled operations | After P14/P17, prove the declared legacy archive and modern display-only/refusal matrix, refused mutations after preliminary read failure, plan invalidation and unchanged hidden versions. A versioning feature label cannot excuse damage from an enabled transfer or metadata action. |
+| P27 remaining directory upload/account capabilities | Later capability; v1 gate retained | Absent directory upload or account-management capabilities may follow core safety because they supply no current mutation path. Audit each actually enabled account metadata/configuration path under the same safety gate; deliver or explicitly re-scope the remaining promised features, without changing current non-goals. |
 
 The prior W-01–17 remain covered: plan authority (P06/P11), Mirror/overwrite/exclusivity (P01/P04/P05/P14/P15), credential tuple/returned endpoints (P09/P10), verification (P16), exact outcomes/outbox (P12/P13), force/native capabilities (P11), local transfers (P18–21/P30), fidelity (P17), paging (P22), versioning (P26), session generation (P07/P10), and release evidence (P31–34).
 Keep the earlier R-* provenance in DESIGN; this audit does not rename those into newly discovered defects.
@@ -216,6 +286,14 @@ Not all of those prior cases were independently re-executed in this audit.
 For each logical fix, require a failing-before/passing-after behaviour test, relevant existing tests, accurate contract/docs, and independent review of the actual resulting commit.
 Include the fault event and independent before/after state in the review evidence for irreversible paths.
 Do not record an unexecuted scenario, a setup failure, a skipped platform or a weak size-only comparison as a pass.
+Require all five actual PR jobs to succeed on the latest reviewed head with current master incorporated, then merge only that head through protection and check all five resulting master jobs.
+A protected merge or aggregate label alone is not evidence that those individual jobs passed; inspect their actual conclusions.
+Stop further feature delivery if master fails.
+
+Close a safety blocker only with a linked reviewed commit, its catching regression and required native/provider/artifact evidence, or a reviewed accepted refusal of the affected capability.
+Record which action, engine, object class, platform and failure boundary the evidence covers and what remains unproved.
+Missing native runners or unresolved product decisions are explicit blockers, never implicit N/A cells or permission to weaken the contract.
+The disposition table supports progress tracking; it does not itself lift the valuable-data hold or establish v1 completeness.
 
 Before valuable-data release, all of the following must be true:
 
@@ -228,4 +306,4 @@ Before valuable-data release, all of the following must be true:
 - The accepted deferred/non-goal list and remaining risks are explicit; unresolved design decisions have not been silently converted into unsupported guarantees.
 
 No calendar estimate is justified until the concurrency/durability choices and real-runner constraints are resolved.
-Track completion by these reviewable evidence gates, starting with the independent P09/P10 security slices alongside P01–P06, rather than by a nominal coverage percentage or phase label.
+Track completion by the remaining blockers and these reviewable evidence gates, following the current execution order above rather than the original phase labels or a nominal coverage percentage.
