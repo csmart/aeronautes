@@ -1,6 +1,6 @@
 # ADR 0025 — preserve local outcomes on interruption
 
-**Status:** Awaiting independent local design review under the authorised audit remediation plan.
+**Status:** Accepted after independent local design review under the authorised audit remediation plan.
 **Scope:** The bounded earlier-outcome reporting follow-up to ADR 0024 for local upload and download.
 
 ## Problem and oracle

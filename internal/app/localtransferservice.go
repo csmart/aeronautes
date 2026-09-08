@@ -413,6 +413,13 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 			message += "; " + err.Error()
 		}
 		finish(jobs.StatePartial, message)
+	case err != nil && report != nil && (report.Done > 0 || len(report.Failures) > 0):
+		message := err.Error()
+		if len(report.Failures) > 0 {
+			message = fmt.Sprintf("%d failed (first: %s: %s); %s",
+				len(report.Failures), report.Failures[0].Name, report.Failures[0].Err, message)
+		}
+		finish(jobs.StatePartial, message)
 	case err != nil && errors.Is(err, context.Canceled):
 		finish(jobs.StateCancelled, "")
 	case err != nil:
