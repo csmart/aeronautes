@@ -1,0 +1,87 @@
+package swiftcontrol
+
+import (
+	"fmt"
+	"net/http"
+	"reflect"
+	"sync/atomic"
+	"testing"
+)
+
+func TestListingFidelityProbe(t *testing.T) {
+	cases := []struct {
+		name, literal, decoded string
+	}{
+		{name: "invalid-byte", literal: "\"b\xff\""},
+		{name: "stray-continuation", literal: "\"b\x80\""},
+		{name: "overlong", literal: "\"b\xc0\xaf\""},
+		{name: "encoded-surrogate", literal: "\"b\xed\xa0\x80\""},
+		{name: "beyond-unicode", literal: "\"b\xf4\x90\x80\x80\""},
+		{name: "truncated-rune", literal: "\"b\xe2\x82\""},
+		{name: "lone-high", literal: `"b\ud800"`},
+		{name: "lone-low", literal: `"b\udc00"`},
+		{name: "high-then-text", literal: `"b\ud800x"`},
+		{name: "reversed-pair", literal: `"b\udc00\ud800"`},
+		{name: "two-high", literal: `"b\ud800\ud800"`},
+		{name: "literal-replacement", literal: `"b�"`, decoded: "b�"},
+		{name: "escaped-replacement", literal: `"b\ufffd"`, decoded: "b�"},
+		{name: "valid-pair", literal: `"b\ud83d\ude80"`, decoded: "b🚀"},
+		{name: "literal-pair", literal: `"b🚀"`, decoded: "b🚀"},
+		{name: "ordinary-unicode", literal: `"b日本語é"`, decoded: "b日本語é"},
+		{name: "combining", literal: `"be\u0301"`, decoded: "be\u0301"},
+		{name: "literal-escape", literal: `"b\\ud800"`, decoded: `b\ud800`},
+		{name: "nul-newline", literal: `"b\u0000\n"`, decoded: "b\x00\n"},
+	}
+	for _, kind := range []string{"containers", "objects", "prefixes"} {
+		t.Run(kind, func(t *testing.T) {
+			for _, tc := range cases {
+				t.Run(tc.name, func(t *testing.T) {
+					var requests atomic.Int32
+					field := "name"
+					if kind == "prefixes" {
+						field = "subdir"
+					}
+					body := fmt.Sprintf(`[{"name":"a-control","bytes":1,"count":1},{%q:%s,"bytes":2,"count":1}]`, field, tc.literal)
+					session := listingResponseSession(t, func(w http.ResponseWriter, r *http.Request) {
+						requests.Add(1)
+						if r.Method != http.MethodGet || r.URL.Query().Get("format") != "json" {
+							t.Errorf("unexpected dependent request: %s %s", r.Method, r.URL)
+							http.Error(w, "unexpected request", http.StatusBadRequest)
+							return
+						}
+						w.Header().Set("Content-Type", "application/json")
+						if r.URL.Query().Get("marker") == "" {
+							fmt.Fprint(w, body)
+						} else {
+							fmt.Fprint(w, "[]")
+						}
+					})
+					var names []string
+					var failure error
+					if kind == "containers" {
+						for row, err := range session.Containers(t.Context(), ListOptions{PageSize: 3}) {
+							if err != nil { failure = err; break }
+							names = append(names, row.Name)
+						}
+					} else {
+						for row, err := range session.Objects(t.Context(), "owned", ObjectListOptions{PageSize: 3, Deep: kind == "objects"}) {
+							if err != nil { failure = err; break }
+							switch row := row.(type) {
+							case ObjectEntry: names = append(names, row.Name)
+							case PrefixEntry: names = append(names, row.Prefix)
+							default: t.Fatalf("unexpected listing row %T", row)
+							}
+						}
+					}
+					if tc.decoded == "" {
+						if failure == nil || len(names) != 0 || requests.Load() != 1 {
+							t.Errorf("LOSSY LISTING ACCEPTED: literal=%q names=%q requests=%d error=%v; want zero rows, one request and an error", tc.literal, names, requests.Load(), failure)
+						}
+					} else if failure != nil || !reflect.DeepEqual(names, []string{"a-control", tc.decoded}) || requests.Load() != 2 {
+						t.Errorf("VALID NAME CHANGED: literal=%q names=%q requests=%d error=%v", tc.literal, names, requests.Load(), failure)
+					}
+				})
+			}
+		})
+	}
+}
