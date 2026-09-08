@@ -4925,6 +4925,14 @@ All 36 cases pass across both providers, thirteen broken controls are detected, 
 Independent implementation review and all five protected PR/master checks passed for [PR56](https://github.com/csmart/aeronautes/pull/56), and its [delivery record](experiments/2026-09-08-copy-completion.md#delivery) confirms the exact reviewed tree and three preserved logical commits.
 Only the bounded Copy summary and admission migration is delivered; the broader outcome, durability, authority, native and valuable-data gates remain open.
 
+The [actual Copy interruption reproductions](experiments/2026-09-08-copy-interruptions.md) confirm earlier copied or failed outcomes hidden behind later cancellation and listing errors, including failures obscured by a separate overwrite refusal.
+[ADR 0027](adr/0027-copy-interruption-outcomes.md) defines the next bounded caller correction after the reviewed Copy completion migration.
+First review that contract and its 26 actual-service cases: sixteen intended failures and ten unchanged controls on mock Swift and two-account SAIO.
+Then preserve the final execution report, first-failure detail and complete later reason in a partial result; retain the existing before-work, verification, refusal, admission and atomic-completion paths.
+Keep the engine-barrier cancellation test's failed-item input and correct its partial expectation, with a distinct zero-outcome cancellation control.
+Require maintained system regressions, independent broken-rule controls, full relevant checks, local implementation review and all five PR/master jobs before delivery.
+The complete identity ledger, conflicts, verification-stream and simultaneous errors, logged close/reconcile failures, native evidence and valuable-data hold remain open.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
