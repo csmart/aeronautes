@@ -133,6 +133,7 @@ Its producer is `upload-archives-before-v1`; these repeated cases add no indepen
 ## Next contract and limits
 
 Review the concrete source-path prerequisite and upload recording contract before changing execution hooks or enabling version-one upload jobs.
+[ADR 0031](../adr/0031-upload-item-recording.md) proposes that contract for independent review; the archived probes remain unchanged.
 It must acknowledge exact backend-captured identities before dependent effects, stop later work after required recording failure, retain final execution and actual HEAD-verification facts honestly, and derive distinct failed-name totals inside terminal completion.
 Preserve copied bytes and the separate exact post-commit issue count when later closure, cleanup or bookkeeping fails.
 Retained paths are display/history data, not new picker capabilities or rerun authority.
