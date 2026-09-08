@@ -4915,6 +4915,12 @@ Independent local review approved this bounded implementation, and all five [PR5
 All five [master checks](https://github.com/csmart/aeronautes/actions/runs/34189682340) passed on `b5ca0f3ac4663e5b496ab210be6b3bdd60b3a694`; its tree exactly matches reviewed source `8e5f92a9b58a45b2174b6f27e590afa47be672e2`, with all three logical commits preserved.
 The [delivery record](experiments/2026-09-08-local-interruptions.md#delivery) closes the defined local interruption-reporting slice while preserving the wider gates above.
 
+The [actual Copy completion reproductions](experiments/2026-09-08-copy-completion.md) confirm the corresponding admission, terminal-persistence and queued-audit gaps in the sibling caller.
+[ADR 0026](adr/0026-copy-job-completion.md) defines its separate bounded migration to the existing atomic completion and persistence-unavailability contract.
+Review the decision first, then migrate Copy start/phase admission, final summaries and queued cancellation in one logical commit with maintained actual-service regressions, shared-latch checks and deliberately broken controls.
+Preserve separate overwrite-refusal counts, source audit authority, destination recovery identities, conditional-new-name writes and the existing recovery refusals.
+Require independent implementation review and all five PR/master jobs before delivery; full identity accounting, other Copy outcome errors, stronger verification, native evidence and valuable-data readiness remain open.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
