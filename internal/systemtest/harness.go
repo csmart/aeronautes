@@ -60,6 +60,7 @@ type Harness struct {
 	Jobs      *app.JobService
 	Audit     *app.AuditService
 	Find      *app.FindService
+	Settings  *app.SettingsService
 
 	Primary   *Account // the active browse/inspect/mutate account
 	Secondary *Account // for cross-account Copy/Mirror
@@ -103,6 +104,7 @@ func New(t *testing.T) *Harness {
 		Jobs:      app.NewJobService(jobStore),
 		Audit:     app.NewAuditService(auditStore),
 		Find:      app.NewFindService(connections),
+		Settings:  app.NewSettingsService(database, runner),
 	}
 
 	// Checked db close: a close/durability error fails the test (so its

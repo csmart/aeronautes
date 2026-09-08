@@ -58,3 +58,33 @@ Commands, source/overlay hashes, raw Go test events, actual exit codes and twent
 The initial upload setup failure is retained separately as `interrupted-probe-baseline-v1`; only version 2 supplies the final reproduction counts.
 [ADR 0025](../adr/0025-local-interruption-outcomes.md) defines the next reviewed runner and regression change.
 No complete identity ledger, new cancellation boundary, stronger verification, safe retry, Copy migration or valuable-data readiness is established here.
+
+## Maintained implementation and evidence
+
+The independently approved ADR 0025 contract is implemented by a seven-line addition to the local runner's terminal switch.
+A returned report with completed items or transfer failures now produces `partial` when execution subsequently returns an error, preserving any first-failure summary and the full later reason.
+The existing post-commit issue, no-outcome cancellation/error, verification-transition and atomic-persistence branches remain intact.
+No execution or cleanup boundary is changed.
+
+`internal/app/localoutcome_test.go` now covers fifteen direct-finaliser cases, including the original one-completed-item controls with explicitly corrected partial expectations, wrapped cancellation and distinct zero-completion controls.
+Their advisory progress intentionally differs from the final report so progress cannot substitute for the saved outcome.
+`internal/systemtest/local_interruption_test.go` maintains all sixteen actual-service cases described above, including both providers, selected exchange cancellation, exact bytes/collateral, recovery identities, audit authority and orderly separate-process reopening.
+Its only additional service wiring is the existing public SettingsService in the system harness; the common response barrier and all production service APIs are unchanged.
+The current drawer renders the stored state, numeric counts and error text directly; it does not infer that a write succeeded from `partial` alone.
+
+The focused run passes all 31 leaf cases and three parents across the app and system-test packages.
+The exact old local caller fails thirteen leaves: the eight service outcome cases and five direct-finaliser cases.
+All original passing service controls still pass with that old caller.
+Seven additional broken variants are detected independently: omitted earlier details, omitted later reason, ignored completed subset, ignored failures when selecting the state, corrupted copied counts, invented failures for unattempted items and lost wrapped-cancellation text.
+The controls use Go overlays; application sources are not changed between positive and negative runs.
+
+The final full internal run passes 603 top-level tests and 1,530 leaf cases in twenty packages with zero failures or skips and 85.3% statement coverage.
+It uses Go 1.27.1, `-race -count=1`, the pinned engine, the required keychain fixture and two-account SAIO.
+All tested Go source hashes match the final implementation.
+Scenario reconciliation is valid at schema 3 and remains 32/110 cells, with 38/49 actions having gaps; no additional action credit is invented for these regressions.
+All 852 frontend tests pass across 22 files at 79.33% statement coverage, and Svelte reports zero errors and warnings.
+Frontend build, Go vet, Linux native build, the CGO-disabled internal build and patched Swift source verification pass.
+Raw events, exits, source/overlay hashes, negative-control results, build checks and the valid scenario report are retained under `/home/csmart/code/.aeronautes-work/20260908/interrupted-*`.
+
+Independent implementation review and protected PR/master pipeline verification remain required delivery gates.
+The complete identity ledger, 200-failure truncation, unknown acceptance, safe cancellation/placement and cleanup, Copy migration, native platform evidence and valuable-data release hold remain open.

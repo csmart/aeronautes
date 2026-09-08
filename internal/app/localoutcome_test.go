@@ -19,16 +19,23 @@ func TestLocalPostCommitTerminalOutcome(t *testing.T) {
 		runError error
 		state    string
 		audit    string
+		done     int64
 	}{
-		{"issue", 1, false, nil, "partial", "verify_mismatch"},
-		{"many_issues", 201, false, nil, "partial", "verify_mismatch"},
-		{"later_error", 1, false, errors.New("later engine failure"), "partial", "verify_mismatch"},
-		{"later_cancel", 1, false, fmt.Errorf("later batch stopped: %w", context.Canceled), "partial", "verify_mismatch"},
-		{"mixed", 1, true, errors.New("later engine failure"), "partial", "verify_mismatch"},
-		{"complete_control", 0, false, nil, "complete", "applied"},
-		{"failure_control", 0, true, nil, "partial", "verify_mismatch"},
-		{"error_control", 0, false, errors.New("engine failure"), "failed", "failed"},
-		{"cancel_control", 0, false, context.Canceled, "cancelled", "failed"},
+		{"issue", 1, false, nil, "partial", "verify_mismatch", 1},
+		{"many_issues", 201, false, nil, "partial", "verify_mismatch", 1},
+		{"later_error", 1, false, errors.New("later engine failure"), "partial", "verify_mismatch", 1},
+		{"later_cancel", 1, false, fmt.Errorf("later batch stopped: %w", context.Canceled), "partial", "verify_mismatch", 1},
+		{"mixed", 1, true, errors.New("later engine failure"), "partial", "verify_mismatch", 1},
+		{"complete_control", 0, false, nil, "complete", "applied", 1},
+		{"failure_control", 0, true, nil, "partial", "verify_mismatch", 1},
+		{"error_after_completion", 0, false, errors.New("engine failure"), "partial", "verify_mismatch", 1},
+		{"cancel_after_completion", 0, false, context.Canceled, "partial", "verify_mismatch", 1},
+		{"wrapped_cancel_after_completion", 0, false, fmt.Errorf("later batch stopped: %w", context.Canceled), "partial", "verify_mismatch", 1},
+		{"failure_then_error", 0, true, errors.New("later engine failure"), "partial", "verify_mismatch", 0},
+		{"failure_then_cancel", 0, true, fmt.Errorf("later batch stopped: %w", context.Canceled), "partial", "verify_mismatch", 0},
+		{"no_completion_error_control", 0, false, errors.New("engine failure"), "failed", "failed", 0},
+		{"no_completion_cancel_control", 0, false, context.Canceled, "cancelled", "failed", 0},
+		{"no_completion_wrapped_cancel_control", 0, false, fmt.Errorf("batch stopped: %w", context.Canceled), "cancelled", "failed", 0},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			h := newHarness(t)
@@ -44,7 +51,7 @@ func TestLocalPostCommitTerminalOutcome(t *testing.T) {
 			h.transfer.runner.register(job.ID, cancel)
 			h.transfer.runLocal(ctx, job.ID, bookmark, base, func(_ context.Context, progress func(int64, int64, int64)) (*local.Report, error) {
 				progress(2, 2, 20)
-				report := &local.Report{Done: 1, Bytes: 10, NativeRouted: 1, PostCommitIssues: test.issues}
+				report := &local.Report{Done: test.done, Bytes: 10 * test.done, NativeRouted: 1, PostCommitIssues: test.issues}
 				if test.issues > 0 {
 					report.PostCommitIssueSamples = []local.Failure{{Name: "live/first", Stage: "commit-record", Err: "record refused"}}
 				}
@@ -60,7 +67,7 @@ func TestLocalPostCommitTerminalOutcome(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := jobs.Counters{ObjectsPlanned: 2, BytesPlanned: 30, ObjectsCopied: 1, ObjectsVerified: 1, BytesCopied: 10, NativeRouted: 1}
+			want := jobs.Counters{ObjectsPlanned: 2, BytesPlanned: 30, ObjectsCopied: test.done, ObjectsVerified: test.done, BytesCopied: 10 * test.done, NativeRouted: 1}
 			if test.failure {
 				want.ObjectsFailed = 1
 			}
@@ -77,10 +84,10 @@ func TestLocalPostCommitTerminalOutcome(t *testing.T) {
 			if test.failure && !strings.Contains(got.Error, "1 failed (first: live/second: size mismatch)") {
 				t.Errorf("terminal transfer failure hidden: %q", got.Error)
 			}
-			if test.runError != nil && (test.issues > 0 || !errors.Is(test.runError, context.Canceled)) && !strings.Contains(got.Error, test.runError.Error()) {
+			if test.runError != nil && (test.state == "partial" || !errors.Is(test.runError, context.Canceled)) && !strings.Contains(got.Error, test.runError.Error()) {
 				t.Errorf("later terminal reason hidden: %q", got.Error)
 			}
-			if test.issues == 0 && !test.failure && (test.runError == nil || errors.Is(test.runError, context.Canceled)) && got.Error != "" {
+			if (test.state == "complete" || test.state == "cancelled") && got.Error != "" {
 				t.Errorf("control acquired a new error: %q", got.Error)
 			}
 			events, err := h.auditSvc.Search(t.Context(), AuditQueryDTO{OperationPrefix: "transfer.local.", Limit: 10})

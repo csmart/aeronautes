@@ -4909,6 +4909,9 @@ The [actual local-interruption reproductions](experiments/2026-09-08-local-inter
 [ADR 0025](adr/0025-local-interruption-outcomes.md) specifies the next bounded runner change: retain earlier failure details alongside the later reason and record reported completed subsets as partial.
 Review the decision before implementing its terminal branch, focused controls and maintained service regressions in one logical commit.
 Then migrate Copy separately; full identity accounting, execution/cancellation safety, native evidence and the valuable-data hold remain blocking.
+The bounded local terminal change now has [maintained direct and actual-service regressions](experiments/2026-09-08-local-interruptions.md#maintained-implementation-and-evidence), including completed-item/no-outcome controls, preserved earlier/later reasons, full collateral and orderly database reopening.
+The full internal race suite passes 603 top-level tests and 1,530 leaf cases without skips; all eight negative controls are detected, and all 852 frontend tests pass.
+Independent implementation review and protected PR/master checks remain required before this slice is delivered.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
