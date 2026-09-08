@@ -1,6 +1,6 @@
 # ADR 0028 — durable logical transfer item records
 
-**Status:** Proposed for independent local design review.
+**Status:** Accepted after independent local design review on 8 September 2026.
 **Scope:** The first shared P12/P13 storage contract, followed by separately reviewed Copy and local-transfer caller migrations.
 
 ## Problem and oracle

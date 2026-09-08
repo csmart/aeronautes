@@ -100,6 +100,8 @@ type Job struct {
 	Settings string
 	// Counts evidence rows, not remote objects or confirmed residue.
 	RecoveryRecords int64
+	// Version zero means item facts were never captured, not an empty ledger.
+	ItemRecordsVersion int
 }
 
 // Store persists jobs.
@@ -122,6 +124,9 @@ func (s *Store) Create(ctx context.Context, j Job) (Job, error) {
 	if j.Type == "" {
 		return Job{}, fmt.Errorf("job needs a type")
 	}
+	if j.ItemRecordsVersion != 0 && (j.ItemRecordsVersion != 1 || (j.Type != TypeCopy && j.Type != TypeUpload && j.Type != TypeDownload)) {
+		return Job{}, ErrInvalidItemRecord
+	}
 	var raw [8]byte
 	if _, err := rand.Read(raw[:]); err != nil {
 		return Job{}, err
@@ -140,11 +145,11 @@ func (s *Store) Create(ctx context.Context, j Job) (Job, error) {
 		}
 		_, err := tx.ExecContext(ctx, `
 			INSERT INTO jobs (id, type, state, source, destination, created_at,
-				execution_engine, counters_json, source_bookmark_id, dest_bookmark_id, settings_json)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				execution_engine, counters_json, source_bookmark_id, dest_bookmark_id, settings_json, item_records_version)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			j.ID, string(j.Type), string(j.State), nullable(j.Source), nullable(j.Destination),
 			j.CreatedAt.Format(time.RFC3339), nullable(j.Engine), string(counters),
-			nullable(j.SourceBookmarkID), nullable(j.DestBookmarkID), nullable(j.Settings))
+			nullable(j.SourceBookmarkID), nullable(j.DestBookmarkID), nullable(j.Settings), j.ItemRecordsVersion)
 		return err
 	})
 	if err != nil {
@@ -160,11 +165,17 @@ func (s *Store) Transition(ctx context.Context, id string, to State) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	return s.db.WriteTx(ctx, func(tx *sql.Tx) error {
 		var current string
-		err := tx.QueryRowContext(ctx, `SELECT state FROM jobs WHERE id=?`, id).Scan(&current)
+		var version int
+		err := tx.QueryRowContext(ctx, `SELECT state, item_records_version FROM jobs WHERE id=?`, id).Scan(&current, &version)
 		if err == sql.ErrNoRows {
 			return fmt.Errorf("job %s not found", id)
 		}
 		if err != nil {
+			return err
+		}
+		if version == 1 && Terminal(to) {
+			err := ErrItemCompletionRequired
+			s.itemWriteFailed(&err)
 			return err
 		}
 		if !transitionLegal(State(current), to) {
@@ -233,7 +244,7 @@ const selectJob = `
 		COALESCE(execution_engine,''), COALESCE(counters_json,'{}'),
 		COALESCE(error,''), COALESCE(source_bookmark_id,''), COALESCE(dest_bookmark_id,''),
 		COALESCE(settings_json,''),
-		(SELECT COUNT(*) FROM job_recovery r WHERE r.job_id=jobs.id)
+		(SELECT COUNT(*) FROM job_recovery r WHERE r.job_id=jobs.id), item_records_version
 	FROM jobs`
 
 // Get returns one job.
@@ -300,7 +311,7 @@ func scanJob(scan func(...any) error) (Job, error) {
 	var typ, state, created, started, finished, counters string
 	err := scan(&j.ID, &typ, &state, &j.Source, &j.Destination,
 		&created, &started, &finished, &j.Engine, &counters,
-		&j.Error, &j.SourceBookmarkID, &j.DestBookmarkID, &j.Settings, &j.RecoveryRecords)
+		&j.Error, &j.SourceBookmarkID, &j.DestBookmarkID, &j.Settings, &j.RecoveryRecords, &j.ItemRecordsVersion)
 	if err != nil {
 		return Job{}, err
 	}
@@ -464,7 +475,8 @@ func (s *Store) PruneTerminal(ctx context.Context, before time.Time) (int64, err
 			DELETE FROM jobs
 			WHERE state IN ('complete','partial','cancelled','failed')
 			  AND finished_at IS NOT NULL AND finished_at < ?
-			  AND id NOT IN (SELECT DISTINCT job_id FROM job_recovery)`, cutoff)
+			  AND id NOT IN (SELECT DISTINCT job_id FROM job_recovery)
+			  AND id NOT IN (SELECT job_id FROM job_items)`, cutoff)
 		if err != nil {
 			return err
 		}
