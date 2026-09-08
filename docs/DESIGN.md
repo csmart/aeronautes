@@ -4938,6 +4938,11 @@ All 852 frontend tests and the local build checks pass.
 Independent implementation review and all five protected PR/master checks passed for [PR57](https://github.com/csmart/aeronautes/pull/57); its [delivery record](experiments/2026-09-08-copy-interruptions.md#delivery) confirms the exact reviewed tree and three preserved logical commits.
 This delivers only the bounded Copy interruption-reporting correction, with the wider outcome and valuable-data gates above still open.
 
+The [current-master failure-identity reproduction](experiments/2026-09-08-copy-failure-identities.md) next confirms the independent DS-08 gap in eight actual-service cases on mock Swift and two-account SAIO.
+One failed name becomes two reported failures, 201 become 400, and 401 also become 400; the existing public job/audit summaries name only the first failure.
+Archive the exact executed test-only probe, review the durable item-admission and outcome schema/API before changing storage, then migrate Copy and local callers in separate reviewed commits with complete identity access and recording-failure tests.
+The reproduction and its next-step requirements do not accept a new ledger design or close P12/P13/P28 or the valuable-data hold.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
