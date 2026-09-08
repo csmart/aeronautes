@@ -68,3 +68,15 @@ Independent local review and all five protected PR/master checks are required be
 Checked Copy admission, execution, verification and item-derived completion are still the next ADR 0030 slice, followed by separate local caller migrations.
 Per-effect history, remote identity and authority, stronger content/metadata fidelity, filesystem safety, native child lifetime, physical durability and all six platform targets remain wider work.
 Mirror starts, changed Copy overwrites and automatic recovery reclamation remain refused, and the [valuable-data release hold](../audits/2026-09-05/remediation-plan.md#acceptance-gates-and-completion) remains in force.
+
+## Delivery
+
+[PR61](https://github.com/csmart/aeronautes/pull/61) delivered this slice through a protected rebase merge at 16:18:15 UTC on 8 September 2026.
+Both logical commits passed independent local review before publication; the reviewer also repeated the complete race suite and frontend checks on the implementation commit and independently exercised the failure controls.
+The reviewed source was `82a7ccd3561c43a4a8e2ad5b4dae23ed0dff64f8`, and resulting master was `44623f5dcc1232c2e06c44a6122ef1488bf05864`.
+Their trees are identical at `8bc43ce1559f4f84081779e11c19c4432be46878`, and the delivery-documentation and implementation patches were both preserved unchanged by the protected rebase.
+All five actual latest jobs passed in [PR run 34248659338](https://github.com/csmart/aeronautes/actions/runs/34248659338) before merging, with the current master incorporated and active strict protection without bypass actors verified.
+All five resulting master jobs passed in [run 34250226792](https://github.com/csmart/aeronautes/actions/runs/34250226792).
+The integration systemtest package took 588.759 seconds in the PR and 582.863 seconds on master; the complete integration jobs took 12 minutes 56 seconds and 12 minutes 48 seconds respectively, within the unchanged fifteen-minute package and twenty-minute job budgets.
+Both CI integration runs had zero failures and the existing optional `TestRcloneMatrix` and `TestKeychainRoundTrip` skips; the separate full local producer above had zero test skips.
+This delivers the interruption and rerun prerequisites only; actual Copy and local transfers remain unrecorded until their separately reviewed caller migrations, and the valuable-data release hold remains open.
