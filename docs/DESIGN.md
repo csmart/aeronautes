@@ -4905,6 +4905,11 @@ Independent local review approved this bounded implementation, and all five [PR5
 All five [master checks](https://github.com/csmart/aeronautes/actions/runs/34185796487) passed on `b365170716d9bbab6fd270efdaf505d697bf4c3a`; its tree exactly matches reviewed source `12606cb9a297342efde2197bf179f9ea825cb827`, with both logical commits preserved.
 The [delivery record](experiments/2026-09-08-terminal-persistence.md#delivery) closes the defined atomic local-summary and admission slice while preserving the wider gates above.
 
+The [actual local-interruption reproductions](experiments/2026-09-08-local-interruptions.md) now cover earlier failed attempts and completed subsets followed by cancellation or a later error on both providers.
+[ADR 0025](adr/0025-local-interruption-outcomes.md) specifies the next bounded runner change: retain earlier failure details alongside the later reason and record reported completed subsets as partial.
+Review the decision before implementing its terminal branch, focused controls and maintained service regressions in one logical commit.
+Then migrate Copy separately; full identity accounting, execution/cancellation safety, native evidence and the valuable-data hold remain blocking.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
