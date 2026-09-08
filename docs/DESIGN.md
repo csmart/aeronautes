@@ -4901,7 +4901,9 @@ Preserve earlier failures alongside later terminal reasons and migrate Copy sepa
 This is a job-summary foundation; exact per-identity outcomes, other callers, real crash boundaries and the valuable-data hold remain open.
 The local implementation and its [maintained evidence](experiments/2026-09-08-terminal-persistence.md#maintained-implementation-and-evidence) now cover atomic terminal summaries, checked admission, queued local cancellation and explicit persistence unavailability.
 The full internal race suite passes 601 top-level tests and 1,508 leaf cases without skips; all 852 frontend tests and the local build checks pass.
-Independent implementation review and protected PR/master pipeline verification remain required delivery gates.
+Independent local review approved this bounded implementation, and all five [PR54 checks](https://github.com/csmart/aeronautes/actions/runs/34184831642) passed before its protected merge.
+All five [master checks](https://github.com/csmart/aeronautes/actions/runs/34185796487) passed on `b365170716d9bbab6fd270efdaf505d697bf4c3a`; its tree exactly matches reviewed source `12606cb9a297342efde2197bf179f9ea825cb827`, with both logical commits preserved.
+The [delivery record](experiments/2026-09-08-terminal-persistence.md#delivery) closes the defined atomic local-summary and admission slice while preserving the wider gates above.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.

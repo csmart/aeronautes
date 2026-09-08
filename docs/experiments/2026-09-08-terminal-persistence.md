@@ -78,3 +78,14 @@ Raw runs, source/overlay hashes, checks, negative controls and the valid scenari
 
 Earlier failures hidden by later errors/cancellation, sibling Copy completion, per-identity durable intents/outcomes, real crash/fsync/lost-history evidence and other mutation families remain open.
 This bounded summary implementation does not authorise retry, cleanup, overwrite/Mirror re-enablement or valuable-data use.
+
+## Delivery
+
+Independent local reviews approved the design and implementation commits before pushing [PR54](https://github.com/csmart/aeronautes/pull/54).
+The reviewer independently ran the full Go race and frontend suites and caught seven broken Go variants plus one UI variant, including failed retention compaction and terminal-transition bypass.
+All five actual jobs in [PR CI](https://github.com/csmart/aeronautes/actions/runs/34184831642) succeeded at reviewed source `12606cb9a297342efde2197bf179f9ea825cb827` with current base `d2659015259f5cfda64c360bd9eb13af5fa66bce`.
+The protected merge used that exact source head without bypassing the ruleset.
+All five actual jobs in [master CI](https://github.com/csmart/aeronautes/actions/runs/34185796487) succeeded at `b365170716d9bbab6fd270efdaf505d697bf4c3a`.
+The merged tree `a876e2dd25026b704cdd39de93bba435a33e7aaf` exactly matches the reviewed source, and range comparison confirms both logical patches were preserved.
+The local record `/home/csmart/code/.aeronautes-work/20260908/terminal-delivery.json` retains the source, master, tree, review and pipeline identities.
+Only the defined atomic local-summary and admission slice is delivered; the remaining outcome, caller, durability and valuable-data gates above still apply.

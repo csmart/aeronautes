@@ -121,7 +121,8 @@ The [terminal-persistence reproductions](../../experiments/2026-09-08-terminal-p
 [ADR 0024](../../adr/0024-local-job-completion.md) defines the next bounded shared contract: atomic final summaries, checked local admission, explicit persistence unavailability and conservative restart.
 Review and implement that local slice first, then preserve earlier failures alongside later terminal reasons and migrate Copy in separate reviewed commits.
 The complete identity ledger and other job/mutation families remain blocking; the process-local diagnostic latch is not durable outcome evidence or a global mutation interlock.
-The local implementation has [maintained rollback, service, queue, UI and process-reopen evidence](../../experiments/2026-09-08-terminal-persistence.md#maintained-implementation-and-evidence); its implementation review and protected PR/master delivery are separate gates.
+The local implementation has [maintained rollback, service, queue, UI and process-reopen evidence](../../experiments/2026-09-08-terminal-persistence.md#maintained-implementation-and-evidence).
+Independent local review and all five PR/master checks passed for [PR54](https://github.com/csmart/aeronautes/pull/54); its [delivery record](../../experiments/2026-09-08-terminal-persistence.md#delivery) confirms the exact reviewed/merged tree and two preserved logical commits.
 The [P22 DLO fixture](../../experiments/2026-09-07-selected-set-copy.md#maintained-implementation-and-evidence) also records a planned-byte accounting gap for P13: a complete six-name Copy plans twenty-seven bytes from listing sizes but copies and independently verifies thirty-three logical bytes.
 Do not create a general workflow engine.
 The audit's modelled WAL lost-history case and an actual process kill must remain separately labelled tests.
