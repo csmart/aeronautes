@@ -4883,11 +4883,13 @@ All five [master checks](https://github.com/csmart/aeronautes/actions/runs/34125
 The [delivery record](experiments/2026-09-07-literal-inputs.md#metadata-delivery) closes UI-14 and P23 for the defined literal transfer, browser and metadata-input contract.
 Backend authority, durability, outcome accounting, external writers, local-platform validation, accessibility and the wider valuable-data release hold remain open.
 
-P12/P21 resumes with the [current local-upload fault reproductions](experiments/2026-09-08-upload-recovery.md).
-The earlier P04 record-retention containment holds, but committed-record refusal and staging DELETE failure still produce an incorrectly complete job on mock Swift and SAIO.
+P12/P21 resumed with the [local-upload fault reproductions](experiments/2026-09-08-upload-recovery.md).
+The earlier P04 record-retention containment held, but committed-record refusal and staging DELETE failure produced an incorrectly complete job on mock Swift and SAIO before the follow-up fix.
 [ADR 0023](adr/0023-upload-post-commit-errors.md) defines the independently reviewed first bounded follow-up: count and display post-commit issues separately from transfer failures, prohibit the affected staging deletion after a rejected committed record, preserve successful live verification counts and retain every recovery fact.
 The [maintained implementation](experiments/2026-09-08-upload-recovery.md#maintained-implementation-and-evidence) exercises both providers, exact collateral and recovery facts, child-process database reopening, bounded samples with exact issue totals and deliberately broken controls.
-Implementation approval and all five PR/master delivery checks remain required.
+Independent local review approved the implementation, and all five [PR52 checks](https://github.com/csmart/aeronautes/actions/runs/34172260269) passed before protected merge.
+All five [master checks](https://github.com/csmart/aeronautes/actions/runs/34172948182) passed on `ae3ecd4962cbbc830d8e9f30f42aabc92c45364e`; its tree exactly matches reviewed source `72776000ab6d9128215c82e101039ccb9308c02d`, with all three logical commits preserved.
+The [delivery record](experiments/2026-09-08-upload-recovery.md#delivery) closes the defined upload post-commit error-reporting and cleanup-admission slice.
 This slice does not restore automatic reclamation or close the wider durable outcome, audit, ownership, local-verification or valuable-data release gates.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
