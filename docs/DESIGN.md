@@ -4932,6 +4932,9 @@ Then preserve the final execution report, first-failure detail and complete late
 Keep the engine-barrier cancellation test's failed-item input and correct its partial expectation, with a distinct zero-outcome cancellation control.
 Require maintained system regressions, independent broken-rule controls, full relevant checks, local implementation review and all five PR/master jobs before delivery.
 The complete identity ledger, conflicts, verification-stream and simultaneous errors, logged close/reconcile failures, native evidence and valuable-data hold remain open.
+The bounded Copy caller correction now has [maintained actual-service regressions](experiments/2026-09-08-copy-interruptions.md#maintained-implementation-and-evidence), including the original attempted engine-cancellation input with its corrected partial result.
+All 27 focused leaf cases pass, the old caller and ten further broken variants are detected, and the full internal race suite passes 607 top-level tests and 1,592 leaf cases without skips using CI's coverage instrumentation.
+All 852 frontend tests and the local build checks pass; independent implementation review and all five PR/master checks remain delivery gates for this slice.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
