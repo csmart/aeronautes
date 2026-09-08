@@ -4972,6 +4972,8 @@ The first ADR 0030 implementation slice adds [bounded job-history and item acces
 It exposes retained jobs beyond the newest fifty, string item cursors, exact quoted locations and separate observations, with explicit uncaptured/empty/unavailable states, overlapping facets and completion refresh.
 The maintained read-service fixtures deliberately construct version-one records; actual Copy/upload/download callers still use version zero.
 Interrupted-result projection, backend/UI rerun refusal and checked Copy recording follow in the reviewed sequence; no caller outcome or valuable-data gate is closed by these reads.
+Independent local review and all five protected PR/master checks passed for [PR60](https://github.com/csmart/aeronautes/pull/60); its [delivery record](experiments/2026-09-08-transfer-item-access.md#delivery) confirms the exact reviewed tree and five preserved logical commits.
+This delivers complete access and the finite integration-suite budget correction while leaving the remaining ADR 0030 slices and valuable-data hold open.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.

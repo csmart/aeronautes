@@ -66,6 +66,7 @@ The existing coverage floors are advisory; hard scenario and coverage gates rema
 Green CI is required evidence, and the wider safety and platform release gates still apply.
 
 The real-Swift integration lane gives each Go test package fifteen minutes and bounds the whole job to twenty minutes, including setup and report upload.
+The job cap includes setup time, so a slow fixture start can exhaust it before Go's package timer; inspect both limits when diagnosing a timeout.
 The growing sequential fault suite exceeded Go's default ten-minute package limit during PR60; the [diagnosis and validation](experiments/2026-09-08-integration-time-budget.md) distinguish that suite budget from individual test, request and child-process deadlines.
 The change preserves every assertion, fixture, race/coverage option, producer-exit check, scenario reconciliation and aggregate refusal.
 

@@ -56,3 +56,19 @@ Independent local review and all five protected PR/master checks remain required
 
 This slice does not opt in a transfer caller, change interruption projection or rerun eligibility, certify legacy job/audit error text, or establish a per-effect journal, retry authority, stronger verification or physical durability.
 The [valuable-data release gates](../audits/2026-09-05/remediation-plan.md#acceptance-gates-and-completion) remain open, including the rest of P12/P13/P28 and the dependent authority, filesystem, native-process and platform evidence.
+
+## Delivery
+
+[PR60](https://github.com/csmart/aeronautes/pull/60) delivered the bounded item-access prerequisite after independent local review of all five logical commits, including the accepted Copy migration contract and the finite [integration time-budget correction](2026-09-08-integration-time-budget.md).
+All five actual [PR checks](https://github.com/csmart/aeronautes/actions/runs/34241334578) passed on reviewed source `83d45e54b96f762042ee0aaa040930f60c74ae3b` with current base `1d4bd66f4f152ae05d277780e4b2f815745ad478` incorporated.
+The protected rebase merge at 15:11:28 UTC on 8 September 2026 produced master `1da8389b0fe92a47a339fb97312d4e0cdebd2e51`.
+All five [master checks](https://github.com/csmart/aeronautes/actions/runs/34243154302) passed on that commit.
+The merged tree `f1f665e385bc7c3efc4f1c2b659331abda4d8724` exactly matches the reviewed source, and all five patches match individually after the merge.
+
+The successful PR and master systemtest packages took 735.075 and 621.675 seconds respectively; their integration jobs took 15 minutes 19 seconds and 13 minutes 37 seconds including setup and uploads.
+Both finished inside the reviewed fifteen-minute package and twenty-minute job limits.
+Those CI integration runs retain the two existing optional skips, `TestRcloneMatrix` and `TestKeychainRoundTrip`; they do not replace the explicit zero-skip local producer above.
+These measurements establish completed checks for this delivery, not a performance improvement or a reason to raise budgets without examining later failures.
+
+Complete access is delivered, while actual transfer callers remain unrecorded.
+Interrupted-result projection, rerun refusal and checked Copy recording remain the next ADR 0030 slices, followed by local caller migration and the wider valuable-data gates.
