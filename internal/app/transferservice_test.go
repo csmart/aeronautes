@@ -505,8 +505,17 @@ func TestUploadAndDownloadJobs(t *testing.T) {
 	if job.State != "complete" || job.Counters.ObjectsCopied != 2 || job.Type != "upload" {
 		t.Fatalf("upload job = %+v", job)
 	}
-	if _, err := h.transfer.StartUpload(ctx, upload); err == nil || !strings.Contains(err.Error(), "collisions") {
-		t.Errorf("second upload should hit exists-collisions: %v", err)
+	preflight, err = h.transfer.PreflightUpload(ctx, upload)
+	if err != nil || !preflight.Rejected() || len(preflight.Items) != 0 || len(preflight.Problems) != 2 {
+		t.Fatalf("second upload preflight should refuse both existing names: %+v %v", preflight, err)
+	}
+	for _, problem := range preflight.Problems {
+		if problem.Kind != "exists" || !problem.Reject {
+			t.Errorf("second upload lost its existing-name refusal: %+v", problem)
+		}
+	}
+	if id, err := h.transfer.StartUpload(ctx, upload); err == nil || id != "" {
+		t.Errorf("second upload should refuse a job for existing names: %q %v", id, err)
 	}
 
 	// Download the uploaded prefix into a fresh directory.
