@@ -65,12 +65,17 @@ Success and engine-failure cases check exact public/durable counters, coarse aud
 Every case checks complete owned local and remote collateral; successful bodies have independent full-content and SHA-256 witnesses.
 
 The selected-file symlink case corrected an initial prediction that rclone would simply skip the link and later fail the staging HEAD.
-The actual pinned invocation attempts one staging PUT and exits 6 when the followed file size differs from the link's own size.
-The reverse proxy observes the client cancelling that exact staged PUT; both owned providers retain no stage or live object in this fixture.
-The test allows that specific cancellation only when both the request context and proxy error report cancellation, and asserts its exact count.
+The actual pinned invocation attempts at least one staging PUT, bounded by the engine's two low-level retries, and exits 6 when the followed file size differs from the link's own size.
+The proxy may observe the abort as context cancellation, an unexpected EOF on the upstream body, or a reset or broken pipe while forwarding the body.
+Both owned providers retain no stage or live object in this fixture.
+The test allows those typed errors only for the source-link fault's selected staging PUT, and requires a cancelled request context for the context-cancellation form.
+It requires between one and three attempted staging PUTs, exactly as many acknowledged aborts as attempted PUTs, no live PUT or staging DELETE, and no other write.
 All other proxy errors remain test failures.
-Engine exit does not acknowledge that proxy callback, so the fixture waits for an explicit cancellation signal before reading its count.
-A temporary 200 ms callback delay reproduced the earlier fixture race as a missing cancellation count; the same delayed callback passes with the acknowledgement on both providers.
+Every proxy error response is 502, including an acknowledged abort.
+Engine exit does not acknowledge those proxy callbacks, so the fixture waits for every observed attempt's acknowledgement before comparing counts.
+A temporary 200 ms callback delay reproduced the earlier fixture race as a missing cancellation count; the initial acknowledgement corrected that race on both providers.
+Independent repetition then observed two staged PUTs in one loaded run and an upstream unexpected EOF in another, although idle repetitions and the full suite passed with one cancellation.
+Those observations invalidate an exact-one or cancellation-only assertion; they do not relax the failed-name, zero-copy, retained-recovery or complete-collateral oracle.
 The job is partial with one failed name, zero copied/verified names and bytes, and retained staging recovery intent.
 This is an observed fixture outcome, not a promise that every symlink is skipped or every aborted staging PUT leaves nothing behind.
 ADR 0031 requires unresolved staging effects for an invoked but failed engine item when the checked caller is implemented.
@@ -83,19 +88,31 @@ Each is detected by the matching maintained behavioural assertion, without compi
 The parent-cleaning overlay also fails the actual service test on both providers by admitting jobs and writes.
 Removing the execution guard admits the earlier valid native item in the bypass test, so this is not credit for removing an equivalent redundant check.
 
-## Final local verification
+## Local verification
 
-The final `upload-source-full-v3` producer passes 2,153 named tests across all twenty expected internal packages, with no failed or skipped tests and 86.3% statement coverage.
+The `upload-source-full-v3` producer at the original guard tree `d8f6d721e5ecf1be1020adc9bf126ffa0f5fb826` passes 2,153 named tests across all twenty expected internal packages, with no failed or skipped tests and 86.3% statement coverage.
 The system package takes 667.764 seconds, including the required pinned engine, owned two-account SAIO and Secret Service fixtures.
-All 297 captured Go/SQL input hashes match the final source, and the scenario reconciler accepts the complete stream and actual zero exit.
+All 297 captured Go/SQL input hashes match that committed tree, and the scenario reconciler accepts the complete stream and actual zero exit.
+The producer recorded parent `73707f95` while the guard was uncommitted; the file hashes establish the tested tree without relabelling its recorded HEAD.
 The maintained twelve-case source matrix previously took 6.13 seconds on mock Swift and 11.91 seconds on SAIO; these fixture timings are not production throughput benchmarks.
 
 Frontend type checking, build and all 878 tests across 23 files pass, with 81.42% statement coverage.
 Go vet, native and internal builds, vendored Swift core tests and source verification pass.
 All 22 regenerated bridge binding files remain unchanged.
 The first full run exposed an old assertion tied to the word “collisions”; its replacement checks both existing-name problems and refusal to create a job, and the complete app replay passes 299 tests.
-The second full run passes all 2,153 tests; the final third run includes the subsequently proved cancellation acknowledgement.
-These earlier runs remain separate evidence and are not relabelled as the final source.
+The second full run passes all 2,153 tests; the third run includes the initial cancellation acknowledgement.
+These runs remain separate evidence and are not relabelled as the subsequent fixture correction.
+
+The fixture correction changes only the two system-test files and this experiment record; application sources, workflows and all earlier archives are unchanged from `d8f6d721`.
+Its `upload-source-abort-matrix-v1` race producer passes the twelve maintained service leaves and 21 error-scope cases, with 36 named passes including parents and no failures or skips.
+The scope cases reject other faults, accounts, containers, methods, names, malformed staging paths and unrelated errors, including a reset while reading a response rather than forwarding a body.
+Ten sequential symlink-engine repetitions and twenty repetitions in four concurrent processes pass across mock Swift and SAIO; all thirty observe one acknowledged staging abort and no live or cleanup write.
+The independent review's two-attempt observation remains the evidence for a retried abort; these thirty repetitions are not claimed to reproduce it.
+An error-shape overlay of the original fixture reproduces the unexpected-EOF failure and missing acknowledgement on both providers.
+Three overlays of the corrected fixture inject EOF, body reset and broken-pipe forms with a 200 ms acknowledgement delay; all six provider cases pass and each records that the injected callback executed.
+Those overlays change only the test proxy's observation of an actual aborted request, without changing the application or replacing its engine.
+The shared upload-recovery replay also passes all thirty named tests on both providers with no failures or skips.
+The correction's validator checks every producer's source hashes, actual exit and complete stream, the four concurrent execution intervals, the injected callback records, and the earlier full producer's exact `d8f6d721` tree.
 
 The evidence validator also checks the original 295-file Git tree and archive hash, four before leaves and their exact expected diagnostics, all six broken controls, and the delayed cancellation before/after streams.
 The documentation check preserves all 46 finding dispositions, 35 detailed work-package requirements and seven valuable-data release gates.
