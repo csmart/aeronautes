@@ -4988,6 +4988,10 @@ The complete race run, twenty-five negative-control runs, frontend/build checks 
 Independent local review and all five protected PR/master checks passed for [PR62](https://github.com/csmart/aeronautes/pull/62); its [delivery record](experiments/2026-09-08-checked-copy-records.md#delivery) confirms the exact reviewed tree, three preserved logical commits and measured integration durations.
 Historical and local transfers remain unrecorded, and the wider outcome, authority, durability and valuable-data gates stay open.
 
+The next local caller is upload, with [archived before-fix prerequisites](experiments/2026-09-08-upload-item-boundaries.md) for complete failure identities, required recovery-record stop boundaries and captured source-path fidelity.
+The actual services still truncate 201 and 401 failed uploads to 200 on mock Swift and SAIO; supplementary local/mock probes expose later work after recovery refusal and a same-length source-path mismatch.
+These differently scoped reproductions require a concrete upload design and actual boundary evidence before caller opt-in; they do not close a valuable-data gate.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
