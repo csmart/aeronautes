@@ -4922,7 +4922,8 @@ Preserve separate overwrite-refusal counts, source audit authority, destination 
 Require independent implementation review and all five PR/master jobs before delivery; full identity accounting, other Copy outcome errors, stronger verification, native evidence and valuable-data readiness remain open.
 The Copy caller now has [maintained actual-service evidence](experiments/2026-09-08-copy-completion.md#maintained-implementation-and-evidence) for atomic completion, checked admission, queued cancellation, combined failure/refusal reporting on rejected verification and shared persistence unavailability.
 All 36 cases pass across both providers, thirteen broken controls are detected, and the full internal race suite passes 605 top-level tests and 1,566 leaf cases without skips; all 852 frontend tests and local build checks pass.
-Independent implementation review and protected PR/master verification remain delivery gates for this bounded migration.
+Independent implementation review and all five protected PR/master checks passed for [PR56](https://github.com/csmart/aeronautes/pull/56), and its [delivery record](experiments/2026-09-08-copy-completion.md#delivery) confirms the exact reviewed tree and three preserved logical commits.
+Only the bounded Copy summary and admission migration is delivered; the broader outcome, durability, authority, native and valuable-data gates remain open.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
