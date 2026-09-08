@@ -4950,6 +4950,8 @@ Specify and review Copy's concrete adapter/UI and restart behaviour before migra
 The complete per-effect journal, authority, strong verification, crash/native evidence, export policy and valuable-data hold remain open.
 The [storage foundation and maintained evidence](experiments/2026-09-08-transfer-item-storage.md) implement immutable version opt-in, bounded intent/observation writes, complete paginated reads, exact failed-name totals, guarded terminal completion and retention protection.
 SQL refusals, historical upgrades, orderly child reopening and sixteen broken controls check these storage rules; existing Copy/upload/download callers still use version zero and remain separate migrations.
+Independent implementation review and all five protected PR/master checks passed for [PR58](https://github.com/csmart/aeronautes/pull/58); its [delivery record](experiments/2026-09-08-transfer-item-storage.md#delivery) confirms the exact reviewed tree and four preserved logical commits.
+This delivers only the shared storage foundation; complete caller/UI/restart migrations and the valuable-data hold remain open.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.

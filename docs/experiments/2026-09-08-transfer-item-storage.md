@@ -99,3 +99,18 @@ Then reproduce and migrate local upload and download separately, including their
 The complete per-effect journal, malformed bulk replies, lost-history handling, stronger verification, resource bounds, retention/export and native-platform evidence remain open.
 Mirror starts, existing-destination Copy overwrites and automatic recovery reclamation remain refused.
 P12/P13/P28 and the valuable-data release hold remain open.
+
+## Delivery
+
+[PR58](https://github.com/csmart/aeronautes/pull/58) delivered the shared storage foundation after independent local review of its four logical commits.
+The reviewer independently passed the full race suite with 1,836 named tests across 20 packages and no test skips, passed all 852 frontend tests, and detected sixteen meaningful broken variants, including the combined read-latch and retention protections.
+The review requires the later Copy adapter plan to state the full latch-on-write-refusal scope and validate identity representability before admission; these remain explicit caller prerequisites.
+
+All five actual [PR checks](https://github.com/csmart/aeronautes/actions/runs/34211333265) passed on reviewed source `7d61bc7a4109655d0e18c8bc7eefaf431d7a7eed` with current base `87df5495aaa1711ad2bcc506104495087580dca8` incorporated.
+The protected rebase merge at 09:55:31 UTC on 8 September 2026 produced master `17cbe69058aa20fe1d0d6330c64f5103f1228e58`.
+All five [master checks](https://github.com/csmart/aeronautes/actions/runs/34212679624) passed on that commit.
+The merged tree `73549ee8337ce99b78cef81b14864819fec45ee8` exactly matches the reviewed source, and all four patches match individually after the merge.
+
+This delivers the storage foundation only.
+Existing Copy, upload and download callers remain unrecorded, and their complete item-access UI, interrupted-result projection and unresolved-rerun refusal remain separate reviewed migrations.
+The broader audit packages and valuable-data release hold remain open.
