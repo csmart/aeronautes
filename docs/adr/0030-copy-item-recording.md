@@ -170,6 +170,10 @@ This guard does not certify the existing display-locator reconstruction, immutab
 Every commit passes independent local review before the next implementation slice or push.
 Each delivered PR needs all five latest actual checks with current master incorporated, a protected merge of the verified head and all five resulting master checks.
 
+Step two is [delivered through PR60](../experiments/2026-09-08-transfer-item-access.md#delivery).
+Step three has [maintained interruption/rerun implementation and evidence](../experiments/2026-09-08-interrupted-item-records.md), pending its independent implementation review and protected delivery.
+Step four remains the next caller migration; no current transfer is silently upgraded to recorded history.
+
 ## Required migration evidence and limits
 
 Maintain the actual mock and two-account SAIO 1/201/401-name fixtures, with one successful engine-routed object and exact native failure identities.

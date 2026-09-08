@@ -343,30 +343,6 @@ func nullable(s string) *string {
 	return &s
 }
 
-// FailInterrupted marks every non-terminal job as failed — the startup
-// crash-recovery sweep (§65.6): a process that died mid-job must never
-// leave the drawer showing phantom running work. This is a deliberate
-// bulk bypass of the per-job transition rules: the legal paths assume a
-// live executor, and after a crash there is none. Recovery records stay
-// because interruption establishes no authority to reclaim remote data.
-func (s *Store) FailInterrupted(ctx context.Context) (int64, error) {
-	now := time.Now().UTC().Format(time.RFC3339)
-	var count int64
-	err := s.db.WriteTx(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, `
-			UPDATE jobs SET state=?, finished_at=?,
-			error='interrupted by shutdown; data and recovery records retained, remote residue unverified'
-			WHERE state NOT IN ('complete','partial','cancelled','failed')`,
-			string(StateFailed), now)
-		if err != nil {
-			return err
-		}
-		count, err = res.RowsAffected()
-		return err
-	})
-	return count, err
-}
-
 // RecoveryKind labels one crash-recovery record (§65.8 item 2).
 type RecoveryKind string
 
