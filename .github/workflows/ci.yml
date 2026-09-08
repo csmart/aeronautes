@@ -130,6 +130,7 @@ jobs:
   saio:
     name: Integration — containerized Swift (SAIO)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
@@ -185,7 +186,8 @@ jobs:
           # exit code is captured instead of aborting the step early.
           go list ./internal/... > expected-packages.txt
           set +e
-          go test -json -v -race -count=1 -coverprofile=cover.out -coverpkg=./internal/... ./internal/... \
+          # The sequential fault fixtures can exceed Go's default ten-minute package budget.
+          go test -json -v -race -count=1 -timeout=15m -coverprofile=cover.out -coverpkg=./internal/... ./internal/... \
             | tee events.jsonl
           # Capture the WHOLE PIPESTATUS array in one statement: reading it into
           # a scalar first would reset PIPESTATUS before the second element.
