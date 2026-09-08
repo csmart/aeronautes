@@ -127,6 +127,8 @@ The [actual interruption reproductions](../../experiments/2026-09-08-local-inter
 [ADR 0025](../../adr/0025-local-interruption-outcomes.md) defines that next bounded terminal-reporting fix and its maintained regression controls before separate Copy migration.
 The local implementation and [maintained evidence](../../experiments/2026-09-08-local-interruptions.md#maintained-implementation-and-evidence) now preserve earlier reported outcomes beside later reasons.
 Independent local review and all five PR/master checks passed for [PR55](https://github.com/csmart/aeronautes/pull/55); its [delivery record](../../experiments/2026-09-08-local-interruptions.md#delivery) confirms the exact reviewed/merged tree and three preserved logical commits.
+The [Copy completion reproductions](../../experiments/2026-09-08-copy-completion.md) confirm the sibling caller still ignores admission failures and can commit contradictory terminal summaries.
+[ADR 0026](../../adr/0026-copy-job-completion.md) defines its separate reviewed admission, atomic-summary and queued-cancellation migration while retaining source audit authority, destination recovery facts and overwrite refusals.
 The [P22 DLO fixture](../../experiments/2026-09-07-selected-set-copy.md#maintained-implementation-and-evidence) also records a planned-byte accounting gap for P13: a complete six-name Copy plans twenty-seven bytes from listing sizes but copies and independently verifies thirty-three logical bytes.
 Do not create a general workflow engine.
 The audit's modelled WAL lost-history case and an actual process kill must remain separately labelled tests.
