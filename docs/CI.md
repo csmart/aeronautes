@@ -65,6 +65,10 @@ CI does not commit these generated files or use `BADGE_DEPLOY_KEY` anymore.
 The existing coverage floors are advisory; hard scenario and coverage gates remain audit work package P34.
 Green CI is required evidence, and the wider safety and platform release gates still apply.
 
+The real-Swift integration lane gives each Go test package fifteen minutes and bounds the whole job to twenty minutes, including setup and report upload.
+The growing sequential fault suite exceeded Go's default ten-minute package limit during PR60; the [diagnosis and validation](experiments/2026-09-08-integration-time-budget.md) distinguish that suite budget from individual test, request and child-process deadlines.
+The change preserves every assertion, fixture, race/coverage option, producer-exit check, scenario reconciliation and aggregate refusal.
+
 ## September 2026 incident
 
 [PR17](https://github.com/csmart/aeronautes/pull/17) ran all four then-required checks successfully in [run 33974249668](https://github.com/csmart/aeronautes/actions/runs/33974249668), completed at 15:20:54 UTC on 5 September, before merge at 15:24:05 UTC.
