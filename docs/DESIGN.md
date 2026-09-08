@@ -4943,11 +4943,13 @@ One failed name becomes two reported failures, 201 become 400, and 401 also beco
 Archive the exact executed test-only probe, review the durable item-admission and outcome schema/API before changing storage, then migrate Copy and local callers in separate reviewed commits with complete identity access and recording-failure tests.
 The reproduction and its next-step requirements do not accept a new ledger design or close P12/P13/P28 or the valuable-data hold.
 
-[ADR 0028](adr/0028-transfer-item-records.md) proposes the first shared logical item-record storage contract for independent review before a schema or API change.
+[ADR 0028](adr/0028-transfer-item-records.md) defines the independently reviewed first shared logical item-record storage contract.
 It separates immutable admission from execution and verification observations, keeps exact identities independently of samples, specifies bounded access, typed diagnostics, unavailable recording and retention protection, and derives failed-name totals within atomic job/audit completion.
 Review the contract first, then implement and review the shared storage foundation with deliberately broken controls; its existence alone does not fix a caller.
 Specify and review Copy's concrete adapter/UI and restart behaviour before migration, then handle local upload and download separately with their own actual-service evidence.
 The complete per-effect journal, authority, strong verification, crash/native evidence, export policy and valuable-data hold remain open.
+The [storage foundation and maintained evidence](experiments/2026-09-08-transfer-item-storage.md) implement immutable version opt-in, bounded intent/observation writes, complete paginated reads, exact failed-name totals, guarded terminal completion and retention protection.
+SQL refusals, historical upgrades, orderly child reopening and sixteen broken controls check these storage rules; existing Copy/upload/download callers still use version zero and remain separate migrations.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.

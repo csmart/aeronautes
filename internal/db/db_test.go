@@ -232,6 +232,11 @@ func TestStepwiseUpgradeFromEveryHistoricalSchema(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
+		if _, err := raw.ExecContext(ctx, `INSERT INTO jobs
+			(id, type, state, created_at, counters_json, error)
+			VALUES ('historical', 'copy', 'partial', '2026-08-28T00:00:00Z', '{"objectsFailed":5}', 'historical failure')`); err != nil {
+			t.Fatal(err)
+		}
 		raw.Close()
 
 		d, err := Open(ctx, path)
@@ -246,12 +251,21 @@ func TestStepwiseUpgradeFromEveryHistoricalSchema(t *testing.T) {
 			t.Fatalf("from %04d: head = %04d", migrations[cut-1].version, head)
 		}
 		// Every expected table exists after the upgrade.
-		for _, table := range []string{"bookmarks", "jobs", "audit_events", "segment_ownership", "app_settings", "benchmark_results", "ca_certs"} {
+		for _, table := range []string{"bookmarks", "jobs", "audit_events", "segment_ownership", "app_settings", "benchmark_results", "ca_certs", "job_items", "job_item_observations"} {
 			var n int
 			if err := d.Reader().QueryRowContext(ctx,
 				`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&n); err != nil || n != 1 {
 				t.Fatalf("from %04d: table %s missing (%v)", migrations[cut-1].version, table, err)
 			}
+		}
+		var version, items int
+		var counters, detail string
+		if err := d.Reader().QueryRowContext(ctx, `SELECT item_records_version, counters_json, error,
+			(SELECT COUNT(*) FROM job_items WHERE job_id='historical') FROM jobs WHERE id='historical'`).Scan(&version, &counters, &detail, &items); err != nil {
+			t.Fatal(err)
+		}
+		if version != 0 || items != 0 || counters != `{"objectsFailed":5}` || detail != "historical failure" {
+			t.Fatalf("upgrade from %04d invented or replaced historical evidence: version=%d items=%d counters=%s error=%s", migrations[cut-1].version, version, items, counters, detail)
 		}
 		d.Close()
 	}
