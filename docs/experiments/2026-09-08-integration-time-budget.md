@@ -43,7 +43,7 @@ The [first PR62 integration run](https://github.com/csmart/aeronautes/actions/ru
 No individual assertion or test deadline failed before the package alarm.
 The system-test package failed at 900.163 seconds while the last top-level test, `TestUploadRecoveryRealSwift`, had been running for 75 seconds.
 Its `absent_plain` case had just started; the stack shows runnable SQLite schema creation in a new fixture, before that case's upload.
-The stream records nine completed cases in that group before the interruption, including its 201-name cleanup-refusal case.
+The stream shows that this sequential group had started its tenth case, after progressing through the 201-name cleanup-refusal case.
 The report rejected the failed producer, and the aggregate blocked merging; master remained at the preceding verified green `44623f5dcc1232c2e06c44a6122ef1488bf05864`.
 
 The [preceding master integration run](https://github.com/csmart/aeronautes/actions/runs/34250226792/job/102142468533) completed systemtest in 582.863 seconds.
@@ -79,5 +79,6 @@ Workflow comparison confirms that only the two budgets and their rationale chang
 Replaying the captured failed producer through the unchanged scenario reconciler returns failure with `valid: false`, names the failed system-test package and credits zero cells.
 
 The original failed stream remains failed evidence and receives no scenario credit.
-A new successful PR run on the reviewed correction and all five resulting master checks remain required before delivery.
+The correction required a new successful PR run on the reviewed head and all five resulting master checks.
+The [checked Copy delivery record](2026-09-08-checked-copy-records.md#delivery) records those results and both measured integration durations.
 Neither time-budget correction changes the valuable-data release hold.
