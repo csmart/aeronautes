@@ -86,5 +86,15 @@ All 852 frontend tests pass across 22 files at 79.33% statement coverage, and Sv
 Frontend build, Go vet, Linux native build, the CGO-disabled internal build and patched Swift source verification pass.
 Raw events, exits, source/overlay hashes, negative-control results, build checks and the valid scenario report are retained under `/home/csmart/code/.aeronautes-work/20260908/interrupted-*`.
 
-Independent implementation review and protected PR/master pipeline verification remain required delivery gates.
 The complete identity ledger, 200-failure truncation, unknown acceptance, safe cancellation/placement and cleanup, Copy migration, native platform evidence and valuable-data release hold remain open.
+
+## Delivery
+
+Independent local reviews approved all three commits before pushing [PR55](https://github.com/csmart/aeronautes/pull/55).
+The reviewer independently ran the full Go race and frontend suites and caught eight deliberately broken cases, including cancellation taking precedence over reported outcomes and incorrectly marking zero-outcome errors as partial.
+All five actual jobs in [PR CI](https://github.com/csmart/aeronautes/actions/runs/34189096060) succeeded at reviewed source `8e5f92a9b58a45b2174b6f27e590afa47be672e2` with current base `b365170716d9bbab6fd270efdaf505d697bf4c3a`.
+The protected merge used that exact source head without bypassing the ruleset.
+All five actual jobs in [master CI](https://github.com/csmart/aeronautes/actions/runs/34189682340) succeeded at `b5ca0f3ac4663e5b496ab210be6b3bdd60b3a694`.
+The merged tree `e532d9df2ea983e93bdc44fb7518563d5af02c44` exactly matches the reviewed source, and range comparison confirms all three logical patches were preserved.
+The local record `/home/csmart/code/.aeronautes-work/20260908/interrupted-delivery.json` retains the source, master, tree, review and pipeline identities.
+Only the defined local interruption-reporting slice is delivered; the remaining outcome, caller, durability and valuable-data gates above still apply.
