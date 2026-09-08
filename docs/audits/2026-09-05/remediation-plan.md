@@ -117,6 +117,10 @@ The [local-upload reproductions](../../experiments/2026-09-08-upload-recovery.md
 The [maintained implementation and regressions](../../experiments/2026-09-08-upload-recovery.md#maintained-implementation-and-evidence) exercise both providers, exact recovery facts and collateral, child-process reopening and independent error/counter controls.
 Independent local review and all five PR/master checks passed for [PR52](https://github.com/csmart/aeronautes/pull/52); its [delivery record](../../experiments/2026-09-08-upload-recovery.md#delivery) confirms the exact reviewed/merged tree and three preserved logical commits.
 Its review and implementation sequence keeps the complete identity ledger, sibling Copy migration, audit atomicity, terminal-write failures and reclamation authority open.
+The [terminal-persistence reproductions](../../experiments/2026-09-08-terminal-persistence.md) confirm contradictory job/audit summaries and rejected admission writes that still allow actual uploads on both providers.
+[ADR 0024](../../adr/0024-local-job-completion.md) defines the next bounded shared contract: atomic final summaries, checked local admission, explicit persistence unavailability and conservative restart.
+Review and implement that local slice first, then preserve earlier failures alongside later terminal reasons and migrate Copy in separate reviewed commits.
+The complete identity ledger and other job/mutation families remain blocking; the process-local diagnostic latch is not durable outcome evidence or a global mutation interlock.
 The [P22 DLO fixture](../../experiments/2026-09-07-selected-set-copy.md#maintained-implementation-and-evidence) also records a planned-byte accounting gap for P13: a complete six-name Copy plans twenty-seven bytes from listing sizes but copies and independently verifies thirty-three logical bytes.
 Do not create a general workflow engine.
 The audit's modelled WAL lost-history case and an actual process kill must remain separately labelled tests.
