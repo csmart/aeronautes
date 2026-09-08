@@ -4895,6 +4895,11 @@ All five [master checks](https://github.com/csmart/aeronautes/actions/runs/34172
 The [delivery record](experiments/2026-09-08-upload-recovery.md#delivery) closes the defined upload post-commit error-reporting and cleanup-admission slice.
 This slice does not restore automatic reclamation or close the wider durable outcome, audit, ownership, local-verification or valuable-data release gates.
 
+The next bounded P12/P13 sequence is specified in [ADR 0024](adr/0024-local-job-completion.md), following [current-master persistence reproductions](experiments/2026-09-08-terminal-persistence.md).
+First review the shared durability contract, then implement atomic local terminal summaries, checked upload/download admission and visible persistence unavailability.
+Preserve earlier failures alongside later terminal reasons and migrate Copy separately after that local slice passes its review and delivery gates.
+This is a job-summary foundation; exact per-identity outcomes, other callers, real crash boundaries and the valuable-data hold remain open.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
