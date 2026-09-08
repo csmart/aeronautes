@@ -107,7 +107,9 @@ The fixture correction changes only the two system-test files and this experimen
 Its `upload-source-abort-matrix-v1` race producer passes the twelve maintained service leaves and 21 error-scope cases, with 36 named passes including parents and no failures or skips.
 The scope cases reject other faults, accounts, containers, methods, names, malformed staging paths and unrelated errors, including a reset while reading a response rather than forwarding a body.
 Ten sequential symlink-engine repetitions and twenty repetitions in four concurrent processes pass across mock Swift and SAIO; all thirty observe one acknowledged staging abort and no live or cleanup write.
-The independent review's two-attempt observation remains the evidence for a retried abort; these thirty repetitions are not claimed to reproduce it.
+The independent review's loaded run observed two attempts; these thirty repetitions are not claimed to reproduce it.
+The separate delayed broken-pipe producer `upload-source-abort-after-pipe-v1` also witnessed two attempted staging PUTs and passed with both aborts acknowledged.
+That passing retry witness is distinct from the later marker-bearing overlays and the thirty repetition runs.
 An error-shape overlay of the original fixture reproduces the unexpected-EOF failure and missing acknowledgement on both providers.
 Three overlays of the corrected fixture inject EOF, body reset and broken-pipe forms with a 200 ms acknowledgement delay; all six provider cases pass and each records that the injected callback executed.
 Those overlays change only the test proxy's observation of an actual aborted request, without changing the application or replacing its engine.
@@ -116,7 +118,31 @@ The correction's validator checks every producer's source hashes, actual exit an
 
 The evidence validator also checks the original 295-file Git tree and archive hash, four before leaves and their exact expected diagnostics, all six broken controls, and the delayed cancellation before/after streams.
 The documentation check preserves all 46 finding dispositions, 35 detailed work-package requirements and seven valuable-data release gates.
-Independent local review and protected PR/master delivery are still required before treating this correction as delivered.
+Independent local review and the protected PR/master delivery below approve this bounded correction.
+
+## Protected delivery
+
+[PR64](https://github.com/csmart/aeronautes/pull/64) delivered the source guard and its separate fixture correction after independent local review approved the full two-commit range.
+The first review reproduced a retry and an upstream EOF that the initial fixture assertion did not accept; the second review approved the corrected range after further scope mutations, provider replays and 35 additional repetitions.
+The original guard's application sources remained unchanged during that correction.
+
+Protected rebase merging preserved `d8f6d721` as `b35e7e74` and source head `622c8cfc072a5cb9dc764800fc393b6acd5765dc` as master `6b754f43e3e1f708abc50a7af9955a8ec0b4c074`.
+Both patches match and both heads have tree `5b5f0894f7359ed65b4968486b8f869fa2687746`.
+The current base was the delivered [PR63 contract and prerequisite record](2026-09-08-upload-item-boundaries.md#protected-delivery).
+
+All five actual checks succeeded on the latest approved source with current master incorporated and again on the resulting master: Go, frontend, owned real-Swift integration, headless smoke and the aggregate gate.
+The strict protection rules stayed in force, and only the verified source head was merged.
+
+| Run | System package | Whole integration job |
+| --- | ---: | ---: |
+| [PR64](https://github.com/csmart/aeronautes/actions/runs/34284216117) | 797.739 s | 1,009 s |
+| [Resulting master](https://github.com/csmart/aeronautes/actions/runs/34285869582) | 790.346 s | 1,000 s |
+
+Both complete integration logs contain zero failed tests and only the existing optional engine-matrix and keychain round-trip skips.
+The required owned Swift job ran successfully on both heads.
+The finite 1,200-second package and 1,500-second job budgets were unchanged.
+These hosted measurements include the complete suite and runner variance; they are not isolated source-guard costs or production transfer benchmarks.
+This delivery retains version-zero upload/download callers and every wider valuable-data gate.
 
 ## Replay
 
