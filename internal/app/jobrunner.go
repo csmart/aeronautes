@@ -80,8 +80,8 @@ func (r *jobRunner) launch(ctx context.Context, jobID, bookmarkID string, releas
 	r.launchWithQueuedOutcome(ctx, jobID, bookmarkID, releasePins, body, nil)
 }
 
-// Local transfers retain their final counters and audit contract even
-// when cancellation prevents the execution body from ever starting.
+// A caller's terminal contract also covers cancellation that prevents
+// its execution body from ever starting.
 func (r *jobRunner) launchWithQueuedOutcome(ctx context.Context, jobID, bookmarkID string, releasePins func(), body, queuedCancel func(context.Context)) {
 	go func() {
 		// Terminal rows and cancellation deregistration can precede

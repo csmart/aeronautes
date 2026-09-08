@@ -25,7 +25,7 @@ They then release the selected response and verify the completed download's exac
 
 ## Results before the Copy migration
 
-All 32 leaf cases completed without skips: 24 target assertions failed and eight unchanged controls passed.
+All 32 leaf cases completed without skips: 24 targeted cases failed and eight unchanged controls passed.
 Each provider produced the same sixteen case dispositions.
 The two parent tests also fail because their children fail; they are not additional reproduced defects.
 
@@ -67,3 +67,40 @@ No system-matrix credit is claimed by these probes.
 
 [ADR 0026](../adr/0026-copy-job-completion.md) defines the separate reviewed Copy admission and terminal-summary migration.
 The identity ledger, incomplete/duplicate accounting, earlier Copy outcomes hidden by later errors, individual effect boundaries, native evidence and valuable-data hold remain open.
+
+## Maintained implementation and evidence
+
+The independently approved ADR 0026 contract is implemented in the Copy caller.
+Start audit, planning and running records now gate admission, and final state, counter snapshot, error, finish time and terminal audit use the existing atomic completion operation.
+The counter snapshot is copied under its mutex and persisted after releasing that mutex.
+Separate forced final-counter, error and terminal-audit writes are removed from this caller.
+Queued Copy cancellation uses the same operation, with source audit authority, the original resource and job identity, and zero execution counters.
+The existing source/destination bindings, overwrite-refusal summary, destination recovery records and cleanup refusals remain intact.
+
+`internal/systemtest/copy_completion_test.go` maintains the original 32 cases and adds four cases across the two providers.
+Two combine a failed native source read, a refused overwrite, a successful engine copy and rejected verification admission; they require one copied object, one failure, one separate refusal, zero verified objects and both the earlier failure and later accounting reason.
+Two let a running download's final audit fail while a Copy is queued; they require shared unavailability, no Copy execution or recovery intent, released bindings and rejection of a subsequent actual StartCopy.
+New Copy starts are also refused after the other terminal and queued persistence failures, with no additional job row or destination writes.
+The 210-refusal regression now requires exactly one matching audit immediately after observing the terminal Copy row, without the old separate-append wait.
+
+All 36 actual-service cases pass on mock Swift and two-account SAIO with the pinned official engine and native fallback.
+They preserve complete account and local-file checks, exact selected bytes, shared aliases, other-job collateral, recovery identities and source audit authority while a different bookmark is active.
+Thirty-four cases perform the checked orderly child-process reopen and conservative interrupted comparison without remote requests.
+The two shared-latch queue cases instead inspect both uncertain rows and live admission behaviour; they do not claim a process-reopen check.
+None of these tests proves physical sync, crash/lost-history recovery, native child lifetime or power-loss safety.
+
+Restoring the exact old Copy caller fails 26 leaf cases while ten controls pass.
+Twelve additional broken variants are detected: separate terminal transactions; ignored start, planning, running or verifying gates; omitted earlier verification failure; corrupted final copied count; destination-attributed terminal audit; erased overwrite refusal; legacy queued finalisation; ignored shared queue/Copy admission availability; and cancellation registration retained after failed persistence.
+The availability control deliberately defeats both existing queue checks and the new Copy admission check to test the shared refusal rule.
+All controls use external Go overlays, have actual failing test assertions and zero skips, and leave application sources unchanged.
+
+The full internal run passes 605 top-level tests and 1,566 leaf cases in twenty packages, with zero failures or skips and 85.3% statement coverage.
+It uses Go 1.27.1, `-race -count=1`, the required keychain fixture, official rclone and two-account SAIO.
+All tested Go source hashes match the implementation.
+Schema-3 scenario reconciliation is valid and remains 32/110 cells with 38/49 actions gapped; these regressions invent no additional action credit.
+All 852 frontend tests pass in 22 files at 79.33% statement coverage, with no Svelte errors or warnings.
+Frontend build, Go vet, the native Linux build, the CGO-disabled internal build and patched Swift source verification pass.
+Raw events, exits, source/overlay hashes, controls, checks and the reconciled report are retained under `/home/csmart/code/.aeronautes-work/20260908/copy-completion-*`.
+
+Independent implementation review and protected PR/master checks remain required before delivery.
+Only the existing Copy job summary and admission contract are implemented here; the identity, outcome, durability, verification, authority, native and valuable-data gates above remain open.
