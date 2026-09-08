@@ -1,6 +1,6 @@
 # ADR 0030 — Copy item recording and complete access
 
-**Status:** Proposed for independent local review.
+**Status:** The initial contract passed independent local review on 8 September 2026; the history-access and effect clarifications require review before implementation.
 **Scope:** The first Copy caller and item-access migration under [ADR 0028](0028-transfer-item-records.md), with explicit interruption and rerun handling.
 
 ## Problem and oracle
@@ -30,11 +30,14 @@ An engine candidate's staging object is the executor's staging prefix plus `batc
 An empty relative key is valid only when both full object locations are valid.
 Validate all constructed values without a database write before attempting admission, including UTF-8, nonempty full names and nonnegative advisory listed bytes.
 Refuse an invalid representation before its dependent effect without deliberately tripping the shared persistence latch.
+Expose the foundation's existing identity/intent validation as a pure operation and use the same implementation at admission; do not duplicate those rules in the caller.
 The strict listing decoder remains required because checking a string after lossy decoding cannot recover its original identity.
 
 The first implementation admits each selected source item synchronously before buffering it or entering its execution path.
 One-item transactions satisfy the existing bounded admission contract and ensure every name in a dispatched engine batch was acknowledged beforehand.
 This adds transaction overhead; do not claim a throughput improvement or silently weaken acknowledgement to improve it.
+An unchanged name also has separate admission, execution and verification writes, potentially three acknowledged transactions per name.
+Measure both that recording cost and an actual unchanged-scope Copy on the owned fixture, reporting the test environment and scope instead of extrapolating a production throughput claim.
 Batching those acknowledgements is a separate measured optimisation that must preserve the same barrier and bounded memory.
 The engine batch itself retains its current count and byte limits and does not collect the complete namespace.
 
@@ -67,8 +70,8 @@ Classify effects from the witnessed execution boundary, never from an arbitrary 
 | Witnessed boundary | Result and effect knowledge |
 | --- | --- |
 | Source read/size failure before any destination mutation | `failed`, `not_attempted` |
-| Native destination already exists before a PUT | `conflict`, `not_attempted` |
-| PUT was invoked and failed, its response was lost, or subsequent verification failed | `failed` or `conflict`, `unresolved` |
+| The existing native symlink re-HEAD refuses an occupied destination before any destination mutation | `conflict`, `not_attempted`; do not add a HEAD to the ordinary native copy path |
+| A destination PUT was invoked, including a conditional 412 refusal, a lost response or subsequent verification failure | `failed` or `conflict`, `unresolved` |
 | Engine invocation started, then failed or left an item without a final observation | Failure or missing observation with unresolved effects, including possible staging writes |
 | Later staged source/read/commit refusal after engine invocation | Retain unresolved staging effects even if the live PUT was never invoked |
 | Reported copy and existing verification succeeded, with no known later problem | `copied`, `reported_applied`, retaining the reported copied-byte value |
@@ -80,6 +83,8 @@ Retain the earlier committing intent and captured prefixes; neither is cleanup a
 Check staging-delete and relevant stream-close errors instead of silently losing them.
 The final item stores one typed diagnostic; simultaneous issues must also remain in the job's overall problem result, and this limited record is not advertised as a complete per-effect issue history.
 A missing final observation after a post-effect recording failure remains unresolved through the durable admission.
+The conservative issued-PUT rule follows ADR 0028's requirement that `not_attempted` means no dependent mutation was invoked.
+An HTTP refusal must not silently change that meaning; finer acceptance knowledge requires its own future contract.
 
 Diagnostic stage and code come from known operation branches, typed context/network errors and typed Swift status errors.
 Unknown errors use the explicit unknown code.
@@ -113,12 +118,19 @@ Other live counters continue to use their established report inputs; advisory li
 ## Complete access and interrupted records
 
 Add bounded item-page and item-total methods to `JobService`, with explicit DTO mapping and regenerated Wails bindings.
+Also add bounded job-history access through the store and service, because the current drawer loads only fifty recent jobs and cannot otherwise discover older retained records.
+Keep the live recent-job poll and its active-job behaviour separate from an explicitly paginated history view.
+History pages preserve the account filter, order by creation time and job ID together, and use the preceding page's last job ID as a keyset cursor resolved inside the read transaction.
+Validate that a nonempty cursor still names a job in that filter; a missing or mismatched cursor is an error requiring a fresh page, not an empty history.
+Use a default of fifty history jobs and a maximum of one hundred, return a next cursor only when another row exists and refuse read failures or a recording latch without partial results.
+New jobs arriving ahead of the cursor must not duplicate or hide older retained jobs; jobs with identical creation timestamps require the ID tie-breaker.
 Expose each item's source, destination, optional staging location, planned/admitted flags and separate execution/verification observations.
 Use decimal strings for row identifiers and cursors across the JavaScript boundary, validating them before the existing store query, so large SQLite identifiers cannot lose precision.
 The methods distinguish a historical job with records not captured, a valid recorded-empty result, available records and an unavailable query.
 A failed query returns no partial page or fabricated zero totals.
 
-The drawer offers item details for active and terminal jobs, shows one bounded page at a time and provides navigation to every retained identity beyond 200.
+The drawer offers item details for active and terminal jobs, shows one bounded page at a time and provides navigation to every retained identity beyond 200, including those in older history pages.
+Bound both displayed job and item pages, expose first/next navigation with clear position and loading/error states, and reset dependent item selection when a history page or account changes.
 Show both observations under the same name, and label missing execution, unresolved effects, unverified copies, refusals and conflicts separately.
 Facet counts may overlap and must not be added as disjoint failures.
 Render exact identities as escaped text with an accessible way to inspect the full value; control characters, bidi controls, zero characters and markup-shaped names must not become indistinguishable or executable.
@@ -137,6 +149,9 @@ No new successful terminal audit is invented by this startup sweep.
 
 The backend rerun guard executes before job creation, bookmark pinning, authentication or any remote call.
 Refuse unavailable or uncaptured item records, unresolved effects and unverified reported copies with a constant explanation directing the operator to the retained facts.
+The uncaptured-record refusal takes effect with the interruption/rerun slice, before caller opt-in.
+It intentionally removes one-click rerun for every historical Copy and for new unrecorded jobs created between those slices; an explicit fresh Copy through the normal dialog remains available.
+Do not infer that a historical complete state proves missing item effects were recorded.
 The UI displays the same reason and cannot bypass the backend guard.
 A permitted explicitly requested rerun still starts a new job and runs normal request validation and current planning; it cannot replay an old admission.
 This guard does not certify the existing display-locator reconstruction, immutable bookmark identity, native approval or protection against all concurrent writers; their P10/P11/P14 gates remain open.
@@ -144,7 +159,7 @@ This guard does not certify the existing display-locator reconstruction, immutab
 ## Reviewed implementation sequence
 
 1. Review this concrete contract and the current-master replay of the archived eight-case reproduction before changing application hooks or enabling a caller.
-2. Add the typed item-page/totals service and complete bounded drawer view, with backend identity/cursor/error tests and frontend pagination, stale-response, identity-rendering and availability tests.
+2. Add the bounded job-history store/service, typed item-page/totals service and complete bounded drawer view, with backend identity/cursor/error tests and frontend pagination, stale-response, identity-rendering and availability tests.
    Existing actual transfers still create version-zero jobs; demonstrate version-one access using deliberately constructed store fixtures and state that limit.
 3. Add the interrupted-record projection and backend/UI rerun refusal, preserving historical jobs and testing transaction rollback and absence of job creation or network effects on refusal.
    Replay records through an orderly child database reopen; do not call it a full app restart or physical durability test.
@@ -159,6 +174,8 @@ Each delivered PR needs all five latest actual checks with current master incorp
 
 Maintain the actual mock and two-account SAIO 1/201/401-name fixtures, with one successful engine-routed object and exact native failure identities.
 After migration each failed key must have both relevant observations, every page must be reachable exactly once, job and audit failure totals must agree and all original namespace/recovery/reopen assertions must still run.
+Before caller opt-in, constructed store/service fixtures must also reach records in jobs beyond the newest fifty and through multiple history pages, including tied timestamps, new concurrent jobs, account filters, invalid/pruned cursors and unavailable reads.
+Frontend tests must navigate from those older jobs through more than 200 item identities while retaining bounded displayed rows and rejecting stale page/account responses.
 Add comparison-only identities, same/refused/conflicting names, empty/newline/Unicode/zero-containing keys and preserved valid replacement characters.
 Exercise the real admission barrier before engine and native dispatch, and a SQL observation refusal after an independently witnessed destination effect.
 Require the affected executor to start no subsequent dependent mutation, retain acknowledged intent/recovery and expose record unavailability and the shared new-job latch.
