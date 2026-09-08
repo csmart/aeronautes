@@ -37,6 +37,12 @@ import type {
   DLOSegmentsDTO,
   Info,
   JobDTO,
+  JobHistoryDTO,
+  JobItemDTO,
+  JobItemLocationDTO,
+  JobItemObservationDTO,
+  JobItemPageDTO,
+  JobItemTotalsDTO,
   ListingRowDTO,
   MutationResultDTO,
   ObjectDetailDTO,
@@ -65,6 +71,12 @@ export type {
   DLOSegmentsDTO,
   Info,
   JobDTO,
+  JobHistoryDTO,
+  JobItemDTO,
+  JobItemLocationDTO,
+  JobItemObservationDTO,
+  JobItemPageDTO,
+  JobItemTotalsDTO,
   ListingRowDTO,
   MutationResultDTO,
   ObjectDetailDTO,
@@ -160,6 +172,10 @@ export interface Api {
   cancelJob(jobId: string): Promise<void>;
   rerunJob(jobId: string): Promise<string>;
   jobs(bookmarkId: string, activeOnly: boolean, limit: number): Promise<JobDTO[]>;
+  job(jobId: string): Promise<JobDTO | null>;
+  jobHistory(bookmarkId: string, cursor: string, limit: number): Promise<JobHistoryDTO>;
+  jobItems(jobId: string, cursor: string, limit: number): Promise<JobItemPageDTO>;
+  jobItemTotals(jobId: string): Promise<JobItemTotalsDTO>;
   recoveryStatus(): Promise<RecoveryStatusDTO>;
   pickUploadFiles(): Promise<PickedFilesDTO | null>;
   pickDownloadDir(): Promise<PickedDirDTO | null>;
@@ -229,6 +245,10 @@ export const liveApi: Api = {
   jobs: async (bookmarkId, activeOnly, limit) =>
     (await JobService.List(bookmarkId, activeOnly, limit)) ?? [],
   recoveryStatus: () => JobService.RecoveryStatus(),
+  job: (jobId) => JobService.Get(jobId),
+  jobHistory: (bookmarkId, cursor, limit) => JobService.History(bookmarkId, cursor, limit),
+  jobItems: (jobId, cursor, limit) => JobService.Items(jobId, cursor, limit),
+  jobItemTotals: (jobId) => JobService.ItemTotals(jobId),
   pickUploadFiles: () => TransferService.PickUploadFiles(),
   pickDownloadDir: () => TransferService.PickDownloadDir(),
   preflightUpload: async (req) => {

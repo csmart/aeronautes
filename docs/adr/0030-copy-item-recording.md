@@ -1,6 +1,6 @@
 # ADR 0030 — Copy item recording and complete access
 
-**Status:** The initial contract passed independent local review on 8 September 2026; the history-access and effect clarifications require review before implementation.
+**Status:** Accepted after independent local review of the initial contract and its history-access/effect clarifications on 8 September 2026.
 **Scope:** The first Copy caller and item-access migration under [ADR 0028](0028-transfer-item-records.md), with explicit interruption and rerun handling.
 
 ## Problem and oracle

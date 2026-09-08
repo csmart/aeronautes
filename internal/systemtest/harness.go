@@ -330,6 +330,21 @@ func (h *Harness) RecoveryStatus(ctx context.Context) (app.RecoveryStatusDTO, *R
 	return status, &Receipt{h: h, action: "JobService.RecoveryStatus", err: err}
 }
 
+func (h *Harness) JobHistory(ctx context.Context, bookmark, cursor string, limit int) (app.JobHistoryDTO, *Receipt) {
+	page, err := h.Jobs.History(ctx, bookmark, cursor, limit)
+	return page, &Receipt{h: h, action: "JobService.History", err: err}
+}
+
+func (h *Harness) JobItems(ctx context.Context, job, cursor string, limit int) (app.JobItemPageDTO, *Receipt) {
+	page, err := h.Jobs.Items(ctx, job, cursor, limit)
+	return page, &Receipt{h: h, action: "JobService.Items", err: err}
+}
+
+func (h *Harness) JobItemTotals(ctx context.Context, job string) (app.JobItemTotalsDTO, *Receipt) {
+	totals, err := h.Jobs.ItemTotals(ctx, job)
+	return totals, &Receipt{h: h, action: "JobService.ItemTotals", err: err}
+}
+
 func (h *Harness) StartCopy(ctx context.Context, req app.CopyRequestDTO) *Receipt {
 	jobID, err := h.Transfer.StartCopy(ctx, req)
 	return &Receipt{h: h, action: "TransferService.StartCopy", jobID: jobID, err: err}

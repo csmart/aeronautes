@@ -492,6 +492,64 @@ export interface JobDTO {
     "recoveryRecords": number;
 }
 
+export interface JobHistoryDTO {
+    "jobs": JobDTO[] | null;
+    "nextCursor": string;
+}
+
+export interface JobItemDTO {
+    "id": string;
+    "key": string;
+    "keyDisplay": string;
+    "source": JobItemLocationDTO;
+    "destination": JobItemLocationDTO;
+    "staging": JobItemLocationDTO | null;
+    "planned": boolean;
+    "admitted": boolean;
+    "listedBytes": number;
+    "createdAt": string;
+    "execution": JobItemObservationDTO | null;
+    "verification": JobItemObservationDTO | null;
+}
+
+export interface JobItemLocationDTO {
+    "kind": string;
+    "bookmarkId": string;
+    "container": string;
+    "object": string;
+    "localPath": string;
+    "display": string;
+}
+
+export interface JobItemObservationDTO {
+    "result": string;
+    "effect": string;
+    "stage": string;
+    "code": string;
+    "httpStatus": number;
+    "copiedBytes": number;
+    "createdAt": string;
+}
+
+export interface JobItemPageDTO {
+    "status": string;
+    "items": JobItemDTO[] | null;
+    "nextCursor": string;
+}
+
+export interface JobItemTotalsDTO {
+    "status": string;
+    "items": number;
+    "planned": number;
+    "admitted": number;
+    "failed": number;
+    "conflicts": number;
+    "refused": number;
+    "unresolved": number;
+    "unverified": number;
+    "problems": number;
+}
+
 /**
  * LicenseEntry is one dependency's licence, for the About surface.
  */

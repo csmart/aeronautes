@@ -94,6 +94,9 @@ The Makefile is a thin directory over the real build system, the Wails v3 Taskfi
    (comparison preview only; execution is unavailable while concurrent changes cannot be protected).
    Copy refuses changed existing destinations and reports a partial job with a separate refused count; versioning does not enable overwrites.
    Follow everything in the jobs drawer — progress, throughput, cancel, audit trail.
+   Its **Job history** tab pages through older retained jobs; expand a job to inspect every saved item, its exact quoted locations and separate execution and verification observations.
+   Missing records, uncaptured history and unavailable reads are shown explicitly; an active job's records are incomplete, and the displayed issue counts can overlap.
+   Existing transfers still report that item records were not captured until their callers are migrated; this read-access view does not lift the valuable-data hold.
 6. Destructive cleanup: **Delete…** for prefix/empty/delete-container (typed confirmation),
    and manifest deletion from the inspector — segments die only under recorded ownership
    proof or an explicit Backstage override.
