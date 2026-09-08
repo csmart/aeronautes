@@ -176,6 +176,7 @@ Step four is [delivered through PR62](../experiments/2026-09-08-checked-copy-rec
 Only new Copy jobs opt into version-one records; historical jobs and local transfer callers are not silently upgraded.
 Separate local upload and download migrations remain step five.
 The [upload prerequisite reproductions](../experiments/2026-09-08-upload-item-boundaries.md) retain exact failure-count, recovery-stop and captured-path observations for the concrete upload contract before that caller opts in.
+[ADR 0031](0031-upload-item-recording.md) proposes that upload contract, with the bounded pathname correction reviewed before the checked caller migration.
 
 ## Required migration evidence and limits
 
