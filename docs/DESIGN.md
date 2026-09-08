@@ -4953,6 +4953,12 @@ SQL refusals, historical upgrades, orderly child reopening and sixteen broken co
 Independent implementation review and all five protected PR/master checks passed for [PR58](https://github.com/csmart/aeronautes/pull/58); its [delivery record](experiments/2026-09-08-transfer-item-storage.md#delivery) confirms the exact reviewed tree and four preserved logical commits.
 This delivers only the shared storage foundation; complete caller/UI/restart migrations and the valuable-data hold remain open.
 
+The [listing identity reproduction](experiments/2026-09-08-listing-fidelity.md) exposes a prerequisite to the Copy record migration: malformed Unicode and duplicate identity fields can reach native copies under rewritten or ambiguous names and still report complete.
+[ADR 0029](adr/0029-listing-identity-decoding.md) proposes strict raw-row validation before typed decoding through a third verified Swift-source patch.
+First review that decision and the archived session/actual-service probes, then implement and independently review the decoder change, maintained regressions and broken-rule controls before protected PR/master delivery.
+Preserve valid Unicode, complete-page and continuation semantics, owned collateral and recovery evidence; the later Copy adapter/UI/restart plan must still define the recording-latch scope, comparison mapping and unresolved-rerun refusal.
+This prerequisite does not close the caller migration, wider audit or valuable-data hold.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
