@@ -5037,7 +5037,8 @@ The next [existing-destination archive](experiments/2026-09-09-download-admissio
 [ADR 0034](adr/0034-download-destination-admission.md) defines the independently approved complete component inspection before Start and before the executor's first effect, while preserving the accepted initial selected-root symlink spelling.
 The shared admission correction implements that contract with whole-selection, faithful-error, direct-executor, queued-job and normal-control regressions on both owned providers.
 The original thirty-eight probe cases pass unchanged, and nine deliberately broken guards trigger their expected failures while retaining normal controls.
-Its [maintained validation](experiments/2026-09-09-download-admission.md#complete-validation-and-retained-failures) preserves the original failed producers and the compatibility-fixture corrections; independent implementation review and protected delivery remain required.
+Its [maintained validation](experiments/2026-09-09-download-admission.md#complete-validation-and-retained-failures) preserves the original failed producers and the compatibility-fixture corrections.
+Independent implementation and integrated-range reviews passed, followed by [protected PR77 delivery](experiments/2026-09-09-download-admission.md#protected-delivery), with all five PR/master checks green and the exact reviewed tree and four logical commits preserved.
 Reject existing descendant links/reparse entries and inspection uncertainty under the approved policy; do not infer that a temporary inspection root supplies later mutation authority.
 Record exact local and remote deltas, actual job/item/audit outcomes, source identity and independent PR/master delivery evidence.
 Stable selected-root lifetime, raced parents, publication and cleanup authority, complete-path identity and native platform acceptance remain separate P18/P19/P20/P30 work, with the valuable-data hold unchanged.
