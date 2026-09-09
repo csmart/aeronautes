@@ -1,8 +1,8 @@
 # ADR 0032 — download placement prerequisites
 
-**Status:** Proposed for independent local review under the authorised audit remediation plan.
+**Status:** Accepted after independent local review under the authorised audit remediation plan.
 **Scope:** Bounded pathname, placement and staging corrections before the separate download item-record migration.
-This draft does not authorise production changes before its own review passes.
+The reviewed prerequisite sequence governs the separate implementation changes below.
 
 ## Problem and oracle
 
@@ -23,12 +23,13 @@ The later item-record contract must separately define native temporary-file admi
 Require a valid UTF-8 absolute destination path whose spelling is unchanged by the host's `filepath.Clean`.
 Check it at download preflight entry before any destination stat, path join or source listing, and again at executor entry before any local write or engine invocation.
 Return one rejecting preflight problem with a constant destination label and safe constant explanation; do not render an invalid path lossily or call every refusal a collision.
-Reject the whole selection when the guard fails, including an empty selection.
+Reject the whole selection when the guard fails, including an empty remote scope.
 Do not clean the path, resolve symlinks, normalise Unicode or silently choose another execution route to accept it.
 
 Preserve accepted spelling, including case, valid replacement characters and supported Unicode, throughout preflight and execution.
 A fresh selection through a supported absolute spelling is the recovery path.
-This conservative compatibility restriction intentionally refuses relative, dot-component and repeated-separator spellings even when a particular spelling would happen to resolve harmlessly.
+This conservative compatibility restriction intentionally refuses relative, dot-component, repeated-separator and single trailing-separator spellings even when a particular spelling would happen to resolve harmlessly.
+An absolute filesystem root whose spelling is already clean remains eligible.
 It does not bind the selected directory's inode, exclude symlink replacement or certify a native picker on any platform.
 P18/P19/P11 remain responsible for those wider boundaries.
 

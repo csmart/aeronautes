@@ -153,6 +153,14 @@ type DownloadPreflight struct {
 
 func (p *DownloadPreflight) Rejected() bool { return rejected(p.Problems) }
 
+const downloadPathRefusal = "the selected destination path cannot be used unchanged; select it again using an absolute UTF-8 path without dot or empty components"
+
+func validDownloadRoot(path string) bool {
+	// Joining a child cleans the root, which can redirect a path when
+	// a symlink precedes '..'. Preserve the captured selection instead.
+	return utf8.ValidString(path) && filepath.IsAbs(path) && filepath.Clean(path) == path
+}
+
 // PreflightDownload walks the prefix scope and decides how every name
 // materializes under destDir — completely, before any write. Rejections
 // (Linux target): dot-segment and leading-slash names (path escapes),
@@ -161,10 +169,14 @@ func (p *DownloadPreflight) Rejected() bool { return rejected(p.Problems) }
 // files (v1 never overwrites). Case-fold and Unicode-normalization
 // twins materialize fine on this target but travel badly — warned.
 func PreflightDownload(ctx context.Context, src *swiftcontrol.Session, container, prefix, destDir string) (*DownloadPreflight, error) {
+	report := &DownloadPreflight{}
+	if !validDownloadRoot(destDir) {
+		report.Problems = []Problem{{Name: "destination", Kind: "destination-path", Detail: downloadPathRefusal, Reject: true}}
+		return report, nil
+	}
 	if prefix != "" && !strings.HasSuffix(prefix, "/") {
 		return nil, fmt.Errorf("prefix %q must be empty or end with '/'", prefix)
 	}
-	report := &DownloadPreflight{}
 	var names []string
 	folded := map[string][]string{}
 
@@ -354,6 +366,9 @@ func (r *Report) postCommitIssue(name, stage string, err error) {
 // verify per file.
 func Download(ctx context.Context, src *swiftcontrol.Session, engine Engine, srcSpec, container, prefix, destDir, stageID string,
 	preflight *DownloadPreflight, onProgress func(done, total, bytes int64)) (*Report, error) {
+	if !validDownloadRoot(destDir) {
+		return nil, errors.New(downloadPathRefusal)
+	}
 	if preflight.Rejected() {
 		return nil, errors.New("preflight rejected the download; nothing was written")
 	}

@@ -296,7 +296,7 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 		return "", err
 	}
 	if preflight.Rejected() {
-		return "", errors.New("preflight found collisions; resolve them and retry (nothing was written)")
+		return "", errors.New("preflight found problems; resolve them and retry (nothing was written)")
 	}
 	if err := req.Settings.Validate(); err != nil {
 		return "", err

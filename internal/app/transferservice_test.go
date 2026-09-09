@@ -545,7 +545,7 @@ func TestUploadAndDownloadJobs(t *testing.T) {
 		t.Errorf("forged selection token = %v, want refusal", err)
 	}
 	// Re-running rejects on local-exists — nothing overwritten.
-	if _, err := h.transfer.StartDownload(ctx, download); err == nil || !strings.Contains(err.Error(), "collisions") {
+	if _, err := h.transfer.StartDownload(ctx, download); err == nil || !strings.Contains(err.Error(), "problems") {
 		t.Errorf("second download should hit local-exists: %v", err)
 	}
 }
