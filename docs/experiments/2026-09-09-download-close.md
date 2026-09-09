@@ -86,10 +86,10 @@ The full run captures 325 Go/SQL source hashes at recorded HEAD `856b7ee862a3b38
 Those hashes match the final focused and deliberate-variant inputs exactly.
 The system package takes 703.455 seconds with fourteen independent real-Swift groups under the unchanged parallel limit of three and no sequential fixture overlapping them.
 Scenario reconciliation accepts the complete event stream, zero producer exit and captured owned SAIO configuration; coverage remains 40/116 cells with 38/52 actions having gaps.
-The 1,200-second package and 1,500-second hosted job limits remain unchanged; actual PR/master timings still require observation.
+The 1,200-second package and 1,500-second hosted job limits remain unchanged; subsequent PR/master timings are recorded under [protected delivery](#protected-delivery).
 Go vet, the native production build, the internal build without CGO, frontend asset build and vendored Swift source/checker tests pass.
 All 22 regenerated bridge files are unchanged.
-Independent local review, protected PR delivery and all five resulting master checks remain required.
+Independent local review and all five PR/master checks subsequently passed as recorded below.
 
 ## Maintained review follow-ups
 
@@ -129,3 +129,29 @@ Sync and orderly state reopening do not establish physical durability, power-los
 Downloads remain record version zero; complete identity history, directory markers, checked record failures, cancellation at every boundary, native approvals and six-platform behaviour remain separate work.
 No complete audit package, scenario gap or valuable-data gate is closed.
 The [valuable-data release hold](../audits/2026-09-05/remediation-plan.md#acceptance-gates-and-completion) remains in force.
+
+## Protected delivery
+
+[PR 69](https://github.com/csmart/aeronautes/pull/69) delivered the native closure correction and the preceding staging-delivery record after their separate independent local approvals.
+All five required jobs passed on reviewed source `0204d81d5b1d1f0ecf26964a506b11e22f4c4aa9` in the [PR run](https://github.com/csmart/aeronautes/actions/runs/34332206256) with current master incorporated.
+The normal protected rebase merge completed at 09:36:48 UTC on 9 September 2026 with the exact expected source head and no ruleset bypass.
+Initial REST attempts returned server errors and then reported a merge in progress; the documented GraphQL merge succeeded, and a separate authenticated read confirmed the result.
+The resulting master `33503e0e3c35704731dc86d4d5b1a9338846286d` passed all five jobs in its [own run](https://github.com/csmart/aeronautes/actions/runs/34335688612).
+
+The source and merged trees both equal `6c0e061d260ba7f9963abb44161709a50d549650`.
+Both logical patches are preserved: `e75858cf` became `155879d1`, and the staging-delivery record `0204d81d` became `33503e0e`.
+The source branch remained unchanged during delivery.
+
+| Observed run | System-test package | Integration job |
+| --- | ---: | ---: |
+| PR 69 | 996.537 s | 1,225 s |
+| Resulting master | 971.042 s | 1,187 s |
+
+Both complete integration logs contain 2,478 named passes across twenty passing packages, zero failures and the two existing optional skips, `TestRcloneMatrix` and `TestKeychainRoundTrip`.
+Their terminal inventories preserve the complete 2,480-test local baseline, with the generated absolute-expiry name checked against each producer's recorded time.
+The PR log SHA-256 is `41a5583d08c147f3c21ff317274e5e7d9631158df1e22708efcac3642ea47a51`; the master log SHA-256 is `40c45abeeb0d4d6a0f0792c2c4e747c0f95ce3e323446c40329ab4251a6aa960`.
+The unchanged 1,200-second package and 1,500-second job limits leave minimum observed headroom of 203.463 and 275 seconds.
+Continue measuring the fixture schedule before adding the separate download recording matrix; these runs do not promise a fixed runtime.
+
+This delivers the bounded native placement/closure correction.
+The maintained admission follow-ups and the wider filesystem, verification, recovery, platform and valuable-data release requirements retain their separate evidence and delivery obligations.

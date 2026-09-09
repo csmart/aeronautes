@@ -162,7 +162,9 @@ The [engine-stage correction](../../experiments/2026-09-09-download-stage.md) ad
 It preserves earlier job reasons and records group cleanup issues without inventing failed object identities.
 Independent review and [protected PR68 delivery](../../experiments/2026-09-09-download-stage.md#delivery) passed with all five PR/master checks, exact tree equality and the full 2,453-test inventory retained.
 The [native closure correction](../../experiments/2026-09-09-download-close.md) rejects placement before required source/file closure and retains simultaneous primary/cleanup errors and already-witnessed copied bytes.
-Both-provider service regressions cover close corruption, raced final targets and retained temporary files; download record version zero and every wider release gate remain unchanged, with independent review and delivery still required.
+Both-provider service regressions cover close corruption, raced final targets and retained temporary files.
+Independent review and [protected PR69 delivery](../../experiments/2026-09-09-download-close.md#protected-delivery) passed with all five PR/master jobs, exact tree equality and the complete 2,480-test inventory preserved.
+The maintained admission follow-ups retain their separate delivery requirement; download record version zero and every wider release gate remain unchanged.
 The [local-upload reproductions](../../experiments/2026-09-08-upload-recovery.md) confirmed P04's retained records while exposing ignored committed-record and staging-delete errors through the actual services on mock Swift and SAIO before the bounded follow-up fix.
 [ADR 0023](../../adr/0023-upload-post-commit-errors.md) defines the independently reviewed first bounded P12/P21 follow-up: retain uncertainty, prevent the affected cleanup after persistence refusal and expose post-commit issues without corrupting successful-transfer counts.
 The [maintained implementation and regressions](../../experiments/2026-09-08-upload-recovery.md#maintained-implementation-and-evidence) exercise both providers, exact recovery facts and collateral, child-process reopening and independent error/counter controls.
