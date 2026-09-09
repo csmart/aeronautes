@@ -98,6 +98,32 @@ Independent review and all five required PR and subsequent master checks remain 
 JSDOM has no layout engine or native keyboard default actions.
 The tests provide an explicit `offsetParent` layout stand-in and the missing native contenteditable accessor, then exercise the production focus code.
 They check untouched select events, real DOM focus calls, inert attributes, Tab boundary handling and form submission callbacks; they do not certify OS select popups, native Tab traversal or Enter activation.
-No native Wails, NVDA, VoiceOver, Orca, platform picker, screen-reader background isolation or valuable-data transfer was exercised here.
+The production-component matrix exercises no native Wails, NVDA, VoiceOver, Orca, platform picker, screen-reader background isolation or valuable-data transfer.
 UI-11/P29 remains open for native accessibility, remaining sensitive labels and additional accepted shortcuts; contrast and broader layout work also remain open.
 The valuable-data release hold is unchanged.
+
+## Native smoke driver correction
+
+[PR 72 run 34346488957](https://github.com/csmart/aeronautes/actions/runs/34346488957) failed its smoke job after two completed Copy previews without an engine start.
+Go, frontend and real-Swift integration passed in that run.
+The failed log and artifact 10102004148 were preserved before investigation; its screenshots show the completed preview followed by focus on the Copy tab.
+Artifact SHA-256 is `83aa0dd291235e070a02e4e18e9cd024e63a99a215bc4eca309c70c1a392fe3d`.
+
+The smoke driver assumed Preview retained focus while planning temporarily disabled its button.
+Native WebKit can drop that focus, so the next Tab returns to the first dialog control and Enter activates Copy instead of Start copy.
+The modal ownership guard correctly keeps those keys inside the dialog.
+[scripts/smoke.sh](../../scripts/smoke.sh) now clicks Start copy in its existing fixed 1280×800 viewport.
+The retry count, screenshots, engine-PUT proof and server-side three-object completion assertion remain unchanged.
+No application code changes in this driver correction.
+
+The actual production app at `ef756a0ab3851b234539b66f3d6409c425279985`, built with Go 1.27.1 and its unchanged frontend, was exercised on the existing Linux host with pinned rclone 1.74.3, an isolated X display, private state and an owned mock port.
+The original sequence passed without an induced delay, confirming that one passing run did not exclude the failure.
+Pausing only the owned mock for 0.5 seconds during Preview captured the disabled Planning state and reproduced both failed start attempts with the original Tab/Enter sequence.
+A direct click passed with the same delay: all three destination payloads matched their fixtures, all three source payloads remained unchanged, and the total was 53 bytes.
+The actual edited smoke script then passed end to end with the same production binary and pinned engine, including its engine-PUT and three-object completion checks.
+Shell syntax and diff checks passed, and the complete frontend tree remained unchanged from the approved keyboard commit.
+An attempted Copy-tab click followed by Shift+Tab also failed and was rejected.
+Runtime setup failures were preserved separately and count as no application evidence.
+
+This is narrow native smoke evidence for the driver repair.
+It does not certify native accessibility, select popups, screen readers or valuable-data use.
