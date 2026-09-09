@@ -228,16 +228,17 @@ Native About, installed packages/upgrades, Windows/macOS runtime observations, s
 
 References: `internal/transfer/rclone/runner.go:29`, `internal/transfer/rclone/manifest.txt`, `scripts/fetch-rclone.sh`, `.github/dependabot.yml`, and the dependency evidence below.
 The exact official Linux/amd64 engine selected by the repository is rclone v1.74.3, built with Go1.26.4.
-An official `govulncheck` binary scan against the downloaded public Go vulnerability database reports 42 distinct advisory IDs at symbol level, across nine modules plus the standard library.
+An official `govulncheck` binary scan against the downloaded public Go vulnerability database reports 42 distinct advisory IDs, across nine modules plus the standard library.
+The [9 September precision correction and six-target assessment](sidecar-assessment.md) establish module-version fallback for these reports; their function fields do not prove binary linkage or enabled callers.
 The application Go source scan being clear does not cover the separate engine binary.
 The [preserved engine advisory inventory](evidence/rclone-advisories.json) records the 42 IDs, scanner provenance and original JSON checksum.
-The full symbol traces remained in the audit scratch directory; the exact binary scan is reproducible from the command below.
+The full reported traces remained in the audit scratch directory; the exact binary scan is reproducible from the command below.
 
 This count is not 42 confirmed exploitable Aeronautes vulnerabilities.
 The general-purpose engine contains unused servers and backends, and binary scanning does not establish enabled-command/flag reachability.
 For example, the local-encoding traversal advisory requires nondefault encoding and explicitly excludes the demonstrated path under default encoding; Aeronautes has a fixed argument surface and excludes ambient rclone configuration. [Rclone local-encoding advisory](https://github.com/rclone/rclone/security/advisories/GHSA-7p4m-qxvv-g567)
-The metadata-permission issue requires metadata restoration; the presence of local backend symbols alone does not prove this app enables that mode. [Rclone metadata advisory](https://github.com/rclone/rclone/security/advisories/GHSA-945v-v9p3-v5xw)
-The TLS KeyUpdate advisory describes a malicious client against a server, so it must not be presented as a confirmed Swift-client exploit solely because TLS symbols are in the binary. [Go TLS advisory](https://pkg.go.dev/vuln/GO-2026-6090)
+The metadata-permission issue requires metadata restoration; a reported local-backend finding alone does not prove this app enables that mode. [Rclone metadata advisory](https://github.com/rclone/rclone/security/advisories/GHSA-945v-v9p3-v5xw)
+The TLS KeyUpdate advisory describes a malicious client against a server, so it must not be presented as a confirmed Swift-client exploit solely from a generic TLS finding. [Go TLS advisory](https://pkg.go.dev/vuln/GO-2026-6090)
 Conversely, the old standard-library URL parser used by HTTP code has a published resource-exhaustion issue that warrants actual redirect/input reachability analysis. [Go URL advisory](https://pkg.go.dev/vuln/GO-2026-6218)
 
 The maintenance finding is that the manual pin is excluded from automatic dependency updates and the compatibility measurements are not a required behavioural CI gate, while known fixes now exist beyond that pin.
@@ -249,6 +250,10 @@ Remediation: inventory and scan all six exact sidecars, triage enabled paths and
 Decide how the project handles an urgent engine security update when distribution packaging has not caught up.
 Do not remove checksum enforcement, allow arbitrary version mismatch, or assume a newer binary fixes the app's separate contracts.
 Acceptance: retained advisory dispositions name their reachability evidence; the chosen pin passes the real-engine redirects, staging/commit, cancellation, path, TLS, and fault tests on all targets; update ownership and latency are documented.
+
+Current evidence: all six accepted v1.74.3 sidecars retain 42 reported IDs; the six assessed v1.75.1 candidate artifacts report one at the same module-version precision.
+The [complete comparison and OpenPGP follow-up](sidecar-assessment.md) retain the unexplained Linux modified-source metadata, incomplete source closure, unperformed full candidate compatibility gate and pending native/application/npm scopes.
+No candidate pin or advisory disposition is accepted, and SEC-11/P31 and the valuable-data release hold remain blocking.
 
 ## SEC-12 — Linux package installation does not guarantee a usable engine
 
