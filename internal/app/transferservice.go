@@ -69,7 +69,8 @@ type TransferService struct {
 	// the pinned rclone. Tests inject fakes here. The source yields
 	// remotes PER SPAWN — implementations must call it for every child
 	// so token refresh reaches long jobs (§26.2).
-	engineFactory func(source transfercopy.RemoteSource, opts rclone.Options) (transfercopy.Engine, error)
+	engineFactory         func(source transfercopy.RemoteSource, opts rclone.Options) (transfercopy.Engine, error)
+	downloadStageBoundary func(context.Context, string) error
 
 	// recommendations is the §42 per-bookmark lookup feeding Auto.
 	recommendations func(bookmarkID string) *TransferSettingsDTO
