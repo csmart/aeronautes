@@ -34,7 +34,7 @@ func (r downloadReadFailure) Read(p []byte) (int, error) {
 func TestNativeDownloadClosure(t *testing.T) {
 	readErr, syncErr := errors.New("read refused"), errors.New("sync refused")
 	fileErr, sourceErr := errors.New("file close refused"), errors.New("source close refused")
-	for _, fault := range []string{"control", "read", "length", "sync", "file_close", "source_close", "all_closes", "read_and_closes", "target_exists"} {
+	for _, fault := range []string{"control", "read", "length", "over_length", "sync", "file_close", "source_close", "all_closes", "read_and_closes", "target_exists"} {
 		t.Run(fault, func(t *testing.T) {
 			dir := t.TempDir()
 			target := filepath.Join(dir, "final")
@@ -92,6 +92,8 @@ func TestNativeDownloadClosure(t *testing.T) {
 			wantSize := int64(len("complete bytes"))
 			if fault == "length" {
 				wantSize++
+			} else if fault == "over_length" {
+				wantSize--
 			}
 			placed, err := finishNativeDownload(body, file, temp.Name(), target, wantSize)
 			if placed != (fault == "control") || (err == nil) != (fault == "control") {
@@ -105,7 +107,7 @@ func TestNativeDownloadClosure(t *testing.T) {
 			if fileCloses != 1 || sourceCloses != 1 {
 				t.Errorf("handles not closed exactly once: file=%d source=%d", fileCloses, sourceCloses)
 			}
-			if fault == "read" || fault == "read_and_closes" || fault == "length" {
+			if fault == "read" || fault == "read_and_closes" || fault == "length" || fault == "over_length" {
 				if syncs != 0 {
 					t.Errorf("synced an unsuccessful read: %d", syncs)
 				}
