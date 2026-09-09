@@ -71,3 +71,29 @@ Keep the original timeout and failed-run evidence, and investigate a new failure
 
 This scheduling change adds no scenario coverage and closes no application audit or valuable-data release gate.
 The download prerequisites and separate item-record migration remain required.
+
+## Protected delivery
+
+[PR 66](https://github.com/csmart/aeronautes/pull/66) delivered the download evidence, reviewed prerequisite contract and scheduling change after four independent local approvals.
+All five required jobs passed on the reviewed source `5951f58feab839106c4ed270397b1c03be904e2a` with current master incorporated.
+The [PR run](https://github.com/csmart/aeronautes/actions/runs/34313679417) completed before the normal protected rebase merge, with no bypass of the active ruleset.
+The resulting master `472d4e30fec2f9d5945da928c80390fc94b5d407` also passed all five jobs in its [own run](https://github.com/csmart/aeronautes/actions/runs/34314889714).
+
+The reviewed and merged trees both equal `6c25fa797c71537c69bbd89de93a5cdf4688fef2`.
+All four logical patches are preserved: `fc52617c` became `3cc54963`, `eefd4002` became `24feef0c`, `983907d8` became `f82e3187`, and `5951f58f` became `472d4e30`.
+The source branch remained unchanged during delivery.
+
+| Observed run | System-test package | Integration job |
+| --- | ---: | ---: |
+| PR 66 | 796.889 s | 1,004 s |
+| Resulting master | 899.491 s | 1,125 s |
+
+Both complete integration logs contain 2,289 named passes across twenty passing internal packages, zero failures and only the two existing optional skips, `TestRcloneMatrix` and `TestKeychainRoundTrip`.
+The local verification runs exercised those optional fixtures too.
+The 1,200-second package and 1,500-second job limits remain unchanged.
+The slower master run leaves about 300 seconds of package headroom and 375 seconds of job headroom.
+Its hosted/local package ratio is about 1.43, above the earlier 1.38 projection; use the new measured variance when budgeting subsequent cases.
+The PR and master observations establish hosted headroom but do not promise a fixed runtime or justify widening the limits.
+
+The reviewed download-root, staging and closure corrections can now proceed as separate logical changes with their own maintained regressions, independent review and protected delivery.
+This delivery changes no application code, adds no scenario coverage and closes no complete audit package or valuable-data release gate.
