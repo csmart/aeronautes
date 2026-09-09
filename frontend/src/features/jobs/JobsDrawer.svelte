@@ -12,6 +12,7 @@
   import JobItems from "./JobItems.svelte";
 
   let { browser }: { browser: BrowserState } = $props();
+  const id = $props.id();
 
   let open = $state(false);
   let tab: "jobs" | "history" | "changes" = $state("jobs");
@@ -246,9 +247,9 @@
               A benchmark writes real objects to a temporary container on
               <span class="type-mono">{browser.account?.name}</span>. It measures small native
               PUT/HEAD/DELETE throughput — an endpoint microbenchmark, not a transfer-path
-              prediction. Type the account name to run:
+              prediction. <label for={`${id}-benchmark`}>Type the account name to run:</label>
             </span>
-            <input class="type-mono" bind:value={benchConfirm} placeholder={browser.account?.name} />
+            <input id={`${id}-benchmark`} class="type-mono" bind:value={benchConfirm} placeholder={browser.account?.name} />
             <button type="submit" disabled={benchConfirm !== (browser.account?.name ?? "")}>
               Run benchmark
             </button>
@@ -348,7 +349,9 @@
         <JobHistory {browser} />
       {:else}
         <div class="audit-filters num">
+          <label for={`${id}-audit-operation`}>Operation prefix</label>
           <input
+            id={`${id}-audit-operation`}
             class="type-mono"
             placeholder="operation prefix (transfer., delete.…)"
             value={browser.auditFilterOp}
@@ -357,7 +360,9 @@
               void browser.searchAudit();
             }}
           />
+          <label for={`${id}-audit-result`}>Result</label>
           <select
+            id={`${id}-audit-result`}
             value={browser.auditFilterResult}
             onchange={(e) => {
               browser.auditFilterResult = e.currentTarget.value;
@@ -580,12 +585,14 @@
 
   .audit-filters {
     display: flex;
+    align-items: center;
     gap: var(--space-2);
     margin-bottom: var(--space-2);
   }
 
   .audit-filters input {
     flex: 1;
+    min-width: 0;
     font: inherit;
     font-size: var(--text-xs);
     background: var(--color-bg-card);
@@ -593,6 +600,11 @@
     border: 1px solid var(--color-border);
     border-radius: var(--radius-control);
     padding: 1px var(--space-2);
+  }
+
+  .audit-filters label {
+    font-size: var(--text-xs);
+    color: var(--color-text-secondary);
   }
 
   .audit-filters select {

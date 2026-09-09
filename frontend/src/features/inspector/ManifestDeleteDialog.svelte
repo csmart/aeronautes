@@ -17,6 +17,7 @@
     segmentsAt: string;
     onClose: () => void;
   } = $props();
+  const confirmId = $props.id();
 
   let deleting = $state(false);
   let error: string | null = $state(null);
@@ -131,9 +132,11 @@
         <p class="force-warn">
           Deleting backing segments is a <strong>Backstage override</strong>. Ownership evidence
           can identify likely-owned segments but cannot yet prove that no other object references
-          them, so this always requires explicit confirmation. Type the object name to arm it:
+          them, so this always requires explicit confirmation.
+          <label for={confirmId}>Type the object name to arm it:</label>
         </p>
         <input
+          id={confirmId}
           class="force-confirm type-mono"
           bind:value={confirmText}
           placeholder={target.request.name}
