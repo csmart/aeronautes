@@ -19,7 +19,7 @@
 </script>
 
 <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && onClose()}>
-  <div class="dialog" role="dialog" aria-label="About Aeronautes" tabindex="-1" use:trapFocus>
+  <div class="dialog" role="dialog" aria-modal="true" aria-label="About Aeronautes" tabindex="-1" use:trapFocus={onClose}>
     <header>
       <h2>About Aeronautes</h2>
       <button class="close" onclick={onClose} aria-label="Close">✕</button>

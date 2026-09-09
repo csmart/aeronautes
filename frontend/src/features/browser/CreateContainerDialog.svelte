@@ -49,9 +49,9 @@
 </script>
 
 <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && close()}>
+  <div role="dialog" aria-modal="true" aria-label="Create container" tabindex="-1" use:trapFocus={close}>
   <form
     class="dialog"
-    use:trapFocus
     aria-label="Create container"
     onsubmit={(e) => {
       e.preventDefault();
@@ -89,6 +89,7 @@
       </button>
     </div>
   </form>
+  </div>
 </div>
 
 <style>

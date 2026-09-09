@@ -115,9 +115,10 @@
 </script>
 
 <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && close()}>
+  <div role="dialog" aria-modal="true" aria-label={bookmark ? "Edit bookmark" : "Add bookmark"}
+    tabindex="-1" use:trapFocus={close}>
   <form
     class="editor"
-    use:trapFocus
     aria-label={bookmark ? "Edit bookmark" : "Add bookmark"}
     onsubmit={(e) => {
       e.preventDefault();
@@ -222,6 +223,7 @@
       </button>
     </div>
   </form>
+  </div>
 </div>
 
 <style>

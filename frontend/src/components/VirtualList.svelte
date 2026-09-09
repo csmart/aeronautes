@@ -98,6 +98,9 @@
   });
 
   function handleKeydown(event: KeyboardEvent) {
+    // The screen owns Alt+Up; consuming it here would hide parent navigation
+    // from the screen's defaultPrevented guard.
+    if (event.defaultPrevented || (event.altKey && event.key === "ArrowUp")) return;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       if (items.length === 0) {

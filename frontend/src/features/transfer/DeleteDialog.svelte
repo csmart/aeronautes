@@ -109,7 +109,7 @@
 </script>
 
 <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && close()}>
-  <div class="dialog" role="dialog" aria-label="Delete" tabindex="-1" use:trapFocus>
+  <div class="dialog" role="dialog" aria-modal="true" aria-label="Delete" tabindex="-1" use:trapFocus={close}>
     <header>
       <h2>Destructive operation</h2>
       <button class="close" onclick={close} aria-label="Close">✕</button>

@@ -146,7 +146,7 @@
 </script>
 
 <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && close()}>
-  <div class="dialog" role="dialog" aria-label={mode === "upload" ? "Upload" : "Download"} tabindex="-1" use:trapFocus>
+  <div class="dialog" role="dialog" aria-modal="true" aria-label={mode === "upload" ? "Upload" : "Download"} tabindex="-1" use:trapFocus={close}>
     <header>
       <h2>
         {mode === "upload"
