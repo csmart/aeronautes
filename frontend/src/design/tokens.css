@@ -22,7 +22,7 @@
   /* Ink. */
   --color-text: #201d18;
   --color-text-secondary: #6e675b;
-  --color-text-faint: #98907f;
+  --color-text-faint: #6d665a;
   --color-text-invert: #f8f5ef;
 
   /* Lines and depth. */
@@ -32,8 +32,8 @@
   --shadow-raised: 0 2px 6px rgb(32 27 20 / 0.08), 0 8px 24px rgb(32 27 20 / 0.10);
 
   /* Champagne / brass accent — restrained. */
-  --color-accent: #a2792c;
-  --color-accent-strong: #8a6420;
+  --color-accent: #856020;
+  --color-accent-strong: #76541c;
   --color-accent-soft: #f3e7cd; /* badge fills, soft highlights */
   --color-accent-border: #d9c69a;
 
@@ -44,9 +44,9 @@
   /* Semantic state. Danger is the destructive-flow colour (§30). */
   --color-danger: #b3402f;
   --color-danger-soft: #f7e4de;
-  --color-success: #3d7a44;
+  --color-success: #36703d;
   --color-success-soft: #e3efe0;
-  --color-warning: #9a6a1a;
+  --color-warning: #8d6017;
   --color-warning-soft: #f7ecd2;
   --color-info: #5a6a83;
   --color-info-soft: #e7ebf1;
@@ -86,7 +86,7 @@
 
     --color-text: #ece5d8;
     --color-text-secondary: #a89e8c;
-    --color-text-faint: #7d7464;
+    --color-text-faint: #a19785;
     --color-text-invert: #201d18;
 
     --color-border: #353027;
@@ -102,7 +102,7 @@
     --color-selection-bg: #332c1d;
     --color-selection-border: #55482c;
 
-    --color-danger: #d3705e;
+    --color-danger: #db7866;
     --color-danger-soft: #3c221c;
     --color-success: #7fb283;
     --color-success-soft: #22301f;
@@ -129,7 +129,7 @@
 
   --color-text: #ece5d8;
   --color-text-secondary: #a89e8c;
-  --color-text-faint: #7d7464;
+  --color-text-faint: #a19785;
   --color-text-invert: #201d18;
 
   --color-border: #353027;
@@ -145,7 +145,7 @@
   --color-selection-bg: #332c1d;
   --color-selection-border: #55482c;
 
-  --color-danger: #d3705e;
+  --color-danger: #db7866;
   --color-danger-soft: #3c221c;
   --color-success: #7fb283;
   --color-success-soft: #22301f;
