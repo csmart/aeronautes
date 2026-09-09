@@ -76,7 +76,9 @@ The [mock schedule](experiments/2026-09-09-mock-scheduling.md) gives mock fixtur
 The remaining non-parallel tests finish before Go resumes those groups; no mock harness changes process-wide environment values.
 Use `go test -race -count=1 -parallel=3 ./...` for the matching local schedule, retaining the configured owned Swift and optional fixture environment when exercising those lanes.
 No tests or required jobs are removed, and the package/job limits and coverage/reconciliation settings above stay unchanged.
-The evidence record must include the complete inventory comparison and actual hosted duration before maintained download cases are added.
+The [protected PR70 delivery record](experiments/2026-09-09-mock-scheduling.md#independent-review-and-protected-delivery) preserves the complete 2,486-test terminal inventory and both successful five-job pipelines.
+Observed PR/master system packages take 792.682/826.057 seconds and integration jobs take 1,011/1,064 seconds within the unchanged limits.
+Keep measuring the complete inventory and both hosted durations as maintained download cases are added.
 
 ## September 2026 incident
 
