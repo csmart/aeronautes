@@ -5065,6 +5065,7 @@ The chosen normal-text target is at least 4.5:1 without rounding, including acti
 Then correct only the demonstrated colour-token values, keep automatic and explicit dark declarations identical, and give input/textarea placeholders an opaque faint-token colour without replacing native appearance or forced-colour adjustment.
 Keep the typography, warm surfaces, layout, event handlers, transfer authority and existing focus treatment unchanged.
 In the same logical correction, add maintained checks for the actual text pairs and placeholder rule, preserve passing controls, and prove that the old palette and independently omitted corrections fail those checks.
+Enumerate the existing inset and soft-fill consumers, including inherited foregrounds and the enabled ACL Remove control's normal/hover colours; a new or changed mapping needs its own checked pair.
 Require existing theme/component tests, the full frontend checks and an attributed native build with separate light/dark normal, hover, focus, error and disabled-state observations before independent implementation review.
 Preserve every failed producer and distinguish authored-colour ratios, isolated renderer controls and actual application observations.
 Final-base review and all five protected PR/master jobs remain required before delivery; root coordination owns that delivery order.
