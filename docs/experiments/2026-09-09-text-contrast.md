@@ -22,8 +22,9 @@ Any additional production file or changed product decision requires a separately
 
 ## Current-source reproduction
 
-The private `before-ratios.json` records 32 actual production text pairs in each theme, with 17 measured failures and 47 passing controls.
-These are measurements, not 64 executed regression tests.
+The initial private `before-ratios.json` records 32 actual production text pairs in each theme, with 17 measured failures and 47 passing controls.
+Independent plan review found that this initial inventory omitted the enabled ACL Remove control's inset surface; the expanded inventory below is the implementation oracle.
+These are measurements, not executed regression tests.
 The sRGB calculation uses the 0.04045 linearisation boundary and the standard luminance weights; black/white 21:1 and the #777777/#767676 boundary against white are independent arithmetic controls.
 
 | Theme | Actual text/background role | Before ratio |
@@ -50,6 +51,42 @@ The sampled consumers are the browser rail, container column, working list, insp
 Passing controls include ordinary and secondary text on their actual surfaces, selected row text, destructive action labels and the other semantic text pairs.
 The unchanged secondary text on an inset surface is the lowest passing control at 4.5364:1.
 Changing only the two examples in the original audit would leave demonstrated failures in selected rows and semantic badges.
+
+## Expanded inset and soft-fill inventory
+
+The enabled ACL Remove control is included in the normal-text target, including its displayed removal glyph; no inactive-control or symbol exception is taken.
+`AclEditor` gives `.chip` the inset background and secondary text, while its transparent `.x` child overrides the foreground to faint and its hover rule uses danger.
+The expanded `before-ratios-expanded-v1.json` retains the initial measurements and adds these four actual pairs.
+
+| Theme | ACL Remove control on inset | Before ratio | Proposed ratio |
+| --- | --- | ---: | ---: |
+| Light | Normal faint text | 2.56836 | 4.60477 |
+| Light | Hover danger text | 4.61385 | 4.61385 |
+| Dark | Normal faint text | 4.08177 | 6.52551 |
+| Dark | Hover danger text | 5.60086 | 6.17571 |
+
+The resulting 68 pairs contain 19 measured failures and 49 passing controls before correction.
+The initial candidate's #70695b light faint colour still fails the newly included inset pair at 4.41128:1; that rejected candidate remains preserved.
+The revised candidate below uses #6d665a, which reaches 4.60477:1 on the inset while keeping the same warm neutral family.
+The initial private label “active tab” is also corrected to “inspector configure action”: the unchanged strong-accent/card pair comes from `Inspector .edit-btn`, while the current active tabs use normal text.
+This label correction changes no measured pair or ratio.
+
+The current source contains exactly 22 inset/soft background declarations, enumerated in `inset-soft-surfaces-v1.json` with source hashes.
+Their complete text and descendant-colour mappings are:
+
+| Surface | Current consumers and foregrounds |
+| --- | --- |
+| Inset | `ContainerColumn .modes` contains secondary `.mode` text; selected modes replace the background with card and use normal text; `Inspector .raw` uses secondary text; `AclEditor .chip` uses secondary text, its enabled `.x` uses faint, and `.x:hover` uses danger. |
+| Accent-soft | `BookmarkRail .badge`, `ContainerColumn .class-chip` and `WorkingList .badge` use strong accent; `BookmarkRail .badge.plus` replaces the fill with a transparent background, so its faint glyph belongs to the underlying rail surface. |
+| Warning-soft | `BookmarkEditor .warning`, `WorkingList .backstage-banner`, both edit panels' `.banner.conflict`, `MetadataEditor .chip.changed` and the grouped conflict/mismatch/partial/cancelled job badges use warning. |
+| Success-soft | `MetadataEditor .chip.added` and the grouped applied/complete job badges use success. |
+| Danger-soft | Bookmark/Create errors, both edit panels' `.banner.mismatch`, `ManifestDeleteDialog .keeps.warn` and `.error`, `MetadataEditor .chip.removed` and the failed job badge use danger. |
+| Info-soft | No current component uses this fill. |
+
+The banner buttons have their own opaque backgrounds and are checked with those backgrounds, rather than inheriting the banner fill.
+No current component places faint text on a semantic soft fill.
+That is not permission to reuse faint indiscriminately: some such hypothetical combinations would still fail the chosen target, so the maintained inventory must make the allowed mappings explicit and require a new checked pair for new or changed usage.
+The implementation must enumerate these declarations and inherited/hover overrides instead of relying on an arbitrary subset of token combinations.
 
 ## Native before evidence
 
@@ -81,11 +118,11 @@ Current upstream WebKit source was a diagnostic lead only; it is not substituted
 
 First commit and independently review this plan and before evidence.
 Only after approval, implement one logical correction with the maintained regressions and updated experiment evidence.
-The following private mathematical candidate passes all 64 inventoried pairs; these values have not yet been applied or accepted as final native rendering evidence.
+The following revised private mathematical candidate passes all 68 expanded pairs; these values have not yet been applied or accepted as final native rendering evidence.
 
 | Theme | Token | Before | Candidate |
 | --- | --- | --- | --- |
-| Light | text-faint | #98907f | #70695b |
+| Light | text-faint | #98907f | #6d665a |
 | Light | accent | #a2792c | #856020 |
 | Light | accent-strong | #8a6420 | #76541c |
 | Light | warning | #9a6a1a | #8d6017 |
@@ -95,12 +132,14 @@ The following private mathematical candidate passes all 64 inventoried pairs; th
 
 Use the corrected faint token with opacity 1 for input/textarea placeholders, leaving native appearance and automatic forced-colour adjustment intact.
 Retain the original candidate that still failed two pairs alongside this passing mathematical candidate.
+Also retain the later 64-pair candidate that failed the newly included ACL inset pair.
 The normal foregrounds, background surfaces, selection fills and focus-ring values remain unchanged.
 Actual disabled attributes and existing disabled opacity continue to convey inactive controls; active muted text cannot claim that exception.
 
 ## Required implementation proof
 
-1. Add a table-driven check over the actual production tokens and sampled selector declarations, with meaningful foreground/background pairs for ordinary, muted, selected, action and semantic text.
+1. Add a table-driven check over the actual production tokens and selector declarations, with meaningful foreground/background pairs for ordinary, muted, selected, action and semantic text.
+   Enumerate all current inset/soft-fill declarations and their inherited/hover foreground mappings, including ACL Remove; require new or changed mappings to be checked explicitly.
    Check the complete automatic/explicit dark declaration equality and the input/textarea placeholder rule.
    Keep independent arithmetic boundary controls and assert the unrounded ratio.
 2. Run the new regression against the unchanged parent styles before correcting them, preserving the intended failures and unchanged passing cases.
@@ -108,7 +147,7 @@ Actual disabled attributes and existing disabled opacity continue to convey inac
    Compilation errors and producer failures do not count as effective broken controls.
 3. Run the existing theme and relevant component regressions, the complete frontend test suite, Svelte checking and the production/native build.
    Retain the previous 986 frontend test identities and attribute generated assets and binaries to the exact inspected source.
-4. Repeat the owned native application controls on the final uninstrumented build in light and dark themes, observing normal, hover, focus, error and disabled states.
+4. Repeat the owned native application controls on the final uninstrumented build in light and dark themes, observing normal, hover, focus, error and disabled states, including the enabled ACL Remove control on its inset background.
    Compare enabled placeholder rendering with the corrected authored colour using the separate renderer controls where the pseudo-element computed-style API is insufficient.
    Keep all failed producers and distinguish visited application states from authored-pair coverage of other states.
 5. Obtain independent implementation approval before any authorised delivery action.
