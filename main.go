@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -25,10 +26,14 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
-// version is stamped by release builds via -ldflags "-X main.version=...".
-var version = "dev"
-
 func main() {
+	identity := buildIdentity()
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		if err := json.NewEncoder(os.Stdout).Encode(identity); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	statePath, err := xdg.StateFile("aeronautes/state.sqlite")
 	if err != nil {
 		log.Fatalf("resolve state dir: %v", err)
@@ -80,7 +85,7 @@ func main() {
 		Name:        "Aeronautes",
 		Description: "Desktop operator workbench for OpenStack Swift",
 		Services: []application.Service{
-			application.NewService(app.NewAppService(version, string(secretBackend))),
+			application.NewService(app.NewAppService(identity, string(secretBackend))),
 			application.NewService(app.NewBookmarkService(bookmarkStore, connections, jobStore)),
 			application.NewService(app.NewBrowseService(connections, evidenceStore)),
 			application.NewService(app.NewInspectorService(connections, evidenceStore)),

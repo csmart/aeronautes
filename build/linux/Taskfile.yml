@@ -22,17 +22,13 @@ tasks:
       - sh: command -v gcc >/dev/null 2>&1 || command -v clang >/dev/null 2>&1
         msg: "A C compiler is required (the webview binds via CGO): install gcc or clang."
     cmds:
-      - go build {{.BUILD_FLAGS}} -o {{.OUTPUT}}
+      - go run ./build/identity build -os linux -arch {{.ARCH | default ARCH}} -output "{{.OUTPUT}}" -dev={{.DEV | default "false"}}
     vars:
       # Production builds carry `-tags production`, which compiles the wails
       # DevTools capability out entirely (§55).
-      BUILD_FLAGS: '{{if eq .DEV "true"}}-buildvcs=false -gcflags=all="-l"{{else}}-tags production -trimpath -buildvcs=false -ldflags="-w -s"{{end}}'
+      BUILD_FLAGS: '{{if eq .DEV "true"}}-gcflags=all="-l"{{else}}-tags production{{end}}'
       DEFAULT_OUTPUT: '{{.BIN_DIR}}/{{.APP_NAME}}'
       OUTPUT: '{{ .OUTPUT | default .DEFAULT_OUTPUT }}'
-    env:
-      GOOS: linux
-      CGO_ENABLED: 1
-      GOARCH: '{{.ARCH | default ARCH}}'
 
   package:
     summary: Packages the application for Linux (rpm, deb, AppImage)
@@ -45,19 +41,11 @@ tasks:
 
   create:appimage:
     summary: Creates an AppImage
-    dir: build/linux/appimage
     deps:
       - task: build
       - task: generate:dotdesktop
     cmds:
-      - cp "{{.APP_BINARY}}" "{{.APP_NAME}}"
-      - cp ../../appicon.png "{{.APP_NAME}}.png"
-      - wails3 generate appimage -binary "{{.APP_NAME}}" -icon {{.ICON}} -desktopfile {{.DESKTOP_FILE}} -outputdir {{.OUTPUT_DIR}} -builddir {{.ROOT_DIR}}/build/linux/appimage/build
-    vars:
-      APP_BINARY: '../../../bin/{{.APP_NAME}}'
-      ICON: '{{.APP_NAME}}.png'
-      DESKTOP_FILE: '../{{.APP_NAME}}.desktop'
-      OUTPUT_DIR: '../../../bin'
+      - go run ./build/identity appimage
 
   create:deb:
     summary: Creates a deb package
@@ -65,7 +53,7 @@ tasks:
       - task: build
       - task: generate:dotdesktop
     cmds:
-      - wails3 tool package -name "{{.APP_NAME}}" -format deb -config ./build/linux/nfpm/nfpm.yaml -out {{.ROOT_DIR}}/bin
+      - go run ./build/identity package -format deb
 
   create:rpm:
     summary: Creates an rpm package
@@ -73,7 +61,7 @@ tasks:
       - task: build
       - task: generate:dotdesktop
     cmds:
-      - wails3 tool package -name "{{.APP_NAME}}" -format rpm -config ./build/linux/nfpm/nfpm.yaml -out {{.ROOT_DIR}}/bin
+      - go run ./build/identity package -format rpm
 
   generate:dotdesktop:
     summary: Generates a `.desktop` file

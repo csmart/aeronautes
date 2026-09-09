@@ -44,6 +44,20 @@ make package   # rpm + deb + AppImage
 The binary is dynamically linked against the system WebKitGTK by design;
 a fully static binary is not possible (see README).
 
+## Build identity
+
+Local builds and branch workflow dispatches report `dev`, with the source revision and clean/dirty state.
+To stamp a local release build, set `AERONAUTES_RELEASE_VERSION=vX.Y.Z` when running `make build`, `make rpm`, `make deb` or the corresponding Wails task.
+The matching tag must identify the current commit, and the source tree must be clean, including untracked files.
+The builder accepts only stable three-component tags, with no leading zeroes and each component at most 65535; prerelease and build metadata suffixes fail explicitly.
+`DEV=true` cannot carry a release label.
+The tag workflow supplies this same input automatically.
+
+Run `bin/aeronautes --version` to inspect the stamped version, full source revision and source state without opening application state.
+The About dialog displays the same identity.
+Packages and archives carry versioned `UNSIGNED` filenames and a build identity document; the release workflow writes an artifact SHA256 provenance file alongside them.
+The [fixture evidence and platform limits](experiments/2026-09-09-release-identity.md) distinguish actual Linux package inspection from Windows cross-build/resource checks and macOS template checks.
+
 ## Release steps
 
 1. `make test` and `make test-integration` (SAIO running) are green.
