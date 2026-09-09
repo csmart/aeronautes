@@ -126,7 +126,7 @@ go test -json -race -count=1 -parallel=3 -timeout=20m \
 For a before replay, keep these maintained tests and use a Go overlay containing the two production files from `232559869ee3ddc5d3bedb7e643ada7b78554de2`.
 Preserve the actual nonzero producer exit and all terminal names; do not invert the refusal assertions.
 The private evidence bundle retains each exact command, tool/version and pinned-binary identity, raw output, actual exit, all Go/SQL snapshots, overlay replacements and validator results.
-The focused source/test SHA-256 values are:
+The original focused source/test SHA-256 values at `eb731d601c44792adda8b1e50e1a4d3a44ba72fd` are:
 
 | File | SHA-256 |
 | --- | --- |
@@ -144,7 +144,7 @@ The integration result below uses the documented `./internal/...` package set an
 ## Complete integration verification
 
 The documented integration profile completed with actual exit 0: 2,976 named passes across the exact 20 packages returned by `go list ./internal/...`, no failures or skips, in 666.881 seconds.
-All 353 Go/SQL inputs and the retained `go.mod`/`go.sum` snapshot match the final source.
+All 353 Go/SQL inputs and the retained `go.mod`/`go.sum` snapshot match implementation commit `eb731d601c44792adda8b1e50e1a4d3a44ba72fd`.
 The complete raw event-stream SHA-256 is `31223630057c4c265d8fa844024e51c3721fd30f65e3a9feda8519f6814bb180`.
 
 The evidence validator reconciles every prior 2,850 terminal name from the approved destination source plus exactly 126 additions: 92 local names, 32 service names and two new app-spy cases.
@@ -158,6 +158,47 @@ The maintained reconciler consumed the actual producer exit and actual package l
 The contract hash remains `6c1e4d947471b8b5`; this correction earns no new scenario credit or full-matrix clearance.
 `go vet ./internal/...` also exited zero.
 These results bind the recorded uncommitted source hashes; subsequent commits and final-base integration must preserve those inputs or receive appropriate new verification and independent review.
+
+## Mirrored spelling regression correction
+
+Independent review found that the original fixtures used uppercase blocking files with lowercase required ancestors in every case.
+A broken guard that still lowercases its file keys but looks up each ancestor with its raw spelling therefore survived those tests.
+Two private overlays reproduced that gap separately at preflight and direct entry: each passed all 90 original local leaves with actual exit zero.
+That result exposed missing regression evidence, not a correct implementation of the portable policy.
+
+The local table now also includes `foo` with `Foo/child`, `top/foo` with `TOP/Foo/a/child`, `foo` with marker `Foo/`, and `fOO` with `FoO/child`.
+Each runs through both preflight routes and the recorded/unrecorded direct paths in both input orders, retaining the original spelling in diagnostics and identities.
+The service table adds `foo` with `Foo/child.bin`, or `Foo/` on the marker route, behind a safe first item on both Mock and real Swift.
+Every prior fixture and assertion remains in place.
+Only the two dedicated test files change; all production, app-spy, module and other Go/SQL bytes remain identical to `eb731d60`.
+
+| Producer | Failing leaves | Passing leaves | Actual exit | Wall seconds |
+| --- | ---: | ---: | ---: | ---: |
+| Original tests, raw preflight ancestor lookup | 0 | 90 | 0 | 1.755 |
+| Original tests, raw direct ancestor lookup | 0 | 90 | 0 | 2.403 |
+| Expanded fixed local/app | 0 | 134 | 0 | 3.177 |
+| Expanded fixed Mock service | 0 | 18 | 0 | 10.194 |
+| Expanded fixed SAIO service | 0 | 18 | 0 | 18.859 |
+| Expanded tests, raw preflight ancestor lookup | 8 | 122 | 1 | 1.381 |
+| Expanded tests, raw direct ancestor lookup | 32 | 98 | 1 | 1.756 |
+| Expanded Mock, raw preflight ancestor lookup | 3 | 15 | 1 | 10.077 |
+| Expanded SAIO, raw preflight ancestor lookup | 3 | 15 | 1 | 18.212 |
+
+The fixed streams contain 137, 19 and 19 named passes with their parent tests included, with no failure or skip.
+Their complete terminal names preserve the original focused inventory plus exactly 46 additions: 40 local cases and three service cases per provider.
+All 353 source hashes remain stable during every producer; only the two dedicated test hashes differ from the original complete run.
+The new local test SHA-256 is `268758e9daf067ac089364838028aaca3d2a237d34d58be274d1106e66d8e0e4`, and the service test SHA-256 is `cd4c2c907e4bef7b4cef956ef023a7d24a3587818f13ed02f05325ee1a241381`.
+
+The expanded fixed service cases refuse before job, item, audit, selected content reads, returned-Copy callbacks or local effects, with complete owned local and remote snapshots unchanged.
+When only preflight uses raw ancestor lookups, each new service case instead creates a failed job and two transfer audit rows: the exact count delta is `[1, 0, 0, 0, 2]`.
+The intact direct guard still prevents item admission and content effects, so those failed jobs do not satisfy service admission refusal.
+When only direct entry uses raw ancestor lookups, all 32 new direct cases report admission and changed local entries, independently detecting the missing direct guard.
+The existing passing controls still verify exact recorded outcomes, identities, full file bytes and permitted local deltas.
+
+The reader validates these complete raw facts, exact overlay replacements, actual exits and source preservation without changing the earlier evidence.
+An initial sandboxed replay could not open the owned loopback test server and exited one before any passing test; that socket failure remains separate from the completed comparison controls.
+The earlier 2,976-name full run remains historical evidence for the unchanged production and original test tree.
+It is not a complete run of the expanded test inventory; final-base verification and independent range review remain required before delivery.
 
 ## Remaining limits
 

@@ -29,7 +29,7 @@ func TestDownloadPathCaseRealSwift(t *testing.T) {
 
 func downloadPathCaseCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 	for _, route := range []string{"engine", "native", "marker"} {
-		for _, shape := range []string{"file_parent", "deep_parent", "shared_parent", "marker_child", "disjoint"} {
+		for _, shape := range []string{"file_parent", "deep_parent", "mirrored_parent", "shared_parent", "marker_child", "disjoint"} {
 			t.Run(route+"/"+shape, func(t *testing.T) { downloadPathCaseService(t, makeHarness(t), route, shape) })
 		}
 	}
@@ -64,6 +64,12 @@ func downloadPathCaseService(t *testing.T, h *Harness, route, shape string) {
 		names = append(names, "parent/Foo", "parent/foo/a/child.bin")
 		if route == "marker" {
 			names[2] = "parent/foo/a/"
+		}
+	case "mirrored_parent":
+		conflict = "foo"
+		names = append(names, "foo", "Foo/child.bin")
+		if route == "marker" {
+			names[2] = "Foo/"
 		}
 	case "shared_parent":
 		names = append(names, "foo/one", "foo/two")
