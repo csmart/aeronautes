@@ -159,13 +159,9 @@ func validDownloadRoot(path string) bool {
 	return utf8.ValidString(path) && filepath.IsAbs(path) && filepath.Clean(path) == path
 }
 
-// PreflightDownload walks the prefix scope and decides how every name
-// materializes under destDir — completely, before any write. Rejections
-// (Linux target): dot-segment and leading-slash names (path escapes),
-// non-empty names ending "/" (file/directory ambiguity), file-vs-prefix
-// conflicts (an object `foo` alongside `foo/...`), and existing local
-// files (v1 never overwrites). Case-fold and Unicode-normalization
-// twins materialize fine on this target but travel badly — warned.
+// PreflightDownload checks the complete selected namespace and existing
+// destination before any write. Its portable namespace policy refuses
+// case-folded conflicts even on hosts that could materialize both paths.
 func PreflightDownload(ctx context.Context, src *swiftcontrol.Session, container, prefix, destDir string) (report *DownloadPreflight, err error) {
 	report = &DownloadPreflight{}
 	if !validDownloadRoot(destDir) {
@@ -268,10 +264,10 @@ func PreflightDownload(ctx context.Context, src *swiftcontrol.Session, container
 	// File-vs-prefix conflicts: a real ancestor lookup, not sorted
 	// adjacency — "foo", "foo.txt", "foo/child" sorts foo.txt between
 	// the conflicting pair and adjacency misses it (follow-up review).
-	fileSet := map[string]bool{}
+	fileSet := map[string]string{}
 	for _, name := range names {
 		if name != "" && !strings.HasSuffix(name, "/") {
-			fileSet[name] = true
+			fileSet[strings.ToLower(name)] = name
 		}
 	}
 	sort.Strings(names)
@@ -285,11 +281,12 @@ func PreflightDownload(ctx context.Context, src *swiftcontrol.Session, container
 			} else {
 				ancestor += "/" + segment
 			}
-			if fileSet[ancestor] && !flagged[ancestor] {
-				flagged[ancestor] = true
+			fold := strings.ToLower(ancestor)
+			if file, exists := fileSet[fold]; exists && !flagged[fold] {
+				flagged[fold] = true
 				report.Problems = append(report.Problems, Problem{
-					Name: prefix + ancestor, Kind: "file-vs-prefix",
-					Detail: fmt.Sprintf("object %q needs to be both a file and the directory holding %q", ancestor, name),
+					Name: prefix + file, Kind: "file-vs-prefix",
+					Detail: fmt.Sprintf("object %q needs to be both a file and the directory holding %q", file, name),
 					Reject: true,
 				})
 			}

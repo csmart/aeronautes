@@ -55,14 +55,14 @@ func Download(ctx context.Context, src *swiftcontrol.Session, engine Engine, src
 		}
 		folded[fold] = true
 		if !item.Dir {
-			files[relative] = true
+			files[fold] = true
 		}
 	}
 	for _, item := range preflight.Items {
 		relative := strings.TrimPrefix(item.Name, prefix)
 		for separator := strings.LastIndexByte(relative, '/'); separator >= 0; separator = strings.LastIndexByte(relative, '/') {
 			relative = relative[:separator]
-			if files[relative] {
+			if files[strings.ToLower(relative)] {
 				return nil, errors.New("download selection needs the same path as a file and a directory")
 			}
 		}
