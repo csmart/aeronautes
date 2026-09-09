@@ -5059,6 +5059,17 @@ Unicode normalization, directory-only aliases, reserved names, encoding collisio
 Selected-root lifetime, concurrent parent/root replacement, publication and cleanup authority remain separate P18/P20/P30 work.
 This bounded correction does not close P18, P19 or the valuable-data hold.
 
+The next bounded UI-12 sequence addresses normal-text contrast within the existing warm visual system, using the [current-source reproduction and plan](experiments/2026-09-09-text-contrast.md).
+First review that plan and its actual foreground/background inventory before changing production styles.
+The chosen normal-text target is at least 4.5:1 without rounding, including active muted help, state labels and enabled placeholders; actual inactive controls retain their existing native disabled semantics.
+Then correct only the demonstrated colour-token values, keep automatic and explicit dark declarations identical, and give input/textarea placeholders an opaque faint-token colour without replacing native appearance or forced-colour adjustment.
+Keep the typography, warm surfaces, layout, event handlers, transfer authority and existing focus treatment unchanged.
+In the same logical correction, add maintained checks for the actual text pairs and placeholder rule, preserve passing controls, and prove that the old palette and independently omitted corrections fail those checks.
+Require existing theme/component tests, the full frontend checks and an attributed native build with separate light/dark normal, hover, focus, error and disabled-state observations before independent implementation review.
+Preserve every failed producer and distinguish authored-colour ratios, isolated renderer controls and actual application observations.
+Final-base review and all five protected PR/master jobs remain required before delivery; root coordination owns that delivery order.
+Forced colours, scaling, assistive technology, other native platforms, broader UI-12/P29 certification and the valuable-data hold remain open.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
