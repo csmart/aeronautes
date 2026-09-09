@@ -5012,6 +5012,8 @@ Its [independent review and protected PR67 delivery](experiments/2026-09-09-down
 That evidence is separate from the pending stage-lifecycle, native-closure and download-recording changes; it grants no valuable-data clearance.
 The [engine-stage correction](experiments/2026-09-09-download-stage.md) refuses existing stages, removes only permitted empty directories and preserves successful placement beside checked cleanup issues.
 Actual-service and pinned-child faults check retained unrelated entries, exact copied-byte facts, matching durable outcomes and unchanged collateral; independent review and protected delivery remain required.
+The [native closure correction](experiments/2026-09-09-download-close.md) checks source/file close before final placement and preserves primary, cleanup and already-placed copy facts separately.
+Actual-service cases on both owned providers preserve full content and durable outcomes for close corruption, raced targets and simultaneous cleanup refusals; independent review and protected delivery remain required.
 Maintain actual-service fault regressions with complete allowed-effect and collateral witnesses for each correction; an executor-only probe must not be promoted into broader evidence without its actual service boundary.
 Only after these prerequisites pass should the separate checked download adapter, directory-marker and temporary-stage identity contract be reviewed and implemented.
 Download record version zero and every wider valuable-data release gate remain in force.

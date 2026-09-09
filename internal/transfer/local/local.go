@@ -14,7 +14,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -405,12 +404,8 @@ func Download(ctx context.Context, src *swiftcontrol.Session, engine Engine, src
 			progress()
 		case item.Route == "native":
 			report.NativeRouted++
-			if err := nativeDownload(ctx, src, container, item, destDir); err != nil {
-				fail(item.Name, "native-get", err)
-			} else {
-				report.Done++
-				report.Bytes += item.Size
-			}
+			placed, err := nativeDownload(ctx, src, container, item, destDir)
+			report.nativeDownloaded(item, placed, err)
 			progress()
 		default:
 			rel := strings.TrimPrefix(item.Name, prefix)
@@ -491,46 +486,23 @@ func placeDownloaded(staged, target string, wantSize int64) (bool, error) {
 	return true, os.Remove(staged)
 }
 
-func nativeDownload(ctx context.Context, src *swiftcontrol.Session, container string, item DownloadItem, destDir string) error {
+func nativeDownload(ctx context.Context, src *swiftcontrol.Session, container string, item DownloadItem, destDir string) (bool, error) {
 	body, _, err := src.OpenObject(ctx, container, item.Name)
 	if err != nil {
-		return err
+		return false, err
 	}
-	defer body.Close()
 	target := filepath.Join(destDir, item.RelPath)
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		return err
+		return false, errors.Join(err, body.Close())
 	}
 	// Private temp beside the target, fsync, then a no-replace move: a
 	// failed read never leaves a partial file at the final name, and
 	// the byte count must match the preflight before the move.
 	temp, err := os.CreateTemp(filepath.Dir(target), ".aeronautes-part-*")
 	if err != nil {
-		return err
+		return false, errors.Join(err, body.Close())
 	}
-	defer os.Remove(temp.Name())
-	written, err := io.Copy(temp, body)
-	if err != nil {
-		temp.Close()
-		return err
-	}
-	if written != item.Size {
-		temp.Close()
-		return fmt.Errorf("wrote %d bytes, object says %d — refusing to place a short file", written, item.Size)
-	}
-	if err := temp.Sync(); err != nil {
-		temp.Close()
-		return err
-	}
-	if err := temp.Close(); err != nil {
-		return err
-	}
-	// os.Link is a true no-replace landing: EEXIST if anything appears
-	// at the target between the preflight and now (review F-09).
-	if err := os.Link(temp.Name(), target); err != nil {
-		return err
-	}
-	return nil
+	return finishNativeDownload(body, temp, temp.Name(), target, item.Size)
 }
 
 // copyWithAuthRetry mirrors the executor's bounded auth lifecycle for
