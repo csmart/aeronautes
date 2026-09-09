@@ -17,6 +17,7 @@
   import CredentialStatusDialog from "./CredentialStatusDialog.svelte";
   import DeleteDialog from "../transfer/DeleteDialog.svelte";
   import { BrowserState } from "./browserState.svelte";
+  import { activeModal } from "../../lib/trapFocus";
 
   const browser = new BrowserState(liveApi);
 
@@ -57,6 +58,7 @@
     return (
       target instanceof HTMLInputElement ||
       target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLSelectElement ||
       (target instanceof HTMLElement && target.isContentEditable)
     );
   }
@@ -64,27 +66,7 @@
   // §4.4: Backspace or Alt+↑ goes to the parent prefix; "/" focuses the
   // server prefix field. Never while typing in a field.
   function handleKeydown(event: KeyboardEvent) {
-    if (
-      editorOpen ||
-      createOpen ||
-      aboutOpen ||
-      credentialStatusOpen ||
-      browser.transferOpen ||
-      browser.localTransfer !== null ||
-      browser.deleteOpen
-    ) {
-      if (event.key === "Escape") {
-        editorOpen = false;
-        createOpen = false;
-        aboutOpen = false;
-        credentialStatusOpen = false;
-        browser.transferOpen = false;
-        browser.localTransfer = null;
-        browser.deleteOpen = false;
-      }
-      return;
-    }
-    if (isEditing(event.target)) {
+    if (event.defaultPrevented || activeModal() || isEditing(event.target)) {
       return;
     }
     if (event.key === "Backspace" || (event.altKey && event.key === "ArrowUp")) {

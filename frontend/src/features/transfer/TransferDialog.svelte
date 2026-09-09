@@ -131,7 +131,7 @@
 </script>
 
 <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && close()}>
-  <div class="dialog" role="dialog" aria-label="Transfer" tabindex="-1" use:trapFocus>
+  <div class="dialog" role="dialog" aria-modal="true" aria-label="Transfer" tabindex="-1" use:trapFocus={close}>
     <header>
       <div class="modes" role="tablist">
         <button

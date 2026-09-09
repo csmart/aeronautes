@@ -64,13 +64,6 @@
     }
   });
 
-  function onKeydown(event: KeyboardEvent) {
-    if (event.key === "Escape") {
-      event.stopPropagation();
-      close();
-    }
-  }
-
   // Segment deletion is ALWAYS force-gated now (R-02): ownership
   // evidence is advisory until a live reference scan exists, so even a
   // "proven" prefix requires the typed confirmation before its backing
@@ -99,11 +92,9 @@
   }
 </script>
 
-<svelte:window onkeydown={onKeydown} />
-
 <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && close()}>
-  <div class="dialog" role="alertdialog" aria-label="Delete manifest"
-    use:trapFocus>
+  <div class="dialog" role="alertdialog" aria-label="Delete manifest" aria-modal="true" tabindex="-1"
+    use:trapFocus={close}>
     <h2 class="title">Delete {target.detail.class.toUpperCase()} manifest</h2>
     <p class="what">
       <span class="type-mono">{target.request.name}</span> will be deleted. The logical object stops

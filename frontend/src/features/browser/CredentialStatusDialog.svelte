@@ -17,7 +17,7 @@
     aria-modal="true"
     aria-labelledby="credential-status-title"
     tabindex="-1"
-    use:trapFocus
+    use:trapFocus={onClose}
   >
     <header>
       <h2 id="credential-status-title">Credential cleanup</h2>
