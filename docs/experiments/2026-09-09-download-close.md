@@ -91,6 +91,29 @@ Go vet, the native production build, the internal build without CGO, frontend as
 All 22 regenerated bridge files are unchanged.
 Independent local review, protected PR delivery and all five resulting master checks remain required.
 
+## Maintained review follow-ups
+
+Independent review approved the native correction while identifying two gaps in the maintained tests: a weakened length check accepting extra bytes, and missing source closure after destination admission fails.
+The production implementation already refuses the grown object and checks both admission-close paths.
+These follow-ups strengthen regression evidence without changing production behaviour.
+
+The [closure test](../../internal/transfer/local/download_close_test.go) now includes an object longer than its planned size and requires refusal, no final file, one close attempt per handle and no temporary residue.
+The [admission tests](../../internal/transfer/local/download_admission_test.go) call the actual native download helper through a mock Swift session whose GET response body records close attempts.
+They require exactly one close after an existing destination file refuses directory creation or an owned directory's permissions refuse temporary-file creation.
+Each path has a successful-close control and a refused-close case; the latter must retain both filesystem and source-close causes.
+Existing local file and sentinel bytes remain unchanged, with no admitted temporary or final name.
+The counting transport is captured in one sequential test session and the default transport is restored immediately after session creation; no production hook is added.
+This is native-helper/transport evidence, not a new actual-service admission or platform certification.
+
+The focused follow-up producer passes sixteen named tests with race detection and no failures or skips.
+Five broken overlays accepting growth, omitting either admission close or ignoring either close error are detected in seven failing leaves with eleven passing controls.
+The complete `download-admission-full-v1` race/coverage producer passes 2,486 named tests across twenty packages with zero failures or skips and 86.9% statement coverage.
+All 2,480 preceding tests remain alongside six new named tests, including checked timestamps for the existing generated expiry name.
+Its 326 captured Go/SQL hashes identify the uncommitted test draft at recorded HEAD `0204d81d5b1d1f0ecf26964a506b11e22f4c4aa9`; production code is unchanged.
+The system package takes 682.678 seconds with fourteen parallel groups, the unchanged limit of three and no sequential overlap.
+Scenario reconciliation remains valid at 40/116 cells with 38/52 actions having gaps, and all release gates remain open.
+Independent local review and protected delivery of these follow-up tests remain required.
+
 With the owned two-account SAIO fixture configured and verified pinned rclone available, the focused replay is:
 
 ```sh
