@@ -189,7 +189,9 @@ Confidence: high static evidence; native accessibility behavior remains unverifi
 Current disposition: [PR72's bounded keyboard/modal correction](../../experiments/2026-09-09-keyboard-scope.md#protected-delivery) is delivered with independent review and all five PR/master checks.
 Global browser keys now respect editable/select targets, consumed events and active modal ownership; the focus action accounts for visible controls, nested modals, inert backgrounds and opener availability.
 The [separate asynchronous Preview correction](../../experiments/2026-09-09-preview-focus.md) addresses native focus loss during planning without authorising Start.
-The historical findings above remain the before evidence; remaining sensitive labels, tab/shortcut patterns, native screen-reader/select journeys and broader UI-11/P29 acceptance remain open.
+The [bounded sensitive-label correction](../../experiments/2026-09-09-sensitive-labels.md#protected-delivery) connects Find, ACL add/raw, audit-filter, benchmark-confirmation and segment-force labels to the appropriate current controls with per-instance IDs, preserving literal values, exact guards and explicit submission.
+Transfer destination controls already have accessible names and remain covered by an unchanged positive control.
+The historical findings above remain the before evidence; tab/shortcut patterns, native screen-reader/select journeys and broader UI-11/P29 acceptance remain open.
 
 ### UI-12 — P2: text contrast is insufficient for the dense control typography
 
