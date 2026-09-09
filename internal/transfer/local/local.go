@@ -348,6 +348,7 @@ type Report struct {
 	// Bound the examples without truncating the issue count (ADR 0023).
 	PostCommitIssues       int64
 	PostCommitIssueSamples []Failure
+	StageCleanup           *StageCleanupResult
 	// CapturedPrefixes: large uploads segment like any engine write.
 	CapturedPrefixes []rclone.SegmentPrefix
 }
@@ -368,6 +369,9 @@ func Download(ctx context.Context, src *swiftcontrol.Session, engine Engine, src
 	preflight *DownloadPreflight, onProgress func(done, total, bytes int64)) (*Report, error) {
 	if !validDownloadRoot(destDir) {
 		return nil, errors.New(downloadPathRefusal)
+	}
+	if preflight == nil {
+		return nil, errors.New("download needs a preflight plan")
 	}
 	if preflight.Rejected() {
 		return nil, errors.New("preflight rejected the download; nothing was written")
@@ -424,10 +428,12 @@ func Download(ctx context.Context, src *swiftcontrol.Session, engine Engine, src
 		// final path, and each file moves into place no-replace with an
 		// exact byte check (the follow-up review's G2/G16 remainder).
 		stageDir := filepath.Join(destDir, ".aeronautes-stage-"+stageID)
-		if err := os.MkdirAll(stageDir, 0o700); err != nil {
+		if err := os.Mkdir(stageDir, 0o700); err != nil {
 			return report, err
 		}
-		defer os.RemoveAll(stageDir)
+		defer func() {
+			report.StageCleanup = cleanupDownloadStage(stageDir, engineItems)
+		}()
 		result, err := copyWithAuthRetry(ctx, src, engine, srcSpec+"/"+strings.TrimSuffix(prefix, "/"), stageDir, engineNames, nil)
 		if err == nil {
 			err = transfercopy.ResultFailure(result)
@@ -442,11 +448,15 @@ func Download(ctx context.Context, src *swiftcontrol.Session, engine Engine, src
 				item := engineItems[rel]
 				staged := filepath.Join(stageDir, item.RelPath)
 				target := filepath.Join(destDir, item.RelPath)
-				if err := placeDownloaded(staged, target, item.Size); err != nil {
-					fail(item.Name, "place", err)
-				} else {
+				placed, err := placeDownloaded(staged, target, item.Size)
+				if placed {
 					report.Done++
 					report.Bytes += item.Size
+					if err != nil {
+						report.postCommitIssue(item.Name, "staging-cleanup", err)
+					}
+				} else if err != nil {
+					fail(item.Name, "place", err)
 				}
 				progress()
 			}
@@ -459,16 +469,16 @@ func Download(ctx context.Context, src *swiftcontrol.Session, engine Engine, src
 // byte check first, then os.Link — a true no-replace landing (EEXIST if
 // anything is already at the target), never a replacement-capable
 // rename.
-func placeDownloaded(staged, target string, wantSize int64) error {
+func placeDownloaded(staged, target string, wantSize int64) (bool, error) {
 	info, err := os.Stat(staged)
 	if err != nil {
-		return fmt.Errorf("missing after download (silent drop?): %w", err)
+		return false, fmt.Errorf("missing after download (silent drop?): %w", err)
 	}
 	if info.Size() != wantSize {
-		return fmt.Errorf("size %d != object %d", info.Size(), wantSize)
+		return false, fmt.Errorf("size %d != object %d", info.Size(), wantSize)
 	}
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		return err
+		return false, err
 	}
 	// os.Link is a true no-replace landing (EEXIST if anything appears
 	// at the target) — a rename would replace whatever won the race.
@@ -476,9 +486,9 @@ func placeDownloaded(staged, target string, wantSize int64) error {
 	// volume on the happy path since the stage dir sits beside the
 	// target; cross-device atomicity is the §65.10 platform matrix.)
 	if err := os.Link(staged, target); err != nil {
-		return err
+		return false, err
 	}
-	return os.Remove(staged)
+	return true, os.Remove(staged)
 }
 
 func nativeDownload(ctx context.Context, src *swiftcontrol.Session, container string, item DownloadItem, destDir string) error {

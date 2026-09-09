@@ -25,6 +25,13 @@ func WireFilePicker(s *TransferService, picker FilePicker) {
 	s.setFilePicker(picker)
 }
 
+// Configure before starting jobs. Each download captures this boundary
+// so an owned fixture can acknowledge engine exit before placement;
+// keeping it off the service methods excludes it from the bridge.
+func WireDownloadStageBoundary(s *TransferService, boundary func(context.Context, string) error) {
+	s.downloadStageBoundary = boundary
+}
+
 // RunStartupRetention applies the persisted §51 retention policy.
 func RunStartupRetention(ctx context.Context, s *SettingsService, jobStore *jobs.Store, auditStore *audit.Store) {
 	s.runRetention(ctx, jobStore, auditStore)
