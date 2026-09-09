@@ -1,0 +1,706 @@
+{
+  "scope": "recorded evidence only; no candidate acceptance or valuable-data clearance",
+  "input_application_revision": "f88114958c7f5211b8953e0c757687146a4c4f5d",
+  "pin_version": "v1.74.3",
+  "scan_precision": "module-version fallback; protocol function fields do not establish binary linkage or reachability",
+  "scanner_version": "govulncheck v1.7.0",
+  "scanner_sha256": "ef8bd4dac6956e563c4162adcbddf3b3766143f851c18666d9a1d04c91420cbd",
+  "candidate_version": "v1.75.1",
+  "candidate_published_at": "2026-09-04T17:11:27Z",
+  "candidate_executed": false,
+  "candidate_accepted": false,
+  "baseline_database": {
+    "archive_bytes": 18425832,
+    "archive_pax_headers": {
+      "comment": "fc5d44d2e19322760d54ba05819057cfbfe803c2"
+    },
+    "archive_sha256": "fa24a0544fdb3427812a6328ac8514c97b349f9b381c13b73086a82093d7b79b",
+    "final_url": "https://codeload.github.com/golang/vulndb/tar.gz/refs/heads/master",
+    "finished": "2026-09-09T17:00:09.905814+00:00",
+    "osv_entry_count": 4378,
+    "scope": "whole public Go database GET; no application dependency metadata was sent; only OSV JSON was extracted",
+    "source_url": "https://codeload.github.com/golang/vulndb/tar.gz/refs/heads/master",
+    "started": "2026-09-09T17:00:07.645372+00:00"
+  },
+  "candidate_database": {
+    "archive_bytes": 18426501,
+    "archive_pax_headers": {
+      "comment": "c1fc9ed8a61223797c096857356d32f4f36ca0dc"
+    },
+    "archive_sha256": "e8bb2a2053d9e721140191e9cae370fb89208a3ab74556aaf92694d8b8526293",
+    "final_url": "https://codeload.github.com/golang/vulndb/tar.gz/refs/heads/master",
+    "finished": "2026-09-09T18:05:53.073834+00:00",
+    "osv_entry_count": 4379,
+    "scope": "whole public Go database GET; no application dependency metadata was sent; only OSV JSON was extracted",
+    "source_url": "https://codeload.github.com/golang/vulndb/tar.gz/refs/heads/master",
+    "started": "2026-09-09T18:05:51.553717+00:00"
+  },
+  "database_delta": {
+    "added": [
+      "GO-2026-6302.json"
+    ],
+    "changed": [],
+    "removed": []
+  },
+  "accepted_sidecars": [
+    {
+      "target": "linux-amd64",
+      "binary_sha256": "9700aa1273ac73d6d0833c43ba63fe830516422cb131960b8c1a24ced789cba0",
+      "advisory_count": 42,
+      "finding_messages": 566,
+      "module_entries": 246,
+      "raw_sha256": "ed4d2ac7abc35935c9a097a19be35ca8eac43ead072e0300f74c4e495f563bcf"
+    },
+    {
+      "target": "linux-arm64",
+      "binary_sha256": "646d2db7e701a4d41d39ed38a71f63373ab051b270ee5f0d6ae14b24cc17c923",
+      "advisory_count": 42,
+      "finding_messages": 566,
+      "module_entries": 246,
+      "raw_sha256": "a9d56bb0a07303fa4072e25ae37bc2bb0c1c96882dacd42642260542f588cc92"
+    },
+    {
+      "target": "darwin-amd64",
+      "binary_sha256": "830416be0a57ccab22970ea58afe92f491547989c24bc587afc5ed7322a73b72",
+      "advisory_count": 42,
+      "finding_messages": 566,
+      "module_entries": 247,
+      "raw_sha256": "bee5de4f56983b852b7c1eca4efca2913070583e6b1651100200771720816455"
+    },
+    {
+      "target": "darwin-arm64",
+      "binary_sha256": "9a156afbdd0a6ade42b0b40e7c30240119e2c82914bc8d7059a94dd9242ca2ed",
+      "advisory_count": 42,
+      "finding_messages": 566,
+      "module_entries": 246,
+      "raw_sha256": "9259421e86667ac7daad3afba963763e18bfd91f94b567234908d5f01912d272"
+    },
+    {
+      "target": "windows-amd64",
+      "binary_sha256": "3ac0dba3a883555f0c0daabc8a87c8f78e531f339780335e07beadf77734b5bc",
+      "advisory_count": 42,
+      "finding_messages": 566,
+      "module_entries": 244,
+      "raw_sha256": "b18411bae11dce0142e5577b991959519f928058eb3d5307c868f1e6802683f6"
+    },
+    {
+      "target": "windows-arm64",
+      "binary_sha256": "2f33f5256966448b929e925c6b19be9e3746e3e55d42e643ac957ee10f98472b",
+      "advisory_count": 42,
+      "finding_messages": 566,
+      "module_entries": 244,
+      "raw_sha256": "a50ddf5f12f0bb218f128967e77e642300f11ee9ee07f6f04c1b824b12b457e7"
+    }
+  ],
+  "candidate_sidecars": [
+    {
+      "target": "linux-amd64",
+      "upstream_url": "https://downloads.rclone.org/v1.75.1/rclone-v1.75.1-linux-amd64.zip",
+      "archive_sha256": "982b5aa772841168f8e380f139e9e787b2a105403e32b94da8676a0e1c0a13ab",
+      "binary_sha256": "f66d8c1d552ad90296a11bc8b46d56a7fa5da1a7fa05e7ca522d95df92c4a4c0",
+      "go_version": "go1.26.8",
+      "main_module_version": "v1.75.1+dirty",
+      "source_revision": "687d264b689b8c49a67e2e52a8a5e0caa01c04ce",
+      "source_modified": "true",
+      "module_entries": 246,
+      "raw_scan_sha256": "2cd12956e0986fb83c76247af528de648e833d8d69a740a5d6f3334a0b09fa34",
+      "finding_messages": 15,
+      "advisory_ids": [
+        "GO-2026-5932"
+      ],
+      "raw_buildinfo_sha256": "1685ac08721bb9faeb097cbf0efeadce03cfd00fb02803ac83fbdf4abd7a2fc3"
+    },
+    {
+      "target": "linux-arm64",
+      "upstream_url": "https://downloads.rclone.org/v1.75.1/rclone-v1.75.1-linux-arm64.zip",
+      "archive_sha256": "03f2504174034b6d004152ed7369251c9a9ec1f7e0836eda420f5c7a5ec0dff9",
+      "binary_sha256": "d7ecfc17726b34f95c5f7ea9470862c2aef53dce1bb0677b83142ca38503f489",
+      "go_version": "go1.26.8",
+      "main_module_version": "v1.75.1+dirty",
+      "source_revision": "687d264b689b8c49a67e2e52a8a5e0caa01c04ce",
+      "source_modified": "true",
+      "module_entries": 246,
+      "raw_scan_sha256": "ae7d0524c79978720563d60dbd759e856b17271a110bf1de5b756a0b14387f77",
+      "finding_messages": 15,
+      "advisory_ids": [
+        "GO-2026-5932"
+      ],
+      "raw_buildinfo_sha256": "e2d2a3211d56ab7a1f1648c0f4da49b4b0ea03a8dd6228abffd531c9c512824d"
+    },
+    {
+      "target": "darwin-amd64",
+      "upstream_url": "https://downloads.rclone.org/v1.75.1/rclone-v1.75.1-osx-amd64.zip",
+      "archive_sha256": "29253d0288b8fbbac46baad6e5f6add6cb01d462c79f10805bbd4631c4cdf82c",
+      "binary_sha256": "67286994be6b150c8f33d70dbafb4256897b008714bc39f3727585a598ec0d31",
+      "go_version": "go1.26.8",
+      "main_module_version": "v1.75.1",
+      "source_revision": "687d264b689b8c49a67e2e52a8a5e0caa01c04ce",
+      "source_modified": "false",
+      "module_entries": 247,
+      "raw_scan_sha256": "62ec95fb4e74870b82bae43713f4e303f43097b16fd930c1083da5ea61151b14",
+      "finding_messages": 15,
+      "advisory_ids": [
+        "GO-2026-5932"
+      ],
+      "raw_buildinfo_sha256": "d984e1830096ac47025c56bc809cd19b84508e12b8fc8244aef02dd5a1863aa2"
+    },
+    {
+      "target": "darwin-arm64",
+      "upstream_url": "https://downloads.rclone.org/v1.75.1/rclone-v1.75.1-osx-arm64.zip",
+      "archive_sha256": "c61d7a371c62bcbbe882c3423aa4b8bf63485c248dd0f692997b8f0c3f6d0c6f",
+      "binary_sha256": "bfe4a146980f07de56e7dc0115cf562aaad5c81fd10ef9b0f36f777eba0ab031",
+      "go_version": "go1.26.8",
+      "main_module_version": "v1.75.1",
+      "source_revision": "687d264b689b8c49a67e2e52a8a5e0caa01c04ce",
+      "source_modified": "false",
+      "module_entries": 246,
+      "raw_scan_sha256": "4f00bc6c82bcb4913b2c36f388e932ae58d73661b736387dfd21e3884bc04c1d",
+      "finding_messages": 15,
+      "advisory_ids": [
+        "GO-2026-5932"
+      ],
+      "raw_buildinfo_sha256": "bc62b8b376c487ebab6748e576166c6a2b6135f5a44c1478640996a1b191eaf9"
+    },
+    {
+      "target": "windows-amd64",
+      "upstream_url": "https://downloads.rclone.org/v1.75.1/rclone-v1.75.1-windows-amd64.zip",
+      "archive_sha256": "200eb602c126d82aa38b51e0f6b9ae837473ff99b51278d3f6f837574c494d6e",
+      "binary_sha256": "033eee51c9ad47c2de2624b6674d355274bcd6cf0027a5f85db4437ba24ae81c",
+      "go_version": "go1.26.8",
+      "main_module_version": "v1.75.1",
+      "source_revision": "687d264b689b8c49a67e2e52a8a5e0caa01c04ce",
+      "source_modified": "false",
+      "module_entries": 244,
+      "raw_scan_sha256": "e3f58acf45c80809df087e0c967012f93c3c7506cdf568d8d04b97583d21cf02",
+      "finding_messages": 15,
+      "advisory_ids": [
+        "GO-2026-5932"
+      ],
+      "raw_buildinfo_sha256": "7efcca8bc9119b0a4448b978348118a32dd6b902c7e0c229e46abbf48a3503e4"
+    },
+    {
+      "target": "windows-arm64",
+      "upstream_url": "https://downloads.rclone.org/v1.75.1/rclone-v1.75.1-windows-arm64.zip",
+      "archive_sha256": "c3c6cd0424dd49076ad179c30c3f9e5cde2c004ec07ea9fe6911f23e32eafe0f",
+      "binary_sha256": "cfc4d92e517649774330c5d007afb87a2042a3a61b3b3fe51d837df4931e196c",
+      "go_version": "go1.26.8",
+      "main_module_version": "v1.75.1",
+      "source_revision": "687d264b689b8c49a67e2e52a8a5e0caa01c04ce",
+      "source_modified": "false",
+      "module_entries": 244,
+      "raw_scan_sha256": "2fc06581543f08bf2fea923a831be97645344e5bbc54edec9a816bcc19427c1e",
+      "finding_messages": 15,
+      "advisory_ids": [
+        "GO-2026-5932"
+      ],
+      "raw_buildinfo_sha256": "c27282f4cc9a4fe3cb9b71f935258b73f935e27fdd2ac784d9940de6240bc48c"
+    }
+  ],
+  "advisory_comparisons": [
+    {
+      "id": "GO-2026-4961",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-4961",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "golang.org/x/image v0.45.0"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "b65b557b4255af063e3ea3daeea9399fb62526c9becc6b4ee8792e9e7053ced8"
+    },
+    {
+      "id": "GO-2026-4970",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-4970",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "stdlib go1.26.8"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "75ca0f62a6798bb6ecf12bb140edb7867263e574ea5e964c3a1fb93d382fe877"
+    },
+    {
+      "id": "GO-2026-5026",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-5026",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "golang.org/x/net v0.57.0",
+        "stdlib go1.26.8"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "7470cc28e6269ac382e6299858977b89549a98c459a515c0f339e7490b0a4621"
+    },
+    {
+      "id": "GO-2026-5051",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-5051",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "github.com/cloudsoda/go-smb2 v0.0.0-20260701064823-d8c5600d73b8"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "73cb530fb3591fc718c8ed0e6f93de53b8e346a28eea0617c91f76dd5f64998e"
+    },
+    {
+      "id": "GO-2026-5061",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-5061",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "golang.org/x/image v0.45.0"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "e0ede272560d0c06c497c2b58d23a9d65b1b99ccc8e371f22afab74784a8bfd3"
+    },
+    {
+      "id": "GO-2026-5062",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-5062",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "golang.org/x/image v0.45.0"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "8f1e6dfe46c92d99130632e01a971558bb6dbc2c5d907811f79321277266e1fa"
+    },
+    {
+      "id": "GO-2026-5066",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-5066",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "golang.org/x/image v0.45.0"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "77834735eb3d88b0b8684fc2160b8499a4b237d447d531d6bc1f1423a919061a"
+    },
+    {
+      "id": "GO-2026-5158",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-5158",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "go.opentelemetry.io/otel v1.44.0"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "a00782fcadade2235c56bc78e1a4a956fbc934d48204df5c24cf97d9b84a1a5c"
+    },
+    {
+      "id": "GO-2026-5774",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-5774",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "github.com/go-chi/chi/v5 v5.3.1"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "59aaafe03939fecc72a5dd0b872b93688877e725cfda60dbe4c754854d11e86a"
+    },
+    {
+      "id": "GO-2026-5775",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-5775",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "github.com/go-chi/chi/v5 v5.3.1"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "a882942792474d21a4cc839d948274583255dd138cbbb322a141b08bd1ce259e"
+    },
+    {
+      "id": "GO-2026-5777",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-5777",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "github.com/go-chi/chi/v5 v5.3.1"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "edef566ad9d02fbda7ea805cdfca44916665b68633ba1cc78167927986db75bc"
+    },
+    {
+      "id": "GO-2026-5841",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-5841",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "github.com/klauspost/compress v1.19.0"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "d9f378fa751658db4ce06bb97e94d36fac333ecee3fe26f67b1fe3cf718d0a47"
+    },
+    {
+      "id": "GO-2026-5856",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-5856",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "stdlib go1.26.8"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "ce150471f3fb94f54d9d807a372ed03d30561beffee24cccc27b8c8c6672bece"
+    },
+    {
+      "id": "GO-2026-5932",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-5932",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 6,
+      "observed_candidate_module_versions": [
+        "golang.org/x/crypto v0.56.0"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "03ad6e02d8be2a09d1b6ed268d8db304684daf85266154ae699bd0446838e24d"
+    },
+    {
+      "id": "GO-2026-5942",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-5942",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "golang.org/x/net v0.57.0",
+        "stdlib go1.26.8"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "f521653d946af0e9e086a9f302ec271977aca1d37170f522da19bd85f8fd091c"
+    },
+    {
+      "id": "GO-2026-5970",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-5970",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "golang.org/x/text v0.41.0"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "50afe3fc28952525c6c7f0476a0fe1e11dfc024472011d56da5ce860013a5da2"
+    },
+    {
+      "id": "GO-2026-5972",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-5972",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "stdlib go1.26.8"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "b29afc3e6e64a38248cdac1af1c471737e57e043e6baf086a6746db32570ea60"
+    },
+    {
+      "id": "GO-2026-6061",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6061",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "google.golang.org/grpc v1.84.0-dev.0.20260723093437-b6eac429d7b6"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "9895923b90063d54ba91d14e75b547b2c9423b7c9ebfca31466a80b120c3214e"
+    },
+    {
+      "id": "GO-2026-6088",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6088",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "stdlib go1.26.8"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "aece7d85212cb95a1eeed5f71a6d20cdcee7dff2f30fae5488c9e7e2eca5c693"
+    },
+    {
+      "id": "GO-2026-6089",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6089",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "stdlib go1.26.8"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "3b24856691f31dc5829945f4f77d84df1261eabd0feb04ed33585473afb48da1"
+    },
+    {
+      "id": "GO-2026-6090",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6090",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "stdlib go1.26.8"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "07e0000e8418a4ede07162731ea705e46c13e7cf3c7542127cbbc0de3432a8aa"
+    },
+    {
+      "id": "GO-2026-6091",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6091",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "stdlib go1.26.8"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "33189ace599afc2f9cb391bf80e534bbe0fcce99b60bf0375b50f1db50ae195f"
+    },
+    {
+      "id": "GO-2026-6181",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6181",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "github.com/rclone/rclone v1.75.1",
+        "github.com/rclone/rclone v1.75.1+dirty"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "145b39cf217e9981b57b1bae26a12a5006dfff703b8e64edc022cf357c904a76"
+    },
+    {
+      "id": "GO-2026-6182",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6182",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "github.com/rclone/rclone v1.75.1",
+        "github.com/rclone/rclone v1.75.1+dirty"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "885a7406dfd659d43a178ac93a55324afad8c115467db5375bac49f3bab9cdda"
+    },
+    {
+      "id": "GO-2026-6183",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6183",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "github.com/rclone/rclone v1.75.1",
+        "github.com/rclone/rclone v1.75.1+dirty"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "883b38e8fa22d5d82552bfa205b15acf9601ff9a266fe34ddadb498d67aef513"
+    },
+    {
+      "id": "GO-2026-6184",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6184",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "github.com/rclone/rclone v1.75.1",
+        "github.com/rclone/rclone v1.75.1+dirty"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "b3eb43f6f023e6858162186193c161ed03eec42dac25e5148b11fab51d2aa560"
+    },
+    {
+      "id": "GO-2026-6185",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6185",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "github.com/rclone/rclone v1.75.1",
+        "github.com/rclone/rclone v1.75.1+dirty"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "cc03c99d57d32e6aebb801d8463409a0c220b1915c1f8e87266bf0e5b6ca39d2"
+    },
+    {
+      "id": "GO-2026-6186",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6186",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "github.com/rclone/rclone v1.75.1",
+        "github.com/rclone/rclone v1.75.1+dirty"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "24dfd9a9544821c0adafdfc78d4447c4d7cb1e18f008de28ccad0dc581dbe723"
+    },
+    {
+      "id": "GO-2026-6187",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6187",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "github.com/rclone/rclone v1.75.1",
+        "github.com/rclone/rclone v1.75.1+dirty"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "3e68581876d4736f3131ac1612e5b5d80d1cdd112f30a2be47cfd3f937d0dd07"
+    },
+    {
+      "id": "GO-2026-6188",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6188",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "github.com/rclone/rclone v1.75.1",
+        "github.com/rclone/rclone v1.75.1+dirty"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "9903f48df25bf84de85b22cca0fe28e16a9a3116e62577466a049dc6e3a64648"
+    },
+    {
+      "id": "GO-2026-6189",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6189",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "github.com/rclone/rclone v1.75.1",
+        "github.com/rclone/rclone v1.75.1+dirty"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "7c9af77ae03a382df74738da20daf332fa7b769d2ba0be9b8e75790a1d3f4ce1"
+    },
+    {
+      "id": "GO-2026-6190",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6190",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "github.com/rclone/rclone v1.75.1",
+        "github.com/rclone/rclone v1.75.1+dirty"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "bca1b5c2014e0e53e0cbfd659ea8842a8041588e20997a01f2c29883b3819610"
+    },
+    {
+      "id": "GO-2026-6191",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6191",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "github.com/rclone/rclone v1.75.1",
+        "github.com/rclone/rclone v1.75.1+dirty"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "60755a17191b66422eeb97f91ae10e968fca888d85f5df03e445b75a068ac4b0"
+    },
+    {
+      "id": "GO-2026-6195",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6195",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "github.com/rclone/rclone v1.75.1",
+        "github.com/rclone/rclone v1.75.1+dirty"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "0aee822fdc2760dcdfe44ee4cb2584de8c160b4028ed7044b74bcaa1a5f65e01"
+    },
+    {
+      "id": "GO-2026-6196",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6196",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "github.com/rclone/rclone v1.75.1",
+        "github.com/rclone/rclone v1.75.1+dirty"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "88f0d07ff76a3920720a76a8d92bba6aceb38298831d5cf87295c4983c5569f5"
+    },
+    {
+      "id": "GO-2026-6197",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6197",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "github.com/rclone/rclone v1.75.1",
+        "github.com/rclone/rclone v1.75.1+dirty"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "248dca8618d130b3957bb516f32a6cc9388b627dc1a85195f37210046be5c967"
+    },
+    {
+      "id": "GO-2026-6199",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6199",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "github.com/rclone/rclone v1.75.1",
+        "github.com/rclone/rclone v1.75.1+dirty"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "b2544421b2172fe329fb0e28967080ca00fc5f0ed3880bebff92f391bf8f00d4"
+    },
+    {
+      "id": "GO-2026-6218",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6218",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "stdlib go1.26.8"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "018788ad0b1c880c724365ba05c84e16298443c073e61d04b835da778e4b2281"
+    },
+    {
+      "id": "GO-2026-6222",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6222",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "golang.org/x/image v0.45.0"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "fb1ad8ebe4c064d3044f828bdcfa8014f29ead6b5e373c2348a54898ebdf2e5b"
+    },
+    {
+      "id": "GO-2026-6303",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6303",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "golang.org/x/crypto v0.56.0"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "43adfd5e5e2c30d8b050f7026188768eb275f3b08040e8ff074ab6ab3e3f3fdc"
+    },
+    {
+      "id": "GO-2026-6354",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6354",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "golang.org/x/crypto v0.56.0"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "e202377be645bcc1a46b2f3246b95740b9a6b548f135d99f11d48adbdf56a58c"
+    },
+    {
+      "id": "GO-2026-6355",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6355",
+      "baseline_targets_reporting": 6,
+      "candidate_targets_reporting": 0,
+      "observed_candidate_module_versions": [
+        "golang.org/x/crypto v0.56.0"
+      ],
+      "accepted_enabled_path_disposition": null,
+      "osv_sha256": "b4e70d7ebbc52c44a4e2e9b40a19277a97ef987a5cecb05b7639c4245afb1f88"
+    }
+  ],
+  "frozen_manifests": [
+    {
+      "name": "p31-dependencies-f8811495-20260910",
+      "sha256": "b53ca3682313b28bee768af98f89a96bfdb3b3ece2db984afb26f8aa963a863d",
+      "files_verified": 160
+    },
+    {
+      "name": "p31-candidate-v1.75.1-20260910",
+      "sha256": "63bd9b00706a4bf50b961fbbcb9f66fdb6b1678d36d224c84afb018a13cb9325",
+      "files_verified": 167
+    },
+    {
+      "name": "p31-openpgp-v1.75.1-20260910",
+      "sha256": "fc4920a3aecd75133809f7ed374d8630dd350ddb9719c85db2a94b97e2e92034",
+      "files_verified": 6981
+    }
+  ],
+  "candidate_assessment_sha256": "206f6b9e8635d2f570ba599c87f159ce1d76f7e8679d70007bcedae4f9292cdb",
+  "precision_erratum_sha256": "10ef41328b26d29ab3c0a81fbb8c171ebacdc3fd269332a3e4bbf69d4ea652f9",
+  "openpgp_source_coverage_sha256": "cf33164812eba6375debb3bcb4634ce1beedb05fe1e894ad60e5adc4436902aa",
+  "openpgp_inspected_dependency_pairs": 27,
+  "openpgp_missing_dependency_pairs": 225,
+  "openpgp_enabled_path_disposition": "unknown",
+  "npm_complete_advisory_scan": false,
+  "p31_complete": false,
+  "valuable_data_clearance": false
+}
