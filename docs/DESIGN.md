@@ -5024,6 +5024,8 @@ The admission follow-ups and mock scheduling prerequisite have passed independen
 The measured hosted runs retain at least 373.943 seconds of package headroom and 436 seconds of integration-job headroom within the existing finite limits.
 Maintain actual-service fault regressions with complete allowed-effect and collateral witnesses for each correction; an executor-only probe must not be promoted into broader evidence without its actual service boundary.
 Only after these prerequisites pass should the separate checked download adapter, directory-marker and temporary-stage identity contract be reviewed and implemented.
+[ADR 0033](adr/0033-download-item-recording.md) proposes that separate contract: exact native/engine temporary intent before effects, checked directory observations, sticky recording-stop and bounded cancellation rules, complete per-name history and item-derived terminal outcomes.
+Review it before application edits, then migrate the executor and first version-one caller together with actual-service SQL/fault, complete 0/1/201/401-name, UI and reopening evidence.
 Download record version zero and every wider valuable-data release gate remain in force.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
