@@ -135,6 +135,9 @@ func (s *TransferService) uploadPreflight(ctx context.Context, req UploadRequest
 	if err != nil {
 		return nil, err
 	}
+	if _, err := req.Settings.forDestination(ctx, session); err != nil {
+		return nil, err
+	}
 	return local.PreflightUpload(ctx, session, req.Container, req.Prefix, paths)
 }
 
@@ -214,17 +217,18 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 	if preflight.Rejected() {
 		return "", errors.New("preflight found problems; resolve them and retry (nothing was written)")
 	}
-	if err := req.Settings.Validate(); err != nil {
+	settings, err := req.Settings.forDestination(ctx, session)
+	if err != nil {
 		return "", err
 	}
-	engine, err := s.localEngine(ctx, session, "aeronautes_dst", req.Settings)
+	engine, err := s.localEngine(ctx, session, "aeronautes_dst", settings)
 	if err != nil {
 		return "", fmt.Errorf("transfer engine: %w", err)
 	}
 	job, err := s.jobs.Create(ctx, jobs.Job{
 		Type:               jobs.TypeUpload,
 		ItemRecordsVersion: 1,
-		Settings:           req.Settings.effectiveJSON(),
+		Settings:           settings.effectiveJSON(),
 		Source:             fmt.Sprintf("%d local files", len(preflight.Items)),
 		Destination:        req.Container + "/" + req.Prefix,
 		DestBookmarkID:     req.BookmarkID,

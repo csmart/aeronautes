@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -138,4 +139,27 @@ func (s TransferSettingsDTO) CheckChunkAgainst(capabilities *swiftcontrol.Capabi
 		}
 	}
 	return nil
+}
+
+// forDestination resolves one chunk value for admission, execution and
+// recording. Unknown capabilities retain the standard default; an
+// advertised smaller maximum constrains even an unset chunk setting.
+func (s TransferSettingsDTO) forDestination(ctx context.Context, destination *swiftcontrol.Session) (TransferSettingsDTO, error) {
+	if err := s.Validate(); err != nil {
+		return TransferSettingsDTO{}, err
+	}
+	capabilities, err := destination.FetchCapabilities(ctx)
+	if err != nil {
+		return TransferSettingsDTO{}, err
+	}
+	if err := s.CheckChunkAgainst(capabilities); err != nil {
+		return TransferSettingsDTO{}, err
+	}
+	if s.ChunkSize == "" {
+		s.ChunkSize = "5Gi"
+		if max := capabilities.MaxFileSize(); max > 0 && max < 5<<30 {
+			s.ChunkSize = fmt.Sprintf("%db", max)
+		}
+	}
+	return s, nil
 }
