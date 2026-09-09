@@ -176,6 +176,8 @@ export function newFakeApi(): Api {
     info: async () => ({
       name: "Aeronautes",
       version: "test",
+      sourceRevision: "test-source",
+      sourceDirty: "unknown",
       wails: "test",
       secretBackend: "session",
     }),
@@ -695,6 +697,8 @@ export function newFakeApi(): Api {
     about: async () => ({
       name: "Aeronautes",
       version: "test",
+      sourceRevision: "test-source",
+      sourceDirty: "unknown",
       wails: "v3",
       secretBackend: "session",
       rclonePin: "v1.74.3",

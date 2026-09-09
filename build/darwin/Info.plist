@@ -13,9 +13,15 @@
 	<key>CFBundleIdentifier</key>
 	<string>io.csmart.aeronautes</string>
 	<key>CFBundleVersion</key>
-	<string>0.1.0</string>
+	<string>{{.NativeVersion}}</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1.0</string>
+	<string>{{.NativeVersion}}</string>
+	<key>AeronautesVersion</key>
+	<string>{{.Version}}</string>
+	<key>AeronautesSourceRevision</key>
+	<string>{{.SourceRevision}}</string>
+	<key>AeronautesSourceDirty</key>
+	<string>{{.SourceDirty}}</string>
 	<key>CFBundleGetInfoString</key>
 	<string>Desktop operator workbench for OpenStack Swift</string>
 	<key>CFBundleIconFile</key>

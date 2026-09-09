@@ -32,6 +32,9 @@
         <span class="type-mono">{about.wails}</span> · pinned rclone
         <span class="type-mono">{about.rclonePin}</span> · secrets: {about.secretBackend}
       </p>
+      <p class="line num">
+        Source <span class="type-mono">{about.sourceRevision}</span> · {about.sourceDirty}
+      </p>
       <p class="line">{about.license}</p>
       <h3>Dependency licences</h3>
       <div class="licenses num">

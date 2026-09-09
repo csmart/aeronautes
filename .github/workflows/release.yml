@@ -10,6 +10,10 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+env:
+  # Branch dispatches are development builds; only a validated tag is a release.
+  AERONAUTES_RELEASE_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -73,10 +77,12 @@ jobs:
       - name: tarball
         run: |
           mkdir -p dist
+          name=$(go run ./build/identity name)
           cp NOTICE bin/NOTICE
-          tar -C bin -czf "dist/aeronautes-linux-${{ matrix.arch }}-UNSIGNED.tar.gz" aeronautes NOTICE
-          cp bin/*.rpm "dist/aeronautes-linux-${{ matrix.arch }}-UNSIGNED.rpm" 2>/dev/null || true
-          cp bin/*.deb "dist/aeronautes-linux-${{ matrix.arch }}-UNSIGNED.deb" 2>/dev/null || true
+          cp bin/build-identity/identity.json bin/build-identity.json
+          tar -C bin -czf "dist/$name.tar.gz" aeronautes NOTICE build-identity.json
+          cp "bin/$name.rpm" "bin/$name.deb" dist/
+          go run ./build/identity record
       # SIGNING (deliberately absent): rpm --addsign / debsigs would go
       # here once release keys exist. Artifacts are honestly UNSIGNED.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -116,14 +122,11 @@ jobs:
       - name: bundle (unsigned)
         run: |
           mkdir -p dist
-          if [ -d bin/aeronautes.app ]; then
-            # The sidecar sits beside the app executable inside the bundle.
-            cp bin/rclone bin/aeronautes.app/Contents/MacOS/rclone
-            cp NOTICE bin/aeronautes.app/Contents/Resources/NOTICE
-            ditto -c -k --keepParent bin/aeronautes.app "dist/aeronautes-macos-${{ matrix.arch }}-UNSIGNED.zip"
-          else
-            ditto -c -k bin "dist/aeronautes-macos-${{ matrix.arch }}-UNSIGNED.zip"
-          fi
+          name=$(go run ./build/identity name)
+          cp bin/rclone bin/aeronautes.app/Contents/MacOS/rclone
+          cp NOTICE bin/aeronautes.app/Contents/Resources/NOTICE
+          ditto -c -k --keepParent bin/aeronautes.app "dist/$name.zip"
+          go run ./build/identity record
       # SIGNING/NOTARISATION (deliberately absent): codesign + notarytool
       # go here once an Apple Developer identity exists. Gatekeeper will
       # warn on these artifacts — that is the honest current state.
@@ -161,8 +164,13 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
+          $artifactName = go run ./build/identity name
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Copy-Item NOTICE bin\NOTICE
-          Compress-Archive -Path bin\* -DestinationPath "dist/aeronautes-windows-${{ matrix.arch }}-UNSIGNED.zip"
+          Copy-Item bin/build-identity/identity.json bin/build-identity.json
+          Compress-Archive -Path bin/aeronautes.exe,bin/rclone.exe,bin/NOTICE,bin/build-identity.json -DestinationPath "dist/$artifactName.zip"
+          go run ./build/identity record
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       # SIGNING (deliberately absent): signtool goes here once a code-
       # signing certificate exists. SmartScreen will warn — honestly.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

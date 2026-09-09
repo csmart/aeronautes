@@ -14,12 +14,20 @@ import (
 // over the bindings bridge is the hello-window proof that the typed
 // service transport works.
 type Info struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
-	Wails   string `json:"wails"`
+	BuildIdentity
+	Name  string `json:"name"`
+	Wails string `json:"wails"`
 	// SecretBackend is "keychain" or "session" (§12.1): the UI must say
 	// visibly when credentials are session-only.
 	SecretBackend string `json:"secretBackend"`
+}
+
+// BuildIdentity includes unknown source state for binaries built without VCS
+// information, so an unstamped binary cannot imply a clean release.
+type BuildIdentity struct {
+	Version        string `json:"version"`
+	SourceRevision string `json:"sourceRevision"`
+	SourceDirty    string `json:"sourceDirty"`
 }
 
 // AppService is the first bound service: shell identity and environment.
@@ -28,13 +36,11 @@ type AppService struct {
 	info Info
 }
 
-// NewAppService builds the service. version is the application version
-// stamped into the binary by the release build ("dev" otherwise);
-// secretBackend names the active SecretStore.
-func NewAppService(version, secretBackend string) *AppService {
+// NewAppService keeps the startup and About identity identical to --version.
+func NewAppService(identity BuildIdentity, secretBackend string) *AppService {
 	return &AppService{info: Info{
+		BuildIdentity: identity,
 		Name:          "Aeronautes",
-		Version:       version,
 		Wails:         wailsVersion(),
 		SecretBackend: secretBackend,
 	}}

@@ -21,17 +21,14 @@ tasks:
           DEV:
             ref: .DEV
     cmds:
-      - go build {{.BUILD_FLAGS}} -o {{.OUTPUT}}
+      - go run ./build/identity build -os darwin -arch {{.ARCH | default ARCH}} -output "{{.OUTPUT}}" -dev={{.DEV | default "false"}}
     vars:
       # Production builds carry `-tags production`, which compiles the wails
       # DevTools capability out entirely (§55) — same policy as linux.
-      BUILD_FLAGS: '{{if eq .DEV "true"}}-buildvcs=false -gcflags=all="-l"{{else}}-tags production -trimpath -buildvcs=false -ldflags="-w -s"{{end}}'
+      BUILD_FLAGS: '{{if eq .DEV "true"}}-gcflags=all="-l"{{else}}-tags production{{end}}'
       DEFAULT_OUTPUT: '{{.BIN_DIR}}/{{.APP_NAME}}'
       OUTPUT: '{{ .OUTPUT | default .DEFAULT_OUTPUT }}'
     env:
-      GOOS: darwin
-      CGO_ENABLED: 1
-      GOARCH: '{{.ARCH | default ARCH}}'
       CGO_CFLAGS: -mmacosx-version-min=10.15
       CGO_LDFLAGS: -mmacosx-version-min=10.15
       MACOSX_DEPLOYMENT_TARGET: "10.15"
@@ -52,7 +49,8 @@ tasks:
       - mkdir -p {{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources
       - cp build/darwin/icons.icns {{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources
       - cp {{.BIN_DIR}}/{{.APP_NAME}} {{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS
-      - cp build/darwin/Info.plist {{.BIN_DIR}}/{{.APP_NAME}}.app/Contents
+      - cp bin/build-identity/Info.plist {{.BIN_DIR}}/{{.APP_NAME}}.app/Contents
+      - cp bin/build-identity/identity.json {{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/build-identity.json
 
   run:
     cmds:

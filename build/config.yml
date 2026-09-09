@@ -1,6 +1,6 @@
 # Wails v3 project configuration (there is no wails.json in v3 — see DESIGN.md §7).
-# When you update `info`, run `wails3 task common:update:build-assets` to refresh
-# generated build assets. Note that this overwrites manual asset edits.
+# This is the development configuration. Release identity is resolved by
+# build/identity; the curated native templates are rendered into bin/.
 version: '3'
 
 # This information is used to generate the build assets.
@@ -11,7 +11,7 @@ info:
   description: "Desktop operator workbench for OpenStack Swift"
   copyright: "(c) 2026 Chris Smart"
   comments: "Swift-aware browsing, inspection, and data movement"
-  version: "0.1.0"
+  version: "0.0.0"
 
 # Dev mode configuration
 dev_mode:

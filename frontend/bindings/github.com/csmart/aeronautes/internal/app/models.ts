@@ -15,8 +15,10 @@ import * as plan$0 from "../transfer/plan/models.js";
  * same commit.
  */
 export interface About {
-    "name": string;
     "version": string;
+    "sourceRevision": string;
+    "sourceDirty": string;
+    "name": string;
     "wails": string;
 
     /**
@@ -456,8 +458,10 @@ export interface FindStatusDTO {
  * service transport works.
  */
 export interface Info {
-    "name": string;
     "version": string;
+    "sourceRevision": string;
+    "sourceDirty": string;
+    "name": string;
     "wails": string;
 
     /**

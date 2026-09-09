@@ -1,12 +1,12 @@
 # nfpm packaging config for deb/rpm — https://nfpm.goreleaser.com
 name: "aeronautes"
-arch: ${GOARCH}
+arch: "{{.Arch}}"
 platform: "linux"
-version: "0.1.0"
+version: "{{.PackageVersion}}"
 section: "utils"
 priority: "optional"
 maintainer: Chris Smart <distroguy@gmail.com>
-description: "Desktop operator workbench for OpenStack Swift"
+description: "Desktop operator workbench for OpenStack Swift ({{.Version}}; source {{.SourceRevision}}; {{.SourceDirty}})"
 vendor: "Aeronautes"
 homepage: "https://github.com/csmart/aeronautes"
 license: "Apache-2.0"
@@ -15,6 +15,8 @@ release: "1"
 contents:
   - src: "./bin/aeronautes"
     dst: "/usr/local/bin/aeronautes"
+  - src: "./bin/build-identity/identity.json"
+    dst: "/usr/share/doc/aeronautes/build-identity.json"
   - src: "./build/appicon.png"
     dst: "/usr/share/icons/hicolor/128x128/apps/aeronautes.png"
   - src: "./build/linux/aeronautes.desktop"
