@@ -5040,6 +5040,22 @@ Reject existing descendant links/reparse entries and inspection uncertainty unde
 Record exact local and remote deltas, actual job/item/audit outcomes, source identity and independent PR/master delivery evidence.
 Stable selected-root lifetime, raced parents, publication and cleanup authority, complete-path identity and native platform acceptance remain separate P18/P19/P20/P30 work, with the valuable-data hold unchanged.
 
+The next bounded [case-folded file/ancestor correction](experiments/2026-09-09-download-path-case.md) applies the already accepted portable identity to planned files and every required ancestor.
+A selected file `Foo` and a selected child `foo/child`, or a directory marker `foo/`, require the same case-folded path to be both a file and a directory.
+Complete-name case-fold checks and case-sensitive ancestor checks separately miss that conflict.
+K-XFER-011, §27.5, §65.9 item 13 and ADR 0034 require whole-selection refusal before the relevant admission boundary.
+This prerequisite preserves exact source, recorded and diagnostic spellings and does not introduce a new materialization policy.
+
+1. Review this sequence and the dedicated experiment plan before implementation.
+2. Add maintained preflight, direct recorded/unrecorded and actual-service native/engine/marker cases, with a safe first member and passing shared-parent controls.
+   Preserve actual baseline failures, complete local and owned remote deltas, full job/item/audit facts, and the distinction between direct invocation and returned-child witnesses.
+   Apply the existing fold identity consistently at preflight and executor entry, then require focused fixed and deliberately broken controls to exercise those boundaries.
+3. Record the relevant complete compatibility, inventory and scenario verification, obtain independent local review, and deliver only the reviewed current-base source through all five protected PR and master checks.
+
+Unicode normalization, directory-only aliases, reserved names, encoding collisions and representative native filesystem acceptance remain separate P19 work.
+Selected-root lifetime, concurrent parent/root replacement, publication and cleanup authority remain separate P18/P20/P30 work.
+This bounded correction does not close P18, P19 or the valuable-data hold.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
