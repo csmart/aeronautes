@@ -5018,7 +5018,9 @@ The [engine-stage correction](experiments/2026-09-09-download-stage.md) refuses 
 Actual-service and pinned-child faults check retained unrelated entries, exact copied-byte facts, matching durable outcomes and unchanged collateral.
 Independent review and [protected PR68 delivery](experiments/2026-09-09-download-stage.md#delivery) passed with all five PR and master jobs green, exact reviewed/merged tree equality and the complete test inventory preserved.
 The [native closure correction](experiments/2026-09-09-download-close.md) checks source/file close before final placement and preserves primary, cleanup and already-placed copy facts separately.
-Actual-service cases on both owned providers preserve full content and durable outcomes for close corruption, raced targets and simultaneous cleanup refusals; independent review and protected delivery remain required.
+Actual-service cases on both owned providers preserve full content and durable outcomes for close corruption, raced targets and simultaneous cleanup refusals.
+Independent review and [protected PR69 delivery](experiments/2026-09-09-download-close.md#protected-delivery) passed with all five PR/master jobs, exact reviewed/merged tree equality and the complete 2,480-test inventory preserved.
+The maintained admission follow-ups and later download recording retain their separate delivery requirements.
 Maintain actual-service fault regressions with complete allowed-effect and collateral witnesses for each correction; an executor-only probe must not be promoted into broader evidence without its actual service boundary.
 Only after these prerequisites pass should the separate checked download adapter, directory-marker and temporary-stage identity contract be reviewed and implemented.
 Download record version zero and every wider valuable-data release gate remain in force.
