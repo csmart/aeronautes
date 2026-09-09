@@ -9,6 +9,7 @@ package systemtest
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"io"
 	"net/http"
@@ -95,7 +96,8 @@ func New(t *testing.T) *Harness {
 	h := &Harness{
 		T: t, ctx: ctx,
 		database: database, jobStore: jobStore, statePath: statePath,
-		ns:        fmt.Sprintf("st%d", time.Now().UnixNano()),
+		// Parallel fixtures cannot rely on clock resolution for namespace isolation.
+		ns:        "st" + rand.Text(),
 		Bookmarks: app.NewBookmarkService(store, connections, jobStore),
 		Browse:    app.NewBrowseService(connections, ev),
 		Inspector: app.NewInspectorService(connections, ev),

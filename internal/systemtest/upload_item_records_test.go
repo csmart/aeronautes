@@ -261,5 +261,8 @@ func uploadItemRecordsCases(t *testing.T, makeHarness func(*testing.T) *Harness)
 	}
 }
 
-func TestUploadItemRecordsMock(t *testing.T)      { uploadItemRecordsCases(t, findMockHarness) }
-func TestUploadItemRecordsRealSwift(t *testing.T) { uploadItemRecordsCases(t, New) }
+func TestUploadItemRecordsMock(t *testing.T) { uploadItemRecordsCases(t, findMockHarness) }
+func TestUploadItemRecordsRealSwift(t *testing.T) {
+	t.Parallel()
+	uploadItemRecordsCases(t, New)
+}

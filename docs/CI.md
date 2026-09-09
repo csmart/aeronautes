@@ -70,6 +70,13 @@ The job cap includes setup time, so a slow fixture start can exhaust it before G
 The growing sequential fault suite exceeded Go's default ten-minute package limit during PR60 and the fifteen-minute limit during PR62; the [diagnosis and validation](experiments/2026-09-08-integration-time-budget.md) distinguish those suite budgets from individual test, request and child-process deadlines.
 The change preserves every assertion, fixture, race/coverage option, producer-exit check, scenario reconciliation and aggregate refusal.
 
+The [bounded SAIO schedule](experiments/2026-09-09-saio-scheduling.md) lets eleven independent real-Swift groups overlap, with `-parallel=3` on both Go CI commands.
+Each group retains its sequential cases and per-harness database, services, local paths and remote namespaces; random namespace text avoids depending on clock resolution for isolation.
+Mock groups that temporarily change process environment stay non-parallel and finish before Go resumes the parallel groups.
+Use `go test -race -count=1 -parallel=3 ./...` for the matching local schedule, retaining the configured owned Swift and optional fixture environment when exercising those lanes.
+No tests or required jobs are removed, and the package/job limits and coverage/reconciliation settings above stay unchanged.
+The evidence record must include the complete inventory comparison and actual hosted duration before maintained download cases are added.
+
 ## September 2026 incident
 
 [PR17](https://github.com/csmart/aeronautes/pull/17) ran all four then-required checks successfully in [run 33974249668](https://github.com/csmart/aeronautes/actions/runs/33974249668), completed at 15:20:54 UTC on 5 September, before merge at 15:24:05 UTC.

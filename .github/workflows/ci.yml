@@ -75,7 +75,7 @@ jobs:
           echo "$RUNNER_TEMP/rclone-pin" >> "$GITHUB_PATH"
           echo "AERONAUTES_OFFICIAL_RCLONE_DIR=$RUNNER_TEMP/rclone-pin" >> "$GITHUB_ENV"
       - name: go test -race
-        run: go test -race -count=1 ./...
+        run: go test -race -count=1 -parallel=3 ./...
 
   frontend:
     name: Frontend — lint, build, test
@@ -186,8 +186,8 @@ jobs:
           # exit code is captured instead of aborting the step early.
           go list ./internal/... > expected-packages.txt
           set +e
-          # Checked item records add measured work to the sequential fault suite.
-          go test -json -v -race -count=1 -timeout=20m -coverprofile=cover.out -coverpkg=./internal/... ./internal/... \
+          # Owned SAIO groups overlap; environment-mutating mock tests stay sequential.
+          go test -json -v -race -count=1 -parallel=3 -timeout=20m -coverprofile=cover.out -coverpkg=./internal/... ./internal/... \
             | tee events.jsonl
           # Capture the WHOLE PIPESTATUS array in one statement: reading it into
           # a scalar first would reset PIPESTATUS before the second element.

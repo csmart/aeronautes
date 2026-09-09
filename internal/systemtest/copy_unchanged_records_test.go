@@ -77,4 +77,7 @@ func copyUnchangedRecords(t *testing.T, h *Harness) {
 
 func TestCopyUnchangedRecordsMock(t *testing.T) { copyUnchangedRecords(t, findMockHarness(t)) }
 
-func TestCopyUnchangedRecordsRealSwift(t *testing.T) { copyUnchangedRecords(t, New(t)) }
+func TestCopyUnchangedRecordsRealSwift(t *testing.T) {
+	t.Parallel()
+	copyUnchangedRecords(t, New(t))
+}
