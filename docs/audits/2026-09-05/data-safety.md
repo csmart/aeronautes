@@ -149,6 +149,10 @@ Preserve no-replace placement at the final leaf.
 Acceptance: pre-existing symlink, symlink planted after preflight, directory marker, native download, engine download, and Windows reparse-point variants produce no outside filesystem delta.
 Probe: `TestAuditDownloadDoesNotEscapePickedDirectory`.
 
+Current disposition: [PR77](../../experiments/2026-09-09-download-admission.md#protected-delivery) delivers the ADR 0034 refusal of evidenced existing destination hazards before Start and before the executor's first effect.
+Both owned providers, direct callers, queued jobs and witnessed inspection errors have maintained regressions; the accepted initial selected-root alias remains supported.
+Stable picker/job root identity, concurrent parent replacement, exact-file publication, cleanup authority and native Windows/macOS acceptance remain open, so DS-05/P18 and the valuable-data release hold are still blocking.
+
 ### DS-06 — High: the cross-platform collision preflight misses case-folded ancestor conflicts
 
 Disposition: newly specified reproducible case within W-11; high confidence for the current policy violation, actual platform materialization still needs native runners.

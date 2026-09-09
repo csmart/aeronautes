@@ -164,3 +164,57 @@ The actual successful scenario reader retains schema three, a complete valid str
 Its incomplete coverage remains unchanged and grants no new scenario credit.
 Independent implementation review and protected delivery remain required.
 Native platform acceptance, stable selected-root lifetime, concurrent path replacement, exact-file publication, cleanup ownership and every wider valuable-data gate remain open.
+
+## Protected delivery
+
+The candidate record above retains its original pending-review status and producer identities; the subsequent review and delivery are recorded here.
+Independent local review approved the contract and implementation, the direct Windows test dependency declaration and the checked-download delivery documentation as separate logical changes.
+The final integrated range was reviewed again after incorporating the delivered sensitive-label changes on master `9e7bb1e9d154ed63fb1bd611521af6dfe6c3bf8e`.
+That review passed a fresh 2,876-name race suite in twenty-two packages plus the test-less mock command, with no failures or skips, along with 986 frontend tests and the required build, binding, module and cross-compilation checks.
+Its Go test inventory equals the earlier independent implementation review.
+
+[PR77](https://github.com/csmart/aeronautes/pull/77) merged at 20:56:03 UTC on 9 September 2026 through the normal protected rebase operation.
+The reviewed source was `dffe875e0cb5890d8c485085f787484ef4e0b597`; the resulting master is `4bd4937e97ff08d35881054e2b92388ca2215cde`.
+Their tree is exactly `efed326a2eeec7d6c8f04a70d9e844968d78069d`, and all four raw patches, complete commit messages, 659 tracked-file hashes and 351 Go/SQL hashes match.
+The four logical commits remain separate.
+
+All five required jobs and all 67 actual steps passed on attempt one in both the [PR run](https://github.com/csmart/aeronautes/actions/runs/34394382263) and the [master run](https://github.com/csmart/aeronautes/actions/runs/34403997565).
+There was no workflow retry or reused execution.
+Every PR job checked out merge-ref `65735fb842eedcad4deb6175d4871e1f6719cd37`, whose tree equals the reviewed source; every master job checked out the resulting master above.
+The final premerge checks verified the current base, exact approved head, empty remote review discussions, all required successful checks and the strict ruleset with no bypass actors.
+
+| Required job | PR duration, seconds | Master duration, seconds |
+| --- | ---: | ---: |
+| Go formatting, vet, build and race tests | 737 | 878 |
+| Frontend checks, build and tests | 87 | 71 |
+| Real-Swift integration | 1,366 | 1,343 |
+| Built desktop smoke | 294 | 271 |
+| Aggregate refusal gate | 6 | 6 |
+
+Each integration stream has 13,740 events and exactly equals its retained scenario artifact event stream.
+Both have 2,850 named outcomes: 2,848 passes and only the two source-witnessed optional skips, `TestRcloneMatrix` without its matrix variable and `TestKeychainRoundTrip` without an available desktop keychain.
+Their corresponding local full-suite executions remain recorded passes.
+The complete PR/master inventories match, with 748 top-level names, twenty passing packages, all thirty-six scheduled groups and 123 serial system groups.
+They retain every prior PR75 name and outcome plus exactly 156 passing additions; the only generated-name mapping uses the unchanged one-hour expiry source and each stream's actual parent/child timestamps.
+All eleven native inspection-denial cases and both post-admission directory-creation denials executed and passed; the former explicitly logged UID 1001 and the actual permission errors.
+
+The PR/master system packages took 1,057.509/1,037.815 seconds, and their whole integration suite steps took 1,318/1,294 seconds.
+The existing twenty-minute package and twenty-five-minute job limits were unchanged.
+Reported combined statement coverage is 87.3% on the PR and 87.2% on master; source and terminal inventories match, but the cause of that measured difference is not established here.
+Both scenario reports remain valid but incomplete at forty of 116 required cells, with thirty-eight actions carrying gaps and contract hash `6c1e4d947471b8b5`.
+The report checkout identities match their respective producers, and no new scenario credit or stronger concurrency claim is inferred from overlapping event records.
+
+Both frontend runs pass all 986 tests with zero Svelte errors or warnings.
+Each smoke run connects, browses and copies through the verified pinned engine, observing three destination objects and preserving five screenshots and the request log; its assertions do not compare payload bytes.
+Full byte and collateral checks remain the separately attributed maintained local/service evidence above.
+The Go and integration jobs report Go 1.27.1, while both smoke builds report Go 1.27.0.
+Each aggregate executes all nineteen negative refusal controls.
+
+The final author binary has SHA-256 `26393570719680bbc3b61fe1ff5cfb91fd169405063d778af050977471dc83e0` and was observed reporting `dev`, revision `dffe875e0cb5890d8c485085f787484ef4e0b597` and clean source.
+It was a plain Go build with VCS stamping and without `-trimpath`; the independent Wails production build reported the same identity but produced different bytes.
+These are source-attribution observations, and the original dirty candidate binary above keeps its own historical identity.
+
+The complete PR/master integration raw logs have SHA-256 `0815732e660d46a6288ca79120e5d25a31ecce037f925573e97da1b787594bd9` and `5c334369b614de5ffb59d893d320f15fcdc7b0371834e477e47653576fd53dc6` respectively.
+Retained scenario ZIPs have SHA-256 `6059ed29005afdcdfefff0760432fd7f29c4e4412b8efb436a1df698fac15340` and `90716ebe591df7e82ff3255da98abce68ea725482aae26420811c0344a90c5cf`; smoke ZIPs have SHA-256 `2164e77ead3be15e8457b41aa8d79b300851613ee26b0bf3c6f340c3bff07b07` and `9120532e2f75a40a5b4fcf6e35d924fc2983cbe70cd9854cba7ad6448fcb79e0`.
+Full raw inventories, physical job identities, checksum readbacks and source/patch comparisons remain preserved with those artifacts.
+This delivers only the ADR 0034 existing-state admission correction; stable root lifetime, concurrent replacement, publication/cleanup authority, complete path identity, native platform acceptance and the valuable-data release hold remain open.
