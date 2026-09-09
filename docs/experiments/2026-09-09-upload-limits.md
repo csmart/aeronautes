@@ -84,3 +84,25 @@ Removing only the upload preview guard now fails four intended leaves; all sixte
 The per-harness real-Swift group now calls `t.Parallel()` to join the existing bounded schedule; its cases still run sequentially and the mock group remains non-parallel because its harness changes process environment.
 `preview-after-v1` passes all 41 named focused app, mock and SAIO tests under `-race -count=1 -parallel=3`, including the real group's pause/resume.
 Formatting, vet and diff checks pass; this follow-up changes only tests and this evidence record.
+
+## Protected delivery
+
+[PR73](https://github.com/csmart/aeronautes/pull/73) delivered independently reviewed source `20b4dca70e561163a6e04f947aff58616b1dc959` as master `ff78cdff85c05c7c9691148cdbec3d4fecf95e95` at 15:03:06 UTC on 9 September 2026.
+The source incorporates the preceding release and keyboard deliveries.
+The protected merge preserves both logical commits and exact tree `b99e7c96afc6b8889d29eea28c7f74736cbef7a9`; all 631 tracked files and 333 Go/SQL input hashes match.
+All five [PR jobs](https://github.com/csmart/aeronautes/actions/runs/34364415721) and all five [master jobs](https://github.com/csmart/aeronautes/actions/runs/34367681233) passed on their first attempts, including every recorded step.
+Both complete integration streams contain 2,525 named passes, twenty passing packages and the same optional `TestKeychainRoundTrip` and `TestRcloneMatrix` skips.
+The full prior inventory remains, with exactly forty-one added admission-test names; each raw scenario-artifact stream equals its complete step log.
+The sole time-dependent expiry name is checked against its producer timestamp before comparison.
+The PR/master system-package times were 806.058/789.080 seconds and integration-job times were 1,042/1,012 seconds within the unchanged twenty-five-minute limit.
+Both report 87.0% Go statement coverage and valid but incomplete scenario coverage at 40/116 required cells, with thirty-eight actions having gaps.
+
+Earlier attempts on the prior source are preserved: two runner-admission failures did not execute the suite, and a later execution was cancelled at the existing integration-job limit.
+That cancellation retained 2,425 named passes and the two optional skips, including all forty-one new admission names, with one hundred expected terminal names absent.
+Measured existing tests were broadly slower and the system suite started later; the host/fixture cause remains unproven.
+No individual assertion failure, Go timeout panic or race dump was evidenced, and no retry or timeout increase was used to disguise that incomplete run.
+The successful runs above cover the subsequently reviewed current-base source.
+
+The supported-path DS-11 admission defect is repaired: local upload and Copy share limits and capped defaults before job or engine creation, and stored settings match the actual engine setting.
+Mirror starts and existing-destination Copy overwrites remain refused.
+Corrupt/incomplete DLO rejection, stronger verification, shared cleanup authority, full P21 acceptance and valuable-data release remain open.

@@ -5026,7 +5026,9 @@ Maintain actual-service fault regressions with complete allowed-effect and colla
 Only after these prerequisites pass should the separate checked download adapter, directory-marker and temporary-stage identity contract be reviewed and implemented.
 [ADR 0033](adr/0033-download-item-recording.md) is the independently approved separate contract for exact native/engine temporary intent before effects, checked directory observations, sticky recording-stop and bounded cancellation rules, complete per-name history and item-derived terminal outcomes.
 Its [maintained implementation and evidence](experiments/2026-09-09-checked-download-records.md) migrate the executor and first version-one caller together, preserving historical unrecorded jobs and the direct executor compatibility mode.
-The actual-service SQL/fault, complete 0/1/201/401-name, UI and reopening evidence remains separate from independent implementation review and protected delivery, which are still pending.
+The actual-service SQL/fault, complete 0/1/201/401-name, UI and reopening evidence passed independent implementation review, including a second full race suite with the exact complete inventory.
+Integration with the delivered keyboard, release identity, chunk-admission and Preview changes passes fresh validation with 2,694 Go tests and 971 frontend tests.
+The resulting range still requires independent review before protected PR/master delivery.
 Every wider valuable-data release gate remains in force.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.

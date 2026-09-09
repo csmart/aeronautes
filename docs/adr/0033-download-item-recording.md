@@ -1,6 +1,6 @@
 # ADR 0033 — checked download item records
 
-**Status:** Contract independently approved on 9 September 2026; implementation review and protected delivery pending.
+**Status:** Contract and initial implementation independently approved on 9 September 2026; integrated-range review and protected delivery pending.
 **Scope:** The separate download caller migration required by [ADR 0032](0032-download-placement-prerequisites.md) step seven.
 The [implementation evidence](../experiments/2026-09-09-checked-download-records.md) separates maintained tests from the remaining delivery gates.
 

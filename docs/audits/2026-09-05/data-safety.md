@@ -268,6 +268,12 @@ Suggested remedy: share resolved settings and destination capability admission a
 Acceptance: explicit above-max chunks refuse before job creation; an unset default is capped for a small-limit cluster; the visible effective settings match engine options for local upload, Copy, and Mirror.
 Probe: `TestAuditUploadChecksDestinationChunkLimit`.
 
+Current disposition: [PR73](https://github.com/csmart/aeronautes/pull/73) delivered shared chunk admission and truthful resolved settings for supported local-upload and Copy preview/start paths.
+Explicit values below the minimum or above the destination maximum refuse before engine/job creation; unset values use the capped default.
+The [maintained regression and delivery record](../../experiments/2026-09-09-upload-limits.md#protected-delivery) preserves the original failing probes, passing controls, independent review and all five PR/master checks.
+Mirror starts remain refused, and P21's corrupt/incomplete DLO checks plus P15/P16 verification and cleanup authority remain blocking.
+The preceding defect description remains the audit-time before evidence.
+
 ### DS-12 — High at scale: several high-volume paths accumulate job-wide namespaces
 
 Disposition: statically revalidated K-PERF-001 gap; no memory benchmark was run.

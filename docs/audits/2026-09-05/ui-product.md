@@ -186,6 +186,11 @@ Fix: central modal ownership, keyboard handlers respecting target/defaultPrevent
 Tests: component keyboard/focus tests plus native NVDA/VoiceOver/Orca smoke on relevant platforms; include selects, screenreader background isolation, close while busy, hidden details, and removed opener.
 Confidence: high static evidence; native accessibility behavior remains unverified.
 
+Current disposition: [PR72's bounded keyboard/modal correction](../../experiments/2026-09-09-keyboard-scope.md#protected-delivery) is delivered with independent review and all five PR/master checks.
+Global browser keys now respect editable/select targets, consumed events and active modal ownership; the focus action accounts for visible controls, nested modals, inert backgrounds and opener availability.
+The [separate asynchronous Preview correction](../../experiments/2026-09-09-preview-focus.md) addresses native focus loss during planning without authorising Start.
+The historical findings above remain the before evidence; remaining sensitive labels, tab/shortcut patterns, native screen-reader/select journeys and broader UI-11/P29 acceptance remain open.
+
 ### UI-12 — P2: text contrast is insufficient for the dense control typography
 
 Evidence: `frontend/src/design/tokens.css:17`–`:26`, `:35`, `:83`–`:90`; `frontend/src/design/typography.css:37`–`:42`; usages include inspector labels, fields, footers, and primary action labels.

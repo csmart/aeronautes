@@ -93,3 +93,27 @@ Independent local review, current-base verification and all five required PR and
 The native rows establish this bounded Linux Preview behaviour and owned-fixture Copy control.
 They do not certify screen readers, OS select popups, other operating systems, general accessibility or valuable-data use.
 UI-11/P29 and the valuable-data release hold remain open.
+
+## Current-base review and protected delivery
+
+[PR74](https://github.com/csmart/aeronautes/pull/74) delivered independently reviewed source `58c6a1f2d02aa6999603f334667e75af37df1ffd` as master `a8ece3429c39468c3da8a4343bbfa7cf8226efce` at 15:51:49 UTC on 9 September 2026.
+The original reviewed implementation remains preserved at `990aa9871c6be9d4174ca14559c696beeb109a58`; the final-base rebase preserves its patch, message and three changed files.
+Fresh validation on source `58c6a1f2` passes all fifty-one focused and 968 frontend tests, with no skips, clean typechecking and production frontend/native builds.
+All 964 earlier frontend cases remain, with the four merged About-identity cases added.
+Independent range review reproduced those checks, the fifteen-failure/thirty-six-pass parent replay and the five native controls using a byte-identical build.
+The final-base native executable has SHA-256 `7a6c15ab90e317c189f87b4be17cea8894fa0163e90f1f03da8d4b29d94b3940`.
+Fresh native controls cover restored Preview, permanent cancellation after Tab or leaving the window, cancellation after close/reopen, and a separate explicit Start.
+The Preview controls issue zero destination writes; explicit Start verifies three staged plus three final creations, exact cleanup and matching source/destination payloads.
+
+The protected merge preserves exact tree `75b0b77d95f515810ef55413f5e4b73623d5f1ae`, the complete message and patch, and all 633 tracked files.
+All five [PR jobs](https://github.com/csmart/aeronautes/actions/runs/34370891584) and all five [master jobs](https://github.com/csmart/aeronautes/actions/runs/34373036923) passed on their first attempts, with actual test-step execution.
+The complete master integration artifact equals its hosted log and retains the exact PR inventory of 2,525 named passes, twenty passing packages and the two known optional keychain/rclone-matrix skips.
+All 333 Go/SQL files remain identical; scenario contract fields remain equal and the sole generated expiry name is checked against its producer's one-hour timestamp relationship before comparison.
+Master integration takes 1,112 seconds for the job and 1,062 seconds for the combined suite step within the existing finite limits.
+The hosted frontend repeats all 968 cases with 88.53% statement coverage.
+Hosted smoke proves three final and three staged creations with exact stage cleanup; its screenshots show focused Preview and completed three-of-three, 53-byte Copy.
+Hosted smoke checks counts and wire effects; payload equality remains attributed to the separately reviewed local native controls.
+
+The historical parent, first-candidate, negative-control and native evidence above retain their original source and binary identities.
+Final intent/modal rechecks remain defence in depth, with no claim that each redundant guard is independently witnessed.
+Native assistive technology, OS select popups, other operating systems, broader UI-11/P29 acceptance and valuable-data release remain open.
