@@ -1,0 +1,344 @@
+package systemtest
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/csmart/aeronautes/internal/app"
+	"github.com/csmart/aeronautes/internal/jobs"
+)
+
+type p18LocalEntry struct {
+	Mode   string `json:"mode"`
+	Size   int64  `json:"size,omitempty"`
+	SHA256 string `json:"sha256,omitempty"`
+	Bytes  []byte `json:"bytes,omitempty"`
+	Link   string `json:"link,omitempty"`
+}
+
+// Full independent bytes and the outside sibling must survive fixture cleanup.
+func p18LocalSnapshot(root string) (map[string]p18LocalEntry, error) {
+	result := map[string]p18LocalEntry{}
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		name, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		state := p18LocalEntry{Mode: info.Mode().String()}
+		switch {
+		case info.Mode().IsRegular():
+			state.Bytes, err = os.ReadFile(path)
+			if err == nil {
+				state.Size = int64(len(state.Bytes))
+				digest := sha256.Sum256(state.Bytes)
+				state.SHA256 = hex.EncodeToString(digest[:])
+			}
+		case info.IsDir():
+		case info.Mode()&os.ModeSymlink != 0:
+			state.Link, err = os.Readlink(path)
+		default:
+			err = fmt.Errorf("unsupported owned fixture type at %q", name)
+		}
+		if err != nil {
+			return err
+		}
+		result[filepath.ToSlash(name)] = state
+		return nil
+	})
+	return result, err
+}
+
+func p18Snapshot(t *testing.T, root string) map[string]p18LocalEntry {
+	t.Helper()
+	result, err := p18LocalSnapshot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
+func p18Error(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+func p18WriteEvidence(t *testing.T, record map[string]any) {
+	t.Helper()
+	directory := os.Getenv("AERONAUTES_P18_EVIDENCE_DIR")
+	if directory == "" {
+		t.Error("private evidence directory was not configured")
+		return
+	}
+	data, err := json.MarshalIndent(record, "", "  ")
+	if err == nil {
+		err = os.WriteFile(filepath.Join(directory, strings.ReplaceAll(t.Name(), "/", "--")+".json"), append(data, '\n'), 0o600)
+	}
+	if err != nil {
+		t.Errorf("write private evidence: %v", err)
+	}
+}
+
+func p18ExistingAdmissionCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
+	for _, route := range []string{"engine", "native", "marker"} {
+		for _, fault := range []string{"descendant_symlink", "dangling_final_symlink", "parent_file", "missing_root", "safe_absent_subtree", "initial_root_symlink"} {
+			t.Run(route+"/"+fault, func(t *testing.T) { p18ExistingAdmission(t, makeHarness(t), route, fault) })
+		}
+	}
+	t.Run("marker/marker_file_collision", func(t *testing.T) { p18ExistingAdmission(t, makeHarness(t), "marker", "marker_file_collision") })
+}
+
+func TestP18ExistingAdmissionMock(t *testing.T) {
+	p18ExistingAdmissionCases(t, findMockHarness)
+}
+
+func TestP18ExistingAdmissionRealSwift(t *testing.T) {
+	p18ExistingAdmissionCases(t, New)
+}
+
+func p18ExistingAdmission(t *testing.T, h *Harness, route, fault string) {
+	t.Helper()
+	record := map[string]any{"test": t.Name(), "route": route, "case": fault, "complete": false}
+	defer p18WriteEvidence(t, record)
+	source := h.Container(h.Primary, "p18-source")
+	other := h.Container(h.Secondary, "p18-other")
+	prefix := "scope/"
+	if route == "native" {
+		prefix = "scope\n/"
+	}
+	owned := t.TempDir()
+	selected := filepath.Join(owned, "selected")
+	seedListingLocal(t, owned, "selected/keep", []byte("selected sentinel"))
+	seedListingLocal(t, owned, "outside/keep", []byte("outside sentinel"))
+	seedListingLocal(t, owned, "unrelated/keep", []byte("unrelated local sentinel"))
+	captured := selected
+	relative := "proof.bin"
+	if route == "marker" {
+		relative = "created/"
+	}
+	wantRefusal := fault != "safe_absent_subtree" && fault != "initial_root_symlink"
+	switch fault {
+	case "descendant_symlink":
+		if err := os.Symlink(filepath.Join(owned, "outside"), filepath.Join(selected, "redirect")); err != nil {
+			t.Fatal(err)
+		}
+		relative = "redirect/payload.bin"
+		if route == "marker" {
+			relative = "redirect/created/"
+		}
+	case "dangling_final_symlink":
+		relative = "dangling"
+		if err := os.Symlink(filepath.Join(owned, "outside", "absent-target"), filepath.Join(selected, relative)); err != nil {
+			t.Fatal(err)
+		}
+		if route == "marker" {
+			relative += "/"
+		}
+	case "parent_file":
+		seedListingLocal(t, owned, "selected/blocked", []byte("existing parent file"))
+		relative = "blocked/payload.bin"
+		if route == "marker" {
+			relative = "blocked/created/"
+		}
+	case "marker_file_collision":
+		if route != "marker" {
+			t.Fatal("marker-only fixture")
+		}
+		seedListingLocal(t, owned, "selected/created", []byte("existing marker-name file"))
+	case "missing_root":
+		if route == "marker" {
+			relative = ""
+		}
+	case "safe_absent_subtree":
+		relative = "new/nested/payload.bin"
+		if route == "marker" {
+			relative = "new/nested/"
+		}
+	case "initial_root_symlink":
+		captured = filepath.Join(owned, "picked-link")
+		if err := os.Symlink(selected, captured); err != nil {
+			t.Fatal(err)
+		}
+		if route == "marker" {
+			relative = ""
+		}
+	default:
+		t.Fatalf("unknown fixture %q", fault)
+	}
+	body := []byte("P18 complete source bytes \x00\xff: " + route + "/" + fault)
+	if route == "marker" {
+		body = nil
+	}
+	name := prefix + relative
+	h.Seed(h.Primary, source, name, body, nil)
+	h.Seed(h.Primary, source, "outside-selection", []byte("unselected remote sentinel"), nil)
+	h.Seed(h.Secondary, other, "keep", []byte("other remote sentinel"), nil)
+	beforeA, beforeB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
+	trace := downloadRecordsProxy(t, h, source, prefix, nil)
+	app.WireFilePicker(h.Transfer, listingFilePicker{dir: captured})
+	picked, err := h.Transfer.PickDownloadDir(t.Context())
+	if err != nil || picked == nil || picked.Dir != captured || picked.Token == "" {
+		t.Fatalf("owned picker fixture failed: %+v %v", picked, err)
+	}
+	if fault == "missing_root" {
+		// Model a selected directory disappearing after picker capture.
+		if err := os.Remove(filepath.Join(selected, "keep")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Remove(selected); err != nil {
+			t.Fatal(err)
+		}
+	}
+	req := app.DownloadRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: source, Prefix: prefix, DestDirToken: picked.Token}
+	before := p18Snapshot(t, owned)
+	beforeCounts := downloadRootGuardCounts(t, h)
+	preflight, preflightErr := h.Transfer.PreflightDownload(t.Context(), req)
+	afterPreflight := p18Snapshot(t, owned)
+	afterPreflightCounts := downloadRootGuardCounts(t, h)
+	record["fixture"] = map[string]any{"owned_root": owned, "selected_directory": selected, "captured_spelling": captured, "remote_container": source,
+		"remote_key": name, "relative_name": relative, "source_bytes": body, "want_refusal": wantRefusal, "missing_root_removed_after_picker": fault == "missing_root"}
+	record["before_local"], record["after_preflight_local"] = before, afterPreflight
+	record["before_counts"], record["after_preflight_counts"] = beforeCounts, afterPreflightCounts
+	record["preflight"], record["preflight_error"] = preflight, p18Error(preflightErr)
+	record["before_remote_primary"], record["before_remote_secondary"] = beforeA, beforeB
+	var stageMu sync.Mutex
+	var stageObservations []map[string]any
+	app.WireDownloadStageBoundary(h.Transfer, func(_ context.Context, stage string) error {
+		observed, err := p18LocalSnapshot(owned)
+		stageMu.Lock()
+		stageObservations = append(stageObservations, map[string]any{"stage": stage, "local_after_actual_engine_return": observed, "observer_error": p18Error(err)})
+		stageMu.Unlock()
+		return err
+	})
+	id, startErr := h.Transfer.StartDownload(t.Context(), req)
+	record["start_id"], record["start_error"] = id, p18Error(startErr)
+	var saved uploadRecoveryState
+	if id != "" {
+		h.AwaitJob(id)
+		copyCompletionAwaitPins(t, h, h.Primary)
+		saved = uploadRecoveryRead(t, h.database, id)
+		record["retained"] = saved
+		public, err := h.Jobs.Get(t.Context(), id)
+		if err != nil || !reflect.DeepEqual(public, saved.Job) {
+			t.Errorf("public job differs from retained read: %+v %v", public, err)
+		}
+		record["public_job"] = public
+		byKey := map[string]jobs.ItemRecord{}
+		for _, item := range saved.Items {
+			byKey[item.Key] = item
+		}
+		assertDownloadItemPages(t, h, id, byKey, saved.ItemTotals)
+	}
+	after := p18Snapshot(t, owned)
+	afterA, afterB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
+	stageMu.Lock()
+	record["engine_return_observations"] = stageObservations
+	stageCalls := len(stageObservations)
+	stageMu.Unlock()
+	record["after_local"], record["after_counts"] = after, downloadRootGuardCounts(t, h)
+	record["after_remote_primary"], record["after_remote_secondary"] = afterA, afterB
+	record["selected_object_gets"], record["remote_writes"] = trace.selectedGets(), trace.traffic.writeSnapshot()
+	record["complete"] = true
+	if !reflect.DeepEqual(before, afterPreflight) || !reflect.DeepEqual(beforeCounts, afterPreflightCounts) {
+		t.Error("read-only preflight changed filesystem or transfer records")
+	}
+	h.AssertNoCollateral(beforeA, afterA)
+	h.AssertNoCollateral(beforeB, afterB)
+	if len(trace.traffic.writeSnapshot()) != 0 {
+		t.Errorf("download changed remote data: %v", trace.traffic.writeSnapshot())
+	}
+	if wantRefusal {
+		if preflightErr == nil && (preflight == nil || !preflight.Rejected()) {
+			t.Errorf("P18 preflight accepted the evidenced existing %s hazard: %+v", fault, preflight)
+		}
+		if id != "" || startErr == nil {
+			t.Errorf("P18 Start admitted a job for an evidenced existing %s hazard: id=%q error=%v", fault, id, startErr)
+		}
+		if !reflect.DeepEqual(beforeCounts, downloadRootGuardCounts(t, h)) {
+			t.Errorf("P18 refusal created transfer/job/item/audit records: before=%v after=%v", beforeCounts, downloadRootGuardCounts(t, h))
+		}
+		if !reflect.DeepEqual(before, after) {
+			t.Errorf("P18 refusal changed the complete selected/outside/unrelated filesystem; see retained full-byte snapshots")
+		}
+		if len(trace.selectedGets()) != 0 || stageCalls != 0 {
+			t.Errorf("P18 refusal dispatched selected content: gets=%v actual engine returns=%d", trace.selectedGets(), stageCalls)
+		}
+		return
+	}
+	if preflightErr != nil || preflight == nil || preflight.Rejected() || len(preflight.Items) != 1 || startErr != nil || id == "" {
+		t.Fatalf("passing control was not admitted: preflight=%+v error=%v start=%q %v", preflight, preflightErr, id, startErr)
+	}
+	wantRoute := "rclone"
+	if route == "native" {
+		wantRoute = "native"
+	}
+	if item := preflight.Items[0]; item.Name != name || item.RelPath != filepath.FromSlash(strings.TrimSuffix(relative, "/")) || item.Dir != (route == "marker") || route != "marker" && item.Route != wantRoute {
+		t.Fatalf("passing control changed its selected identity or route: %+v", item)
+	}
+	wantCounters := jobs.Counters{ObjectsPlanned: 1, BytesPlanned: int64(len(body)), ObjectsCopied: 1, BytesCopied: int64(len(body)), ObjectsVerified: 1}
+	if route == "native" {
+		wantCounters.NativeRouted = 1
+	}
+	if saved.Job.State != "complete" || saved.Job.Error != "" || saved.Job.Counters != wantCounters || !saved.ItemsCaptured || len(saved.Items) != 1 ||
+		saved.ItemTotals != (jobs.ItemTotals{Items: 1, Planned: 1, Admitted: 1}) || len(saved.Audit) != 1 || saved.Audit[0].Operation != "transfer.local.complete" || saved.Audit[0].Resource != "job "+id || saved.Audit[0].Result != "applied" {
+		t.Fatalf("passing control lost full job/item/audit outcome: %+v", saved)
+	}
+	item := saved.Items[0]
+	if item.Key != name || item.Source != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: source, Object: name}) ||
+		item.Destination != (jobs.ItemLocation{Kind: jobs.ItemLocal, LocalPath: filepath.Join(captured, filepath.FromSlash(strings.TrimSuffix(relative, "/")))}) ||
+		item.Execution == nil || item.Execution.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemCopied, Effect: jobs.EffectReportedApplied, CopiedBytes: int64(len(body))}) ||
+		item.Verification == nil || item.Verification.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemVerified, Effect: jobs.EffectNotAttempted}) || (item.Staging == nil) != (route == "marker") {
+		t.Fatalf("passing control retained identity or observations differ: %+v", item)
+	}
+	allowed := map[string]bool{}
+	if fault == "safe_absent_subtree" {
+		allowed["selected/new"], allowed["selected/new/nested"] = true, true
+		for _, path := range []string{"selected/new", "selected/new/nested"} {
+			if entry, ok := after[path]; !ok || !strings.HasPrefix(entry.Mode, "d") {
+				t.Errorf("passing control did not create the observed directory %q: %+v", path, entry)
+			}
+		}
+	}
+	if route != "marker" {
+		path := "selected/" + relative
+		allowed[path] = true
+		if entry, ok := after[path]; !ok || !bytes.Equal(entry.Bytes, body) {
+			t.Errorf("passing control full file bytes differ: %+v", entry)
+		}
+	}
+	for path, entry := range after {
+		if allowed[path] {
+			continue
+		}
+		if original, ok := before[path]; !ok || !reflect.DeepEqual(original, entry) {
+			t.Errorf("passing control changed unrelated path %q", path)
+		}
+	}
+	for path, entry := range before {
+		if !reflect.DeepEqual(after[path], entry) {
+			t.Errorf("passing control lost or changed original path %q", path)
+		}
+	}
+	if route == "engine" && (stageCalls != 1 || trace.selectedGets()[relative] == 0) || route != "engine" && stageCalls != 0 || route == "marker" && len(trace.selectedGets()) != 0 {
+		t.Errorf("passing control engine/native/marker boundary differs: engine=%d gets=%v", stageCalls, trace.selectedGets())
+	}
+}

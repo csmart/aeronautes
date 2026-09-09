@@ -5031,6 +5031,13 @@ Integration with the delivered keyboard, release identity, chunk-admission and P
 The resulting range still requires independent review before protected PR/master delivery.
 Every wider valuable-data release gate remains in force.
 
+The next [existing-destination archive](experiments/2026-09-09-download-admission.md) reproduces thirteen unsafe admissions on each owned provider, including outside writes through existing descendant symlinks on native, real-engine and marker routes.
+[ADR 0034](adr/0034-download-destination-admission.md) proposes complete component inspection before Start and before the executor's first effect, while preserving the accepted initial selected-root symlink spelling.
+Review that bounded contract before production changes, then implement the shared admission correction with whole-selection, faithful-error, normal-control and deliberately broken regression cases.
+Reject existing descendant links/reparse entries and inspection uncertainty under the approved policy; do not infer that a temporary inspection root supplies later mutation authority.
+Record exact local and remote deltas, actual job/item/audit outcomes, source identity and independent PR/master delivery evidence.
+Stable selected-root lifetime, raced parents, publication and cleanup authority, complete-path identity and native platform acceptance remain separate P18/P19/P20/P30 work, with the valuable-data hold unchanged.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
