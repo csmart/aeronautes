@@ -1,8 +1,8 @@
 <!-- Mirror keeps its comparison preview while ADR 0020 prevents an
   execution that cannot protect concurrent changes. -->
 <script lang="ts">
-  import { onDestroy, untrack } from "svelte";
-  import { trapFocus } from "../../lib/trapFocus";
+  import { onDestroy, tick, untrack } from "svelte";
+  import { activeModal, trapFocus } from "../../lib/trapFocus";
   import type { BrowserState } from "../browser/browserState.svelte";
   import type { CopyPlanDTO, CopyRequestDTO } from "../../lib/api";
   import { formatBytes } from "../../lib/format";
@@ -29,6 +29,7 @@
   let startedJobId: string | null = $state(null);
   let closed = $state(false);
   let generation = 0;
+  let cancelPreviewFocus: (() => void) | undefined;
   interface Intent {
     generation: number;
     browser: BrowserState;
@@ -67,6 +68,7 @@
   }
 
   function invalidate() {
+    cancelPreviewFocus?.();
     generation++;
     prepared = null;
     previewing = false;
@@ -94,13 +96,48 @@
     invalidate();
   }
 
-  async function runPreview() {
+  function trackPreviewFocus(button: HTMLButtonElement, intent: Intent) {
+    const modal = activeModal();
+    if (document.activeElement !== button || !modal?.contains(button)) return async () => {};
+    let cancelled = false;
+    const navigationEvents = ["keydown", "pointerdown", "click"] as const;
+    function cleanup() {
+      for (const event of navigationEvents) document.removeEventListener(event, cancel, true);
+      document.removeEventListener("focusin", changedFocus, true);
+      window.removeEventListener("blur", cancel);
+      if (cancelPreviewFocus === cancel) cancelPreviewFocus = undefined;
+    }
+    function cancel() { cancelled = true; cleanup(); }
+    function changedFocus(event: FocusEvent) {
+      if (event.target !== button) cancel();
+    }
+    // An empty focus target at completion is not enough: deliberate navigation
+    // can also leave the body focused, and must retire this request's claim.
+    for (const event of navigationEvents) document.addEventListener(event, cancel, true);
+    document.addEventListener("focusin", changedFocus, true);
+    window.addEventListener("blur", cancel);
+    cancelPreviewFocus = cancel;
+    return async () => {
+      // WebKit can discard focus after the first render frame. Check while
+      // this request still owns the disabled control, before re-enabling.
+      const lost = button.disabled && document.activeElement === document.body;
+      // Close or another request may win before re-enabling renders.
+      await tick();
+      const restore = lost && !cancelled && isCurrent(intent) && activeModal() === modal
+        && button.isConnected && !button.disabled && document.activeElement === document.body;
+      cleanup();
+      if (restore) button.focus();
+    };
+  }
+
+  async function runPreview(button: HTMLButtonElement) {
     if (!canPreview) return;
     invalidate();
     const req = request();
     Object.freeze(req.settings);
     Object.freeze(req);
     const intent: Intent = { generation, browser, scopeRevision: browser.scopeRevision, mode, request: req };
+    const finishFocus = trackPreviewFocus(button, intent);
     previewing = true;
     try {
       const plan = await browser.planCopy(req);
@@ -108,7 +145,9 @@
     } catch (e) {
       if (isCurrent(intent)) error = e instanceof Error ? e.message : String(e);
     } finally {
+      const focusCompletion = finishFocus();
       if (isCurrent(intent)) previewing = false;
+      await focusCompletion;
     }
   }
 
@@ -308,7 +347,7 @@
         <span class="started">Job {startedJobId} started — follow it in the drawer.</span>
         <button class="primary" onclick={close}>Close</button>
       {:else}
-        <button onclick={runPreview} disabled={!canPreview}>
+        <button onclick={(event) => runPreview(event.currentTarget)} disabled={!canPreview}>
           {previewing ? "Planning…" : "Preview"}
         </button>
         {#if mode === "copy"}
