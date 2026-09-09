@@ -257,12 +257,13 @@ func interruptedUpload(t *testing.T, h *Harness, mode string) {
 		if firstFailed {
 			first = 0
 		}
-		fragments = append(fragments, fmt.Sprintf("%d failed (first: live/%s:", want.ObjectsFailed, names[first]))
+		fragments = append(fragments, fmt.Sprintf("upload failures (first: live/%s:", names[first]))
 	}
 	if cancelled {
 		fragments = append(fragments, "context canceled")
 	}
 	saved := interruptionOutcome(t, h, id, state, want, fragments...)
+	assertInterruptedUploadItems(t, h, id, container, mode, paths, bodies, want.ObjectsFailed, saved)
 	wantRows := []jobs.RecoveryRecord{{JobID: id, BookmarkID: h.Primary.BookmarkID, Kind: jobs.RecoveryStaging, Container: container, Prefix: ".aeronautes/stage/" + id + "/"}}
 	if !reflect.DeepEqual(saved.Rows, wantRows) || saved.Status != (app.RecoveryStatusDTO{Jobs: 1, Records: 1}) || saved.Job.RecoveryRecords != 1 {
 		t.Fatalf("retained recovery facts differ: %+v", saved)
@@ -291,6 +292,50 @@ func interruptedUpload(t *testing.T, h *Harness, mode string) {
 	}
 	h.AssertNoCollateral(afterA, h.SnapshotNamespace(h.Primary))
 	h.AssertNoCollateral(afterB, h.SnapshotNamespace(h.Secondary))
+}
+
+func assertInterruptedUploadItems(t *testing.T, h *Harness, id, container, mode string, paths []string, bodies [][]byte, failed int64, saved uploadRecoveryState) {
+	t.Helper()
+	cancelled := strings.HasSuffix(mode, "_cancel")
+	count := 3
+	if cancelled {
+		count = 2
+	}
+	want := jobs.ItemTotals{Items: int64(count), Planned: int64(count), Admitted: int64(count), Failed: failed, Unresolved: failed, Problems: failed}
+	if !saved.ItemsCaptured || saved.ItemTotals != want || len(saved.Items) != count {
+		t.Fatalf("interruption lost admitted upload identities: captured=%t totals=%+v rows=%d want=%+v", saved.ItemsCaptured, saved.ItemTotals, len(saved.Items), want)
+	}
+	byKey := map[string]jobs.ItemRecord{}
+	for i, item := range saved.Items {
+		key := "live/" + filepath.Base(paths[i])
+		if item.Key != key || item.JobID != id || !item.Planned || !item.Admitted || item.ListedBytes != int64(len(bodies[i])) ||
+			item.Source != (jobs.ItemLocation{Kind: jobs.ItemLocal, LocalPath: paths[i]}) ||
+			item.Destination != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: container, Object: key}) || item.Execution == nil {
+			t.Fatalf("interruption changed original upload identity: %+v", item)
+		}
+		if i < 2 && item.Staging != nil || i == 2 && (item.Staging == nil || *item.Staging != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: container, Object: ".aeronautes/stage/" + id + "/batch/" + filepath.Base(paths[i])})) {
+			t.Fatalf("interruption invented or lost staging identity: %+v", item)
+		}
+		failure := i == 0 && strings.HasPrefix(mode, "failure") || i == 1 && mode != "complete_control"
+		if failure {
+			diagnostic := jobs.ItemDiagnostic{Stage: jobs.StageCommit, Code: jobs.CodeForbidden, HTTPStatus: 403}
+			if i == 1 && cancelled {
+				diagnostic = jobs.ItemDiagnostic{Stage: jobs.StageCommit, Code: jobs.CodeCancelled}
+			}
+			if item.Execution.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectUnresolved, Diagnostic: diagnostic}) || item.Verification != nil {
+				t.Fatalf("interruption fabricated verification or lost failed name: %+v", item)
+			}
+		} else if item.Execution.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemCopied, Effect: jobs.EffectReportedApplied, CopiedBytes: int64(len(bodies[i]))}) ||
+			item.Verification == nil || item.Verification.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemVerified, Effect: jobs.EffectNotAttempted}) {
+			t.Fatalf("interruption erased earlier copied bytes: %+v", item)
+		}
+		byKey[key] = item
+	}
+	assertUploadItemPages(t, h, id, byKey, want)
+	summary := fmt.Sprintf(" · item outcomes: %d failed names, 0 conflicts, 0 refusals, %d unresolved, 0 unverified, %d with problems", failed, failed, failed)
+	if len(saved.Audit) != 1 || saved.Audit[0].Summary != summary {
+		t.Fatalf("interruption audit lost distinct item facets: %+v", saved.Audit)
+	}
 }
 
 func interruptedDownload(t *testing.T, h *Harness, mode string) {

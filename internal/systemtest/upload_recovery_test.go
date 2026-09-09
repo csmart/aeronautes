@@ -37,10 +37,13 @@ type uploadRecoveryCase struct {
 }
 
 type uploadRecoveryState struct {
-	Job    *app.JobDTO
-	Rows   []jobs.RecoveryRecord
-	Status app.RecoveryStatusDTO
-	Audit  []app.AuditEventDTO
+	Job           *app.JobDTO
+	Rows          []jobs.RecoveryRecord
+	Status        app.RecoveryStatusDTO
+	Audit         []app.AuditEventDTO
+	ItemsCaptured bool
+	Items         []jobs.ItemRecord
+	ItemTotals    jobs.ItemTotals
 }
 
 func uploadRecoveryRows(t *testing.T, database *db.DB) []jobs.RecoveryRecord {
@@ -79,7 +82,31 @@ func uploadRecoveryRead(t *testing.T, database *db.DB, jobID string) uploadRecov
 	if err != nil {
 		t.Fatal(err)
 	}
-	return uploadRecoveryState{job, uploadRecoveryRows(t, database), status, events}
+	state := uploadRecoveryState{Job: job, Rows: uploadRecoveryRows(t, database), Status: status, Audit: events}
+	store := jobs.NewStore(database)
+	totals, err := store.ReadItemTotals(t.Context(), jobID)
+	if errors.Is(err, jobs.ErrItemRecordsNotCaptured) {
+		return state
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.ItemsCaptured, state.ItemTotals = true, totals
+	for cursor := int64(0); ; {
+		page, err := store.ReadItems(t.Context(), jobID, cursor, 100)
+		if err != nil || len(page.Items) > 100 {
+			t.Fatalf("upload retained item page: %+v %v", page, err)
+		}
+		state.Items = append(state.Items, page.Items...)
+		if page.NextCursor == 0 {
+			break
+		}
+		if page.NextCursor <= cursor {
+			t.Fatal("upload retained item cursor did not advance")
+		}
+		cursor = page.NextCursor
+	}
+	return state
 }
 
 func uploadRecoveryChild(t *testing.T) bool {
@@ -418,6 +445,29 @@ func uploadRecoveryRun(t *testing.T, h *Harness, test uploadRecoveryCase) {
 	if job.State != wantState || job.Counters != wantCounters || state.Audit[0].Result != wantAudit {
 		t.Errorf("post-commit outcome differs: job=%+v audit=%+v want counters=%+v state=%s", job, state.Audit, wantCounters, wantState)
 	}
+	problems := max(failed, issues)
+	if test.fault == "mixed" {
+		problems = failed + issues
+	}
+	wantItems := jobs.ItemTotals{Items: int64(test.count), Planned: int64(test.count), Admitted: int64(test.count), Failed: failed, Problems: problems, Unresolved: problems}
+	if !state.ItemsCaptured || state.ItemTotals != wantItems || len(state.Items) != len(paths) {
+		t.Fatalf("upload issues lost distinct item facets: captured=%t totals=%+v rows=%d want=%+v", state.ItemsCaptured, state.ItemTotals, len(state.Items), wantItems)
+	}
+	byKey := map[string]jobs.ItemRecord{}
+	for i, item := range state.Items {
+		name := fmt.Sprintf("%03d.bin", i)
+		if item.Key != "live/"+name || item.Source != (jobs.ItemLocation{Kind: jobs.ItemLocal, LocalPath: paths[i]}) ||
+			item.Destination != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: dest, Object: "live/" + name}) ||
+			item.Staging == nil || item.Staging.Object != ".aeronautes/stage/"+job.ID+"/batch/"+name || item.Execution == nil {
+			t.Fatalf("upload issue changed retained identity: %+v", item)
+		}
+		byKey[item.Key] = item
+	}
+	assertUploadItemPages(t, h, job.ID, byKey, wantItems)
+	wantSummary := fmt.Sprintf(" · item outcomes: %d failed names, 0 conflicts, 0 refusals, %d unresolved, 0 unverified, %d with problems", failed, problems, problems)
+	if state.Audit[0].Summary != wantSummary {
+		t.Fatalf("post-commit issue audit differs from distinct item facets: %q want=%q", state.Audit[0].Summary, wantSummary)
+	}
 	if issues > 0 {
 		firstName := "000.bin"
 		if test.fault == "last" {
@@ -435,7 +485,7 @@ func uploadRecoveryRun(t *testing.T, h *Harness, test uploadRecoveryCase) {
 			}
 		}
 	}
-	if failed > 0 && !strings.Contains(job.Error, "1 failed") {
+	if failed > 0 && !strings.Contains(job.Error, "upload failures (first:") {
 		t.Errorf("transfer failure hidden: %q", job.Error)
 	}
 	if issues == 0 && failed == 0 && job.Error != "" {

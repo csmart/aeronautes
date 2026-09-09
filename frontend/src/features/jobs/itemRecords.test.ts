@@ -158,6 +158,75 @@ it("reaches every item through older history while bounding both displayed pages
   await vi.waitFor(() => expect(document.querySelectorAll(".history-job")).toHaveLength(50));
 });
 
+it("pages every captured upload path and preserves missing observations without rerun", async () => {
+  const api = newFakeApi();
+  const upload = { ...job("upload", "partial"), type: "upload", sourceBookmarkId: "", destBookmarkId: "b" };
+  const retained = Array.from({ length: 401 }, (_, index) => {
+    const row = item(index, `scope/étude-${index}\n<script>`);
+    const path = `/owned/Éléments/étude-${index}\n<script>`;
+    row.source = { kind: "local", bookmarkId: "", container: "", object: "", localPath: path, display: JSON.stringify(path) };
+    row.execution = index % 3 === 2 ? null : { result: "copied", effect: index % 3 === 1 ? "unresolved" : "reported_applied",
+      stage: index % 3 === 1 ? "staging" : "", code: index % 3 === 1 ? "io" : "", httpStatus: 0, copiedBytes: 9, createdAt: "2000-01-01T00:00:00Z" };
+    row.verification = index % 3 === 0 ? { result: "verified", effect: "not_attempted", stage: "", code: "", httpStatus: 0, copiedBytes: 0, createdAt: "2000-01-01T00:00:00Z" } : null;
+    return row;
+  });
+  api.jobItems = vi.fn(async (id, cursor, limit) => {
+    expect(id).toBe("upload");
+    expect(limit).toBe(100);
+    const offset = cursor ? retained.findIndex((row) => row.id === cursor) + 1 : 0;
+    const items = retained.slice(offset, offset + limit);
+    return { status: "available", items, nextCursor: offset + limit < retained.length ? items.at(-1)!.id : "" };
+  });
+  api.jobItemTotals = async () => totals({ items: 401, planned: 401, admitted: 401, unresolved: 267, unverified: 134, problems: 134 });
+  api.rerunJob = vi.fn(async () => "unexpected");
+  api.startUpload = vi.fn(async () => "unexpected");
+  api.pickUploadFiles = vi.fn(async () => null);
+  await show(api, [upload]);
+  expand("upload");
+  const seen: string[] = [];
+  for (let page = 0; page < 5; page++) {
+    const expected = retained.slice(page * 100, page * 100 + 100);
+    await vi.waitFor(() => expect(document.querySelector("summary code")?.textContent).toBe(expected[0].keyDisplay));
+    const elements = [...document.querySelectorAll(".item-record")];
+    expect(elements).toHaveLength(expected.length);
+    expect(document.body.textContent).toContain(`Item page ${page + 1}`);
+    elements.forEach((element, index) => {
+      const row = expected[index];
+      expect(element.querySelector("summary code")?.textContent).toBe(row.keyDisplay);
+      expect(element.querySelector(".locations")?.textContent).toContain(row.source.display);
+      expect(element.querySelectorAll(".observation")).toHaveLength(2);
+      expect(element.querySelectorAll(".observation")[0].textContent).toContain(row.execution ? "copied" : "No observation recorded");
+      expect(element.querySelectorAll(".observation")[1].textContent).toContain(row.verification ? "verified" : "No observation recorded");
+      seen.push(row.source.display);
+    });
+    expect(document.querySelector(".item-records script")).toBeNull();
+    expect(document.querySelector(".rerun")).toBeNull();
+    if (page < 4) click("Next item page");
+  }
+  expect(seen).toEqual(retained.map((row) => row.source.display));
+  expect(button("Next item page").disabled).toBe(true);
+  expect(api.rerunJob).not.toHaveBeenCalled();
+  expect(api.startUpload).not.toHaveBeenCalled();
+  expect(api.pickUploadFiles).not.toHaveBeenCalled();
+});
+
+it("keeps unrecorded download history distinct and requires its own dialog", async () => {
+  const api = newFakeApi();
+  const download = { ...job("download", "complete"), type: "download", destBookmarkId: "" };
+  api.jobItems = async () => ({ status: "not_captured", items: [], nextCursor: "" });
+  api.jobItemTotals = async () => totals({ status: "not_captured" });
+  api.rerunJob = vi.fn(async () => "unexpected");
+  api.startDownload = vi.fn(async () => "unexpected");
+  await show(api, [download]);
+  expand("download");
+  await vi.waitFor(() => expect(document.querySelector(".item-records")?.textContent).toContain("Item records were not captured"));
+  expect(document.querySelector(".item-record")).toBeNull();
+  expect(document.querySelector(".totals")).toBeNull();
+  expect(document.querySelector(".rerun")).toBeNull();
+  expect(api.rerunJob).not.toHaveBeenCalled();
+  expect(api.startDownload).not.toHaveBeenCalled();
+});
+
 it.each(["not_captured", "empty", "page-error", "totals-error", "mismatch", "null-rows", "unknown-status"])("distinguishes %s without fabricated totals", async (condition) => {
   const api = newFakeApi();
   api.jobItems = async () => {

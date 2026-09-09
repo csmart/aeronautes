@@ -113,6 +113,10 @@ func completionReopen(t *testing.T, h *Harness, id string, want uploadRecoverySt
 		job := *want.Job
 		job.State = "failed"
 		job.Error = "interrupted by shutdown; data and recovery records retained, remote residue unverified; counters show the last saved progress"
+		if want.ItemsCaptured {
+			job.Error = "interrupted by shutdown; data and recovery records retained, remote residue unverified; other counters show the last saved progress"
+			job.Counters.ObjectsFailed = want.ItemTotals.Failed
+		}
 		finished, err := time.Parse(time.RFC3339, got.After.Job.FinishedAt)
 		if err != nil || finished.Before(started) || finished.After(time.Now().UTC()) {
 			t.Fatalf("invalid restart finish time: %q", got.After.Job.FinishedAt)
@@ -255,6 +259,9 @@ func localCompletionRun(t *testing.T, h *Harness, direction, fault, class string
 		}
 	}
 	state := uploadRecoveryRead(t, h.database, id)
+	if state.ItemsCaptured != (direction == "upload") {
+		t.Fatalf("local caller used the wrong recording version: direction=%s captured=%t", direction, state.ItemsCaptured)
+	}
 	admitted := !startRefused && fault != "planning" && fault != "running"
 	wantState, wantAudit := "complete", "applied"
 	if unavailable {

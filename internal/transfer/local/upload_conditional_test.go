@@ -57,10 +57,11 @@ func TestStagedUploadPreservesFinalHeadRacer(t *testing.T) {
 			go func() {
 				defer close(finished)
 				report := &Report{}
-				fail := func(name, stage string, err error) {
-					report.Failures = append(report.Failures, Failure{Name: name, Stage: stage, Err: err.Error()})
+				u := &uploadRun{report: report}
+				result := commitStagedUpload(ctx, s, "media", stage+"object", preflight.Items[0], nil)
+				if err := u.observe(preflight.Items[0], result); err != nil {
+					t.Error(err)
 				}
-				commitStagedUpload(ctx, s, "media", "docs/", stage, preflight.Items[0], report, fail, nil, nil)
 				done <- report
 			}()
 			event, err := barrier.Wait(ctx)

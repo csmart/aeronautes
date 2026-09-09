@@ -76,7 +76,7 @@ type Observation struct {
 	CopiedBytes int64
 }
 
-func diagnostic(stage Stage, code Code, err error) Diagnostic {
+func ClassifyDiagnostic(stage Stage, code Code, err error) Diagnostic {
 	d := Diagnostic{Stage: stage, Code: code}
 	var se *swiftcontrol.SwiftError
 	var ne net.Error
@@ -127,14 +127,14 @@ type executionResult struct {
 
 func failed(effect Effect, stage Stage, code Code, label string, err error) executionResult {
 	return executionResult{
-		Observation: Observation{Result: ResultFailed, Effect: effect, Diagnostic: diagnostic(stage, code, err)},
+		Observation: Observation{Result: ResultFailed, Effect: effect, Diagnostic: ClassifyDiagnostic(stage, code, err)},
 		label:       label, failure: err,
 	}
 }
 
 func conflict(effect Effect, err error, detail string) executionResult {
 	return executionResult{
-		Observation: Observation{Result: ResultConflict, Effect: effect, Diagnostic: diagnostic(StageCommit, CodeConflict, err)},
+		Observation: Observation{Result: ResultConflict, Effect: effect, Diagnostic: ClassifyDiagnostic(StageCommit, CodeConflict, err)},
 		detail:      detail,
 	}
 }
@@ -148,7 +148,7 @@ func (r *executionResult) addProblem(stage Stage, err error) {
 		return
 	}
 	if r.Diagnostic == (Diagnostic{}) {
-		r.Diagnostic = diagnostic(stage, CodeUnknown, err)
+		r.Diagnostic = ClassifyDiagnostic(stage, CodeUnknown, err)
 	}
 	if r.Effect != EffectNotAttempted {
 		r.Effect = EffectUnresolved
@@ -211,7 +211,7 @@ func (e *Executor) abandonBatch(names []string, cause error) error {
 			break
 		}
 		observation := Observation{Result: ResultNotAttempted, Effect: EffectNotAttempted,
-			Diagnostic: diagnostic(StageEngine, CodeIncomplete, cause)}
+			Diagnostic: ClassifyDiagnostic(StageEngine, CodeIncomplete, cause)}
 		if err := e.cfg.Recorder.Execute(name, observation); err != nil {
 			e.stop(err)
 			break

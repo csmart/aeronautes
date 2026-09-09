@@ -24,6 +24,8 @@ When the DLO committed-record callback returns an error, record that issue and p
 Read-only live verification may still run; a successful existing verification still contributes the copied/verified object and byte counts.
 If verification also fails, retain both the transfer failure and the bookkeeping issue without adding the bookkeeping issue to `ObjectsFailed`.
 Later objects retain their own existing before-commit admission requirements; this slice grants no new write authority or recovery retry.
+The later checked-upload migration in [ADR 0031](0031-upload-item-recording.md) strengthens that continuation boundary: a required captured, committing or committed record refusal stops subsequent upload work, including another authentication attempt or directory group.
+Ordinary cleanup issues retain this decision's continuation and exact issue-count behaviour.
 
 After successful live verification, handle a staging DELETE error explicitly, retain the recovery facts and report the exact attempted staging name in the issue text.
 An authoritative not-found response means that attempted staging name is already absent and does not create an additional cleanup issue.
