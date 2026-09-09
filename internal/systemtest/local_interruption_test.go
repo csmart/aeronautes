@@ -257,7 +257,7 @@ func interruptedUpload(t *testing.T, h *Harness, mode string) {
 		if firstFailed {
 			first = 0
 		}
-		fragments = append(fragments, fmt.Sprintf("upload failures (first: live/%s:", names[first]))
+		fragments = append(fragments, fmt.Sprintf("transfer failures (first: live/%s:", names[first]))
 	}
 	if cancelled {
 		fragments = append(fragments, "context canceled")
@@ -415,7 +415,7 @@ func interruptedDownload(t *testing.T, h *Harness, mode string) {
 		want.ObjectsPlanned++
 		if mode == "failure_then_error" {
 			want.ObjectsFailed = 1
-			fragments = append(fragments, "1 failed (first: scope/folder/:", filepath.Join(root, "folder"))
+			fragments = append(fragments, "transfer failures (first: scope/folder/:", filepath.Join(root, "folder"))
 		} else {
 			want.ObjectsCopied++
 			want.ObjectsVerified++

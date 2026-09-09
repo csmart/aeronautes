@@ -222,9 +222,14 @@ func downloadRootGuardService(t *testing.T, h *Harness, spelling string, native,
 	if err != nil || !reflect.DeepEqual(visible, saved.Job) || len(saved.Audit) != 1 || saved.Audit[0].Operation != "transfer.local.complete" || saved.Audit[0].Resource != "job "+id || saved.Audit[0].Result != "applied" {
 		t.Fatalf("public, durable or audit outcome differs: %+v %v", saved, err)
 	}
-	if len(trace.writeSnapshot()) != 0 || saved.ItemsCaptured || len(saved.Items) != 0 {
-		t.Fatalf("download changed remote data or record version: %+v", saved)
+	if len(trace.writeSnapshot()) != 0 {
+		t.Fatalf("download changed remote data: %v", trace.writeSnapshot())
 	}
+	originals := map[string][]byte{}
+	if !empty {
+		originals["proof.bin"] = body
+	}
+	assertDownloadRecords(t, h, id, source, prefix, captured, nil, originals, native, saved)
 	if next, err := h.Transfer.RerunJob(t.Context(), id); next != "" || err == nil || !strings.Contains(err.Error(), "own dialog") {
 		t.Fatalf("download history gained rerun authority: %q %v", next, err)
 	}

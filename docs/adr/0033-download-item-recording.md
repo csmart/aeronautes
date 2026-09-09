@@ -1,15 +1,15 @@
 # ADR 0033 — checked download item records
 
-**Status:** Proposed for independent local review under the authorised audit remediation plan.
+**Status:** Contract independently approved on 9 September 2026; implementation review and protected delivery pending.
 **Scope:** The separate download caller migration required by [ADR 0032](0032-download-placement-prerequisites.md) step seven.
-Implementation requires approval of this contract first.
+The [implementation evidence](../experiments/2026-09-09-checked-download-records.md) separates maintained tests from the remaining delivery gates.
 
 ## Problem and oracle
 
 The [reviewed download archive](../experiments/2026-09-09-download-boundaries.md) reproduces 201 and 401 failed downloads reported as 200, with no retained item identities, through actual services on both owned providers and both execution routes.
 Its native route uses a newline in the remote prefix while keeping ordinary supported local filenames.
 The captured-root, stage-lifecycle and native-closure corrections have passed independent review and protected PR/master delivery; [PR70](../experiments/2026-09-09-mock-scheduling.md#independent-review-and-protected-delivery) also delivered their admission tests and measured scheduling prerequisite.
-Downloads still use record version zero.
+The delivered prerequisite baseline uses download record version zero.
 
 The oracle is the exact selected-name set, captured local destination, independently witnessed placement/content/cleanup effects and the checked logical-record contract in [ADR 0028](0028-transfer-item-records.md).
 [ADR 0031](0031-upload-item-recording.md) supplies the existing optional-recorder, checked application adapter and item-derived completion pattern.
@@ -62,7 +62,7 @@ Do not use `CreateTemp` to create an unrecorded pathname and then record it afte
 
 An existing file, directory or symlink at the admitted temporary name refuses that item and is retained unchanged.
 Track whether this invocation's exclusive creation succeeded; never unlink a pathname whose exclusive create failed.
-Keep checked source-body closure when parent-directory or temporary-file admission fails.
+Keep checked source-body closure when parent-directory or temporary-file creation fails.
 Preserve the native length, sync, file-close and source-close prerequisites before no-replace final placement, and preserve simultaneous primary/cleanup errors.
 Successful final placement retains copied bytes beside a later temporary cleanup refusal.
 
@@ -94,7 +94,7 @@ This extra directory observation is the bounded verification prerequisite for it
 | Admitted item stopped before any relevant local mutation or engine invocation | `not_attempted` with `not_attempted` effect knowledge and typed cancellation/incomplete reason; no verification |
 | Native selected-object open fails before local work | `failed`, `not_attempted`; no verification |
 | Parent/temporary/stage creation, native transfer or engine invocation began but final placement is not established | Failed/conflict or missing execution with unresolved effects; failed verification only when an actual check failed |
-| Staged/native checks pass but final no-replace link fails | Failed/conflict execution with unresolved effects; no successful verification and no copied bytes |
+| Staged/native checks pass but final no-replace link fails | Failed/conflict execution with unresolved effects; no verification observation and no copied bytes |
 | File passes the established checks and final placement succeeds | `copied`, `reported_applied`, with witnessed bytes; verified observation |
 | Final placement succeeds but item cleanup has a problem | Keep `copied` and bytes with a typed problem and unresolved effects; retain actual verification when its acknowledgement succeeds |
 | Directory materialisation and directory observation both succeed | Zero-byte `copied`, `reported_applied`; verified observation |

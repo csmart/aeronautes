@@ -1,12 +1,15 @@
 package local
 
 import (
+	"context"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
 )
 
 type downloadCloseReader struct {
@@ -34,8 +37,10 @@ func (r downloadReadFailure) Read(p []byte) (int, error) {
 func TestNativeDownloadClosure(t *testing.T) {
 	readErr, syncErr := errors.New("read refused"), errors.New("sync refused")
 	fileErr, sourceErr := errors.New("file close refused"), errors.New("source close refused")
-	for _, fault := range []string{"control", "read", "length", "over_length", "sync", "file_close", "source_close", "all_closes", "read_and_closes", "target_exists"} {
+	for _, fault := range []string{"control", "read", "length", "over_length", "sync", "file_close", "source_close", "all_closes", "read_and_closes", "target_exists", "cancelled_before_link"} {
 		t.Run(fault, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
 			dir := t.TempDir()
 			target := filepath.Join(dir, "final")
 			if fault == "target_exists" {
@@ -83,6 +88,10 @@ func TestNativeDownloadClosure(t *testing.T) {
 			body := downloadCloseReader{Reader: reader, close: func() error {
 				sourceCloses++
 				checkBeforeLink()
+				if fault == "cancelled_before_link" {
+					cancel()
+					expected = append(expected, context.Canceled)
+				}
 				if fault == "source_close" || fault == "all_closes" || fault == "read_and_closes" {
 					expected = append(expected, sourceErr)
 					return sourceErr
@@ -95,9 +104,19 @@ func TestNativeDownloadClosure(t *testing.T) {
 			} else if fault == "over_length" {
 				wantSize--
 			}
-			placed, err := finishNativeDownload(body, file, temp.Name(), target, wantSize)
+			outcome := finishNativeDownload(ctx, body, file, temp.Name(), target, wantSize)
+			placed, err := outcome.Result == transfercopy.ResultCopied, outcome.err()
 			if placed != (fault == "control") || (err == nil) != (fault == "control") {
 				t.Fatalf("placement outcome: placed=%v error=%v", placed, err)
+			}
+			wantVerification := transfercopy.ResultFailed
+			if fault == "control" {
+				wantVerification = transfercopy.ResultVerified
+			} else if fault == "read" || fault == "target_exists" || fault == "cancelled_before_link" {
+				wantVerification = ""
+			}
+			if wantVerification == "" && outcome.verification != nil || wantVerification != "" && (outcome.verification == nil || outcome.verification.Result != wantVerification) {
+				t.Fatalf("native result invented or lost an attempted verification: %+v", outcome.verification)
 			}
 			for _, cause := range expected {
 				if !errors.Is(err, cause) {
@@ -165,7 +184,8 @@ func TestNativeDownloadCleanupRefusal(t *testing.T) {
 				}
 				return nil
 			}}
-			placed, err := finishNativeDownload(body, temp, temp.Name(), final, int64(len("complete bytes")))
+			outcome := finishNativeDownload(t.Context(), body, temp, temp.Name(), final, int64(len("complete bytes")))
+			placed, err := outcome.Result == transfercopy.ResultCopied, outcome.err()
 			if placed != (primary == "none") || !errors.Is(err, os.ErrPermission) {
 				t.Fatalf("cleanup refusal lacks actual placement/permission facts: %v %v", placed, err)
 			}
@@ -173,7 +193,10 @@ func TestNativeDownloadCleanupRefusal(t *testing.T) {
 				t.Errorf("cleanup erased primary error: %v", err)
 			}
 			report := &Report{}
-			report.nativeDownloaded(DownloadItem{Name: "selected", Size: int64(len("complete bytes"))}, placed, err)
+			run := downloadRun{report: report}
+			if err := run.observe(DownloadItem{Name: "selected", Size: int64(len("complete bytes"))}, outcome); err != nil {
+				t.Fatal(err)
+			}
 			if placed {
 				if report.Done != 1 || report.Bytes != int64(len("complete bytes")) || len(report.Failures) != 0 || report.PostCommitIssues != 1 || len(report.PostCommitIssueSamples) != 1 {
 					t.Fatalf("cleanup hid witnessed copied bytes: %+v", report)

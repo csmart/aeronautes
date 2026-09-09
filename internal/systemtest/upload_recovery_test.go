@@ -485,7 +485,7 @@ func uploadRecoveryRun(t *testing.T, h *Harness, test uploadRecoveryCase) {
 			}
 		}
 	}
-	if failed > 0 && !strings.Contains(job.Error, "upload failures (first:") {
+	if failed > 0 && !strings.Contains(job.Error, "transfer failures (first:") {
 		t.Errorf("transfer failure hidden: %q", job.Error)
 	}
 	if issues == 0 && failed == 0 && job.Error != "" {

@@ -707,9 +707,42 @@ func copyCompletionQueued(t *testing.T, h *Harness, fault string) {
 		if len(firstState.Audit) != 0 || firstState.Job.FinishedAt != "" || firstState.Job.Error != "" {
 			t.Errorf("partial running-job transaction: %+v", firstState)
 		}
+	} else if fault != "control" {
+		// Already admitted work may retain its facts, while public totals
+		// remain unavailable after another job's refused completion.
+		wantFirstState = "partial"
+		unavailable := h.jobStore.Available()
+		if unavailable == nil || firstState.Job.Error != unavailable.Error() || firstState.Job.FinishedAt == "" ||
+			len(firstState.Audit) != 1 || firstState.Audit[0].Operation != "transfer.local.partial" ||
+			firstState.Audit[0].Result != "verify_mismatch" || firstState.Audit[0].Resource != "job "+first ||
+			firstState.Audit[0].Summary != " · item outcomes: 0 failed names, 0 conflicts, 0 refusals, 0 unresolved, 0 unverified, 0 with problems" {
+			t.Errorf("running download lost the earlier persistence refusal: %+v latch=%v", firstState, unavailable)
+		}
 	}
 	if firstState.Job.State != wantFirstState || firstState.Job.Counters != wantFirstCounters {
 		t.Errorf("queued Copy affected running download: %+v", firstState)
+	}
+	if !firstState.ItemsCaptured || firstState.ItemTotals != (jobs.ItemTotals{Items: 1, Planned: 1, Admitted: 1}) || len(firstState.Items) != 1 {
+		t.Fatalf("running download lost its admitted item facts: %+v", firstState)
+	}
+	item := firstState.Items[0]
+	if item.Key != "hold/first.bin" || item.JobID != first || !item.Planned || !item.Admitted || item.ListedBytes != 10 ||
+		item.Source != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: src, Object: "hold/first.bin"}) ||
+		item.Destination != (jobs.ItemLocation{Kind: jobs.ItemLocal, LocalPath: filepath.Join(root, "first.bin")}) ||
+		item.Staging == nil || *item.Staging != (jobs.ItemLocation{Kind: jobs.ItemLocal, LocalPath: filepath.Join(root, ".aeronautes-stage-"+first, "first.bin")}) ||
+		item.Execution == nil || item.Execution.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemCopied, Effect: jobs.EffectReportedApplied, CopiedBytes: 10}) ||
+		item.Verification == nil || item.Verification.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemVerified, Effect: jobs.EffectNotAttempted}) {
+		t.Fatalf("running download lost its exact placement/verification history: %+v", item)
+	}
+	if fault == "control" {
+		assertDownloadItemPages(t, h, first, map[string]jobs.ItemRecord{item.Key: item}, firstState.ItemTotals)
+	} else {
+		if page, err := h.Jobs.Items(t.Context(), first, "", 100); err == nil || page.Items != nil {
+			t.Errorf("shared persistence refusal exposed public download items: %+v %v", page, err)
+		}
+		if totals, err := h.Jobs.ItemTotals(t.Context(), first); err == nil || totals != (app.JobItemTotalsDTO{}) {
+			t.Errorf("shared persistence refusal exposed public download totals: %+v %v", totals, err)
+		}
 	}
 	if fault != "control" {
 		copyCompletionRefuseNew(t, h, src, dst, 2)

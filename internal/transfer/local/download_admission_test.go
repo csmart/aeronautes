@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
 )
 
 type downloadAdmissionTransport func(*http.Request) (*http.Response, error)
@@ -70,7 +72,8 @@ func TestNativeDownloadAdmissionClosesSource(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				placed, err := nativeDownload(t.Context(), source, "media", DownloadItem{Name: "selected", RelPath: "final", Size: 21}, dest)
+				outcome := nativeDownload(t.Context(), source, "media", DownloadItem{Name: "selected", RelPath: "final", Size: 21}, dest, filepath.Join(dest, ".aeronautes-part-fixture"))
+				placed, err := outcome.Result == transfercopy.ResultCopied, outcome.err()
 				if placed || err == nil || gets.Load() != 1 || closes.Load() != 1 {
 					t.Fatalf("admission did not close the actual GET exactly once: placed=%v gets=%d closes=%d error=%v", placed, gets.Load(), closes.Load(), err)
 				}

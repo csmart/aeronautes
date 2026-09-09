@@ -259,7 +259,7 @@ func localCompletionRun(t *testing.T, h *Harness, direction, fault, class string
 		}
 	}
 	state := uploadRecoveryRead(t, h.database, id)
-	if state.ItemsCaptured != (direction == "upload") {
+	if !state.ItemsCaptured {
 		t.Fatalf("local caller used the wrong recording version: direction=%s captured=%t", direction, state.ItemsCaptured)
 	}
 	admitted := !startRefused && fault != "planning" && fault != "running"

@@ -12,7 +12,6 @@ package local
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,7 +20,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
-	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
 	"github.com/csmart/aeronautes/internal/transfer/plan"
 	"github.com/csmart/aeronautes/internal/transfer/rclone"
 )
@@ -358,168 +356,5 @@ func (r *Report) postCommitIssue(name, stage string, err error) {
 	r.PostCommitIssues++
 	if len(r.PostCommitIssueSamples) < maxFailures {
 		r.PostCommitIssueSamples = append(r.PostCommitIssueSamples, Failure{Name: name, Stage: stage, Err: err.Error()})
-	}
-}
-
-// Download materializes a preflighted scope: directories first, engine
-// batch for safe names, native streams for the rest, then a local stat
-// verify per file.
-func Download(ctx context.Context, src *swiftcontrol.Session, engine Engine, srcSpec, container, prefix, destDir, stageID string,
-	preflight *DownloadPreflight, onProgress func(done, total, bytes int64)) (*Report, error) {
-	if !validDownloadRoot(destDir) {
-		return nil, errors.New(downloadPathRefusal)
-	}
-	if preflight == nil {
-		return nil, errors.New("download needs a preflight plan")
-	}
-	if preflight.Rejected() {
-		return nil, errors.New("preflight rejected the download; nothing was written")
-	}
-	if stageID == "" {
-		return nil, errors.New("download needs a stage id (the job id)")
-	}
-	report := &Report{}
-	fail := func(name, stage string, err error) {
-		if len(report.Failures) < maxFailures {
-			report.Failures = append(report.Failures, Failure{Name: name, Stage: stage, Err: err.Error()})
-		}
-	}
-	total := int64(len(preflight.Items))
-	progress := func() {
-		if onProgress != nil {
-			onProgress(report.Done+int64(len(report.Failures)), total, report.Bytes)
-		}
-	}
-
-	var engineNames []string
-	engineItems := map[string]DownloadItem{}
-	for _, item := range preflight.Items {
-		switch {
-		case item.Dir:
-			if err := os.MkdirAll(filepath.Join(destDir, item.RelPath), 0o755); err != nil {
-				fail(item.Name, "mkdir", err)
-			} else {
-				report.Done++
-			}
-			progress()
-		case item.Route == "native":
-			report.NativeRouted++
-			placed, err := nativeDownload(ctx, src, container, item, destDir)
-			report.nativeDownloaded(item, placed, err)
-			progress()
-		default:
-			rel := strings.TrimPrefix(item.Name, prefix)
-			engineNames = append(engineNames, rel)
-			engineItems[rel] = item
-		}
-	}
-
-	if len(engineNames) > 0 {
-		if err := ctx.Err(); err != nil {
-			return report, err
-		}
-		// The engine writes into a job stage directory, never the live
-		// destination tree: a partial or racing write cannot land on a
-		// final path, and each file moves into place no-replace with an
-		// exact byte check (the follow-up review's G2/G16 remainder).
-		stageDir := filepath.Join(destDir, ".aeronautes-stage-"+stageID)
-		if err := os.Mkdir(stageDir, 0o700); err != nil {
-			return report, err
-		}
-		defer func() {
-			report.StageCleanup = cleanupDownloadStage(stageDir, engineItems)
-		}()
-		result, err := copyWithAuthRetry(ctx, src, engine, srcSpec+"/"+strings.TrimSuffix(prefix, "/"), stageDir, engineNames, nil)
-		if err == nil {
-			err = transfercopy.ResultFailure(result)
-		}
-		if err != nil {
-			for _, rel := range engineNames {
-				fail(engineItems[rel].Name, "engine", err)
-			}
-			progress()
-		} else {
-			for _, rel := range engineNames {
-				item := engineItems[rel]
-				staged := filepath.Join(stageDir, item.RelPath)
-				target := filepath.Join(destDir, item.RelPath)
-				placed, err := placeDownloaded(staged, target, item.Size)
-				if placed {
-					report.Done++
-					report.Bytes += item.Size
-					if err != nil {
-						report.postCommitIssue(item.Name, "staging-cleanup", err)
-					}
-				} else if err != nil {
-					fail(item.Name, "place", err)
-				}
-				progress()
-			}
-		}
-	}
-	return report, nil
-}
-
-// placeDownloaded moves one staged download onto its final path: exact
-// byte check first, then os.Link — a true no-replace landing (EEXIST if
-// anything is already at the target), never a replacement-capable
-// rename.
-func placeDownloaded(staged, target string, wantSize int64) (bool, error) {
-	info, err := os.Stat(staged)
-	if err != nil {
-		return false, fmt.Errorf("missing after download (silent drop?): %w", err)
-	}
-	if info.Size() != wantSize {
-		return false, fmt.Errorf("size %d != object %d", info.Size(), wantSize)
-	}
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		return false, err
-	}
-	// os.Link is a true no-replace landing (EEXIST if anything appears
-	// at the target) — a rename would replace whatever won the race.
-	// The staged copy is removed only after the link exists. (Same-
-	// volume on the happy path since the stage dir sits beside the
-	// target; cross-device atomicity is the §65.10 platform matrix.)
-	if err := os.Link(staged, target); err != nil {
-		return false, err
-	}
-	return true, os.Remove(staged)
-}
-
-func nativeDownload(ctx context.Context, src *swiftcontrol.Session, container string, item DownloadItem, destDir string) (bool, error) {
-	body, _, err := src.OpenObject(ctx, container, item.Name)
-	if err != nil {
-		return false, err
-	}
-	target := filepath.Join(destDir, item.RelPath)
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		return false, errors.Join(err, body.Close())
-	}
-	// Private temp beside the target, fsync, then a no-replace move: a
-	// failed read never leaves a partial file at the final name, and
-	// the byte count must match the preflight before the move.
-	temp, err := os.CreateTemp(filepath.Dir(target), ".aeronautes-part-*")
-	if err != nil {
-		return false, errors.Join(err, body.Close())
-	}
-	return finishNativeDownload(body, temp, temp.Name(), target, item.Size)
-}
-
-// copyWithAuthRetry mirrors the executor's bounded auth lifecycle for
-// the local paths (review F-06 parity): one auth-shaped failure forces
-// re-authentication and earns exactly one fresh child.
-func copyWithAuthRetry(ctx context.Context, session *swiftcontrol.Session, engine Engine,
-	src, dst string, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
-	for attempt := 0; ; attempt++ {
-		result, err := engine.Copy(ctx, src, dst, names, onEvent)
-		if err != nil {
-			return result, err
-		}
-		if failure := transfercopy.ResultFailure(result); failure != nil &&
-			attempt == 0 && transfercopy.IsAuthFailure(result) && ctx.Err() == nil {
-			session.ForceReauth()
-			continue
-		}
-		return result, nil
 	}
 }
