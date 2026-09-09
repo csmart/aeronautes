@@ -306,17 +306,17 @@ func TestNativeDownloadNeverLeavesPartials(t *testing.T) {
 	dest := t.TempDir()
 
 	// Short read: item.Size larger than the object → refuse + no file.
-	err := nativeDownload(context.Background(), session, "media",
+	placed, err := nativeDownload(context.Background(), session, "media",
 		DownloadItem{Name: "ok.bin", RelPath: "short.bin", Size: 9999}, dest)
-	if err == nil || !strings.Contains(err.Error(), "short") {
+	if placed || err == nil || !strings.Contains(err.Error(), "short") {
 		t.Fatalf("short download = %v", err)
 	}
 	if _, statErr := os.Stat(filepath.Join(dest, "short.bin")); statErr == nil {
 		t.Fatal("short download left a file at the final name")
 	}
 	// Clean copy lands with exact bytes.
-	if err := nativeDownload(context.Background(), session, "media",
-		DownloadItem{Name: "ok.bin", RelPath: "ok.bin", Size: int64(len("complete-content"))}, dest); err != nil {
+	if placed, err := nativeDownload(context.Background(), session, "media",
+		DownloadItem{Name: "ok.bin", RelPath: "ok.bin", Size: int64(len("complete-content"))}, dest); !placed || err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(filepath.Join(dest, "ok.bin"))
