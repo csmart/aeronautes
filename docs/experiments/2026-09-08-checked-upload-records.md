@@ -88,7 +88,7 @@ The final Go 1.27.1 race/coverage producer passed 2,291 named tests (701 top-lev
 The system-test package took 890.494 seconds locally; all 311 Go/SQL source hashes match the tested tree.
 This full `./...` result includes the desktop root and mock-Swift command packages and uses Go's default package-local coverage instrumentation.
 Earlier internal-only producers used `-coverpkg=./internal/...` to count execution from other packages' tests too, so their percentages are not directly comparable; hosted integration retains its configured cross-package coverage check.
-Independent local approval and protected PR/master delivery remain required.
+Independent local approval and protected PR/master delivery are recorded below.
 The complete producer reconciles the existing scenario report at 40/116 cells with gaps in 38/52 actions; no new coverage credit is inferred from passing tests.
 All 880 frontend tests, Svelte/TypeScript checks, frontend production build, vet, native application build, CGO-disabled internal build, upstream Swift core tests and source provenance checks passed.
 All 22 binding files were unchanged after regeneration.
@@ -164,10 +164,36 @@ The unmodified 401-name controls also pass on both providers under cross-package
 These controlled delays reproduce premature waiting, not the hosted runner's exact latency or production throughput.
 The final maintained identity replay passes all sixteen leaves and both parents with race detection, cross-package coverage and no skips.
 Of the 311 Go/SQL inputs from the earlier full validation, only this test file changes; the maintained correction matches the passing controlled overlay after removing its artificial delay.
-Independent local review and successful replacement PR/master checks remain required for this correction.
+Independent local review and successful replacement PR/master checks approved this correction as recorded below.
 Application code, the shared cleanup helper, pipeline limits, assertions and merge protections remain unchanged.
 
 No scenario cells, complete audit packages or release gates are closed by this caller migration.
 Download recording, source replacement/root confinement, backend-held approval and credential authority, current remote identity, stronger content/metadata verification, concurrent writers, per-effect/lost-history recovery, ordinary staging deletion authority, native child quiescence and all six platforms remain separate work.
 Mirror starts, changed Copy overwrites and automatic recovery reclamation remain refused.
 Valuable-data operation remains on hold.
+
+## Protected delivery
+
+[PR65](https://github.com/csmart/aeronautes/pull/65) delivered the checked upload caller and its separate completion-wait correction after independent local review approved both changes.
+The preceding documentation commit records the protected prerequisite deliveries through PR63 and PR64.
+The reviewer independently ran the full 2,291-test Go and 880-test frontend suites for the caller, then reproduced the premature fixture wait and verified all sixteen maintained upload identity cases for the correction.
+The first failed hosted run and controlled before/after evidence remain preserved; the correction changed two test lines and their evidence record, without changing application code or CI budgets.
+
+Protected rebase merging preserved `af46a276` as `ff8b56f5`, `039e7758` as `75627158` and reviewed head `99a2a4795b9de3760b1df5a37592275615aa2843` as master `2b68d28e000e676537d131b00610cffe0b60205a`.
+All three patches match and both heads have tree `86b3fe1e2d93475355081859cb1b6c04d42ed390`.
+The current base was delivered PR64 master `6b754f43e3e1f708abc50a7af9955a8ec0b4c074`.
+
+All five actual checks succeeded on the latest reviewed PR head with current master incorporated and again on the resulting master: Go, frontend, owned real-Swift integration, headless smoke and the aggregate gate.
+Strict merge protection remained enabled, and only the verified source head was merged.
+
+| Run | System package | Whole integration job |
+| --- | ---: | ---: |
+| [PR65](https://github.com/csmart/aeronautes/actions/runs/34305861294) | 1,071.119 s | 1,303 s |
+| [Resulting master](https://github.com/csmart/aeronautes/actions/runs/34307415807) | 1,074.871 s | 1,299 s |
+
+Each complete integration log contains 2,289 named passing tests across twenty internal packages, zero failures and only the existing optional engine-matrix and keychain round-trip skips.
+The required owned Swift integration job ran successfully on both heads.
+The finite 1,200-second package and 1,500-second job budgets remained unchanged; the master package has about 125 seconds of headroom.
+These whole-suite measurements include runner variance and do not isolate upload recording cost or establish production throughput.
+Future slices must measure runtime growth and investigate scheduling before considering any budget change.
+New downloads and historical jobs retain record version zero; the complete audit packages and valuable-data release gates above remain open.
