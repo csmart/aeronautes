@@ -112,7 +112,7 @@ All 2,480 preceding tests remain alongside six new named tests, including checke
 Its 326 captured Go/SQL hashes identify the uncommitted test draft at recorded HEAD `0204d81d5b1d1f0ecf26964a506b11e22f4c4aa9`; production code is unchanged.
 The system package takes 682.678 seconds with fourteen parallel groups, the unchanged limit of three and no sequential overlap.
 Scenario reconciliation remains valid at 40/116 cells with 38/52 actions having gaps, and all release gates remain open.
-Independent local review and protected delivery of these follow-up tests remain required.
+Independent local review and [protected PR70 delivery](2026-09-09-mock-scheduling.md#independent-review-and-protected-delivery) passed for these follow-up tests alongside the separate mock scheduling prerequisite.
 
 With the owned two-account SAIO fixture configured and verified pinned rclone available, the focused replay is:
 
@@ -154,4 +154,5 @@ The unchanged 1,200-second package and 1,500-second job limits leave minimum obs
 Continue measuring the fixture schedule before adding the separate download recording matrix; these runs do not promise a fixed runtime.
 
 This delivers the bounded native placement/closure correction.
-The maintained admission follow-ups and the wider filesystem, verification, recovery, platform and valuable-data release requirements retain their separate evidence and delivery obligations.
+The maintained admission follow-ups were delivered separately through [PR70](2026-09-09-mock-scheduling.md#independent-review-and-protected-delivery).
+The wider filesystem, verification, recovery, platform and valuable-data release requirements retain their separate evidence and delivery obligations.

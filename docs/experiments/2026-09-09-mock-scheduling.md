@@ -47,7 +47,7 @@ Its 326 Go/SQL hashes identify the uncommitted scheduling draft at recorded HEAD
 All preceding test names remain, with the unchanged generated expiry case checked against its recorded start plus one hour.
 The system package takes 564.812 seconds; the preceding admission run took 682.678 seconds on this local fixture.
 All twenty-seven selected groups resume and finish, and no non-parallel top-level group overlaps them.
-As in the earlier experiment, four JSON records briefly overlap because Go releases an execution slot before emitting the preceding pass; the longest observed overlap is 41 microseconds and the runtime's three-slot limit is unchanged.
+In this producer, four JSON records briefly overlap because Go releases an execution slot before cleanup and the preceding pass; the longest observed overlap is 41 microseconds and the runtime's three-slot limit is unchanged.
 Scenario reconciliation remains valid at 40/116 cells with 38/52 actions having gaps.
 
 Ten before/after producers exercise the existing real-Swift `New(t)` entry point with absent authentication settings, refused primary credentials, optional refused secondary credentials, required refused secondary credentials and an ordinary control.
@@ -60,5 +60,36 @@ An overlay restoring the old environment-mutating mock constructor is rejected a
 The unchanged 58-case positive comparison remains the passing control.
 Go vet and formatting checks pass.
 
-Independent local review and protected PR/master delivery remain required.
+Independent local review and protected PR/master delivery passed as recorded below.
 No scenario cell, audit package or valuable-data release gate is closed by this experiment.
+
+## Independent review and protected delivery
+
+Independent review approved the admission tests and the separate scheduling commit.
+The reviewer reproduced all 2,486 named full-suite passes across twenty packages with no failures or test skips and a 563.2-second system package.
+A separate system-package stress run at parallelism eight passed 690 named tests in 348.1 seconds without failures or skips.
+The thirteen mock test bodies remain unchanged apart from their parallel scheduling wrappers.
+
+Go releases a parallel execution slot before the finishing group's cleanup and final pass event.
+The author's full JSON stream had a longest overlap of 41 microseconds; the reviewer's had one 695-millisecond interval while a mock harness closed its servers.
+These are run-specific event intervals, not a fixed timing bound or evidence of a fourth running test body under the three-slot limit.
+Each fixture owns its cleanup state and the full inventory remains required.
+
+[PR 70](https://github.com/csmart/aeronautes/pull/70) passed all five required jobs on reviewed source `82f0b3901e315d87fec163bc3c62f33345d3e3df` in the [PR run](https://github.com/csmart/aeronautes/actions/runs/34343266319) with current master incorporated.
+The protected merge produced master `ca3439bfc9165c1e46e985cffc63dd94b16507e7`, whose [own run](https://github.com/csmart/aeronautes/actions/runs/34345016975) also passed all five jobs.
+The exact source and merged tree is `f512a884624f651bf21a017274b95d627cce17ca` and both logical patches are preserved.
+The source branch remained unchanged during delivery, with no ruleset bypass.
+
+| Observed run | System-test package | Integration job |
+| --- | ---: | ---: |
+| PR 70 | 792.682 s | 1,011 s |
+| Resulting master | 826.057 s | 1,064 s |
+
+Both complete integration logs contain 2,484 named passes across twenty passing packages, zero failures and the existing optional `TestRcloneMatrix` and `TestKeychainRoundTrip` skips.
+The complete 2,486-test local terminal inventory is retained, including validation of the clock-generated expiry name against each producer's recorded time.
+The PR log SHA-256 is `3d59f50f4b078e33902bdf1b3523c435e82216b28c3a19f8452fb3af4257e94a`; the master log SHA-256 is `3101335a59e118b0fd17bfd614a273aa6fd7148a6300dc34f959f4f646d6cde5`.
+Within the unchanged 1,200-second package and 1,500-second integration-job limits, minimum observed headroom is 373.943 and 436 seconds respectively.
+These measured runs do not promise a fixed hosted duration or production transfer performance.
+
+This delivers the admission regressions and fixture scheduling prerequisite for the separate download recording contract.
+Downloads remain record version zero and all wider audit and valuable-data release gates remain in force.
