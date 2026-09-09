@@ -119,3 +119,32 @@ These fixture tags must stay inside the disposable repository.
 
 P33 still needs the native About/package/resource observations across the supported platform matrix before its full acceptance can be closed.
 P34's exact-commit release eligibility and every wider valuable-data gate remain separate.
+
+## Windows checkout line endings
+
+The first [unsigned branch build](https://github.com/csmart/aeronautes/actions/runs/34344406506) at `2a869e41f385714e54cb82b64b96d6f38744a1fb` passed its test job and all six build targets.
+Artifact inspection found matching development identities and checksums throughout, but both Windows artifacts reported `dirty`; the Linux and macOS artifacts reported `clean`.
+The hosted toolchains recorded Go 1.27.0, distinct from the local Go 1.27.1 checks above.
+Actual RPM and DEB development headers both use `0.0.0~dev.<revision>` before their package release, while the recorded canonical package version and filenames retain `0.0.0-dev.<revision>`.
+The downloaded Linux amd64 binary returned `dev`, that full source revision and `clean` from `--version`, with no state files created in its fresh disposable state directory.
+This is executable identity evidence, not native About or package installation evidence.
+
+A disposable checkout of that exact source with `core.autocrlf=true` reproduced the dirty state locally.
+It started clean; Windows-target `go mod tidy` rewrote `go.mod` with LF, and Wails 3.0.0-beta.16 binding generation rewrote all 22 tracked binding files with LF.
+Git reported those files as modified even though their normalised contents matched the committed inputs and `git diff` contained no content hunks.
+A clean fixture tag would consequently be refused by the existing release guard.
+The hosted logs show those generators running before identity resolution, but do not contain the old checkout's Git configuration or changed-file list, so attribution of the hosted failure to line endings remains an inference.
+The original downloaded artifacts, logs, failing checkout and reader corrections are preserved.
+
+The scoped `.gitattributes` rules keep only the observed build-rewritten inputs, `go.mod` and `frontend/bindings/`, as LF on checkout.
+No tracked source contents are renormalised and the source-state guard is unchanged.
+A local control with those attributes stays clean through the same module and binding generators.
+The maintained regression uses a real autocrlf checkout and module tidying, plus the LF write boundary of binding generation; it also requires changed binding content and untracked inputs to remain refused.
+The final correction producer, `windows-eol-fix-v2`, records 625 matching source inputs and runs the Windows-target generators followed by the actual `windows:build` task from a fresh autocrlf checkout.
+Its disposable `v1.2.3` tag identifies fixture source `c358632a97769d33426ae8d58250284ab242228c`; the resulting Windows amd64 binary has SHA256 `d34500ff356852030d1aa4719842ed4df2dec0ddc93cdce7ef204c574f94e9bd`.
+Its identity document and PE resources agree on `1.2.3`, that source revision and `clean`, and the checkout remains clean after compilation.
+This is a Linux-hosted Windows cross-build, not native Windows execution.
+Removing either LF rule makes the unchanged-generation regression fail; ignoring source dirtiness makes both real-change refusal cases fail.
+The first correction producer is preserved but excluded because diff inspection found that its candidate replaced an existing unrelated attribute rule; the rule was restored before the final replay.
+Windows workflow steps now record checkout configuration and line endings, require clean source before and after the actual Wails build, and check the recorded source state.
+Fresh hosted evidence for this correction remains a delivery requirement.
