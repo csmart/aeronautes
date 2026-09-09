@@ -7,6 +7,7 @@
   import { formatBytes } from "../../lib/format";
 
   let { browser, onClose }: { browser: BrowserState; onClose: () => void } = $props();
+  const queryId = $props.id();
 
   let query = $state("");
   let navigating = $state(false);
@@ -53,7 +54,9 @@
       if (ownsPanel() && !navigating && !browser.findRunning && query.trim() !== "") void browser.startFind(query);
     }}
   >
+    <label for={queryId}>Find query</label>
     <input
+      id={queryId}
       class="type-mono"
       placeholder="find in {browser.containerName}/{browser.prefix}…"
       bind:value={query}
@@ -121,6 +124,7 @@
 
   .controls input {
     flex: 1;
+    min-width: 0;
     font: inherit;
     font-size: var(--text-sm);
     background: var(--color-bg-pane);
@@ -128,6 +132,11 @@
     border: 1px solid var(--color-border);
     border-radius: var(--radius-control);
     padding: 2px var(--space-2);
+  }
+
+  .controls label {
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
   }
 
   .controls button {

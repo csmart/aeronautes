@@ -6,6 +6,7 @@
     label,
     value = $bindable(""),
   }: { label: string; value: string } = $props();
+  const inputId = $props.id();
 
   let raw = $state(false);
   let newEntry = $state("");
@@ -33,11 +34,11 @@
 
 <div class="acl">
   <div class="head">
-    <span class="label">{label}</span>
+    <label class="label" for={inputId}>{label} ({raw ? "raw" : "add entry"})</label>
     <button class="mode" onclick={() => (raw = !raw)}>{raw ? "structured" : "raw"}</button>
   </div>
   {#if raw}
-    <input class="rawline type-mono" bind:value placeholder="e.g. .r:*,.rlistings,account:user" />
+    <input id={inputId} class="rawline type-mono" bind:value placeholder="e.g. .r:*,.rlistings,account:user" />
   {:else}
     <div class="chips">
       {#each entries as entry, i (i)}
@@ -47,6 +48,7 @@
         </span>
       {/each}
       <input
+        id={inputId}
         class="entry type-mono"
         bind:value={newEntry}
         placeholder="add entry…"
