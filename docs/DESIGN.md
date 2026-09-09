@@ -5003,6 +5003,14 @@ It preserves successful live HEAD counts alongside post-commit issues, stops sub
 Actual mock and SAIO fixtures cover ordinary and native-routed names, complete 0/1/201/401 failure sets, SQL refusal, DLO recovery stops, owned collateral and full-record child reopening.
 Historical jobs and new downloads retain version zero; filesystem authority, stronger verification, physical durability and the valuable-data hold remain open.
 
+The [download before-fix archive](experiments/2026-09-09-download-boundaries.md) is independently reviewed and reproduces the captured-root redirection, unrelated-stage deletion, ignored close corruption, hidden placed bytes and truncated identities.
+[ADR 0032](adr/0032-download-placement-prerequisites.md) proposes the bounded prerequisites before download recording: reject changed root spellings, create a new stage without reusing existing data, replace recursive cleanup with explicit conservative outcomes, and check native closure before placement.
+Review that decision first, then give test scheduling, the root guard, the engine stage lifecycle and native closure their own implementation commits and local reviews.
+The scheduling prerequisite must preserve the full test inventory, assertions, coverage/reconciliation and required checks within the existing finite CI limits.
+Maintain actual-service fault regressions with complete allowed-effect and collateral witnesses for each correction; an executor-only probe must not be promoted into broader evidence without its actual service boundary.
+Only after these prerequisites pass should the separate checked download adapter, directory-marker and temporary-stage identity contract be reviewed and implemented.
+Download record version zero and every wider valuable-data release gate remain in force.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
