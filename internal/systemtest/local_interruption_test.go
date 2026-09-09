@@ -3,12 +3,14 @@ package systemtest
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -386,12 +388,32 @@ func interruptedDownload(t *testing.T, h *Harness, mode string) {
 	if err != nil || queued.State != "queued" || queued.StartedAt != "" {
 		t.Fatalf("second download was not held after preflight: %+v %v", queued, err)
 	}
-	if mode == "failure_then_error" {
-		seedListingLocal(t, root, "folder", []byte("marker refusal sentinel"))
-	}
 	stageName := ".aeronautes-stage-" + id
 	if mode != "complete_control" {
 		seedListingLocal(t, root, stageName, []byte("stage refusal sentinel"))
+	}
+	if mode == "failure_then_error" {
+		// An existing marker collision now refuses at executor entry.
+		// Keep this oracle about a failed marker followed by a stage error.
+		if err := os.Chmod(root, 0o500); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if err := os.Chmod(root, 0o700); err != nil {
+				t.Error(err)
+			}
+		})
+		probe := filepath.Join(root, "permission-probe")
+		err := os.Mkdir(probe, 0o700)
+		if !errors.Is(err, os.ErrPermission) {
+			if err == nil {
+				if err := os.Remove(probe); err != nil {
+					t.Fatal(err)
+				}
+			}
+			t.Skipf("native directory-creation denial is unavailable: %v", err)
+		}
+		t.Logf("native directory creation refused with selected root mode 0500: %v", err)
 	}
 	localBefore := snapshotListingLocal(t, root)
 	if err := barrier.Release(); err != nil {

@@ -12,6 +12,7 @@ package local
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -165,8 +166,8 @@ func validDownloadRoot(path string) bool {
 // conflicts (an object `foo` alongside `foo/...`), and existing local
 // files (v1 never overwrites). Case-fold and Unicode-normalization
 // twins materialize fine on this target but travel badly — warned.
-func PreflightDownload(ctx context.Context, src *swiftcontrol.Session, container, prefix, destDir string) (*DownloadPreflight, error) {
-	report := &DownloadPreflight{}
+func PreflightDownload(ctx context.Context, src *swiftcontrol.Session, container, prefix, destDir string) (report *DownloadPreflight, err error) {
+	report = &DownloadPreflight{}
 	if !validDownloadRoot(destDir) {
 		report.Problems = []Problem{{Name: "destination", Kind: "destination-path", Detail: downloadPathRefusal, Reject: true}}
 		return report, nil
@@ -174,7 +175,14 @@ func PreflightDownload(ctx context.Context, src *swiftcontrol.Session, container
 	if prefix != "" && !strings.HasSuffix(prefix, "/") {
 		return nil, fmt.Errorf("prefix %q must be empty or end with '/'", prefix)
 	}
+	destination, err := openDownloadDestination(destDir)
+	if err != nil {
+		report.Problems = []Problem{{Name: "destination", Kind: "destination-unavailable", Detail: "cannot inspect the selected destination directory: " + err.Error(), Reject: true}}
+		return report, nil
+	}
+	defer func() { err = errors.Join(err, destination.Close()) }()
 	var names []string
+	var candidates []DownloadItem
 	folded := map[string][]string{}
 
 	for entry, err := range src.Objects(ctx, container, swiftcontrol.ObjectListOptions{Deep: true, Prefix: prefix}) {
@@ -231,23 +239,13 @@ func PreflightDownload(ctx context.Context, src *swiftcontrol.Session, container
 				logical = detail.ContentLength
 			}
 			if logical == 0 {
-				report.Items = append(report.Items, DownloadItem{Name: object.Name, RelPath: filepath.FromSlash(trimmed), Dir: true})
-				report.Objects++
+				candidates = append(candidates, DownloadItem{Name: object.Name, RelPath: filepath.FromSlash(trimmed), Dir: true})
 				continue
 			}
 			problem("unmaterializable", "a non-empty object named like a directory cannot be a local file and a directory at once")
 			continue
 		}
 
-		local := filepath.Join(destDir, filepath.FromSlash(rel))
-		if info, err := os.Stat(local); err == nil {
-			if info.IsDir() {
-				problem("local-exists", filepath.FromSlash(rel)+" is an existing DIRECTORY under the destination; a file cannot land on it")
-			} else {
-				problem("local-exists", filepath.FromSlash(rel)+" already exists under the destination; v1 download never overwrites")
-			}
-			continue
-		}
 		size := object.Bytes
 		if size == 0 {
 			// A zero-byte listing row may be a DLO manifest whose logical
@@ -262,11 +260,9 @@ func PreflightDownload(ctx context.Context, src *swiftcontrol.Session, container
 		if plan.RcloneUnsafe(prefix + rel) {
 			route = "native"
 		}
-		report.Items = append(report.Items, DownloadItem{
+		candidates = append(candidates, DownloadItem{
 			Name: object.Name, RelPath: filepath.FromSlash(rel), Size: size, Route: route,
 		})
-		report.Objects++
-		report.TotalBytes += size
 	}
 
 	// File-vs-prefix conflicts: a real ancestor lookup, not sorted
@@ -309,6 +305,15 @@ func PreflightDownload(ctx context.Context, src *swiftcontrol.Session, container
 				Reject: true,
 			})
 		}
+	}
+	for _, item := range candidates {
+		if refusal := inspectDownloadPath(destination, item); refusal != nil {
+			report.Problems = append(report.Problems, *refusal)
+			continue
+		}
+		report.Items = append(report.Items, item)
+		report.Objects++
+		report.TotalBytes += item.Size
 	}
 	return report, nil
 }

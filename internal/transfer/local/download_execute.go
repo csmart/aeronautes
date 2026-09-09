@@ -67,6 +67,9 @@ func Download(ctx context.Context, src *swiftcontrol.Session, engine Engine, src
 			}
 		}
 	}
+	if err := checkDownloadDestination(destDir, preflight.Items); err != nil {
+		return nil, err
+	}
 	d := &downloadRun{recorder: recorder, report: &Report{}}
 	report = d.report
 	total := int64(len(preflight.Items))
