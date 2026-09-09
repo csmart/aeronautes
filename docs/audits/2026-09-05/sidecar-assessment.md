@@ -107,7 +107,7 @@ A candidate non-report does not clear the still-accepted v1.74.3 binary.
 
 GO-2026-5932 covers the deprecated `golang.org/x/crypto/openpgp` family and lists no fixed version.
 Upgrading x/crypto alone does not close it.
-The source follow-up inspected the signed-tag rclone source and 27 of the 252 distinct embedded dependency module/version pairs; 225 pairs remain uninspected.
+The initial source follow-up inspected the signed-tag rclone source and 27 of the 252 distinct embedded dependency module/version pairs; 225 pairs were then uninspected.
 The standard Go parser read imports from 3,356 Go files with no parse errors.
 All 46 deprecated-family import edges, including tests, occur within that family itself; 36 edges in non-test-named files span 19 files.
 No external importer was found within the inspected set.
@@ -115,8 +115,12 @@ No external importer was found within the inspected set.
 The actual self-update and inspected Proton backend/bridge/API/SRP calls use the maintained `github.com/ProtonMail/go-crypto` family.
 The wrapper selects fixed version/copy/copyto Swift/local routes, but a backend-name argument does not close startup initializers or shared callers.
 The import reader is not a selected-build graph, type-checked call graph, linker map or runtime trace.
-Missing source coverage, build conditions, initialization and exact source-to-artifact correspondence prevent a “not linked”, “not reachable” or false-positive disposition.
+At that stage, missing source coverage, build conditions, initialization and exact source-to-artifact correspondence prevented a “not linked”, “not reachable” or false-positive disposition.
 GO-2026-5932 remains unknown.
+
+The later [complete source collection](sidecar-sources.md) retains all 252 dependency pairs and the main source, closing the source availability gap.
+Its strict import census still fails on five retained generator templates, with 46,302 parsed files and no accepted advisory disposition.
+Selected-build and exact source-to-artifact analysis remain required.
 
 ## Other dependency evidence and limits
 

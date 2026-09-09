@@ -1,0 +1,280 @@
+{
+  "schema_version": 1,
+  "assessment_date_utc": "2026-09-09",
+  "scope": "exact candidate source collection and bounded manual template-import assessment",
+  "accepted_engine": "v1.74.3",
+  "candidate": {
+    "version": "v1.75.1",
+    "revision": "687d264b689b8c49a67e2e52a8a5e0caa01c04ce",
+    "accepted": false
+  },
+  "collection": {
+    "evidence_bundle": "p31-source-census-20260910-v2",
+    "dependency_module_version_pairs": 252,
+    "reused_dependency_roots": 27,
+    "new_authenticated_downloads": 225,
+    "roots_including_main": 253,
+    "new_regular_source_files": 52000,
+    "new_regular_source_bytes": 1071861064,
+    "downloaded_zip_bytes": 336876393,
+    "complete_regular_source_files": 57380,
+    "source_availability_complete": true,
+    "go_tool": "go1.27.1",
+    "signed_checksum_verification": true,
+    "module_proxy": "https://proxy.golang.org",
+    "checksum_service": "sum.golang.org https://sum.golang.org",
+    "direct_fallback": false,
+    "candidate_or_dependency_code_executed": false,
+    "containment_evidence": "explicit private Go and XDG paths, effective settings and pinned implementation; no syscall trace"
+  },
+  "reader": {
+    "mode": "go/parser ImportsOnly with comments; no full syntax or selected-build claim",
+    "actual_process_exit": 0,
+    "strict_census_wrapper_exit": 1,
+    "records": 46307,
+    "parsed_import_prefixes": 46302,
+    "retained_parse_errors": 5,
+    "unchanged_original_records": 3356,
+    "strict_import_census_complete": false,
+    "finish_phase_run": false,
+    "raw_output": {
+      "record": "commands/complete-imports-v1.stdout",
+      "bytes": 37500747,
+      "sha256": "60d6bafdbd745b960127150bc7a0e7b6394199f5e7079f7708473deb5bae8a5d"
+    }
+  },
+  "template_assessment": {
+    "module": "github.com/cloudflare/circl",
+    "version": "v1.6.4",
+    "method": "complete source inspection and fixed-instance import comparison; no template engine or generator execution",
+    "input_templates": 5,
+    "generator_source_files": 4,
+    "import_declarations": 31,
+    "interpolated_import_declarations": 4,
+    "existing_generated_outputs": 21,
+    "output_import_occurrences": 129,
+    "all_instance_import_sets_match_retained_outputs": true,
+    "all_original_error_records_retained": true,
+    "regeneration_equality_proven": false,
+    "declarations_and_fixed_expansions": "standard-library and CIRCL paths only",
+    "files": [
+      {
+        "path": "kem/kyber/templates/pkg.templ.go",
+        "sha256": "56e6916b3a92475ee587c43ca0b3512828fb57f54aa8d806ac9e0374ca3143dd",
+        "parser_error": "8:1: expected 'package', found '{'",
+        "generator": "kem/kyber/gen.go",
+        "generator_sha256": "0e7d8365f60c7c98a18e63231fd9ce45f49068ec1377736c23b812bb96955d5e",
+        "generator_reference_line": 69,
+        "manually_inspected_import_declarations": 7,
+        "existing_outputs": [
+          {
+            "path": "kem/kyber/kyber512/kyber.go",
+            "sha256": "ca5c6d3b77fb84e94f75c0bfcb73c65623c45e8198be94a61520f986b9f73197",
+            "import_occurrences": 7
+          },
+          {
+            "path": "kem/kyber/kyber768/kyber.go",
+            "sha256": "5c36db04f73ee4cda523c4a998662720795da9b77781c3095353aabb4c9f8da1",
+            "import_occurrences": 7
+          },
+          {
+            "path": "kem/kyber/kyber1024/kyber.go",
+            "sha256": "720716cdc845b400d4a5f676dfe7438ac60bded828ebfb05c3c604dc18695e5b",
+            "import_occurrences": 7
+          },
+          {
+            "path": "kem/mlkem/mlkem512/kyber.go",
+            "sha256": "e94be9c14776cf1420cdb4331ba2c25f37304583414d5da16625ede54e237595",
+            "import_occurrences": 7
+          },
+          {
+            "path": "kem/mlkem/mlkem768/kyber.go",
+            "sha256": "0e68af5dfe3ff6c4a95c7aac343995b98d4c9b52ca0001ccbeda43648d674dfd",
+            "import_occurrences": 7
+          },
+          {
+            "path": "kem/mlkem/mlkem1024/kyber.go",
+            "sha256": "8c8054a38716dd9ad74a32af95275d8d669ec032c046145bf4c79245742e6da1",
+            "import_occurrences": 7
+          }
+        ]
+      },
+      {
+        "path": "kem/sike/templates/pkg.templ.go",
+        "sha256": "946083eb53e6a7de1f6c8e61ac12fa4c4d86e5a027132903262845ac95a270d7",
+        "parser_error": "14:9: expected 'IDENT', found '{'",
+        "generator": "kem/sike/gen.go",
+        "generator_sha256": "81132a24857c66d7b3a4a8162d5a612b8f1bb38cfd6a49b0c77268a660cc406e",
+        "generator_reference_line": 48,
+        "manually_inspected_import_declarations": 7,
+        "existing_outputs": [
+          {
+            "path": "kem/sike/sikep434/sike.go",
+            "sha256": "dd0453b00e9faedd96e748842c7b0d3b51023d74bb21d1afb7a09363996e242f",
+            "import_occurrences": 7
+          },
+          {
+            "path": "kem/sike/sikep503/sike.go",
+            "sha256": "da649721eaa8384047afa137268d3498a6fd5baa57916f841c40a61cbdbdfe6b",
+            "import_occurrences": 7
+          },
+          {
+            "path": "kem/sike/sikep751/sike.go",
+            "sha256": "026c52f3ff4b587d334bbe0fd42f3aa64928ad64f107f203b5877344b670314a",
+            "import_occurrences": 7
+          }
+        ]
+      },
+      {
+        "path": "pke/kyber/templates/pkg.templ.go",
+        "sha256": "00ac6b5b4bf23399b6b7a014ce1a17288585ad1e6e359a449a34b7f5ac681456",
+        "parser_error": "12:9: expected 'IDENT', found '{'",
+        "generator": "pke/kyber/gen.go",
+        "generator_sha256": "08349a98331b10e395ff569f600b9aa50bea936788a4cd1477878c564efe1604",
+        "generator_reference_line": 106,
+        "manually_inspected_import_declarations": 4,
+        "existing_outputs": [
+          {
+            "path": "pke/kyber/kyber512/kyber.go",
+            "sha256": "010fbad76f0bc360fae05365ec60290682218555740e34f8e99002fb8142a15b",
+            "import_occurrences": 4
+          },
+          {
+            "path": "pke/kyber/kyber768/kyber.go",
+            "sha256": "725ef18f553e34f536f5bf211188a4a04ec344da016b2e5ce8e5cc27463fcc76",
+            "import_occurrences": 4
+          },
+          {
+            "path": "pke/kyber/kyber1024/kyber.go",
+            "sha256": "38855000a8d42955d8e041ea1b953f199d3730fd4a19d276c7c8dfab6950bd9d",
+            "import_occurrences": 4
+          }
+        ]
+      },
+      {
+        "path": "sign/dilithium/templates/acvp.templ.go",
+        "sha256": "2a522dce9d8a8a33cc7c7986d2b0e566f27227a6e82571dde6140afe627a82ee",
+        "parser_error": "7:9: expected 'IDENT', found '{'",
+        "generator": "sign/dilithium/gen.go",
+        "generator_sha256": "cac1cb70694bff6be55ff4400a4405c0a9d88af3b889e617f5fedea86810a585",
+        "generator_reference_line": 238,
+        "manually_inspected_import_declarations": 4,
+        "existing_outputs": [
+          {
+            "path": "sign/mldsa/mldsa44/acvp_test.go",
+            "sha256": "f7b14f189f21a5b87b82f27db84462f999c87207993ad14ec059ecb92ac31d26",
+            "import_occurrences": 4
+          },
+          {
+            "path": "sign/mldsa/mldsa65/acvp_test.go",
+            "sha256": "b67b0687d69afffa7c459a1f75596edd27e54b17f204388d93eae28b89a01dc8",
+            "import_occurrences": 4
+          },
+          {
+            "path": "sign/mldsa/mldsa87/acvp_test.go",
+            "sha256": "8b05755f76ccc02b379cc768f5f7b85da8757cf5f73fe3c32ec7fd7b85f704d5",
+            "import_occurrences": 4
+          }
+        ]
+      },
+      {
+        "path": "sign/dilithium/templates/pkg.templ.go",
+        "sha256": "4f1758ea28c9838cd5bd448654efc8782f9a047aec2b4541ef76a7ae55de8b69",
+        "parser_error": "7:1: expected 'package', found '{'",
+        "generator": "sign/dilithium/gen.go",
+        "generator_sha256": "cac1cb70694bff6be55ff4400a4405c0a9d88af3b889e617f5fedea86810a585",
+        "generator_reference_line": 208,
+        "manually_inspected_import_declarations": 9,
+        "existing_outputs": [
+          {
+            "path": "sign/dilithium/mode2/dilithium.go",
+            "sha256": "23ddb3c1597404f61d745fe709729c957eacdf1eaf95f0cb5865902c123445db",
+            "import_occurrences": 6
+          },
+          {
+            "path": "sign/dilithium/mode3/dilithium.go",
+            "sha256": "e4714d6b628256115d19f30652de0542a0f0e92311ee720477986b83a366f479",
+            "import_occurrences": 6
+          },
+          {
+            "path": "sign/dilithium/mode5/dilithium.go",
+            "sha256": "68edf1a09d1012902ea04db3bb851479817c4c4ccddac3746b21e2d35669f1bd",
+            "import_occurrences": 6
+          },
+          {
+            "path": "sign/mldsa/mldsa44/dilithium.go",
+            "sha256": "40e69307a8cc72c346fba29443cf941a185c06e4e890b1e03910c8780cab2bdf",
+            "import_occurrences": 8
+          },
+          {
+            "path": "sign/mldsa/mldsa65/dilithium.go",
+            "sha256": "247372dd8382fc7ae189fd570288a0a3fc67109d7136d16fd9c2811ddb07884f",
+            "import_occurrences": 8
+          },
+          {
+            "path": "sign/mldsa/mldsa87/dilithium.go",
+            "sha256": "bb67bf474a52e1cde0f0a0aa4732e2e7c97a37db31fee9b652740d1c07665b77",
+            "import_occurrences": 8
+          }
+        ]
+      }
+    ],
+    "proposal_record": {
+      "record": "p31-template-classification-proposal-20260910/template-assessment-proposal.json",
+      "bytes": 81128,
+      "sha256": "4c23350782dff1a6a70e950fa31d6759f48050dd10c0ac562c256ebfbc5a36aa"
+    },
+    "proposal_manifest": {
+      "record": "p31-template-classification-proposal-20260910/closeout-manifest.json",
+      "bytes": 5958,
+      "sha256": "31e2b03582ffeb30a4535ca43d806353b8aac67ee5f1061cf0a0f588f16ff9bd"
+    }
+  },
+  "observed_parsed_openpgp_imports": {
+    "edges": 46,
+    "non_test_named_edges": 36,
+    "non_test_named_files": 19,
+    "external_edges": 0,
+    "source_module": "golang.org/x/crypto",
+    "source_subtree": "openpgp/",
+    "binary_linkage_or_reachability_proven": false
+  },
+  "preservation": {
+    "new_archival_manifest_files": 55033,
+    "original_manifest_files": 7308,
+    "first_attempt_manifest_files": 899,
+    "independent_distinct_files_verified": 63247,
+    "strict_parser_failure_preserved": true,
+    "manifest": {
+      "record": "archival-manifest.json",
+      "bytes": 15718959,
+      "sha256": "c4d2acae132b0c6585298dc869588087f054004bce5d01da09b0869329a7571d"
+    },
+    "inventory": {
+      "record": "archival-inventory.json",
+      "bytes": 4837,
+      "sha256": "014eaddf6a814323101a504e5a7bed90c9e4bd41c35c0fc8b6ddb6ac3f3c1da5"
+    },
+    "archival_closeout": {
+      "record": "archival-closeout.json",
+      "bytes": 2213,
+      "sha256": "b6ca09621b00e9d2e1a0dfce74643c2a9516d8b0101cc3b0f0ea1381f50dc9f6"
+    },
+    "frozen_collection_inputs": {
+      "record": "frozen-inputs-v4.json",
+      "bytes": 8013,
+      "sha256": "3a2ac36e6f0c0d6c038232336f63cfe225266c39f5a357fdc3408c41216b059d"
+    },
+    "independent_verification": {
+      "record": "sidecar-source-root-verification.json",
+      "bytes": 1042,
+      "sha256": "66396d38f04830cfdf62c62039bfd9e05e8bcfb1ecc883bd09e10348d7ad8d75"
+    }
+  },
+  "advisory_disposition": {
+    "GO-2026-5932": "unresolved"
+  },
+  "selected_build_or_binary_linkage_proven": false,
+  "p31_complete": false,
+  "valuable_data_accepted": false
+}
