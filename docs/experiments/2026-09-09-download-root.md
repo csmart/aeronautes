@@ -69,13 +69,36 @@ One existing unchanged-source test generates its absolute expiry subtest name fr
 Twelve independent real-Swift groups pause and resume under `-parallel=3`, with no sequential fixture overlapping them.
 The scenario reconciler accepts the full stream, actual zero exit and captured SAIO configuration, but coverage remains 40/116 cells with 38/52 actions having gaps.
 No new scenario credit is claimed.
-The existing 1,200-second package and 1,500-second hosted job limits remain unchanged; hosted timings still require observation.
+The existing 1,200-second package and 1,500-second hosted job limits remain unchanged; measured hosted timings are recorded below.
 
 Frontend asset build, Go vet, production native build, the internal build without CGO, and vendored Swift source verification with its checker tests pass.
 All 22 regenerated bridge binding files are unchanged.
 The initial binding-check command referenced an unavailable CLI path; the recorded retry used the existing pinned generator and passed without changing bindings.
 Frontend source and dependency files are unchanged, so their full test suite is left to the required PR check.
-Independent local review and protected PR/master checks are still required before this correction is delivered.
+Independent local review and protected PR/master delivery subsequently passed, as recorded below.
+
+## Delivery
+
+Independent review approved source `a3ee071cad5461c3db80bb01bd2dfb2adc85236b` after its own complete race run: 2,402 named passes, twenty packages, no failures or skips, and 656.5 seconds for the system package.
+It checked all 315 author input hashes, reproduced the refused spellings before the guard, tested additional path edges and rejected eleven deliberate weakenings at the intended assertions.
+The reviewer also passed all 880 frontend tests and confirmed unchanged generated bindings.
+The native picker observation below remains supplemental rather than platform certification.
+
+[PR67](https://github.com/csmart/aeronautes/pull/67) passed all five [latest PR checks](https://github.com/csmart/aeronautes/actions/runs/34319824696) against the current master before the protected merge.
+All five [resulting master checks](https://github.com/csmart/aeronautes/actions/runs/34321545648) also passed.
+The reviewed source and merged master `7ad1fb81707d472b6cb34ab6d10c67fb4747e854` have the identical tree `039717d21975374fb46cdce8458e83330cbb7e8b`.
+The two logical commits, prior scheduling delivery and this destination correction, were preserved as equal patches.
+
+The PR integration package took 913.092 seconds and its complete job took 1,129 seconds.
+The master integration package took 884.460 seconds and its complete job took 1,090 seconds.
+Each full hosted stream contains 2,400 named passes across twenty packages, zero failures and the two existing optional skips, `TestKeychainRoundTrip` and `TestRcloneMatrix`.
+The complete local inventory is accounted for, including an independently checked absolute-expiry case whose name changes with the clock.
+Twelve independent real-Swift groups use the unchanged parallel limit of three.
+The package retained at least 286.908 seconds of headroom and the complete job at least 371 seconds; later additions must be measured against the same finite limits.
+
+Review follow-ups include an eligible-root nil-plan refusal, maintained filesystem-root and Unicode-normalisation edge cases, and dialog wording that still mentions collisions.
+These are distinct from stable inode binding, safe staging cleanup, native closure and exact download history.
+No complete audit package, scenario gap or valuable-data gate is closed by this delivery.
 
 ## Native picker observation
 
