@@ -79,7 +79,7 @@ func assertUploadItemRecords(t *testing.T, h *Harness, id, dst string, failed, b
 	if len(saved.Audit) != 1 || saved.Audit[0].Summary != summary {
 		t.Fatalf("upload terminal audit is not item-derived: %+v want=%q", saved.Audit, summary)
 	}
-	if strings.Contains(saved.Job.Error, "200 failed") || failed > 0 && !strings.Contains(saved.Job.Error, "upload failures (first:") {
+	if strings.Contains(saved.Job.Error, "200 failed") || failed > 0 && !strings.Contains(saved.Job.Error, "transfer failures (first:") {
 		t.Fatalf("upload error presents sample length as exact: %q", saved.Job.Error)
 	}
 	if repeat := uploadRecoveryRead(t, h.database, id); !reflect.DeepEqual(repeat, saved) {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -205,6 +206,9 @@ func downloadCloseRun(t *testing.T, h *Harness, scenario string) {
 	state, result := "complete", "applied"
 	if fault || collision || cleanup {
 		want.ObjectsFailed = 1
+		if collision {
+			want.ObjectsFailed = 0
+		}
 		state, result = "partial", "verify_mismatch"
 		if collision {
 			delta["selected/proof.bin"] = []byte("concurrent creator")
@@ -220,10 +224,40 @@ func downloadCloseRun(t *testing.T, h *Harness, scenario string) {
 		}
 	}
 	assertListingLocalDelta(t, beforeLocal, snapshotListingLocal(t, root), delta)
-	if saved.Job.State != state || saved.Job.Counters != want || saved.ItemsCaptured || len(saved.Items) != 0 || len(saved.Rows) != 0 {
+	if saved.Job.State != state || saved.Job.Counters != want || !saved.ItemsCaptured || len(saved.Items) != 1 || len(saved.Rows) != 0 {
 		t.Fatalf("native close outcome differs: %+v", saved)
 	}
-	if len(saved.Audit) != 1 || saved.Audit[0].Operation != "transfer.local."+state || saved.Audit[0].Result != result || saved.Audit[0].Resource != "job "+id || saved.Audit[0].Summary != "" {
+	totals := jobs.ItemTotals{Items: 1, Planned: 1, Admitted: 1}
+	execution := jobs.ItemObservation{Result: jobs.ItemCopied, Effect: jobs.EffectReportedApplied, CopiedBytes: int64(len(body))}
+	verification := &jobs.ItemObservation{Result: jobs.ItemVerified, Effect: jobs.EffectNotAttempted}
+	if fault || collision || cleanup {
+		totals.Unresolved, totals.Problems = 1, 1
+		execution = jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectUnresolved, Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageCommit, Code: jobs.CodeIO}}
+		verification = nil
+		if collision {
+			totals.Conflicts = 1
+			execution.Result, execution.Diagnostic.Code = jobs.ItemConflict, jobs.CodeConflict
+		} else {
+			totals.Failed = 1
+		}
+		if fault {
+			execution.Diagnostic = jobs.ItemDiagnostic{Stage: jobs.StageVerification, Code: jobs.CodeUnverified}
+			verification = &jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectNotAttempted, Diagnostic: execution.Diagnostic}
+		}
+	}
+	item := saved.Items[0]
+	if saved.ItemTotals != totals || item.Key != prefix+name || !item.Planned || !item.Admitted || item.ListedBytes != int64(len(body)) ||
+		item.Source != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: source, Object: prefix + name}) ||
+		item.Destination != (jobs.ItemLocation{Kind: jobs.ItemLocal, LocalPath: filepath.Join(destination, name)}) ||
+		item.Staging == nil || item.Staging.Kind != jobs.ItemLocal || filepath.Dir(item.Staging.LocalPath) != destination ||
+		!strings.HasPrefix(filepath.Base(item.Staging.LocalPath), ".aeronautes-part-") || retained != "" && item.Staging.LocalPath != retained ||
+		item.Execution == nil || item.Execution.ItemObservation != execution ||
+		(item.Verification == nil) != (verification == nil) || verification != nil && item.Verification.ItemObservation != *verification {
+		t.Fatalf("native close records lost exact placement, closure or cleanup facts: %+v", saved)
+	}
+	assertDownloadItemPages(t, h, id, map[string]jobs.ItemRecord{item.Key: item}, totals)
+	summary := fmt.Sprintf(" · item outcomes: %d failed names, %d conflicts, 0 refusals, %d unresolved, 0 unverified, %d with problems", totals.Failed, totals.Conflicts, totals.Unresolved, totals.Problems)
+	if len(saved.Audit) != 1 || saved.Audit[0].Operation != "transfer.local."+state || saved.Audit[0].Result != result || saved.Audit[0].Resource != "job "+id || saved.Audit[0].Summary != summary {
 		t.Fatalf("native close audit differs: %+v", saved.Audit)
 	}
 	var bookmarkID string

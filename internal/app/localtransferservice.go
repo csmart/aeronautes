@@ -313,12 +313,13 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 		engine = downloadStageBoundaryEngine{Engine: engine, after: boundary}
 	}
 	job, err := s.jobs.Create(ctx, jobs.Job{
-		Type:             jobs.TypeDownload,
-		Settings:         req.Settings.effectiveJSON(),
-		Source:           req.Container + "/" + req.Prefix,
-		Destination:      "local directory (picker-selected)",
-		SourceBookmarkID: req.BookmarkID,
-		Engine:           "rclone+native",
+		Type:               jobs.TypeDownload,
+		ItemRecordsVersion: 1,
+		Settings:           req.Settings.effectiveJSON(),
+		Source:             req.Container + "/" + req.Prefix,
+		Destination:        "local directory (picker-selected)",
+		SourceBookmarkID:   req.BookmarkID,
+		Engine:             "rclone+native",
 		Counters: jobs.Counters{
 			ObjectsPlanned: preflight.Objects, BytesPlanned: preflight.TotalBytes,
 		},
@@ -335,7 +336,8 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 
 	s.runner.launchWithQueuedOutcome(jobCtx, job.ID, req.BookmarkID, releasePins, func(runCtx context.Context) {
 		s.runLocal(runCtx, job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, func(innerCtx context.Context, onProgress func(done, total, bytes int64)) (*local.Report, error) {
-			return local.Download(innerCtx, session, engine, "aeronautes_src:"+req.Container, req.Container, req.Prefix, destDir, job.ID, preflight, onProgress)
+			return local.Download(innerCtx, session, engine, "aeronautes_src:"+req.Container, req.Container, req.Prefix, destDir, job.ID, preflight, onProgress,
+				s.downloadItemRecorder(context.WithoutCancel(innerCtx), job.ID, req, destDir))
 		})
 	}, func(cancelCtx context.Context) {
 		s.finishLocal(cancelCtx, job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, jobs.StateCancelled, "", "")
@@ -398,15 +400,20 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 	var stageCleanup *local.StageCleanupResult
 	finish := func(state jobs.State, message string) {
 		auditSummary := ""
-		if stageCleanup != nil && stageCleanup.Issues > 0 {
+		if stageCleanup != nil && (stageCleanup.Issues > 0 || stageCleanup.Retained) {
 			if state == jobs.StateComplete {
 				state = jobs.StatePartial
 			}
 			if message != "" {
 				message += "; "
 			}
-			auditSummary = fmt.Sprintf("download stage cleanup: %d issues", stageCleanup.Issues)
-			message += fmt.Sprintf("%s (first: %s)", auditSummary, stageCleanup.FirstError)
+			if stageCleanup.Retained {
+				auditSummary = "download stage retained after required item recording failed; cleanup was not attempted"
+				message += auditSummary
+			} else {
+				auditSummary = fmt.Sprintf("download stage cleanup: %d issues", stageCleanup.Issues)
+				message += fmt.Sprintf("%s (first: %s)", auditSummary, stageCleanup.FirstError)
+			}
 		}
 		s.finishLocal(background, jobID, bookmarkID, version, counters, state, message, auditSummary)
 	}
@@ -438,11 +445,13 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 		counters.ObjectsVerified = report.Done
 		counters.BytesCopied = report.Bytes
 		counters.NativeRouted = report.NativeRouted
-		counters.ObjectsFailed = int64(len(report.Failures))
+		if version == 0 {
+			counters.ObjectsFailed = int64(len(report.Failures))
+		}
 	}
 	failures := ""
 	if report != nil && len(report.Failures) > 0 {
-		label := "upload failures"
+		label := "transfer failures"
 		if version == 0 {
 			label = fmt.Sprintf("%d failed", len(report.Failures))
 		}

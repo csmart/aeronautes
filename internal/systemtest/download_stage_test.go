@@ -81,6 +81,22 @@ func (f *downloadStageFixture) check(t *testing.T, id, state, reason string, iss
 			t.Errorf("stage group result missing: %+v", saved.Job)
 		}
 	}
+	totals := jobs.ItemTotals{Items: 1, Planned: 1, Admitted: 1}
+	execution := &jobs.ItemObservation{Result: jobs.ItemCopied, Effect: jobs.EffectReportedApplied, CopiedBytes: int64(len(f.body))}
+	verification := &jobs.ItemObservation{Result: jobs.ItemVerified, Effect: jobs.EffectNotAttempted}
+	if state == "failed" {
+		totals.Unresolved = 1
+		execution, verification = nil, nil
+	} else if counters.ObjectsFailed == 1 {
+		totals.Failed, totals.Unresolved, totals.Problems = 1, 1, 1
+		execution = &jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectUnresolved, Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageEngine, Code: jobs.CodeUnknown}}
+		verification = nil
+	} else if reason == "1 post-commit issues" {
+		totals.Unresolved, totals.Problems = 1, 1
+		execution.Effect = jobs.EffectUnresolved
+		execution.Diagnostic = jobs.ItemDiagnostic{Stage: jobs.StageCleanup, Code: jobs.CodeIO}
+	}
+	summary += fmt.Sprintf(" · item outcomes: %d failed names, 0 conflicts, 0 refusals, %d unresolved, 0 unverified, %d with problems", totals.Failed, totals.Unresolved, totals.Problems)
 	var terminal []app.AuditEventDTO
 	for _, event := range saved.Audit {
 		if event.Resource == "job "+id {
@@ -96,9 +112,19 @@ func (f *downloadStageFixture) check(t *testing.T, id, state, reason string, iss
 			t.Errorf("stage audit binding differs: %q %v", bookmarkID, err)
 		}
 	}
-	if len(trace.writeSnapshot()) != 0 || saved.ItemsCaptured || len(saved.Items) != 0 || len(saved.Rows) != 0 {
+	if len(trace.writeSnapshot()) != 0 || !saved.ItemsCaptured || len(saved.Items) != 1 || len(saved.Rows) != 0 {
 		t.Fatalf("stage invented writes or authority: %+v", saved)
 	}
+	item := saved.Items[0]
+	if saved.ItemTotals != totals || item.Key != "scope/nested/proof.bin" || !item.Planned || !item.Admitted || item.ListedBytes != int64(len(f.body)) ||
+		item.Source != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: f.source, Object: item.Key}) ||
+		item.Destination != (jobs.ItemLocation{Kind: jobs.ItemLocal, LocalPath: filepath.Join(f.root, "selected", "nested", "proof.bin")}) ||
+		item.Staging == nil || *item.Staging != (jobs.ItemLocation{Kind: jobs.ItemLocal, LocalPath: filepath.Join(f.root, "selected", ".aeronautes-stage-"+id, "nested", "proof.bin")}) ||
+		(item.Execution == nil) != (execution == nil) || execution != nil && item.Execution.ItemObservation != *execution ||
+		(item.Verification == nil) != (verification == nil) || verification != nil && item.Verification.ItemObservation != *verification {
+		t.Fatalf("stage lost exact recorded identities or observed boundaries: %+v", saved)
+	}
+	assertDownloadItemPages(t, h, id, map[string]jobs.ItemRecord{item.Key: item}, totals)
 	checkLocal()
 	h.AssertNoCollateral(f.beforeA, h.SnapshotNamespace(h.Primary))
 	h.AssertNoCollateral(f.beforeB, h.SnapshotNamespace(h.Secondary))

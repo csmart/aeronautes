@@ -72,7 +72,8 @@ The change preserves every assertion, fixture, race/coverage option, producer-ex
 
 The [bounded SAIO schedule](experiments/2026-09-09-saio-scheduling.md) lets fourteen independent real-Swift groups overlap, including the [download destination](experiments/2026-09-09-download-root.md#delivery), [stage lifecycle](experiments/2026-09-09-download-stage.md#delivery) and [native closure regressions](experiments/2026-09-09-download-close.md), with `-parallel=3` on both Go CI commands.
 Each group retains its sequential cases and per-harness database, services, local paths and remote namespaces; random namespace text avoids depending on clock resolution for isolation.
-The [mock schedule](experiments/2026-09-09-mock-scheduling.md) gives mock fixtures explicit instance settings and adds thirteen existing counterparts to the same three slots, for twenty-seven eligible groups in total.
+The [mock schedule](experiments/2026-09-09-mock-scheduling.md) gives mock fixtures explicit instance settings and adds thirteen existing counterparts to the same three slots, for twenty-seven initial eligible groups.
+The [checked download record cases](experiments/2026-09-09-checked-download-records.md) add six groups for complete item histories, SQL refusals and empty/marker selections on both providers, using the same three slots.
 The remaining non-parallel tests finish before Go resumes those groups; no mock harness changes process-wide environment values.
 Use `go test -race -count=1 -parallel=3 ./...` for the matching local schedule, retaining the configured owned Swift and optional fixture environment when exercising those lanes.
 No tests or required jobs are removed, and the package/job limits and coverage/reconciliation settings above stay unchanged.

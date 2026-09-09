@@ -14,6 +14,7 @@ import (
 type StageCleanupResult struct {
 	Issues     int64
 	FirstError string
+	Retained   bool
 }
 
 func (r *StageCleanupResult) failed(err error) {
