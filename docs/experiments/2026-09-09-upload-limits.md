@@ -35,7 +35,7 @@ Copy overwrite refusal, Mirror start refusal, checked upload records, staging/co
 
 `TestDestinationChunkSettings` covers ten cases for each of upload and Copy, including invalid explicit sizes, equality at the maximum, capped and standard defaults, a smaller-than-minimum cluster limit, missing limits and unavailable capability discovery.
 It compares every exposed settings field with the injected engine options and checks that refusals leave no engine call, job, recovery row, item or observation.
-Copy preview admission is checked alongside start.
+Copy and upload preview admission are checked alongside start.
 
 `TestDestinationChunkSettingsMock` and `TestDestinationChunkSettingsRealSwift` each cover upload and Copy above-maximum refusal, below-minimum refusal and a capped default.
 Refusals require no job, recovery, item, observation, transfer audit or remote write, with unchanged owned-account and local-source snapshots.
@@ -72,3 +72,15 @@ go test -race -count=1 -run '^TestDestinationChunkSettings(Mock|RealSwift)$' ./i
 
 This establishes chunk admission and truthful chunk settings for the tested service paths.
 It does not complete P21's DLO completeness, stronger verification or cleanup gates, and does not establish valuable-data release safety.
+
+## Review follow-up
+
+The producers above describe implementation `58791b8dc7953248cf6c15d948d0cd8e45edd287`.
+Independent review approved that implementation after a full 2,521-test race run with no failures or skips, exact inventory reconciliation and further real-rclone probes and broken variants.
+It also identified a missing maintained assertion: removing upload preview's admission still let the existing start and Copy-preview tests pass.
+
+The follow-up calls `PreflightUpload` for all ten upload cases, checks the refusal reason or accepted report, and verifies that preview constructs no engine and creates no job.
+Removing only the upload preview guard now fails four intended leaves; all sixteen other leaves pass (`mutant-preview-v1`, six failed and seventeen passed names including parents).
+The per-harness real-Swift group now calls `t.Parallel()` to join the existing bounded schedule; its cases still run sequentially and the mock group remains non-parallel because its harness changes process environment.
+`preview-after-v1` passes all 41 named focused app, mock and SAIO tests under `-race -count=1 -parallel=3`, including the real group's pause/resume.
+Formatting, vet and diff checks pass; this follow-up changes only tests and this evidence record.
