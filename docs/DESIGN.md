@@ -4986,10 +4986,10 @@ The streaming planner acknowledges each item before reading ahead, and planning 
 Maintained mock and two-account SAIO tests cover complete failure identities, SQL refusal before and after effects, retained DLO staging and segments, unchanged names, owned collateral and orderly reopening.
 The complete race run, twenty-five negative-control runs, frontend/build checks and measured recording costs are recorded in that evidence.
 Independent local review and all five protected PR/master checks passed for [PR62](https://github.com/csmart/aeronautes/pull/62); its [delivery record](experiments/2026-09-08-checked-copy-records.md#delivery) confirms the exact reviewed tree, three preserved logical commits and measured integration durations.
-Historical and local transfers remain unrecorded, and the wider outcome, authority, durability and valuable-data gates stay open.
+That delivery left historical and local transfers unrecorded, with the wider outcome, authority, durability and valuable-data gates still open.
 
 The next local caller is upload, with [archived before-fix prerequisites](experiments/2026-09-08-upload-item-boundaries.md) for complete failure identities, required recovery-record stop boundaries and captured source-path fidelity.
-The actual services still truncate 201 and 401 failed uploads to 200 on mock Swift and SAIO; supplementary local/mock probes expose later work after recovery refusal and a same-length source-path mismatch.
+The archived services truncate 201 and 401 failed uploads to 200 on mock Swift and SAIO; supplementary local/mock probes expose later work after recovery refusal and a same-length source-path mismatch.
 These differently scoped reproductions require a concrete upload design and actual boundary evidence before caller opt-in; they do not close a valuable-data gate.
 
 [ADR 0031](adr/0031-upload-item-recording.md) defines the independently accepted upload contract.
@@ -4998,7 +4998,10 @@ Each logical implementation change requires its own review before the next; down
 Required record failures stop later retry/commit work, while actual live HEAD results preserve copied bytes and post-commit issues remain exact independently of samples.
 The maintained proof must include ordinary local filenames, real SQL faults, exact local/remote collateral, complete item pages and orderly child reopening with all item facts, followed by full checks and protected PR/master delivery.
 The first [bounded source-path correction](experiments/2026-09-08-upload-source-paths.md) refuses unsafe captured spellings before transfer work, with actual-service content and collateral witnesses on both providers.
-Upload item recording remains unimplemented, and filesystem authority, stronger verification, physical durability and the valuable-data hold remain open.
+The [checked upload implementation](experiments/2026-09-08-checked-upload-records.md) now opts new uploads into exact item identities, checked admission/final observations and transaction-derived terminal/audit facets.
+It preserves successful live HEAD counts alongside post-commit issues, stops subsequent dependent work after required record refusal and retains missing engine-started observations as unresolved.
+Actual mock and SAIO fixtures cover ordinary and native-routed names, complete 0/1/201/401 failure sets, SQL refusal, DLO recovery stops, owned collateral and full-record child reopening.
+Historical jobs and new downloads retain version zero; filesystem authority, stronger verification, physical durability and the valuable-data hold remain open.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.

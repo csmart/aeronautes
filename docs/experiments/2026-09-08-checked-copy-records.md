@@ -27,7 +27,7 @@ Each selected source name is acknowledged before buffering or native execution.
 Changed names record refusals without staging; unchanged names record a separate comparison and execution fact without becoming planned transfers.
 Required item-write failures latch the shared store against public status/record reads and admission of every new job family, and stop this executor's subsequent dependent work.
 Buffered names whose engine invocation never started can record `not_attempted` while storage remains writable; engine-started names with missing final observations remain unresolved.
-Abandonment starts with an engine/incomplete diagnostic; typed cancellation, timeout or recognised Swift errors retain their classified code.
+Abandonment starts with an engine/incomplete diagnostic; typed cancellation, timeout, recognised Swift errors and generic network errors retain their classified code.
 
 The shared [streaming planner](../../internal/transfer/plan/plan.go) now emits and acknowledges the current item before reading its next input row.
 Previously, a later listing failure could discard the current comparison, and a refused recording callback was reached only after reading ahead.

@@ -495,7 +495,7 @@ func (e *Executor) nativeCopy(ctx context.Context, item plan.Item) (result execu
 // Persist its exact relative identity before allowing planning to continue.
 func (e *Executor) refuseOverwrite(item plan.Item) error {
 	result := executionResult{Observation: Observation{Result: ResultRefused, Effect: EffectNotAttempted,
-		Diagnostic: diagnostic(StagePlanning, CodeUnsupported, nil)},
+		Diagnostic: ClassifyDiagnostic(StagePlanning, CodeUnsupported, nil)},
 		detail: "overwriting existing destinations is unavailable while concurrent changes cannot be protected"}
 	result.addProblem(StageRecording, e.refusals.append(item.Name))
 	return e.observe(item.Name, result)

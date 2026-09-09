@@ -11,6 +11,38 @@ import (
 	"github.com/csmart/aeronautes/internal/transfer/local"
 )
 
+func TestLocalMissingOutcomeRefusesCompletion(t *testing.T) {
+	for _, test := range []struct {
+		kind    jobs.Type
+		version int
+	}{{jobs.TypeDownload, 0}, {jobs.TypeUpload, 1}} {
+		t.Run(string(test.kind), func(t *testing.T) {
+			h := newHarness(t)
+			job, err := h.transfer.jobs.Create(t.Context(), jobs.Job{Type: test.kind, ItemRecordsVersion: test.version})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			h.transfer.runner.register(job.ID, cancel)
+			h.transfer.runLocal(ctx, job.ID, "", test.version, job.Counters, func(context.Context, func(int64, int64, int64)) (*local.Report, error) {
+				return nil, nil
+			})
+			got, err := h.jobsSvc.Get(t.Context(), job.ID)
+			if err != nil || got.State != "failed" || got.Error != "local transfer returned no outcome" || got.Counters != (jobs.Counters{}) {
+				t.Fatalf("missing outcome reported as success: %+v %v", got, err)
+			}
+			events, err := h.auditSvc.Search(t.Context(), AuditQueryDTO{OperationPrefix: "transfer.local.", Limit: 10})
+			if err != nil || len(events) != 1 || events[0].Operation != "transfer.local.failed" || events[0].Result != "failed" {
+				t.Fatalf("missing outcome audit: %+v %v", events, err)
+			}
+			if _, active := h.transfer.runner.cancel(job.ID); active {
+				t.Fatal("finished body still accepts cancellation")
+			}
+		})
+	}
+}
+
 func TestLocalPostCommitTerminalOutcome(t *testing.T) {
 	for _, test := range []struct {
 		name     string
@@ -49,7 +81,7 @@ func TestLocalPostCommitTerminalOutcome(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			h.transfer.runner.register(job.ID, cancel)
-			h.transfer.runLocal(ctx, job.ID, bookmark, base, func(_ context.Context, progress func(int64, int64, int64)) (*local.Report, error) {
+			h.transfer.runLocal(ctx, job.ID, bookmark, job.ItemRecordsVersion, base, func(_ context.Context, progress func(int64, int64, int64)) (*local.Report, error) {
 				progress(2, 2, 20)
 				report := &local.Report{Done: test.done, Bytes: 10 * test.done, NativeRouted: 1, PostCommitIssues: test.issues}
 				if test.issues > 0 {

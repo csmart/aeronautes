@@ -86,7 +86,7 @@ func (e *Executor) verifyItem(ctx context.Context, item plan.Item) (Observation,
 		code = CodeUnsupported
 	}
 	return Observation{Result: ResultFailed, Effect: EffectNotAttempted,
-		Diagnostic: diagnostic(StageVerification, code, err)}, err
+		Diagnostic: ClassifyDiagnostic(StageVerification, code, err)}, err
 }
 
 func (r *VerifyReport) fail(name, stage string, err error) {

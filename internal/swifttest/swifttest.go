@@ -755,10 +755,11 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request, container,
 	}
 	length := o.Bytes
 	var logical []byte
-	if ok && o.Manifest == "" {
+	rawManifest := r.URL.Query().Get("multipart-manifest") == "get"
+	if ok && (o.Manifest == "" || rawManifest) {
 		logical = o.Data
 	}
-	if ok && o.Manifest != "" {
+	if ok && o.Manifest != "" && !rawManifest {
 		// A DLO manifest HEAD reports the assembled logical size (§20):
 		// the summed bytes of everything under container/prefix right now.
 		if slash := strings.Index(o.Manifest, "/"); slash > 0 {

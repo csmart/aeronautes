@@ -182,6 +182,10 @@ The existing version-one interrupted projection must preserve upload records and
 
 Each implementation step has its own local review gate before the next begins.
 No initial caller or schema change is authorised by an unreviewed draft of this decision.
+
+The source-path prerequisite is [delivered through protected PR64](../experiments/2026-09-08-upload-source-paths.md#protected-delivery).
+The [checked caller implementation and evidence](../experiments/2026-09-08-checked-upload-records.md) now cover steps three through ten's local implementation and verification work.
+That record distinguishes local validation from independent approval and protected delivery; it does not grant valuable-data clearance.
 Do not credit new scenario cells unless their maintained evidence and reconciliation satisfy the existing coverage contract.
 
 ## Limits

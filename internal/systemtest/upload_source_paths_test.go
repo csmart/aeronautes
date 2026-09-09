@@ -184,6 +184,31 @@ func uploadSourcePaths(t *testing.T, h *Harness, tc uploadSourceCase) {
 		(copied && saved.Job.Error != "") || (!copied && !strings.Contains(saved.Job.Error, "engine exit 6")) {
 		t.Fatalf("source job witness: %+v", saved.Job)
 	}
+	wantItems := jobs.ItemTotals{Items: 1, Planned: 1, Admitted: 1}
+	if !copied {
+		wantItems.Failed, wantItems.Unresolved, wantItems.Problems = 1, 1, 1
+	}
+	if !saved.ItemsCaptured || saved.ItemTotals != wantItems || len(saved.Items) != 1 {
+		t.Fatalf("selected source lost its recorded outcome: %+v", saved.ItemTotals)
+	}
+	item := saved.Items[0]
+	if item.Key != name || item.Source != (jobs.ItemLocation{Kind: jobs.ItemLocal, LocalPath: captured}) ||
+		item.Destination != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: dst, Object: name}) || item.Execution == nil {
+		t.Fatalf("source record changed the captured identity: %+v", item)
+	}
+	if tc.native && item.Staging != nil || !tc.native && (item.Staging == nil || item.Staging.Object != ".aeronautes/stage/"+id+"/batch/"+filepath.Base(captured)) {
+		t.Fatalf("source record changed actual staging: %+v", item)
+	}
+	if copied {
+		if item.Execution.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemCopied, Effect: jobs.EffectReportedApplied, CopiedBytes: 5}) ||
+			item.Verification == nil || item.Verification.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemVerified, Effect: jobs.EffectNotAttempted}) {
+			t.Fatalf("source record lost copied or verified bytes: %+v", item)
+		}
+	} else if item.Execution.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectUnresolved,
+		Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageEngine, Code: jobs.CodeUnknown}}) || item.Verification != nil {
+		t.Fatalf("failed symlink invocation lost uncertainty or invented verification: %+v", item)
+	}
+	assertUploadItemPages(t, h, id, map[string]jobs.ItemRecord{item.Key: item}, wantItems)
 	var body []byte
 	if copied {
 		liveURL, err := url.Parse(h.Primary.storageURL)

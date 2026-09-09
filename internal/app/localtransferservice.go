@@ -222,12 +222,13 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 		return "", fmt.Errorf("transfer engine: %w", err)
 	}
 	job, err := s.jobs.Create(ctx, jobs.Job{
-		Type:           jobs.TypeUpload,
-		Settings:       req.Settings.effectiveJSON(),
-		Source:         fmt.Sprintf("%d local files", len(preflight.Items)),
-		Destination:    req.Container + "/" + req.Prefix,
-		DestBookmarkID: req.BookmarkID,
-		Engine:         "rclone+native",
+		Type:               jobs.TypeUpload,
+		ItemRecordsVersion: 1,
+		Settings:           req.Settings.effectiveJSON(),
+		Source:             fmt.Sprintf("%d local files", len(preflight.Items)),
+		Destination:        req.Container + "/" + req.Prefix,
+		DestBookmarkID:     req.BookmarkID,
+		Engine:             "rclone+native",
 		Counters: jobs.Counters{
 			ObjectsPlanned: int64(len(preflight.Items)), BytesPlanned: preflight.TotalBytes,
 		},
@@ -244,7 +245,7 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 		Container: req.Container, Prefix: ".aeronautes/stage/" + job.ID + "/",
 	}); err != nil {
 		cancel()
-		s.finishLocal(context.WithoutCancel(ctx), job.ID, req.BookmarkID, job.Counters, jobs.StateFailed, "recovery store unavailable before first write: "+err.Error())
+		s.finishLocal(context.WithoutCancel(ctx), job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, jobs.StateFailed, "recovery store unavailable before first write: "+err.Error())
 		return "", fmt.Errorf("recovery store unavailable: %w", err)
 	}
 	if err := s.startLocalAudit(ctx, job, req.BookmarkID, "transfer.upload.start"); err != nil {
@@ -253,10 +254,10 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 	}
 
 	s.runner.launchWithQueuedOutcome(jobCtx, job.ID, req.BookmarkID, releasePins, func(runCtx context.Context) {
-		s.runLocal(runCtx, job.ID, req.BookmarkID, job.Counters, func(innerCtx context.Context, onProgress func(done, total, bytes int64)) (*local.Report, error) {
+		s.runLocal(runCtx, job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, func(innerCtx context.Context, onProgress func(done, total, bytes int64)) (*local.Report, error) {
 			background := context.WithoutCancel(innerCtx)
 			report, err := local.Upload(innerCtx, session, engine, "aeronautes_dst:"+req.Container, req.Container, req.Prefix, job.ID,
-				preflight, onProgress, s.recoveryRecorder(background, job.ID, req.BookmarkID))
+				preflight, onProgress, s.recoveryRecorder(background, job.ID, req.BookmarkID), s.uploadItemRecorder(background, job.ID, req))
 			if report != nil && err == nil && len(report.Failures) == 0 {
 				// Verification does not prove cleanup completed or exclude
 				// outside references, so recovery records stay (ADR 0020).
@@ -265,7 +266,7 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 			return report, err
 		})
 	}, func(cancelCtx context.Context) {
-		s.finishLocal(cancelCtx, job.ID, req.BookmarkID, job.Counters, jobs.StateCancelled, "")
+		s.finishLocal(cancelCtx, job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, jobs.StateCancelled, "")
 	})
 	releasePins = nil
 	return job.ID, nil
@@ -326,11 +327,11 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 	}
 
 	s.runner.launchWithQueuedOutcome(jobCtx, job.ID, req.BookmarkID, releasePins, func(runCtx context.Context) {
-		s.runLocal(runCtx, job.ID, req.BookmarkID, job.Counters, func(innerCtx context.Context, onProgress func(done, total, bytes int64)) (*local.Report, error) {
+		s.runLocal(runCtx, job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, func(innerCtx context.Context, onProgress func(done, total, bytes int64)) (*local.Report, error) {
 			return local.Download(innerCtx, session, engine, "aeronautes_src:"+req.Container, req.Container, req.Prefix, destDir, job.ID, preflight, onProgress)
 		})
 	}, func(cancelCtx context.Context) {
-		s.finishLocal(cancelCtx, job.ID, req.BookmarkID, job.Counters, jobs.StateCancelled, "")
+		s.finishLocal(cancelCtx, job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, jobs.StateCancelled, "")
 	})
 	releasePins = nil
 	return job.ID, nil
@@ -342,17 +343,34 @@ func (s *TransferService) startLocalAudit(ctx context.Context, job jobs.Job, boo
 		Summary: "job " + job.ID + " · " + job.Settings, Result: audit.ResultApplied,
 	})
 	if err != nil {
-		s.finishLocal(context.WithoutCancel(ctx), job.ID, bookmarkID, job.Counters, jobs.StateFailed, "start audit unavailable before first write: "+err.Error())
+		s.finishLocal(context.WithoutCancel(ctx), job.ID, bookmarkID, job.ItemRecordsVersion, job.Counters, jobs.StateFailed, "start audit unavailable before first write: "+err.Error())
 		return fmt.Errorf("start audit unavailable: %w", err)
 	}
 	return nil
 }
 
-func (s *TransferService) finishLocal(ctx context.Context, jobID, bookmarkID string, counters jobs.Counters, state jobs.State, message string) {
+func (s *TransferService) finishLocal(ctx context.Context, jobID, bookmarkID string, version int, counters jobs.Counters, state jobs.State, message string) {
 	// A completed body must no longer accept cancellation, even when
 	// persistence fails and the shared store reports unavailability.
 	s.runner.release(jobID)
-	err := s.jobs.Finish(ctx, jobID, jobs.Completion{
+	finish := s.jobs.Finish
+	if version == 1 {
+		finish = s.jobs.FinishFromItems
+		totals, err := s.jobs.ReadItemTotals(ctx, jobID)
+		if err != nil {
+			if message != "" {
+				message += "; "
+			}
+			message += err.Error()
+			if state == jobs.StateComplete {
+				state = jobs.StatePartial
+			}
+		} else if state == jobs.StateComplete && (totals.Failed != 0 || totals.Conflicts != 0 || totals.Refused != 0 || totals.Unresolved != 0 || totals.Unverified != 0 || totals.Problems != 0) {
+			state = jobs.StatePartial
+			message = "retained item outcomes contain failures or uncertainty"
+		}
+	}
+	err := finish(ctx, jobID, jobs.Completion{
 		State: state, Counters: counters, Error: message,
 		Audit: audit.Event{BookmarkID: bookmarkID, Operation: "transfer.local." + string(state), Resource: "job " + jobID, Result: terminalAuditResult(state)},
 	}, s.runner.audit)
@@ -365,13 +383,13 @@ func (s *TransferService) finishLocal(ctx context.Context, jobID, bookmarkID str
 // the Planning half; execution verifies per object as it goes (§27.5),
 // so the lifecycle is Planning → Running → Verifying → terminal with
 // verification counted from the per-object checks.
-func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string, base jobs.Counters,
+func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string, version int, base jobs.Counters,
 	run func(ctx context.Context, onProgress func(done, total, bytes int64)) (*local.Report, error)) {
 
 	background := context.WithoutCancel(ctx)
 	counters := base
 	finish := func(state jobs.State, message string) {
-		s.finishLocal(background, jobID, bookmarkID, counters, state, message)
+		s.finishLocal(background, jobID, bookmarkID, version, counters, state, message)
 	}
 	for _, state := range []jobs.State{jobs.StatePlanning, jobs.StateRunning} {
 		if err := s.jobs.Available(); err != nil {
@@ -392,12 +410,23 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 		counters.BytesCopied = bytes
 		_ = s.jobs.UpdateCounters(background, jobID, counters)
 	})
+	if report == nil && err == nil {
+		err = errors.New("local transfer returned no outcome")
+	}
 	if report != nil {
 		counters.ObjectsCopied = report.Done
 		counters.ObjectsVerified = report.Done
 		counters.BytesCopied = report.Bytes
 		counters.NativeRouted = report.NativeRouted
 		counters.ObjectsFailed = int64(len(report.Failures))
+	}
+	failures := ""
+	if report != nil && len(report.Failures) > 0 {
+		label := "upload failures"
+		if version == 0 {
+			label = fmt.Sprintf("%d failed", len(report.Failures))
+		}
+		failures = fmt.Sprintf("%s (first: %s: %s)", label, report.Failures[0].Name, report.Failures[0].Err)
 	}
 	switch {
 	case report != nil && report.PostCommitIssues > 0:
@@ -407,7 +436,7 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 			message += fmt.Sprintf(" (first: %s: %s: %s)", first.Name, first.Stage, first.Err)
 		}
 		if len(report.Failures) > 0 {
-			message += fmt.Sprintf("; %d failed (first: %s: %s)", len(report.Failures), report.Failures[0].Name, report.Failures[0].Err)
+			message += "; " + failures
 		}
 		if err != nil {
 			message += "; " + err.Error()
@@ -416,8 +445,7 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 	case err != nil && report != nil && (report.Done > 0 || len(report.Failures) > 0):
 		message := err.Error()
 		if len(report.Failures) > 0 {
-			message = fmt.Sprintf("%d failed (first: %s: %s); %s",
-				len(report.Failures), report.Failures[0].Name, report.Failures[0].Err, message)
+			message = failures + "; " + message
 		}
 		finish(jobs.StatePartial, message)
 	case err != nil && errors.Is(err, context.Canceled):
@@ -428,14 +456,13 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 		if err := s.jobs.Transition(background, jobID, jobs.StateVerifying); err != nil {
 			message := "verification state could not be saved: " + err.Error()
 			if report != nil && len(report.Failures) > 0 {
-				message += fmt.Sprintf("; %d failed (first: %s: %s)", len(report.Failures), report.Failures[0].Name, report.Failures[0].Err)
+				message += "; " + failures
 			}
 			finish(jobs.StatePartial, message)
 			return
 		}
-		if len(report.Failures) > 0 {
-			finish(jobs.StatePartial, fmt.Sprintf("%d failed (first: %s: %s)",
-				len(report.Failures), report.Failures[0].Name, report.Failures[0].Err))
+		if report != nil && len(report.Failures) > 0 {
+			finish(jobs.StatePartial, failures)
 		} else {
 			finish(jobs.StateComplete, "")
 		}

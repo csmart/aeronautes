@@ -42,7 +42,7 @@ func TestLocalCompletionAdmission(t *testing.T) {
 			defer cancel()
 			h.transfer.runner.register(job.ID, cancel)
 			called := false
-			h.transfer.runLocal(ctx, job.ID, "", job.Counters, func(context.Context, func(int64, int64, int64)) (*local.Report, error) {
+			h.transfer.runLocal(ctx, job.ID, "", job.ItemRecordsVersion, job.Counters, func(context.Context, func(int64, int64, int64)) (*local.Report, error) {
 				called = true
 				report := &local.Report{Done: 1, Bytes: 10}
 				if fault == "error" {

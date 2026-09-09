@@ -173,8 +173,9 @@ Each delivered PR needs all five latest actual checks with current master incorp
 Step two is [delivered through PR60](../experiments/2026-09-08-transfer-item-access.md#delivery).
 Step three is [delivered through PR61](../experiments/2026-09-08-interrupted-item-records.md#delivery), with independent implementation review and all five protected PR/master checks complete.
 Step four is [delivered through PR62](../experiments/2026-09-08-checked-copy-records.md#delivery), with independent implementation review, all five protected PR/master checks and exact reviewed/merged tree identity complete.
-Only new Copy jobs opt into version-one records; historical jobs and local transfer callers are not silently upgraded.
-Separate local upload and download migrations remain step five.
+That delivery opted only new Copy jobs into version-one records; historical jobs and local transfer callers were not silently upgraded.
+Step five's [checked upload implementation](../experiments/2026-09-08-checked-upload-records.md) now supplies its own recorder and terminal adapter under ADR 0031.
+Historical jobs and new downloads retain version zero; download remains a separate migration.
 The [upload prerequisite reproductions](../experiments/2026-09-08-upload-item-boundaries.md) retain exact failure-count, recovery-stop and captured-path observations for the concrete upload contract before that caller opts in.
 [ADR 0031](0031-upload-item-recording.md) is the independently accepted upload contract, with the bounded pathname correction reviewed before the checked caller migration.
 
