@@ -123,7 +123,10 @@ if [ "$TRANSFERS" = 1 ]; then
     X key Tab Tab Tab                            # prefix, settings summary, Preview
     X key Return; sleep 3                        # Preview
     shot 03-preview
-    X key Tab; X key Return; sleep 2             # Start copy
+    # Preview disables its button while planning, so native focus can
+    # leave it. Start directly in this fixed viewport instead of tabbing
+    # from a control that may no longer own focus.
+    X mousemove 945 608 click 1; sleep 2          # Start copy
     shot 04-started
     X key Escape; sleep 1
     # The engine's first write is the proof the job started.
