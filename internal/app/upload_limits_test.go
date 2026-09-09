@@ -48,7 +48,18 @@ func TestDestinationChunkSettings(t *testing.T) {
 						if pickErr != nil {
 							t.Fatal(pickErr)
 						}
-						id, err = h.transfer.StartUpload(t.Context(), UploadRequestDTO{BookmarkID: bookmark, Container: "chunk-destination", SelectionToken: picked.Token, Settings: settings})
+						request := UploadRequestDTO{BookmarkID: bookmark, Container: "chunk-destination", SelectionToken: picked.Token, Settings: settings}
+						preview, previewErr := h.transfer.PreflightUpload(t.Context(), request)
+						if tc.refusal != "" && (previewErr == nil || !strings.Contains(previewErr.Error(), tc.refusal)) {
+							t.Errorf("upload preview admitted invalid chunks: %v", previewErr)
+						} else if tc.refusal == "" && (previewErr != nil || preview == nil || preview.Rejected()) {
+							t.Fatalf("upload preview: %+v %v", preview, previewErr)
+						}
+						var previewJobs int
+						if err := h.db.Reader().QueryRowContext(t.Context(), "SELECT COUNT(*) FROM jobs").Scan(&previewJobs); err != nil || previewJobs != 0 || len(*seen) != 0 {
+							t.Errorf("upload preview admitted engine/job work: jobs=%d options=%+v error=%v", previewJobs, *seen, err)
+						}
+						id, err = h.transfer.StartUpload(t.Context(), request)
 					} else {
 						request := CopyRequestDTO{SourceBookmarkID: bookmark, SourceContainer: "chunk-source", DestBookmarkID: bookmark, DestContainer: "chunk-destination", Settings: settings}
 						_, planErr := h.transfer.PlanCopy(t.Context(), request)

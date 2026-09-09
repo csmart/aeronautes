@@ -200,5 +200,6 @@ func TestDestinationChunkSettingsMock(t *testing.T) {
 	destinationChunkSettingsCases(t, findMockHarness)
 }
 func TestDestinationChunkSettingsRealSwift(t *testing.T) {
+	t.Parallel()
 	destinationChunkSettingsCases(t, New)
 }
