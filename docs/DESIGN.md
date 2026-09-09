@@ -5009,9 +5009,10 @@ Give test scheduling, the root guard, the engine stage lifecycle and native clos
 The scheduling prerequisite must preserve the full test inventory, assertions, coverage/reconciliation and required checks within the existing finite CI limits.
 The [captured-root correction](experiments/2026-09-09-download-root.md) refuses unsupported destination spelling before planning, job creation or execution, with maintained regressions on both routes and owned providers.
 Its [independent review and protected PR67 delivery](experiments/2026-09-09-download-root.md#delivery) passed with all five PR and master checks green.
-That evidence is separate from the pending stage-lifecycle, native-closure and download-recording changes; it grants no valuable-data clearance.
+That evidence grants no valuable-data clearance; native closure and download recording retain their own verification and delivery requirements.
 The [engine-stage correction](experiments/2026-09-09-download-stage.md) refuses existing stages, removes only permitted empty directories and preserves successful placement beside checked cleanup issues.
-Actual-service and pinned-child faults check retained unrelated entries, exact copied-byte facts, matching durable outcomes and unchanged collateral; independent review and protected delivery remain required.
+Actual-service and pinned-child faults check retained unrelated entries, exact copied-byte facts, matching durable outcomes and unchanged collateral.
+Independent review and [protected PR68 delivery](experiments/2026-09-09-download-stage.md#delivery) passed with all five PR and master jobs green, exact reviewed/merged tree equality and the complete test inventory preserved.
 The [native closure correction](experiments/2026-09-09-download-close.md) checks source/file close before final placement and preserves primary, cleanup and already-placed copy facts separately.
 Actual-service cases on both owned providers preserve full content and durable outcomes for close corruption, raced targets and simultaneous cleanup refusals; independent review and protected delivery remain required.
 Maintain actual-service fault regressions with complete allowed-effect and collateral witnesses for each correction; an executor-only probe must not be promoted into broader evidence without its actual service boundary.

@@ -83,13 +83,13 @@ Its 321 captured Go/SQL file hashes identify the executed uncommitted source at 
 The approved delivery documentation was fast-forwarded during that run without changing any of those sources; the recorded producer HEAD is not relabelled.
 The system package takes 703.234 seconds with thirteen independent real-Swift groups under the unchanged parallel limit of three and no sequential fixture overlapping them.
 Scenario reconciliation accepts the complete stream, actual zero exit and captured owned SAIO configuration; coverage remains 40/116 cells with 38/52 actions having gaps.
-The 1,200-second package and 1,500-second hosted job limits remain unchanged, and actual PR/master timings still require observation.
+The 1,200-second package and 1,500-second hosted job limits remain unchanged; the [delivery evidence](#delivery) records actual PR/master timings.
 Go vet, production native build, the internal build without CGO, frontend asset build and vendored Swift source/checker tests pass.
 All 22 regenerated bridge files are unchanged.
 The first service attempt failed compilation because a test expected a bookmark field in the UI audit DTO; the corrected test reads the durable audit table.
 An earlier executor fixture attempt failed because its nested fixture parents had not been created; the corrected fixtures and their original failed streams remain separate.
 An initial full-suite attempt omitted cross-package coverage instrumentation and was interrupted; it is not a baseline or passing evidence.
-Independent local review and protected PR/master delivery remain required.
+Independent local review and protected PR/master delivery passed as recorded below.
 
 With owned SAIO and both accounts configured, verified rclone on PATH and `AERONAUTES_OFFICIAL_RCLONE_DIR` pointing to it, the focused replay is:
 
@@ -106,3 +106,24 @@ Orderly reopen is not power-loss recovery or full native-application restart evi
 Native source/file closure, temporary-file cleanup, directory-marker identity, exact download history and six-platform behaviour remain separate work.
 No complete audit package, scenario gap or valuable-data gate is closed.
 The [valuable-data release hold](../audits/2026-09-05/remediation-plan.md#acceptance-gates-and-completion) remains in force.
+
+## Delivery
+
+[PR68](https://github.com/csmart/aeronautes/pull/68) merged through the normal protected rebase procedure on 9 September 2026 after independent local approval and all five successful latest-head checks against current master.
+The reviewed source `e6ec3404f2b1e5e8d58803381a3555c10b7a615b` and resulting master `856b7ee862a3b3822f57e0ef0798a8c5591c9441` share exact tree `45dac841bc822b478f76476692765358e6d254df`.
+Both logical patches are preserved: the prior destination-delivery record and the staging correction.
+The original reviewed implementation remains separately preserved at `478c711342a584ca3bc3d605029d1dad593d5082`; the final source only corrects commit-message wrapping, with the same parent, tree and message words, and received another independent review and focused replay.
+
+All five jobs passed in [PR run 34326590483](https://github.com/csmart/aeronautes/actions/runs/34326590483) and [master run 34328690498](https://github.com/csmart/aeronautes/actions/runs/34328690498).
+The complete integration logs preserve all 2,453 local named tests: 2,451 pass and the same two explicitly optional tests skip in each hosted run.
+All twenty packages pass, no test fails, and the single clock-generated expiry name is independently checked against each run's timestamps.
+
+| Run | System package | Entire integration job |
+| --- | ---: | ---: |
+| PR | 996.216 seconds | 1,220 seconds |
+| Master | 948.892 seconds | 1,192 seconds |
+
+Both measurements remain below the existing finite limits, leaving at least 203.784 seconds at package scope and 280 seconds at job scope.
+Continue measuring each added fault-test slice rather than assuming that this margin will remain constant.
+The archived full PR log hashes to `18e0caad7999b64cc060cdd318731b080d1327c19dcad137a4c21f686ce028bb`; the master log hashes to `b5ad49df173134872c9b9505fa9172f965a411b0eac65eebe307e17511242792`.
+This delivery establishes the bounded engine-stage prerequisite and leaves native closure, download identity recording and all wider valuable-data gates separate.

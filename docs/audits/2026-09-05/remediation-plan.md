@@ -159,7 +159,8 @@ The [root-spelling correction](../../experiments/2026-09-09-download-root.md) ad
 Its 2,402-test local race run preserves the full previous inventory; independent review and [protected PR67 delivery](../../experiments/2026-09-09-download-root.md#delivery) passed with all five PR and master checks green.
 All broader package and valuable-data release gates remain open.
 The [engine-stage correction](../../experiments/2026-09-09-download-stage.md) adds exclusive stage creation, conservative directory cleanup and honest post-link accounting, with actual-service fault evidence on both owned providers.
-It preserves earlier job reasons and records group cleanup issues without inventing failed object identities; independent review and protected delivery remain required.
+It preserves earlier job reasons and records group cleanup issues without inventing failed object identities.
+Independent review and [protected PR68 delivery](../../experiments/2026-09-09-download-stage.md#delivery) passed with all five PR/master checks, exact tree equality and the full 2,453-test inventory retained.
 The [native closure correction](../../experiments/2026-09-09-download-close.md) rejects placement before required source/file closure and retains simultaneous primary/cleanup errors and already-witnessed copied bytes.
 Both-provider service regressions cover close corruption, raced final targets and retained temporary files; download record version zero and every wider release gate remain unchanged, with independent review and delivery still required.
 The [local-upload reproductions](../../experiments/2026-09-08-upload-recovery.md) confirmed P04's retained records while exposing ignored committed-record and staging-delete errors through the actual services on mock Swift and SAIO before the bounded follow-up fix.
