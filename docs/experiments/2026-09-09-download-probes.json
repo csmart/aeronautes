@@ -1,0 +1,64 @@
+{
+  "schema": 1,
+  "expected_failed_leaves": 17,
+  "passing_control_leaves": 17,
+  "scenario_credit": 0,
+  "valuable_data_clearance": false,
+  "probes": [
+    {
+      "case": "identity",
+      "path": "probes/2026-09-09-download-identity_test.go.txt",
+      "sha256": "09d8db9eeef22426369bd46d004ece97588d6907a72da3a8a4c20f9667cce8ef",
+      "source": "039e77584631307448c1d0f5d37691fe3b9d222b",
+      "package": "internal/systemtest",
+      "run": "^TestDownloadIdentityBefore(Mock|RealSwift)$",
+      "expected_failed_leaves": 8,
+      "passing_control_leaves": 8,
+      "scope": "actual services, injected backend picker, pinned real child, actual native GET refusals and acknowledged local placement collisions on owned mock/two-account SAIO fixtures"
+    },
+    {
+      "case": "root",
+      "path": "probes/2026-09-09-download-root_test.go.txt",
+      "sha256": "d365bf6017d02a08744d1d6b9f1ed5a41837802383b54f6ec0ebc28281051322",
+      "source": "99a2a4795b9de3760b1df5a37592275615aa2843",
+      "package": "internal/systemtest",
+      "run": "^TestDownloadRootBefore(Mock|RealSwift)$",
+      "expected_failed_leaves": 4,
+      "passing_control_leaves": 4,
+      "scope": "actual picker token, preflight and download service on both routes and providers; exact owned local delta including symlink, unchanged owned remote namespaces, public/durable equality and orderly reopen without HTTP; no production modification"
+    },
+    {
+      "case": "close",
+      "path": "probes/2026-09-09-download-close_test.go.txt",
+      "sha256": "3e4448393604a46f4e5e949cfc79cf29d776bca097c9bc52cb9ed251c32287b5",
+      "source": "99a2a4795b9de3760b1df5a37592275615aa2843",
+      "package": "internal/systemtest",
+      "run": "^TestDownloadCloseBefore(Mock|RealSwift)$",
+      "expected_failed_leaves": 2,
+      "passing_control_leaves": 2,
+      "scope": "actual native download service, streamed upstream GET and injected HEAD length disagreement; independent native reader returns ObjectCorrupted only on close; exact local delta and unchanged owned remote namespaces, public/durable equality, refused rerun and orderly reopen without HTTP"
+    },
+    {
+      "case": "placement",
+      "path": "probes/2026-09-09-download-placement_test.go.txt",
+      "sha256": "c005c91d64fc2dd7006abc564b5b5d142e42c764a8d2c4b855926623513fd65a",
+      "source": "99a2a4795b9de3760b1df5a37592275615aa2843",
+      "package": "internal/transfer/local",
+      "run": "^TestDownloadPlacementBefore$",
+      "expected_failed_leaves": 1,
+      "passing_control_leaves": 1,
+      "scope": "local Download executor and existing fsEngine with mock Swift; actual chmod, Link and permission-denied Remove on owned POSIX paths; same-file witness and complete local/remote snapshots; no real rclone child or application service claim"
+    },
+    {
+      "case": "cleanup",
+      "path": "probes/2026-09-09-download-cleanup_test.go.txt",
+      "sha256": "991e327617e016ec10e339d675aa48962a315367e4696469934759ff91640239",
+      "source": "99a2a4795b9de3760b1df5a37592275615aa2843",
+      "package": "internal/systemtest",
+      "run": "^TestDownloadCleanupBefore(Mock|RealSwift)$",
+      "expected_failed_leaves": 2,
+      "passing_control_leaves": 2,
+      "scope": "actual picker, preflight, service and pinned rclone with acknowledged GET barrier on mock/SAIO; complete local/remote deltas, exact job/audit and orderly reopen; omit only deferred RemoveAll in private counterfactual to attribute loss"
+    }
+  ]
+}

@@ -1,0 +1,180 @@
+package systemtest
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strconv"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/csmart/aeronautes/internal/app"
+	"github.com/csmart/aeronautes/internal/swiftcontrol"
+	"github.com/ncw/swift/v2"
+)
+
+func downloadCloseProbeRun(t *testing.T, h *Harness, fault bool) {
+	t.Helper()
+	source := h.Container(h.Primary, "download-close-source")
+	other := h.Container(h.Secondary, "download-close-other")
+	prefix, name := "scope\n/", "proof.bin"
+	body := []byte("selected source bytes")
+	h.Seed(h.Primary, source, prefix+name, body, nil)
+	h.Seed(h.Primary, source, "outside", []byte("unselected source"), nil)
+	h.Seed(h.Secondary, other, "outside", []byte("other account"), nil)
+	beforeA, beforeB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
+	root := t.TempDir()
+	seedListingLocal(t, root, "selected/keep", []byte("local sentinel"))
+	seedListingLocal(t, root, "other-job/keep", []byte("other local job"))
+	destination := filepath.Join(root, "selected")
+	beforeLocal := snapshotListingLocal(t, root)
+	storage, err := url.Parse(h.Primary.storageURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := *storage
+	target.Path, target.RawPath, target.RawQuery = "", "", ""
+	selectedPath := storage.Path + "/" + source + "/" + prefix + name
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DisableCompression = true
+	transport.ResponseHeaderTimeout = 10 * time.Second
+	t.Cleanup(transport.CloseIdleConnections)
+	proxy := httputil.NewSingleHostReverseProxy(&target)
+	proxy.Transport = transport
+	var gets, lengthHeads atomic.Int32
+	proxy.ModifyResponse = func(response *http.Response) error {
+		if response.Request.Method == http.MethodGet && response.Request.URL.Path == selectedPath && response.StatusCode == http.StatusOK {
+			gets.Add(1)
+			response.Header.Del("Content-Length")
+			response.ContentLength = -1
+		}
+		return nil
+	}
+	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
+		t.Errorf("close probe proxy: %v", err)
+		http.Error(w, "fixture proxy failure", http.StatusBadGateway)
+	}
+	trace := &uploadDeleteTrace{}
+	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		trace.mu.Lock()
+		trace.requests++
+		if r.Method == http.MethodPut || r.Method == http.MethodPost || r.Method == http.MethodDelete {
+			trace.writes = append(trace.writes, r.Method+" "+r.URL.Path)
+		}
+		trace.mu.Unlock()
+		if r.Method == http.MethodHead && r.URL.Path == selectedPath && gets.Load() > 0 {
+			lengthHeads.Add(1)
+			if fault {
+				w.Header().Set("Content-Length", strconv.Itoa(len(body)+1))
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+		}
+		proxy.ServeHTTP(w, r)
+	}))
+	t.Cleanup(front.Close)
+	bookmarks, err := h.Bookmarks.List(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, bookmark := range bookmarks {
+		if bookmark.ID == h.Primary.BookmarkID {
+			bookmark.StorageURLOverride = front.URL + storage.EscapedPath()
+			if _, err := h.Bookmarks.Save(t.Context(), bookmark, h.Primary.key); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	app.WireFilePicker(h.Transfer, listingFilePicker{dir: destination})
+	picked, err := h.Transfer.PickDownloadDir(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := app.DownloadRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: source, Prefix: prefix, DestDirToken: picked.Token}
+	preflight, err := h.Transfer.PreflightDownload(t.Context(), request)
+	if err != nil || preflight == nil || preflight.Rejected() || len(preflight.Items) != 1 || preflight.Items[0].Route != "native" {
+		t.Fatalf("close probe native preflight: %+v %v", preflight, err)
+	}
+	id, err := h.Transfer.StartDownload(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.AwaitJob(id)
+	copyCompletionAwaitPins(t, h, h.Primary)
+	saved := uploadRecoveryRead(t, h.database, id)
+	if gets.Load() != 1 || lengthHeads.Load() != 1 {
+		t.Fatalf("close probe missed actual wire length check: gets=%d heads=%d", gets.Load(), lengthHeads.Load())
+	}
+	placed, err := os.ReadFile(filepath.Join(destination, name))
+	if err != nil || !bytes.Equal(placed, body) {
+		t.Fatalf("close probe lacks complete destination bytes: %q %v", placed, err)
+	}
+	assertListingLocalDelta(t, beforeLocal, snapshotListingLocal(t, root), map[string][]byte{"selected/proof.bin": body})
+	if saved.Job.Counters.ObjectsCopied != 1 || saved.Job.Counters.ObjectsVerified != 1 || saved.Job.Counters.BytesCopied != int64(len(body)) || saved.Job.Counters.NativeRouted != 1 {
+		t.Fatalf("close probe lost witnessed copied bytes: %+v", saved.Job)
+	}
+	visible, err := h.Jobs.Get(t.Context(), id)
+	if err != nil || !reflect.DeepEqual(visible, saved.Job) {
+		t.Fatalf("close probe public/durable mismatch: %+v %v", visible, err)
+	}
+	witness, err := swiftcontrol.New(swiftcontrol.Config{AuthURL: h.Primary.authURL, Username: h.Primary.user, APIKey: h.Primary.key, StorageURLOverride: front.URL + storage.EscapedPath()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, _, err := witness.OpenObject(t.Context(), source, prefix+name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	read, readErr := io.ReadAll(stream)
+	closeErr := stream.Close()
+	if readErr != nil || !bytes.Equal(read, body) || fault != errors.Is(closeErr, swift.ObjectCorrupted) || !fault && closeErr != nil {
+		t.Fatalf("independent close witness differs: read=%q read_error=%v close_error=%v", read, readErr, closeErr)
+	}
+	if fault && saved.Job.State == "complete" {
+		t.Errorf("download hid stream close corruption after placement: %+v", saved.Job)
+	}
+	if !fault && (saved.Job.State != "complete" || saved.Job.Error != "") {
+		t.Errorf("download close control did not complete: %+v", saved.Job)
+	}
+	requests := trace.requestCount()
+	if next, err := h.Transfer.RerunJob(t.Context(), id); next != "" || err == nil || !strings.Contains(err.Error(), "own dialog") || trace.requestCount() != requests {
+		t.Fatalf("close probe rerun escaped refusal: %q %v", next, err)
+	}
+	if writes := trace.writeSnapshot(); len(writes) != 0 {
+		t.Fatalf("download wrote remote data: %v", writes)
+	}
+	uploadRecoveryReopen(t, h, id, saved)
+	if requests != trace.requestCount() {
+		t.Error("close probe reopen contacted Swift")
+	}
+	assertListingLocalDelta(t, beforeLocal, snapshotListingLocal(t, root), map[string][]byte{"selected/proof.bin": body})
+	h.AssertNoCollateral(beforeA, h.SnapshotNamespace(h.Primary))
+	h.AssertNoCollateral(beforeB, h.SnapshotNamespace(h.Secondary))
+	encoded, err := json.Marshal(map[string]any{"fault": fault, "wire_close_corrupt": errors.Is(closeErr, swift.ObjectCorrupted), "read_bytes": len(read), "saved": saved})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("download close before: %s", encoded)
+}
+
+func downloadCloseProbeCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
+	for _, fault := range []bool{false, true} {
+		t.Run(fmt.Sprintf("fault_%v", fault), func(t *testing.T) {
+			downloadCloseProbeRun(t, makeHarness(t), fault)
+		})
+	}
+}
+
+func TestDownloadCloseBeforeMock(t *testing.T)      { downloadCloseProbeCases(t, findMockHarness) }
+func TestDownloadCloseBeforeRealSwift(t *testing.T) { downloadCloseProbeCases(t, New) }

@@ -1,0 +1,127 @@
+package systemtest
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+
+	"github.com/csmart/aeronautes/internal/app"
+)
+
+func downloadRootProbeRun(t *testing.T, h *Harness, noncanonical, native bool) {
+	t.Helper()
+	source := h.Container(h.Primary, "download-root-source")
+	other := h.Container(h.Secondary, "download-root-other")
+	prefix := "scope/"
+	if native {
+		prefix = "scope\n/"
+	}
+	body := []byte("selected source bytes")
+	h.Seed(h.Primary, source, prefix+"proof.bin", body, nil)
+	h.Seed(h.Primary, source, "outside", []byte("unselected source"), nil)
+	h.Seed(h.Secondary, other, "outside", []byte("other account"), nil)
+	beforeA, beforeB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
+	root := t.TempDir()
+	seedListingLocal(t, root, "actual/selected/keep", []byte("selected directory"))
+	seedListingLocal(t, root, "lexical/selected/keep", []byte("different directory"))
+	seedListingLocal(t, root, "actual/nested/keep", []byte("symlink target"))
+	if err := os.Symlink(filepath.Join(root, "actual", "nested"), filepath.Join(root, "lexical", "link")); err != nil {
+		t.Fatal(err)
+	}
+	captured := filepath.Join(root, "actual", "selected")
+	if noncanonical {
+		captured = filepath.Join(root, "lexical", "link") + string(os.PathSeparator) + ".." + string(os.PathSeparator) + "selected"
+	}
+	selectedMarker, err := os.ReadFile(captured + string(os.PathSeparator) + "keep")
+	if err != nil || string(selectedMarker) != "selected directory" {
+		t.Fatalf("fixture did not select the actual directory: %q %v", selectedMarker, err)
+	}
+	beforeLocal := snapshotListingLocal(t, root)
+	trace := copyCompletionProxy(t, h, h.Primary, "")
+	app.WireFilePicker(h.Transfer, listingFilePicker{dir: captured})
+	picked, err := h.Transfer.PickDownloadDir(t.Context())
+	if err != nil || picked == nil || picked.Dir != captured {
+		t.Fatalf("picker changed the captured path: %+v %v", picked, err)
+	}
+	req := app.DownloadRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: source, Prefix: prefix, DestDirToken: picked.Token}
+	preflight, err := h.Transfer.PreflightDownload(t.Context(), req)
+	if err != nil || preflight == nil || preflight.Rejected() || len(preflight.Items) != 1 {
+		t.Fatalf("root probe preflight failed: %+v %v", preflight, err)
+	}
+	route := "rclone"
+	if native {
+		route = "native"
+	}
+	if preflight.Items[0].Route != route || preflight.Items[0].Name != prefix+"proof.bin" || preflight.Items[0].RelPath != "proof.bin" {
+		t.Fatalf("root probe route or identity differs: %+v", preflight.Items[0])
+	}
+	id, err := h.Transfer.StartDownload(t.Context(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.AwaitJob(id)
+	copyCompletionAwaitPins(t, h, h.Primary)
+	saved := uploadRecoveryRead(t, h.database, id)
+	if saved.Job.State != "complete" || saved.Job.Counters.ObjectsCopied != 1 || saved.Job.Counters.BytesCopied != int64(len(body)) || saved.Job.Counters.ObjectsFailed != 0 {
+		t.Fatalf("root probe transfer did not complete: %+v", saved.Job)
+	}
+	selected, selectedErr := os.ReadFile(captured + string(os.PathSeparator) + "proof.bin")
+	cleaned, cleanedErr := os.ReadFile(filepath.Join(captured, "proof.bin"))
+	if selectedErr != nil || !bytes.Equal(selected, body) {
+		t.Errorf("captured download root was replaced: selected=%q selected_error=%v cleaned=%q cleaned_error=%v", selected, selectedErr, cleaned, cleanedErr)
+	}
+	if cleanedErr != nil || !bytes.Equal(cleaned, body) {
+		t.Fatal("fixture lost the independently observed destination bytes")
+	}
+	observed := "actual/selected/proof.bin"
+	if noncanonical {
+		observed = "lexical/selected/proof.bin"
+	}
+	assertListingLocalDelta(t, beforeLocal, snapshotListingLocal(t, root), map[string][]byte{observed: body})
+	h.AssertNoCollateral(beforeA, h.SnapshotNamespace(h.Primary))
+	h.AssertNoCollateral(beforeB, h.SnapshotNamespace(h.Secondary))
+	visible, err := h.Jobs.Get(t.Context(), id)
+	if err != nil || !reflect.DeepEqual(visible, saved.Job) {
+		t.Fatalf("root probe public/durable state differs: %+v %v", visible, err)
+	}
+	encoded, err := json.Marshal(map[string]any{"noncanonical": noncanonical, "native": native, "captured": captured, "selected_bytes": string(selected), "selected_missing": os.IsNotExist(selectedErr), "cleaned_bytes": string(cleaned), "observed_local_file": observed, "job": saved.Job})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("download root before: %s", encoded)
+	if next, err := h.Transfer.RerunJob(t.Context(), id); next != "" || err == nil || !strings.Contains(err.Error(), "own dialog") {
+		t.Fatalf("root probe gained rerun authority: %q %v", next, err)
+	}
+	requests := trace.requestCount()
+	trace.mu.Lock()
+	writes := append([]string(nil), trace.writes...)
+	trace.mu.Unlock()
+	if len(writes) != 0 || saved.ItemsCaptured || len(saved.Items) != 0 {
+		t.Fatalf("root probe changed remote data or download record version: writes=%v saved=%+v", writes, saved)
+	}
+	uploadRecoveryReopen(t, h, id, saved)
+	if requests != trace.requestCount() {
+		t.Error("root probe reopen contacted Swift")
+	}
+	assertListingLocalDelta(t, beforeLocal, snapshotListingLocal(t, root), map[string][]byte{observed: body})
+	h.AssertNoCollateral(beforeA, h.SnapshotNamespace(h.Primary))
+	h.AssertNoCollateral(beforeB, h.SnapshotNamespace(h.Secondary))
+}
+
+func downloadRootProbeMatrix(t *testing.T, makeHarness func(*testing.T) *Harness) {
+	for _, native := range []bool{false, true} {
+		for _, noncanonical := range []bool{false, true} {
+			t.Run(fmt.Sprintf("native_%v_noncanonical_%v", native, noncanonical), func(t *testing.T) {
+				downloadRootProbeRun(t, makeHarness(t), noncanonical, native)
+			})
+		}
+	}
+}
+
+func TestDownloadRootBeforeMock(t *testing.T)      { downloadRootProbeMatrix(t, findMockHarness) }
+func TestDownloadRootBeforeRealSwift(t *testing.T) { downloadRootProbeMatrix(t, New) }
