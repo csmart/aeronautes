@@ -245,7 +245,10 @@ func uploadRecoveryStopCases(t *testing.T, makeHarness func(*testing.T) *Harness
 	}
 }
 
-func TestUploadRecoveryStopMock(t *testing.T) { uploadRecoveryStopCases(t, findMockHarness) }
+func TestUploadRecoveryStopMock(t *testing.T) {
+	t.Parallel()
+	uploadRecoveryStopCases(t, findMockHarness)
+}
 func TestUploadRecoveryStopRealSwift(t *testing.T) {
 	t.Parallel()
 	uploadRecoveryStopCases(t, New)

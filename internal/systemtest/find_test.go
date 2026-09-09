@@ -58,13 +58,14 @@ func findMockHarness(t *testing.T) *Harness {
 		http.NotFound(w, r)
 	}))
 	t.Cleanup(server.Close)
-	t.Setenv("AERONAUTES_SAIO_AUTH_URL", server.URL+"/auth/v1.0")
-	t.Setenv("AERONAUTES_SAIO_USER", "test:tester")
-	t.Setenv("AERONAUTES_SAIO_KEY", "testing")
-	t.Setenv("AERONAUTES_SAIO_USER2", "test2:tester2")
-	t.Setenv("AERONAUTES_SAIO_KEY2", "testing2")
-	t.Setenv("AERONAUTES_REQUIRE_TWO_ACCOUNTS", "1")
-	return New(t)
+	// Each mock owns its configuration so parallel fixtures cannot redirect
+	// one another's authentication or change the real-Swift environment.
+	return newHarness(t, harnessConfig{
+		authURL: server.URL + "/auth/v1.0",
+		user:    "test:tester", key: "testing",
+		user2: "test2:tester2", key2: "testing2",
+		requireTwoAccounts: true,
+	})
 }
 
 func awaitFindStatus(t *testing.T, h *Harness, id string) (*app.FindStatusDTO, *Receipt) {

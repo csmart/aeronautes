@@ -374,7 +374,10 @@ func localCompletionCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 	}
 }
 
-func TestLocalCompletionMock(t *testing.T) { localCompletionCases(t, findMockHarness) }
+func TestLocalCompletionMock(t *testing.T) {
+	t.Parallel()
+	localCompletionCases(t, findMockHarness)
+}
 func TestLocalCompletionRealSwift(t *testing.T) {
 	t.Parallel()
 

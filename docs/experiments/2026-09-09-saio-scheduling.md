@@ -19,8 +19,9 @@ Each group keeps its own subtests sequential and creates a separate harness for 
 Both Go CI invocations pass `-parallel=3`, limiting these groups to three active top-level tests per package.
 Use the same flag for local verification of this schedule.
 
-Mock groups remain non-parallel because their harness temporarily changes process-wide environment variables with `t.Setenv`.
+At this experiment's source, mock groups remain non-parallel because their harness temporarily changes process-wide environment variables with `t.Setenv`.
 Go's testing scheduler waits for non-parallel tests to finish before resuming parallel tests, so those environment changes are restored first.
+The later [mock scheduling correction](2026-09-09-mock-scheduling.md) replaces that process-wide configuration with per-instance settings before adding thirteen mock counterparts to the same bounded schedule.
 The SAIO groups use their existing per-harness database, services, local temporary paths and exact prefixed remote namespaces; barriers and assertions remain scoped to the current test and job.
 Harness namespace generation now uses random text instead of only a wall-clock timestamp, avoiding dependence on clock resolution when independent fixtures start together.
 Neither this prefix nor its randomness grants application cleanup or concurrency authority.

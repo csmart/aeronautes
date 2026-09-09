@@ -68,13 +68,31 @@ type Harness struct {
 	Secondary *Account // for cross-account Copy/Mirror
 }
 
+type harnessConfig struct {
+	authURL            string
+	user, key          string
+	user2, key2        string
+	requireTwoAccounts bool
+}
+
 // New builds a harness or skips when SAIO is unavailable. A second
 // account is MANDATORY (§65.10) — under AERONAUTES_REQUIRE_TWO_ACCOUNTS
 // a missing one is a failure, never a silent skip.
 func New(t *testing.T) *Harness {
 	t.Helper()
-	authURL := os.Getenv("AERONAUTES_SAIO_AUTH_URL")
-	if authURL == "" {
+	return newHarness(t, harnessConfig{
+		authURL:            os.Getenv("AERONAUTES_SAIO_AUTH_URL"),
+		user:               envOr("AERONAUTES_SAIO_USER", "test:tester"),
+		key:                envOr("AERONAUTES_SAIO_KEY", "testing"),
+		user2:              envOr("AERONAUTES_SAIO_USER2", "test2:tester2"),
+		key2:               envOr("AERONAUTES_SAIO_KEY2", "testing2"),
+		requireTwoAccounts: os.Getenv("AERONAUTES_REQUIRE_TWO_ACCOUNTS") != "",
+	})
+}
+
+func newHarness(t *testing.T, cfg harnessConfig) *Harness {
+	t.Helper()
+	if cfg.authURL == "" {
 		t.Skip("AERONAUTES_SAIO_AUTH_URL not set")
 	}
 	ctx := context.Background()
@@ -119,7 +137,7 @@ func New(t *testing.T) *Harness {
 		}
 	})
 
-	primary, err := h.account(authURL, envOr("AERONAUTES_SAIO_USER", "test:tester"), envOr("AERONAUTES_SAIO_KEY", "testing"), "primary")
+	primary, err := h.account(cfg.authURL, cfg.user, cfg.key, "primary")
 	if err != nil {
 		t.Fatalf("primary SAIO account unavailable: %v", err)
 	}
@@ -129,14 +147,14 @@ func New(t *testing.T) *Harness {
 	// (where AERONAUTES_REQUIRE_TWO_ACCOUNTS is set) — never an
 	// unconditional Fatal that would sink the whole package on a
 	// one-account laptop.
-	secondary, secErr := h.account(authURL, envOr("AERONAUTES_SAIO_USER2", "test2:tester2"), envOr("AERONAUTES_SAIO_KEY2", "testing2"), "secondary")
+	secondary, secErr := h.account(cfg.authURL, cfg.user2, cfg.key2, "secondary")
 	h.Secondary = secondary
 	reach := secErr
 	if reach == nil {
 		reach = h.secondaryReachable()
 	}
 	if reach != nil {
-		if os.Getenv("AERONAUTES_REQUIRE_TWO_ACCOUNTS") != "" {
+		if cfg.requireTwoAccounts {
 			t.Fatalf("second SAIO account unavailable but AERONAUTES_REQUIRE_TWO_ACCOUNTS is set: %v", reach)
 		}
 		t.Skipf("second SAIO account unavailable (%v); cross-account matrix needs it", reach)

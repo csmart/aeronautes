@@ -308,7 +308,10 @@ func uploadRecordFaultCases(t *testing.T, makeHarness func(*testing.T) *Harness)
 	}
 }
 
-func TestUploadRecordRefusalMock(t *testing.T) { uploadRecordFaultCases(t, findMockHarness) }
+func TestUploadRecordRefusalMock(t *testing.T) {
+	t.Parallel()
+	uploadRecordFaultCases(t, findMockHarness)
+}
 func TestUploadRecordRefusalRealSwift(t *testing.T) {
 	t.Parallel()
 	uploadRecordFaultCases(t, New)

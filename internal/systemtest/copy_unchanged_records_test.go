@@ -75,7 +75,10 @@ func copyUnchangedRecords(t *testing.T, h *Harness) {
 	t.Logf("unchanged_copy_cost=%s", encoded)
 }
 
-func TestCopyUnchangedRecordsMock(t *testing.T) { copyUnchangedRecords(t, findMockHarness(t)) }
+func TestCopyUnchangedRecordsMock(t *testing.T) {
+	t.Parallel()
+	copyUnchangedRecords(t, findMockHarness(t))
+}
 
 func TestCopyUnchangedRecordsRealSwift(t *testing.T) {
 	t.Parallel()

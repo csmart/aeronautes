@@ -258,7 +258,10 @@ func copyListingFidelityCases(t *testing.T, makeHarness func(*testing.T) *Harnes
 	}
 }
 
-func TestCopyListingFidelityMock(t *testing.T) { copyListingFidelityCases(t, findMockHarness) }
+func TestCopyListingFidelityMock(t *testing.T) {
+	t.Parallel()
+	copyListingFidelityCases(t, findMockHarness)
+}
 func TestCopyListingFidelityRealSwift(t *testing.T) {
 	t.Parallel()
 	copyListingFidelityCases(t, New)
