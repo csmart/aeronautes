@@ -148,3 +148,36 @@ Removing either LF rule makes the unchanged-generation regression fail; ignoring
 The first correction producer is preserved but excluded because diff inspection found that its candidate replaced an existing unrelated attribute rule; the rule was restored before the final replay.
 Windows workflow steps now record checkout configuration and line endings, require clean source before and after the actual Wails build, and check the recorded source state.
 Fresh hosted evidence for this correction remains a delivery requirement.
+
+## Protected delivery and hosted artifacts
+
+[PR71](https://github.com/csmart/aeronautes/pull/71) delivered independently reviewed source `0f9bb47412808a9d2650786b170064782ed24ad3` as master `2ad4ea2d05cf479cca9ee720a30a129f98a07ccb` at 14:15:26 UTC on 9 September 2026.
+The source incorporates the delivered keyboard changes, and independent range review checked both the About focus attributes and identity display together.
+The protected merge preserves the two logical release/checkout patches and exact tree `6af151d613c0b6814a0fb6c59682836628c71051`.
+All 628 tracked files, including 331 Go/SQL files, match between reviewed source and merged master.
+All five [PR CI jobs](https://github.com/csmart/aeronautes/actions/runs/34358393188) and all five [master CI jobs](https://github.com/csmart/aeronautes/actions/runs/34362414008) passed on their first attempts.
+Both complete integration streams contain 2,484 named passes, 718 top-level passes, twenty passing packages and the same two optional keychain/rclone-matrix skips.
+Each artifact event stream exactly matches its complete job log; the only time-dependent test name is checked against its producer's one-hour expiry calculation before comparison.
+The PR/master system-package times were 831.835/829.539 seconds and integration-job times were 1,061/1,049 seconds, within the unchanged limits.
+Both report 86.9% Go statement coverage and valid but incomplete scenario coverage at 40/116 required cells.
+
+All seven jobs in the [unsigned six-target workflow](https://github.com/csmart/aeronautes/actions/runs/34358370897) passed for source `0f9bb474`.
+The six downloaded archives match their GitHub SHA-256 digests, inner checksums/provenance, binary architectures, native resources and exact source identity.
+Every artifact reports `dev`, the full reviewed revision and `clean`, with canonical package version `0.0.0-dev.0f9bb4741280` and `UNSIGNED` filenames.
+Actual RPM headers use `0.0.0~dev.0f9bb4741280` with release `1`; DEB headers use `0.0.0~dev.0f9bb4741280-1`.
+The four Linux package payloads match their corresponding archive's binary and identity document.
+Both Windows resources and macOS plists retain their platform-specific numeric development version while agreeing on the development string and clean source identity.
+Hosted provenance records Go 1.27.0; the separate local verification used Go 1.27.1.
+
+Both actual Windows runners report `core.autocrlf=true`, with `go.mod` and all twenty-two bindings remaining LF and clean before and after the real module, binding and architecture-specific Wails build steps.
+This supplies the previously pending hosted witness for the narrow LF correction, while preserving the earlier dirty artifacts and local reproduction.
+The downloaded Linux amd64 binary, SHA-256 `87ae6909c94b510922d44ddb7c3e88d037ca501486105f0d4eda159404f5b70d`, returned the exact development/source/clean identity through `--version` and left its fresh state directory empty.
+These artifacts remain attributed to source `0f9bb474`; identical merge-tree evidence does not relabel their embedded source as master `2ad4ea2d`.
+No additional dispatch, tag or published GitHub release was needed.
+
+The initial whole-scenario-report comparison failed on generated identifiers; the original failure and all raw differences are retained.
+A separate comparison verifies a one-to-one mapping of 32 job IDs, six scan IDs and nine fixture namespaces while preserving their relationships and all remaining report fields and evidence text.
+Five negative controls detect changed coverage, outcomes, scan relationships, object names and missing witnesses; no source or producer was changed for the comparison.
+
+SEC-10's stamping implementation and bounded build evidence are delivered.
+Native About windows, package installation/upgrades, Windows/macOS runtime observations, signing, full P33/platform acceptance and valuable-data release remain open.

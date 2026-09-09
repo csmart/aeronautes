@@ -127,3 +127,22 @@ Runtime setup failures were preserved separately and count as no application evi
 
 This is narrow native smoke evidence for the driver repair.
 It does not certify native accessibility, select popups, screen readers or valuable-data use.
+
+## Protected delivery
+
+[PR72](https://github.com/csmart/aeronautes/pull/72) delivered reviewed source `9488b1111be29f80ba70359152eef329cdb94d59` as master `759848149aedd4aaefc2bf623f34af8fc7f78a81` on 9 September 2026.
+Independent review covered the keyboard correction and the separate smoke-driver correction, including a byte-identical native build, the delayed parent failure and the exact-payload passing controls above.
+The protected merge preserves both logical patches and exact tree `c1f4fd6e17147baeb02b54150685f4509a0e12d3`.
+All five [latest PR jobs](https://github.com/csmart/aeronautes/actions/runs/34352059528), attempt three, and all five [resulting master jobs](https://github.com/csmart/aeronautes/actions/runs/34356268538), attempt one, passed with actual runner and step execution.
+The earlier runner-admission failure did not execute tests; it remains separate from the reproduced application smoke failure above.
+
+Both complete integration inventories contain 2,484 named passes, twenty passing packages and the same optional `TestKeychainRoundTrip` and `TestRcloneMatrix` skips.
+All 326 Go/SQL inputs match the unchanged integration baseline and reviewed/merged source.
+The master system package took 607.243 seconds and the integration job took 797 seconds within the existing limits.
+Statement coverage was 86.9% for Go and 88.41% for the 913-test frontend run.
+Scenario coverage remained valid but incomplete at 40/116 required cells.
+Hosted native smoke completed three of three objects using pinned rclone 1.74.3, with three staged creations, three final creations and matching stage cleanup.
+The stronger payload-equality evidence remains the separate local native controls above.
+
+The [asynchronous Preview follow-up](2026-09-09-preview-focus.md) restores focus only when the same Preview request still owns that intent.
+This delivery addresses the bounded keyboard/modal interference and smoke-driver defects; remaining labels, accepted shortcuts, native assistive technology, OS select popups, broader UI-11/P29 acceptance and valuable-data release remain open.

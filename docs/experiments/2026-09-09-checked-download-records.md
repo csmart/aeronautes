@@ -142,6 +142,32 @@ The first and second full runs contain the same complete named inventory; only o
 The passing run includes 740 top-level tests, 87.1% statement coverage and a 630.205-second system package.
 All twenty-seven prior scheduled groups remain, with the six new record/refusal/empty groups under the unchanged `-parallel=3` limit.
 Scenario reconciliation remains valid at schema version three with 40/116 required cells covered and thirty-eight actions with gaps; it remains incomplete coverage.
-Independent implementation review and protected PR/master delivery remain pending.
+Independent implementation review passed for source `021d3e17f761345135a37de2e668f343198fcf5d`.
+The reviewer independently reproduced all 2,653 named passes across twenty packages without failures or skips, inspected the actual-service and SQL-refusal evidence, and verified the acknowledged-order and identity negative controls.
+Seven of eight additional reviewer variants failed their intended cases; removing the post-`MkdirAll` directory observation remained undetected because that guard addresses a replacement race, as the focused evidence limits above already state.
+Integrated-range review and protected PR/master delivery remain pending.
 No CI limits, assertions, historical archives or audit finding dispositions are weakened by this migration.
 Full per-effect history, stronger source/content identity, stable local roots and path authority, cancellation interlocks, crash recovery, native acceptance, retention/export and the [valuable-data release hold](../audits/2026-09-05/remediation-plan.md#acceptance-gates-and-completion) remain open.
+
+## Current-base integration
+
+The four independently reviewed delivery/contract/implementation commits were rebased once onto protected master `a8ece3429c39468c3da8a4343bbfa7cf8226efce`, incorporating PR71–74.
+Original source `021d3e17` is preserved, and all four stable patch identities and commit messages match the resulting source `cafe784aee6aa8f4dd2dfa2c5dca03b8a7f5631a`.
+Its tree `18227478bca7aeb4565c2de4b9cd4289c0c056ba` matches the previously checked prospective integration.
+
+The fresh complete internal race run passes 2,694 named tests, including 743 top-level tests, across twenty packages without failures or skips.
+All 343 Go/SQL input hashes match the immutable integrated source before and after the run.
+The complete inventory is exactly the union of the earlier download run and delivered upload-admission baseline: forty-one additions over the former and 167 over the latter, with no missing or duplicate names.
+The two hosted optional skips run and pass in this configured local environment.
+The system package takes 630.907 seconds and coverage is 7,615 of 8,732 statements, reported as 87.2%.
+All earlier scheduled groups remain: the merged upload test adds one to the previous thirty-three, while its environment-changing mock counterpart stays serial.
+All serial system-test groups finish before the parallel phase; the configured worker bound stays three.
+An observed peak of four open JSON test records reflects slot release before parent reporting, not proof of four simultaneous workers.
+The raw 13,107-event stream has SHA-256 `644c25a6d65e5b9a34ede1767bcf305e015ee932ece72ca3b7a3bf4be2ca82ed`.
+Schema-three scenario reconciliation remains valid but incomplete at 40/116 required cells and thirty-eight actions with gaps.
+
+Fresh frontend validation passes all 971 tests, with no failures or skips, and reports 88.53% statement coverage.
+The full 883-name pre-integration inventory remains, with exactly thirty-three keyboard, fifty-one Preview and four About-identity cases added.
+All ninety-five frontend inputs and twenty-two regenerated binding files remain unchanged through typechecking, frontend build/tests, vet, native production build, root/build-identity/command tests, no-CGO internal build and Swift source verification.
+The native executable has SHA-256 `bb272224b1fb01a1f055dce0243d8dd33b95a24693be3ff5a2e8b7750abae6aa`.
+This build and component evidence does not replace native acceptance or valuable-data validation.

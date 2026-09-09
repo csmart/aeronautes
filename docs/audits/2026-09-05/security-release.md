@@ -219,6 +219,11 @@ Remediation: derive application version, package/resource versions, source revis
 Acceptance: build two fixture tags and verify About, binary metadata, macOS resources, Windows resources, RPM/DEB metadata, filenames, and recorded source revision agree and differ as expected.
 Record checksums and build provenance with the release evidence.
 
+Current disposition: [PR71](https://github.com/csmart/aeronautes/pull/71) delivered one validated build identity, native/package resource generation and checksum/provenance checks, including the scoped Windows LF correction.
+The [maintained evidence and protected delivery](../../experiments/2026-09-09-release-identity.md#protected-delivery-and-hosted-artifacts) covers two disposable fixture releases, all five PR/master checks, six actual unsigned hosted artifacts, both Windows clean-checkout witnesses and the downloaded Linux binary's command-line identity.
+The preceding unstamped-source description remains the audit-time before evidence.
+Native About, installed packages/upgrades, Windows/macOS runtime observations, signing and full P33 release acceptance remain open.
+
 ## SEC-11 — the engine pin has a substantial untriaged advisory inventory
 
 References: `internal/transfer/rclone/runner.go:29`, `internal/transfer/rclone/manifest.txt`, `scripts/fetch-rclone.sh`, `.github/dependabot.yml`, and the dependency evidence below.
