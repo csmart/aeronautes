@@ -1,8 +1,8 @@
-# Normal-text contrast: reproduction and bounded plan
+# Normal-text contrast: reproduction and correction
 
-This is the UI-12 plan and before evidence, starting from `9e7bb1e9d154ed63fb1bd611521af6dfe6c3bf8e`.
-Production styles have not changed at this step.
-Implementation and delivery require their own independent reviews.
+This record starts with the UI-12 plan and before evidence at `9e7bb1e9d154ed63fb1bd611521af6dfe6c3bf8e`.
+The corrected plan through `aff3d142652836819b4bb14ff16d9af241258aa8` received independent approval before the production change below.
+Implementation and final-base delivery require their own independent reviews.
 
 ## Oracle and scope
 
@@ -83,7 +83,9 @@ Their complete text and descendant-colour mappings are:
 | Danger-soft | Bookmark/Create errors, both edit panels' `.banner.mismatch`, `ManifestDeleteDialog .keeps.warn` and `.error`, `MetadataEditor .chip.removed` and the failed job badge use danger. |
 | Info-soft | No current component uses this fill. |
 
-The banner buttons have their own opaque backgrounds and are checked with those backgrounds, rather than inheriting the banner fill.
+Both edit panels give ordinary banner buttons their own opaque pane background.
+Their `button.danger` override instead uses danger text with `background: none`, so “Apply mine anyway” inherits the conflict banner's warning-soft fill.
+The maintained checks below include both cases; the initial plan's blanket statement that every banner button had an opaque background was incorrect.
 No current component places faint text on a semantic soft fill.
 That is not permission to reuse faint indiscriminately: some such hypothetical combinations would still fail the chosen target, so the maintained inventory must make the allowed mappings explicit and require a new checked pair for new or changed usage.
 The implementation must enumerate these declarations and inherited/hover overrides instead of relying on an arbitrary subset of token combinations.
@@ -118,7 +120,7 @@ Current upstream WebKit source was a diagnostic lead only; it is not substituted
 
 First commit and independently review this plan and before evidence.
 Only after approval, implement one logical correction with the maintained regressions and updated experiment evidence.
-The following revised private mathematical candidate passes all 68 expanded pairs; these values have not yet been applied or accepted as final native rendering evidence.
+The following revised private mathematical candidate passed all 68 expanded pairs at the plan stage; the implementation below applies these same values.
 
 | Theme | Token | Before | Candidate |
 | --- | --- | --- | --- |
@@ -155,3 +157,72 @@ Actual disabled attributes and existing disabled opacity continue to convey inac
 
 Forced colours, display scaling, assistive technology, other native platforms, the complete UI-12/P29 accessibility programme and valuable-data acceptance remain open.
 These bounded token and renderer checks do not certify the whole application.
+
+## Implemented correction and regressions
+
+The production change applies the seven colour-role corrections above and the opaque input/textarea placeholder rule.
+Both complete dark declaration blocks remain equal.
+Backgrounds, normal and secondary text, focus-ring values, typography, component styling, native appearance and handlers are unchanged.
+
+The maintained [contrast tests](../../frontend/src/design/textContrast.test.ts) read the actual token and component selector declarations.
+They cover 124 actual text pairs in both themes, retaining every foreground/background combination in the earlier 68-pair inventory, and four placeholder/surface pairs.
+The 22 inset/soft-fill background rules are enumerated, with explicit transparent, inherited, selected and hover mappings.
+Ordinary/secondary text, destructive action labels, unchanged semantic combinations, dark-declaration equality and independent arithmetic boundaries provide passing controls.
+This is an authored-style regression inventory; it does not implement a browser's cascade or certify arbitrary future markup.
+New descendant colour mappings still require source inspection and their own checked pair.
+
+The expanded source trace also includes the insecure-bookmark warning glyph, which is a sibling of the accent-soft badge and inherits the bookmark's ordinary, hovered or selected surface.
+Two additional dark combinations failed before the correction: danger on warning-soft was 4.17122:1 and danger on selection was 4.11455:1.
+The already-planned danger correction reaches 4.59934:1 and 4.53685:1 respectively; neither finding required another colour or production file.
+The lowest corrected pair in the maintained inventory remains unchanged secondary text on inset at 4.536402:1.
+
+Running the new tests with the six existing theme tests against unchanged parent styles produced 42 contrast failures and six missing-placeholder-rule assertions, with 97 passing checks (`focused-before-v2`, exit 1).
+The corrected source passes all 145 checks (`focused-after-v1`, exit 0).
+The initial test run also used a mistaken selected-mode selector; its two lookup failures are retained in `focused-before-v1` and excluded from the contrast-failure count.
+The corrected selector reads the production `aria-selected="true"` rule.
+
+Ten private broken variants each fail the unchanged tests, while all eight existing theme/arithmetic controls continue to pass.
+
+| Deliberately broken correction | Failed checks | Passing checks |
+| --- | ---: | ---: |
+| Light faint reverted | 9 | 136 |
+| Light accent reverted | 5 | 140 |
+| Light strong accent reverted | 3 | 142 |
+| Light warning reverted | 7 | 138 |
+| Light success reverted | 2 | 143 |
+| Dark faint reverted in both blocks | 9 | 136 |
+| Dark danger reverted in both blocks | 11 | 134 |
+| Automatic dark block alone changed | 1 | 144 |
+| Placeholder rule removed | 6 | 139 |
+| Placeholder opacity reduced to 0.5 | 2 | 143 |
+
+The original variant runner stopped because it expected a diagnostic prefix that the placeholder ratio assertion does not print; that runner failure is preserved separately from the ten completed `mutations-v2` results.
+Every variant retains its exact source, test hash, full test report and process exit, and the corrected styles were restored byte-for-byte afterwards.
+No compilation failure counts as an effective variant.
+
+The complete frontend suite passes all 1,125 tests, retaining the previous 986 names and adding these 139 contrast checks (`full-v1`).
+`npm run check` reports zero errors and zero warnings, and `make build` succeeds with every generated frontend asset verified inside the native executable.
+The observed binary is SHA-256 `920ad71e01ea0d7b9c80eb93cbf5ae54e2fd737fd69058d061fafec553370697`, stamped `dev`, source `aff3d142652836819b4bb14ff16d9af241258aa8`, `sourceDirty: dirty`.
+It is the uninstrumented pre-commit implementation build, with source hashes and the working diff retained; it is not a clean or final-base release build.
+
+## Native after observations
+
+The fresh-state `native-after-v2` application replay completes 64 fixed commands and captures 24 screenshots on the owned Linux display and mock endpoint.
+Both themes cover ordinary/hovered rows, keyboard-focused Filter, empty and filled Create controls, a safely rejected `/` container name, disabled Copy Preview/Start, and an unsaved ACL entry's enabled Remove control before hover, during hover and after removal.
+The application sends zero Swift PUT/POST/DELETE requests, and all six owned payloads, the DLO reference and the empty destination remain unchanged.
+The first interactive pass is also retained; its initial error-trigger command accidentally typed extra command words, so `06-light-create-error` is excluded and the corrected `06b-light-create-error` supplies that observation.
+
+The separate WebKitGTK 2.52.5 / GTK 4.22.4 renderer uses the same production styles and the same hashed GTK/WebKit libraries as the application.
+In each theme its placeholder text region matches the explicit corrected-colour control and differs from both the old grey and normal-text controls.
+The actual application's Filter region contains the corrected opaque colour in each theme.
+The identified placeholder pair is now 5.58887:1 in light and 5.47789:1 in dark, using the opaque source colours for the ratio.
+The small ACL glyph is antialiased without an opaque core pixel; its actual normal/hover appearance and removal are observed, while its ratio comes from the checked authored pair on the verified inset surface.
+
+Selected focus, error-text, disabled-dialog and ACL regions match between the inspected first pass and the deterministic replay.
+An initial whole-error-dialog comparison also included the input's focus ring and failed on that unrelated difference; the preserved diagnostic localises it to the input, and the final comparison checks the actual error-text region.
+The existing keyboard-focus observation remains a separate passing control.
+These image comparisons do not calculate contrast from antialiasing pixels.
+
+Conflict-banner actions and insecure-bookmark warnings have authored-pair checks but were not visited in this native replay.
+Textarea placeholders, native select rendering, forced colours, scaling, assistive technology and other platforms remain outside the native evidence.
+The wider UI-12/P29 programme and valuable-data hold remain open, and final-base review plus all required PR/master jobs are still required before delivery.
