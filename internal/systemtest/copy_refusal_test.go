@@ -10,6 +10,8 @@ import (
 )
 
 func TestCopyRefusesOverwritesRealSwift(t *testing.T) {
+	t.Parallel()
+
 	h := New(t)
 	src := h.Container(h.Primary, "refused-src")
 	dst := h.Container(h.Secondary, "refused-dst")

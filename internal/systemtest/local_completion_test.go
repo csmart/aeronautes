@@ -376,6 +376,8 @@ func localCompletionCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 
 func TestLocalCompletionMock(t *testing.T) { localCompletionCases(t, findMockHarness) }
 func TestLocalCompletionRealSwift(t *testing.T) {
+	t.Parallel()
+
 	if completionReopenChild(t) {
 		return
 	}

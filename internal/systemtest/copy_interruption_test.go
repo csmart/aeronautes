@@ -358,5 +358,8 @@ func copyInterruptionCases(t *testing.T, makeHarness func(*testing.T) *Harness) 
 	}
 }
 
-func TestCopyInterruptionMock(t *testing.T)      { copyInterruptionCases(t, findMockHarness) }
-func TestCopyInterruptionRealSwift(t *testing.T) { copyInterruptionCases(t, New) }
+func TestCopyInterruptionMock(t *testing.T) { copyInterruptionCases(t, findMockHarness) }
+func TestCopyInterruptionRealSwift(t *testing.T) {
+	t.Parallel()
+	copyInterruptionCases(t, New)
+}

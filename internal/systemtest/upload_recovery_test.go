@@ -574,6 +574,8 @@ func uploadRecoveryRun(t *testing.T, h *Harness, test uploadRecoveryCase) {
 
 func TestUploadRecoveryMock(t *testing.T) { uploadRecoveryCases(t, findMockHarness) }
 func TestUploadRecoveryRealSwift(t *testing.T) {
+	t.Parallel()
+
 	if uploadRecoveryChild(t) {
 		return
 	}
