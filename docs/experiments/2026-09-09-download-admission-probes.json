@@ -1,0 +1,103 @@
+{
+  "schema": 1,
+  "source_head": "cafe784aee6aa8f4dd2dfa2c5dca03b8a7f5631a",
+  "source_tree": "18227478bca7aeb4565c2de4b9cd4289c0c056ba",
+  "go_sql_input_count": 343,
+  "go_sql_inventory_sha256": "371fce8ea44527b1ffb9bce9ab4f1005500e9ec51f989aa7d33c9f3ac18034ba",
+  "toolchain": "go1.27.1",
+  "rclone_version": "v1.74.3",
+  "rclone_binary_sha256": "9700aa1273ac73d6d0833c43ba63fe830516422cb131960b8c1a24ced789cba0",
+  "probe": {
+    "path": "docs/experiments/probes/2026-09-09-download-admission_test.go.txt",
+    "sha256": "6d2c426aa5ad3979af8d32c7094163e1cd4dbecfd45b5192cc49d6e9de34f668",
+    "package": "internal/systemtest"
+  },
+  "producers": [
+    {
+      "provider": "Mock",
+      "label": "mock-v2",
+      "test": "TestP18ExistingAdmissionMock",
+      "actual_exit": 1,
+      "package_elapsed_seconds": 7.897,
+      "named_failures": [
+        "TestP18ExistingAdmissionMock/engine/descendant_symlink",
+        "TestP18ExistingAdmissionMock/engine/dangling_final_symlink",
+        "TestP18ExistingAdmissionMock/engine/parent_file",
+        "TestP18ExistingAdmissionMock/engine/missing_root",
+        "TestP18ExistingAdmissionMock/native/descendant_symlink",
+        "TestP18ExistingAdmissionMock/native/dangling_final_symlink",
+        "TestP18ExistingAdmissionMock/native/parent_file",
+        "TestP18ExistingAdmissionMock/native/missing_root",
+        "TestP18ExistingAdmissionMock/marker/descendant_symlink",
+        "TestP18ExistingAdmissionMock/marker/dangling_final_symlink",
+        "TestP18ExistingAdmissionMock/marker/parent_file",
+        "TestP18ExistingAdmissionMock/marker/missing_root",
+        "TestP18ExistingAdmissionMock/marker/marker_file_collision"
+      ],
+      "failed_parents": [
+        "TestP18ExistingAdmissionMock"
+      ],
+      "named_passes": [
+        "TestP18ExistingAdmissionMock/engine/safe_absent_subtree",
+        "TestP18ExistingAdmissionMock/engine/initial_root_symlink",
+        "TestP18ExistingAdmissionMock/native/safe_absent_subtree",
+        "TestP18ExistingAdmissionMock/native/initial_root_symlink",
+        "TestP18ExistingAdmissionMock/marker/safe_absent_subtree",
+        "TestP18ExistingAdmissionMock/marker/initial_root_symlink"
+      ],
+      "skips": 0,
+      "complete_case_records": 19,
+      "raw_stream_sha256": "706f87bbf95404a411d13c3481e07fa6d6e057726b1755ce2230b404cea9ae8e",
+      "input_record_sha256": "9876374398d797a6d61f4426efc60460a9295e28464c6f2101ee34872da89609",
+      "summary_sha256": "6468dc2fc6d8cb67b428fd31ebef20a637befe43aab8f0ca76f5529af97a45e7"
+    },
+    {
+      "provider": "RealSwift",
+      "label": "saio-v1",
+      "test": "TestP18ExistingAdmissionRealSwift",
+      "actual_exit": 1,
+      "package_elapsed_seconds": 16.734,
+      "named_failures": [
+        "TestP18ExistingAdmissionRealSwift/engine/descendant_symlink",
+        "TestP18ExistingAdmissionRealSwift/engine/dangling_final_symlink",
+        "TestP18ExistingAdmissionRealSwift/engine/parent_file",
+        "TestP18ExistingAdmissionRealSwift/engine/missing_root",
+        "TestP18ExistingAdmissionRealSwift/native/descendant_symlink",
+        "TestP18ExistingAdmissionRealSwift/native/dangling_final_symlink",
+        "TestP18ExistingAdmissionRealSwift/native/parent_file",
+        "TestP18ExistingAdmissionRealSwift/native/missing_root",
+        "TestP18ExistingAdmissionRealSwift/marker/descendant_symlink",
+        "TestP18ExistingAdmissionRealSwift/marker/dangling_final_symlink",
+        "TestP18ExistingAdmissionRealSwift/marker/parent_file",
+        "TestP18ExistingAdmissionRealSwift/marker/missing_root",
+        "TestP18ExistingAdmissionRealSwift/marker/marker_file_collision"
+      ],
+      "failed_parents": [
+        "TestP18ExistingAdmissionRealSwift"
+      ],
+      "named_passes": [
+        "TestP18ExistingAdmissionRealSwift/engine/safe_absent_subtree",
+        "TestP18ExistingAdmissionRealSwift/engine/initial_root_symlink",
+        "TestP18ExistingAdmissionRealSwift/native/safe_absent_subtree",
+        "TestP18ExistingAdmissionRealSwift/native/initial_root_symlink",
+        "TestP18ExistingAdmissionRealSwift/marker/safe_absent_subtree",
+        "TestP18ExistingAdmissionRealSwift/marker/initial_root_symlink"
+      ],
+      "skips": 0,
+      "complete_case_records": 19,
+      "raw_stream_sha256": "a8addec2c1ab1d0fec6f01b746b273a80a4ef0bda63150e931cf34ee22a9d879",
+      "input_record_sha256": "a168f482417e7a0a9918e6ab2b104e208eafd2c0f83b364f15134c05039c7a64",
+      "summary_sha256": "833ddee4a5e3f1c64feb2adc83f075c4f0547245b130d4584b8e4753e3094c29"
+    }
+  ],
+  "expected_failed_leaves": 26,
+  "passing_control_leaves": 12,
+  "scenario_credit": 0,
+  "valuable_data_clearance": false,
+  "archive_validation": {
+    "result_sha256": "ef36c5e4413cd4c65e97448fbbf15eccf6ab6f03c9bb2928faf5a7b53f8651e8",
+    "validator_sha256": "520e2348973d438bbdcf2111ac79d85aa66e69fcc03c1ae3bcfa2b43872654a1",
+    "actual_exit": 0,
+    "scope": "stored evidence consistency only; original safety assertions remain failing"
+  }
+}
