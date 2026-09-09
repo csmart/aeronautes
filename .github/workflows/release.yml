@@ -148,6 +148,16 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: inspect Windows checkout
+        shell: pwsh
+        run: |
+          git config --show-origin --get-regexp 'core\.(autocrlf|eol|safecrlf)'
+          if ($LASTEXITCODE -gt 1) { exit $LASTEXITCODE }
+          git ls-files --eol go.mod frontend/bindings
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $sourceStatus = git status --porcelain --untracked-files=normal
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($sourceStatus) { $sourceStatus; throw 'Checkout must start clean' }
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
@@ -155,7 +165,18 @@ jobs:
         with:
           node-version: "22"
       - run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.16
-      - run: wails3 task build
+      - name: build and verify Windows source identity
+        shell: pwsh
+        run: |
+          wails3 task build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git ls-files --eol go.mod frontend/bindings
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $sourceStatus = git status --porcelain --untracked-files=normal
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($sourceStatus) { $sourceStatus; throw 'Build changed source inputs' }
+          $identity = Get-Content bin/build-identity/identity.json -Raw | ConvertFrom-Json
+          if ($identity.sourceDirty -ne 'clean') { throw 'Build recorded dirty source' }
       # §61.1: the checksummed official pinned rclone rides the bundle.
       - name: bundle pinned rclone
         shell: bash

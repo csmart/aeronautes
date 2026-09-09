@@ -1,3 +1,7 @@
 # Unified patch context requires spaces before tabs; the source gate checks
 # the applied code with git apply --whitespace=error-all.
 third_party/ncw-swift/*.patch -whitespace
+
+# Go and Wails rewrite these inputs with LF during a build.
+go.mod text eol=lf
+frontend/bindings/** text eol=lf
