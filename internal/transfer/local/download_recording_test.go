@@ -370,7 +370,20 @@ func TestDownloadProgressCountsPlacedFiles(t *testing.T) {
 			if err != nil || preflight.Rejected() {
 				t.Fatalf("fixture preflight: %+v %v", preflight, err)
 			}
-			writeFile(t, root, "a", "other writer")
+			admitted := 0
+			recorder := &DownloadRecorder{
+				Admit: func(a DownloadAdmission) error {
+					admitted++
+					// Existing collisions now refuse the whole plan at entry.
+					// Keep this progress oracle about a later writer.
+					if a.Item.Name == prefix+"a" {
+						writeFile(t, root, "a", "other writer")
+					}
+					return nil
+				},
+				Execute: func(DownloadItem, transfercopy.Observation) error { return nil },
+				Verify:  func(DownloadItem, transfercopy.Observation) error { return nil },
+			}
 			updates := 0
 			progress := func(done, total, bytes int64) {
 				updates++
@@ -388,8 +401,8 @@ func TestDownloadProgressCountsPlacedFiles(t *testing.T) {
 					t.Fatalf("progress counted attempted names as copied: done=%d bytes=%d total=%d actual files=%d bytes=%d", done, bytes, total, placed, size)
 				}
 			}
-			report, err := Download(t.Context(), source, &fsEngine{session: source}, "remote:media", "media", prefix, root, "fixture", preflight, progress)
-			if err != nil || report.Done != 1 || report.Bytes != 7 || len(report.Failures) != 1 || updates != 2 {
+			report, err := Download(t.Context(), source, &fsEngine{session: source}, "remote:media", "media", prefix, root, "fixture", preflight, progress, recorder)
+			if err != nil || report.Done != 1 || report.Bytes != 7 || len(report.Failures) != 1 || updates != 2 || admitted != 2 {
 				t.Fatalf("mixed transfer lost final accounting: %+v updates=%d error=%v", report, updates, err)
 			}
 			if data, err := os.ReadFile(filepath.Join(root, "a")); err != nil || string(data) != "other writer" {

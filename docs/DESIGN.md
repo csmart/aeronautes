@@ -5032,8 +5032,10 @@ The resulting range still requires independent review before protected PR/master
 Every wider valuable-data release gate remains in force.
 
 The next [existing-destination archive](experiments/2026-09-09-download-admission.md) reproduces thirteen unsafe admissions on each owned provider, including outside writes through existing descendant symlinks on native, real-engine and marker routes.
-[ADR 0034](adr/0034-download-destination-admission.md) proposes complete component inspection before Start and before the executor's first effect, while preserving the accepted initial selected-root symlink spelling.
-Review that bounded contract before production changes, then implement the shared admission correction with whole-selection, faithful-error, normal-control and deliberately broken regression cases.
+[ADR 0034](adr/0034-download-destination-admission.md) defines the independently approved complete component inspection before Start and before the executor's first effect, while preserving the accepted initial selected-root symlink spelling.
+The shared admission correction implements that contract with whole-selection, faithful-error, direct-executor, queued-job and normal-control regressions on both owned providers.
+The original thirty-eight probe cases pass unchanged, and nine deliberately broken guards trigger their expected failures while retaining normal controls.
+Its [maintained validation](experiments/2026-09-09-download-admission.md#complete-validation-and-retained-failures) preserves the original failed producers and the compatibility-fixture corrections; independent implementation review and protected delivery remain required.
 Reject existing descendant links/reparse entries and inspection uncertainty under the approved policy; do not infer that a temporary inspection root supplies later mutation authority.
 Record exact local and remote deltas, actual job/item/audit outcomes, source identity and independent PR/master delivery evidence.
 Stable selected-root lifetime, raced parents, publication and cleanup authority, complete-path identity and native platform acceptance remain separate P18/P19/P20/P30 work, with the valuable-data hold unchanged.

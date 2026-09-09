@@ -1,8 +1,8 @@
 # ADR 0034 — download destination admission
 
-**Status:** Proposed for independent local review under the authorised audit remediation plan.
+**Status:** Accepted after independent local review under the authorised audit remediation plan.
 **Scope:** Refuse evidenced existing destination hazards before any download effect; stronger filesystem authority remains P18 work.
-Production changes depend on approval of this contract.
+The before evidence was independently reproduced on both owned providers before this contract was approved.
 
 ## Problem and oracle
 
