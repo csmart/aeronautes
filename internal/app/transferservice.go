@@ -196,12 +196,7 @@ func (s *TransferService) resolve(ctx context.Context, req CopyRequestDTO) (src,
 	if err != nil {
 		return nil, nil, false, err
 	}
-	capabilities, err := dst.FetchCapabilities(ctx)
-	if err == nil {
-		if err := effective.CheckChunkAgainst(capabilities); err != nil {
-			return nil, nil, false, err
-		}
-	} else if err := effective.CheckChunkAgainst(nil); err != nil {
+	if _, err := effective.forDestination(ctx, dst); err != nil {
 		return nil, nil, false, err
 	}
 	versioned = detail.Versioning.Mode != swiftcontrol.VersioningOff
@@ -266,7 +261,7 @@ func (s *TransferService) setRecommendationSource(f func(bookmarkID string) *Tra
 // with the job's effective options. Remotes resolve PER SPAWN: each
 // child gets tokens refreshed against expiry first (§26.2 — the child
 // cannot re-authenticate itself).
-func (s *TransferService) buildEngine(ctx context.Context, req CopyRequestDTO, src, dst *swiftcontrol.Session) (transfercopy.Engine, error) {
+func (s *TransferService) buildEngine(ctx context.Context, req CopyRequestDTO, src, dst *swiftcontrol.Session) (transfercopy.Engine, TransferSettingsDTO, error) {
 	source := func(spawnCtx context.Context) ([]rclone.Remote, error) {
 		srcRemote, err := s.connections.EngineRemote(spawnCtx, src, "aeronautes_src")
 		if err != nil {
@@ -280,46 +275,39 @@ func (s *TransferService) buildEngine(ctx context.Context, req CopyRequestDTO, s
 	}
 	remotes, err := source(ctx)
 	if err != nil {
-		return nil, err
+		return nil, TransferSettingsDTO{}, err
 	}
 	// §12.3: one child may serve both endpoints only when their TLS
 	// trust identities are EQUAL — refuse here so the operator sees the
 	// reason at start, not a child-spawn failure mid-job.
 	srcTrust, err := rclone.TrustIdentity(remotes[0].InsecureTLS, remotes[0].CACertFile)
 	if err != nil {
-		return nil, err
+		return nil, TransferSettingsDTO{}, err
 	}
 	dstTrust, err := rclone.TrustIdentity(remotes[1].InsecureTLS, remotes[1].CACertFile)
 	if err != nil {
-		return nil, err
+		return nil, TransferSettingsDTO{}, err
 	}
 	if srcTrust != dstTrust {
-		return nil, errors.New("the two bookmarks carry different TLS trust (custom CA or insecure): one transfer child cannot serve both safely (§12.3) — align their trust settings or move data via a location both trust")
+		return nil, TransferSettingsDTO{}, errors.New("the two bookmarks carry different TLS trust (custom CA or insecure): one transfer child cannot serve both safely (§12.3) — align their trust settings or move data via a location both trust")
 	}
 	effective, err := s.effectiveSettings(req)
 	if err != nil {
-		return nil, err
+		return nil, TransferSettingsDTO{}, err
 	}
-	options := effective.options()
-	// K-XFER-004's default half: an EMPTY chunk size means rclone's
-	// 5Gi default — on a cluster advertising a smaller max_file_size
-	// the effective chunk is capped to it, recorded, never left to
-	// fail at upload time.
-	if options.ChunkSize == "" {
-		if caps, err := dst.FetchCapabilities(ctx); err == nil {
-			if max := caps.MaxFileSize(); max > 0 && max < 5<<30 {
-				options.ChunkSize = fmt.Sprintf("%db", max)
-			}
-		}
+	effective, err = effective.forDestination(ctx, dst)
+	if err != nil {
+		return nil, TransferSettingsDTO{}, err
 	}
 	if s.engineFactory != nil {
-		return s.engineFactory(source, options)
+		engine, err := s.engineFactory(source, effective.options())
+		return engine, effective, err
 	}
-	runner, err := rclone.NewRunner(options)
+	runner, err := rclone.NewRunner(effective.options())
 	if err != nil {
-		return nil, err
+		return nil, TransferSettingsDTO{}, err
 	}
-	return transfercopy.BindRunnerSource(runner, source), nil
+	return transfercopy.BindRunnerSource(runner, source), effective, nil
 }
 
 // StartCopy creates the job and launches execution in the background;
@@ -341,7 +329,7 @@ func (s *TransferService) StartCopy(ctx context.Context, req CopyRequestDTO) (st
 	if err != nil {
 		return "", err
 	}
-	engine, err := s.buildEngine(ctx, req, src, dst)
+	engine, effective, err := s.buildEngine(ctx, req, src, dst)
 	if err != nil {
 		return "", fmt.Errorf("transfer engine: %w", err)
 	}
@@ -354,7 +342,7 @@ func (s *TransferService) StartCopy(ctx context.Context, req CopyRequestDTO) (st
 		SourceBookmarkID:   req.SourceBookmarkID,
 		DestBookmarkID:     req.DestBookmarkID,
 		Engine:             "rclone+native",
-		Settings:           s.effectiveConfigJSON(req),
+		Settings:           effectiveJSONWithProfile(Profile(req.Profile), effective),
 	})
 	if err != nil {
 		return "", err
@@ -633,20 +621,6 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 	default:
 		finish(jobs.StateComplete, "")
 	}
-}
-
-// effectiveConfigJSON is the §45 record for a request: the resolved
-// profile plus the effective settings.
-func (s *TransferService) effectiveConfigJSON(req CopyRequestDTO) string {
-	effective, err := s.effectiveSettings(req)
-	if err != nil {
-		return ""
-	}
-	profile := Profile(req.Profile)
-	if profile == "" {
-		profile = ProfileBalanced
-	}
-	return effectiveJSONWithProfile(profile, effective)
 }
 
 // recoveryRecorder persists executor recovery facts durably. Errors
