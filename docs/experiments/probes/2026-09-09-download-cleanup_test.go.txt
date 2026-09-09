@@ -1,0 +1,117 @@
+package systemtest
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/csmart/aeronautes/internal/app"
+)
+
+func downloadCleanupProbeRun(t *testing.T, h *Harness, foreign bool) {
+	t.Helper()
+	source := h.Container(h.Primary, "download-cleanup-source")
+	other := h.Container(h.Secondary, "download-cleanup-other")
+	body := []byte("selected source bytes")
+	marker := []byte("unrelated writer bytes")
+	h.Seed(h.Primary, source, "scope/proof.bin", body, nil)
+	h.Seed(h.Primary, source, "outside", []byte("unselected source"), nil)
+	h.Seed(h.Secondary, other, "outside", []byte("other account"), nil)
+	beforeA, beforeB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
+	root := t.TempDir()
+	seedListingLocal(t, root, "selected/keep", []byte("local sentinel"))
+	seedListingLocal(t, root, "other-job/keep", []byte("other local job"))
+	beforeLocal := snapshotListingLocal(t, root)
+	app.WireFilePicker(h.Transfer, listingFilePicker{dir: filepath.Join(root, "selected")})
+	picked, err := h.Transfer.PickDownloadDir(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := app.DownloadRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: source, Prefix: "scope/", DestDirToken: picked.Token}
+	preflight, err := h.Transfer.PreflightDownload(t.Context(), request)
+	if err != nil || preflight == nil || preflight.Rejected() || len(preflight.Items) != 1 || preflight.Items[0].Route != "rclone" {
+		t.Fatalf("cleanup probe engine preflight: %+v %v", preflight, err)
+	}
+	barrier, ended, hits, trace := interruptionProxy(t, h, source, http.MethodGet, "scope/proof.bin", nil)
+	id, err := h.Transfer.StartDownload(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event, err := barrier.Wait(t.Context()); err != nil || event.StatusCode != http.StatusOK {
+		t.Fatalf("cleanup probe response barrier: %+v %v", event, err)
+	}
+	stage := filepath.Join(root, "selected", ".aeronautes-stage-"+id)
+	if info, err := os.Stat(stage); err != nil || !info.IsDir() {
+		t.Fatalf("actual child stage was not created: %v", err)
+	}
+	foreignPath := filepath.Join(stage, "other-writer-keep")
+	if foreign {
+		if err := os.WriteFile(foreignPath, marker, 0600); err != nil {
+			t.Fatal(err)
+		}
+		if observed, err := os.ReadFile(foreignPath); err != nil || !bytes.Equal(observed, marker) {
+			t.Fatalf("foreign fixture file was not acknowledged: %q %v", observed, err)
+		}
+	}
+	if err := barrier.Release(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-ended:
+	case <-time.After(10 * time.Second):
+		t.Fatal("released cleanup probe response did not return")
+	}
+	if hits.Load() != 1 || barrier.Err() != nil {
+		t.Fatalf("cleanup probe barrier retried: %d %v", hits.Load(), barrier.Err())
+	}
+	h.AwaitJob(id)
+	copyCompletionAwaitPins(t, h, h.Primary)
+	saved := uploadRecoveryRead(t, h.database, id)
+	visible, err := h.Jobs.Get(t.Context(), id)
+	if err != nil || !reflect.DeepEqual(visible, saved.Job) {
+		t.Fatalf("cleanup probe public/durable mismatch: %+v %v", visible, err)
+	}
+	if saved.Job.State != "complete" || saved.Job.Counters.ObjectsCopied != 1 || saved.Job.Counters.BytesCopied != int64(len(body)) {
+		t.Fatalf("cleanup probe did not finish its selected copy: %+v", saved.Job)
+	}
+	observed, foreignErr := os.ReadFile(foreignPath)
+	if foreign && (foreignErr != nil || !bytes.Equal(observed, marker)) {
+		t.Errorf("download cleanup deleted unrelated writer data: bytes=%q error=%v", observed, foreignErr)
+	}
+	assertListingLocalDelta(t, beforeLocal, snapshotListingLocal(t, root), map[string][]byte{"selected/proof.bin": body})
+	if writes := trace.writeSnapshot(); len(writes) != 0 {
+		t.Fatalf("download modified remote storage: %v", writes)
+	}
+	requests := trace.requestCount()
+	if next, err := h.Transfer.RerunJob(t.Context(), id); next != "" || err == nil || !strings.Contains(err.Error(), "own dialog") || requests != trace.requestCount() {
+		t.Fatalf("cleanup probe rerun escaped refusal: %q %v", next, err)
+	}
+	uploadRecoveryReopen(t, h, id, saved)
+	if requests != trace.requestCount() {
+		t.Error("cleanup probe reopen contacted Swift")
+	}
+	assertListingLocalDelta(t, beforeLocal, snapshotListingLocal(t, root), map[string][]byte{"selected/proof.bin": body})
+	h.AssertNoCollateral(beforeA, h.SnapshotNamespace(h.Primary))
+	h.AssertNoCollateral(beforeB, h.SnapshotNamespace(h.Secondary))
+	encoded, err := json.Marshal(map[string]any{"foreign": foreign, "foreign_missing": os.IsNotExist(foreignErr), "foreign_bytes": string(observed), "saved": saved})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("download cleanup before: %s", encoded)
+}
+
+func downloadCleanupProbeCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
+	for _, foreign := range []bool{false, true} {
+		t.Run(fmt.Sprintf("foreign_%v", foreign), func(t *testing.T) { downloadCleanupProbeRun(t, makeHarness(t), foreign) })
+	}
+}
+
+func TestDownloadCleanupBeforeMock(t *testing.T)      { downloadCleanupProbeCases(t, findMockHarness) }
+func TestDownloadCleanupBeforeRealSwift(t *testing.T) { downloadCleanupProbeCases(t, New) }
