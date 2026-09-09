@@ -5008,7 +5008,8 @@ The [download before-fix archive](experiments/2026-09-09-download-boundaries.md)
 Give test scheduling, the root guard, the engine stage lifecycle and native closure their own implementation commits and local reviews.
 The scheduling prerequisite must preserve the full test inventory, assertions, coverage/reconciliation and required checks within the existing finite CI limits.
 The [captured-root correction](experiments/2026-09-09-download-root.md) refuses unsupported destination spelling before planning, job creation or execution, with maintained regressions on both routes and owned providers.
-Its local evidence is separate from the pending stage-lifecycle, native-closure and download-recording changes; it grants no valuable-data clearance.
+Its [independent review and protected PR67 delivery](experiments/2026-09-09-download-root.md#delivery) passed with all five PR and master checks green.
+That evidence is separate from the pending stage-lifecycle, native-closure and download-recording changes; it grants no valuable-data clearance.
 Maintain actual-service fault regressions with complete allowed-effect and collateral witnesses for each correction; an executor-only probe must not be promoted into broader evidence without its actual service boundary.
 Only after these prerequisites pass should the separate checked download adapter, directory-marker and temporary-stage identity contract be reviewed and implemented.
 Download record version zero and every wider valuable-data release gate remain in force.
