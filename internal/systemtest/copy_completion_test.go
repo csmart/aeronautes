@@ -750,7 +750,10 @@ func copyCompletionCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 	}
 }
 
-func TestCopyCompletionMock(t *testing.T) { copyCompletionCases(t, findMockHarness) }
+func TestCopyCompletionMock(t *testing.T) {
+	t.Parallel()
+	copyCompletionCases(t, findMockHarness)
+}
 func TestCopyCompletionRealSwift(t *testing.T) {
 	t.Parallel()
 

@@ -370,7 +370,10 @@ func downloadStageCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 	t.Run("foreign_empty_directory", func(t *testing.T) { downloadStageForeign(t, makeHarness(t), "empty_directory") })
 }
 
-func TestDownloadStageMock(t *testing.T) { downloadStageCases(t, findMockHarness) }
+func TestDownloadStageMock(t *testing.T) {
+	t.Parallel()
+	downloadStageCases(t, findMockHarness)
+}
 func TestDownloadStageRealSwift(t *testing.T) {
 	t.Parallel()
 	downloadStageCases(t, New)

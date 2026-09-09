@@ -291,7 +291,10 @@ func downloadCloseCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 	}
 }
 
-func TestDownloadCloseMock(t *testing.T) { downloadCloseCases(t, findMockHarness) }
+func TestDownloadCloseMock(t *testing.T) {
+	t.Parallel()
+	downloadCloseCases(t, findMockHarness)
+}
 func TestDownloadCloseRealSwift(t *testing.T) {
 	t.Parallel()
 	downloadCloseCases(t, New)

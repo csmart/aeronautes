@@ -46,6 +46,8 @@ func downloadRootGuardCases(t *testing.T, makeHarness func(*testing.T) *Harness)
 }
 
 func TestDownloadRootGuardMock(t *testing.T) {
+	t.Parallel()
+
 	downloadRootGuardCases(t, findMockHarness)
 }
 

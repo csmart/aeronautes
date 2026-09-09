@@ -572,7 +572,10 @@ func uploadRecoveryRun(t *testing.T, h *Harness, test uploadRecoveryCase) {
 	h.AssertNoCollateral(afterB, h.SnapshotNamespace(h.Secondary))
 }
 
-func TestUploadRecoveryMock(t *testing.T) { uploadRecoveryCases(t, findMockHarness) }
+func TestUploadRecoveryMock(t *testing.T) {
+	t.Parallel()
+	uploadRecoveryCases(t, findMockHarness)
+}
 func TestUploadRecoveryRealSwift(t *testing.T) {
 	t.Parallel()
 

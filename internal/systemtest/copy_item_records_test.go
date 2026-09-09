@@ -214,7 +214,10 @@ func copyItemRecordsCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 	}
 }
 
-func TestCopyItemRecordsMock(t *testing.T) { copyItemRecordsCases(t, findMockHarness) }
+func TestCopyItemRecordsMock(t *testing.T) {
+	t.Parallel()
+	copyItemRecordsCases(t, findMockHarness)
+}
 func TestCopyItemRecordsRealSwift(t *testing.T) {
 	t.Parallel()
 	copyItemRecordsCases(t, New)

@@ -5007,6 +5007,10 @@ The [download before-fix archive](experiments/2026-09-09-download-boundaries.md)
 [ADR 0032](adr/0032-download-placement-prerequisites.md) defines the independently reviewed prerequisites before download recording: reject changed root spellings, create a new stage without reusing existing data, replace recursive cleanup with explicit conservative outcomes, and check native closure before placement.
 Give test scheduling, the root guard, the engine stage lifecycle and native closure their own implementation commits and local reviews.
 The scheduling prerequisite must preserve the full test inventory, assertions, coverage/reconciliation and required checks within the existing finite CI limits.
+Before adding the download recording matrix, give the mock harness explicit per-instance endpoint and account settings, preserving the existing environment adapter for real Swift.
+In one separate scheduling commit, let the thirteen mock counterparts of already-parallel real-Swift groups share the existing three-slot limit.
+Require a matched scheduling comparison, unchanged missing/required-account behaviour, a mock-only run without SAIO settings and complete race/inventory/scenario verification as described in the [mock scheduling experiment](experiments/2026-09-09-mock-scheduling.md).
+Keep every test body and safety assertion, the finite CI limits and all five required jobs; this creates no application safety or throughput claim.
 The [captured-root correction](experiments/2026-09-09-download-root.md) refuses unsupported destination spelling before planning, job creation or execution, with maintained regressions on both routes and owned providers.
 Its [independent review and protected PR67 delivery](experiments/2026-09-09-download-root.md#delivery) passed with all five PR and master checks green.
 That evidence grants no valuable-data clearance; native closure and download recording retain their own verification and delivery requirements.
