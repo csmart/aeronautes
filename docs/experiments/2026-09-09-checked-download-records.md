@@ -3,7 +3,7 @@
 ## Scope and oracle
 
 This implements the independently approved [ADR 0033](../adr/0033-download-item-recording.md) contract after the delivered captured-root, engine-stage and native-closure prerequisites in [ADR 0032](../adr/0032-download-placement-prerequisites.md).
-Implementation review and protected delivery remain pending.
+Independent implementation and integrated-range review passed, followed by [protected PR75 delivery](#protected-delivery).
 The original [download archive](2026-09-09-download-boundaries.md) remains unchanged: it demonstrates the delivered version-zero caller truncating 201 and 401 failed names to 200 on both execution routes and owned providers.
 
 The oracle is the exact preflight selection, independently read destination content and complete allowed filesystem/remote delta, compared with the actual item rows, public pages and matching terminal job/audit facts.
@@ -145,7 +145,7 @@ Scenario reconciliation remains valid at schema version three with 40/116 requir
 Independent implementation review passed for source `021d3e17f761345135a37de2e668f343198fcf5d`.
 The reviewer independently reproduced all 2,653 named passes across twenty packages without failures or skips, inspected the actual-service and SQL-refusal evidence, and verified the acknowledged-order and identity negative controls.
 Seven of eight additional reviewer variants failed their intended cases; removing the post-`MkdirAll` directory observation remained undetected because that guard addresses a replacement race, as the focused evidence limits above already state.
-Integrated-range review and protected PR/master delivery remain pending.
+The resulting integration later passed [independent review and protected PR/master delivery](#protected-delivery).
 No CI limits, assertions, historical archives or audit finding dispositions are weakened by this migration.
 Full per-effect history, stronger source/content identity, stable local roots and path authority, cancellation interlocks, crash recovery, native acceptance, retention/export and the [valuable-data release hold](../audits/2026-09-05/remediation-plan.md#acceptance-gates-and-completion) remain open.
 
@@ -170,4 +170,41 @@ Fresh frontend validation passes all 971 tests, with no failures or skips, and r
 The full 883-name pre-integration inventory remains, with exactly thirty-three keyboard, fifty-one Preview and four About-identity cases added.
 All ninety-five frontend inputs and twenty-two regenerated binding files remain unchanged through typechecking, frontend build/tests, vet, native production build, root/build-identity/command tests, no-CGO internal build and Swift source verification.
 The native executable has SHA-256 `bb272224b1fb01a1f055dce0243d8dd33b95a24693be3ff5a2e8b7750abae6aa`.
+Its observed `--version` output at 16:39:43 UTC on 9 September 2026 reports version `dev`, source revision `cafe784aee6aa8f4dd2dfa2c5dca03b8a7f5631a` and `sourceDirty=clean`.
+This attributes the existing local binary; byte-for-byte build reproducibility and hosted artifact provenance were not established by that observation.
 This build and component evidence does not replace native acceptance or valuable-data validation.
+
+## Protected delivery
+
+Independent review approved the integrated source `f88114958c7f5211b8953e0c757687146a4c4f5d` on base `a8ece3429c39468c3da8a4343bbfa7cf8226efce`.
+[PR75](https://github.com/csmart/aeronautes/pull/75) merged through the normal protected rebase procedure on 9 September 2026 at 17:03:41 UTC, producing master `4feaaeacb0f7093e47ed8d7c37bcd08d6305be2e`.
+Both trees are exactly `325766fcd7705fecf97261356965dcb1863f8f10`: all 645 tracked files and 343 Go/SQL inputs match, as do all five binary patches, stable patch identities and complete commit messages.
+The PR checkout `28fe4f5f695abab662681f191c1ba5fc1a492201` has that same tree and the exact source/base parents.
+
+Both actual pipelines passed all five required jobs and all 67 steps, without a rerun or changed CI limit.
+Each full SAIO log contains exactly the same 13,095 events as its own downloaded artifact.
+Both retain the complete 2,694-name inventory across twenty passing packages: 2,692 named passes, no failures, and only `TestRcloneMatrix` and `TestKeychainRoundTrip` skipped with their source-bound optional-environment diagnostics.
+The 743 top-level names comprise 741 passes and those two skips.
+The complete names and outcomes match between PR and master after separately checking each run's generated absolute-expiry test name against its one-hour calculation.
+The configured local run's two optional tests passed; its 2,694-pass result remains a separate producer.
+
+| Producer | Actual Go | System package | Suite step | SAIO job | Reported statements |
+| --- | --- | ---: | ---: | ---: | ---: |
+| [PR75 run 34377926698](https://github.com/csmart/aeronautes/actions/runs/34377926698), attempt 1 | 1.27.1 | 980.437 s | 1,170 s | 1,222 s | 87.2% |
+| [Master run 34380591757](https://github.com/csmart/aeronautes/actions/runs/34380591757), attempt 1 | 1.27.1 | 931.617 s | 1,120 s | 1,183 s | 87.2% |
+
+The reports retain all thirty-four scheduled groups and 123 serial system-test groups under the unchanged `-parallel=3` setting.
+All serial groups terminate before the parallel phase; four open JSON records do not establish four simultaneous workers.
+The observed minimum margins are 219.563 seconds against the twenty-minute package limit and 278 seconds against the twenty-five-minute job limit; these are measurements of these runs, not a worst-case performance guarantee.
+The hosted Go 1.27.1 witnesses do not change earlier producers' recorded Go versions.
+
+Schema-three scenario reconciliation remains valid but incomplete at 40/116 required cells, with thirty-eight actions having gaps and contract hash `6c1e4d947471b8b5`.
+The fifty-one raw PR/master report differences comprise one checkout SHA and fifty evidence strings with consistently mapped generated job, scan or fixture identifiers.
+All remaining fields, test witnesses, outcomes, object names and evidence meaning match.
+Separate broken-reader controls reject changed coverage, a changed job outcome, inconsistent scan identity, a changed object name and a missing witness.
+The full PR log has SHA-256 `e8c7dc2083622ef4f059c046a256b84da04e64237148fc86885f91a555495d95`; its scenario artifact `10115447008` has verified ZIP SHA-256 `59a591ed1b3e45ee7c115076b16da45c42531fc6015d5aaa01ca2763385cd7f2`.
+The full master log has SHA-256 `4f78297259f8e86a35a2f952b5e02acf6d1a8548ea34100c9fc5583ca0bfe0d2`; its scenario artifact `10116446144` has verified ZIP SHA-256 `a2cba0b4b49ded471f3c73e12994529cd41a4f9d4a015c404350eb378cb267e1`.
+All twenty-seven pinned historical artifacts and the complete PR evidence remained unchanged after master validation.
+
+This delivery establishes the checked download-recording migration and preserves its original failed probes and later corrections.
+It does not close DS-08/SEC-08, stronger content identity, stable filesystem authority, crash recovery, native acceptance or any valuable-data release gate.

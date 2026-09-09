@@ -5028,7 +5028,7 @@ Only after these prerequisites pass should the separate checked download adapter
 Its [maintained implementation and evidence](experiments/2026-09-09-checked-download-records.md) migrate the executor and first version-one caller together, preserving historical unrecorded jobs and the direct executor compatibility mode.
 The actual-service SQL/fault, complete 0/1/201/401-name, UI and reopening evidence passed independent implementation review, including a second full race suite with the exact complete inventory.
 Integration with the delivered keyboard, release identity, chunk-admission and Preview changes passes fresh validation with 2,694 Go tests and 971 frontend tests.
-The resulting range still requires independent review before protected PR/master delivery.
+The resulting range passed independent review and [protected PR75 delivery](experiments/2026-09-09-checked-download-records.md#protected-delivery), preserving all five logical commits and the exact reviewed tree with all five PR/master checks green.
 Every wider valuable-data release gate remains in force.
 
 The next [existing-destination archive](experiments/2026-09-09-download-admission.md) reproduces thirteen unsafe admissions on each owned provider, including outside writes through existing descendant symlinks on native, real-engine and marker routes.
