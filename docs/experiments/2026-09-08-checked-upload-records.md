@@ -131,6 +131,42 @@ The exact monotonic service-duration correction passed all eight short-upload ca
 Production Go/SQL remained identical across all three full runs; only the timing test changed.
 The protected PR and resulting master integration package/job durations must still be measured against their unchanged 1,200/1,500-second budgets; investigate growth before changing those limits.
 
+## Hosted completion-wait correction
+
+The initial [PR65 integration run](https://github.com/csmart/aeronautes/actions/runs/34297051410/job/102295834232) failed `TestUploadItemRecordsRealSwift/native_false_failed_401` at the credential-release wait.
+It passed 2,287 named tests, failed that leaf and its parent, and skipped only the two existing optional environment tests.
+The system-test package finished in 974.784 seconds and the integration job in 1,176 seconds, within the unchanged package/job limits.
+This was an individual fixture deadline, not exhaustion of either CI budget.
+
+The identity fixture called the thirty-second credential-release helper immediately after starting the upload.
+Hundreds of individual acknowledgements and remote operations can legitimately outlast that wait.
+The fixture now first uses the harness's existing ninety-second terminal-job wait, then checks credential release with the original thirty-second bound.
+Both conditions remain required: a visible terminal row alone cannot acknowledge deferred body cleanup.
+The behaviour oracle remains the complete terminal job/item/audit state plus actual credential publication after cleanup and the independently checked data effects.
+
+Controlled overlays on source `039e77584631307448c1d0f5d37691fe3b9d222b` add `time.Sleep(100 * time.Millisecond)` inside the proxy's selected live-PUT refusal branch.
+They run the 1- and 401-failure engine cases on both providers with `go test -race -count=1 -coverpkg=./internal/...` and the pinned real rclone.
+For observation only, the overlaid cleanup helper records a test error at the original thirty-second deadline and allows one additional bounded ninety-second wait instead of aborting immediately.
+That preserves the failure while allowing the actual job to finish and all original identity, ledger, audit, staging-byte, mutation, collateral, rerun and orderly-reopen assertions to execute.
+The matching corrected overlay adds only the terminal-job wait before that same helper.
+All 311 underlying Go/SQL sources remain identical across these two runs; no delay, grace period or observation hook enters the maintained tests or production code.
+
+| Provider | Failed names | Original wait | Corrected wait | Original/corrected service seconds |
+| --- | ---: | --- | --- | ---: |
+| Mock Swift | 1 | Pass | Pass | 0.332 / 0.376 |
+| Mock Swift | 401 | Fails at 30 s, then completes | Pass | 53.273 / 51.723 |
+| SAIO | 1 | Pass | Pass | 0.422 / 0.494 |
+| SAIO | 401 | Fails at 30 s, then completes | Pass | 63.780 / 63.014 |
+
+The original delayed run fails only the two expected deadline observations and their parents; the corrected run passes all four leaves and both parents without skips.
+Every delayed 401-name job still records exactly 401 failed identities, one copied and verified object with twelve bytes, and all expected retained facts and effects.
+The unmodified 401-name controls also pass on both providers under cross-package coverage, with service times of 11.137 and 21.872 seconds.
+These controlled delays reproduce premature waiting, not the hosted runner's exact latency or production throughput.
+The final maintained identity replay passes all sixteen leaves and both parents with race detection, cross-package coverage and no skips.
+Of the 311 Go/SQL inputs from the earlier full validation, only this test file changes; the maintained correction matches the passing controlled overlay after removing its artificial delay.
+Independent local review and successful replacement PR/master checks remain required for this correction.
+Application code, the shared cleanup helper, pipeline limits, assertions and merge protections remain unchanged.
+
 No scenario cells, complete audit packages or release gates are closed by this caller migration.
 Download recording, source replacement/root confinement, backend-held approval and credential authority, current remote identity, stronger content/metadata verification, concurrent writers, per-effect/lost-history recovery, ordinary staging deletion authority, native child quiescence and all six platforms remain separate work.
 Mirror starts, changed Copy overwrites and automatic recovery reclamation remain refused.

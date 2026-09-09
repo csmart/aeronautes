@@ -126,6 +126,8 @@ func uploadItemRecordsRun(t *testing.T, h *Harness, count int, native bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Hundreds of checked commits may outlast the separate cleanup wait.
+	h.AwaitJob(id)
 	copyCompletionAwaitPins(t, h, h.Primary)
 	serviceTime := time.Since(started)
 	saved := uploadRecoveryRead(t, h.database, id)
