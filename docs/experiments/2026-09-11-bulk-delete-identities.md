@@ -109,6 +109,8 @@ On an untrusted reply, every requested identity has an unresolved effect, includ
 The minimal public projection is defined here rather than deferred.
 The existing failure counter keeps its meaning and counts each requested identity with a reported execution error once, never twice.
 Unresolved identities are published as their own count with their own retained set, and are never presented as verified, as deletions, or as part of the failure count.
+The retained set is durable only as far as its retention path is: the complete list is written to a spill file opened before any destructive request, and where that file cannot be opened or written the run keeps the exact count and a bounded sample and says so, rather than letting the ledger read as complete when it is not.
+Making that path dependable in every environment, or refusing to begin a destructive run without it, is a policy decision this slice does not take.
 The verified counter is credited only from a validated aggregate; a diagnostic aggregate credits nothing, which is the specific change that stops an untrusted reply publishing claimed deletions as verified alongside the same names as failures.
 The processed display is credited on the same condition.
 A run holding any unresolved identity is not complete: it ends partial and its summary states the unresolved count alongside any failure summary, rather than hiding one behind the other, following the same pattern ADR 0023 sets for a partial local job.
@@ -132,6 +134,23 @@ Before a reply is used, it must satisfy all of the following.
 A reply satisfying all five is validated: its named identities are reported execution errors, and its aggregate is credited.
 A reply failing any of them is untrusted: its validly named identities are still retained as reported execution errors, every requested identity takes an unresolved effect, and its aggregate becomes a diagnostic.
 This is what makes the two numerically reconciling shapes above safe, and it is why the passing control cannot be that a reconciling reply records no failure: a reply with one claimed deletion and one valid row for the second name is a valid partial reply that must retain exactly one reported error, without inventing certainty about that object's effect.
+
+## The sweep re-attempts an unresolved name
+
+A prefix run sweeps in passes: it lists, deletes, and lists again while a pass still deletes something, and it re-submits whatever is still listed.
+A name the service blamed is therefore submitted again on the next pass, and this slice records that name as unresolved, which is a destructive request issued for a name whose effect the run cannot state.
+
+This is pre-existing behaviour, not something the ledger introduces, and the evidence says so plainly.
+A probe on unchanged production at head 08b0d125, retained as `before-reattempt.txt` with its source, drove a valid partial reply claiming one deletion and blaming one of two listed names.
+The unchanged sweep sent three bulk requests and submitted the blamed name in all three, raised no error, and retained three entries for that one name, each spelled as the echoed wire path.
+What the correction changes is the record, not the requests: the same three submissions now leave one entry, under the object's own name, marked as an unresolved effect.
+
+This slice deliberately does not change sweep semantics.
+Suppressing a name from later passes, or stopping the sweep when an effect becomes unresolved, would alter when a deletion run stops and what a pass may retry, which the approved contract does not cover and which reaches beyond a reporting correction.
+Recording the behaviour truthfully is within this slice; deciding the authority question is not.
+
+The question is put to review directly: is it acceptable to land the ledger with this pre-existing re-attempt recorded and carried as a named follow-up, or does the re-attempt of an unresolved name block this slice until the authority rule is decided.
+Either answer is workable here, and the honest position is that the correction makes a pre-existing hazard visible for the first time rather than creating one.
 
 ## Required proof
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -143,5 +144,54 @@ func TestDeleteJobDoesNotPublishClaimedDeletionsAsVerified(t *testing.T) {
 		if _, err := session.ObjectDetail(ctx, "media", name); err != nil {
 			t.Errorf("%q is missing after a run that deleted nothing: %v", name, err)
 		}
+	}
+}
+
+// TestDeleteJobDisclosesAnUnretainableUnresolvedSet drives the case
+// where the retention path cannot be opened at all. The run must still
+// report the exact count, and must say that the complete list was not
+// retained, so nobody reads the ledger as complete when it is not.
+func TestDeleteJobDisclosesAnUnretainableUnresolvedSet(t *testing.T) {
+	// A cache location that is a file, not a directory, so the retention
+	// path cannot be created.
+	blocked := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(blocked, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XDG_CACHE_HOME", blocked)
+
+	h, _ := bulkIdentityHarness(t, map[string]any{
+		"Number Deleted": 1, "Number Not Found": 0,
+		"Response Status": "200 OK", "Response Body": "",
+		"Errors": [][2]string{{"/media/scope/obj-0", "500 Internal Server Error"}},
+	})
+	h.connect(t)
+	bookmark := h.transfer.connections.ActiveBookmarkID()
+	service := NewDeleteService(h.transfer.connections, h.transfer.jobs, h.transfer.runner, h.evidence)
+	ctx := context.Background()
+	h.mock.AddContainer("media", "standard")
+	for i := 0; i < 3; i++ {
+		seedObject(h.mock, "media", fmt.Sprintf("scope/obj-%d", i), "data", nil)
+	}
+
+	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{
+		BookmarkID: bookmark, Container: "media", Prefix: "scope/", Mode: ModePrefix, Confirm: "media",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, h, jobID)
+
+	if job.State != "partial" {
+		t.Errorf("state = %q, want partial while names are unresolved", job.State)
+	}
+	if !strings.Contains(job.Error, "3 names have an unresolved effect") {
+		t.Errorf("the exact count did not survive the retention failure: %q", job.Error)
+	}
+	if !strings.Contains(job.Error, "could not be retained") {
+		t.Errorf("a lost unresolved list was not disclosed: %q", job.Error)
+	}
+	if strings.Contains(job.Error, "full list:") {
+		t.Errorf("a full list was offered although none was retained: %q", job.Error)
 	}
 }
