@@ -5090,6 +5090,22 @@ Unicode equivalence and normalization, leading spaces, directory-only aliases, e
 Selected-root lifetime, concurrent parent/root replacement, publication and cleanup authority remain separate P18/P20/P30 work.
 This bounded correction does not close P18, P19 or the valuable-data hold.
 
+The next bounded [manifest consent layout correction](experiments/2026-09-10-consent-layout.md) keeps the ownership-consent disclosure and its controls usable at the supported minimum window.
+The 560-character backing target in that label leaves the dialog and the application edge at 960×600 in both themes and in both the default and force states, and again at 1280×800, while the identical text wraps in the survival paragraph directly above it.
+The blocking safety part of UI-13, §4.3, the destruction and force disclosure in §§3.4/34/35 and the Phase 7 gate require the title and the action row to stay visible at that size, with the complete target, the confirmation input and any error reachable by scrolling and keyboard focus.
+
+1. Review this sequence and the dedicated experiment plan, including its measured before and candidate geometry, before changing production styles.
+2. Wrap the consent label's text and bound the dialog to the viewport, keeping the title and the action row outside the scrolled region at 960×600 while the disclosure body, the consent control, the confirmation input and any error scroll within it.
+   Preserve the native checkbox, the complete literal target, the associated input, all script and markup authority, the existing tokens, typography and focus treatment.
+   A measured wrapping-only candidate leaves every short-label dialog identical, but its long-target default dialog then needs 650 pixels and the existing long-name survival disclosure already needs 602, so both exceed the 600-pixel minimum and wrapping alone is not sufficient.
+3. Make the rendered native replay the maintained layout regression, because the existing component environment reports no layout geometry and a synthetic check can only cover content and interaction.
+   Require that replay to identify the actual Cancel and Delete controls in both their enabled and disabled rendering, to reach the complete content and every control by scrolling and keyboard focus while the title and action row stay visible, to prove that pointer and keyboard cancellation close the dialog, and to cover the refused-operation error state with long literal content.
+   Separate deliberately broken controls must remove the wrapping and the height bound independently and each must fail its own check, before independent review and delivery of only the reviewed current-base source through all five protected checks.
+
+Zoom and scaling, forced colours, assistive technology and other native platforms remain open.
+Named breakpoints, resizable panes, responsive working-list columns and bounded large-namespace retention remain separate UI-13 and P24 work.
+This bounded correction does not close UI-13, the accepted responsive-layout gate or the valuable-data hold.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
