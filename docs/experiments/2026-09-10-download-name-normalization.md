@@ -147,6 +147,11 @@ The accepted controls are the distinct look-alikes, sharp s against double s, a 
 Accepted controls assert the whole outcome rather than admission alone: the exact report, routed counts and engine calls, per-item admission, execution and verification observations with staging identity, every owned entry unchanged, each selected name present with its full bytes, the permitted directories, and nothing else.
 At the service layer they additionally assert job state and counters, item totals and identities, audit facts and history counts, the local delta and the per-route source reads.
 
+They assert all of that because an earlier revision did not, and the gap was invisible until it was attacked directly.
+Those controls checked only that admission returned without error and that the selected names appeared in the plan, which cannot distinguish a real download from an executor that admits everything and then does nothing.
+A mutant that keeps every admission check and returns an empty successful report passed the entire matrix at that revision, two hundred and twenty leaves in the transfer package and all twenty-one mock service leaves; there was no real-service no-op observation for that revision.
+The lesson generalises beyond this slice: a control that names only the absence of a refusal is not a control, and the cheapest way to find that out is to write the implementation that would satisfy it and require the control to fail.
+
 ## Complete verification
 
 Before evidence came from Go overlays that restore the two production files to their unchanged state while keeping the final tests, so the failures are the tests meeting real production.
@@ -165,6 +170,11 @@ Both providers are covered without skips: thirty-six leaves on the owned mock an
 
 One earlier attempt at that suite is recorded rather than discarded: run against the real service without an explicit package limit, the system-test package reached Go's default ten-minute limit and the package failed, so that attempt is not evidence of a pass.
 The reported run carries an explicit twenty-five-minute package limit, matching the lane's own budget.
+
+The raised budget in the pipeline does not reach a developer machine, and the distinction is worth stating plainly because it is easy to miss.
+The lane sets its own package limit in the workflow, while a local run takes Go's default ten minutes per package unless the invocation passes one.
+With the real service configured, the recorded local run's system-test package exceeded that default.
+Runtime depends on the host, its load and the test selection, so the full real-service gate must pass an explicit package limit matching the workflow and retain its actual exit; the completion of a wrapper is not a pass.
 
 Formatting, vet on Linux, Windows and macOS, the Windows and macOS internal builds and a module tidy that leaves both module files unchanged all pass.
 
