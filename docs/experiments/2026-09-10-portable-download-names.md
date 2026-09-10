@@ -16,7 +16,7 @@ This is a conservative refusal on every host, not a claim that each refused spel
 
 ## Source finding
 
-The inspected source is `36e731fe149526d5ff760b23b9caf7bd7b1e4370`.
+The inspected source is `6d1856333a2c561edb6d7425e044d470705b9375`; the three files below are byte-identical at the earlier `36e731fe149526d5ff760b23b9caf7bd7b1e4370` where the inspection began.
 [PreflightDownload](../../internal/transfer/local/local.go) refuses a leading slash, dot segments, backslashes, empty segments and control characters before its directory-marker branch, and has no reserved-component, restricted-character or trailing-form check.
 [validDownloadItem](../../internal/transfer/local/download_recording.go) repeats exactly the same list for direct items.
 [Download](../../internal/transfer/local/download_execute.go) validates every planned item through that function before destination inspection, recording and effects, so both boundaries gain the rule from one predicate.
@@ -104,7 +104,94 @@ After the bounded correction, require the same assertions to pass, and require a
 Then run the compatibility checks and the complete inventory, scenario and coverage verification under the existing finite budgets, reconciling every prior terminal name against the delivered inventory and listing the additions.
 Any existing fixture that this rule newly refuses must be surfaced by that reconciliation rather than adjusted silently.
 Independent local review is required for this plan and for every implementation commit, before protected PR delivery and all five resulting master checks.
-No maintained runtime result, test count, coverage figure, native platform outcome or delivery is claimed by this plan; the private probe section above is preparation evidence and is labelled as such.
+The plan was independently reviewed and approved before the implementation was adopted and committed; the sections below record the observed results, and the private probe section above stays preparation evidence.
+
+## Maintained reproduction and correction
+
+The plan was committed as `ecc9e5a460cf75fcb2d39c90015e80e93dd4f88a` and approved by independent review before the implementation commit was recorded.
+The candidate production change and its regressions were prepared and run privately in a detached worktree at master `36e731fe149526d5ff760b23b9caf7bd7b1e4370` before that approval, and were adopted unchanged afterwards.
+The approved range was then rebased onto master `6d1856333a2c561edb6d7425e044d470705b9375`, which changes no Go or SQL file: every file this correction touches has the same blob on both bases, and only the documentation and frontend files of two intervening deliveries differ.
+The implementation commit is patch-identical across that rebase, the plan commit differs only in where its unchanged DESIGN paragraph attaches, and every producer below was rerun on the new base and reproduced its exit, leaf counts and history deltas.
+Every tested file hashes identically to its committed blob, so the retained producer records bind this commit, and no implementation file was present in the reviewed worktree while the plan was under review.
+Preflight applies the shared predicate after its escape and control checks and before the directory-marker branch, so a refused name never reaches marker classification, its zero-byte metadata read, candidate collection or destination inspection.
+The same predicate refuses a direct item inside `validDownloadItem`, which the executor already calls for every planned item at entry, before destination inspection, recording and effects.
+Only `internal/transfer/local/local.go` and `internal/transfer/local/download_recording.go` differ between the before and fixed production snapshots; `download_execute.go` is unchanged and gains the rule through its existing call.
+The other consumer of that validation is the live download recorder, which the executor guard already precedes, so no recorded-history read path changes.
+A refused name still enters the existing complete-name and ancestor collision maps, exactly as a backslash or control-character name already does, so a selection that is both unportable and case-folded reports both diagnostics instead of hiding one.
+
+The [local regressions](../../internal/transfer/local/download_portable_names_test.go) cover 21 refused fixtures and 5 near-miss control fixtures at leaf, ancestor, deep-ancestor and directory-marker positions, through both routes, both recorder modes and both input orders.
+The [service regressions](../../internal/systemtest/download_portable_names_test.go) run five refused shapes and two controls through engine, native and marker routes on Mock and real Swift with picker tokens.
+The [existing app spy](../../internal/app/download_root_admission_test.go) gains a refused and a near-miss case, proving refusal before engine construction while its control still reaches the configured sentinel.
+Every unsafe selection starts with a harmless file or marker that must also remain untouched.
+
+| Producer | Failing leaves | Passing leaves | Actual exit | Measured wall seconds |
+| --- | ---: | ---: | ---: | ---: |
+| Before local/app | 211 | 55 | 1 | 2.786 |
+| Before Mock service | 15 | 6 | 1 | 11.341 |
+| Before real Swift service | 15 | 6 | 1 | 22.313 |
+| Fixed local/app | 0 | 266 | 0 | 2.895 |
+| Fixed Mock service | 0 | 21 | 0 | 8.620 |
+| Fixed real Swift service | 0 | 21 | 0 | 20.518 |
+| Broken preflight call, local/app | 43 | 223 | 1 | 2.253 |
+| Broken direct call, local/app | 168 | 98 | 1 | 3.309 |
+| Broken extension cut, local/app | 30 | 236 | 1 | 3.033 |
+| Broken preflight call, Mock service | 15 | 6 | 1 | 9.978 |
+
+These are leaf counts derived from the complete Go JSON terminal names, not counts inferred from table rows.
+The seconds column is a monotonic measurement of each whole producer command on the delivered base, including process startup and build time.
+The before failures are exactly the 42 preflight leaves, the 168 direct leaves and the one new app case, across all 21 refused fixtures; the other 55 leaves are the near-miss controls and the existing app cases, which pass throughout.
+Removing only the direct call fails exactly those 168 direct leaves; removing only the preflight call fails exactly the 42 preflight leaves and the app case; removing only the extension cut fails exactly the 30 leaves of the three extension-form fixtures and nothing else.
+No focused case skipped, and every recorded source hash stayed unchanged during each producer.
+
+Each unsafe service case in both before producers created a complete job with two planned and admitted items, four observations and two transfer audit rows, the exact `[1, 0, 2, 4, 2]` job, recovery, item, observation and audit delta, and materialized both the safe first member and the refused name.
+The same fixed cases return one rejecting preflight problem with the exact selected spelling, an empty Start job id and the exact `[0, 0, 0, 0, 0]` delta, with no selected content GET, no returned-Copy callback, no local delta and unchanged owned remote snapshots on both providers.
+With only the preflight call removed, each unsafe service case instead creates a failed job and two audit rows, the exact `[1, 0, 0, 0, 2]` delta, because the intact direct guard still refuses before item admission and content effects; a failed job is not service admission refusal.
+Every near-miss control keeps its exact `[1, 0, 3, 6, 2]` delta, admitted item records, copied and verified observations, complete file bytes, staging identities and start audit on both providers.
+
+## Reproduction profile
+
+Use Go 1.27.1, the pinned rclone 1.74.3 and the existing Mock and two-account SAIO fixture configuration described in [CI](../CI.md).
+The maintained focused commands are:
+
+```sh
+go test -json -race -count=1 -parallel=3 -timeout=20m \
+  -run 'TestDownloadPortableNames|TestDownloadRootGuardBeforeEngineConstruction' \
+  ./internal/transfer/local ./internal/app
+go test -json -race -count=1 -parallel=3 -timeout=20m \
+  -run '^TestDownloadPortableNamesMock$' ./internal/systemtest
+go test -json -race -count=1 -parallel=3 -timeout=20m \
+  -run '^TestDownloadPortableNamesRealSwift$' ./internal/systemtest
+```
+
+For a before replay, keep these maintained tests and use a Go overlay carrying the two production files from the base commit; those two files are identical at `6d1856333a2c561edb6d7425e044d470705b9375` and `36e731fe149526d5ff760b23b9caf7bd7b1e4370`.
+Preserve the actual nonzero producer exit and all terminal names; do not invert the refusal assertions.
+The three broken-guard overlays each remove one thing: the preflight call, the direct call, or the first dot or colon cut in the reserved-base comparison.
+The private evidence bundle retains each exact command, tool and pinned-binary identity, raw output, actual exit, all Go and SQL snapshots, overlay replacements and validator results.
+The focused source and test SHA-256 values at this implementation commit are:
+
+| File | SHA-256 |
+| --- | --- |
+| `internal/transfer/local/local.go` | `d68bbf4e627ac7f53230489072b6edba7cc69ffb3b15b8dfe2422c5754358e21` |
+| `internal/transfer/local/download_recording.go` | `94524bed46727ad74d3ce178244f29f1763e6ca95f3b8536dc4a8b254129d884` |
+| `internal/transfer/local/download_portable_names_test.go` | `f01959912e2db13b3c8996634ad83720d6386546347275b0863eddc04e47d817` |
+| `internal/systemtest/download_portable_names_test.go` | `5139e60b0014ae46785d387b75a4fb776b112478f08b4a7b6c9603941101c73a` |
+| `internal/app/download_root_admission_test.go` | `feacbf7b93c0101dd20999724532713ddc8a76fb8ebfd885336263a15c4c7865` |
+
+## Complete integration verification
+
+The documented integration profile completed with actual exit 0: 3,330 named passes across the exact 20 packages returned by `go list ./internal/...`, with no failure and no skip, in a measured 695.937 seconds on the delivered base.
+It ran with the race detector, `-count=1`, `-parallel=3` and the atomic `-coverpkg=./internal/...` profile, and recorded all 355 Go and SQL inputs unchanged during the run.
+The complete raw event-stream SHA-256 is `e351738c3b47b5015142b25c6c2d69789066be3e5f25d92f67225a8f291e3e0c`.
+
+The inventory reconciles against the 3,022 internal terminal names of the delivered source: 3,021 are retained unchanged and exactly 308 are added, 262 local, 44 service and two app-spy cases.
+The single remaining difference is the existing generated one-hour absolute-expiry name in the unchanged `swiftcontrol` reauthentication test, whose Unix value equals this run's start plus one hour.
+No other missing or unexpected test name appears.
+
+Combined statement coverage is 87.3%, independently recomputed as 7,694 of 8,813 statements from the merged atomic profile and checked against `go tool cover`.
+The 26 statements this correction adds are all covered.
+`gofmt` reports no file, `go vet ./internal/...` exits zero, and Windows and macOS `go vet` and `go build ./internal/...` also exit zero with `-mod=readonly`.
+`go mod tidy` leaves `go.mod` and `go.sum` byte-identical.
+These results bind the recorded source hashes; any later rebase or final-base integration must preserve those inputs or receive fresh verification and independent review.
 
 ## Remaining limits
 

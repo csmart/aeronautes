@@ -221,6 +221,13 @@ func PreflightDownload(ctx context.Context, src *swiftcontrol.Session, container
 			problem("unmaterializable", "control character in the name cannot ride a local path")
 			continue
 		}
+		// Portable component policy, also BEFORE the directory-marker
+		// branch: a marker named "CON/" would otherwise become a MkdirAll
+		// of a Windows device name.
+		if refusal := portableNameRefusal(trimmed); refusal != "" {
+			problem("unportable-name", refusal)
+			continue
+		}
 		if rel == "" || strings.HasSuffix(rel, "/") {
 			logical := object.Bytes
 			if logical == 0 {
@@ -322,6 +329,68 @@ func hasDotSegment(rel string) bool {
 		}
 	}
 	return false
+}
+
+// portableNameRefusal reports why a selected name below the prefix cannot be
+// materialized on every supported target, or "" when every component is
+// admissible. One namespace policy covers all six targets (§65.9 item 13):
+// Windows device names, the characters it forbids and components ending in
+// an ASCII space or dot are refused everywhere rather than materialized
+// differently per platform. The original bytes are never trimmed, encoded
+// or renamed; refusal carries the exact component.
+func portableNameRefusal(rel string) string {
+	for _, component := range strings.Split(rel, "/") {
+		switch {
+		case component == "":
+			continue
+		case reservedDeviceBase(component):
+			return fmt.Sprintf("path component %q is a reserved device name on Windows; refused on every platform", component)
+		case strings.ContainsAny(component, `<>:"|?*`):
+			return fmt.Sprintf("path component %q holds a character Windows forbids in a name; refused on every platform", component)
+		case strings.HasSuffix(component, " ") || strings.HasSuffix(component, "."):
+			return fmt.Sprintf("path component %q ends with a space or dot, which Windows does not preserve; refused on every platform", component)
+		}
+	}
+	return ""
+}
+
+// reservedDeviceBase applies the documented device families to one path
+// component: the base is what precedes the first '.' or ':' without its
+// trailing ASCII spaces. Since Windows 11 a device name with an extension is
+// no longer reserved and the runtime asks the OS instead of deciding
+// statically, so this rule keeps those forms refused for every target
+// (2026-09-10 portable-name experiment). Folding is ASCII-only, exactly as
+// the pinned runtime compares these families.
+func reservedDeviceBase(component string) bool {
+	base := component
+	if cut := strings.IndexAny(base, ".:"); cut >= 0 {
+		base = base[:cut]
+	}
+	base = strings.TrimRight(base, " ")
+	switch asciiUpper(base) {
+	case "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$":
+		return true
+	}
+	if len(base) < 4 {
+		return false
+	}
+	switch asciiUpper(base[:3]) {
+	case "COM", "LPT":
+		// Superscript ¹, ² and ³ are device digits as well.
+		return len(base) == 4 && '1' <= base[3] && base[3] <= '9' ||
+			base[3:] == "¹" || base[3:] == "²" || base[3:] == "³"
+	}
+	return false
+}
+
+func asciiUpper(name string) string {
+	folded := []byte(name)
+	for index, letter := range folded {
+		if 'a' <= letter && letter <= 'z' {
+			folded[index] = letter - 'a' + 'A'
+		}
+	}
+	return string(folded)
 }
 
 // Engine is the same boundary the copy executor uses; local paths ride

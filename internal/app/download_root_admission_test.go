@@ -13,27 +13,38 @@ func TestDownloadRootGuardBeforeEngineConstruction(t *testing.T) {
 	for _, fixture := range []struct {
 		name     string
 		pathCase bool
+		portable bool
 		refused  bool
 	}{
-		{"refused_false", false, false},
-		{"refused_true", false, true},
-		{"path_case_false", true, false},
-		{"path_case_true", true, true},
+		{"refused_false", false, false, false},
+		{"refused_true", false, false, true},
+		{"path_case_false", true, false, false},
+		{"path_case_true", true, false, true},
+		{"portable_false", false, true, false},
+		{"portable_true", false, true, true},
 	} {
 		t.Run(fixture.name, func(t *testing.T) {
 			h := newHarness(t)
 			h.connect(t)
 			h.mock.AddContainer("media", "standard")
 			captured := t.TempDir()
-			if !fixture.pathCase && fixture.refused {
+			if !fixture.pathCase && !fixture.portable && fixture.refused {
 				captured += string(os.PathSeparator)
 			}
 			prefix := ""
-			if fixture.pathCase {
+			if fixture.pathCase || fixture.portable {
 				prefix = "scope/"
 				child := "bar/child"
 				if fixture.refused {
 					child = "foo/child"
+				}
+				if fixture.portable {
+					// One portable component policy: a Windows device name
+					// must not reach engine construction either.
+					child = "NULx"
+					if fixture.refused {
+						child = "CON"
+					}
 				}
 				for _, name := range []string{"000-safe", "Foo", child} {
 					seedObject(h.mock, "media", prefix+name, "complete source bytes\x00\xff "+name, nil)
