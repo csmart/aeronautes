@@ -49,9 +49,18 @@ The aggregate is therefore treated here as evidence of change, never as proof of
    A dynamic large object destination must additionally carry a stamp equal to its live aggregate identity; an absent or malformed stamp is refused.
    A static large object destination is refused outright, because the entity tag it reports is the one its manifest recorded and there is no live aggregate to compare.
    Any other destination, in particular a large source materialised as a plain destination, keeps exactly the decision it has today, because it has no aggregate of its own; that case is recorded as still open rather than tightened, since refusing it would reject copies this executor itself creates.
-3. The plain pair path is unchanged, no existing refusal is removed, and no new refusal policy for names is introduced.
+3. The stamp is optional evidence and never costs a copy.
+   It rides the publishing write only when it fits inside the destination's advertised user metadata allowance, counting the complete added entry against both the entry count and the total size.
+   When it does not fit, or the destination advertises no allowance this executor can read, the name publishes with every preserved user value and simply carries no stamp, and the unstamped destination is then refused rather than skipped on a later decision.
+   No preserved metadata is ever displaced and no second write is introduced to make room.
+4. Only the skip decision is narrowed.
+   Verifying what a job has just written asks a different question with different evidence, so it keeps the predicate it had; otherwise a destination that legitimately carries no stamp would turn an ordinary copy into a verification failure.
+5. The plain pair path is unchanged, no existing refusal is removed, and no new refusal policy for names is introduced.
 
-One case decided the shape of this rule, and it is the difference between a guard and an outage.
+Three cases decided the shape of this rule, and each is the difference between a guard and an outage.
+Adding the stamp unconditionally broke a previously valid copy at the destination's metadata limit: a source carrying enough user metadata published fine before and failed with a 400 afterwards, so the stamp became conditional on the advertised allowance.
+Applying the narrowed decision to verification as well turned an unstamped but perfectly good copy into a failed job, so the narrowing was confined to the skip.
+And the third:
 Refusing every non-plain destination that carries no aggregate would have refused a large source materialised as a plain destination, which is a copy this executor itself creates; the system tests caught it immediately.
 That case therefore keeps exactly the decision it has today and is recorded as still open, rather than being quietly tightened into a refusal of correct work.
 
@@ -64,6 +73,7 @@ A legitimately resegmented copy is unaffected, because the comparison is against
 
 The mock serves a manifest object's own stored entity tag, which represents neither observed behaviour, so it is corrected rather than designed around.
 A dynamic large object read in the mock derives its aggregate entity tag from the same segment rows the mock lists, which is the shape of the upstream computation.
+The mock also now advertises the user metadata allowance the deployed service advertises and refuses a write that exceeds it, because a fixture that accepts what the service rejects cannot express the limit this slice must respect.
 Neither the mock nor the observations above model a lagging segment listing; that dimension is named here as unmodelled, and a fault-injection switch for it belongs with the staged-content work rather than this slice.
 The static large object behaviour, both the frozen entity tag and the refusal of a mismatched assembled read, remains unmodelled, which is exactly why this slice refuses static large object destinations instead of reasoning about them.
 
@@ -75,7 +85,11 @@ The archived probe is kept as before evidence, and the maintained regression ass
 It must distinguish an authoritative answer from a transport or permission failure.
 
 The decision is proved through the public service as well as at the predicate, in a mock and an owned-service pair.
-That pair publishes a segmented destination through the normal copy path with an admitted chunk setting, observes that the stamp originates in the single conditional publishing write with no metadata update to the live name, then runs the unchanged, substituted-segment and stripped-stamp cases and asserts the job counters, the exact item and verification observations, the absence of any write to the live name on a refusal, and unchanged collateral.
+That pair publishes a segmented destination through the normal copy path with an admitted chunk setting and asserts that the stamp originates in the single conditional publishing write, carrying the conditional header, with no metadata update to the live name and no preserved value displaced.
+It then runs the unchanged, substituted-segment, stripped-stamp, malformed-stamp and metadata-allowance scenarios, and the static large object scenario against the owned service, asserting for each the exact job state and counters, the recorded item identity, the execution and verification observations, the single terminal audit event with its operation, result and summary, the absence of any mutation of the live name or its segments on a refusal, and unchanged collateral in both namespaces.
+Each scenario builds its own destination so that a broken guard reaches the assertion it is meant to fail, rather than being stopped by an earlier one.
+The stripped-stamp scenario removes only the aggregate and keeps the fingerprint, so it exercises this guard and not the older one.
+The mock does not model creating a static large object over its HTTP surface, so that class is covered against the owned service and at the predicate.
 
 What this slice fixes, and must prove it fixes:
 
