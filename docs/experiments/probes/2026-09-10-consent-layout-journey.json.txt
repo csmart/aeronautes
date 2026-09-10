@@ -238,7 +238,8 @@
     "text_beside_dialog": 0,
     "error_block_visible": true,
     "error_block_end_visible": true,
-    "error_block_height_min": 100
+    "error_block_height_min": 100,
+    "error_tail_complete": true
    }
   },
   {
@@ -307,7 +308,8 @@
     "text_beside_dialog": 0,
     "error_block_visible": true,
     "error_block_end_visible": true,
-    "error_block_height_min": 100
+    "error_block_height_min": 100,
+    "error_tail_complete": true
    }
   },
   {

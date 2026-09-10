@@ -125,10 +125,10 @@ It needs nothing from the author's machine: the pixel oracle sits beside it, the
 
 | Archived source | SHA-256 |
 | --- | --- |
-| [Regression driver](probes/2026-09-10-consent-layout-driver.py.txt) | `9e09a99fbb511a6c8e1b9d474048ab4a95a6adc6368d0d161ce5914c2c2d7316` |
-| [Pixel oracle](probes/2026-09-10-consent-layout-oracle.py.txt) | `588e3ae0c173c76dfa237f066395faf7be36f947efd86a047f5d5d6acfdc5725` |
+| [Regression driver](probes/2026-09-10-consent-layout-driver.py.txt) | `4872c49c8e8a9aa92fda960304310cf59ab957283147c9724eda75a47049620b` |
+| [Pixel oracle](probes/2026-09-10-consent-layout-oracle.py.txt) | `5a489991b3a6c68dc60eba6b7dd2e81e30bf26562a1cd6e3a0d6df00403f8807` |
 | [Gate sequence](probes/2026-09-10-consent-layout-regression.json.txt) | `442a21b65697aefc6dcc844b18e7a107cd45cb6bd356fcc34c24fe240ddaa697` |
-| [Journey sequence](probes/2026-09-10-consent-layout-journey.json.txt) | `393ba4a62312ee58b7f5828a8ef3346d89b1cbe95251a22855c5526cc990ce27` |
+| [Journey sequence](probes/2026-09-10-consent-layout-journey.json.txt) | `83581d545291bc82236618218789f123dddf979215de4715fe49184ff4230df6` |
 | [Fixture entrypoint](probes/2026-09-10-consent-layout-fixture.go.txt) | `d9a572d709538812a5140da077d2c3c104d140aa9e5153b8c2a3fab69b06acd6` |
 | [Fixture data](probes/2026-09-10-consent-layout-fixture.json.txt) | `dbabe8590779de01ecdfa3731c57e549d87a79388a4becd96d7cc94954d4aa7d` |
 
@@ -151,8 +151,10 @@ python3 consent_layout_regression.py \
   --fixture-binary mockswift --fixture 2026-09-10-consent-layout-fixture.json.txt \
   --sequence 2026-09-10-consent-layout-journey.json.txt \
   --runtime <runtime root> --out <output directory> \
-  --refusal "refused by the provider with reference zzz...zzz END-OF-REFUSAL"
+  --refusal "refused by the provider with reference $(python3 -c "print('z'*360)") END-OF-REFUSAL"
 ```
+
+That exact phrase is what the recorded evidence used: 414 characters, of which 360 are one unbroken token.
 
 The fixture answers every request that is not a GET or a HEAD with 405 before reaching its data handler, so a refused attempt cannot change anything.
 When a refusal phrase is given it writes that phrase on the status line, because the client builds its error text from the reason phrase; the response body is discarded by the existing normalisation, so a long body would not reach the dialog.
@@ -160,7 +162,7 @@ That is a fixture behaviour and needs no change to the error contract.
 
 Each checkpoint asserts five properties measured from the rendered dialog border: the border is complete, the dialog lies inside the viewport, both action controls are visible, the body does not scroll sideways, and no consent text lies beside the dialog.
 The driver identifies the actual Cancel and Delete controls in their armed and disabled renderings, so the confirmation input above them cannot be mistaken for the action row.
-Behaviour is asserted rather than inferred: keyboard focus reaches a named button only when that button carries the focus ring, the consent control is proved by activation changing its state while neither button holds the ring, keyboard scrolling counts only when the body moves further than a blinking caret, the confirmation field is proved by the danger action becoming armed, the error endpoint requires the paragraph's own background to end above the action row with a declared minimum height, and dismissal requires the modal to be gone, the application to be undimmed and the underlying delete control to be present again.
+Behaviour is asserted rather than inferred: keyboard focus reaches a named button only when that button carries the focus ring, the consent control is proved by activation changing its state while neither button holds the ring, keyboard scrolling counts only when the body moves further than a blinking caret, the confirmation field is proved by the danger action becoming armed, the error endpoint requires the paragraph to show its own natural end, which is a partial last line followed by its bottom padding inside a background that stops above the action row, together with a declared minimum height, and dismissal requires the modal to be gone, the application to be undimmed and the underlying delete control to be present again.
 
 The process exits non-zero on any failed assertion, on an incomplete sequence, on a failed final data check and when that final check cannot run at all.
 `--self-check` proves those contracts without a display or a Swift call: seven cases for the data verdict and four for the exit orchestration, including a completed sequence whose final verification never ran.
@@ -179,6 +181,7 @@ The four broken controls are the same source with one declaration removed or cha
 | journey-good | correction | 30 | 30 | before, after, final | 2 | pass |
 | journey-clip | body scrolling removed | 30 | 13 | before, final | 0 | fail: no keyboard stop scrolls the body |
 | journey-truncate | error paragraph truncated | 30 | 20 | before, final | 1 | fail: the error endpoint is too short |
+| endpoint counterexample | correction capture, clipped in memory | n/a | n/a | n/a | n/a | fail: the tail is not the paragraph's own end |
 | journey-nodismiss | correction, Cancel activation removed | 29 | 22 | before, final | 1 | fail: the modal is still open |
 
 Every run compared 23 snapshot entries, all equal.
@@ -189,7 +192,8 @@ The gate opens the long-target dialog at 960×600 and asserts the five layout pr
 The journey drives the combined object, whose name is 831 characters and whose backing target is 584, and refuses with a 414-character reason phrase containing an unbroken 360-character token.
 Its first cycle scrolls the bounded body to the end from the keyboard, reaches and activates the consent control from the keyboard, arms the danger action by typing the complete object name, activates it, reaches the resulting error from the keyboard and dismisses the dialog with the keyboard.
 Its second cycle reopens the dialog, refuses a manifest-only deletion and dismisses the dialog with the pointer, so both cancellation methods are proved in the error state.
-Throughout, the fixed title and action row do not change by a single pixel while the body scrolls, and the rendered error paragraph measures 168 pixels tall with its own end visible above the action row.
+Throughout, the fixed title and action row do not change by a single pixel while the body scrolls.
+At both error endpoints the rendered paragraph measures 168 pixels tall, ends with a partial line and seven rows of its own padding, and stops above the action row.
 
 The measured geometry is unchanged from the earlier submission: 450×586 at 960×600 in both themes where the unbounded wrapped dialog needed 650, 450×508 in the force state, and 450×650 and 450×508 at 1280×800.
 
@@ -200,6 +204,9 @@ Removing the wrapping rule leaves the border and controls intact but makes the b
 Removing the viewport bound loses the bottom border, puts the dialog outside the viewport and hides both action controls.
 Removing the body's scrolling passes the gate, because the static default state still looks correct, and fails the journey: no keyboard stop scrolls the body, so the end of the target and the error are unreachable.
 Truncating the error paragraph keeps the layout and the scrolling, reaches the endpoint check and fails it, because the rendered error is far shorter than the message it must show.
+A minimum height alone would still accept a paragraph clipped just above that floor, so the endpoint also requires the paragraph's own end.
+Taking the passing capture and keeping only the first 120 rows of its error paragraph in memory leaves 120 pixels of background that still stops above the action row, and the endpoint rejects it because no bottom padding follows the last line of text.
+That counterexample is a pixel construction rather than a native run, and no retained capture was altered.
 Removing the Cancel activation from the journey leaves every earlier checkpoint passing and fails only the dismissal assertion.
 Together they separate a broken layout, unreachable content, cut content and a dialog that will not close.
 
