@@ -194,6 +194,10 @@ Treat cancellation after any irreversible result as an explicit partial/cancelle
 Acceptance: cancel before staging, after staging, between placements, during native copy, and during cleanup; only pre-cancel committed names may exist, and the durable job state must match the filesystem snapshot.
 Probe: `TestAuditCancelledDownloadStopsBeforePlacement`.
 
+Current disposition: that archived reproduction [no longer reproduces on master](../../experiments/2026-09-11-archived-probe-status.md#result), and maintained tests cover cancellation between items, cancelled body closure and the engine cancellation boundaries in the local transfer package.
+This records coverage of the reproduced scenario on Linux and nothing more.
+Cancellation at native writes and placements, exact partial outcomes, child quiescence and the native parent-kill evidence on all six targets are untouched, so DS-07/SEC-06 stays blocking.
+
 ### DS-08 — High: outcomes are event counts and samples, not an exact identity ledger
 
 Disposition: revalidated W-08/R-10; direct Copy-service reproduction plus static destructive-path evidence.
@@ -216,6 +220,10 @@ Suggested remedy: persist one outcome per stable object identity and operation a
 Never derive an identity from an aggregate response count.
 Acceptance: 1, 201, and multi-chunk failure sets; out-of-order/duplicated/unrequested bulk errors; lost response after some successes; failing spill storage; cancellation after a subset; and segment retry after the manifest is gone.
 Probe: `TestAuditCopyCountsOneFailedIdentityOnce`.
+
+Current disposition: that archived reproduction [no longer reproduces on master](../../experiments/2026-09-11-archived-probe-status.md#result), and the maintained copy and upload item-record tests plus the interrupted-record reopen test cover one outcome per identity on both the mock and the owned service.
+The bulk-delete accounting described above is unchanged: both deletion paths still derive the surviving set from an aggregate count used as an index into the requested batch, so an out-of-order or duplicated reply can fail one name twice and lose another.
+The 200-record cap, the manifest-with-segments counts, the DLO force sink and the durable audit facts are also untouched, so DS-08/SEC-08 stays blocking.
 
 ### DS-09 — High: metadata-only changes never propagate through Copy/Mirror
 
