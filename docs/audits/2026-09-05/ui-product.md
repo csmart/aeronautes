@@ -220,6 +220,10 @@ Fix: implement named breakpoints, resizable/collapsible panes, responsive column
 Tests: 960×600 and larger windows, increased text/DPI scaling, long names/errors, Mirror expanded, 100k+ loaded rows, and measured memory/interaction latency.
 Confidence: high for absent layout mechanisms; actual clipping/performance severity requires live layout profiling.
 
+Current disposition: [PR84](../../experiments/2026-09-10-consent-layout.md#protected-delivery) delivers the bounded safety part only, wrapping the ownership-consent label and bounding the manifest deletion dialog to the viewport so its title and action row stay outside the scrolled region at the supported 960 by 600 minimum.
+A rendered native replay is the maintained regression, because the component environment reports no layout geometry, and separate broken controls remove the wrapping and the height bound independently and each fails its own check.
+Named breakpoints, resizable panes, responsive working-list columns, bounded large-namespace retention, zoom and scaling, forced colours, assistive technology and other native platforms remain open, so UI-13 stays blocking for its safety portion and the broader layout work follows.
+
 ### UI-14 — P2: inherited JavaScript property names break metadata input/diff
 
 Evidence: `frontend/src/lib/metadataDiff.ts:22`, `:29`, `:62`–`:74`.

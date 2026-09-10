@@ -222,6 +222,29 @@ Because it left the dialog open, a following click intended for the theme contro
 The later filenames of that replay are therefore unreliable: its captures named dark at 960×600 and at 1280×800 are light, and the three named light at 1280×800 are dark.
 The measured theme in each record is authoritative, and both themes are covered at both sizes by the replays taken together.
 
+## Protected delivery
+
+The delivered range is the nine logical commits between master 7956b936108b04ba and the reviewed head 82f2292a4c17b55c: the sequence plan, the bounded dialog, the recorded evidence, the archived regression, the wrapped refusal message, and the four corrections that review required.
+Independent review returned two corrective verdicts on the plan and five on the implementation before approving each, and approved the rebase separately, which is ten responses in all.
+The implementation corrections reached the delivered history as six commits, each described in this document rather than summarised away.
+The range was then rebased onto the delivered portable component refusal; only the design sequence list conflicted, both accepted paragraphs were kept verbatim with the portable refusal first, and every check and native run was re-executed on the rebased head rather than carried over.
+
+Its check run 34452039163 completed at the first attempt with all five required jobs successful.
+The frontend job reported zero errors and zero warnings from svelte-check and passed twenty-nine test files carrying one thousand one hundred and thirty tests.
+That job log records the totals but not the checked-file count; the reviewed implementation reconciled the test set as the one thousand one hundred and twenty-five earlier names with five additions and none dropped.
+The race-detector Go job recorded twenty-four successful package executions across twenty-three distinct tested packages with no failures, unchanged by this range, which moves no Go, SQL, module or workflow byte.
+The containerized Swift integration job passed three thousand three hundred and twenty-eight test results with no failures and the same two skips, measured combined Go statement coverage of 87.3 per cent against the seventy-five per cent floor, and recorded scenario coverage of forty of one hundred and sixteen cells and thirty-eight of fifty-two actions with gaps, reported valid with the owned service configured and coverage incomplete.
+The headless smoke job landed three of three objects and passed.
+The run retained both coverage badges, the 399,800-byte scenario coverage artifact and the 6,110,035-byte smoke artifact.
+
+That integration job ran from 07:51:02Z to 08:15:23Z, 24 minutes and 21 seconds, finishing 39 seconds inside the twenty-five-minute cap that then applied.
+It is a further measurement supporting the [raised time budget](2026-09-08-integration-time-budget.md#2026-09-10-job-cap-cancellation-and-correction), which was delivered immediately after this range and is not reflected in the eleven jobs recorded there.
+
+The pull request then left draft state and was merged by rebase pinned to the reviewed head object.
+Master became ba816f608cfc1831, whose tree ad5d74d7b6d535a4 is identical to the reviewed head's tree, and all nine commits kept their patch identity, message, author identity and intermediate tree.
+The resulting master check run 34454383890 concluded success with the same five required jobs, its integration job taking 22.3 minutes.
+The pipeline exercised Linux runners only, and the rendered regression ran on this Linux host, so acceptance on the other native platforms remains unproven.
+
 ## Remaining limits
 
 No zoom or scaling coverage is claimed, and no forced-colour, assistive-technology or non-Linux platform observation is made.
