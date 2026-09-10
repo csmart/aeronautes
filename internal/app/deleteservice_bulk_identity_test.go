@@ -1,9 +1,11 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -27,14 +29,28 @@ import (
 type bulkIdentityServer struct {
 	inner http.Handler
 	reply map[string]any
-	calls int
+	// forward replays the request into the service first, so the
+	// deletions really happen, before the same substituted reply is
+	// returned. That is the fault boundary: two runs differing only in
+	// whether the effect was applied, driven by identical bytes.
+	forward bool
+	calls   int
+	sent    []byte
 }
 
 func (b *bulkIdentityServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost && r.URL.Query().Has("bulk-delete") {
+		body, _ := io.ReadAll(r.Body)
+		if b.forward {
+			replay := httptest.NewRequest(http.MethodPost, r.URL.String(), bytes.NewReader(body))
+			replay.Header = r.Header.Clone()
+			b.inner.ServeHTTP(httptest.NewRecorder(), replay)
+		}
 		b.calls++
+		payload, _ := json.Marshal(b.reply)
+		b.sent = payload
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(b.reply)
+		_, _ = w.Write(payload)
 		return
 	}
 	b.inner.ServeHTTP(w, r)
@@ -46,6 +62,11 @@ func (b *bulkIdentityServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // slices are editing that file.
 func bulkIdentityHarness(t *testing.T, reply map[string]any) (*harness, *bulkIdentityServer) {
 	t.Helper()
+	return bulkIdentityHarnessForwarding(t, false, reply)
+}
+
+func bulkIdentityHarnessForwarding(t *testing.T, forward bool, reply map[string]any) (*harness, *bulkIdentityServer) {
+	t.Helper()
 	d, err := db.Open(context.Background(), filepath.Join(t.TempDir(), "state.sqlite"))
 	if err != nil {
 		t.Fatal(err)
@@ -54,7 +75,7 @@ func bulkIdentityHarness(t *testing.T, reply map[string]any) (*harness, *bulkIde
 
 	mock := swifttest.New("test:tester", "testing")
 	mock.LoadCanonicalFixtures()
-	crafted := &bulkIdentityServer{inner: mock, reply: reply}
+	crafted := &bulkIdentityServer{inner: mock, reply: reply, forward: forward}
 	srv := httptest.NewServer(crafted)
 	t.Cleanup(srv.Close)
 
@@ -242,5 +263,207 @@ func TestUnresolvedRetentionReportsBufferedLoss(t *testing.T) {
 	}
 	if !strings.Contains(problem, "not established") {
 		t.Errorf("the problem does not admit the lost count is unknown: %q", problem)
+	}
+}
+
+// TestDeleteJobRetainsEveryUnresolvedIdentity is the retained-evidence
+// proof. It drives a reply that claims a few deletions and names one
+// failure for a request far larger than the display cap, then reads the
+// retained list back and compares the complete identity set, so a run
+// that advertises a list it never wrote cannot pass.
+func TestDeleteJobRetainsEveryUnresolvedIdentity(t *testing.T) {
+	cache := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", cache)
+
+	const seeded = 250 // deliberately beyond the 200-record display cap
+	h, crafted := bulkIdentityHarness(t, map[string]any{
+		"Number Deleted": 3, "Number Not Found": 0,
+		"Response Status": "200 OK", "Response Body": "",
+		"Errors": [][2]string{{"/media/scope/obj-0000", "500 Internal Server Error"}},
+	})
+	h.connect(t)
+	bookmark := h.transfer.connections.ActiveBookmarkID()
+	service := NewDeleteService(h.transfer.connections, h.transfer.jobs, h.transfer.runner, h.evidence)
+	ctx := context.Background()
+	h.mock.AddContainer("media", "standard")
+	want := map[string]bool{}
+	for i := 0; i < seeded; i++ {
+		name := fmt.Sprintf("scope/obj-%04d", i)
+		seedObject(h.mock, "media", name, "data", nil)
+		want[name] = true
+	}
+
+	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{
+		BookmarkID: bookmark, Container: "media", Prefix: "scope/", Mode: ModePrefix, Confirm: "media",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, h, jobID)
+
+	if job.State != "partial" {
+		t.Errorf("state = %q, want partial", job.State)
+	}
+	if job.Counters.ObjectsVerified != 0 || job.Counters.ObjectsCopied != 0 {
+		t.Errorf("an untrusted aggregate reached the counters: %+v", job.Counters)
+	}
+	if job.Counters.ObjectsFailed != 1 {
+		t.Errorf("ObjectsFailed = %d, want the single validly named row", job.Counters.ObjectsFailed)
+	}
+	if !strings.Contains(job.Error, fmt.Sprintf("%d names have an unresolved effect", seeded)) {
+		t.Errorf("the summary does not count every requested name: %q", job.Error)
+	}
+
+	// The complete retained set, read back from where the run said it is.
+	marker := "full list: "
+	idx := strings.Index(job.Error, marker)
+	if idx < 0 {
+		t.Fatalf("the run advertised no retained list: %q", job.Error)
+	}
+	path := strings.TrimSpace(job.Error[idx+len(marker):])
+	if cut := strings.Index(path, ";"); cut >= 0 {
+		path = strings.TrimSpace(path[:cut])
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("the advertised list cannot be read: %v", err)
+	}
+	got := map[string]bool{}
+	for _, line := range strings.Split(strings.TrimSpace(string(body)), "\n") {
+		if line == "" {
+			continue
+		}
+		var record struct {
+			Name       string `json:"name"`
+			Unresolved string `json:"unresolved"`
+		}
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatalf("a retained record is not readable: %v", err)
+		}
+		if record.Unresolved == "" {
+			t.Errorf("the record for %q carries no reason", record.Name)
+		}
+		got[record.Name] = true
+	}
+	if len(got) != seeded {
+		t.Errorf("the retained list holds %d identities, want every one of the %d requested", len(got), seeded)
+	}
+	for name := range want {
+		if !got[name] {
+			t.Errorf("%q is missing from the retained list", name)
+		}
+	}
+	// The display sample is bounded while the retained list is not.
+	if len(got) <= 200 {
+		t.Errorf("this case must exceed the display cap to be worth running, got %d", len(got))
+	}
+
+	// The audit trail records the run as a destructive operation that
+	// did not complete.
+	events, err := h.auditSvc.Recent(ctx, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawDelete bool
+	for _, e := range events {
+		if strings.HasPrefix(e.Operation, "delete.") {
+			sawDelete = true
+			if e.Result == "ok" {
+				t.Errorf("the audit records a clean result for a run with unresolved names: %+v", e)
+			}
+		}
+	}
+	if !sawDelete {
+		t.Error("the run left no delete audit event")
+	}
+	if crafted.calls == 0 {
+		t.Error("the crafted reply was never used")
+	}
+}
+
+// TestDeleteJobEffectSubstitutionThroughTheService runs the agreed
+// fault boundary at the public service: the same substituted reply,
+// once with the deletions actually applied and once with them
+// suppressed. The job's public facts must be identical in both, because
+// the reply establishes nothing about the effect, while authoritative
+// witnesses show the two worlds really did differ.
+func TestDeleteJobEffectSubstitutionThroughTheService(t *testing.T) {
+	type outcome struct {
+		state    string
+		counters string
+		summary  string
+		present  []string
+	}
+	var runs []outcome
+	var replies [][]byte
+
+	for _, forward := range []bool{false, true} {
+		cache := t.TempDir()
+		t.Setenv("XDG_CACHE_HOME", cache)
+		h, crafted := bulkIdentityHarnessForwarding(t, forward, map[string]any{
+			"Number Deleted": 3, "Number Not Found": 0,
+			"Response Status": "200 OK", "Response Body": "",
+			"Errors": [][2]string{{"/media/scope/obj-0", "500 Internal Server Error"}},
+		})
+		h.connect(t)
+		bookmark := h.transfer.connections.ActiveBookmarkID()
+		service := NewDeleteService(h.transfer.connections, h.transfer.jobs, h.transfer.runner, h.evidence)
+		ctx := context.Background()
+		h.mock.AddContainer("media", "standard")
+		seeded := []string{}
+		for i := 0; i < 5; i++ {
+			name := fmt.Sprintf("scope/obj-%d", i)
+			seedObject(h.mock, "media", name, "data", nil)
+			seeded = append(seeded, name)
+		}
+		seedObject(h.mock, "media", "kept.txt", "kept", nil)
+
+		jobID, err := service.StartDelete(ctx, DeleteRequestDTO{
+			BookmarkID: bookmark, Container: "media", Prefix: "scope/", Mode: ModePrefix, Confirm: "media",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		job := awaitTerminal(t, h, jobID)
+
+		// Authoritative witnesses, not a listing.
+		session := h.transfer.connections.sessions[bookmark].session
+		present := []string{}
+		for _, name := range append(append([]string{}, seeded...), "kept.txt") {
+			if _, err := session.ObjectDetail(ctx, "media", name); err == nil {
+				present = append(present, name)
+			}
+		}
+		// The summary's retained-list path differs per run by job id, so
+		// compare the part that states the facts.
+		summary := job.Error
+		if idx := strings.Index(summary, "; full list: "); idx >= 0 {
+			summary = summary[:idx]
+		}
+		runs = append(runs, outcome{
+			state:    job.State,
+			counters: fmt.Sprintf("copied=%d verified=%d failed=%d", job.Counters.ObjectsCopied, job.Counters.ObjectsVerified, job.Counters.ObjectsFailed),
+			summary:  summary,
+			present:  present,
+		})
+		replies = append(replies, crafted.sent)
+	}
+
+	if !bytes.Equal(replies[0], replies[1]) {
+		t.Fatal("the two runs must be driven by identical reply bytes")
+	}
+	if runs[0].state != runs[1].state || runs[0].counters != runs[1].counters || runs[0].summary != runs[1].summary {
+		t.Errorf("the same reply produced different public facts:\n suppressed %+v\n applied    %+v", runs[0], runs[1])
+	}
+	if runs[0].state != "partial" {
+		t.Errorf("state = %q, want partial", runs[0].state)
+	}
+	// The worlds really did differ: nothing was deleted in the suppressed
+	// run, and the named objects are gone in the applied one.
+	if len(runs[0].present) != 6 {
+		t.Errorf("the suppressed run changed the store: %v", runs[0].present)
+	}
+	if len(runs[1].present) != 1 || runs[1].present[0] != "kept.txt" {
+		t.Errorf("the applied run left %v, want only the neighbour", runs[1].present)
 	}
 }
