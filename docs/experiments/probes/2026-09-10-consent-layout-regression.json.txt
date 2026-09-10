@@ -1,0 +1,81 @@
+{
+ "commands": [
+  {
+   "op": "x",
+   "args": [
+    "mousemove",
+    "440",
+    "190",
+    "click",
+    "1"
+   ],
+   "pause": 0.5
+  },
+  {
+   "op": "x",
+   "args": [
+    "windowsize",
+    "--sync",
+    "{window}",
+    "960",
+    "600"
+   ],
+   "pause": 0.6
+  },
+  {
+   "op": "x",
+   "args": [
+    "mousemove",
+    "420",
+    "371",
+    "click",
+    "1"
+   ],
+   "pause": 0.5
+  },
+  {
+   "op": "x",
+   "args": [
+    "mousemove",
+    "820",
+    "440",
+    "click",
+    "--repeat",
+    "20",
+    "--delay",
+    "60",
+    "5"
+   ],
+   "pause": 0.5
+  },
+  {
+   "op": "x",
+   "args": [
+    "mousemove",
+    "760",
+    "290",
+    "click",
+    "1"
+   ],
+   "pause": 0.8
+  },
+  {
+   "op": "shot",
+   "name": "c01-long-target-default-960"
+  },
+  {
+   "op": "check",
+   "name": "c01-long-target-default-960",
+   "expect": {
+    "border_complete": true,
+    "dialog_inside_viewport": true,
+    "controls_visible": true,
+    "horizontal_overflow": false,
+    "text_beside_dialog": 0
+   }
+  },
+  {
+   "op": "finish"
+  }
+ ]
+}

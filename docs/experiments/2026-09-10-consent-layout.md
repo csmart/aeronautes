@@ -111,55 +111,72 @@ Preserve every failed producer, and keep separately instrumented renderer eviden
 
 ## Implementation and maintained evidence
 
-The correction adds the consent label wrapping rule, bounds the dialog to the viewport and moves the
-disclosure body, the consent control, the confirmation input and any error into a scrolled region, so
-the title and the action row stay outside it.
+The correction adds the consent label wrapping rule, bounds the dialog to the viewport and moves the disclosure body, the consent control, the confirmation input and any error into a scrolled region, so the title and the action row stay outside it.
 
-The maintained checks reconcile against the delivered inventory.
-The frontend suite grows from 1,125 to 1,130 tests with no name lost and no failure, the five added
-names all belong to the new consent-layout file, the type check reports 258 files with no error or
-warning, and the production build succeeds.
-Those checks cover content, interaction and arrangement only: the complete literal target and refusal
-message, the force toggle, exact-confirmation arming, cancellation, and which elements the bounded
-region owns.
+The frontend checks reconcile against the delivered inventory.
+The suite grows from 1,125 to 1,130 tests with no name lost and no failure, and the five added names all belong to the new consent-layout file.
+The type check reports 258 files with no error or warning, and the production build succeeds.
+Those checks cover content, interaction and arrangement only, because that environment reports no layout geometry.
 
-The native evidence comes from a clean binary built at the correction commit, which reports that
-revision and a clean source.
-Five replays ran against the private read-only fixture: 59, 38 and 29 commands for the implementation
-and 8 each for the two broken controls, with 56 screenshots in total.
-Every request was a GET or a HEAD except the single refused delete described below, and every complete
-21-entry remote snapshot equalled its baseline.
+## Maintained native regression
 
-At 960×600 the long-target default dialog now measures 450×586 with a complete border, in both themes,
-where the unbounded wrapped dialog needed 650.
+The layout regression is archived verbatim and is intentionally outside the normal passing test suite.
+
+| Archived source | SHA-256 |
+| --- | --- |
+| [Driver](probes/2026-09-10-consent-layout-driver.py.txt) | `086f40345e0fd7797988048b564427d0a9b6458297e81143add23df0c9fff45f` |
+| [Pixel oracle](probes/2026-09-10-consent-layout-oracle.py.txt) | `a266fc2f1d4fc1c92110c448f51b044d6dad0fc186ca1d0477a03f11eec381ce` |
+| [Regression sequence](probes/2026-09-10-consent-layout-regression.json.txt) | `442a21b65697aefc6dcc844b18e7a107cd45cb6bd356fcc34c24fe240ddaa697` |
+| [Keyboard and refusal journey](probes/2026-09-10-consent-layout-journey.json.txt) | `ae85c77911c2913dea2eb1e07add10bb3a3090a68ad31abf6ddf005240e537e5` |
+| [Fixture entrypoint](probes/2026-09-10-consent-layout-fixture.go.txt) | `cb76ac4d317d39f1bbb6f42b48130c3059ee58e70f2c79fe309f951c16385405` |
+| [Fixture data](probes/2026-09-10-consent-layout-fixture.json.txt) | `dbabe8590779de01ecdfa3731c57e549d87a79388a4becd96d7cc94954d4aa7d` |
+
+The driver takes a run label, the application binary, a sequence and an optional fixture, and it exits non-zero when any assertion fails.
+It needs a headless X server, xdotool, the GTK and WebKit runtime the application links, and the fixture binary built from the archived entrypoint against this module.
+The fixture answers every request that is not a GET or a HEAD with 405 before reaching its data handler, so a refused attempt cannot change anything.
+
+The driver measures the rendered dialog from its own border and asserts five properties at each checkpoint: the border is complete, the dialog lies inside the viewport, both action controls are visible, the body does not scroll sideways and no consent text lies beside the dialog.
+It identifies the actual Cancel and Delete controls in both renderings, so the confirmation input above them cannot be mistaken for the action row.
+It also asserts behaviour rather than inferring it: keyboard focus reaches a named control only when that control carries the focus ring, keyboard scrolling counts only when the body moves by more than a blinking caret, and the confirmation field is proved by the danger action becoming armed after typing.
+
+## Observed implementation results
+
+The native evidence comes from a clean binary built at the correction commit, which reports that revision and a clean source.
+Eight replays ran against the private fixtures with 59, 38, 29, 41 and 8 commands for the implementation and 8 for each broken control.
+Every request was a GET or a HEAD except one refused DELETE in each of the two refusal replays, and every complete remote snapshot equalled its baseline.
+The four replays on the original fixture compare 21 entries each and the three on the combined fixture compare 23, because that fixture adds one object; each set is internally equal before, after and at shutdown.
+
+At 960×600 the long-target default dialog now measures 450×586 with a complete border in both themes, where the unbounded wrapped dialog needed 650.
 Its force state measures 450×508.
 At 1280×800 the default measures 450×650 and the force state 450×508, both with complete borders.
-In every one of those states the oracle locates the actual Cancel and Delete controls inside the
-viewport, in their enabled and disabled rendering, and no consent text lies beside the dialog.
+The oracle locates the actual Cancel and Delete controls inside the viewport in every one of those states, and no consent text lies beside the dialog.
 Pointer cancellation closes the dialog at both sizes.
 
-Keyboard focus reaches Cancel and activating it closes the dialog.
-The recorded ring positions show the order: the first stop is the Delete action, the second is the
-scrolled body itself, and the third is Cancel, so the bounded region is also the mechanism that makes
-its content reachable from the keyboard.
-In the refused-operation case Cancel is the second stop, because the error changes the content.
+The keyboard journey runs at 960×600 on an object whose name is 831 characters and whose backing target is 584.
+Keyboard focus reaches Cancel, and the recorded ring positions give the order: the Delete action, then the scrolled body, then Cancel.
+Page Down on that body stop scrolls to the end of the literal target while the title and the action row do not move by a single pixel.
+Two further tab stops later, typing the complete object name arms the danger action, which proves the confirmation field takes keyboard focus and input.
+Activating that armed action produced exactly one DELETE, which the fixture refused with 405, and the complete remote snapshot was unchanged.
+In the resulting error state the whole body is traversable from the keyboard in both directions, with the title and action row still fixed, and activating Cancel from the keyboard closes the dialog.
+All seven layout checkpoints in that journey passed.
 
-The refused-operation case uses a combined fixture whose object carries an 831-character name and a
-584-character backing target.
-Activating the delete produced exactly one DELETE request, which the fixture answered with 405 before
-touching data, and the complete remote snapshot was unchanged.
-The dialog kept its complete border at 450×586, rendered the whole refusal message, and kept the title
-and both actions visible while the disclosure, the consent label and the error were reached by
-scrolling.
+## Independently broken controls
 
-Both deliberately broken controls fail, independently and for different reasons.
-Removing the wrapping rule alone leaves the border and controls intact but makes the body scroll
-sideways, cutting the literal target instead of wrapping it, which the horizontal-overflow check
-detects.
-Removing the viewport bound alone leaves no horizontal overflow but loses the bottom border and both
-action controls at 960×600.
-The original before capture fails the same border check, because the escaping label overwrites the
-dialog's right border.
+Both deliberately broken controls fail the archived regression, independently and for different reasons.
+Removing the wrapping rule alone leaves the border and controls intact but makes the body scroll sideways, cutting the literal target instead of wrapping it, and the run fails on the horizontal-overflow assertion.
+Removing the viewport bound alone produces no horizontal overflow but fails three assertions at once: the border is incomplete, the dialog is not inside the viewport, and the action controls are not visible.
+The same regression passes on the corrected build.
+The original before capture fails the border assertion, because the escaping label overwrites the dialog's right border.
+
+## Retained incomplete observations
+
+The first replay's keyboard-cancel attempt did not close the dialog: its capture still shows the complete 450×586 border.
+That attempt pressed Return after a fixed number of tabs rather than after confirming the focus ring, and it is retained as incomplete.
+The later replay that finds Cancel by its ring does close the dialog, and it is the evidence for that contract.
+
+Because that first attempt left the dialog open, a following click intended for the theme control closed the dialog instead, so only one theme step was applied.
+The later filenames of that replay are therefore unreliable: its captures named dark at 960×600 and at 1280×800 are light, and the three named light at 1280×800 are dark.
+The measured theme in each record is authoritative, and both themes are covered at both sizes by the replays taken together.
 
 ## Remaining limits
 

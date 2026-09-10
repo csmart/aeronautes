@@ -1,0 +1,324 @@
+"""Dialog geometry from a full-root screenshot: pure pixels, no renderer."""
+import struct, zlib
+from pathlib import Path
+
+LIGHT_DANGER, DARK_DANGER = (179, 64, 47), (219, 120, 102)
+LIGHT_PANE, DARK_PANE = (250, 248, 243), (32, 28, 23)
+
+
+def pixels(path):
+    data = Path(path).read_bytes()
+    assert data[:8] == b'\x89PNG\r\n\x1a\n'
+    position, compressed, width, height = 8, b'', None, None
+    while position < len(data):
+        length = struct.unpack('>I', data[position:position + 4])[0]
+        kind = data[position + 4:position + 8]
+        chunk = data[position + 8:position + 8 + length]
+        position += length + 12
+        if kind == b'IHDR':
+            width, height, depth, colour, compression, filtering, interlace = struct.unpack('>IIBBBBB', chunk)
+            assert (depth, colour, compression, filtering, interlace) == (8, 2, 0, 0, 0)
+        if kind == b'IDAT':
+            compressed += chunk
+    raw = zlib.decompress(compressed)
+    stride = width * 3 + 1
+    assert len(raw) == stride * height
+    rows = []
+    for y in range(height):
+        row = raw[y * stride:(y + 1) * stride]
+        assert row[0] == 0
+        rows.append([tuple(row[x:x + 3]) for x in range(1, len(row), 3)])
+    return rows
+
+
+def colour_bbox(rows, colour, window=None):
+    x0, y0, x1, y1 = window if window else (0, 0, len(rows[0]), len(rows))
+    xs, ys, count = [], [], 0
+    for y in range(y0, min(y1, len(rows))):
+        row = rows[y]
+        for x in range(x0, min(x1, len(row))):
+            if row[x] == colour:
+                xs.append(x); ys.append(y); count += 1
+    if not xs:
+        return None
+    return {'left': min(xs), 'top': min(ys), 'right': max(xs), 'bottom': max(ys), 'pixels': count,
+            'width': max(xs) - min(xs) + 1, 'height': max(ys) - min(ys) + 1}
+
+
+def dialog(rows, window=None):
+    """The dialog border box: bounding box of exact danger-token pixels."""
+    light = colour_bbox(rows, LIGHT_DANGER, window)
+    dark = colour_bbox(rows, DARK_DANGER, window)
+    theme, box = ('light', light) if (light or {'pixels': 0})['pixels'] >= (dark or {'pixels': 0})['pixels'] else ('dark', dark)
+    if not box:
+        return None
+    box['theme'] = theme
+    danger = LIGHT_DANGER if theme == 'light' else DARK_DANGER
+    # Rounded corners break a strict full-length run, so the border is measured
+    # across the middle 90% of each edge.
+    def span(a, b):
+        margin = int((b - a + 1) * 0.05)
+        return range(a + margin, b - margin + 1)
+    box['border'] = {
+        'top': all(rows[box['top']][x] == danger for x in span(box['left'], box['right'])),
+        'bottom': all(rows[box['bottom']][x] == danger for x in span(box['left'], box['right'])),
+        'left': all(rows[y][box['left']] == danger for y in span(box['top'], box['bottom'])),
+        'right': all(rows[y][box['right']] == danger for y in span(box['top'], box['bottom']))}
+    box['border']['complete'] = all(box['border'][edge] for edge in ('top', 'bottom', 'left', 'right'))
+    box['action_row'] = action_row(rows, box, danger)
+    return box
+
+
+def action_row(rows, box, danger, minimum_run=60, below=0.5):
+    """The filled danger action button: dense danger runs low in the dialog."""
+    start = box['top'] + int(box['height'] * below)
+    xs, ys = [], []
+    for y in range(start, box['bottom']):
+        row, x, longest, best = rows[y], box['left'] + 1, 0, None
+        while x < box['right']:
+            if row[x] == danger:
+                run_start = x
+                while x < box['right'] and row[x] == danger:
+                    x += 1
+                if x - run_start > longest:
+                    longest, best = x - run_start, (run_start, x - 1)
+            else:
+                x += 1
+        if longest >= minimum_run:
+            xs.extend(best); ys.append(y)
+    if not ys:
+        return None
+    return {'left': min(xs), 'top': min(ys), 'right': max(xs), 'bottom': max(ys),
+            'width': max(xs) - min(xs) + 1, 'height': max(ys) - min(ys) + 1}
+
+
+def solid_blocks(rows, colour, box, minimum=(60, 16)):
+    """Filled rectangles of one colour inside box: the danger action button."""
+    found, seen = [], set()
+    for y in range(box['top'], box['bottom'] + 1):
+        x = box['left']
+        row = rows[y]
+        while x <= box['right']:
+            if row[x] == colour and (x, y) not in seen:
+                start = x
+                while x <= box['right'] and row[x] == colour:
+                    x += 1
+                run = x - start
+                if run >= minimum[0]:
+                    height = 0
+                    while (y + height <= box['bottom']
+                           and all(rows[y + height][c] == colour for c in range(start, start + run))):
+                        for c in range(start, start + run):
+                            seen.add((c, y + height))
+                        height += 1
+                    if height >= minimum[1]:
+                        found.append({'left': start, 'top': y, 'width': run, 'height': height})
+            else:
+                x += 1
+    return found
+
+
+def patch(rows, left, top, width, height):
+    return [tuple(row[left:left + width]) for row in rows[top:top + height]]
+
+
+def find_patch(rows, template, box, limit=4, tolerance=2):
+    """Locations of a template patch inside box.
+
+    A vertical layout shift changes the fractional position of a native
+    control, which moves its antialiased corners by one unit, so a small
+    per-channel tolerance is allowed; 144 pixels still identify it.
+    """
+    height, width = len(template), len(template[0])
+
+    def alike(a, b):
+        return all(abs(p - q) <= tolerance for p, q in zip(a, b))
+
+    def row_alike(actual, expected):
+        return len(actual) == len(expected) and all(alike(p, q) for p, q in zip(actual, expected))
+
+    hits = []
+    for y in range(max(0, box['top']), min(len(rows) - height, box['bottom']) + 1):
+        row = rows[y]
+        for x in range(max(0, box['left']), min(len(row) - width, box['right']) + 1):
+            if not row_alike(row[x:x + width], template[0]):
+                continue
+            if all(row_alike(rows[y + dy][x:x + width], template[dy]) for dy in range(1, height)):
+                hits.append({'left': x, 'top': y})
+                if len(hits) >= limit:
+                    return hits
+    return hits
+
+
+LIGHT_BORDER, DARK_BORDER = (227, 221, 208), (53, 48, 39)
+LIGHT_CARD, DARK_CARD = (255, 253, 249), (39, 34, 25)
+
+
+def composite(fg, bg, alpha=0.6):
+    """A disabled control renders its fill at 60% over the pane."""
+    return tuple(round(alpha * f + (1 - alpha) * b) for f, b in zip(fg, bg))
+
+
+def row_groups(rows, colour, box, minimum_run=60, minimum_height=12, gap=4, fill=0.4):
+    """Filled bands of one colour: a control, not a one-pixel border.
+
+    A row qualifies on the horizontal extent of its matching pixels, so the
+    glyphs inside a filled button do not break the band; the densest label
+    rows can still fall below the fill ratio, which the small gap absorbs. A band must then be
+    filled on most of its rows, which excludes the confirmation input, whose
+    only matching rows are its top and bottom border lines.
+    """
+    qualifying = {}
+    # The dialog's own border shares the danger token, so measure strictly
+    # inside it; otherwise every row's extent is the full dialog width.
+    inner = (box['left'] + 2, box['right'] - 1)
+    for y in range(box['top'] + 2, box['bottom'] - 1):
+        row = rows[y]
+        matches = [x for x in range(inner[0], inner[1] + 1) if row[x] == colour]
+        if not matches:
+            continue
+        extent = matches[-1] - matches[0] + 1
+        if extent >= minimum_run and len(matches) >= fill * extent:
+            qualifying[y] = (matches[0], matches[-1], len(matches))
+    bands, current = [], []
+    for y in sorted(qualifying):
+        if current and y - current[-1] <= gap:
+            current.append(y)
+        else:
+            if current:
+                bands.append(current)
+            current = [y]
+    if current:
+        bands.append(current)
+    out = []
+    for band in bands:
+        height = band[-1] - band[0] + 1
+        if height < minimum_height:
+            continue
+        left = min(qualifying[y][0] for y in band)
+        right = max(qualifying[y][1] for y in band)
+        width = right - left + 1
+        covered = sum(1 for y in range(band[0], band[-1] + 1) if y in qualifying)
+        if covered < 0.8 * height:
+            continue
+        out.append({'top': band[0], 'bottom': band[-1], 'left': left, 'right': right,
+                    'width': width, 'height': height})
+    return out
+
+
+def action_buttons(rows, box):
+    """The real Cancel and Delete controls, in either rendering.
+
+    The danger action is the danger token when armed and that token at 60%
+    over the pane when disabled; Cancel is the bordered card control on the
+    same rows to its left. Matching the bare danger token alone would find
+    the confirmation input's border instead.
+    """
+    danger = LIGHT_DANGER if box['theme'] == 'light' else DARK_DANGER
+    pane = LIGHT_PANE if box['theme'] == 'light' else DARK_PANE
+    border = LIGHT_BORDER if box['theme'] == 'light' else DARK_BORDER
+    card = LIGHT_CARD if box['theme'] == 'light' else DARK_CARD
+    armed = row_groups(rows, danger, box)
+    disabled = row_groups(rows, composite(danger, pane), box)
+    found = None
+    for state, bands in (('armed', armed), ('disabled', disabled)):
+        for band in bands:
+            if band['width'] > box['width'] * 0.8:
+                continue  # a full-width band is the dialog border, not a button
+            if found is None or band['top'] > found['delete']['top']:
+                found = {'delete': dict(band, state=state)}
+    if not found:
+        return {'delete': None, 'cancel': None}
+    band = found['delete']
+    # Search Cancel only in the action row and to the left of the danger
+    # action, so content scrolled into other rows cannot interfere.
+    strip = {'left': box['left'] + 2, 'right': band['left'] - 2, 'top': max(box['top'] + 1, band['top'] - 6),
+             'bottom': min(box['bottom'] - 1, band['bottom'] + 6), 'theme': box['theme']}
+    strip['width'] = strip['right'] - strip['left'] + 1
+    strip['height'] = strip['bottom'] - strip['top'] + 1
+    cancel = None
+    for colour in (card, border):
+        hits = row_groups(rows, colour, strip, minimum_run=40, minimum_height=6)
+        if hits:
+            cancel = dict(max(hits, key=lambda g: g['width']), colour=list(colour))
+            break
+    return {'delete': band, 'cancel': cancel}
+
+
+LIGHT_FOCUS, DARK_FOCUS = (162, 121, 44), (207, 168, 89)
+
+
+def focus_ring(rows, box, control, pad=6):
+    """Focus-ring pixels in the band around one control."""
+    colour = LIGHT_FOCUS if box['theme'] == 'light' else DARK_FOCUS
+    count = 0
+    for y in range(control['top'] - pad, control['bottom'] + pad + 1):
+        for x in range(control['left'] - pad, control['right'] + pad + 1):
+            if 0 <= y < len(rows) and 0 <= x < len(rows[y]) and rows[y][x] == colour:
+                count += 1
+    return count
+
+
+def ink(pixel, background, margin=40):
+    return sum(background) - sum(pixel) > margin
+
+
+def horizontal_overflow(rows, box, minimum_run=18, maximum_width=60, height_range=(3, 8), clearance=28):
+    """A horizontal scrollbar thumb at the bottom edge of the scrolled body.
+
+    Its presence means the body scrolls sideways, so literal content is cut
+    instead of wrapped. The search stops above the action row, because a
+    filled button also contains long ink runs, and the thumb must hug the
+    bottom of the body and stay narrow.
+    """
+    background = LIGHT_PANE if box['theme'] == 'light' else DARK_PANE
+    controls = action_buttons(rows, box)
+    limit = controls['delete']['top'] - 4 if controls['delete'] else box['bottom'] - 1
+    bands, current = [], []
+    for y in range(box['top'] + 2, max(box['top'] + 3, limit)):
+        row, x, best = rows[y], box['left'] + 2, None
+        while x < box['right'] - 1:
+            if ink(row[x], background):
+                start = x
+                while x < box['right'] - 1 and ink(row[x], background):
+                    x += 1
+                if x - start >= minimum_run and (best is None or x - start > best[1] - best[0]):
+                    best = (start, x)
+            else:
+                x += 1
+        if best and current and y == current[-1][0] + 1:
+            current.append((y, best))
+        elif best:
+            current = [(y, best)]
+        else:
+            current = []
+        if current and len(current) >= height_range[0]:
+            bands.append(list(current))
+    out = []
+    for band in bands:
+        left, right = min(s for _, (s, e) in band), max(e for _, (s, e) in band)
+        if right - left > maximum_width or not (height_range[0] <= len(band) <= height_range[1]):
+            continue
+        if limit - band[-1][0] > clearance:
+            continue
+        entry = {'top': band[0][0], 'bottom': band[-1][0], 'left': left, 'right': right, 'height': len(band)}
+        if entry not in out:
+            out.append(entry)
+    return out
+
+
+def text_beside(rows, box, strip=80):
+    """Normal-text pixels in the strips flanking the dialog, in its own band.
+
+    The strips are narrow so unrelated application content further away is not
+    counted; escaping label text continues directly from the dialog edge.
+    """
+    foreground = (32, 29, 24) if box['theme'] == 'light' else (236, 229, 216)
+    hits = []
+    for y in range(max(0, box['top']), min(len(rows), box['bottom'] + 1)):
+        row = rows[y]
+        for x in list(range(max(0, box['left'] - strip), box['left'])) + \
+                 list(range(box['right'] + 1, min(len(row), box['right'] + 1 + strip))):
+            if row[x] == foreground:
+                hits.append({'x': x, 'y': y})
+    return hits

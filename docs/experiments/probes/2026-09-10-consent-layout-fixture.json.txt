@@ -1,0 +1,119 @@
+{
+ "Containers": [
+  "smoke-out",
+  "smoke-src",
+  "zz-backing"
+ ],
+ "Objects": [
+  {
+   "Container": "zz-backing",
+   "Name": "dlo/part-a",
+   "Object": {
+    "Bytes": 16,
+    "Data": "b3duZWQtZGxvLXBhcnQtYQ==",
+    "ETag": "9d8344b71ee4ae583cd53d426b6583ee",
+    "ContentType": "application/octet-stream"
+   }
+  },
+  {
+   "Container": "zz-backing",
+   "Name": "dlo/part-b",
+   "Object": {
+    "Bytes": 16,
+    "Data": "b3duZWQtZGxvLXBhcnQtYg==",
+    "ETag": "a621a8bcf8546e95eda8ca2a376fe7d9",
+    "ContentType": "application/octet-stream"
+   }
+  },
+  {
+   "Container": "zz-backing",
+   "Name": "slo/part-a",
+   "Object": {
+    "Bytes": 16,
+    "Data": "b3duZWQtc2xvLXBhcnQtYQ==",
+    "ETag": "c3ecb4d23badf0434f2f657c00eb0e50",
+    "ContentType": "application/octet-stream"
+   }
+  },
+  {
+   "Container": "smoke-src",
+   "Name": "01-short-dlo",
+   "Object": {
+    "Bytes": 0,
+    "Data": "",
+    "ETag": "d41d8cd98f00b204e9800998ecf8427e",
+    "ContentType": "application/octet-stream",
+    "Manifest": "zz-backing/dlo/"
+   }
+  },
+  {
+   "Container": "smoke-src",
+   "Name": "02-DLO-BEGIN-1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890-DLO-END",
+   "Object": {
+    "Bytes": 0,
+    "Data": "",
+    "ETag": "d41d8cd98f00b204e9800998ecf8427e",
+    "ContentType": "application/octet-stream",
+    "Manifest": "zz-backing/dlo/"
+   }
+  },
+  {
+   "Container": "smoke-src",
+   "Name": "03-short-slo",
+   "Object": {
+    "Bytes": 29,
+    "Data": "b3duZWQtc2xvLXBhcnQtYWlubGluZS1sYXlvdXQ=",
+    "ETag": "15571d939d9c6b7e6a7f33979f2a950f",
+    "ContentType": "application/octet-stream",
+    "SLO": true,
+    "SLOEtag": "8aec32458ddfde0e51250d96bed2e8ca",
+    "SLOManifestJSON": "[{\"name\":\"/zz-backing/slo/part-a\",\"hash\":\"c3ecb4d23badf0434f2f657c00eb0e50\",\"bytes\":16,\"content_type\":\"application/octet-stream\"},{\"data\":\"aW5saW5lLWxheW91dA==\"}]"
+   }
+  },
+  {
+   "Container": "smoke-src",
+   "Name": "04-SLO-BEGIN-abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij-SLO-END",
+   "Object": {
+    "Bytes": 29,
+    "Data": "b3duZWQtc2xvLXBhcnQtYWlubGluZS1sYXlvdXQ=",
+    "ETag": "15571d939d9c6b7e6a7f33979f2a950f",
+    "ContentType": "application/octet-stream",
+    "SLO": true,
+    "SLOEtag": "8aec32458ddfde0e51250d96bed2e8ca",
+    "SLOManifestJSON": "[{\"name\":\"/zz-backing/slo/part-a\",\"hash\":\"c3ecb4d23badf0434f2f657c00eb0e50\",\"bytes\":16,\"content_type\":\"application/octet-stream\"},{\"data\":\"aW5saW5lLWxheW91dA==\"}]"
+   }
+  },
+  {
+   "Container": "zz-backing",
+   "Name": "long-prefix/pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp/part-a",
+   "Object": {
+    "Bytes": 17,
+    "Data": "b3duZWQtbG9uZy1wcmVmaXg=",
+    "ETag": "1386f449a94f4d2a572f2c8b91e73106",
+    "ContentType": "application/octet-stream"
+   }
+  },
+  {
+   "Container": "smoke-src",
+   "Name": "05-long-target-dlo",
+   "Object": {
+    "Bytes": 0,
+    "Data": "",
+    "ETag": "d41d8cd98f00b204e9800998ecf8427e",
+    "ContentType": "application/octet-stream",
+    "Manifest": "zz-backing/long-prefix/pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp/"
+   }
+  },
+  {
+   "Container": "smoke-src",
+   "Name": "06-COMBINED-BEGIN-cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd-COMBINED-END",
+   "Object": {
+    "Bytes": 0,
+    "Data": "",
+    "ETag": "d41d8cd98f00b204e9800998ecf8427e",
+    "ContentType": "application/octet-stream",
+    "Manifest": "zz-backing/long-prefix/pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp/"
+   }
+  }
+ ]
+}
