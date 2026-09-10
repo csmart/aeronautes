@@ -239,7 +239,8 @@
     "error_block_visible": true,
     "error_block_end_visible": true,
     "error_block_height_min": 100,
-    "error_tail_complete": true
+    "error_tail_complete": true,
+    "error_text_lines_min": 8
    }
   },
   {
@@ -309,7 +310,8 @@
     "error_block_visible": true,
     "error_block_end_visible": true,
     "error_block_height_min": 100,
-    "error_tail_complete": true
+    "error_tail_complete": true,
+    "error_text_lines_min": 8
    }
   },
   {

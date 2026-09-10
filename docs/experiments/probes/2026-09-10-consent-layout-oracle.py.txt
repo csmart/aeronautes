@@ -364,25 +364,41 @@ def consent_checkbox(rows, box, size=(6, 14)):
     return found
 
 
-def paragraph_tail(rows, block, background, margin=4, short=0.6):
-    """Whether a filled paragraph shows its own natural end.
+def paragraph_tail(rows, block, background, gutter=14, padding_rows=4, short=0.6):
+    """Whether a filled paragraph shows the end of its own text.
 
-    A complete paragraph finishes with a partial last line and then its own
-    bottom padding; a paragraph cut from below ends with a full-width line
-    flush against the edge of its background. Both conditions are needed,
-    because either alone is satisfied by a clip.
+    The right gutter is excluded because the body's scrollbar overlaps the
+    paragraph there, and its pixels are neither text nor padding. Ink rows are
+    grouped into text lines, so the measurement describes the last line rather
+    than the last scanline: a complete paragraph ends with a short line and
+    then its own bottom padding, while a paragraph cut from below ends with a
+    full-width line flush against its background.
     """
-    ink_rows = []
+    left, right = block['left'] + 1, block['right'] - gutter
+    width = max(1, right - left + 1)
+    inked = {}
     for y in range(block['top'], block['bottom'] + 1):
-        extent = [x for x in range(block['left'], block['right'] + 1)
-                  if rows[y][x] != background and ink(rows[y][x], background, margin=25)]
-        if extent:
-            ink_rows.append((y, extent[0], extent[-1]))
-    if not ink_rows:
-        return {'has_text': False, 'padding_rows': 0, 'last_line_fraction': None, 'natural_end': False}
-    last_y, first_x, last_x = ink_rows[-1]
-    padding = block['bottom'] - last_y
-    fraction = (last_x - first_x + 1) / max(1, block['right'] - block['left'] + 1)
-    return {'has_text': True, 'padding_rows': padding, 'last_line_fraction': round(fraction, 3),
-            'last_ink_row': last_y,
-            'natural_end': padding >= margin and fraction <= short}
+        marks = [x for x in range(left, right + 1) if ink(rows[y][x], background, margin=25)]
+        if marks:
+            inked[y] = (marks[0], marks[-1])
+    if not inked:
+        return {'has_text': False, 'text_lines': 0, 'padding_rows': 0,
+                'last_line_fraction': None, 'natural_end': False}
+    lines, current = [], []
+    for y in sorted(inked):
+        if current and y - current[-1] <= 2:
+            current.append(y)
+        else:
+            if current:
+                lines.append(current)
+            current = [y]
+    lines.append(current)
+    spans = [{'top': line[0], 'bottom': line[-1],
+              'left': min(inked[y][0] for y in line), 'right': max(inked[y][1] for y in line)}
+             for line in lines]
+    last = spans[-1]
+    fraction = (last['right'] - last['left'] + 1) / width
+    padding = block['bottom'] - last['bottom']
+    return {'has_text': True, 'text_lines': len(spans), 'padding_rows': padding,
+            'last_line_fraction': round(fraction, 3), 'last_line': last,
+            'natural_end': padding >= padding_rows and fraction <= short}
