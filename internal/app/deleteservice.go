@@ -220,6 +220,10 @@ func (s *DeleteService) runDelete(ctx context.Context, jobID string, req DeleteR
 
 	transition(jobs.StateRunning)
 	recordFailure, closeSpill := failureSpill(jobID)
+	// Unresolved names are a different public fact from reported
+	// failures and get their own retained set, never folded into the
+	// failure count and never presented as a deletion.
+	recordUnresolved, closeUnresolvedSpill := failureSpill(jobID + "-unresolved")
 	var countersMu sync.Mutex
 	result, err := deletion.DeletePrefix(ctx, session, capabilities, req.Container, req.Prefix, deletion.Options{
 		OnProgress: func(deleted, failed int64) {
@@ -230,10 +234,17 @@ func (s *DeleteService) runDelete(ctx context.Context, jobID string, req DeleteR
 			countersMu.Unlock()
 			_ = s.jobs.UpdateCounters(background, jobID, snapshot)
 		},
-		OnFailure: recordFailure,
+		OnFailure:    recordFailure,
+		OnUnresolved: recordUnresolved,
 	})
 	spillPath, failedTotal := closeSpill()
+	unresolvedPath, _ := closeUnresolvedSpill()
 	if result != nil {
+		// Only a validated reply's aggregate reaches these counters, so
+		// an untrusted reply can no longer publish claimed deletions as
+		// verified beside the same names as failures. These remain the
+		// service's report rather than an independent observation of the
+		// store.
 		countersMu.Lock()
 		counters.ObjectsCopied = result.Deleted
 		counters.ObjectsFailed = result.Failed
@@ -241,6 +252,27 @@ func (s *DeleteService) runDelete(ctx context.Context, jobID string, req DeleteR
 		countersMu.Unlock()
 	}
 	_ = s.jobs.UpdateCounters(background, jobID, counters)
+	// A name whose effect the reply did not establish is neither a
+	// deletion nor a proven failure, and it must reach the operator on
+	// every terminal path, including the one an error takes.
+	unresolvedDetail := ""
+	if result != nil && result.Unresolved > 0 {
+		unresolvedDetail = fmt.Sprintf("%d names have an unresolved effect: the reply did not establish whether the object was destroyed (first: %s)",
+			result.Unresolved, result.Unresolveds[0].Name)
+		if unresolvedPath != "" {
+			unresolvedDetail += "; full list: " + unresolvedPath
+		}
+	}
+	withUnresolved := func(reason string) string {
+		switch {
+		case unresolvedDetail == "":
+			return reason
+		case reason == "":
+			return unresolvedDetail
+		default:
+			return reason + "; " + unresolvedDetail
+		}
+	}
 	if err != nil {
 		// Once anything was irreversibly deleted, an interruption is
 		// PARTIAL with the exact count — never a plain cancel/fail
@@ -251,13 +283,13 @@ func (s *DeleteService) runDelete(ctx context.Context, jobID string, req DeleteR
 		}
 		switch {
 		case deleted > 0 && errors.Is(err, context.Canceled):
-			finish(jobs.StatePartial, fmt.Sprintf("cancelled after %d deletions", deleted))
+			finish(jobs.StatePartial, withUnresolved(fmt.Sprintf("cancelled after %d deletions", deleted)))
 		case deleted > 0:
-			finish(jobs.StatePartial, fmt.Sprintf("stopped after %d deletions: %v", deleted, err))
+			finish(jobs.StatePartial, withUnresolved(fmt.Sprintf("stopped after %d deletions: %v", deleted, err)))
 		case errors.Is(err, context.Canceled):
-			finish(jobs.StateCancelled, "")
+			finish(jobs.StateCancelled, withUnresolved(""))
 		default:
-			finish(jobs.StateFailed, err.Error())
+			finish(jobs.StateFailed, withUnresolved(err.Error()))
 		}
 		return
 	}
@@ -277,6 +309,10 @@ func (s *DeleteService) runDelete(ctx context.Context, jobID string, req DeleteR
 		problems = append(problems, detail)
 	}
 	_ = failedTotal
+	if unresolvedDetail != "" {
+		// A run holding an unresolved name has not completed.
+		problems = append(problems, unresolvedDetail)
+	}
 	if result.Remaining > 0 {
 		problems = append(problems, "objects still listed after the final pass (concurrent writer or listing lag)")
 	}
