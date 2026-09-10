@@ -5090,6 +5090,26 @@ Unicode equivalence and normalization, leading spaces, directory-only aliases, e
 Selected-root lifetime, concurrent parent/root replacement, publication and cleanup authority remain separate P18/P20/P30 work.
 This bounded correction does not close P18, P19 or the valuable-data hold.
 
+The next bounded [canonical name equivalence](experiments/2026-09-10-download-name-normalization.md) applies one collision identity to planned names that differ only by Unicode normalization form.
+Two such names are distinct byte sequences in Swift and distinct to every delivered check, while a normalizing target filesystem addresses one location with both.
+The delivered rules already fold non-ASCII case, so `Étude` and `étude` are refused today, but they do not fold normalization form: a probe on unchanged production admitted both spellings of one name, and a precomposed file beside its decomposed ancestor, with no problem reported.
+The established relation must survive intact, and a check across every rune whose lowercase differs from itself proves it.
+K-XFER-011, §27.5, §65.9 item 13 and ADR 0034 require whole-selection refusal before the relevant admission boundary.
+This prerequisite changes the identity used to compare names and adds no per-name refusal; a single name in any form stays selectable and every spelling reaches the service, the executor and the records unchanged.
+
+1. Review this sequence and the dedicated experiment plan, including the dependency route, before changing production code.
+2. Settle whether canonical composition arrives by promoting the already-required text module to a direct requirement or by an in-tree implementation, because the standard library offers none and every approximation is unsound in one direction or the other.
+3. Keep the established lowercase relation exactly as it is and check a canonical caseless relation beside it, decomposing, lowercasing and decomposing again, refusing when either holds, because no single key carries both: used alone the caseless key loses the precomposed dotted capital I against a plain i, and any single key forces by transitivity an equality neither relation contains.
+   Apply both relations at the existing preflight twin, file-set and ancestor sites and at the direct executor's matching sites, leaving the boundaries and their ordering unchanged.
+   The canonical helper must agree with strict canonical equivalence and carry its own tests, because the library's stream-safe normal forms equate some inputs that are not canonically equivalent.
+4. Add maintained refusals for twin, shared-parent, both ancestor directions, marker and non-adjacent cases behind a safe first member, with passing controls for a lone name in either form, for names that merely look similar, and for the delivered case-fold and portable fixtures.
+   Preserve actual before failures on unchanged production, complete local and owned remote deltas, full job, item and audit facts, and single-boundary broken controls.
+5. Record the complete compatibility, inventory and scenario verification, obtain independent local review, and deliver only the reviewed current-base source through all five protected PR and master checks.
+
+The rule refuses a collision, never a spelling, and it makes no claim about which normalization form a given filesystem stores or compares.
+Compatibility equivalence, leading spaces, length limits, directory-only aliases, encoding collisions and representative native filesystem acceptance remain separate P19 work.
+This bounded correction does not close P18, P19 or the valuable-data hold.
+
 The next bounded [manifest consent layout correction](experiments/2026-09-10-consent-layout.md) keeps the ownership-consent disclosure and its controls usable at the supported minimum window.
 The 560-character backing target in that label leaves the dialog and the application edge at 960×600 in both themes and in both the default and force states, and again at 1280×800, while the identical text wraps in the survival paragraph directly above it.
 The blocking safety part of UI-13, §4.3, the destruction and force disclosure in §§3.4/34/35 and the Phase 7 gate require the title and the action row to stay visible at that size, with the complete target, the confirmation input and any error reachable by scrolling and keyboard focus.
