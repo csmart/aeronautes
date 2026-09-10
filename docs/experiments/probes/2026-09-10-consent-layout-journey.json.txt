@@ -1,0 +1,346 @@
+{
+ "allow_activation": true,
+ "expect_refused_writes": true,
+ "commands": [
+  {
+   "op": "x",
+   "args": [
+    "mousemove",
+    "440",
+    "190",
+    "click",
+    "1"
+   ],
+   "pause": 0.5
+  },
+  {
+   "op": "x",
+   "args": [
+    "windowsize",
+    "--sync",
+    "{window}",
+    "960",
+    "600"
+   ],
+   "pause": 0.6
+  },
+  {
+   "op": "x",
+   "args": [
+    "mousemove",
+    "420",
+    "407",
+    "click",
+    "1"
+   ],
+   "pause": 0.6
+  },
+  {
+   "op": "x",
+   "args": [
+    "mousemove",
+    "820",
+    "440",
+    "click",
+    "--repeat",
+    "25",
+    "--delay",
+    "40",
+    "5"
+   ],
+   "pause": 0.4
+  },
+  {
+   "op": "x",
+   "args": [
+    "mousemove",
+    "820",
+    "440",
+    "click",
+    "--repeat",
+    "25",
+    "--delay",
+    "40",
+    "5"
+   ],
+   "pause": 0.4
+  },
+  {
+   "op": "x",
+   "args": [
+    "mousemove",
+    "820",
+    "440",
+    "click",
+    "--repeat",
+    "25",
+    "--delay",
+    "40",
+    "5"
+   ],
+   "pause": 0.4
+  },
+  {
+   "op": "x",
+   "args": [
+    "mousemove",
+    "820",
+    "440",
+    "click",
+    "--repeat",
+    "25",
+    "--delay",
+    "40",
+    "5"
+   ],
+   "pause": 0.4
+  },
+  {
+   "op": "x",
+   "args": [
+    "mousemove",
+    "820",
+    "440",
+    "click",
+    "--repeat",
+    "25",
+    "--delay",
+    "40",
+    "5"
+   ],
+   "pause": 0.4
+  },
+  {
+   "op": "x",
+   "args": [
+    "mousemove",
+    "820",
+    "440",
+    "click",
+    "--repeat",
+    "25",
+    "--delay",
+    "40",
+    "5"
+   ],
+   "pause": 0.4
+  },
+  {
+   "op": "x",
+   "args": [
+    "mousemove",
+    "760",
+    "290",
+    "click",
+    "1"
+   ],
+   "pause": 1.0
+  },
+  {
+   "op": "shot",
+   "name": "j01-combined-default-960"
+  },
+  {
+   "op": "check",
+   "name": "j01-combined-default-960",
+   "expect": {
+    "border_complete": true,
+    "dialog_inside_viewport": true,
+    "controls_visible": true,
+    "horizontal_overflow": false,
+    "text_beside_dialog": 0
+   }
+  },
+  {
+   "op": "focus_until",
+   "name": "j02-focus-cancel",
+   "which": "cancel",
+   "max_tabs": 8
+  },
+  {
+   "op": "x",
+   "args": [
+    "key",
+    "Tab"
+   ],
+   "pause": 0.4
+  },
+  {
+   "op": "shot",
+   "name": "j03-after-cancel-tab"
+  },
+  {
+   "op": "scroll_to_end",
+   "name": "j05-keyboard-scroll-end",
+   "key": "Next",
+   "maximum_presses": 24,
+   "minimum_change": 200,
+   "find_tabs": 6
+  },
+  {
+   "op": "check",
+   "name": "j05-keyboard-scroll-end",
+   "expect": {
+    "border_complete": true,
+    "dialog_inside_viewport": true,
+    "controls_visible": true,
+    "horizontal_overflow": false,
+    "text_beside_dialog": 0
+   }
+  },
+  {
+   "op": "shot",
+   "name": "j06-body-scrolled-to-end"
+  },
+  {
+   "op": "checkbox_click",
+   "name": "j07-locate-consent"
+  },
+  {
+   "op": "shot",
+   "name": "j08-force-mode"
+  },
+  {
+   "op": "check",
+   "name": "j08-force-mode",
+   "expect": {
+    "border_complete": true,
+    "dialog_inside_viewport": true,
+    "controls_visible": true,
+    "horizontal_overflow": false,
+    "text_beside_dialog": 0
+   }
+  },
+  {
+   "op": "focus_until",
+   "name": "j09-focus-cancel-force",
+   "which": "cancel",
+   "max_tabs": 10
+  },
+  {
+   "op": "shot",
+   "name": "j10-force-cancel-focused"
+  },
+  {
+   "op": "shot",
+   "name": "j11-force-after-three-tabs"
+  },
+  {
+   "op": "arm_confirmation",
+   "name": "j12-arm-confirmation",
+   "text": "06-COMBINED-BEGIN-cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd-COMBINED-END",
+   "delay": 10,
+   "max_tabs": 8
+  },
+  {
+   "op": "shot",
+   "name": "j12-confirmation-typed"
+  },
+  {
+   "op": "check",
+   "name": "j12-confirmation-typed",
+   "expect": {
+    "border_complete": true,
+    "dialog_inside_viewport": true,
+    "controls_visible": true,
+    "horizontal_overflow": false,
+    "text_beside_dialog": 0
+   }
+  },
+  {
+   "op": "button_click",
+   "name": "j13-locate-delete",
+   "which": "delete",
+   "pause": 2.5
+  },
+  {
+   "op": "shot",
+   "name": "j14-force-refused"
+  },
+  {
+   "op": "check",
+   "name": "j14-force-refused",
+   "expect": {
+    "border_complete": true,
+    "dialog_inside_viewport": true,
+    "controls_visible": true,
+    "horizontal_overflow": false,
+    "text_beside_dialog": 0
+   }
+  },
+  {
+   "op": "scroll_to_end",
+   "name": "j15a-keyboard-scroll-to-top",
+   "key": "Prior",
+   "maximum_presses": 24,
+   "minimum_change": 200,
+   "find_tabs": 6,
+   "movement_threshold": 100
+  },
+  {
+   "op": "check",
+   "name": "j15b-error-top",
+   "expect": {
+    "border_complete": true,
+    "dialog_inside_viewport": true,
+    "controls_visible": true,
+    "horizontal_overflow": false,
+    "text_beside_dialog": 0
+   }
+  },
+  {
+   "op": "scroll_to_end",
+   "name": "j15c-keyboard-scroll-back-to-error",
+   "key": "Next",
+   "maximum_presses": 24,
+   "minimum_change": 200,
+   "find_tabs": 6,
+   "movement_threshold": 100
+  },
+  {
+   "op": "shot",
+   "name": "j16-error-reached"
+  },
+  {
+   "op": "check",
+   "name": "j16-error-reached",
+   "expect": {
+    "border_complete": true,
+    "dialog_inside_viewport": true,
+    "controls_visible": true,
+    "horizontal_overflow": false,
+    "text_beside_dialog": 0
+   }
+  },
+  {
+   "op": "focus_until",
+   "name": "j17-focus-cancel-after-refusal",
+   "which": "cancel",
+   "max_tabs": 10
+  },
+  {
+   "op": "shot",
+   "name": "j18-cancel-focused-after-refusal"
+  },
+  {
+   "op": "x",
+   "args": [
+    "key",
+    "Return"
+   ],
+   "activate": true,
+   "pause": 1.0
+  },
+  {
+   "op": "shot",
+   "name": "j19-keyboard-cancel-after-refusal"
+  },
+  {
+   "op": "measure",
+   "name": "j19-keyboard-cancel-after-refusal"
+  },
+  {
+   "op": "finish"
+  }
+ ]
+}
