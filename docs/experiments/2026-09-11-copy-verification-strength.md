@@ -51,6 +51,10 @@ The aggregate is therefore treated here as evidence of change, never as proof of
    Any other destination, in particular a large source materialised as a plain destination, keeps exactly the decision it has today, because it has no aggregate of its own; that case is recorded as still open rather than tightened, since refusing it would reject copies this executor itself creates.
 3. The plain pair path is unchanged, no existing refusal is removed, and no new refusal policy for names is introduced.
 
+One case decided the shape of this rule, and it is the difference between a guard and an outage.
+Refusing every non-plain destination that carries no aggregate would have refused a large source materialised as a plain destination, which is a copy this executor itself creates; the system tests caught it immediately.
+That case therefore keeps exactly the decision it has today and is recorded as still open, rather than being quietly tightened into a refusal of correct work.
+
 The correction is deliberately one-directional, and that property is what the slice must prove.
 The permitted-skip set is a strict subset of today's: a destination may be skipped only if it would be skipped today and it is additionally a dynamic large object whose live aggregate matches the recorded staged observation.
 Nothing that is refused today becomes skipped, and no new write is introduced, so no current outcome becomes less safe.
@@ -70,6 +74,9 @@ The correction was measured before proposing it: with it applied, the swifttest,
 The archived probe is kept as before evidence, and the maintained regression asserts the precise refusal outcome for the changed destination, that no overwrite occurred, the exact recorded item and audit facts, and complete unchanged collateral in both namespaces.
 It must distinguish an authoritative answer from a transport or permission failure.
 
+The decision is proved through the public service as well as at the predicate, in a mock and an owned-service pair.
+That pair publishes a segmented destination through the normal copy path with an admitted chunk setting, observes that the stamp originates in the single conditional publishing write with no metadata update to the live name, then runs the unchanged, substituted-segment and stripped-stamp cases and asserts the job counters, the exact item and verification observations, the absence of any write to the live name on a refusal, and unchanged collateral.
+
 What this slice fixes, and must prove it fixes:
 
 - a dynamic large object destination carrying a stamp, whose segments were substituted after publication so that its live aggregate differs, is refused instead of skipped, with the exact item and audit outcome, no overwrite and unchanged collateral;
@@ -86,7 +93,8 @@ Neither unresolved case may be turned green by weakening an assertion or by rest
 
 Controls that must keep their current outcomes, each with its stamp and class precondition stated: an unchanged stamped dynamic large object destination, a legitimately resegmented stamped destination including the four and four to three, three and two case, a plain pair, and a large source materialised as a plain destination.
 
-Deliberately broken variants must each fail their own boundary and no other: one reverting the decision to fingerprint and length, one stamping the identity but never checking it, and one admitting static large object destinations to the stamped path.
+Deliberately broken variants must each fail their own boundary and no other: one reverting the decision to fingerprint and length, one stamping the identity but never checking it, one admitting static large object destinations to the stamped path, one skipping validation of the observed aggregate, and one minting a stamp from an unusable staged observation.
+Their patched sources, exact commands, raw result streams and exits are retained rather than summarised.
 
 The full race suite runs with inventory reconciliation against the delivered name count, alongside vet, gofmt, the Windows and macOS vets and internal builds, and module tidiness.
 
