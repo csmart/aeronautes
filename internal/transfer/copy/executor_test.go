@@ -746,11 +746,26 @@ func TestStaleManifestFingerprintCannotSkip(t *testing.T) {
 		t.Fatal("stale fingerprint with mismatched live length passed as proven-equal")
 	}
 
-	// A destination whose segments still sum right IS proven.
+	// Restoring the missing bytes makes the live length match again, but
+	// a destination this executor never published carries no staged
+	// aggregate, and an absent stamp is not evidence.
 	seed(w.dstMock, "backup_segments", "video.bin/gen/00000001", bytes.Repeat([]byte("v"), 1000), nil)
 	dst, _ = w.dst.ObjectDetail(context.Background(), "backup", "video.bin")
+	if provenEqual(src, dst) {
+		t.Fatal("unstamped DLO destination passed as proven-equal")
+	}
+
+	// Stamped with the aggregate actually observed, it IS proven.
+	w.dstMock.PutObject("backup", "video.bin", swifttest.Object{
+		Manifest: "backup_segments/video.bin/gen/",
+		Meta: map[string]string{
+			"Aeronautes-Fingerprint":      fingerprint(src.ContentLength, src.ETag),
+			"Aeronautes-Staged-Aggregate": aggregateStamp(dst.ContentLength, dst.ETag),
+		},
+	})
+	dst, _ = w.dst.ObjectDetail(context.Background(), "backup", "video.bin")
 	if !provenEqual(src, dst) {
-		t.Fatal("intact fingerprinted DLO no longer proves equal")
+		t.Fatal("intact stamped DLO no longer proves equal")
 	}
 }
 

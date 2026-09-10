@@ -40,6 +40,19 @@ func fingerprint(logicalBytes int64, sourceETag string) string {
 	return fmt.Sprintf("v1:%d:%s", logicalBytes, strings.Trim(sourceETag, `"`))
 }
 
+// stagedAggregateMetaKey records the aggregate identity observed on the
+// staged manifest just before publication, stored as
+// X-Object-Meta-Aeronautes-Staged-Aggregate and carried by the same
+// conditional PUT that publishes the name. It identifies THAT earlier
+// staged observation: it is not the live object's identity, it does not
+// freeze segment membership, and it says nothing about whether the
+// staged bytes were ever verified against the source.
+const stagedAggregateMetaKey = "Aeronautes-Staged-Aggregate"
+
+func aggregateStamp(logicalBytes int64, etag string) string {
+	return fmt.Sprintf("v1:%d:%s", logicalBytes, strings.Trim(etag, `"`))
+}
+
 // Config wires one job's executor.
 type Config struct {
 	Source *swiftcontrol.Session
@@ -263,8 +276,36 @@ func provenEqual(src, dst *swiftcontrol.ObjectDetail) bool {
 		return src.ContentLength == dst.ContentLength &&
 			strings.Trim(src.ETag, `"`) == strings.Trim(dst.ETag, `"`)
 	}
+	// Every condition that admitted a non-plain skip before still has to
+	// hold; the aggregate check below only ever removes members from that
+	// set, so nothing refused today becomes skipped.
 	want := fingerprint(src.ContentLength, src.ETag)
-	return dst.Meta[fingerprintMetaKey] == want && dst.ContentLength == src.ContentLength
+	if dst.Meta[fingerprintMetaKey] != want || dst.ContentLength != src.ContentLength {
+		return false
+	}
+	switch dst.Class {
+	case swiftcontrol.ClassDLO:
+		// A destination whose segments were replaced by different bytes
+		// of the same length leaves both of those facts true, so require
+		// the live aggregate to still match what this executor observed
+		// when it published the name. An absent or malformed stamp is not
+		// evidence, and a stale segment listing can still hide a
+		// substitution, so a match says only that no difference was
+		// observed, never that the destination equals the source.
+		stamp := dst.Meta[stagedAggregateMetaKey]
+		return stamp != "" && stamp == aggregateStamp(dst.ContentLength, dst.ETag)
+	case swiftcontrol.ClassSLO:
+		// A static large object reports the entity tag its manifest
+		// recorded, so it carries no live aggregate to compare. Refuse
+		// rather than reason about it.
+		return false
+	default:
+		// Anything else, including a large source materialised as a plain
+		// destination, keeps the decision it had before this guard: the
+		// fingerprint and the logical length. That case has no aggregate
+		// of its own to check and is recorded as still open.
+		return true
+	}
 }
 
 // runNew copies a name with no live destination: engine-routed names
@@ -434,7 +475,7 @@ func verifyCopied(src, dst *swiftcontrol.ObjectDetail) error {
 func metadataHeaders(src *swiftcontrol.ObjectDetail, metaPrefix string) map[string]string {
 	headers := map[string]string{}
 	for k, v := range src.Meta {
-		if k == fingerprintMetaKey {
+		if k == fingerprintMetaKey || k == stagedAggregateMetaKey {
 			continue
 		}
 		headers[metaPrefix+k] = v
@@ -584,6 +625,11 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 		}
 		// Manifest-swap PUT: the live name becomes a DLO pointing at the
 		// staged segments in one atomic write (validated on real Swift).
+		// The staged aggregate rides in this same conditional write: a
+		// value observed after it could not, and persisting one later
+		// would mean another live mutation with its own authority,
+		// concurrency and response-loss protocol.
+		headers["X-Object-Meta-"+stagedAggregateMetaKey] = aggregateStamp(staged.ContentLength, staged.ETag)
 		headers["X-Object-Manifest"] = staged.Manifest
 		if _, err := e.cfg.Dest.PutObject(ctx, e.cfg.DstContainer, dstName, strings.NewReader(""), src.ContentType, headers); err != nil {
 			if swiftcontrol.IsPreconditionFailed(err) {
@@ -742,7 +788,7 @@ func (e *Executor) copySymlink(ctx context.Context, srcName, dstName string, pri
 		headers["X-Symlink-Target-Account"] = link.SymlinkTargetAccount
 	}
 	for k, v := range link.Meta {
-		if k != fingerprintMetaKey {
+		if k != fingerprintMetaKey && k != stagedAggregateMetaKey {
 			headers["X-Object-Meta-"+k] = v
 		}
 	}

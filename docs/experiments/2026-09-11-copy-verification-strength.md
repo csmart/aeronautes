@@ -45,8 +45,10 @@ The aggregate is therefore treated here as evidence of change, never as proof of
 1. Carry the stamp in the existing conditional publishing PUT, beside the fingerprint that write already sends, so no new mutation of a live object is introduced.
    Its value is the aggregate identity observed on the staged manifest before publication, and the stamp says exactly that: it identifies an earlier staged observation, not the live object's identity, and it asserts nothing about segment membership being frozen by publication or about the content being verified.
    A value observed after the publishing PUT cannot be carried by that write, and persisting one would require a further live mutation with its own authority, concurrency, metadata-preservation and response-loss protocol; this slice deliberately does not open that.
-2. In `provenEqual`, a destination may be reported the same only when it is a dynamic large object, the fingerprint matches, the live logical lengths match, and the live aggregate identity equals the stamp.
-   Every other non-plain destination, including any static large object and anything carrying no stamp, takes the existing unknown path, so the overwrite is refused rather than skipped.
+2. In `provenEqual`, keep every condition that admits a non-plain skip today, then apply the new requirement by destination class.
+   A dynamic large object destination must additionally carry a stamp equal to its live aggregate identity; an absent or malformed stamp is refused.
+   A static large object destination is refused outright, because the entity tag it reports is the one its manifest recorded and there is no live aggregate to compare.
+   Any other destination, in particular a large source materialised as a plain destination, keeps exactly the decision it has today, because it has no aggregate of its own; that case is recorded as still open rather than tightened, since refusing it would reject copies this executor itself creates.
 3. The plain pair path is unchanged, no existing refusal is removed, and no new refusal policy for names is introduced.
 
 The correction is deliberately one-directional, and that property is what the slice must prove.
@@ -72,16 +74,17 @@ What this slice fixes, and must prove it fixes:
 
 - a dynamic large object destination carrying a stamp, whose segments were substituted after publication so that its live aggregate differs, is refused instead of skipped, with the exact item and audit outcome, no overwrite and unchanged collateral;
 - a static large object destination is refused rather than skipped, whether or not its segments were substituted, because the evidence for it is insufficient;
-- a destination carrying no stamp is refused rather than skipped.
+- a dynamic large object destination carrying no stamp is refused rather than skipped.
 
 What this slice does not fix, and must retain as explicitly unresolved DS-04 reproductions recording their actual outcomes rather than a required refusal:
 
 - a wrong-at-stamp-time destination, whose committed bytes never matched the source, still matches the fingerprint and its own stamp and is still reported the same; this is the dependency on staged verification, and the reproduction records that outcome as unresolved;
-- a stale segment row that leaves the aggregate unchanged after a substitution still permits the skip, because the aggregate is derived from that listing; the reproduction records that outcome as unresolved.
+- a stale segment row that leaves the aggregate unchanged after a substitution still permits the skip, because the aggregate is derived from that listing; the repository mock derives its aggregate from the rows it lists and so cannot stage that divergence, which is recorded here rather than asserted;
+- a large source materialised as a plain destination keeps its existing fingerprint and length decision, with no aggregate of its own to check.
 
 Neither unresolved case may be turned green by weakening an assertion or by restating the same outcome under a new description.
 
-Controls that must keep their current outcomes, each with its stamp and class precondition stated: an unchanged stamped dynamic large object destination, a legitimately resegmented stamped destination including the four and four to three, three and two case, and a plain pair.
+Controls that must keep their current outcomes, each with its stamp and class precondition stated: an unchanged stamped dynamic large object destination, a legitimately resegmented stamped destination including the four and four to three, three and two case, a plain pair, and a large source materialised as a plain destination.
 
 Deliberately broken variants must each fail their own boundary and no other: one reverting the decision to fingerprint and length, one stamping the identity but never checking it, and one admitting static large object destinations to the stamped path.
 
