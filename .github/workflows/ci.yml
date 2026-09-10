@@ -130,7 +130,7 @@ jobs:
   saio:
     name: Integration — containerized Swift (SAIO)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
@@ -187,7 +187,7 @@ jobs:
           go list ./internal/... > expected-packages.txt
           set +e
           # Owned SAIO groups overlap; environment-mutating mock tests stay sequential.
-          go test -json -v -race -count=1 -parallel=3 -timeout=20m -coverprofile=cover.out -coverpkg=./internal/... ./internal/... \
+          go test -json -v -race -count=1 -parallel=3 -timeout=25m -coverprofile=cover.out -coverpkg=./internal/... ./internal/... \
             | tee events.jsonl
           # Capture the WHOLE PIPESTATUS array in one statement: reading it into
           # a scalar first would reset PIPESTATUS before the second element.

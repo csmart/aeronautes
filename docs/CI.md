@@ -65,9 +65,9 @@ CI does not commit these generated files or use `BADGE_DEPLOY_KEY` anymore.
 The existing coverage floors are advisory; hard scenario and coverage gates remain audit work package P34.
 Green CI is required evidence, and the wider safety and platform release gates still apply.
 
-The real-Swift integration lane gives each Go test package twenty minutes and bounds the whole job to twenty-five minutes, including setup and report upload.
-The job cap includes setup time, so a slow fixture start can exhaust it before Go's package timer; inspect both limits when diagnosing a timeout.
-The growing sequential fault suite exceeded Go's default ten-minute package limit during PR60 and the fifteen-minute limit during PR62; the [diagnosis and validation](experiments/2026-09-08-integration-time-budget.md) distinguish those suite budgets from individual test, request and child-process deadlines.
+The real-Swift integration lane gives each Go test package twenty-five minutes and bounds the whole job to thirty-five minutes, including setup and report upload.
+The job cap includes setup time and the compilation and other packages that run before the long system-test package, so inspect both limits and the measured start delay when diagnosing a timeout.
+The growing sequential fault suite exceeded Go's default ten-minute package limit during PR60 and the fifteen-minute limit during PR62, and the twenty-five-minute job cap cancelled a master run on 2026-09-10; the [diagnosis and validation](experiments/2026-09-08-integration-time-budget.md) distinguish those suite budgets from individual test, request and child-process deadlines.
 The change preserves every assertion, fixture, race/coverage option, producer-exit check, scenario reconciliation and aggregate refusal.
 
 The [bounded SAIO schedule](experiments/2026-09-09-saio-scheduling.md) lets fourteen independent real-Swift groups overlap, including the [download destination](experiments/2026-09-09-download-root.md#delivery), [stage lifecycle](experiments/2026-09-09-download-stage.md#delivery) and [native closure regressions](experiments/2026-09-09-download-close.md), with `-parallel=3` on both Go CI commands.
