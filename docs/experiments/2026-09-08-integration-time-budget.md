@@ -88,7 +88,8 @@ Neither time-budget correction changes the valuable-data release hold.
 The [master run for the contrast delivery record](https://github.com/csmart/aeronautes/actions/runs/34446406312) was cancelled at the twenty-five-minute job cap on its first attempt.
 Nothing failed: the integration job started at 06:42:22Z, its suite step ran for 23.9 minutes and was cancelled at 07:07:35Z, and the aggregate job then reported failure because a required job had not succeeded.
 The Go, frontend and smoke jobs of that run succeeded, and the merged commit was documentation only, so no product change is implicated.
-Re-running the failed jobs completed all five successfully on the second attempt, which is the only retry recorded here.
+Re-running the failed jobs completed all five successfully on the second attempt.
+A second master run that day also needed a retry, for the two test failures recorded below.
 
 Eleven successful integration jobs ran that day across six pull requests and their master pushes, and nine of their event streams were measured.
 
@@ -117,3 +118,56 @@ The portable component slice added 308 integration results that day, but its own
 
 No assertion, fixture, race or coverage option, producer-exit check, scenario reconciliation or aggregate refusal changes, and no other job's budget changes.
 This correction does not change the valuable-data release hold, and it makes no claim about why a particular hosted runner is slow.
+
+## 2026-09-10 intermittent master test failures
+
+The master run for the raised budget failed on its first attempt in two jobs, and the same tree passed all five jobs on the retry.
+That establishes intermittent success; it does not establish a cause, that the two failures share one, or that nothing needs repair.
+Neither failing assertion is weakened here, and no retry is added to any test.
+
+The race-detector job failed `TestCopyItemRecordsMock/failed_401`, the largest of that test's 0, 1, 201 and 401 item cases.
+The case starts the copy asynchronously and enters the bounded wait immediately, so the wait spans queueing, the whole job body and the release, not cleanup alone.
+That wait polls a bookmark save every five milliseconds for thirty seconds and reports the in-use error, and the job runner releases the binding in a deferred call around the body.
+The observation therefore cannot distinguish slow or queued work from a release that never happened, which is the first thing the investigation must separate.
+
+The integration job failed `TestUploadItemRecordsRealSwift/native_false_failed_401` on differing mutation identities or attempt counts.
+Comparing the observed and expected maps gives 805 distinct request identities on each side with no missing or extra identity, and exactly one identity observed twice where one attempt was expected, so 806 observed attempts against 805 expected.
+The recording proxy notes method and path before forwarding and keeps no upstream status, response or applied-effect identity, so the trace does not show whether that second request was a retry, whether it was rejected, or whether it changed anything.
+A transient retry is a plausible hypothesis, given the engine's low-level attempt allowance, and it is only a hypothesis.
+
+The failing job's own durations are reproducible, and so is this comparison sample of the four preceding CI runs, two on master and two on pull requests.
+
+| Run | Event | Go job | System-test seconds | Transfer-rclone seconds |
+| --- | --- | --- | ---: | ---: |
+| 34450598829 | master push | 102785220203 | 230.219 | 36.646 |
+| 34452039163 | pull request | 102789739174 | 234.799 | 36.835 |
+| 34454383890 | master push | 102797260396 | 228.174 | 36.726 |
+| 34455834601 | pull request | 102801875805 | 233.391 | 36.948 |
+| 34457863592, failed | master push | 102808379480 | 381.968 | 34.916 |
+
+The system-test package took about 1.6 times the preceding sample while the rclone package took slightly less than any of them, so the runner was not uniformly slower.
+Load sensitivity is a hypothesis that this comparison supports and does not prove.
+
+Two local replays are retained on head 01c5a8130fc2f175, whose tree is exactly the tree of the failing master commit; both resolve to a434cb0480ef9dcd and their diff is empty.
+The whole system-test package passed in 219.981 seconds with no failure, and its retained log records that success line alone.
+The focused `failed_401` case then passed nine consecutive times under the race detector, at 12.88, 12.08, 11.99, 12.07, 12.18, 12.01, 12.51, 12.14 and 12.30 seconds, with no failed or skipped event and the package completing in 111.191 seconds.
+Its retained stream is 4,410,456 bytes with digest 393449f62c6596d635f6e628e0be4e03c2e6472c04636921ebc5e85b788821e9, and the producer command, worktree head, toolchain and exit result are retained beside it.
+Independent review separately replayed that case three times on frozen source at 15.07 to 15.55 seconds.
+No local replay has reproduced either failure.
+
+## Planned investigation for the two intermittent assertions
+
+This is a bounded investigation, not a fix, and it changes no assertion.
+The two failed traces and the unchanged green retry stay as distinct evidence.
+
+1. Review this plan before changing any test.
+2. For the copy case, observe body progress, the job's terminal state and the final binding release as three separate facts under a controlled slow-work case, rather than inferring them from one bounded wait.
+   Keep the successful bookmark save as the release oracle, and keep every identity, record and collateral assertion exactly as it stands.
+   The upload case already separates awaiting the job from that acknowledgement, which is useful surrounding evidence rather than proof that the copy case needs only the same edit.
+3. For the upload case, capture controlled response and attempt evidence at the recording proxy so that a rejected request, a retried request and an applied effect can be told apart.
+   Keep the exact live-destination mutation set, the identity accounting and the collateral checks unchanged.
+4. Only then decide whether either test needs a change, and record the decision with its evidence.
+
+No blind retry is introduced anywhere, and no strict assertion is relaxed to absorb variance.
+The exact attempt count is a duplicate-write guard, and the binding release is a safety acknowledgement, so both must survive whatever this investigation concludes.
+This investigation does not change the valuable-data release hold.
