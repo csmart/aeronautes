@@ -1,87 +1,205 @@
-"""UI13 implementation replay: the candidate harness with two additions.
+#!/usr/bin/env python3
+"""UI-13 manifest consent layout: maintained native regression.
 
-A sequence may declare allow_activation, which permits activating a control
-that cannot destroy data, and expect_refused_writes, which replaces the
-no-write invariant with a refused-attempt invariant. The private fixture
-answers every non-read request with 405 before touching data, and the
-complete remote snapshot is compared either way."""
+Everything this needs is either an explicit argument or archived beside it:
+the pixel oracle is imported from the same directory, the screen capture is
+inlined, and no reference image is used. The process exits non-zero when any
+assertion fails, when the declared sequence does not complete, or when the
+final data invariant fails.
+
+  python3 consent_layout_regression.py \
+      --label native-consent-layout \
+      --app bin/aeronautes \
+      --fixture-binary /path/to/mockswift \
+      --fixture 2026-09-10-consent-layout-fixture.json.txt \
+      --sequence 2026-09-10-consent-layout-regression.json.txt \
+      --runtime /path/to/runtime-root \
+      --out /path/to/output/directory
+
+The runtime root supplies usr/bin/Xvfb, usr/bin/xdotool and the usr/lib64 the
+application links. The fixture binary is built from the archived entrypoint
+against this module. The application binary is the build under test.
+"""
+import argparse
+import ctypes
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import select
 import signal
 import socket
+import struct
 import subprocess
 import sys
 import tempfile
 import time
 import urllib.request
+import zlib
+from pathlib import Path
 
-evidence = Path(__file__).resolve().parent
-before = Path('/home/csmart/code/.aeronautes-work/parallel/text_contrast/ui13-before')
-shared = Path('/home/csmart/code/.aeronautes-work/parallel')
-sys.path.insert(0, str(shared / 'preview_focus'))
-sys.path.insert(0, str(evidence))
-from native_capture import capture
-import geometry
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import geometry  # noqa: E402  the archived pixel oracle
 
-label, binary_path, sequence_path = sys.argv[1:4]
-fixture_path = Path(sys.argv[4]).resolve() if len(sys.argv) > 4 else before / 'fixture.json'
-assert re.fullmatch(r'native-[a-z0-9-]+', label)
-binary = Path(binary_path).resolve()
-ALLOWED = {evidence / 'build-candidate/aeronautes': 'candidate',
-           evidence / 'build-implementation/aeronautes': 'implementation',
-           evidence / 'build-broken-wrapping/aeronautes': 'broken control: wrapping removed',
-           evidence / 'build-broken-bound/aeronautes': 'broken control: height bound removed',
-           before / 'build-v1/aeronautes': 'retained before build'}
-assert binary in ALLOWED, binary
-sequence = Path(sequence_path).resolve()
-out = evidence / label
-out.mkdir()
-(out / 'driver.py').write_bytes(Path(__file__).read_bytes())
-(out / 'geometry.py').write_bytes((evidence / 'geometry.py').read_bytes())
-(out / 'clipboard.py').write_bytes((before.parent / 'clipboard.py').read_bytes())
-(out / 'capture.py').write_bytes((shared / 'preview_focus/native_capture.py').read_bytes())
-declared = json.loads(sequence.read_text())
+
+class XImage(ctypes.Structure):
+    _fields_ = [('width', ctypes.c_int), ('height', ctypes.c_int), ('xoffset', ctypes.c_int),
+                ('format', ctypes.c_int), ('data', ctypes.c_void_p), ('byte_order', ctypes.c_int),
+                ('bitmap_unit', ctypes.c_int), ('bitmap_bit_order', ctypes.c_int),
+                ('bitmap_pad', ctypes.c_int), ('depth', ctypes.c_int), ('bytes_per_line', ctypes.c_int),
+                ('bits_per_pixel', ctypes.c_int), ('red_mask', ctypes.c_ulong),
+                ('green_mask', ctypes.c_ulong), ('blue_mask', ctypes.c_ulong)]
+
+
+def capture(display_name, destination, width=1280, height=800):
+    """Whole-root capture written as a PNG, with no imaging dependency."""
+    x11 = ctypes.CDLL('libX11.so.6')
+    x11.XOpenDisplay.argtypes, x11.XOpenDisplay.restype = [ctypes.c_char_p], ctypes.c_void_p
+    x11.XDefaultRootWindow.argtypes, x11.XDefaultRootWindow.restype = [ctypes.c_void_p], ctypes.c_ulong
+    x11.XGetImage.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_int,
+                              ctypes.c_uint, ctypes.c_uint, ctypes.c_ulong, ctypes.c_int]
+    x11.XGetImage.restype = ctypes.POINTER(XImage)
+    x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+    display = x11.XOpenDisplay(display_name.encode())
+    assert display, 'cannot open ' + display_name
+    pointer = x11.XGetImage(display, x11.XDefaultRootWindow(display), 0, 0, width, height, ctypes.c_ulong(-1), 2)
+    assert pointer
+    image = pointer.contents
+    assert (image.width, image.height, image.bits_per_pixel, image.byte_order) == (width, height, 32, 0)
+    assert (image.red_mask, image.green_mask, image.blue_mask) == (0xff0000, 0xff00, 0xff)
+    raw = ctypes.string_at(image.data, image.bytes_per_line * image.height)
+    body = bytearray()
+    for row in range(image.height):
+        body.append(0)
+        for column in range(image.width):
+            offset = row * image.bytes_per_line + column * 4
+            body.extend((raw[offset + 2], raw[offset + 1], raw[offset]))
+
+    def chunk(kind, data):
+        return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data))
+
+    png = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0))
+    Path(destination).write_bytes(png + chunk(b'IDAT', zlib.compress(bytes(body))) + chunk(b'IEND', b''))
+    x11.XCloseDisplay(display)
+
+
+def verdict(completed, methods, snapshot_equal, expect_refused_writes):
+    """Whether a run may exit zero. Any doubt is a failure."""
+    if not completed:
+        return False, 'the declared sequence did not complete'
+    unexpected = [m for m in methods if m not in ('GET', 'HEAD')
+                  and not (expect_refused_writes and m == 'DELETE')]
+    if unexpected:
+        return False, 'unexpected final write: ' + ','.join(sorted(set(unexpected)))
+    if expect_refused_writes and 'DELETE' not in methods:
+        return False, 'the refusal case attempted no write at all'
+    if not snapshot_equal:
+        return False, 'the final snapshot differs from the baseline'
+    return True, ''
+
+
+def self_check():
+    """Focused checks of the exit contract, with no GUI and no Swift call."""
+    cases = [
+        ('passing read-only run', (True, ['GET', 'HEAD'], True, False), True),
+        ('passing refusal run', (True, ['GET', 'DELETE'], True, True), True),
+        ('final snapshot mismatch', (True, ['GET'], False, False), False),
+        ('unexpected final write', (True, ['GET', 'PUT'], True, False), False),
+        ('unexpected write in a refusal run', (True, ['GET', 'DELETE', 'POST'], True, True), False),
+        ('incomplete sequence', (False, ['GET'], True, False), False),
+        ('refusal run with no attempt', (True, ['GET'], True, True), False),
+    ]
+    failures = []
+    for name, arguments, expected in cases:
+        ok, reason = verdict(*arguments)
+        print('%-34s %s%s' % (name, 'ok' if ok == expected else 'WRONG', '' if ok else '  (' + reason + ')'))
+        if ok != expected:
+            failures.append(name)
+    if failures:
+        print('self-check failed: ' + ', '.join(failures), file=sys.stderr)
+        return 1
+    print('self-check passed: a retained failure cannot exit zero')
+    return 0
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--self-check', action='store_true', help='verify the exit contract and stop')
+parser.add_argument('--label')
+parser.add_argument('--app')
+parser.add_argument('--fixture-binary')
+parser.add_argument('--fixture')
+parser.add_argument('--sequence')
+parser.add_argument('--runtime')
+parser.add_argument('--out')
+parser.add_argument('--refusal', default='', help='body the fixture returns for every refused method')
+parser.add_argument('--rclone-dir', default='', help='optional pinned engine directory')
+options = parser.parse_args()
+if options.self_check:
+    raise SystemExit(self_check())
+for required in ('label', 'app', 'fixture_binary', 'fixture', 'sequence', 'runtime', 'out'):
+    assert getattr(options, required), '--' + required.replace('_', '-') + ' is required'
+assert re.fullmatch(r'native-[a-z0-9-]+', options.label), 'label must be native-<name>'
+
+binary = Path(options.app).resolve()
+fixture_binary = Path(options.fixture_binary).resolve()
+fixture_path = Path(options.fixture).resolve()
+sequence_path = Path(options.sequence).resolve()
+runtime = Path(options.runtime).resolve()
+out = Path(options.out).resolve() / options.label
+out.mkdir(parents=True)
+
+declared = json.loads(sequence_path.read_text())
 if isinstance(declared, dict):
     commands = declared['commands']
     allow_activation = bool(declared.get('allow_activation'))
     expect_refused_writes = bool(declared.get('expect_refused_writes'))
 else:
     commands, allow_activation, expect_refused_writes = declared, False, False
-(out / 'sequence.json').write_bytes(sequence.read_bytes())
-(out / 'commands.jsonl').write_text(''.join(json.dumps(c) + '\n' for c in commands))
-runtime = shared / 'keyboard_scope/native/runtime-root'
+
 env = os.environ.copy()
 env.update(LD_LIBRARY_PATH=str(runtime / 'usr/lib64'), GDK_BACKEND='x11', WAYLAND_DISPLAY='',
            GTK_USE_PORTAL='0', XKB_BINDIR=str(runtime / 'usr/bin'), GTK_A11Y='none',
            WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS='1', DCONF_PROFILE='/dev/null', TZ='UTC',
-           AERONAUTES_STATE_DIR=str(out / 'state'),
-           AERONAUTES_OFFICIAL_RCLONE_DIR='/home/csmart/code/.aeronautes-work/rclone-pin')
-env['PATH'] = str(runtime / 'usr/bin') + ':/home/csmart/code/.aeronautes-work/rclone-pin:' + env['PATH']
+           AERONAUTES_STATE_DIR=str(out / 'state'))
+if options.rclone_dir:
+    env['AERONAUTES_OFFICIAL_RCLONE_DIR'] = options.rclone_dir
+    env['PATH'] = str(runtime / 'usr/bin') + ':' + options.rclone_dir + ':' + env['PATH']
+else:
+    env['PATH'] = str(runtime / 'usr/bin') + ':' + env['PATH']
 for key, name in [('XDG_CONFIG_HOME', 'config'), ('XDG_CACHE_HOME', 'cache'), ('XDG_DATA_HOME', 'data')]:
     (out / name).mkdir(mode=0o700)
     env[key] = str(out / name)
 (out / 'state').mkdir(mode=0o700)
-env['XDG_RUNTIME_DIR'] = tempfile.mkdtemp(prefix='aeronautes-ui13-candidate-')
+env['XDG_RUNTIME_DIR'] = tempfile.mkdtemp(prefix='aeronautes-ui13-')
+
 with socket.socket() as reservation:
     reservation.bind(('127.0.0.1', 0))
     port = reservation.getsockname()[1]
-origin = f'http://127.0.0.1:{port}'
+origin = 'http://127.0.0.1:%d' % port
 processes = []
-result = {'label': label, 'kind': 'UI13 wrapping candidate replay; no destructive activation',
-          'status': 'running', 'port': port, 'app_sha256': hashlib.sha256(binary.read_bytes()).hexdigest(),
-          'sequence_sha256': hashlib.sha256(sequence.read_bytes()).hexdigest(), 'commands': [],
+result = {'label': options.label, 'kind': 'UI13 maintained consent layout regression', 'status': 'running',
+          'port': port, 'commands': [], 'declared_commands': len(commands),
+          'allow_activation': allow_activation, 'expect_refused_writes': expect_refused_writes,
+          'app_sha256': hashlib.sha256(binary.read_bytes()).hexdigest(),
+          'fixture_binary_sha256': hashlib.sha256(fixture_binary.read_bytes()).hexdigest(),
+          'fixture_sha256': hashlib.sha256(fixture_path.read_bytes()).hexdigest(),
+          'sequence_sha256': hashlib.sha256(sequence_path.read_bytes()).hexdigest(),
+          'oracle_sha256': hashlib.sha256(Path(geometry.__file__).read_bytes()).hexdigest(),
+          'driver_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+          'refusal_body_length': len(options.refusal),
           'started_utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
+window = ''
 window_rect = (0, 0, 1280, 800)
+completed = False
 
 
-def request(path, method='GET', data=None, token=None, extra=None):
+def save():
+    (out / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
+
+
+def request(path, method='GET', token=None):
     headers = {'X-Auth-Token': token} if token else {'X-Auth-User': 'test:tester', 'X-Auth-Key': 'testing'}
-    headers.update(extra or {})
-    with urllib.request.urlopen(urllib.request.Request(origin + path, data=data, method=method, headers=headers), timeout=5) as reply:
+    with urllib.request.urlopen(urllib.request.Request(origin + path, method=method, headers=headers), timeout=5) as reply:
         return reply.headers, reply.read()
 
 
@@ -96,11 +214,8 @@ def wire(pattern, seconds):
 
 def x(*args, check=True):
     args = tuple(window if part == '{window}' else part for part in args)
-    return subprocess.run([str(runtime / 'usr/bin/xdotool'), *args], env=env, capture_output=True, text=True, timeout=20, check=check)
-
-
-def save():
-    (out / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
+    return subprocess.run([str(runtime / 'usr/bin/xdotool'), *args], env=env,
+                          capture_output=True, text=True, timeout=30, check=check)
 
 
 def read_window_rect():
@@ -110,48 +225,41 @@ def read_window_rect():
     return (left, top, left + int(values['WIDTH']), top + int(values['HEIGHT']))
 
 
-def inspect(name):
-    """Capture and measure the dialog without disturbing the run."""
+def shot(name):
     path = out / (name + '.png')
     capture(env['DISPLAY'], path)
-    rows = geometry.pixels(path)
+    return path, geometry.pixels(path)
+
+
+def observe(rows):
     box = geometry.dialog(rows, window=window_rect)
-    record = {'screenshot': name, 'window_rect': window_rect, 'dialog': box}
-    if box:
-        left, top, right, bottom = window_rect
-        record['fits_window'] = box['top'] > top and box['bottom'] < bottom - 1
-        record['clipped_top'] = box['top'] <= top
-        record['clipped_bottom'] = box['bottom'] >= bottom - 1
-        record['checkbox_hits'] = geometry.find_patch(rows, TEMPLATES[box['theme']], box)
-    return record, rows, box
+    if not box:
+        return None, {}
+    controls = geometry.action_buttons(rows, box)
+    left, top, right, bottom = window_rect
+    soft = (247, 228, 222) if box['theme'] == 'light' else (60, 34, 28)
+    error_block = geometry.row_groups(rows, soft, box, minimum_run=40, minimum_height=8)
+    return box, {
+        'border_complete': box['border']['complete'],
+        'dialog_inside_viewport': box['top'] > top and box['bottom'] < bottom - 1,
+        'controls_visible': bool(controls['delete']) and bool(controls['cancel'])
+                            and controls['delete']['bottom'] < bottom - 1 and controls['cancel']['top'] > top,
+        'horizontal_overflow': bool(geometry.horizontal_overflow(rows, box)),
+        'text_beside_dialog': len(geometry.text_beside(rows, box)),
+        'error_block_visible': bool(error_block),
+        'consent_checkbox_visible': len(geometry.consent_checkbox(rows, box)) == 1}
 
 
-TEMPLATES = {
-    'light': geometry.patch(geometry.pixels(before / 'native-before-v2/18-light-long-target-default-960.png'), 272, 434, 16, 16),
-    'dark': geometry.patch(geometry.pixels(before / 'native-before-v2/25-dark-long-target-default-960.png'), 272, 434, 16, 16)}
-
-window = ''
 try:
     identity = subprocess.run([str(binary), '--version'], env=env, capture_output=True, text=True, check=True)
-    result['identity_stdout'] = identity.stdout
-    identity_data = json.loads(identity.stdout)
-    result['identity'] = identity_data
-    assert re.fullmatch(r'[0-9a-f]{40}', identity_data['sourceRevision']), identity_data
-    result['binary_role'] = ALLOWED[binary]
-    EXPECTED_DIRTY = {'candidate': 'dirty', 'retained before build': 'clean', 'implementation': 'clean',
-                      'broken control: wrapping removed': 'dirty', 'broken control: height bound removed': 'dirty'}
-    assert identity_data['sourceDirty'] == EXPECTED_DIRTY[ALLOWED[binary]], identity_data
-    result['candidate'] = ALLOWED[binary]
+    result['identity'] = json.loads(identity.stdout)
     spec = json.loads(fixture_path.read_text())
-    (out / 'fixture.json').write_bytes(fixture_path.read_bytes())
-    result['fixture_path'] = str(fixture_path)
-    result['fixture_sha256'] = hashlib.sha256(fixture_path.read_bytes()).hexdigest()
-    result['allow_activation'] = allow_activation
-    result['expect_refused_writes'] = expect_refused_writes
-    result['fixture_binary_sha256'] = hashlib.sha256((before / 'fixture-mockswift').read_bytes()).hexdigest()
     mocklog = (out / 'mockswift.log').open('w')
-    mock = subprocess.Popen([str(before / 'fixture-mockswift'), '-addr', f'127.0.0.1:{port}', '-fixture', str(fixture_path)],
-                            stdout=mocklog, stderr=mocklog, env=env)
+    mock_command = [str(fixture_binary), '-addr', '127.0.0.1:%d' % port, '-fixture', str(fixture_path)]
+    if options.refusal:
+        mock_command += ['-refusal', options.refusal]
+    result['fixture_command'] = mock_command[:4] + (['-refusal', '<%d bytes>' % len(options.refusal)] if options.refusal else [])
+    mock = subprocess.Popen(mock_command, stdout=mocklog, stderr=mocklog, env=env)
     processes.append(mock)
     deadline = time.monotonic() + 10
     while True:
@@ -159,7 +267,7 @@ try:
             headers, _ = request('/auth/v1.0')
             break
         except OSError:
-            assert mock.poll() is None and time.monotonic() < deadline
+            assert mock.poll() is None and time.monotonic() < deadline, 'fixture did not start'
             time.sleep(.1)
     token = headers['X-Auth-Token']
 
@@ -169,8 +277,9 @@ try:
             path = '/v1/AUTH_test/' + item['Container'] + '/' + item['Name']
             for suffix in ('', '?multipart-manifest=get'):
                 head, body = request(path + suffix, token=token)
-                collected[path + suffix] = {'body_hex': body.hex(), 'sha256': hashlib.sha256(body).hexdigest(),
-                    'headers': {k: head.get(k) for k in ('Content-Type', 'Content-Length', 'Etag', 'X-Object-Manifest', 'X-Static-Large-Object')}}
+                collected[path + suffix] = {'sha256': hashlib.sha256(body).hexdigest(),
+                    'headers': {k: head.get(k) for k in ('Content-Type', 'Content-Length', 'Etag',
+                                                         'X-Object-Manifest', 'X-Static-Large-Object')}}
         for container in spec['Containers']:
             _, body = request('/v1/AUTH_test/' + container + '?format=json', token=token)
             collected[container] = json.loads(body)
@@ -178,99 +287,143 @@ try:
 
     baseline = snapshot()
     (out / 'remote-before.json').write_text(json.dumps(baseline, indent=2) + '\n')
+    result['snapshot_entries'] = len(baseline)
     seeded = (out / 'mockswift.log').read_text()
     wire_start = len(seeded)
-    result['seed_wire'] = seeded
     displaylog = (out / 'xvfb.log').open('w')
-    display = subprocess.Popen([str(runtime / 'usr/bin/Xvfb'), '-displayfd', '1', '-screen', '0', '1280x800x24', '-nolisten', 'tcp'],
-                               env=env, stdout=subprocess.PIPE, stderr=displaylog, text=True)
+    display = subprocess.Popen([str(runtime / 'usr/bin/Xvfb'), '-displayfd', '1', '-screen', '0', '1280x800x24',
+                                '-nolisten', 'tcp'], env=env, stdout=subprocess.PIPE, stderr=displaylog, text=True)
     processes.append(display)
-    assert select.select([display.stdout], [], [], 20)[0]
+    assert select.select([display.stdout], [], [], 20)[0], 'Xvfb did not report a display'
     number = display.stdout.readline().strip()
-    assert number.isdigit()
+    assert number.isdigit(), 'Xvfb did not allocate a display'
     env['DISPLAY'] = ':' + number
     result['display'] = env['DISPLAY']
     applog = (out / 'app.log').open('w')
     app = subprocess.Popen(['dbus-run-session', '--', str(binary)], env=env, stdout=applog, stderr=applog)
     processes.append(app)
-    deadline = time.monotonic() + 30
+    deadline = time.monotonic() + 40
     while True:
         found = x('search', '--onlyvisible', '--name', 'Aeronautes', check=False)
         if found.returncode == 0 and found.stdout.strip():
             window = found.stdout.splitlines()[0]
             break
-        assert app.poll() is None and time.monotonic() < deadline, 'app window did not appear'
+        assert app.poll() is None and time.monotonic() < deadline, 'application window did not appear'
         time.sleep(.2)
-    result['window'] = window
     window_rect = read_window_rect()
-    result['initial_window_rect'] = window_rect
     x('windowfocus', '--sync', window)
     time.sleep(2)
-    x('key', 'Escape'); time.sleep(1)
-    x('mousemove', '42', '50', 'click', '1'); time.sleep(2)
+    x('key', 'Escape')
+    time.sleep(1)
+    x('mousemove', '42', '50', 'click', '1')
+    time.sleep(2)
     x('type', '--delay', '15', 'Smoke')
     x('key', 'Tab'); x('type', '--delay', '10', origin + '/auth/v1.0')
     x('key', 'Tab'); x('type', '--delay', '15', 'test:tester')
     x('key', 'Tab'); x('type', '--delay', '15', 'testing')
     x('key', 'Return')
-    assert wire(r'GET /v1/AUTH_test(?:\?|$)', 10), 'bookmark did not connect'
+    assert wire(r'GET /v1/AUTH_test(?:\?|$)', 15), 'bookmark did not connect'
     time.sleep(1)
     x('mousemove', '160', '160', 'click', '1')
-    assert wire(r'GET /v1/AUTH_test/smoke-src', 8), 'source did not open'
+    assert wire(r'GET /v1/AUTH_test/smoke-src', 10), 'source container did not open'
     time.sleep(1)
-    capture(env['DISPLAY'], out / '00-browse.png')
+    shot('00-browse')
     save()
+
     for position, command in enumerate(commands):
-        record = {'index': position, 'command': command, 'utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
+        record = {'index': position, 'command': command,
+                  'utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
         result['commands'].append(record)
-        if command['op'] == 'x':
+        operation = command['op']
+        if operation == 'x':
             activating = any(part in ('Return', 'KP_Enter', 'space') for part in command['args'])
-            assert not activating or (allow_activation and command.get('activate')), 'confirmation activation is forbidden'
+            assert not activating or (allow_activation and command.get('activate')), 'activation is forbidden here'
             reply = x(*command['args'])
             record['stdout'], record['stderr'] = reply.stdout, reply.stderr
             if command['args'][0] == 'windowsize':
                 window_rect = read_window_rect()
                 record['window_rect'] = window_rect
             time.sleep(command.get('pause', .3))
-        elif command['op'] == 'shot':
-            capture(env['DISPLAY'], out / (command['name'] + '.png'))
-        elif command['op'] == 'measure':
-            measurement, _, _ = inspect(command['name'])
-            record['measurement'] = measurement
-        elif command['op'] == 'dialog_click':
-            measurement, rows, box = inspect(command['name'])
-            record['measurement'] = measurement
-            assert box, 'no dialog found for a dialog-internal click'
-            anchor = (box['left'], box['top']) if command['anchor'] == 'top' else (box['left'], box['bottom'])
-            point = (anchor[0] + command['dx'], anchor[1] + command['dy'])
-            record['point'] = point
-            record['before_point'] = command.get('expect')
-            hits = measurement.get('checkbox_hits') or []
-            near = [h for h in hits if abs(h['left'] + 8 - point[0]) <= 4 and abs(h['top'] + 8 - point[1]) <= 4]
-            record['checkbox_at_computed_point'] = bool(near)
-            if command.get('require_checkbox') and not near:
-                record['skipped_no_checkbox'] = True
-                save()
-                print(json.dumps({'index': position, 'skipped_no_checkbox': True, 'hits': hits}), flush=True)
-                continue
-            if command.get('expect'):
-                record['same_as_before'] = list(point) == list(command['expect'])
-                if command.get('assert_same'):
-                    assert record['same_as_before'], 'unchanged control moved: %s vs %s' % (point, command['expect'])
-            x('mousemove', str(point[0]), str(point[1]), 'click', '1')
-            time.sleep(command.get('pause', .4))
-        elif command['op'] in ('checkbox_click', 'button_click'):
-            measurement, rows, box = inspect(command['name'])
-            record['measurement'] = measurement
-            assert box, 'no dialog found for a dialog-internal click'
-            if command['op'] == 'checkbox_click':
-                hits = measurement.get('checkbox_hits') or []
-                assert len(hits) == 1, 'expected exactly one consent checkbox, found %d' % len(hits)
-                point = (hits[0]['left'] + 8, hits[0]['top'] + 8)
+        elif operation == 'shot':
+            shot(command['name'])
+        elif operation == 'focus_checkbox':
+            # Tab until the consent control owns focus, which is proved by the
+            # effect of activating it rather than by an absent ring: focusing
+            # it also scrolls it into view inside the bounded body. Activation
+            # is attempted only while neither action button carries the ring,
+            # so a stray keystroke cannot reach a destructive control.
+            assert allow_activation and command.get('activate'), 'toggling the consent control needs activation'
+            steps, reached = [], None
+            for attempt in range(command.get('max_tabs', 10)):
+                x('key', 'Tab')
+                time.sleep(.35)
+                _, rows = shot('%s-tab%d' % (command['name'], attempt + 1))
+                box = geometry.dialog(rows, window=window_rect)
+                hits = geometry.consent_checkbox(rows, box) if box else []
+                controls = geometry.action_buttons(rows, box) if box else {'delete': None, 'cancel': None}
+                rings = {k: (geometry.focus_ring(rows, box, v) if v else 0) for k, v in controls.items()}
+                step = {'tab': attempt + 1, 'checkbox_visible': len(hits), 'button_rings': rings}
+                steps.append(step)
+                if len(hits) != 1 or max(rings.values() or [0]) >= 50:
+                    continue
+                x('key', 'space')
+                time.sleep(command.get('pause', .8))
+                _, rows = shot('%s-try%d' % (command['name'], attempt + 1))
+                box = geometry.dialog(rows, window=window_rect)
+                controls = geometry.action_buttons(rows, box)
+                after = {'checkbox_visible': len(geometry.consent_checkbox(rows, box)),
+                         'delete_state': controls['delete']['state'] if controls['delete'] else None}
+                step['after'] = after
+                if after['checkbox_visible'] == 0 and after['delete_state'] == 'disabled':
+                    reached = {'tabs': attempt + 1, 'at': hits[0], 'after': after}
+                    break
+            record['steps'] = steps
+            record['reached'] = reached
+            assert reached, 'keyboard activation never checked the consent control: %s' % json.dumps(steps)
+            record['after'] = reached['after']
+        elif operation == 'check':
+            _, rows = shot(command['name'])
+            box, observed = observe(rows)
+            record['observed'] = observed
+            assert box, 'no dialog to check at ' + command['name']
+            failures = {k: {'observed': observed.get(k), 'expected': v} for k, v in command['expect'].items()
+                        if observed.get(k) != v}
+            record['failures'] = failures
+            assert not failures, 'check %s failed: %s' % (command['name'], json.dumps(failures))
+        elif operation == 'check_closed':
+            _, rows = shot(command['name'])
+            box, observed = observe(rows)
+            record['observed'] = observed
+            record['dialog_present'] = bool(box and box['border']['complete'])
+            reference = geometry.pixels(out / (command['reference'] + '.png'))
+            points = [(column, row) for row in range(40, window_rect[3] - 60, 37)
+                      for column in range(20, 140, 23)]
+            matches = sum(1 for column, row in points if reference[row][column] == rows[row][column])
+            record['undimmed_sample'] = [matches, len(points)]
+            danger = geometry.LIGHT_DANGER if (box or {'theme': 'light'})['theme'] == 'light' else geometry.DARK_DANGER
+            inspector = {'left': int(window_rect[2] * 0.7), 'right': window_rect[2] - 2,
+                         'top': window_rect[1] + 2, 'bottom': window_rect[3] - 60, 'theme': 'light'}
+            inspector['width'] = inspector['right'] - inspector['left'] + 1
+            inspector['height'] = inspector['bottom'] - inspector['top'] + 1
+            restored = geometry.colour_bbox(rows, danger, (inspector['left'], inspector['top'],
+                                                           inspector['right'], inspector['bottom']))
+            record['underlying_delete_control_pixels'] = restored['pixels'] if restored else 0
+            assert not record['dialog_present'], 'the modal is still open at ' + command['name']
+            assert matches == len(points), 'the modal overlay still dims the application'
+            assert record['underlying_delete_control_pixels'] >= command.get('minimum_control_pixels', 80), \
+                'the underlying delete control is not restored'
+        elif operation in ('checkbox_click', 'button_click'):
+            _, rows = shot(command['name'])
+            box, observed = observe(rows)
+            record['observed'] = observed
+            assert box, 'no dialog for a dialog-internal click'
+            if operation == 'checkbox_click':
+                hits = geometry.consent_checkbox(rows, box)
+                assert len(hits) == 1, 'expected one consent checkbox, found %d' % len(hits)
+                point = ((hits[0]['left'] + hits[0]['right']) // 2, (hits[0]['top'] + hits[0]['bottom']) // 2)
                 record['control'] = {'kind': 'consent checkbox', 'at': hits[0]}
             else:
                 controls = geometry.action_buttons(rows, box)
-                record['controls'] = controls
                 control = controls[command['which']]
                 assert control, 'the %s control is not visible' % command['which']
                 point = ((control['left'] + control['right']) // 2, (control['top'] + control['bottom']) // 2)
@@ -278,226 +431,149 @@ try:
             record['point'] = point
             x('mousemove', str(point[0]), str(point[1]), 'click', '1')
             time.sleep(command.get('pause', .5))
-        elif command['op'] == 'focus_until':
+        elif operation == 'focus_until':
             steps = []
             for attempt in range(command.get('max_tabs', 8)):
                 x('key', 'Tab')
                 time.sleep(.35)
-                measurement, rows, box = inspect('%s-tab%d' % (command['name'], attempt + 1))
+                _, rows = shot('%s-tab%d' % (command['name'], attempt + 1))
+                box = geometry.dialog(rows, window=window_rect)
                 controls = geometry.action_buttons(rows, box)
                 rings = {k: (geometry.focus_ring(rows, box, v) if v else None) for k, v in controls.items()}
-                steps.append({'tab': attempt + 1, 'rings': rings, 'controls': controls})
-                wanted, other = command['which'], 'delete' if command['which'] == 'cancel' else 'cancel'
+                steps.append({'tab': attempt + 1, 'rings': rings})
+                wanted = command['which']
+                other = 'delete' if wanted == 'cancel' else 'cancel'
                 if (rings.get(wanted) or 0) >= 100 and (rings.get(other) or 0) < 50:
-                    record['focused'] = wanted
-                    record['tabs'] = attempt + 1
+                    record['focused'], record['tabs'] = wanted, attempt + 1
                     break
             record['steps'] = steps
-            assert record.get('focused') == command['which'], 'keyboard focus never reached %s' % command['which']
-        elif command['op'] == 'check':
-            measurement, rows, box = inspect(command['name'])
-            record['measurement'] = measurement
-            assert box, 'no dialog to check'
-            controls = geometry.action_buttons(rows, box)
-            left, top, right, bottom = window_rect
-            observed = {
-                'border_complete': box['border']['complete'],
-                'dialog_inside_viewport': box['top'] > top and box['bottom'] < bottom - 1,
-                'controls_visible': bool(controls['delete']) and bool(controls['cancel'])
-                                    and controls['delete']['bottom'] < bottom - 1 and controls['cancel']['top'] > top,
-                'horizontal_overflow': bool(geometry.horizontal_overflow(rows, box)),
-                'text_beside_dialog': len(geometry.text_beside(rows, box))}
-            record['observed'] = observed
-            record['controls'] = controls
-            failures = {k: {'observed': observed[k], 'expected': v}
-                        for k, v in command['expect'].items() if observed[k] != v}
-            record['failures'] = failures
-            assert not failures, 'layout check %s failed: %s' % (command['name'], json.dumps(failures))
-        elif command['op'] == 'key_scroll':
-            before_path = out / (command['name'] + '-before.png')
-            capture(env['DISPLAY'], before_path)
-            rows_before = geometry.pixels(before_path)
+            assert record.get('focused') == command['which'], 'keyboard focus never reached ' + command['which']
+        elif operation == 'scroll_to_end':
+            _, rows_before = shot(command['name'] + '-start')
             box = geometry.dialog(rows_before, window=window_rect)
             controls = geometry.action_buttons(rows_before, box)
-            assert box and controls['delete'], 'no dialog with controls to scroll'
-            def body_delta(previous):
-                probe = out / (command['name'] + '-probe.png')
-                capture(env['DISPLAY'], probe)
-                current = geometry.pixels(probe)
-                band = (box['top'] + 30, controls['delete']['top'] - 10)
-                return current, sum(1 for y in range(band[0], band[1])
-                                    for xx in range(box['left'] + 2, box['right'] - 1)
-                                    if previous[y][xx] != current[y][xx])
-
-            attempts, moved, reference = [], 0, rows_before
-            for tab in range(command.get('find_tabs', 0) + 1):
-                if tab:
-                    x('key', 'Tab')
-                    time.sleep(.35)
-                    reference, _ = body_delta(reference)
-                for _ in range(command.get('repeat', 1)):
-                    x('key', command['key'])
-                    time.sleep(.35)
-                reference, moved = body_delta(reference)
-                attempts.append({'tabs_before_key': tab, 'body_pixels_changed': moved})
-                if moved >= command.get('minimum_change', 400):
-                    record['tabs_to_scrollable'] = tab
-                    break
-            record['attempts'] = attempts
-            measurement, rows_after, box_after = inspect(command['name'])
-            record['measurement'] = measurement
-            body = {'top': box['top'] + 30, 'bottom': controls['delete']['top'] - 10}
-            changed = sum(1 for y in range(body['top'], body['bottom'])
-                          for xx in range(box['left'] + 2, box['right'] - 1)
-                          if rows_before[y][xx] != rows_after[y][xx])
-            fixed = sum(1 for y in range(controls['delete']['top'] - 2, min(len(rows_after), controls['delete']['bottom'] + 3))
-                        for xx in range(box['left'] + 2, box['right'] - 1)
-                        if rows_before[y][xx] != rows_after[y][xx])
-            title = sum(1 for y in range(box['top'] + 2, box['top'] + 28)
-                        for xx in range(box['left'] + 2, box['right'] - 1)
-                        if rows_before[y][xx] != rows_after[y][xx])
-            record['body_pixels_changed'] = changed
-            changed = max(changed, moved)
-            record['action_row_pixels_changed'] = fixed
-            record['title_pixels_changed'] = title
-            record['dialog_box_unchanged'] = [box_after[k] for k in ('left','top','right','bottom')] == [box[k] for k in ('left','top','right','bottom')]
-            assert changed >= command.get('minimum_change', 400), 'keyboard scrolling moved nothing: %d' % changed
-            assert fixed == 0 and title == 0, 'the fixed title or action row moved during keyboard scrolling'
-            assert record['dialog_box_unchanged'], 'the dialog box moved during keyboard scrolling'
-        elif command['op'] == 'scroll_to_end':
-            probe = out / (command['name'] + '-probe.png')
-            capture(env['DISPLAY'], probe)
-            rows_before = geometry.pixels(probe)
-            box = geometry.dialog(rows_before, window=window_rect)
-            controls = geometry.action_buttons(rows_before, box)
-            assert box and controls['delete'] and controls['cancel'], 'no dialog with both controls to scroll'
+            assert box and controls['delete'] and controls['cancel'], 'no dialog with controls to scroll'
             band = (box['top'] + 30, controls['delete']['top'] - 10)
             fixed_rows = list(range(box['top'] + 2, box['top'] + 28)) + \
-                list(range(controls['delete']['top'] - 2, min(len(rows_before), controls['delete']['bottom'] + 3)))
+                list(range(controls['delete']['top'] - 2, controls['delete']['bottom'] + 3))
+            threshold = command.get('movement_threshold', 100)
 
-            def snapshot_rows():
-                shot_path = out / (command['name'] + '-probe.png')
-                capture(env['DISPLAY'], shot_path)
-                return geometry.pixels(shot_path)
+            def delta(previous, name):
+                _, current = shot(name)
+                moved = sum(1 for row in range(band[0], band[1])
+                            for column in range(box['left'] + 2, box['right'] - 1)
+                            if previous[row][column] != current[row][column])
+                fixed = sum(1 for row in fixed_rows
+                            for column in range(box['left'] + 2, box['right'] - 1)
+                            if previous[row][column] != current[row][column])
+                return current, moved, fixed
 
-            previous, presses, moved_total, fixed_total = rows_before, 0, 0, 0
-
-            def body_moved(reference):
-                current = snapshot_rows()
-                return current, sum(1 for y in range(band[0], band[1])
-                                    for xx in range(box['left'] + 2, box['right'] - 1)
-                                    if reference[y][xx] != current[y][xx])
-
+            previous, moved_total, fixed_total, presses, moved = rows_before, 0, 0, 0, 0
             record['tabs_to_scrollable'] = None
             for tab in range(command.get('find_tabs', 0) + 1):
                 if tab:
                     x('key', 'Tab')
                     time.sleep(.35)
-                    previous, _ = body_moved(previous)
+                    previous, _, _ = delta(previous, '%s-tab%d' % (command['name'], tab))
                 x('key', command['key'])
                 time.sleep(.3)
-                previous, moved = body_moved(previous)
+                previous, moved, fixed = delta(previous, '%s-probe%d' % (command['name'], tab))
                 moved_total += moved
-                if moved >= command.get('movement_threshold', 100):
+                # Tab moves the focus ring, which lives in the action row, so
+                # the fixed regions are compared only across scroll presses.
+                if moved >= threshold:
                     record['tabs_to_scrollable'] = tab
                     break
             assert record['tabs_to_scrollable'] is not None, 'no keyboard focus stop scrolls the body'
-            for presses in range(1, command.get('maximum_presses', 20) + 1):
+            for presses in range(1, command.get('maximum_presses', 24) + 1):
                 x('key', command['key'])
                 time.sleep(.3)
-                current = snapshot_rows()
-                moved = sum(1 for y in range(band[0], band[1]) for xx in range(box['left'] + 2, box['right'] - 1)
-                            if previous[y][xx] != current[y][xx])
-                fixed_total += sum(1 for y in fixed_rows for xx in range(box['left'] + 2, box['right'] - 1)
-                                   if previous[y][xx] != current[y][xx])
+                previous, moved, fixed = delta(previous, '%s-press%d' % (command['name'], presses))
                 moved_total += moved
-                previous = current
-                # A blinking caret changes a few pixels every capture, so only a
-                # real scroll step counts as movement.
-                if moved < command.get('movement_threshold', 100):
+                fixed_total += fixed
+                if moved < threshold:
                     break
-            record['presses'] = presses
-            record['body_pixels_moved_total'] = moved_total
-            record['fixed_region_pixels_changed'] = fixed_total
-            record['reached_end'] = moved < command.get('movement_threshold', 100)
-            measurement, rows_after, box_after = inspect(command['name'])
-            record['measurement'] = measurement
+            record.update(presses=presses, body_pixels_moved=moved_total,
+                          fixed_region_pixels_changed=fixed_total, reached_end=moved < threshold)
+            _, rows_after = shot(command['name'])
+            box_after = geometry.dialog(rows_after, window=window_rect)
             assert moved_total >= command.get('minimum_change', 400), 'keyboard scrolling moved nothing'
             assert record['reached_end'], 'the end of the body was not reached within the press budget'
             assert fixed_total == 0, 'the fixed title or action row moved while scrolling'
-        elif command['op'] == 'arm_confirmation':
-            attempts = []
-            armed = False
+            assert [box_after[k] for k in ('left', 'top', 'right', 'bottom')] == \
+                   [box[k] for k in ('left', 'top', 'right', 'bottom')], 'the dialog moved while scrolling'
+            if command.get('expect'):
+                _, observed = observe(rows_after)
+                record['observed'] = observed
+                failures = {k: {'observed': observed.get(k), 'expected': v}
+                            for k, v in command['expect'].items() if observed.get(k) != v}
+                record['failures'] = failures
+                assert not failures, 'endpoint check failed: %s' % json.dumps(failures)
+        elif operation == 'arm_confirmation':
+            attempts, armed = [], False
             for tab in range(command.get('max_tabs', 8)):
                 if tab:
                     x('key', 'Tab')
                     time.sleep(.35)
-                if tab:
-                    # Clear only after a failed attempt, so a first attempt that
-                    # lands outside the field leaves no document selection.
                     x('key', 'ctrl+a')
                     time.sleep(.2)
                 x('type', '--delay', str(command.get('delay', 10)), command['text'])
-                time.sleep(.8)
-                measurement, rows, box = inspect('%s-attempt%d' % (command['name'], tab))
+                time.sleep(.9)
+                _, rows = shot('%s-attempt%d' % (command['name'], tab))
+                box = geometry.dialog(rows, window=window_rect)
                 controls = geometry.action_buttons(rows, box)
                 state = controls['delete']['state'] if controls['delete'] else None
                 attempts.append({'tabs': tab, 'delete_state': state})
                 if state == 'armed':
-                    armed = True
-                    record['tabs_to_confirmation'] = tab
-                    record['measurement'] = measurement
-                    record['controls'] = controls
+                    armed, record['tabs_to_confirmation'] = True, tab
                     break
             record['attempts'] = attempts
-            assert armed, 'typing from the keyboard never armed the danger action: %s' % json.dumps(attempts)
-        elif command['op'] == 'clipboard':
-            reply = subprocess.run(['/usr/bin/python3', str(out / 'clipboard.py')], env=env, capture_output=True, text=True, timeout=5, check=True)
-            content = json.loads(reply.stdout)
-            record['text'] = content
-            if 'expected' in command:
-                record['matched'] = content == command['expected']
-                if command.get('assert', True):
-                    assert record['matched'], 'native clipboard did not match the typed name'
-        elif command['op'] == 'finish':
-            wire_after = (out / 'mockswift.log').read_text()[len(seeded):]
-            writes = re.findall(r'\b(?:PUT|POST|DELETE) /.*', wire_after)
+            assert armed, 'keyboard typing never armed the danger action: %s' % json.dumps(attempts)
+        elif operation == 'finish':
+            after_wire = (out / 'mockswift.log').read_text()[len(seeded):]
+            writes = re.findall(r'\b(?:PUT|POST|DELETE) /.*', after_wire)
             result['app_swift_mutations'] = writes
             if expect_refused_writes:
-                assert writes, 'the refused-operation case attempted no write at all'
+                assert writes, 'the refusal case attempted no write at all'
                 assert all(w.startswith('DELETE ') for w in writes), 'only a refused delete is expected'
             else:
-                assert writes == [], 'layout probe attempted a Swift mutation'
+                assert writes == [], 'this case must attempt no write'
             after = snapshot()
             (out / 'remote-after.json').write_text(json.dumps(after, indent=2) + '\n')
             assert after == baseline, 'owned remote data changed'
             result['unchanged_complete_remote_snapshot'] = True
-            result['status'] = 'completed'
+            completed = True
             break
         else:
-            raise AssertionError('unknown operation')
+            raise AssertionError('unknown operation ' + operation)
         save()
-        print(json.dumps({k: record[k] for k in ('index', 'point', 'same_as_before') if k in record}), flush=True)
+        print(json.dumps({'index': position, 'op': operation}), flush=True)
+    assert completed, 'the declared sequence did not reach its finish step'
+    result['status'] = 'completed'
 except BaseException as error:
     result['status'] = 'failed'
     result['error'] = '%s: %s' % (type(error).__name__, error)
     raise
 finally:
+    failure = None
     try:
         if 'baseline' in dir() and mock.poll() is None:
-            wire_text = (out / 'mockswift.log').read_text()[wire_start:]
-            methods = re.findall(r'\b([A-Z]+) /', wire_text)
-            result['all_http_methods'] = {method: methods.count(method) for method in sorted(set(methods))}
+            text = (out / 'mockswift.log').read_text()[wire_start:]
+            methods = re.findall(r'\b([A-Z]+) /', text)
+            result['all_http_methods'] = {m: methods.count(m) for m in sorted(set(methods))}
             result['app_http_mutations'] = [m for m in methods if m not in ('GET', 'HEAD')]
-            after = snapshot()
-            (out / 'remote-after-finally.json').write_text(json.dumps(after, indent=2) + '\n')
-            result['final_snapshot_equal'] = after == baseline
-            unexpected = [m for m in result['app_http_mutations'] if not (expect_refused_writes and m == 'DELETE')]
-            if unexpected or not result['final_snapshot_equal']:
-                raise AssertionError('final data or write invariant failed')
+            final = snapshot()
+            (out / 'remote-final.json').write_text(json.dumps(final, indent=2) + '\n')
+            result['final_snapshot_equal'] = final == baseline
+            ok, reason = verdict(completed, methods, result['final_snapshot_equal'], expect_refused_writes)
+            if not ok:
+                failure = reason
     except BaseException as error:
-        result['final_snapshot_error'] = str(error)
+        failure = 'final verification error: %s' % error
+    if failure:
+        result['final_verification_failure'] = failure
         result['status'] = 'failed'
+    result['completed_commands'] = len(result['commands'])
     result['finished_utc'] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
     save()
     for process in reversed(processes):
@@ -507,4 +583,10 @@ finally:
             try:
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                process.kill(); process.wait(timeout=5)
+                process.kill()
+                process.wait(timeout=5)
+    # A retained failure must never exit zero, including one raised only by the
+    # final data check after the sequence itself completed.
+    if result['status'] != 'completed' and sys.exc_info()[0] is None:
+        print('FAILED: ' + str(result.get('final_verification_failure') or result.get('error')), file=sys.stderr)
+        sys.exit(1)
