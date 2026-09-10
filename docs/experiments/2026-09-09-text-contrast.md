@@ -225,4 +225,23 @@ These image comparisons do not calculate contrast from antialiasing pixels.
 
 Conflict-banner actions and insecure-bookmark warnings have authored-pair checks but were not visited in this native replay.
 Textarea placeholders, native select rendering, forced colours, scaling, assistive technology and other platforms remain outside the native evidence.
-The wider UI-12/P29 programme and valuable-data hold remain open, and final-base review plus all required PR/master jobs are still required before delivery.
+The wider UI-12/P29 programme and valuable-data hold remain open; the final-base review and required jobs that followed are recorded under [protected delivery](#protected-delivery).
+
+## Protected delivery
+
+The delivered range is the five logical commits between master 36e731fe149526d5 and the reviewed head 538e1d0af12cb4bd: the sequence plan, the ACL inset pair correction, the colour implementation, the sidecar source record and its audit index line.
+Independent review approved the corrected plan, then the implementation on its original base, and then this range on its final base after the rebase onto the merged case-fold delivery.
+That rebase kept both accepted DESIGN sequences whole, placing the contrast block after the case-fold sequence, and altered nothing else.
+
+Its check run 34433301670 completed at the first attempt with all five required jobs successful.
+The frontend job reported zero errors and zero warnings from svelte-check and passed twenty-eight test files carrying one thousand one hundred and twenty-five tests, the same test-name set as the approved run with no name dropped or added.
+The race-detector Go job recorded twenty-four successful package executions across twenty-three distinct tested packages with no failures, unchanged by this range, which moves no Go, SQL, module, workflow or binding byte.
+The containerized Swift integration job passed three thousand and twenty test results with no failures and the same two skips, for an unset matrix binary and an unreachable operating-system keychain.
+It measured combined Go statement coverage of 87.2 per cent against the seventy-five per cent floor, one tenth of a point below the preceding delivery's measurement of the same unchanged Go tree, and recorded scenario coverage of forty of one hundred and sixteen cells and thirty-eight of fifty-two actions with gaps, reported valid with the owned service configured and coverage incomplete.
+The headless smoke job landed three of three objects and passed.
+The run retained both coverage badges, the 353,931-byte scenario coverage artifact and the 6,109,383-byte smoke artifact.
+
+The pull request then left draft state and was merged by rebase pinned to the reviewed head object.
+Master became 2ed13884408acef4, whose tree aedfe002e0f20f0a is identical to the reviewed head's tree, and each of the five commits kept its patch identity, message, author identity and intermediate tree.
+The resulting master check run 34434806305 concluded success with the same five required jobs.
+The pipeline exercised Linux runners only, so native acceptance on the other platforms remains unproven, and the sidecar source record carried by the same pull request closes source availability alone, leaving the advisory disposition, P31, SEC-11 and the valuable-data hold open.
