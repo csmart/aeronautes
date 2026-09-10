@@ -5128,6 +5128,21 @@ Zoom and scaling, forced colours, assistive technology and other native platform
 Named breakpoints, resizable panes, responsive working-list columns and bounded large-namespace retention remain separate UI-13 and P24 work.
 This bounded correction does not close UI-13, the accepted responsive-layout gate or the valuable-data hold.
 
+The next bounded [segmented-destination change detection](experiments/2026-09-11-copy-verification-strength.md) stops a same-size segment substitution being reported as an equal destination.
+The executor decides a non-plain pair from its own stored fingerprint and a matching logical length, so a destination whose segments were replaced with different bytes of the same length is skipped as equal.
+This is a prerequisite within DS-04 and not its remedy: comparing a destination against an identity this executor recorded detects change since that observation and cannot establish that the committed bytes were ever correct, which the staged-content sequence owns.
+§28.4 and K-CON-001 require the decision to rest on evidence the executor actually holds, and a listing-derived aggregate is evidence of change rather than proof of equality.
+
+1. Review this sequence and the dedicated experiment plan, including its observations of the deployed fixture and the limits of a listing-derived aggregate identity, before changing production styles or fixtures.
+2. Carry the aggregate identity observed on the staged manifest before publication in the existing conditional publishing write, beside the fingerprint it already sends, introducing no further mutation of a live object; the stamp identifies that earlier staged observation and claims no live identity, no frozen membership and no verified content.
+3. Report a non-plain destination as the same only when it is a dynamic large object whose fingerprint, logical length and live aggregate identity all match what was recorded; refuse the overwrite on every other non-plain destination, including static large objects and any destination carrying no stamp.
+4. Correct the mock so a dynamic large object derives its aggregate entity tag from the segment rows it lists, prove the correction changes no existing observed behaviour, and name the lagging-listing dimension it still does not model.
+
+The correction is one-directional and its permitted-skip set is a strict subset of today's: destinations skipped today become refused, nothing refused today becomes skipped, and no new write is introduced.
+A wrong initial copy and a stale segment row remain undetectable here and stay recorded as unresolved reproductions rather than required refusals.
+A legitimately resegmented copy keeps its current outcome because the comparison is against this executor's own record, not the source's segment structure.
+Stronger change detection grants no destructive authority, Mirror starts remain refused under ADR 0020, and the valuable-data hold is unchanged.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
