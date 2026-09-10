@@ -1,10 +1,14 @@
 package app
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -223,7 +227,7 @@ func (s *DeleteService) runDelete(ctx context.Context, jobID string, req DeleteR
 	// Unresolved names are a different public fact from reported
 	// failures and get their own retained set, never folded into the
 	// failure count and never presented as a deletion.
-	recordUnresolved, closeUnresolvedSpill := failureSpill(jobID + "-unresolved")
+	recordUnresolved, closeUnresolvedRetention := unresolvedRetention(jobID)
 	var countersMu sync.Mutex
 	result, err := deletion.DeletePrefix(ctx, session, capabilities, req.Container, req.Prefix, deletion.Options{
 		OnProgress: func(deleted, failed int64) {
@@ -238,7 +242,7 @@ func (s *DeleteService) runDelete(ctx context.Context, jobID string, req DeleteR
 		OnUnresolved: recordUnresolved,
 	})
 	spillPath, failedTotal := closeSpill()
-	unresolvedPath, _ := closeUnresolvedSpill()
+	unresolvedPath, _, retentionProblem := closeUnresolvedRetention()
 	if result != nil {
 		// Only a validated reply's aggregate reaches these counters, so
 		// an untrusted reply can no longer publish claimed deletions as
@@ -261,6 +265,12 @@ func (s *DeleteService) runDelete(ctx context.Context, jobID string, req DeleteR
 			result.Unresolved, result.Unresolveds[0].Name)
 		if unresolvedPath != "" {
 			unresolvedDetail += "; full list: " + unresolvedPath
+		}
+		if retentionProblem != "" {
+			// The count and the bounded sample are all that survived, and
+			// the operator is told so rather than shown a ledger that
+			// reads as complete.
+			unresolvedDetail += "; " + retentionProblem
 		}
 	}
 	withUnresolved := func(reason string) string {
@@ -345,4 +355,70 @@ func (s *DeleteService) runDelete(ctx context.Context, jobID string, req DeleteR
 		return
 	}
 	finish(jobs.StateComplete, "")
+}
+
+// unresolvedRetention keeps the complete set of names whose effect a
+// run could not state. It is opened before any destructive request, so
+// a run cannot discover at the end that it had nowhere to put the list,
+// and it reports its own failures instead of degrading to a count in
+// silence: a ledger that quietly loses its identities is not a ledger.
+func unresolvedRetention(jobID string) (record func(name, detail string), closeRetention func() (path string, count int64, problem string)) {
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		dir = os.TempDir()
+	}
+	dir = filepath.Join(dir, "aeronautes", "unresolved")
+	var (
+		mu        sync.Mutex
+		count     int64
+		file      *os.File
+		writer    *bufio.Writer
+		enc       *json.Encoder
+		writeErrs int64
+		openErr   error
+	)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		openErr = err
+	} else if f, err := os.OpenFile(filepath.Join(dir, jobID+".jsonl"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600); err != nil {
+		openErr = err
+	} else {
+		file = f
+		writer = bufio.NewWriter(f)
+		enc = json.NewEncoder(writer)
+	}
+	record = func(name, detail string) {
+		mu.Lock()
+		defer mu.Unlock()
+		count++
+		if enc == nil {
+			return
+		}
+		if err := enc.Encode(map[string]string{"name": name, "unresolved": detail}); err != nil {
+			writeErrs++
+		}
+	}
+	closeRetention = func() (string, int64, string) {
+		mu.Lock()
+		defer mu.Unlock()
+		if writer != nil {
+			if err := writer.Flush(); err != nil {
+				writeErrs++
+			}
+		}
+		if file != nil {
+			if err := file.Close(); err != nil {
+				writeErrs++
+			}
+		}
+		switch {
+		case openErr != nil:
+			return "", count, "the complete unresolved list could not be retained: " + openErr.Error()
+		case writeErrs > 0:
+			return file.Name(), count, fmt.Sprintf("%d unresolved names could not be written to the retained list", writeErrs)
+		case file == nil:
+			return "", count, "the complete unresolved list could not be retained"
+		}
+		return file.Name(), count, ""
+	}
+	return record, closeRetention
 }

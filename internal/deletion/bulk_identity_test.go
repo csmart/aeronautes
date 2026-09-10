@@ -9,10 +9,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"sort"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	"github.com/csmart/aeronautes/internal/swifttest"
@@ -496,5 +498,116 @@ func TestBulkLedgerCountsDistinctIdentitiesAcrossPasses(t *testing.T) {
 	if len(result.Failures) != 1 || len(result.Unresolveds) != 1 {
 		t.Errorf("retained sets hold %d failures and %d unresolved, want one each",
 			len(result.Failures), len(result.Unresolveds))
+	}
+}
+
+// realSwiftSession authenticates against the owned Swift fixture, or
+// skips when it is not configured. Package-level tests are otherwise
+// mock-backed, and the mock cannot prove how the real middleware treats
+// an encoded name.
+func realSwiftSession(t *testing.T) *swiftcontrol.Session {
+	t.Helper()
+	authURL := os.Getenv("AERONAUTES_SAIO_AUTH_URL")
+	if authURL == "" {
+		t.Skip("the owned Swift fixture is not configured")
+	}
+	session, err := swiftcontrol.New(swiftcontrol.Config{
+		AuthURL: authURL, Username: "test:tester", APIKey: "testing",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Authenticate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	return session
+}
+
+// TestBulkDeleteEncodingRoundTripsRealSwift proves on the owned service
+// that every name shape this slice claims to carry actually reaches the
+// middleware as the object it names, and that exactly those objects go.
+// The mock echoes what it was sent, so only the real service can settle
+// the request encoding.
+func TestBulkDeleteEncodingRoundTripsRealSwift(t *testing.T) {
+	session := realSwiftSession(t)
+	ctx := context.Background()
+	capabilities, err := session.FetchCapabilities(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if capabilities.BulkDeleteMaxDeletes() <= 0 {
+		t.Skip("the owned fixture does not advertise bulk delete")
+	}
+	container := fmt.Sprintf("aeronautes-bulkid-%d", time.Now().UnixNano())
+	if _, err := session.CreateContainer(ctx, swiftcontrol.ContainerCreateRequest{Name: container}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.DeleteContainer(context.Background(), container) })
+
+	doomed := []string{
+		"plain.bin",
+		"dir/with a space.bin",
+		"literal%percent.bin",
+		"percent-like%41.bin",
+		"héllo-ünicode.bin",
+		"line\nbreak.bin",
+		"deep/nested/child.bin",
+		"trailing-plus+and&amp.bin",
+	}
+	kept := "kept-neighbour.bin"
+	for _, name := range append(append([]string{}, doomed...), kept) {
+		if _, err := session.PutObject(ctx, container, name, strings.NewReader("payload"), "application/octet-stream", nil); err != nil {
+			t.Fatalf("seed %q: %v", name, err)
+		}
+	}
+	// Every seeded name must exist under the exact spelling first,
+	// otherwise the delete would be proving nothing.
+	present := map[string]bool{}
+	for entry, err := range session.Objects(ctx, container, swiftcontrol.ObjectListOptions{Deep: true}) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		if o, ok := entry.(swiftcontrol.ObjectEntry); ok {
+			present[o.Name] = true
+		}
+	}
+	for _, name := range append(append([]string{}, doomed...), kept) {
+		if !present[name] {
+			t.Fatalf("the fixture did not store %q under that exact spelling", name)
+		}
+	}
+
+	var mu sync.Mutex
+	var failed, unresolved []string
+	result, err := DeleteNames(ctx, session, capabilities, container, doomed, Options{
+		OnFailure:    func(name, detail string) { mu.Lock(); failed = append(failed, name); mu.Unlock() },
+		OnUnresolved: func(name, detail string) { mu.Lock(); unresolved = append(unresolved, name); mu.Unlock() },
+	})
+	if err != nil {
+		t.Fatalf("the owned service refused a well formed request: %v", err)
+	}
+	if result.Deleted != int64(len(doomed)) || result.Failed != 0 || result.Unresolved != 0 {
+		t.Fatalf("result = %+v (failed %v, unresolved %v)", result, failed, unresolved)
+	}
+
+	after := map[string]bool{}
+	for entry, err := range session.Objects(ctx, container, swiftcontrol.ObjectListOptions{Deep: true}) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		if o, ok := entry.(swiftcontrol.ObjectEntry); ok {
+			after[o.Name] = true
+		}
+	}
+	for _, name := range doomed {
+		if after[name] {
+			t.Errorf("%q survived, so its request encoding did not name it", name)
+		}
+	}
+	if !after[kept] {
+		t.Errorf("the neighbour %q was destroyed by a request that never named it", kept)
+	}
+	if len(after) != 1 {
+		t.Errorf("the container holds %d objects after the run, want only the neighbour", len(after))
 	}
 }
