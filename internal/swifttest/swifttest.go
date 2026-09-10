@@ -69,6 +69,8 @@ type Container struct {
 // picker, versioned_writes flags per the §21 pin, slo/tempurl/bulk_delete.
 const defaultInfoJSON = `{
 	"swift": {"max_file_size": 5368709122, "version": "2.36.0",
+		"max_meta_count": 90, "max_meta_name_length": 128,
+		"max_meta_value_length": 256, "max_meta_overall_size": 4096,
 		"policies": [{"name": "standard", "default": true, "aliases": "standard"},
 			{"name": "gold", "aliases": "gold, fast"}, {"name": "ec42", "aliases": "ec42"}]},
 	"slo": {"max_manifest_segments": 1000, "min_segment_size": 1},
@@ -446,7 +448,30 @@ func applyContainerHeaders(c *Container, r *http.Request) {
 
 // putObject implements object PUT: create/replace with body, content
 // type, user metadata, DLO manifest, and delete-at headers.
+// metaLimitExceeded reports whether a request's user metadata exceeds
+// what /info advertises, which the real service enforces with 400. The
+// values here mirror defaultInfoJSON.
+func metaLimitExceeded(r *http.Request) bool {
+	const maxCount, maxOverall = 90, 4096
+	entries, size := 0, 0
+	for name, values := range r.Header {
+		key, isMeta := strings.CutPrefix(http.CanonicalHeaderKey(name), "X-Object-Meta-")
+		if !isMeta {
+			continue
+		}
+		for _, v := range values {
+			entries++
+			size += len(key) + len(v)
+		}
+	}
+	return entries > maxCount || size > maxOverall
+}
+
 func (s *Server) putObject(w http.ResponseWriter, r *http.Request, container, name string) {
+	if metaLimitExceeded(r) {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -499,6 +524,10 @@ func (s *Server) putObject(w http.ResponseWriter, r *http.Request, container, na
 // Content-Type is preserved unless supplied; SLO-ness is sysmeta and
 // survives untouched.
 func (s *Server) postObject(w http.ResponseWriter, r *http.Request, container, name string) {
+	if metaLimitExceeded(r) {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 	s.mu.Lock()
 	if c0, ok0 := s.containers[container]; ok0 {
 		if o0, ok1 := c0.objects[name]; ok1 && o0.SymlinkTarget != "" && r.URL.Query().Get("symlink") != "get" {

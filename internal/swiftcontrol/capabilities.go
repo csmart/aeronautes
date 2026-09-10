@@ -109,6 +109,21 @@ func (c *Capabilities) MaxFileSize() int64 {
 	return int64(v)
 }
 
+// MaxMetaCount returns swift.max_meta_count — the cap on how many user
+// metadata entries one object may carry — or 0 when unknown.
+func (c *Capabilities) MaxMetaCount() int {
+	v, _ := c.Feature("swift")["max_meta_count"].(float64)
+	return int(v)
+}
+
+// MaxMetaOverallSize returns swift.max_meta_overall_size — the cap on
+// the combined size of an object's user metadata names and values — or 0
+// when unknown.
+func (c *Capabilities) MaxMetaOverallSize() int {
+	v, _ := c.Feature("swift")["max_meta_overall_size"].(float64)
+	return int(v)
+}
+
 // BulkDeleteMaxDeletes returns bulk_delete.max_deletes_per_request, or 0
 // when unknown.
 func (c *Capabilities) BulkDeleteMaxDeletes() int {

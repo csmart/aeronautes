@@ -71,6 +71,58 @@ func validAggregate(etag string) bool {
 	return true
 }
 
+// metaBudget is the destination's advertised user-metadata allowance,
+// read once per run. A zero field means the cluster advertised no such
+// limit, and known records that the lookup already happened.
+type metaBudget struct {
+	count   int
+	overall int
+	known   bool
+}
+
+// metaBudgetFor reads the destination's advertised metadata allowance
+// once per executor. An unreadable /info leaves the budget unknown.
+func (e *Executor) metaBudgetFor(ctx context.Context) metaBudget {
+	if e.budget.known {
+		return e.budget
+	}
+	e.budget.known = true
+	capabilities, err := e.cfg.Dest.FetchCapabilities(ctx)
+	if err == nil && capabilities != nil {
+		e.budget.count = capabilities.MaxMetaCount()
+		e.budget.overall = capabilities.MaxMetaOverallSize()
+	}
+	return e.budget
+}
+
+// stampFits reports whether one more user metadata entry fits inside
+// what the destination advertises, counting the complete added entry.
+// The stamp is optional evidence: it must never displace preserved user
+// metadata (§27.4) nor break an otherwise valid copy, so an unknown or
+// exhausted allowance simply publishes without it, and the destination
+// is then refused rather than skipped on a later decision.
+func stampFits(headers map[string]string, key, value string, budget metaBudget) bool {
+	if budget.count == 0 && budget.overall == 0 {
+		return false
+	}
+	entries, size := 0, 0
+	for k, v := range headers {
+		name, isMeta := strings.CutPrefix(k, "X-Object-Meta-")
+		if !isMeta {
+			continue
+		}
+		entries++
+		size += len(name) + len(v)
+	}
+	if budget.count > 0 && entries+1 > budget.count {
+		return false
+	}
+	if budget.overall > 0 && size+len(key)+len(value) > budget.overall {
+		return false
+	}
+	return true
+}
+
 // Config wires one job's executor.
 type Config struct {
 	Source *swiftcontrol.Session
@@ -163,6 +215,8 @@ type Executor struct {
 	// sweep could not replay (§65.9 item 5 fail-closed rule).
 	recoveryBroken error
 	stopped        error
+	// budget caches the destination's advertised metadata allowance.
+	budget metaBudget
 }
 
 // New validates the config and builds an executor.
@@ -277,7 +331,7 @@ func (e *Executor) runUnknown(ctx context.Context, item plan.Item) error {
 		}
 		return e.observe(item.Name, failed(EffectNotAttempted, StagePlanning, CodeUnknown, "resolve-head-dest", err))
 	}
-	if provenEqual(src, dst) {
+	if skippableEqual(src, dst) {
 		return e.observe(item.Name, executionResult{Observation: Observation{Result: ResultSame, Effect: EffectNotAttempted}})
 	}
 	return e.refuseOverwrite(item)
@@ -294,12 +348,26 @@ func provenEqual(src, dst *swiftcontrol.ObjectDetail) bool {
 		return src.ContentLength == dst.ContentLength &&
 			strings.Trim(src.ETag, `"`) == strings.Trim(dst.ETag, `"`)
 	}
-	// Every condition that admitted a non-plain skip before still has to
-	// hold; the aggregate check below only ever removes members from that
-	// set, so nothing refused today becomes skipped.
 	want := fingerprint(src.ContentLength, src.ETag)
-	if dst.Meta[fingerprintMetaKey] != want || dst.ContentLength != src.ContentLength {
+	return dst.Meta[fingerprintMetaKey] == want && dst.ContentLength == src.ContentLength
+}
+
+// skippableEqual decides whether an existing destination may be left
+// alone instead of copied. It is strictly narrower than provenEqual:
+// every condition that admitted a skip before still has to hold, and a
+// segmented destination must additionally still match the aggregate
+// this executor observed when it published the name.
+//
+// Only the skip decision is narrowed. Verifying what this job just wrote
+// asks a different question with different evidence, so it keeps using
+// provenEqual; otherwise a destination that legitimately carries no
+// stamp would turn an ordinary copy into a verification failure.
+func skippableEqual(src, dst *swiftcontrol.ObjectDetail) bool {
+	if !provenEqual(src, dst) {
 		return false
+	}
+	if src.Class == swiftcontrol.ClassPlain && dst.Class == swiftcontrol.ClassPlain {
+		return true
 	}
 	switch dst.Class {
 	case swiftcontrol.ClassDLO:
@@ -653,12 +721,16 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 		// value observed after it could not, and persisting one later
 		// would mean another live mutation with its own authority,
 		// concurrency and response-loss protocol.
-		// An unusable staged observation mints no stamp: the name still
-		// publishes, and the unstamped destination is refused on a later
+		// An unusable staged observation, or one that will not fit inside
+		// the destination's advertised metadata allowance, mints no
+		// stamp: the name still publishes with every preserved user
+		// value, and the unstamped destination is refused on a later
 		// decision rather than skipped on bad evidence. Omitting the
-		// header keeps this the same single conditional write.
-		if validAggregate(staged.ETag) {
-			headers["X-Object-Meta-"+stagedAggregateMetaKey] = aggregateStamp(staged.ContentLength, staged.ETag)
+		// header keeps this the same single conditional write, and never
+		// trades a working copy for optional evidence.
+		if stamp := aggregateStamp(staged.ContentLength, staged.ETag); validAggregate(staged.ETag) &&
+			stampFits(headers, stagedAggregateMetaKey, stamp, e.metaBudgetFor(ctx)) {
+			headers["X-Object-Meta-"+stagedAggregateMetaKey] = stamp
 		}
 		headers["X-Object-Manifest"] = staged.Manifest
 		if _, err := e.cfg.Dest.PutObject(ctx, e.cfg.DstContainer, dstName, strings.NewReader(""), src.ContentType, headers); err != nil {

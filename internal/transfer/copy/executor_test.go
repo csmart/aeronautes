@@ -742,7 +742,7 @@ func TestStaleManifestFingerprintCannotSkip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if provenEqual(src, dst) {
+	if skippableEqual(src, dst) {
 		t.Fatal("stale fingerprint with mismatched live length passed as proven-equal")
 	}
 
@@ -751,7 +751,7 @@ func TestStaleManifestFingerprintCannotSkip(t *testing.T) {
 	// aggregate, and an absent stamp is not evidence.
 	seed(w.dstMock, "backup_segments", "video.bin/gen/00000001", bytes.Repeat([]byte("v"), 1000), nil)
 	dst, _ = w.dst.ObjectDetail(context.Background(), "backup", "video.bin")
-	if provenEqual(src, dst) {
+	if skippableEqual(src, dst) {
 		t.Fatal("unstamped DLO destination passed as proven-equal")
 	}
 
@@ -764,7 +764,7 @@ func TestStaleManifestFingerprintCannotSkip(t *testing.T) {
 		},
 	})
 	dst, _ = w.dst.ObjectDetail(context.Background(), "backup", "video.bin")
-	if !provenEqual(src, dst) {
+	if !skippableEqual(src, dst) {
 		t.Fatal("intact stamped DLO no longer proves equal")
 	}
 }

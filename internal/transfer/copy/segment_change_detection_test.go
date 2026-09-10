@@ -169,7 +169,7 @@ func TestStaticLargeObjectDestinationRefusedNotSkipped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if provenEqual(src, dst) {
+	if skippableEqual(src, dst) {
 		t.Fatal("a static large object destination passed as proven-equal")
 	}
 }
@@ -211,12 +211,12 @@ func TestPlainPairDecisionUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !provenEqual(src, dst) {
+	if !skippableEqual(src, dst) {
 		t.Fatal("identical plain pair no longer proves equal")
 	}
 	seed(w.dstMock, "backup", "asset", []byte("EVILDATA"), nil)
 	dst, _ = w.dst.ObjectDetail(context.Background(), "backup", "asset")
-	if provenEqual(src, dst) {
+	if skippableEqual(src, dst) {
 		t.Fatal("differing plain pair proves equal")
 	}
 }
@@ -295,7 +295,7 @@ func TestMaterialisedPlainDestinationKeepsItsDecision(t *testing.T) {
 	if dst.Class != swiftcontrol.ClassPlain {
 		t.Fatalf("destination class = %v, want plain", dst.Class)
 	}
-	if !provenEqual(src, dst) {
+	if !skippableEqual(src, dst) {
 		t.Fatal("a materialised plain destination lost the decision it had before this guard")
 	}
 }
@@ -354,7 +354,7 @@ func TestMalformedAggregateIsNotEvidence(t *testing.T) {
 			if dst.ETag != bad {
 				t.Fatalf("store reported %q, want the pinned observation %q", dst.ETag, bad)
 			}
-			if provenEqual(src, dst) {
+			if skippableEqual(src, dst) {
 				t.Fatalf("malformed aggregate %q proved equal", bad)
 			}
 		})
