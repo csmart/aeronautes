@@ -109,6 +109,58 @@ The full frontend suite, the type check and the production build are required be
 Retain the existing mutation-dialog, keyboard-scope and sensitive-label suites unchanged as authority and lifetime controls.
 Preserve every failed producer, and keep separately instrumented renderer evidence labelled separately from the actual application.
 
+## Implementation and maintained evidence
+
+The correction adds the consent label wrapping rule, bounds the dialog to the viewport and moves the
+disclosure body, the consent control, the confirmation input and any error into a scrolled region, so
+the title and the action row stay outside it.
+
+The maintained checks reconcile against the delivered inventory.
+The frontend suite grows from 1,125 to 1,130 tests with no name lost and no failure, the five added
+names all belong to the new consent-layout file, the type check reports 258 files with no error or
+warning, and the production build succeeds.
+Those checks cover content, interaction and arrangement only: the complete literal target and refusal
+message, the force toggle, exact-confirmation arming, cancellation, and which elements the bounded
+region owns.
+
+The native evidence comes from a clean binary built at the correction commit, which reports that
+revision and a clean source.
+Five replays ran against the private read-only fixture: 59, 38 and 29 commands for the implementation
+and 8 each for the two broken controls, with 56 screenshots in total.
+Every request was a GET or a HEAD except the single refused delete described below, and every complete
+21-entry remote snapshot equalled its baseline.
+
+At 960×600 the long-target default dialog now measures 450×586 with a complete border, in both themes,
+where the unbounded wrapped dialog needed 650.
+Its force state measures 450×508.
+At 1280×800 the default measures 450×650 and the force state 450×508, both with complete borders.
+In every one of those states the oracle locates the actual Cancel and Delete controls inside the
+viewport, in their enabled and disabled rendering, and no consent text lies beside the dialog.
+Pointer cancellation closes the dialog at both sizes.
+
+Keyboard focus reaches Cancel and activating it closes the dialog.
+The recorded ring positions show the order: the first stop is the Delete action, the second is the
+scrolled body itself, and the third is Cancel, so the bounded region is also the mechanism that makes
+its content reachable from the keyboard.
+In the refused-operation case Cancel is the second stop, because the error changes the content.
+
+The refused-operation case uses a combined fixture whose object carries an 831-character name and a
+584-character backing target.
+Activating the delete produced exactly one DELETE request, which the fixture answered with 405 before
+touching data, and the complete remote snapshot was unchanged.
+The dialog kept its complete border at 450×586, rendered the whole refusal message, and kept the title
+and both actions visible while the disclosure, the consent label and the error were reached by
+scrolling.
+
+Both deliberately broken controls fail, independently and for different reasons.
+Removing the wrapping rule alone leaves the border and controls intact but makes the body scroll
+sideways, cutting the literal target instead of wrapping it, which the horizontal-overflow check
+detects.
+Removing the viewport bound alone leaves no horizontal overflow but loses the bottom border and both
+action controls at 960×600.
+The original before capture fails the same border check, because the escaping label overwrites the
+dialog's right border.
+
 ## Remaining limits
 
 No zoom or scaling coverage is claimed, and no forced-colour, assistive-technology or non-Linux platform observation is made.
