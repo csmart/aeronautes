@@ -5102,6 +5102,7 @@ The blocking safety part of UI-13, §4.3, the destruction and force disclosure i
    Require that replay to identify the actual Cancel and Delete controls in both their enabled and disabled rendering, to reach the complete content and every control by scrolling and keyboard focus while the title and action row stay visible, to prove that pointer and keyboard cancellation close the dialog, and to cover the refused-operation error state with long literal content.
    Separate deliberately broken controls must remove the wrapping and the height bound independently and each must fail its own check, before independent review and delivery of only the reviewed current-base source through all five protected checks.
 
+Independent review returned two corrective verdicts on the plan and five on the implementation before approving each, and approved the rebase separately, followed by [protected PR84 delivery](experiments/2026-09-10-consent-layout.md#protected-delivery) with all five PR and master checks green and the reviewed nine-commit range preserved patch for patch through the merge.
 Zoom and scaling, forced colours, assistive technology and other native platforms remain open.
 Named breakpoints, resizable panes, responsive working-list columns and bounded large-namespace retention remain separate UI-13 and P24 work.
 This bounded correction does not close UI-13, the accepted responsive-layout gate or the valuable-data hold.
