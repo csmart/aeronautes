@@ -250,6 +250,7 @@
     color: var(--color-danger);
     background: var(--color-danger-soft);
     border-radius: var(--radius-control);
+    overflow-wrap: anywhere;
   }
 
   .body {
