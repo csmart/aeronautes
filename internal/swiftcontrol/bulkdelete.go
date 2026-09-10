@@ -7,15 +7,66 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
+// BulkDeleteFailure is one per-item failure resolved back to the name
+// the caller asked to delete. The reply echoes the request line, which
+// is percent-encoded and container-prefixed, so resolving it here — in
+// the only place that knows how the line was built — keeps every caller
+// from rebuilding that rule and drifting from it.
+type BulkDeleteFailure struct {
+	// Name is the requested object name, spelled exactly as the caller
+	// gave it.
+	Name string
+	// Status is the per-item status the reply reported.
+	Status string
+}
+
 // BulkDeleteResult is one bulk request's account of itself.
+//
+// Deleted and NotFound are counts alone: the reply names no successful
+// identity, so which names they refer to is not knowable from it.
 type BulkDeleteResult struct {
 	Deleted  int64
 	NotFound int64
-	// Errors are per-item failures: [path, status].
+	// Errors are the raw per-item failure rows: [path, status]. The path
+	// is the echoed request line, not an object name.
 	Errors [][2]string
+	// Failures are those rows resolved to requested names, in reply
+	// order and preserving repeats, so a caller can see exactly what the
+	// reply said about names it asked about.
+	Failures []BulkDeleteFailure
+	// UnmatchedPaths are error rows whose path matches no line this
+	// request sent. They are evidence the reply is not wholly about this
+	// request and must never be recorded as one of the caller's names.
+	UnmatchedPaths []string
+	// Anomalies describe every way this reply failed validation, in the
+	// order found. A reply with any anomaly says nothing dependable
+	// about which names it handled.
+	Anomalies []string
+	// Validated is true only when the reply named this request's names,
+	// named none of them twice, gave every row a status that denotes a
+	// failure, reconciled its counts and carried a usable overall
+	// status. Only a validated reply's counts may be credited.
+	Validated bool
+}
+
+// failureStatus reports whether a per-item status denotes a failure.
+// A row is authoritative about a name only when it says something went
+// wrong: a missing, unparsable or success-valued status does not become
+// a disposition merely because the path matched.
+func failureStatus(status string) bool {
+	fields := strings.Fields(strings.TrimSpace(status))
+	if len(fields) == 0 {
+		return false
+	}
+	code, err := strconv.Atoi(fields[0])
+	if err != nil {
+		return false
+	}
+	return code >= 400 && code <= 599
 }
 
 // BulkDelete issues one Swift bulk-delete (§31.2 BulkDelete executor):
@@ -27,8 +78,15 @@ type BulkDeleteResult struct {
 // a newline travels as %0A.
 func (s *Session) BulkDelete(ctx context.Context, container string, names []string) (*BulkDeleteResult, error) {
 	var body strings.Builder
+	// The line each name is sent as, kept so the reply's echoed error
+	// rows can be resolved back to the requested spelling.
+	requested := make(map[string]string, len(names))
 	for _, name := range names {
-		body.WriteString("/" + url.PathEscape(container) + "/" + escapeObjectPath(name) + "\n")
+		line := "/" + url.PathEscape(container) + "/" + escapeObjectPath(name)
+		body.WriteString(line + "\n")
+		if _, seen := requested[line]; !seen {
+			requested[line] = name
+		}
 	}
 	// The session's own client (bookmark transport, refused redirects,
 	// bounded time) with ONE re-auth on 401 — the lifecycle the wire
@@ -85,17 +143,56 @@ func (s *Session) BulkDelete(ctx context.Context, container string, names []stri
 		NotFound: decoded.NumberNotFound,
 		Errors:   decoded.Errors,
 	}
-	// The middleware reports overall failure through Response Status
-	// while still returning 200 on the wire; surface it when nothing
-	// per-item explains it.
-	if !strings.HasPrefix(decoded.ResponseStatus, "200") && len(decoded.Errors) == 0 {
-		return result, fmt.Errorf("bulk-delete: %s", decoded.ResponseStatus)
+	// Validate the reply against this request before anything trusts it.
+	// Arithmetic alone accepted replies that named the wrong names, so
+	// membership, uniqueness, status shape and counts are all checked,
+	// and any violation makes the whole reply untrusted (K-DEL-002).
+	seen := make(map[string]string, len(decoded.Errors))
+	distinct := int64(0)
+	for _, row := range decoded.Errors {
+		path := strings.TrimSpace(row[0])
+		name, ok := requested[path]
+		if !ok {
+			result.UnmatchedPaths = append(result.UnmatchedPaths, row[0])
+			result.Anomalies = append(result.Anomalies,
+				fmt.Sprintf("a row names %q, which this request did not send", row[0]))
+			continue
+		}
+		if !failureStatus(row[1]) {
+			result.Anomalies = append(result.Anomalies,
+				fmt.Sprintf("the row for %q carries status %q, which does not denote a failure", name, row[1]))
+			continue
+		}
+		if previous, repeated := seen[name]; repeated {
+			result.Anomalies = append(result.Anomalies,
+				fmt.Sprintf("the reply names %q more than once, first as %q and again as %q", name, previous, row[1]))
+			continue
+		}
+		seen[name] = row[1]
+		distinct++
+		result.Failures = append(result.Failures, BulkDeleteFailure{Name: name, Status: row[1]})
+	}
+	if result.Deleted < 0 || result.NotFound < 0 {
+		result.Anomalies = append(result.Anomalies,
+			fmt.Sprintf("the reply reports negative counts: %d deleted and %d not found", result.Deleted, result.NotFound))
 	}
 	// Cardinality must reconcile: every requested name is deleted, not
 	// found, or individually errored — an undercounted 200 cannot pass
 	// as success (K-DEL-002).
-	if accounted := result.Deleted + result.NotFound + int64(len(result.Errors)); accounted != int64(len(names)) {
-		return result, fmt.Errorf("bulk-delete response accounts for %d of %d requested names — treating the difference as failed", accounted, len(names))
+	if accounted := result.Deleted + result.NotFound + distinct; accounted != int64(len(names)) {
+		result.Anomalies = append(result.Anomalies,
+			fmt.Sprintf("the reply accounts for %d of %d requested names", accounted, len(names)))
+	}
+	// The middleware reports overall failure through Response Status
+	// while still returning 200 on the wire; a status that is not the
+	// documented success needs a valid row to explain it.
+	if !strings.HasPrefix(decoded.ResponseStatus, "200") && distinct == 0 {
+		result.Anomalies = append(result.Anomalies,
+			fmt.Sprintf("the reply carries overall status %q with no row explaining it", decoded.ResponseStatus))
+	}
+	result.Validated = len(result.Anomalies) == 0
+	if !result.Validated {
+		return result, fmt.Errorf("bulk-delete reply is not dependable: %s", strings.Join(result.Anomalies, "; "))
 	}
 	return result, nil
 }

@@ -44,9 +44,15 @@ type Options struct {
 	Passes int
 	// OnProgress is told cumulative counts as the run advances.
 	OnProgress func(deleted, failed int64)
-	// OnFailure receives EVERY per-name failure (uncapped) — the
-	// complete-set channel behind Result.Failures' bounded sample.
+	// OnFailure receives EVERY per-name reported failure (uncapped) —
+	// the complete-set channel behind Result.Failures' bounded sample.
 	OnFailure func(name, detail string)
+	// OnUnresolved receives EVERY name whose effect this run cannot
+	// state (uncapped), which is a different fact from a reported
+	// failure and may describe the same name. Nothing here observes the
+	// store, so a name the service reported an error for is also
+	// unresolved.
+	OnUnresolved func(name, detail string)
 }
 
 // Failure is one name that would not die.
@@ -61,11 +67,25 @@ type Result struct {
 	Deleted  int64
 	NotFound int64
 	Failures []Failure
-	// Failed is the EXACT failure count — Failures above is a bounded
-	// sample for display; every failure also streams through
+	// Failed is the EXACT count of distinct requested names the service
+	// reported an error for, each counted once — Failures above is a
+	// bounded sample for display; every one also streams through
 	// Options.OnFailure so callers can retain the complete set
 	// (K-DEL-002).
 	Failed int64
+	// Unresolveds samples the names whose effect this run cannot state,
+	// bounded for display exactly as Failures is.
+	Unresolveds []Failure
+	// Unresolved is the EXACT count of distinct requested names whose
+	// effect is unknown, streamed uncapped through Options.OnUnresolved.
+	// It overlaps Failed rather than extending it: a reported error is
+	// a report about an attempt and witnesses no effect, so a reported
+	// name is also unresolved. A run holding any unresolved name has
+	// not completed.
+	Unresolved int64
+	// UntrustedReplies counts bulk replies that failed validation and
+	// whose counts were therefore credited to nothing.
+	UntrustedReplies int64
 	// Remaining counts names still listed after the final pass and
 	// verification retries: eventual consistency or a concurrent writer.
 	// Remaining > 0 means Partial, never silent success.
@@ -78,6 +98,54 @@ type Result struct {
 
 const maxFailures = 200
 
+// blamedNames indexes the per-name errors a validated reply reported.
+func blamedNames(bulk *swiftcontrol.BulkDeleteResult) map[string]string {
+	if bulk == nil {
+		return nil
+	}
+	blamed := make(map[string]string, len(bulk.Failures))
+	for _, item := range bulk.Failures {
+		if _, seen := blamed[item.Name]; !seen {
+			blamed[item.Name] = item.Status
+		}
+	}
+	return blamed
+}
+
+// recordBatchOutcome writes one batch's outcome into the ledger.
+//
+// Two facts are kept apart. A name the reply reported an error for is a
+// reported failure carrying that status. A name whose effect this run
+// cannot state is unresolved. They describe the same name whenever the
+// service blamed it, because nothing here observes the store: a report
+// is a report about an attempt, and an identical reply accompanies an
+// object that survived and one that was destroyed.
+//
+// A reply that failed validation says nothing dependable about which
+// names it handled, so every requested name in that batch is
+// unresolved and its counts are credited to nothing (K-DEL-002).
+func recordBatchOutcome(result *Result, onFailure, onUnresolved func(name, detail string),
+	batch []string, bulk *swiftcontrol.BulkDeleteResult, err error) {
+
+	validated := bulk != nil && bulk.Validated
+	blamed := blamedNames(bulk)
+	reason := "the reply is not dependable, so this name's effect is unknown"
+	if err != nil {
+		reason = err.Error()
+	}
+	for _, name := range batch {
+		if status, ok := blamed[name]; ok {
+			result.fail(onFailure, name, fmt.Errorf("%s", status))
+			result.unresolvedEffect(onUnresolved, name,
+				fmt.Sprintf("the service reported %s and no observation establishes whether the object was destroyed", status))
+			continue
+		}
+		if !validated {
+			result.unresolvedEffect(onUnresolved, name, reason)
+		}
+	}
+}
+
 func (r *Result) fail(onFailure func(name, detail string), name string, err error) {
 	r.Failed++
 	if len(r.Failures) < maxFailures {
@@ -85,6 +153,17 @@ func (r *Result) fail(onFailure func(name, detail string), name string, err erro
 	}
 	if onFailure != nil {
 		onFailure(name, err.Error())
+	}
+}
+
+// unresolvedEffect retains one name whose effect this run cannot state.
+func (r *Result) unresolvedEffect(onUnresolved func(name, detail string), name, detail string) {
+	r.Unresolved++
+	if len(r.Unresolveds) < maxFailures {
+		r.Unresolveds = append(r.Unresolveds, Failure{Name: name, Err: detail})
+	}
+	if onUnresolved != nil {
+		onUnresolved(name, detail)
 	}
 }
 
@@ -127,7 +206,7 @@ func DeletePrefix(ctx context.Context, session *swiftcontrol.Session, capabiliti
 
 	for pass := 1; pass <= passes; pass++ {
 		result.Passes = pass
-		deletedThisPass, err := deletePass(ctx, session, container, prefix, bulkSize, workers, result, opts.OnProgress, opts.OnFailure)
+		deletedThisPass, err := deletePass(ctx, session, container, prefix, bulkSize, workers, result, opts.OnProgress, opts.OnFailure, opts.OnUnresolved)
 		if err != nil {
 			return result, err
 		}
@@ -146,7 +225,8 @@ func DeletePrefix(ctx context.Context, session *swiftcontrol.Session, capabiliti
 
 // deletePass consumes one full listing sweep, deleting as it streams.
 func deletePass(ctx context.Context, session *swiftcontrol.Session, container, prefix string,
-	bulkSize, workers int, result *Result, onProgress func(deleted, failed int64), onFailure func(name, detail string)) (int64, error) {
+	bulkSize, workers int, result *Result, onProgress func(deleted, failed int64),
+	onFailure, onUnresolved func(name, detail string)) (int64, error) {
 
 	var passDeleted int64
 	var mu sync.Mutex
@@ -167,25 +247,17 @@ func deletePass(ctx context.Context, session *swiftcontrol.Session, container, p
 			bulk, err := session.BulkDelete(ctx, container, batch)
 			mu.Lock()
 			defer mu.Unlock()
-			if bulk != nil {
+			// Only a validated reply's counts are credited; an untrusted
+			// one is a diagnostic and names nothing.
+			if bulk != nil && bulk.Validated {
 				result.Deleted += bulk.Deleted
 				result.NotFound += bulk.NotFound
 				passDeleted += bulk.Deleted
-				for _, item := range bulk.Errors {
-					result.fail(onFailure, item[0], fmt.Errorf("%s", item[1]))
-				}
+			} else if bulk != nil {
+				result.UntrustedReplies++
 			}
+			recordBatchOutcome(result, onFailure, onUnresolved, batch, bulk, err)
 			if err != nil {
-				// EVERY name the response did not account for is a
-				// recorded failure — a failed request must never lose
-				// its batch (K-DEL-002).
-				accounted := int64(0)
-				if bulk != nil {
-					accounted = bulk.Deleted + bulk.NotFound + int64(len(bulk.Errors))
-				}
-				for i := accounted; i < int64(len(batch)); i++ {
-					result.fail(onFailure, batch[i], err)
-				}
 				batch = batch[:0]
 				progress()
 				return err
@@ -383,24 +455,17 @@ func DeleteNames(ctx context.Context, session *swiftcontrol.Session, capabilitie
 				return result, err
 			}
 			end := min(start+bulkSize, len(names))
-			bulk, err := session.BulkDelete(ctx, container, names[start:end])
+			chunk := names[start:end]
+			bulk, err := session.BulkDelete(ctx, container, chunk)
 			mu.Lock()
-			if bulk != nil {
+			if bulk != nil && bulk.Validated {
 				result.Deleted += bulk.Deleted
 				result.NotFound += bulk.NotFound
-				for _, item := range bulk.Errors {
-					result.fail(opts.OnFailure, item[0], fmt.Errorf("%s", item[1]))
-				}
+			} else if bulk != nil {
+				result.UntrustedReplies++
 			}
+			recordBatchOutcome(result, opts.OnFailure, opts.OnUnresolved, chunk, bulk, err)
 			if err != nil {
-				accounted := int64(0)
-				if bulk != nil {
-					accounted = bulk.Deleted + bulk.NotFound + int64(len(bulk.Errors))
-				}
-				chunk := names[start:end]
-				for i := accounted; i < int64(len(chunk)); i++ {
-					result.fail(opts.OnFailure, chunk[i], err)
-				}
 				progress()
 				mu.Unlock()
 				return result, err
