@@ -121,6 +121,59 @@ Every producer is retained with its command, the engine binary and version, the 
 4. Record the observed result, and state it as unresolved if the evidence cannot establish what the original extra attempt was.
 5. Only then decide whether any test or production change is warranted, in its own reviewed commit.
 
+## Observed result, partial
+
+These runs are a partial execution of the approved proof.
+They establish the target identity's behaviour under each fault and they do not complete the collateral, whole-inventory or sensitivity gates, which stay pending and are named below.
+Each control ran once under the race detector, with the pinned engine on the path and the two-account fixture configured, on the mock and on the containerised Swift fixture, and both harnesses produced the same shapes.
+
+| Control | Target staging writes | Service outcome | Response to the gateway | Gated witness | Staged after | Live control after | Target item |
+| --- | ---: | --- | --- | --- | --- | --- | --- |
+| Applied, no fault | 1 | 201 | 201 | not armed | present | present | failed, unresolved, commit, 403 |
+| Rejected then retried | 2 | fixture 503, then 201 | 503, then 201 | staged absent at the refusal | present | present | failed, unresolved, commit, 403 |
+| Rejected throughout | 2 | fixture 503 twice | 503 twice | staged absent at both | absent | absent | failed, unresolved, engine |
+| Applied then aborted | 1 | 201 | aborted, no status | staged present | present | absent | failed, unresolved, engine |
+
+What these runs checked is the target's staging writes and their hop outcomes, the gated witness readings, the target's staged and live objects and the live control object, the target item's execution facets, the aggregate counters and item totals, and the audit summary.
+The permanent rejection failed the whole engine group, so its live commits were skipped, the live control object is absent and the audit counts 402 failed names rather than 401.
+The aborted response also failed the group and retained the staged object the witness had already seen, which is what separates that outcome from the permanent rejection.
+
+What these runs did not check is everything else the approved proof requires.
+They do not compare the namespace before and after, do not observe the second account or the local files, do not run the existing collateral assertion, do not validate all 402 item records, and do not compare the complete mutation identity map, so an unrelated lost object or an extra write on another identity would not have been caught.
+The separate unmodified 401-item run with the instrumentation in place was not executed.
+Those gates remain pending, and until they are met this experiment is not complete.
+
+The ambiguity the experiment set out to break is separable in these records.
+The rejected-then-retried control and the applied-then-aborted control end with the same staged object present, so a final object cannot tell them apart, while the per-hop record and the gated witness can: at the refusal the witness found the staged name absent, and at the abort it found the staged name present while the response carried no status at all.
+The wrong classifier that reads an abort as proof that nothing applied is contradicted by those records on inspection.
+That contradiction is not yet the required sensitivity proof, because the producer only reports it and no checked oracle fails when the expected rejection does not occur; that control is pending.
+
+Three defects in the instrumentation were found by running it and corrected before these runs.
+The fault first fired on any request on the armed path, so an early run refused a probe rather than the staging write; the fault counter counted probes, so a measured count would not have been a count of writes; and the recorder captured an informational 100 Continue as the status returned to the gateway.
+
+## What this says about the original failure
+
+The original run observed one staging identity twice and otherwise produced its ordinary outcome, with the staged object present and the item recorded failed and unresolved at commit with HTTP 403.
+That is the shape of the rejected-then-retried control rather than of the applied-then-aborted control, because an abort failed the whole engine group here and the original group did not fail.
+The original extra attempt is therefore consistent with a first attempt that did not apply followed by a successful retry.
+
+It is not established.
+The comparison holds only against these particular controls, it does not exclude other faults that apply a write and lose its response without failing the group, the original first attempt's outcome was never recorded, and no run here reproduces a hosted runner.
+
+Attempt counts belong to the cases that produced them.
+Each of the two rejection controls made two target staging writes; the abort control made one, and the engine made no further attempt on that identity.
+These are counts for these faults and not a general retry bound.
+
+## Mechanisms this producer does not yet implement
+
+The predeclared boundary of twenty attempts on the identity or one hundred and twenty seconds is not implemented here.
+The attempt counter only records that a limit was passed, the abort path never reaches it, and no incomplete outcome is ever populated, while the job wait fails at its own existing ninety-second bound instead.
+The observed counts and durations sit below the proposed thresholds, so these runs neither exercised nor established that mechanism.
+The aborted records carry no duration, because the deliberate abort bypasses the recorder's completion path; that is a missing measurement rather than a measured zero.
+
+The retained producer record holds the effective commands, the harness and control identities, exits, durations, the environment including the gating variable that the run requires, hashes of the two uncommitted producer sources and of every observation record.
+It does not hold raw test output or the engine's emitted arguments, so the engine identity and its arguments for these runs are unestablished provenance rather than recorded fact.
+
 ## Limits
 
 This is diagnosis and not repair, and it introduces no retry into any test.
