@@ -198,7 +198,28 @@ The existing passing controls still verify exact recorded outcomes, identities, 
 The reader validates these complete raw facts, exact overlay replacements, actual exits and source preservation without changing the earlier evidence.
 An initial sandboxed replay could not open the owned loopback test server and exited one before any passing test; that socket failure remains separate from the completed comparison controls.
 The earlier 2,976-name full run remains historical evidence for the unchanged production and original test tree.
-It is not a complete run of the expanded test inventory; final-base verification and independent range review remain required before delivery.
+It is not a complete run of the expanded test inventory; the final-base verification and independent range review that followed it are recorded under [protected delivery](#protected-delivery).
+
+## Protected delivery
+
+The delivered range is the six logical commits between master 4bd4937e97ff08d3 and the reviewed head e298c40d3860419f: the sequence plan, the shared refusal, the mirrored-spelling fixture repair and three audit delivery records carried on the same branch.
+Independent review approved the sequence plan, returned a required change on the first implementation because the fixtures folded only one direction, approved the repaired implementation with its mirrored fixtures, and then approved the integrated range on its final base.
+No source changed between that final approval and delivery.
+A draft pull request was opened from the reviewed head with the branch protection ruleset active, no bypass actors and no reviews or comments recorded on it.
+
+Its check run 34421914424 completed at the first attempt with all five required jobs successful.
+The race-detector Go job recorded twenty-four successful package executions across twenty-three distinct tested packages, because the Secret Service protocol package ran once under its required fixture and once in the complete race suite, and it reported no failures.
+The mock Swift command package supplied the single result with no test files.
+The frontend job reported zero errors and zero warnings from svelte-check and passed twenty-seven test files carrying nine hundred and eighty-six tests.
+The containerized Swift integration job passed three thousand and twenty test results with no failures, measured combined Go statement coverage of 87.3 per cent against the seventy-five per cent floor, and recorded scenario coverage of forty of one hundred and sixteen cells and thirty-eight of fifty-two actions with gaps, reported valid with the owned service configured and scenario coverage incomplete.
+That job skipped two cases, the rclone matrix case for an unset matrix binary and the keychain round trip for an unreachable operating-system keychain.
+The headless smoke job landed three of three objects through the real engine against mock Swift and passed.
+The run retained both coverage badges, the 355,823-byte scenario coverage artifact carrying the report and its event stream, and the 6,103,671-byte smoke artifact.
+
+The pull request then left draft state and was merged by rebase pinned to the reviewed head object.
+Master became 36e731fe149526d5, whose tree 9492442db07d31c4 is identical to the reviewed head's tree, and each of the six commits kept its patch identity, message, author identity and intermediate tree.
+The resulting master check run 34430991465 concluded success with the same five required jobs.
+The pipeline exercised Linux runners only, so the native macOS and Windows acceptance of these refusals remains unproven.
 
 ## Remaining limits
 

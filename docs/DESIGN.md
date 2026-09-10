@@ -5055,6 +5055,7 @@ This prerequisite preserves exact source, recorded and diagnostic spellings and 
    Apply the existing fold identity consistently at preflight and executor entry, then require focused fixed and deliberately broken controls to exercise those boundaries.
 3. Record the relevant complete compatibility, inventory and scenario verification, obtain independent local review, and deliver only the reviewed current-base source through all five protected PR and master checks.
 
+Independent review approved the sequence plan, required the mirrored-spelling fixtures on the first implementation, and then approved the repaired implementation and the integrated range, followed by [protected PR78 delivery](experiments/2026-09-09-download-path-case.md#protected-delivery) with all five PR and master checks green and the reviewed six-commit range preserved patch for patch.
 Unicode normalization, directory-only aliases, reserved names, encoding collisions and representative native filesystem acceptance remain separate P19 work.
 Selected-root lifetime, concurrent parent/root replacement, publication and cleanup authority remain separate P18/P20/P30 work.
 This bounded correction does not close P18, P19 or the valuable-data hold.
