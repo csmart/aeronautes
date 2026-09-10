@@ -170,6 +170,10 @@ Use an external/scratch-backed index to preserve bounded memory for large namesp
 Acceptance: case-folded ancestor conflicts, Unicode-normalized ancestor conflicts, reserved device names, trailing dots/spaces, and existing local ancestors reject the entire plan before any write on each supported platform.
 Probe: `TestAuditPreflightRejectsCaseFoldAncestorConflict`.
 
+Current disposition: [PR78](../../experiments/2026-09-09-download-path-case.md#protected-delivery) delivers the case-folded file and ancestor refusal at preflight and at the executor's item admission, before any marker or filesystem effect.
+Both spellings of each conflicting pair are refused across the whole selection on the owned providers, with a safe first member and passing shared-parent controls.
+Unicode normalization, directory-only aliases, reserved names, forbidden characters, encoding collisions and native target-filesystem acceptance remain open, so DS-06/P19 and the valuable-data release hold are still blocking.
+
 ### DS-07 — High: cancellation after staging still places files and can report completion
 
 Disposition: concrete reproduction of deferred W-11 cancellation coverage; high confidence.
