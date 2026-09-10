@@ -119,7 +119,10 @@ func TestCredentialsAndBulkDeleteRemainCoherentDuringWireReauth(t *testing.T) {
 			return
 		}
 		deletes.Add(1)
-		fmt.Fprint(w, `{"Number Deleted":1,"Response Status":"200 OK"}`)
+		// Both counts are always present in a real reply, and the
+		// decoder now requires them rather than reading a missing
+		// field as an observed zero.
+		fmt.Fprint(w, `{"Number Deleted":1,"Number Not Found":0,"Response Status":"200 OK"}`)
 	}))
 	defer srv.Close()
 	session := mustSession(t, srv.URL)

@@ -525,9 +525,12 @@ func realSwiftSession(t *testing.T) *swiftcontrol.Session {
 
 // TestBulkDeleteEncodingRoundTripsRealSwift proves on the owned service
 // that every name shape this slice claims to carry actually reaches the
-// middleware as the object it names, and that exactly those objects go.
-// The mock echoes what it was sent, so only the real service can settle
-// the request encoding.
+// middleware as the object it names, that exactly those objects go, and
+// that a neighbouring namespace is untouched. The mock echoes what it
+// was sent, so only the real service can settle the request encoding.
+//
+// Absence is established by an authoritative object read expecting a
+// not-found, never by a listing, which is advisory.
 func TestBulkDeleteEncodingRoundTripsRealSwift(t *testing.T) {
 	session := realSwiftSession(t)
 	ctx := context.Background()
@@ -538,11 +541,14 @@ func TestBulkDeleteEncodingRoundTripsRealSwift(t *testing.T) {
 	if capabilities.BulkDeleteMaxDeletes() <= 0 {
 		t.Skip("the owned fixture does not advertise bulk delete")
 	}
-	container := fmt.Sprintf("aeronautes-bulkid-%d", time.Now().UnixNano())
-	if _, err := session.CreateContainer(ctx, swiftcontrol.ContainerCreateRequest{Name: container}); err != nil {
-		t.Fatal(err)
+	stamp := time.Now().UnixNano()
+	container := fmt.Sprintf("aeronautes-bulkid-%d", stamp)
+	neighbour := fmt.Sprintf("aeronautes-bulkid-%d-neighbour", stamp)
+	for _, name := range []string{container, neighbour} {
+		if _, err := session.CreateContainer(ctx, swiftcontrol.ContainerCreateRequest{Name: name}); err != nil {
+			t.Fatal(err)
+		}
 	}
-	t.Cleanup(func() { _ = session.DeleteContainer(context.Background(), container) })
 
 	doomed := []string{
 		"plain.bin",
@@ -555,31 +561,47 @@ func TestBulkDeleteEncodingRoundTripsRealSwift(t *testing.T) {
 		"trailing-plus+and&amp.bin",
 	}
 	kept := "kept-neighbour.bin"
-	for _, name := range append(append([]string{}, doomed...), kept) {
+	inNeighbour := "other-namespace.bin"
+	seeded := append(append([]string{}, doomed...), kept)
+
+	// Every object this test creates is removed again, in both
+	// namespaces, whatever the test does in between.
+	t.Cleanup(func() {
+		background := context.Background()
+		for _, pair := range [][2]string{{container, kept}, {neighbour, inNeighbour}} {
+			for _, name := range append([]string{pair[1]}, doomed...) {
+				_ = session.DeleteObject(background, pair[0], name)
+			}
+		}
+		for _, name := range []string{container, neighbour} {
+			if err := session.DeleteContainer(background, name); err != nil {
+				t.Errorf("cleanup left %q behind: %v", name, err)
+			}
+		}
+	})
+
+	for _, name := range seeded {
 		if _, err := session.PutObject(ctx, container, name, strings.NewReader("payload"), "application/octet-stream", nil); err != nil {
 			t.Fatalf("seed %q: %v", name, err)
 		}
 	}
-	// Every seeded name must exist under the exact spelling first,
-	// otherwise the delete would be proving nothing.
-	present := map[string]bool{}
-	for entry, err := range session.Objects(ctx, container, swiftcontrol.ObjectListOptions{Deep: true}) {
-		if err != nil {
-			t.Fatal(err)
-		}
-		if o, ok := entry.(swiftcontrol.ObjectEntry); ok {
-			present[o.Name] = true
-		}
+	if _, err := session.PutObject(ctx, neighbour, inNeighbour, strings.NewReader("payload"), "application/octet-stream", nil); err != nil {
+		t.Fatal(err)
 	}
-	for _, name := range append(append([]string{}, doomed...), kept) {
-		if !present[name] {
-			t.Fatalf("the fixture did not store %q under that exact spelling", name)
+	// Each seeded name must be authoritatively readable under its exact
+	// spelling first, or the delete would prove nothing.
+	for _, name := range seeded {
+		if _, err := session.ObjectDetail(ctx, container, name); err != nil {
+			t.Fatalf("the fixture did not store %q under that exact spelling: %v", name, err)
 		}
 	}
 
 	var mu sync.Mutex
 	var failed, unresolved []string
 	result, err := DeleteNames(ctx, session, capabilities, container, doomed, Options{
+		// Small enough to cross a chunk boundary and complete, rather
+		// than stopping at the first request.
+		BulkSize:     3,
 		OnFailure:    func(name, detail string) { mu.Lock(); failed = append(failed, name); mu.Unlock() },
 		OnUnresolved: func(name, detail string) { mu.Lock(); unresolved = append(unresolved, name); mu.Unlock() },
 	})
@@ -589,25 +611,106 @@ func TestBulkDeleteEncodingRoundTripsRealSwift(t *testing.T) {
 	if result.Deleted != int64(len(doomed)) || result.Failed != 0 || result.Unresolved != 0 {
 		t.Fatalf("result = %+v (failed %v, unresolved %v)", result, failed, unresolved)
 	}
+	if result.UntrustedReplies != 0 {
+		t.Errorf("the owned service produced %d untrusted replies", result.UntrustedReplies)
+	}
 
-	after := map[string]bool{}
-	for entry, err := range session.Objects(ctx, container, swiftcontrol.ObjectListOptions{Deep: true}) {
-		if err != nil {
-			t.Fatal(err)
-		}
-		if o, ok := entry.(swiftcontrol.ObjectEntry); ok {
-			after[o.Name] = true
-		}
-	}
+	// Authoritative witnesses: each named object is gone, the unnamed
+	// neighbour in the same container survives, and the second namespace
+	// is untouched.
 	for _, name := range doomed {
-		if after[name] {
+		if _, err := session.ObjectDetail(ctx, container, name); err == nil {
 			t.Errorf("%q survived, so its request encoding did not name it", name)
+		} else if !swiftcontrol.IsNotFound(err) {
+			t.Errorf("%q could not be witnessed as absent: %v", name, err)
 		}
 	}
-	if !after[kept] {
-		t.Errorf("the neighbour %q was destroyed by a request that never named it", kept)
+	if _, err := session.ObjectDetail(ctx, container, kept); err != nil {
+		t.Errorf("the neighbour %q was destroyed by a request that never named it: %v", kept, err)
 	}
-	if len(after) != 1 {
-		t.Errorf("the container holds %d objects after the run, want only the neighbour", len(after))
+	if _, err := session.ObjectDetail(ctx, neighbour, inNeighbour); err != nil {
+		t.Errorf("the second namespace was disturbed: %v", err)
+	}
+}
+
+// TestBulkRejectsUndocumentedOutcomes covers replies whose counts and
+// rows reconcile but whose overall outcome is not a bulk-delete result,
+// and replies that omit a required count altogether. A missing count is
+// not an observed zero.
+func TestBulkRejectsUndocumentedOutcomes(t *testing.T) {
+	row := [2]string{wire("media", "b"), "500 Internal Server Error"}
+	cases := []struct {
+		label string
+		reply map[string]any
+	}{
+		{"an informational overall status", map[string]any{
+			"Number Deleted": 1, "Number Not Found": 0, "Response Status": "100 Continue",
+			"Response Body": "", "Errors": [][2]string{row}}},
+		{"a created overall status", map[string]any{
+			"Number Deleted": 1, "Number Not Found": 0, "Response Status": "201 Created",
+			"Response Body": "", "Errors": [][2]string{row}}},
+		{"a no-content overall status", map[string]any{
+			"Number Deleted": 1, "Number Not Found": 0, "Response Status": "204 No Content",
+			"Response Body": "", "Errors": [][2]string{row}}},
+		{"a redirect overall status", map[string]any{
+			"Number Deleted": 1, "Number Not Found": 0, "Response Status": "302 Found",
+			"Response Body": "", "Errors": [][2]string{row}}},
+		{"no deleted count at all", map[string]any{
+			"Number Not Found": 1, "Response Status": "200 OK",
+			"Response Body": "", "Errors": [][2]string{row}}},
+		{"a null deleted count", map[string]any{
+			"Number Deleted": nil, "Number Not Found": 1, "Response Status": "200 OK",
+			"Response Body": "", "Errors": [][2]string{row}}},
+		{"no not-found count at all", map[string]any{
+			"Number Deleted": 1, "Response Status": "200 OK",
+			"Response Body": "", "Errors": [][2]string{row}}},
+		{"a null not-found count", map[string]any{
+			"Number Deleted": 1, "Number Not Found": nil, "Response Status": "200 OK",
+			"Response Body": "", "Errors": [][2]string{row}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.label, func(t *testing.T) {
+			session, capabilities, _, _ := craftedCluster(t, tc.reply)
+			l := runNames(t, session, capabilities, []string{"a", "b"}, Options{})
+			if l.err == nil {
+				t.Fatal("an undocumented outcome must not validate")
+			}
+			if l.result.Deleted != 0 || l.result.NotFound != 0 {
+				t.Errorf("an untrusted reply's counts were credited: %+v", l.result)
+			}
+			if !equal(l.unresolved, []string{"a", "b"}) {
+				t.Errorf("unresolved = %v, want every requested name", l.unresolved)
+			}
+			if len(l.result.UntrustedAggregates) != 1 {
+				t.Fatalf("the diagnostic aggregate did not survive: %+v", l.result.UntrustedAggregates)
+			}
+			if l.result.UntrustedAggregates[0].Requested != 2 {
+				t.Errorf("the diagnostic lost the request size: %+v", l.result.UntrustedAggregates[0])
+			}
+			if len(l.result.UntrustedAggregates[0].Anomalies) == 0 {
+				t.Error("the diagnostic carries no reason")
+			}
+		})
+	}
+}
+
+// TestBulkRetainsMalformedRowsWhole keeps the evidence of a bad reply
+// intact rather than truncating it to the documented shape.
+func TestBulkRetainsMalformedRowsWhole(t *testing.T) {
+	session, capabilities, _, _ := craftedCluster(t, replyShaped("200 OK", 1, 0,
+		[]string{wire("media", "a"), "500 Internal Server Error", "third", "fourth"}))
+	l := runNames(t, session, capabilities, []string{"a"}, Options{})
+	if l.err == nil {
+		t.Fatal("a malformed row must not validate")
+	}
+	if len(l.result.UntrustedAggregates) != 1 {
+		t.Fatalf("no diagnostic retained: %+v", l.result)
+	}
+	rows := l.result.UntrustedAggregates[0].MalformedRows
+	if len(rows) != 1 || len(rows[0]) != 4 {
+		t.Fatalf("the malformed row was not retained whole: %v", rows)
+	}
+	if rows[0][2] != "third" || rows[0][3] != "fourth" {
+		t.Errorf("the retained row lost elements: %v", rows[0])
 	}
 }

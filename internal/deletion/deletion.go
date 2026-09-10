@@ -55,6 +55,22 @@ type Options struct {
 	OnUnresolved func(name, detail string)
 }
 
+// UntrustedAggregate is one untrusted reply's own account of itself,
+// retained so the diagnostic survives the caller boundary. It is
+// evidence about a reply, never a deletion or verification credit, and
+// it names nobody.
+type UntrustedAggregate struct {
+	// Requested is how many names that request carried.
+	Requested int
+	// Deleted and NotFound are the counts the reply claimed.
+	Deleted, NotFound int64
+	// Anomalies are why the reply was not dependable.
+	Anomalies []string
+	// MalformedRows are rows whose shape was not the documented pair,
+	// retained whole.
+	MalformedRows [][]string
+}
+
 // Failure is one name that would not die.
 type Failure struct {
 	Name string
@@ -86,6 +102,10 @@ type Result struct {
 	// UntrustedReplies counts bulk replies that failed validation and
 	// whose counts were therefore credited to nothing.
 	UntrustedReplies int64
+	// UntrustedAggregates retains what each of those replies claimed,
+	// bounded for size. These are diagnostics and are credited to
+	// nothing.
+	UntrustedAggregates []UntrustedAggregate
 	// Remaining counts names still listed after the final pass and
 	// verification retries: eventual consistency or a concurrent writer.
 	// Remaining > 0 means Partial, never silent success.
@@ -137,6 +157,17 @@ func recordBatchOutcome(result *Result, onFailure, onUnresolved func(name, detai
 	batch []string, bulk *swiftcontrol.BulkDeleteResult, err error) {
 
 	validated := bulk != nil && bulk.Validated
+	if bulk != nil && !validated && len(result.UntrustedAggregates) < maxFailures {
+		// The reply is not dependable, but what it claimed is evidence
+		// about the service and must survive this boundary.
+		result.UntrustedAggregates = append(result.UntrustedAggregates, UntrustedAggregate{
+			Requested:     len(batch),
+			Deleted:       bulk.Deleted,
+			NotFound:      bulk.NotFound,
+			Anomalies:     append([]string(nil), bulk.Anomalies...),
+			MalformedRows: bulk.MalformedRows,
+		})
+	}
 	blamed := blamedNames(bulk)
 	reason := "the reply is not dependable, so this name's effect is unknown"
 	if err != nil {

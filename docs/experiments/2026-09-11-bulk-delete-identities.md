@@ -78,6 +78,40 @@ The reply, the run error and the recorded outcome are identical while the object
 A reported execution error therefore carries no knowledge of the effect, which is what forces the contract below to keep the two apart.
 The reviewer established the same result independently by controlled response substitution, and neither run is a claim about any production incident.
 
+## Owned-service evidence for the reply shape
+
+Two questions could only be settled against the owned Swift fixture, because the mock echoes whatever it was sent.
+Direct wire probes answered both, and are retained with their exact requests and replies.
+
+The returned error path is the submitted line, byte for byte.
+A container was created whose stored name is `bulk probe-2462880 héllo%pct`, carrying a space, non-ASCII and a literal percent, and an object it still held was deliberately left out of the request so the container deletion would fail.
+
+    line sent:      /bulk%20probe-2462880%20h%C3%A9llo%25pct
+    reply:
+      Response Status: "400 Bad Request"
+      Number Deleted: 0
+      Number Not Found: 0
+      Errors: [["/bulk%20probe-2462880%20h%C3%A9llo%25pct", "409 Conflict"]]
+
+The returned path is the sent line character for character.
+This is the evidence behind resolving a row by exact comparison, and against normalising an unrecognised path before matching it, which an earlier draft of this correction did.
+
+A partial failure carries a non-200 overall status explained by a row.
+An earlier probe requested one existing object, one missing object and one non-empty container:
+
+    reply:
+      Response Status: "400 Bad Request"
+      Number Deleted: 1
+      Number Not Found: 1
+      Errors: [["/bulkprobe-2461009", "409 Conflict"]]
+
+A validated reply therefore cannot require an overall 200, and the accepted outcomes are the documented success or a failure a valid row explains.
+
+One thing the fixture could not be made to do is return a per-object error row.
+An over-long object name was answered as not found rather than as an error, and the account owns its own containers, so no authorisation failure is reachable.
+The reliable error row there is a non-empty container, which is a container-level path and outside the deletion package's object API.
+The returned-spelling evidence is consequently a wire probe rather than a package test, and that is stated rather than papered over.
+
 ## The outcome contract
 
 The correction needs a contract before it needs code, because the present result type cannot express what a bad reply leaves behind.
@@ -109,7 +143,9 @@ On an untrusted reply, every requested identity has an unresolved effect, includ
 The minimal public projection is defined here rather than deferred.
 The existing failure counter keeps its meaning and counts each requested identity with a reported execution error once, never twice.
 Unresolved identities are published as their own count with their own retained set, and are never presented as verified, as deletions, or as part of the failure count.
-The retained set is durable only as far as its retention path is: the complete list is written to a spill file opened before any destructive request, and where that file cannot be opened or written the run keeps the exact count and a bounded sample and says so, rather than letting the ledger read as complete when it is not.
+The retained set is durable only as far as its retention path is: the complete list is written to a file opened before any destructive request, and the run keeps the exact identity count separately from any storage failure.
+Where the file cannot be opened, or where any write, flush or close fails, the run offers no list at all and says the retained list is unavailable or incomplete.
+It does not state how many identities were lost, because a buffered write that fails at the flush loses records the encoder already accepted and the recorder cannot establish that number.
 Making that path dependable in every environment, or refusing to begin a destructive run without it, is a policy decision this slice does not take.
 The verified counter is credited only from a validated aggregate; a diagnostic aggregate credits nothing, which is the specific change that stops an untrusted reply publishing claimed deletions as verified alongside the same names as failures.
 The processed display is credited on the same condition.
@@ -149,12 +185,11 @@ This slice deliberately does not change sweep semantics.
 Suppressing a name from later passes, or stopping the sweep when an effect becomes unresolved, would alter when a deletion run stops and what a pass may retry, which the approved contract does not cover and which reaches beyond a reporting correction.
 Recording the behaviour truthfully is within this slice; deciding the authority question is not.
 
-The question is put to review directly: is it acceptable to land the ledger with this pre-existing re-attempt recorded and carried as a named follow-up, or does the re-attempt of an unresolved name block this slice until the authority rule is decided.
-Either answer is workable here, and the honest position is that the correction makes a pre-existing hazard visible for the first time rather than creating one.
+Review ruled on this directly: the re-attempt is a pre-existing destructive-authority hazard rather than a retry this ledger introduces, and it may remain a separately recorded audit blocker while this bounded reporting correction is delivered.
+That ruling is not permission to retry and not a claim that the sweep is safe.
+An explicit audit follow-up is therefore carried for fresh authority and identity across replacement races, valuable-data acceptance is not cleared until it is resolved, and any change to sweep semantics needs its own approved contract.
 
 ## Required proof
-
-The implementation must show, on unchanged production first and then on the correction:
 
 1. The crafted replies above, asserting the exact retained identity set and its kind for each, with the defective shapes failing before the correction and passing after it.
 2. Rows that are out of request order, duplicated, conflicting, and naming a path never requested, each asserted separately rather than in combination.
@@ -164,10 +199,11 @@ The implementation must show, on unchanged production first and then on the corr
 6. Actual-service regressions on the owned mock and the owned Swift fixture, asserting the requested mutations that actually reached the service, the retained outcome for each requested identity, and unchanged collateral in both namespaces.
 7. A service-level assertion for the mixed-count reply over the public job counters, the terminal state, the complete outcome stream and the audit trail, so the contract is proven where the operator reads it.
 8. The streaming site in `deletePass` covered as well as the explicit-name site, since each defect exists once per site.
-9. Controlled effect substitution through the public service and both callers: the same named-error reply where the deletion did reach the service and where it did not, proving the run classifies both identically as a reported error with an unresolved effect and never asserts survival in either.
+9. Every deliberately broken variant rebuilt from its current source whenever a file it targets is rewritten. A variant whose subject has moved passes for the wrong reason and is indistinguishable from one that works, which is how two regressions were silently lost from this slice before a rebuild caught it.
 10. Rows whose status is missing, malformed, or itself a success, and two rows disagreeing about one identity, each rejected as an anomaly rather than trusted because the path matched.
-11. At least three deliberately broken variants, each failing its own check: one restoring the count-as-index assignment, one recording the echoed wire path as the name, and one dropping the foreign-row anomaly in silence. A variant that fails to compile is not a broken-guard result and does not count.
-12. The full race suite with inventory reconciliation against the delivered name count, vet, gofmt, the Windows and macOS vets and internal builds on both architectures, and a clean module tidy.
+11. Controlled effect substitution through the public service and both callers: the same named-error reply where the deletion did reach the service and where it did not, proving the run classifies both identically as a reported error with an unresolved effect and never asserts survival in either.
+12. At least three deliberately broken variants, each failing its own check: one restoring the count-as-index assignment, one recording the echoed wire path as the name, and one dropping the foreign-row anomaly in silence. A variant that fails to compile is not a broken-guard result and does not count.
+13. The full race suite with inventory reconciliation against the delivered name count, vet, gofmt, the Windows and macOS vets and internal builds on both architectures, and a clean module tidy.
 
 ## Remaining limits
 
