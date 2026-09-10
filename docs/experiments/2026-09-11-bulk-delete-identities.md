@@ -83,18 +83,26 @@ The reviewer established the same result independently by controlled response su
 Two questions could only be settled against the owned Swift fixture, because the mock echoes whatever it was sent.
 Direct wire probes answered both, and are retained with their exact requests and replies.
 
-The returned error path is the submitted line, byte for byte.
-A container was created whose stored name is `bulk probe-2462880 héllo%pct`, carrying a space, non-ASCII and a literal percent, and an object it still held was deliberately left out of the request so the container deletion would fail.
+The returned error path names the requested object, but not necessarily in the spelling the request used.
+A first probe suggested otherwise and an earlier draft of this document generalised it into a byte-for-byte echo rule, which is false.
+That probe used a name carrying a space, non-ASCII and a literal percent, which both encoders escape the same way, so it could not distinguish the two rules.
 
     line sent:      /bulk%20probe-2462880%20h%C3%A9llo%25pct
-    reply:
-      Response Status: "400 Bad Request"
-      Number Deleted: 0
-      Number Not Found: 0
-      Errors: [["/bulk%20probe-2462880%20h%C3%A9llo%25pct", "409 Conflict"]]
+    error row:      /bulk%20probe-2462880%20h%C3%A9llo%25pct
 
-The returned path is the sent line character for character.
-This is the evidence behind resolving a row by exact comparison, and against normalising an unrecognised path before matching it, which an earlier draft of this correction did.
+A second probe used punctuation that the request encoder leaves literal in a path segment and the service's reply encoder does not.
+
+    stored name:    bulkprobe3-2696204 plus+and&equals=at@colon:dollar$
+    line sent:      /bulkprobe3-2696204%20plus+and&equals=at@colon:dollar$
+    error row:      /bulkprobe3-2696204%20plus%2Band%26equals%3Dat%40colon%3Adollar%24
+
+The service decodes the line it was sent and quotes the name again more strictly for its reply, so one object has two spellings.
+Comparing spellings therefore rejects legitimate rows: a reported failure for such a name would be discarded as foreign and the whole reply falsely called untrusted, losing both the reported facet and the credit for a valid partial aggregate.
+
+The rule is consequently on the bytes a row names, not on how it is spelled.
+A row is split at the first separator after the container, each part is percent-decoded exactly once, and the result is compared to the requested container and object.
+Decoding one layer keeps percent-like text in a name intact, and a literal plus stays a plus because a path segment is not form data.
+A row that does not decode, names another container, names something the request never sent, or arrives with whitespace around it is not one of ours and is an anomaly.
 
 A partial failure carries a non-200 overall status explained by a row.
 An earlier probe requested one existing object, one missing object and one non-empty container:
@@ -201,9 +209,10 @@ An explicit audit follow-up is therefore carried for fresh authority and identit
 8. The streaming site in `deletePass` covered as well as the explicit-name site, since each defect exists once per site.
 9. Every deliberately broken variant rebuilt from its current source whenever a file it targets is rewritten. A variant whose subject has moved passes for the wrong reason and is indistinguishable from one that works, which is how two regressions were silently lost from this slice before a rebuild caught it.
 10. Rows whose status is missing, malformed, or itself a success, and two rows disagreeing about one identity, each rejected as an anomaly rather than trusted because the path matched.
-11. Controlled effect substitution through the public service and both callers: the same named-error reply where the deletion did reach the service and where it did not, proving the run classifies both identically as a reported error with an unresolved effect and never asserts survival in either.
-12. At least three deliberately broken variants, each failing its own check: one restoring the count-as-index assignment, one recording the echoed wire path as the name, and one dropping the foreign-row anomaly in silence. A variant that fails to compile is not a broken-guard result and does not count.
-13. The full race suite with inventory reconciliation against the delivered name count, vet, gofmt, the Windows and macOS vets and internal builds on both architectures, and a clean module tidy.
+11. Controlled effect substitution through the public service and both callers, on both owned providers: the same substituted reply, once with the deletion forwarded and witnessed and once suppressed, proving the run classifies both identically and asserts neither outcome, with absence and survival witnessed authoritatively by an observer that never passed through the fault boundary.
+12. The complete retained identity set read back from where the run said it is and compared beyond the display cap, so a run that advertises a list it never wrote fails.
+13. At least three deliberately broken variants, each failing its own check: one restoring the count-as-index assignment, one recording the echoed wire path as the name, and one dropping the foreign-row anomaly in silence. A variant that fails to compile is not a broken-guard result and does not count.
+14. The full race suite with inventory reconciliation against the delivered name count, vet, gofmt, the Windows and macOS vets and internal builds on both architectures, and a clean module tidy.
 
 ## Remaining limits
 

@@ -58,6 +58,38 @@ type BulkDeleteResult struct {
 	Validated bool
 }
 
+// resolveReplyPath splits a reply's row path into the container and
+// object bytes it names.
+//
+// The spelling cannot be compared directly. Swift decodes the line it
+// was sent and quotes the name again for its error response with a
+// stricter encoder than the request used: a container sent as
+// "plus+and&equals=at@colon:dollar$" comes back as
+// "plus%2Band%26equals%3Dat%40colon%3Adollar%24", observed on the owned
+// fixture. Two different spellings therefore name one object, so the
+// comparison is on the decoded bytes. Decoding is exactly one layer, so
+// percent-like text in a name survives, and a literal plus stays a plus
+// because a path segment is not form data.
+func resolveReplyPath(raw string) (container, object string, ok bool) {
+	if !strings.HasPrefix(raw, "/") {
+		return "", "", false
+	}
+	rest := raw[1:]
+	slash := strings.Index(rest, "/")
+	if slash <= 0 {
+		return "", "", false
+	}
+	decodedContainer, err := url.PathUnescape(rest[:slash])
+	if err != nil {
+		return "", "", false
+	}
+	decodedObject, err := url.PathUnescape(rest[slash+1:])
+	if err != nil || decodedObject == "" {
+		return "", "", false
+	}
+	return decodedContainer, decodedObject, true
+}
+
 // maxRetainedMalformedRows bounds the malformed-row evidence a single
 // reply can carry into a caller's record.
 const maxRetainedMalformedRows = 20
@@ -101,15 +133,12 @@ func failureStatus(status string) bool {
 // a newline travels as %0A.
 func (s *Session) BulkDelete(ctx context.Context, container string, names []string) (*BulkDeleteResult, error) {
 	var body strings.Builder
-	// The line each name is sent as, kept so the reply's echoed error
-	// rows can be resolved back to the requested spelling.
-	requested := make(map[string]string, len(names))
+	// The requested object names, kept so a reply's error rows can be
+	// resolved back to them by identity rather than by spelling.
+	requested := make(map[string]bool, len(names))
 	for _, name := range names {
-		line := "/" + url.PathEscape(container) + "/" + escapeObjectPath(name)
-		body.WriteString(line + "\n")
-		if _, seen := requested[line]; !seen {
-			requested[line] = name
-		}
+		body.WriteString("/" + url.PathEscape(container) + "/" + escapeObjectPath(name) + "\n")
+		requested[name] = true
 	}
 	// The session's own client (bookmark transport, refused redirects,
 	// bounded time) with ONE re-auth on 401 — the lifecycle the wire
@@ -205,11 +234,12 @@ func (s *Session) BulkDelete(ctx context.Context, container string, names []stri
 	seen := make(map[string]string, len(decoded.Errors))
 	distinct := int64(0)
 	for _, row := range shaped {
-		// The path is compared exactly as the reply sent it. Trimming or
-		// otherwise normalising it here would let a row that is not one
-		// of ours become one of our identities, which no part of the
-		// contract authorises.
-		name, ok := requested[row[0]]
+		// The row is resolved to the bytes it names and matched against
+		// the requested identities. Anything that does not decode, names
+		// another container, or names something this request did not
+		// send is not one of ours.
+		rowContainer, name, resolved := resolveReplyPath(row[0])
+		ok := resolved && rowContainer == container && requested[name]
 		if !ok {
 			result.UnmatchedPaths = append(result.UnmatchedPaths, row[0])
 			result.Anomalies = append(result.Anomalies,

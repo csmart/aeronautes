@@ -714,3 +714,286 @@ func TestBulkRetainsMalformedRowsWhole(t *testing.T) {
 		t.Errorf("the retained row lost elements: %v", rows[0])
 	}
 }
+
+// swiftQuote reproduces the encoder Swift uses for the paths it returns
+// in error rows: everything but the unreserved set and the separator is
+// percent-encoded. It is deliberately not the production request
+// encoder, because a helper that repeats the code under test proves
+// nothing about the service.
+func swiftQuote(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		unreserved := (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+			c == '-' || c == '.' || c == '_' || c == '~' || c == '/'
+		if unreserved {
+			b.WriteByte(c)
+			continue
+		}
+		fmt.Fprintf(&b, "%%%02X", c)
+	}
+	return b.String()
+}
+
+// replyPath renders a row path the way the service returns it.
+func replyPath(container, name string) string {
+	return "/" + swiftQuote(container) + "/" + swiftQuote(name)
+}
+
+// TestBulkResolvesTheServiceReplyEncoding pins the identity rule to the
+// bytes a row names rather than to its spelling. The service decodes
+// the line it was sent and quotes the name again more strictly, so a
+// name carrying punctuation comes back spelled differently from the way
+// it went out, and both spellings name the same object.
+func TestBulkResolvesTheServiceReplyEncoding(t *testing.T) {
+	names := []string{
+		"plus+and&amp.bin",
+		"colon:name.bin",
+		"equals=name.bin",
+		"at@name.bin",
+		"dollar$name.bin",
+		"comma,semi;name.bin",
+		"literal%percent.bin",
+		"dir/with a space.bin",
+		"héllo-ünicode.bin",
+	}
+	for _, name := range names {
+		for _, spelling := range []struct {
+			label string
+			path  func(string, string) string
+		}{
+			{"as the service returns it", replyPath},
+			{"as the request sent it", func(c, n string) string { return wire(c, n) }},
+		} {
+			t.Run(name+" "+spelling.label, func(t *testing.T) {
+				// One requested name and one valid row naming it is a
+				// legitimate, reconciling reply. The point of the case is
+				// that the row resolves to the requested identity whichever
+				// spelling it arrives in.
+				row := [2]string{spelling.path("media", name), "500 Internal Server Error"}
+				session, capabilities, _, _ := craftedCluster(t, reply(0, 0, row))
+				l := runNames(t, session, capabilities, []string{name}, Options{})
+				if l.err != nil {
+					t.Fatalf("a legitimate row was rejected: %v", l.err)
+				}
+				if l.result.UntrustedReplies != 0 {
+					t.Errorf("a legitimate reply was treated as untrusted: %+v", l.result)
+				}
+				if !equal(l.failed, []string{name}) {
+					t.Errorf("the row did not resolve to the requested identity: failed=%v", l.failed)
+				}
+				if !equal(l.unresolved, []string{name}) {
+					t.Errorf("unresolved = %v, want the requested name", l.unresolved)
+				}
+				if !strings.Contains(l.details[name], "500") {
+					t.Errorf("the reported status was lost: %q", l.details[name])
+				}
+			})
+		}
+	}
+}
+
+// TestBulkValidPartialSurvivesTheReplyEncoding proves the encoding fix
+// where it matters most: a legitimate partial reply must still be
+// validated and credited when its row uses the service's own spelling.
+func TestBulkValidPartialSurvivesTheReplyEncoding(t *testing.T) {
+	session, capabilities, _, _ := craftedCluster(t,
+		reply(1, 0, [2]string{replyPath("media", "b+plus.bin"), "500 Internal Server Error"}))
+	l := runNames(t, session, capabilities, []string{"a.bin", "b+plus.bin"}, Options{})
+	if l.err != nil {
+		t.Fatalf("a valid partial reply was rejected: %v", l.err)
+	}
+	if l.result.Deleted != 1 || l.result.UntrustedReplies != 0 {
+		t.Errorf("the aggregate was not credited: %+v", l.result)
+	}
+	if !equal(l.failed, []string{"b+plus.bin"}) || !equal(l.unresolved, []string{"b+plus.bin"}) {
+		t.Errorf("failed=%v unresolved=%v", l.failed, l.unresolved)
+	}
+}
+
+// TestBulkRefusesRowsThatAreNotOurs keeps the resolver strict in the
+// other direction: decoding is one layer, and nothing beyond a
+// different spelling of a requested identity is admitted.
+func TestBulkRefusesRowsThatAreNotOurs(t *testing.T) {
+	cases := []struct{ label, path string }{
+		{"another container", replyPath("other-container", "a b.bin")},
+		{"a name never requested", replyPath("media", "never.bin")},
+		{"whitespace added around the path", " " + replyPath("media", "a b.bin") + " "},
+		{"malformed percent encoding", "/media/a%zz.bin"},
+		{"no object part at all", "/media"},
+		{"an empty object part", "/media/"},
+		{"a double-encoded name", replyPath("media", swiftQuote("a b.bin"))},
+	}
+	for _, tc := range cases {
+		t.Run(tc.label, func(t *testing.T) {
+			session, capabilities, _, _ := craftedCluster(t,
+				reply(0, 0, [2]string{tc.path, "500 Internal Server Error"}))
+			l := runNames(t, session, capabilities, []string{"a b.bin"}, Options{})
+			if l.err == nil {
+				t.Fatal("a row that is not ours must not validate")
+			}
+			if l.result.Failed != 0 {
+				t.Errorf("a foreign row became a reported failure: %+v", l.result.Failures)
+			}
+			if !equal(l.unresolved, []string{"a b.bin"}) {
+				t.Errorf("unresolved = %v, want the requested name", l.unresolved)
+			}
+		})
+	}
+}
+
+// swiftProxy stands in front of the owned Swift fixture so one bulk
+// reply can be substituted while the request is optionally forwarded
+// for real. Everything else passes through untouched, and the auth
+// response's storage URL is rewritten so the session keeps talking to
+// the proxy rather than escaping to the fixture directly.
+type swiftProxy struct {
+	target  string
+	self    string
+	forward bool
+	reply   map[string]any
+	client  *http.Client
+	calls   int
+	sent    []byte
+}
+
+func (p *swiftProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(r.Body)
+	bulk := r.Method == http.MethodPost && r.URL.Query().Has("bulk-delete")
+	if !bulk || p.forward {
+		outbound, err := http.NewRequest(r.Method, p.target+r.URL.RequestURI(), bytes.NewReader(body))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		outbound.Header = r.Header.Clone()
+		resp, err := p.client.Do(outbound)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+		payload, _ := io.ReadAll(resp.Body)
+		if !bulk {
+			for key, values := range resp.Header {
+				for _, v := range values {
+					if strings.EqualFold(key, "X-Storage-Url") {
+						v = strings.Replace(v, p.target, p.self, 1)
+					}
+					w.Header().Add(key, v)
+				}
+			}
+			w.WriteHeader(resp.StatusCode)
+			_, _ = w.Write(payload)
+			return
+		}
+	}
+	// The substituted reply, identical whether or not the request was
+	// forwarded.
+	p.calls++
+	payload, _ := json.Marshal(p.reply)
+	p.sent = payload
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(payload)
+}
+
+func proxiedSwiftSession(t *testing.T, forward bool, reply map[string]any) (*swiftcontrol.Session, *swiftcontrol.Capabilities, *swiftProxy) {
+	t.Helper()
+	authURL := os.Getenv("AERONAUTES_SAIO_AUTH_URL")
+	if authURL == "" {
+		t.Skip("the owned Swift fixture is not configured")
+	}
+	base := authURL[:strings.Index(authURL, "/auth/")]
+	proxy := &swiftProxy{target: base, forward: forward, reply: reply, client: &http.Client{}}
+	srv := httptest.NewServer(proxy)
+	t.Cleanup(srv.Close)
+	proxy.self = srv.URL
+	session, err := swiftcontrol.New(swiftcontrol.Config{
+		AuthURL: srv.URL + "/auth/v1.0", Username: "test:tester", APIKey: "testing",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Authenticate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	capabilities, err := session.FetchCapabilities(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return session, capabilities, proxy
+}
+
+// TestBulkEffectSubstitutionRealSwift runs the fault boundary against
+// the owned service: the same substituted reply, once with the deletion
+// really applied and once suppressed. The ledger must read identically
+// in both, while a session that never sees the proxy witnesses that the
+// two worlds differ.
+func TestBulkEffectSubstitutionRealSwift(t *testing.T) {
+	direct := realSwiftSession(t)
+	ctx := context.Background()
+	container := fmt.Sprintf("aeronautes-bulksub-%d", time.Now().UnixNano())
+	if _, err := direct.CreateContainer(ctx, swiftcontrol.ContainerCreateRequest{Name: container}); err != nil {
+		t.Fatal(err)
+	}
+	target := "substitution-target.bin"
+	neighbour := "substitution-neighbour.bin"
+	t.Cleanup(func() {
+		background := context.Background()
+		for _, name := range []string{target, neighbour} {
+			_ = direct.DeleteObject(background, container, name)
+		}
+		if err := direct.DeleteContainer(background, container); err != nil {
+			t.Errorf("cleanup left %q behind: %v", container, err)
+		}
+	})
+
+	reply := map[string]any{
+		"Number Deleted": 0, "Number Not Found": 0,
+		"Response Status": "200 OK", "Response Body": "",
+		"Errors": [][2]string{{"/" + container + "/" + target, "500 Internal Server Error"}},
+	}
+	var ledgers []string
+	var payloads [][]byte
+	var presence []bool
+
+	for _, forward := range []bool{false, true} {
+		for _, name := range []string{target, neighbour} {
+			if _, err := direct.PutObject(ctx, container, name, strings.NewReader("payload"), "application/octet-stream", nil); err != nil {
+				t.Fatal(err)
+			}
+		}
+		session, capabilities, proxy := proxiedSwiftSession(t, forward, reply)
+		var mu sync.Mutex
+		var failed, unresolved []string
+		result, err := DeleteNames(ctx, session, capabilities, container, []string{target}, Options{
+			OnFailure:    func(n, d string) { mu.Lock(); failed = append(failed, n); mu.Unlock() },
+			OnUnresolved: func(n, d string) { mu.Lock(); unresolved = append(unresolved, n); mu.Unlock() },
+		})
+		sort.Strings(failed)
+		sort.Strings(unresolved)
+		ledgers = append(ledgers, fmt.Sprintf("err=%v deleted=%d failed=%v unresolved=%v untrusted=%d",
+			err != nil, result.Deleted, failed, unresolved, result.UntrustedReplies))
+		payloads = append(payloads, proxy.sent)
+
+		// Witnessed by a session that never passed through the proxy.
+		_, headErr := direct.ObjectDetail(ctx, container, target)
+		presence = append(presence, headErr == nil)
+		if _, err := direct.ObjectDetail(ctx, container, neighbour); err != nil {
+			t.Errorf("forward=%v: the neighbour was harmed: %v", forward, err)
+		}
+	}
+
+	if !bytes.Equal(payloads[0], payloads[1]) {
+		t.Fatal("the two runs must be driven by identical reply bytes")
+	}
+	if ledgers[0] != ledgers[1] {
+		t.Errorf("the same reply produced different ledgers:\n suppressed %s\n applied    %s", ledgers[0], ledgers[1])
+	}
+	if !presence[0] {
+		t.Error("the suppressed run destroyed the target")
+	}
+	if presence[1] {
+		t.Error("the forwarded run did not destroy the target, so the boundary proved nothing")
+	}
+}
