@@ -5135,7 +5135,7 @@ This is a prerequisite within DS-04 and not its remedy: comparing a destination 
 
 1. Review this sequence and the dedicated experiment plan, including its observations of the deployed fixture and the limits of a listing-derived aggregate identity, before changing production styles or fixtures.
 2. Carry the aggregate identity observed on the staged manifest before publication in the existing conditional publishing write, beside the fingerprint it already sends, introducing no further mutation of a live object; the stamp identifies that earlier staged observation and claims no live identity, no frozen membership and no verified content.
-3. Report a non-plain destination as the same only when it is a dynamic large object whose fingerprint, logical length and live aggregate identity all match what was recorded; refuse the overwrite on every other non-plain destination, including static large objects and any destination carrying no stamp.
+3. Keep every condition that admits a non-plain skip today, then require a dynamic large object destination to carry a stamp equal to its live aggregate identity, refuse a static large object destination outright, and leave any other destination, such as a large source materialised as a plain one, with the decision it has today because it carries no aggregate of its own.
 4. Correct the mock so a dynamic large object derives its aggregate entity tag from the segment rows it lists, prove the correction changes no existing observed behaviour, and name the lagging-listing dimension it still does not model.
 
 The correction is one-directional and its permitted-skip set is a strict subset of today's: destinations skipped today become refused, nothing refused today becomes skipped, and no new write is introduced.

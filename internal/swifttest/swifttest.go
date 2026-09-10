@@ -755,6 +755,10 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request, container,
 	}
 	length := o.Bytes
 	var logical []byte
+	// derivedETag is the DLO aggregate recomputed from the segment rows
+	// this mock lists, matching the shape of the upstream computation;
+	// empty leaves the stored value in place.
+	var derivedETag string
 	rawManifest := r.URL.Query().Get("multipart-manifest") == "get"
 	if ok && (o.Manifest == "" || rawManifest) {
 		logical = o.Data
@@ -774,10 +778,21 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request, container,
 				sort.Strings(segNames)
 				length = 0
 				logical = nil
+				var concatenated strings.Builder
 				for _, segName := range segNames {
 					seg := sc.objects[segName]
 					length += seg.Bytes
 					logical = append(logical, seg.Data...)
+					concatenated.WriteString(strings.Trim(seg.ETag, `"`))
+				}
+				// Observed on the deployed service: a dynamic large
+				// object reports the MD5 of its segments' concatenated
+				// entity tags, so a same-size substitution changes it. A
+				// static large object keeps the value its manifest
+				// recorded, which this mock does not model.
+				if !o.SLO {
+					derived := md5.Sum([]byte(concatenated.String()))
+					derivedETag = hex.EncodeToString(derived[:])
 				}
 			}
 		}
@@ -796,7 +811,11 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request, container,
 
 	h := w.Header()
 	h.Set("Content-Type", o.ContentType)
-	h.Set("Etag", o.ETag)
+	if derivedETag != "" {
+		h.Set("Etag", derivedETag)
+	} else {
+		h.Set("Etag", o.ETag)
+	}
 	h.Set("Content-Length", strconv.FormatInt(length, 10))
 	h.Set("Last-Modified", "Fri, 28 Aug 2026 10:00:00 GMT")
 	if o.Manifest != "" {
