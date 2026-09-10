@@ -295,6 +295,7 @@ def observe(rows):
         'error_block_height': block['height'] if block else 0,
         'error_block_end_visible': bool(tail),
         'error_tail_complete': bool(tail) and bool(ending.get('natural_end')),
+        'error_text_lines': ending.get('text_lines', 0),
         'error_tail_padding_rows': ending.get('padding_rows', 0),
         'error_last_line_fraction': ending.get('last_line_fraction'),
         'consent_checkbox_visible': len(geometry.consent_checkbox(rows, box)) == 1}
