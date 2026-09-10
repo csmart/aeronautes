@@ -97,56 +97,60 @@
   <div class="dialog" role="alertdialog" aria-label="Delete manifest" aria-modal="true" tabindex="-1"
     use:trapFocus={close}>
     <h2 class="title">Delete {target.detail.class.toUpperCase()} manifest</h2>
-    <p class="what">
-      <span class="type-mono">{target.request.name}</span> will be deleted. The logical object stops
-      existing: reads of this name will fail.
-    </p>
-    {#if !withSegments}
-      <p class="keeps">
-        <strong>{(ownership?.inlineEntries ?? 0) > 0
-          ? "Referenced segment objects survive; inline data does not."
-          : "Every referenced segment object survives."}</strong> The data remains at
-        <span class="type-mono">{target.segmentsAt}</span> and becomes orphaned unless another manifest
-        references it.
+    <!-- The body scrolls inside the viewport bound (UI-13): the title and the
+      actions stay visible while a long backing target or error stays reachable. -->
+    <div class="body">
+      <p class="what">
+        <span class="type-mono">{target.request.name}</span> will be deleted. The logical object stops
+        existing: reads of this name will fail.
       </p>
-      {#if (ownership?.inlineEntries ?? 0) > 0}
-        <p class="keeps warn">
-          <strong>{ownership?.inlineEntries} inline data entr{(ownership?.inlineEntries ?? 0) === 1 ? "y" : "ies"}
-          will be destroyed:</strong> inline data lives only inside the manifest itself and
-          cannot survive its deletion.
+      {#if !withSegments}
+        <p class="keeps">
+          <strong>{(ownership?.inlineEntries ?? 0) > 0
+            ? "Referenced segment objects survive; inline data does not."
+            : "Every referenced segment object survives."}</strong> The data remains at
+          <span class="type-mono">{target.segmentsAt}</span> and becomes orphaned unless another manifest
+          references it.
         </p>
+        {#if (ownership?.inlineEntries ?? 0) > 0}
+          <p class="keeps warn">
+            <strong>{ownership?.inlineEntries} inline data entr{(ownership?.inlineEntries ?? 0) === 1 ? "y" : "ies"}
+            will be destroyed:</strong> inline data lives only inside the manifest itself and
+            cannot survive its deletion.
+          </p>
+        {/if}
       {/if}
-    {/if}
 
-    {#if ownership}
-      <label class="segments-opt">
-        <input type="checkbox" bind:checked={withSegments} disabled={deleting || !isCurrent()} />
-        <span>
-          Also delete the segments ({ownership.target})
-          {#if ownership.proven}
-            — evidence suggests <strong class="proven">likely this app's</strong> (ownership record)
-          {/if}
-        </span>
-      </label>
-      {#if forceNeeded}
-        <p class="force-warn">
-          Deleting backing segments is a <strong>Backstage override</strong>. Ownership evidence
-          can identify likely-owned segments but cannot yet prove that no other object references
-          them, so this always requires explicit confirmation.
-          <label for={confirmId}>Type the object name to arm it:</label>
-        </p>
-        <input
-          id={confirmId}
-          class="force-confirm type-mono"
-          bind:value={confirmText}
-          placeholder={target.request.name}
-          disabled={deleting || !isCurrent()}
-        />
+      {#if ownership}
+        <label class="segments-opt">
+          <input type="checkbox" bind:checked={withSegments} disabled={deleting || !isCurrent()} />
+          <span>
+            Also delete the segments ({ownership.target})
+            {#if ownership.proven}
+              — evidence suggests <strong class="proven">likely this app's</strong> (ownership record)
+            {/if}
+          </span>
+        </label>
+        {#if forceNeeded}
+          <p class="force-warn">
+            Deleting backing segments is a <strong>Backstage override</strong>. Ownership evidence
+            can identify likely-owned segments but cannot yet prove that no other object references
+            them, so this always requires explicit confirmation.
+            <label for={confirmId}>Type the object name to arm it:</label>
+          </p>
+          <input
+            id={confirmId}
+            class="force-confirm type-mono"
+            bind:value={confirmText}
+            placeholder={target.request.name}
+            disabled={deleting || !isCurrent()}
+          />
+        {/if}
       {/if}
-    {/if}
-    {#if error}
-      <p class="error" role="alert">{error}</p>
-    {/if}
+      {#if error}
+        <p class="error" role="alert">{error}</p>
+      {/if}
+    </div>
     <div class="actions">
       <button class="secondary" onclick={close} disabled={deleting}>Cancel</button>
       <button class="danger" onclick={confirm} disabled={deleting || !armed}>
@@ -166,6 +170,13 @@
     gap: var(--space-2);
     align-items: baseline;
     font-size: var(--text-sm);
+  }
+
+  /* The literal backing target has no break opportunities, so the label needs
+     both a shrinkable flex item and permission to break inside the word. */
+  .segments-opt span {
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 
   .proven {
@@ -206,6 +217,7 @@
 
   .dialog {
     width: min(26rem, calc(100vw - 2 * var(--space-5)));
+    max-height: calc(100vh - 2 * var(--space-5));
     padding: var(--space-4);
     display: flex;
     flex-direction: column;
@@ -238,6 +250,14 @@
     color: var(--color-danger);
     background: var(--color-danger-soft);
     border-radius: var(--radius-control);
+  }
+
+  .body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    min-height: 0;
+    overflow-y: auto;
   }
 
   .actions {
