@@ -92,3 +92,81 @@ Slot admission, cancellation, the recovery paths and the upload attempt-count qu
 The result is recorded first, including an explicitly unresolved outcome if the evidence does not separate the phases.
 Only then, and only as its own reviewed commit, may any test change be proposed, with the release oracle and every identity, record and collateral assertion preserved.
 No blind retry is introduced anywhere, and no deadline is relaxed merely to absorb variance.
+
+## Result
+
+Five private producers ran on one Linux host against the mock harness, at the planned source revision.
+The parameters were fixed beforehand, with one exception recorded here rather than presented otherwise.
+The contention reduction, to eight busy loops and three runs because another investigation had system-test processes on the same host, was registered before that producer ran.
+The missing-release window, aligned to the real thirty-second deadline and so observing to sixty seconds, was registered after those three runs had already completed, which makes that producer's parameters retrospective provenance rather than pre-registration; its value is visible in the retained marks, and the original timestamps are left unchanged.
+
+### Marker semantics
+
+The seam markers are named for where they are emitted, and the intervals below are marker to marker.
+The entry marker is emitted at the launch seam before the bounded hold and before the body call, so it is not entry into the copy body.
+The return marker is emitted immediately after the body call returns, so the body's own deferred cleanup has completed.
+The release marker is emitted inside the deferred release wrapper before the release runs, and is emitted even when the release is suppressed, so it marks the call site and not a completed release.
+A successful bookmark save is the only evidence of an actual release, and remains the release oracle.
+No origin was recorded at the start of the copy, so no interval here measures all scheduling before the body.
+
+### The interval the unheld runs measure
+
+In the five idle runs, with retained one-minute load averages of 0.26 to 0.66 taken immediately before each run, the interval from the entry marker to the return marker was 9,538 to 10,400 milliseconds, a mean of 9,776.
+The interval from entering the wait to the entry marker was 0.0 to 0.1 milliseconds, which bounds the seam handoff only and does not establish that scheduling played no part.
+The return marker was followed by the release marker within 0.1 milliseconds in each of the fourteen runs that retained both markers.
+The three guard-rejection runs retain only the entry and hold-start markers, because the unchanged guard fails before the hold ends, so their return-to-release interval is unobserved.
+The account polled first is acknowledged as that interval ends, and the second within about fifteen milliseconds.
+The worst idle run consumed 34.7 per cent of the thirty-second deadline.
+
+In three runs with eight busy loops running throughout, the same interval was 11,774 to 12,181 milliseconds, a mean of 1.23 times the idle mean.
+The retained one-minute load averages, sampled three seconds after the busy loops started and therefore lagging the instantaneous load, were 1.26, 3.44 and 5.01.
+Reaching the deadline from the idle mean would require about 3.07 times that interval, which this sample did not reach.
+
+For the unheld runs, then, what the wait measures is dominated by the body: the whole interval from entering the wait to the release marker equals the entry-to-return interval to within a tenth of a millisecond.
+That is a statement about these runs, not about every expiry, because the suppressed-release control below expires after a body that completed quickly.
+
+### The two situations are separable
+
+The unchanged guard was proved to reject a held body: with the launch seam holding for thirty-five seconds, each of three runs produced one failing leaf carrying the binding message, with no build, setup or teardown error counted as that result.
+
+The supervised runs then observed what the same held job does afterwards, with the fixture kept alive past the deadline.
+Both accounts crossed their own thirty-second deadline, at 30,000 to 30,006 milliseconds from their own origins.
+The entry-to-return interval was 45,418 to 45,968 milliseconds, which contains the thirty-five second hold and is therefore not thirty-five seconds of copy work.
+The release marker followed the return marker within 0.1 milliseconds, and both accounts were acknowledged 22 to 45 milliseconds after that marker.
+Every original identity, record and collateral assertion in the case still held.
+
+The suppressed-release control removed the release and left the body unheld.
+The entry-to-return interval was 10,105 to 10,255 milliseconds, the return marker was observed, and both accounts crossed the deadline and were still refused when observation ended at about sixty seconds.
+
+The deadline crossing alone therefore does not distinguish the two situations, because it is identical in both.
+What distinguishes them is whether an acknowledgement follows the return marker: within forty-five milliseconds when the launch seam had been held, and absent through sixty seconds when the release was removed.
+That is a narrow distinction between a supervised delayed launch that eventually releases and an intentionally suppressed release after body return, and it is the distinction the current single wait cannot draw.
+
+### One planned observation was not collected
+
+The plan listed terminal publication as a fourth observation, and these producers did not collect it.
+The instrumentation marks the launch seam, the body call's return and the release call site, and the wait marks the two acknowledgements; nothing timestamped the terminal row.
+It is recorded here as not collected rather than inferred from the order of the other marks.
+The separation reported above does not rest on it, because the distinguishing observable is whether an acknowledgement follows the return marker.
+
+### What is eliminated and what is not
+
+Competing occupants of a capacity slot are excluded for this fixture, because the harness builds its own runner over its own database, the ceiling is two, and the case starts one job.
+Scheduling before the body is not excluded: no origin was taken at the start of the copy, and the measured seam handoff bounds only the step from entering the wait to the seam marker.
+The cause of the recorded hosted failure is not established and cannot be, because its process is gone, and that failure remains unclassified between the two situations above.
+Nothing here shows that the hosted body reached thirty seconds, and no result in this document may be reported as that failure's cause.
+
+### Limits on these numbers
+
+The instrumentation writes one short line per event and the host was shared with another investigation, so both bound the precision of the timings rather than being corrected for.
+Per-run wrapper exit codes were not written to disk in this set, and the retained streams carry the pass and fail events.
+The invocation record retained beside them is a reconstructed template rather than a capture of the executed command lines: it states the common command shape and per-producer environment, and it omits the bound substituted into each timeout, the execution directory, the per-run log paths and redirections, and the source switch that restored the unchanged guard for the rejection producer.
+The hold sits at the launch seam immediately before the body call, so during it the job holds its slot and its binding but has not entered the copy body.
+From the binding's perspective that is indistinguishable from a slow body, and it is not slow copy work.
+These runs cover a Linux host and the mock harness; the real-service variants need the containerised service and are outside this slice.
+
+### Indicated direction, not validated here
+
+Waiting explicitly for a terminal state before waiting for the release, which is the shape the upload item-record case already uses, remains a hypothesis worth its own slice.
+This sample neither measured a terminal-to-release interval nor validated that boundary, because terminal publication was not observed.
+Any such change would come as its own reviewed commit with its own evidence, keeping the successful save as the release acknowledgement, every existing assertion unchanged, no relaxed deadline and no retry.
