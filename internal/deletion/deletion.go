@@ -94,6 +94,15 @@ type Result struct {
 	Passes int
 	// VerifyPolicy states the §32 postcondition this run checked.
 	VerifyPolicy string
+
+	// seenFailed and seenUnresolved make both counts what they are
+	// documented to be: distinct requested identities across the whole
+	// run. A sweep re-lists what is still there, so the same name can
+	// be observed on more than one pass and in more than one batch, and
+	// one identity must still be one record, one stream event and one
+	// count.
+	seenFailed     map[string]bool
+	seenUnresolved map[string]bool
 }
 
 const maxFailures = 200
@@ -147,6 +156,13 @@ func recordBatchOutcome(result *Result, onFailure, onUnresolved func(name, detai
 }
 
 func (r *Result) fail(onFailure func(name, detail string), name string, err error) {
+	if r.seenFailed == nil {
+		r.seenFailed = map[string]bool{}
+	}
+	if r.seenFailed[name] {
+		return
+	}
+	r.seenFailed[name] = true
 	r.Failed++
 	if len(r.Failures) < maxFailures {
 		r.Failures = append(r.Failures, Failure{Name: name, Err: err.Error()})
@@ -158,6 +174,13 @@ func (r *Result) fail(onFailure func(name, detail string), name string, err erro
 
 // unresolvedEffect retains one name whose effect this run cannot state.
 func (r *Result) unresolvedEffect(onUnresolved func(name, detail string), name, detail string) {
+	if r.seenUnresolved == nil {
+		r.seenUnresolved = map[string]bool{}
+	}
+	if r.seenUnresolved[name] {
+		return
+	}
+	r.seenUnresolved[name] = true
 	r.Unresolved++
 	if len(r.Unresolveds) < maxFailures {
 		r.Unresolveds = append(r.Unresolveds, Failure{Name: name, Err: detail})

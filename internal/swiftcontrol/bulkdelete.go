@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -53,20 +54,34 @@ type BulkDeleteResult struct {
 	Validated bool
 }
 
-// failureStatus reports whether a per-item status denotes a failure.
-// A row is authoritative about a name only when it says something went
-// wrong: a missing, unparsable or success-valued status does not become
-// a disposition merely because the path matched.
-func failureStatus(status string) bool {
-	fields := strings.Fields(strings.TrimSpace(status))
-	if len(fields) == 0 {
-		return false
+// statusLine matches the shape Swift documents for a status: three
+// digits, optionally followed by a space and a reason phrase. It is
+// deliberately strict, so a value like "+500", "0500", "200not-a-status"
+// or an empty string is not a status at all.
+var statusLine = regexp.MustCompile(`^([1-5][0-9]{2})( .*)?$`)
+
+// statusCode returns the code a status line carries, and whether the
+// line is a status at all.
+func statusCode(status string) (int, bool) {
+	match := statusLine.FindStringSubmatch(status)
+	if match == nil {
+		return 0, false
 	}
-	code, err := strconv.Atoi(fields[0])
+	code, err := strconv.Atoi(match[1])
 	if err != nil {
-		return false
+		return 0, false
 	}
-	return code >= 400 && code <= 599
+	return code, true
+}
+
+// failureStatus reports whether a per-item status is a well formed
+// status that denotes a failure. A row is authoritative about a name
+// only when it says something went wrong: a missing, malformed or
+// success-valued status does not become a disposition merely because
+// the path matched.
+func failureStatus(status string) bool {
+	code, ok := statusCode(status)
+	return ok && code >= 400
 }
 
 // BulkDelete issues one Swift bulk-delete (§31.2 BulkDelete executor):
@@ -132,7 +147,7 @@ func (s *Session) BulkDelete(ctx context.Context, container string, names []stri
 		NumberDeleted  int64           `json:"Number Deleted"`
 		NumberNotFound int64           `json:"Number Not Found"`
 		ResponseStatus string          `json:"Response Status"`
-		Errors         [][2]string     `json:"Errors"`
+		Errors         [][]string      `json:"Errors"`
 		ResponseBody   json.RawMessage `json:"Response Body"`
 	}
 	if err := json.Unmarshal(payload, &decoded); err != nil {
@@ -141,17 +156,39 @@ func (s *Session) BulkDelete(ctx context.Context, container string, names []stri
 	result := &BulkDeleteResult{
 		Deleted:  decoded.NumberDeleted,
 		NotFound: decoded.NumberNotFound,
-		Errors:   decoded.Errors,
 	}
+	// A documented row is exactly a path and a status. A row of any
+	// other shape is not discarded quietly: it is an anomaly, and its
+	// contents are kept as far as they go.
+	rows := make([][2]string, 0, len(decoded.Errors))
+	shaped := make([][2]string, 0, len(decoded.Errors))
+	for _, row := range decoded.Errors {
+		padded := [2]string{}
+		copy(padded[:], row)
+		rows = append(rows, padded)
+		if len(row) != 2 {
+			// A row of the wrong shape is not a disposition about
+			// anything. It is retained raw and reported, and it never
+			// reaches identity resolution.
+			result.Anomalies = append(result.Anomalies,
+				fmt.Sprintf("a row carries %d elements where the reply format has two", len(row)))
+			continue
+		}
+		shaped = append(shaped, padded)
+	}
+	result.Errors = rows
 	// Validate the reply against this request before anything trusts it.
 	// Arithmetic alone accepted replies that named the wrong names, so
 	// membership, uniqueness, status shape and counts are all checked,
 	// and any violation makes the whole reply untrusted (K-DEL-002).
 	seen := make(map[string]string, len(decoded.Errors))
 	distinct := int64(0)
-	for _, row := range decoded.Errors {
-		path := strings.TrimSpace(row[0])
-		name, ok := requested[path]
+	for _, row := range shaped {
+		// The path is compared exactly as the reply sent it. Trimming or
+		// otherwise normalising it here would let a row that is not one
+		// of ours become one of our identities, which no part of the
+		// contract authorises.
+		name, ok := requested[row[0]]
 		if !ok {
 			result.UnmatchedPaths = append(result.UnmatchedPaths, row[0])
 			result.Anomalies = append(result.Anomalies,
@@ -186,7 +223,12 @@ func (s *Session) BulkDelete(ctx context.Context, container string, names []stri
 	// The middleware reports overall failure through Response Status
 	// while still returning 200 on the wire; a status that is not the
 	// documented success needs a valid row to explain it.
-	if !strings.HasPrefix(decoded.ResponseStatus, "200") && distinct == 0 {
+	overall, wellFormed := statusCode(decoded.ResponseStatus)
+	switch {
+	case !wellFormed:
+		result.Anomalies = append(result.Anomalies,
+			fmt.Sprintf("the reply carries overall status %q, which is not a status", decoded.ResponseStatus))
+	case overall != http.StatusOK && distinct == 0:
 		result.Anomalies = append(result.Anomalies,
 			fmt.Sprintf("the reply carries overall status %q with no row explaining it", decoded.ResponseStatus))
 	}

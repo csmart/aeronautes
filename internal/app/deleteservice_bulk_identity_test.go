@@ -112,8 +112,10 @@ func TestDeleteJobDoesNotPublishClaimedDeletionsAsVerified(t *testing.T) {
 	}
 	job := awaitTerminal(t, h, jobID)
 
-	if job.State == "complete" {
-		t.Errorf("a run holding unresolved names completed: %+v", job)
+	// The exact state matters: an unresolved effect is not zero effect,
+	// so the run is partial rather than failed or cancelled.
+	if job.State != "partial" {
+		t.Errorf("state = %q, want partial while names are unresolved", job.State)
 	}
 	if job.Counters.ObjectsVerified != 0 {
 		t.Errorf("claimed deletions were published as verified: ObjectsVerified = %d", job.Counters.ObjectsVerified)
