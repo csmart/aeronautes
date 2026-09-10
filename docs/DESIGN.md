@@ -5072,6 +5072,23 @@ Preserve every failed producer and distinguish authored-colour ratios, isolated 
 Final-base review and all five protected PR/master jobs remain required before delivery; root coordination owns that delivery order.
 Forced colours, scaling, assistive technology, other native platforms, broader UI-12/P29 certification and the valuable-data hold remain open.
 
+The next bounded [portable component refusal](experiments/2026-09-10-portable-download-names.md) applies one lexical name policy to every planned download component.
+Windows reserves device bases such as `CON` and `COM1`, opens a console for `CONIN$` and `CONOUT$`, forbids `<>:"|?*` inside a component, and directs applications not to end a name with a space or dot that its shell and user interface do not preserve.
+Preflight and direct item validation refuse traversal, backslashes, empty segments and control characters today, and admit every one of those spellings.
+K-XFER-011, §27.5, §65.9 item 13 and ADR 0034 require one portable policy and whole-selection refusal before the relevant admission boundary.
+This prerequisite refuses without trimming, encoding or renaming, and preserves exact source, recorded and diagnostic spellings.
+
+1. Review this sequence and the dedicated experiment plan, including the exact refusal families, the extension-form decision and their near-miss controls, before implementation.
+2. Add one shared component predicate in `local.go`, called from preflight before marker classification and from `validDownloadItem` in `download_recording.go` before admission, keeping the existing empty root-marker exception and the selected-root spelling.
+3. Add maintained preflight, direct recorded/unrecorded and actual-service engine/native/marker cases behind a safe first member, at leaf, ancestor and marker positions, with passing near-miss controls such as `NULx`, `COM10`, `x.NUL` and an internal space.
+   Preserve actual before failures on unchanged production, complete local and owned remote deltas, full job/item/audit facts, and single-boundary broken controls.
+4. Record the complete compatibility, inventory and scenario verification, obtain independent local review, and deliver only the reviewed current-base source through all five protected PR and master checks.
+
+The refusal is a conservative rule on every host, not a claim that each refused spelling is a device or an invalid name on every Windows release, and no Windows device is ever opened to prove it.
+Unicode equivalence and normalization, leading spaces, directory-only aliases, encoding collisions, length limits and representative native filesystem acceptance remain separate P19 work.
+Selected-root lifetime, concurrent parent/root replacement, publication and cleanup authority remain separate P18/P20/P30 work.
+This bounded correction does not close P18, P19 or the valuable-data hold.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
