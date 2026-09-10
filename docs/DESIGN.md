@@ -5170,6 +5170,22 @@ Maintain unchanged-poll and pending-page regressions, retaining genuine completi
 Run full frontend validation and independent implementation review before the next complete five-job PR/master delivery loop.
 The polling cadence, transfer authority and valuable-data hold remain unchanged.
 
+The next bounded [bulk delete outcome contract](experiments/2026-09-11-bulk-delete-identities.md) makes a deletion run state what it knows about each requested name.
+A bulk reply names identities only in its error rows and reports deleted and not-found as counts, and today it is validated by arithmetic alone.
+Two rows naming one requested name of two reconcile numerically, raise no error, and leave the second name unmentioned and treated as handled; on the path where arithmetic does fail, a count is used as an index into the requested names.
+K-DEL-002 and §31.2 require one outcome per identity, and ADR 0023 already holds that an attempted deletion under an error response remains unresolved.
+An identical reported error accompanies an object that survived and one that was destroyed, so a row reports an attempt and witnesses no effect.
+
+1. Review this sequence and the dedicated experiment plan, including the outcome contract and the validation rules, before changing production.
+2. Validate every reply for membership, duplicate or conflicting identity rows, row status shape, counts and overall status, so a path match alone never makes a malformed or success-valued row authoritative.
+3. Retain a reported execution error and an unresolved effect as separate facts that may describe one identity, credit a reported aggregate only from a validated reply, and keep every requested name of an untrusted reply by identity.
+4. Project those facts publicly without contradiction: count each reported failure once, publish unresolved names separately and never as verified deletions, and refuse a complete terminal state while any name is unresolved.
+5. Prove it with actual-service regressions on the owned fixtures, object-name encoding carried end to end, the controlled effect pair, deliberately broken controls and the complete outcome stream, then deliver only the reviewed current-base source through all five protected checks.
+
+An unresolved record is not authority to delete again, because a replacement object may exist under the name, and no retry is introduced.
+Successful deletions stay unidentifiable because the protocol reports them only as counts, so a validated aggregate remains the service's report rather than an independent observation.
+This bounded correction does not close DS-08, the 200-record display cap, the segment helper that returns only counts, or the valuable-data hold.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.

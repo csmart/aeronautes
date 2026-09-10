@@ -65,6 +65,19 @@ These are the shapes that raise no error at all, so nothing downstream can tell 
 The third of these is a valid partial reply, and its single failure is genuine.
 It is the reason the passing control cannot be that a reconciling reply records no failure.
 
+A third probe established the control pair directly, on the same unchanged head, retained as `before-effect-pair.txt` with its source as `probe_effect_pair_test.go.txt`.
+One name was requested twice under identical conditions, and the crafted reply was the same 144 bytes in both runs: no counts, and one row naming that name with a server error.
+The two runs differed only in whether the request was replayed into the owned mock before the crafted reply was returned.
+
+| Run | Reply | Run error | Recorded outcome | Target after an authoritative check | Collateral |
+| --- | --- | --- | --- | --- | --- |
+| Not forwarded | 144 bytes, one server-error row | none | one failure, that row | present | present |
+| Forwarded to the mock | the same 144 bytes | none | one failure, the same row | absent | present |
+
+The reply, the run error and the recorded outcome are identical while the object survived in one run and was destroyed in the other.
+A reported execution error therefore carries no knowledge of the effect, which is what forces the contract below to keep the two apart.
+The reviewer established the same result independently by controlled response substitution, and neither run is a claim about any production incident.
+
 ## The outcome contract
 
 The correction needs a contract before it needs code, because the present result type cannot express what a bad reply leaves behind.
