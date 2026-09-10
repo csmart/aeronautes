@@ -75,9 +75,19 @@ func validAggregate(etag string) bool {
 // read once per run. A zero field means the cluster advertised no such
 // limit, and known records that the lookup already happened.
 type metaBudget struct {
-	count   int
-	overall int
-	known   bool
+	count       int
+	overall     int
+	nameLength  int
+	valueLength int
+	known       bool
+}
+
+// complete reports whether every dimension the store enforces was
+// advertised. A partly advertised allowance is not a budget: treating
+// the missing dimension as unlimited is how optional evidence breaks a
+// copy, so an incomplete answer means the stamp is simply omitted.
+func (b metaBudget) complete() bool {
+	return b.count > 0 && b.overall > 0 && b.nameLength > 0 && b.valueLength > 0
 }
 
 // metaBudgetFor reads the destination's advertised metadata allowance
@@ -91,6 +101,8 @@ func (e *Executor) metaBudgetFor(ctx context.Context) metaBudget {
 	if err == nil && capabilities != nil {
 		e.budget.count = capabilities.MaxMetaCount()
 		e.budget.overall = capabilities.MaxMetaOverallSize()
+		e.budget.nameLength = capabilities.MaxMetaNameLength()
+		e.budget.valueLength = capabilities.MaxMetaValueLength()
 	}
 	return e.budget
 }
@@ -102,7 +114,10 @@ func (e *Executor) metaBudgetFor(ctx context.Context) metaBudget {
 // exhausted allowance simply publishes without it, and the destination
 // is then refused rather than skipped on a later decision.
 func stampFits(headers map[string]string, key, value string, budget metaBudget) bool {
-	if budget.count == 0 && budget.overall == 0 {
+	if !budget.complete() {
+		return false
+	}
+	if len(key) > budget.nameLength || len(value) > budget.valueLength {
 		return false
 	}
 	entries, size := 0, 0
@@ -114,13 +129,7 @@ func stampFits(headers map[string]string, key, value string, budget metaBudget) 
 		entries++
 		size += len(name) + len(v)
 	}
-	if budget.count > 0 && entries+1 > budget.count {
-		return false
-	}
-	if budget.overall > 0 && size+len(key)+len(value) > budget.overall {
-		return false
-	}
-	return true
+	return entries+1 <= budget.count && size+len(key)+len(value) <= budget.overall
 }
 
 // Config wires one job's executor.
