@@ -39,6 +39,10 @@ type BulkDeleteResult struct {
 	// order and preserving repeats, so a caller can see exactly what the
 	// reply said about names it asked about.
 	Failures []BulkDeleteFailure
+	// MalformedRows are rows whose shape is not the documented pair,
+	// retained whole rather than truncated, so the evidence of a bad
+	// reply survives the boundary. Bounded, and never a disposition.
+	MalformedRows [][]string
 	// UnmatchedPaths are error rows whose path matches no line this
 	// request sent. They are evidence the reply is not wholly about this
 	// request and must never be recorded as one of the caller's names.
@@ -53,6 +57,10 @@ type BulkDeleteResult struct {
 	// status. Only a validated reply's counts may be credited.
 	Validated bool
 }
+
+// maxRetainedMalformedRows bounds the malformed-row evidence a single
+// reply can carry into a caller's record.
+const maxRetainedMalformedRows = 20
 
 // statusLine matches the shape Swift documents for a status: three
 // digits, optionally followed by a space and a reason phrase. It is
@@ -144,8 +152,11 @@ func (s *Session) BulkDelete(ctx context.Context, container string, names []stri
 	}
 
 	var decoded struct {
-		NumberDeleted  int64           `json:"Number Deleted"`
-		NumberNotFound int64           `json:"Number Not Found"`
+		// The counts are pointers so a missing or null field is not read
+		// as an observed zero: the protocol requires both, and absent
+		// data is not an observation.
+		NumberDeleted  *int64          `json:"Number Deleted"`
+		NumberNotFound *int64          `json:"Number Not Found"`
 		ResponseStatus string          `json:"Response Status"`
 		Errors         [][]string      `json:"Errors"`
 		ResponseBody   json.RawMessage `json:"Response Body"`
@@ -153,9 +164,16 @@ func (s *Session) BulkDelete(ctx context.Context, container string, names []stri
 	if err := json.Unmarshal(payload, &decoded); err != nil {
 		return nil, fmt.Errorf("bulk-delete response: %w", err)
 	}
-	result := &BulkDeleteResult{
-		Deleted:  decoded.NumberDeleted,
-		NotFound: decoded.NumberNotFound,
+	result := &BulkDeleteResult{}
+	if decoded.NumberDeleted != nil {
+		result.Deleted = *decoded.NumberDeleted
+	} else {
+		result.Anomalies = append(result.Anomalies, "the reply reports no deleted count")
+	}
+	if decoded.NumberNotFound != nil {
+		result.NotFound = *decoded.NumberNotFound
+	} else {
+		result.Anomalies = append(result.Anomalies, "the reply reports no not-found count")
 	}
 	// A documented row is exactly a path and a status. A row of any
 	// other shape is not discarded quietly: it is an anomaly, and its
@@ -168,10 +186,13 @@ func (s *Session) BulkDelete(ctx context.Context, container string, names []stri
 		rows = append(rows, padded)
 		if len(row) != 2 {
 			// A row of the wrong shape is not a disposition about
-			// anything. It is retained raw and reported, and it never
+			// anything. It is retained whole and reported, and it never
 			// reaches identity resolution.
 			result.Anomalies = append(result.Anomalies,
 				fmt.Sprintf("a row carries %d elements where the reply format has two", len(row)))
+			if len(result.MalformedRows) < maxRetainedMalformedRows {
+				result.MalformedRows = append(result.MalformedRows, append([]string(nil), row...))
+			}
 			continue
 		}
 		shaped = append(shaped, padded)
@@ -223,14 +244,28 @@ func (s *Session) BulkDelete(ctx context.Context, container string, names []stri
 	// The middleware reports overall failure through Response Status
 	// while still returning 200 on the wire; a status that is not the
 	// documented success needs a valid row to explain it.
+	// The documented outcomes are the success the middleware reports when
+	// everything it was asked for was handled, or a failure explained by
+	// a valid row. Anything else — an informational, redirect or other
+	// success code — is not a bulk-delete outcome at all, however well
+	// formed it looks. The owned fixture answers a partial failure with
+	// "400 Bad Request" and a row, which is why a failure explained by a
+	// row is accepted.
 	overall, wellFormed := statusCode(decoded.ResponseStatus)
 	switch {
 	case !wellFormed:
 		result.Anomalies = append(result.Anomalies,
 			fmt.Sprintf("the reply carries overall status %q, which is not a status", decoded.ResponseStatus))
-	case overall != http.StatusOK && distinct == 0:
+	case overall == http.StatusOK:
+		// The documented success.
+	case overall >= 400 && distinct > 0:
+		// A failure the reply itself explains.
+	case overall >= 400:
 		result.Anomalies = append(result.Anomalies,
 			fmt.Sprintf("the reply carries overall status %q with no row explaining it", decoded.ResponseStatus))
+	default:
+		result.Anomalies = append(result.Anomalies,
+			fmt.Sprintf("the reply carries overall status %q, which is not a bulk-delete outcome", decoded.ResponseStatus))
 	}
 	result.Validated = len(result.Anomalies) == 0
 	if !result.Validated {

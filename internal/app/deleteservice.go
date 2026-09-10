@@ -369,13 +369,13 @@ func unresolvedRetention(jobID string) (record func(name, detail string), closeR
 	}
 	dir = filepath.Join(dir, "aeronautes", "unresolved")
 	var (
-		mu        sync.Mutex
-		count     int64
-		file      *os.File
-		writer    *bufio.Writer
-		enc       *json.Encoder
-		writeErrs int64
-		openErr   error
+		mu            sync.Mutex
+		count         int64
+		file          *os.File
+		writer        *bufio.Writer
+		enc           *json.Encoder
+		storageErrors int64
+		openErr       error
 	)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		openErr = err
@@ -394,29 +394,35 @@ func unresolvedRetention(jobID string) (record func(name, detail string), closeR
 			return
 		}
 		if err := enc.Encode(map[string]string{"name": name, "unresolved": detail}); err != nil {
-			writeErrs++
+			storageErrors++
 		}
 	}
 	closeRetention = func() (string, int64, string) {
 		mu.Lock()
 		defer mu.Unlock()
+		// A buffered write that fails at the flush loses records the
+		// encoder already accepted, so a storage error anywhere means the
+		// artifact cannot be offered as the complete list, and the number
+		// of identities lost is not something this recorder can state.
 		if writer != nil {
 			if err := writer.Flush(); err != nil {
-				writeErrs++
+				storageErrors++
 			}
 		}
 		if file != nil {
 			if err := file.Close(); err != nil {
-				writeErrs++
+				storageErrors++
 			}
 		}
 		switch {
 		case openErr != nil:
 			return "", count, "the complete unresolved list could not be retained: " + openErr.Error()
-		case writeErrs > 0:
-			return file.Name(), count, fmt.Sprintf("%d unresolved names could not be written to the retained list", writeErrs)
 		case file == nil:
 			return "", count, "the complete unresolved list could not be retained"
+		case storageErrors > 0:
+			return "", count, fmt.Sprintf(
+				"the retained unresolved list is incomplete: %d storage errors occurred while writing it, and how many identities were lost is not established",
+				storageErrors)
 		}
 		return file.Name(), count, ""
 	}

@@ -195,3 +195,52 @@ func TestDeleteJobDisclosesAnUnretainableUnresolvedSet(t *testing.T) {
 		t.Errorf("a full list was offered although none was retained: %q", job.Error)
 	}
 }
+
+// TestUnresolvedRetentionReportsBufferedLoss drives the case the open
+// check cannot reach: the file opens, records are accepted into the
+// buffer, and the write fails only at the flush. Every buffered record
+// is then lost, so the recorder must not offer the artifact as a full
+// list, must keep the exact identity count, and must not claim a number
+// of lost names it cannot establish.
+func TestUnresolvedRetentionReportsBufferedLoss(t *testing.T) {
+	if _, err := os.Stat("/dev/full"); err != nil {
+		t.Skip("/dev/full is not available to force a write failure")
+	}
+	cache := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", cache)
+	jobID := "buffered-loss"
+	dir := filepath.Join(cache, "aeronautes", "unresolved")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// The retention opens this exact path; a symlink to a device that
+	// accepts an open and refuses every byte reproduces a full disk.
+	if err := os.Symlink("/dev/full", filepath.Join(dir, jobID+".jsonl")); err != nil {
+		t.Skipf("cannot link to /dev/full here: %v", err)
+	}
+
+	record, closeRetention := unresolvedRetention(jobID)
+	for i := 0; i < 3; i++ {
+		record(fmt.Sprintf("name-%d", i), "the reply did not establish an effect")
+	}
+	path, count, problem := closeRetention()
+
+	if count != 3 {
+		t.Errorf("count = %d, want the exact number of identities recorded", count)
+	}
+	if path != "" {
+		t.Errorf("an unusable artifact was offered as a retained list: %q", path)
+	}
+	if problem == "" {
+		t.Fatal("a lost list was not disclosed")
+	}
+	if !strings.Contains(problem, "incomplete") {
+		t.Errorf("the problem does not say the list is incomplete: %q", problem)
+	}
+	if strings.Contains(problem, "3 unresolved names could not") {
+		t.Errorf("the problem claims a lost-name count it cannot establish: %q", problem)
+	}
+	if !strings.Contains(problem, "not established") {
+		t.Errorf("the problem does not admit the lost count is unknown: %q", problem)
+	}
+}
