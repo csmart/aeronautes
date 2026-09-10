@@ -41,28 +41,31 @@ func Download(ctx context.Context, src *swiftcontrol.Session, engine Engine, src
 		return nil, errors.New("download needs an unchanged UTF-8 prefix ending in '/'")
 	}
 	seen := make(map[string]bool, len(preflight.Items))
-	folded := make(map[string]bool, len(preflight.Items))
-	files := make(map[string]bool, len(preflight.Items))
+	// Both relations, exactly as the preflight applies them.
+	lowerSeen := make(map[string]bool, len(preflight.Items))
+	caselessSeen := make(map[string]bool, len(preflight.Items))
+	filesByLower := make(map[string]bool, len(preflight.Items))
+	filesByCaseless := make(map[string]bool, len(preflight.Items))
 	for _, item := range preflight.Items {
 		if !validDownloadItem(prefix, item) || seen[item.Name] {
 			return nil, errors.New("download item does not preserve its unique selected name and relative path")
 		}
 		seen[item.Name] = true
 		relative := strings.TrimPrefix(item.Name, prefix)
-		fold := strings.ToLower(relative)
-		if folded[fold] {
-			return nil, errors.New("download selection contains case-fold collisions")
+		lower, caseless := lowercaseIdentity(relative), caselessIdentity(relative)
+		if lowerSeen[lower] || caselessSeen[caseless] {
+			return nil, errors.New("download selection contains names that collide on case or Unicode normalization form")
 		}
-		folded[fold] = true
+		lowerSeen[lower], caselessSeen[caseless] = true, true
 		if !item.Dir {
-			files[fold] = true
+			filesByLower[lower], filesByCaseless[caseless] = true, true
 		}
 	}
 	for _, item := range preflight.Items {
 		relative := strings.TrimPrefix(item.Name, prefix)
 		for separator := strings.LastIndexByte(relative, '/'); separator >= 0; separator = strings.LastIndexByte(relative, '/') {
 			relative = relative[:separator]
-			if files[strings.ToLower(relative)] {
+			if filesByLower[lowercaseIdentity(relative)] || filesByCaseless[caselessIdentity(relative)] {
 				return nil, errors.New("download selection needs the same path as a file and a directory")
 			}
 		}
