@@ -193,6 +193,25 @@ The 26 statements this correction adds are all covered.
 `go mod tidy` leaves `go.mod` and `go.sum` byte-identical.
 These results bind the recorded source hashes; any later rebase or final-base integration must preserve those inputs or receive fresh verification and independent review.
 
+## Protected delivery
+
+The delivered range is the two logical commits between master 6d1856333a2c561e and the reviewed head eb16679ef527cd09: the sequence plan and the shared component refusal with its maintained regressions.
+Independent review approved the plan after two corrections, one recovering a table fix that had never reached the commit and one narrowing an overstated claim about the pinned helper, then approved the implementation after a correction to the evidence record, and then approved this range on its final base.
+That final base is the delivered case-fold, contrast and record deliveries; the rebase changed no Go, SQL or module blob, and the only conflict was in the design sequence list, where both accepted sequences were kept whole.
+
+Its check run 34442250112 completed at the first attempt with all five required jobs successful.
+The race-detector Go job recorded twenty-four successful package executions across twenty-three distinct tested packages with no failures.
+The frontend job reported zero errors and zero warnings from svelte-check and passed twenty-eight test files carrying one thousand one hundred and twenty-five tests, untouched by this range.
+The containerized Swift integration job passed three thousand three hundred and twenty-eight test results with no failures, three hundred and eight more than the preceding delivery, and the same two skips for an unset matrix binary and an unreachable operating-system keychain.
+It measured combined Go statement coverage of 87.3 per cent against the seventy-five per cent floor, and recorded scenario coverage of forty of one hundred and sixteen cells and thirty-eight of fifty-two actions with gaps, reported valid with the owned service configured and coverage incomplete.
+The headless smoke job landed three of three objects and passed.
+The run retained both coverage badges, the 398,238-byte scenario coverage artifact and the 6,109,654-byte smoke artifact.
+
+The pull request then left draft state and was merged by rebase pinned to the reviewed head object.
+Master became 2f2fe231bffbbf49, whose tree bc328ebc7bc1c6fb is identical to the reviewed head's tree, and both commits kept their patch identity, message, author identity and intermediate tree.
+The resulting master check run 34443839939 concluded success with the same five required jobs.
+The pipeline exercised Linux runners only, so the native acceptance of these refusals on the target filesystems remains unproven.
+
 ## Remaining limits
 
 The rule is lexical and ASCII-only: it is not full Unicode case folding, normalization or equivalence, and it decides nothing about non-ASCII homoglyphs.

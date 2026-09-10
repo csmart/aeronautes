@@ -5084,6 +5084,7 @@ This prerequisite refuses without trimming, encoding or renaming, and preserves 
    Preserve actual before failures on unchanged production, complete local and owned remote deltas, full job/item/audit facts, and single-boundary broken controls.
 4. Record the complete compatibility, inventory and scenario verification, obtain independent local review, and deliver only the reviewed current-base source through all five protected PR and master checks.
 
+Independent review approved the sequence plan after two corrections, then the implementation, and then the rebased range on its final base, followed by [protected PR81 delivery](experiments/2026-09-10-portable-download-names.md#protected-delivery) with all five PR and master checks green and both commits preserved patch for patch through the merge.
 The refusal is a conservative rule on every host, not a claim that each refused spelling is a device or an invalid name on every Windows release, and no Windows device is ever opened to prove it.
 Unicode equivalence and normalization, leading spaces, directory-only aliases, encoding collisions, length limits and representative native filesystem acceptance remain separate P19 work.
 Selected-root lifetime, concurrent parent/root replacement, publication and cleanup authority remain separate P18/P20/P30 work.
