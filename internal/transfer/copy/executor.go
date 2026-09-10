@@ -53,6 +53,24 @@ func aggregateStamp(logicalBytes int64, etag string) string {
 	return fmt.Sprintf("v1:%d:%s", logicalBytes, strings.Trim(etag, `"`))
 }
 
+// validAggregate reports whether an observed dynamic large object
+// entity tag is shaped like the aggregate the store computes: the
+// complete-listing MD5, sixteen bytes as lower-case hex. Anything else,
+// including an empty value, is not an observation this executor will
+// treat as evidence or mint a stamp from.
+func validAggregate(etag string) bool {
+	etag = strings.Trim(etag, `"`)
+	if len(etag) != 32 {
+		return false
+	}
+	for _, r := range etag {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 // Config wires one job's executor.
 type Config struct {
 	Source *swiftcontrol.Session
@@ -292,6 +310,12 @@ func provenEqual(src, dst *swiftcontrol.ObjectDetail) bool {
 		// evidence, and a stale segment listing can still hide a
 		// substitution, so a match says only that no difference was
 		// observed, never that the destination equals the source.
+		// The live observation has to look like an aggregate before it can
+		// be compared: an unusable entity tag matched against a stamp
+		// minted from the same unusable value would otherwise skip.
+		if !validAggregate(dst.ETag) {
+			return false
+		}
 		stamp := dst.Meta[stagedAggregateMetaKey]
 		return stamp != "" && stamp == aggregateStamp(dst.ContentLength, dst.ETag)
 	case swiftcontrol.ClassSLO:
@@ -629,7 +653,13 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 		// value observed after it could not, and persisting one later
 		// would mean another live mutation with its own authority,
 		// concurrency and response-loss protocol.
-		headers["X-Object-Meta-"+stagedAggregateMetaKey] = aggregateStamp(staged.ContentLength, staged.ETag)
+		// An unusable staged observation mints no stamp: the name still
+		// publishes, and the unstamped destination is refused on a later
+		// decision rather than skipped on bad evidence. Omitting the
+		// header keeps this the same single conditional write.
+		if validAggregate(staged.ETag) {
+			headers["X-Object-Meta-"+stagedAggregateMetaKey] = aggregateStamp(staged.ContentLength, staged.ETag)
+		}
 		headers["X-Object-Manifest"] = staged.Manifest
 		if _, err := e.cfg.Dest.PutObject(ctx, e.cfg.DstContainer, dstName, strings.NewReader(""), src.ContentType, headers); err != nil {
 			if swiftcontrol.IsPreconditionFailed(err) {

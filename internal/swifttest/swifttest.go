@@ -80,6 +80,12 @@ const defaultInfoJSON = `{
 
 // Server is the mock cluster; it implements http.Handler.
 type Server struct {
+	// SegmentAggregateOverride pins the aggregate entity tag a dynamic
+	// large object reports, keyed by "container/name". The store derives
+	// that value from a listing of the segment rows, so a listing that
+	// has not caught up can report the previous aggregate after the
+	// segments changed; this models exactly that and nothing else.
+	SegmentAggregateOverride map[string]string
 	// FailDeletes makes every object DELETE answer 500 — the exact-
 	// accounting fixtures' knob.
 	FailDeletes bool
@@ -793,6 +799,9 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request, container,
 				if !o.SLO {
 					derived := md5.Sum([]byte(concatenated.String()))
 					derivedETag = hex.EncodeToString(derived[:])
+				}
+				if pinned, pinnedOK := s.SegmentAggregateOverride[container+"/"+name]; pinnedOK {
+					derivedETag = pinned
 				}
 			}
 		}
