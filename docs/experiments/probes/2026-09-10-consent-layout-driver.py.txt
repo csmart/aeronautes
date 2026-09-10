@@ -277,11 +277,13 @@ def observe(rows):
     soft = (247, 228, 222) if box['theme'] == 'light' else (60, 34, 28)
     error_block = geometry.row_groups(rows, soft, box, minimum_run=40, minimum_height=8)
     block = max(error_block, key=lambda b: b['height']) if error_block else None
-    tail = None
+    tail, ending = None, {}
     if block and controls['delete']:
-        # The paragraph's own background ends above the action row, with body
-        # behind it, which is what makes its literal end reachable.
+        # The paragraph's background must end above the action row, and the
+        # paragraph must show its own natural end: a partial last line with
+        # its bottom padding below it. A clipped tail satisfies neither.
         tail = block['bottom'] < controls['delete']['top'] - 6
+        ending = geometry.paragraph_tail(rows, block, soft)
     return box, {
         'border_complete': box['border']['complete'],
         'dialog_inside_viewport': box['top'] > top and box['bottom'] < bottom - 1,
@@ -292,6 +294,9 @@ def observe(rows):
         'error_block_visible': bool(error_block),
         'error_block_height': block['height'] if block else 0,
         'error_block_end_visible': bool(tail),
+        'error_tail_complete': bool(tail) and bool(ending.get('natural_end')),
+        'error_tail_padding_rows': ending.get('padding_rows', 0),
+        'error_last_line_fraction': ending.get('last_line_fraction'),
         'consent_checkbox_visible': len(geometry.consent_checkbox(rows, box)) == 1}
 
 

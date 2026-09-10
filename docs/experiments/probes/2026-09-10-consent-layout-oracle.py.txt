@@ -362,3 +362,27 @@ def consent_checkbox(rows, box, size=(6, 14)):
                 found.append({'left': run[0], 'top': y, 'right': run[1], 'bottom': y + height - 1,
                               'width': run[1] - run[0] + 1, 'height': height})
     return found
+
+
+def paragraph_tail(rows, block, background, margin=4, short=0.6):
+    """Whether a filled paragraph shows its own natural end.
+
+    A complete paragraph finishes with a partial last line and then its own
+    bottom padding; a paragraph cut from below ends with a full-width line
+    flush against the edge of its background. Both conditions are needed,
+    because either alone is satisfied by a clip.
+    """
+    ink_rows = []
+    for y in range(block['top'], block['bottom'] + 1):
+        extent = [x for x in range(block['left'], block['right'] + 1)
+                  if rows[y][x] != background and ink(rows[y][x], background, margin=25)]
+        if extent:
+            ink_rows.append((y, extent[0], extent[-1]))
+    if not ink_rows:
+        return {'has_text': False, 'padding_rows': 0, 'last_line_fraction': None, 'natural_end': False}
+    last_y, first_x, last_x = ink_rows[-1]
+    padding = block['bottom'] - last_y
+    fraction = (last_x - first_x + 1) / max(1, block['right'] - block['left'] + 1)
+    return {'has_text': True, 'padding_rows': padding, 'last_line_fraction': round(fraction, 3),
+            'last_ink_row': last_y,
+            'natural_end': padding >= margin and fraction <= short}
