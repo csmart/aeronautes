@@ -402,3 +402,99 @@ func TestBulkLedgerInStreamingPass(t *testing.T) {
 		t.Errorf("streaming pass failures = %v", failed)
 	}
 }
+
+// replyShaped builds a reply with an arbitrary overall status and rows
+// of arbitrary shape, so a malformed reply can be driven without the
+// helper quietly correcting it.
+func replyShaped(status string, deleted, notFound int, rows ...[]string) map[string]any {
+	if rows == nil {
+		rows = [][]string{}
+	}
+	return map[string]any{
+		"Number Deleted": deleted, "Number Not Found": notFound,
+		"Response Status": status, "Response Body": "",
+		"Errors": rows,
+	}
+}
+
+// TestBulkRejectsMalformedRepliesThatReconcile covers the shapes whose
+// counts add up, so the malformation is the only thing wrong with them.
+// Each must be untrusted, credit nothing, and leave the requested name
+// unresolved rather than becoming an authoritative disposition.
+func TestBulkRejectsMalformedRepliesThatReconcile(t *testing.T) {
+	cases := []struct {
+		label string
+		reply map[string]any
+	}{
+		{"an overall status that is not a status",
+			replyShaped("200not-a-status", 1, 0)},
+		{"an overall status that is empty",
+			replyShaped("", 1, 0)},
+		{"a row code carrying a sign",
+			replyShaped("200 OK", 1, 0, []string{wire("media", "a"), "+500 Internal Server Error"})},
+		{"a row code with a leading zero",
+			replyShaped("200 OK", 1, 0, []string{wire("media", "a"), "0500 Internal Server Error"})},
+		{"a row code with no separator",
+			replyShaped("200 OK", 1, 0, []string{wire("media", "a"), "500Internal"})},
+		{"a row carrying a third element",
+			replyShaped("200 OK", 1, 0, []string{wire("media", "a"), "500 Internal Server Error", "extra"})},
+		{"a row path padded with spaces",
+			replyShaped("200 OK", 1, 0, []string{" " + wire("media", "a") + " ", "500 Internal Server Error"})},
+	}
+	for _, tc := range cases {
+		t.Run(tc.label, func(t *testing.T) {
+			session, capabilities, _, _ := craftedCluster(t, tc.reply)
+			l := runNames(t, session, capabilities, []string{"a"}, Options{})
+			if l.err == nil {
+				t.Fatal("a malformed reply must not validate merely because its counts add up")
+			}
+			if l.result.Deleted != 0 || l.result.NotFound != 0 {
+				t.Errorf("a malformed reply's counts were credited: %+v", l.result)
+			}
+			if l.result.Failed != 0 {
+				t.Errorf("a malformed row became an authoritative failure: %+v", l.result.Failures)
+			}
+			if !equal(l.unresolved, []string{"a"}) {
+				t.Errorf("unresolved = %v, want the requested name", l.unresolved)
+			}
+		})
+	}
+}
+
+// TestBulkLedgerCountsDistinctIdentitiesAcrossPasses pins the counters
+// to what they claim to be. A sweep re-lists whatever is still there,
+// so a name the service keeps blaming is observed on every pass, and
+// one identity must remain one record, one stream event and one count.
+func TestBulkLedgerCountsDistinctIdentitiesAcrossPasses(t *testing.T) {
+	session, capabilities, mock, crafted := craftedCluster(t,
+		reply(1, 0, [2]string{wire("media", "doomed/b"), "500 Internal Server Error"}))
+	mock.PutObject("media", "doomed/a", swifttest.Object{Bytes: 1, ETag: "aa", Data: []byte("a")})
+	mock.PutObject("media", "doomed/b", swifttest.Object{Bytes: 1, ETag: "bb", Data: []byte("b")})
+
+	var mu sync.Mutex
+	var failed, unresolved []string
+	result, err := DeletePrefix(context.Background(), session, capabilities, "media", "doomed/", Options{
+		BulkSize:     10,
+		Passes:       3,
+		OnFailure:    func(name, detail string) { mu.Lock(); failed = append(failed, name); mu.Unlock() },
+		OnUnresolved: func(name, detail string) { mu.Lock(); unresolved = append(unresolved, name); mu.Unlock() },
+	})
+	if err != nil {
+		t.Fatalf("a valid partial reply must not surface an error: %v", err)
+	}
+	if crafted.calls < 2 {
+		t.Skipf("the sweep did not repeat (%d request), so this case proves nothing", crafted.calls)
+	}
+	if result.Failed != 1 || len(failed) != 1 {
+		t.Errorf("Failed = %d over %d stream events, want one distinct identity across %d requests",
+			result.Failed, len(failed), crafted.calls)
+	}
+	if result.Unresolved != 1 || len(unresolved) != 1 {
+		t.Errorf("Unresolved = %d over %d stream events, want one distinct identity",
+			result.Unresolved, len(unresolved))
+	}
+	if len(result.Failures) != 1 || len(result.Unresolveds) != 1 {
+		t.Errorf("retained sets hold %d failures and %d unresolved, want one each",
+			len(result.Failures), len(result.Unresolveds))
+	}
+}

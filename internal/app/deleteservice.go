@@ -282,14 +282,21 @@ func (s *DeleteService) runDelete(ctx context.Context, jobID string, req DeleteR
 			deleted = result.Deleted
 		}
 		switch {
+		// An unresolved effect is not zero effect: crediting no deletion
+		// does not establish that none landed, so the run is partial
+		// whatever else happened to it.
+		case unresolvedDetail != "" && errors.Is(err, context.Canceled):
+			finish(jobs.StatePartial, withUnresolved(fmt.Sprintf("cancelled after %d credited deletions", deleted)))
+		case unresolvedDetail != "":
+			finish(jobs.StatePartial, withUnresolved(fmt.Sprintf("stopped after %d credited deletions: %v", deleted, err)))
 		case deleted > 0 && errors.Is(err, context.Canceled):
-			finish(jobs.StatePartial, withUnresolved(fmt.Sprintf("cancelled after %d deletions", deleted)))
+			finish(jobs.StatePartial, fmt.Sprintf("cancelled after %d deletions", deleted))
 		case deleted > 0:
-			finish(jobs.StatePartial, withUnresolved(fmt.Sprintf("stopped after %d deletions: %v", deleted, err)))
+			finish(jobs.StatePartial, fmt.Sprintf("stopped after %d deletions: %v", deleted, err))
 		case errors.Is(err, context.Canceled):
-			finish(jobs.StateCancelled, withUnresolved(""))
+			finish(jobs.StateCancelled, "")
 		default:
-			finish(jobs.StateFailed, withUnresolved(err.Error()))
+			finish(jobs.StateFailed, err.Error())
 		}
 		return
 	}
