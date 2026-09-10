@@ -322,3 +322,43 @@ def text_beside(rows, box, strip=80):
             if row[x] == foreground:
                 hits.append({'x': x, 'y': y})
     return hits
+
+
+CHECKBOX_FILL = (255, 255, 255)
+
+
+def consent_checkbox(rows, box, size=(6, 14)):
+    """The native consent checkbox, found by its white fill.
+
+    The dialog uses a warm off-white pane and card, so pure white belongs to
+    the native control alone; this needs no reference image.
+    """
+    runs = {}
+    for y in range(box['top'] + 2, box['bottom'] - 1):
+        row, x = rows[y], box['left'] + 2
+        while x < box['right'] - 1:
+            if row[x] == CHECKBOX_FILL:
+                start = x
+                while x < box['right'] - 1 and row[x] == CHECKBOX_FILL:
+                    x += 1
+                if size[0] <= x - start <= size[1]:
+                    runs.setdefault(y, []).append((start, x - 1))
+            else:
+                x += 1
+    found, used = [], set()
+    for y in sorted(runs):
+        for run in runs[y]:
+            if (y, run) in used:
+                continue
+            column, height = [run], 1
+            while y + height in runs:
+                match = [r for r in runs[y + height] if abs(r[0] - run[0]) <= 1 and abs(r[1] - run[1]) <= 1]
+                if not match:
+                    break
+                used.add((y + height, match[0]))
+                column.append(match[0])
+                height += 1
+            if size[0] <= height <= size[1]:
+                found.append({'left': run[0], 'top': y, 'right': run[1], 'bottom': y + height - 1,
+                              'width': run[1] - run[0] + 1, 'height': height})
+    return found

@@ -14,6 +14,7 @@ import (
 func main() {
 	addr := flag.String("addr", "127.0.0.1:0", "owned loopback address")
 	fixture := flag.String("fixture", "", "private fixture JSON")
+	refusal := flag.String("refusal", "", "body returned with every refused method")
 	flag.Parse()
 	data, err := os.ReadFile(*fixture)
 	if err != nil {
@@ -40,7 +41,12 @@ func main() {
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("%s %s", r.Method, r.URL.RequestURI())
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			// A refusal before the data handler, with an optional long
+			// unbroken token so the dialog's error path can be observed.
 			w.WriteHeader(http.StatusMethodNotAllowed)
+			if *refusal != "" {
+				_, _ = w.Write([]byte(*refusal))
+			}
 			return
 		}
 		s.ServeHTTP(w, r)
