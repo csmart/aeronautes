@@ -129,6 +129,45 @@ At least three narrow broken-guard overlays must each fail only their own bounda
 The complete internal race suite must pass with its inventory reconciled against the delivered name count, alongside vet, gofmt, the Windows and macOS vets and internal builds, and a module tidy that leaves the promoted requirement exact.
 Actual service evidence must cover the engine, native and marker routes on both owned providers, with complete local and remote deltas, full job, item and audit facts, and the distinction between direct invocation and returned-child witnesses preserved.
 
+## Implemented correction and regressions
+
+The correction adds one file holding the two identities and the strict canonical helper, and changes the five existing sites to consult both relations.
+The preflight keeps one group map per relation and reports one problem per collision group, emitting the lowercase groups first so an existing case collision keeps its exact kind and wording; a group only the second relation finds is reported as a name-form collision.
+The ancestor lookup consults both file maps and flags by the selected file, so one file conflicting under both relations is reported once.
+The direct executor repeats both relations before its first item or effect, exactly where it repeated the single one.
+No boundary, ordering, exact-byte duplicate check or selected spelling changed, and `golang.org/x/text` moved from a graph selection to a direct requirement, adding one line to the module file and two to its checksums.
+
+The helper carries its own battery: precomposed against decomposed, canonical reordering, Hangul, a singleton, a nested decomposition, the precomposed dotted capital I against its decomposed spelling, and, as pairs that must stay distinct, names that merely look alike, a same-class mark reordering, a compatibility ligature, a preserved real joiner, and a thirty-one mark run against the same run broken by a real joiner.
+Every fixture that must be distinct is asserted to differ in bytes first, because a decomposed sequence typed as a literal is normalized on its way into a source file and would otherwise compare one string with itself.
+
+The boundary matrix carries all five pairs as twins and again as ancestors, and each ancestor pair appears in both directions, so the selected file and its required ancestor exchange spellings rather than relying on item order, which does not exchange those roles.
+Every collision case also records which single relation is expected to carry it, and the test asserts that membership: a case declared for the caseless relation fails if the lowercase relation already holds between its two names, so no case can pass through the unintended relation.
+The accepted controls are the distinct look-alikes, sharp s against double s, a ligature against its letters, a lone decomposed spelling, a lone precomposed spelling, a shared parent, and the admitted plain `i` beside `i` with a combining dot.
+
+Accepted controls assert the whole outcome rather than admission alone: the exact report, routed counts and engine calls, per-item admission, execution and verification observations with staging identity, every owned entry unchanged, each selected name present with its full bytes, the permitted directories, and nothing else.
+At the service layer they additionally assert job state and counters, item totals and identities, audit facts and history counts, the local delta and the per-route source reads.
+
+## Complete verification
+
+Before evidence came from Go overlays that restore the two production files to their unchanged state while keeping the final tests, so the failures are the tests meeting real production.
+In the transfer package one hundred and twenty leaves failed and one hundred and sixty passed; at the service layer fifteen failed and twenty-one passed.
+The passing sets are the accepted controls and the established case shapes that unchanged production already refuses, which are the controls proving the fixtures reach the real boundary.
+
+Four narrow mutants separate the guards from each other and from the effects, and their failures do not overlap.
+Removing the caseless twin groups failed eight preflight leaves and no direct leaf; removing the caseless ancestor lookup failed sixteen preflight leaves and no direct leaf; removing both caseless checks from the direct executor failed ninety-six direct leaves and no preflight leaf.
+None of those three touched an accepted control.
+A fourth mutant keeps every admission check and then returns an empty successful report: it failed fifty-six leaves, every one an accepted control and no refusal leaf at all.
+That mutant is the reason the accepted controls assert effects; before they did so it passed the entire matrix.
+
+The complete internal suite ran under the race detector at three-way package parallelism against the owned two-account service, and passed with no failure and no skipped test: twenty packages and three thousand seven hundred and eighteen distinct test names.
+Three hundred and eighty-eight of those are added by this slice, leaving three thousand three hundred and thirty before it, which matches the inventory recorded by the preceding portable component slice.
+Both providers are covered without skips: thirty-six leaves on the owned mock and thirty-six against the real service, across three routes and twelve shapes each.
+
+One earlier attempt at that suite is recorded rather than discarded: run against the real service without an explicit package limit, the system-test package reached Go's default ten-minute limit and the package failed, so that attempt is not evidence of a pass.
+The reported run carries an explicit twenty-five-minute package limit, matching the lane's own budget.
+
+Formatting, vet on Linux, Windows and macOS, the Windows and macOS internal builds and a module tidy that leaves both module files unchanged all pass.
+
 ## Remaining limits
 
 This slice settles canonical equivalence for collisions and nothing else.

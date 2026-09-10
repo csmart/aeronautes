@@ -179,7 +179,9 @@ func PreflightDownload(ctx context.Context, src *swiftcontrol.Session, container
 	defer func() { err = errors.Join(err, destination.Close()) }()
 	var names []string
 	var candidates []DownloadItem
-	folded := map[string][]string{}
+	// One group per relation; a collision in either refuses the selection.
+	byLower := map[string][]string{}
+	byCaseless := map[string][]string{}
 
 	for entry, err := range src.Objects(ctx, container, swiftcontrol.ObjectListOptions{Deep: true, Prefix: prefix}) {
 		if err != nil {
@@ -191,7 +193,9 @@ func PreflightDownload(ctx context.Context, src *swiftcontrol.Session, container
 		}
 		rel := object.Name[len(prefix):]
 		names = append(names, rel)
-		folded[strings.ToLower(rel)] = append(folded[strings.ToLower(rel)], rel)
+		lower, caseless := lowercaseIdentity(rel), caselessIdentity(rel)
+		byLower[lower] = append(byLower[lower], rel)
+		byCaseless[caseless] = append(byCaseless[caseless], rel)
 
 		problem := func(kind, detail string) {
 			report.Problems = append(report.Problems, Problem{Name: object.Name, Kind: kind, Detail: detail, Reject: true})
@@ -271,10 +275,11 @@ func PreflightDownload(ctx context.Context, src *swiftcontrol.Session, container
 	// File-vs-prefix conflicts: a real ancestor lookup, not sorted
 	// adjacency — "foo", "foo.txt", "foo/child" sorts foo.txt between
 	// the conflicting pair and adjacency misses it (follow-up review).
-	fileSet := map[string]string{}
+	filesByLower, filesByCaseless := map[string]string{}, map[string]string{}
 	for _, name := range names {
 		if name != "" && !strings.HasSuffix(name, "/") {
-			fileSet[strings.ToLower(name)] = name
+			filesByLower[lowercaseIdentity(name)] = name
+			filesByCaseless[caselessIdentity(name)] = name
 		}
 	}
 	sort.Strings(names)
@@ -288,9 +293,14 @@ func PreflightDownload(ctx context.Context, src *swiftcontrol.Session, container
 			} else {
 				ancestor += "/" + segment
 			}
-			fold := strings.ToLower(ancestor)
-			if file, exists := fileSet[fold]; exists && !flagged[fold] {
-				flagged[fold] = true
+			file, exists := filesByLower[lowercaseIdentity(ancestor)]
+			if !exists {
+				file, exists = filesByCaseless[caselessIdentity(ancestor)]
+			}
+			// Flagged by the selected file, so one file conflicting under
+			// both relations is reported once.
+			if exists && !flagged[file] {
+				flagged[file] = true
 				report.Problems = append(report.Problems, Problem{
 					Name: prefix + file, Kind: "file-vs-prefix",
 					Detail: fmt.Sprintf("object %q needs to be both a file and the directory holding %q", file, name),
@@ -299,16 +309,30 @@ func PreflightDownload(ctx context.Context, src *swiftcontrol.Session, container
 			}
 		}
 	}
-	for _, twins := range folded {
-		if len(twins) > 1 {
-			// Rejected, not warned: the same operator moves this data to
-			// macOS/Windows next — one namespace policy per target set.
-			report.Problems = append(report.Problems, Problem{
-				Name: prefix + twins[0], Kind: "case-fold",
-				Detail: fmt.Sprintf("%d names collide on case-insensitive filesystems: %q", len(twins), twins),
-				Reject: true,
-			})
+	// Rejected, not warned: the same operator moves this data to
+	// macOS/Windows next — one namespace policy per target set. The
+	// lowercase groups are emitted first so an existing case collision
+	// keeps its exact kind and wording; a group the second relation finds
+	// on its own is reported as a name-form collision.
+	reported := map[string]bool{}
+	emit := func(twins []string, kind, detail string) {
+		if len(twins) < 2 {
+			return
 		}
+		key := strings.Join(twins, "\x00")
+		if reported[key] {
+			return
+		}
+		reported[key] = true
+		report.Problems = append(report.Problems, Problem{
+			Name: prefix + twins[0], Kind: kind, Detail: detail, Reject: true,
+		})
+	}
+	for _, twins := range byLower {
+		emit(twins, "case-fold", fmt.Sprintf("%d names collide on case-insensitive filesystems: %q", len(twins), twins))
+	}
+	for _, twins := range byCaseless {
+		emit(twins, "name-form", fmt.Sprintf("%d names collide on filesystems that ignore case or Unicode normalization form: %q", len(twins), twins))
 	}
 	for _, item := range candidates {
 		if refusal := inspectDownloadPath(destination, item); refusal != nil {
