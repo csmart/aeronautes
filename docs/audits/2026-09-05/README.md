@@ -149,6 +149,7 @@ Project requirements and operator preferences remain authoritative.
 - [Data safety: DS-01–13](data-safety.md)
 - [Security and release findings](security-release.md)
 - [Six-sidecar advisory assessment and remaining limits](sidecar-assessment.md)
+- [Complete candidate sidecar source collection](sidecar-sources.md)
 - [UI and product: UI-01–14](ui-product.md)
 - [Testing, performance and documentation findings](testing-performance.md)
 - [Verification and evidence limitations](verification.md)
