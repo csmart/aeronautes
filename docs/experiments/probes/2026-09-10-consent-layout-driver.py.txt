@@ -98,6 +98,19 @@ def verdict(completed, methods, snapshot_equal, expect_refused_writes):
     return True, ''
 
 
+def final_decision(sequence_completed, verification_ran, verdict_ok, verdict_reason):
+    """A run may exit zero only if the sequence completed and the final
+    verification actually ran and passed. An unavailable fixture or a missing
+    baseline is a failure, not a skip."""
+    if not sequence_completed:
+        return False, 'the declared sequence did not complete'
+    if not verification_ran:
+        return False, 'final verification could not run'
+    if not verdict_ok:
+        return False, verdict_reason
+    return True, ''
+
+
 def self_check():
     """Focused checks of the exit contract, with no GUI and no Swift call."""
     cases = [
@@ -109,10 +122,21 @@ def self_check():
         ('incomplete sequence', (False, ['GET'], True, False), False),
         ('refusal run with no attempt', (True, ['GET'], True, True), False),
     ]
+    orchestration = [
+        ('completed, verified, passing', (True, True, True, ''), True),
+        ('completed but verification skipped', (True, False, True, ''), False),
+        ('completed, verified, failing', (True, True, False, 'mismatch'), False),
+        ('incomplete sequence', (False, True, True, ''), False),
+    ]
     failures = []
     for name, arguments, expected in cases:
         ok, reason = verdict(*arguments)
-        print('%-34s %s%s' % (name, 'ok' if ok == expected else 'WRONG', '' if ok else '  (' + reason + ')'))
+        print('%-38s %s%s' % (name, 'ok' if ok == expected else 'WRONG', '' if ok else '  (' + reason + ')'))
+        if ok != expected:
+            failures.append(name)
+    for name, arguments, expected in orchestration:
+        ok, reason = final_decision(*arguments)
+        print('%-38s %s%s' % (name, 'ok' if ok == expected else 'WRONG', '' if ok else '  (' + reason + ')'))
         if ok != expected:
             failures.append(name)
     if failures:
@@ -231,6 +255,19 @@ def shot(name):
     return path, geometry.pixels(path)
 
 
+def compare(observed, expected):
+    """Expectations are equality, except a key ending in _min, which is a floor."""
+    failures = {}
+    for key, wanted in expected.items():
+        if key.endswith('_min'):
+            actual = observed.get(key[:-4])
+            if actual is None or actual < wanted:
+                failures[key] = {'observed': actual, 'at least': wanted}
+        elif observed.get(key) != wanted:
+            failures[key] = {'observed': observed.get(key), 'expected': wanted}
+    return failures
+
+
 def observe(rows):
     box = geometry.dialog(rows, window=window_rect)
     if not box:
@@ -239,6 +276,12 @@ def observe(rows):
     left, top, right, bottom = window_rect
     soft = (247, 228, 222) if box['theme'] == 'light' else (60, 34, 28)
     error_block = geometry.row_groups(rows, soft, box, minimum_run=40, minimum_height=8)
+    block = max(error_block, key=lambda b: b['height']) if error_block else None
+    tail = None
+    if block and controls['delete']:
+        # The paragraph's own background ends above the action row, with body
+        # behind it, which is what makes its literal end reachable.
+        tail = block['bottom'] < controls['delete']['top'] - 6
     return box, {
         'border_complete': box['border']['complete'],
         'dialog_inside_viewport': box['top'] > top and box['bottom'] < bottom - 1,
@@ -247,6 +290,8 @@ def observe(rows):
         'horizontal_overflow': bool(geometry.horizontal_overflow(rows, box)),
         'text_beside_dialog': len(geometry.text_beside(rows, box)),
         'error_block_visible': bool(error_block),
+        'error_block_height': block['height'] if block else 0,
+        'error_block_end_visible': bool(tail),
         'consent_checkbox_visible': len(geometry.consent_checkbox(rows, box)) == 1}
 
 
@@ -386,8 +431,7 @@ try:
             box, observed = observe(rows)
             record['observed'] = observed
             assert box, 'no dialog to check at ' + command['name']
-            failures = {k: {'observed': observed.get(k), 'expected': v} for k, v in command['expect'].items()
-                        if observed.get(k) != v}
+            failures = compare(observed, command['expect'])
             record['failures'] = failures
             assert not failures, 'check %s failed: %s' % (command['name'], json.dumps(failures))
         elif operation == 'check_closed':
@@ -505,8 +549,7 @@ try:
             if command.get('expect'):
                 _, observed = observe(rows_after)
                 record['observed'] = observed
-                failures = {k: {'observed': observed.get(k), 'expected': v}
-                            for k, v in command['expect'].items() if observed.get(k) != v}
+                failures = compare(observed, command['expect'])
                 record['failures'] = failures
                 assert not failures, 'endpoint check failed: %s' % json.dumps(failures)
         elif operation == 'arm_confirmation':
@@ -555,7 +598,7 @@ except BaseException as error:
     result['error'] = '%s: %s' % (type(error).__name__, error)
     raise
 finally:
-    failure = None
+    failure, verification_ran = None, False
     try:
         if 'baseline' in dir() and mock.poll() is None:
             text = (out / 'mockswift.log').read_text()[wire_start:]
@@ -565,12 +608,16 @@ finally:
             final = snapshot()
             (out / 'remote-final.json').write_text(json.dumps(final, indent=2) + '\n')
             result['final_snapshot_equal'] = final == baseline
+            verification_ran = True
             ok, reason = verdict(completed, methods, result['final_snapshot_equal'], expect_refused_writes)
-            if not ok:
-                failure = reason
+        else:
+            ok, reason = False, 'the fixture was not available for final verification'
     except BaseException as error:
-        failure = 'final verification error: %s' % error
-    if failure:
+        ok, reason = False, 'final verification error: %s' % error
+    result['final_verification_ran'] = verification_ran
+    decided, why = final_decision(completed, verification_ran, ok, reason)
+    if not decided:
+        failure = why
         result['final_verification_failure'] = failure
         result['status'] = 'failed'
     result['completed_commands'] = len(result['commands'])

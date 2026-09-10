@@ -149,7 +149,8 @@
     "controls_visible": true,
     "horizontal_overflow": false,
     "text_beside_dialog": 0,
-    "consent_checkbox_visible": false
+    "consent_checkbox_visible": false,
+    "error_block_visible": false
    }
   },
   {
@@ -172,7 +173,6 @@
    "op": "focus_checkbox",
    "name": "g03-keyboard-consent",
    "max_tabs": 10,
-   "minimum_ring": 60,
    "activate": true,
    "pause": 0.9
   },
@@ -236,7 +236,9 @@
     "controls_visible": true,
     "horizontal_overflow": false,
     "text_beside_dialog": 0,
-    "error_block_visible": true
+    "error_block_visible": true,
+    "error_block_end_visible": true,
+    "error_block_height_min": 100
    }
   },
   {
@@ -256,7 +258,67 @@
   },
   {
    "op": "check_closed",
-   "name": "g11-dismissed",
+   "name": "g11-keyboard-dismissed",
+   "reference": "g00-before-dialog",
+   "minimum_control_pixels": 80
+  },
+  {
+   "op": "x",
+   "args": [
+    "mousemove",
+    "760",
+    "290",
+    "click",
+    "1"
+   ],
+   "pause": 1.0
+  },
+  {
+   "op": "check",
+   "name": "g12-reopened",
+   "expect": {
+    "border_complete": true,
+    "dialog_inside_viewport": true,
+    "controls_visible": true,
+    "horizontal_overflow": false,
+    "text_beside_dialog": 0,
+    "error_block_visible": false
+   }
+  },
+  {
+   "op": "button_click",
+   "name": "g13-delete-manifest-only",
+   "which": "delete",
+   "pause": 2.5
+  },
+  {
+   "op": "scroll_to_end",
+   "name": "g14-keyboard-to-error-again",
+   "key": "Next",
+   "find_tabs": 6,
+   "maximum_presses": 24,
+   "minimum_change": 200,
+   "movement_threshold": 100,
+   "expect": {
+    "border_complete": true,
+    "dialog_inside_viewport": true,
+    "controls_visible": true,
+    "horizontal_overflow": false,
+    "text_beside_dialog": 0,
+    "error_block_visible": true,
+    "error_block_end_visible": true,
+    "error_block_height_min": 100
+   }
+  },
+  {
+   "op": "button_click",
+   "name": "g15-pointer-cancel",
+   "which": "cancel",
+   "pause": 1.2
+  },
+  {
+   "op": "check_closed",
+   "name": "g16-pointer-dismissed",
    "reference": "g00-before-dialog",
    "minimum_control_pixels": 80
   },

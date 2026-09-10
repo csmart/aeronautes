@@ -4,9 +4,11 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/csmart/aeronautes/internal/swifttest"
 )
@@ -41,12 +43,28 @@ func main() {
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("%s %s", r.Method, r.URL.RequestURI())
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			// A refusal before the data handler, with an optional long
-			// unbroken token so the dialog's error path can be observed.
-			w.WriteHeader(http.StatusMethodNotAllowed)
+			// A refusal before the data handler. The reason phrase is what
+			// the client turns into its error text, so an optional long
+			// phrase is written on the status line itself.
 			if *refusal != "" {
-				_, _ = w.Write([]byte(*refusal))
+				phrase := strings.Map(func(r rune) rune {
+					if r == '\r' || r == '\n' {
+						return ' '
+					}
+					return r
+				}, *refusal)
+				if hijacker, ok := w.(http.Hijacker); ok {
+					connection, buffered, err := hijacker.Hijack()
+					if err == nil {
+						defer connection.Close()
+						fmt.Fprintf(buffered, "HTTP/1.1 %d %s\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+							http.StatusMethodNotAllowed, phrase)
+						_ = buffered.Flush()
+						return
+					}
+				}
 			}
+			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
 		s.ServeHTTP(w, r)
