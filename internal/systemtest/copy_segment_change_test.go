@@ -229,19 +229,65 @@ func segmentChangePublish(t *testing.T, h *Harness, scope segmentChangeScope, me
 	t.Helper()
 	h.Seed(h.Primary, scope.src, "scope/asset", segmentChangeBody, meta)
 	sourceBefore := h.SnapshotNamespace(h.Primary)
+	destinationBefore := h.SnapshotNamespace(h.Secondary)
 	if _, err := h.Browse.Connect(t.Context(), h.Secondary.BookmarkID); err != nil {
 		t.Fatal(err)
 	}
 	trace := segmentChangeProxy(t, h, h.Secondary)
-	_, saved := segmentChangeRun(t, h, scope)
-	if saved.Job.State != "complete" || saved.Job.Counters.ObjectsCopied != 1 ||
-		saved.Job.Counters.BytesCopied != int64(len(segmentChangeBody)) || saved.Job.Counters.ObjectsFailed != 0 {
-		t.Fatalf("publication job differs: %+v", saved.Job)
+	id, saved := segmentChangeRun(t, h, scope)
+
+	// The whole publication outcome is asserted, not a subset: a job that
+	// silently stopped recording its terminal audit or its item facets
+	// must fail here.
+	want := jobs.Counters{ObjectsPlanned: 1, BytesPlanned: int64(len(segmentChangeBody)),
+		ObjectsCopied: 1, BytesCopied: int64(len(segmentChangeBody)), ObjectsVerified: 1}
+	if saved.Job.State != "complete" || saved.Job.Counters != want || saved.Job.Error != "" {
+		t.Fatalf("publication job differs: state=%q error=%q counters=%+v", saved.Job.State, saved.Job.Error, saved.Job.Counters)
 	}
+	item := segmentChangeItem(t, h, saved, scope)
+	if item.Execution == nil || item.Verification == nil || !item.Planned || !item.Admitted || item.Staging == nil ||
+		item.Execution.ItemObservation.Result != jobs.ItemCopied ||
+		item.Execution.ItemObservation.CopiedBytes != int64(len(segmentChangeBody)) ||
+		item.Verification.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemVerified, Effect: jobs.EffectNotAttempted}) {
+		t.Fatalf("publication item observation differs: execution=%+v verification=%+v", item.Execution, item.Verification)
+	}
+	segmentChangeAudit(t, h, saved, scope, id, "transfer.copy.complete", audit.ResultApplied,
+		" · item outcomes: 0 failed names, 0 conflicts, 0 refusals, 0 unresolved, 0 unverified, 0 with problems")
+
 	live := segmentChangeLive(t, h, scope)
 	if live.Class != "dlo" || len(live.Segments) < 2 || live.Size != int64(len(segmentChangeBody)) {
 		t.Fatalf("destination was not published as a segmented object: class=%s segments=%d size=%d", live.Class, len(live.Segments), live.Size)
 	}
+	if live.Digest != sourceBefore.Containers[scope.src].Objects["scope/asset"].Digest {
+		t.Fatal("published body differs from the source")
+	}
+	// Every preserved value arrives unchanged, and only this executor's
+	// own keys are added.
+	for key, value := range meta {
+		name := strings.TrimPrefix(key, "X-Object-Meta-")
+		if live.Meta[name] != value {
+			t.Fatalf("preserved metadata %q = %q, want %q", name, live.Meta[name], value)
+		}
+	}
+	for name := range live.Meta {
+		if name == segmentChangeFingerprintKey || name == segmentChangeStampKey {
+			continue
+		}
+		if _, seeded := meta["X-Object-Meta-"+name]; !seeded {
+			t.Fatalf("publication invented metadata %q", name)
+		}
+	}
+	if live.Meta[segmentChangeFingerprintKey] == "" {
+		t.Fatal("publication carries no fingerprint")
+	}
+	// Destination collateral: only the published name and its segments
+	// may be new, and the sentinel must be untouched.
+	allowed := []string{scope.dst + "/scope/asset"}
+	for _, segment := range live.Segments {
+		allowed = append(allowed, segment.Name)
+	}
+	h.AssertNoCollateral(destinationBefore, h.SnapshotNamespace(h.Secondary), allowed...)
+	h.AssertNoCollateral(sourceBefore, h.SnapshotNamespace(h.Primary))
 	return trace, live, sourceBefore
 }
 
@@ -327,10 +373,11 @@ func segmentChangeRefusal(t *testing.T, h *Harness, scope segmentChangeScope, wh
 	}
 	segmentChangeAudit(t, h, saved, scope, id, "transfer.copy.partial", audit.ResultVerifyMismatch,
 		" · 1 overwrite refused · item outcomes: 0 failed names, 0 conflicts, 1 refusals, 0 unresolved, 0 unverified, 1 with problems")
-	for _, write := range trace.snapshot() {
-		if strings.HasSuffix(write.Path, "/"+scope.dst+"/scope/asset") || strings.Contains(write.Path, "/"+scope.segments+"/") {
-			t.Fatalf("%s: refusal mutated protected state: %+v", why, write)
-		}
+	// A refusal writes nothing anywhere in the destination account, so
+	// even a staging object created and removed before the final
+	// snapshot is caught here.
+	if writes := trace.snapshot(); len(writes) != 0 {
+		t.Fatalf("%s: refusal mutated the destination: %+v", why, writes)
 	}
 	h.AssertNoCollateral(beforeA, h.SnapshotNamespace(h.Primary))
 	h.AssertNoCollateral(beforeB, h.SnapshotNamespace(h.Secondary))
@@ -398,14 +445,24 @@ func copySegmentChangeStaticLargeObject(t *testing.T, h *Harness) {
 	scope := segmentChangeScope0(t, h, "segchange-slo")
 	_, live, _ := segmentChangePublish(t, h, scope, nil)
 	// Republish the same bytes as a static large object over the same
-	// segments, keeping every other precondition for a skip.
+	// segments, carrying the same fingerprint and stamp, so the only
+	// reason a skip can be refused is the destination class.
 	var entries []string
 	for _, segment := range live.Segments {
 		entries = append(entries, fmt.Sprintf(`{"path":"/%s","size_bytes":%d}`, segment.Name, segment.Size))
 	}
-	h.SeedSLO(h.Secondary, scope.dst, "scope/asset", "["+strings.Join(entries, ",")+"]")
-	if slo := segmentChangeLive(t, h, scope); slo.Class != "slo" {
-		t.Fatalf("the destination is not a static large object: %+v", slo)
+	h.rawPutQuery(h.Secondary, "/"+scope.dst+"/"+oracle.Escape("scope/asset"), "multipart-manifest=put",
+		[]byte("["+strings.Join(entries, ",")+"]"), map[string]string{
+			"X-Object-Meta-" + segmentChangeFingerprintKey: live.Meta[segmentChangeFingerprintKey],
+			"X-Object-Meta-" + segmentChangeStampKey:       live.Meta[segmentChangeStampKey],
+		})
+	slo := segmentChangeLive(t, h, scope)
+	if slo.Class != "slo" || slo.Size != live.Size || slo.Digest != live.Digest {
+		t.Fatalf("the static large object does not hold the same bytes: %+v", slo)
+	}
+	if slo.Meta[segmentChangeFingerprintKey] != live.Meta[segmentChangeFingerprintKey] ||
+		slo.Meta[segmentChangeStampKey] != live.Meta[segmentChangeStampKey] {
+		t.Fatalf("the static large object lost a skip precondition: %+v", slo.Meta)
 	}
 	segmentChangeRefusal(t, h, scope, "static large object")
 }
@@ -438,8 +495,14 @@ func copySegmentChangeMetadataAllowance(t *testing.T, h *Harness) {
 	if crowdedLive.Meta[segmentChangeStampKey] != "" {
 		t.Fatalf("the stamp was added past the advertised allowance of %d", allowance)
 	}
-	if crowdedLive.Meta[segmentChangeFingerprintKey] == "" || len(crowdedLive.Meta) != allowance {
-		t.Fatalf("a preserved value or the fingerprint was displaced: %d entries", len(crowdedLive.Meta))
+	if crowdedLive.Meta[segmentChangeFingerprintKey] == "" {
+		t.Fatal("the fingerprint was displaced to make room")
+	}
+	for key, value := range crowded {
+		name := strings.TrimPrefix(key, "X-Object-Meta-")
+		if crowdedLive.Meta[name] != value {
+			t.Fatalf("preserved metadata %q = %q, want %q", name, crowdedLive.Meta[name], value)
+		}
 	}
 	segmentChangeRefusal(t, h, full, "unstamped because the allowance was full")
 }

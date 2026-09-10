@@ -124,6 +124,20 @@ func (c *Capabilities) MaxMetaOverallSize() int {
 	return int(v)
 }
 
+// MaxMetaNameLength returns swift.max_meta_name_length — the cap on one
+// metadata key after the header prefix — or 0 when unknown.
+func (c *Capabilities) MaxMetaNameLength() int {
+	v, _ := c.Feature("swift")["max_meta_name_length"].(float64)
+	return int(v)
+}
+
+// MaxMetaValueLength returns swift.max_meta_value_length — the cap on
+// one metadata value — or 0 when unknown.
+func (c *Capabilities) MaxMetaValueLength() int {
+	v, _ := c.Feature("swift")["max_meta_value_length"].(float64)
+	return int(v)
+}
+
 // BulkDeleteMaxDeletes returns bulk_delete.max_deletes_per_request, or 0
 // when unknown.
 func (c *Capabilities) BulkDeleteMaxDeletes() int {

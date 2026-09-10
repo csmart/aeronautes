@@ -50,7 +50,8 @@ The aggregate is therefore treated here as evidence of change, never as proof of
    A static large object destination is refused outright, because the entity tag it reports is the one its manifest recorded and there is no live aggregate to compare.
    Any other destination, in particular a large source materialised as a plain destination, keeps exactly the decision it has today, because it has no aggregate of its own; that case is recorded as still open rather than tightened, since refusing it would reject copies this executor itself creates.
 3. The stamp is optional evidence and never costs a copy.
-   It rides the publishing write only when it fits inside the destination's advertised user metadata allowance, counting the complete added entry against both the entry count and the total size.
+   It rides the publishing write only when it fits inside the destination's advertised user metadata allowance, counting the complete added entry against the entry count, the total size, and the advertised key and value lengths.
+   A partly advertised allowance is not a budget: if any of those dimensions is missing, the missing one would otherwise be treated as unlimited, so the stamp is omitted instead.
    When it does not fit, or the destination advertises no allowance this executor can read, the name publishes with every preserved user value and simply carries no stamp, and the unstamped destination is then refused rather than skipped on a later decision.
    No preserved metadata is ever displaced and no second write is introduced to make room.
 4. Only the skip decision is narrowed.
@@ -86,7 +87,9 @@ It must distinguish an authoritative answer from a transport or permission failu
 
 The decision is proved through the public service as well as at the predicate, in a mock and an owned-service pair.
 That pair publishes a segmented destination through the normal copy path with an admitted chunk setting and asserts that the stamp originates in the single conditional publishing write, carrying the conditional header, with no metadata update to the live name and no preserved value displaced.
-It then runs the unchanged, substituted-segment, stripped-stamp, malformed-stamp and metadata-allowance scenarios, and the static large object scenario against the owned service, asserting for each the exact job state and counters, the recorded item identity, the execution and verification observations, the single terminal audit event with its operation, result and summary, the absence of any mutation of the live name or its segments on a refusal, and unchanged collateral in both namespaces.
+Publication also asserts the exact counters, the recorded item identity and its execution and verification observations, the job-specific terminal audit event, every preserved metadata value with nothing invented, and destination collateral limited to the published name and its own segments.
+It then runs the unchanged, substituted-segment, stripped-stamp, malformed-stamp and metadata-allowance scenarios, and the static large object scenario against the owned service, asserting for each the exact job state and counters, the recorded item identity, the observations, the single terminal audit event with its operation, result and exact summary, that a refusal writes nothing at all in the destination account rather than nothing that survives to the final snapshot, and unchanged collateral in both namespaces.
+The static large object destination is given the same fingerprint and stamp the publication left, so the refusal it proves is the destination class rather than an older precondition.
 Each scenario builds its own destination so that a broken guard reaches the assertion it is meant to fail, rather than being stopped by an earlier one.
 The stripped-stamp scenario removes only the aggregate and keeps the fingerprint, so it exercises this guard and not the older one.
 The mock does not model creating a static large object over its HTTP surface, so that class is covered against the owned service and at the predicate.
@@ -107,8 +110,9 @@ Neither unresolved case may be turned green by weakening an assertion or by rest
 
 Controls that must keep their current outcomes, each with its stamp and class precondition stated: an unchanged stamped dynamic large object destination, a legitimately resegmented stamped destination including the four and four to three, three and two case, a plain pair, and a large source materialised as a plain destination.
 
-Deliberately broken variants must each fail their own boundary and no other: one reverting the decision to fingerprint and length, one stamping the identity but never checking it, one admitting static large object destinations to the stamped path, one skipping validation of the observed aggregate, and one minting a stamp from an unusable staged observation.
-Their patched sources, exact commands, raw result streams and exits are retained rather than summarised.
+Nine deliberately broken variants must each fail their own boundary: reverting the decision to fingerprint and length, stamping the identity but never checking it, admitting static large object destinations at the predicate and again at the owned service, skipping validation of the observed aggregate, minting a stamp from an unusable staged observation, ignoring the advertised allowance, applying the narrowed decision to verification as well, and renaming the terminal audit only for jobs that copied something.
+The last three are only expressible at the service layer, and the static large object and audit variants are run against both providers, because a mock-only selection cannot establish an owned-service boundary.
+Their patched sources, unified patches, exact commands, raw result streams and exits are retained rather than summarised.
 
 The full race suite runs with inventory reconciliation against the delivered name count, alongside vet, gofmt, the Windows and macOS vets and internal builds, and module tidiness.
 
