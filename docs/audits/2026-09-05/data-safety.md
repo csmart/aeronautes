@@ -172,7 +172,9 @@ Probe: `TestAuditPreflightRejectsCaseFoldAncestorConflict`.
 
 Current disposition: [PR78](../../experiments/2026-09-09-download-path-case.md#protected-delivery) delivers the case-folded file and ancestor refusal at preflight and at the executor's item admission, before any marker or filesystem effect.
 Both spellings of each conflicting pair are refused across the whole selection on the owned providers, with a safe first member and passing shared-parent controls.
-Unicode normalization, directory-only aliases, reserved names, forbidden characters, encoding collisions and native target-filesystem acceptance remain open, so DS-06/P19 and the valuable-data release hold are still blocking.
+[PR81](../../experiments/2026-09-10-portable-download-names.md#protected-delivery) then delivers one lexical portable component rule at the same two boundaries, refusing Windows device and console bases, the seven restricted characters and components ending in an ASCII space or dot, across the whole selection and without trimming or renaming.
+That rule is conservative on every host rather than a claim about any particular Windows release, and no Windows device is opened to prove it.
+Unicode normalization and equivalence, leading spaces, component and path length limits, directory-only aliases, encoding collisions and native target-filesystem acceptance remain open, so DS-06/P19 and the valuable-data release hold are still blocking.
 
 ### DS-07 — High: cancellation after staging still places files and can report completion
 
