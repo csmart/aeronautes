@@ -82,3 +82,38 @@ The original failed stream remains failed evidence and receives no scenario cred
 The correction required a new successful PR run on the reviewed head and all five resulting master checks.
 The [checked Copy delivery record](2026-09-08-checked-copy-records.md#delivery) records those results and both measured integration durations.
 Neither time-budget correction changes the valuable-data release hold.
+
+## 2026-09-10 job-cap cancellation and correction
+
+The [master run for the contrast delivery record](https://github.com/csmart/aeronautes/actions/runs/34446406312) was cancelled at the twenty-five-minute job cap on its first attempt.
+Nothing failed: the integration job started at 06:42:22Z, its suite step ran for 23.9 minutes and was cancelled at 07:07:35Z, and the aggregate job then reported failure because a required job had not succeeded.
+The Go, frontend and smoke jobs of that run succeeded, and the merged commit was documentation only, so no product change is implicated.
+Re-running the failed jobs completed all five successfully on the second attempt, which is the only retry recorded here.
+
+Eleven successful integration jobs ran that day across six pull requests and their master pushes, and nine of their event streams were measured.
+
+| Measurement | Minutes |
+| --- | ---: |
+| Whole job, fastest and slowest of eleven | 20.4 and 22.5 |
+| Suite step, fastest and slowest of eleven | 19.1 and 21.4 |
+| System-test package, fastest and slowest of nine streams | 16.4 and 18.2 |
+| Delay from job start to system-test package start, nine streams | 3.82 to 4.44 |
+| Cancelled attempt, delay to system-test package start | 5.91 |
+| Cancelled attempt, system-test package before cancellation | 19.28 |
+
+The cancelled attempt's stream starts `internal/app` at 06:43:46.130229758Z and `internal/systemtest` at 06:48:16.549674529Z, and its last system-test event is at 07:07:33.226606874Z.
+That package had run for 19.28 minutes without finishing, close to its twenty-minute alarm, and the job cap ended the step first.
+Compilation and the other nineteen packages account for the delay before the system-test package starts, and on that slow runner the delay was 5.91 minutes against 3.82 to 4.44 minutes on the measured successful runs.
+Every delay here is measured from the job's own start time as the API reports it, one to two seconds before its first setup step.
+Both attempts of that run uploaded a scenario coverage artifact: the cancelled attempt is artifact 10140531583 of 303,143 bytes, distinct from the successful retry's 10141315306, and its 14,642 events agree with the same attempt's retained job log.
+
+Two limits were therefore too close at once: the job cap against the observed job durations, and the package alarm against the observed system-test durations.
+The correction raises the job cap to thirty-five minutes and the per-package limit to twenty-five minutes.
+The package alarm still fires first, which is what preserves a Go stack for a hung package instead of an opaque cancellation: with the slowest observed start delay of 5.91 minutes, a twenty-five-minute alarm expires 30.91 minutes into the job, about 4.09 minutes before the new cap.
+Twenty-five minutes leaves 5.7 minutes over the longest system-test run observed, the incomplete 19.28-minute one, and 6.8 minutes over the longest completed one.
+Retaining the twenty-minute alarm alongside a larger job cap would have left 43.3 seconds of measured margin on that profile, which is why the alarm moved as well.
+The stream stops while the package is still running, so it does not show whether that package would have finished within the remaining margin; the recorded fact is the margin, not a failure.
+The portable component slice added 308 integration results that day, but its own runs finished in 21.0 and 21.8 minutes, so suite growth alone does not explain the cancellation.
+
+No assertion, fixture, race or coverage option, producer-exit check, scenario reconciliation or aggregate refusal changes, and no other job's budget changes.
+This correction does not change the valuable-data release hold, and it makes no claim about why a particular hosted runner is slow.
