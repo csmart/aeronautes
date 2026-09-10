@@ -204,6 +204,10 @@ Fix: increase text/primary-action contrast while preserving the warm palette; us
 Tests: automated color-pair checks plus real rendering in both themes, high contrast/forced colors, scaling, focus, disabled, error, and hover states.
 Confidence: high for ratio calculations; whole-app accessibility compliance not assessed.
 
+Current disposition: [PR79](../../experiments/2026-09-09-text-contrast.md#protected-delivery) raises the demonstrated colour roles and gives input and textarea placeholders an opaque faint colour, with maintained checks over the actual text and placeholder pairs.
+The corrected pairs meet the chosen 4.5:1 normal-text target without rounding, and a native replay observed the normal, hover, keyboard-focus, error, disabled and ACL states in both themes on the delivered binary.
+Forced colours, scaling, assistive technology, other native platforms and the wider UI-12/P29 certification remain unassessed, so UI-12/P29 stays blocking.
+
 ### UI-13 — P2 product gap: responsive and large-scale navigation remain unfinished
 
 Evidence: `frontend/src/features/browser/BrowserScreen.svelte:154`–`:172`; `frontend/src/features/browser/WorkingList.svelte:358`, `:378`; `main.go:137`–`:140`.

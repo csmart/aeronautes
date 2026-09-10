@@ -5069,7 +5069,7 @@ In the same logical correction, add maintained checks for the actual text pairs 
 Enumerate the existing inset and soft-fill consumers, including inherited foregrounds and the enabled ACL Remove control's normal/hover colours; a new or changed mapping needs its own checked pair.
 Require existing theme/component tests, the full frontend checks and an attributed native build with separate light/dark normal, hover, focus, error and disabled-state observations before independent implementation review.
 Preserve every failed producer and distinguish authored-colour ratios, isolated renderer controls and actual application observations.
-Final-base review and all five protected PR/master jobs remain required before delivery; root coordination owns that delivery order.
+Independent review approved the corrected plan, the implementation and then the final-base range, followed by [protected PR79 delivery](experiments/2026-09-09-text-contrast.md#protected-delivery) with all five PR and master checks green and the reviewed five-commit range preserved patch for patch.
 Forced colours, scaling, assistive technology, other native platforms, broader UI-12/P29 certification and the valuable-data hold remain open.
 
 The next bounded [portable component refusal](experiments/2026-09-10-portable-download-names.md) applies one lexical name policy to every planned download component.
