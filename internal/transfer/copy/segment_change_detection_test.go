@@ -469,3 +469,31 @@ func countSegments(t *testing.T, w *world, live *swiftcontrol.ObjectDetail) int 
 	}
 	return count
 }
+
+func TestUnusableStagedObservationMintsNoStamp(t *testing.T) {
+	// The staged observation is what the publishing write carries, so an
+	// unusable one must mint no stamp at all. Publishing anyway and
+	// leaving the destination unstamped is the safe outcome: the next
+	// decision refuses it instead of trusting a value that means nothing.
+	w := newWorld(t)
+	seed(w.srcMock, "media", "asset", []byte("GOODDATA"), nil)
+	// The staged manifest reports an unusable aggregate at the moment the
+	// commit path reads it.
+	w.dstMock.SegmentAggregateOverride = map[string]string{
+		"backup/.aeronautes/stage/job01/batch/asset": "not-a-digest",
+	}
+	report, live := copyThenHead(t, w, 4)
+	if report.Copied != 1 {
+		t.Fatalf("publication did not proceed: %+v", report)
+	}
+	if stamp := live.Meta["Aeronautes-Staged-Aggregate"]; stamp != "" {
+		t.Fatalf("an unusable staged observation minted the stamp %q", stamp)
+	}
+	if body := readDst(t, w, "asset"); body != "GOODDATA" {
+		t.Fatalf("destination body = %q, want the source bytes", body)
+	}
+	// Unstamped, so the next decision refuses rather than skips.
+	if skip := runUnknownOver(t, w); skip.SkippedEqual != 0 || skip.OverwritesRefused != 1 {
+		t.Fatalf("report = %+v, want the unstamped destination refused", skip)
+	}
+}
