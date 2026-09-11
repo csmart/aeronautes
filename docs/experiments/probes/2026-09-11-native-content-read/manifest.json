@@ -1,0 +1,559 @@
+{
+  "status": "proposed archive for proposed ADR 0037; no approval or new execution",
+  "archive_format": "exact Go source bytes preserved as .go.txt outside active Go test discovery",
+  "restoration": "Use a separate immutable copy of the listed original commit and restore one probe version to restore_as. The two raw-body versions have the same restore_as and must never be installed together. These archived probes deliberately assert old-path observations and are not new-API acceptance tests.",
+  "sources": [
+    {
+      "filename": "native_call_probe_test.go.txt",
+      "original_source_commit": "859ec53c53dbb00851bfbcc796b1a89706d07310",
+      "restore_as": "internal/swiftcontrol/native_call_probe_test.go",
+      "bytes": 18625,
+      "sha256": "e424d31df42fe6172dd3602c33d1e06d8d03227679001790e9b3d301f83bd070",
+      "executions": "all three native invocations",
+      "role": "historical test-only before evidence; not a maintained acceptance test"
+    },
+    {
+      "filename": "raw_body_probe_test.go.txt",
+      "original_source_commit": "0992dca42b6bb8158288c3baaa56f4f0c74a4ec8",
+      "restore_as": "internal/swiftcontrol/raw_body_probe_test.go",
+      "bytes": 18268,
+      "sha256": "30feeb0c962b98f82ab5bbcdaa95465e3377d0da59786daf17a91b2b1e3b3e37",
+      "executions": "raw controls-2 and expected-red-1",
+      "role": "historical test-only before evidence; not a maintained acceptance test"
+    },
+    {
+      "filename": "raw_body_probe_controls_1_test.go.txt",
+      "original_source_commit": "0992dca42b6bb8158288c3baaa56f4f0c74a4ec8",
+      "restore_as": "internal/swiftcontrol/raw_body_probe_test.go",
+      "bytes": 17590,
+      "sha256": "be4075bd0a4e79e1777f7200518814750689400f49bae2d896b49e3deb3fd039",
+      "executions": "raw controls-1 failed control; no regression credit",
+      "role": "historical test-only before evidence; not a maintained acceptance test"
+    },
+    {
+      "filename": "copy_content_before_probe_test.go.txt",
+      "original_source_commit": "5823af8879416deb7b4188a9d84f391bf292fd73",
+      "restore_as": "internal/systemtest/copy_content_before_probe_test.go",
+      "bytes": 14818,
+      "sha256": "a58bae633082940f96c75262def4b7c9dc05cfdf7f02f7c24a1eadad82e10cb3",
+      "executions": "single Copy invocation, both leaves",
+      "role": "historical test-only before evidence; not a maintained acceptance test"
+    }
+  ],
+  "retained_run_summary": [
+    {
+      "label": "native/controls-1",
+      "source_commit": "859ec53c53dbb00851bfbcc796b1a89706d07310",
+      "probe_sha256": "e424d31df42fe6172dd3602c33d1e06d8d03227679001790e9b3d301f83bd070",
+      "argv_with_only_executable_path_normalised": [
+        "go",
+        "test",
+        "-json",
+        "-v",
+        "-race",
+        "-mod=readonly",
+        "-count=1",
+        "-parallel=1",
+        "-p=2",
+        "-timeout=45s",
+        "-run=^TestNativeCall(Lifetime|Representation)Controls$",
+        "./internal/swiftcontrol"
+      ],
+      "environment_overrides_with_private_paths_normalised": {
+        "GOTOOLCHAIN": "local",
+        "GOENV": "off",
+        "GOWORK": "off",
+        "GOPROXY": "off",
+        "GOSUMDB": "off",
+        "GOMODCACHE": "<populated-module-cache>",
+        "GOCACHE": "<build-cache>",
+        "GOTMPDIR": "<owned-go-temp>",
+        "TMPDIR": "<owned-run-temp>",
+        "GOMAXPROCS": "2",
+        "CGO_ENABLED": "1",
+        "AERONAUTES_PROBE_EVIDENCE_DIR": "<owned-snapshot-directory>"
+      },
+      "cwd": "<immutable-source-copy>",
+      "go_timeout_seconds": 45,
+      "process_timeout_seconds": 120,
+      "actual_exit_code": 0,
+      "actual_elapsed_seconds": 3.615918962052092,
+      "event_count": 188,
+      "leaf_counts": {
+        "pass": 20
+      },
+      "leaf_terminals": [
+        {
+          "Test": "TestNativeCallLifetimeControls/healthy_complete",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestNativeCallLifetimeControls/owned_header_timeout_cancel",
+          "Action": "pass",
+          "Elapsed": 0.41
+        },
+        {
+          "Test": "TestNativeCallLifetimeControls/owned_body_timeout_cancel_close",
+          "Action": "pass",
+          "Elapsed": 0.3
+        },
+        {
+          "Test": "TestNativeCallLifetimeControls/body_timeout_close_only",
+          "Action": "pass",
+          "Elapsed": 0.35
+        },
+        {
+          "Test": "TestNativeCallLifetimeControls/external_header_cancel",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestNativeCallLifetimeControls/external_body_cancel",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestNativeCallLifetimeControls/header_context_deadline",
+          "Action": "pass",
+          "Elapsed": 0.08
+        },
+        {
+          "Test": "TestNativeCallLifetimeControls/body_context_deadline",
+          "Action": "pass",
+          "Elapsed": 0.08
+        },
+        {
+          "Test": "TestNativeCallRepresentationControls/automatic/gzip_a",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestNativeCallRepresentationControls/automatic/gzip_b",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestNativeCallRepresentationControls/automatic/malformed",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestNativeCallRepresentationControls/automatic/unknown",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestNativeCallRepresentationControls/identity/gzip_a",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestNativeCallRepresentationControls/identity/gzip_b",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestNativeCallRepresentationControls/identity/malformed",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestNativeCallRepresentationControls/identity/unknown",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestNativeCallRepresentationControls/owned_no_compression/gzip_a",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestNativeCallRepresentationControls/owned_no_compression/gzip_b",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestNativeCallRepresentationControls/owned_no_compression/malformed",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestNativeCallRepresentationControls/owned_no_compression/unknown",
+          "Action": "pass",
+          "Elapsed": 0
+        }
+      ],
+      "events_sha256": "5e88d608638837e41a276d55dddd68b2cab1fd0f974e8ff4d0f2fca46810fa6b",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_bytes": 0,
+      "credit": "passing_characterisation",
+      "new_execution": false
+    },
+    {
+      "label": "native/lifetime-red-1",
+      "source_commit": "859ec53c53dbb00851bfbcc796b1a89706d07310",
+      "probe_sha256": "e424d31df42fe6172dd3602c33d1e06d8d03227679001790e9b3d301f83bd070",
+      "argv_with_only_executable_path_normalised": [
+        "go",
+        "test",
+        "-json",
+        "-v",
+        "-race",
+        "-mod=readonly",
+        "-count=1",
+        "-parallel=1",
+        "-p=2",
+        "-timeout=45s",
+        "-run=^TestNativeCallLifetimeExpectedRed$",
+        "./internal/swiftcontrol"
+      ],
+      "environment_overrides_with_private_paths_normalised": {
+        "GOTOOLCHAIN": "local",
+        "GOENV": "off",
+        "GOWORK": "off",
+        "GOPROXY": "off",
+        "GOSUMDB": "off",
+        "GOMODCACHE": "<populated-module-cache>",
+        "GOCACHE": "<build-cache>",
+        "GOTMPDIR": "<owned-go-temp>",
+        "TMPDIR": "<owned-run-temp>",
+        "GOMAXPROCS": "2",
+        "CGO_ENABLED": "1",
+        "AERONAUTES_PROBE_EVIDENCE_DIR": "<owned-snapshot-directory>"
+      },
+      "cwd": "<immutable-source-copy>",
+      "go_timeout_seconds": 45,
+      "process_timeout_seconds": 120,
+      "actual_exit_code": 1,
+      "actual_elapsed_seconds": 1.3643640449736267,
+      "event_count": 28,
+      "leaf_counts": {
+        "fail": 2
+      },
+      "leaf_terminals": [
+        {
+          "Test": "TestNativeCallLifetimeExpectedRed/headers",
+          "Action": "fail",
+          "Elapsed": 0.56
+        },
+        {
+          "Test": "TestNativeCallLifetimeExpectedRed/body",
+          "Action": "fail",
+          "Elapsed": 0.45
+        }
+      ],
+      "events_sha256": "8fa6eacd8520a3f8d738dbe8469facaef64b81e12dfff454978e019325693494",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_bytes": 0,
+      "credit": "intended_before_failures",
+      "new_execution": false
+    },
+    {
+      "label": "native/representation-red-1",
+      "source_commit": "859ec53c53dbb00851bfbcc796b1a89706d07310",
+      "probe_sha256": "e424d31df42fe6172dd3602c33d1e06d8d03227679001790e9b3d301f83bd070",
+      "argv_with_only_executable_path_normalised": [
+        "go",
+        "test",
+        "-json",
+        "-v",
+        "-race",
+        "-mod=readonly",
+        "-count=1",
+        "-parallel=1",
+        "-p=2",
+        "-timeout=45s",
+        "-run=^TestNativeCallRepresentationExpectedRed$",
+        "./internal/swiftcontrol"
+      ],
+      "environment_overrides_with_private_paths_normalised": {
+        "GOTOOLCHAIN": "local",
+        "GOENV": "off",
+        "GOWORK": "off",
+        "GOPROXY": "off",
+        "GOSUMDB": "off",
+        "GOMODCACHE": "<populated-module-cache>",
+        "GOCACHE": "<build-cache>",
+        "GOTMPDIR": "<owned-go-temp>",
+        "TMPDIR": "<owned-run-temp>",
+        "GOMAXPROCS": "2",
+        "CGO_ENABLED": "1",
+        "AERONAUTES_PROBE_EVIDENCE_DIR": "<owned-snapshot-directory>"
+      },
+      "cwd": "<immutable-source-copy>",
+      "go_timeout_seconds": 45,
+      "process_timeout_seconds": 120,
+      "actual_exit_code": 1,
+      "actual_elapsed_seconds": 0.31376539706252515,
+      "event_count": 13,
+      "leaf_counts": {
+        "fail": 1
+      },
+      "leaf_terminals": [
+        {
+          "Test": "TestNativeCallRepresentationExpectedRed",
+          "Action": "fail",
+          "Elapsed": 0
+        }
+      ],
+      "events_sha256": "20a0b8f620231b7777dc1c467cb1b6d26bd232d768ee791da521f27ce65e222f",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_bytes": 0,
+      "credit": "intended_before_failure",
+      "new_execution": false
+    },
+    {
+      "label": "raw/controls-1",
+      "source_commit": "0992dca42b6bb8158288c3baaa56f4f0c74a4ec8",
+      "probe_sha256": "be4075bd0a4e79e1777f7200518814750689400f49bae2d896b49e3deb3fd039",
+      "argv_with_only_executable_path_normalised": [
+        "go",
+        "test",
+        "-json",
+        "-v",
+        "-race",
+        "-mod=readonly",
+        "-count=1",
+        "-parallel=1",
+        "-p=2",
+        "-timeout=45s",
+        "-run=^TestRawBodyControls$",
+        "./internal/swiftcontrol"
+      ],
+      "environment_overrides_with_private_paths_normalised": {
+        "GOTOOLCHAIN": "local",
+        "GOENV": "off",
+        "GOWORK": "off",
+        "GOPROXY": "off",
+        "GOSUMDB": "off",
+        "GOMODCACHE": "<populated-module-cache>",
+        "GOCACHE": "<build-cache>",
+        "GOTMPDIR": "<owned-go-temp>",
+        "TMPDIR": "<owned-run-temp>",
+        "GOMAXPROCS": "2",
+        "CGO_ENABLED": "1",
+        "AERONAUTES_PROBE_EVIDENCE_DIR": "<owned-snapshot-directory>"
+      },
+      "cwd": "<immutable-source-copy>",
+      "go_timeout_seconds": 45,
+      "process_timeout_seconds": 120,
+      "actual_exit_code": 1,
+      "actual_elapsed_seconds": 1.4145934279076755,
+      "event_count": 33,
+      "leaf_counts": {
+        "pass": 2,
+        "fail": 1
+      },
+      "leaf_terminals": [
+        {
+          "Test": "TestRawBodyControls/auth_unused",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestRawBodyControls/storage_401",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestRawBodyControls/text_error",
+          "Action": "fail",
+          "Elapsed": 0
+        }
+      ],
+      "events_sha256": "98780cca21501834259af1e70b84aafbe84cd2d8432b719495350fd631acba55",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_bytes": 0,
+      "credit": "failed_control_no_regression_credit",
+      "new_execution": false
+    },
+    {
+      "label": "raw/controls-2",
+      "source_commit": "0992dca42b6bb8158288c3baaa56f4f0c74a4ec8",
+      "probe_sha256": "30feeb0c962b98f82ab5bbcdaa95465e3377d0da59786daf17a91b2b1e3b3e37",
+      "argv_with_only_executable_path_normalised": [
+        "go",
+        "test",
+        "-json",
+        "-v",
+        "-race",
+        "-mod=readonly",
+        "-count=1",
+        "-parallel=1",
+        "-p=2",
+        "-timeout=45s",
+        "-run=^TestRawBodyControls$",
+        "./internal/swiftcontrol"
+      ],
+      "environment_overrides_with_private_paths_normalised": {
+        "GOTOOLCHAIN": "local",
+        "GOENV": "off",
+        "GOWORK": "off",
+        "GOPROXY": "off",
+        "GOSUMDB": "off",
+        "GOMODCACHE": "<populated-module-cache>",
+        "GOCACHE": "<build-cache>",
+        "GOTMPDIR": "<owned-go-temp>",
+        "TMPDIR": "<owned-run-temp>",
+        "GOMAXPROCS": "2",
+        "CGO_ENABLED": "1",
+        "AERONAUTES_PROBE_EVIDENCE_DIR": "<owned-snapshot-directory>"
+      },
+      "cwd": "<immutable-source-copy>",
+      "go_timeout_seconds": 45,
+      "process_timeout_seconds": 120,
+      "actual_exit_code": 0,
+      "actual_elapsed_seconds": 2.071073342114687,
+      "event_count": 32,
+      "leaf_counts": {
+        "pass": 3
+      },
+      "leaf_terminals": [
+        {
+          "Test": "TestRawBodyControls/auth_unused",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestRawBodyControls/storage_401",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestRawBodyControls/text_error",
+          "Action": "pass",
+          "Elapsed": 0
+        }
+      ],
+      "events_sha256": "f4dcd2bddef9df4b9e19b1186c6639aa890e12cd4c405f238ccba425148d7cae",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_bytes": 0,
+      "credit": "passing_control",
+      "new_execution": false
+    },
+    {
+      "label": "raw/expected-red-1",
+      "source_commit": "0992dca42b6bb8158288c3baaa56f4f0c74a4ec8",
+      "probe_sha256": "30feeb0c962b98f82ab5bbcdaa95465e3377d0da59786daf17a91b2b1e3b3e37",
+      "argv_with_only_executable_path_normalised": [
+        "go",
+        "test",
+        "-json",
+        "-v",
+        "-race",
+        "-mod=readonly",
+        "-count=1",
+        "-parallel=1",
+        "-p=2",
+        "-timeout=45s",
+        "-run=^TestRawBodyExpectedRed$",
+        "./internal/swiftcontrol"
+      ],
+      "environment_overrides_with_private_paths_normalised": {
+        "GOTOOLCHAIN": "local",
+        "GOENV": "off",
+        "GOWORK": "off",
+        "GOPROXY": "off",
+        "GOSUMDB": "off",
+        "GOMODCACHE": "<populated-module-cache>",
+        "GOCACHE": "<build-cache>",
+        "GOTMPDIR": "<owned-go-temp>",
+        "TMPDIR": "<owned-run-temp>",
+        "GOMAXPROCS": "2",
+        "CGO_ENABLED": "1",
+        "AERONAUTES_PROBE_EVIDENCE_DIR": "<owned-snapshot-directory>"
+      },
+      "cwd": "<immutable-source-copy>",
+      "go_timeout_seconds": 45,
+      "process_timeout_seconds": 120,
+      "actual_exit_code": 1,
+      "actual_elapsed_seconds": 1.7205701218917966,
+      "event_count": 38,
+      "leaf_counts": {
+        "fail": 3
+      },
+      "leaf_terminals": [
+        {
+          "Test": "TestRawBodyExpectedRed/auth_unused",
+          "Action": "fail",
+          "Elapsed": 0.46
+        },
+        {
+          "Test": "TestRawBodyExpectedRed/storage_401",
+          "Action": "fail",
+          "Elapsed": 0.46
+        },
+        {
+          "Test": "TestRawBodyExpectedRed/text_error",
+          "Action": "fail",
+          "Elapsed": 0.46
+        }
+      ],
+      "events_sha256": "55e4ef5e81fd0e90add39ad68ea0c3ee118758be747bf3ee815835f3742655b1",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_bytes": 0,
+      "credit": "intended_before_failures",
+      "new_execution": false
+    },
+    {
+      "label": "copy/single-invocation",
+      "source_commit": "5823af8879416deb7b4188a9d84f391bf292fd73",
+      "probe_sha256": "a58bae633082940f96c75262def4b7c9dc05cfdf7f02f7c24a1eadad82e10cb3",
+      "argv_with_only_executable_path_normalised": [
+        "go",
+        "test",
+        "-json",
+        "-v",
+        "-mod=readonly",
+        "-race",
+        "-count=1",
+        "-parallel=1",
+        "-timeout=150s",
+        "-run=^TestCopyStagedContentBeforeRealSwift$",
+        "./internal/systemtest"
+      ],
+      "environment_overrides_with_private_paths_normalised": {
+        "GOTOOLCHAIN": "local",
+        "GOPROXY": "off",
+        "GOMODCACHE": "<populated-module-cache>",
+        "GOCACHE": "<build-cache>",
+        "AERONAUTES_OFFICIAL_RCLONE_DIR": "<pinned-rclone-1.74.3-directory>",
+        "AERONAUTES_SAIO_AUTH_URL": "http://127.0.0.1:18081/auth/v1.0",
+        "AERONAUTES_REQUIRE_TWO_ACCOUNTS": "1",
+        "AERONAUTES_CONTENT_PROBE_OUTPUT": "<owned-snapshot-directory>"
+      },
+      "cwd": "<immutable-source-copy>",
+      "go_timeout_seconds": 150,
+      "process_timeout_seconds": 180,
+      "actual_exit_code": 1,
+      "actual_elapsed_seconds": 8.071270749904215,
+      "event_count": 21,
+      "leaf_counts": {
+        "pass": 1,
+        "fail": 1
+      },
+      "leaf_terminals": [
+        {
+          "Test": "TestCopyStagedContentBeforeRealSwift/control",
+          "Action": "pass",
+          "Elapsed": 2.29
+        },
+        {
+          "Test": "TestCopyStagedContentBeforeRealSwift/same_size_corruption",
+          "Action": "fail",
+          "Elapsed": 2.41
+        }
+      ],
+      "events_sha256": "d4aad5d182546c8de4bd1d0e14b1a621482f7be873b82d1a422cde9de1696c34",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_bytes": 0,
+      "credit": "passing_control_and_intended_before_failure",
+      "new_execution": false
+    }
+  ],
+  "raw_stream_archive_note": "The raw event, command, result, diagnostic snapshot, producer and assessor records are retained separately. This proposed public archive contains four source files and this manifest; it does not contain raw runtime logs or private command records.",
+  "private_path_normalisation": "Only the executable path, working directory and environment path values are replaced by explicit placeholders. Test arguments, versions, time bounds and actual outcomes are unchanged.",
+  "new_test_executions": 0,
+  "approval_claim": false
+}

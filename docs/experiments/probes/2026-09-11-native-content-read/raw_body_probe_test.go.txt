@@ -1,0 +1,535 @@
+package swiftcontrol
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	swift "github.com/ncw/swift/v2"
+)
+
+const rawHeaderTimeout = 100 * time.Millisecond
+const rawIdleTimeout = 150 * time.Millisecond
+const rawObservation = 450 * time.Millisecond
+const rawJoinLimit = 2 * time.Second
+
+type rawBodyEvent struct {
+	Name           string `json:"name"`
+	Path           string `json:"path,omitempty"`
+	ElapsedNS      int64  `json:"elapsed_ns"`
+	Status         int    `json:"status,omitempty"`
+	Bytes          int    `json:"bytes,omitempty"`
+	Error          string `json:"error,omitempty"`
+	ContextStopped bool   `json:"context_stopped,omitempty"`
+	TokenMatched   bool   `json:"token_matched,omitempty"`
+}
+
+type rawBodyTrace struct {
+	started                                             time.Time
+	auth, storage, admission, serverStart, serverFinish atomic.Int64
+	serverCancel, rtStart, rtFinish, readStart, readEnd atomic.Int64
+	closeCalls, closeErrors                             atomic.Int64
+	mu                                                  sync.Mutex
+	events                                              []rawBodyEvent
+}
+
+func (r *rawBodyTrace) event(e rawBodyEvent) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	e.ElapsedNS = time.Since(r.started).Nanoseconds()
+	r.events = append(r.events, e)
+}
+
+type rawBodyTransport struct {
+	inner   *http.Transport
+	fixture *rawBodyFixture
+}
+
+func (r *rawBodyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	f := r.fixture
+	f.trace.rtStart.Add(1)
+	f.trace.event(rawBodyEvent{Name: "roundtrip_start", Path: req.URL.Path, ContextStopped: req.Context().Err() != nil})
+	resp, err := r.inner.RoundTrip(req)
+	if resp != nil && resp.Body != nil {
+		target := resp.Header.Get("X-Probe-Target") == "yes"
+		resp.Body = &rawObservedBody{ReadCloser: resp.Body, fixture: f, path: req.URL.Path, target: target}
+		f.trace.event(rawBodyEvent{Name: "response_headers_received", Path: req.URL.Path, Status: resp.StatusCode})
+		if target {
+			select {
+			case f.headers <- struct{}{}:
+			default:
+			}
+		}
+	}
+	f.trace.rtFinish.Add(1)
+	f.trace.event(rawBodyEvent{Name: "roundtrip_finish", Path: req.URL.Path, Error: rawError(err)})
+	return resp, err
+}
+
+// Keep the inner optional API visible here; the actual production wrappers
+// still determine whether the library's timer can call it.
+func (r *rawBodyTransport) CancelRequest(req *http.Request) {
+	r.inner.CancelRequest(req)
+}
+
+type rawObservedBody struct {
+	io.ReadCloser
+	fixture *rawBodyFixture
+	path    string
+	target  bool
+}
+
+func (b *rawObservedBody) Read(p []byte) (int, error) {
+	f := b.fixture
+	f.trace.readStart.Add(1)
+	f.trace.event(rawBodyEvent{Name: "body_read_enter", Path: b.path})
+	if b.target {
+		select {
+		case f.readEntered <- struct{}{}:
+		default:
+		}
+	}
+	n, err := b.ReadCloser.Read(p)
+	f.trace.readEnd.Add(1)
+	f.trace.event(rawBodyEvent{Name: "body_read_return", Path: b.path, Bytes: n, Error: rawError(err)})
+	return n, err
+}
+
+func (b *rawObservedBody) Close() error {
+	b.fixture.trace.closeCalls.Add(1)
+	err := b.ReadCloser.Close()
+	if err != nil {
+		b.fixture.trace.closeErrors.Add(1)
+	}
+	b.fixture.trace.event(rawBodyEvent{Name: "body_close", Path: b.path, Error: rawError(err)})
+	return err
+}
+
+type rawCallResult struct {
+	Error          string `json:"error"`
+	ReadError      string `json:"read_error"`
+	CloseError     string `json:"close_error"`
+	Status         int    `json:"status"`
+	Body           string `json:"body"`
+	ContextError   bool   `json:"is_context_canceled"`
+	ForbiddenError bool   `json:"is_forbidden"`
+}
+
+type rawBodyFixture struct {
+	session      *Session
+	server       *httptest.Server
+	transport    *http.Transport
+	trace        *rawBodyTrace
+	ctx          context.Context
+	cancel       context.CancelFunc
+	headers      chan struct{}
+	readEntered  chan struct{}
+	release      chan struct{}
+	releaseOnce  sync.Once
+	cleanupOnce  sync.Once
+	cleanupOK    bool
+	callReturned chan struct{}
+	done         chan struct{}
+	result       rawCallResult
+}
+
+func newRawBodyFixture(t *testing.T, kind string, stalled bool) *rawBodyFixture {
+	t.Helper()
+	f := &rawBodyFixture{
+		trace: &rawBodyTrace{started: time.Now()}, headers: make(chan struct{}, 1),
+		readEntered: make(chan struct{}, 1), release: make(chan struct{}),
+		callReturned: make(chan struct{}), done: make(chan struct{}),
+	}
+	f.ctx, f.cancel = context.WithCancel(context.Background())
+	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		f.trace.serverStart.Add(1)
+		defer func() {
+			f.trace.serverFinish.Add(1)
+			f.trace.event(rawBodyEvent{Name: "server_finish", Path: req.URL.Path})
+		}()
+		status, payload, target := http.StatusOK, "data", false
+		if req.URL.Path == "/auth/v1.0" {
+			n := f.trace.auth.Add(1)
+			f.trace.event(rawBodyEvent{Name: "auth_request", Path: req.URL.Path,
+				TokenMatched: req.Header.Get("X-Auth-User") == "owned:user" && req.Header.Get("X-Auth-Key") == "owned-probe-key"})
+			w.Header().Set("X-Storage-Url", "http://"+req.Host+"/v1/AUTH_probe")
+			w.Header().Set("X-Auth-Token", fmt.Sprintf("owned-probe-%d", n))
+			payload, target = "auth-body", kind == "auth_unused" && n == 1
+		} else {
+			n := f.trace.storage.Add(1)
+			matched := req.Header.Get("X-Auth-Token") == fmt.Sprintf("owned-probe-%d", f.trace.auth.Load())
+			f.trace.event(rawBodyEvent{Name: "storage_request", Path: req.URL.Path, TokenMatched: matched})
+			if req.Method != http.MethodGet || req.URL.Path != "/v1/AUTH_probe/owned/object % + é?" || !matched {
+				t.Errorf("unexpected owned storage request: method=%s path=%q matched=%t", req.Method, req.URL.Path, matched)
+			}
+			if kind == "storage_401" && n == 1 {
+				status, payload, target = http.StatusUnauthorized, "denied-body", true
+			}
+			if kind == "text_error" {
+				status, payload, target = http.StatusForbidden, "forbidden-body", true
+			}
+		}
+		if target {
+			w.Header().Set("X-Probe-Target", "yes")
+		}
+		w.Header().Set("Content-Type", "text/plain")
+		w.Header().Set("Content-Length", strconv.Itoa(len(payload)))
+		w.WriteHeader(status)
+		w.(http.Flusher).Flush()
+		f.trace.event(rawBodyEvent{Name: "server_headers_flushed", Path: req.URL.Path, Status: status})
+		if target && stalled {
+			select {
+			case <-req.Context().Done():
+				f.trace.serverCancel.Add(1)
+				f.trace.event(rawBodyEvent{Name: "server_context_canceled", Path: req.URL.Path})
+				return
+			case <-f.release:
+				f.trace.event(rawBodyEvent{Name: "server_barrier_released", Path: req.URL.Path})
+			}
+		}
+		n, err := io.WriteString(w, payload)
+		f.trace.event(rawBodyEvent{Name: "server_body_write", Path: req.URL.Path, Bytes: n, Error: rawError(err)})
+		if err != nil && req.Context().Err() == nil {
+			t.Errorf("owned response write: %v", err)
+		}
+	}))
+	t.Cleanup(func() { f.cleanup(t) })
+	var err error
+	f.session, err = New(Config{
+		AuthURL: f.server.URL + "/auth/v1.0", Username: "owned:user", APIKey: "owned-probe-key",
+		AdmitRequest: func(context.Context) error { f.trace.admission.Add(1); return nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, ok := f.session.conn.Transport.(requestAdmissionTransport)
+	if !ok {
+		t.Fatal("production admission wrapper missing")
+	}
+	r, ok := a.inner.(redirectRefusingTransport)
+	if !ok {
+		t.Fatal("production redirect wrapper missing")
+	}
+	inner, ok := r.inner.(*http.Transport)
+	if !ok {
+		t.Fatal("production HTTP transport missing")
+	}
+	f.transport = inner.Clone()
+	r.inner = &rawBodyTransport{inner: f.transport, fixture: f}
+	a.inner = r
+	f.session.conn.Transport = a
+	if _, ok := f.session.conn.Transport.(interface{ CancelRequest(*http.Request) }); ok {
+		t.Fatal("probe changed outer native cancellation boundary")
+	}
+	f.session.conn.ConnectTimeout = rawHeaderTimeout
+	f.session.conn.Timeout = rawIdleTimeout
+	t.Logf("private timers: headers=%s read_idle=%s observation=%s join_containment=%s; no overall caller deadline; default native retries retained", rawHeaderTimeout, rawIdleTimeout, rawObservation, rawJoinLimit)
+	return f
+}
+
+func (f *rawBodyFixture) start() {
+	go func() {
+		defer close(f.done)
+		defer f.cancel()
+		if err := f.session.AdmitRequest(f.ctx); err != nil {
+			f.result.Error = err.Error()
+			close(f.callReturned)
+			return
+		}
+		resp, _, err := f.session.conn.Call(f.ctx, "", swift.RequestOpts{
+			Operation: http.MethodGet, Container: "owned", ObjectName: "object % + é?",
+			OnReAuth: f.session.auth.storageTarget,
+		})
+		f.trace.event(rawBodyEvent{Name: "call_returned", Error: rawError(err)})
+		close(f.callReturned)
+		f.result.Error = rawError(err)
+		f.result.ContextError = errors.Is(err, context.Canceled)
+		var statusError *swift.Error
+		f.result.ForbiddenError = errors.As(err, &statusError) && statusError.StatusCode == http.StatusForbidden
+		if resp != nil {
+			f.result.Status = resp.StatusCode
+			if resp.Body != nil {
+				if err == nil {
+					body, readErr := io.ReadAll(resp.Body)
+					f.result.Body, f.result.ReadError = string(body), rawError(readErr)
+				}
+				f.result.CloseError = rawError(resp.Body.Close())
+			}
+		}
+		f.trace.event(rawBodyEvent{Name: "caller_finished"})
+	}()
+}
+
+func rawError(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+func rawClosed(ch <-chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
+	}
+}
+
+func rawWait(ch <-chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	case <-time.After(rawJoinLimit):
+		return false
+	}
+}
+
+func rawNativeStacks() []string {
+	p := make([]byte, 1<<20)
+	n := runtime.Stack(p, true)
+	if n == len(p) {
+		return []string{"TRUNCATED_RUNTIME_STACK"}
+	}
+	var stacks []string
+	for _, stack := range strings.Split(string(p[:n]), "\n\n") {
+		if strings.Contains(stack, "swift/v2.(*Connection).Call(") ||
+			strings.Contains(stack, "swift/v2.(*Connection).doTimeoutRequest.func1") ||
+			strings.Contains(stack, "swift/v2.(*timeoutReader).Read.func1") {
+			stacks = append(stacks, stack)
+		}
+	}
+	return stacks
+}
+
+type rawBodySnapshot struct {
+	Phase                                                                   string `json:"phase"`
+	ElapsedNS                                                               int64  `json:"elapsed_ns"`
+	Auth, Storage, Admission, ServerStarted, ServerFinished, ServerCanceled int64
+	RoundTripsStarted, RoundTripsFinished, ReadsStarted, ReadsFinished      int64
+	CloseCalls, CloseErrors                                                 int64
+	CallReturned, CallerJoined, AcceptedSnapshot                            bool
+	NativeStacks                                                            []string       `json:"native_stacks"`
+	Events                                                                  []rawBodyEvent `json:"events"`
+	Result                                                                  *rawCallResult `json:"result,omitempty"`
+}
+
+func (f *rawBodyFixture) snapshot(phase string) rawBodySnapshot {
+	r := f.trace
+	s := rawBodySnapshot{
+		Phase: phase, ElapsedNS: time.Since(r.started).Nanoseconds(), Auth: r.auth.Load(),
+		Storage: r.storage.Load(), Admission: r.admission.Load(), ServerStarted: r.serverStart.Load(),
+		ServerFinished: r.serverFinish.Load(), ServerCanceled: r.serverCancel.Load(),
+		RoundTripsStarted: r.rtStart.Load(), RoundTripsFinished: r.rtFinish.Load(),
+		ReadsStarted: r.readStart.Load(), ReadsFinished: r.readEnd.Load(),
+		CloseCalls: r.closeCalls.Load(), CloseErrors: r.closeErrors.Load(),
+		CallReturned: rawClosed(f.callReturned), CallerJoined: rawClosed(f.done),
+		NativeStacks: rawNativeStacks(),
+	}
+	if f.session != nil {
+		s.AcceptedSnapshot = f.session.auth.snapshot().token != ""
+	}
+	r.mu.Lock()
+	s.Events = append([]rawBodyEvent(nil), r.events...)
+	r.mu.Unlock()
+	if s.CallerJoined {
+		result := f.result
+		s.Result = &result
+	}
+	return s
+}
+
+func (s rawBodySnapshot) joined() bool {
+	return s.CallerJoined && s.ServerStarted == s.ServerFinished &&
+		s.RoundTripsStarted == s.RoundTripsFinished && s.ReadsStarted == s.ReadsFinished &&
+		len(s.NativeStacks) == 0
+}
+
+func (f *rawBodyFixture) waitJoined() rawBodySnapshot {
+	deadline := time.NewTimer(rawJoinLimit)
+	defer deadline.Stop()
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+	for {
+		s := f.snapshot("after_join_wait")
+		if s.joined() {
+			return s
+		}
+		select {
+		case <-deadline.C:
+			return s
+		case <-tick.C:
+		}
+	}
+}
+
+func recordRawSnapshot(t *testing.T, s rawBodySnapshot) {
+	t.Helper()
+	root := os.Getenv("AERONAUTES_PROBE_EVIDENCE_DIR")
+	if root == "" {
+		t.Fatal("private evidence directory missing")
+	}
+	p, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := strings.ReplaceAll(t.Name(), "/", "_") + "-" + s.Phase + ".json"
+	if err := os.WriteFile(filepath.Join(root, name), append(p, '\n'), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("phase=%s elapsed=%s auth=%d storage=%d server=%d/%d canceled=%d rt=%d/%d read=%d/%d call_returned=%t joined=%t native_stacks=%d accepted_snapshot=%t close_errors=%d",
+		s.Phase, time.Duration(s.ElapsedNS), s.Auth, s.Storage, s.ServerFinished, s.ServerStarted,
+		s.ServerCanceled, s.RoundTripsFinished, s.RoundTripsStarted, s.ReadsFinished, s.ReadsStarted,
+		s.CallReturned, s.CallerJoined, len(s.NativeStacks), s.AcceptedSnapshot, s.CloseErrors)
+}
+
+func (f *rawBodyFixture) cleanup(t *testing.T) bool {
+	t.Helper()
+	f.cleanupOnce.Do(func() {
+		f.cancel()
+		f.releaseOnce.Do(func() { close(f.release) })
+		f.server.CloseClientConnections()
+		if f.transport != nil {
+			f.transport.CloseIdleConnections()
+		}
+		f.server.Close()
+		s := f.waitJoined()
+		s.Phase = "after_all_owned_cleanup"
+		recordRawSnapshot(t, s)
+		f.cleanupOK = s.joined() && s.CloseErrors == 0
+		if !f.cleanupOK {
+			t.Error("owned raw-body fixture did not join cleanly")
+		}
+	})
+	return f.cleanupOK
+}
+
+func runRawBodyCase(t *testing.T, kind string, stalled bool) {
+	t.Helper()
+	f := newRawBodyFixture(t, kind, stalled)
+	f.start()
+	if !rawWait(f.headers) || !rawWait(f.readEntered) {
+		t.Fatal("target response headers and body-read boundary were not observed")
+	}
+	recordRawSnapshot(t, f.snapshot("target_body_boundary"))
+	if !stalled {
+		if !rawWait(f.done) {
+			t.Fatal("matched normal caller did not complete")
+		}
+		s := f.waitJoined()
+		s.Phase = "normal_complete"
+		recordRawSnapshot(t, s)
+		if !s.joined() || s.CloseErrors != 0 || s.Result.ReadError != "" || s.Result.CloseError != "" {
+			t.Fatalf("normal response did not finish cleanly: %+v", s.Result)
+		}
+		wantAuth, wantStorage := int64(1), int64(1)
+		if kind == "storage_401" {
+			wantAuth, wantStorage = 2, 2
+		}
+		if s.Auth != wantAuth || s.Storage != wantStorage || s.ServerCanceled != 0 {
+			t.Fatalf("normal request inventory auth=%d storage=%d canceled=%d", s.Auth, s.Storage, s.ServerCanceled)
+		}
+		var authBytes, storageBytes int
+		for _, event := range s.Events {
+			if event.Name != "body_read_return" {
+				continue
+			}
+			if event.Error != "" && event.Error != "EOF" {
+				t.Fatalf("normal body read failed: %+v", event)
+			}
+			if event.Path == "/auth/v1.0" {
+				authBytes += event.Bytes
+			} else {
+				storageBytes += event.Bytes
+			}
+		}
+		wantStorageBytes := len("data")
+		if kind == "storage_401" {
+			wantStorageBytes += len("denied-body")
+		} else if kind == "text_error" {
+			wantStorageBytes = len("forbidden-body")
+		}
+		if authBytes != int(wantAuth)*len("auth-body") || storageBytes != wantStorageBytes {
+			t.Fatalf("normal body consumption auth=%d storage=%d", authBytes, storageBytes)
+		}
+		if kind == "text_error" {
+			if !s.Result.ForbiddenError || s.Result.Status != 403 || s.Result.Error == "" {
+				t.Fatalf("normal text error lost status: %+v", s.Result)
+			}
+		} else if s.Result.Error != "" || s.Result.Status != 200 || s.Result.Body != "data" {
+			t.Fatalf("normal auth/retry did not return complete content: %+v", s.Result)
+		}
+		f.cleanup(t)
+		return
+	}
+
+	started := time.Now()
+	select {
+	case <-f.callReturned:
+		t.Fatal("before probe did not reproduce a blocked raw-body Call")
+	case <-time.After(rawObservation):
+	}
+	s := f.snapshot("past_observation_window")
+	recordRawSnapshot(t, s)
+	wantStack := "swift/v2.drainAndClose("
+	if kind == "text_error" {
+		wantStack = "swift/v2.appendResponseBodyToError("
+	}
+	blocked := !s.CallReturned && !s.CallerJoined && s.ReadsStarted == s.ReadsFinished+1 &&
+		s.ServerStarted == s.ServerFinished+1 && strings.Contains(strings.Join(s.NativeStacks, "\n"), wantStack)
+	if !blocked {
+		t.Fatal("observed wait did not identify the intended raw-body stack")
+	}
+	if kind == "auth_unused" && (!s.AcceptedSnapshot || s.Storage != 0) {
+		t.Fatal("auth body boundary did not follow header acceptance before storage dispatch")
+	}
+	f.trace.event(rawBodyEvent{Name: "external_containment_cancel"})
+	f.cancel()
+	if !rawWait(f.done) {
+		t.Fatal("caller did not finish after external containment cancellation")
+	}
+	joined := f.waitJoined()
+	joined.Phase = "after_external_cancel"
+	recordRawSnapshot(t, joined)
+	if !joined.joined() || joined.ServerCanceled != 1 || joined.CloseErrors != 0 {
+		t.Fatal("external cancellation did not join the owned request/read work")
+	}
+	if kind == "text_error" {
+		if !joined.Result.ForbiddenError || joined.Result.ContextError {
+			t.Fatalf("unexpected original text-error cancellation projection: %+v", joined.Result)
+		}
+	} else if !joined.Result.ContextError {
+		t.Fatalf("auth/401 containment did not return context cancellation: %+v", joined.Result)
+	}
+	if !f.cleanup(t) {
+		return
+	}
+	// This is a before-only diagnostic for the proposed opt-in ownership
+	// contract, not an assertion that legacy authentication promised it.
+	t.Errorf("EXPECTED_RAW_BODY_OWNERSHIP: %s kept Call blocked for %s after acknowledged headers/read, beyond private header=%s and idle=%s observation; all owned work joined before this intended failure", kind, time.Since(started), rawHeaderTimeout, rawIdleTimeout)
+}
+
+func TestRawBodyControls(t *testing.T) {
+	for _, kind := range []string{"auth_unused", "storage_401", "text_error"} {
+		t.Run(kind, func(t *testing.T) { runRawBodyCase(t, kind, false) })
+	}
+}
+
+func TestRawBodyExpectedRed(t *testing.T) {
+	for _, kind := range []string{"auth_unused", "storage_401", "text_error"} {
+		t.Run(kind, func(t *testing.T) { runRawBodyCase(t, kind, true) })
+	}
+}

@@ -5189,6 +5189,30 @@ A wrong initial copy and a stale segment row remain undetectable here and stay r
 A legitimately resegmented copy keeps its current outcome because the comparison is against this executor's own record, not the source's segment structure.
 Stronger change detection grants no destructive authority, Mirror starts remain refused under ADR 0020, and the valuable-data hold is unchanged.
 
+The next bounded staged-content correction within DS-04/P16 requires an owned native full-object read before the first plain-source to staged-DLO byte comparison.
+The existing header/body wrappers can return before their request/read helpers finish, while raw auth/401/error bodies can keep Call itself blocked after headers; their existing behaviour does not supply the new reader's ownership contract.
+Use one per-call opt-in on the existing Session, with explicit admission and native storageTarget URL/token pairing, joined local request/read work and checked unused/error/auth-response closure without unbounded drains.
+Preserve generic authentication body access and coherent accepted credential publication; an auth-close failure refuses this read without claiming every snapshot was erased.
+Keep existing per-attempt header and read-idle timeouts, with no whole-object deadline or shared-session policy change.
+
+1. Review [ADR 0037](adr/0037-staged-content-read.md) and the retained [lifetime, raw-body and representation before evidence](experiments/2026-09-11-native-content-read.md) before implementation.
+   Preserve all failed setup/control attempts and distinguish old-stack diagnostics from maintained tests of the new observable contract.
+2. Implement the native opt-in and Session reader as one locally reviewed prerequisite commit, including per-attempt cancellation, local Do/Read/watchdog ownership, checked response-plus-error/401/auth closure, generic auth and credential/admission preservation tests.
+   Extend the ordered vendor patch and source-verification gate without changing the module pin or the three existing patches; run the explicit nested native mock gate.
+   Request opaque bytes with fixed Accept-Encoding identity and require complete HTTP 200/no-Content-Range handling, with progressing-stream and malformed/unknown-coding controls.
+3. In a second locally reviewed implementation commit, compare the full staged DLO bytes and MD5 against the existing non-symlink plain-source HEAD observation, after current staging checks and before committing intent or publication.
+   Stream with bounded memory, accept legitimate resegmentation, and retain stage/segments/recovery plus typed unresolved failure on any new verification refusal.
+   Require the actual-service same-size corruption case to produce no second live PUT, preserve the first successful name, and expose exact agreeing item/job/history/audit outcomes after the body and pins finish.
+4. Deliver both implementation commits together as one complete change; no unused standalone reader API ships.
+   Require safeguard-removal tests, original namespace/collateral oracles, current-base local review, source/native/app race gates and positive real-Swift/pinned-rclone opaque representation compatibility before all five latest PR and resulting-master checks.
+
+The covered check costs one full staged read per candidate and must retain measured workload/cost evidence; no source-to-segment-structure comparison, fixed object deadline or inferred throughput claim replaces it.
+The shared non-context-aware auth-lock wait and uncooperative callbacks/transports remain explicit limits, and Linux/loopback evidence does not certify other native platforms.
+A final-name cancellation can still reach the existing later read-only verification; a focused test must establish its actual outcome without implying a broader caller stop policy.
+The source HEAD is an observation rather than a pinned source version, and staged content is not bound against later source/segment/manifest changes or through publication.
+Segmented-source verification, metadata/replication semantics, final-publication binding, stale later listings and legacy verification-strength labels remain separate work.
+Existing aggregate stamps keep their limited change-detection meaning; this correction grants no new destructive authority and leaves DS-04/P16 and the valuable-data hold open.
+
 The bounded [Swift integration failure investigation](experiments/2026-09-11-swift-ci-failures.md) follows two failed PR93 runs whose test streams retain HTTP 503 responses but no server or runner diagnostics.
 The existing CI contract requires investigation before retry, every required job to succeed on the current head and base, and a checked master after merge.
 
