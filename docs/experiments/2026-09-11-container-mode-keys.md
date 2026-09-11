@@ -54,10 +54,65 @@ The change stays inside `ContainerColumn.svelte`; the browser screen, the global
 - The complete frontend suite retains every one of the one thousand one hundred and thirty prior test names and adds exactly the nine new ones; the type check and the production build pass; the generated bindings are unchanged.
 - A native keyboard check on the Linux build is attempted through the existing host replay harness and recorded whether or not the harness is available.
 
+## Implemented correction and results
+
+The correction is confined to `ContainerColumn.svelte` and `containerModeTabs.test.ts`.
+The component takes its instance id from `$props.id()`, derives one panel id and one id per tab from it, binds the three tab buttons, and handles keydown on each tab: ArrowRight, ArrowLeft, Home and End compute the target index, prevent the event's default, set the mode, and focus the target button; every other key returns before any of that.
+Each tab carries its id, `aria-controls` naming the panel and a `tabindex` of zero when selected and minus one otherwise, and the container list carries `role="tabpanel"`, the panel id and `aria-labelledby` naming the selected tab.
+The browser screen, its window-level key handler, the browser state, shared focus helpers and global styles are untouched.
+
+Two additions to the component go beyond the plan's statement that its styles stay unchanged, and both come from the native replay below rather than from the component tests.
+The selected tab's card shadow was replacing the global focus ring, and because activation follows focus the focused tab is always the selected one, so the ring never showed; the component now draws the card shadow and the focus ring together on a selected tab that has visible focus.
+The focus moved by a key was not given the keyboard focus indication by the engine, because script focus does not inherit it there; the move now requests visible focus through the focus option, which engines without that option ignore.
+
+On the corrected component all nine cases pass, including the two controls that passed before.
+Three deliberately broken variants were built from the corrected source and run against the same nine cases.
+Removing the `preventDefault` fails the ownership case and the two movement cases that assert consumption, while the vertical-arrow control and the other five still pass.
+Removing the roving `tabindex` fails only the tab-stop case.
+Freezing `aria-labelledby` on the first tab fails only the association case.
+
+The existing keyboard-scope and paging regressions pass alongside the new file, one hundred and six cases across the three files.
+The complete frontend suite passes one thousand one hundred and thirty-nine tests: every one of the one thousand one hundred and thirty prior names is retained and exactly the nine new names are added.
+The type check reports zero errors and zero warnings across two hundred and sixty files, and the production build succeeds.
+
+## Native keyboard replay
+
+The Linux build of the reviewed head was driven on the host through the retained portable display runtime, the same read-only fixture mock and the same connect sequence as the earlier native replays, at 1280 by 800 in the light theme.
+The virtual display was allocated by the display server itself; the operator's own session is a different display.
+The binary reports the reviewed head as its source revision and a clean tree, and its digest, the sequence digest and every capture are retained with the run.
+Twenty-nine sequence commands ran, fourteen inputs and fourteen captures followed by the finishing check, so with the connect capture fifteen images are retained; no confirmation key was ever sent, the mock recorded no write, and the complete remote snapshot was unchanged at the end.
+
+Captures were read by region: the brightest of the three tab boxes names the selected tab, a count of focus-coloured pixels inside the strip shows whether a focus ring is drawn there, and the container list, working list and footer regions are hashed so that any change in them is caught.
+
+| Step | Selected tab | Ring in strip | Container list | Working list |
+| --- | --- | --- | --- | --- |
+| pointer click on the selected row, then on the Logical tab | Logical | none | unchanged | selected row unchanged |
+| Shift+Tab | Logical | yes | unchanged | unchanged |
+| ArrowRight | All | yes | unchanged | unchanged |
+| ArrowRight | Backstage | yes | unchanged | unchanged |
+| ArrowRight | Logical | yes | unchanged | unchanged |
+| ArrowLeft | Backstage | yes | unchanged | unchanged |
+| Home | Logical | yes | unchanged | unchanged |
+| End | Backstage | yes | unchanged | unchanged |
+| Home | Logical | yes | unchanged | unchanged |
+| Tab | Logical | none | first row focused | unchanged |
+| Shift+Tab | Logical | yes | unchanged | unchanged |
+| ArrowDown | Logical | none | unchanged | list focused |
+| ArrowDown | Logical | none | unchanged | selection moved to the second row |
+
+The selected tab follows every key exactly as the component tests assert, the seven consumed presses leave the container list and the working list byte-identical, Tab leaves the strip to the first container row and Shift+Tab returns to the selected tab, so the strip is one tab stop, and ArrowDown still hands focus to the working list.
+The mock fixture classifies every container as ordinary, so the three modes list the same rows there; the mode change is visible only through the tabs, and the container list's byte-identical region shows that the selected container did not change.
+
+Two things the replay established that the component tests could not.
+A pointer click on a tab does not focus the button on this engine; it sets the point from which the next Tab or Shift+Tab moves, so keyboard focus reaches the strip on the next Shift+Tab, as the second step shows.
+On the first corrected build the selected tab never showed a focus ring under keyboard focus, and after the first arrow move no tab showed one on the second build either; the two component additions above were made for those observations, and the replay on the reviewed head shows the ring on the focused tab at every keyboard step.
+The same sequence on a build without the shadow addition, retained beside the run, shows the selected tab moving identically and no ring at any step, which is the before evidence for that addition.
+
 ## Limits
 
 This corrects one control and closes nothing beyond it.
-Screen-reader announcement of the tab and panel relationship, native macOS and Windows behaviour, zoom and scaling, the other tab-like controls and the §4.4 shortcuts that are still absent remain open UI-11 and P29 work.
+Screen-reader announcement of the tab and panel relationship, native macOS and Windows behaviour, zoom and scaling, the dark theme in the native replay, the other tab-like controls and the §4.4 shortcuts that are still absent remain open UI-11 and P29 work.
+The native replay covers one engine on Linux, one window size and one theme, and its ring detection is a pixel count in a fixed region rather than a reading of the accessibility tree.
 The valuable-data hold is unchanged.
 
 ## Proposed shared-document text
