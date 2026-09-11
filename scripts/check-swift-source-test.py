@@ -28,7 +28,7 @@ class SourceGateTests(unittest.TestCase):
         shutil.copytree(ROOT / "third_party/ncw-swift", self.dependency)
 
     def test_recorded_source_and_patches_pass(self):
-        self.assertEqual(SOURCE.check(self.root), 38)
+        self.assertEqual(SOURCE.check(self.root), 41)
 
     def test_source_drift_is_refused(self):
         for mutation in ("changed", "missing", "extra"):
@@ -46,6 +46,18 @@ class SourceGateTests(unittest.TestCase):
                     SOURCE.check(self.root)
                 path.write_bytes(original)
                 extra.unlink(missing_ok=True)
+
+    def test_owned_read_source_drift_is_refused(self):
+        for name in ("read_request.go", "read_request_test.go", "read_request_auth_test.go"):
+            with self.subTest(source=name):
+                path = self.dependency / "source" / name
+                original = path.read_bytes()
+                path.write_bytes(original + b"\n// unrecorded change\n")
+                try:
+                    with self.assertRaisesRegex(ValueError, "source differs"):
+                        SOURCE.check(self.root)
+                finally:
+                    path.write_bytes(original)
 
     def test_required_version_drift_is_refused(self):
         SOURCE.run(["go", "mod", "edit", "-require=" + SOURCE.MODULE + "@v2.0.4"], self.root)
@@ -114,6 +126,8 @@ class SourceGateTests(unittest.TestCase):
         path = self.dependency / "UPSTREAM.json"
         original = json.loads(path.read_text())
         for patches in (None, "listing-response.patch", [],
+                        SOURCE.PATCHES[:-1],
+                        SOURCE.PATCHES[:-2] + list(reversed(SOURCE.PATCHES[-2:])),
                         ["listing-response.patch", "credential-pairing.patch"],
                         ["credential-pairing.patch"],
                         ["credential-pairing.patch", "listing-response.patch"],
@@ -135,6 +149,7 @@ class SourceGateTests(unittest.TestCase):
             "credential-pairing.patch": b"+// The callback selects a URL",
             "listing-response.patch": b"+\t\t\tobject.LastModified = object.LastModified.Truncate(time.Second)",
             "listing-fidelity.patch": b"+// Aeronautes",
+            "content-read.patch": b"+// The legacy helpers detach Do/Read",
         }
         for name, anchor in anchors.items():
             with self.subTest(patch=name):

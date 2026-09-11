@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the reviewed ncw/swift source and patches (ADRs 0016, 0021 and 0029)."""
+"""Verify the reviewed ncw/swift source and patches (ADRs 0016, 0021, 0029 and 0037)."""
 
 import base64
 import hashlib
@@ -14,7 +14,7 @@ import zipfile
 
 MODULE = "github.com/ncw/swift/v2"
 REPLACEMENT = "./third_party/ncw-swift/source"
-PATCHES = ["credential-pairing.patch", "listing-response.patch", "listing-fidelity.patch"]
+PATCHES = ["credential-pairing.patch", "listing-response.patch", "listing-fidelity.patch", "content-read.patch"]
 
 
 def run(args, cwd):
