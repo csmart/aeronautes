@@ -52,6 +52,10 @@ jobs:
         run: python3 scripts/saio-diagnostics-test.py
       - name: Test Swift logging startup
         run: python3 scripts/saio-start-test.py
+      - name: Test Swift storage admission
+        run: python3 scripts/saio-storage-check-test.py
+      - name: Test Swift storage cleanup
+        run: python3 scripts/saio-storage-cleanup-test.py
       - name: Test upstream Swift core against its local mock
         run: make test-swift-core
       - name: Test keychain protocol on an isolated D-Bus service
@@ -135,17 +139,41 @@ jobs:
     name: Integration — containerized Swift (SAIO)
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    env:
+      SAIO_IMAGE: docker.io/openstackswift/saio@sha256:18ddf9feb9d1f419751a66eace8d956ecdaf5a085dedcc54ae51c210447ea1fa
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: stable
+      - name: Prepare dedicated Swift storage
+        timeout-minutes: 3
+        run: |
+          storage=$(timeout 5 mktemp -d "$RUNNER_TEMP/aeronautes-saio.XXXXXX")
+          echo "SAIO_STORAGE_DIR=$storage" >> "$GITHUB_ENV"
+          timeout 5 mkdir "$storage/data"
+          timeout 5 truncate -s 4G "$storage/data.xfs"
+          timeout -k 2 90 docker run --name saio-format --network none --user root \
+            --mount "type=bind,src=$storage,dst=/fixture" --entrypoint timeout \
+            "$SAIO_IMAGE" -k 2 60 /sbin/mkfs.xfs -f /fixture/data.xfs
+          timeout -k 2 15 sudo mount -t xfs -o loop,noatime "$storage/data.xfs" "$storage/data"
+          mount_source=$(timeout 5 findmnt -rn -M "$storage/data" -o SOURCE)
+          filesystem=$(timeout 5 findmnt -rn -M "$storage/data" -o FSTYPE)
+          test "$filesystem" = xfs
+          backing=$(timeout 5 sudo losetup -ln -O BACK-FILE "$mount_source")
+          test "$backing" = "$storage/data.xfs"
+          echo "Swift data mount: $mount_source ($filesystem), backing file $backing"
+          timeout 5 sudo chown 1000:1000 "$storage/data"
+          timeout -k 2 20 docker run --name saio-storage-check --network none --user swift \
+            --mount "type=bind,src=$storage/data,dst=/srv/node" \
+            --mount "type=bind,src=$GITHUB_WORKSPACE/scripts/saio-storage-check.py,dst=/tmp/saio-storage-check.py,readonly" \
+            --entrypoint timeout "$SAIO_IMAGE" -k 1 10 python3 /tmp/saio-storage-check.py
       - name: Start SAIO
         # A different host port catches helpers that ignore the configured endpoint.
         run: |
           docker create --name saio -p 127.0.0.1:18080:8080 --entrypoint python3 \
-            docker.io/openstackswift/saio@sha256:18ddf9feb9d1f419751a66eace8d956ecdaf5a085dedcc54ae51c210447ea1fa \
-            /tmp/saio-start.py
+            --mount "type=bind,src=$SAIO_STORAGE_DIR/data,dst=/srv/node" \
+            "$SAIO_IMAGE" /tmp/saio-start.py
           docker cp scripts/saio-start.py saio:/tmp/saio-start.py
           docker start saio
       - name: Wait for Swift
@@ -244,6 +272,35 @@ jobs:
             scenario-coverage.json
             events.jsonl
           if-no-files-found: warn
+      - name: Clean up owned Swift fixture
+        if: always()
+        timeout-minutes: 2
+        run: |
+          for container in saio saio-storage-check saio-format; do
+            present=$(timeout 10 docker ps -a --filter "name=^/${container}$" --format '{{.Names}}')
+            if [ -n "$present" ]; then
+              test "$present" = "$container"
+              timeout -k 2 15 docker rm -f "$container"
+            fi
+          done
+          if [ -n "${SAIO_STORAGE_DIR:-}" ]; then
+            test ! -L "$SAIO_STORAGE_DIR/data"
+            if [ -d "$SAIO_STORAGE_DIR/data" ]; then
+              if timeout 5 mountpoint -q "$SAIO_STORAGE_DIR/data"; then
+                timeout -k 2 15 sudo umount "$SAIO_STORAGE_DIR/data"
+              else
+                mount_status=$?
+                test "$mount_status" = 32
+              fi
+            else
+              test ! -e "$SAIO_STORAGE_DIR/data"
+            fi
+            timeout 5 rm -f "$SAIO_STORAGE_DIR/data.xfs"
+            if [ -d "$SAIO_STORAGE_DIR/data" ]; then
+              timeout 5 rmdir "$SAIO_STORAGE_DIR/data"
+            fi
+            timeout 5 rmdir "$SAIO_STORAGE_DIR"
+          fi
       # SOFT coverage floor: red step + warning on a drop, pipeline
       # continues (continue-on-error).
       - name: coverage floor (soft, 75%)

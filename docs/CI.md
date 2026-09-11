@@ -65,7 +65,14 @@ The `saio-diagnostics` artifact retains container and runner observations after 
 Each probe records its command, UTC start, elapsed time, exit or timeout, and redacted output; unsuccessful probes do not prevent the remaining probes from running.
 Before the pinned image starts, a small helper corrects its demonstrated error-filter typo while preserving every other byte and then runs the original `/init`.
 An already-corrected rule needs no write; missing, duplicate or ambiguous forms refuse startup.
-Only this disposable fixture's logging selector changes; Swift request, storage, authentication and worker settings keep their pinned values.
+Swift request, authentication, ring and worker settings keep their pinned values.
+The disposable fixture stores its data on a dedicated four-GiB XFS filesystem beneath the runner's temporary directory, formatted only from a newly created sparse file using the pinned image.
+Setup checks the loop device's exact backing file and requires a writable filesystem-root mount owned by the Swift service user.
+Before starting Swift, that user must round-trip a full 65,536-byte metadata attribute and its checksum-sized attribute on the data mount.
+Failed setup refuses the suite; formatting, mounting and admission checks have bounded deadlines.
+After diagnostic and scenario artifact collection, checked teardown removes the three owned job containers before unmounting and removing the backing file.
+Observation, removal and unmount errors remain failures and prevent backing-file deletion.
+The storage-helper and workflow-cleanup tests run in the required Go job.
 The collector bounds each of eleven probes to ten seconds, retains at most four MiB of redacted output per probe, and has a two-minute step limit within the existing job budget.
 Swift's internal access log and container output each retain at most the last 10,000 lines before redaction and the output limit.
 A separate probe reads the last 10,000 lines of each retained error-log rotation and the current error log, oldest first, then retains the first four MiB after redaction so later traffic cannot displace an earlier retained error.
