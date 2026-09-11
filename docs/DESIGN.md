@@ -5162,6 +5162,14 @@ The existing CI contract requires investigation before retry, every required job
    This next exception changes the fixture's backing filesystem only; preserve the metadata-boundary scenarios, every application assertion, Swift settings, image pin, concurrency and time budgets.
    Review setup, bounded refusal, teardown and evidence before pushing; retain the failed run, then require all five PR jobs and resulting master jobs to pass.
 
+The next hosted run exposed a separate retained-item pagination failure in the frontend while the new Swift storage setup passed.
+The [bounded polling investigation](experiments/2026-09-11-item-page-polling.md) reproduces an unchanged terminal-job poll resetting a selected later item page to the first page.
+ADR 0030 requires complete bounded navigation and refresh on actual completion; ADR 0033 reuses that view for exact download identities.
+Review the preserved timer control and plan before changing the component, then make its reset effect depend on primitive job identity and active/terminal classification rather than replacement of the job value.
+Maintain unchanged-poll and pending-page regressions, retaining genuine completion refresh, unavailable-status recovery, stale-response rejection and all 401-item assertions.
+Run full frontend validation and independent implementation review before the next complete five-job PR/master delivery loop.
+The polling cadence, transfer authority and valuable-data hold remain unchanged.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.

@@ -1,0 +1,28 @@
+
+it.each(["same rows", "fresh rows"])("diagnostic: preserves a terminal page across a timer poll (%s)", async (representation) => {
+  vi.useFakeTimers();
+  const api = newFakeApi();
+  const download = { ...job("download", "partial"), type: "download", destBookmarkId: "" };
+  const first = item(0, "scope\n<script>/étude-0.bin");
+  const last = item(400, "scope\n<script>/");
+  api.jobItems = vi.fn(async (_id, cursor) => ({ status: "available", items: [cursor ? last : first], nextCursor: cursor ? "" : first.id }));
+  api.jobItemTotals = async () => totals({ items: 2 });
+  await show(api, [download]);
+  if (representation === "fresh rows") api.jobs = vi.fn(async () => [{ ...download, counters: { ...download.counters } }]);
+  expand("download");
+  await vi.waitFor(() => expect(document.querySelector("summary code")?.textContent).toBe(first.keyDisplay));
+  click("Next item page");
+  await vi.waitFor(() => expect(document.querySelector("summary code")?.textContent).toBe(last.keyDisplay));
+  expect(document.body.textContent).toContain("Item page 2");
+  vi.mocked(api.jobs).mockClear();
+  vi.mocked(api.job).mockClear();
+  vi.mocked(api.jobItems).mockClear();
+  await vi.advanceTimersByTimeAsync(1500);
+  flushSync();
+  expect(api.jobs).toHaveBeenCalledOnce();
+  expect(api.job).toHaveBeenCalledExactlyOnceWith("download");
+  console.log(JSON.stringify({ representation, calls: vi.mocked(api.jobItems).mock.calls, summary: document.querySelector("summary code")?.textContent }));
+  expect(document.querySelector("summary code")?.textContent).toBe(last.keyDisplay);
+  expect(document.body.textContent).toContain("Item page 2");
+  expect(api.jobItems).not.toHaveBeenCalled();
+});
