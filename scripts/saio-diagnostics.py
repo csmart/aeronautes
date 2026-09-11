@@ -12,6 +12,17 @@ import time
 
 PROBE_TIMEOUT = 10
 OUTPUT_LIMIT = 4 * 1024 * 1024
+# Exec keeps the reader under the container's own deadline after launch.
+ROTATED_LOG_TAIL = """
+from pathlib import Path
+import os
+import sys
+
+root = Path(sys.argv[1])
+paths = [str(path) for path in sorted(root.glob("@*.[su]"))]
+paths.append(str(root / "current"))
+os.execvp("tail", ["tail", "-n", "10000", "--", *paths])
+"""
 PROBES = (
     ("container-state", ["docker", "inspect", "--format",
                          '{"id":{{json .Id}},"image":{{json .Image}},'
@@ -20,6 +31,10 @@ PROBES = (
     ("container-log", ["docker", "logs", "--timestamps", "--tail", "10000", "saio"]),
     # Swift's syslog output is kept inside the image, outside docker logs.
     ("swift-log", ["docker", "exec", "saio", "tail", "-n", "10000", "/var/log/swift/all.log"]),
+    # Access traffic can rotate away a failure before the suite finishes cleanup.
+    ("swift-error-log", ["docker", "exec", "saio", "timeout", "-k", "1", "8",
+                         "python3", "-c", ROTATED_LOG_TAIL,
+                         "/var/log/socklog/errors"]),
     ("container-memory-events", ["docker", "exec", "saio", "cat", "/sys/fs/cgroup/memory.events"]),
     ("container-disk", ["docker", "exec", "saio", "df", "-k", "/", "/srv/node", "/var/log"]),
     ("container-inodes", ["docker", "exec", "saio", "df", "-i", "/", "/srv/node", "/var/log"]),
