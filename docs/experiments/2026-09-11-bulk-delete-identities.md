@@ -155,6 +155,8 @@ The retained set is durable only as far as its retention path is: the complete l
 Where the file cannot be opened, or where any write, flush or close fails, the run offers no list at all and says the retained list is unavailable or incomplete.
 It does not state how many identities were lost, because a buffered write that fails at the flush loses records the encoder already accepted and the recorder cannot establish that number.
 Making that path dependable in every environment, or refusing to begin a destructive run without it, is a policy decision this slice does not take.
+This retained-list failure promise assumes the identity index itself remains available.
+The later [bounded identity-accounting contract](../adr/0036-delete-identity-accounting.md) preserves that promise and explicitly defines unavailable final totals when an index failure prevents accounting for issued requests.
 The verified counter is credited only from a validated aggregate; a diagnostic aggregate credits nothing, which is the specific change that stops an untrusted reply publishing claimed deletions as verified alongside the same names as failures.
 The processed display is credited on the same condition.
 A run holding any unresolved identity is not complete: it ends partial and its summary states the unresolved count alongside any failure summary, rather than hiding one behind the other, following the same pattern ADR 0023 sets for a partial local job.
@@ -221,6 +223,20 @@ Two further variants are maintained as controls for the assertions themselves: o
 Every variant is rebuilt from the current sources by one producer rather than kept as a copy, and a variant that fails to compile is not a broken-guard result and does not count.
 14. The full race suite with inventory reconciliation against the delivered name count, vet, gofmt, the Windows and macOS vets and internal builds on both architectures, and a clean module tidy.
 
+## Final review found unbounded identity storage
+
+The rebased implementation at `2aeb9b8de2c684e402e930984d73860071c381bd`, based on delivered master `859ec53c53dbb00851bfbcc796b1a89706d07310`, retains every distinct failed and unresolved name in run-wide maps.
+A generated sorted listing of N distinct names can receive a validated all-failure bulk reply for each request: zero deleted, zero not found and one valid failure row per requested name.
+That reply does not return a request error, so the executor consumes the entire listing before its zero-deletion pass stops the sweep.
+Both maps then contain N entries even though the displayed samples each stop at 200.
+The parallel failure path also retains every distinct failed name.
+This is a source-level growth proof, not an RSS measurement or a claimed out-of-memory execution.
+
+The completed checks on that head include 13 intended negative controls, static/native/cross-build checks and a full race suite with 3,576 passing leaf tests, one documented `TestRcloneMatrix` skip and no failures.
+The actual Go process exited 0 after 801.405 seconds, and all three required real-Swift deletion cases passed.
+Those checks do not exercise or clear this resource-bound defect.
+The range remains unpushed and requires the [ADR 0036 correction](../adr/0036-delete-identity-accounting.md), its new resource/storage-failure proof and renewed final-range review before delivery.
+
 ## Remaining limits
 
 This slice settles what a run knows about each requested name and how that is stated, and nothing else.
@@ -228,4 +244,4 @@ It does not make successful deletions individually identifiable, because the pro
 It does not change the 200-record display cap, the segment-deleting helper that returns only counts, or the force flow that has no failure sink, which are the rest of DS-08.
 The wire spelling of error rows is established here only against the owned mock and fixture; the real middleware's exact spelling on a production cluster is not established by this work, and the validation is written to treat an unrecognised row as an anomaly rather than to assume a spelling.
 No native platform behaviour is claimed, since the pipeline is Linux only.
-The design sequence paragraph and the audit register update for this finding are sequenced separately by the main session, so this document edits neither.
+The audit-register disposition remains separately sequenced and no finding closure follows from this experiment alone.

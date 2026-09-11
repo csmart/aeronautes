@@ -5186,6 +5186,15 @@ An unresolved record is not authority to delete again, because a replacement obj
 Successful deletions stay unidentifiable because the protocol reports them only as counts, so a validated aggregate remains the service's report rather than an independent observation.
 This bounded correction does not close DS-08, the 200-record display cap, the segment helper that returns only counts, or the valuable-data hold.
 
+The bulk range's final review found that its run-wide failed and unresolved identity maps violate the bounded-memory side of K-DEL-002 and K-PERF-001.
+[ADR 0036](adr/0036-delete-identity-accounting.md) defines the corrective exact disk index and its storage-failure outcome before production changes.
+Review that contract first, then prove the increasing paginated all-failure case and implement the deletion-private bounded index as a reviewed storage prerequisite.
+Replace the maps and connect checked dispatch, draining and attempt evidence with the counters, recent drawer, older history and atomic job/audit completion as one coherent failure-path correction.
+Exact distinct counts still apply when the index works, including when the separate retained-list writer fails.
+If issued outcomes cannot be indexed, stop new dispatch, report final identity totals unavailable and retain available attempt evidence without calling it a complete distinct set.
+Require resource-growth and storage-failure controls, the existing identity/encoding/effect regressions, renewed range review and all five PR/master checks before delivery.
+The sweep re-attempt hazard, broader retention durability, DS-08/P24 closure and valuable-data acceptance remain open.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
