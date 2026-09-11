@@ -10,6 +10,10 @@ The audit records the state of that revision, not a claim about a later branch o
 Authenticated GitHub inspection found master one badge-only commit ahead, with identical product source; its successful 31 August CI artifact is recorded separately from this audit's local runs.
 This change records findings, reproducible evidence, and a plan; it does not implement the product fixes.
 
+The later [DS-04 disposition](data-safety.md#ds-04--high-large-object-verification-accepts-corruption-and-a-stale-destination-fingerprint-preserves-it) records PR93’s bounded correction to segmented-destination skips.
+The finding remains open because initial content verification, current source/destination binding and local-transfer verification still block valuable-data assurance.
+The audit-time evidence below is preserved, and the [valuable-data and release gates](remediation-plan.md#acceptance-gates-and-completion) remain unchanged.
+
 ## Highest-priority conclusions
 
 1. **Recovery can damage unrelated live objects.**
