@@ -99,3 +99,27 @@ Use disposable log files to prove current and rotated error retention, missing-c
 Keep the same ten-second command limits, two-minute collector step, image configuration, suite, concurrency and test/merge gates.
 Any rotations already discarded by the image remain an explicit evidence limit.
 PR93 remains draft and unmerged, the HTTP 503 causes remain unproved, and the valuable-data hold remains in force.
+
+## Retained error-log collection
+
+The collector now adds an eleventh probe for `/var/log/socklog/errors`.
+It reads the retained `.s` and `.u` rotations in filename order and the required current file last, taking at most 10,000 lines per file before the existing redaction and four-MiB output limit.
+The reader replaces its launcher process and has an eight-second deadline inside the container, followed by a forced stop after one further second if needed, within the existing ten-second client deadline.
+This bounds the reader independently of whether stopping a Docker client stops its container process.
+A missing current file remains a nonzero probe even when earlier rotations were read successfully; later independent probes still run.
+There is no new shell interpolation, Swift configuration change, suite retry or change to the workflow's two-minute collection budget.
+
+All twelve collector tests pass.
+New disposable-file controls prove an earlier rotated HTTP 503 survives more than 10,000 later cleanup lines, both rotation suffixes are retained, unrelated state files are excluded, authentication material is redacted, an unrotated current file works, and a missing current file is reported before continuing the next probe.
+The three new tests first failed because the probe was absent.
+A blocked-file read also failed its control before the internal deadline was added; it now returns a nonzero command result before the outer probe times out.
+Separate sensitivity controls against the final twelve-test suite removed rotations, the current file or the internal deadline: they produced two, four and one assertion failures respectively, with no test execution errors.
+The actual probe command also succeeded against the pinned local image's empty error log, using the owned Podman fixture instead of Docker.
+An isolated blocked-file control inside that same image exited 143 after 8.108 seconds without triggering the outer timeout; the normal probe then exited zero after 0.132 seconds.
+That empty-log observation verifies command and path availability; it does not establish a server-failure diagnosis or replace the next hosted artifact inspection.
+
+The complete pinned local internal suite subsequently exited zero after 838.888 seconds with Go 1.27.1, `-race -count=1 -parallel=3 -timeout=25m` and internal-package coverage enabled.
+Its 3,746 terminal test names contain 3,481 passing leaves and one explicit `TestRcloneMatrix` skip; all twenty packages passed.
+The event stream has SHA-256 `254bbe478546613dd420a1628354dbb800340fbc1d0ea3637358fb743d350f34`.
+The run began at `c4574c49`; documentation and collector files changed while it ran, but Go and module files remained identical throughout.
+The same local runtime and listener differences described above apply, and this pass does not establish the causes of the three hosted failures.
