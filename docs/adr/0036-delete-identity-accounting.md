@@ -1,6 +1,6 @@
 # ADR 0036: bounded deletion identity accounting
 
-Status: Proposed
+Status: Accepted
 Date: 2026-09-11
 
 ## Context

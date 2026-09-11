@@ -1,0 +1,164 @@
+package deletion
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
+	"syscall"
+	"testing"
+	"time"
+)
+
+func probeProcNumbers(t *testing.T) map[string]uint64 {
+	t.Helper()
+	data, err := os.ReadFile("/proc/self/status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := make(map[string]uint64)
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 3 || fields[2] != "kB" {
+			continue
+		}
+		switch fields[0] {
+		case "VmRSS:", "VmHWM:", "RssAnon:", "RssFile:", "RssShmem:", "VmSize:":
+			value, err := strconv.ParseUint(fields[1], 10, 64)
+			if err != nil {
+				t.Fatal(err)
+			}
+			values[strings.TrimSuffix(fields[0], ":")] = value * 1024
+		}
+	}
+	return values
+}
+
+func probeSnapshot(t *testing.T, stage string, names int, index *identityIndex, started time.Time) {
+	t.Helper()
+	var rows int
+	settings := make(map[string]string)
+	files := make(map[string]map[string]int64)
+	var connections sql.DBStats
+	if index != nil {
+		if err := index.conn.QueryRowContext(t.Context(), "SELECT count(*) FROM seen").Scan(&rows); err != nil {
+			t.Fatal(err)
+		}
+		if rows != names*2 {
+			t.Fatalf("%s rows=%d want=%d", stage, rows, names*2)
+		}
+		for _, pragma := range []string{"page_size", "page_count", "freelist_count", "cache_size", "cache_spill", "mmap_size", "temp_store", "journal_mode", "synchronous", "busy_timeout"} {
+			var value string
+			if err := index.conn.QueryRowContext(t.Context(), "PRAGMA "+pragma).Scan(&value); err != nil {
+				t.Fatal(err)
+			}
+			settings[pragma] = value
+		}
+		connections = index.db.Stats()
+		if connections.OpenConnections != 1 || connections.MaxOpenConnections != 1 {
+			t.Fatalf("unexpected connection count: %+v", connections)
+		}
+		entries, err := os.ReadDir(index.dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, entry := range entries {
+			info, err := entry.Info()
+			if err != nil {
+				t.Fatal(err)
+			}
+			stat, ok := info.Sys().(*syscall.Stat_t)
+			if !ok {
+				t.Fatal("Linux file allocation unavailable")
+			}
+			files[entry.Name()] = map[string]int64{"bytes": info.Size(), "allocated_bytes": stat.Blocks * 512, "mode": int64(info.Mode().Perm())}
+		}
+	}
+	runtime.GC()
+	var memory runtime.MemStats
+	runtime.ReadMemStats(&memory)
+	fds, err := os.ReadDir("/proc/self/fd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := map[string]any{
+		"stage": stage, "names": names, "facets": rows, "elapsed_seconds": time.Since(started).Seconds(),
+		"held_heap_alloc_bytes_after_gc": memory.HeapAlloc, "heap_inuse_bytes": memory.HeapInuse,
+		"heap_sys_bytes": memory.HeapSys, "heap_objects": memory.HeapObjects, "runtime_sys_bytes": memory.Sys,
+		"proc_bytes": probeProcNumbers(t), "fd_count": len(fds), "goroutines": runtime.NumGoroutine(),
+		"settings": settings, "files": files, "connections": connections,
+	}
+	if err := json.NewEncoder(os.Stdout).Encode(record); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func probeRange(t *testing.T, index *identityIndex, start, end int, repeated bool) {
+	t.Helper()
+	const padding = 1008
+	for offset := start; offset < end; offset += 1000 {
+		facets := make([]identityFacet, 0, 2000)
+		for n := offset; n < min(offset+1000, end); n++ {
+			name := fmt.Sprintf("name-%010d/%s", n, strings.Repeat("x", padding))
+			if len(name) != 1024 {
+				t.Fatal("unexpected name length")
+			}
+			facets = append(facets, identityFacet{reportedFailureIdentity, name}, identityFacet{unresolvedIdentity, name})
+		}
+		inserted, err := index.add(t.Context(), facets)
+		if err != nil || len(inserted) != len(facets) {
+			t.Fatalf("offset=%d repeated=%t marks=%d error=%v", offset, repeated, len(inserted), err)
+		}
+		for i, value := range inserted {
+			if value == repeated {
+				t.Fatalf("offset=%d facet=%d repeated=%t inserted=%t", offset, i, repeated, value)
+			}
+		}
+	}
+}
+
+func TestIdentityIndexResourceProbe(t *testing.T) {
+	started := time.Now()
+	cache := os.Getenv("AERONAUTES_INDEX_PROBE_CACHE")
+	if !filepath.IsAbs(cache) {
+		t.Fatal("private absolute probe cache is required")
+	}
+	probeSnapshot(t, "before-open", 0, nil, started)
+	index, err := newIdentityIndex(t.Context(), cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := index.close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	probeSnapshot(t, "opened", 0, index, started)
+	previous := 0
+	for _, total := range []int{10000, 50000, 100000} {
+		probeRange(t, index, previous, total, false)
+		probeSnapshot(t, "inserted", total, index, started)
+		probeRange(t, index, 0, total, true)
+		probeSnapshot(t, "repeated", total, index, started)
+		previous = total
+	}
+	if err := index.close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(index.dir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("owned index directory was not removed: %v", err)
+	}
+	if _, err := index.conn.ExecContext(context.Background(), "SELECT 1"); !errors.Is(err, sql.ErrConnDone) {
+		t.Fatalf("index connection remains usable after close: %v", err)
+	}
+	if index.db.Stats().OpenConnections != 0 {
+		t.Fatal("connection remains open after close")
+	}
+	probeSnapshot(t, "closed-and-removed", 100000, nil, started)
+}

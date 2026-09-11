@@ -237,6 +237,89 @@ The actual Go process exited 0 after 801.405 seconds, and all three required rea
 Those checks do not exercise or clear this resource-bound defect.
 The range remains unpushed and requires the [ADR 0036 correction](../adr/0036-delete-identity-accounting.md), its new resource/storage-failure proof and renewed final-range review before delivery.
 
+The subsequent [executed before probe](probes/2026-09-11-delete-memory-before_test.go.txt) exercises `DeletePrefix` on that same production parent using a generated HTTP provider.
+The provider keeps scalar counts and an ordered deletion watermark, generates listing rows incrementally and buffers only the current request of at most 1,000 names.
+The callback oracle compares each identity with its ordinal and retains no namespace or outcome set.
+
+| Generated run | Names | Identities in each result map | Held Go heap delta | Outcome |
+| --- | ---: | ---: | ---: | --- |
+| All-success control | 50,000 | 0 | 52,040 bytes | Pass |
+| All reported failures | 1,000 | 1,000 | 275,072 bytes | Below the generous witness bound |
+| All reported failures | 10,000 | 10,000 | 2,199,536 bytes | Below the generous witness bound |
+| All reported failures | 50,000 | 50,000 | 10,137,472 bytes | Intended bound assertion fails |
+
+The structural witness allows 11,400 retained identities per map, more than a listing page, request and both display samples combined; it is not a proposed product memory budget.
+Smaller passing cases do not establish a bound, because every failure case retains N entries in each map.
+Both callback streams still carry all N exact identities and both display samples remain capped at 200.
+The 50,000-failure run consumes five full pages and 50 validated all-failure bulk replies, followed by the bounded non-empty verification checks.
+The all-success control models removal through the provider's watermark; this is generated HTTP evidence rather than actual Swift storage.
+
+The pinned Go 1.27.1 race invocation exits 1 after 13.123 seconds solely because of the 50,000-failure assertion, with three passing leaves, one failing leaf, no skips and no race diagnostic.
+The first invocation failed at sandbox socket setup and receives no behavioural-failure credit; the identical source then ran with permission for its owned loopback listeners.
+Heap and sampled RSS are supplemental measurements rather than the pass/fail oracle: releasing the result reduces the 50,000-failure sample's heap to 284,496 bytes while RSS remains 104,724 KiB.
+That release is still a measurement of the old code, not an after-fix result.
+The archived source SHA-256 is `ac0c29bec220fab2d694ad640fc7311249d9d07eab273bf76f0a408ab12f56e8`, and the complete raw Go event stream SHA-256 is `f7f71cf2a4d27fb2bc43e9d4e0feb001172b4e401c7354b5d85946a2086cfa97`.
+To reproduce it, use a disposable checkout of the named parent, copy the archived text to `internal/deletion/memory_before_probe_test.go`, and run `go test -mod=readonly -race -count=1 -parallel=1 -p=2 -timeout=110s -run '^TestDeletePrefixBeforeGenerated' ./internal/deletion` with the pinned toolchain and permission for its owned loopback listeners.
+The expected behavioural exit is 1; an inability to build or open the listeners is not that result.
+
+## Private index prerequisite
+
+The new `internal/deletion/identity_index.go` implements ADR 0036's private storage prerequisite.
+It is not yet called by either executor: the old maps, job completion and public interface remain unchanged at this step.
+The parent range remains blocked until the coherent executor and public failure-path correction is implemented and reviewed.
+
+The index binds exact name bytes and the outcome facet to a binary primary key, on one reserved SQLite connection in an invocation-owned private directory.
+Each call accepts at most 2,000 facets and returns insertion marks only after a checked transaction commit.
+Any accounting error discards the pending marks and stops future accounting on that index.
+The executor integration must additionally enforce at most 1,000 names per bulk request or one parallel request's outcome; the facet cap alone is not that admission rule.
+
+Twenty focused leaf cases pass with pinned Go 1.27.1 using `go test -mod=readonly -race -count=1 -parallel=3 -timeout=3m -run '^TestIdentityIndex' ./internal/deletion`.
+They cover exact binary identity and separate facets, repeated names within and across transactions, bounded batches, effective connection settings, invalid cache locations, private files, checked cleanup and refusal after a lost connection.
+Real SQLite failures include a constraint error after a successful insert, an owned database page limit producing `SQLITE_FULL`, a missing table and a reader lock that permits insertion but prevents commit.
+The page-limit fixture exercises SQLite allocation failure without filling the host filesystem; it is not a host ENOSPC or power-loss experiment.
+Removal failure uses permissions on the fixture's own directory and is explicitly skipped on Windows or when root would bypass those permissions; neither skip occurred on this Linux run.
+
+A per-index test barrier cancels after successful inserts have been read back inside the transaction and before commit.
+The cancelled case returns no insertion marks, retains only the previously committed row and refuses later accounting, while the uncancelled control commits both rows.
+Both cases also passed 100 race-instrumented repetitions.
+The barrier is unset by default and does not replace the driver, transaction or filesystem with a mock.
+
+The focused run exits 0 after 3.328 seconds with 20 passing leaves and no failures or skips.
+The repeated cancellation run exits 0 after 10.384 seconds with 200 passing leaves.
+The separate race/coverage run exits 0 and covers 96 of the index file's 116 statements, or 82.8 percent; setup, setting-readback and some driver close/error branches remain uncovered.
+`go vet -mod=readonly ./internal/deletion` and `git diff --check` also pass.
+These are prerequisite checks, not new full-suite or integrated-engine evidence.
+
+Three private mutants were rebuilt from these final source files, changing only the indicated guard.
+The unmodified baseline passes all three selected tests with exit 0, and each mutant exits 1 solely at its intended assertion, without a build, setup, timeout, race or skip failure.
+
+| Deliberately broken guard | Catching test | Observed assertion |
+| --- | --- | --- |
+| Mark every insertion new | `TestIdentityIndexPreservesBinaryNamesAndFacets` | Duplicate facets incorrectly return true |
+| Omit the checked commit | `TestIdentityIndexCommitFailureStopsAccounting` | The blocked-commit request incorrectly returns a true mark and nil error |
+| Omit the accounting-failure latch | `TestIdentityIndexRollsBackAndStopsAfterFailure` | Later accounting incorrectly resumes after the constraint failure |
+
+The [isolated resource probe](probes/2026-09-11-delete-index-resource_test.go.txt) uses the same final index implementation, streams 1,000 generated 1,024-byte names and both facets per transaction, and repeats the full accumulated range after each growth step.
+Its owned cache is on XFS with 4,096-byte filesystem blocks; `/tmp` is overlayfs and was not used for the index.
+The process has no race instrumentation for this memory observation; the focused race tests are separate evidence.
+Values below are measured after the repeated pass and an explicit Go GC.
+
+| Distinct names | Indexed facets | Held Go heap | Process RSS | SQLite logical file size |
+| ---: | ---: | ---: | ---: | ---: |
+| 10,000 | 20,000 | 946,056 bytes | 21,245,952 bytes | 93,294,592 bytes |
+| 50,000 | 100,000 | 1,001,960 bytes | 21,934,080 bytes | 466,702,336 bytes |
+| 100,000 | 200,000 | 1,056,544 bytes | 22,749,184 bytes | 933,384,192 bytes |
+
+Every repeated pass adds no rows or file growth.
+Each open checkpoint reports one connection, eight descriptors and three goroutines; checked close removes the owned directory and returns those counts to zero connections, seven descriptors and two goroutines.
+The probe exits 0 after 8.169 seconds.
+The approximately 933 MB disk cost for 100,000 long names is material; the index moves distinct membership to storage and does not make its storage cost constant.
+These observations do not establish a global memory ceiling, peak journal size, crash durability or the complete executor's resource behaviour.
+
+For reproduction on Linux, copy the archived resource probe into `internal/deletion/resource_probe_test.go` in a disposable checkout, set `AERONAUTES_INDEX_PROBE_CACHE` to a new owned absolute cache directory, record its filesystem backing and run `go test -mod=readonly -count=1 -timeout=5m -run '^TestIdentityIndexResourceProbe$' -v ./internal/deletion` with the pinned toolchain.
+The executed probe source SHA-256 is `cf6f5493a142aa05a96008a07a55e85dbd90b5e15c25019f64b708d16cd32a90`; its raw output SHA-256 is `5135691141b1f328b6e03ab2c95de225ca52bd82c44a5dafe875d0bbca89e7c1`.
+The final implementation and maintained test source hashes are `18931379a286694329bb8aa54811731177ff816f389b082cddcd503dc5b451f6` and `3cc3de821d7e01b781dd660ed134073a8ae540b441f526276a7d06b7333a7e16`.
+
 ## Remaining limits
 
 This slice settles what a run knows about each requested name and how that is stated, and nothing else.
