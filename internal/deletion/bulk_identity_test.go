@@ -897,13 +897,11 @@ func (p *swiftProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(payload)
 }
 
-func proxiedSwiftSession(t *testing.T, forward bool, reply map[string]any) (*swiftcontrol.Session, *swiftcontrol.Capabilities, *swiftProxy) {
+// proxiedSessionOver puts the substituting proxy in front of any
+// provider, so the mock and the owned service are driven through one
+// code path with byte-identical injected replies.
+func proxiedSessionOver(t *testing.T, base string, forward bool, reply map[string]any) (*swiftcontrol.Session, *swiftcontrol.Capabilities, *swiftProxy) {
 	t.Helper()
-	authURL := os.Getenv("AERONAUTES_SAIO_AUTH_URL")
-	if authURL == "" {
-		t.Skip("the owned Swift fixture is not configured")
-	}
-	base := authURL[:strings.Index(authURL, "/auth/")]
 	proxy := &swiftProxy{target: base, forward: forward, reply: reply, client: &http.Client{}}
 	srv := httptest.NewServer(proxy)
 	t.Cleanup(srv.Close)
@@ -924,64 +922,144 @@ func proxiedSwiftSession(t *testing.T, forward bool, reply map[string]any) (*swi
 	return session, capabilities, proxy
 }
 
-// TestBulkEffectSubstitutionRealSwift runs the fault boundary against
-// the owned service: the same substituted reply, once with the deletion
-// really applied and once suppressed. The ledger must read identically
-// in both, while a session that never sees the proxy witnesses that the
-// two worlds differ.
+// TestBulkEffectSubstitutionMock runs the fault boundary against the
+// in-process provider: the same substituted reply, once with the
+// deletions really applied and once suppressed.
+func TestBulkEffectSubstitutionMock(t *testing.T) {
+	mock := swifttest.New("test:tester", "testing")
+	mock.LoadCanonicalFixtures()
+	srv := httptest.NewServer(mock)
+	t.Cleanup(srv.Close)
+	observer := effectObserver(t, srv.URL+"/auth/v1.0")
+	runDeleteNamesEffectPair(t, srv.URL, observer)
+}
+
+// TestBulkEffectSubstitutionRealSwift runs the same boundary against
+// the owned service, so the pair is not an artefact of the mock.
 func TestBulkEffectSubstitutionRealSwift(t *testing.T) {
-	direct := realSwiftSession(t)
-	ctx := context.Background()
-	container := fmt.Sprintf("aeronautes-bulksub-%d", time.Now().UnixNano())
-	if _, err := direct.CreateContainer(ctx, swiftcontrol.ContainerCreateRequest{Name: container}); err != nil {
+	authURL := os.Getenv("AERONAUTES_SAIO_AUTH_URL")
+	if authURL == "" {
+		t.Skip("the owned Swift fixture is not configured")
+	}
+	observer := effectObserver(t, authURL)
+	runDeleteNamesEffectPair(t, authURL[:strings.Index(authURL, "/auth/")], observer)
+}
+
+func effectObserver(t *testing.T, authURL string) *swiftcontrol.Session {
+	t.Helper()
+	session, err := swiftcontrol.New(swiftcontrol.Config{
+		AuthURL: authURL, Username: "test:tester", APIKey: "testing",
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
-	target := "substitution-target.bin"
+	if err := session.Authenticate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	return session
+}
+
+// witnessGone requires an authoritative not-found. A transport,
+// authentication or server failure is a broken observation, not a
+// witnessed deletion.
+func witnessGone(t *testing.T, observer *swiftcontrol.Session, container, name string) {
+	t.Helper()
+	_, err := observer.ObjectDetail(context.Background(), container, name)
+	switch {
+	case err == nil:
+		t.Errorf("%s/%s is still present, so nothing was witnessed as deleted", container, name)
+	case !swiftcontrol.IsNotFound(err):
+		t.Fatalf("%s/%s could not be observed, so absence is not established: %v", container, name, err)
+	}
+}
+
+// witnessBytes requires the object to be present with exactly the bytes
+// it was given, so a survivor is shown to have survived intact.
+func witnessBytes(t *testing.T, observer *swiftcontrol.Session, container, name, want string) {
+	t.Helper()
+	body, _, err := observer.OpenObject(context.Background(), container, name)
+	if err != nil {
+		t.Fatalf("%s/%s is not present: %v", container, name, err)
+	}
+	defer body.Close()
+	got, err := io.ReadAll(body)
+	if err != nil {
+		t.Fatalf("%s/%s could not be read: %v", container, name, err)
+	}
+	if string(got) != want {
+		t.Errorf("%s/%s content = %q, want %q", container, name, got, want)
+	}
+}
+
+// runDeleteNamesEffectPair drives DeleteNames twice with byte-identical
+// substituted replies, once with the deletions applied and once
+// suppressed. The ledger must read identically in both, while an
+// observer that never passes through the proxy shows the stores really
+// did end in opposite states, with surviving content and the
+// neighbouring namespace intact.
+func runDeleteNamesEffectPair(t *testing.T, base string, observer *swiftcontrol.Session) {
+	t.Helper()
+	ctx := context.Background()
+	container := fmt.Sprintf("aeronautes-bulksub-%d", time.Now().UnixNano())
+	if _, err := observer.CreateContainer(ctx, swiftcontrol.ContainerCreateRequest{Name: container}); err != nil {
+		t.Fatal(err)
+	}
+	targets := []string{"substitution-target.bin", "substitution-second.bin"}
 	neighbour := "substitution-neighbour.bin"
+	contents := map[string]string{
+		targets[0]: "target-one-payload",
+		targets[1]: "target-two-payload",
+		neighbour:  "neighbour-payload",
+	}
 	t.Cleanup(func() {
 		background := context.Background()
-		for _, name := range []string{target, neighbour} {
-			_ = direct.DeleteObject(background, container, name)
+		for name := range contents {
+			_ = observer.DeleteObject(background, container, name)
 		}
-		if err := direct.DeleteContainer(background, container); err != nil {
+		if err := observer.DeleteContainer(background, container); err != nil {
 			t.Errorf("cleanup left %q behind: %v", container, err)
 		}
 	})
 
+	// One target is blamed by name, the other gets no disposition at all,
+	// so both shapes of unresolved identity are exercised.
 	reply := map[string]any{
 		"Number Deleted": 0, "Number Not Found": 0,
 		"Response Status": "200 OK", "Response Body": "",
-		"Errors": [][2]string{{"/" + container + "/" + target, "500 Internal Server Error"}},
+		"Errors": [][2]string{{"/" + container + "/" + targets[0], "500 Internal Server Error"}},
 	}
 	var ledgers []string
 	var payloads [][]byte
-	var presence []bool
 
 	for _, forward := range []bool{false, true} {
-		for _, name := range []string{target, neighbour} {
-			if _, err := direct.PutObject(ctx, container, name, strings.NewReader("payload"), "application/octet-stream", nil); err != nil {
+		for name, body := range contents {
+			if _, err := observer.PutObject(ctx, container, name, strings.NewReader(body), "application/octet-stream", nil); err != nil {
 				t.Fatal(err)
 			}
 		}
-		session, capabilities, proxy := proxiedSwiftSession(t, forward, reply)
+		session, capabilities, proxy := proxiedSessionOver(t, base, forward, reply)
 		var mu sync.Mutex
 		var failed, unresolved []string
-		result, err := DeleteNames(ctx, session, capabilities, container, []string{target}, Options{
+		result, err := DeleteNames(ctx, session, capabilities, container, targets, Options{
 			OnFailure:    func(n, d string) { mu.Lock(); failed = append(failed, n); mu.Unlock() },
 			OnUnresolved: func(n, d string) { mu.Lock(); unresolved = append(unresolved, n); mu.Unlock() },
 		})
 		sort.Strings(failed)
 		sort.Strings(unresolved)
-		ledgers = append(ledgers, fmt.Sprintf("err=%v deleted=%d failed=%v unresolved=%v untrusted=%d",
-			err != nil, result.Deleted, failed, unresolved, result.UntrustedReplies))
+		ledgers = append(ledgers, fmt.Sprintf("err=%v deleted=%d notfound=%d failed=%v unresolved=%v untrusted=%d",
+			err != nil, result.Deleted, result.NotFound, failed, unresolved, result.UntrustedReplies))
 		payloads = append(payloads, proxy.sent)
 
 		// Witnessed by a session that never passed through the proxy.
-		_, headErr := direct.ObjectDetail(ctx, container, target)
-		presence = append(presence, headErr == nil)
-		if _, err := direct.ObjectDetail(ctx, container, neighbour); err != nil {
-			t.Errorf("forward=%v: the neighbour was harmed: %v", forward, err)
+		for _, name := range targets {
+			if forward {
+				witnessGone(t, observer, container, name)
+			} else {
+				witnessBytes(t, observer, container, name, contents[name])
+			}
 		}
+		// Collateral: the neighbour keeps its bytes in both worlds.
+		witnessBytes(t, observer, container, neighbour, contents[neighbour])
 	}
 
 	if !bytes.Equal(payloads[0], payloads[1]) {
@@ -990,10 +1068,8 @@ func TestBulkEffectSubstitutionRealSwift(t *testing.T) {
 	if ledgers[0] != ledgers[1] {
 		t.Errorf("the same reply produced different ledgers:\n suppressed %s\n applied    %s", ledgers[0], ledgers[1])
 	}
-	if !presence[0] {
-		t.Error("the suppressed run destroyed the target")
-	}
-	if presence[1] {
-		t.Error("the forwarded run did not destroy the target, so the boundary proved nothing")
+	if !strings.Contains(ledgers[0], "unresolved=["+targets[1]+" "+targets[0]+"]") &&
+		!strings.Contains(ledgers[0], "unresolved=["+targets[0]+" "+targets[1]+"]") {
+		t.Errorf("both requested identities must be unresolved: %s", ledgers[0])
 	}
 }

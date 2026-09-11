@@ -10,8 +10,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/bookmarks"
@@ -19,6 +22,7 @@ import (
 	"github.com/csmart/aeronautes/internal/evidence"
 	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/secrets"
+	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	"github.com/csmart/aeronautes/internal/swifttest"
 )
 
@@ -36,9 +40,17 @@ type bulkIdentityServer struct {
 	forward bool
 	calls   int
 	sent    []byte
+	// beforeList runs once, on the server goroutine, before the first
+	// prefix listing is answered. It lets a test act on facts the job
+	// only publishes after it starts, without racing the job.
+	beforeList func()
+	listOnce   sync.Once
 }
 
 func (b *bulkIdentityServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if b.beforeList != nil && r.Method == http.MethodGet && r.URL.Query().Has("prefix") {
+		b.listOnce.Do(b.beforeList)
+	}
 	if r.Method == http.MethodPost && r.URL.Query().Has("bulk-delete") {
 		body, _ := io.ReadAll(r.Body)
 		if b.forward {
@@ -67,15 +79,23 @@ func bulkIdentityHarness(t *testing.T, reply map[string]any) (*harness, *bulkIde
 
 func bulkIdentityHarnessForwarding(t *testing.T, forward bool, reply map[string]any) (*harness, *bulkIdentityServer) {
 	t.Helper()
+	mock := swifttest.New("test:tester", "testing")
+	mock.LoadCanonicalFixtures()
+	return bulkIdentityHarnessOver(t, mock, mock, forward, reply)
+}
+
+// bulkIdentityHarnessOver puts the public service in front of any
+// upstream, so the same job code can be driven against the in-process
+// mock and against the owned Swift fixture with one substituting layer.
+func bulkIdentityHarnessOver(t *testing.T, upstream http.Handler, mock *swifttest.Server, forward bool, reply map[string]any) (*harness, *bulkIdentityServer) {
+	t.Helper()
 	d, err := db.Open(context.Background(), filepath.Join(t.TempDir(), "state.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { d.Close() })
 
-	mock := swifttest.New("test:tester", "testing")
-	mock.LoadCanonicalFixtures()
-	crafted := &bulkIdentityServer{inner: mock, reply: reply, forward: forward}
+	crafted := &bulkIdentityServer{inner: upstream, reply: reply, forward: forward}
 	srv := httptest.NewServer(crafted)
 	t.Cleanup(srv.Close)
 
@@ -97,6 +117,200 @@ func bulkIdentityHarnessForwarding(t *testing.T, forward bool, reply map[string]
 		mock:      mock,
 		authURL:   srv.URL + "/auth/v1.0",
 	}, crafted
+}
+
+// terminalAuditFor requires the exact terminal event this job must
+// leave, identified by the job rather than by any delete-prefixed
+// operation, so a run that emits only its start event fails.
+func terminalAuditFor(t *testing.T, h *harness, jobID, operation, resource, result string) {
+	t.Helper()
+	// finish() makes the terminal state visible before it writes the
+	// audit record, so a job that has just been observed as terminal may
+	// not have recorded yet. Wait for the record instead of sampling
+	// once; a run that never writes one still fails.
+	summary := "job " + jobID
+	var events []AuditEventDTO
+	var found *AuditEventDTO
+	deadline := time.Now().Add(10 * time.Second)
+	for found == nil && time.Now().Before(deadline) {
+		var err error
+		events, err = h.auditSvc.Recent(context.Background(), 200)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := range events {
+			if events[i].Summary == summary && events[i].Operation == operation {
+				found = &events[i]
+				break
+			}
+		}
+		if found == nil {
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	if found == nil {
+		seen := []string{}
+		for _, e := range events {
+			if strings.HasPrefix(e.Operation, "delete.") {
+				seen = append(seen, e.Operation+" "+e.Summary+" "+e.Result)
+			}
+		}
+		t.Fatalf("no terminal audit event %q for %q; delete events seen: %v", operation, summary, seen)
+	}
+	if found.Result != result {
+		t.Errorf("terminal audit result = %q, want %q", found.Result, result)
+	}
+	if found.Resource != resource {
+		t.Errorf("terminal audit resource = %q, want %q", found.Resource, resource)
+	}
+}
+
+// retainedListPath extracts the artifact the run advertised, and fails
+// when the run offered none.
+func retainedListPath(t *testing.T, summary string) string {
+	t.Helper()
+	marker := "full list: "
+	idx := strings.Index(summary, marker)
+	if idx < 0 {
+		t.Fatalf("the run advertised no retained list: %q", summary)
+	}
+	path := strings.TrimSpace(summary[idx+len(marker):])
+	if cut := strings.Index(path, ";"); cut >= 0 {
+		path = strings.TrimSpace(path[:cut])
+	}
+	return path
+}
+
+// retainedRecords reads back the complete advertised list as identity
+// to details, keeping every repeat so multiplicity is testable.
+func retainedRecords(t *testing.T, summary string) map[string][]string {
+	t.Helper()
+	body, err := os.ReadFile(retainedListPath(t, summary))
+	if err != nil {
+		t.Fatalf("the advertised list cannot be read: %v", err)
+	}
+	records := map[string][]string{}
+	for _, line := range strings.Split(strings.TrimSpace(string(body)), "\n") {
+		if line == "" {
+			continue
+		}
+		var record struct {
+			Name       string `json:"name"`
+			Unresolved string `json:"unresolved"`
+		}
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatalf("a retained record is not readable: %v", err)
+		}
+		if record.Name == "" {
+			t.Error("a retained record names nothing")
+		}
+		records[record.Name] = append(records[record.Name], record.Unresolved)
+	}
+	return records
+}
+
+// assertRetainedRecords is the content control. Each identity must
+// appear exactly once, each blamed name must carry the reply status the
+// service returned for it, every other name must carry the shared
+// not-dependable reason, and every detail must say the effect is
+// unknown. A run that writes one constant sentence for every name, or
+// that claims an effect it cannot know, fails all three requirements.
+func assertRetainedRecords(t *testing.T, records map[string][]string, want map[string]bool, blamed map[string]string) {
+	t.Helper()
+	if len(records) != len(want) {
+		t.Errorf("the retained list holds %d identities, want every one of the %d requested", len(records), len(want))
+	}
+	distinct := map[string]bool{}
+	for name := range want {
+		details, ok := records[name]
+		if !ok {
+			t.Errorf("%q is missing from the retained list", name)
+			continue
+		}
+		if len(details) != 1 {
+			t.Errorf("%q is retained %d times, want exactly once", name, len(details))
+			continue
+		}
+		detail := details[0]
+		distinct[detail] = true
+		if status, isBlamed := blamed[name]; isBlamed {
+			// A blamed name must carry the exact status its own row
+			// returned, and must still refuse to state an effect.
+			if !strings.Contains(detail, status) {
+				t.Errorf("the record for %q does not carry its reply status %q: %q", name, status, detail)
+			}
+			if !strings.Contains(detail, "no observation establishes") {
+				t.Errorf("the record for %q does not refuse to state an effect: %q", name, detail)
+			}
+		} else if !strings.Contains(detail, "not dependable") {
+			// Every other name must be explained by what was wrong with
+			// the reply, which is the only thing this run learned.
+			t.Errorf("the record for %q does not give the reply reason: %q", name, detail)
+		}
+	}
+	if len(blamed) > 0 && len(distinct) < 2 {
+		t.Errorf("every identity carries the same detail, so no detail is drawn from its own reply row: %v", distinct)
+	}
+}
+
+// observerSession authenticates a client against the upstream directly,
+// so its observations never pass through the substituting layer.
+func observerSession(t *testing.T, upstream http.Handler) *swiftcontrol.Session {
+	t.Helper()
+	srv := httptest.NewServer(upstream)
+	t.Cleanup(srv.Close)
+	return authenticatedSession(t, srv.URL+"/auth/v1.0")
+}
+
+func authenticatedSession(t *testing.T, authURL string) *swiftcontrol.Session {
+	t.Helper()
+	session, err := swiftcontrol.New(swiftcontrol.Config{
+		AuthURL: authURL, Username: "test:tester", APIKey: "testing",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Authenticate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	return session
+}
+
+// saioAuthURL is the owned Swift fixture, or an empty string when it is
+// not configured for this run.
+func saioAuthURL() string { return os.Getenv("AERONAUTES_SAIO_AUTH_URL") }
+
+// witnessAbsent requires an authoritative 404. A transport,
+// authentication or server failure is a broken observation, not a
+// witnessed deletion, and must never be read as absence.
+func witnessAbsent(t *testing.T, observer *swiftcontrol.Session, container, name string) {
+	t.Helper()
+	_, err := observer.ObjectDetail(context.Background(), container, name)
+	switch {
+	case err == nil:
+		t.Errorf("%s/%s is still present, so nothing was witnessed as deleted", container, name)
+	case !swiftcontrol.IsNotFound(err):
+		t.Fatalf("%s/%s could not be observed, so absence is not established: %v", container, name, err)
+	}
+}
+
+// witnessContent requires the object to be present with exactly the
+// bytes it was given, which is what proves a survivor survived intact
+// rather than merely still having a name.
+func witnessContent(t *testing.T, observer *swiftcontrol.Session, container, name, want string) {
+	t.Helper()
+	body, _, err := observer.OpenObject(context.Background(), container, name)
+	if err != nil {
+		t.Fatalf("%s/%s is not present: %v", container, name, err)
+	}
+	defer body.Close()
+	got, err := io.ReadAll(body)
+	if err != nil {
+		t.Fatalf("%s/%s could not be read: %v", container, name, err)
+	}
+	if string(got) != want {
+		t.Errorf("%s/%s content = %q, want %q", container, name, got, want)
+	}
 }
 
 // TestDeleteJobDoesNotPublishClaimedDeletionsAsVerified is the
@@ -314,68 +528,19 @@ func TestDeleteJobRetainsEveryUnresolvedIdentity(t *testing.T) {
 		t.Errorf("the summary does not count every requested name: %q", job.Error)
 	}
 
-	// The complete retained set, read back from where the run said it is.
-	marker := "full list: "
-	idx := strings.Index(job.Error, marker)
-	if idx < 0 {
-		t.Fatalf("the run advertised no retained list: %q", job.Error)
-	}
-	path := strings.TrimSpace(job.Error[idx+len(marker):])
-	if cut := strings.Index(path, ";"); cut >= 0 {
-		path = strings.TrimSpace(path[:cut])
-	}
-	body, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("the advertised list cannot be read: %v", err)
-	}
-	got := map[string]bool{}
-	for _, line := range strings.Split(strings.TrimSpace(string(body)), "\n") {
-		if line == "" {
-			continue
-		}
-		var record struct {
-			Name       string `json:"name"`
-			Unresolved string `json:"unresolved"`
-		}
-		if err := json.Unmarshal([]byte(line), &record); err != nil {
-			t.Fatalf("a retained record is not readable: %v", err)
-		}
-		if record.Unresolved == "" {
-			t.Errorf("the record for %q carries no reason", record.Name)
-		}
-		got[record.Name] = true
-	}
-	if len(got) != seeded {
-		t.Errorf("the retained list holds %d identities, want every one of the %d requested", len(got), seeded)
-	}
-	for name := range want {
-		if !got[name] {
-			t.Errorf("%q is missing from the retained list", name)
-		}
-	}
+	// The complete retained set, read back from where the run said it is:
+	// every identity once, each detail drawn from its own reply row, and
+	// none of them claiming an effect on the store.
+	got := retainedRecords(t, job.Error)
+	assertRetainedRecords(t, got, want, map[string]string{"scope/obj-0000": "500 Internal Server Error"})
 	// The display sample is bounded while the retained list is not.
 	if len(got) <= 200 {
 		t.Errorf("this case must exceed the display cap to be worth running, got %d", len(got))
 	}
 
-	// The audit trail records the run as a destructive operation that
-	// did not complete.
-	events, err := h.auditSvc.Recent(ctx, 20)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var sawDelete bool
-	for _, e := range events {
-		if strings.HasPrefix(e.Operation, "delete.") {
-			sawDelete = true
-			if e.Result == "ok" {
-				t.Errorf("the audit records a clean result for a run with unresolved names: %+v", e)
-			}
-		}
-	}
-	if !sawDelete {
-		t.Error("the run left no delete audit event")
-	}
+	// The exact terminal audit fact for this job, not merely some delete
+	// event: a partial destructive run on this scope.
+	terminalAuditFor(t, h, jobID, "delete.prefix.partial", "media/scope/", "verify_mismatch")
 	if crafted.calls == 0 {
 		t.Error("the crafted reply was never used")
 	}
@@ -384,67 +549,160 @@ func TestDeleteJobRetainsEveryUnresolvedIdentity(t *testing.T) {
 // TestDeleteJobEffectSubstitutionThroughTheService runs the agreed
 // fault boundary at the public service: the same substituted reply,
 // once with the deletions actually applied and once with them
-// suppressed. The job's public facts must be identical in both, because
-// the reply establishes nothing about the effect, while authoritative
-// witnesses show the two worlds really did differ.
+// suppressed. Every public fact must be identical in both, because the
+// reply establishes nothing about the effect, while an observer that
+// never passes through the substituting layer shows the two worlds
+// really did differ.
 func TestDeleteJobEffectSubstitutionThroughTheService(t *testing.T) {
-	type outcome struct {
-		state    string
-		counters string
-		summary  string
-		present  []string
+	runEffectSubstitutionPair(t, nil)
+}
+
+// TestDeleteJobEffectSubstitutionThroughTheServiceRealSwift runs the
+// same public-path boundary against the owned Swift fixture, so the
+// pair is not an artefact of the in-process mock.
+func TestDeleteJobEffectSubstitutionThroughTheServiceRealSwift(t *testing.T) {
+	if saioAuthURL() == "" {
+		t.Skip("the owned Swift fixture is not configured")
 	}
-	var runs []outcome
+	runEffectSubstitutionPair(t, &realSwiftUpstream{})
+}
+
+// realSwiftUpstream marks the pair as running against the owned
+// service rather than the in-process mock.
+type realSwiftUpstream struct{}
+
+type effectOutcome struct {
+	state    string
+	counters string
+	summary  string
+	records  map[string][]string
+	audit    string
+}
+
+func runEffectSubstitutionPair(t *testing.T, real *realSwiftUpstream) {
+	t.Helper()
+	var runs []effectOutcome
 	var replies [][]byte
+
+	container := "media"
+	prefix := "scope/"
+	if real != nil {
+		container = fmt.Sprintf("aeronautes-effect-%d", time.Now().UnixNano())
+	}
+	seeded := []string{}
+	for i := 0; i < 5; i++ {
+		seeded = append(seeded, fmt.Sprintf("%sobj-%d", prefix, i))
+	}
+	neighbour := "kept.txt"
+	blamed := seeded[0]
+	reply := map[string]any{
+		"Number Deleted": 3, "Number Not Found": 0,
+		"Response Status": "200 OK", "Response Body": "",
+		"Errors": [][2]string{{"/" + container + "/" + blamed, "500 Internal Server Error"}},
+	}
+
+	// The owned service keeps one container and one observer across both
+	// runs; the mock gets a fresh in-process provider each time.
+	var owned *swiftcontrol.Session
+	if real != nil {
+		owned = authenticatedSession(t, saioAuthURL())
+		if _, err := owned.CreateContainer(context.Background(), swiftcontrol.ContainerCreateRequest{Name: container}); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			background := context.Background()
+			for _, name := range append(append([]string{}, seeded...), neighbour) {
+				_ = owned.DeleteObject(background, container, name)
+			}
+			if err := owned.DeleteContainer(background, container); err != nil {
+				t.Errorf("cleanup left %q behind: %v", container, err)
+			}
+		})
+	}
 
 	for _, forward := range []bool{false, true} {
 		cache := t.TempDir()
 		t.Setenv("XDG_CACHE_HOME", cache)
-		h, crafted := bulkIdentityHarnessForwarding(t, forward, map[string]any{
-			"Number Deleted": 3, "Number Not Found": 0,
-			"Response Status": "200 OK", "Response Body": "",
-			"Errors": [][2]string{{"/media/scope/obj-0", "500 Internal Server Error"}},
-		})
+
+		var h *harness
+		var crafted *bulkIdentityServer
+		var observer *swiftcontrol.Session
+		if real != nil {
+			base := saioAuthURL()
+			base = base[:strings.Index(base, "/auth/")]
+			upstream := &swiftReverseProxy{target: base, client: &http.Client{}}
+			h, crafted = bulkIdentityHarnessOver(t, upstream, swifttest.New("test:tester", "testing"), forward, reply)
+			// The storage URL the service is handed must point back at
+			// the substituting layer, not past it, or the injected reply
+			// never reaches the job.
+			upstream.self = strings.TrimSuffix(h.authURL, "/auth/v1.0")
+			observer = owned
+			for _, name := range append(append([]string{}, seeded...), neighbour) {
+				body := "data"
+				if name == neighbour {
+					body = "kept"
+				}
+				if _, err := observer.PutObject(context.Background(), container, name, strings.NewReader(body), "application/octet-stream", nil); err != nil {
+					t.Fatal(err)
+				}
+			}
+		} else {
+			h, crafted = bulkIdentityHarnessForwarding(t, forward, reply)
+			observer = observerSession(t, h.mock)
+			h.mock.AddContainer(container, "standard")
+			for _, name := range seeded {
+				seedObject(h.mock, container, name, "data", nil)
+			}
+			seedObject(h.mock, container, neighbour, "kept", nil)
+		}
 		h.connect(t)
 		bookmark := h.transfer.connections.ActiveBookmarkID()
 		service := NewDeleteService(h.transfer.connections, h.transfer.jobs, h.transfer.runner, h.evidence)
 		ctx := context.Background()
-		h.mock.AddContainer("media", "standard")
-		seeded := []string{}
-		for i := 0; i < 5; i++ {
-			name := fmt.Sprintf("scope/obj-%d", i)
-			seedObject(h.mock, "media", name, "data", nil)
-			seeded = append(seeded, name)
-		}
-		seedObject(h.mock, "media", "kept.txt", "kept", nil)
 
 		jobID, err := service.StartDelete(ctx, DeleteRequestDTO{
-			BookmarkID: bookmark, Container: "media", Prefix: "scope/", Mode: ModePrefix, Confirm: "media",
+			BookmarkID: bookmark, Container: container, Prefix: prefix, Mode: ModePrefix, Confirm: container,
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
 		job := awaitTerminal(t, h, jobID)
 
-		// Authoritative witnesses, not a listing.
-		session := h.transfer.connections.sessions[bookmark].session
-		present := []string{}
-		for _, name := range append(append([]string{}, seeded...), "kept.txt") {
-			if _, err := session.ObjectDetail(ctx, "media", name); err == nil {
-				present = append(present, name)
+		// The complete retained records, compared in both worlds.
+		want := map[string]bool{}
+		for _, name := range seeded {
+			want[name] = true
+		}
+		records := retainedRecords(t, job.Error)
+		assertRetainedRecords(t, records, want, map[string]string{blamed: "500 Internal Server Error"})
+		terminalAuditFor(t, h, jobID, "delete.prefix.partial", container+"/"+prefix, "verify_mismatch")
+
+		// Authoritative witnesses, taken outside the fault boundary.
+		if forward {
+			for _, name := range seeded {
+				witnessAbsent(t, observer, container, name)
+			}
+		} else {
+			for _, name := range seeded {
+				witnessContent(t, observer, container, name, "data")
 			}
 		}
+		// Collateral: the neighbour outside the prefix keeps its bytes in
+		// both worlds.
+		witnessContent(t, observer, container, neighbour, "kept")
+
 		// The summary's retained-list path differs per run by job id, so
 		// compare the part that states the facts.
 		summary := job.Error
 		if idx := strings.Index(summary, "; full list: "); idx >= 0 {
 			summary = summary[:idx]
 		}
-		runs = append(runs, outcome{
+		runs = append(runs, effectOutcome{
 			state:    job.State,
 			counters: fmt.Sprintf("copied=%d verified=%d failed=%d", job.Counters.ObjectsCopied, job.Counters.ObjectsVerified, job.Counters.ObjectsFailed),
 			summary:  summary,
-			present:  present,
+			records:  records,
+			audit:    "delete.prefix.partial/verify_mismatch",
 		})
 		replies = append(replies, crafted.sent)
 	}
@@ -453,17 +711,133 @@ func TestDeleteJobEffectSubstitutionThroughTheService(t *testing.T) {
 		t.Fatal("the two runs must be driven by identical reply bytes")
 	}
 	if runs[0].state != runs[1].state || runs[0].counters != runs[1].counters || runs[0].summary != runs[1].summary {
-		t.Errorf("the same reply produced different public facts:\n suppressed %+v\n applied    %+v", runs[0], runs[1])
+		t.Errorf("the same reply produced different public facts:\n suppressed %s | %s | %s\n applied    %s | %s | %s",
+			runs[0].state, runs[0].counters, runs[0].summary, runs[1].state, runs[1].counters, runs[1].summary)
 	}
 	if runs[0].state != "partial" {
 		t.Errorf("state = %q, want partial", runs[0].state)
 	}
-	// The worlds really did differ: nothing was deleted in the suppressed
-	// run, and the named objects are gone in the applied one.
-	if len(runs[0].present) != 6 {
-		t.Errorf("the suppressed run changed the store: %v", runs[0].present)
+	if runs[0].counters != "copied=0 verified=0 failed=1" {
+		t.Errorf("counters = %q, want no credited deletions and the one validly named row", runs[0].counters)
 	}
-	if len(runs[1].present) != 1 || runs[1].present[0] != "kept.txt" {
-		t.Errorf("the applied run left %v, want only the neighbour", runs[1].present)
+	// The retained ledgers agree name for name and detail for detail
+	// although the stores ended in opposite states.
+	if !reflect.DeepEqual(runs[0].records, runs[1].records) {
+		t.Errorf("the retained records differ between the two worlds:\n suppressed %v\n applied    %v", runs[0].records, runs[1].records)
 	}
+}
+
+// swiftReverseProxy forwards every request to the owned service and
+// rewrites the storage URL so the client keeps talking to this process.
+type swiftReverseProxy struct {
+	target string
+	self   string
+	client *http.Client
+}
+
+func (p *swiftReverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(r.Body)
+	out, err := http.NewRequest(r.Method, p.target+r.URL.RequestURI(), bytes.NewReader(body))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	out.Header = r.Header.Clone()
+	resp, err := p.client.Do(out)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+	payload, _ := io.ReadAll(resp.Body)
+	for key, values := range resp.Header {
+		for _, v := range values {
+			if strings.EqualFold(key, "X-Storage-Url") {
+				v = strings.Replace(v, p.target, p.self, 1)
+			}
+			w.Header().Add(key, v)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+	_, _ = w.Write(payload)
+}
+
+// TestDeleteJobPublishesBufferedRetentionLoss carries the buffered
+// write failure through a public job. The retention file opens, records
+// are accepted, and every byte is refused at the flush, so the job must
+// keep the exact identity count, must not offer the artifact as a full
+// list, and must say the list is incomplete without claiming how many
+// identities were lost.
+func TestDeleteJobPublishesBufferedRetentionLoss(t *testing.T) {
+	if _, err := os.Stat("/dev/full"); err != nil {
+		t.Skip("/dev/full is not available to force a write failure")
+	}
+	cache := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", cache)
+
+	h, crafted := bulkIdentityHarness(t, map[string]any{
+		"Number Deleted": 1, "Number Not Found": 0,
+		"Response Status": "200 OK", "Response Body": "",
+		"Errors": [][2]string{{"/media/scope/obj-0", "500 Internal Server Error"}},
+	})
+	h.connect(t)
+	bookmark := h.transfer.connections.ActiveBookmarkID()
+	service := NewDeleteService(h.transfer.connections, h.transfer.jobs, h.transfer.runner, h.evidence)
+	ctx := context.Background()
+	h.mock.AddContainer("media", "standard")
+	for i := 0; i < 3; i++ {
+		seedObject(h.mock, "media", fmt.Sprintf("scope/obj-%d", i), "data", nil)
+	}
+
+	// The job id is only known once the job exists, and the retention
+	// file is opened later, while the job is listing. Linking the exact
+	// path to a device that accepts an open and refuses every byte during
+	// that listing reproduces a full disk without racing the job.
+	var jobID string
+	linked := make(chan error, 1)
+	crafted.beforeList = func() {
+		dir := filepath.Join(cache, "aeronautes", "unresolved")
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			linked <- err
+			return
+		}
+		linked <- os.Symlink("/dev/full", filepath.Join(dir, jobID+".jsonl"))
+	}
+
+	var err error
+	jobID, err = service.StartDelete(ctx, DeleteRequestDTO{
+		BookmarkID: bookmark, Container: "media", Prefix: "scope/", Mode: ModePrefix, Confirm: "media",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, h, jobID)
+	select {
+	case err := <-linked:
+		if err != nil {
+			t.Skipf("cannot link to /dev/full here: %v", err)
+		}
+	default:
+		t.Fatal("the listing hook never ran, so no retention failure was forced")
+	}
+
+	if job.State != "partial" {
+		t.Errorf("state = %q, want partial while names are unresolved", job.State)
+	}
+	if !strings.Contains(job.Error, "3 names have an unresolved effect") {
+		t.Errorf("the exact count did not survive the retention failure: %q", job.Error)
+	}
+	if strings.Contains(job.Error, "full list:") {
+		t.Errorf("an unusable artifact was offered as a full list: %q", job.Error)
+	}
+	if !strings.Contains(job.Error, "incomplete") {
+		t.Errorf("the job does not say the retained list is incomplete: %q", job.Error)
+	}
+	if !strings.Contains(job.Error, "not established") {
+		t.Errorf("the job does not admit the lost count is unknown: %q", job.Error)
+	}
+	if strings.Contains(job.Error, "3 unresolved names could not") {
+		t.Errorf("the job claims a lost-name count it cannot establish: %q", job.Error)
+	}
+	terminalAuditFor(t, h, jobID, "delete.prefix.partial", "media/scope/", "verify_mismatch")
 }
