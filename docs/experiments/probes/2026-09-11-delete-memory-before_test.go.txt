@@ -1,0 +1,368 @@
+package deletion
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"runtime"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/csmart/aeronautes/internal/swiftcontrol"
+)
+
+const probePageSize = 10000
+const probeBulkSize = 1000
+const probeSampleSize = 200
+
+// This deliberately generous witness exceeds one listing page, one
+// request and both display samples. It is not a proposed product RAM
+// budget: retained identities exceeding it after the stream finishes
+// demonstrate that those existing bounds do not constrain the result.
+const probeRetainedNameWitness = probePageSize + probeBulkSize + 2*probeSampleSize
+
+func probeName(i int) string {
+	return fmt.Sprintf("scope/%s/obj-%08d", strings.Repeat("x", 96), i)
+}
+
+type probeProducerStats struct {
+	Requested    int    `json:"requested"`
+	BulkCalls    int    `json:"bulk_calls"`
+	ListCalls    int    `json:"list_calls"`
+	ListedRows   int    `json:"listed_rows"`
+	MaxListRows  int    `json:"max_list_rows"`
+	MaxBulkNames int    `json:"max_bulk_names"`
+	Problem      string `json:"problem"`
+}
+
+// The fixture stores cardinalities and a deletion watermark, never a
+// namespace or request history. Ordered successful requests advance the
+// watermark; reported failures leave every generated object present.
+type probeProducer struct {
+	mu      sync.Mutex
+	n       int
+	success bool
+	stats   probeProducerStats
+}
+
+func (p *probeProducer) problem(w http.ResponseWriter, format string, args ...any) {
+	if p.stats.Problem == "" {
+		p.stats.Problem = fmt.Sprintf(format, args...)
+	}
+	http.Error(w, "owned probe rejected request", http.StatusBadRequest)
+}
+
+func (p *probeProducer) emit(w http.ResponseWriter, value any) {
+	if err := json.NewEncoder(w).Encode(value); err != nil && p.stats.Problem == "" {
+		p.stats.Problem = "response encode: " + err.Error()
+	}
+}
+
+func (p *probeProducer) write(w http.ResponseWriter, text string) bool {
+	if _, err := io.WriteString(w, text); err != nil {
+		if p.stats.Problem == "" {
+			p.stats.Problem = "response write: " + err.Error()
+		}
+		return false
+	}
+	return true
+}
+
+func (p *probeProducer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if r.Method == http.MethodGet && r.URL.Path == "/auth/v1.0" {
+		if r.Header.Get("X-Auth-User") != "owned:probe" || r.Header.Get("X-Auth-Key") != "owned-fixture-only" {
+			p.problem(w, "unexpected owned authentication")
+			return
+		}
+		w.Header().Set("X-Storage-Url", "http://"+r.Host+"/v1/AUTH_owned")
+		w.Header().Set("X-Auth-Token", "owned-fixture-token")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method == http.MethodGet && r.URL.Path == "/info" {
+		p.write(w, `{"swift":{"version":"owned-generated-probe"},"bulk_delete":{"max_deletes_per_request":1000}}`)
+		return
+	}
+	if r.Header.Get("X-Auth-Token") != "owned-fixture-token" {
+		p.problem(w, "unexpected storage authentication")
+		return
+	}
+	if r.Method == http.MethodPost && r.URL.Path == "/v1/AUTH_owned" && r.URL.Query().Has("bulk-delete") {
+		p.bulk(w, r)
+		return
+	}
+	if r.Method == http.MethodGet && r.URL.Path == "/v1/AUTH_owned/media" {
+		p.list(w, r)
+		return
+	}
+	p.problem(w, "unexpected method/path: %s %s", r.Method, r.URL.Path)
+}
+
+func (p *probeProducer) bulk(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	// Only the current request is buffered so reply rows can name it.
+	scanner := bufio.NewScanner(http.MaxBytesReader(w, r.Body, 256<<10))
+	paths := make([]string, 0, probeBulkSize)
+	for scanner.Scan() {
+		if len(paths) >= probeBulkSize || p.stats.Requested+len(paths) >= p.n {
+			p.problem(w, "request exceeds owned namespace or batch bound")
+			return
+		}
+		path := scanner.Text()
+		want := "/media/" + probeName(p.stats.Requested+len(paths))
+		if path != want {
+			p.problem(w, "request identity %q, want %q", path, want)
+			return
+		}
+		paths = append(paths, path)
+	}
+	if err := scanner.Err(); err != nil {
+		p.problem(w, "request read: %v", err)
+		return
+	}
+	if len(paths) == 0 {
+		p.problem(w, "empty bulk request")
+		return
+	}
+	p.stats.BulkCalls++
+	p.stats.Requested += len(paths)
+	p.stats.MaxBulkNames = max(p.stats.MaxBulkNames, len(paths))
+	response := struct {
+		Deleted  int         `json:"Number Deleted"`
+		NotFound int         `json:"Number Not Found"`
+		Status   string      `json:"Response Status"`
+		Body     string      `json:"Response Body"`
+		Errors   [][2]string `json:"Errors"`
+	}{Status: "200 OK", Errors: [][2]string{}}
+	if p.success {
+		response.Deleted = len(paths)
+	} else {
+		response.Status = "400 Bad Request"
+		for _, path := range paths {
+			response.Errors = append(response.Errors, [2]string{path, "500 Internal Server Error"})
+		}
+	}
+	p.emit(w, response)
+}
+
+func (p *probeProducer) list(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	limit, err := strconv.Atoi(q.Get("limit"))
+	if err != nil || limit < 1 || limit > probePageSize || q.Get("prefix") != "scope/" || q.Get("delimiter") != "" {
+		p.problem(w, "unexpected listing options")
+		return
+	}
+	start := 0
+	if marker := q.Get("marker"); marker != "" {
+		slash := strings.LastIndex(marker, "/obj-")
+		if slash < 0 {
+			p.problem(w, "invalid marker")
+			return
+		}
+		i, err := strconv.Atoi(marker[slash+5:])
+		if err != nil || i < 0 || i >= p.n || marker != probeName(i) {
+			p.problem(w, "invalid marker identity")
+			return
+		}
+		start = i + 1
+	}
+	if p.success {
+		start = max(start, p.stats.Requested)
+	}
+	end := min(start+limit, p.n)
+	p.stats.ListCalls++
+	p.stats.ListedRows += end - start
+	p.stats.MaxListRows = max(p.stats.MaxListRows, end-start)
+	if !p.write(w, "[") {
+		return
+	}
+	for i := start; i < end; i++ {
+		if i > start && !p.write(w, ",") {
+			return
+		}
+		row := fmt.Sprintf(`{"name":%q,"bytes":1,"hash":"9dd4e461268c8034f5c8564e155c67a6","content_type":"application/octet-stream","last_modified":"2026-09-12T00:00:00.000000"}`, probeName(i))
+		if !p.write(w, row) {
+			return
+		}
+	}
+	p.write(w, "]")
+}
+
+func (p *probeProducer) snapshot() probeProducerStats {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.stats
+}
+
+type probeMemory struct {
+	HeapAlloc   uint64 `json:"heap_alloc_bytes"`
+	HeapObjects uint64 `json:"heap_objects"`
+	RSSKiB      int64  `json:"rss_kib"`
+}
+
+func probeMemoryNow(t *testing.T) probeMemory {
+	t.Helper()
+	runtime.GC()
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	data, err := os.ReadFile("/proc/self/status")
+	if err != nil {
+		t.Fatalf("measurement setup: %v", err)
+	}
+	for line := range strings.SplitSeq(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 3 && fields[0] == "VmRSS:" && fields[2] == "kB" {
+			rss, err := strconv.ParseInt(fields[1], 10, 64)
+			if err != nil {
+				t.Fatalf("measurement RSS parse: %v", err)
+			}
+			return probeMemory{m.HeapAlloc, m.HeapObjects, rss}
+		}
+	}
+	t.Fatal("measurement setup: VmRSS not found")
+	return probeMemory{}
+}
+
+func probeRun(t *testing.T, n int, success bool) (int, int) {
+	t.Helper()
+	if runtime.Version() != "go1.27.1" {
+		t.Fatalf("wrong toolchain: %s", runtime.Version())
+	}
+	producer := &probeProducer{n: n, success: success}
+	srv := httptest.NewServer(producer)
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 25*time.Second)
+	defer cancel()
+	session, err := swiftcontrol.New(swiftcontrol.Config{
+		AuthURL: srv.URL + "/auth/v1.0", Username: "owned:probe", APIKey: "owned-fixture-only",
+	})
+	if err != nil {
+		t.Fatalf("session setup: %v", err)
+	}
+	if err := session.Authenticate(ctx); err != nil {
+		t.Fatalf("authentication setup: %v", err)
+	}
+	capabilities, err := session.FetchCapabilities(ctx)
+	if err != nil || capabilities.BulkDeleteMaxDeletes() != probeBulkSize {
+		t.Fatalf("capability setup: %v, %+v", err, capabilities)
+	}
+	var failed, unresolved, progressCalls int64
+	var previousDeleted, previousFailed int64
+	var streamProblem string
+	checkStream := func(which string, ordinal *int64, name, detail string) {
+		if (*ordinal >= int64(n) || name != probeName(int(*ordinal)) || !strings.Contains(detail, "500 Internal Server Error")) && streamProblem == "" {
+			streamProblem = fmt.Sprintf("%s stream identity/detail mismatch at %d", which, *ordinal)
+		}
+		*ordinal++
+	}
+	before := probeMemoryNow(t)
+	started := time.Now()
+	result, err := DeletePrefix(ctx, session, capabilities, "media", "scope/", Options{
+		BulkSize: probeBulkSize, Passes: 3,
+		OnFailure:    func(name, detail string) { checkStream("failed", &failed, name, detail) },
+		OnUnresolved: func(name, detail string) { checkStream("unresolved", &unresolved, name, detail) },
+		OnProgress: func(deleted, count int64) {
+			progressCalls++
+			if (deleted < previousDeleted || count < previousFailed || count != failed) && streamProblem == "" {
+				streamProblem = "progress is inconsistent with streamed outcomes"
+			}
+			previousDeleted, previousFailed = deleted, count
+		},
+	})
+	elapsed := time.Since(started)
+	if err != nil || result == nil {
+		t.Fatalf("production execution failed before memory assertion: %v; producer=%+v", err, producer.snapshot())
+	}
+	stats := producer.snapshot()
+	if stats.Problem != "" || streamProblem != "" {
+		t.Fatalf("fixture/stream guard failed: producer=%+v stream=%q", stats, streamProblem)
+	}
+	if stats.Requested != n || stats.BulkCalls != (n+probeBulkSize-1)/probeBulkSize || stats.MaxBulkNames > probeBulkSize || stats.MaxListRows != min(n, probePageSize) {
+		t.Fatalf("incomplete or unbounded producer: %+v", stats)
+	}
+	if result.Strategy != StrategyBulk || result.NotFound != 0 || result.UntrustedReplies != 0 || len(result.UntrustedAggregates) != 0 || progressCalls != int64(stats.BulkCalls) {
+		t.Fatalf("wrong strategy/reply/progress outcome: strategy=%s untrusted=%d notfound=%d progress=%d calls=%d", result.Strategy, result.UntrustedReplies, result.NotFound, progressCalls, stats.BulkCalls)
+	}
+	wantFailures, wantRemaining, wantPasses, wantDeleted := int64(n), int64(1), 1, int64(0)
+	wantRows, wantListCalls := n+5, (n+probePageSize-1)/probePageSize+1+5
+	if success {
+		wantFailures, wantRemaining, wantPasses, wantDeleted = 0, 0, 2, int64(n)
+		wantRows, wantListCalls = n, (n+probePageSize-1)/probePageSize+1+1+1
+	}
+	if failed != wantFailures || unresolved != wantFailures || result.Failed != wantFailures || result.Unresolved != wantFailures || result.Deleted != wantDeleted || result.Remaining != wantRemaining || result.Passes != wantPasses {
+		t.Fatalf("public engine facts mismatch: failed=%d unresolved=%d result_failed=%d result_unresolved=%d deleted=%d remaining=%d passes=%d", failed, unresolved, result.Failed, result.Unresolved, result.Deleted, result.Remaining, result.Passes)
+	}
+	if stats.ListedRows != wantRows || stats.ListCalls != wantListCalls {
+		t.Fatalf("listing did not traverse the complete namespace and expected verification: %+v want rows=%d calls=%d", stats, wantRows, wantListCalls)
+	}
+	if len(result.Failures) != int(min(wantFailures, probeSampleSize)) || len(result.Unresolveds) != int(min(wantFailures, probeSampleSize)) {
+		t.Fatal("display sample cap was not preserved")
+	}
+	for i, item := range result.Failures {
+		if item.Name != probeName(i) || item.Err != "500 Internal Server Error" {
+			t.Fatal("failure sample has the wrong identity or reason")
+		}
+	}
+	for i, item := range result.Unresolveds {
+		if item.Name != probeName(i) || !strings.Contains(item.Err, "no observation establishes whether the object was destroyed") {
+			t.Fatal("unresolved sample has the wrong identity or reason")
+		}
+	}
+	failedMap, unresolvedMap := len(result.seenFailed), len(result.seenUnresolved)
+	if failedMap != int(wantFailures) || unresolvedMap != int(wantFailures) {
+		t.Fatalf("before-source characterization changed: retained maps=%d,%d expected=%d", failedMap, unresolvedMap, wantFailures)
+	}
+	held := probeMemoryNow(t)
+	runtime.KeepAlive(result)
+	result = nil
+	released := probeMemoryNow(t)
+	measurement := struct {
+		N                int                `json:"n"`
+		Success          bool               `json:"success"`
+		FailedMap        int                `json:"retained_failed_map_names"`
+		UnresolvedMap    int                `json:"retained_unresolved_map_names"`
+		FailedStream     int64              `json:"failed_stream_names"`
+		UnresolvedStream int64              `json:"unresolved_stream_names"`
+		Bound            int                `json:"per_map_witness_bound"`
+		Seconds          float64            `json:"execution_seconds"`
+		Before           probeMemory        `json:"before"`
+		Held             probeMemory        `json:"held_result"`
+		Released         probeMemory        `json:"released_result"`
+		HeapDelta        int64              `json:"held_heap_delta_bytes"`
+		Producer         probeProducerStats `json:"producer"`
+	}{n, success, failedMap, unresolvedMap, failed, unresolved, probeRetainedNameWitness, elapsed.Seconds(), before, held, released, int64(held.HeapAlloc) - int64(before.HeapAlloc), stats}
+	encoded, err := json.Marshal(measurement)
+	if err != nil {
+		t.Fatalf("measurement encode: %v", err)
+	}
+	t.Logf("MEASUREMENT %s", encoded)
+	return failedMap, unresolvedMap
+}
+
+func TestDeletePrefixBeforeGeneratedSuccessControl(t *testing.T) {
+	failed, unresolved := probeRun(t, 50000, true)
+	if failed > probeRetainedNameWitness || unresolved > probeRetainedNameWitness {
+		t.Fatalf("all-success retained names exceed witness bound: %d %d", failed, unresolved)
+	}
+}
+
+func TestDeletePrefixBeforeGeneratedFailureGrowth(t *testing.T) {
+	for _, n := range []int{1000, 10000, 50000} {
+		t.Run(strconv.Itoa(n), func(t *testing.T) {
+			failed, unresolved := probeRun(t, n, false)
+			if failed > probeRetainedNameWitness || unresolved > probeRetainedNameWitness {
+				t.Fatalf("EXPECTED_BOUND_FAILURE: retained result indexes hold %d failed and %d unresolved identities, exceeding %d despite streamed pages/batches and 200-record samples", failed, unresolved, probeRetainedNameWitness)
+			}
+		})
+	}
+}
