@@ -48,6 +48,8 @@ jobs:
           if [ -n "$diff" ]; then echo "gofmt needed on:"; echo "$diff"; exit 1; fi
       - name: Verify patched Swift source and checker refusals
         run: make verify-swift-source
+      - name: Test Swift diagnostic collection
+        run: python3 scripts/saio-diagnostics-test.py
       - name: Test upstream Swift core against its local mock
         run: make test-swift-core
       - name: Test keychain protocol on an isolated D-Bus service
@@ -212,6 +214,18 @@ jobs:
           grep -E '"total(Covered|Required)"|"actionsWithGaps"|"contractHash"' scenario-coverage.json
           grep -q '"schemaVersion": 3' scenario-coverage.json || { echo "::error::unexpected scenario report schema"; exit 1; }
           grep -q '"valid": true' scenario-coverage.json || { echo "::error::scenario report marks the run invalid"; exit 1; }
+      - name: Collect Swift and runner diagnostics
+        if: always()
+        timeout-minutes: 2
+        run: python3 scripts/saio-diagnostics.py saio-diagnostics
+      - name: Upload Swift and runner diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: saio-diagnostics
+          path: saio-diagnostics/
+          retention-days: 7
+          if-no-files-found: warn
       # Upload the report AND the raw stream even on failure, so an invalid or
       # partial run is diagnosable (codex war-room round-5 F-03).
       - name: upload scenario-coverage report
