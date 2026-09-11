@@ -5191,6 +5191,8 @@ The bulk range's final review found that its run-wide failed and unresolved iden
 Review that contract first, then prove the increasing paginated all-failure case and implement the deletion-private bounded index as a reviewed storage prerequisite.
 Replace the maps and connect checked dispatch, draining and attempt evidence with the counters, recent drawer, older history and atomic job/audit completion as one coherent failure-path correction.
 Exact distinct counts still apply when the index works, including when the separate retained-list writer fails.
+The ADR's caller compatibility rules also stop benchmark cleanup from retrying after storage failure and qualify the forced DLO caller's segment counts while disclosing its already-deleted manifest.
+The storage correction preserves healthy parallel failure classification; its separate unresolved stream remains a recorded DS-08 follow-up rather than being introduced implicitly with the index.
 If issued outcomes cannot be indexed, stop new dispatch, report final identity totals unavailable and retain available attempt evidence without calling it a complete distinct set.
 Require resource-growth and storage-failure controls, the existing identity/encoding/effect regressions, renewed range review and all five PR/master checks before delivery.
 The sweep re-attempt hazard, broader retention durability, DS-08/P24 closure and valuable-data acceptance remain open.
