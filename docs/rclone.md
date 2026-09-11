@@ -110,6 +110,11 @@ Names containing any rune of the pinned set (U+201B, U+2400–U+241F, U+2421, U+
 | `--transfers`, `--checkers`, `--tpslimit`, `--bwlimit` | performance profile (§40–41) | ✓ bwlimit throttling exercised |
 | `--stats-one-line` / stats via JSON log | drawer progress (§47) | ✓ |
 
+The proposed [ADR 0038 Copy representation correction](adr/0038-copy-representations.md) adds one fixed `--no-gzip-encoding` argument to both `copy` and `copyto` only for a runner explicitly selected by the Copy service.
+It disables automatic gzip negotiation/decoding for requests through the child's Swift HTTP transport, sends no `Accept-Encoding` header itself, and retains the false default for local upload/download runners.
+The [before experiment](experiments/2026-09-12-copy-representations.md) reproduces gzip staging failure on the unchanged baseline; this proposed surface is not yet implemented or compatibility-approved.
+Keep the flag before `--` and preserve the existing gateway, credentials, TLS, retry, cleanup and metadata contracts.
+
 ## Deliberately never set
 
 | Flag | Why |
