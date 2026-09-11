@@ -133,3 +133,22 @@ Its 3,746 terminal test names contain 3,481 passing leaves and one explicit `Tes
 The event stream has SHA-256 `254bbe478546613dd420a1628354dbb800340fbc1d0ea3637358fb743d350f34`.
 The run began at `c4574c49`; documentation and collector files changed while it ran, but Go and module files remained identical throughout.
 The same local runtime and listener differences described above apply, and this pass does not establish the causes of the three hosted failures.
+
+## Logging-rule correction plan
+
+The new logger control requires a narrow exception to the earlier unchanged-image-configuration constraint: correct only the separate error-selection rule in the disposable CI fixture.
+Keep every Swift request/storage setting, authentication setting, worker setting and image digest unchanged.
+This changes which messages reach an existing diagnostic file, not the response or data path under test.
+
+Add a small startup helper which accepts one exact original `+\..err:` line or one exact already-corrected `+\.err:` line in `/etc/socklog.rules/~-errors`.
+For the original form, replace only that line while preserving every other byte; for the corrected form, perform no write.
+Missing, duplicate or ambiguous forms must fail before executing the image's original `/init`.
+Create the pinned container, copy the reviewed helper into it and start it through that helper, so no running service needs its logger restarted or rules replaced.
+Keep the existing readiness check and five-job gate; startup failure must remain a failed integration setup.
+
+Tests must cover the one-line correction, the already-corrected control, preservation of unrelated rules, rejection without writes and refusal to start the image after a configuration error.
+Verify workflow syntax and the unchanged suite/gates.
+Against a fresh owned container from the exact pin, emit a clearly marked synthetic error through its real syslog socket, then require that marker in the redacted error-log observation.
+Keep the synthetic control separate from actual test failures, verify the ordinary Swift readiness endpoint, and retain actual commands and exits.
+Obtain independent local review of the helper, workflow and evidence before the next complete hosted run; then inspect the hosted error-log artifact before claiming the diagnostic path works there.
+This plan neither diagnoses the historical HTTP 503 responses nor permits a merge or removal of the valuable-data hold.
