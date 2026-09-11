@@ -459,6 +459,31 @@ The report SHA-256 is `227f34f9cfe0cd1ef341e1ca4405c2f3f4ab04917efa32305faeec10c
 The complete frontend suite also passed on this unchanged implementation: 1,141 tests in 29 files, no failures or pending tests, and an actual zero exit after 11.545 seconds.
 These results supplement the focused storage-failure, resource, UI, binding and static evidence above; they do not replace native acceptance or the five-job PR and resulting-master checks.
 
+## CI cancellation observer correction
+
+[PR94 run 34629240691](https://github.com/csmart/aeronautes/actions/runs/34629240691) failed the Go job at `TestIdentityIndexCancellationAfterInserts/cancelled_true` on `fa11097c290e74e4007c69c0991d0948bc0eaa86`.
+The frontend, smoke and real-Swift integration jobs passed; the aggregate gate correctly failed.
+An unchanged-source local race run reproduced the same two-row assertion in two of 200 cancelled cases, with all 200 healthy controls passing; the actual Go exit was one.
+
+The old observer queried the writer's pinned connection, which can still see its uncommitted insertion while automatic context rollback is pending.
+Go 1.27.1 marks the transaction done before the driver rollback runs, so a competing rollback can return `ErrTxDone` without joining it.
+The correction opens an independent reader using the existing private `mode=rw` URI and checks its query and close errors.
+Before cancellation, the maintained test now requires the transaction to see two rows while the independent committed view sees only the previous row.
+That assertion deterministically fails with the old observer in both cases; the corrected observer passes 200 healthy and 200 cancelled cases under the race detector.
+The test still requires no published insertion marks, one committed row after cancellation and refusal of later accounting.
+No production code, sleep, retry, count expectation or CI budget changes.
+
+A separate owned probe using the unchanged production index and the pinned Go/SQLite sources held the real SQLite rollback callback.
+Production connection close remained blocked and the index file remained present until rollback was released; close then returned nil and removed the private directory.
+Its three leaf cases passed under race instrumentation.
+This establishes the observed driver-rollback and connection-release ordering, not a checked rollback result from Go's automatic rollback path, a hard filesystem interruption deadline or every goroutine's final exit.
+
+The corrected test file has SHA-256 `292e6b4d110b8c82f5e5481dfdd2ab3821355eed7cb0970b8a1bad52e69b9cd9`.
+The whole deletion package then passed `go test -mod=readonly -race -count=1 -parallel=3 -timeout=3m -json ./internal/deletion` with the same owned Swift and pinned tools: actual exit zero in 14.173 seconds, 110 passing leaves and no failures or skips.
+Both maintained real-Swift groups passed, source hashes stayed unchanged during verification, and gofmt, goimports, package vet and `git diff --check` were clean.
+The package stdout SHA-256 is `2b086e29cd19c145b54779e20cbd670e86f6520519d535d9741f2571342f97ae`.
+The earlier complete application suite is evidence for the unchanged production implementation; this test correction still requires independent review and all five jobs on its new PR head before merge.
+
 ## Remaining limits
 
 This slice settles what a run knows about each requested name and how that is stated, and nothing else.

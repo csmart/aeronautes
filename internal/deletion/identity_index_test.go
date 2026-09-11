@@ -31,8 +31,20 @@ func testIdentityIndex(t *testing.T) *identityIndex {
 
 func identityRows(t *testing.T, index *identityIndex) int {
 	t.Helper()
+	// Context rollback can still be running after Commit returns. The
+	// writer's connection can see pending inserts, so it cannot establish
+	// which identities committed.
+	reader, err := sql.Open("sqlite", identityIndexURI(index.path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := reader.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
 	var count int
-	if err := index.conn.QueryRowContext(t.Context(), "SELECT count(*) FROM seen").Scan(&count); err != nil {
+	if err := reader.QueryRowContext(t.Context(), "SELECT count(*) FROM seen").Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	return count
@@ -231,6 +243,9 @@ func TestIdentityIndexCancellationAfterInserts(t *testing.T) {
 				var count int
 				if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM seen").Scan(&count); err != nil || count != 2 {
 					t.Fatalf("pending insertion: count=%d err=%v", count, err)
+				}
+				if count := identityRows(t, index); count != 1 {
+					t.Fatalf("committed view includes pending insertion: rows=%d, want the previous row only", count)
 				}
 				reached = true
 				if cancelled {
