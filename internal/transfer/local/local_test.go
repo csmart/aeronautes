@@ -307,8 +307,9 @@ func TestNativeDownloadNeverLeavesPartials(t *testing.T) {
 	dest := t.TempDir()
 
 	// Short read: item.Size larger than the object → refuse + no file.
+	destination := testDestination(t, dest)
 	outcome := nativeDownload(context.Background(), session, "media",
-		DownloadItem{Name: "ok.bin", RelPath: "short.bin", Size: 9999}, dest, filepath.Join(dest, ".aeronautes-part-short"))
+		DownloadItem{Name: "ok.bin", RelPath: "short.bin", Size: 9999}, destination, filepath.Join(dest, ".aeronautes-part-short"))
 	placed, err := outcome.Result == transfercopy.ResultCopied, outcome.err()
 	if placed || err == nil || !strings.Contains(err.Error(), "short") {
 		t.Fatalf("short download = %v", err)
@@ -318,7 +319,7 @@ func TestNativeDownloadNeverLeavesPartials(t *testing.T) {
 	}
 	// Clean copy lands with exact bytes.
 	if outcome := nativeDownload(context.Background(), session, "media",
-		DownloadItem{Name: "ok.bin", RelPath: "ok.bin", Size: int64(len("complete-content"))}, dest, filepath.Join(dest, ".aeronautes-part-ok")); outcome.Result != transfercopy.ResultCopied || outcome.err() != nil {
+		DownloadItem{Name: "ok.bin", RelPath: "ok.bin", Size: int64(len("complete-content"))}, destination, filepath.Join(dest, ".aeronautes-part-ok")); outcome.Result != transfercopy.ResultCopied || outcome.err() != nil {
 		t.Fatal(outcome.err())
 	}
 	data, err := os.ReadFile(filepath.Join(dest, "ok.bin"))

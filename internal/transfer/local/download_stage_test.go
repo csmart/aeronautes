@@ -112,6 +112,14 @@ func TestDownloadStageCleanupPreservesOtherEntries(t *testing.T) {
 			if err := os.MkdirAll(filepath.Join(stage, "nested", "leaf"), 0700); err != nil {
 				t.Fatal(err)
 			}
+			// The handles are bound before anything replaces the stage,
+			// exactly as the executor binds them when it creates the stage.
+			destination := testDestination(t, root)
+			held, err := destination.openChildDirectory(destination.root, "stage")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = held.Close() })
 			remove := func(relative string) {
 				if err := os.Remove(filepath.Join(root, relative)); err != nil {
 					t.Fatal(err)
@@ -161,7 +169,9 @@ func TestDownloadStageCleanupPreservesOtherEntries(t *testing.T) {
 				remove("stage/nested")
 				remove("stage")
 				writeDownloadStageFile(t, root, "stage", "replacement root bytes")
-				issues = 3
+				// The planned directories are absent in the held stage, so only
+				// the foreign file at the stage's name is an issue; it is retained.
+				issues = 1
 			}
 			want := snapshotDownloadStage(t, root)
 			if issues < 3 {
@@ -171,7 +181,7 @@ func TestDownloadStageCleanupPreservesOtherEntries(t *testing.T) {
 					delete(want, "stage")
 				}
 			}
-			result := cleanupDownloadStage(stage, map[string]DownloadItem{"proof": {RelPath: "nested/leaf/proof"}})
+			result := cleanupDownloadStage(destination, held, "stage", map[string]DownloadItem{"proof": {RelPath: "nested/leaf/proof"}})
 			if result.Issues != issues || (result.FirstError != "") != (issues > 0) {
 				t.Errorf("cleanup outcome differs: %+v; want %d issues", result, issues)
 			}
