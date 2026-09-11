@@ -228,3 +228,42 @@ Exercise formatting, mount identity and cleanup where the runtime permits actual
 Obtain independent review before pushing, then run the complete hosted suite and inspect the actual mount, probe and diagnostic evidence.
 No merge is permitted until all five current-head/current-base PR jobs pass; verify all five resulting master jobs afterwards.
 The valuable-data hold remains in place.
+
+## Dedicated storage implementation and local controls
+
+The integration job now formats a fresh four-GiB sparse file with the pinned image's formatter, mounts it as XFS, and checks both the mount type and its loop device's exact backing-file path.
+It gives the Swift service user ownership before binding the filesystem over `/srv/node`, so the original image initialization still creates its six device directories.
+The storage helper runs as that service user before Swift starts and requires one writable XFS filesystem-root mount, ownership by UID/GID 1000, and simultaneous exact readback of a 65,536-byte metadata attribute and a 32-byte checksum attribute.
+It removes its temporary probe on success and on write or readback failure.
+Formatting, mounting, probing and teardown have command and step deadlines within the existing job budget.
+
+Teardown runs after diagnostic and scenario artifact collection.
+It removes only the three named job containers before attempting a normal unmount, then removes this job's backing file and empty directories.
+Failed container observation, container removal, mount observation or unmounting refuses backing-file deletion.
+An interrupted setup with no data directory is accepted for cleanup; an unexpected file or symlink at that path is refused.
+The first cleanup control exposed a missing-directory failure, which was corrected before review.
+
+The eight storage-helper tests pass.
+Six separate omission controls remove the mount or ownership checks, remove their invocation, reduce the metadata payload to 4,096 bytes, or omit the exact readback comparison.
+Every control produces assertion failures with no test execution errors.
+The maintained workflow-cleanup test exercises nine cases using fake container and mount commands with real files confined to disposable directories.
+It checks successful cleanup, partial setup, unexpected path entries, failure preservation and removal of all containers before unmounting.
+Substituting the original cleanup body into a private copy reproduces the maintained missing-directory assertion failure.
+Two further controls which ignore container-removal or unmount errors each fail the corresponding refusal-exit assertion, with no test execution errors.
+The CI workflow passes linting, and the aggregate gate still accepts success and rejects nineteen incomplete result combinations.
+
+The exact pinned image's `/sbin/mkfs.xfs` successfully formatted an owned four-GiB sparse file locally.
+The subsequent mount command failed with exit 32 because this runtime could not set up a loop device; the metadata admission helper did not run on that file.
+The owned formatter container was removed, and a subsequent mount observation found no mount at the target.
+This is an incomplete local fixture validation, not a successful loop-mount test.
+
+A separate owned XFS-directory bind in the pinned image successfully ran the real metadata writes and readbacks as UID/GID 1000, leaving no probe file.
+The same control then required the helper's mount check to reject that ordinary subdirectory as unsuitable for the dedicated fixture.
+The helper had SHA-256 `d09f96438144ab711511b45cae4cee7a6d2a8c9903359c64af594c9789f52ca6`.
+This proves the attribute capacity and refusal on that local bind only; it does not validate the missing loop-mounted path.
+The local runtime used rootful Podman with the previously disclosed host-network adaptation, while hosted CI uses Docker with isolated formatter and probe containers.
+
+No Go or module file changed from the previously reviewed application implementation.
+The metadata-boundary scenarios, producer result, scenario reconciliation, image pin, Swift settings, concurrency, time budgets and five required checks are preserved.
+Independent implementation review and a complete hosted run must still establish actual mount identity, successful admission, the unchanged suite and visible teardown before any merge.
+The earlier hosted causes remain unproved, and the valuable-data hold remains in force.
