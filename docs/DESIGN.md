@@ -5153,6 +5153,10 @@ The existing CI contract requires investigation before retry, every required job
    A passing retry does not establish the cause of an earlier failure or clear the valuable-data hold.
 4. The next run retained only the final access-log window, after the failing request, because the pinned image rotates that busy log.
    Extend collection to the image's separate error log and its retained rotations, prove that an earlier rotated error survives collection and redaction, then inspect the next hosted artifact without changing Swift configuration or any test gate.
+5. A marked error and an isolated `s6-log` control demonstrate that the pinned image's separate error filter misses ordinary `.err` messages.
+   Correct only that demonstrated logging rule before the original image initialization starts, accept the known corrected rule without further changes, and refuse unexpected rule contents before starting Swift.
+   Review the startup helper and its refusal tests, then prove marked error routing through the actual pinned logger and redacted collector before pushing the diagnostic changes.
+   The exception permits only the disposable fixture's error-selection rule; Swift request/storage configuration, image pin, suite, concurrency and all acceptance gates stay unchanged.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
