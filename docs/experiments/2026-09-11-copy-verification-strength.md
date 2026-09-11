@@ -5,6 +5,10 @@
 This is a bounded prerequisite within the DS-04 copy verification finding in [the data safety audit](../audits/2026-09-05/data-safety.md) and its [remediation row](../audits/2026-09-05/remediation-plan.md).
 It does not settle DS-04 and it does not establish equality.
 
+This document records PR93's change-detection slice before the separate [plain-source staged-content correction](2026-09-11-staged-copy-content.md).
+That later correction adds an assembled content read before publishing a staged DLO; the wrong-initial-copy observations below describe the earlier implementation.
+The aggregate stamp and later skip still have only their stated change-detection meaning.
+
 The distinction is the whole point of the slice.
 Comparing a destination against an identity recorded when this executor committed it detects change since that observation.
 It cannot supply the observation that the committed bytes were ever correct, because the staged commit path still accepts a large object on logical size alone.

@@ -695,6 +695,11 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 		if err := e.verifyStagedSegments(ctx, staged, src.ContentLength); err != nil {
 			return failed(EffectUnresolved, StageStaging, CodeIncomplete, "stage-segments", err)
 		}
+		if src.Class == swiftcontrol.ClassPlain {
+			if code, err := e.verifyStagedContent(ctx, src, stagedName); err != nil {
+				return failed(EffectUnresolved, StageStaging, code, "stage-content", err)
+			}
+		}
 	}
 
 	_, err = e.cfg.Dest.ObjectDetail(ctx, e.cfg.DstContainer, dstName)

@@ -223,8 +223,7 @@ func TestPlainPairDecisionUnchanged(t *testing.T) {
 }
 
 // corruptStageEngine replaces the first staged segment with different
-// bytes of the same length after the engine reports success, which is
-// the staged-verification gap this slice does not close.
+// bytes of the same length so length and listing checks cannot catch it.
 type corruptStageEngine struct{ inner *fakeEngine }
 
 func (e corruptStageEngine) Copy(ctx context.Context, src, dst string, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
@@ -240,32 +239,62 @@ func (e corruptStageEngine) CopyTo(ctx context.Context, src, dst string, onEvent
 	return e.inner.CopyTo(ctx, src, dst, onEvent)
 }
 
-func TestWrongStagedBytesRemainSkippableGap(t *testing.T) {
-	// UNRESOLVED DS-04 reproduction, recorded with its actual outcome.
-	// The staged commit path accepts a large object on logical size
-	// alone, so bytes that never matched the source can be published.
-	// The aggregate then stamps those wrong bytes, and because nothing
-	// changes afterwards the destination still skips as equal. Change
-	// detection cannot supply the missing first observation; only the
-	// staged-content sequence can. This test asserts the gap so it
-	// cannot close silently.
+func TestWrongStagedBytesRefusedBeforePublication(t *testing.T) {
 	w := newWorld(t)
 	seed(w.srcMock, "media", "asset", []byte("GOODDATA"), nil)
 	e := newExecutor(t, w, corruptStageEngine{inner: &fakeEngine{w: w, chunk: 4, interruptAfter: -1}})
+	var observed []Observation
+	e.cfg.Recorder = &Recorder{
+		Admit: func(Admission) error { return nil },
+		Execute: func(_ string, observation Observation) error {
+			observed = append(observed, observation)
+			return nil
+		},
+		Verify: func(string, Observation) error { return nil },
+	}
+	var recovery []string
+	e.cfg.OnRecovery = func(kind, _, _, _ string) error {
+		recovery = append(recovery, kind)
+		return nil
+	}
 	report, err := e.Run(context.Background(), []plan.Item{
 		{Name: "asset", Verdict: plan.VerdictNew, Route: plan.RouteRclone, SourceBytes: 8},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Copied != 1 {
-		t.Fatalf("staged corruption no longer commits: %+v — the gap may have closed, update this record", report)
+	if report.Copied != 0 || report.BytesCopied != 0 || len(report.Failures) != 1 {
+		t.Fatalf("wrong staged content was not refused: %+v", report)
 	}
-	if body := readDst(t, w, "asset"); body != "EVILDATA" {
-		t.Fatalf("live body = %q, want the unverified staged bytes", body)
+	want := Observation{Result: ResultFailed, Effect: EffectUnresolved,
+		Diagnostic: Diagnostic{Stage: StageStaging, Code: CodeUnverified}}
+	if len(observed) != 1 || observed[0] != want {
+		t.Fatalf("observations = %+v, want %+v", observed, want)
 	}
-	if skip := runUnknownOver(t, w); skip.SkippedEqual != 1 {
-		t.Fatalf("report = %+v — a wrong-at-stamp destination is expected to still skip; if this changed, the dependency is resolved and this record must be updated", skip)
+	if _, err := w.dst.ObjectDetail(context.Background(), "backup", "asset"); !swiftcontrol.IsNotFound(err) {
+		t.Fatalf("refused live name exists: %v", err)
+	}
+	stage := e.StagingPrefix() + "batch/asset"
+	if len(report.StagedResidue) != 1 || report.StagedResidue[0] != stage ||
+		len(report.CapturedPrefixes) != 1 || len(report.CommittedPrefixes) != 0 {
+		t.Fatalf("staging recovery lost: %+v", report)
+	}
+	if len(recovery) != 1 || recovery[0] != "captured" {
+		t.Fatalf("recovery events = %v, want only captured", recovery)
+	}
+	if body := readDst(t, w, stage); body != "EVILDATA" {
+		t.Fatalf("retained staged body = %q", body)
+	}
+	prefix := report.CapturedPrefixes[0]
+	wantNames := []string{"backup/" + stage, prefix.Container + "/" + prefix.Prefix + "00000000", prefix.Container + "/" + prefix.Prefix + "00000001"}
+	sort.Strings(wantNames)
+	if names := dstNames(t, w); !equalNames(names, wantNames) {
+		t.Fatalf("retained namespace = %v, want %v", names, wantNames)
+	}
+	for _, request := range w.dstMock.RequestLog() {
+		if request == "PUT /v1/AUTH_test/backup/asset" || strings.HasPrefix(request, "DELETE ") {
+			t.Errorf("refused content caused a write or cleanup: %s", request)
+		}
 	}
 }
 
