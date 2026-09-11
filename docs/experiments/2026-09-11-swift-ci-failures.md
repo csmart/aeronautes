@@ -173,3 +173,58 @@ Its event stream has SHA-256 `9a11822ff377857973ca280a8f2c1117d53414bea50872821d
 This is a focused control after the logging correction, separate from the earlier full-suite pass.
 The next hosted run must still demonstrate the corrected startup and artifact capture in Docker, and every required PR/master check remains mandatory.
 The logging correction explains a loss of diagnostic evidence, not the earlier HTTP 503 responses.
+
+## Fourth hosted run: extended-attribute failure
+
+[Run 34583178040](https://github.com/csmart/aeronautes/actions/runs/34583178040), attempt one on source `08a3454bdb8c16795168118ee531e49a5e7c3dc8`, completed with failed integration and aggregate checks.
+Go, frontend and smoke passed.
+The integration test step ran from 09:15:32 to 09:31:49 UTC on 11 September 2026.
+Its 3,746 terminal test names contain 3,476 passing leaves, two skips and four failed leaves: `TestCopySegmentChangeDetectionRealSwift`, `TestCopyRefusesOverwritesRealSwift`, and `TestCopyItemRecordsRealSwift/failed_1` and `/failed_401`.
+The raw job log has SHA-256 `7314a80d8d5c0aa9f5616ac6cf44182a304ad8c809ab9e97f1cf7e2031a5b901`; the uploaded event stream has SHA-256 `c8ab725bc669c490796f6095b5302a308e529a2dcf4e4c6eda2afda9024a2f02`.
+The scenario report correctly refuses the failed producer and names its workflow checkout `2349a3510e5e4ff533eb575c1fb0aa758c562a90`, which is GitHub's temporary merge commit rather than the source head.
+
+The corrected image startup succeeded, and all eleven diagnostic probes exited zero without a timeout or output truncation.
+The separate error-log observation contains 1,857 output bytes and has SHA-256 `bb0d102bdba1b5ef9fd9a8b91fae3834065f0e123009ca24171496fc83c6d538`.
+It records this sequence:
+
+1. At 09:30:38.532, `swift.obj.diskfile.write_metadata` fails in `xattr.setxattr` with `OSError: [Errno 28] No space left on device`.
+2. The same transaction, `tx8d819e1e57054e1aa6c3e-006aa3ca3e`, produces backend 507, a sixty-second error exclusion of `127.0.0.1:6200/swift-d5`, and a proxy PUT 503.
+3. The Copy publication assertion reports its partial outcome at 09:30:38.743.
+4. Proxy GET 503s at 09:30:38.936, 09:30:47.294 and 09:31:31.551 coincide with the three other failing leaves, while that node remains excluded.
+
+The after-suite snapshot reports about 10.5 GiB of available disk space, thirteen percent inode use, 6,468 MiB available memory, no container restart and zero cgroup out-of-memory events.
+Those resource observations are after the failed requests, not measurements of every request's resource state.
+The captured stack identifies an extended-attribute write failure; it does not identify which filesystem limit was reached, the backing filesystem type, or the exact metadata-boundary case executing then.
+The access-log window again contains later cleanup only.
+The preceding three runs have no equivalent error record, so their causes remain unproved.
+
+The [Linux extended-attribute documentation](https://www.man7.org/linux/man-pages/man7/xattr.7.html) describes filesystem-specific storage limits, and the [setxattr error contract](https://www.man7.org/linux/man-pages/man2/fsetxattr.2.html) includes insufficient extended-attribute space as `ENOSPC`.
+The [upstream SAIO guide](https://docs.openstack.org/swift/latest/development_saio) specifies XFS storage for tests.
+The hosted fixture currently stores its data in Docker's writable overlay.
+The local pinned fixture uses a different overlay implementation; the local workspace is XFS, and temporary files in both that workspace and local `/tmp` successfully round-trip attribute values from 2,048 through 60,000 bytes.
+These differences support investigating metadata-storage capacity; the local control does not reproduce the hosted failure.
+
+## Dedicated fixture storage plan
+
+Use a fresh four-GiB sparse backing file and a dedicated mount directory beneath the job's temporary directory.
+Format only that new file as XFS, using the formatter already present in the exact pinned image, and mount it through a loop device on the disposable runner.
+Do not format a pre-existing block device, edit host filesystem configuration or change another container's storage.
+Bind the mounted filesystem to the fixture's existing `/srv/node` path and preserve the pinned image's Swift user ownership and device initialization.
+Keep the image digest, original startup, reviewed logger correction, authentication, rings, request/storage settings and worker configuration unchanged.
+
+Before any suite starts, check the actual mounted filesystem and require a temporary file on the Swift data path to round-trip a 65,536-byte metadata attribute alongside its checksum-sized attribute.
+The pinned `write_metadata` implementation writes chunks up to that size; successful file creation alone cannot establish this capability.
+Use the fixture's service user for this check, remove the probe file, and refuse startup on a failed write, readback, ownership check or unexpected mount.
+Record the filesystem type and the storage-check result without credentials or object bodies.
+Bound formatter, mount, probe and teardown commands; retain the existing thirty-five-minute job and twenty-five-minute package budgets.
+
+Always collect the existing diagnostics before removing the owned container and unmounting this job's filesystem.
+Setup and teardown failures must remain visible, and a failed suite must remain failed.
+Keep every metadata-count and metadata-byte boundary scenario, application assertion, producer result, scenario reconciler, concurrency setting and required check unchanged.
+This storage correction grants no retry, transfer or cleanup authority to the application.
+
+Validate the real storage check on an owned fixture, including caught write/readback failures, and lint the workflow.
+Exercise formatting, mount identity and cleanup where the runtime permits actual loop mounts; record a missing capability as a local evidence gap rather than a pass.
+Obtain independent review before pushing, then run the complete hosted suite and inspect the actual mount, probe and diagnostic evidence.
+No merge is permitted until all five current-head/current-base PR jobs pass; verify all five resulting master jobs afterwards.
+The valuable-data hold remains in place.

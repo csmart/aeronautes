@@ -5157,6 +5157,10 @@ The existing CI contract requires investigation before retry, every required job
    Correct only that demonstrated logging rule before the original image initialization starts, accept the known corrected rule without further changes, and refuse unexpected rule contents before starting Swift.
    Review the startup helper and its refusal tests, then prove marked error routing through the actual pinned logger and redacted collector before pushing the diagnostic changes.
    The exception permits only the disposable fixture's error-selection rule; Swift request/storage configuration, image pin, suite, concurrency and all acceptance gates stay unchanged.
+6. The corrected logger captures an extended-attribute write failing with `ENOSPC`, a backend 507 and the sole object node being excluded for sixty seconds in the next hosted run.
+   Provide a dedicated, bounded XFS filesystem for the disposable fixture's data, following the upstream SAIO storage requirement, and verify metadata storage before the suite starts.
+   This next exception changes the fixture's backing filesystem only; preserve the metadata-boundary scenarios, every application assertion, Swift settings, image pin, concurrency and time budgets.
+   Review setup, bounded refusal, teardown and evidence before pushing; retain the failed run, then require all five PR jobs and resulting master jobs to pass.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
