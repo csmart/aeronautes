@@ -205,13 +205,20 @@ An explicit audit follow-up is therefore carried for fresh authority and identit
 4. Object-name encoding cases carried end to end without normalising the selected bytes: a space, a literal percent and percent-like text, a non-ASCII name, a newline-bearing name, and a name containing a slash.
 5. Batch sizes of one, two hundred and one, and a size that crosses a chunk boundary, so the chunk arithmetic is exercised rather than assumed, including the boundary where the display sample caps and the stream does not.
 6. Actual-service regressions on the owned mock and the owned Swift fixture, asserting the requested mutations that actually reached the service, the retained outcome for each requested identity, and unchanged collateral in both namespaces.
+Absence is established only by an authoritative not-found, and a survivor by reading its bytes back, so a transport or authentication failure cannot be read as a witnessed deletion.
 7. A service-level assertion for the mixed-count reply over the public job counters, the terminal state, the complete outcome stream and the audit trail, so the contract is proven where the operator reads it.
+The audit assertion names this job's exact terminal operation, resource, summary and result, so a start event does not satisfy it and a result outside the audit vocabulary cannot pass by accident.
 8. The streaming site in `deletePass` covered as well as the explicit-name site, since each defect exists once per site.
 9. Every deliberately broken variant rebuilt from its current source whenever a file it targets is rewritten. A variant whose subject has moved passes for the wrong reason and is indistinguishable from one that works, which is how two regressions were silently lost from this slice before a rebuild caught it.
 10. Rows whose status is missing, malformed, or itself a success, and two rows disagreeing about one identity, each rejected as an anomaly rather than trusted because the path matched.
 11. Controlled effect substitution through the public service and both callers, on both owned providers: the same substituted reply, once with the deletion forwarded and witnessed and once suppressed, proving the run classifies both identically and asserts neither outcome, with absence and survival witnessed authoritatively by an observer that never passed through the fault boundary.
+The two worlds are compared on state, counters, summary, the terminal audit fact and the complete retained records, not on presence alone.
+The buffered retention failure is carried through a public job as well, so the operator-visible result of a list that cannot be written is proven where it is read.
 12. The complete retained identity set read back from where the run said it is and compared beyond the display cap, so a run that advertises a list it never wrote fails.
-13. At least three deliberately broken variants, each failing its own check: one restoring the count-as-index assignment, one recording the echoed wire path as the name, and one dropping the foreign-row anomaly in silence. A variant that fails to compile is not a broken-guard result and does not count.
+Each identity must appear exactly once, and each reason must be drawn from the reply that produced it: a blamed identity carries the status its own row returned and still refuses to state an effect, and every other identity carries what was wrong with the reply.
+13. At least three deliberately broken variants, each failing its own check: one restoring the count-as-index assignment, one requiring the reply path to echo the sent spelling, and one dropping the foreign-row anomaly in silence.
+Two further variants are maintained as controls for the assertions themselves: one that emits no terminal audit event and one that replaces every retained reason with a claim that the object survived.
+Every variant is rebuilt from the current sources by one producer rather than kept as a copy, and a variant that fails to compile is not a broken-guard result and does not count.
 14. The full race suite with inventory reconciliation against the delivered name count, vet, gofmt, the Windows and macOS vets and internal builds on both architectures, and a clean module tidy.
 
 ## Remaining limits

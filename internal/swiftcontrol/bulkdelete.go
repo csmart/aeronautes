@@ -13,10 +13,11 @@ import (
 )
 
 // BulkDeleteFailure is one per-item failure resolved back to the name
-// the caller asked to delete. The reply echoes the request line, which
-// is percent-encoded and container-prefixed, so resolving it here — in
-// the only place that knows how the line was built — keeps every caller
-// from rebuilding that rule and drifting from it.
+// the caller asked to delete. The reply returns a container-prefixed,
+// percent-encoded path that is the service's own spelling of the name,
+// not the line this client sent, so the row is resolved by decoding it
+// and comparing identities here — in the only place that knows how the
+// line was built — rather than by matching text.
 type BulkDeleteFailure struct {
 	// Name is the requested object name, spelled exactly as the caller
 	// gave it.
@@ -33,7 +34,8 @@ type BulkDeleteResult struct {
 	Deleted  int64
 	NotFound int64
 	// Errors are the raw per-item failure rows: [path, status]. The path
-	// is the echoed request line, not an object name.
+	// is the service's spelling of a container-prefixed path, not an
+	// object name, and not necessarily the bytes this client sent.
 	Errors [][2]string
 	// Failures are those rows resolved to requested names, in reply
 	// order and preserving repeats, so a caller can see exactly what the
