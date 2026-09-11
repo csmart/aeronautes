@@ -1,0 +1,49 @@
+{
+  "environment": {
+    "AERONAUTES_OFFICIAL_RCLONE_DIR": "<pinned rclone 1.74.3 directory>",
+    "GOFLAGS": "-mod=mod",
+    "GOTOOLCHAIN": "go1.27.1",
+    "PATH": "pinned rclone first",
+    "real_swift": "AERONAUTES_SAIO_AUTH_URL=http://127.0.0.1:18080/auth/v1.0 AERONAUTES_REQUIRE_TWO_ACCOUNTS=1 AERONAUTES_REQUIRE_SECRET_SERVICE_FIXTURE=1"
+  },
+  "probes": {
+    "internal/systemtest/download_root_authority_test.go": {
+      "archive": "probes/2026-09-11-download-root-authority-service_test.go.txt",
+      "sha256": "29c3f8186df03b5d7f6d7c277c7608ceb6f6917257f0f69d299ddef3330b0c31"
+    },
+    "internal/transfer/local/download_root_authority_test.go": {
+      "archive": "probes/2026-09-11-download-root-authority_test.go.txt",
+      "sha256": "6b4f037283eca933fb851f1d19b94b87dd5d08802f0bf2386592ed554271380a"
+    }
+  },
+  "producers": [
+    {
+      "command": "go test -race -count=1 -run TestDownloadRootAuthorityProbe ./internal/transfer/local/ -v",
+      "exit": 1,
+      "failing_leaves": 7,
+      "log_sha256": "304cae7a6e7643e6836499ac641ff8f7a04ab768f696026b9be8e47e88ec85c6",
+      "name": "executor",
+      "passing_controls": 3
+    },
+    {
+      "command": "go test -race -count=1 -run TestDownloadRootAuthorityMock ./internal/systemtest/ -v",
+      "exit": 1,
+      "failing_leaves": 8,
+      "log_sha256": "3bb9d9e0eb96793e52cdf14269379cae388ab943507343d8fc6e548a7cd5fddc",
+      "name": "service mock",
+      "passing_controls": 3
+    },
+    {
+      "command": "go test -race -count=1 -run TestDownloadRootAuthorityRealSwift ./internal/systemtest/ -v",
+      "exit": 1,
+      "failing_leaves": 8,
+      "log_sha256": "25e788be5b82910cfa70c60b0643c3cca48ca07451fcd903220302dcdd98874b",
+      "name": "service real Swift",
+      "passing_controls": 3
+    }
+  ],
+  "rclone": "rclone v1.74.3",
+  "recorded": "2026-09-11T12:16:34.026428+00:00",
+  "source": "1b520ba2a80f281d5945250548137be7498a1f02",
+  "tree_state": "unchanged production; probes applied as untracked test files and removed before commit"
+}
