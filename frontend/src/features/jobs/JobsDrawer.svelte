@@ -36,7 +36,7 @@
 
   function progressOf(job: JobDTO): number | null {
     const planned = job.counters.objectsPlanned;
-    if (planned <= 0 || !isActive(job)) {
+    if (planned <= 0 || !isActive(job) || job.counters.deletionAccountingIncomplete) {
       return null;
     }
     // Operation-specific numerators: a delete job's progress is its
@@ -277,17 +277,21 @@
                   {bookmarkName(job.sourceBookmarkId)} → {bookmarkName(job.destBookmarkId)}
                 </span>
                 <span class="counts">
-                  {job.counters.objectsCopied}{#if job.counters.objectsPlanned > 0}/{job.counters
-                      .objectsPlanned}{/if}
-                  obj · {formatBytes(job.counters.bytesCopied)}
-                  {#if job.counters.objectsDeleted > 0}
-                    · {job.counters.objectsDeleted} deleted
-                  {/if}
-                  {#if job.counters.objectsFailed > 0}
-                    · <em class="bad">{job.counters.objectsFailed} failed</em>
-                  {/if}
-                  {#if job.counters.overwritesRefused > 0}
-                    · <em class="bad">{job.counters.overwritesRefused} {job.counters.overwritesRefused === 1 ? "overwrite" : "overwrites"} refused</em>
+                  {#if job.counters.deletionAccountingIncomplete}
+                    Last confirmed progress: {job.counters.objectsCopied} processed · {job.counters.objectsFailed} reported failures
+                  {:else}
+                    {job.counters.objectsCopied}{#if job.counters.objectsPlanned > 0}/{job.counters
+                        .objectsPlanned}{/if}
+                    obj · {formatBytes(job.counters.bytesCopied)}
+                    {#if job.counters.objectsDeleted > 0}
+                      · {job.counters.objectsDeleted} deleted
+                    {/if}
+                    {#if job.counters.objectsFailed > 0}
+                      · <em class="bad">{job.counters.objectsFailed} failed</em>
+                    {/if}
+                    {#if job.counters.overwritesRefused > 0}
+                      · <em class="bad">{job.counters.overwritesRefused} {job.counters.overwritesRefused === 1 ? "overwrite" : "overwrites"} refused</em>
+                    {/if}
                   {/if}
                 </span>
                 <span class="when">
@@ -323,6 +327,9 @@
                 {#if job.error}
                   <p class="error">{job.error}</p>
                 {/if}
+                {#if job.counters.deletionAccountingIncomplete}
+                  <p class="error">Deletion accounting is incomplete. Final failure and unresolved totals are unavailable.</p>
+                {/if}
                 {#if !isActive(job) && job.recoveryRecords > 0}
                   <p class="recovery-row">
                     {job.recoveryRecords} recovery {job.recoveryRecords === 1 ? "record" : "records"} retained; remote residue is unverified.
@@ -331,7 +338,9 @@
                 {#if expanded === job.id}
                   <div class="config num">
                     <span class="config-row"><span class="k">engine</span><span class="type-mono">{job.engine}</span></span>
-                    <span class="config-row"><span class="k">verified</span><span>{job.counters.objectsVerified}</span></span>
+                    {#if !job.counters.deletionAccountingIncomplete}
+                      <span class="config-row"><span class="k">verified</span><span>{job.counters.objectsVerified}</span></span>
+                    {/if}
                     {#each settingsRows(job) as [key, value] (key)}
                       <span class="config-row"><span class="k">{key}</span><span class="type-mono">{value}</span></span>
                     {/each}

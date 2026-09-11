@@ -21,6 +21,46 @@ function show(browser: BrowserState) {
   flushSync();
 }
 
+it.each([undefined, false, true])("qualifies deletion counters and retains history reasons (flag %s)", async (incomplete) => {
+  const api = newFakeApi();
+  const job: JobDTO = {
+    id: "delete-accounting", type: "delete_container", state: "partial", source: "selected/", destination: "(deleted)",
+    sourceBookmarkId: "a", destBookmarkId: "", createdAt: "2000-01-01T00:00:00Z", startedAt: "", finishedAt: "",
+    engine: "native", settings: "", recoveryRecords: 0,
+    error: "Deletion stopped; inspect retained admitted-attempt evidence at the recorded path.",
+    counters: { objectsPlanned: 10, objectsCopied: 2, objectsVerified: 2, objectsFailed: 3,
+      bytesPlanned: 100, bytesCopied: 0, overwrites: 0, overwritesRefused: 0, nativeRouted: 0, objectsDeleted: 0,
+      ...(incomplete === undefined ? {} : { deletionAccountingIncomplete: incomplete }) },
+  };
+  api.jobs = async () => [job];
+  api.jobHistory = async () => ({ jobs: [job], nextCursor: "" });
+  show(new BrowserState(api));
+  await vi.waitFor(() => expect(document.querySelector(".badge")?.textContent).toBe("partial"));
+  expect(document.querySelector(".error")?.textContent).toBe(job.error);
+  const counts = document.querySelector(".counts")?.textContent;
+  const qualifier = "Final failure and unresolved totals are unavailable";
+  if (incomplete) {
+    expect(counts).toContain("Last confirmed progress");
+    expect(counts).toContain("3 reported failures");
+    expect(counts).not.toMatch(/2\s*\/10/);
+    expect(counts).not.toContain("3 failed");
+    expect(document.body.textContent).toContain(qualifier);
+  } else {
+    expect(counts).toMatch(/2\s*\/10/);
+    expect(counts).toContain("3 failed");
+    expect(document.body.textContent).not.toContain(qualifier);
+  }
+  expect(document.querySelector(".progress")).toBeNull();
+  document.querySelector<HTMLButtonElement>(`[aria-label="Item details for job ${job.id}"]`)!.click();
+  flushSync();
+  expect(document.querySelector(".config")?.textContent?.includes("verified")).toBe(!incomplete);
+  [...document.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((button) => button.textContent?.trim() === "Job history")!.click();
+  flushSync();
+  await vi.waitFor(() => expect(document.querySelectorAll(".history-job")).toHaveLength(1));
+  expect(document.querySelector(".history-job")?.textContent).toContain(job.error);
+  expect(document.querySelector(".history-job")?.textContent?.includes(qualifier)).toBe(Boolean(incomplete));
+});
+
 it.each([false, true])("shows unavailable status over a stale active count (%s)", async (stale) => {
   const api = newFakeApi();
   api.jobs = async () => { throw new Error("final result could not be saved; inspect retained data before retrying"); };

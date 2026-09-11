@@ -10,6 +10,7 @@ package deletion
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -44,14 +45,12 @@ type Options struct {
 	Passes int
 	// OnProgress is told cumulative counts as the run advances.
 	OnProgress func(deleted, failed int64)
-	// OnFailure receives EVERY per-name reported failure (uncapped) —
+	// OnFailure receives every indexed per-name reported failure —
 	// the complete-set channel behind Result.Failures' bounded sample.
 	OnFailure func(name, detail string)
-	// OnUnresolved receives EVERY name whose effect this run cannot
-	// state (uncapped), which is a different fact from a reported
-	// failure and may describe the same name. Nothing here observes the
-	// store, so a name the service reported an error for is also
-	// unresolved.
+	// OnUnresolved receives every indexed bulk name whose effect this
+	// run cannot state, including reported failures. The parallel
+	// strategy currently records its reported-failure facet only.
 	OnUnresolved func(name, detail string)
 }
 
@@ -71,10 +70,17 @@ type UntrustedAggregate struct {
 	MalformedRows [][]string
 }
 
-// Failure is one name that would not die.
+// Failure is a reported error or unresolved effect, not proof of survival.
 type Failure struct {
 	Name string
 	Err  string
+}
+
+// UnindexedAttempt preserves an admitted request after accounting fails.
+// It may repeat a name and cannot supply a distinct failure count.
+type UnindexedAttempt struct {
+	Name   string `json:"name"`
+	Detail string `json:"detail"`
 }
 
 // Result accounts for one run.
@@ -83,21 +89,23 @@ type Result struct {
 	Deleted  int64
 	NotFound int64
 	Failures []Failure
-	// Failed is the EXACT count of distinct requested names the service
+	// Failed counts distinct indexed requested names the service
 	// reported an error for, each counted once — Failures above is a
 	// bounded sample for display; every one also streams through
 	// Options.OnFailure so callers can retain the complete set
-	// (K-DEL-002).
+	// (K-DEL-002). It is a final exact total only when accounting is
+	// complete; otherwise it is the last committed count.
 	Failed int64
 	// Unresolveds samples the names whose effect this run cannot state,
 	// bounded for display exactly as Failures is.
 	Unresolveds []Failure
-	// Unresolved is the EXACT count of distinct requested names whose
-	// effect is unknown, streamed uncapped through Options.OnUnresolved.
+	// Unresolved counts distinct indexed bulk names whose effect is
+	// unknown, streamed uncapped through Options.OnUnresolved.
 	// It overlaps Failed rather than extending it: a reported error is
 	// a report about an attempt and witnesses no effect, so a reported
-	// name is also unresolved. A run holding any unresolved name has
-	// not completed.
+	// bulk name is also unresolved. A run holding any unresolved name
+	// has not completed. With incomplete accounting this is only the
+	// last committed count. Parallel deletion does not populate it yet.
 	Unresolved int64
 	// UntrustedReplies counts bulk replies that failed validation and
 	// whose counts were therefore credited to nothing.
@@ -114,15 +122,13 @@ type Result struct {
 	Passes int
 	// VerifyPolicy states the §32 postcondition this run checked.
 	VerifyPolicy string
-
-	// seenFailed and seenUnresolved make both counts what they are
-	// documented to be: distinct requested identities across the whole
-	// run. A sweep re-lists what is still there, so the same name can
-	// be observed on more than one pass and in more than one batch, and
-	// one identity must still be one record, one stream event and one
-	// count.
-	seenFailed     map[string]bool
-	seenUnresolved map[string]bool
+	// AccountingIncomplete means an admitted outcome could not be
+	// indexed. All counters retain their last committed values; final
+	// distinct totals are unavailable, even when no delete was credited.
+	AccountingIncomplete bool
+	// UnindexedAttempts contains only the current bulk request or the
+	// bounded worker attempts admitted before accounting failed.
+	UnindexedAttempts []UnindexedAttempt
 }
 
 const maxFailures = 200
@@ -141,77 +147,18 @@ func blamedNames(bulk *swiftcontrol.BulkDeleteResult) map[string]string {
 	return blamed
 }
 
-// recordBatchOutcome writes one batch's outcome into the ledger.
-//
-// Two facts are kept apart. A name the reply reported an error for is a
-// reported failure carrying that status. A name whose effect this run
-// cannot state is unresolved. They describe the same name whenever the
-// service blamed it, because nothing here observes the store: a report
-// is a report about an attempt, and an identical reply accompanies an
-// object that survived and one that was destroyed.
-//
-// A reply that failed validation says nothing dependable about which
-// names it handled, so every requested name in that batch is
-// unresolved and its counts are credited to nothing (K-DEL-002).
-func recordBatchOutcome(result *Result, onFailure, onUnresolved func(name, detail string),
-	batch []string, bulk *swiftcontrol.BulkDeleteResult, err error) {
-
-	validated := bulk != nil && bulk.Validated
-	if bulk != nil && !validated && len(result.UntrustedAggregates) < maxFailures {
-		// The reply is not dependable, but what it claimed is evidence
-		// about the service and must survive this boundary.
-		result.UntrustedAggregates = append(result.UntrustedAggregates, UntrustedAggregate{
-			Requested:     len(batch),
-			Deleted:       bulk.Deleted,
-			NotFound:      bulk.NotFound,
-			Anomalies:     append([]string(nil), bulk.Anomalies...),
-			MalformedRows: bulk.MalformedRows,
-		})
-	}
-	blamed := blamedNames(bulk)
-	reason := "the reply is not dependable, so this name's effect is unknown"
-	if err != nil {
-		reason = err.Error()
-	}
-	for _, name := range batch {
-		if status, ok := blamed[name]; ok {
-			result.fail(onFailure, name, fmt.Errorf("%s", status))
-			result.unresolvedEffect(onUnresolved, name,
-				fmt.Sprintf("the service reported %s and no observation establishes whether the object was destroyed", status))
-			continue
-		}
-		if !validated {
-			result.unresolvedEffect(onUnresolved, name, reason)
-		}
-	}
-}
-
-func (r *Result) fail(onFailure func(name, detail string), name string, err error) {
-	if r.seenFailed == nil {
-		r.seenFailed = map[string]bool{}
-	}
-	if r.seenFailed[name] {
-		return
-	}
-	r.seenFailed[name] = true
+func (r *Result) fail(onFailure func(name, detail string), name, detail string) {
 	r.Failed++
 	if len(r.Failures) < maxFailures {
-		r.Failures = append(r.Failures, Failure{Name: name, Err: err.Error()})
+		r.Failures = append(r.Failures, Failure{Name: name, Err: detail})
 	}
 	if onFailure != nil {
-		onFailure(name, err.Error())
+		onFailure(name, detail)
 	}
 }
 
 // unresolvedEffect retains one name whose effect this run cannot state.
 func (r *Result) unresolvedEffect(onUnresolved func(name, detail string), name, detail string) {
-	if r.seenUnresolved == nil {
-		r.seenUnresolved = map[string]bool{}
-	}
-	if r.seenUnresolved[name] {
-		return
-	}
-	r.seenUnresolved[name] = true
 	r.Unresolved++
 	if len(r.Unresolveds) < maxFailures {
 		r.Unresolveds = append(r.Unresolveds, Failure{Name: name, Err: detail})
@@ -228,7 +175,7 @@ func (r *Result) unresolvedEffect(onUnresolved func(name, detail string), name, 
 // `limit=1` listing must come back empty, with bounded retries for
 // listing consistency).
 func DeletePrefix(ctx context.Context, session *swiftcontrol.Session, capabilities *swiftcontrol.Capabilities,
-	container, prefix string, opts Options) (*Result, error) {
+	container, prefix string, opts Options) (result *Result, err error) {
 
 	workers := opts.Workers
 	if workers <= 0 {
@@ -242,7 +189,7 @@ func DeletePrefix(ctx context.Context, session *swiftcontrol.Session, capabiliti
 		passes = 3
 	}
 
-	result := &Result{Strategy: StrategyParallel}
+	result = &Result{Strategy: StrategyParallel}
 	bulkSize := 0
 	if !opts.ForceParallel && capabilities != nil {
 		if max := capabilities.BulkDeleteMaxDeletes(); max > 0 {
@@ -257,14 +204,21 @@ func DeletePrefix(ctx context.Context, session *swiftcontrol.Session, capabiliti
 		}
 	}
 	result.VerifyPolicy = fmt.Sprintf("prefix limit=1 empty after ≤%d passes", passes)
+	admissionCtx, stopAdmission := context.WithCancel(ctx)
+	defer stopAdmission()
+	accounting, err := newDeletionAccounting(ctx, result, opts, stopAdmission)
+	if err != nil {
+		return result, err
+	}
+	defer func() { err = errors.Join(err, accounting.close()) }()
 
 	for pass := 1; pass <= passes; pass++ {
 		result.Passes = pass
-		deletedThisPass, err := deletePass(ctx, session, container, prefix, bulkSize, workers, result, opts.OnProgress, opts.OnFailure, opts.OnUnresolved)
-		if err != nil {
+		before := result.Deleted
+		if err := deletePass(ctx, admissionCtx, session, container, prefix, bulkSize, workers, accounting); err != nil {
 			return result, err
 		}
-		if deletedThisPass == 0 {
+		if result.Deleted == before {
 			break
 		}
 	}
@@ -278,19 +232,8 @@ func DeletePrefix(ctx context.Context, session *swiftcontrol.Session, capabiliti
 }
 
 // deletePass consumes one full listing sweep, deleting as it streams.
-func deletePass(ctx context.Context, session *swiftcontrol.Session, container, prefix string,
-	bulkSize, workers int, result *Result, onProgress func(deleted, failed int64),
-	onFailure, onUnresolved func(name, detail string)) (int64, error) {
-
-	var passDeleted int64
-	var mu sync.Mutex
-	// Progress snapshots are taken AND delivered under the mutex:
-	// callers see monotonic, consistent pairs (§65.9 item 11).
-	progress := func() {
-		if onProgress != nil {
-			onProgress(result.Deleted, result.Failed)
-		}
-	}
+func deletePass(ctx, admissionCtx context.Context, session *swiftcontrol.Session, container, prefix string,
+	bulkSize, workers int, accounting *deletionAccounting) error {
 
 	if bulkSize > 0 {
 		batch := make([]string, 0, bulkSize)
@@ -298,72 +241,48 @@ func deletePass(ctx context.Context, session *swiftcontrol.Session, container, p
 			if len(batch) == 0 {
 				return nil
 			}
+			if !accounting.admit(admissionCtx) {
+				return errors.Join(accounting.problem(), admissionCtx.Err())
+			}
 			bulk, err := session.BulkDelete(ctx, container, batch)
-			mu.Lock()
-			defer mu.Unlock()
-			// Only a validated reply's counts are credited; an untrusted
-			// one is a diagnostic and names nothing.
-			if bulk != nil && bulk.Validated {
-				result.Deleted += bulk.Deleted
-				result.NotFound += bulk.NotFound
-				passDeleted += bulk.Deleted
-			} else if bulk != nil {
-				result.UntrustedReplies++
-			}
-			recordBatchOutcome(result, onFailure, onUnresolved, batch, bulk, err)
-			if err != nil {
-				batch = batch[:0]
-				progress()
-				return err
-			}
+			err = accounting.recordBatchOutcome(ctx, batch, bulk, err)
 			batch = batch[:0]
-			progress()
-			return nil
+			return err
 		}
-		for entry, err := range session.Objects(ctx, container, swiftcontrol.ObjectListOptions{Deep: true, Prefix: prefix}) {
+		for entry, err := range session.Objects(admissionCtx, container, swiftcontrol.ObjectListOptions{Deep: true, Prefix: prefix}) {
 			if err != nil {
-				return passDeleted, err
+				return err
 			}
 			if object, ok := entry.(swiftcontrol.ObjectEntry); ok {
 				batch = append(batch, object.Name)
 				if len(batch) == bulkSize {
 					if err := flush(); err != nil {
-						return passDeleted, err
+						return err
 					}
 				}
 			}
 		}
-		return passDeleted, flush()
+		return flush()
 	}
 
 	// Parallel single DELETEs: LIST page → bounded queue → N workers.
 	names := make(chan string, workers*2)
 	var wg sync.WaitGroup
-	workerCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for name := range names {
-				err := session.DeleteObject(workerCtx, container, name)
-				mu.Lock()
-				switch {
-				case err == nil:
-					result.Deleted++
-					passDeleted++
-				case swiftcontrol.IsNotFound(err):
-					result.NotFound++
-				default:
-					result.fail(onFailure, name, err)
+				if !accounting.admit(admissionCtx) {
+					return
 				}
-				progress()
-				mu.Unlock()
+				err := session.DeleteObject(ctx, container, name)
+				accounting.recordSingleOutcome(ctx, name, err)
 			}
 		}()
 	}
 	var listErr error
-	for entry, err := range session.Objects(ctx, container, swiftcontrol.ObjectListOptions{Deep: true, Prefix: prefix}) {
+	for entry, err := range session.Objects(admissionCtx, container, swiftcontrol.ObjectListOptions{Deep: true, Prefix: prefix}) {
 		if err != nil {
 			listErr = err
 			break
@@ -371,8 +290,8 @@ func deletePass(ctx context.Context, session *swiftcontrol.Session, container, p
 		if object, ok := entry.(swiftcontrol.ObjectEntry); ok {
 			select {
 			case names <- object.Name:
-			case <-ctx.Done():
-				listErr = ctx.Err()
+			case <-admissionCtx.Done():
+				listErr = admissionCtx.Err()
 			}
 			if listErr != nil {
 				break
@@ -381,7 +300,7 @@ func deletePass(ctx context.Context, session *swiftcontrol.Session, container, p
 	}
 	close(names)
 	wg.Wait()
-	return passDeleted, listErr
+	return errors.Join(accounting.problem(), listErr, ctx.Err())
 }
 
 // verifyPrefixEmpty is the §32 low-cost postcondition: one-row listing
@@ -473,7 +392,7 @@ func (c ContainerConfig) Diff(after ContainerConfig) string {
 // Verification is a bounded sample of HEADs expecting 404 (§32:
 // operation-specific, never a namespace rescan).
 func DeleteNames(ctx context.Context, session *swiftcontrol.Session, capabilities *swiftcontrol.Capabilities,
-	container string, names []string, opts Options) (*Result, error) {
+	container string, names []string, opts Options) (result *Result, err error) {
 
 	workers := opts.Workers
 	if workers <= 0 {
@@ -482,7 +401,7 @@ func DeleteNames(ctx context.Context, session *swiftcontrol.Session, capabilitie
 	if workers > 64 {
 		workers = 64
 	}
-	result := &Result{Strategy: StrategyParallel, VerifyPolicy: "sampled HEAD=404 (≤10 names)"}
+	result = &Result{Strategy: StrategyParallel, VerifyPolicy: "sampled HEAD=404 (≤10 names)"}
 	bulkSize := 0
 	if !opts.ForceParallel && capabilities != nil {
 		if max := capabilities.BulkDeleteMaxDeletes(); max > 0 {
@@ -496,36 +415,25 @@ func DeleteNames(ctx context.Context, session *swiftcontrol.Session, capabilitie
 			result.Strategy = StrategyBulk
 		}
 	}
-	var mu sync.Mutex
-	progress := func() {
-		if opts.OnProgress != nil {
-			opts.OnProgress(result.Deleted, result.Failed)
-		}
+	admissionCtx, stopAdmission := context.WithCancel(ctx)
+	defer stopAdmission()
+	accounting, err := newDeletionAccounting(ctx, result, opts, stopAdmission)
+	if err != nil {
+		return result, err
 	}
+	defer func() { err = errors.Join(err, accounting.close()) }()
 
 	if bulkSize > 0 {
 		for start := 0; start < len(names); start += bulkSize {
-			if err := ctx.Err(); err != nil {
-				return result, err
+			if !accounting.admit(admissionCtx) {
+				return result, errors.Join(accounting.problem(), admissionCtx.Err())
 			}
 			end := min(start+bulkSize, len(names))
 			chunk := names[start:end]
 			bulk, err := session.BulkDelete(ctx, container, chunk)
-			mu.Lock()
-			if bulk != nil && bulk.Validated {
-				result.Deleted += bulk.Deleted
-				result.NotFound += bulk.NotFound
-			} else if bulk != nil {
-				result.UntrustedReplies++
-			}
-			recordBatchOutcome(result, opts.OnFailure, opts.OnUnresolved, chunk, bulk, err)
-			if err != nil {
-				progress()
-				mu.Unlock()
+			if err := accounting.recordBatchOutcome(ctx, chunk, bulk, err); err != nil {
 				return result, err
 			}
-			progress()
-			mu.Unlock()
 		}
 	} else {
 		queue := make(chan string, workers*2)
@@ -535,18 +443,11 @@ func DeleteNames(ctx context.Context, session *swiftcontrol.Session, capabilitie
 			go func() {
 				defer wg.Done()
 				for name := range queue {
-					err := session.DeleteObject(ctx, container, name)
-					mu.Lock()
-					switch {
-					case err == nil:
-						result.Deleted++
-					case swiftcontrol.IsNotFound(err):
-						result.NotFound++
-					default:
-						result.fail(opts.OnFailure, name, err)
+					if !accounting.admit(admissionCtx) {
+						return
 					}
-					progress()
-					mu.Unlock()
+					err := session.DeleteObject(ctx, container, name)
+					accounting.recordSingleOutcome(ctx, name, err)
 				}
 			}()
 		}
@@ -554,8 +455,8 @@ func DeleteNames(ctx context.Context, session *swiftcontrol.Session, capabilitie
 		for _, name := range names {
 			select {
 			case queue <- name:
-			case <-ctx.Done():
-				queueErr = ctx.Err()
+			case <-admissionCtx.Done():
+				queueErr = admissionCtx.Err()
 			}
 			if queueErr != nil {
 				break
@@ -563,8 +464,8 @@ func DeleteNames(ctx context.Context, session *swiftcontrol.Session, capabilitie
 		}
 		close(queue)
 		wg.Wait()
-		if queueErr != nil {
-			return result, queueErr
+		if err := errors.Join(accounting.problem(), queueErr, ctx.Err()); err != nil {
+			return result, err
 		}
 	}
 
@@ -572,6 +473,9 @@ func DeleteNames(ctx context.Context, session *swiftcontrol.Session, capabilitie
 	for i, name := range names {
 		if i >= 10 {
 			break
+		}
+		if err := ctx.Err(); err != nil {
+			return result, err
 		}
 		if _, err := session.ObjectDetail(ctx, container, name); err == nil {
 			result.Remaining++

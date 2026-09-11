@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -220,26 +221,50 @@ func (s *BenchmarkService) runBenchmark(ctx context.Context, jobID, bookmarkID s
 	container string, objects int, concurrencies []int) {
 
 	background := context.WithoutCancel(ctx)
+	counters := jobs.Counters{}
 	finish := func(state jobs.State, message string) {
-		if message != "" {
-			_ = s.jobs.SetError(background, jobID, message)
-		}
 		// Deregister before the terminal state is visible — a terminal
 		// benchmark must not stay cancel-addressable (review F-11).
 		s.runner.release(jobID)
-		_ = s.jobs.Transition(background, jobID, state)
-		s.runner.record(background, bookmarkID, "benchmark."+string(state), container, "job "+jobID, terminalAuditResult(state))
+		summary := "job " + jobID
+		if counters.DeletionAccountingIncomplete {
+			summary += "; deletion accounting incomplete"
+		}
+		if err := s.jobs.Finish(background, jobID, jobs.Completion{
+			State: state, Counters: counters, Error: message,
+			Audit: audit.Event{BookmarkID: bookmarkID, Operation: "benchmark." + string(state),
+				Resource: container, Summary: summary, Result: terminalAuditResult(state)},
+		}, s.runner.audit); err != nil {
+			log.Printf("job %s: finish benchmark: %v", jobID, err)
+		}
 	}
-	fail := func(stage string, err error) {
-		// Best-effort cleanup before reporting: the container is ours by
-		// construction (unique Aeronautes name).
-		_, _ = deletion.DeletePrefix(background, session, capabilities, container, "", deletion.Options{})
-		_ = session.DeleteContainer(background, container)
-		if errors.Is(err, context.Canceled) {
-			finish(jobs.StateCancelled, "")
+	fail := func(stage string, err error, result *deletion.Result) {
+		reason := stage + ": " + err.Error()
+		// A failed accounting store is not permission for a fresh index
+		// and another destructive sweep, even in benchmark cleanup.
+		if !errors.Is(err, deletion.ErrIdentityAccounting) && (result == nil || !result.AccountingIncomplete) {
+			var cleanupErr error
+			result, cleanupErr = deletion.DeletePrefix(background, session, capabilities, container, "", deletion.Options{})
+			if cleanupErr != nil {
+				reason += "; cleanup: " + cleanupErr.Error()
+				err = errors.Join(err, cleanupErr)
+			}
+			if !errors.Is(cleanupErr, deletion.ErrIdentityAccounting) && (result == nil || !result.AccountingIncomplete) {
+				if containerErr := session.DeleteContainer(background, container); containerErr != nil {
+					reason += "; container cleanup: " + containerErr.Error()
+				}
+			}
+		}
+		if result != nil && result.AccountingIncomplete {
+			counters.DeletionAccountingIncomplete = true
+			finish(jobs.StatePartial, reason+"; "+incompleteDeletionReason(result))
 			return
 		}
-		finish(jobs.StateFailed, stage+": "+err.Error())
+		if errors.Is(err, context.Canceled) {
+			finish(jobs.StateCancelled, reason)
+			return
+		}
+		finish(jobs.StateFailed, reason)
 	}
 
 	_ = s.jobs.Transition(background, jobID, jobs.StatePlanning)
@@ -254,7 +279,7 @@ func (s *BenchmarkService) runBenchmark(ctx context.Context, jobID, bookmarkID s
 	// and deletes (objects). The §42 result is an ENDPOINT
 	// MICROBENCHMARK — small native PUT/HEAD/DELETE ops — not a
 	// transfer-path prediction.
-	counters := jobs.Counters{ObjectsPlanned: int64(objects * (3 + len(concurrencies)))}
+	counters = jobs.Counters{ObjectsPlanned: int64(objects * (3 + len(concurrencies)))}
 	bump := func(n int) {
 		counters.ObjectsCopied += int64(n)
 		_ = s.jobs.UpdateCounters(background, jobID, counters)
@@ -276,7 +301,7 @@ func (s *BenchmarkService) runBenchmark(ctx context.Context, jobID, bookmarkID s
 			return err
 		})
 		if err != nil {
-			fail("upload", err)
+			fail("upload", err, nil)
 			return
 		}
 		total += objects / len(concurrencies)
@@ -292,7 +317,7 @@ func (s *BenchmarkService) runBenchmark(ctx context.Context, jobID, bookmarkID s
 	listed := 0
 	for entry, err := range session.Objects(ctx, container, swiftcontrol.ObjectListOptions{Deep: true, PageSize: 1000}) {
 		if err != nil {
-			fail("listing", err)
+			fail("listing", err, nil)
 			return
 		}
 		if _, ok := entry.(swiftcontrol.ObjectEntry); ok {
@@ -310,7 +335,7 @@ func (s *BenchmarkService) runBenchmark(ctx context.Context, jobID, bookmarkID s
 			return err
 		})
 		if err != nil {
-			fail("head", err)
+			fail("head", err, nil)
 			return
 		}
 		record("head", c, ops)
@@ -326,7 +351,7 @@ func (s *BenchmarkService) runBenchmark(ctx context.Context, jobID, bookmarkID s
 		return session.DeleteObject(ctx, container, name(i))
 	})
 	if err != nil {
-		fail("delete", err)
+		fail("delete", err, nil)
 		return
 	}
 	record("delete", bestHead, ops)
@@ -337,22 +362,22 @@ func (s *BenchmarkService) runBenchmark(ctx context.Context, jobID, bookmarkID s
 			names = append(names, name(i))
 		}
 		bulkStart := time.Now()
-		if _, err := deletion.DeleteNames(ctx, session, capabilities, container, names, deletion.Options{}); err != nil {
-			fail("bulk-delete", err)
+		if result, err := deletion.DeleteNames(ctx, session, capabilities, container, names, deletion.Options{}); err != nil {
+			fail("bulk-delete", err, result)
 			return
 		}
 		record("bulk-delete", 1, float64(len(names))/maxFloat(time.Since(bulkStart).Seconds(), 1e-6))
 		bump(len(names))
 	} else {
-		if _, err := deletion.DeletePrefix(ctx, session, capabilities, container, "", deletion.Options{ForceParallel: true}); err != nil {
-			fail("cleanup-delete", err)
+		if result, err := deletion.DeletePrefix(ctx, session, capabilities, container, "", deletion.Options{ForceParallel: true}); err != nil {
+			fail("cleanup-delete", err, result)
 			return
 		}
 	}
 
 	// Cleanup: the container must be gone.
-	if _, err := deletion.DeletePrefix(background, session, capabilities, container, "", deletion.Options{}); err != nil {
-		fail("cleanup", err)
+	if result, err := deletion.DeletePrefix(background, session, capabilities, container, "", deletion.Options{}); err != nil {
+		fail("cleanup", err, result)
 		return
 	}
 	if err := session.DeleteContainer(background, container); err != nil {

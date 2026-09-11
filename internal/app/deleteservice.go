@@ -175,26 +175,32 @@ func (s *DeleteService) runDelete(ctx context.Context, jobID string, req DeleteR
 	session *swiftcontrol.Session, capabilities *swiftcontrol.Capabilities) {
 
 	background := context.WithoutCancel(ctx)
+	counters := jobs.Counters{}
 	transition := func(state jobs.State) {
 		if err := s.jobs.Transition(background, jobID, state); err != nil {
 			log.Printf("job %s: %v", jobID, err)
 		}
 	}
 	finish := func(state jobs.State, message string) {
-		if message != "" {
-			_ = s.jobs.SetError(background, jobID, message)
-		}
 		// Deregister BEFORE the terminal state becomes visible: a job
 		// that reads terminal must no longer be cancel-addressable.
 		s.runner.release(jobID)
-		transition(state)
-		s.runner.record(background, req.BookmarkID, "delete."+string(req.Mode)+"."+string(state),
-			req.Container+"/"+req.Prefix, "job "+jobID, terminalAuditResult(state))
+		summary := "job " + jobID
+		if counters.DeletionAccountingIncomplete {
+			summary += "; deletion accounting incomplete"
+		}
+		if err := s.jobs.Finish(background, jobID, jobs.Completion{
+			State: state, Counters: counters, Error: message,
+			Audit: audit.Event{BookmarkID: req.BookmarkID,
+				Operation: "delete." + string(req.Mode) + "." + string(state),
+				Resource:  req.Container + "/" + req.Prefix, Summary: summary, Result: terminalAuditResult(state)},
+		}, s.runner.audit); err != nil {
+			log.Printf("job %s: finish deletion: %v", jobID, err)
+		}
 	}
 
 	// Planning: count the scope for honest progress.
 	transition(jobs.StatePlanning)
-	counters := jobs.Counters{}
 	for entry, err := range session.Objects(ctx, req.Container, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.Prefix}) {
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
@@ -253,9 +259,26 @@ func (s *DeleteService) runDelete(ctx context.Context, jobID string, req DeleteR
 		counters.ObjectsCopied = result.Deleted
 		counters.ObjectsFailed = result.Failed
 		counters.ObjectsVerified = result.Deleted
+		counters.DeletionAccountingIncomplete = result.AccountingIncomplete
 		countersMu.Unlock()
 	}
-	_ = s.jobs.UpdateCounters(background, jobID, counters)
+	if result != nil && result.AccountingIncomplete {
+		reason := incompleteDeletionReason(result)
+		if err != nil {
+			reason += "; " + err.Error()
+		}
+		if result.Failed > 0 && spillPath != "" {
+			reason += "; partial reported-failure observations: " + spillPath
+		}
+		if result.Unresolved > 0 && unresolvedPath != "" {
+			reason += "; partial unresolved observations: " + unresolvedPath
+		}
+		if retentionProblem != "" {
+			reason += "; " + retentionProblem
+		}
+		finish(jobs.StatePartial, reason)
+		return
+	}
 	// A name whose effect the reply did not establish is neither a
 	// deletion nor a proven failure, and it must reach the operator on
 	// every terminal path, including the one an error takes.

@@ -77,6 +77,9 @@ type Counters struct {
 	NativeRouted      int64 `json:"nativeRouted"`
 	// ObjectsDeleted counts a Mirror's destination-only deletions.
 	ObjectsDeleted int64 `json:"objectsDeleted"`
+	// A deletion accounting failure leaves only last-confirmed progress;
+	// the stored reason explains unavailable final totals and evidence.
+	DeletionAccountingIncomplete bool `json:"deletionAccountingIncomplete,omitempty"`
 }
 
 // Job is one persistent job row.
