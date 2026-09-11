@@ -82,6 +82,33 @@ A failed completion write must leave public status unavailable through the exist
 Do not add a table, item-record version, job family, generic outcome framework or alternate terminal state for this index.
 This migration does not claim to repair every earlier progress, start-event or broader P12/P13 persistence failure.
 
+### Caller compatibility
+
+Both executors use the checked index and admission/failure contract, while retaining their existing healthy outcome classification in this storage correction.
+Bulk error identities retain both reported-failure and unresolved facets as defined by the dedicated bulk experiment.
+The parallel executor continues recording its existing reported-failure facet only; adding its separate unresolved stream and reconciling that broader public outcome remains DS-08 follow-up work.
+This scope limit does not turn a parallel error into evidence of survival, and an unindexable admitted parallel outcome still makes final totals unavailable.
+Clarify the generic result and callback comments so they do not imply that both strategies already populate that unresolved stream.
+
+Resolve the index root from `os.UserCacheDir()` and the application's cache subdirectory for existing callers with default options.
+Keep any test injection private to the backend; no frontend storage setting is introduced.
+Preserve the normal retained-list failure tests by faulting only that writer's storage, leaving the new index healthy; a failed entire cache location is instead a separate index-setup refusal case.
+
+The benchmark's four calls must retain the deletion result and distinguish checked storage errors, including setup or cleanup errors whose known totals remain exact.
+Such an error stops the benchmark without another prefix sweep or container deletion, including when it occurs during cleanup of an earlier benchmark failure.
+Retain the original problem alongside the cleanup problem and available attempt evidence.
+An incomplete benchmark deletion outcome is partial, carries the counters qualifier and reason, and uses the same atomic `jobs.Finish` publication.
+Its other counters continue to describe benchmark progress rather than distinct deletion totals.
+Normal successful benchmark cleanup and measurement semantics remain unchanged.
+
+The forced DLO segment caller deletes its manifest before the segment-prefix sweep begins.
+An index-setup refusal therefore means zero attempted segment outcomes, not zero effects for the enclosing operation.
+Its returned error must disclose the already-deleted manifest and whether segment totals or admitted-attempt evidence are unavailable, and must never reach an applied audit event after a storage error.
+Add an optional `deletionAccountingIncomplete` qualifier to its existing result DTO and generated binding, with a controlled partial audit summary when accounting is incomplete.
+Check the audit append on this new error path and include an audit-write failure in the returned error rather than hiding it.
+The rejected-call error must carry the explanation because the frontend need not receive the non-nil Go result alongside an error.
+The existing SLO path, force consent, segment authority and broader retained-name limitations remain outside this compatibility change.
+
 ## Implementation sequence and proof
 
 1. Review this contract and the DESIGN sequence before production changes.
