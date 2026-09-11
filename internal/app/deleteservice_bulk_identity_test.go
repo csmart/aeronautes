@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -789,13 +790,21 @@ func TestDeleteJobPublishesBufferedRetentionLoss(t *testing.T) {
 		seedObject(h.mock, "media", fmt.Sprintf("scope/obj-%d", i), "data", nil)
 	}
 
-	// The job id is only known once the job exists, and the retention
-	// file is opened later, while the job is listing. Linking the exact
-	// path to a device that accepts an open and refuses every byte during
-	// that listing reproduces a full disk without racing the job.
-	var jobID string
+	// The job id is only known once StartDelete returns, but the job is
+	// already running by then and may reach its first listing before this
+	// goroutine has done anything with the id. The hook therefore blocks
+	// until the id is delivered over a channel, and only then links the
+	// exact retention path to a device that accepts an open and refuses
+	// every byte, which reproduces a full disk before the job opens the
+	// file and without any assumption about who runs first.
+	idReady := make(chan string, 1)
 	linked := make(chan error, 1)
 	crafted.beforeList = func() {
+		jobID, ok := <-idReady
+		if !ok {
+			linked <- errors.New("no job id reached the listing hook")
+			return
+		}
 		dir := filepath.Join(cache, "aeronautes", "unresolved")
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			linked <- err
@@ -803,14 +812,23 @@ func TestDeleteJobPublishesBufferedRetentionLoss(t *testing.T) {
 		}
 		linked <- os.Symlink("/dev/full", filepath.Join(dir, jobID+".jsonl"))
 	}
+	// Closing the channel on every exit keeps a blocked hook from holding
+	// the server open if StartDelete fails before an id exists; a value
+	// already sent is still received after the close.
+	t.Cleanup(func() { close(idReady) })
 
-	var err error
-	jobID, err = service.StartDelete(ctx, DeleteRequestDTO{
+	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{
 		BookmarkID: bookmark, Container: "media", Prefix: "scope/", Mode: ModePrefix, Confirm: "media",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The delayed-start control: the caller is deliberately descheduled
+	// after StartDelete returns and before it delivers the id, which is
+	// the ordering a shared variable got wrong. The outcome must not
+	// depend on how long this takes.
+	time.Sleep(250 * time.Millisecond)
+	idReady <- jobID
 	job := awaitTerminal(t, h, jobID)
 	select {
 	case err := <-linked:
