@@ -2,7 +2,7 @@
 
 ## Observations
 
-PR93 remains unmerged at source `bca217c50be57a5807aeec3048f30b2f957590d5`, incorporating master `1b520ba2a80f281d5945250548137be7498a1f02`.
+The first two PR93 attempts used source `bca217c50be57a5807aeec3048f30b2f957590d5`, incorporating master `1b520ba2a80f281d5945250548137be7498a1f02`.
 The [first integration attempt](https://github.com/csmart/aeronautes/actions/runs/34567370623/job/103162139411) and [second attempt](https://github.com/csmart/aeronautes/actions/runs/34567370623/job/103166908781) both failed.
 Go, frontend and smoke succeeded; the aggregate correctly refused integration's failure.
 The second attempt reused those three successful jobs and does not represent five newly executed jobs.
@@ -68,3 +68,34 @@ The actual local CLI run wrote ten readable JSON records: seven explicit missing
 The local Swift HTTP fixture is reachable but its Docker runtime is unavailable to this session, so container log/resource capture remains a hosted verification requirement.
 Workflow linting and `git diff --check` passed, and the existing aggregate regression still accepts all-success and refuses its nineteen incomplete-result cases.
 The complete local internal race/coverage replay is separate from these collector checks and does not replace the required hosted run.
+
+## First hosted diagnostic capture
+
+The [next complete run](https://github.com/csmart/aeronautes/actions/runs/34574614183) used source `c4574c49c9fb37cb8c7ef8b78907019d27614cb0` and the same master base.
+The application and module files were unchanged from the first two attempts.
+Go, frontend and smoke passed; integration failed and the aggregate refused it.
+Its 3,746 terminal test names contain 3,479 passing leaves, one failing leaf and two skipped leaves.
+The only failing leaf is `TestCopySegmentChangeDetectionRealSwift`, whose publication assertion recorded HTTP 503, a partial job and one failed object with no copied or verified objects.
+The assertion appeared at 07:53:12 UTC and the test failed at 07:53:16 UTC, after 151.28 seconds.
+The retained integration log has SHA-256 `348dd398585e47d31c285a4892881644aae2c559c79b25735d265474c361ce72` and its reconstructed event stream has SHA-256 `2bb3fc1f0b51baab50f5cc6b9cf5fa82f091bc49a5f93ca5cb0544fed8f095d0`.
+
+All ten diagnostic commands succeeded without timeout or output truncation, and both diagnostic and scenario artifacts were uploaded.
+Container state showed no restart or OOM kill, and all cgroup memory-event counters were zero.
+The after-suite observations showed about 453 MiB of container memory, 6,522 MiB available runner memory, about 10.5 GiB free filesystem space and 13 percent inode use.
+These observations do not measure every resource at the failing request and do not establish the HTTP 503 cause.
+Docker output was empty; the Swift log contained only 242 lines from 07:54:13–14 UTC, during cleanup after the assertion.
+Successful collection therefore did not preserve the failure window.
+
+A local reproduction used the identical image ID, `sha256:2c39297ee7e8ff768d10ad970a982a89a87a44eaae5b9140ea80738e67c92d02`, from the unchanged CI image pin.
+The unchanged real-Swift test passed with Go 1.27.1, `-race -count=1 -parallel=3`, in a command lasting 60.884 seconds; its event stream has SHA-256 `65f3dd615750314a60eb918d4018b80424561af94539acabfca9cf3336cd1644`.
+This was an isolated run, not a full-suite or hosted acceptance result.
+The local runtime and host resources differ from CI; its proxy listener was moved to a separate loopback port while the backend listeners remained on loopback.
+The pinned image's log directories contained the current file and rapid rotations, and its logging rules also route errors to a separate `/var/log/socklog/errors` directory.
+The isolated passing run left that error log empty.
+
+The next bounded collector change will read that separate current error log and its retained rotations, preserving the existing access-log observation and resource probes.
+It must retain an earlier error even when subsequent access traffic has rotated away, redact before truncation or artifact output, expose missing paths and read failures, and continue later probes after failure.
+Use disposable log files to prove current and rotated error retention, missing-current refusal and authentication redaction before testing the pinned container command.
+Keep the same ten-second command limits, two-minute collector step, image configuration, suite, concurrency and test/merge gates.
+Any rotations already discarded by the image remain an explicit evidence limit.
+PR93 remains draft and unmerged, the HTTP 503 causes remain unproved, and the valuable-data hold remains in force.

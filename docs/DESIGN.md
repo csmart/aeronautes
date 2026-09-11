@@ -5151,6 +5151,8 @@ The existing CI contract requires investigation before retry, every required job
    Keep the Go producer exit, assertions, test selection, scenario reconciliation, aggregate refusal, fixture pin, concurrency and time budgets unchanged.
 3. Verify the collector's success, missing-container, failed-command and timeout paths, obtain independent review, then use the next complete PR run to investigate any recurring failure before deciding a repair or merge.
    A passing retry does not establish the cause of an earlier failure or clear the valuable-data hold.
+4. The next run retained only the final access-log window, after the failing request, because the pinned image rotates that busy log.
+   Extend collection to the image's separate error log and its retained rotations, prove that an earlier rotated error survives collection and redaction, then inspect the next hosted artifact without changing Swift configuration or any test gate.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
