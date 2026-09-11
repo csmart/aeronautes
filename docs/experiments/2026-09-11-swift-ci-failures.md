@@ -45,3 +45,26 @@ Use the next complete PR run as a measured investigation of the retained failure
 Preserve any recurring failure instead of retrying indefinitely or weakening assertions.
 If the next run succeeds, record that result separately from the still-unproved historical causes.
 The valuable-data hold and the remaining DS-04 content-verification work stay open.
+
+## Collector implementation and local verification
+
+The collector now runs after the suite with `always()`, followed by a separate artifact upload with the same condition.
+Each of ten probes has a ten-second timeout, a UTC timestamp, an actual exit or explicit timeout/error, and at most four MiB of redacted output.
+The two log probes request the final 10,000 lines; the step has a two-minute limit within the unchanged thirty-five-minute integration job budget.
+Completed probes are saved individually so a later command failure does not erase their evidence.
+A collector exit of zero means it wrote the requested observations, not that every diagnostic command succeeded.
+Output-directory or artifact-write errors still fail collection, and the existing test-step result remains independent of collection.
+
+The probes read limited container identity/state, container statistics, container output, Swift's internal log, cgroup memory events, and container/runner filesystem and memory observations.
+The [upstream log initialization](https://github.com/openstack/swift/blob/fe1ae77c33170927fe5629ca10aa0d1e165b85c2/docker/rootfs/etc/cont-init.d/01_swift_logs) identifies `/var/log/swift/all.log` as Swift's internal log link; the next hosted artifact must confirm availability in the pinned image.
+Tempauth tokens and authentication-header lines are removed before any output truncation or file write.
+No environment, configuration, database or object-content files are read.
+Missing log paths, unsupported cgroup files, truncated tails and commands interrupted by the time limit remain visible gaps.
+A runner that disappears or exhausts the whole job budget cannot be assumed to finish collection or upload.
+
+Eight focused Python tests passed using disposable child processes, including nonzero command exits, missing commands, partial output on timeout, continuation after timeout, token/header redaction, UTF-8 truncation and refusal of an unusable output path.
+The missing-container response is a simulated command result in those tests, not an observed Docker failure against the pinned image.
+The actual local CLI run wrote ten readable JSON records: seven explicit missing-Docker errors and three successful runner probes.
+The local Swift HTTP fixture is reachable but its Docker runtime is unavailable to this session, so container log/resource capture remains a hosted verification requirement.
+Workflow linting and `git diff --check` passed, and the existing aggregate regression still accepts all-success and refuses its nineteen incomplete-result cases.
+The complete local internal race/coverage replay is separate from these collector checks and does not replace the required hosted run.
