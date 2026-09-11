@@ -375,7 +375,7 @@ The intentionally unsynchronised hook control includes its expected race; passin
 
 Initial socket/formatter setup failures, a test helper compilation mistake, and corrected test assumptions about an empty terminal listing page or an invalidated bookmark observer are preserved as failed development attempts.
 They are not counted as behavioural reproductions or successful verification.
-The complete final local suite, current-head/current-base five-job PR run, protected merge and resulting-master checks remain separate required delivery gates.
+The final local suite is recorded below; the current-head/current-base five-job PR run, protected merge and resulting-master checks remain separate required delivery gates.
 The earlier full-suite result on the map-based implementation is historical and does not satisfy them.
 
 ### Maintained public system matrix
@@ -439,6 +439,25 @@ Raw bulk, parallel and final race streams have SHA-256 `9ceb98814801f4265e300412
 To reproduce on Linux, copy the archived text into `internal/deletion/consumer_resource_linux_test.go` in a disposable checkout, set `AERONAUTES_CONSUMER_CACHE` to a new owned absolute XFS cache directory, and run pinned Go 1.27.1 with `go test -mod=readonly -count=1 -parallel=1 -timeout=10m -run '^TestDeletionIntegratedResource$' -v ./internal/deletion`.
 The original before probe remains byte-identical to its committed archive; this consumer probe changes its observation point and does not pretend to be the identical before test.
 These finite measurements and source checks establish the inspected collection bounds, not a universal asymptotic proof, a hard process-memory ceiling, peak journal size or durable recovery guarantee.
+
+## Final local verification
+
+The coherent implementation at `9106a26c50e6cecc4e8433a2de8236a97c797e9b`, based on delivered master `859ec53c53dbb00851bfbcc796b1a89706d07310`, passed the complete local race suite on 11 September 2026.
+Pinned Go 1.27.1 ran `go test -mod=readonly -race -count=1 -parallel=3 -timeout=25m -json ./...` against the owned Swift fixture on port 18081 with the checked official rclone 1.74.3 binary.
+The producer exited zero after 836.128 seconds, within the unchanged package and process budgets.
+Before and after checks found the same clean head and identical tracked source hashes.
+
+Complete event-lifecycle reconciliation found 3,666 passing leaves, no failures and one explicitly skipped `TestRcloneMatrix`; executed slash-separated ancestors are excluded from the leaf count.
+Twenty-two packages passed and the separate `cmd/mockswift` package reported no test files.
+The skip is the optional characterization matrix, not an omission of the maintained real-engine or real-Swift regressions.
+The required real-Swift bulk encoding, executor effect-substitution and public-service effect-substitution tests all passed.
+The raw stdout SHA-256 is `21bbcc5f3c5a88ba6c7bfe5f17758f1ae2b6e7a8ffc2e7b58a7c44aef0e4f45d`; stderr is empty.
+
+The maintained scenario reconciler consumed that complete stream, the producer's actual exit and the independently listed package set.
+It exited zero with schema version 3, `valid:true`, 41 of 116 cells covered and 38 actions with gaps; `coverageComplete` remains false.
+The report SHA-256 is `227f34f9cfe0cd1ef341e1ca4405c2f3f4ab04917efa32305faeec10c61f7a05`.
+The complete frontend suite also passed on this unchanged implementation: 1,141 tests in 29 files, no failures or pending tests, and an actual zero exit after 11.545 seconds.
+These results supplement the focused storage-failure, resource, UI, binding and static evidence above; they do not replace native acceptance or the five-job PR and resulting-master checks.
 
 ## Remaining limits
 
