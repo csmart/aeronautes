@@ -10,6 +10,36 @@
     { id: "all", label: "All" },
     { id: "backstage", label: "Backstage" },
   ];
+
+  // The mode buttons are one tablist over the container list below them.
+  // The selected tab is its only tab stop, and the horizontal arrows and
+  // Home/End move focus and select the mode they land on (a mode is a local
+  // regrouping of loaded containers, so selecting on focus costs nothing).
+  // Exactly those four keys are consumed: the window-level browser handler
+  // returns on a prevented event, so they never move the working list,
+  // while ArrowUp/ArrowDown keep their §4.4 owner.
+  const id = $props.id();
+  const panelId = `${id}-panel`;
+  const tabId = (mode: ContainerMode) => `${id}-tab-${mode}`;
+  let tabButtons: HTMLButtonElement[] = $state([]);
+  // The focus moved by a key must stay visible: script focus does not
+  // inherit the keyboard focus indication on every engine, and the DOM
+  // typings do not yet name the option that requests it.
+  const visibleFocus: FocusOptions & { focusVisible?: boolean } = { focusVisible: true };
+
+  function onTabKeydown(event: KeyboardEvent, index: number) {
+    let next: number;
+    switch (event.key) {
+      case "ArrowRight": next = (index + 1) % modes.length; break;
+      case "ArrowLeft": next = (index - 1 + modes.length) % modes.length; break;
+      case "Home": next = 0; break;
+      case "End": next = modes.length - 1; break;
+      default: return;
+    }
+    event.preventDefault();
+    browser.mode = modes[next].id;
+    tabButtons[next]?.focus(visibleFocus);
+  }
 </script>
 
 {#snippet containerRow(container: ContainerRowDTO)}
@@ -39,12 +69,17 @@
       {/if}
     </div>
     <div class="modes" role="tablist" aria-label="Container mode">
-      {#each modes as mode (mode.id)}
+      {#each modes as mode, index (mode.id)}
         <button
           role="tab"
+          id={tabId(mode.id)}
           class="mode"
           aria-selected={browser.mode === mode.id}
+          aria-controls={panelId}
+          tabindex={browser.mode === mode.id ? 0 : -1}
+          bind:this={tabButtons[index]}
           onclick={() => (browser.mode = mode.id)}
+          onkeydown={(event) => onTabKeydown(event, index)}
         >
           {mode.label}
         </button>
@@ -52,7 +87,7 @@
     </div>
   </header>
 
-  <div class="rows">
+  <div class="rows" role="tabpanel" id={panelId} aria-labelledby={tabId(browser.mode)}>
     {#if !browser.account}
       <p class="disconnected">Not connected.</p>
     {:else if browser.containersLoading}
@@ -163,6 +198,12 @@
     color: var(--color-text);
     background: var(--color-bg-card);
     box-shadow: var(--shadow-card);
+  }
+
+  /* Activation follows focus, so the focused tab is always the selected
+     one, whose card shadow would otherwise replace the global focus ring. */
+  .mode[aria-selected="true"]:focus-visible {
+    box-shadow: var(--shadow-card), var(--focus-ring);
   }
 
   .rows {
