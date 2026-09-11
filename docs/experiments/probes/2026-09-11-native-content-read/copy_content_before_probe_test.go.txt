@@ -1,0 +1,322 @@
+package systemtest
+
+import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/csmart/aeronautes/internal/app"
+	"github.com/csmart/aeronautes/internal/audit"
+	"github.com/csmart/aeronautes/internal/jobs"
+	"github.com/csmart/aeronautes/internal/swifttest"
+)
+
+type contentProbeWrite struct {
+	Method, Path, IfNoneMatch, Manifest string
+}
+
+type contentProbeTrace struct {
+	mu     sync.Mutex
+	writes []contentProbeWrite
+}
+
+func (trace *contentProbeTrace) snapshot() []contentProbeWrite {
+	trace.mu.Lock()
+	defer trace.mu.Unlock()
+	return append([]contentProbeWrite(nil), trace.writes...)
+}
+
+func contentProbeJSON(t *testing.T, label string, value any) {
+	t.Helper()
+	dir := os.Getenv("AERONAUTES_CONTENT_PROBE_OUTPUT")
+	if dir == "" {
+		t.Fatal("private evidence output is required")
+	}
+	body, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, label+".json"), append(body, '\n'), 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func contentProbeProxy(t *testing.T, h *Harness, controlPath string) (*swifttest.HTTPResponseBarrier, *contentProbeTrace) {
+	t.Helper()
+	storage, err := url.Parse(h.Secondary.storageURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected := &url.URL{Path: storage.Path + "/" + controlPath}
+	selector := swifttest.HTTPResponseSelector{Operation: t.Name(), Method: http.MethodPut, EscapedPath: selected.EscapedPath(), Occurrence: 1}
+	barrier, err := swifttest.NewHTTPResponseBarrier(selector, false, 30*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := *storage
+	target.Path, target.RawPath, target.RawQuery = "", "", ""
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DisableCompression = true
+	transport.ResponseHeaderTimeout = 15 * time.Second
+	t.Cleanup(transport.CloseIdleConnections)
+	proxy := httputil.NewSingleHostReverseProxy(&target)
+	proxy.Transport = transport
+	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
+		t.Errorf("private content probe proxy: %v", err)
+		http.Error(w, "private fixture proxy failed", http.StatusBadGateway)
+	}
+	held := barrier.Wrap(proxy)
+	trace := &contentProbeTrace{}
+	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut || r.Method == http.MethodPost || r.Method == http.MethodDelete {
+			trace.mu.Lock()
+			trace.writes = append(trace.writes, contentProbeWrite{r.Method, r.URL.Path, r.Header.Get("If-None-Match"), r.Header.Get("X-Object-Manifest")})
+			trace.mu.Unlock()
+		}
+		if r.Method == selector.Method && r.URL.EscapedPath() == selector.EscapedPath && r.URL.RawQuery == selector.RawQuery {
+			// Only the small control PUT needs the bounded Expect adapter;
+			// applying it to engine segment uploads would reject the fixture.
+			if len(r.Header.Values("Expect")) != 0 {
+				prepared, err := copyCompletionContinue(r)
+				if err != nil {
+					t.Errorf("private control handshake: %v", err)
+					http.Error(w, "private control handshake failed", http.StatusBadRequest)
+					return
+				}
+				r = prepared
+			}
+			held.ServeHTTP(w, r)
+			return
+		}
+		proxy.ServeHTTP(w, r)
+	}))
+	t.Cleanup(front.Close)
+	t.Cleanup(barrier.Close)
+	bookmarks, err := h.Bookmarks.List(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, bookmark := range bookmarks {
+		if bookmark.ID == h.Secondary.BookmarkID {
+			bookmark.StorageURLOverride = front.URL + storage.EscapedPath()
+			if _, err := h.Bookmarks.Save(t.Context(), bookmark, h.Secondary.key); err != nil {
+				t.Fatal(err)
+			}
+			return barrier, trace
+		}
+	}
+	t.Fatal("owned destination bookmark missing")
+	return nil, nil
+}
+
+func TestCopyStagedContentBeforeRealSwift(t *testing.T) {
+	for _, mode := range []string{"control", "same_size_corruption"} {
+		t.Run(mode, func(t *testing.T) {
+			h := New(t)
+			src := h.Container(h.Primary, "content-before-src")
+			dst := h.Container(h.Secondary, "content-before-dst")
+			segments := dst + "_segments"
+			h.rawPut(h.Secondary, "/"+segments, nil, nil)
+			t.Cleanup(func() { h.purge(h.Secondary, segments) })
+			control := []byte("first control bytes")
+			subject := append(bytes.Repeat([]byte("A"), 1<<20), bytes.Repeat([]byte("B"), 1<<20)...)
+			h.Seed(h.Primary, src, "scope/a-control", control, map[string]string{"X-Object-Meta-Team": "content-proof"})
+			h.Seed(h.Primary, src, "scope/b-subject", subject, map[string]string{"X-Object-Meta-Team": "content-proof"})
+			h.Seed(h.Primary, src, "unselected", []byte("source sentinel"), nil)
+			h.Seed(h.Secondary, dst, "unselected", []byte("destination sentinel"), nil)
+			beforeA, beforeB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
+			contentProbeJSON(t, mode+"-before", map[string]any{"source": beforeA, "destination": beforeB})
+			if _, err := h.Browse.Connect(t.Context(), h.Secondary.BookmarkID); err != nil {
+				t.Fatal(err)
+			}
+			sourceTrace := copyCompletionProxy(t, h, h.Primary, "")
+			barrier, trace := contentProbeProxy(t, h, dst+"/scope/a-control")
+			id, err := h.Transfer.StartCopy(t.Context(), app.CopyRequestDTO{
+				SourceBookmarkID: h.Primary.BookmarkID, SourceContainer: src, SourcePrefix: "scope/",
+				DestBookmarkID: h.Secondary.BookmarkID, DestContainer: dst, DestPrefix: "scope/",
+				Settings: app.TransferSettingsDTO{ChunkSize: "1Mi"},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			event, err := barrier.Wait(t.Context())
+			if err != nil || event.StatusCode != http.StatusCreated {
+				t.Fatalf("first live PUT did not reach the bounded after-effect barrier: %+v %v", event, err)
+			}
+			page, err := h.jobStore.ReadItems(t.Context(), id, 0, 100)
+			if err != nil || len(page.Items) != 2 {
+				t.Fatalf("two acknowledged batch identities required: %+v %v", page, err)
+			}
+			for i, name := range []string{"a-control", "b-subject"} {
+				item := page.Items[i]
+				if item.Key != name || !item.Planned || !item.Admitted || item.Staging == nil || item.Execution != nil || item.Verification != nil {
+					t.Fatalf("barrier crossed the claimed item boundary: %+v", item)
+				}
+			}
+			stageName := page.Items[1].Staging.Object
+			gate := h.SnapshotNamespace(h.Secondary)
+			stage := gate.Containers[dst].Objects[stageName]
+			if got := gate.Containers[dst].Objects["scope/a-control"]; got.Digest != fmt.Sprintf("%x", sha256.Sum256(control)) {
+				t.Fatalf("first landed effect not independently witnessed: %+v", got)
+			}
+			if _, exists := gate.Containers[dst].Objects["scope/b-subject"]; exists {
+				t.Fatal("subject was already live at the selected barrier")
+			}
+			if stage.Class != "dlo" || stage.Size != int64(len(subject)) || stage.Digest != fmt.Sprintf("%x", sha256.Sum256(subject)) || len(stage.Segments) != 2 {
+				t.Fatalf("subject did not stage as the intended two-part DLO: %+v", stage)
+			}
+			for _, segment := range stage.Segments {
+				if segment.Size != 1<<20 || !strings.HasPrefix(segment.Name, segments+"/") {
+					t.Fatalf("unexpected owned staged segment: %+v", segment)
+				}
+			}
+			contentProbeJSON(t, mode+"-held", map[string]any{"event": event, "items": page, "destination": gate, "writes": trace.snapshot()})
+			wantBody := subject
+			if mode == "same_size_corruption" {
+				container, name, ok := strings.Cut(stage.Segments[0].Name, "/")
+				if !ok || container != segments {
+					t.Fatal("segment identity is outside the owned subject fixture")
+				}
+				h.Seed(h.Secondary, container, name, bytes.Repeat([]byte("C"), 1<<20), nil)
+				wantBody = append(bytes.Repeat([]byte("C"), 1<<20), bytes.Repeat([]byte("B"), 1<<20)...)
+			}
+			altered := h.SnapshotNamespace(h.Secondary)
+			wantDigest := fmt.Sprintf("%x", sha256.Sum256(wantBody))
+			if got := altered.Containers[dst].Objects[stageName]; got.Size != int64(len(subject)) || got.Digest != wantDigest {
+				t.Fatalf("controlled stage bytes not independently witnessed: %+v", got)
+			}
+			if _, exists := altered.Containers[dst].Objects["scope/b-subject"]; exists {
+				t.Fatal("subject became live while first commit was held")
+			}
+			contentProbeJSON(t, mode+"-altered", altered)
+			if err := barrier.Release(); err != nil {
+				t.Fatal(err)
+			}
+			job := h.AwaitJob(id)
+			copyCompletionAwaitPins(t, h)
+			if err := barrier.Err(); err != nil {
+				t.Fatal(err)
+			}
+			saved := copyCompletionRead(t, h.database, id)
+			publicItems, err := h.Jobs.Items(t.Context(), id, "", 100)
+			if err != nil {
+				t.Fatal(err)
+			}
+			publicTotals, err := h.Jobs.ItemTotals(t.Context(), id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			publicAudit, err := h.Audit.Search(t.Context(), app.AuditQueryDTO{OperationPrefix: "transfer.copy.", Limit: 100})
+			if err != nil {
+				t.Fatal(err)
+			}
+			afterA, afterB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
+			writes := trace.snapshot()
+			contentProbeJSON(t, mode+"-after", map[string]any{"source": afterA, "destination": afterB, "public_job": job, "public_items": publicItems, "public_totals": publicTotals, "public_audit": publicAudit, "saved": saved, "writes": writes})
+			if d := diffOf(beforeA, afterA); !d.Empty() {
+				t.Fatalf("immutable source changed: %s", d)
+			}
+			sourceTrace.mu.Lock()
+			sourceWrites := append([]string(nil), sourceTrace.writes...)
+			sourceTrace.mu.Unlock()
+			if len(sourceWrites) != 0 {
+				t.Fatalf("Copy attempted source mutation: %v", sourceWrites)
+			}
+			live := afterB.Containers[dst].Objects["scope/b-subject"]
+			allowed := []string{dst + "/scope/a-control", dst + "/scope/b-subject"}
+			for _, segment := range live.Segments {
+				allowed = append(allowed, segment.Name)
+			}
+			h.AssertNoCollateral(beforeB, afterB, allowed...)
+			// Capture the exact current unsafe outcome before the desired
+			// safety assertion fails, so a generic setup failure proves nothing.
+			wantCounters := jobs.Counters{ObjectsPlanned: 2, BytesPlanned: int64(len(subject) + len(control)), ObjectsCopied: 2,
+				BytesCopied: int64(len(subject) + len(control)), ObjectsVerified: 2}
+			if saved.Job.State != "complete" || saved.Job.Counters != wantCounters || saved.Job.Error != "" || len(saved.Items) != 2 ||
+				!saved.ItemsCaptured || saved.ItemTotals != (jobs.ItemTotals{Items: 2, Planned: 2, Admitted: 2}) || !reflect.DeepEqual(job, saved.Job) {
+				t.Fatalf("unexpected baseline job result (not classified as the content defect): %+v", saved)
+			}
+			for i, name := range []string{"a-control", "b-subject"} {
+				item := saved.Items[i]
+				copiedBytes := int64(len(control))
+				if i == 1 {
+					copiedBytes = int64(len(subject))
+				}
+				if item.Key != name || item.Source.Object != "scope/"+name || item.Source.Container != src || item.Source.BookmarkID != h.Primary.BookmarkID ||
+					item.Destination.Object != "scope/"+name || item.Destination.Container != dst || item.Destination.BookmarkID != h.Secondary.BookmarkID ||
+					item.Execution == nil || item.Verification == nil || item.Execution.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemCopied, Effect: jobs.EffectReportedApplied, CopiedBytes: copiedBytes}) ||
+					item.Verification.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemVerified, Effect: jobs.EffectNotAttempted}) {
+					t.Fatalf("unexpected baseline retained item: %+v", item)
+				}
+			}
+			if publicItems.Status != "available" || len(publicItems.Items) != 2 || publicItems.NextCursor != "" ||
+				publicTotals != (app.JobItemTotalsDTO{Status: "available", Items: 2, Planned: 2, Admitted: 2}) {
+				t.Fatalf("public item result differs: %+v %+v", publicItems, publicTotals)
+			}
+			for i, item := range publicItems.Items {
+				stored := saved.Items[i]
+				if item.Key != stored.Key || item.Source.Object != stored.Source.Object || item.Source.Container != src || item.Source.BookmarkID != h.Primary.BookmarkID ||
+					item.Destination.Object != stored.Destination.Object || item.Destination.Container != dst || item.Destination.BookmarkID != h.Secondary.BookmarkID ||
+					item.Execution == nil || item.Execution.Result != "copied" || item.Execution.Effect != "reported_applied" || item.Execution.CopiedBytes != stored.Execution.CopiedBytes ||
+					item.Verification == nil || item.Verification.Result != "verified" || item.Verification.Effect != "not_attempted" {
+					t.Fatalf("public item dropped or altered the baseline outcome: %+v", item)
+				}
+			}
+			segmentChangeAudit(t, h, saved, segmentChangeScope{src: src, dst: dst}, id, "transfer.copy.complete", audit.ResultApplied,
+				" · item outcomes: 0 failed names, 0 conflicts, 0 refusals, 0 unresolved, 0 unverified, 0 with problems")
+			terminalAudit := 0
+			for _, event := range publicAudit {
+				if event.Operation != "transfer.copy.start" && strings.HasPrefix(event.Summary, "job "+id+" · ") {
+					terminalAudit++
+					if event.ID != saved.Audit[0].ID || event.Operation != saved.Audit[0].Operation || event.Result != string(saved.Audit[0].Result) || event.Resource != saved.Audit[0].Resource || event.Summary != saved.Audit[0].Summary {
+						t.Fatalf("public terminal audit differs from retained facts: %+v", event)
+					}
+				}
+			}
+			if terminalAudit != 1 {
+				t.Fatalf("public terminal audit count=%d", terminalAudit)
+			}
+			if len(saved.Rows) != 4 || saved.Status != (app.RecoveryStatusDTO{Jobs: 1, Records: 4}) {
+				t.Fatalf("expected all four recovery facts retained: %+v %+v", saved.Rows, saved.Status)
+			}
+			for _, row := range saved.Rows {
+				if row.JobID != id || row.BookmarkID != h.Secondary.BookmarkID {
+					t.Fatalf("recovery ownership differs: %+v", row)
+				}
+			}
+			if live.Class != "dlo" || live.Size != int64(len(subject)) || live.Digest != wantDigest || live.Meta["Team"] != "content-proof" {
+				t.Fatalf("published content does not match the controlled staged outcome: %+v", live)
+			}
+			livePuts := 0
+			for _, write := range writes {
+				if strings.HasSuffix(write.Path, "/"+dst+"/scope/b-subject") {
+					if write.Method != http.MethodPut || write.IfNoneMatch != "*" || write.Manifest != stage.Manifest {
+						t.Fatalf("unexpected subject publication: %+v", write)
+					}
+					livePuts++
+				}
+			}
+			if livePuts != 1 {
+				t.Fatalf("expected exact single baseline publication, got %d", livePuts)
+			}
+			t.Logf("probe complete: mode=%s source_digest=%s live_digest=%s state=%s copied=%d verified=%d live_puts=%d", mode,
+				beforeA.Containers[src].Objects["scope/b-subject"].Digest, live.Digest, saved.Job.State, saved.Job.Counters.ObjectsCopied, saved.Job.Counters.ObjectsVerified, livePuts)
+			if mode == "same_size_corruption" {
+				t.Errorf("DS04_EXPECTED_RED: corrupt staged subject was published and reported copied/verified; immutable source digest=%s live digest=%s live_puts=%d",
+					beforeA.Containers[src].Objects["scope/b-subject"].Digest, live.Digest, livePuts)
+			}
+		})
+	}
+}

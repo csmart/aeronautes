@@ -1,0 +1,563 @@
+package swiftcontrol
+
+import (
+	"bytes"
+	"compress/gzip"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	swift "github.com/ncw/swift/v2"
+)
+
+const probeHeaderTimeout = 100 * time.Millisecond
+const probeBodyTimeout = 300 * time.Millisecond
+
+type nativeProbeTrace struct {
+	auth, admission, serverStart, serverFinish, serverCancel          atomic.Int64
+	rtStart, rtFinish, readStart, readFinish, closeCalls, closeErrors atomic.Int64
+	mu                                                                sync.Mutex
+	bodies                                                            []*nativeProbeBody
+	requests                                                          []nativeProbeRequest
+}
+
+type nativeProbeRequest struct {
+	Method         string   `json:"method"`
+	Path           string   `json:"path"`
+	AcceptEncoding []string `json:"accept_encoding"`
+	TokenMatched   bool     `json:"token_matched"`
+}
+
+type nativeProbeTransport struct {
+	inner *http.Transport
+	trace *nativeProbeTrace
+}
+
+func (p *nativeProbeTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	if strings.HasPrefix(r.URL.Path, "/auth/") {
+		return p.inner.RoundTrip(r)
+	}
+	p.trace.rtStart.Add(1)
+	defer p.trace.rtFinish.Add(1)
+	resp, err := p.inner.RoundTrip(r)
+	if resp != nil && resp.Body != nil {
+		body := &nativeProbeBody{ReadCloser: resp.Body, trace: p.trace}
+		resp.Body = body
+		p.trace.mu.Lock()
+		p.trace.bodies = append(p.trace.bodies, body)
+		p.trace.mu.Unlock()
+	}
+	return resp, err
+}
+
+// The observer retains the inner transport's optional API; the unchanged
+// outer production wrappers determine whether native timers can reach it.
+func (p *nativeProbeTransport) CancelRequest(r *http.Request) {
+	p.inner.CancelRequest(r)
+}
+
+type nativeProbeBody struct {
+	io.ReadCloser
+	trace *nativeProbeTrace
+}
+
+func (b *nativeProbeBody) Read(p []byte) (int, error) {
+	b.trace.readStart.Add(1)
+	defer b.trace.readFinish.Add(1)
+	return b.ReadCloser.Read(p)
+}
+
+func (b *nativeProbeBody) Close() error {
+	b.trace.closeCalls.Add(1)
+	err := b.ReadCloser.Close()
+	if err != nil {
+		b.trace.closeErrors.Add(1)
+	}
+	return err
+}
+
+type nativeProbeSnapshot struct {
+	Phase                                                              string `json:"phase"`
+	Auth, Admission, ServerStarted, ServerFinished, ServerCancelled    int64
+	RoundTripsStarted, RoundTripsFinished, ReadsStarted, ReadsFinished int64
+	CloseCalls, CloseErrors                                            int64
+	NativeWorkers                                                      []string             `json:"native_workers"`
+	Requests                                                           []nativeProbeRequest `json:"requests"`
+}
+
+func nativeProbeWorkers() []string {
+	buffer := make([]byte, 1<<20)
+	n := runtime.Stack(buffer, true)
+	if n == len(buffer) {
+		return []string{"TRUNCATED_RUNTIME_STACK"}
+	}
+	var workers []string
+	for _, stack := range strings.Split(string(buffer[:n]), "\n\n") {
+		if strings.Contains(stack, "swift/v2.(*Connection).doTimeoutRequest.func1") ||
+			strings.Contains(stack, "swift/v2.(*timeoutReader).Read.func1") {
+			workers = append(workers, stack)
+		}
+	}
+	return workers
+}
+
+func (p *nativeProbeTrace) snapshot(phase string) nativeProbeSnapshot {
+	s := nativeProbeSnapshot{
+		Phase: phase, Auth: p.auth.Load(), Admission: p.admission.Load(),
+		ServerStarted: p.serverStart.Load(), ServerFinished: p.serverFinish.Load(),
+		ServerCancelled: p.serverCancel.Load(), RoundTripsStarted: p.rtStart.Load(),
+		RoundTripsFinished: p.rtFinish.Load(), ReadsStarted: p.readStart.Load(),
+		ReadsFinished: p.readFinish.Load(), CloseCalls: p.closeCalls.Load(),
+		CloseErrors: p.closeErrors.Load(), NativeWorkers: nativeProbeWorkers(),
+	}
+	p.mu.Lock()
+	s.Requests = append([]nativeProbeRequest(nil), p.requests...)
+	p.mu.Unlock()
+	return s
+}
+
+func (s nativeProbeSnapshot) drained() bool {
+	return s.ServerStarted > 0 && s.ServerStarted == s.ServerFinished &&
+		s.RoundTripsStarted == s.RoundTripsFinished && s.ReadsStarted == s.ReadsFinished &&
+		len(s.NativeWorkers) == 0
+}
+
+func recordNativeProbe(t *testing.T, snapshot nativeProbeSnapshot) {
+	t.Helper()
+	encoded, err := json.MarshalIndent(snapshot, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := os.Getenv("AERONAUTES_PROBE_EVIDENCE_DIR")
+	if root == "" {
+		t.Fatal("private evidence directory was not supplied")
+	}
+	name := strings.ReplaceAll(t.Name(), "/", "_") + "-" + snapshot.Phase + ".json"
+	if err := os.WriteFile(filepath.Join(root, name), append(encoded, '\n'), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("phase=%s server=%d/%d cancelled=%d roundtrips=%d/%d reads=%d/%d native_workers=%d close=%d close_errors=%d",
+		snapshot.Phase, snapshot.ServerFinished, snapshot.ServerStarted, snapshot.ServerCancelled,
+		snapshot.RoundTripsFinished, snapshot.RoundTripsStarted, snapshot.ReadsFinished,
+		snapshot.ReadsStarted, len(snapshot.NativeWorkers), snapshot.CloseCalls, snapshot.CloseErrors)
+}
+
+type nativeProbeFixture struct {
+	session    *Session
+	server     *httptest.Server
+	transport  *http.Transport
+	trace      *nativeProbeTrace
+	entered    chan struct{}
+	release    chan struct{}
+	once       sync.Once
+	cancel     context.CancelFunc
+	ctx        context.Context
+	clientDone []chan struct{}
+}
+
+func newNativeProbeFixture(t *testing.T, mode, encoding string, payload []byte, disableCompression bool) *nativeProbeFixture {
+	t.Helper()
+	f := &nativeProbeFixture{trace: &nativeProbeTrace{}, entered: make(chan struct{}, 32), release: make(chan struct{})}
+	f.ctx, f.cancel = context.WithCancel(context.Background())
+	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/auth/") {
+			f.trace.auth.Add(1)
+			w.Header().Set("X-Storage-Url", "http://"+r.Host+"/v1/AUTH_probe")
+			w.Header().Set("X-Auth-Token", "owned-probe-token")
+			return
+		}
+		f.trace.serverStart.Add(1)
+		defer f.trace.serverFinish.Add(1)
+		f.trace.mu.Lock()
+		f.trace.requests = append(f.trace.requests, nativeProbeRequest{
+			Method: r.Method, Path: r.URL.Path,
+			AcceptEncoding: append([]string(nil), r.Header.Values("Accept-Encoding")...),
+			TokenMatched:   r.Header.Get("X-Auth-Token") == "owned-probe-token",
+		})
+		f.trace.mu.Unlock()
+		f.entered <- struct{}{}
+		wait := func() bool {
+			select {
+			case <-r.Context().Done():
+				f.trace.serverCancel.Add(1)
+				return false
+			case <-f.release:
+				return true
+			}
+		}
+		if mode == "headers" && !wait() {
+			return
+		}
+		if encoding != "" {
+			w.Header().Set("Content-Encoding", encoding)
+		}
+		w.Header().Set("Content-Length", strconv.Itoa(len(payload)))
+		w.WriteHeader(http.StatusOK)
+		if mode == "body" {
+			w.(http.Flusher).Flush()
+			if !wait() {
+				return
+			}
+		}
+		if _, err := w.Write(payload); err != nil && r.Context().Err() == nil {
+			t.Errorf("owned fixture write failed without request cancellation: %v", err)
+		}
+	}))
+	t.Cleanup(func() {
+		// Every path releases the owned server, even an intended red assertion.
+		f.cancel()
+		f.once.Do(func() { close(f.release) })
+		f.server.CloseClientConnections()
+		f.trace.mu.Lock()
+		bodies := append([]*nativeProbeBody(nil), f.trace.bodies...)
+		f.trace.mu.Unlock()
+		for _, body := range bodies {
+			if err := body.Close(); err != nil {
+				t.Errorf("forced fixture body close: %v", err)
+			}
+		}
+		if f.transport != nil {
+			f.transport.CloseIdleConnections()
+		}
+		f.server.Close()
+		for _, done := range f.clientDone {
+			select {
+			case <-done:
+			case <-time.After(2 * time.Second):
+				t.Error("probe caller did not join during owned cleanup")
+			}
+		}
+		s := waitNativeProbeDrain(f.trace, 2*time.Second)
+		s.Phase = "after_forced_cleanup"
+		recordNativeProbe(t, s)
+		if s.ServerStarted > 0 && !s.drained() {
+			t.Error("owned fixture did not completely drain during cleanup")
+		}
+	})
+	var err error
+	f.session, err = New(Config{
+		AuthURL: f.server.URL + "/auth/v1.0", Username: "owned:user", APIKey: "owned-probe-key",
+		AdmitRequest: func(context.Context) error { f.trace.admission.Add(1); return nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	admission, ok := f.session.conn.Transport.(requestAdmissionTransport)
+	if !ok {
+		t.Fatal("production admission wrapper missing")
+	}
+	redirect, ok := admission.inner.(redirectRefusingTransport)
+	if !ok {
+		t.Fatal("production redirect wrapper missing")
+	}
+	base, ok := redirect.inner.(*http.Transport)
+	if !ok {
+		t.Fatal("unexpected underlying production transport")
+	}
+	f.transport = base.Clone()
+	f.transport.DisableCompression = disableCompression
+	redirect.inner = &nativeProbeTransport{inner: f.transport, trace: f.trace}
+	admission.inner = redirect
+	f.session.conn.Transport = admission
+	if _, ok := f.session.conn.Transport.(interface{ CancelRequest(*http.Request) }); ok {
+		t.Fatal("probe no longer represents the existing native timer boundary")
+	}
+	f.session.conn.ConnectTimeout = probeHeaderTimeout
+	f.session.conn.Timeout = probeBodyTimeout
+	if _, err := f.session.Credentials(f.ctx, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("private_session header_timeout=%s body_idle_timeout=%s native_retries=%d disable_compression=%t outer_cancel_request=false",
+		probeHeaderTimeout, probeBodyTimeout, f.session.conn.Retries, disableCompression)
+	return f
+}
+
+func (f *nativeProbeFixture) call(ctx context.Context, acceptEncoding string) (*http.Response, error) {
+	credentials, err := f.session.Credentials(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	var headers swift.Headers
+	if acceptEncoding != "" {
+		headers = swift.Headers{"Accept-Encoding": acceptEncoding}
+	}
+	resp, _, err := f.session.conn.Call(ctx, credentials.StorageURL, swift.RequestOpts{
+		Container: "owned", ObjectName: "object % + é?", Operation: http.MethodGet,
+		Headers: headers, OnReAuth: f.session.auth.storageTarget,
+	})
+	return resp, err
+}
+
+func waitNativeProbeDrain(trace *nativeProbeTrace, limit time.Duration) nativeProbeSnapshot {
+	deadline := time.NewTimer(limit)
+	defer deadline.Stop()
+	tick := time.NewTicker(5 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		s := trace.snapshot("after_drain_wait")
+		if s.drained() {
+			return s
+		}
+		select {
+		case <-deadline.C:
+			return s
+		case <-tick.C:
+		}
+	}
+}
+
+func waitNativeProbeEntered(t *testing.T, f *nativeProbeFixture) {
+	t.Helper()
+	select {
+	case <-f.entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("owned object request did not reach the response barrier")
+	}
+}
+
+func waitNativeProbeRead(t *testing.T, f *nativeProbeFixture) {
+	t.Helper()
+	deadline := time.NewTimer(2 * time.Second)
+	defer deadline.Stop()
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+	for f.trace.readStart.Load() == 0 {
+		select {
+		case <-deadline.C:
+			t.Fatal("underlying body read did not enter")
+		case <-tick.C:
+		}
+	}
+}
+
+func runNativeLifetime(t *testing.T, mode, strategy string) {
+	t.Helper()
+	f := newNativeProbeFixture(t, mode, "", []byte("data"), false)
+	ctx := f.ctx
+	if strategy == "deadline" {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 75*time.Millisecond)
+		defer cancel()
+	}
+	started := time.Now()
+	var resp *http.Response
+	var err error
+	if mode == "headers" && strategy == "cancel" {
+		type callResult struct {
+			resp *http.Response
+			err  error
+		}
+		result := make(chan callResult, 1)
+		done := make(chan struct{})
+		f.clientDone = append(f.clientDone, done)
+		go func() { defer close(done); r, e := f.call(ctx, "identity"); result <- callResult{r, e} }()
+		waitNativeProbeEntered(t, f)
+		f.cancel()
+		select {
+		case got := <-result:
+			resp, err = got.resp, got.err
+		case <-time.After(2 * time.Second):
+			t.Fatal("cancelled header call did not return")
+		}
+	} else {
+		resp, err = f.call(ctx, "identity")
+	}
+	if mode != "headers" && err != nil {
+		t.Fatalf("body/healthy setup failed: %v", err)
+	}
+	if mode == "body" {
+		if strategy == "cancel" {
+			result := make(chan error, 1)
+			done := make(chan struct{})
+			f.clientDone = append(f.clientDone, done)
+			go func() { defer close(done); _, e := resp.Body.Read(make([]byte, 16)); result <- e }()
+			waitNativeProbeRead(t, f)
+			f.cancel()
+			select {
+			case err = <-result:
+			case <-time.After(2 * time.Second):
+				t.Fatal("cancelled body read did not return")
+			}
+		} else {
+			_, err = resp.Body.Read(make([]byte, 16))
+		}
+	} else if mode == "complete" {
+		var payload []byte
+		payload, err = io.ReadAll(resp.Body)
+		if err == nil && !bytes.Equal(payload, []byte("data")) {
+			t.Fatalf("healthy payload mismatch: %q", payload)
+		}
+	}
+	t.Logf("operation_return elapsed=%s error_type=%T error=%v", time.Since(started), err, err)
+	if mode == "complete" {
+		if err != nil {
+			t.Fatal(err)
+		}
+	} else if strategy == "deadline" {
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("not the intended caller deadline: %v", err)
+		}
+	} else if strategy == "cancel" {
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("not the intended caller cancellation: %v", err)
+		}
+	} else if !errors.Is(err, swift.TimeoutError) {
+		t.Fatalf("not the intended native timeout: %v", err)
+	}
+	recordNativeProbe(t, f.trace.snapshot("after_operation"))
+	if strategy != "native" {
+		if strategy != "close_only" {
+			f.cancel()
+		}
+		if resp != nil {
+			if closeErr := resp.Body.Close(); closeErr != nil {
+				t.Fatalf("checked close failed: %v", closeErr)
+			}
+		}
+		recordNativeProbe(t, f.trace.snapshot("after_candidate_cleanup"))
+	}
+	limit := 2 * time.Second
+	if strategy == "native" {
+		limit = 150 * time.Millisecond
+	}
+	s := waitNativeProbeDrain(f.trace, limit)
+	recordNativeProbe(t, s)
+	if !s.drained() {
+		t.Errorf("EXPECTED_NATIVE_%s_LIFETIME_BOUND: operation returned but server/read/native workers remain live before forced fixture cleanup", strings.ToUpper(mode))
+	}
+	if strategy == "owned" && mode == "headers" && s.ServerStarted != int64(f.session.conn.Retries+1) {
+		t.Errorf("header timeout dispatch count=%d want=%d", s.ServerStarted, f.session.conn.Retries+1)
+	}
+	if strategy != "native" && mode != "complete" && s.ServerCancelled != s.ServerStarted {
+		t.Errorf("candidate cleanup did not cancel every held server request: %d/%d", s.ServerCancelled, s.ServerStarted)
+	}
+}
+
+func TestNativeCallLifetimeControls(t *testing.T) {
+	for _, tc := range []struct{ name, mode, strategy string }{
+		{"healthy_complete", "complete", "owned"},
+		{"owned_header_timeout_cancel", "headers", "owned"},
+		{"owned_body_timeout_cancel_close", "body", "owned"},
+		{"body_timeout_close_only", "body", "close_only"},
+		{"external_header_cancel", "headers", "cancel"},
+		{"external_body_cancel", "body", "cancel"},
+		{"header_context_deadline", "headers", "deadline"},
+		{"body_context_deadline", "body", "deadline"},
+	} {
+		t.Run(tc.name, func(t *testing.T) { runNativeLifetime(t, tc.mode, tc.strategy) })
+	}
+}
+
+func TestNativeCallLifetimeExpectedRed(t *testing.T) {
+	for _, mode := range []string{"headers", "body"} {
+		t.Run(mode, func(t *testing.T) { runNativeLifetime(t, mode, "native") })
+	}
+}
+
+func probeGzip(t *testing.T, name string) []byte {
+	t.Helper()
+	var out bytes.Buffer
+	w := gzip.NewWriter(&out)
+	w.Name = name
+	if _, err := w.Write([]byte("same decoded content")); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return out.Bytes()
+}
+
+func probeDigest(b []byte) string {
+	d := sha256.Sum256(b)
+	return hex.EncodeToString(d[:])
+}
+
+func runNativeRepresentation(t *testing.T, mode, kind string, requireOpaque bool) {
+	t.Helper()
+	encoding := "gzip"
+	payload := probeGzip(t, kind)
+	if kind == "malformed" {
+		payload = []byte("not a gzip stream")
+	}
+	if kind == "unknown" {
+		encoding, payload = "owned-unknown-coding", []byte{'o', 'p', 'a', 'q', 'u', 'e', 0, 255}
+	}
+	f := newNativeProbeFixture(t, "complete", encoding, payload, mode == "owned_no_compression")
+	accept := ""
+	if mode == "identity" {
+		accept = "identity"
+	}
+	resp, err := f.call(f.ctx, accept)
+	if err != nil {
+		t.Fatalf("representation setup call failed: %v", err)
+	}
+	got, readErr := io.ReadAll(resp.Body)
+	closeErr := resp.Body.Close()
+	f.cancel()
+	t.Logf("representation mode=%s kind=%s status=%d uncompressed=%t content_encoding=%q content_length=%d stored_length=%d returned_length=%d stored_sha256=%s returned_sha256=%s read_error=%v close_error=%v",
+		mode, kind, resp.StatusCode, resp.Uncompressed, resp.Header.Values("Content-Encoding"), resp.ContentLength,
+		len(payload), len(got), probeDigest(payload), probeDigest(got), readErr, closeErr)
+	if closeErr != nil {
+		t.Fatalf("representation checked close: %v", closeErr)
+	}
+	if requireOpaque || mode != "automatic" || kind == "unknown" {
+		if readErr != nil || !bytes.Equal(got, payload) || resp.Uncompressed || resp.Header.Get("Content-Encoding") != encoding {
+			t.Errorf("EXPECTED_OPAQUE_REPRESENTATION: complete stored bytes/encoding were not returned unchanged: read_error=%v equal_bytes=%t uncompressed=%t encoding=%q", readErr, bytes.Equal(got, payload), resp.Uncompressed, resp.Header.Get("Content-Encoding"))
+		}
+	} else if kind == "malformed" {
+		if readErr == nil || !resp.Uncompressed {
+			t.Error("automatic malformed-gzip control did not attempt decoding")
+		}
+	} else {
+		if readErr != nil || !bytes.Equal(got, []byte("same decoded content")) || !resp.Uncompressed || resp.Header.Get("Content-Encoding") != "" {
+			t.Error("automatic gzip characterization did not observe decoded bytes and removed encoding")
+		}
+	}
+	s := waitNativeProbeDrain(f.trace, 2*time.Second)
+	recordNativeProbe(t, s)
+	if !s.drained() {
+		t.Error("representation read did not drain before forced cleanup")
+	}
+	if len(s.Requests) != 1 {
+		t.Fatalf("representation requests=%d want=1", len(s.Requests))
+	}
+	wantAccept := "gzip"
+	if mode == "identity" {
+		wantAccept = "identity"
+	}
+	if mode == "owned_no_compression" {
+		wantAccept = ""
+	}
+	if strings.Join(s.Requests[0].AcceptEncoding, ",") != wantAccept || !s.Requests[0].TokenMatched ||
+		s.Requests[0].Path != "/v1/AUTH_probe/owned/object % + é?" || s.Requests[0].Method != http.MethodGet {
+		t.Errorf("unexpected request tuple: %+v; want Accept-Encoding=%q", s.Requests[0], wantAccept)
+	}
+}
+
+func TestNativeCallRepresentationControls(t *testing.T) {
+	for _, mode := range []string{"automatic", "identity", "owned_no_compression"} {
+		for _, kind := range []string{"gzip_a", "gzip_b", "malformed", "unknown"} {
+			t.Run(fmt.Sprintf("%s/%s", mode, kind), func(t *testing.T) { runNativeRepresentation(t, mode, kind, false) })
+		}
+	}
+}
+
+func TestNativeCallRepresentationExpectedRed(t *testing.T) {
+	runNativeRepresentation(t, "automatic", "gzip_a", true)
+}
