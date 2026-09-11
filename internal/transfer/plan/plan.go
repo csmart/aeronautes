@@ -111,9 +111,13 @@ type Summary struct {
 // and "//" components are silently dropped (exit 0); "." or ".." path
 // segments are silently skipped by --files-from-raw and silently
 // RENAMED to fullwidth dots (U+FF0E) by traversal — both measured on
-// v1.74.3 against real Swift; and a newline cannot ride any rclone list
-// (--files-from0 does not exist). Evaluate full names — a prefix can
-// make a safe relative name unsafe.
+// v1.74.3 against real Swift; a newline cannot ride any rclone list
+// (--files-from0 does not exist); and a name containing a rune the
+// engine reserves as a substitute or a quote is decoded to another
+// spelling, so a raw list entry matches nothing and is silently not
+// copied (exit 0), measured on v1.74.3 against real Swift and the mock
+// (2026-09-11 name encoding experiment). Evaluate full names — a prefix
+// can make a safe relative name unsafe.
 func RcloneUnsafe(name string) bool {
 	if strings.HasPrefix(name, "/") || strings.HasSuffix(name, "/") ||
 		strings.Contains(name, "//") || strings.Contains(name, "\n") {
@@ -124,7 +128,35 @@ func RcloneUnsafe(name string) bool {
 			return true
 		}
 	}
-	return false
+	return strings.ContainsFunc(name, engineReservedRune)
+}
+
+// engineReservedRune reports a rune the pinned engine (v1.74.3) uses as
+// an encoding substitute or quote on any supported platform, pinned to
+// its frozen encoder source: the quote rune, the control pictures it
+// substitutes for NUL, the C0 range and DEL, the space picture it uses
+// for a trailing space, and the full-width forms it uses for the slash,
+// the backslash, the full stop, and the seven characters Windows
+// forbids. One set applies on every platform, so a name that would be
+// respelled on one target is carried natively on all of them.
+func engineReservedRune(r rune) bool {
+	switch r {
+	case '\u201b', // ‛ quote rune
+		'\u2420', // ␠ trailing space substitute
+		'\uff0f', // ／ slash
+		'\uff3c', // ＼ backslash
+		'\uff0e', // ． full stop
+		'\uff1a', // ： colon
+		'\uff1f', // ？ question mark
+		'\uff02', // ＂ quotation mark
+		'\uff0a', // ＊ asterisk
+		'\uff1c', // ＜ less than
+		'\uff1e', // ＞ greater than
+		'\uff5c': // ｜ pipe
+		return true
+	}
+	// ␀ through ␟ for NUL and the C0 range, and ␡ for DEL.
+	return r >= '\u2400' && r <= '\u241f' || r == '\u2421'
 }
 
 // Copy merge-joins two deep listing streams (source and destination,
