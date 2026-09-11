@@ -5143,6 +5143,15 @@ A wrong initial copy and a stale segment row remain undetectable here and stay r
 A legitimately resegmented copy keeps its current outcome because the comparison is against this executor's own record, not the source's segment structure.
 Stronger change detection grants no destructive authority, Mirror starts remain refused under ADR 0020, and the valuable-data hold is unchanged.
 
+The bounded [Swift integration failure investigation](experiments/2026-09-11-swift-ci-failures.md) follows two failed PR93 runs whose test streams retain HTTP 503 responses but no server or runner diagnostics.
+The existing CI contract requires investigation before retry, every required job to succeed on the current head and base, and a checked master after merge.
+
+1. Preserve both failed runs, their complete failing-test inventories and the distinction between observed unavailability and an established cause.
+2. Retain bounded, timestamped diagnostics from the owned CI container and runner after the suite, including failed runs, with command failures recorded and credentials excluded.
+   Keep the Go producer exit, assertions, test selection, scenario reconciliation, aggregate refusal, fixture pin, concurrency and time budgets unchanged.
+3. Verify the collector's success, missing-container, failed-command and timeout paths, obtain independent review, then use the next complete PR run to investigate any recurring failure before deciding a repair or merge.
+   A passing retry does not establish the cause of an earlier failure or clear the valuable-data hold.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
