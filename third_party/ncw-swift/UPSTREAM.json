@@ -7,6 +7,7 @@
   "patches": [
     "credential-pairing.patch",
     "listing-response.patch",
-    "listing-fidelity.patch"
+    "listing-fidelity.patch",
+    "content-read.patch"
   ]
 }

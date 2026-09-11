@@ -1,8 +1,8 @@
 # Native content read: before evidence and maintained-proof boundary
 
-Status: proposed evidence document for [ADR 0037](../adr/0037-staged-content-read.md).
-These retained experiments establish why staged-content verification needs an explicit native-read prerequisite; they do not implement or approve that prerequisite.
-No new execution was performed to prepare this document.
+Status: before evidence and bounded prerequisite verification for [ADR 0037](../adr/0037-staged-content-read.md).
+The original experiments establish why staged-content verification needs an explicit native-read prerequisite; their preparation did not run new tests or implement that prerequisite.
+The later maintained verification below covers the opt-in native reader and Session adapter; the Copy consumer and real-Swift representation gate remain pending.
 DS-04 and the valuable-data hold remain open.
 
 ## Original sources and executions
@@ -123,10 +123,10 @@ Raw command/result/event/snapshot records and producer/assessor sources remain r
 
 The pinned Go binary's recorded SHA-256 is `30969f97169d7f43fe6a085873d75613adc21e30818a8c61d95bd27275df4624`; rclone 1.74.3's is `9700aa1273ac73d6d0833c43ba63fe830516422cb131960b8c1a24ced789cba0`.
 
-## Proposed maintained-proof boundary
+## Maintained-proof boundary
 
 The archived before tests assert old worker/raw-stack or unsafe-publication observations and deliberately fail afterwards; they are not drop-in passing acceptance tests for ADR 0037.
-Its proposed opt-in read requires maintained tests for joined local request/read ownership, checked unused/auth/401/error-body closure, response-plus-error ownership, generic body-consuming auth with coherent credential pairing, admission and read cancellation, and complete opaque HTTP 200 responses through checked EOF/close.
+Its opt-in read requires maintained tests for joined local request/read ownership, checked unused/auth/401/error-body closure, response-plus-error ownership, generic body-consuming auth with coherent credential pairing, admission and read cancellation, and complete opaque HTTP 200 responses through checked EOF/close.
 The consumer then needs a real-service refusal regression at the first-PUT barrier, a matching healthy/resegmentation control, complete collateral/recovery/public-record assertions, and checked recording/completion failures that cannot permit later dependent effects or invent saved outcomes.
 A same-size mismatch should become failed/unresolved staging evidence before its committing record or public PUT, retaining the bad stage and its segments; its item Unverified facet stays zero because that facet counts copied items lacking verified comparison, not diagnostic codes.
 Existing skip limitations, plain/native and segmented-source paths retain their accepted scope.
@@ -139,3 +139,83 @@ A focused maintained test must establish the actual final-name cancellation outc
 Shared auth-lock waits, uncooperative transports/bodies, generic-auth close failures, TLS/HTTP2 and other native platforms are not proved by these Linux HTTP/1.1 runs.
 MD5 remains an integrity check within the stated Swift model; no source-version snapshot, binding of dynamic segment membership through final publication, later-skip equality, crash/power-loss durability or destructive follow-up authority has been established.
 The prerequisite and narrow staged guard require separate local reviews within one eventual delivered change; no unused standalone read API, DS-04 closure or release of the valuable-data hold follows from this document.
+
+## Native prerequisite verification
+
+The implementation adds `RequestOpts.OwnedRead` and `Session.OpenObjectContent` without migrating any existing caller.
+Each authentication or storage attempt owns its context and response; successful open transfers the body to the caller, while errors check acquired-body closure before returning a nil response.
+The synchronous request and read calls join their cancelling watchdogs, and Close cancels and joins an active read before completing.
+Unused authentication, 401 and rejected bodies close without raw draining or provider-body excerpts.
+Authentication retains its native expiry and retry policy, accepts generic body-consuming authenticators, and publishes a coherent accepted tuple before reporting a subsequent close failure.
+The adapter requires explicit admission, the storage-target callback, HTTP 200, absence of every Content-Range field and opaque bytes requested with identity encoding.
+Existing callers, Session freshness policy, module pins and the first three vendor patches are unchanged.
+
+Verification used Go 1.27.1 on Linux/amd64 with race detection and read-only offline modules, from the contract base `bc28c57768596f983a1f1cc953b6a9245f14744c` plus the recorded implementation.
+The native draft changed eight paths; its replay reproduced all 731 archived files, preserving the other 723 baseline files.
+The ordered `content-read.patch` has SHA-256 `5a54ae5fc246d35a78dd0c07c57f21e0de8f1f0b3519da71683fb325c5968320`; `read_request.go` has SHA-256 `c38590329f6245c2685cce1a2cb4920cc8d1a866e3d44fc3652c2aa699dade72`.
+The source gate compares all 41 source files with the pinned archive plus four ordered patches; its 16 rejection tests include missing, altered and reordered patches and drift in the newly added files.
+
+| Final native command or control | Actual exit | Process seconds | Terminal leaves |
+| --- | ---: | ---: | --- |
+| Focused owned-read race tests | 0 | 4.578360 | 79 passed, no skips |
+| Explicit nested root mock race suite | 0 | 5.831902 | 252 passed, two existing symlink skips |
+| Source comparison | 0 | 0.074862 | 41 source files verified |
+| Source-gate rejection tests | 0 | 0.524101 | 16 unittest methods passed |
+| Header watchdog deliberately left armed | 1 | 1.527757 | One intended failure |
+| Underlying Read deliberately detached | 1 | 1.426295 | Three intended failures |
+| Required Close failure deliberately ignored for retry | 1 | 1.925968 | Two intended failures |
+
+The focused and nested JSON streams contain 398 and 1,122 events respectively, with complete unique test/package lifecycles and empty Go stderr.
+The nested skips are exactly `TestSymlinkObject` and `TestStaticSymlinkObject`, because that mock does not support symlinks.
+The focused coverage observation is 220 of 232 statements in `read_request.go`; it is not an assurance percentage.
+Actual owned HTTP/1, TLS HTTP/1 and explicitly configured HTTP/2 controls observe the negotiated protocol, cancellation, handler completion and buffer ownership.
+Private timers are 100 ms with 35 ms progressing chunks; the three-second observation cap and 90/120-second Go/process caps are test containment, not whole-object deadlines.
+The header-timer mutation interrupts a progressing stream after two bytes and also retains its resulting fixture broken-pipe error.
+The detached-read controls release and join every held writer before failing their early-return assertion, while both failed-Close controls observe three attempts instead of the required single attempt.
+These are targeted sensitivity checks, not proof that every omitted safeguard or possible timer race is covered.
+
+Every intermediate attempt remains retained separately from these final runs.
+The missing-API build failure has no regression credit; the first sandboxed mock-initializer run could not open its listener and was killed at its actual 120-second limit, without test starts or a package terminal.
+A later test-only panic compared a function-backed transport interface; the fixture was made comparable and its matching rerun passed before final acceptance.
+Actual draft failures separately exposed auth-request body closure, 401 invalidation with transport error, cancellation during Close, loss of a distinct I/O cause and timeout incorrectly appearing as caller cancellation.
+The final implementation preserves distinct cleanup causes and still stops retry after failed required closure.
+The outer patch replay initially rejected legitimate whitespace inside the patch file when run outside Git; supplying the unchanged repository attributes fixed packaging, while the actual source comparison still enforces whitespace errors.
+
+## Integrated Session verification
+
+The integrated prerequisite was checked again with the real Session adapter and its existing credential, trust, admission and normalization tests.
+All recorded production/test inputs remained unchanged during these commands; documentation was updated afterwards.
+Each command used the same pinned Go executable, `GOTOOLCHAIN=local`, `GOENV=off`, `GOWORK=off`, read-only offline modules and a private build cache, without inherited external Swift fixture configuration.
+
+```sh
+go test -race -count=1 -mod=readonly -json -parallel=1 -p=2 -timeout=180s ./internal/swiftcontrol -run '^TestObjectContent'
+go test -race -count=1 -mod=readonly -json -parallel=1 -p=2 -timeout=300s ./internal/swiftcontrol
+make verify-swift-source
+make test-swift-core
+go vet ./internal/swiftcontrol
+```
+
+| Integrated command | Actual exit | Process seconds | Result |
+| --- | ---: | ---: | --- |
+| Focused Session adapter race tests | 0 | 14.434596 | 177 events; 43 named tests, nine top-level tests, 34 passing leaves |
+| Complete swiftcontrol race package | 0 | 2.315285 | 1,958 events; 488 named tests, 100 top-level tests, 449 passing leaves |
+| Source comparison and rejection tests | 0 | 0.563789 | 41 source files and 16 unittest methods passed |
+| Explicit nested native root mock gate | 0 | 7.368311 | Package passed in 5.568 s; this command does not emit a named-test inventory |
+| Adapter vet | 0 | 4.276660 | No diagnostics |
+
+The two Session JSON runs have complete unique lifecycles, no skips or failed tests and empty Go stderr.
+Their expected self-signed-certificate rejection fixtures emit server handshake diagnostics in the event stream; these are passing refusal controls.
+The full package retains every focused adapter test and the existing paired-credential, expiry, forced-refresh, admission and captured-trust controls.
+The new adapter tests distinguish old and newly accepted auth tuples on checked close failure, native reuse of unknown-expiry credentials from Session's age policy, origin/account/override changes after 401 and admission refusal before later wire dispatch.
+The custom-CA HTTP/1 control uses captured CA bytes after the caller's original slice is cleared; a separate test-configured transport explicitly negotiates HTTP/2, while system trust refuses the self-signed peer before auth or storage dispatch.
+This does not claim HTTP/2 negotiation by the unchanged default custom-CA transport.
+
+Five separate private adapter mutations remove the exact-200 check, raw Content-Range presence check, explicit admission, initial caller-context check or checked rejected-body Close.
+Each exits 1 at its single intended leaf assertion in 1.315–1.365 seconds, without panic, race or timeout, and preserves the root source.
+The corresponding unmodified focused cases pass; the status/range controls keep otherwise matching content, the admission/context controls observe authentication/admission counts, and the close control observes zero closes instead of the required one.
+These tests do not substitute for the consumer's later count, digest, EOF, publication and retention checks.
+
+The reader alone does not verify content equality or prevent publication.
+The first Copy consumer, complete public failure and retention projections, actual Swift/rclone opaque-representation controls, application-wide verification and both delivery pipelines remain required.
+Normal explicit Close can still expose a body-returned cancellation error without proving operator cancellation; no broader error-kind policy is introduced.
+Auth-lock waits, uncooperative callbacks/transports, pooled HTTP work, source/publication binding and other native platforms retain the ADR's limits.

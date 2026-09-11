@@ -1,6 +1,6 @@
 # ADR 0037 — own staged-content reads
 
-**Status:** Proposed; independent contract approval is required before production changes.
+**Status:** Accepted; the native prerequisite and first consumer require separate implementation review and one combined delivery.
 **Scope:** One native-read prerequisite and its first plain-source to staged-DLO consumer within DS-04/P16.
 
 ## Problem and oracle
@@ -17,7 +17,7 @@ Deferring caller cancellation until Call returns cannot interrupt those pre-retu
 Automatic gzip handling can also replace the stored content bytes with decoded bytes.
 
 The behaviour oracle is DESIGN §§6.5, 9, 26.2, 28.4, 38 and 65.11; K-CON-001, K-PERF-001, K-XFER-014 and K-SEG-004; ADRs 0015, 0016, 0018, 0020, 0021 and 0030; and the accepted [staged-content direction](../experiments/2026-09-11-copy-verification-strength.md#the-staged-half-and-its-dependency).
-This proposal adds a scoped ownership and content-read contract; the before probes do not retroactively establish that legacy authentication promised it.
+This decision adds a scoped ownership and content-read contract; the before probes do not retroactively establish that legacy authentication promised it.
 The retained [native-read experiment](../experiments/2026-09-11-native-content-read.md) records the original sources, actual outcomes, failed controls and archival probe bytes.
 
 ## Decision

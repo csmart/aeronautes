@@ -1,0 +1,1608 @@
+diff --git a/swift.go b/swift.go
+--- a/swift.go
++++ b/swift.go
+@@ -749,6 +749,10 @@
+ 	NoResponse bool
+ 	Body       io.Reader
+ 	Retries    int
++	// OwnedRead opts a full object GET into joined request/read ownership.
++	// It requires an empty initial target and OnReAuth; the caller must
++	// consume through EOF and check Close before accepting the content.
++	OwnedRead bool
+ 	// OnReAuth selects the current target under the authentication lock on
+ 	// every attempt, even when another request already authenticated. It must
+ 	// do no external I/O or call methods that acquire the same lock. An error
+@@ -777,6 +781,9 @@
+ //
+ // This method is exported so extensions can call it.
+ func (c *Connection) Call(ctx context.Context, targetUrl string, p RequestOpts) (resp *http.Response, headers Headers, err error) {
++	if p.OwnedRead {
++		return c.callOwnedRead(ctx, targetUrl, p)
++	}
+ 	c.authLock.Lock()
+ 	c.setDefaults()
+ 	c.authLock.Unlock()
+diff --git a/read_request.go b/read_request.go
+new file mode 100644
+--- /dev/null
++++ b/read_request.go
+@@ -0,0 +1,386 @@
++package swift
++
++import (
++	"context"
++	"errors"
++	"fmt"
++	"io"
++	"net/http"
++	"net/url"
++	"strings"
++	"sync"
++	"sync/atomic"
++	"time"
++)
++
++var errOwnedReadClosed = errors.New("owned response closed")
++
++func validateOwnedRead(target string, p RequestOpts) error {
++	if target != "" || p.OnReAuth == nil || p.Container == "" || p.ObjectName == "" || p.Operation != http.MethodGet || p.Body != nil || p.NoResponse || p.Parameters != nil {
++		return errors.New("owned read requires a full object GET, an empty initial target and a storage target callback")
++	}
++	for key := range p.Headers {
++		switch strings.ToLower(key) {
++		case "range", "if-range", "content-length", "transfer-encoding":
++			return fmt.Errorf("owned read does not support %s", key)
++		}
++	}
++	return nil
++}
++
++// The legacy helpers detach Do/Read or drain unused bodies. This opt-in owns
++// each request separately so closing authentication cannot cancel the GET.
++func (c *Connection) callOwnedRead(ctx context.Context, target string, p RequestOpts) (*http.Response, Headers, error) {
++	if err := validateOwnedRead(target, p); err != nil {
++		return nil, nil, err
++	}
++	operation, cancel := context.WithCancel(ctx)
++	transferred := false
++	defer func() {
++		if !transferred {
++			cancel()
++		}
++	}()
++	c.authLock.Lock()
++	c.setDefaults()
++	retries := p.Retries
++	if retries == 0 {
++		retries = c.Retries
++	}
++	c.authLock.Unlock()
++	var headers Headers
++	for {
++		target, token, err := c.ownedReadCredentials(operation, p.OnReAuth)
++		if err != nil {
++			return nil, headers, err
++		}
++		uri, err := url.Parse(target)
++		if err != nil {
++			return nil, headers, err
++		}
++		if uri.RawQuery != "" || uri.ForceQuery || uri.Fragment != "" {
++			return nil, headers, errors.New("owned read storage target must not contain a query or fragment")
++		}
++		uri.Path += "/" + p.Container + "/" + p.ObjectName
++		// RawPath belongs to the old target and cannot describe the appended name.
++		uri.RawPath = ""
++		attempt, stop := context.WithCancelCause(operation)
++		req, err := http.NewRequestWithContext(attempt, http.MethodGet, uri.String(), nil)
++		if err != nil {
++			stop(err)
++			return nil, headers, err
++		}
++		for key, value := range p.Headers {
++			req.Header.Set(key, value)
++		}
++		req.Header.Set("Accept-Encoding", "identity")
++		req.Header.Set("User-Agent", c.UserAgent)
++		req.Header.Set("X-Auth-Token", token)
++		resp, err, closeErr := c.doOwnedRead(operation, req, stop)
++		if resp != nil {
++			headers = ownedReadHeaders(resp)
++			if resp.StatusCode == http.StatusUnauthorized {
++				c.UnAuthenticate()
++			}
++		}
++		if err != nil {
++			if closeErr != nil || operation.Err() != nil || retries <= 0 {
++				return nil, headers, errors.Join(err, closeErr)
++			}
++			retries--
++			continue
++		}
++		if resp.StatusCode == http.StatusUnauthorized {
++			closeErr = resp.Body.Close()
++			if closeErr != nil || operation.Err() != nil || retries <= 0 {
++				return nil, headers, errors.Join(AuthorizationFailed, closeErr, operation.Err())
++			}
++			retries--
++			continue
++		}
++		if err = ownedReadStatus(resp, p.ErrorMap); err != nil {
++			return nil, headers, errors.Join(err, resp.Body.Close())
++		}
++		body := resp.Body.(*ownedReadBody)
++		body.finishOperation = cancel
++		transferred = true
++		return resp, headers, nil
++	}
++}
++
++// Check cancellation on both sides of the legacy non-context-aware lock.
++func (c *Connection) ownedReadCredentials(ctx context.Context, target func() (string, error)) (string, string, error) {
++	if err := ctx.Err(); err != nil {
++		return "", "", err
++	}
++	c.authLock.Lock()
++	defer c.authLock.Unlock()
++	if err := ctx.Err(); err != nil {
++		return "", "", err
++	}
++	if !c.authenticated() {
++		if err := c.authenticateOwnedRead(ctx); err != nil {
++			return "", "", err
++		}
++	}
++	if err := ctx.Err(); err != nil {
++		return "", "", err
++	}
++	uri, err := target()
++	if err != nil {
++		return "", "", err
++	}
++	if uri == "" {
++		return "", "", errors.New("storage target callback returned an empty URL")
++	}
++	return uri, c.AuthToken, nil
++}
++
++// Authentication publication deliberately precedes checked close, as in the
++// legacy path: header authenticators may already have published their snapshot.
++func (c *Connection) authenticateOwnedRead(ctx context.Context) error {
++	flushKeepaliveConnections(c.Transport)
++	defer flushKeepaliveConnections(c.Transport)
++	if c.Auth == nil {
++		var err error
++		c.Auth, err = newAuth(c)
++		if err != nil {
++			return err
++		}
++	}
++	for retries := 1; ; retries-- {
++		attempt, stop := context.WithCancelCause(ctx)
++		req, err := c.Auth.Request(attempt, c)
++		if err != nil {
++			stop(err)
++			return errors.Join(err, closeOwnedReadRequest(req))
++		}
++		if req == nil {
++			stop(errOwnedReadClosed)
++			return c.publishOwnedReadAuthentication()
++		}
++		resp, err, closeErr := c.doOwnedRead(ctx, req.WithContext(attempt), stop)
++		if err != nil {
++			return errors.Join(err, closeErr)
++		}
++		if err = ownedReadStatus(resp, authErrorMap); err != nil {
++			closeErr = resp.Body.Close()
++			if closeErr == nil && ctx.Err() == nil && retries > 0 && (errors.Is(err, AuthorizationFailed) || errors.Is(err, BadRequest)) {
++				continue
++			}
++			return errors.Join(err, closeErr, ctx.Err())
++		}
++		err = c.Auth.Response(attempt, resp)
++		if err == nil {
++			err = c.publishOwnedReadAuthentication()
++		}
++		return errors.Join(err, resp.Body.Close())
++	}
++}
++
++func (c *Connection) publishOwnedReadAuthentication() error {
++	if custom, ok := c.Auth.(CustomEndpointAuthenticator); ok && c.EndpointType != "" {
++		c.StorageUrl = custom.StorageUrlForEndpoint(c.EndpointType)
++	} else {
++		c.StorageUrl = c.Auth.StorageUrl(c.Internal)
++	}
++	c.AuthToken = c.Auth.Token()
++	if expiring, ok := c.Auth.(Expireser); ok {
++		c.Expires = expiring.Expires()
++	} else {
++		c.Expires = time.Time{}
++	}
++	if !c.authenticated() {
++		return newError(0, "Response didn't have storage url and auth token")
++	}
++	return nil
++}
++
++func ownedReadStatus(resp *http.Response, mapping errorMap) error {
++	if err := mapping[resp.StatusCode]; err != nil {
++		return err
++	}
++	if resp.StatusCode < 200 || resp.StatusCode > 299 {
++		return newErrorf(resp.StatusCode, "HTTP Error: %d: %s", resp.StatusCode, http.StatusText(resp.StatusCode))
++	}
++	return nil
++}
++
++func ownedReadHeaders(resp *http.Response) Headers {
++	headers := Headers{}
++	for key, values := range resp.Header {
++		if len(values) != 0 {
++			headers[key] = values[0]
++		}
++	}
++	if tag, ok := headers["Etag"]; ok {
++		headers["Etag"] = strings.Trim(tag, "\"")
++	}
++	return headers
++}
++
++// http.Client discards a RoundTripper response returned with an error. Retain
++// that response in this attempt, so neither its body nor its close error is lost.
++// Refusing redirects also avoids the client's implicit raw body drain.
++type ownedReadTransport struct {
++	inner           http.RoundTripper
++	response        *http.Response
++	requestCloseErr error
++}
++
++func (t *ownedReadTransport) RoundTrip(req *http.Request) (*http.Response, error) {
++	if err := req.Context().Err(); err != nil {
++		t.requestCloseErr = closeOwnedReadRequest(req)
++		return nil, err
++	}
++	resp, err := t.inner.RoundTrip(req)
++	t.response = resp
++	if err != nil {
++		return nil, err
++	}
++	return resp, nil
++}
++
++func (c *Connection) doOwnedRead(parent context.Context, req *http.Request, cancel context.CancelCauseFunc) (*http.Response, error, error) {
++	client := *c.client
++	transport := &ownedReadTransport{inner: client.Transport}
++	client.Transport = transport
++	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
++	stopTimer := ownedReadWatchdog(cancel, c.ConnectTimeout)
++	resp, err := client.Do(req)
++	stopTimer()
++	if resp == nil {
++		resp = transport.response
++	}
++	err = ownedReadCause(req.Context(), err)
++	if resp != nil {
++		if resp.Body == nil {
++			resp.Body = http.NoBody
++		}
++		resp.Body = &ownedReadBody{body: resp.Body, ctx: req.Context(), parent: parent, cancel: cancel, idle: c.Timeout}
++	}
++	if err != nil {
++		if resp != nil {
++			body := resp.Body.(*ownedReadBody)
++			closeErr := body.Close()
++			var cleanupFailure error
++			if body.cleanupErr != nil {
++				cleanupFailure = ownedReadCause(req.Context(), body.cleanupErr)
++			}
++			return resp, errors.Join(err, closeErr), cleanupFailure
++		}
++		cancel(err)
++		return nil, err, transport.requestCloseErr
++	}
++	return resp, nil, nil
++}
++
++func closeOwnedReadRequest(req *http.Request) error {
++	if req != nil && req.Body != nil {
++		return req.Body.Close()
++	}
++	return nil
++}
++
++func ownedReadWatchdog(cancel context.CancelCauseFunc, timeout time.Duration) func() {
++	done := make(chan struct{})
++	timer := time.AfterFunc(timeout, func() {
++		defer close(done)
++		cancel(TimeoutError)
++	})
++	return func() {
++		if !timer.Stop() {
++			<-done
++		}
++	}
++}
++
++func ownedReadCause(ctx context.Context, err error) error {
++	cause := context.Cause(ctx)
++	if cause == nil {
++		return err
++	}
++	if errors.Is(cause, errOwnedReadClosed) {
++		return err
++	}
++	// A watchdog uses cancellation to interrupt I/O. Its transport cancellation
++	// must not hide the timeout or discard other joined I/O/cleanup failures.
++	if err == nil || err == io.EOF {
++		return cause
++	}
++	if errors.Is(cause, TimeoutError) {
++		err = ownedReadWithoutCancellation(err)
++	}
++	return errors.Join(cause, err)
++}
++
++func ownedReadWithoutCancellation(err error) error {
++	if err == context.Canceled || err == context.DeadlineExceeded {
++		return nil
++	}
++	if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
++		return err
++	}
++	switch wrapped := err.(type) {
++	case interface{ Unwrap() []error }:
++		var retained []error
++		for _, child := range wrapped.Unwrap() {
++			retained = append(retained, ownedReadWithoutCancellation(child))
++		}
++		return errors.Join(retained...)
++	case interface{ Unwrap() error }:
++		return ownedReadWithoutCancellation(wrapped.Unwrap())
++	default:
++		return err
++	}
++}
++
++type ownedReadBody struct {
++	body            io.ReadCloser
++	ctx             context.Context
++	parent          context.Context
++	cancel          context.CancelCauseFunc
++	idle            time.Duration
++	finishOperation context.CancelFunc
++	reading         sync.Mutex
++	closed          atomic.Bool
++	closeOnce       sync.Once
++	closeErr        error
++	cleanupErr      error
++}
++
++func (b *ownedReadBody) Read(p []byte) (int, error) {
++	b.reading.Lock()
++	defer b.reading.Unlock()
++	if b.closed.Load() {
++		return 0, io.ErrClosedPipe
++	}
++	if err := ownedReadCause(b.ctx, nil); err != nil {
++		return 0, err
++	}
++	stopTimer := ownedReadWatchdog(b.cancel, b.idle)
++	n, err := b.body.Read(p)
++	stopTimer()
++	return n, ownedReadCause(b.ctx, err)
++}
++
++func (b *ownedReadBody) Close() error {
++	b.closeOnce.Do(func() {
++		b.closed.Store(true)
++		cause := ownedReadCause(b.ctx, nil)
++		b.cancel(errOwnedReadClosed)
++		b.cleanupErr = b.body.Close()
++		// Cancel and Close precede the join because either can unblock Read.
++		b.reading.Lock()
++		b.reading.Unlock()
++		cleanup := b.cleanupErr
++		if errors.Is(cause, TimeoutError) {
++			cleanup = ownedReadWithoutCancellation(cleanup)
++		}
++		b.closeErr = errors.Join(cause, cleanup, b.parent.Err())
++		if b.finishOperation != nil {
++			b.finishOperation()
++		}
++	})
++	return b.closeErr
++}
+diff --git a/read_request_test.go b/read_request_test.go
+new file mode 100644
+--- /dev/null
++++ b/read_request_test.go
+@@ -0,0 +1,440 @@
++package swift
++
++import (
++	"context"
++	"errors"
++	"io"
++	"net/http"
++	"net/http/httptest"
++	"net/url"
++	"strings"
++	"sync"
++	"sync/atomic"
++	"testing"
++	"time"
++)
++
++type ownedTestTransport func(*http.Request) (*http.Response, error)
++
++func (f ownedTestTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
++
++func ownedTestConnection(transport http.RoundTripper) *Connection {
++	return &Connection{Transport: transport, StorageUrl: "http://storage.invalid/v1/account", AuthToken: "token", Retries: -1, ConnectTimeout: 100 * time.Millisecond, Timeout: 100 * time.Millisecond}
++}
++
++func ownedTestOptions(c *Connection) RequestOpts {
++	return RequestOpts{OwnedRead: true, Container: "container", ObjectName: "object", Operation: http.MethodGet, OnReAuth: func() (string, error) { return c.StorageUrl, nil }}
++}
++
++func ownedTestWait(t *testing.T, ch <-chan struct{}, what string) {
++	t.Helper()
++	select {
++	case <-ch:
++	case <-time.After(3 * time.Second):
++		t.Fatalf("did not observe %s", what)
++	}
++}
++
++func ownedTestPending(t *testing.T, ch <-chan struct{}, what string) {
++	t.Helper()
++	select {
++	case <-ch:
++		t.Errorf("%s returned before its underlying work joined", what)
++	case <-time.After(25 * time.Millisecond):
++	}
++}
++
++type ownedTestBody struct {
++	reads    atomic.Int32
++	closes   atomic.Int32
++	closeErr error
++}
++
++func (b *ownedTestBody) Read([]byte) (int, error) {
++	b.reads.Add(1)
++	return 0, errors.New("unused body was read")
++}
++func (b *ownedTestBody) Close() error { b.closes.Add(1); return b.closeErr }
++
++func TestOwnedReadRejectsOtherOperations(t *testing.T) {
++	for _, tc := range []struct {
++		name   string
++		change func(*RequestOpts)
++		target string
++	}{
++		{"method", func(p *RequestOpts) { p.Operation = http.MethodHead }, ""},
++		{"body", func(p *RequestOpts) { p.Body = strings.NewReader("") }, ""},
++		{"no_response", func(p *RequestOpts) { p.NoResponse = true }, ""},
++		{"parameters", func(p *RequestOpts) { p.Parameters = url.Values{} }, ""},
++		{"range", func(p *RequestOpts) { p.Headers = Headers{"rAnGe": ""} }, ""},
++		{"if_range", func(p *RequestOpts) { p.Headers = Headers{"If-Range": "tag"} }, ""},
++		{"callback", func(p *RequestOpts) { p.OnReAuth = nil }, ""},
++		{"initial_target", func(*RequestOpts) {}, "http://storage.invalid/v1/old"},
++		{"container", func(p *RequestOpts) { p.Container = "" }, ""},
++		{"object", func(p *RequestOpts) { p.ObjectName = "" }, ""},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			var calls atomic.Int32
++			c := ownedTestConnection(ownedTestTransport(func(*http.Request) (*http.Response, error) {
++				calls.Add(1)
++				return nil, errors.New("unexpected dispatch")
++			}))
++			p := ownedTestOptions(c)
++			tc.change(&p)
++			resp, _, err := c.Call(context.Background(), tc.target, p)
++			if err == nil || resp != nil || calls.Load() != 0 {
++				t.Fatalf("invalid option: response=%v err=%v calls=%d", resp, err, calls.Load())
++			}
++		})
++	}
++}
++
++func TestOwnedReadJoinsHeaderWork(t *testing.T) {
++	for _, mode := range []string{"timeout", "cancellation", "response_and_error"} {
++		t.Run(mode, func(t *testing.T) {
++			entered, cancelled, release, finished, returned := make(chan struct{}), make(chan struct{}), make(chan struct{}), make(chan struct{}), make(chan struct{})
++			var once sync.Once
++			releaseWork := func() { once.Do(func() { close(release) }) }
++			defer releaseWork()
++			closeErr := errors.New("late close failed")
++			body := &ownedTestBody{closeErr: closeErr}
++			transportErr := errors.New("late transport error")
++			c := ownedTestConnection(ownedTestTransport(func(r *http.Request) (*http.Response, error) {
++				close(entered)
++				<-r.Context().Done()
++				close(cancelled)
++				<-release
++				defer close(finished)
++				resp := &http.Response{StatusCode: 200, Header: http.Header{"X-Trans-Id": {"late-id"}}, Body: body}
++				if mode == "response_and_error" {
++					return resp, transportErr
++				}
++				return resp, nil
++			}))
++			ctx, cancel := context.WithCancel(context.Background())
++			defer cancel()
++			var resp *http.Response
++			var headers Headers
++			var err error
++			go func() { defer close(returned); resp, headers, err = c.Call(ctx, "", ownedTestOptions(c)) }()
++			t.Cleanup(func() {
++				cancel()
++				releaseWork()
++				ownedTestWait(t, returned, "Call cleanup")
++				ownedTestWait(t, finished, "Do cleanup")
++			})
++			ownedTestWait(t, entered, "Do entry")
++			if mode != "timeout" {
++				cancel()
++			}
++			ownedTestWait(t, cancelled, "request cancellation")
++			ownedTestPending(t, returned, "Call")
++			releaseWork()
++			ownedTestWait(t, returned, "Call completion")
++			ownedTestWait(t, finished, "Do completion")
++			want := error(context.Canceled)
++			if mode == "timeout" {
++				want = TimeoutError
++			}
++			if resp != nil || !errors.Is(err, want) || !errors.Is(err, closeErr) || headers["X-Trans-Id"] != "late-id" {
++				t.Fatalf("late response=%v headers=%v err=%v", resp, headers, err)
++			}
++			if mode == "timeout" && errors.Is(err, context.Canceled) {
++				t.Fatalf("timer reported as caller cancellation: %v", err)
++			}
++			if mode == "response_and_error" && !errors.Is(err, transportErr) {
++				t.Fatalf("transport cause lost: %v", err)
++			}
++			if body.reads.Load() != 0 || body.closes.Load() != 1 {
++				t.Fatalf("late body reads=%d closes=%d", body.reads.Load(), body.closes.Load())
++			}
++		})
++	}
++}
++
++func TestOwnedReadRejectsWithoutDraining(t *testing.T) {
++	for _, status := range []int{401, 403, 404, 503} {
++		t.Run(http.StatusText(status), func(t *testing.T) {
++			closeErr := errors.New("rejected close failed")
++			body := &ownedTestBody{closeErr: closeErr}
++			c := ownedTestConnection(ownedTestTransport(func(*http.Request) (*http.Response, error) {
++				return &http.Response{StatusCode: status, Header: http.Header{"Content-Type": {"text/plain"}}, Body: body}, nil
++			}))
++			resp, _, err := c.Call(context.Background(), "", ownedTestOptions(c))
++			var swiftErr *Error
++			if resp != nil || !errors.As(err, &swiftErr) || swiftErr.StatusCode != status || !errors.Is(err, closeErr) {
++				t.Fatalf("response=%v error=%v", resp, err)
++			}
++			if body.reads.Load() != 0 || body.closes.Load() != 1 {
++				t.Fatalf("body reads=%d closes=%d", body.reads.Load(), body.closes.Load())
++			}
++			if status == 401 && c.Authenticated() {
++				t.Fatal("401 left rejected native credentials authenticated")
++			}
++		})
++	}
++}
++
++func TestOwnedReadHTTPControl(t *testing.T) {
++	var requests atomic.Int32
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		requests.Add(1)
++		if r.Header.Get("Accept-Encoding") != "identity" || r.Header.Get("X-Auth-Token") != "token" || r.URL.EscapedPath() != "/v1/account/container/a%25%3F%23/b" {
++			t.Errorf("request headers=%v path=%q", r.Header, r.URL.EscapedPath())
++		}
++		w.Header().Set("Content-Encoding", "unknown")
++		w.Header().Set("X-Trans-Id", "good-id")
++		_, err := io.WriteString(w, "opaque bytes")
++		if err != nil {
++			t.Errorf("fixture write: %v", err)
++		}
++	}))
++	defer server.Close()
++	c := ownedTestConnection(server.Client().Transport)
++	c.StorageUrl = server.URL + "/v1/account"
++	p := ownedTestOptions(c)
++	p.ObjectName = "a%?#/b"
++	p.Headers = Headers{"accept-encoding": "gzip"}
++	resp, headers, err := c.Call(context.Background(), "", p)
++	if err != nil {
++		t.Fatal(err)
++	}
++	got, readErr := io.ReadAll(resp.Body)
++	closeErr := resp.Body.Close()
++	if string(got) != "opaque bytes" || readErr != nil || closeErr != nil || headers["X-Trans-Id"] != "good-id" || resp.Header.Get("Content-Encoding") != "unknown" || resp.Uncompressed || requests.Load() != 1 {
++		t.Fatalf("body=%q read=%v close=%v headers=%v requests=%d", got, readErr, closeErr, headers, requests.Load())
++	}
++	if err := resp.Body.Close(); err != nil {
++		t.Fatalf("repeated close: %v", err)
++	}
++}
++
++type ownedHeldBody struct {
++	ctx                                   context.Context
++	entered, cancelled, release, finished chan struct{}
++	closes                                atomic.Int32
++}
++
++func (b *ownedHeldBody) Read(p []byte) (int, error) {
++	close(b.entered)
++	<-b.ctx.Done()
++	close(b.cancelled)
++	<-b.release
++	p[0] = 'z'
++	close(b.finished)
++	return 1, b.ctx.Err()
++}
++func (b *ownedHeldBody) Close() error { b.closes.Add(1); return nil }
++
++func TestOwnedReadJoinsBorrowedBuffer(t *testing.T) {
++	for _, mode := range []string{"timeout", "cancellation", "close"} {
++		t.Run(mode, func(t *testing.T) {
++			body := &ownedHeldBody{entered: make(chan struct{}), cancelled: make(chan struct{}), release: make(chan struct{}), finished: make(chan struct{})}
++			var once sync.Once
++			release := func() { once.Do(func() { close(body.release) }) }
++			defer release()
++			c := ownedTestConnection(ownedTestTransport(func(r *http.Request) (*http.Response, error) {
++				body.ctx = r.Context()
++				return &http.Response{StatusCode: 200, Header: http.Header{}, Body: body}, nil
++			}))
++			ctx, cancel := context.WithCancel(context.Background())
++			defer cancel()
++			resp, _, err := c.Call(ctx, "", ownedTestOptions(c))
++			if err != nil {
++				t.Fatal(err)
++			}
++			buffer := []byte{'a'}
++			returned := make(chan struct{})
++			var n int
++			var readErr error
++			go func() { defer close(returned); n, readErr = resp.Body.Read(buffer) }()
++			t.Cleanup(func() {
++				cancel()
++				release()
++				ownedTestWait(t, returned, "Read cleanup")
++				ownedTestWait(t, body.finished, "buffer writer cleanup")
++				if err := resp.Body.Close(); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, TimeoutError) {
++					t.Errorf("unexpected body cleanup error: %v", err)
++				}
++			})
++			ownedTestWait(t, body.entered, "body Read entry")
++			closeReturned := make(chan struct{})
++			var closeErr error
++			switch mode {
++			case "cancellation":
++				cancel()
++			case "close":
++				go func() { defer close(closeReturned); closeErr = resp.Body.Close() }()
++			}
++			ownedTestWait(t, body.cancelled, "body context cancellation")
++			ownedTestPending(t, returned, "Read")
++			if mode == "close" {
++				ownedTestPending(t, closeReturned, "Close")
++			}
++			release()
++			ownedTestWait(t, returned, "Read return")
++			ownedTestWait(t, body.finished, "buffer writer completion")
++			if mode == "close" {
++				ownedTestWait(t, closeReturned, "Close return")
++			} else {
++				closeErr = resp.Body.Close()
++			}
++			if n != 1 || buffer[0] != 'z' || readErr == nil || body.closes.Load() != 1 {
++				t.Fatalf("read=%d/%q err=%v close=%v count=%d", n, buffer, readErr, closeErr, body.closes.Load())
++			}
++			if mode == "timeout" && (!errors.Is(readErr, TimeoutError) || errors.Is(readErr, context.Canceled)) {
++				t.Fatalf("wrong idle timeout: %v", readErr)
++			}
++			if mode == "cancellation" && !errors.Is(readErr, context.Canceled) {
++				t.Fatalf("wrong cancellation: %v", readErr)
++			}
++			buffer[0] = 'x'
++			if _, err := resp.Body.Read(buffer); !errors.Is(err, io.ErrClosedPipe) {
++				t.Fatalf("read after close=%v", err)
++			}
++		})
++	}
++}
++
++func TestOwnedReadHTTPProgressAndCancellation(t *testing.T) {
++	for _, protocol := range []string{"http1", "tls_http1", "http2"} {
++		t.Run(protocol, func(t *testing.T) {
++			for _, mode := range []string{"progress", "header_timeout", "body_timeout", "caller_cancel"} {
++				t.Run(mode, func(t *testing.T) {
++					entered, cancelled, finished := make(chan struct{}), make(chan struct{}), make(chan struct{})
++					release := make(chan struct{})
++					var releaseOnce sync.Once
++					releaseAll := func() { releaseOnce.Do(func() { close(release) }) }
++					defer releaseAll()
++					var protocolMajor atomic.Int32
++					server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++						defer close(finished)
++						protocolMajor.Store(int32(r.ProtoMajor))
++						close(entered)
++						if mode == "progress" {
++							w.WriteHeader(200)
++							w.(http.Flusher).Flush()
++							for i := 0; i < 6; i++ {
++								select {
++								case <-release:
++									return
++								case <-time.After(35 * time.Millisecond):
++								}
++								if _, err := w.Write([]byte{'a' + byte(i)}); err != nil {
++									t.Errorf("progress fixture write: %v", err)
++									return
++								}
++								w.(http.Flusher).Flush()
++							}
++							return
++						}
++						if mode != "header_timeout" {
++							w.WriteHeader(200)
++							w.(http.Flusher).Flush()
++						}
++						select {
++						case <-r.Context().Done():
++							close(cancelled)
++						case <-release:
++						}
++					}))
++					if protocol == "http1" {
++						server.Start()
++					} else {
++						server.EnableHTTP2 = protocol == "http2"
++						server.StartTLS()
++					}
++					defer server.Close()
++					c := ownedTestConnection(server.Client().Transport)
++					c.StorageUrl = server.URL + "/v1/account"
++					ctx, cancel := context.WithCancel(context.Background())
++					defer cancel()
++					start := time.Now()
++					resp, _, err := c.Call(ctx, "", ownedTestOptions(c))
++					ownedTestWait(t, entered, "HTTP handler")
++					if mode == "header_timeout" {
++						if resp != nil || !errors.Is(err, TimeoutError) || errors.Is(err, context.Canceled) {
++							t.Fatalf("header timeout response=%v err=%v", resp, err)
++						}
++					} else {
++						if err != nil {
++							t.Fatal(err)
++						}
++						if mode == "caller_cancel" {
++							cancel()
++						}
++						data, readErr := io.ReadAll(resp.Body)
++						closeErr := resp.Body.Close()
++						if mode == "progress" {
++							if string(data) != "abcdef" || readErr != nil || closeErr != nil || time.Since(start) <= c.Timeout || time.Since(start) <= c.ConnectTimeout {
++								t.Fatalf("progress=%q read=%v close=%v elapsed=%v", data, readErr, closeErr, time.Since(start))
++							}
++						} else {
++							want := error(TimeoutError)
++							if mode == "caller_cancel" {
++								want = context.Canceled
++							}
++							if !errors.Is(readErr, want) {
++								t.Fatalf("body failure=%v want=%v close=%v", readErr, want, closeErr)
++							}
++						}
++					}
++					if mode != "progress" {
++						ownedTestWait(t, cancelled, "server cancellation")
++					}
++					ownedTestWait(t, finished, "HTTP handler completion")
++					wantProtocol := int32(1)
++					if protocol == "http2" {
++						wantProtocol = 2
++					}
++					if protocolMajor.Load() != wantProtocol {
++						t.Fatalf("negotiated HTTP/%d, want %d", protocolMajor.Load(), wantProtocol)
++					}
++					t.Logf("observed HTTP/%d mode=%s elapsed=%v; handler joined", protocolMajor.Load(), mode, time.Since(start))
++				})
++			}
++		})
++	}
++}
++
++func TestOwnedReadLeavesConcurrentLegacyCallUnchanged(t *testing.T) {
++	entered, release, returned := make(chan struct{}), make(chan struct{}), make(chan struct{})
++	var releaseOnce sync.Once
++	releaseAll := func() { releaseOnce.Do(func() { close(release) }) }
++	defer releaseAll()
++	c := ownedTestConnection(ownedTestTransport(func(r *http.Request) (*http.Response, error) {
++		if strings.HasSuffix(r.URL.Path, "/owned") {
++			close(entered)
++			<-r.Context().Done()
++			<-release
++			return nil, r.Context().Err()
++		}
++		if r.Header.Get("Accept-Encoding") != "" {
++			t.Errorf("owned encoding option leaked to legacy request: %v", r.Header)
++		}
++		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("legacy"))}, nil
++	}))
++	c.Transport = &struct{ http.RoundTripper }{c.Transport}
++	c.setDefaults()
++	originalClient, originalTransport, originalTimeout := c.client, c.Transport, c.Timeout
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	var ownedErr error
++	p := ownedTestOptions(c)
++	p.ObjectName = "owned"
++	go func() { defer close(returned); _, _, ownedErr = c.Call(ctx, "", p) }()
++	t.Cleanup(func() { cancel(); releaseAll(); ownedTestWait(t, returned, "owned Call cleanup") })
++	ownedTestWait(t, entered, "owned request")
++	resp, _, err := c.Call(context.Background(), c.StorageUrl, RequestOpts{Operation: http.MethodGet, Container: "container", ObjectName: "legacy"})
++	if err != nil {
++		t.Fatal(err)
++	}
++	got, readErr := io.ReadAll(resp.Body)
++	closeErr := resp.Body.Close()
++	cancel()
++	releaseAll()
++	ownedTestWait(t, returned, "owned Call completion")
++	if string(got) != "legacy" || readErr != nil || closeErr != nil || !errors.Is(ownedErr, context.Canceled) || c.client != originalClient || c.Transport != originalTransport || c.Timeout != originalTimeout || c.client.CheckRedirect != nil {
++		t.Fatalf("legacy=%q read=%v close=%v owned=%v shared client or policy changed", got, readErr, closeErr, ownedErr)
++	}
++}
+diff --git a/read_request_auth_test.go b/read_request_auth_test.go
+new file mode 100644
+--- /dev/null
++++ b/read_request_auth_test.go
+@@ -0,0 +1,743 @@
++package swift
++
++import (
++	"context"
++	"errors"
++	"fmt"
++	"io"
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"sync"
++	"sync/atomic"
++	"testing"
++	"time"
++)
++
++type ownedTestAuth struct {
++	request    func(context.Context, *Connection) (*http.Request, error)
++	response   func(context.Context, *http.Response) error
++	url, token string
++	expires    time.Time
++}
++
++func (a *ownedTestAuth) Request(ctx context.Context, c *Connection) (*http.Request, error) {
++	return a.request(ctx, c)
++}
++func (a *ownedTestAuth) Response(ctx context.Context, r *http.Response) error {
++	return a.response(ctx, r)
++}
++func (a *ownedTestAuth) StorageUrl(bool) string { return a.url }
++func (a *ownedTestAuth) Token() string          { return a.token }
++func (a *ownedTestAuth) CdnUrl() string         { return "" }
++func (a *ownedTestAuth) Expires() time.Time     { return a.expires }
++
++func TestOwnedReadAuthBodiesAndPublication(t *testing.T) {
++	for _, mode := range []string{"unused", "generic_body", "close_failure", "auth_rejected"} {
++		t.Run(mode, func(t *testing.T) {
++			closeErr := errors.New("auth close failure")
++			body := &ownedTestBody{}
++			if mode == "close_failure" {
++				body.closeErr = closeErr
++			}
++			var authRequests, storageRequests, callbacks, responses int
++			auth := &ownedTestAuth{}
++			auth.request = func(ctx context.Context, c *Connection) (*http.Request, error) {
++				return http.NewRequestWithContext(ctx, http.MethodPost, "http://auth.invalid/v1", strings.NewReader("auth request"))
++			}
++			auth.response = func(ctx context.Context, r *http.Response) error {
++				responses++
++				if mode == "close_failure" && auth.token != "token" {
++					return errors.New("old accepted auth snapshot was lost before Response")
++				}
++				if body.closes.Load() != 0 {
++					return errors.New("auth received a closed body")
++				}
++				if mode == "generic_body" {
++					data, err := io.ReadAll(r.Body)
++					if err != nil {
++						return err
++					}
++					if string(data) != "auth response" {
++						return errors.New("wrong generic auth body")
++					}
++				}
++				auth.url = r.Header.Get("X-Storage-Url")
++				auth.token = r.Header.Get("X-Auth-Token")
++				return nil
++			}
++			c := ownedTestConnection(ownedTestTransport(func(r *http.Request) (*http.Response, error) {
++				if r.URL.Host == "auth.invalid" {
++					authRequests++
++					if r.Body == nil {
++						t.Error("generic auth lost its request body")
++					} else {
++						data, err := io.ReadAll(r.Body)
++						closeErr := r.Body.Close()
++						if string(data) != "auth request" || err != nil || closeErr != nil {
++							t.Errorf("auth request=%q read=%v close=%v", data, err, closeErr)
++						}
++					}
++					status := 200
++					if mode == "auth_rejected" {
++						status = 403
++					}
++					var responseBody io.ReadCloser = body
++					if mode == "generic_body" {
++						responseBody = io.NopCloser(strings.NewReader("auth response"))
++					}
++					return &http.Response{StatusCode: status, Header: http.Header{"X-Storage-Url": {"http://storage.invalid/v1/new"}, "X-Auth-Token": {"new-token"}}, Body: responseBody}, nil
++				}
++				storageRequests++
++				if r.Context().Err() != nil || r.URL.Path != "/v1/new/container/object" || r.Header.Get("X-Auth-Token") != "new-token" {
++					t.Errorf("storage request context=%v path=%q token=%q", r.Context().Err(), r.URL.Path, r.Header.Get("X-Auth-Token"))
++				}
++				return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("good"))}, nil
++			}))
++			c.Auth = auth
++			if mode == "close_failure" {
++				auth.url, auth.token = c.StorageUrl, c.AuthToken
++				if !c.Authenticated() {
++					t.Fatal("control requires an accepted old native tuple")
++				}
++				c.Expires = time.Now().Add(30 * time.Second)
++			} else {
++				c.UnAuthenticate()
++			}
++			p := ownedTestOptions(c)
++			p.OnReAuth = func() (string, error) {
++				callbacks++
++				if c.StorageUrl != auth.url || c.AuthToken != auth.token {
++					return "", errors.New("mixed authentication tuple")
++				}
++				return auth.url, nil
++			}
++			resp, _, err := c.Call(context.Background(), "", p)
++			if mode == "close_failure" || mode == "auth_rejected" {
++				if resp != nil || err == nil || callbacks != 0 || storageRequests != 0 {
++					t.Fatalf("auth failure response=%v err=%v callback=%d storage=%d", resp, err, callbacks, storageRequests)
++				}
++				if mode == "close_failure" && (!errors.Is(err, closeErr) || c.StorageUrl != auth.url || c.AuthToken != auth.token || c.AuthToken != "new-token" || responses != 1) {
++					t.Fatalf("accepted tuple lost: url=%q token=%q responses=%d err=%v", c.StorageUrl, c.AuthToken, responses, err)
++				}
++				if mode == "auth_rejected" && (c.Authenticated() || responses != 0 || auth.token != "") {
++					t.Fatalf("rejected auth was published: native=%v responses=%d snapshot=%q", c.Authenticated(), responses, auth.token)
++				}
++			} else {
++				if err != nil {
++					t.Fatal(err)
++				}
++				data, readErr := io.ReadAll(resp.Body)
++				if err := resp.Body.Close(); err != nil {
++					t.Fatal(err)
++				}
++				if string(data) != "good" || readErr != nil || storageRequests != 1 || callbacks != 1 {
++					t.Fatalf("storage=%q err=%v requests=%d callbacks=%d", data, readErr, storageRequests, callbacks)
++				}
++			}
++			if authRequests != 1 {
++				t.Fatalf("auth requests=%d", authRequests)
++			}
++			if mode != "generic_body" && (body.reads.Load() != 0 || body.closes.Load() != 1) {
++				t.Fatalf("unused auth body read=%d close=%d", body.reads.Load(), body.closes.Load())
++			}
++		})
++	}
++}
++
++func TestOwnedRead401RetryAndCloseFailure(t *testing.T) {
++	for _, mode := range []string{"success", "close_failure", "auth_failure", "revoked"} {
++		t.Run(mode, func(t *testing.T) {
++			closeErr := errors.New("401 close failure")
++			revoked := errors.New("request no longer admitted")
++			body := &ownedTestBody{}
++			if mode == "close_failure" {
++				body.closeErr = closeErr
++			}
++			var authRequests, storageRequests, attempts int
++			c := ownedTestConnection(ownedTestTransport(func(r *http.Request) (*http.Response, error) {
++				attempts++
++				if mode == "revoked" && attempts > 1 {
++					return nil, revoked
++				}
++				if r.URL.Host == "auth.invalid" {
++					authRequests++
++					status := 200
++					if mode == "auth_failure" {
++						status = 403
++					}
++					return &http.Response{StatusCode: status, Header: http.Header{"X-Storage-Url": {"http://storage.invalid/v1/new"}, "X-Auth-Token": {"new-token"}}, Body: &ownedTestBody{}}, nil
++				}
++				storageRequests++
++				if storageRequests == 1 {
++					if r.Header.Get("X-Auth-Token") != "token" {
++						t.Error("missing initial token")
++					}
++					return &http.Response{StatusCode: 401, Header: http.Header{}, Body: body}, nil
++				}
++				if r.URL.Path != "/v1/new/container/object" || r.Header.Get("X-Auth-Token") != "new-token" || r.Context().Err() != nil {
++					t.Errorf("retry used wrong pair or cancelled context: %v", r)
++				}
++				return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("fresh"))}, nil
++			}))
++			c.Retries = 2
++			c.AuthUrl = "http://auth.invalid/v1"
++			c.AuthVersion = 1
++			resp, _, err := c.Call(context.Background(), "", ownedTestOptions(c))
++			if mode == "success" {
++				if err != nil {
++					t.Fatal(err)
++				}
++				data, readErr := io.ReadAll(resp.Body)
++				closeErr := resp.Body.Close()
++				if string(data) != "fresh" || readErr != nil || closeErr != nil || authRequests != 1 || storageRequests != 2 {
++					t.Fatalf("retry=%q read=%v close=%v auth=%d storage=%d", data, readErr, closeErr, authRequests, storageRequests)
++				}
++			} else {
++				if resp != nil || err == nil || storageRequests != 1 || c.Authenticated() {
++					t.Fatalf("failure response=%v error=%v storage=%d native=%v", resp, err, storageRequests, c.Authenticated())
++				}
++				if mode == "close_failure" && (!errors.Is(err, AuthorizationFailed) || !errors.Is(err, closeErr) || authRequests != 0) {
++					t.Fatalf("close refusal err=%v auth=%d", err, authRequests)
++				}
++				if mode == "revoked" && (!errors.Is(err, revoked) || authRequests != 0) {
++					t.Fatalf("revoked err=%v auth=%d", err, authRequests)
++				}
++			}
++			if body.reads.Load() != 0 || body.closes.Load() != 1 {
++				t.Fatalf("401 body read=%d close=%d", body.reads.Load(), body.closes.Load())
++			}
++		})
++	}
++}
++
++func TestOwnedReadRedirectDoesNotFollow(t *testing.T) {
++	var targetRequests atomic.Int32
++	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { targetRequests.Add(1) }))
++	defer target.Close()
++	body := &ownedTestBody{closeErr: errors.New("redirect close")}
++	c := ownedTestConnection(ownedTestTransport(func(*http.Request) (*http.Response, error) {
++		return &http.Response{StatusCode: 302, Header: http.Header{"Location": {target.URL}}, Body: body}, nil
++	}))
++	resp, headers, err := c.Call(context.Background(), "", ownedTestOptions(c))
++	var swiftErr *Error
++	if resp != nil || !errors.As(err, &swiftErr) || swiftErr.StatusCode != 302 || !errors.Is(err, body.closeErr) || headers["Location"] != target.URL || targetRequests.Load() != 0 || body.reads.Load() != 0 || body.closes.Load() != 1 {
++		t.Fatalf("redirect response=%v headers=%v err=%v target=%d reads=%d closes=%d", resp, headers, err, targetRequests.Load(), body.reads.Load(), body.closes.Load())
++	}
++}
++
++type ownedCountedBody struct {
++	io.ReadCloser
++	reads, closes atomic.Int32
++}
++
++func (b *ownedCountedBody) Read(p []byte) (int, error) { b.reads.Add(1); return b.ReadCloser.Read(p) }
++func (b *ownedCountedBody) Close() error               { b.closes.Add(1); return b.ReadCloser.Close() }
++
++func TestOwnedReadRawHTTPBodies(t *testing.T) {
++	for _, kind := range []string{"v1_auth", "storage_401", "text_403"} {
++		for _, stalled := range []bool{false, true} {
++			t.Run(fmt.Sprintf("%s/stalled_%t", kind, stalled), func(t *testing.T) {
++				selected, finished, cancelled := make(chan struct{}), make(chan struct{}), make(chan struct{})
++				release := make(chan struct{})
++				var releaseOnce sync.Once
++				releaseAll := func() { releaseOnce.Do(func() { close(release) }) }
++				defer releaseAll()
++				var storageRequests, authRequests atomic.Int32
++				var serverURL string
++				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++					isAuth := r.URL.Path == "/v1.0"
++					target := false
++					status := 200
++					if isAuth {
++						authRequests.Add(1)
++						w.Header().Set("X-Storage-Url", serverURL+"/v1/new")
++						w.Header().Set("X-Auth-Token", "fresh")
++						target = kind == "v1_auth"
++					} else {
++						n := storageRequests.Add(1)
++						if n == 1 && kind == "storage_401" {
++							target = true
++							status = 401
++						}
++						if kind == "text_403" {
++							target = true
++							status = 403
++							w.Header().Set("Content-Type", "text/plain")
++						}
++					}
++					if !target {
++						_, err := io.WriteString(w, "ok")
++						if err != nil {
++							t.Errorf("normal fixture write: %v", err)
++						}
++						return
++					}
++					defer close(finished)
++					w.Header().Set("Content-Length", "100")
++					w.WriteHeader(status)
++					if !stalled {
++						_, err := w.Write([]byte(strings.Repeat("x", 100)))
++						if err != nil {
++							t.Errorf("normal raw fixture write: %v", err)
++						}
++					}
++					w.(http.Flusher).Flush()
++					close(selected)
++					if stalled {
++						select {
++						case <-r.Context().Done():
++							close(cancelled)
++						case <-release:
++						}
++					}
++				}))
++				serverURL = server.URL
++				defer func() { releaseAll(); server.Close() }()
++				var selectedBody *ownedCountedBody
++				transport := server.Client().Transport
++				c := ownedTestConnection(ownedTestTransport(func(r *http.Request) (*http.Response, error) {
++					resp, err := transport.RoundTrip(r)
++					if err == nil && ((kind == "v1_auth" && r.URL.Path == "/v1.0") || (kind == "storage_401" && resp.StatusCode == 401) || (kind == "text_403" && resp.StatusCode == 403)) {
++						selectedBody = &ownedCountedBody{ReadCloser: resp.Body}
++						resp.Body = selectedBody
++					}
++					return resp, err
++				}))
++				c.StorageUrl = serverURL + "/v1/old"
++				c.AuthUrl = serverURL + "/v1.0"
++				c.AuthVersion = 1
++				c.Retries = 1
++				if kind == "v1_auth" {
++					c.UnAuthenticate()
++				}
++				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
++				defer cancel()
++				resp, _, err := c.Call(ctx, "", ownedTestOptions(c))
++				ownedTestWait(t, selected, "selected raw response headers")
++				if kind == "text_403" {
++					var statusErr *Error
++					if resp != nil || !errors.As(err, &statusErr) || statusErr.StatusCode != 403 || errors.Is(err, context.Canceled) || errors.Is(err, TimeoutError) {
++						t.Fatalf("text refusal response=%v err=%v", resp, err)
++					}
++				} else {
++					if err != nil {
++						t.Fatal(err)
++					}
++					data, readErr := io.ReadAll(resp.Body)
++					closeErr := resp.Body.Close()
++					if string(data) != "ok" || readErr != nil || closeErr != nil {
++						t.Fatalf("storage control=%q read=%v close=%v", data, readErr, closeErr)
++					}
++				}
++				if selectedBody == nil || selectedBody.reads.Load() != 0 || selectedBody.closes.Load() != 1 {
++					t.Fatalf("raw body=%+v", selectedBody)
++				}
++				if stalled {
++					ownedTestWait(t, cancelled, "raw response server cancellation")
++				}
++				ownedTestWait(t, finished, "raw response handler completion")
++				wantStorage, wantAuth := int32(1), int32(1)
++				if kind == "storage_401" {
++					wantStorage = 2
++				}
++				if kind == "text_403" {
++					wantAuth = 0
++				}
++				if storageRequests.Load() != wantStorage || authRequests.Load() != wantAuth {
++					t.Fatalf("auth=%d storage=%d", authRequests.Load(), storageRequests.Load())
++				}
++			})
++		}
++	}
++}
++
++func TestOwnedReadCredentialBoundaries(t *testing.T) {
++	for _, mode := range []string{"warm", "cold", "expiry", "unknown_expiry", "force_reauth_failure", "override", "callback_error", "empty_callback", "missing_native", "cancelled", "callback_cancels", "query_target"} {
++		t.Run(mode, func(t *testing.T) {
++			var authRequests, storageRequests, callbacks int
++			callbackErr := errors.New("callback refused")
++			c := ownedTestConnection(ownedTestTransport(func(r *http.Request) (*http.Response, error) {
++				if r.URL.Host == "auth.invalid" {
++					authRequests++
++					status := 200
++					if mode == "force_reauth_failure" {
++						status = 403
++					}
++					header := http.Header{"X-Storage-Url": {"http://storage.invalid/v1/new"}, "X-Auth-Token": {"new-token"}}
++					if mode == "missing_native" {
++						header.Del("X-Auth-Token")
++					}
++					return &http.Response{StatusCode: status, Header: header, Body: &ownedTestBody{}}, nil
++				}
++				storageRequests++
++				wantToken, wantHost, wantPath := "token", "storage.invalid", "/v1/account/container/object"
++				if mode == "cold" || mode == "expiry" {
++					wantToken = "new-token"
++					wantPath = "/v1/new/container/object"
++				}
++				if mode == "override" {
++					wantHost = "override.invalid"
++					wantPath = "/v1/override/container/object"
++				}
++				if r.Header.Get("X-Auth-Token") != wantToken || r.URL.Host != wantHost || r.URL.Path != wantPath {
++					t.Errorf("credential pair request=%s token=%q", r.URL, r.Header.Get("X-Auth-Token"))
++				}
++				return &http.Response{StatusCode: 200, Header: http.Header{}, Body: http.NoBody}, nil
++			}))
++			c.AuthUrl = "http://auth.invalid/v1"
++			c.AuthVersion = 1
++			ctx, cancel := context.WithCancel(context.Background())
++			defer cancel()
++			switch mode {
++			case "cold", "force_reauth_failure", "missing_native":
++				c.UnAuthenticate()
++			case "expiry":
++				c.Expires = time.Now().Add(30 * time.Second)
++			case "unknown_expiry":
++				c.Expires = time.Time{}
++			case "cancelled":
++				cancel()
++			}
++			p := ownedTestOptions(c)
++			p.OnReAuth = func() (string, error) {
++				callbacks++
++				switch mode {
++				case "override":
++					return "http://override.invalid/v1/override", nil
++				case "callback_error":
++					return "", callbackErr
++				case "empty_callback":
++					return "", nil
++				case "callback_cancels":
++					cancel()
++				case "query_target":
++					return c.StorageUrl + "?multipart-manifest=get", nil
++				}
++				return c.StorageUrl, nil
++			}
++			resp, _, err := c.Call(ctx, "", p)
++			failure := mode == "force_reauth_failure" || mode == "callback_error" || mode == "empty_callback" || mode == "missing_native" || mode == "cancelled" || mode == "callback_cancels" || mode == "query_target"
++			if failure {
++				if resp != nil || err == nil || storageRequests != 0 {
++					t.Fatalf("refusal response=%v err=%v storage=%d", resp, err, storageRequests)
++				}
++			} else {
++				if err != nil {
++					t.Fatal(err)
++				}
++				if err := resp.Body.Close(); err != nil {
++					t.Fatal(err)
++				}
++				if storageRequests != 1 {
++					t.Fatalf("storage requests=%d", storageRequests)
++				}
++			}
++			wantAuth := 0
++			if mode == "cold" || mode == "expiry" || mode == "force_reauth_failure" || mode == "missing_native" {
++				wantAuth = 1
++			}
++			if authRequests != wantAuth {
++				t.Fatalf("auth requests=%d want=%d", authRequests, wantAuth)
++			}
++			if (mode == "force_reauth_failure" || mode == "missing_native" || mode == "cancelled") && callbacks != 0 {
++				t.Fatalf("callback after refused authentication/cancellation=%d", callbacks)
++			}
++			if mode == "callback_error" && !errors.Is(err, callbackErr) {
++				t.Fatalf("callback error lost: %v", err)
++			}
++			if (mode == "cancelled" || mode == "callback_cancels") && !errors.Is(err, context.Canceled) {
++				t.Fatalf("caller cancellation lost: %v", err)
++			}
++		})
++	}
++}
++
++func TestOwnedReadRetryBudget(t *testing.T) {
++	for _, mode := range []string{"transport", "header_timeout", "auth_bad_request", "auth_unauthorized", "auth_close_failure"} {
++		t.Run(mode, func(t *testing.T) {
++			var requests int
++			closeErr := errors.New("auth retry close failed")
++			var firstBody *ownedTestBody
++			c := ownedTestConnection(ownedTestTransport(func(r *http.Request) (*http.Response, error) {
++				requests++
++				if r.URL.Host == "auth.invalid" {
++					if requests == 1 {
++						status := 400
++						if mode == "auth_unauthorized" {
++							status = 401
++						}
++						firstBody = &ownedTestBody{}
++						if mode == "auth_close_failure" {
++							firstBody.closeErr = closeErr
++						}
++						return &http.Response{StatusCode: status, Header: http.Header{}, Body: firstBody}, nil
++					}
++					return &http.Response{StatusCode: 200, Header: http.Header{"X-Storage-Url": {"http://storage.invalid/v1/new"}, "X-Auth-Token": {"new-token"}}, Body: &ownedTestBody{}}, nil
++				}
++				if requests == 1 {
++					if mode == "header_timeout" {
++						<-r.Context().Done()
++						firstBody = &ownedTestBody{}
++						return &http.Response{StatusCode: 200, Header: http.Header{}, Body: firstBody}, nil
++					}
++					return nil, errors.New("temporary transport failure")
++				}
++				return &http.Response{StatusCode: 200, Header: http.Header{}, Body: http.NoBody}, nil
++			}))
++			c.Retries = 4
++			p := ownedTestOptions(c)
++			p.Retries = 1
++			if strings.HasPrefix(mode, "auth_") {
++				c.UnAuthenticate()
++				c.AuthUrl = "http://auth.invalid/v1"
++				c.AuthVersion = 1
++			}
++			resp, _, err := c.Call(context.Background(), "", p)
++			if mode == "auth_close_failure" {
++				if resp != nil || !errors.Is(err, closeErr) || requests != 1 {
++					t.Fatalf("close failure response=%v err=%v requests=%d", resp, err, requests)
++				}
++			} else {
++				if err != nil {
++					t.Fatal(err)
++				}
++				if err := resp.Body.Close(); err != nil {
++					t.Fatal(err)
++				}
++				want := 2
++				if strings.HasPrefix(mode, "auth_") {
++					want = 3
++				}
++				if requests != want {
++					t.Fatalf("requests=%d want=%d", requests, want)
++				}
++			}
++			if firstBody != nil && (firstBody.reads.Load() != 0 || firstBody.closes.Load() != 1) {
++				t.Fatalf("first body reads=%d closes=%d", firstBody.reads.Load(), firstBody.closes.Load())
++			}
++			if c.Retries != 4 {
++				t.Fatalf("per-call retry changed shared retries=%d", c.Retries)
++			}
++		})
++	}
++}
++
++type ownedClosingBody struct {
++	entered, release chan struct{}
++	err              error
++}
++
++func (b *ownedClosingBody) Read([]byte) (int, error) { return 0, io.EOF }
++func (b *ownedClosingBody) Close() error             { close(b.entered); <-b.release; return b.err }
++
++func TestOwnedReadCancellationDuringClose(t *testing.T) {
++	body := &ownedClosingBody{entered: make(chan struct{}), release: make(chan struct{})}
++	var once sync.Once
++	release := func() { once.Do(func() { close(body.release) }) }
++	defer release()
++	c := ownedTestConnection(ownedTestTransport(func(*http.Request) (*http.Response, error) {
++		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: body}, nil
++	}))
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	resp, _, err := c.Call(ctx, "", ownedTestOptions(c))
++	if err != nil {
++		t.Fatal(err)
++	}
++	if _, err := io.ReadAll(resp.Body); err != nil {
++		t.Fatal(err)
++	}
++	done := make(chan struct{})
++	var closeErr error
++	go func() { defer close(done); closeErr = resp.Body.Close() }()
++	ownedTestWait(t, body.entered, "underlying Close entry")
++	cancel()
++	ownedTestPending(t, done, "Close")
++	release()
++	ownedTestWait(t, done, "Close return")
++	if !errors.Is(closeErr, context.Canceled) {
++		t.Fatalf("cancellation while Close joined was lost: %v", closeErr)
++	}
++}
++
++func TestOwnedRead401WithTransportErrorInvalidates(t *testing.T) {
++	transportErr := errors.New("response plus transport failure")
++	closeErr := errors.New("response close failure")
++	body := &ownedTestBody{closeErr: closeErr}
++	c := ownedTestConnection(ownedTestTransport(func(*http.Request) (*http.Response, error) {
++		return &http.Response{StatusCode: 401, Header: http.Header{}, Body: body}, transportErr
++	}))
++	resp, _, err := c.Call(context.Background(), "", ownedTestOptions(c))
++	if resp != nil || !errors.Is(err, transportErr) || !errors.Is(err, closeErr) || c.Authenticated() || body.closes.Load() != 1 {
++		t.Fatalf("rejected response=%v err=%v native=%v closes=%d", resp, err, c.Authenticated(), body.closes.Load())
++	}
++}
++
++func TestOwnedReadRejectedAuthRequestClosesBody(t *testing.T) {
++	for _, mode := range []string{"request_error", "cancel_before_dispatch"} {
++		t.Run(mode, func(t *testing.T) {
++			requestErr := errors.New("auth request refused")
++			closeErr := errors.New("auth request close failed")
++			body := &ownedTestBody{closeErr: closeErr}
++			ctx, cancel := context.WithCancel(context.Background())
++			defer cancel()
++			var dispatched atomic.Int32
++			c := ownedTestConnection(ownedTestTransport(func(*http.Request) (*http.Response, error) {
++				dispatched.Add(1)
++				return nil, errors.New("must not dispatch")
++			}))
++			c.UnAuthenticate()
++			c.Auth = &ownedTestAuth{request: func(ctx context.Context, _ *Connection) (*http.Request, error) {
++				req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://auth.invalid/v1", body)
++				if err != nil {
++					return nil, err
++				}
++				if mode == "request_error" {
++					return req, requestErr
++				}
++				cancel()
++				return req, nil
++			}}
++			resp, _, err := c.Call(ctx, "", ownedTestOptions(c))
++			want := error(requestErr)
++			if mode == "cancel_before_dispatch" {
++				want = context.Canceled
++			}
++			if resp != nil || !errors.Is(err, want) || !errors.Is(err, closeErr) || body.closes.Load() != 1 || dispatched.Load() != 0 {
++				t.Fatalf("rejected request response=%v error=%v closes=%d dispatch=%d", resp, err, body.closes.Load(), dispatched.Load())
++			}
++		})
++	}
++}
++
++type ownedErrorBody struct {
++	ctx   context.Context
++	extra error
++}
++
++func (b *ownedErrorBody) Read([]byte) (int, error) {
++	<-b.ctx.Done()
++	return 0, errors.Join(b.ctx.Err(), b.extra)
++}
++func (b *ownedErrorBody) Close() error { return nil }
++
++func TestOwnedReadTimeoutKeepsOtherIOErrors(t *testing.T) {
++	extra := errors.New("distinct I/O failure")
++	body := &ownedErrorBody{extra: extra}
++	c := ownedTestConnection(ownedTestTransport(func(r *http.Request) (*http.Response, error) {
++		body.ctx = r.Context()
++		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: body}, nil
++	}))
++	resp, _, err := c.Call(context.Background(), "", ownedTestOptions(c))
++	if err != nil {
++		t.Fatal(err)
++	}
++	_, readErr := resp.Body.Read(make([]byte, 1))
++	closeErr := resp.Body.Close()
++	if !errors.Is(readErr, TimeoutError) || !errors.Is(readErr, extra) || errors.Is(readErr, context.Canceled) || !errors.Is(closeErr, TimeoutError) {
++		t.Fatalf("timeout lost or misclassified causes: read=%v close=%v", readErr, closeErr)
++	}
++}
++
++func TestOwnedReadExhaustedRetryBudgets(t *testing.T) {
++	for _, authFailure := range []bool{false, true} {
++		t.Run(fmt.Sprintf("auth_%t", authFailure), func(t *testing.T) {
++			var attempts int
++			var bodies []*ownedTestBody
++			transportErr := errors.New("persistent transport failure")
++			c := ownedTestConnection(ownedTestTransport(func(*http.Request) (*http.Response, error) {
++				attempts++
++				if !authFailure {
++					return nil, transportErr
++				}
++				body := &ownedTestBody{}
++				bodies = append(bodies, body)
++				return &http.Response{StatusCode: 400, Header: http.Header{}, Body: body}, nil
++			}))
++			c.Retries = 4
++			p := ownedTestOptions(c)
++			p.Retries = 1
++			if authFailure {
++				c.UnAuthenticate()
++				c.AuthVersion = 1
++				c.AuthUrl = "http://auth.invalid/v1"
++			}
++			resp, _, err := c.Call(context.Background(), "", p)
++			want := transportErr
++			if authFailure {
++				want = BadRequest
++			}
++			if resp != nil || !errors.Is(err, want) || attempts != 2 || c.Retries != 4 {
++				t.Fatalf("bounded failure response=%v err=%v attempts=%d shared_retries=%d", resp, err, attempts, c.Retries)
++			}
++			for _, body := range bodies {
++				if body.reads.Load() != 0 || body.closes.Load() != 1 {
++					t.Fatalf("rejected auth body reads=%d closes=%d", body.reads.Load(), body.closes.Load())
++				}
++			}
++		})
++	}
++}
++
++type ownedCancelledCloseBody struct {
++	ctx   context.Context
++	extra error
++}
++
++func (b *ownedCancelledCloseBody) Read([]byte) (int, error) { <-b.ctx.Done(); return 0, b.ctx.Err() }
++func (b *ownedCancelledCloseBody) Close() error             { return errors.Join(b.ctx.Err(), b.extra) }
++
++func TestOwnedReadTimeoutCloseCause(t *testing.T) {
++	for _, mode := range []string{"headers", "body", "caller"} {
++		for _, distinct := range []bool{false, true} {
++			t.Run(fmt.Sprintf("%s/distinct_%t", mode, distinct), func(t *testing.T) {
++				body := &ownedCancelledCloseBody{}
++				if distinct {
++					body.extra = errors.New("distinct close failure")
++				}
++				var attempts int
++				c := ownedTestConnection(ownedTestTransport(func(r *http.Request) (*http.Response, error) {
++					attempts++
++					body.ctx = r.Context()
++					if mode == "headers" {
++						<-r.Context().Done()
++					}
++					return &http.Response{StatusCode: 200, Header: http.Header{}, Body: body}, nil
++				}))
++				c.Retries = 2
++				ctx, cancel := context.WithCancel(context.Background())
++				defer cancel()
++				resp, _, err := c.Call(ctx, "", ownedTestOptions(c))
++				if mode == "headers" {
++					if resp != nil {
++						t.Fatal("timed out request returned a body")
++					}
++				} else {
++					if err != nil {
++						t.Fatal(err)
++					}
++					if mode == "caller" {
++						cancel()
++					}
++					_, readErr := resp.Body.Read(make([]byte, 1))
++					closeErr := resp.Body.Close()
++					err = errors.Join(readErr, closeErr)
++					if mode != "caller" && (errors.Is(closeErr, context.Canceled) || !errors.Is(closeErr, TimeoutError)) {
++						t.Errorf("owned timeout Close misclassified: %v", closeErr)
++					}
++					if distinct && !errors.Is(closeErr, body.extra) {
++						t.Errorf("distinct Close error lost: %v", closeErr)
++					}
++				}
++				want := error(TimeoutError)
++				if mode == "caller" {
++					want = context.Canceled
++				}
++				if !errors.Is(err, want) || (mode != "caller" && errors.Is(err, context.Canceled)) || (distinct && !errors.Is(err, body.extra)) || attempts != 1 {
++					t.Fatalf("wrong cause or retry after failed Close: err=%v attempts=%d", err, attempts)
++				}
++			})
++		}
++	}
++}

@@ -749,6 +749,10 @@ type RequestOpts struct {
 	NoResponse bool
 	Body       io.Reader
 	Retries    int
+	// OwnedRead opts a full object GET into joined request/read ownership.
+	// It requires an empty initial target and OnReAuth; the caller must
+	// consume through EOF and check Close before accepting the content.
+	OwnedRead bool
 	// OnReAuth selects the current target under the authentication lock on
 	// every attempt, even when another request already authenticated. It must
 	// do no external I/O or call methods that acquire the same lock. An error
@@ -777,6 +781,9 @@ type RequestOpts struct {
 //
 // This method is exported so extensions can call it.
 func (c *Connection) Call(ctx context.Context, targetUrl string, p RequestOpts) (resp *http.Response, headers Headers, err error) {
+	if p.OwnedRead {
+		return c.callOwnedRead(ctx, targetUrl, p)
+	}
 	c.authLock.Lock()
 	c.setDefaults()
 	c.authLock.Unlock()
