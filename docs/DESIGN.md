@@ -5106,6 +5106,7 @@ This prerequisite changes the identity used to compare names and adds no per-nam
    Preserve actual before failures on unchanged production, complete local and owned remote deltas, full job, item and audit facts, and single-boundary broken controls.
 5. Record the complete compatibility, inventory and scenario verification, obtain independent local review, and deliver only the reviewed current-base source through all five protected PR and master checks.
 
+Independent review returned four corrective verdicts on the plan and one on the implementation before approving each, and approved the rebase onto the final base separately, followed by [protected PR91 delivery](experiments/2026-09-10-download-name-normalization.md#protected-delivery) with all five PR and master checks green and both commits preserved patch for patch through the merge.
 The rule refuses a collision, never a spelling, and it makes no claim about which normalization form a given filesystem stores or compares.
 Compatibility equivalence, leading spaces, length limits, directory-only aliases, encoding collisions and representative native filesystem acceptance remain separate P19 work.
 This bounded correction does not close P18, P19 or the valuable-data hold.
