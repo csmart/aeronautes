@@ -1,4 +1,112 @@
 {
+  "after": {
+    "broken_controls": {
+      "g01_no_quote_rune": {
+        "log_sha256": "d5942f734597805f031b5ee3f793454b7322fbb95efd513f95daa98d452c214b",
+        "plan_exit": 1,
+        "plan_names_failing": 2,
+        "service_cases_failing": [
+          "copy/quote_rune",
+          "download/quote_rune"
+        ],
+        "service_exit": 1,
+        "setup_failed": false
+      },
+      "g02_no_control_pictures": {
+        "log_sha256": "c1f41b3f212371cfaf36e27f96a52e81012a871d91fd95473054593e01aac5f7",
+        "plan_exit": 1,
+        "plan_names_failing": 4,
+        "service_cases_failing": [
+          "copy/control_picture",
+          "copy/del_picture",
+          "copy/null_picture",
+          "download/control_picture",
+          "download/del_picture",
+          "download/null_picture"
+        ],
+        "service_exit": 1,
+        "setup_failed": false
+      },
+      "g03_no_fullwidth_stop": {
+        "log_sha256": "b1f1de25dcf6f41acefddb07c343e751c0a738584212275d7c6a428609eebbc7",
+        "plan_exit": 1,
+        "plan_names_failing": 3,
+        "service_cases_failing": [
+          "copy/fullwidth_stop_component",
+          "copy/fullwidth_stop_trailing",
+          "download/fullwidth_stop_component",
+          "download/fullwidth_stop_trailing"
+        ],
+        "service_exit": 1,
+        "setup_failed": false
+      },
+      "g04_no_windows_substitutes": {
+        "log_sha256": "b07158b11ea899aa88b19e8151bccab2ad5bde44fcdfa73a418b2067ee1c95fa",
+        "plan_exit": 1,
+        "plan_names_failing": 7,
+        "service_cases_failing": [
+          "copy/fullwidth_colon",
+          "download/fullwidth_colon"
+        ],
+        "service_exit": 1,
+        "setup_failed": false
+      }
+    },
+    "environment": {
+      "AERONAUTES_OFFICIAL_RCLONE_DIR": "<pinned rclone 1.74.3 directory>",
+      "GOFLAGS": "-mod=readonly",
+      "GOTOOLCHAIN": "go1.27.1",
+      "PATH": "pinned rclone first",
+      "real_swift": "AERONAUTES_SAIO_AUTH_URL=http://127.0.0.1:18080/auth/v1.0"
+    },
+    "producers": [
+      {
+        "command": "go test -race -count=1 -run 'TestRcloneUnsafeEngineReservedRunes$' -v ./internal/transfer/plan/",
+        "exit": 0,
+        "log_sha256": "837b833a6beec3eea07af119588729a4785a1126491d6c230572a18dff8c028b",
+        "name": "plan regression"
+      },
+      {
+        "command": "go test -race -count=1 -run 'TestDownloadNameEncodingMock$' -v ./internal/systemtest/",
+        "exit": 0,
+        "failing_leaves": 0,
+        "log_sha256": "0c936c348c667169a95a8223efe63fd456e47500069994f8c392c8295ddcff0c",
+        "name": "service mock",
+        "passing_leaves": 26
+      },
+      {
+        "command": "go test -race -count=1 -run 'TestDownloadNameEncodingRealSwift$' -v ./internal/systemtest/",
+        "exit": 0,
+        "failing_leaves": 0,
+        "log_sha256": "c42bd83046662ac513ee9e47482d8f9d6badb78d566b18a366f643e0dbbad8e6",
+        "name": "service real Swift",
+        "passing_leaves": 26
+      },
+      {
+        "command": "go test -race -count=1 -timeout=40m -json ./...",
+        "exit": 0,
+        "leaf_rule": "a leaf is a recorded name that is not a slash-separated prefix of another recorded name in the same package",
+        "name": "full race suite",
+        "reconciled": {
+          "distinct names": 3799,
+          "failing": 0,
+          "leaves": 3532,
+          "packages": 22,
+          "pass events": 3798,
+          "passing": 3531,
+          "skipped": 1
+        },
+        "stream_bytes": 7086139,
+        "stream_sha256": "0333b1680e780cee4ea77b4b2176f21890d71899f6ab53cd3599a0db0b6a24e8",
+        "window_utc": [
+          "2026-09-11T14:01:04Z",
+          "2026-09-11T14:08:21Z"
+        ]
+      }
+    ],
+    "recorded": "2026-09-11T14:09:19.181402+00:00",
+    "source": "20c3776918af150dbc0b5cf8cf9fd42d27ae7176"
+  },
   "environment": {
     "AERONAUTES_OFFICIAL_RCLONE_DIR": "<pinned rclone 1.74.3 directory>",
     "GOFLAGS": "-mod=readonly",
