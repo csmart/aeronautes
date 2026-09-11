@@ -44,3 +44,25 @@ A real completion, explicit refresh, changed identity or recovery after unavaila
 
 This fix changes presentation lifetime only and adds no transfer, rerun, overwrite or cleanup authority.
 The valuable-data hold remains in force.
+
+## Maintained correction and validation
+
+The component now derives its primitive job ID and reads that value in the existing reset effect.
+The active/terminal dependency, poll cadence, request sequence checks and unavailable-status handling are unchanged.
+Ordinary status updates still refresh the job counters while preserving the selected item page and any pending page read.
+
+Eight maintained cases cover active and terminal jobs, reused and fresh job values, and a completed or pending second-page read during the existing timer tick.
+They require both status polls to execute, updated counters to remain visible in browser state, no replacement item/totals request, the selected page to survive, and a pending read to finish on that page.
+The existing 401-row download test now explicitly triggers the poll before checking the last page, preserving every original identity, location, observation, count and refusal assertion.
+All nine cases fail their page or identity assertions against the prior component, with no test execution errors.
+The corrected item-record file passes all 39 tests.
+
+Four independent omission controls remove completion refresh, missing-status refusal, recovery reload or stale same-job page-response rejection.
+Each produces the expected behaviour assertion failure in the existing tests, for five failing cases in total, without a process, setup or test timeout.
+These controls keep the distinction between stable-page preservation and the events which must invalidate or refresh retained records.
+
+The full frontend coverage command, with two local workers, passes all 1,138 tests in 29 files.
+Type checking reports zero errors and zero warnings, and the production build passes.
+Measured whole-source statement coverage is 90.8 percent; `JobItems.svelte` has 100 percent line coverage and 87.71 percent branch coverage.
+These local component checks do not establish native platform coverage.
+Independent implementation review and successful current-head/current-base PR and resulting master pipelines remain required before delivery.

@@ -4,6 +4,8 @@
   import type { JobDTO, JobItemDTO, JobItemPageDTO, JobItemTotalsDTO } from "../../lib/api";
 
   let { browser, job }: { browser: BrowserState; job: JobDTO } = $props();
+  // A refreshed job object must not discard the selected page or its pending read.
+  const jobId = $derived(job.id);
   let page = $state<(JobItemPageDTO & { items: JobItemDTO[] }) | null>(null);
   let totals = $state<JobItemTotalsDTO | null>(null);
   let pageNumber = $state(1);
@@ -65,7 +67,7 @@
   }
 
   $effect(() => {
-    job.id;
+    jobId;
     active;
     untrack(() => void load("", 1));
     return () => { ++request; };

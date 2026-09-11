@@ -228,6 +228,7 @@ it("keeps unrecorded download history distinct and requires its own dialog", asy
 });
 
 it("pages exact download destinations and temporary paths without acquiring rerun authority", async () => {
+  vi.useFakeTimers();
   const api = newFakeApi();
   const download = { ...job("download", "partial"), type: "download", destBookmarkId: "" };
   const root = "/owned/Éléments";
@@ -263,6 +264,10 @@ it("pages exact download destinations and temporary paths without acquiring reru
   expand("download");
   const seen: string[] = [];
   for (let page = 0; page < 5; page++) {
+    if (page === 4) {
+      await vi.advanceTimersByTimeAsync(1500);
+      flushSync();
+    }
     const expected = retained.slice(page * 100, page * 100 + 100);
     await vi.waitFor(() => expect(document.querySelector("summary code")?.textContent).toBe(expected[0].keyDisplay));
     const elements = [...document.querySelectorAll(".item-record")];
@@ -294,6 +299,58 @@ it("pages exact download destinations and temporary paths without acquiring reru
   expect(api.rerunJob).not.toHaveBeenCalled();
   expect(api.startDownload).not.toHaveBeenCalled();
   expect(api.pickDownloadDir).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["partial", false, false], ["partial", false, true],
+  ["partial", true, false], ["partial", true, true],
+  ["running", false, false], ["running", false, true],
+  ["running", true, false], ["running", true, true],
+] as const)("preserves item pages during unchanged %s polls (fresh=%s, pending=%s)", async (state, fresh, pending) => {
+  vi.useFakeTimers();
+  const api = newFakeApi();
+  const download = { ...job("download", state), type: "download", destBookmarkId: "" };
+  const first = item(0, "scope\n<script>/étude-0.bin");
+  const last = item(400, "scope\n<script>/");
+  const tail: JobItemPageDTO = { status: "available", items: [last], nextCursor: "" };
+  const delayed = deferred<JobItemPageDTO>();
+  api.jobItems = vi.fn(async (id, cursor, limit) => {
+    expect(id).toBe("download");
+    expect(limit).toBe(100);
+    if (!cursor) return { status: "available", items: [first], nextCursor: first.id };
+    expect(cursor).toBe(first.id);
+    return pending ? delayed.promise : tail;
+  });
+  api.jobItemTotals = vi.fn(async () => totals({ items: 2 }));
+  const browser = await show(api, [download]);
+  if (fresh) api.jobs = vi.fn(async () => [{ ...download, counters: { ...download.counters, bytesCopied: 17 } }]);
+  expand("download");
+  await vi.waitFor(() => expect(document.querySelector("summary code")?.textContent).toBe(first.keyDisplay));
+  click("Next item page");
+  if (!pending) {
+    await vi.waitFor(() => expect(document.querySelector("summary code")?.textContent).toBe(last.keyDisplay));
+  }
+  vi.mocked(api.jobs).mockClear();
+  vi.mocked(api.job).mockClear();
+  vi.mocked(api.jobItems).mockClear();
+  vi.mocked(api.jobItemTotals).mockClear();
+  await vi.advanceTimersByTimeAsync(1500);
+  flushSync();
+  expect(api.jobs).toHaveBeenCalledOnce();
+  expect(api.job).toHaveBeenCalledExactlyOnceWith("download");
+  expect(browser.jobs[0].counters.bytesCopied).toBe(fresh ? 17 : 0);
+  expect(document.body.textContent).toContain("Item page 2");
+  expect(api.jobItems).not.toHaveBeenCalled();
+  expect(api.jobItemTotals).not.toHaveBeenCalled();
+  if (pending) {
+    expect(document.querySelector(".item-records")?.getAttribute("aria-busy")).toBe("true");
+    expect(document.querySelector(".item-record")).toBeNull();
+    delayed.resolve(tail);
+    await vi.waitFor(() => expect(document.querySelector("summary code")?.textContent).toBe(last.keyDisplay));
+  }
+  expect(document.querySelector("summary code")?.textContent).toBe(last.keyDisplay);
+  expect(document.querySelector(".item-records")?.getAttribute("aria-busy")).toBe("false");
+  expect(button("Next item page").disabled).toBe(true);
 });
 
 it.each(["empty", "unavailable"])("keeps new download records %s distinct from historical uncaptured jobs", async (condition) => {
