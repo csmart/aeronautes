@@ -122,7 +122,7 @@ func segmentChangeProxy(t *testing.T, h *Harness, account *Account) *segmentChan
 
 // segmentChangeMaxMeta reads the destination's advertised user metadata
 // allowance rather than assuming any particular deployment's value.
-func segmentChangeMaxMeta(t *testing.T, h *Harness) int {
+func segmentChangeMaxMeta(t *testing.T, h *Harness) segmentChangeLimits {
 	t.Helper()
 	root, err := url.Parse(h.Secondary.storageURL)
 	if err != nil {
@@ -140,17 +140,23 @@ func segmentChangeMaxMeta(t *testing.T, h *Harness) int {
 	}
 	var info struct {
 		Swift struct {
-			MaxMetaCount int `json:"max_meta_count"`
+			MaxMetaCount       int `json:"max_meta_count"`
+			MaxMetaOverallSize int `json:"max_meta_overall_size"`
+			MaxMetaNameLength  int `json:"max_meta_name_length"`
+			MaxMetaValueLength int `json:"max_meta_value_length"`
 		} `json:"swift"`
 	}
 	if err := json.Unmarshal(body, &info); err != nil {
 		t.Fatal(err)
 	}
-	if info.Swift.MaxMetaCount <= 0 {
-		t.Fatalf("destination advertises no metadata allowance: %s", body)
+	if info.Swift.MaxMetaCount <= 0 || info.Swift.MaxMetaOverallSize <= 0 || info.Swift.MaxMetaNameLength <= 0 || info.Swift.MaxMetaValueLength <= 0 {
+		t.Fatalf("destination advertises an incomplete metadata allowance: %s", body)
 	}
-	return info.Swift.MaxMetaCount
+	return segmentChangeLimits{count: info.Swift.MaxMetaCount, overall: info.Swift.MaxMetaOverallSize,
+		nameLength: info.Swift.MaxMetaNameLength, valueLength: info.Swift.MaxMetaValueLength}
 }
+
+type segmentChangeLimits struct{ count, overall, nameLength, valueLength int }
 
 type segmentChangeScope struct {
 	src, dst, segments string
@@ -361,15 +367,23 @@ func segmentChangeRefusal(t *testing.T, h *Harness, scope segmentChangeScope, wh
 	trace := segmentChangeProxy(t, h, h.Secondary)
 	id, saved := segmentChangeRun(t, h, scope)
 
-	if saved.Job.State != "partial" || saved.Job.Counters.OverwritesRefused != 1 ||
-		saved.Job.Counters.Overwrites != 0 || saved.Job.Counters.ObjectsCopied != 0 ||
-		saved.Job.Counters.ObjectsVerified != 0 || saved.Job.Counters.ObjectsFailed != 0 {
-		t.Fatalf("%s: refusal job differs: state=%q counters=%+v", why, saved.Job.State, saved.Job.Counters)
+	// The complete persisted outcome, not a subset: the planned object and
+	// bytes, the one refusal, every other counter zero.
+	want := jobs.Counters{ObjectsPlanned: 1, BytesPlanned: int64(len(segmentChangeBody)), OverwritesRefused: 1}
+	if saved.Job.State != "partial" || saved.Job.Counters != want {
+		t.Fatalf("%s: refusal job differs: state=%q counters=%+v want=%+v", why, saved.Job.State, saved.Job.Counters, want)
 	}
 	item := segmentChangeItem(t, h, saved, scope)
-	if item.Execution == nil || item.Execution.ItemObservation.Result != jobs.ItemRefused ||
-		item.Execution.ItemObservation.Effect != jobs.EffectNotAttempted {
-		t.Fatalf("%s: refusal observation differs: %+v", why, item.Execution)
+	if !item.Planned || !item.Admitted || item.Staging == nil || item.ListedBytes != int64(len(segmentChangeBody)) {
+		t.Fatalf("%s: refusal item intent differs: %+v", why, item.ItemIntent)
+	}
+	wantObservation := jobs.ItemObservation{Result: jobs.ItemRefused, Effect: jobs.EffectNotAttempted,
+		Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StagePlanning, Code: jobs.CodeUnsupported}}
+	if item.Execution == nil || item.Execution.ItemObservation != wantObservation {
+		t.Fatalf("%s: refusal observation differs: %+v want=%+v", why, item.Execution, wantObservation)
+	}
+	if item.Verification != nil {
+		t.Fatalf("%s: a refused item acquired a verification observation: %+v", why, item.Verification)
 	}
 	segmentChangeAudit(t, h, saved, scope, id, "transfer.copy.partial", audit.ResultVerifyMismatch,
 		" · 1 overwrite refused · item outcomes: 0 failed names, 0 conflicts, 1 refusals, 0 unresolved, 0 unverified, 1 with problems")
@@ -469,42 +483,71 @@ func copySegmentChangeStaticLargeObject(t *testing.T, h *Harness) {
 
 func copySegmentChangeMetadataAllowance(t *testing.T, h *Harness) {
 	t.Helper()
-	allowance := segmentChangeMaxMeta(t, h)
+	limits := segmentChangeMaxMeta(t, h)
+	// Both of this executor's entries have the same value shape, so one
+	// published sample gives the exact entry sizes the arithmetic needs.
+	probe := segmentChangeScope0(t, h, "segchange-metaprobe")
+	_, sample, _ := segmentChangePublish(t, h, probe, nil)
+	fingerprintEntry := len(segmentChangeFingerprintKey) + len(sample.Meta[segmentChangeFingerprintKey])
+	stampEntry := len(segmentChangeStampKey) + len(sample.Meta[segmentChangeStampKey])
+	if fingerprintEntry <= len(segmentChangeFingerprintKey) || stampEntry <= len(segmentChangeStampKey) {
+		t.Fatalf("sample publication carried no usable entries: %+v", sample.Meta)
+	}
 
-	// Below the allowance: the stamp fits beside the fingerprint and
-	// every preserved user value, and the copy carries it.
+	// Below the entry allowance: the stamp fits beside the fingerprint
+	// and every preserved value, and the copy carries it.
 	below := segmentChangeScope0(t, h, "segchange-metafit")
 	fits := map[string]string{}
-	for i := range allowance - 2 {
+	for i := range limits.count - 2 {
 		fits[fmt.Sprintf("X-Object-Meta-Pad%03d", i)] = "v"
 	}
 	_, live, _ := segmentChangePublish(t, h, below, fits)
 	if live.Meta[segmentChangeStampKey] == "" {
-		t.Fatalf("the stamp was dropped although it fits within %d entries: %d preserved", allowance, len(live.Meta))
+		t.Fatalf("the stamp was dropped although it fits within %d entries", limits.count)
 	}
 
-	// At the allowance: the stamp cannot fit without displacing a
-	// preserved value, so the copy still succeeds and simply carries no
-	// stamp. The destination is then refused rather than skipped.
+	// At the entry allowance: the stamp cannot fit without displacing a
+	// preserved value, so the copy still succeeds with every value
+	// intact and simply carries no stamp; the destination is then refused
+	// rather than skipped.
 	full := segmentChangeScope0(t, h, "segchange-metafull")
 	crowded := map[string]string{}
-	for i := range allowance - 1 {
+	for i := range limits.count - 1 {
 		crowded[fmt.Sprintf("X-Object-Meta-Pad%03d", i)] = "v"
 	}
 	_, crowdedLive, _ := segmentChangePublish(t, h, full, crowded)
 	if crowdedLive.Meta[segmentChangeStampKey] != "" {
-		t.Fatalf("the stamp was added past the advertised allowance of %d", allowance)
+		t.Fatalf("the stamp was added past the advertised allowance of %d entries", limits.count)
 	}
-	if crowdedLive.Meta[segmentChangeFingerprintKey] == "" {
-		t.Fatal("the fingerprint was displaced to make room")
-	}
-	for key, value := range crowded {
-		name := strings.TrimPrefix(key, "X-Object-Meta-")
-		if crowdedLive.Meta[name] != value {
-			t.Fatalf("preserved metadata %q = %q, want %q", name, crowdedLive.Meta[name], value)
+	segmentChangeRefusal(t, h, full, "unstamped because the entry allowance was full")
+
+	// At the total-size allowance: preserved values fill the advertised
+	// total so that the fingerprint entry still fits and the stamp entry
+	// does not, computed from the advertised limits rather than assumed.
+	sized := segmentChangeScope0(t, h, "segchange-metabytes")
+	room := limits.overall - fingerprintEntry - stampEntry + 1
+	heavy := map[string]string{}
+	for i := 0; room > 0; i++ {
+		name := fmt.Sprintf("Bulk%03d", i)
+		width := min(limits.valueLength, room-len(name))
+		if width <= 0 {
+			break
 		}
+		heavy["X-Object-Meta-"+name] = strings.Repeat("b", width)
+		room -= len(name) + width
 	}
-	segmentChangeRefusal(t, h, full, "unstamped because the allowance was full")
+	used := 0
+	for key, value := range heavy {
+		used += len(strings.TrimPrefix(key, "X-Object-Meta-")) + len(value)
+	}
+	if used+fingerprintEntry > limits.overall || used+fingerprintEntry+stampEntry <= limits.overall {
+		t.Fatalf("total-size fixture is not at the boundary: used=%d fingerprint=%d stamp=%d limit=%d", used, fingerprintEntry, stampEntry, limits.overall)
+	}
+	_, heavyLive, _ := segmentChangePublish(t, h, sized, heavy)
+	if heavyLive.Meta[segmentChangeStampKey] != "" {
+		t.Fatalf("the stamp was added past the advertised total size of %d", limits.overall)
+	}
+	segmentChangeRefusal(t, h, sized, "unstamped because the total size allowance was full")
 }
 
 // copySegmentChangeScenarios runs every scenario the fixture can

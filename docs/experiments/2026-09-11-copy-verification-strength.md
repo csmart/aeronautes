@@ -74,7 +74,7 @@ A legitimately resegmented copy is unaffected, because the comparison is against
 
 The mock serves a manifest object's own stored entity tag, which represents neither observed behaviour, so it is corrected rather than designed around.
 A dynamic large object read in the mock derives its aggregate entity tag from the same segment rows the mock lists, which is the shape of the upstream computation.
-The mock also now advertises the user metadata allowance the deployed service advertises and refuses a write that exceeds it, because a fixture that accepts what the service rejects cannot express the limit this slice must respect.
+The mock also now advertises the user metadata allowance the deployed service advertises and refuses a write that exceeds any of its four dimensions, reading them from whatever info document it is serving, because a fixture that accepts what the service rejects cannot express the limit this slice must respect.
 Neither the mock nor the observations above model a lagging segment listing; that dimension is named here as unmodelled, and a fault-injection switch for it belongs with the staged-content work rather than this slice.
 The static large object behaviour, both the frozen entity tag and the refusal of a mismatched assembled read, remains unmodelled, which is exactly why this slice refuses static large object destinations instead of reasoning about them.
 
@@ -93,6 +93,11 @@ The static large object destination is given the same fingerprint and stamp the 
 Each scenario builds its own destination so that a broken guard reaches the assertion it is meant to fail, rather than being stopped by an earlier one.
 The stripped-stamp scenario removes only the aggregate and keeps the fingerprint, so it exercises this guard and not the older one.
 The mock does not model creating a static large object over its HTTP surface, so that class is covered against the owned service and at the predicate.
+
+The allowance is covered at both layers.
+At the predicate, eight publications through the executor against custom info documents cover room to spare, an exhausted entry count, an exhausted total size, a name limit shorter than the stamp key, a count advertised without a total size, missing name and value lengths, no limits at all, and an unusable document; each preserves every source value, publishes the body, and then refuses rather than skips whenever the stamp was omitted.
+The value bound cannot be reached through the fixture without also breaking the mandatory fingerprint, whose value has the same shape, so it is held at the predicate function itself.
+Against both providers, the service scenario reads all four advertised limits and drives the entry-count and total-size boundaries with values computed from a sample publication rather than assumed.
 
 What this slice fixes, and must prove it fixes:
 

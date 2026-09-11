@@ -448,27 +448,55 @@ func applyContainerHeaders(c *Container, r *http.Request) {
 
 // putObject implements object PUT: create/replace with body, content
 // type, user metadata, DLO manifest, and delete-at headers.
+// metaLimits reads the user metadata limits the served /info document
+// advertises, so enforcement always matches the advertisement, whether
+// the default document or an override is in effect. A missing or
+// unusable value disables that one check, which is what a service that
+// does not advertise a limit does.
+func (s *Server) metaLimits() (count, overall, nameLength, valueLength int) {
+	info := s.InfoJSON
+	if info == "" {
+		info = defaultInfoJSON
+	}
+	var doc struct {
+		Swift struct {
+			MaxMetaCount       int `json:"max_meta_count"`
+			MaxMetaOverallSize int `json:"max_meta_overall_size"`
+			MaxMetaNameLength  int `json:"max_meta_name_length"`
+			MaxMetaValueLength int `json:"max_meta_value_length"`
+		} `json:"swift"`
+	}
+	_ = json.Unmarshal([]byte(info), &doc)
+	return doc.Swift.MaxMetaCount, doc.Swift.MaxMetaOverallSize, doc.Swift.MaxMetaNameLength, doc.Swift.MaxMetaValueLength
+}
+
 // metaLimitExceeded reports whether a request's user metadata exceeds
-// what /info advertises, which the real service enforces with 400. The
-// values here mirror defaultInfoJSON.
-func metaLimitExceeded(r *http.Request) bool {
-	const maxCount, maxOverall = 90, 4096
+// what this server advertises, which the real service enforces with
+// 400 on every one of these dimensions.
+func (s *Server) metaLimitExceeded(r *http.Request) bool {
+	count, overall, nameLength, valueLength := s.metaLimits()
 	entries, size := 0, 0
 	for name, values := range r.Header {
 		key, isMeta := strings.CutPrefix(http.CanonicalHeaderKey(name), "X-Object-Meta-")
 		if !isMeta {
 			continue
 		}
+		if nameLength > 0 && len(key) > nameLength {
+			return true
+		}
 		for _, v := range values {
+			if valueLength > 0 && len(v) > valueLength {
+				return true
+			}
 			entries++
 			size += len(key) + len(v)
 		}
 	}
-	return entries > maxCount || size > maxOverall
+	return (count > 0 && entries > count) || (overall > 0 && size > overall)
 }
 
 func (s *Server) putObject(w http.ResponseWriter, r *http.Request, container, name string) {
-	if metaLimitExceeded(r) {
+	if s.metaLimitExceeded(r) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -524,7 +552,7 @@ func (s *Server) putObject(w http.ResponseWriter, r *http.Request, container, na
 // Content-Type is preserved unless supplied; SLO-ness is sysmeta and
 // survives untouched.
 func (s *Server) postObject(w http.ResponseWriter, r *http.Request, container, name string) {
-	if metaLimitExceeded(r) {
+	if s.metaLimitExceeded(r) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
