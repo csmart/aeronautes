@@ -65,7 +65,8 @@ The `saio-diagnostics` artifact retains container and runner observations after 
 Each probe records its command, UTC start, elapsed time, exit or timeout, and redacted output; unsuccessful probes do not prevent the remaining probes from running.
 The collector bounds each of eleven probes to ten seconds, retains at most four MiB of redacted output per probe, and has a two-minute step limit within the existing job budget.
 Swift's internal access log and container output each retain at most the last 10,000 lines before redaction and the output limit.
-A separate probe reads the last 10,000 lines of each retained error-log rotation and the current error log, oldest first, before the same redaction and four-MiB output limit.
+A separate probe reads the last 10,000 lines of each retained error-log rotation and the current error log, oldest first, then retains the first four MiB after redaction so later traffic cannot displace an earlier retained error.
+Other probes keep their final four MiB; each record names its selected output window.
 Missing files, unsupported cgroup files, discarded rotations and truncated output are explicit limitations.
 It reads only the disposable `saio` container and runner resource state, excludes environment/configuration dumps and object bodies, and redacts tempauth tokens and authentication-header lines before saving output.
 The [PR93 investigation](experiments/2026-09-11-swift-ci-failures.md) records why these observations are needed and keeps the earlier failure causes open.

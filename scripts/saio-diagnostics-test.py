@@ -54,6 +54,22 @@ class DiagnosticsTests(unittest.TestCase):
         self.assertEqual(result["exit"], 0)
         self.assertEqual(result["output"], "current error tx-only\n")
 
+    def test_error_output_limit_keeps_the_earlier_rotated_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "@400000006aa3b88b155140a4.s").write_text(
+                "HTTP 503 tx-earlier AUTH_tk0123456789\n")
+            (root / "current").write_text(("later traffic " + "x" * 1000 + "\n") * 6000)
+            with patch.object(DIAGNOSTICS, "PROBES", (("swift-error-log", self.error_log_probe(root)),)):
+                output = root / "observations"
+                DIAGNOSTICS.collect(output)
+            result = json.loads((output / "swift-error-log.json").read_text())
+        self.assertEqual(result["exit"], 0)
+        self.assertTrue(result["output_truncated"])
+        self.assertLessEqual(len(result["output"].encode()), DIAGNOSTICS.OUTPUT_LIMIT)
+        self.assertTrue("HTTP 503 tx-earlier" in result["output"], "earlier rotated error was dropped")
+        self.assertNotIn("AUTH_tk0123456789", result["output"])
+
     def test_blocked_reader_exits_before_probe_timeout(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -131,8 +147,8 @@ class DiagnosticsTests(unittest.TestCase):
         original_probe = DIAGNOSTICS.probe
         with tempfile.TemporaryDirectory() as directory, \
                 patch.object(DIAGNOSTICS, "PROBES", probes), \
-                patch.object(DIAGNOSTICS, "probe", side_effect=lambda argv: original_probe(
-                    argv, timeout=0.5 if argv == slow else DIAGNOSTICS.PROBE_TIMEOUT)):
+                patch.object(DIAGNOSTICS, "probe", side_effect=lambda argv, **kwargs: original_probe(
+                    argv, timeout=0.5 if argv == slow else DIAGNOSTICS.PROBE_TIMEOUT, **kwargs)):
             root = Path(directory)
             DIAGNOSTICS.collect(root)
             self.assertTrue(json.loads((root / "slow.json").read_text())["timed_out"])

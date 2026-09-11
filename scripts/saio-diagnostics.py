@@ -56,7 +56,7 @@ def redact(output):
     return text
 
 
-def probe(argv, timeout=PROBE_TIMEOUT):
+def probe(argv, timeout=PROBE_TIMEOUT, keep_first=False):
     record = {"argv": argv, "started": datetime.datetime.now(datetime.timezone.utc).isoformat(),
               "exit": None, "timed_out": False}
     started = time.monotonic()
@@ -72,17 +72,19 @@ def probe(argv, timeout=PROBE_TIMEOUT):
         record["error"] = str(error)
         output = b""
     record["elapsed_seconds"] = round(time.monotonic() - started, 3)
-    # Redact before retaining the tail so a clipped token prefix cannot escape.
+    # Redact before selecting a window so a clipped token prefix cannot escape.
     cleaned = redact(output).encode("utf-8")
     record["output_truncated"] = len(cleaned) > OUTPUT_LIMIT
-    record["output"] = cleaned[-OUTPUT_LIMIT:].decode("utf-8", errors="ignore")
+    record["output_window"] = "first" if keep_first else "last"
+    retained = cleaned[:OUTPUT_LIMIT] if keep_first else cleaned[-OUTPUT_LIMIT:]
+    record["output"] = retained.decode("utf-8", errors="ignore")
     return record
 
 
 def collect(directory):
     directory.mkdir(parents=True, exist_ok=True)
     for name, argv in PROBES:
-        record = probe(argv)
+        record = probe(argv, keep_first=name == "swift-error-log")
         (directory / (name + ".json")).write_text(json.dumps(record, indent=2) + "\n")
         print(f"{name}: exit={record['exit']} timed_out={record['timed_out']}", flush=True)
 
