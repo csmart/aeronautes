@@ -233,8 +233,18 @@ Acceptance: 1, 201, and multi-chunk failure sets; out-of-order/duplicated/unrequ
 Probe: `TestAuditCopyCountsOneFailedIdentityOnce`.
 
 Current disposition: that archived reproduction [no longer reproduces on master](../../experiments/2026-09-11-archived-probe-status.md#result), and the maintained copy and upload item-record tests plus the interrupted-record reopen test cover one outcome per identity on both the mock and the owned service.
-The bulk-delete accounting described above is unchanged: both deletion paths still derive the surviving set from an aggregate count used as an index into the requested batch, so an out-of-order or duplicated reply can fail one name twice and lose another.
-The 200-record cap, the manifest-with-segments counts, the DLO force sink and the durable audit facts are also untouched, so DS-08/SEC-08 stays blocking.
+[PR94’s reply-identity correction](../../experiments/2026-09-11-bulk-delete-identities.md#identity-validation-on-every-reply) replaces the aggregate-position fallback with validation of every bulk reply’s requested membership, uniqueness, status shape and counts.
+Only validated deleted/not-found aggregates are credited, as service-reported totals rather than independently observed or individually identifiable successful deletions; a reported error never proves that its named object survived.
+With the healthy [ADR 0036 index](../../adr/0036-delete-identity-accounting.md), reported-failure names and bulk unresolved-effect names are each counted once across batches and passes, independently of the 200-record display samples.
+An untrusted bulk reply credits no aggregate and leaves every requested name unresolved.
+Index setup refuses either executor before its requests; an unindexable admitted outcome instead stops new admission, drains the bounded already-issued work and exposes the last committed counters as progress with final identity totals unavailable.
+That public outcome is partial even when no deletion was credited.
+The affected bulk request or admitted worker requests form a separate bounded attempt record that may repeat names, not a distinct failure set or retry authority; failure of its checked retention explicitly discloses that the issued identities could not all be retained.
+An ordinary retained-list open/write/flush/close failure with a healthy index preserves exact counts but offers no complete available list, while checked index close/removal failure after all outcomes were recorded reports cleanup failure without invalidating the known totals.
+Deletion and benchmark terminal counters, qualifier, reason, state and audit now use the existing atomic completion path; absent qualifiers on older jobs do not retrospectively prove complete accounting.
+The forced DLO error path discloses its already-deleted manifest and any incomplete segment accounting, but does not supply a complete ordinary DLO/SLO reported-failure ledger.
+The [existing sweep still re-attempts unresolved names](../../experiments/2026-09-11-bulk-delete-identities.md#the-sweep-re-attempts-an-unresolved-name), so fresh authority through replacement races remains a blocking follow-up; healthy parallel deletion still lacks the separate unresolved stream.
+Those hazards, complete per-effect/durable outcomes, ordinary segment-failure retention and the wider P12/P13/P28 acceptance work keep DS-08/SEC-08 and the valuable-data hold blocking.
 
 ### DS-09 — High: metadata-only changes never propagate through Copy/Mirror
 
