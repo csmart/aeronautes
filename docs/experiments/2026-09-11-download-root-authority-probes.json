@@ -1,4 +1,124 @@
 {
+  "after": {
+    "broken_guards": {
+      "g01_pathname_root": {
+        "exit": 1,
+        "failing_cases": [
+          "engine_root_after_stage",
+          "marker_root_between_items",
+          "native_root_before_start",
+          "native_root_between_items"
+        ],
+        "file": "internal/transfer/local/download_root.go",
+        "log_sha256": "78190cf91d5da6fcf3ddae1502948517d068f7b765df1556c0bc8ddf61dfed84",
+        "passing_cases": 10
+      },
+      "g02_skip_component_inspection": {
+        "exit": 1,
+        "failing_cases": [
+          "engine_existing_parent_after_stage",
+          "engine_parent_after_stage",
+          "marker_parent_between_items",
+          "native_parent_between_items"
+        ],
+        "file": "internal/transfer/local/download_root.go",
+        "log_sha256": "7880583d0631dab179ff30e0257bd90195cab0b734434ae5aa3a7e0f948a3c1e",
+        "passing_cases": 10
+      },
+      "g03_skip_stage_identity": {
+        "exit": 1,
+        "failing_cases": [
+          "engine_stage_replaced"
+        ],
+        "file": "internal/transfer/local/download_execute.go",
+        "log_sha256": "d5933c0e391b8203c4e92990cc2ca9722978ccd0bb615a90637c461cde7c2248",
+        "passing_cases": 13
+      },
+      "g04_pathname_cleanup": {
+        "exit": 1,
+        "failing_cases": [
+          "engine_root_after_stage"
+        ],
+        "file": "internal/transfer/local/download_stage.go",
+        "log_sha256": "2e3144f139ff98ce41ab187c98c7532cf36624bde1898e14fceb1f19318a7081",
+        "passing_cases": 13
+      }
+    },
+    "engine_anchor": {
+      "producers": {
+        "RESULT.md": "b5c2ee0d4bd9fdab8b7c32dce7995b9987169c3d8e05ed5dc5eb7b8aa6ff5d34",
+        "run-slow.log": "c59e879fc92c9e317f7df39bd221e57cf2469af572ac9417349131671d58c0b3",
+        "run-slow.sh": "f2524450f261cd01dbdd3643faf90d3add0ad489fbf0424e6a9558a95b4f4dcd",
+        "run.log": "cc1e31628e92d01d0fbeb2683a812f10b224b6d4d87fc53d0af8032e0ec86bde",
+        "run.sh": "6206d4e4741dcfc7d28a78109f146d895fbc9f137f21845f842deeb932f79b3a"
+      },
+      "rclone": "rclone v1.74.3"
+    },
+    "environment": {
+      "AERONAUTES_OFFICIAL_RCLONE_DIR": "<pinned rclone 1.74.3 directory>",
+      "GOFLAGS": "-mod=readonly",
+      "GOTOOLCHAIN": "go1.27.1",
+      "PATH": "pinned rclone first",
+      "real_swift": "AERONAUTES_SAIO_AUTH_URL=http://127.0.0.1:18080/auth/v1.0"
+    },
+    "producers": [
+      {
+        "command": "go test -race -count=1 -run 'TestDownloadRootAuthority$|TestDestinationRoot|TestPublishVerified|TestStageRemoval|TestRefuseMountRoot' -v ./internal/transfer/local/",
+        "exit": 0,
+        "failing_leaves": 0,
+        "log_sha256": "da547790f54f86092c73b13a3a663ffdcea6bfed8e9b53e6f5c7a3fa39c4e80b",
+        "name": "executor regression and root unit tests",
+        "passing_leaves": 23
+      },
+      {
+        "command": "go test -race -count=1 -run TestDownloadRootAuthorityMock -v ./internal/systemtest/",
+        "exit": 0,
+        "failing_leaves": 0,
+        "log_sha256": "ad6dcece094b867cde61f81970f35927952e3050ffbdd677208f0ea6fe0239b8",
+        "name": "service mock",
+        "passing_leaves": 12
+      },
+      {
+        "command": "go test -race -count=1 -run TestDownloadRootAuthorityRealSwift -v ./internal/systemtest/",
+        "exit": 0,
+        "failing_leaves": 0,
+        "log_sha256": "ab279e4cff94fdc56a73e1297889d5da65a128ed0ef51594fea28fb5021ef74d",
+        "name": "service real Swift",
+        "passing_leaves": 12
+      },
+      {
+        "command": "go test -race -count=1 -run 'TestDirectorySelectionLifetime|TestDownloadRootGuardBeforeEngineConstruction' -v ./internal/app/",
+        "exit": 0,
+        "failing_leaves": 0,
+        "log_sha256": "8c738751a1a55a0295b91e6d1b25d77d37ab3d60e17239524ba3813febbbfced",
+        "name": "selection lifetime and engine construction guard",
+        "passing_leaves": 6
+      },
+      {
+        "command": "go test -race -count=1 -timeout=40m -json ./...",
+        "exit": 0,
+        "leaf_rule": "a leaf is a recorded name that is not a slash-separated prefix of another recorded name in the same package",
+        "name": "full race suite",
+        "reconciled": {
+          "distinct names": 3800,
+          "failing": 0,
+          "leaves": 3531,
+          "packages": 22,
+          "pass events": 3799,
+          "passing": 3530,
+          "skipped": 1
+        },
+        "stream_bytes": 7097046,
+        "stream_sha256": "243d17023f8f93858e35661dc17655f267e0670584821290fac740483b8e53e3",
+        "window_utc": [
+          "2026-09-11T13:22:19Z",
+          "2026-09-11T13:29:41Z"
+        ]
+      }
+    ],
+    "recorded": "2026-09-11T13:30:40.393874+00:00",
+    "source": "d8668063f82b0e26178e5a6e4695b38a9b47236f"
+  },
   "environment": {
     "AERONAUTES_OFFICIAL_RCLONE_DIR": "<pinned rclone 1.74.3 directory>",
     "GOFLAGS": "-mod=mod",
