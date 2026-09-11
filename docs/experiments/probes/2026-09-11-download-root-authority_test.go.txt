@@ -1,0 +1,293 @@
+package local
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/csmart/aeronautes/internal/transfer/rclone"
+)
+
+// The executor's authority over the selected directory ends when admission
+// closes its handle. Every later effect resolves the selected pathname again,
+// so a root or parent replaced after admission redirects placement.
+//
+// Each case replaces exactly one entry at one deterministic boundary the
+// production code already exposes: the engine boundary between staging and
+// placement, or the progress callback between two items. The assertions are
+// the K-XFER-011 and P18 invariants, not a particular remedy: nothing outside
+// the selected directory changes, every reported success exists inside the
+// real selected directory, and stage or temporary residue is reported.
+
+type rootAuthorityFixture struct {
+	owned, selected, outside, moved, movedParent string
+}
+
+func newRootAuthorityFixture(t *testing.T) *rootAuthorityFixture {
+	t.Helper()
+	owned := t.TempDir()
+	f := &rootAuthorityFixture{
+		owned:       owned,
+		selected:    filepath.Join(owned, "selected"),
+		outside:     filepath.Join(owned, "outside"),
+		moved:       filepath.Join(owned, "moved"),
+		movedParent: filepath.Join(owned, "moved-parent"),
+	}
+	rootAuthorityWrite(t, f.selected, "keep", "selected sentinel")
+	rootAuthorityWrite(t, f.outside, "keep", "outside sentinel")
+	return f
+}
+
+func rootAuthorityWrite(t *testing.T, dir, name, content string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// replaceRoot moves the real selected directory away and leaves a symlink to
+// the outside directory at the selected pathname.
+func (f *rootAuthorityFixture) replaceRoot(t *testing.T) {
+	t.Helper()
+	if err := os.Rename(f.selected, f.moved); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(f.outside, f.selected); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// replaceParent puts a symlink to the outside directory at a parent path
+// under the selected directory, moving any existing directory away first.
+func (f *rootAuthorityFixture) replaceParent(t *testing.T, parent string) {
+	t.Helper()
+	path := filepath.Join(f.selected, filepath.FromSlash(parent))
+	if _, err := os.Lstat(path); err == nil {
+		if err := os.Rename(path, f.movedParent); err != nil {
+			t.Fatal(err)
+		}
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(f.outside, path); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// rootAuthorityTree records every entry beneath root without following links,
+// so a file behind a planted symlink is never mistaken for a contained one.
+func rootAuthorityTree(t *testing.T, root string) map[string]string {
+	t.Helper()
+	result := map[string]string{}
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		switch {
+		case info.Mode()&os.ModeSymlink != 0:
+			target, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			result[rel] = "link:" + target
+		case info.IsDir():
+			result[rel] = "dir"
+		case info.Mode().IsRegular():
+			body, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			result[rel] = "file:" + string(body)
+		default:
+			return fmt.Errorf("unmodelled entry %q: %v", rel, info.Mode())
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
+type afterStageEngine struct {
+	inner Engine
+	after func()
+	calls int
+}
+
+func (e *afterStageEngine) Copy(ctx context.Context, src, dst string, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
+	e.calls++
+	result, err := e.inner.Copy(ctx, src, dst, names, onEvent)
+	if err == nil && e.after != nil {
+		e.after()
+	}
+	return result, err
+}
+
+func rootAuthorityBody(rel string) string { return "payload for " + rel }
+
+func rootAuthorityFile(rel, route string) DownloadItem {
+	return DownloadItem{Name: "scope/" + rel, RelPath: filepath.FromSlash(rel), Size: int64(len(rootAuthorityBody(rel))), Route: route}
+}
+
+func rootAuthorityMarker(rel string) DownloadItem {
+	return DownloadItem{Name: "scope/" + rel + "/", RelPath: filepath.FromSlash(rel), Dir: true}
+}
+
+type rootAuthorityCase struct {
+	name           string
+	items          []DownloadItem
+	seam           string // "stage" replaces after the engine stages; "progress" replaces after the first item; "" never replaces
+	replace        string // "root" or a parent path relative to the selected directory
+	existingParent bool
+}
+
+func rootAuthorityCases() []rootAuthorityCase {
+	return []rootAuthorityCase{
+		{name: "engine_parent_after_stage", items: []DownloadItem{rootAuthorityFile("redirect/payload.bin", "rclone")}, seam: "stage", replace: "redirect"},
+		{name: "engine_existing_parent_after_stage", items: []DownloadItem{rootAuthorityFile("redirect/payload.bin", "rclone")}, seam: "stage", replace: "redirect", existingParent: true},
+		{name: "engine_root_after_stage", items: []DownloadItem{rootAuthorityFile("payload.bin", "rclone")}, seam: "stage", replace: "root"},
+		{name: "native_root_between_items", items: []DownloadItem{rootAuthorityFile("a.bin", "native"), rootAuthorityFile("b.bin", "native")}, seam: "progress", replace: "root"},
+		{name: "native_parent_between_items", items: []DownloadItem{rootAuthorityFile("a.bin", "native"), rootAuthorityFile("redirect/b.bin", "native")}, seam: "progress", replace: "redirect"},
+		{name: "marker_root_between_items", items: []DownloadItem{rootAuthorityFile("a.bin", "native"), rootAuthorityMarker("m")}, seam: "progress", replace: "root"},
+		{name: "marker_parent_between_items", items: []DownloadItem{rootAuthorityFile("a.bin", "native"), rootAuthorityMarker("redirect/m")}, seam: "progress", replace: "redirect"},
+		{name: "engine_control", items: []DownloadItem{rootAuthorityFile("redirect/payload.bin", "rclone")}},
+		{name: "native_control", items: []DownloadItem{rootAuthorityFile("a.bin", "native"), rootAuthorityFile("redirect/b.bin", "native")}},
+		{name: "marker_control", items: []DownloadItem{rootAuthorityFile("a.bin", "native"), rootAuthorityMarker("redirect/m")}},
+	}
+}
+
+func TestDownloadRootAuthorityProbe(t *testing.T) {
+	for _, c := range rootAuthorityCases() {
+		t.Run(c.name, func(t *testing.T) {
+			f := newRootAuthorityFixture(t)
+			if c.existingParent {
+				rootAuthorityWrite(t, filepath.Join(f.selected, c.replace), "keep", "existing parent contents")
+			}
+			s, mock := session(t)
+			var objects, total int64
+			for _, item := range c.items {
+				if item.Dir {
+					seed(mock, "media", item.Name, "")
+					continue
+				}
+				seed(mock, "media", item.Name, rootAuthorityBody(strings.TrimPrefix(item.Name, "scope/")))
+				objects++
+				total += item.Size
+			}
+			act := func() {
+				if c.replace == "root" {
+					f.replaceRoot(t)
+					return
+				}
+				f.replaceParent(t, c.replace)
+			}
+			engine := &afterStageEngine{inner: &fsEngine{s}}
+			if c.seam == "stage" {
+				engine.after = act
+			}
+			replaced := false
+			progress := func(done, total, bytes int64) {
+				if c.seam == "progress" && done == 1 && !replaced {
+					replaced = true
+					act()
+				}
+			}
+			before := rootAuthorityTree(t, f.owned)
+			plan := &DownloadPreflight{Items: c.items, Objects: objects, TotalBytes: total}
+			report, err := Download(t.Context(), s, engine, "aeronautes_src:media", "media", "scope/", f.selected, "root-authority", plan, progress)
+			after := rootAuthorityTree(t, f.owned)
+			observation := struct {
+				Case   string
+				Err    string
+				Report *Report
+				Before map[string]string
+				After  map[string]string
+			}{c.name, fmt.Sprint(err), report, before, after}
+			encoded, encodeErr := json.Marshal(observation)
+			if encodeErr != nil {
+				t.Fatal(encodeErr)
+			}
+			t.Logf("root authority observation: %s", encoded)
+
+			// Invariant 1: nothing outside the selected directory changes.
+			for key, state := range after {
+				if key == "outside" || strings.HasPrefix(key, "outside/") {
+					if want, existed := before[key]; !existed || want != state {
+						t.Errorf("outside entry %q changed: %q", key, state)
+					}
+				}
+			}
+			for key := range before {
+				if (key == "outside" || strings.HasPrefix(key, "outside/")) && after[key] == "" {
+					t.Errorf("outside entry %q disappeared", key)
+				}
+			}
+
+			// Invariant 2: every item the report counts as done exists inside
+			// the real selected directory, reached without any link.
+			failed := map[string]bool{}
+			if report != nil {
+				for _, failure := range report.Failures {
+					failed[failure.Name] = true
+				}
+			}
+			realRoot := "selected"
+			if c.replace == "root" && c.seam != "" {
+				realRoot = "moved"
+			}
+			for _, item := range c.items {
+				if failed[item.Name] || report == nil {
+					continue
+				}
+				key := realRoot + "/" + filepath.ToSlash(item.RelPath)
+				want := "dir"
+				if !item.Dir {
+					want = "file:" + rootAuthorityBody(strings.TrimPrefix(item.Name, "scope/"))
+				}
+				if after[key] != want {
+					t.Errorf("reported success for %q is not inside the real selected directory: %q=%q", item.Name, key, after[key])
+				}
+			}
+
+			// Invariant 3: stage or temporary residue anywhere in the owned
+			// tree must be reported as retained or as a cleanup issue.
+			residue := 0
+			for key := range after {
+				if strings.Contains(key, ".aeronautes-stage-") || strings.Contains(key, ".aeronautes-part-") {
+					residue++
+				}
+			}
+			if residue > 0 && (report == nil || report.StageCleanup == nil || !report.StageCleanup.Retained && report.StageCleanup.Issues == 0) {
+				t.Errorf("%d stage or temporary entries remain without a retained or failed cleanup report", residue)
+			}
+
+			// Controls must complete inside the selected directory.
+			if c.seam == "" {
+				if err != nil || report == nil || report.Done != int64(len(c.items)) || len(report.Failures) != 0 {
+					t.Errorf("control did not complete: %+v %v", report, err)
+				}
+				if engine.calls > 1 {
+					t.Errorf("control invoked the engine %d times", engine.calls)
+				}
+			}
+		})
+	}
+}

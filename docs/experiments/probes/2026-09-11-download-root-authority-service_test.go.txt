@@ -1,0 +1,277 @@
+package systemtest
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/json"
+	"net/http"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync/atomic"
+	"testing"
+
+	"github.com/csmart/aeronautes/internal/app"
+	"github.com/csmart/aeronautes/internal/swifttest"
+)
+
+// The picker token records a pathname, and every effect after admission
+// resolves that pathname again. These cases replace the selected root or a
+// parent under it at one deterministic boundary the service already exposes:
+// the held Swift response before a native write, the engine boundary between
+// staging and placement, or the gap between the operator's preflight and
+// start calls. The assertions are the K-XFER-011 and P18 invariants only.
+
+type rootAuthorityServiceCase struct {
+	name    string
+	route   string // engine, native or marker
+	seam    string // stage, get, bridge, or empty for a control
+	replace string // root or parent
+}
+
+func downloadRootAuthorityCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
+	for _, c := range []rootAuthorityServiceCase{
+		{"engine_parent_after_stage", "engine", "stage", "parent"},
+		{"engine_root_after_stage", "engine", "stage", "root"},
+		{"native_parent_during_get", "native", "get", "parent"},
+		{"native_root_during_get", "native", "get", "root"},
+		{"marker_parent_during_get", "marker", "get", "parent"},
+		{"marker_root_during_get", "marker", "get", "root"},
+		{"engine_root_before_start", "engine", "bridge", "root"},
+		{"native_root_before_start", "native", "bridge", "root"},
+		{"engine_control", "engine", "", ""},
+		{"native_control", "native", "", ""},
+		{"marker_control", "marker", "", ""},
+	} {
+		t.Run(c.name, func(t *testing.T) { downloadRootAuthorityService(t, makeHarness(t), c) })
+	}
+}
+
+func TestDownloadRootAuthorityMock(t *testing.T) {
+	t.Parallel()
+	downloadRootAuthorityCases(t, findMockHarness)
+}
+
+func TestDownloadRootAuthorityRealSwift(t *testing.T) {
+	t.Parallel()
+	downloadRootAuthorityCases(t, New)
+}
+
+type rootAuthorityObject struct {
+	rel  string
+	body []byte
+	dir  bool
+}
+
+func downloadRootAuthorityService(t *testing.T, h *Harness, c rootAuthorityServiceCase) {
+	t.Helper()
+	source := h.Container(h.Primary, "download-root-authority")
+	other := h.Container(h.Secondary, "download-root-authority-other")
+	owned := t.TempDir()
+	selected := filepath.Join(owned, "selected")
+	outside := filepath.Join(owned, "outside")
+	moved := filepath.Join(owned, "moved")
+	seedListingLocal(t, owned, "selected/keep", []byte("selected sentinel\x00\xff"))
+	seedListingLocal(t, owned, "outside/keep", []byte("outside sentinel"))
+	// A newline in the prefix keeps the child engine away, so the native
+	// route carries every non-engine case.
+	prefix := "scope/"
+	if c.route != "engine" {
+		prefix = "scope\n/"
+	}
+	parent := ""
+	if c.replace == "parent" {
+		parent = "redirect/"
+	}
+	var objects []rootAuthorityObject
+	held := ""
+	switch c.route {
+	case "engine":
+		objects = []rootAuthorityObject{{rel: parent + "payload.bin", body: []byte("engine bytes " + c.name)}}
+	case "native":
+		objects = []rootAuthorityObject{{rel: parent + "b.bin", body: []byte("native bytes " + c.name)}}
+		held = objects[0].rel
+	case "marker":
+		objects = []rootAuthorityObject{{rel: "a.bin", body: []byte("native bytes " + c.name)}, {rel: parent + "m/", dir: true}}
+		held = "a.bin"
+	default:
+		t.Fatalf("unknown route %q", c.route)
+	}
+	for _, object := range objects {
+		h.Seed(h.Primary, source, prefix+object.rel, object.body, nil)
+	}
+	h.Seed(h.Primary, source, "outside-selection", []byte("unselected remote sentinel"), nil)
+	h.Seed(h.Secondary, other, "keep", []byte("other remote sentinel"), nil)
+	beforeA, beforeB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
+
+	act := func() {
+		if c.replace == "root" {
+			if err := os.Rename(selected, moved); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(outside, selected); err != nil {
+				t.Fatal(err)
+			}
+			return
+		}
+		// Absent at admission, so the complete inspection admits it.
+		if err := os.Symlink(outside, filepath.Join(selected, "redirect")); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var trace *uploadDeleteTrace
+	var barrier *swifttest.HTTPResponseBarrier
+	var hits *atomic.Int32
+	if c.seam == "get" {
+		barrier, _, hits, trace = interruptionProxy(t, h, source, http.MethodGet, prefix+held, nil)
+	} else {
+		trace = copyCompletionProxy(t, h, h.Primary, "")
+	}
+	stageCalls := &atomic.Int32{}
+	app.WireDownloadStageBoundary(h.Transfer, func(context.Context, string) error {
+		stageCalls.Add(1)
+		if c.seam == "stage" {
+			act()
+		}
+		return nil
+	})
+	app.WireFilePicker(h.Transfer, listingFilePicker{dir: selected})
+	picked, err := h.Transfer.PickDownloadDir(t.Context())
+	if err != nil || picked == nil || picked.Dir != selected {
+		t.Fatalf("picker changed the selected spelling: %+v %v", picked, err)
+	}
+	request := app.DownloadRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: source, Prefix: prefix, DestDirToken: picked.Token}
+	beforeLocal := snapshotListingLocal(t, owned)
+	preflight, err := h.Transfer.PreflightDownload(t.Context(), request)
+	if err != nil || preflight == nil || preflight.Rejected() || len(preflight.Items) != len(objects) {
+		t.Fatalf("selection was not admitted before any replacement: %+v %v", preflight, err)
+	}
+	if c.seam == "bridge" {
+		act()
+	}
+	id, err := h.Transfer.StartDownload(t.Context(), request)
+	if err != nil {
+		t.Fatalf("start refused an admitted selection: %v", err)
+	}
+	if c.seam == "get" {
+		event, err := barrier.Wait(t.Context())
+		if err != nil || event.StatusCode != http.StatusOK {
+			t.Fatalf("held source read: %+v %v", event, err)
+		}
+		act()
+		if err := barrier.Release(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	job := h.AwaitJob(id)
+	copyCompletionAwaitPins(t, h, h.Primary)
+	saved := uploadRecoveryRead(t, h.database, id)
+	afterLocal := snapshotListingLocal(t, owned)
+
+	var added, changed []string
+	for key, state := range afterLocal {
+		before, existed := beforeLocal[key]
+		switch {
+		case !existed:
+			added = append(added, key)
+		case before != state:
+			changed = append(changed, key)
+		}
+	}
+	sort.Strings(added)
+	sort.Strings(changed)
+	observation := struct {
+		Case       string
+		State      string
+		Error      string
+		Counters   any
+		ItemTotals any
+		StageCalls int32
+		Added      []string
+		Changed    []string
+	}{c.name, job.State, job.Error, job.Counters, saved.ItemTotals, stageCalls.Load(), added, changed}
+	encoded, err := json.Marshal(observation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("root authority service observation: %s", encoded)
+
+	// Invariant 1: nothing outside the selected directory changes.
+	for _, key := range append(append([]string(nil), added...), changed...) {
+		if key == "outside" || strings.HasPrefix(key, "outside/") {
+			t.Errorf("outside entry %q was created or changed", key)
+		}
+	}
+	for key := range beforeLocal {
+		if (key == "outside" || strings.HasPrefix(key, "outside/")) && afterLocal[key] == (listingLocalState{}) {
+			t.Errorf("outside entry %q disappeared", key)
+		}
+	}
+
+	// Invariant 2: when every item is reported successful, every item exists
+	// inside the real selected directory, reached without any link.
+	realRoot := "selected"
+	if c.replace == "root" && c.seam != "" {
+		realRoot = "moved"
+	}
+	totals := saved.ItemTotals
+	allSucceeded := job.State == "complete" && totals.Failed == 0 && totals.Conflicts == 0 && totals.Refused == 0 && totals.Unresolved == 0 && totals.Unverified == 0
+	if allSucceeded {
+		for _, object := range objects {
+			key := realRoot + "/" + strings.TrimSuffix(object.rel, "/")
+			state, found := afterLocal[key]
+			switch {
+			case !found:
+				t.Errorf("reported success %q is absent from the real selected directory at %q", object.rel, key)
+			case object.dir && !state.mode.IsDir():
+				t.Errorf("reported marker %q is not a directory at %q: %+v", object.rel, key, state)
+			case !object.dir && (!state.mode.IsRegular() || state.size != int64(len(object.body)) || state.digest != sha256.Sum256(object.body)):
+				t.Errorf("reported file %q differs at %q: %+v", object.rel, key, state)
+			}
+		}
+	}
+
+	// Invariant 3: stage or temporary residue must be reported as a cleanup
+	// problem rather than left behind under a clean outcome.
+	residue := 0
+	for _, key := range added {
+		if strings.Contains(key, ".aeronautes-stage-") || strings.Contains(key, ".aeronautes-part-") {
+			residue++
+		}
+	}
+	if residue > 0 && !strings.Contains(job.Error, "stage cleanup") {
+		t.Errorf("%d stage or temporary entries remain while the job reports %q with error %q", residue, job.State, job.Error)
+	}
+
+	if len(trace.writeSnapshot()) != 0 {
+		t.Errorf("download changed remote data: %v", trace.writeSnapshot())
+	}
+	h.AssertNoCollateral(beforeA, h.SnapshotNamespace(h.Primary))
+	h.AssertNoCollateral(beforeB, h.SnapshotNamespace(h.Secondary))
+	if c.seam == "get" && (hits.Load() != 1 || barrier.Err() != nil) {
+		t.Errorf("held source read retried or failed: %d %v", hits.Load(), barrier.Err())
+	}
+
+	if c.seam == "" {
+		files := map[string][]byte{}
+		var dirs []string
+		for _, object := range objects {
+			key := "selected/" + strings.TrimSuffix(object.rel, "/")
+			if object.dir {
+				dirs = append(dirs, key)
+				continue
+			}
+			files[key] = object.body
+			if strings.Contains(object.rel, "/") {
+				dirs = append(dirs, "selected/"+filepath.ToSlash(filepath.Dir(object.rel)))
+			}
+		}
+		// Directory markers count as copied and verified items.
+		if job.State != "complete" || job.Error != "" || job.Counters.ObjectsCopied != int64(len(objects)) || job.Counters.ObjectsVerified != int64(len(objects)) {
+			t.Errorf("control did not complete: %+v", job)
+		}
+		assertListingLocalDelta(t, beforeLocal, afterLocal, files, dirs...)
+	}
+}
