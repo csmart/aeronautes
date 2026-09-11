@@ -130,6 +130,14 @@ Do not claim strong verification when only size evidence exists.
 Acceptance: same-size segment replacement, permutation, stale source identity, source mutation during transfer, missing/duplicate inventory entries, and resegmentation are checked end to end; Mirror deletion stays blocked for unverified transfers.
 Probes: `TestAuditCopyRejectsSameSizeCorruptSegments`, `TestAuditSkipRejectsChangedDestinationSegments`.
 
+Current disposition: [PR93’s bounded destination change detection](../../experiments/2026-09-11-copy-verification-strength.md#what-this-slice-claims-and-what-it-does-not) narrows the existing skip predicate for segmented destinations.
+A DLO destination additionally needs a usable staged aggregate stamp matching its live aggregate; an SLO destination is refused by this predicate.
+The optional stamp uses the existing conditional publication only when it fits the complete advertised metadata allowance, preserving every user value; it does not strengthen post-copy content verification.
+A skip means only that no aggregate difference was observed against the staged observation this executor recorded when it published the name; it never means that the destination equals the source, because a wrong initial copy still skips and a stale segment listing can still conceal a substitution.
+The staged-content half, current source/destination binding, large-source/plain-destination case and local-transfer verification remain open under P16.
+Logical-content verification must accommodate legitimate resegmentation, with its content-read cost and policy reviewed separately; comparing source and destination segment layouts is not a substitute.
+DS-04 remains blocking, Mirror starts remain refused under ADR 0020, and this slice grants no destructive follow-up authority.
+
 ### DS-05 — High: downloads escape the selected directory through parent symlinks
 
 Disposition: newly specified reproducible defect within the broad W-11/R-09 local-filesystem backlog; high confidence.
