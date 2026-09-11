@@ -265,7 +265,7 @@ The expected behavioural exit is 1; an inability to build or open the listeners 
 ## Private index prerequisite
 
 The new `internal/deletion/identity_index.go` implements ADR 0036's private storage prerequisite.
-It is not yet called by either executor: the old maps, job completion and public interface remain unchanged at this step.
+At the prerequisite commit, neither executor called it: the old maps, job completion and public interface were unchanged.
 The parent range remains blocked until the coherent executor and public failure-path correction is implemented and reviewed.
 
 The index binds exact name bytes and the outcome facet to a binary primary key, on one reserved SQLite connection in an invocation-owned private directory.
@@ -320,11 +320,132 @@ For reproduction on Linux, copy the archived resource probe into `internal/delet
 The executed probe source SHA-256 is `cf6f5493a142aa05a96008a07a55e85dbd90b5e15c25019f64b708d16cd32a90`; its raw output SHA-256 is `5135691141b1f328b6e03ab2c95de225ca52bd82c44a5dafe875d0bbca89e7c1`.
 The final implementation and maintained test source hashes are `18931379a286694329bb8aa54811731177ff816f389b082cddcd503dc5b451f6` and `3cc3de821d7e01b781dd660ed134073a8ae540b441f526276a7d06b7333a7e16`.
 
+## Integrated executor and caller correction
+
+The coherent ADR 0036 implementation replaces both run-wide maps with the checked private index.
+The dispatch guard stops new requests after an unindexable outcome, joins already-admitted workers and returns their bounded attempt records separately from distinct identity counts.
+Index setup refusal dispatches no destructive request; failed accounting after dispatch is partial even with zero credited deletions.
+A checked close or removal failure stops completion without making successfully recorded totals unavailable.
+Disk exhaustion never falls back to namespace-sized memory or a new cleanup sweep.
+
+Deletion jobs and all four benchmark deletion calls retain the result and stop follow-up destruction after an accounting-storage error.
+The forced DLO caller also discloses that its manifest was already deleted before segment accounting failed.
+The optional counters/segment-result qualifier, generated Wails bindings, drawer and history distinguish unavailable final totals from last-confirmed progress.
+Deletion and benchmark completion reuse the existing version-zero `jobs.Finish` transaction for counters, qualifier, reason, state and the controlled terminal audit.
+No item-record version, durable recovery ledger or new deletion authority is introduced.
+Healthy parallel reported-failure classification remains unchanged; its separate unresolved stream remains DS-08 work.
+
+### Failure boundaries and public outcomes
+
+The combined focused race run on the implementation's exact working-tree sources passed 91 leaf tests: 49 app, 38 deletion and four public system cases.
+The actual Go process exited 0 after 16.138 seconds, with 539 complete JSON events, no skipped or failing test, no stderr and no race diagnostic.
+This includes the 20 prerequisite index tests; those are not counted again as newly added integrated cases.
+The separate focused race/coverage run passed and measured `accounting.go` at 77/83 statements (92.8 percent), the attempt writer at 31/31, the shared caller reason at 6/7 and the prerequisite index at 96/116.
+These percentages describe the named files under the selected tests, not application-wide or native-platform coverage.
+
+| Boundary | Maintained tests | Required observation |
+| --- | --- | --- |
+| Cache setup | `TestDeletionIndexSetupRefusesDispatch`, `TestDeleteAccountingStorageLifecycle` | Both public executors and the delete job refuse destructive dispatch; exact selected objects survive. |
+| Bulk index write and repeated identities | `TestDeletionAccountingBulkAdmittedFailure`, `TestDeleteAccountingFailureIsPublic` | Earlier committed facets stay exact; only the held request enters separate attempt evidence; no later batch, sweep or verification is issued. |
+| Parallel queue and drain | `TestDeletionAccountingParallelQueuedFailure` | Two admitted outcomes are retained and four buffered names are never dispatched after the latch; the healthy control preserves the existing classification. |
+| Caller cancellation after effect | `TestDeletionAccountingCancelledBulkOutcome`, `TestDeleteCancellationRetainsAdmittedOutcomes` | Independently observed effects do not disappear when the response is lost; healthy indexed unresolved names and unindexed admitted attempts remain distinct. |
+| Evidence storage | `TestRetainDeletionAttempts*`, `TestWriteDeletionAttempts*`, `TestDeleteJobDisclosesAnUnretainableUnresolvedSet` | Exact UTF-8 identities/details, checked buffered writes and close, explicit loss when unavailable, and unchanged exact counts for ordinary retained-list failure. |
+| Deletion and benchmark completion | `TestDeleteAccountingCompletionIsAtomic`, `TestBenchmarkAccountingCompletionIsAtomic` | Separate counters, reason, state and audit refusal triggers leave the prior durable row unchanged after reopening; Get/List/History report unavailable rather than an unqualified terminal result. |
+| Benchmark callers | `TestBenchmarkDeletionAccounting` | All four call sites stop on setup or indexing failure, retain the original problem, avoid a second sweep/container delete and withhold recommendations; all four healthy controls preserve existing measurement/cleanup behaviour. |
+| DLO caller | `TestDLOAccountingErrorReportsManifestEffect` | Setup and indexing failures disclose the gone manifest; incomplete attempts are retained separately; an audit-write failure is included in the returned error and no applied audit is emitted. |
+| Index cleanup | `TestDeleteAccountingStorageLifecycle/cleanup` | Obstruction after the final verification response preserves two credited deletions and the complete-accounting flag while refusing container deletion and disclosing removal failure. |
+| Rendered result | `JobsDrawer.test.ts` | Recent and older history show the saved reason; an explicit incomplete flag labels progress, suppresses an unqualified failed total and hides numeric verification; absent/false historical flags preserve existing rendering. |
+
+The indexed-storage tests use owned real SQLite failures and HTTP response barriers rather than substituting a fabricated executor result.
+The cleanup obstruction uses a Unix rename of the fixture's own open index parent after all outcomes committed; that particular test explicitly skips Windows.
+The attempt writer's ENOSPC evidence uses `/dev/full` for buffered flush and larger writes, and a closed owned file checks that flush/close errors are joined.
+It does not establish a naturally occurring close-only fault, power-loss durability or native-platform acceptance.
+The focused frontend run passed 50 tests, `svelte-check` reported zero errors and warnings, and the production build succeeded.
+Pinned Wails beta.16 binding generation completed with CGO enabled and no warnings; the earlier CGO-disabled invocation's native-symbol warnings receive no clean-generation credit.
+Native vet/build, the no-CGO internal build, Windows/macOS amd64/arm64 internal vet/build, module tidy, gofmt, goimports and diff checks pass.
+
+The eight-case engine setup reproduction had four intended before failures and four passing controls.
+The four public delete-job before cases lost the required qualifier/reason or offered unqualified retained-list claims; all four passed after integration.
+The three rendered-result before cases failed their intended label/history assertions and pass after integration; the other eight tests were unselected in that before run.
+Restoring only the old benchmark caller makes all eight storage-fault cases attempt a forbidden container delete, while all four healthy controls still pass.
+Private admission and drain mutations separately produce six retained attempts instead of two, and one instead of two; their healthy controls pass.
+Those two mutants stop at the intended attempt-set assertion, so later wire/observer assertions receive no negative-evidence credit.
+The 13 pre-existing reply, encoding, retention, audit and hook-race controls were rebuilt for the integrated source: all 13 fail at their maintained intended assertions and all 11 unique unchanged baselines pass.
+The intentionally unsynchronised hook control includes its expected race; passing production runs do not.
+
+Initial socket/formatter setup failures, a test helper compilation mistake, and corrected test assumptions about an empty terminal listing page or an invalidated bookmark observer are preserved as failed development attempts.
+They are not counted as behavioural reproductions or successful verification.
+The complete final local suite, current-head/current-base five-job PR run, protected merge and resulting-master checks remain separate required delivery gates.
+The earlier full-suite result on the map-based implementation is historical and does not satisfy them.
+
+### Maintained public system matrix
+
+| Public action | Required scenario | Maintained test | Observed boundary and required outcome | Evidence scope |
+|---|---|---|---|---|
+| `DeleteService.StartDelete` | `partial` | `TestDeleteAccountingFailureRetainsIssuedNamesMock` | A real first bulk request deletes its one named object; the owned HTTP wrapper withholds its response, installs a refusal trigger in that invocation's private identity index, and sends an untrusted reply. The public job remains partial with zero credited, verified and reported-failure progress plus `deletionAccountingIncomplete=true`; final identity totals are explicitly unavailable. A separately labelled JSONL file retains exactly the issued name and available detail. No later request, sweep, verification or container DELETE is issued, two selected but unissued objects survive, and both account namespaces have no collateral change. | Linux Go service/native-deletion engine against two owned HTTP mocks; receipt-based partial credit; no real-Swift or native-UI claim. |
+| `DeleteService.StartDelete` | `partial` | `TestDeleteAccountingFailureReportsLostEvidenceMock` | The same admitted effect and index failure occur while only the separate attempt-evidence directory is obstructed by an owned regular file. The public partial job retains the incomplete-totals qualifier and explicitly says the issued identities could not all be retained, without claiming a complete list or an available attempt file. Later destruction remains unissued and both account namespaces retain the same exact delta. | Linux owned-cache/open-failure control; no universal retention-durability claim. |
+| `DeleteService.StartDelete` | `partial` | `TestDeleteAccountingHealthyIndexRetainsUnresolvedMock` | The same real first effect and untrusted reply with a non-firing index trigger retain a known unresolved count of one and a normal retained-list reference, without setting the incomplete-accounting qualifier or producing admitted-attempt evidence. Later requests remain stopped and the independent namespace delta is unchanged. | Matched healthy-index control; the public count and retained-list reference are asserted, not a new normal-writer durability proof. |
+| `DeleteService.StartDelete` | `happy` | `TestDeleteAccountingHealthyContainerDeleteMock` | The non-firing trigger and original trusted replies allow all three one-name bulk requests, exact three-object credited/verified progress, successful container deletion and no attempt-evidence file or incomplete-accounting qualifier. Primary and secondary sentinels remain unchanged. | Matched successful public container-deletion control. |
+
+These tests bind the failure claim to the existing `StartDelete/partial` system cell using the actual public service.
+Their raw-HTTP oracle checks both throwaway account namespaces and modelled object/container identity; it is not a complete account, recovery or native-platform witness.
+The focused mock-only scenario reconciliation is valid with the existing 116-cell denominator and two selected-run cells, `StartDelete/happy` and `StartDelete/partial`.
+Combined-suite coverage must come from the complete producer's own terminal-event reconciliation.
+Three private system mutations are caught: failed instead of partial (two failures), a queued name substituted for the issued identity (one failure), and a later container DELETE (two failures).
+Both healthy controls pass in all three mutation runs.
+
+### Integrated resource observations
+
+The [executed consumer probe](probes/2026-09-11-delete-consumer-resource_linux_test.go.txt) uses the unchanged public executors with generated 115-byte ordinal names.
+It streams pages of at most 10,000 rows, bounds bulk requests at 1,000 names and uses scalar callback/order oracles rather than another namespace-sized set.
+The `DeleteNames` baseline includes its real caller-owned selection, kept alive throughout measurement and checked unchanged after return.
+The held sample occurs inside `OnProgress` after the outcome transaction commits and before the index closes, with explicit GC and process RSS sampled before opening the separate SQL observer.
+That observer checks exact committed facets one row at a time and closes its rows, reserved connection and database.
+Its connection-local settings are not presented as the writer's settings; the unchanged private index and prerequisite proof establish those.
+
+| Held consumer | Names | Held Go heap | Held process RSS | SQLite logical bytes |
+| --- | ---: | ---: | ---: | ---: |
+| Prefix, bulk failures | 1,000 | 683,928 | 20,918,272 | 278,528 |
+| Prefix, bulk failures | 10,000 | 3,208,160 | 27,332,608 | 2,666,496 |
+| Prefix, bulk failures | 50,000 | 3,244,576 | 29,712,384 | 13,312,000 |
+| Prefix, bulk zero-facet control | 50,000 | 3,206,128 | 29,859,840 | 8,192 |
+| Prefix, parallel failures | 1,000 | 558,064 | 22,040,576 | 143,360 |
+| Prefix, parallel failures | 10,000 | 598,104 | 28,340,224 | 1,421,312 |
+| Names, bulk failures | 50,000 | 7,789,496 | 39,485,440 | 13,312,000 |
+
+The last row's caller-selection baseline is 7,592,824 heap bytes, including 50,000 names containing 5,750,000 name bytes.
+There is no second run-sized selection or oracle collection.
+The index cache is on an owned XFS directory with 4,096-byte filesystem blocks, verified both outside and inside the test process.
+At 50,000 bulk-failure names its 100,000 facets occupy 13,312,000 logical and 16,777,216 allocated bytes.
+The earlier 1,024-byte-name prerequisite still demonstrates the materially larger 933,384,192-byte disk cost at 100,000 names; this shorter-name experiment does not replace it.
+
+Bulk cases cover 1,000, 10,000 and 50,000 failures for both entry points, with 50,000-name zero-facet controls.
+Parallel cases cover 1,000 and 10,000 failures for both entry points and both 50,000-name zero-facet controls.
+Eight engine workers use a serial response acknowledgement schedule so the exact callback oracle remains scalar; these are not peak-concurrency memory measurements.
+The bulk held stack still has its listing page; the parallel stack may already have released its last page, so their absolute heap values are not a like-for-like peak comparison.
+The parallel 10,000-failure calls took 164.183 seconds for Prefix and 165.496 seconds for Names with one FULL-sync transaction per indexed outcome.
+A 50,000-failure parallel point was deliberately omitted after observing that cost.
+Elapsed times include the fixture, forced GC and SQL observer, and are not performance acceptance thresholds.
+
+Three-pass controls revisit 10,000 failing bulk identities and 1,000 failing parallel identities, with one credited sentinel each pass so the existing sweep continues.
+They publish each applicable failure/unresolved callback once, keep the same exact facets and file size at every checkpoint, and do not assert renewed destructive authority over the revisited names.
+Every successful public return leaves no invocation-owned index entries or file descriptors before fixture cleanup.
+The nine bulk and seven parallel non-race cases passed in 10.871 and 384.762 seconds respectively, with no skips, timeouts or stream/lifecycle failures.
+Four 1,000-name cases also passed under race instrumentation using the final probe source in 43.094 seconds.
+No repository or CI time budget was changed for these private experiments.
+
+The source SHA-256 is `cf36b95acb8af14e815bfec0beefe80e30f43319d6192c4800b5cee706163cae`.
+Raw bulk, parallel and final race streams have SHA-256 `9ceb98814801f4265e3004123416c3a31e7f79c82fb5022c731d40232a58aa31`, `88af8893d4c596ffda89278fda3452c09c54912b7f8134c9348d3b840b637aa7` and `d09998ce0481d75a17726783a4c29e7f90f780892a413d1782baa17cda74f41f` respectively.
+To reproduce on Linux, copy the archived text into `internal/deletion/consumer_resource_linux_test.go` in a disposable checkout, set `AERONAUTES_CONSUMER_CACHE` to a new owned absolute XFS cache directory, and run pinned Go 1.27.1 with `go test -mod=readonly -count=1 -parallel=1 -timeout=10m -run '^TestDeletionIntegratedResource$' -v ./internal/deletion`.
+The original before probe remains byte-identical to its committed archive; this consumer probe changes its observation point and does not pretend to be the identical before test.
+These finite measurements and source checks establish the inspected collection bounds, not a universal asymptotic proof, a hard process-memory ceiling, peak journal size or durable recovery guarantee.
+
 ## Remaining limits
 
 This slice settles what a run knows about each requested name and how that is stated, and nothing else.
 It does not make successful deletions individually identifiable, because the protocol does not report them, so a validated reply is still trusted by count.
-It does not change the 200-record display cap, the segment-deleting helper that returns only counts, or the force flow that has no failure sink, which are the rest of DS-08.
+It does not change the 200-record display cap or provide a complete ordinary reported-failure sink for forced segment cleanup, which remain DS-08 work.
+The DLO accounting-failure path now discloses incomplete segment totals and bounded admitted-attempt evidence; that exceptional path is not a complete ordinary failure ledger.
 The wire spelling of error rows is established here only against the owned mock and fixture; the real middleware's exact spelling on a production cluster is not established by this work, and the validation is written to treat an unrecognised row as an anomaly rather than to assume a spelling.
 No native platform behaviour is claimed, since the pipeline is Linux only.
 The audit-register disposition remains separately sequenced and no finding closure follows from this experiment alone.

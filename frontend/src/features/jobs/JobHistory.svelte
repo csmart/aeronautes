@@ -64,6 +64,10 @@
               {job.type} · {job.state} when page loaded · {job.createdAt} · {job.id}
             </button>
             <p><code>{quoted(job.source)} → {quoted(job.destination)}</code></p>
+            {#if job.error}<p>{job.error}</p>{/if}
+            {#if job.counters.deletionAccountingIncomplete}
+              <p>Deletion accounting is incomplete. Final failure and unresolved totals are unavailable.</p>
+            {/if}
             {#if expanded === job.id}
               {#key job.id}<JobItems {browser} {job} />{/key}
             {/if}

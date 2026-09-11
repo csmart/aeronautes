@@ -805,15 +805,15 @@ export interface SegmentsDeleteRequestDTO {
 }
 
 /**
- * SegmentsDeleteResultDTO reports what actually died.
+ * SegmentsDeleteResultDTO retains the manifest result and reported segment counts.
  */
 export interface SegmentsDeleteResultDTO {
     "manifestDeleted": boolean;
     "segmentsDeleted": number;
 
     /**
-     * SegmentsFailed are proven identities whose delete failed — the
-     * result is then PARTIAL and says so, never silently "applied".
+     * SegmentsFailed counts reported errors, not proof of survival.
+     * Incomplete accounting makes these counts last-confirmed progress.
      */
     "segmentsFailed": number;
 
@@ -821,6 +821,7 @@ export interface SegmentsDeleteResultDTO {
      * "exclusive-ownership" | "backstage-forced"
      */
     "basis": string;
+    "deletionAccountingIncomplete"?: boolean;
 }
 
 /**

@@ -24,4 +24,10 @@ export interface Counters {
      * ObjectsDeleted counts a Mirror's destination-only deletions.
      */
     "objectsDeleted": number;
+
+    /**
+     * A deletion accounting failure leaves only last-confirmed progress;
+     * the stored reason explains unavailable final totals and evidence.
+     */
+    "deletionAccountingIncomplete"?: boolean;
 }

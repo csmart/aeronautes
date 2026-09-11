@@ -1,0 +1,717 @@
+package deletion
+
+import (
+	"bufio"
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
+	"sync"
+	"syscall"
+	"testing"
+	"time"
+
+	"github.com/csmart/aeronautes/internal/swiftcontrol"
+)
+
+const consumerPage = 10000
+const consumerBatch = 1000
+const consumerWorkers = 8
+
+func consumerName(i int) string {
+	return fmt.Sprintf("scope/%s/obj-%08d", strings.Repeat("x", 96), i)
+}
+
+func consumerOrdinal(name string, rows int) (int, error) {
+	slash := strings.LastIndex(name, "/obj-")
+	if slash < 0 {
+		return 0, errors.New("missing generated ordinal")
+	}
+	n, err := strconv.Atoi(name[slash+5:])
+	if err != nil || n < 0 || n >= rows || name != consumerName(n) {
+		return 0, errors.New("invalid generated identity")
+	}
+	return n, nil
+}
+
+type consumerStats struct {
+	Requested, Completed, BulkCalls, SingleCalls                int
+	ListCalls, ListedRows, MaxListRows, MaxBulkNames, HeadCalls int
+	Problem                                                     string
+}
+
+// Only the current bounded reply is buffered. Parallel replies wait for the
+// prior progress acknowledgement, so exact callback order needs no name set.
+// This is an eight-worker consumer measurement under a serial reply schedule.
+type consumerProducer struct {
+	mu              sync.Mutex
+	n, rows, passes int
+	mode            string
+	parallel        bool
+	stats           consumerStats
+	changed         chan struct{}
+}
+
+func (p *consumerProducer) problem(err error) {
+	if err == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.stats.Problem == "" {
+		p.stats.Problem = err.Error()
+	}
+}
+
+func (p *consumerProducer) reject(w http.ResponseWriter, err error) {
+	p.problem(err)
+	http.Error(w, "owned generated probe rejected request", http.StatusBadRequest)
+}
+
+func (p *consumerProducer) write(w http.ResponseWriter, value string) bool {
+	_, err := io.WriteString(w, value)
+	p.problem(err)
+	return err == nil
+}
+
+func (p *consumerProducer) snapshot() consumerStats {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.stats
+}
+
+func (p *consumerProducer) acknowledge() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.stats.Completed >= p.stats.Requested {
+		return errors.New("progress without a new outcome")
+	}
+	p.stats.Completed = p.stats.Requested
+	close(p.changed)
+	p.changed = make(chan struct{})
+	return nil
+}
+
+func (p *consumerProducer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet && r.URL.Path == "/auth/v1.0" {
+		if r.Header.Get("X-Auth-User") != "owned:probe" || r.Header.Get("X-Auth-Key") != "owned-fixture-only" {
+			p.reject(w, errors.New("unexpected owned authentication"))
+			return
+		}
+		w.Header().Set("X-Storage-Url", "http://"+r.Host+"/v1/AUTH_owned")
+		w.Header().Set("X-Auth-Token", "owned-fixture-token")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method == http.MethodGet && r.URL.Path == "/info" {
+		p.write(w, `{"swift":{"version":"owned-generated-consumer"},"bulk_delete":{"max_deletes_per_request":1000}}`)
+		return
+	}
+	if r.Header.Get("X-Auth-Token") != "owned-fixture-token" {
+		p.reject(w, errors.New("unexpected storage authentication"))
+		return
+	}
+	switch {
+	case r.Method == http.MethodPost && r.URL.Path == "/v1/AUTH_owned" && r.URL.Query().Has("bulk-delete") && !p.parallel:
+		p.bulk(w, r)
+	case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/v1/AUTH_owned/media/") && p.parallel:
+		p.single(w, r)
+	case r.Method == http.MethodGet && r.URL.Path == "/v1/AUTH_owned/media":
+		p.list(w, r)
+	case r.Method == http.MethodHead && strings.HasPrefix(r.URL.Path, "/v1/AUTH_owned/media/"):
+		p.head(w, r)
+	default:
+		p.reject(w, fmt.Errorf("unexpected method/path %s %s", r.Method, r.URL.Path))
+	}
+}
+
+func (p *consumerProducer) bulk(w http.ResponseWriter, r *http.Request) {
+	defer func() { p.problem(r.Body.Close()) }()
+	before := p.snapshot()
+	paths := make([]string, 0, consumerBatch)
+	scanner := bufio.NewScanner(http.MaxBytesReader(w, r.Body, 256<<10))
+	for scanner.Scan() {
+		ordinal := before.Requested%p.rows + len(paths)
+		if len(paths) >= consumerBatch || ordinal >= p.rows || before.Requested+len(paths) >= p.rows*p.passes || scanner.Text() != "/media/"+consumerName(ordinal) {
+			p.reject(w, errors.New("bulk identity, namespace or batch guard failed"))
+			return
+		}
+		paths = append(paths, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		p.reject(w, err)
+		return
+	}
+	if len(paths) == 0 || before.Completed != before.Requested {
+		p.reject(w, errors.New("empty or overlapping bulk request"))
+		return
+	}
+	p.mu.Lock()
+	p.stats.Requested += len(paths)
+	p.stats.BulkCalls++
+	p.stats.MaxBulkNames = max(p.stats.MaxBulkNames, len(paths))
+	p.mu.Unlock()
+	response := struct {
+		Deleted  int         `json:"Number Deleted"`
+		NotFound int         `json:"Number Not Found"`
+		Status   string      `json:"Response Status"`
+		Body     string      `json:"Response Body"`
+		Errors   [][2]string `json:"Errors"`
+	}{Status: "200 OK", Errors: [][2]string{}}
+	for i, path := range paths {
+		if p.mode == "zero_facets" || p.mode == "repeat" && before.Requested%p.rows+i == p.n {
+			response.Deleted++
+		} else {
+			response.Status = "400 Bad Request"
+			response.Errors = append(response.Errors, [2]string{path, "500 Internal Server Error"})
+		}
+	}
+	p.problem(json.NewEncoder(w).Encode(response))
+}
+
+func (p *consumerProducer) single(w http.ResponseWriter, r *http.Request) {
+	ordinal, err := consumerOrdinal(strings.TrimPrefix(r.URL.Path, "/v1/AUTH_owned/media/"), p.rows)
+	if err != nil {
+		p.reject(w, err)
+		return
+	}
+	for {
+		p.mu.Lock()
+		if p.stats.Requested >= p.rows*p.passes {
+			p.mu.Unlock()
+			p.reject(w, errors.New("single request exceeds complete generated traversal"))
+			return
+		}
+		if ordinal == p.stats.Completed%p.rows && p.stats.Requested == p.stats.Completed {
+			p.stats.Requested++
+			p.stats.SingleCalls++
+			p.mu.Unlock()
+			if p.mode == "zero_facets" || p.mode == "repeat" && ordinal == p.n {
+				w.WriteHeader(http.StatusNoContent)
+			} else {
+				w.WriteHeader(http.StatusInternalServerError)
+				p.write(w, "owned generated failure")
+			}
+			return
+		}
+		changed := p.changed
+		p.mu.Unlock()
+		select {
+		case <-changed:
+		case <-r.Context().Done():
+			p.problem(fmt.Errorf("reply gate: %w", r.Context().Err()))
+			return
+		}
+	}
+}
+
+func (p *consumerProducer) list(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	limit, err := strconv.Atoi(q.Get("limit"))
+	if err != nil || limit < 1 || limit > consumerPage || q.Get("prefix") != "scope/" || q.Get("delimiter") != "" {
+		p.reject(w, errors.New("unexpected listing options"))
+		return
+	}
+	start := 0
+	if marker := q.Get("marker"); marker != "" {
+		ordinal, err := consumerOrdinal(marker, p.rows)
+		if err != nil {
+			p.reject(w, err)
+			return
+		}
+		start = ordinal + 1
+	}
+	p.mu.Lock()
+	if p.mode == "zero_facets" {
+		start = max(start, p.stats.Completed)
+	}
+	end := min(start+limit, p.rows)
+	p.stats.ListCalls++
+	p.stats.ListedRows += end - start
+	p.stats.MaxListRows = max(p.stats.MaxListRows, end-start)
+	p.mu.Unlock()
+	if !p.write(w, "[") {
+		return
+	}
+	for i := start; i < end; i++ {
+		if i > start && !p.write(w, ",") {
+			return
+		}
+		row := fmt.Sprintf(`{"name":%q,"bytes":1,"hash":"9dd4e461268c8034f5c8564e155c67a6","content_type":"application/octet-stream","last_modified":"2026-09-12T00:00:00.000000"}`, consumerName(i))
+		if !p.write(w, row) {
+			return
+		}
+	}
+	p.write(w, "]")
+}
+
+func (p *consumerProducer) head(w http.ResponseWriter, r *http.Request) {
+	ordinal, err := consumerOrdinal(strings.TrimPrefix(r.URL.Path, "/v1/AUTH_owned/media/"), p.rows)
+	if err != nil {
+		p.reject(w, err)
+		return
+	}
+	p.mu.Lock()
+	valid := ordinal == p.stats.HeadCalls && p.stats.Completed == p.rows*p.passes && p.stats.HeadCalls < 10
+	p.stats.HeadCalls++
+	p.mu.Unlock()
+	if !valid {
+		p.reject(w, errors.New("bounded HEAD order or completion guard failed"))
+		return
+	}
+	if p.mode == "zero_facets" {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Length", "1")
+	w.Header().Set("Etag", "9dd4e461268c8034f5c8564e155c67a6")
+	w.Header().Set("Last-Modified", "Sat, 12 Sep 2026 00:00:00 GMT")
+	w.WriteHeader(http.StatusOK)
+}
+
+type consumerMemory struct {
+	HeapAlloc, HeapInuse, HeapObjects, RuntimeSys uint64
+	RSS, RSSHighWater, RSSAnon, RSSFile, RSSShmem uint64
+	FDs, Goroutines                               int
+}
+
+func consumerMemoryNow() (consumerMemory, error) {
+	runtime.GC()
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	result := consumerMemory{HeapAlloc: m.HeapAlloc, HeapInuse: m.HeapInuse, HeapObjects: m.HeapObjects, RuntimeSys: m.Sys, Goroutines: runtime.NumGoroutine()}
+	data, err := os.ReadFile("/proc/self/status")
+	if err != nil {
+		return result, err
+	}
+	for line := range strings.SplitSeq(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 3 || fields[2] != "kB" {
+			continue
+		}
+		var destination *uint64
+		switch fields[0] {
+		case "VmRSS:":
+			destination = &result.RSS
+		case "VmHWM:":
+			destination = &result.RSSHighWater
+		case "RssAnon:":
+			destination = &result.RSSAnon
+		case "RssFile:":
+			destination = &result.RSSFile
+		case "RssShmem:":
+			destination = &result.RSSShmem
+		}
+		if destination == nil {
+			continue
+		}
+		n, err := strconv.ParseUint(fields[1], 10, 64)
+		if err != nil {
+			return result, err
+		}
+		*destination = n * 1024
+	}
+	if result.RSS == 0 {
+		return result, errors.New("missing process RSS")
+	}
+	fds, err := os.ReadDir("/proc/self/fd")
+	result.FDs = len(fds)
+	return result, err
+}
+
+type consumerDisk struct {
+	Path                  string
+	Bytes, AllocatedBytes int64
+	Mode                  uint32
+	Facets                int
+	PageSize, PageCount   int
+	JournalMode           string
+	ObserverClosed        bool
+}
+
+// Read-only, one-row-at-a-time verification runs after the memory sample.
+// Its connection-local settings are not claimed as the writer's settings.
+func consumerIndexSnapshot(cache string, n, kinds int) (result consumerDisk, returned error) {
+	root := filepath.Join(cache, "aeronautes", "deletion-identities")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return result, err
+	}
+	if len(entries) != 1 || !entries[0].IsDir() || !strings.HasPrefix(entries[0].Name(), "delete-identities-") {
+		return result, errors.New("consumer did not hold exactly one owned index")
+	}
+	dir := filepath.Join(root, entries[0].Name())
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return result, err
+	}
+	if len(files) != 1 || files[0].Name() != "identities.sqlite" {
+		return result, errors.New("unexpected held index files after committed outcome")
+	}
+	info, err := files[0].Info()
+	if err != nil {
+		return result, err
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return result, errors.New("Linux file allocation unavailable")
+	}
+	result = consumerDisk{Path: filepath.Join(dir, info.Name()), Bytes: info.Size(), AllocatedBytes: stat.Blocks * 512, Mode: uint32(info.Mode().Perm())}
+	if result.Mode != 0600 {
+		return result, errors.New("private file permission changed")
+	}
+	uri := (&url.URL{Scheme: "file", Path: result.Path, RawQuery: "mode=ro&cache=private"}).String()
+	db, err := sql.Open("sqlite", uri)
+	if err != nil {
+		return result, err
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	defer func() {
+		returned = errors.Join(returned, db.Close())
+		result.ObserverClosed = returned == nil && db.Stats().OpenConnections == 0
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return result, err
+	}
+	defer func() { returned = errors.Join(returned, conn.Close()) }()
+	for _, setting := range []string{"PRAGMA cache_size=256", "PRAGMA mmap_size=0", "PRAGMA busy_timeout=0", "PRAGMA query_only=ON"} {
+		if _, err := conn.ExecContext(ctx, setting); err != nil {
+			return result, err
+		}
+	}
+	for _, item := range []struct {
+		query string
+		into  any
+	}{
+		{"PRAGMA page_size", &result.PageSize}, {"PRAGMA page_count", &result.PageCount}, {"PRAGMA journal_mode", &result.JournalMode},
+	} {
+		if err := conn.QueryRowContext(ctx, item.query).Scan(item.into); err != nil {
+			return result, err
+		}
+	}
+	if result.PageSize != 4096 || result.JournalMode != "delete" || int64(result.PageSize*result.PageCount) != result.Bytes {
+		return result, errors.New("persistent page/journal facts changed")
+	}
+	rows, err := conn.QueryContext(ctx, "SELECT kind, name FROM seen ORDER BY kind, name")
+	if err != nil {
+		return result, err
+	}
+	defer func() { returned = errors.Join(returned, rows.Close()) }()
+	for rows.Next() {
+		var kind int
+		var name []byte
+		if err := rows.Scan(&kind, &name); err != nil {
+			return result, err
+		}
+		if n == 0 || result.Facets >= n*kinds || kind != result.Facets/n+1 || string(name) != consumerName(result.Facets%n) {
+			return result, errors.New("exact streamed committed facet oracle failed")
+		}
+		result.Facets++
+	}
+	if err := rows.Err(); err != nil {
+		return result, err
+	}
+	if result.Facets != n*kinds {
+		return result, fmt.Errorf("committed facets=%d want=%d", result.Facets, n*kinds)
+	}
+	return result, nil
+}
+
+func consumerCleanup(cache string) error {
+	root := filepath.Join(cache, "aeronautes", "deletion-identities")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return err
+	}
+	if len(entries) != 0 {
+		return errors.New("owned index not removed after public return")
+	}
+	fds, err := os.ReadDir("/proc/self/fd")
+	if err != nil {
+		return err
+	}
+	for _, fd := range fds {
+		target, err := os.Readlink(filepath.Join("/proc/self/fd", fd.Name()))
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if strings.HasPrefix(target, root+string(filepath.Separator)) {
+			return errors.New("owned index file descriptor survived return")
+		}
+	}
+	return nil
+}
+
+type consumerHeld struct {
+	Pass, Processed                            int
+	Deleted, Failed, Unresolved, ProgressCalls int64
+	Memory                                     consumerMemory
+	Disk                                       consumerDisk
+}
+
+func consumerRun(t *testing.T, source, strategy, mode string, n int) {
+	t.Helper()
+	if runtime.Version() != "go1.27.1" {
+		t.Fatalf("toolchain setup: %s", runtime.Version())
+	}
+	cacheParent := os.Getenv("AERONAUTES_CONSUMER_CACHE")
+	if !filepath.IsAbs(cacheParent) {
+		t.Fatal("private absolute cache is required")
+	}
+	cache, err := os.MkdirTemp(cacheParent, "consumer-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(cache); err != nil {
+			t.Error(err)
+		}
+	})
+	t.Setenv("XDG_CACHE_HOME", cache)
+	t.Setenv("LocalAppData", cache)
+	t.Setenv("HOME", cache)
+	actualCache, err := os.UserCacheDir()
+	if err != nil || actualCache != cache {
+		t.Fatalf("owned cache selection: %q %v", actualCache, err)
+	}
+	var backing syscall.Statfs_t
+	if err := syscall.Statfs(cache, &backing); err != nil {
+		t.Fatal(err)
+	}
+	if backing.Type != 0x58465342 {
+		t.Fatalf("cache is not XFS: %#x", backing.Type)
+	}
+	p := &consumerProducer{n: n, rows: n, passes: 1, mode: mode, parallel: strategy == "parallel", changed: make(chan struct{})}
+	if mode == "repeat" {
+		p.rows++
+		p.passes = 3
+	}
+	server := httptest.NewServer(p)
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
+	defer cancel()
+	session, err := swiftcontrol.New(swiftcontrol.Config{AuthURL: server.URL + "/auth/v1.0", Username: "owned:probe", APIKey: "owned-fixture-only"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Authenticate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	capabilities, err := session.FetchCapabilities(ctx)
+	if err != nil || capabilities.BulkDeleteMaxDeletes() != consumerBatch {
+		t.Fatalf("capability setup: %v", err)
+	}
+	var selection []string
+	if source == "names" {
+		selection = make([]string, n)
+		for i := range selection {
+			selection[i] = consumerName(i)
+		}
+	}
+	before, err := consumerMemoryNow()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var failed, unresolved, progress int64
+	var observationErr error
+	held := make([]consumerHeld, 0, 3)
+	recordProblem := func(err error) {
+		if err != nil && observationErr == nil {
+			observationErr = err
+			cancel()
+		}
+	}
+	checkStream := func(which string, ordinal *int64, name, detail string) {
+		if *ordinal >= int64(n) || name != consumerName(int(*ordinal)) || detail == "" || mode == "zero_facets" {
+			recordProblem(fmt.Errorf("%s callback identity/detail mismatch at ordinal %d", which, *ordinal))
+		}
+		if !p.parallel && !strings.Contains(detail, "500 Internal Server Error") {
+			recordProblem(errors.New("bulk reported status lost"))
+		}
+		*ordinal++
+	}
+	options := Options{BulkSize: consumerBatch, Workers: consumerWorkers, ForceParallel: p.parallel, Passes: 3,
+		OnFailure:    func(name, detail string) { checkStream("failed", &failed, name, detail) },
+		OnUnresolved: func(name, detail string) { checkStream("unresolved", &unresolved, name, detail) },
+		OnProgress: func(deleted, count int64) {
+			progress++
+			stats := p.snapshot()
+			wantFailed := int64(min(n, stats.Requested))
+			wantDeleted := int64(0)
+			if mode == "zero_facets" {
+				wantFailed = 0
+				wantDeleted = int64(stats.Requested)
+			}
+			if mode == "repeat" {
+				wantDeleted = int64(stats.Requested / p.rows)
+			}
+			wantUnresolved := wantFailed
+			if p.parallel {
+				wantUnresolved = 0
+			}
+			if count != wantFailed || failed != wantFailed || unresolved != wantUnresolved || deleted != wantDeleted {
+				recordProblem(fmt.Errorf("committed progress mismatch at %d: deleted=%d failed=%d callbacks=%d,%d", stats.Requested, deleted, count, failed, unresolved))
+			}
+			if stats.Requested%p.rows == 0 {
+				memory, err := consumerMemoryNow()
+				recordProblem(err)
+				kinds := 2
+				if p.parallel {
+					kinds = 1
+				}
+				disk, err := consumerIndexSnapshot(cache, int(wantFailed), kinds)
+				recordProblem(err)
+				held = append(held, consumerHeld{stats.Requested / p.rows, stats.Requested, deleted, count, unresolved, progress, memory, disk})
+			}
+			recordProblem(p.acknowledge())
+		},
+	}
+	started := time.Now()
+	var result *Result
+	if source == "prefix" {
+		result, err = DeletePrefix(ctx, session, capabilities, "media", "scope/", options)
+	} else {
+		result, err = DeleteNames(ctx, session, capabilities, "media", selection, options)
+	}
+	elapsed := time.Since(started)
+	if err != nil || observationErr != nil || result == nil {
+		t.Fatalf("engine or observation failed: engine=%v observation=%v producer=%+v", err, observationErr, p.snapshot())
+	}
+	if err := consumerCleanup(cache); err != nil {
+		t.Fatal(err)
+	}
+	returned, err := consumerMemoryNow()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime.KeepAlive(selection)
+	runtime.KeepAlive(result)
+	for i, name := range selection {
+		if name != consumerName(i) {
+			t.Fatal("caller-owned selection was modified")
+		}
+	}
+	stats := p.snapshot()
+	wantFailures, wantUnresolved, wantDeleted := int64(n), int64(n), int64(0)
+	if p.parallel {
+		wantUnresolved = 0
+	}
+	if mode == "zero_facets" {
+		wantFailures = 0
+		wantUnresolved = 0
+		wantDeleted = int64(n)
+	}
+	if mode == "repeat" {
+		wantDeleted = 3
+	}
+	wantRemaining, wantPasses, wantRows, wantLists, wantHeads := int64(1), 1, p.rows*p.passes+5, ((p.rows+consumerPage-1)/consumerPage+1)*p.passes+5, 0
+	if mode == "repeat" {
+		wantPasses = 3
+	}
+	if mode == "zero_facets" {
+		wantRemaining = 0
+		wantPasses = 2
+		wantRows = n
+		wantLists = (n+consumerPage-1)/consumerPage + 3
+	}
+	if source == "names" {
+		wantPasses = 0
+		wantRows = 0
+		wantLists = 0
+		wantHeads = min(n, 10)
+		if mode != "zero_facets" {
+			wantRemaining = int64(wantHeads)
+		}
+	}
+	wantStrategy := StrategyBulk
+	if p.parallel {
+		wantStrategy = StrategyParallel
+	}
+	if result.Strategy != wantStrategy || result.Deleted != wantDeleted || result.Failed != wantFailures || result.Unresolved != wantUnresolved || failed != wantFailures || unresolved != wantUnresolved || result.Remaining != wantRemaining || result.Passes != wantPasses {
+		t.Fatalf("public result mismatch: %+v callbacks=%d,%d", result, failed, unresolved)
+	}
+	if result.NotFound != 0 || result.UntrustedReplies != 0 || len(result.UntrustedAggregates) != 0 || result.AccountingIncomplete || len(result.UnindexedAttempts) != 0 {
+		t.Fatal("unexpected diagnostic or incomplete outcome")
+	}
+	if len(result.Failures) != int(min(wantFailures, 200)) || len(result.Unresolveds) != int(min(wantUnresolved, 200)) {
+		t.Fatal("display sample bound changed")
+	}
+	for _, sample := range [][]Failure{result.Failures, result.Unresolveds} {
+		for i, item := range sample {
+			if item.Name != consumerName(i) || item.Err == "" {
+				t.Fatal("bounded sample identity/detail changed")
+			}
+		}
+	}
+	wantBulk, wantSingle := (p.rows+consumerBatch-1)/consumerBatch*p.passes, 0
+	if p.parallel {
+		wantBulk = 0
+		wantSingle = p.rows * p.passes
+	}
+	wantMaxList := min(p.rows, consumerPage)
+	if source == "names" {
+		wantMaxList = 0
+	}
+	if stats.Problem != "" || stats.Requested != p.rows*p.passes || stats.Completed != stats.Requested || stats.BulkCalls != wantBulk || stats.SingleCalls != wantSingle || progress != int64(wantBulk+wantSingle) || stats.ListedRows != wantRows || stats.ListCalls != wantLists || stats.HeadCalls != wantHeads || stats.MaxListRows != wantMaxList || stats.MaxBulkNames > consumerBatch {
+		t.Fatalf("producer cardinality or bounds mismatch: %+v want rows=%d lists=%d heads=%d", stats, wantRows, wantLists, wantHeads)
+	}
+	if len(held) != p.passes {
+		t.Fatal("missing held-consumer checkpoint")
+	}
+	for i, point := range held {
+		if !point.Disk.ObserverClosed {
+			t.Fatal("observer did not close cleanly")
+		}
+		if i > 0 && point.Disk.Bytes != held[0].Disk.Bytes {
+			t.Fatal("repeat observation grew committed identity file")
+		}
+	}
+	measurement := map[string]any{"source": source, "strategy": strategy, "mode": mode, "n": n, "name_bytes": len(consumerName(0)), "workers": consumerWorkers,
+		"caller_selection_len": len(selection), "caller_selection_cap": cap(selection), "caller_selection_name_bytes": len(selection) * len(consumerName(0)),
+		"seconds": elapsed.Seconds(), "before_including_caller_selection": before, "held_consumer": held, "returned_result_and_selection_still_held": returned,
+		"producer": stats, "failed_callbacks": failed, "unresolved_callbacks": unresolved, "failure_sample_count": len(result.Failures), "unresolved_sample_count": len(result.Unresolveds),
+		"deleted": result.Deleted, "remaining": result.Remaining, "passes": result.Passes, "cache": cache, "backing": "xfs", "backing_block_bytes": backing.Bsize,
+		"owned_index_cleanup_checked": true, "parallel_reply_schedule": "next response waits for prior committed progress acknowledgement"}
+	encoded, err := json.Marshal(measurement)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("CONSUMER_MEASUREMENT %s", encoded)
+}
+
+func TestDeletionIntegratedResource(t *testing.T) {
+	for _, source := range []string{"prefix", "names"} {
+		for _, strategy := range []string{"bulk", "parallel"} {
+			cardinalities := []int{1000, 10000, 50000}
+			repeatNames := 10000
+			if strategy == "parallel" {
+				cardinalities = []int{1000, 10000}
+				repeatNames = 1000
+			}
+			for _, n := range cardinalities {
+				t.Run(fmt.Sprintf("%s_%s_failure_%d", source, strategy, n), func(t *testing.T) { consumerRun(t, source, strategy, "failure", n) })
+			}
+			t.Run(source+"_"+strategy+"_zero_facets_50000", func(t *testing.T) { consumerRun(t, source, strategy, "zero_facets", 50000) })
+			if source == "prefix" {
+				t.Run(fmt.Sprintf("%s_%s_repeat_%d", source, strategy, repeatNames), func(t *testing.T) { consumerRun(t, source, strategy, "repeat", repeatNames) })
+			}
+		}
+	}
+}

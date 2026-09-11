@@ -49,14 +49,15 @@ type SegmentOwnershipDTO struct {
 	InlineEntries int64 `json:"inlineEntries"`
 }
 
-// SegmentsDeleteResultDTO reports what actually died.
+// SegmentsDeleteResultDTO retains the manifest result and reported segment counts.
 type SegmentsDeleteResultDTO struct {
 	ManifestDeleted bool  `json:"manifestDeleted"`
 	SegmentsDeleted int64 `json:"segmentsDeleted"`
-	// SegmentsFailed are proven identities whose delete failed — the
-	// result is then PARTIAL and says so, never silently "applied".
-	SegmentsFailed int64  `json:"segmentsFailed"`
-	Basis          string `json:"basis"` // "exclusive-ownership" | "backstage-forced"
+	// SegmentsFailed counts reported errors, not proof of survival.
+	// Incomplete accounting makes these counts last-confirmed progress.
+	SegmentsFailed               int64  `json:"segmentsFailed"`
+	Basis                        string `json:"basis"` // "exclusive-ownership" | "backstage-forced"
+	DeletionAccountingIncomplete bool   `json:"deletionAccountingIncomplete,omitempty"`
 }
 
 // sloSegmentRefs flattens a manifest's direct whole-object references
@@ -285,6 +286,26 @@ func (s *DeleteService) DeleteManifestWithSegments(ctx context.Context, req Segm
 		if sweep != nil {
 			result.SegmentsDeleted = sweep.Deleted
 			result.SegmentsFailed = sweep.Failed
+			result.DeletionAccountingIncomplete = sweep.AccountingIncomplete
+		}
+		if errors.Is(err, deletion.ErrIdentityAccounting) || result.DeletionAccountingIncomplete {
+			reason := fmt.Sprintf("the manifest is gone; segment-prefix deletion stopped after %d credited deletions and %d reported failures", result.SegmentsDeleted, result.SegmentsFailed)
+			summary := "partial: manifest deleted; segment deletion accounting storage unavailable"
+			if result.DeletionAccountingIncomplete {
+				reason = "the manifest is gone; " + incompleteDeletionReason(sweep)
+				summary = "partial: manifest deleted; deletion accounting incomplete"
+			}
+			problem := errors.New(reason)
+			if err != nil {
+				problem = fmt.Errorf("%s: %w", reason, err)
+			}
+			if auditErr := s.runner.audit.Append(context.WithoutCancel(ctx), audit.Event{
+				BookmarkID: req.BookmarkID, Operation: "segments.delete", Resource: resource,
+				Summary: summary, Result: audit.ResultVerifyMismatch,
+			}); auditErr != nil {
+				problem = errors.Join(problem, fmt.Errorf("record partial segment deletion audit: %w", auditErr))
+			}
+			return result, problem
 		}
 		if err != nil {
 			s.runner.record(ctx, req.BookmarkID, "segments.delete", resource, "prefix sweep failed: "+err.Error(), audit.ResultFailed)

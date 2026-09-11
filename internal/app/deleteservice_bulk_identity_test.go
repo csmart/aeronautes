@@ -388,13 +388,16 @@ func TestDeleteJobDoesNotPublishClaimedDeletionsAsVerified(t *testing.T) {
 // report the exact count, and must say that the complete list was not
 // retained, so nobody reads the ledger as complete when it is not.
 func TestDeleteJobDisclosesAnUnretainableUnresolvedSet(t *testing.T) {
-	// A cache location that is a file, not a directory, so the retention
-	// path cannot be created.
-	blocked := filepath.Join(t.TempDir(), "not-a-directory")
+	// The index must remain healthy: this case promises exact counts
+	// despite losing only the normal retained unresolved list.
+	cache := deletionAccountingCache(t)
+	if err := os.MkdirAll(filepath.Join(cache, "aeronautes"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	blocked := filepath.Join(cache, "aeronautes", "unresolved")
 	if err := os.WriteFile(blocked, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("XDG_CACHE_HOME", blocked)
 
 	h, _ := bulkIdentityHarness(t, map[string]any{
 		"Number Deleted": 1, "Number Not Found": 0,
