@@ -191,7 +191,8 @@ Global browser keys now respect editable/select targets, consumed events and act
 The [separate asynchronous Preview correction](../../experiments/2026-09-09-preview-focus.md) addresses native focus loss during planning without authorising Start.
 The [bounded sensitive-label correction](../../experiments/2026-09-09-sensitive-labels.md#protected-delivery) connects Find, ACL add/raw, audit-filter, benchmark-confirmation and segment-force labels to the appropriate current controls with per-instance IDs, preserving literal values, exact guards and explicit submission.
 Transfer destination controls already have accessible names and remain covered by an unchanged positive control.
-The historical findings above remain the before evidence; tab/shortcut patterns, native screen-reader/select journeys and broader UI-11/P29 acceptance remain open.
+The [Container mode correction delivered in PR97](../../experiments/2026-09-11-container-mode-keys.md) supplies one roving tab stop, horizontal-arrow and Home/End activation, per-instance tab/panel associations and selected-tab focus indication for that one control, with nine maintained component cases and broken controls.
+The historical findings above remain the before evidence; remaining tab/shortcut patterns, native screen-reader/select journeys and broader UI-11/P29 acceptance remain open.
 
 ### UI-12 — P2: text contrast is insufficient for the dense control typography
 

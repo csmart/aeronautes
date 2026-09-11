@@ -5128,6 +5128,11 @@ Zoom and scaling, forced colours, assistive technology and other native platform
 Named breakpoints, resizable panes, responsive working-list columns and bounded large-namespace retention remain separate UI-13 and P24 work.
 This bounded correction does not close UI-13, the accepted responsive-layout gate or the valuable-data hold.
 
+The [Container mode keyboard correction](experiments/2026-09-11-container-mode-keys.md) delivered in PR97 gives Logical, All and Backstage one roving tab stop, automatic activation on ArrowLeft/ArrowRight with wrapping and Home/End, per-instance tab/panel associations and selected-tab focus indication.
+The control consumes those four keys, preserves the selected container, loaded-row filter, server prefix and working-list selection, and keeps pointer activation and the vertical-arrow hand-off unchanged.
+The experiment records nine maintained component cases with before and broken controls, plus one Linux light-theme keyboard replay at 1280×800.
+Other tab patterns and §4.4 shortcuts, native select and screen-reader journeys, dark-theme native behaviour, zoom/scaling and other native platforms remain open under UI-11/P29.
+
 The next bounded [segmented-destination change detection](experiments/2026-09-11-copy-verification-strength.md) stops a same-size segment substitution being reported as an equal destination.
 The executor decides a non-plain pair from its own stored fingerprint and a matching logical length, so a destination whose segments were replaced with different bytes of the same length is skipped as equal.
 This is a prerequisite within DS-04 and not its remedy: comparing a destination against an identity this executor recorded detects change since that observation and cannot establish that the committed bytes were ever correct, which the staged-content sequence owns.
