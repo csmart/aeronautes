@@ -103,13 +103,14 @@ PR93 remains draft and unmerged, the HTTP 503 causes remain unproved, and the va
 ## Retained error-log collection
 
 The collector now adds an eleventh probe for `/var/log/socklog/errors`.
-It reads the retained `.s` and `.u` rotations in filename order and the required current file last, taking at most 10,000 lines per file before the existing redaction and four-MiB output limit.
+It reads the retained `.s` and `.u` rotations in filename order and the required current file last, taking at most 10,000 lines per file before redaction and retaining the first four MiB of that result.
+Later retained errors can be omitted when that limit is reached; this probe prefers the earliest retained window while the other probes continue keeping their final window.
 The reader replaces its launcher process and has an eight-second deadline inside the container, followed by a forced stop after one further second if needed, within the existing ten-second client deadline.
 This bounds the reader independently of whether stopping a Docker client stops its container process.
 A missing current file remains a nonzero probe even when earlier rotations were read successfully; later independent probes still run.
 There is no new shell interpolation, Swift configuration change, suite retry or change to the workflow's two-minute collection budget.
 
-All twelve collector tests pass.
+All thirteen collector tests pass.
 New disposable-file controls prove an earlier rotated HTTP 503 survives more than 10,000 later cleanup lines, both rotation suffixes are retained, unrelated state files are excluded, authentication material is redacted, an unrotated current file works, and a missing current file is reported before continuing the next probe.
 The three new tests first failed because the probe was absent.
 A blocked-file read also failed its control before the internal deadline was added; it now returns a nonzero command result before the outer probe times out.
@@ -117,6 +118,15 @@ Separate sensitivity controls against the final twelve-test suite removed rotati
 The actual probe command also succeeded against the pinned local image's empty error log, using the owned Podman fixture instead of Docker.
 An isolated blocked-file control inside that same image exited 143 after 8.108 seconds without triggering the outer timeout; the normal probe then exited zero after 0.132 seconds.
 That empty-log observation verifies command and path availability; it does not establish a server-failure diagnosis or replace the next hosted artifact inspection.
+
+Independent review found that the initial implementation's final four-MiB window could still discard an earlier rotated error.
+A new control with more than six MiB in the current file reproduced that loss and now requires the earlier rotated error to survive collection without exposing its token.
+The first-window selection applies only to this error-log probe and each record reports its selected window alongside truncation status.
+
+A subsequent marked synthetic `local2.err` message reached the pinned image's Swift and general logs but not its separate error log.
+An isolated invocation of the image's `s6-log` reproduced its filter mismatch: the original `+\..err:` rule missed that severity, while `+\.err:` retained it.
+Neither invocation changed the running logger or Swift configuration.
+This is a newly reproduced diagnostic-routing gap, not a cause of the hosted HTTP 503 responses; reliable error capture still requires its own reviewed correction before another hosted investigation.
 
 The complete pinned local internal suite subsequently exited zero after 838.888 seconds with Go 1.27.1, `-race -count=1 -parallel=3 -timeout=25m` and internal-package coverage enabled.
 Its 3,746 terminal test names contain 3,481 passing leaves and one explicit `TestRcloneMatrix` skip; all twenty packages passed.
