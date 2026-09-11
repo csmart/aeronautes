@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 
 	"github.com/csmart/aeronautes/internal/audit"
@@ -100,6 +101,8 @@ func (s *TransferService) PickDownloadDir(ctx context.Context) (*PickedDirDTO, e
 	if err != nil || dir == "" {
 		return nil, err
 	}
+	// The pick captures the directory behind a handle; the token names
+	// that directory, not whatever its pathname names later.
 	return &PickedDirDTO{Token: s.selections.putDir(dir), Dir: dir}, nil
 }
 
@@ -146,15 +149,24 @@ func (s *TransferService) PreflightDownload(ctx context.Context, req DownloadReq
 	if req.BookmarkID == "" || req.Container == "" {
 		return nil, errors.New("bookmark and container are required")
 	}
-	destDir, err := s.selections.getDir(req.DestDirToken)
+	destination, destDir, err := s.selections.leaseDir(req.DestDirToken)
 	if err != nil {
 		return nil, err
 	}
 	session, err := s.connections.SessionFor(ctx, req.BookmarkID)
 	if err != nil {
+		if destination != nil {
+			err = errors.Join(err, destination.Close())
+		}
 		return nil, err
 	}
-	return local.PreflightDownload(ctx, session, req.Container, req.Prefix, destDir)
+	if destination == nil {
+		// The pick could not be held; the complete report says why,
+		// without any effect.
+		return local.PreflightDownload(ctx, session, req.Container, req.Prefix, destDir)
+	}
+	report, err := local.PreflightDownloadInto(ctx, session, req.Container, req.Prefix, destination)
+	return report, errors.Join(err, destination.Close())
 }
 
 // localEngine builds the single-remote engine for the bookmark's end;
@@ -192,6 +204,16 @@ func (b boundLocal) Copy(ctx context.Context, src, dst string, names []string, o
 		return nil, err
 	}
 	return b.runner.Copy(ctx, remotes, src, dst, names, onEvent)
+}
+
+// CopyInto anchors the child's destination to the held stage directory
+// where the runner supports it (local.AnchoredEngine).
+func (b boundLocal) CopyInto(ctx context.Context, src, dst string, anchor *os.File, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
+	remotes, err := b.source(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return b.runner.CopyInto(ctx, remotes, src, anchor, names, onEvent)
 }
 
 // StartUpload re-runs the preflight (state may have moved since the UI
@@ -291,10 +313,6 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 	if err != nil {
 		return "", err
 	}
-	destDir, err := s.selections.getDir(req.DestDirToken)
-	if err != nil {
-		return "", err
-	}
 	preflight, err := s.PreflightDownload(ctx, req)
 	if err != nil {
 		return "", err
@@ -305,12 +323,26 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 	if err := req.Settings.Validate(); err != nil {
 		return "", err
 	}
+	destination, _, err := s.selections.leaseDir(req.DestDirToken)
+	if err != nil {
+		return "", err
+	}
+	if destination == nil {
+		return "", errors.New("the selected directory cannot be held for the job; pick it again")
+	}
+	// The job owns this handle. It closes with the pins after the whole
+	// body has returned, on every path, and on any refusal below.
+	release := releasePins
+	releasePins = func() {
+		release()
+		_ = destination.Close()
+	}
 	engine, err := s.localEngine(ctx, session, "aeronautes_src", req.Settings)
 	if err != nil {
 		return "", fmt.Errorf("transfer engine: %w", err)
 	}
 	if boundary := s.downloadStageBoundary; boundary != nil {
-		engine = downloadStageBoundaryEngine{Engine: engine, after: boundary}
+		engine = wrapDownloadStageBoundary(engine, boundary)
 	}
 	job, err := s.jobs.Create(ctx, jobs.Job{
 		Type:               jobs.TypeDownload,
@@ -336,8 +368,8 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 
 	s.runner.launchWithQueuedOutcome(jobCtx, job.ID, req.BookmarkID, releasePins, func(runCtx context.Context) {
 		s.runLocal(runCtx, job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, func(innerCtx context.Context, onProgress func(done, total, bytes int64)) (*local.Report, error) {
-			return local.Download(innerCtx, session, engine, "aeronautes_src:"+req.Container, req.Container, req.Prefix, destDir, job.ID, preflight, onProgress,
-				s.downloadItemRecorder(context.WithoutCancel(innerCtx), job.ID, req, destDir))
+			return local.DownloadInto(innerCtx, session, engine, "aeronautes_src:"+req.Container, req.Container, req.Prefix, destination, job.ID, preflight, onProgress,
+				s.downloadItemRecorder(context.WithoutCancel(innerCtx), job.ID, req, destination.Path()))
 		})
 	}, func(cancelCtx context.Context) {
 		s.finishLocal(cancelCtx, job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, jobs.StateCancelled, "", "")
@@ -398,6 +430,7 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 	background := context.WithoutCancel(ctx)
 	counters := base
 	var stageCleanup *local.StageCleanupResult
+	rootDisplacement := ""
 	finish := func(state jobs.State, message string) {
 		auditSummary := ""
 		if stageCleanup != nil && (stageCleanup.Issues > 0 || stageCleanup.Retained) {
@@ -414,6 +447,22 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 				auditSummary = fmt.Sprintf("download stage cleanup: %d issues", stageCleanup.Issues)
 				message += fmt.Sprintf("%s (first: %s)", auditSummary, stageCleanup.FirstError)
 			}
+		}
+		// Effects went into the directory picked, but the recorded paths
+		// keep the picked spelling, which no longer names it. The outcome
+		// is partial so the operator looks before trusting the records.
+		if rootDisplacement != "" {
+			if state == jobs.StateComplete {
+				state = jobs.StatePartial
+			}
+			if message != "" {
+				message += "; "
+			}
+			message += rootDisplacement
+			if auditSummary != "" {
+				auditSummary += "; "
+			}
+			auditSummary += rootDisplacement
 		}
 		s.finishLocal(background, jobID, bookmarkID, version, counters, state, message, auditSummary)
 	}
@@ -441,6 +490,7 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 	}
 	if report != nil {
 		stageCleanup = report.StageCleanup
+		rootDisplacement = report.RootDisplacement
 		counters.ObjectsCopied = report.Done
 		counters.ObjectsVerified = report.Done
 		counters.BytesCopied = report.Bytes
