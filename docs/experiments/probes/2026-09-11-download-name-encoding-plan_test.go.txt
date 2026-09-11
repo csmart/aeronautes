@@ -1,0 +1,17 @@
+package plan
+
+import "testing"
+
+// Before probe: every rune the pinned engine reserves as a substitute or
+// quote on some supported platform is routed to the engine today.
+func TestRcloneUnsafeEngineReservedRunesProbe(t *testing.T) {
+	for _, name := range []string{
+		"scope/p‛q", "scope/s␀t", "scope/s␁t", "scope/s␡t", "scope/t␠",
+		"scope/a／b", "scope/a＼b", "scope/a：b", "scope/a？b", "scope/a＊b",
+		"scope/a＜b", "scope/a＞b", "scope/a＂b", "scope/a｜b", "scope/d/．/e", "scope/f．",
+	} {
+		if RcloneUnsafe(name) {
+			t.Errorf("%q is routed natively today; the probe expected the engine route", name)
+		}
+	}
+}

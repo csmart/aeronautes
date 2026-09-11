@@ -1,0 +1,73 @@
+{
+  "environment": {
+    "AERONAUTES_OFFICIAL_RCLONE_DIR": "<pinned rclone 1.74.3 directory>",
+    "GOFLAGS": "-mod=readonly",
+    "GOTOOLCHAIN": "go1.27.1",
+    "PATH": "pinned rclone first",
+    "real_swift": "AERONAUTES_SAIO_AUTH_URL=http://127.0.0.1:18080/auth/v1.0"
+  },
+  "frozen_engine_source": {
+    "path_note": "retained privately with the P31 sidecar source collection; VERSION reads v1.74.3",
+    "sha256": {
+      "VERSION": "cba1390df42ac41f10e3c584007d42317eb4209812fa250812123bc0fe06549e",
+      "backend/swift/swift.go": "5ba35a36d4da83eab8e489c953c128540ce89c5daff152fc52084b3b7cf5b1ae",
+      "lib/encoder/encoder.go": "d45f9f2d20a18d6b4be0d717ed4311e56831bb6ce14a7d481ef1bc894a87ad29",
+      "lib/encoder/os_darwin.go": "fc31921f690fc33d2cb4c6f69da5fe973749cd3506e1659d1c8e8ea55620620a",
+      "lib/encoder/os_other.go": "b7ce6c47b479484e0116e1f09f1781938b8394ee2289d4192724eb4ff9df3cfb",
+      "lib/encoder/os_windows.go": "75f62dadc543d117d57f5c47f52dc184bbca2b91a6445465071e84816b08c238",
+      "lib/encoder/standard.go": "c2ad677dd0847be3679632d7d1049f57fe97d13d357cb7476039865028322d51"
+    }
+  },
+  "probes": {
+    "internal/systemtest/download_name_encoding_test.go": {
+      "archive": "probes/2026-09-11-download-name-encoding-service_test.go.txt",
+      "sha256": "45b55ea4dd6b43609cc41e9316058ed92e5577df254d894047dcd8e64fe6268d"
+    },
+    "internal/transfer/plan/plan_encoding_test.go": {
+      "archive": "probes/2026-09-11-download-name-encoding-plan_test.go.txt",
+      "sha256": "425ac993761ca1cb1086c308fa8d4a493c853e68f77eac3c1f5b883a508df341"
+    }
+  },
+  "producers": [
+    {
+      "command": "go test -race -count=1 -run TestRcloneUnsafeEngineReservedRunesProbe ./internal/transfer/plan/",
+      "exit": 0,
+      "name": "plan probe",
+      "note": "every reserved rune is routed to the engine today"
+    },
+    {
+      "command": "go test -race -count=1 -run TestDownloadNameEncodingProbeMock -v ./internal/systemtest/",
+      "copy_leaves_reported_failed": 9,
+      "download_leaves_passing": 9,
+      "exit": 1,
+      "log_sha256": "0af2174667bd18c39bfb9b35bed1be315c11adb3c063883a16ceace1ef03ca64",
+      "name": "service mock",
+      "note": "the copy leaves fail only their final scenario-credit call, which the probe used wrongly; every invariant and recorded outcome held"
+    },
+    {
+      "command": "go test -race -count=1 -run TestDownloadNameEncodingProbeRealSwift -v ./internal/systemtest/",
+      "copy_leaves_reported_failed": 9,
+      "download_leaves_passing": 9,
+      "exit": 1,
+      "log_sha256": "186593a7f1c4695e41fe786e2b15af8c7bff32bee63dd34178bcbf012d700651",
+      "name": "service real Swift",
+      "note": "as for the mock"
+    },
+    {
+      "command": "engine-encoding/run.sh against the real Swift fixture with the pinned engine",
+      "exit": 0,
+      "name": "engine characterization",
+      "sha256": {
+        "engine-encoding/list-route.stderr": "4d2b1fecbcc9535a4c6bde17e5b3570c3f33b3948d1611d9f30a6835e3b7e7a2",
+        "engine-encoding/names.txt": "2da120df2e18d0a655bc9b9910de55606ff0af98429e16685244b75942456220",
+        "engine-encoding/run.log": "7a626cc7a9eebbbb468a91a90bfa103f0ae06e79c7ffb1cde148335dac9a61bf",
+        "engine-encoding/run.sh": "c3424a809578fe6d58b738b7b921d574944fa7c5082efed6de4d1992345a3891",
+        "engine-encoding/traversal-route.stderr": "811e0dcff4ec9dbef804297406a00bcb71f9e442098d57f552c8bbab951830a7"
+      }
+    }
+  ],
+  "rclone": "rclone v1.74.3",
+  "recorded": "2026-09-11T13:48:23.200265+00:00",
+  "source": "1b520ba2a80f281d5945250548137be7498a1f02",
+  "tree_state": "unchanged production; probes applied as untracked test files and removed before commit"
+}

@@ -1,0 +1,181 @@
+package systemtest
+
+import (
+	"context"
+	"encoding/json"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/csmart/aeronautes/internal/app"
+)
+
+// Before probe for the DS-06 encoding remainder: the pinned engine reserves
+// runes it uses as substitutes and quotes, and a source name that contains
+// one is carried by the engine only when the encodings on both sides agree.
+// Each case seeds a safe control beside one such name and records, on both
+// routes the engine serves, what the job reported and where the bytes went.
+// The assertions are only the admission facts the inventory claims and the
+// invariants every transfer keeps: the source is unchanged, no remote write
+// lands outside the job's own scope, and nothing is placed outside the
+// selected directory.
+
+type nameEncodingCase struct {
+	name   string
+	object string
+	// beside adds a second object with the real character, so a substitute
+	// beside its original is observed as a pair.
+	beside string
+}
+
+func nameEncodingCases() []nameEncodingCase {
+	return []nameEncodingCase{
+		{name: "quote_rune", object: "p‛q"},
+		{name: "null_picture", object: "s␀t"},
+		{name: "control_picture", object: "s␁t"},
+		{name: "fullwidth_slash", object: "a／b"},
+		{name: "fullwidth_slash_beside_real", object: "a／b", beside: "a/b"},
+		{name: "fullwidth_colon", object: "a：b"},
+		{name: "fullwidth_stop_component", object: "d/．/e"},
+		{name: "space_picture_trailing", object: "t␠"},
+		{name: "control", object: "plain.txt"},
+	}
+}
+
+func TestDownloadNameEncodingProbeMock(t *testing.T) {
+	t.Parallel()
+	for _, c := range nameEncodingCases() {
+		t.Run("download/"+c.name, func(t *testing.T) { downloadNameEncodingProbe(t, findMockHarness(t), c) })
+		t.Run("copy/"+c.name, func(t *testing.T) { copyNameEncodingProbe(t, findMockHarness(t), c) })
+	}
+}
+
+func TestDownloadNameEncodingProbeRealSwift(t *testing.T) {
+	t.Parallel()
+	for _, c := range nameEncodingCases() {
+		t.Run("download/"+c.name, func(t *testing.T) { downloadNameEncodingProbe(t, New(t), c) })
+		t.Run("copy/"+c.name, func(t *testing.T) { copyNameEncodingProbe(t, New(t), c) })
+	}
+}
+
+func nameEncodingObjects(c nameEncodingCase) []string {
+	objects := []string{"safe.txt", c.object}
+	if c.beside != "" {
+		objects = append(objects, c.beside)
+	}
+	return objects
+}
+
+func downloadNameEncodingProbe(t *testing.T, h *Harness, c nameEncodingCase) {
+	t.Helper()
+	source := h.Container(h.Primary, "name-encoding")
+	owned := t.TempDir()
+	selected := filepath.Join(owned, "selected")
+	seedListingLocal(t, owned, "selected/keep", []byte("selected sentinel"))
+	seedListingLocal(t, owned, "outside/keep", []byte("outside sentinel"))
+	objects := nameEncodingObjects(c)
+	for _, name := range objects {
+		h.Seed(h.Primary, source, "scope/"+name, []byte("bytes for "+name), nil)
+	}
+	h.Seed(h.Primary, source, "outside-selection", []byte("unselected remote sentinel"), nil)
+	beforeA := h.SnapshotNamespace(h.Primary)
+	trace := copyCompletionProxy(t, h, h.Primary, "")
+	app.WireDownloadStageBoundary(h.Transfer, func(context.Context, string) error { return nil })
+	app.WireFilePicker(h.Transfer, listingFilePicker{dir: selected})
+	picked, err := h.Transfer.PickDownloadDir(t.Context())
+	if err != nil || picked == nil {
+		t.Fatalf("pick: %+v %v", picked, err)
+	}
+	request := app.DownloadRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: source, Prefix: "scope/", DestDirToken: picked.Token}
+	preflight, err := h.Transfer.PreflightDownload(t.Context(), request)
+	if err != nil || preflight == nil || preflight.Rejected() || len(preflight.Items) != len(objects) {
+		t.Fatalf("selection was not admitted: %+v %v", preflight, err)
+	}
+	routes := map[string]string{}
+	for _, item := range preflight.Items {
+		routes[strings.TrimPrefix(item.Name, "scope/")] = item.Route
+		if item.Route != "rclone" {
+			t.Fatalf("expected the engine route for %q today: %q", item.Name, item.Route)
+		}
+	}
+	before := snapshotListingLocal(t, owned)
+	id, err := h.Transfer.StartDownload(t.Context(), request)
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	job := h.AwaitJob(id)
+	copyCompletionAwaitPins(t, h, h.Primary)
+	saved := uploadRecoveryRead(t, h.database, id)
+	after := snapshotListingLocal(t, owned)
+	var added []string
+	for key, state := range after {
+		if _, existed := before[key]; !existed {
+			added = append(added, key+"="+state.mode.String()+":"+itoa(state.size))
+		}
+	}
+	sort.Strings(added)
+	for _, key := range added {
+		if strings.HasPrefix(key, "outside/") {
+			t.Errorf("outside entry created: %s", key)
+		}
+	}
+	observation := map[string]any{"case": c.name, "route": "download", "objects": objects, "routes": routes,
+		"state": job.State, "error": job.Error, "counters": job.Counters, "totals": saved.ItemTotals, "added": added,
+		"remoteWrites": len(trace.writeSnapshot())}
+	encoded, _ := json.Marshal(observation)
+	t.Logf("name encoding observation: %s", encoded)
+	if len(trace.writeSnapshot()) != 0 {
+		t.Errorf("download changed remote data: %v", trace.writeSnapshot())
+	}
+	h.AssertNoCollateral(beforeA, h.SnapshotNamespace(h.Primary))
+}
+
+func copyNameEncodingProbe(t *testing.T, h *Harness, c nameEncodingCase) {
+	t.Helper()
+	source := h.Container(h.Primary, "name-encoding-src")
+	target := h.Container(h.Secondary, "name-encoding-dst")
+	objects := nameEncodingObjects(c)
+	for _, name := range objects {
+		h.Seed(h.Primary, source, "scope/"+name, []byte("bytes for "+name), nil)
+	}
+	h.Seed(h.Primary, source, "outside-selection", []byte("unselected remote sentinel"), nil)
+	h.Seed(h.Secondary, target, "keep", []byte("destination sentinel"), nil)
+	srcBefore := h.SnapshotNamespace(h.Primary)
+	dstBefore := h.SnapshotNamespace(h.Secondary)
+	rec := h.StartCopy(t.Context(), app.CopyRequestDTO{
+		SourceBookmarkID: h.Primary.BookmarkID, SourceContainer: source, SourcePrefix: "scope/",
+		DestBookmarkID: h.Secondary.BookmarkID, DestContainer: target, DestPrefix: "landed/",
+	})
+	if rec.Err() != nil {
+		t.Fatalf("start copy: %v", rec.Err())
+	}
+	job := h.AwaitJob(rec.JobID())
+	copyCompletionAwaitPins(t, h, h.Primary)
+	copyCompletionAwaitPins(t, h, h.Secondary)
+	saved := uploadRecoveryRead(t, h.database, rec.JobID())
+	dstAfter := h.SnapshotNamespace(h.Secondary)
+	var landed []string
+	for name, object := range dstAfter.Containers[target].Objects {
+		if name != "keep" {
+			landed = append(landed, name+":"+itoa(object.Size))
+		}
+	}
+	sort.Strings(landed)
+	observation := map[string]any{"case": c.name, "route": "copy", "objects": objects,
+		"state": job.State, "error": job.Error, "counters": job.Counters, "totals": saved.ItemTotals, "landed": landed}
+	encoded, _ := json.Marshal(observation)
+	t.Logf("name encoding observation: %s", encoded)
+	if d := diffOf(srcBefore, h.SnapshotNamespace(h.Primary)); !d.Empty() {
+		t.Errorf("source account changed during a copy:\n%s", d)
+	}
+	allowed := make([]string, 0, len(objects))
+	for _, name := range objects {
+		allowed = append(allowed, target+"/landed/"+name)
+	}
+	h.AssertNoCollateral(dstBefore, dstAfter, allowed...)
+	rec.CreditApplied()
+}
+
+func itoa(n int64) string { return strconv.FormatInt(n, 10) }
