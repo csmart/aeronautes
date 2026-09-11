@@ -63,6 +63,9 @@ Changing protection to get a failing or missing check through is forbidden.
 Coverage SVGs remain downloadable as `badge-go` and `badge-frontend` artifacts on each CI run; the scenario report and event stream are in `scenario-coverage`.
 The `saio-diagnostics` artifact retains container and runner observations after successful and failed integration suites for seven days.
 Each probe records its command, UTC start, elapsed time, exit or timeout, and redacted output; unsuccessful probes do not prevent the remaining probes from running.
+Before the pinned image starts, a small helper corrects its demonstrated error-filter typo while preserving every other byte and then runs the original `/init`.
+An already-corrected rule needs no write; missing, duplicate or ambiguous forms refuse startup.
+Only this disposable fixture's logging selector changes; Swift request, storage, authentication and worker settings keep their pinned values.
 The collector bounds each of eleven probes to ten seconds, retains at most four MiB of redacted output per probe, and has a two-minute step limit within the existing job budget.
 Swift's internal access log and container output each retain at most the last 10,000 lines before redaction and the output limit.
 A separate probe reads the last 10,000 lines of each retained error-log rotation and the current error log, oldest first, then retains the first four MiB after redaction so later traffic cannot displace an earlier retained error.

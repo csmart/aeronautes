@@ -152,3 +152,24 @@ Against a fresh owned container from the exact pin, emit a clearly marked synthe
 Keep the synthetic control separate from actual test failures, verify the ordinary Swift readiness endpoint, and retain actual commands and exits.
 Obtain independent local review of the helper, workflow and evidence before the next complete hosted run; then inspect the hosted error-log artifact before claiming the diagnostic path works there.
 This plan neither diagnoses the historical HTTP 503 responses nor permits a merge or removal of the valuable-data hold.
+
+## Startup correction and local routing evidence
+
+The startup helper now validates whole byte lines, corrects the single original selector, and preserves every other byte before executing `/init`.
+It leaves the one known corrected form untouched and raises an error for missing, duplicate, ambiguous, commented, embedded or differently terminated selector lines.
+CI creates the pinned container, copies the helper, then starts the helper as its entrypoint; the existing readiness check, suite, limits and required job names are unchanged.
+Six helper tests pass, including seven refused rule forms and initialization refusal after configuration errors.
+Separate omission controls catch a missing correction with one assertion failure and ignored configuration errors with two; neither control fails to execute.
+Workflow linting, the thirteen collector tests, whitespace checks and the nineteen aggregate refusals pass.
+
+A fresh pinned local container with unexpected rules exited one before image initialization.
+A second fresh container started normally, answered `/info`, and routed a clearly marked synthetic `local2.err` message into the redacted error-log observation.
+The helper's SHA-256 was `86daf43665f78d6be1b03a37ca0fd2ac87891fe79889d7614d205661bab8a46b`; the captured error observation has SHA-256 `2bea766a9b3bb5e439f8ea4a7aa3f74bdcd4ec132217055a2c3657261c356ea9`.
+The initial local launcher's quoting error and failed readiness are preserved separately; that failed setup is not counted as a passing container check.
+The corrected launcher used the same rootful Podman and loopback-listener adaptations already disclosed above, without mounting host directories or credentials.
+
+The unchanged `TestCopySegmentChangeDetectionRealSwift` then passed against this fixture with Go 1.27.1 and `-race -count=1 -parallel=3`, in a command lasting 65.224 seconds.
+Its event stream has SHA-256 `9a11822ff377857973ca280a8f2c1117d53414bea50872821d7d483fba189edd`.
+This is a focused control after the logging correction, separate from the earlier full-suite pass.
+The next hosted run must still demonstrate the corrected startup and artifact capture in Docker, and every required PR/master check remains mandatory.
+The logging correction explains a loss of diagnostic evidence, not the earlier HTTP 503 responses.
