@@ -3,6 +3,7 @@ package copy
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 	"testing"
@@ -495,5 +496,118 @@ func TestUnusableStagedObservationMintsNoStamp(t *testing.T) {
 	// Unstamped, so the next decision refuses rather than skips.
 	if skip := runUnknownOver(t, w); skip.SkippedEqual != 0 || skip.OverwritesRefused != 1 {
 		t.Fatalf("report = %+v, want the unstamped destination refused", skip)
+	}
+}
+
+// metaInfo builds an /info document advertising exactly the metadata
+// limits given; a zero value omits that limit from the advertisement.
+func metaInfo(count, overall, nameLength, valueLength int) string {
+	fields := []string{`"max_file_size": 5368709122`, `"version": "2.36.0"`,
+		`"policies": [{"name": "standard", "default": true, "aliases": "standard"}]`}
+	for name, value := range map[string]int{
+		"max_meta_count": count, "max_meta_overall_size": overall,
+		"max_meta_name_length": nameLength, "max_meta_value_length": valueLength,
+	} {
+		if value > 0 {
+			fields = append(fields, fmt.Sprintf(`%q: %d`, name, value))
+		}
+	}
+	sort.Strings(fields)
+	return `{"swift": {` + strings.Join(fields, ", ") + `}, "slo": {"max_manifest_segments": 1000, "min_segment_size": 1}}`
+}
+
+// publishWithMeta stages "asset" through a chunking engine with the given
+// source metadata and returns the published destination.
+func publishWithMeta(t *testing.T, w *world, meta map[string]string) *swiftcontrol.ObjectDetail {
+	t.Helper()
+	seed(w.srcMock, "media", "asset", []byte("GOODDATA"), meta)
+	e := newExecutor(t, w, &fakeEngine{w: w, chunk: 4, interruptAfter: -1})
+	report, err := e.Run(context.Background(), []plan.Item{
+		{Name: "asset", Verdict: plan.VerdictNew, Route: plan.RouteRclone, SourceBytes: 8},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Copied != 1 || len(report.Failures) != 0 {
+		t.Fatalf("publication did not succeed: %+v", report)
+	}
+	return headDst(t, w, "asset")
+}
+
+func assertPreserved(t *testing.T, live *swiftcontrol.ObjectDetail, meta map[string]string) {
+	t.Helper()
+	for key, value := range meta {
+		if live.Meta[key] != value {
+			t.Fatalf("preserved metadata %q = %q, want %q", key, live.Meta[key], value)
+		}
+	}
+	if live.Meta[fingerprintMetaKey] == "" {
+		t.Fatal("the fingerprint was displaced")
+	}
+}
+
+func TestStampRespectsAdvertisedAllowance(t *testing.T) {
+	// The stamp is optional evidence: it rides the publishing write only
+	// when the complete added entry fits every limit the destination
+	// advertises, and it never displaces a preserved value or breaks the
+	// copy. The fixture enforces what it advertises, so a stamp added
+	// past a limit would fail the publication outright.
+	stampKeyLen := len(stagedAggregateMetaKey)      // 27
+	fingerprintKeyLen := len(fingerprintMetaKey)    // 22
+	valueLen := len(aggregateStamp(8, md5hex("x"))) // both stamp shapes: "v1:8:" + 32 hex
+	cases := []struct {
+		name    string
+		info    string
+		meta    map[string]string
+		stamped bool
+	}{
+		{name: "complete limits with room", info: metaInfo(90, 4096, 128, 256), meta: map[string]string{"Kept": "v"}, stamped: true},
+		{name: "entry count exhausted by preserved values", info: metaInfo(3, 4096, 128, 256),
+			meta: map[string]string{"A": "1", "B": "2"}, stamped: false},
+		{name: "total size leaves no room for the stamp", info: metaInfo(90, fingerprintKeyLen+valueLen+len("Pad")+40+stampKeyLen+valueLen-1, 128, 256),
+			meta: map[string]string{"Pad": strings.Repeat("p", 40)}, stamped: false},
+		{name: "name limit shorter than the stamp key", info: metaInfo(90, 4096, stampKeyLen-1, 256),
+			meta: map[string]string{"Kept": "v"}, stamped: false},
+		{name: "count advertised but total size missing", info: metaInfo(90, 0, 128, 256),
+			meta: map[string]string{"Kept": "v"}, stamped: false},
+		{name: "name and value lengths missing", info: metaInfo(90, 4096, 0, 0),
+			meta: map[string]string{"Kept": "v"}, stamped: false},
+		{name: "no limits advertised at all", info: `{"swift": {"max_file_size": 5368709122}}`,
+			meta: map[string]string{"Kept": "v"}, stamped: false},
+		{name: "unusable info document", info: `{"swift": "not-an-object"}`,
+			meta: map[string]string{"Kept": "v"}, stamped: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newWorld(t)
+			w.dstMock.InfoJSON = tc.info
+			live := publishWithMeta(t, w, tc.meta)
+			assertPreserved(t, live, tc.meta)
+			if got := live.Meta[stagedAggregateMetaKey] != ""; got != tc.stamped {
+				t.Fatalf("stamped = %v, want %v (meta=%v)", got, tc.stamped, live.Meta)
+			}
+			if body := readDst(t, w, "asset"); body != "GOODDATA" {
+				t.Fatalf("published body = %q", body)
+			}
+			// Unstamped destinations are then refused rather than skipped.
+			if report := runUnknownOver(t, w); tc.stamped && report.SkippedEqual != 1 || !tc.stamped && report.OverwritesRefused != 1 {
+				t.Fatalf("later decision = %+v for stamped=%v", report, tc.stamped)
+			}
+		})
+	}
+}
+
+func TestStampFitsValueLength(t *testing.T) {
+	// The value bound cannot be reached through the fixture without also
+	// breaking the mandatory fingerprint, whose value has the same shape,
+	// so it is held at the predicate: a value longer than the advertised
+	// value length never fits, whatever room remains elsewhere.
+	headers := map[string]string{"X-Object-Meta-" + fingerprintMetaKey: fingerprint(8, md5hex("x"))}
+	value := aggregateStamp(8, md5hex("y"))
+	if stampFits(headers, stagedAggregateMetaKey, value, metaBudget{count: 90, overall: 4096, nameLength: 128, valueLength: len(value) - 1, known: true}) {
+		t.Fatal("a stamp longer than the advertised value length was accepted")
+	}
+	if !stampFits(headers, stagedAggregateMetaKey, value, metaBudget{count: 90, overall: 4096, nameLength: 128, valueLength: len(value), known: true}) {
+		t.Fatal("a stamp exactly at the advertised value length was refused")
 	}
 }
