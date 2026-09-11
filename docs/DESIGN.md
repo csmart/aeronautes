@@ -5213,6 +5213,20 @@ The source HEAD is an observation rather than a pinned source version, and stage
 Segmented-source verification, metadata/replication semantics, final-publication binding, stale later listings and legacy verification-strength labels remain separate work.
 Existing aggregate stamps keep their limited change-detection meaning; this correction grants no new destructive authority and leaves DS-04/P16 and the valuable-data hold open.
 
+The required staged-content compatibility gate found an earlier Copy engine representation failure on both the unchanged prerequisite baseline and the new consumer.
+Two valid gzip streams fail when decoded bytes are shorter than the stored length used for segment upload; malformed gzip fails in the child's decoder before any new staged-content GET or live publication.
+The separate [representation experiment](experiments/2026-09-12-copy-representations.md) preserves the failed gate and its passing unencoded/unknown-coding controls.
+
+1. Review [ADR 0038](adr/0038-copy-representations.md), the exact pinned-source attribution and the proposed enumerated flag before changing engine policy.
+2. Review the prepared ADR 0037 consumer separately, retaining the failed representation gate as a delivery dependency.
+3. Add an explicit false-default runner option selected only by the Copy service, applying `--no-gzip-encoding` before `--` in both Copy command builders.
+   Its scope is requests through the child's Swift HTTP transport; it sends no encoding header and preserves local/download defaults, gateway authority, TLS, retries, cleanup and native metadata writes.
+   Resolve shared file ownership before implementation and require both construction paths, both builders, local-scope controls, small/empty routes and the original five actual-Swift representation cases.
+4. Deliver the separately reviewed native prerequisite, consumer and representation correction together after complete current-base verification, renewed range review and all five PR/resulting-master checks.
+
+This scope preserves stored content without weakening the length/MD5 oracle or enabling another transfer capability.
+Native fallbacks, source-version binding, later stage changes, final publication, broader fidelity and the valuable-data hold remain separate unresolved obligations.
+
 The bounded [Swift integration failure investigation](experiments/2026-09-11-swift-ci-failures.md) follows two failed PR93 runs whose test streams retain HTTP 503 responses but no server or runner diagnostics.
 The existing CI contract requires investigation before retry, every required job to succeed on the current head and base, and a checked master after merge.
 
