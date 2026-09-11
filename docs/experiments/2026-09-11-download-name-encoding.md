@@ -8,8 +8,8 @@ It follows the delivered name policy of [ADR 0034](../adr/0034-download-destinat
 The oracle is K-XFER-011, DESIGN §14.3 and §27.5, the DS-06 acceptance in the audit register and the newline precedent recorded in docs/rclone.md: a name the engine cannot carry unchanged is routed natively, never handed to the engine, and a selection that the engine cannot serve faithfully is never reported as copied.
 Exact bytes, the accepted relations, the portable-component refusals and the existing-destination inspection are preserved facts.
 
-This record establishes the defect on both routes the engine serves and proposes a reviewable contract.
-It changes no production code and makes no claim about compatibility equivalence, leading spaces or length limits, which stay separate DS-06 items.
+The first part of this record establishes the defect on both routes the engine serves and proposes a reviewable contract; the second part, from the section "Correction delivered" onward, records the correction and its evidence.
+It makes no claim about compatibility equivalence, leading spaces or length limits, which stay separate DS-06 items.
 
 ## Source finding
 
@@ -75,7 +75,7 @@ Windows and macOS local encodings are a reading of the pinned source; the full-w
 Names that are not valid UTF-8 never reach this policy because the listing decoder refuses them.
 Nothing here measures how often such names occur.
 
-## Proposed contract
+## Contract
 
 1. Reserved rune set.
    The application pins, per engine version, the set of runes whose presence makes a name unsafe for the engine: the quote rune U+201B; the control pictures U+2400 through U+241F and U+2421; the full-width full stop U+FF0E; and the full-width substitutes the pinned engine uses on any supported platform, U+FF0F, U+FF3C, U+FF1A, U+FF1F, U+FF02, U+FF0A, U+FF1C, U+FF1E, U+FF5C and the space picture U+2420.
@@ -109,9 +109,58 @@ For the design sequence, after the sequence that delivered the root authority co
 
 For the register, the DS-06 encoding-collision item: names containing an engine-reserved rune are routed natively on both routes on every platform; the Windows and macOS local encodings remain a reading of the pinned source until native evidence exists.
 
+## Correction delivered
+
+The correction is one commit on top of the plan, `route engine-reserved names natively`, bounded to the shared engine-safety predicate and its regressions.
+`RcloneUnsafe` in `internal/transfer/plan/plan.go` now reports a name containing any rune of the pinned set as unsafe, through `engineReservedRune`: the quote rune, the control pictures U+2400 to U+241F and U+2421, the trailing space picture U+2420, and the full-width forms of the slash, the backslash, the full stop and the seven characters Windows forbids.
+The download planner, the upload planner and the copy planner already route every unsafe name natively, so no other production file changes; the copy route's native fallback and its single-object limit are unchanged.
+The union set is the delivered default; the operator's choice between the union set and a per-platform set, and between native routing and refusal, remains owed.
+
+## After evidence
+
+The plan-level probe became the maintained table `TestRcloneUnsafeEngineReservedRunes`, which requires every reserved rune to route natively wherever it sits in the name and keeps look-alike full-width letters, the blank symbol outside the engine's picture range, accented letters, ordinary spaces, ordinary full stops and ordinary curly quotes on the engine route.
+The service probe became the maintained regression `TestDownloadNameEncodingMock` and `TestDownloadNameEncodingRealSwift`, thirteen cases per route on each provider: the eleven reserved-rune names of the plan's matrix plus the DEL picture, the full-width backslash and a trailing full-width full stop, and two controls, a full-width letter and a plain name.
+Every case now completes on both routes and both providers with the reserved name routed natively, every byte landing under its exact spelling, the item totals recording no failure, the engine boundary observed exactly once for the safe control, the source account unchanged and no remote write outside the job's scope.
+The wrongly used scenario-credit call of the archived probe is gone from the maintained regression.
+
+| Case | Before, both routes | After, both routes |
+| --- | --- | --- |
+| quote_rune `p‛q` | silent drop | native, exact bytes |
+| null_picture `s␀t` | exact bytes through the engine | native, exact bytes |
+| control_picture `s␁t` | silent drop | native, exact bytes |
+| del_picture `s␡t` | not probed through the service; dropped in the engine characterization | native, exact bytes |
+| fullwidth_slash `a／b`, beside `a/b` | exact bytes through the engine | native, exact bytes, both placed |
+| fullwidth_colon `a：b` | exact bytes through the engine on Linux | native, exact bytes |
+| fullwidth_backslash `a＼b` | exact bytes through the engine on Linux | native, exact bytes |
+| fullwidth_stop_component `d/．/e` | the whole batch failed | native, exact bytes, the control through the engine |
+| fullwidth_stop_trailing `f．` | exact bytes through the engine | native, exact bytes |
+| space_picture_trailing `t␠` | exact bytes through the engine | native, exact bytes |
+| fullwidth_letter_control `Ａbc`, control `plain.txt` | complete | complete through the engine |
+
+## Deliberately broken controls
+
+Each rune class was dropped from the predicate on its own in a private copy and both maintained regressions rerun on the mock; every control failed only the names and cases of its class and compiled cleanly.
+
+| Control | Mutation | Plan names failing | Service cases failing on the mock |
+| --- | --- | --- | --- |
+| no quote rune | U+201B removed | 2 | quote_rune on both routes |
+| no control pictures | the picture range and U+2421 removed | 4 | null_picture, control_picture and del_picture on both routes |
+| no full-width full stop | U+FF0E removed | 3 | fullwidth_stop_component and fullwidth_stop_trailing on both routes |
+| no Windows substitutes | the seven forbidden-character forms removed | 7 | fullwidth_colon on both routes |
+
+The Windows-substitute control shows what the union set buys on Linux: those runes round-trip through the engine here, so dropping them fails only the maintained expectation that they are routed natively, not a byte-level outcome; on Windows the same drop would let the engine respell them.
+
+## Verification
+
+Focused producers on the committed source, all under the race detector: the plan regression table passes, and the service regression passes 26 leaves on the in-process mock and 26 leaves on the real two-account Swift fixture, both routes included.
+The four deliberately broken controls were run on the mock before the commit and are recorded above.
+The full race suite ran once on the committed source with the pinned engine directory and the real Swift fixture configured, exit 0: 3799 distinct names, 3532 leaves of which 3531 passing, 0 failing and 1 skipped, 3798 passing events including parents, 22 packages passing.
+A leaf is a recorded name that is not a slash-separated prefix of another recorded name in the same package.
+The change carries gofmt, vet on Linux, Windows and macOS, internal builds for Windows and macOS on arm64, and no module change.
+The [manifest](2026-09-11-download-name-encoding-probes.json) records every producer command, exit, count and digest and the broken-control outcomes.
+
 ## Remaining limits
 
-This record proves the defect and proposes a contract; it delivers no correction.
 Compatibility equivalence, leading spaces and length limits stay separate items with their own decisions.
 Linux amd64 is the only observed platform for the engine's local backend.
 DS-06, P19, P20 and the valuable-data hold remain open.
