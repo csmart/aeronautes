@@ -171,12 +171,33 @@ func PreflightDownload(ctx context.Context, src *swiftcontrol.Session, container
 	if prefix != "" && !strings.HasSuffix(prefix, "/") {
 		return nil, fmt.Errorf("prefix %q must be empty or end with '/'", prefix)
 	}
-	destination, err := openDownloadDestination(destDir)
+	destination, err := OpenDestinationRoot(destDir)
 	if err != nil {
 		report.Problems = []Problem{{Name: "destination", Kind: "destination-unavailable", Detail: "cannot inspect the selected destination directory: " + err.Error(), Reject: true}}
 		return report, nil
 	}
 	defer func() { err = errors.Join(err, destination.Close()) }()
+	return PreflightDownloadInto(ctx, src, container, prefix, destination)
+}
+
+// PreflightDownloadInto runs the same complete report through a held
+// destination handle, so the directory inspected is the directory the
+// job writes into whatever its pathname names later.
+func PreflightDownloadInto(ctx context.Context, src *swiftcontrol.Session, container, prefix string, destination *DestinationRoot) (report *DownloadPreflight, err error) {
+	report = &DownloadPreflight{}
+	if prefix != "" && !strings.HasSuffix(prefix, "/") {
+		return nil, fmt.Errorf("prefix %q must be empty or end with '/'", prefix)
+	}
+	if destination == nil {
+		return nil, errors.New("download preflight needs the held destination directory")
+	}
+	if removed, err := destination.Removed(); err != nil {
+		report.Problems = []Problem{{Name: "destination", Kind: "destination-unavailable", Detail: "cannot inspect the selected destination directory: " + err.Error(), Reject: true}}
+		return report, nil
+	} else if removed {
+		report.Problems = []Problem{{Name: "destination", Kind: "destination-unavailable", Detail: "the selected destination directory was deleted after it was picked; pick a directory again", Reject: true}}
+		return report, nil
+	}
 	var names []string
 	var candidates []DownloadItem
 	// One group per relation; a collision in either refuses the selection.
@@ -335,7 +356,7 @@ func PreflightDownload(ctx context.Context, src *swiftcontrol.Session, container
 		emit(twins, "name-form", fmt.Sprintf("%d names collide on filesystems that ignore case or Unicode normalization form: %q", len(twins), twins))
 	}
 	for _, item := range candidates {
-		if refusal := inspectDownloadPath(destination, item); refusal != nil {
+		if refusal := inspectDownloadPath(destination.root, item); refusal != nil {
 			report.Problems = append(report.Problems, *refusal)
 			continue
 		}
@@ -441,6 +462,9 @@ type Report struct {
 	PostCommitIssues       int64
 	PostCommitIssueSamples []Failure
 	StageCleanup           *StageCleanupResult
+	// RootDisplacement records when the captured pathname stopped naming
+	// the held destination; effects continued through the handle.
+	RootDisplacement string
 	// CapturedPrefixes: large uploads segment like any engine write.
 	CapturedPrefixes []rclone.SegmentPrefix
 }

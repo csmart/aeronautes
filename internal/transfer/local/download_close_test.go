@@ -22,11 +22,22 @@ func (r downloadCloseReader) Close() error { return r.close() }
 type downloadCloseFile struct {
 	io.Writer
 	sync  func() error
+	stat  func() (os.FileInfo, error)
 	close func() error
 }
 
-func (f downloadCloseFile) Sync() error  { return f.sync() }
-func (f downloadCloseFile) Close() error { return f.close() }
+func (f downloadCloseFile) Sync() error                { return f.sync() }
+func (f downloadCloseFile) Stat() (os.FileInfo, error) { return f.stat() }
+func (f downloadCloseFile) Close() error               { return f.close() }
+
+// nativePublication describes publishing the temporary beside its target
+// under the held directory, both names relative to dir.
+func nativePublication(t *testing.T, destination *DestinationRoot, stagedDir, temporary, targetDir, target string) publication {
+	t.Helper()
+	return publication{root: destination,
+		stagedRoot: testDirectory(t, destination, stagedDir), stagedBase: temporary, stagedRel: filepath.Join(stagedDir, temporary), stagedDisplay: filepath.Join(destination.Path(), stagedDir, temporary),
+		targetRoot: testDirectory(t, destination, targetDir), targetBase: target, targetRel: filepath.Join(targetDir, target), targetDisplay: filepath.Join(destination.Path(), targetDir, target)}
+}
 
 type downloadReadFailure struct{ err error }
 
@@ -67,7 +78,7 @@ func TestNativeDownloadClosure(t *testing.T) {
 				expected = append(expected, readErr)
 			}
 			syncs, fileCloses, sourceCloses := 0, 0, 0
-			file := downloadCloseFile{Writer: temp, sync: func() error {
+			file := downloadCloseFile{Writer: temp, stat: temp.Stat, sync: func() error {
 				syncs++
 				checkBeforeLink()
 				if fault == "sync" {
@@ -104,7 +115,8 @@ func TestNativeDownloadClosure(t *testing.T) {
 			} else if fault == "over_length" {
 				wantSize--
 			}
-			outcome := finishNativeDownload(ctx, body, file, temp.Name(), target, wantSize)
+			destination := testDestination(t, dir)
+			outcome := finishNativeDownload(ctx, body, file, testDirectory(t, destination, "."), nativePublication(t, destination, ".", filepath.Base(temp.Name()), ".", "final"), wantSize)
 			placed, err := outcome.Result == transfercopy.ResultCopied, outcome.err()
 			if placed != (fault == "control") || (err == nil) != (fault == "control") {
 				t.Fatalf("placement outcome: placed=%v error=%v", placed, err)
@@ -184,7 +196,8 @@ func TestNativeDownloadCleanupRefusal(t *testing.T) {
 				}
 				return nil
 			}}
-			outcome := finishNativeDownload(t.Context(), body, temp, temp.Name(), final, int64(len("complete bytes")))
+			destination := testDestination(t, dir)
+			outcome := finishNativeDownload(t.Context(), body, temp, testDirectory(t, destination, "temporary"), nativePublication(t, destination, "temporary", filepath.Base(temp.Name()), ".", "final"), int64(len("complete bytes")))
 			placed, err := outcome.Result == transfercopy.ResultCopied, outcome.err()
 			if placed != (primary == "none") || !errors.Is(err, os.ErrPermission) {
 				t.Fatalf("cleanup refusal lacks actual placement/permission facts: %v %v", placed, err)

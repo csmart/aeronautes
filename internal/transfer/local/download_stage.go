@@ -2,11 +2,9 @@ package local
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 )
 
 // StageCleanupResult describes the group, without inventing an object
@@ -24,7 +22,10 @@ func (r *StageCleanupResult) failed(err error) {
 	}
 }
 
-func cleanupDownloadStage(stage string, items map[string]DownloadItem) *StageCleanupResult {
+// cleanupDownloadStage removes the directories this executor planned,
+// deepest first, through the held stage handle, and finally the stage
+// itself by name beneath the held root once the name still denotes it.
+func cleanupDownloadStage(destination, stage *DestinationRoot, stageName string, items map[string]DownloadItem) *StageCleanupResult {
 	result := &StageCleanupResult{}
 	dirs := map[string]bool{".": true}
 	for _, item := range items {
@@ -55,36 +56,48 @@ func cleanupDownloadStage(stage string, items map[string]DownloadItem) *StageCle
 		return ordered[i] < ordered[j]
 	})
 	for _, dir := range ordered {
-		if err := removeEmptyStageDirectory(stage, dir); err != nil {
+		if err := removeEmptyStageDirectory(destination, stage, stageName, dir); err != nil {
 			result.failed(err)
 		}
 	}
 	return result
 }
 
-func removeEmptyStageDirectory(stage, relative string) error {
-	path := stage
-	parts := []string{"."}
-	if relative != "." {
-		parts = append(parts, strings.Split(relative, string(filepath.Separator))...)
-	}
-	for _, part := range parts {
-		path = filepath.Join(path, part)
-		info, err := os.Lstat(path)
-		if os.IsNotExist(err) {
-			return nil
-		}
+// removeEmptyStageDirectory removes one planned directory only through
+// handles bound to inspected directories, and only with a primitive that
+// removes an empty directory, so a file placed at a directory's name is
+// never unlinked. An absent directory needs no removal; anything else
+// that is not an ordinary directory is retained and reported.
+func removeEmptyStageDirectory(destination, stage *DestinationRoot, stageName, relative string) error {
+	if relative == "." {
+		displaced, err := stage.displacedAt(destination.root, stageName)
 		if err != nil {
 			return err
 		}
-		if !info.IsDir() {
-			return fmt.Errorf("stage cleanup retained a non-directory at %q", path)
+		if displaced {
+			return fmt.Errorf("stage directory %q no longer sits at its name under the selected directory; it was retained wherever it was moved", stage.Path())
 		}
+		return removeDirAt(destination.root, stageName, stage.Path())
 	}
-	// os.Remove may unlink a file that replaces this directory after
-	// Lstat. Rmdir only removes an empty directory, even in that race.
-	if err := syscall.Rmdir(path); err != nil {
-		return &os.PathError{Op: "rmdir", Path: path, Err: err}
+	display := filepath.Join(stage.Path(), relative)
+	parent, err := stage.openDirectory(filepath.Dir(relative), false)
+	if err != nil {
+		if downloadChildAbsent(err) {
+			return nil
+		}
+		return err
 	}
-	return nil
+	defer parent.Close()
+	base := filepath.Base(relative)
+	info, err := parent.Lstat(base)
+	if err != nil {
+		if downloadChildAbsent(err) {
+			return nil
+		}
+		return atPath(err, "lstat", display)
+	}
+	if !downloadOrdinaryDirectory(info) {
+		return fmt.Errorf("stage cleanup retained a non-directory at %q", display)
+	}
+	return removeDirAt(parent, base, display)
 }

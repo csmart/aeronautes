@@ -2,6 +2,7 @@ package local
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -52,14 +53,19 @@ func TestNativeDownloadAdmissionClosesSource(t *testing.T) {
 				http.DefaultTransport = original
 				seed(mock, "media", "selected", "complete source bytes")
 				dest := filepath.Join(t.TempDir(), "selected")
+				if err := os.Mkdir(dest, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				// The selected directory is always a directory the handle can
+				// hold; the parent that cannot be created is a file beneath it.
+				item, temporary := DownloadItem{Name: "selected", RelPath: "final", Size: 21}, filepath.Join(dest, ".aeronautes-part-fixture")
 				if admission == "mkdir" {
-					if err := os.WriteFile(dest, []byte("existing destination file"), 0o600); err != nil {
+					if err := os.WriteFile(filepath.Join(dest, "parent"), []byte("existing destination file"), 0o600); err != nil {
 						t.Fatal(err)
 					}
+					item.RelPath = filepath.Join("parent", "final")
+					temporary = filepath.Join(dest, "parent", ".aeronautes-part-fixture")
 				} else {
-					if err := os.Mkdir(dest, 0o700); err != nil {
-						t.Fatal(err)
-					}
 					if err := os.WriteFile(filepath.Join(dest, "keep"), []byte("local sentinel"), 0o600); err != nil {
 						t.Fatal(err)
 					}
@@ -72,7 +78,7 @@ func TestNativeDownloadAdmissionClosesSource(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				outcome := nativeDownload(t.Context(), source, "media", DownloadItem{Name: "selected", RelPath: "final", Size: 21}, dest, filepath.Join(dest, ".aeronautes-part-fixture"))
+				outcome := nativeDownload(t.Context(), source, "media", item, testDestination(t, dest), temporary)
 				placed, err := outcome.Result == transfercopy.ResultCopied, outcome.err()
 				if placed || err == nil || gets.Load() != 1 || closes.Load() != 1 {
 					t.Fatalf("admission did not close the actual GET exactly once: placed=%v gets=%d closes=%d error=%v", placed, gets.Load(), closes.Load(), err)
@@ -80,19 +86,21 @@ func TestNativeDownloadAdmissionClosesSource(t *testing.T) {
 				if errors.Is(err, closeErr) != closeFails {
 					t.Errorf("admission lost or invented the close error: %v", err)
 				}
-				var pathErr *os.PathError
-				if !errors.As(err, &pathErr) {
-					t.Fatalf("admission lost filesystem cause: %v", err)
-				}
 				if admission == "mkdir" {
-					if pathErr.Op != "mkdir" || pathErr.Path != dest {
-						t.Errorf("wrong admission failure: %v", pathErr)
+					// A file at a parent's name is a refusal of that component
+					// through the held handle, never a pathname mkdir.
+					if !strings.Contains(err.Error(), fmt.Sprintf("destination component %q is not an inspectable ordinary directory", filepath.Join(dest, "parent"))) {
+						t.Errorf("wrong admission failure: %v", err)
 					}
-					data, err := os.ReadFile(dest)
+					data, err := os.ReadFile(filepath.Join(dest, "parent"))
 					if err != nil || string(data) != "existing destination file" {
 						t.Errorf("admission changed destination bytes: %q %v", data, err)
 					}
 				} else {
+					var pathErr *os.PathError
+					if !errors.As(err, &pathErr) {
+						t.Fatalf("admission lost filesystem cause: %v", err)
+					}
 					if pathErr.Op != "open" || filepath.Dir(pathErr.Path) != dest || !errors.Is(err, os.ErrPermission) {
 						t.Errorf("temporary admission was not denied: %v", pathErr)
 					}

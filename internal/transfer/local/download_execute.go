@@ -17,12 +17,39 @@ import (
 	"github.com/csmart/aeronautes/internal/transfer/rclone"
 )
 
-// Download keeps final placement behind checked identity and observations.
-// Omitted recording preserves direct callers' unrecorded mode.
+const downloadStagePrefix = ".aeronautes-stage-"
+
+const downloadEnginePathnameRefusal = "the selected directory's pathname no longer names it and the engine can only be given a pathname; engine items were not attempted"
+
+// downloadEngineUncontainedRefusal gates the engine route where the child
+// cannot be anchored to the held stage directory: the child would write
+// through a pathname during its run, which no later check can contain.
+const downloadEngineUncontainedRefusal = "engine downloads are refused on this platform until the engine's destination can be anchored to the held stage directory; engine items were not attempted"
+
+// Download opens the selected directory from its pathname for this call
+// and runs DownloadInto. Direct callers keep their unrecorded mode; the
+// service passes the handle it captured at the pick instead.
 func Download(ctx context.Context, src *swiftcontrol.Session, engine Engine, srcSpec, container, prefix, destDir, stageID string,
 	preflight *DownloadPreflight, onProgress func(done, total, bytes int64), recorders ...*DownloadRecorder) (report *Report, runErr error) {
-	if !validDownloadRoot(destDir) {
-		return nil, errors.New(downloadPathRefusal)
+	destination, err := OpenDestinationRoot(destDir)
+	if err != nil {
+		if !validDownloadRoot(destDir) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("cannot inspect the selected destination directory: %w", err)
+	}
+	defer func() { runErr = errors.Join(runErr, destination.Close()) }()
+	return DownloadInto(ctx, src, engine, srcSpec, container, prefix, destination, stageID, preflight, onProgress, recorders...)
+}
+
+// DownloadInto keeps final placement behind checked identity and
+// observations, with every local effect resolved through the held
+// destination rather than its pathname. Omitted recording preserves
+// direct callers' unrecorded mode.
+func DownloadInto(ctx context.Context, src *swiftcontrol.Session, engine Engine, srcSpec, container, prefix string, destination *DestinationRoot, stageID string,
+	preflight *DownloadPreflight, onProgress func(done, total, bytes int64), recorders ...*DownloadRecorder) (report *Report, runErr error) {
+	if destination == nil {
+		return nil, errors.New("download needs the held destination directory")
 	}
 	recorder, err := downloadRecorder(recorders)
 	if err != nil {
@@ -70,7 +97,12 @@ func Download(ctx context.Context, src *swiftcontrol.Session, engine Engine, src
 			}
 		}
 	}
-	if err := checkDownloadDestination(destDir, preflight.Items); err != nil {
+	if removed, err := destination.Removed(); err != nil {
+		return nil, fmt.Errorf("cannot inspect the selected destination directory: %w", err)
+	} else if removed {
+		return nil, errors.New("the selected destination directory was deleted after it was picked; pick a directory again")
+	}
+	if err := checkDownloadDestination(destination.root, preflight.Items); err != nil {
 		return nil, err
 	}
 	d := &downloadRun{recorder: recorder, report: &Report{}}
@@ -81,7 +113,12 @@ func Download(ctx context.Context, src *swiftcontrol.Session, engine Engine, src
 			onProgress(report.Done, total, report.Bytes)
 		}
 	}
-	stageDir := filepath.Join(destDir, ".aeronautes-stage-"+stageID)
+	// Record text keeps the picker spelling; no effect resolves it.
+	destDir := destination.Path()
+	stageName := downloadStagePrefix + stageID
+	stageDir := filepath.Join(destDir, stageName)
+	d.noteDisplacement(destination, "before the first effect")
+	defer d.noteDisplacement(destination, "after the last effect")
 	var engineNames []string
 	engineItems := map[string]DownloadItem{}
 	stageAttempted := false
@@ -125,10 +162,10 @@ func Download(ctx context.Context, src *swiftcontrol.Session, engine Engine, src
 		}
 		var outcome downloadResult
 		if item.Dir {
-			outcome = materializeDownloadDirectory(ctx, filepath.Join(destDir, item.RelPath))
+			outcome = materializeDownloadDirectory(ctx, destination, item.RelPath)
 		} else {
 			report.NativeRouted++
-			outcome = nativeDownload(ctx, src, container, item, destDir, staging)
+			outcome = nativeDownload(ctx, src, container, item, destination, staging)
 		}
 		if err := d.observe(item, outcome); err != nil {
 			return report, err
@@ -144,18 +181,55 @@ func Download(ctx context.Context, src *swiftcontrol.Session, engine Engine, src
 	if err := ctx.Err(); err != nil {
 		return report, err
 	}
+	// Where the platform cannot anchor the child to the held stage, the
+	// engine route is refused outright (K-XFER-011 asks for containment,
+	// not detection). An engine that can only be given a pathname on a
+	// platform with the anchor, which is only an in-process test engine,
+	// must not be given a pathname that no longer names the directory
+	// picked; its items are refused before any stage exists. An anchored
+	// engine resolves through the held stage and continues, as decision
+	// 2 of the contract says.
+	if _, anchored := engine.(AnchoredEngine); !anchored || !rclone.AnchorSupported {
+		var err error
+		if !rclone.AnchorSupported {
+			err = errors.New(downloadEngineUncontainedRefusal)
+		} else if displaced, displacedErr := destination.Displaced(); displacedErr != nil {
+			err = displacedErr
+		} else if displaced {
+			err = errors.New(downloadEnginePathnameRefusal)
+		}
+		if err != nil {
+			for _, rel := range engineNames {
+				outcome := downloadFailed(transfercopy.EffectNotAttempted, transfercopy.StageEngine, transfercopy.CodeIncomplete, "engine", err)
+				if observeErr := d.observe(engineItems[rel], outcome); observeErr != nil {
+					return report, errors.Join(err, observeErr)
+				}
+			}
+			progress()
+			return report, nil
+		}
+	}
 	stageAttempted = true
-	if err := os.Mkdir(stageDir, 0o700); err != nil {
+	stage, err := openDownloadStage(destination, stageName)
+	if err != nil {
 		return report, err
 	}
+	defer func() {
+		if closeErr := stage.Close(); closeErr != nil {
+			report.postCommitIssue(stageName, "stage-close", closeErr)
+		}
+	}()
 	defer func() {
 		if d.stopped != nil {
 			report.StageCleanup = &StageCleanupResult{Retained: true}
 			return
 		}
-		report.StageCleanup = cleanupDownloadStage(stageDir, engineItems)
+		report.StageCleanup = cleanupDownloadStage(destination, stage, stageName, engineItems)
 	}()
-	result, err := d.copy(ctx, src, engine, srcSpec+"/"+strings.TrimSuffix(prefix, "/"), stageDir, engineNames)
+	source := srcSpec + "/" + strings.TrimSuffix(prefix, "/")
+	result, err := d.copy(ctx, src, func(copyCtx context.Context) (*rclone.Result, error) {
+		return copyIntoStage(copyCtx, engine, source, stage, engineNames)
+	})
 	if err == nil {
 		err = transfercopy.ResultFailure(result)
 	}
@@ -169,18 +243,80 @@ func Download(ctx context.Context, src *swiftcontrol.Session, engine Engine, src
 		progress()
 		return report, nil
 	}
+	// The engine was given the stage by name. Bytes that reached a
+	// stage the name no longer denotes are not placed from anywhere.
+	displaced, err := stage.displacedAt(destination.root, stageName)
+	if err == nil && displaced {
+		err = fmt.Errorf("stage directory %q was replaced under the selected directory while the engine ran; staged bytes were not placed", stageName)
+	}
+	if err != nil {
+		for _, rel := range engineNames {
+			outcome := downloadVerificationFailed(transfercopy.StageVerification, transfercopy.CodeUnverified, "place", err)
+			if observeErr := d.observe(engineItems[rel], outcome); observeErr != nil {
+				return report, errors.Join(err, observeErr)
+			}
+		}
+		progress()
+		return report, nil
+	}
 	for _, rel := range engineNames {
 		if err := ctx.Err(); err != nil {
 			return report, err
 		}
 		item := engineItems[rel]
-		outcome := placeDownloaded(ctx, filepath.Join(stageDir, item.RelPath), filepath.Join(destDir, item.RelPath), item.Size)
+		outcome := placeDownloaded(ctx, destination, stage, stageName, item)
 		if err := d.observe(item, outcome); err != nil {
 			return report, err
 		}
 		progress()
 	}
 	return report, ctx.Err()
+}
+
+// noteDisplacement records when the captured pathname stops naming the
+// held directory. Effects continue through the handle either way; the
+// operator learns that the directory picked is no longer where the
+// records say it was.
+func (d *downloadRun) noteDisplacement(destination *DestinationRoot, when string) {
+	displaced, err := destination.Displaced()
+	note := ""
+	switch {
+	case err != nil:
+		note = fmt.Sprintf("the selected directory could not be re-identified by its pathname %s: %v", when, err)
+	case displaced:
+		note = fmt.Sprintf("the selected directory was relocated or replaced at its pathname %s; effects continued into the directory picked", when)
+	default:
+		return
+	}
+	if d.report.RootDisplacement != "" {
+		d.report.RootDisplacement += "; "
+	}
+	d.report.RootDisplacement += note
+}
+
+// openDownloadStage creates the stage beneath the held root and binds a
+// handle to the directory created, refusing a name that already exists.
+func openDownloadStage(destination *DestinationRoot, stageName string) (*DestinationRoot, error) {
+	if err := destination.root.Mkdir(stageName, 0o700); err != nil {
+		return nil, atPath(err, "mkdir", filepath.Join(destination.Path(), stageName))
+	}
+	return destination.openChildDirectory(destination.root, stageName)
+}
+
+// copyIntoStage hands the engine the stage. Where the platform provides
+// it, the child's destination is anchored to the held stage directory so
+// its own path resolution cannot be redirected; elsewhere the child gets
+// the stage pathname and the identity check after the copy governs.
+func copyIntoStage(ctx context.Context, engine Engine, src string, stage *DestinationRoot, names []string) (*rclone.Result, error) {
+	if anchored, ok := engine.(AnchoredEngine); ok && rclone.AnchorSupported {
+		dir, err := stage.root.Open(".")
+		if err != nil {
+			return nil, err
+		}
+		defer dir.Close()
+		return anchored.CopyInto(ctx, src, stage.Path(), dir, names, nil)
+	}
+	return engine.Copy(ctx, src, stage.Path(), names, nil)
 }
 
 func downloadTemporaryPath(destDir string, item DownloadItem) (string, error) {
@@ -191,20 +327,29 @@ func downloadTemporaryPath(destDir string, item DownloadItem) (string, error) {
 	return filepath.Join(filepath.Dir(filepath.Join(destDir, item.RelPath)), ".aeronautes-part-"+hex.EncodeToString(token[:])), nil
 }
 
-func materializeDownloadDirectory(ctx context.Context, target string) downloadResult {
+func materializeDownloadDirectory(ctx context.Context, destination *DestinationRoot, rel string) downloadResult {
 	if err := ctx.Err(); err != nil {
 		return downloadNotAttempted(transfercopy.StageCommit, err)
 	}
-	if err := os.MkdirAll(target, 0o755); err != nil {
+	if rel == "" || rel == "." {
+		return observeDownloadDirectory(destination.root, ".")
+	}
+	parent, err := destination.openDirectory(filepath.Dir(rel), true)
+	if err != nil {
 		return downloadFailed(transfercopy.EffectUnresolved, transfercopy.StageCommit, transfercopy.CodeIO, "mkdir", err)
 	}
-	return observeDownloadDirectory(target)
+	defer parent.Close()
+	base := filepath.Base(rel)
+	if err := parent.Mkdir(base, 0o755); err != nil && !errors.Is(err, os.ErrExist) {
+		return downloadFailed(transfercopy.EffectUnresolved, transfercopy.StageCommit, transfercopy.CodeIO, "mkdir", atPath(err, "mkdir", filepath.Join(destination.Path(), rel)))
+	}
+	return observeDownloadDirectory(parent, base)
 }
 
-func observeDownloadDirectory(target string) downloadResult {
-	info, err := os.Stat(target)
-	if err == nil && !info.IsDir() {
-		err = errors.New("materialized download marker is not a directory")
+func observeDownloadDirectory(parent *os.Root, base string) downloadResult {
+	info, err := parent.Lstat(base)
+	if err == nil && !downloadOrdinaryDirectory(info) {
+		err = errors.New("materialized download marker is not an ordinary directory")
 	}
 	if err != nil {
 		return downloadVerificationFailed(transfercopy.StageVerification, transfercopy.CodeUnverified, "directory-verify", err)
@@ -212,29 +357,54 @@ func observeDownloadDirectory(target string) downloadResult {
 	return downloadVerified(0)
 }
 
-func placeDownloaded(ctx context.Context, staged, target string, wantSize int64) downloadResult {
-	info, err := os.Stat(staged)
+func placeDownloaded(ctx context.Context, destination, stage *DestinationRoot, stageName string, item DownloadItem) downloadResult {
+	stagedDisplay := filepath.Join(stage.Path(), item.RelPath)
+	targetDisplay := filepath.Join(destination.Path(), item.RelPath)
+	stagedParent, err := stage.openDirectory(filepath.Dir(item.RelPath), false)
 	if err != nil {
-		return downloadVerificationFailed(transfercopy.StageVerification, transfercopy.CodeMissing, "place", fmt.Errorf("missing after download (silent drop?): %w", err))
+		return stagedFileUnavailable(err)
 	}
-	if info.Size() != wantSize {
-		return downloadVerificationFailed(transfercopy.StageVerification, transfercopy.CodeUnverified, "place", fmt.Errorf("size %d != object %d", info.Size(), wantSize))
+	defer stagedParent.Close()
+	base := filepath.Base(item.RelPath)
+	info, err := stagedParent.Lstat(base)
+	if err != nil {
+		return stagedFileUnavailable(atPath(err, "stat", stagedDisplay))
+	}
+	if !info.Mode().IsRegular() {
+		return downloadVerificationFailed(transfercopy.StageVerification, transfercopy.CodeUnverified, "place", fmt.Errorf("staged entry %q is not a regular file", item.RelPath))
+	}
+	if info.Size() != item.Size {
+		return downloadVerificationFailed(transfercopy.StageVerification, transfercopy.CodeUnverified, "place", fmt.Errorf("size %d != object %d", info.Size(), item.Size))
 	}
 	if err := ctx.Err(); err != nil {
 		return downloadFailed(transfercopy.EffectUnresolved, transfercopy.StageCommit, transfercopy.CodeIncomplete, "place", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+	targetParent, err := destination.openDirectory(filepath.Dir(item.RelPath), true)
+	if err != nil {
 		return downloadFailed(transfercopy.EffectUnresolved, transfercopy.StageCommit, transfercopy.CodeIO, "place", err)
 	}
+	defer targetParent.Close()
 	if err := ctx.Err(); err != nil {
 		return downloadFailed(transfercopy.EffectUnresolved, transfercopy.StageCommit, transfercopy.CodeIncomplete, "place", err)
 	}
-	if err := os.Link(staged, target); err != nil {
+	publish := publication{root: destination,
+		stagedRoot: stagedParent, stagedBase: base, stagedRel: filepath.Join(stageName, item.RelPath), stagedDisplay: stagedDisplay,
+		targetRoot: targetParent, targetBase: base, targetRel: item.RelPath, targetDisplay: targetDisplay}
+	if err := publish.publishVerified(info); err != nil {
 		return downloadPlacementFailed("place", err)
 	}
-	result := downloadVerified(wantSize)
-	result.addIssue(transfercopy.StageCleanup, "staging-cleanup", os.Remove(staged))
+	result := downloadVerified(item.Size)
+	result.addIssue(transfercopy.StageCleanup, "staging-cleanup", unlinkFileAt(stagedParent, base, stagedDisplay))
 	return result
+}
+
+// stagedFileUnavailable keeps the silent-drop diagnosis for an absent
+// staged file and names any other reason the stage could not be read.
+func stagedFileUnavailable(err error) downloadResult {
+	if downloadChildAbsent(err) {
+		return downloadVerificationFailed(transfercopy.StageVerification, transfercopy.CodeMissing, "place", fmt.Errorf("missing after download (silent drop?): %w", err))
+	}
+	return downloadVerificationFailed(transfercopy.StageVerification, transfercopy.CodeUnverified, "place", fmt.Errorf("staged file cannot be inspected through the stage: %w", err))
 }
 
 func downloadPlacementFailed(label string, err error) downloadResult {
@@ -246,7 +416,7 @@ func downloadPlacementFailed(label string, err error) downloadResult {
 	return result
 }
 
-func nativeDownload(ctx context.Context, src *swiftcontrol.Session, container string, item DownloadItem, destDir, temporary string) downloadResult {
+func nativeDownload(ctx context.Context, src *swiftcontrol.Session, container string, item DownloadItem, destination *DestinationRoot, temporary string) downloadResult {
 	if err := ctx.Err(); err != nil {
 		return downloadNotAttempted(transfercopy.StageSourceRead, err)
 	}
@@ -254,10 +424,10 @@ func nativeDownload(ctx context.Context, src *swiftcontrol.Session, container st
 	if err != nil {
 		return downloadFailed(transfercopy.EffectNotAttempted, transfercopy.StageSourceRead, transfercopy.CodeIO, "native-get", err)
 	}
-	return nativeDownloadBody(ctx, body, item, destDir, temporary)
+	return nativeDownloadBody(ctx, body, item, destination, temporary)
 }
 
-func nativeDownloadBody(ctx context.Context, body io.ReadCloser, item DownloadItem, destDir, temporary string) downloadResult {
+func nativeDownloadBody(ctx context.Context, body io.ReadCloser, item DownloadItem, destination *DestinationRoot, temporary string) downloadResult {
 	if err := ctx.Err(); err != nil {
 		if closeErr := body.Close(); closeErr != nil {
 			result := downloadFailed(transfercopy.EffectNotAttempted, transfercopy.StageSourceRead, transfercopy.CodeIO, "native-close", closeErr)
@@ -266,17 +436,20 @@ func nativeDownloadBody(ctx context.Context, body io.ReadCloser, item DownloadIt
 		}
 		return downloadNotAttempted(transfercopy.StageSourceRead, err)
 	}
-	target := filepath.Join(destDir, item.RelPath)
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+	parent, err := destination.openDirectory(filepath.Dir(item.RelPath), true)
+	if err != nil {
 		return downloadFailed(transfercopy.EffectUnresolved, transfercopy.StageStaging, transfercopy.CodeIO, "native-get", errors.Join(err, body.Close()))
 	}
+	defer parent.Close()
 	if err := ctx.Err(); err != nil {
 		return downloadFailed(transfercopy.EffectUnresolved, transfercopy.StageStaging, transfercopy.CodeIncomplete, "native-get", errors.Join(err, body.Close()))
 	}
-	// The admitted pathname must be the only attempted temporary name.
+	// The admitted name must be the only attempted temporary name.
 	// Failed exclusive creation gives no authority to unlink that entry.
-	temp, err := os.OpenFile(temporary, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	temporaryBase := filepath.Base(temporary)
+	temp, err := parent.OpenFile(temporaryBase, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
+		err = atPath(err, "open", temporary)
 		result := downloadFailed(transfercopy.EffectUnresolved, transfercopy.StageStaging, transfercopy.CodeIO, "native-get", errors.Join(err, body.Close()))
 		if errors.Is(err, os.ErrExist) {
 			result.Result = transfercopy.ResultConflict
@@ -284,11 +457,14 @@ func nativeDownloadBody(ctx context.Context, body io.ReadCloser, item DownloadIt
 		}
 		return result
 	}
-	return finishNativeDownload(ctx, body, temp, temporary, target, item.Size)
+	base := filepath.Base(item.RelPath)
+	publish := publication{root: destination,
+		stagedRoot: parent, stagedBase: temporaryBase, stagedRel: filepath.Join(filepath.Dir(item.RelPath), temporaryBase), stagedDisplay: temporary,
+		targetRoot: parent, targetBase: base, targetRel: item.RelPath, targetDisplay: filepath.Join(destination.Path(), item.RelPath)}
+	return finishNativeDownload(ctx, body, temp, parent, publish, item.Size)
 }
 
-func (d *downloadRun) copy(ctx context.Context, session *swiftcontrol.Session, engine Engine,
-	src, dst string, names []string) (*rclone.Result, error) {
+func (d *downloadRun) copy(ctx context.Context, session *swiftcontrol.Session, run func(context.Context) (*rclone.Result, error)) (*rclone.Result, error) {
 	for attempt := 0; ; attempt++ {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -296,7 +472,7 @@ func (d *downloadRun) copy(ctx context.Context, session *swiftcontrol.Session, e
 		if d.stopped != nil {
 			return nil, d.stopped
 		}
-		result, err := engine.Copy(ctx, src, dst, names, nil)
+		result, err := run(ctx)
 		if err != nil || d.stopped != nil {
 			return result, errors.Join(err, d.stopped)
 		}

@@ -278,6 +278,25 @@ type Result struct {
 // expressible in a newline-delimited raw list — the planner routes
 // newline-bearing names natively, and the runner refuses them outright.
 func (r *Runner) Copy(ctx context.Context, remotes []Remote, src, dst string, names []string, onEvent func(Event)) (*Result, error) {
+	return r.copy(ctx, remotes, src, dst, names, onEvent, nil)
+}
+
+// CopyInto runs the same bounded batch with the child's destination
+// anchored to a held directory: the child inherits the descriptor and
+// resolves every write through it, so renaming any ancestor while the
+// copy runs cannot redirect the child. AnchorSupported says whether
+// this platform provides the anchor; elsewhere the call refuses.
+func (r *Runner) CopyInto(ctx context.Context, remotes []Remote, src string, anchor *os.File, names []string, onEvent func(Event)) (*Result, error) {
+	if !AnchorSupported {
+		return nil, fmt.Errorf("descriptor-anchored destinations are not available on this platform")
+	}
+	if anchor == nil {
+		return nil, fmt.Errorf("anchored copy needs the held destination directory")
+	}
+	return r.copy(ctx, remotes, src, anchoredDestination, names, onEvent, anchor)
+}
+
+func (r *Runner) copy(ctx context.Context, remotes []Remote, src, dst string, names []string, onEvent func(Event), anchor *os.File) (*Result, error) {
 	// Refuse-closed: an empty selected set would make rclone copy the
 	// ENTIRE source scope — the caller must always say exactly what
 	// moves (§28.4).
@@ -325,7 +344,11 @@ func (r *Runner) Copy(ctx context.Context, remotes []Remote, src, dst string, na
 	// a flag, whatever it starts with.
 	args = append(args, "--", src, dst)
 
-	return r.run(ctx, args, env, onEvent)
+	var inherited []*os.File
+	if anchor != nil {
+		inherited = []*os.File{anchor}
+	}
+	return r.run(ctx, args, env, onEvent, inherited)
 }
 
 // CopyTo runs `rclone copyto src dst` for ONE object under a different
@@ -360,7 +383,7 @@ func (r *Runner) CopyTo(ctx context.Context, remotes []Remote, src, dst string, 
 	args := []string{"copyto", "--ignore-times", "--use-json-log", "-vv", "--stats", "1s", "--config", configPath}
 	args = append(args, r.pacingArgs()...)
 	args = append(args, "--", src, dst)
-	return r.run(ctx, args, env, onEvent)
+	return r.run(ctx, args, env, onEvent, nil)
 }
 
 func (r *Runner) gatewayCapacity() int {
@@ -433,12 +456,14 @@ const maxCollectedErrors = 50
 const childCancelGrace = 10 * time.Second
 
 // run spawns, streams, and reaps one child.
-func (r *Runner) run(ctx context.Context, args, env []string, onEvent func(Event)) (*Result, error) {
+func (r *Runner) run(ctx context.Context, args, env []string, onEvent func(Event), inherited []*os.File) (*Result, error) {
 	// The child gets its own lifetime: cancellation is OUR signal
 	// escalation (SIGINT then SIGKILL), not a blunt kill from exec.
 	cmd := exec.Command(r.binary, args...)
 	cmd.SysProcAttr = childSysProcAttr()
 	cmd.Env = env
+	// Inherited descriptors start at 3 in the child, in this order.
+	cmd.ExtraFiles = inherited
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		return nil, err

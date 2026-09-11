@@ -335,7 +335,7 @@ func TestDownloadCancelledBodyClosure(t *testing.T) {
 			}}
 			ctx, cancel := context.WithCancel(t.Context())
 			cancel()
-			outcome := nativeDownloadBody(ctx, wrapped, item, root, temporary)
+			outcome := nativeDownloadBody(ctx, wrapped, item, testDestination(t, root), temporary)
 			want := transfercopy.ResultNotAttempted
 			if closeFailure {
 				want = transfercopy.ResultFailed
@@ -429,8 +429,10 @@ func TestDownloadDirectoryObservation(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			outcome := observeDownloadDirectory(target)
-			if kind == "directory" || kind == "symlink_directory" {
+			// A link at the marker's name is refused through the handle: the
+			// marker must be an ordinary directory, exactly as admission requires.
+			outcome := observeDownloadDirectory(testDestination(t, root).root, "marker")
+			if kind == "directory" {
 				if outcome.Result != transfercopy.ResultCopied || outcome.CopiedBytes != 0 || outcome.verification == nil || outcome.verification.Result != transfercopy.ResultVerified {
 					t.Fatalf("observed directory was not a zero-byte materialization: %+v", outcome)
 				}
