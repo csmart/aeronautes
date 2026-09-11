@@ -168,6 +168,25 @@ The reported run carries an explicit twenty-five-minute package limit, matching 
 
 Formatting, vet on Linux, Windows and macOS, the Windows and macOS internal builds and a module tidy that leaves both module files unchanged all pass.
 
+## Protected delivery
+
+The delivered range is the two logical commits between master 5c64de37a9f1c3c1 and the reviewed head ea9bfe63b9af7152: the sequence plan and the implementation with its recorded results.
+Independent review returned four corrective verdicts on the plan and one on the implementation before approving each, then approved the rebase onto that base separately; the base carried the two investigation records delivered just before, neither of which touches a file in this range.
+The module files promote the text module from an indirect to a direct requirement in one line and two checksums, which review accepted with the implementation.
+
+Its check run 34528444762 completed at the first attempt with all five required jobs successful.
+The frontend job reported zero errors and zero warnings from svelte-check and passed twenty-nine test files carrying one thousand one hundred and thirty tests, untouched by this range, which moves no frontend byte.
+The race-detector Go job recorded twenty-four successful package executions across twenty-three distinct tested packages with no failures.
+The containerized Swift integration job passed three thousand seven hundred and sixteen test results with no failures and the same two skipped cases as the preceding deliveries, the rclone matrix case and the keychain round trip, measured combined Go statement coverage of 87.3 per cent against the seventy-five per cent floor, and recorded scenario coverage of forty of one hundred and sixteen cells and thirty-eight of fifty-two actions with gaps, reported valid with the owned service configured and coverage incomplete.
+That job ran for 25.2 minutes, past the twenty-five-minute job cap that applied before the [raised time budget](2026-09-08-integration-time-budget.md#2026-09-10-job-cap-cancellation-and-correction) and inside the current one, which is a further measurement in that budget's favour.
+The headless smoke job landed three of three objects and passed.
+The run retained both coverage badges, the 438,218-byte scenario coverage artifact and the 6,109,681-byte smoke artifact.
+
+The pull request then left draft state and was merged by rebase pinned to the reviewed head object.
+Master became 235e7d9877f3f85e, whose tree is identical to the reviewed head's tree, and both commits kept their patch identity, message, author identity and intermediate tree.
+The resulting master check run 34533436985 concluded success with the same five required jobs at the first attempt.
+The pipeline exercised Linux runners only, so native acceptance on the other platforms remains unproven.
+
 ## Remaining limits
 
 This slice settles canonical equivalence for collisions and nothing else.

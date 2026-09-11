@@ -174,7 +174,10 @@ Current disposition: [PR78](../../experiments/2026-09-09-download-path-case.md#p
 Both spellings of each conflicting pair are refused across the whole selection on the owned providers, with a safe first member and passing shared-parent controls.
 [PR81](../../experiments/2026-09-10-portable-download-names.md#protected-delivery) then delivers one lexical portable component rule at the same two boundaries, refusing Windows device and console bases, the seven restricted characters and components ending in an ASCII space or dot, across the whole selection and without trimming or renaming.
 That rule is conservative on every host rather than a claim about any particular Windows release, and no Windows device is opened to prove it.
-Unicode normalization and equivalence, leading spaces, component and path length limits, directory-only aliases, encoding collisions and native target-filesystem acceptance remain open, so DS-06/P19 and the valuable-data release hold are still blocking.
+[PR91](../../experiments/2026-09-10-download-name-normalization.md#protected-delivery) then checks a canonical caseless relation beside the established lowercase relation at the same two boundaries, side by side and never joined transitively, so planned names that differ only by Unicode normalization form are refused as one collision while every single spelling stays selectable.
+The helper walks the canonical decomposition tables directly rather than calling the library's stream-safe normal forms, which would equate a long combining run with the same run broken by a real joiner and so refuse two distinct names.
+One consequence is recorded rather than hidden: a plain letter beside the same letter with a combining mark stays admitted, because only a chain through the precomposed character would join them.
+Compatibility equivalence, leading spaces, component and path length limits, directory-only aliases, encoding collisions and native target-filesystem acceptance remain open, so DS-06/P19 and the valuable-data release hold are still blocking.
 
 ### DS-07 — High: cancellation after staging still places files and can report completion
 
