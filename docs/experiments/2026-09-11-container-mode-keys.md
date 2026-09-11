@@ -128,3 +128,18 @@ For `docs/DESIGN.md`, after the manifest consent layout sequence:
 For the UI-11 disposition in `docs/audits/2026-09-05/ui-product.md`, once delivered:
 
 > The bounded container mode correction supplies roving focus, arrow and Home/End activation and a labelled tab panel for that one tablist with maintained cases and broken controls; other tab patterns, native select and assistive-technology journeys remain open.
+
+## Protected delivery
+
+The delivered range is the nine logical commits between master d561eaac17f1839e and the reviewed head ba7b65c47d224d20, cherry-picked patch for patch from three independently approved branches: this slice's two commits (the plan and the keyboard semantics of the container mode tabs), together with the four commits of the download root authority correction and the three commits of the engine-reserved name routing correction.
+Independent review approved each slice on its own base and then the combined range on its final base, with every patch marked identical by range-diff and no shared document in the range.
+
+Its check run 34652123581 completed at the first attempt with all five required jobs successful: the frontend job in one minute and forty-three seconds, the headless smoke job in two minutes and three seconds, the race-detector Go job in eight minutes and fifty-nine seconds, the containerized Swift integration job in thirty minutes and two seconds, and the aggregate job.
+The run retained the two coverage badges, the 473,665-byte scenario coverage artifact, the 6,112,982-byte smoke artifact and a 9,964-byte Swift diagnostics artifact.
+The retained badges report combined Go statement coverage of 88.1 per cent and frontend coverage of 91.07 per cent.
+On the same head the full race suite with the real Swift fixture reconciled to 3,772 leaves with 3,771 passing, none failing and the single expected matrix skip, and the frontend suite passed 1,150 tests in thirty files with svelte-check reporting no errors and no warnings.
+
+The pull request then left draft state after thirty-one premerge guards passed and was merged by rebase pinned to the reviewed head object at 22:32:55 UTC on 11 September 2026.
+Master became bf5bd6b3d491bbb4, whose tree cf2548534276a07a is identical to the reviewed head's tree, and each of the nine commits kept its patch identity, message and author identity.
+The resulting master check run 34654485439 concluded success at the first attempt with the same five required jobs.
+The pipeline exercised Linux runners only, so native acceptance on the other platforms remains unproven, and the shared design, engine-pin and register text for this slice follows in the integrator's own range.
