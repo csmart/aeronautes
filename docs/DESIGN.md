@@ -5324,6 +5324,21 @@ Record the engine-stage cancellation with an unresolved effect and return the or
 Keep missing results, deadline expiry, uncancelled contexts and independent failures outside that classification, and preserve retained staging and its cleanup disclosure.
 Require executor controls for those exclusions and real-service cancellation regressions alongside the child-lifetime tests before delivery.
 
+The next bounded [UI-10 cancellation and audit sequence](experiments/2026-09-12-cancellation-feedback.md) separates an operator request's outcome from an independent status read.
+The unchanged drawer hides a rejected cancellation behind a successful refresh and admits duplicate requests while the first is pending; the audit reader also allows older queries and background Recent replies to replace a selected view.
+UI-10, P28, §§26.4/47/49/50/55 and K-UI-005 require honest status, while `CancelJob` acknowledges a graceful cancellation request without proving a terminal result, cleanup or child quiescence.
+
+1. Review the preserved before evidence and the dedicated request-status contract before production changes.
+2. Give each cancellation attempt immutable job attribution and separate pending, requested and unconfirmed feedback in the drawer, with duplicate admission guarded while pending.
+   Preserve feedback across independent refreshes, account filters, tabs, collapsed views and missing rows; use safe fixed wording, explicit read-only refresh and operator retry, and bounded notice retention with no silent eviction.
+   Keep backend outcomes authoritative and preserve all existing counters, recovery, rerun and retained-record behaviour.
+3. After independent cancellation review and separate file ownership, specify and implement audit-read loading, empty, unavailable and stale states, immutable query ownership, late-reply rejection and duplicate-page admission guards as a separate logical fix.
+   A background audit-read failure must not turn an already successful mutation into a failed action, and Recent replies must not replace the selected paginated view.
+4. Preserve before failures and healthy controls, prove each changed guard with maintained component/state regressions and independent omission controls, then run focused frontend checks and the final current-base frontend gates.
+   Obtain renewed independent range review, all five PR jobs, a protected merge and all five resulting-master jobs before recording delivered progress.
+
+The cancellation slice changes presentation only; audit implementation requires its own reviewed contract, and settings, bookmarks, UI-09, native accessibility acceptance and the valuable-data hold remain open.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
