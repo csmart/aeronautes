@@ -1,4 +1,103 @@
 {
+  "after": {
+    "broken_controls": {
+      "g01_no_length_rule": {
+        "file": "internal/transfer/local/local.go",
+        "local_exit": 1,
+        "local_failed": [
+          "TestDownloadNameLimits",
+          "component_256_bytes",
+          "component_300_bytes",
+          "component_400_bytes_200_units",
+          "long_component_beside_safe",
+          "marker_component_300_bytes",
+          "nested_component_300_bytes",
+          "TestDownloadNameLimitsExecutorAdmission",
+          "over_long_file",
+          "over_long_marker",
+          "over_long_nested"
+        ],
+        "local_passed": 9,
+        "log_sha256": "e54933a32ab8ca4caf1cb0169809bdef63a256b186454f048dda0172b7c983d3",
+        "service_failed": [
+          "component_300_bytes",
+          "marker_component_300_bytes",
+          "nested_component_300_bytes"
+        ],
+        "setup_failed": false
+      },
+      "g02_no_executor_length_check": {
+        "file": "internal/transfer/local/download_recording.go",
+        "local_exit": 1,
+        "local_failed": [
+          "TestDownloadNameLimitsExecutorAdmission",
+          "over_long_file",
+          "over_long_marker",
+          "over_long_nested"
+        ],
+        "local_passed": 16,
+        "log_sha256": "bad74e7eb05000941e22d832567cd71bca272d8052b0c1fcd7280c96d0470f9f",
+        "service_failed": null,
+        "setup_failed": false
+      }
+    },
+    "environment": {
+      "AERONAUTES_OFFICIAL_RCLONE_DIR": "<pinned rclone 1.74.3 directory>",
+      "GOFLAGS": "-mod=readonly",
+      "GOTOOLCHAIN": "go1.27.1",
+      "PATH": "pinned rclone first",
+      "real_swift": "AERONAUTES_SAIO_AUTH_URL=http://127.0.0.1:18080/auth/v1.0"
+    },
+    "producers": [
+      {
+        "command": "go test -race -count=1 -run TestDownloadNameLimits -v ./internal/transfer/local/",
+        "exit": 0,
+        "failing_leaves": 0,
+        "log_sha256": "2320e41cb3cca8a510826747ecfef9e1f1988a968ebe38c2c4662b23bcddeffd",
+        "name": "preflight and executor regressions",
+        "passing_leaves": 18
+      },
+      {
+        "command": "go test -race -count=1 -run 'TestDownloadNameLimitsMock$' -v ./internal/systemtest/",
+        "exit": 0,
+        "failing_leaves": 0,
+        "log_sha256": "22cceca46ffce1d39c9925493b3f07997bc2f1f056710966da648e7ade185785",
+        "name": "service mock",
+        "passing_leaves": 8
+      },
+      {
+        "command": "go test -race -count=1 -run 'TestDownloadNameLimitsRealSwift$' -v ./internal/systemtest/",
+        "exit": 0,
+        "failing_leaves": 0,
+        "log_sha256": "0bbb4a914466323604e25021d6ae38d43e9c2d4cce2352495efce7e8c9e1fb5b",
+        "name": "service real Swift",
+        "passing_leaves": 8
+      },
+      {
+        "command": "go test -race -count=1 -timeout=40m -json ./...",
+        "exit": 0,
+        "leaf_rule": "a leaf is a recorded name that is not a slash-separated prefix of another recorded name in the same package",
+        "name": "full race suite",
+        "reconciled": {
+          "distinct names": 4105,
+          "failing": 0,
+          "leaves": 3806,
+          "packages": 22,
+          "pass events": 4104,
+          "passing": 3805,
+          "skipped": 1
+        },
+        "stream_bytes": 7516114,
+        "stream_sha256": "047006adb2737ead5b70c8596044ffa05cb401f26d5ec57067a1f39545f3afe5",
+        "window_utc": [
+          "2026-09-12T04:55:35Z",
+          "2026-09-12T05:04:13Z"
+        ]
+      }
+    ],
+    "recorded": "2026-09-12T05:05:03.243677+00:00",
+    "source": "ae98e6c5fc261afc925af1e36b522473a05c9960"
+  },
   "environment": {
     "AERONAUTES_OFFICIAL_RCLONE_DIR": "<pinned rclone 1.74.3 directory>",
     "GOFLAGS": "-mod=readonly",
