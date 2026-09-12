@@ -5216,7 +5216,7 @@ Existing aggregate stamps keep their limited change-detection meaning; this corr
 The [first staged-content consumer](experiments/2026-09-11-staged-copy-content.md) implements this bounded comparison with a fixed buffer, complete EOF, checked Close and conservative retention on failure.
 Its maintained service tests cover same-size corruption, permutation, missing content compensated by a duplicate, valid resegmentation, cancellation and required-record/completion refusal against owned mock and real Swift providers.
 The first 19-byte effect remains visible while a corrupt second stage is refused before publication; complete item/job/history/audit assertions preserve the existing partial and unavailable outcomes.
-The native prerequisite, this consumer and the separately planned representation correction remain one combined delivery, with actual representation compatibility, complete-range verification, independent review and all five PR/master gates required before publication.
+The native prerequisite, this consumer and the representation correction remain one combined delivery, with complete-range verification, independent review and all five PR/master gates required before publication.
 
 The required staged-content compatibility gate found an earlier Copy engine representation failure on both the unchanged prerequisite baseline and the new consumer.
 Two valid gzip streams fail when decoded bytes are shorter than the stored length used for segment upload; malformed gzip fails in the child's decoder before any new staged-content GET or live publication.
@@ -5228,6 +5228,14 @@ The separate [representation experiment](experiments/2026-09-12-copy-representat
    Its scope is requests through the child's Swift HTTP transport; it sends no encoding header and preserves local/download defaults, gateway authority, TLS, retries, cleanup and native metadata writes.
    Resolve shared file ownership before implementation and require both construction paths, both builders, local-scope controls, small/empty routes and the original five actual-Swift representation cases.
 4. Deliver the separately reviewed native prerequisite, consumer and representation correction together after complete current-base verification, renewed range review and all five PR/resulting-master checks.
+
+The Copy-only representation policy is implemented and locally reviewed.
+Copy construction enables a false-default runner option for both command builders, while local transfers retain their existing policy.
+The representation experiment records all five original actual-Swift DLO positives and four empty/small plain positives preserving stored bytes, metadata, exact public and durable outcomes, recovery and collateral.
+The DLO cases observe the owned identity read before publication; the plain cases use the existing native publication read and do not establish a new native policy.
+Independent service, builder and shared-default controls fail when the policy or its scope is broken.
+The native prerequisite, first consumer and representation correction remain pending combined current-base delivery; these local results do not satisfy the final PR/master gates.
+Encoded listings and Range retries were not established by the successful object fixtures.
 
 This scope preserves stored content without weakening the length/MD5 oracle or enabling another transfer capability.
 Native fallbacks, source-version binding, later stage changes, final publication, broader fidelity and the valuable-data hold remain separate unresolved obligations.

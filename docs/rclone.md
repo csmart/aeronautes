@@ -109,10 +109,13 @@ Names containing any rune of the pinned set (U+201B, U+2400–U+241F, U+2421, U+
 | `--retries N --low-level-retries N` | bounded failure budget (§26.2: control must return quickly) | ✓ 401 returns in ~2.6 s default, ~50 ms at 1/1 |
 | `--transfers`, `--checkers`, `--tpslimit`, `--bwlimit` | performance profile (§40–41) | ✓ bwlimit throttling exercised |
 | `--stats-one-line` / stats via JSON log | drawer progress (§47) | ✓ |
+| `--no-gzip-encoding` | fixed Copy-only transport policy under [ADR 0038](adr/0038-copy-representations.md); local runners retain the false default | [Locally reviewed representation tests](experiments/2026-09-12-copy-representations.md) cover both builders, both constructor paths, actual-Swift stored bytes and deliberately broken scope controls; combined delivery remains required |
 
-The proposed [ADR 0038 Copy representation correction](adr/0038-copy-representations.md) adds one fixed `--no-gzip-encoding` argument to both `copy` and `copyto` only for a runner explicitly selected by the Copy service.
+The locally reviewed [ADR 0038 Copy representation correction](adr/0038-copy-representations.md) adds one fixed `--no-gzip-encoding` argument to both `copy` and `copyto` only for a runner explicitly selected by the Copy service.
 It disables automatic gzip negotiation/decoding for requests through the child's Swift HTTP transport, sends no `Accept-Encoding` header itself, and retains the false default for local upload/download runners.
-The [before experiment](experiments/2026-09-12-copy-representations.md) reproduces gzip staging failure on the unchanged baseline; this proposed surface is not yet implemented or compatibility-approved.
+The [representation experiment](experiments/2026-09-12-copy-representations.md) preserves the unchanged-baseline gzip failures and the five original DLO plus four plain success cases after this correction.
+The owned identity staged read precedes DLO publication; plain stages retain the existing native publication read, and neither set establishes encoded-listing or Range-retry behaviour.
+The native reader, first staged-content consumer and representation correction still require their combined current-base delivery.
 Keep the flag before `--` and preserve the existing gateway, credentials, TLS, retry, cleanup and metadata contracts.
 
 ## Deliberately never set

@@ -94,9 +94,13 @@ The valid gzip diagnostics record an engine segment upload with ContentLength 52
 The 156-byte difference equals the stored gzip representation's excess over its decoded payload.
 The unchanged-baseline replay reproduces all three gzip failures, and the exact pinned source maps the child's automatic decoding to its upload sizing from the original metadata.
 The [separate representation record](2026-09-12-copy-representations.md) retains the source attribution, dirty-binary limitation, required-success failures and earlier engine-abort cleanup separately from this consumer's refusal path.
-This is a failed ADR 0037 compatibility gate, not accepted encoded-content behaviour.
+This recorded run is a failed ADR 0037 compatibility gate, not accepted encoded-content behaviour.
 The independently reviewed [ADR 0038 plan](../adr/0038-copy-representations.md) adds a separate Copy-only transport correction after this consumer's local review.
-Delivery requires that correction and the original positive expectations to pass; the new reader and comparison remain local until then.
+The subsequent [locally reviewed representation correction](2026-09-12-copy-representations.md) passes all five original DLO positive expectations and four empty/small plain cases through the actual service and pinned child.
+The DLO cases observe the new staged identity GET before publication; plain cases retain the existing native publication read.
+Independent omission and local-scope controls fail when the fixed Copy policy is absent or escapes its intended constructors.
+Those later results preserve this failed gate and do not expand it to encoded listings, Range retries or native fallback policy.
+The new reader, comparison and representation correction remain local pending combined current-base verification, independent range review and all five PR/resulting-master checks.
 
 ## Evidence boundaries
 
