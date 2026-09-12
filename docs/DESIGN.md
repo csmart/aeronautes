@@ -893,6 +893,15 @@ spike ran this suite through the pinned rclone (v1.74.3, Swift→Swift cross-acc
   traversal copy, **silently renamed** — rclone substitutes fullwidth dots (U+FF0E:
   `a/．/b`) — which is an identity mutation, not a round-trip. Both route native. Dots inside
   a segment (`a. b.`, `v1.2/x`) are safe.
+- **Engine-reserved runes are unsafe on the list route** (measured 2026-09-11 against real
+  Swift and the mock, [experiment](experiments/2026-09-11-download-name-encoding.md)): the
+  engine decodes listed names through its backend encoding and quotes literal substitutes with
+  U+201B, so a raw list entry containing U+201B, a C0 control picture (U+2401–U+241F), the
+  DEL picture (U+2421) or a full-width full stop component matches nothing and is silently
+  not copied with exit 0, and a full-width full stop component through the gateway fails the
+  whole batch. Any name containing a rune of the pinned reserved set routes native on every
+  platform (delivered in PR97); the set is recorded beside the engine pin in
+  [rclone.md](rclone.md).
 - **rclone-safe on 1.74.3** (round-tripped byte-exact): spaces (leading, trailing,
   all-spaces — via `--files-from-raw`, which does not trim), `+`, `%`, `?`, `#`, `%2F`, and
   Unicode. This classification is pin-specific: re-run the suite on any rclone upgrade.
@@ -5132,6 +5141,17 @@ The [Container mode keyboard correction](experiments/2026-09-11-container-mode-k
 The control consumes those four keys, preserves the selected container, loaded-row filter, server prefix and working-list selection, and keeps pointer activation and the vertical-arrow hand-off unchanged.
 The experiment records nine maintained component cases with before and broken controls, plus one Linux light-theme keyboard replay at 1280×800.
 Other tab patterns and §4.4 shortcuts, native select and screen-reader journeys, dark-theme native behaviour, zoom/scaling and other native platforms remain open under UI-11/P29.
+
+The [download root authority correction](experiments/2026-09-11-download-root-authority.md) delivered in PR97 binds the identity of the picked directory from the picker through every download effect, under [ADR 0035](adr/0035-download-root-authority.md).
+The selection store holds the picked directory as an open handle and derives one per preflight and per job; every path beneath it is opened one component at a time through the parent handle, links, non-directories and foreign devices are refused, the stage is bound and re-identified around the engine run, publication links by directory descriptor and confirms that the target names the verified file, and cleanup removes only planned empty directories through handles.
+On Linux the engine child receives the held stage directory as an inherited descriptor, so a renamed ancestor cannot redirect it; where no anchor exists the engine route is refused before any stage exists.
+A selected directory renamed after the pick keeps receiving effects and the job ends partial with the displacement named; a deleted one refuses the job.
+The experiment records the deterministic before matrix at three production boundaries on both providers, maintained executor and service regressions, four deliberately broken guards and the engine-anchor experiments.
+Native macOS and Windows acceptance, reparse points and the engine route on those platforms remain open under P18 and TEST-04.
+
+The [engine-reserved name routing correction](experiments/2026-09-11-download-name-encoding.md) delivered in PR97 routes any name containing a rune the pinned engine reserves as a substitute or quote natively on every platform, through the shared engine-safety predicate the download, upload and copy planners use, exactly as newline names are routed.
+Before it, such names were admitted to the engine route and silently dropped with a successful engine exit, and a full-width full stop component failed the whole batch; the set is pinned to the frozen engine source and recorded in the engine pin document.
+Compatibility equivalence, leading spaces and length limits remain separate DS-06 items with their own decisions.
 
 The next bounded [segmented-destination change detection](experiments/2026-09-11-copy-verification-strength.md) stops a same-size segment substitution being reported as an equal destination.
 The executor decides a non-plain pair from its own stored fingerprint and a matching logical length, so a destination whose segments were replaced with different bytes of the same length is skipped as equal.

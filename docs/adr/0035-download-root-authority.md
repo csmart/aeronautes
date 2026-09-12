@@ -1,6 +1,6 @@
 # ADR 0035 — download root authority through the held handle
 
-**Status:** Proposed; the product choices marked below await the operator, and the contract awaits independent review before it is accepted.
+**Status:** Accepted after independent local review of the contract and of its implementation, delivered in PR97; the product choices below were settled by the operator on 12 September 2026 as delivered.
 **Scope:** Bind the identity of the picked directory from the picker through every download effect, so a root, parent or stage replaced after admission cannot redirect an effect through a pathname; native macOS and Windows acceptance remains TEST-04 work.
 The before evidence was reproduced deterministically on both owned providers before this contract was proposed, and the correction's evidence is recorded in the same experiment.
 
@@ -21,12 +21,12 @@ Exact picker spelling, the accepted initial selected-root alias, complete-select
    The handle is the authority; the spelling is display and record text only.
    Each preflight and each job leases a handle derived from the held one and owns it until it closes it, so one pick can start any number of jobs; eviction closes only the pick's own handle.
    A pick that cannot be held keeps its spelling with no handle, and the complete preflight report refuses it with its reason.
-   Product choice awaiting the operator: whether a pick may be reused by later jobs, as delivered, or must be single use.
+   Product choice settled on 12 September 2026: a pick may be reused by later jobs, as delivered.
 2. Renamed and deleted roots.
    Effects continue into the directory picked at its new location.
    The executor compares the captured pathname with the held identity before the first effect and after the last, and a mismatch is a job-level fact: the job ends partial with the displacement in its message and audit summary, because the item records keep the picked spelling which no longer names the directory the bytes went into.
    A directory deleted after the pick is refused before any effect.
-   Product choice awaiting the operator: continue and report, as delivered, or refuse further effects once the pathname stops naming the directory.
+   Product choice settled on 12 September 2026: continue and report, as delivered.
 3. Relocated descendants and planted parents.
    Every path beneath the root is opened one component at a time through the parent handle; a link, a non-directory or an entry on another filesystem is refused, the opened directory must be the inspected entry, and absent components are created only through the parent handle.
    A descendant handle is held only across the single effect it was opened for; the stage handle is the one descendant held longer, and decision 5 states what a relocation of it means.
@@ -34,13 +34,13 @@ Exact picker spelling, the accepted initial selected-root alias, complete-select
 4. Mount boundaries and reparse points.
    A component on another device is refused everywhere; on Linux a component that is a mount root is refused by the `statx` attribute, which also covers a bind mount of the same filesystem; on Windows reparse points remain refused, which covers junctions and volume mount points.
    On other Unix targets a bind mount of the same filesystem is not distinguished, which is a recorded limit.
-   Product choice awaiting the operator: refuse mounts inside a selected directory, as delivered, or follow them.
+   Product choice settled on 12 September 2026: mounts inside a selected directory are refused, as delivered.
 5. Engine destination authority.
    The stage is created and bound through the held root before the engine runs and its identity is compared after the engine returns; a stage that no longer sits at its name fails every engine item with that diagnosis, nothing is placed, and cleanup retains and reports it.
    Staged files are read only through the stage handle.
    On Linux the child receives a descriptor-anchored destination: it inherits the held stage directory and resolves every write through it, so a renamed ancestor cannot redirect the child, and a stage relocated during the run keeps receiving the child's bytes in the directory this executor created, never through a name another process controls.
    Where the platform provides no anchor, the engine route is refused before any stage exists, because a child given a pathname cannot be contained during its run.
-   Product choice awaiting the operator: keep the engine route refused on macOS and Windows until an anchor exists there, as delivered, or accept the uncontained run there for a first milestone.
+   Product choice settled on 12 September 2026: the engine route stays refused on macOS and Windows until an anchor exists there, as delivered.
 6. Publication.
    The verified file is linked into its inspected parent by directory descriptor on Unix and by root-relative names on Windows, with no-replace semantics, and the target must then name the verified file.
    A substituted staged entry fails the item, and the link this executor created to it is removed by name immediately after the identity check; the window between that check and the removal is recorded as a limit.
