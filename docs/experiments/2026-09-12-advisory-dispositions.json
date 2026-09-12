@@ -1,0 +1,3266 @@
+{
+  "advisories": [
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "stdlib"
+      ],
+      "class": "Unknown: shared input",
+      "fixed_version_hints": [
+        "v1.26.6"
+      ],
+      "id": "GO-2026-6218",
+      "input_condition": "Relative URL references, especially redirect Location values.",
+      "next_evidence": "First priority: close remaining URL-reference callers; retain bounded long-reference and redirect refusal controls on every candidate binary.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-6218",
+      "osv_sha256": "018788ad0b1c880c724365ba05c84e16298443c073e61d04b835da778e4b2281",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6218",
+      "reasoning": "HTTP client symbols are present. Gateway rejects 3xx and strips Location; ncw/swift request assembly uses package url.Parse, not affected URL.Parse. This excludes the inspected ordinary redirect path but does not close every linked URLJoin/ResolveReference caller or prove six-binary input reachability.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        }
+      },
+      "source_bundles": [
+        "A",
+        "N",
+        "S",
+        "H"
+      ],
+      "summary": "Avoid quadratic complexity in resolvePath in net/url",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "golang.org/x/text"
+      ],
+      "class": "Unknown: shared input",
+      "fixed_version_hints": [
+        "v0.39.0"
+      ],
+      "id": "GO-2026-5970",
+      "input_condition": "Invalid UTF-8 reaching normalization of selected or backend-derived names.",
+      "next_evidence": "Trace normalization callers and encoding conversions across all routes; require malformed-name refusal and valid-Unicode compatibility controls.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-5970",
+      "osv_sha256": "50afe3fc28952525c6c7f0476a0fe1e11dfc024472011d56da5ce860013a5da2",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-5970",
+      "reasoning": "Shared copy traversal installs NFC normalization, so this is not an unrelated backend finding. files-from bypasses one filter branch; local upload and recorded download validate UTF-8. Other copy paths, backend encoding conversion and malformed-response handling have not been closed through the affected iterator.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 24
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 24
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 24
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 24
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 24
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 24
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "D",
+        "U"
+      ],
+      "summary": "Infinite loop on invalid input in golang.org/x/text",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "stdlib"
+      ],
+      "class": "Unknown: transitive caller",
+      "fixed_version_hints": [
+        "v1.26.5"
+      ],
+      "id": "GO-2026-4970",
+      "input_condition": "Unix os.Root open with a final symlink and trailing slash.",
+      "next_evidence": "Map every linked Root caller on Unix; keep separate P18 symlink/rename/cleanup hold regardless of this advisory.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-4970",
+      "osv_sha256": "75ca0f62a6798bb6ecf12bb140edb7867263e574ea5e964c3a1fb93d382fe877",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-4970",
+      "reasoning": "Linux/Darwin affected Root symbols are present. Inspected local copy uses ordinary file opens and mkdir, not os.Root; that is not a containment guarantee. Other linked Root callers remain untraced. The advisory states Unix, so the described OS prerequisite is absent for the two Windows targets.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 10
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 10
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 10
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 10
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 10
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 10
+        }
+      },
+      "source_bundles": [
+        "D",
+        "Y"
+      ],
+      "summary": "Root escape via symlink plus trailing slash in os",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "golang.org/x/image"
+      ],
+      "class": "Unknown: transitive caller",
+      "fixed_version_hints": [
+        "v0.43.0"
+      ],
+      "id": "GO-2026-5061",
+      "input_condition": "Malformed WebP dimensions delivered to a decoder.",
+      "next_evidence": "Identify decoder registration/call owners and prove transfer bytes cannot invoke them, or test the patched candidate decoder.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-5061",
+      "osv_sha256": "e0ede272560d0c06c497c2b58d23a9d65b1b99ccc8e371f22afab74784a8bfd3",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-5061",
+      "reasoning": "Object bytes reach the copy path, but inspected Swift/local copying and MIME fallback do not decode images. No evidence yet connects the retained WebP decoder symbols to an enabled operation, and transitive decoder callers were not fully inspected.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 4
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 4
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 4
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 4
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 4
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 4
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "D",
+        "S"
+      ],
+      "summary": "Panic on VP8 alpha channel size mismatch in x/image/webp in golang.org/x/image",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "golang.org/x/image"
+      ],
+      "class": "Unknown: transitive caller",
+      "fixed_version_hints": [
+        "v0.43.0"
+      ],
+      "id": "GO-2026-5062",
+      "input_condition": "TIFF with oversized tiles delivered to a decoder.",
+      "next_evidence": "Close transitive TIFF decoder callers; candidate must contain the fixed image module or retain a reviewed exclusion.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-5062",
+      "osv_sha256": "8f1e6dfe46c92d99130632e01a971558bb6dbc2c5d907811f79321277266e1fa",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-5062",
+      "reasoning": "Untrusted object bytes are enabled inputs. Copy and extension-based MIME handling do not themselves select TIFF decoding; linked decoder callers remain unresolved.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "D",
+        "S"
+      ],
+      "summary": "Lack of limit on tile sizes in x/image/tiff in golang.org/x/image",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "golang.org/x/image"
+      ],
+      "class": "Unknown: transitive caller",
+      "fixed_version_hints": [
+        "v0.43.0"
+      ],
+      "id": "GO-2026-5066",
+      "input_condition": "TIFF with invalid strip offsets delivered to a decoder.",
+      "next_evidence": "Use the same decoder-owner inventory as 5062, retaining this distinct panic condition and advisory ID.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-5066",
+      "osv_sha256": "77834735eb3d88b0b8684fc2160b8499a4b237d447d531d6bc1f1423a919061a",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-5066",
+      "reasoning": "Binary symbol presence does not show that copying a TIFF invokes its decoder. The inspected transfer path moves bytes, while any transitive image helper route is still unknown.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "D",
+        "S"
+      ],
+      "summary": "Panic decoding image with out-of-bounds strip offset in x/image/tiff in golang.org/x/image",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "go.opentelemetry.io/otel"
+      ],
+      "class": "Unknown: transitive caller",
+      "fixed_version_hints": [
+        "v1.44.0"
+      ],
+      "id": "GO-2026-5158",
+      "input_condition": "Oversized baggage header passed to OpenTelemetry propagation parsing.",
+      "next_evidence": "Find Baggage.Extract/Parse owners and startup hooks; determine whether any enabled request or response path supplies their input.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-5158",
+      "osv_sha256": "a00782fcadade2235c56bc78e1a4a956fbc934d48204df5c24cf97d9b84a1a5c",
+      "primary_advisory": "https://github.com/open-telemetry/opentelemetry-go/security/advisories/GHSA-5wrp-cwcj-q835",
+      "reasoning": "Gateway forwards permitted response headers under a 32 KiB header limit, but neither gateway nor inspected ncw/swift/fshttp transport extracts baggage. That cap is not a parser-exclusion proof; the linked OpenTelemetry caller graph remains incomplete.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 2,
+          "symbol": 3
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 2,
+          "symbol": 3
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 2,
+          "symbol": 3
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 2,
+          "symbol": 3
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 2,
+          "symbol": 3
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 2,
+          "symbol": 3
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "N",
+        "S"
+      ],
+      "summary": "Opentelemetry-go's baggage parsing no longer caps raw header length in go.opentelemetry.io/otel",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "github.com/klauspost/compress"
+      ],
+      "class": "Unknown: transitive caller",
+      "fixed_version_hints": [
+        "v1.18.7"
+      ],
+      "id": "GO-2026-5841",
+      "input_condition": "Attacker-controlled s2 dictionary supplied to NewDict and encoding.",
+      "next_evidence": "Identify the linked dictionary caller and its input source; require a fixed compress module or reviewed unreachable-input evidence.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-5841",
+      "osv_sha256": "d9f378fa751658db4ce06bb97e94d36fac333ecee3fe26f67b1fe3cf718d0a47",
+      "primary_advisory": "https://github.com/klauspost/compress/security/advisories/GHSA-259r-337f-4rfw",
+      "reasoning": "The ordinary copy stream does not create an s2 dictionary. No configured compression/dictionary mode is exposed, but the retained NewDict caller in transitive dependencies was not identified; copying arbitrary bytes alone is not proof of dictionary parsing.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 1
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 1
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 1
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 1
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 1
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 1
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "D"
+      ],
+      "summary": "OOB read in github.com/klauspost/compress/s2",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "golang.org/x/crypto"
+      ],
+      "class": "Unknown: transitive caller",
+      "fixed_version_hints": [],
+      "id": "GO-2026-5932",
+      "input_condition": "Data processed by deprecated golang.org/x/crypto/openpgp.",
+      "next_evidence": "Identify its transitive owner; remove/replace it in a candidate or produce a narrowly reviewed route exclusion. A version bump alone is insufficient.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-5932",
+      "osv_sha256": "03ad6e02d8be2a09d1b6ed268d8db304684daf85266154ae699bd0446838e24d",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-5932",
+      "reasoning": "The advisory has no fixed version. Swift/local expose no OpenPGP operation; rclone self-update instead imports ProtonMail and is not invoked. This does not explain or exclude the different deprecated package actually reported in the binaries.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 7,
+          "symbol": 7
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 7,
+          "symbol": 7
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 7,
+          "symbol": 7
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 7,
+          "symbol": 7
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 7,
+          "symbol": 7
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 7,
+          "symbol": 7
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "D",
+        "T"
+      ],
+      "summary": "The golang.org/x/crypto/openpgp package is unmaintained, unsafe by design, and has known security issues",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "stdlib"
+      ],
+      "class": "Unknown: transitive caller",
+      "fixed_version_hints": [
+        "v1.26.6"
+      ],
+      "id": "GO-2026-5972",
+      "input_condition": "Deep recursive ASN.1 decoded by affected Unmarshal.",
+      "next_evidence": "Trace non-TLS ASN.1 callers; inspect candidate toolchain metadata and add the required trust/CA compatibility cases.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-5972",
+      "osv_sha256": "b29afc3e6e64a38248cdac1af1c471737e57e043e6baf086a6746db32570ea60",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-5972",
+      "reasoning": "Child Swift HTTP is plaintext loopback; upstream certificates are parsed in the Go 1.27.1 parent source configuration. No child client-certificate/key flag is exposed. Other linked ASN.1 callers and local credential/config initialization are not fully closed.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "N",
+        "S"
+      ],
+      "summary": "Enforce maximum recursion depth in encoding/asn1",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "stdlib"
+      ],
+      "class": "Unknown: transitive caller",
+      "fixed_version_hints": [
+        "v1.26.6"
+      ],
+      "id": "GO-2026-6088",
+      "input_condition": "Deep XML through DecodeElement/custom unmarshalling.",
+      "next_evidence": "Identify XML decoder owners and any enabled extension/error path; retain malformed-response and opaque-object-byte controls.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-6088",
+      "osv_sha256": "aece7d85212cb95a1eeed5f71a6d20cdcee7dff2f30fae5488c9e7e2eca5c693",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6088",
+      "reasoning": "Swift listings explicitly use JSON and object bytes remain byte streams. Supplying XML content does not by itself select encoding/xml. The general binary still has XML symbols and its transitive decode entry points have not been fully excluded.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 6
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 6
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 6
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 6
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 6
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 6
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "D",
+        "S"
+      ],
+      "summary": "Add recursion depth guard during decode in encoding/xml",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "golang.org/x/image"
+      ],
+      "class": "Unknown: transitive caller",
+      "fixed_version_hints": [
+        "v0.45.0"
+      ],
+      "id": "GO-2026-6222",
+      "input_condition": "Crafted VP8L data supplied to decoder Huffman allocation.",
+      "next_evidence": "Close the decoder owner/input mapping and inspect candidate x/image version, preserving this ID separately.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-6222",
+      "osv_sha256": "fb1ad8ebe4c064d3044f828bdcfa8014f29ead6b5e373c2348a54898ebdf2e5b",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6222",
+      "reasoning": "The transfer/MIME path does not decode VP8L, but linked decoder callers remain unknown. This is a distinct memory-allocation condition from the other WebP reports.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 1
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 1
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 1
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 1
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 1
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 1
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "D",
+        "S"
+      ],
+      "summary": "Excessive memory allocation during VP8L decoding in golang.org/x/image",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "golang.org/x/image"
+      ],
+      "class": "32-bit prerequisite absent",
+      "fixed_version_hints": [
+        "v0.42.0"
+      ],
+      "id": "GO-2026-4961",
+      "input_condition": "Large WebP decoding on a 32-bit process.",
+      "next_evidence": "Keep per-artifact architecture checks; reopen if a 32-bit artifact or execution mode is introduced.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-4961",
+      "osv_sha256": "b65b557b4255af063e3ea3daeea9399fb62526c9becc6b4ee8792e9e7053ced8",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-4961",
+      "reasoning": "All six retained build metadata records are amd64 or arm64. The advisory explicitly requires 32-bit execution, which these six exact sidecars do not provide. This says nothing about the other image advisories or future additional targets.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 4
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 4
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 4
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 4
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 4
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 4
+        }
+      },
+      "source_bundles": [
+        "A",
+        "D"
+      ],
+      "summary": "Panic when decoding large WEBP image on 32-bit platforms in golang.org/x/image",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "stdlib"
+      ],
+      "class": "Conditional: not enabled",
+      "fixed_version_hints": [
+        "v1.26.6"
+      ],
+      "id": "GO-2026-5026",
+      "input_condition": "Punycode hostname canonicalization used for a privilege decision.",
+      "next_evidence": "Preserve literal-host construction, redirect refusal and absent proxy/remote overrides on every shipped binary.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-5026",
+      "osv_sha256": "7470cc28e6269ac382e6299858977b89549a98c459a515c0f339e7490b0a4621",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-5026",
+      "reasoning": "The affected standard-library HTTP symbols run in a child whose remote authority is a generated literal 127.0.0.1 address. Original hostnames stay in the parent and upstream redirects do not reach the child. This is a conditional hostname-input exclusion, not proof that all HTTP symbols are unreachable.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 2,
+          "symbol": 22
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 2,
+          "symbol": 22
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 2,
+          "symbol": 22
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 2,
+          "symbol": 22
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 2,
+          "symbol": 22
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 2,
+          "symbol": 22
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "N",
+        "S"
+      ],
+      "summary": "Invoking failure to reject ASCII-only Punycode-encoded labels in golang.org/x/net/idna",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "github.com/cloudsoda/go-smb2"
+      ],
+      "class": "Conditional: not enabled",
+      "fixed_version_hints": [
+        "v0.0.0-20260609183447-7b96c35f5f4b"
+      ],
+      "id": "GO-2026-5051",
+      "input_condition": "Crafted SMB QUERY_DIRECTORY response.",
+      "next_evidence": "Prove backend-selector confinement and keep native UNC/platform limits separate from the Go SMB advisory.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-5051",
+      "osv_sha256": "73cb530fb3591fc718c8ed0e6f93de53b8e346a28eea0617c91f76dd5f64998e",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-5051",
+      "reasoning": "Fixed remote types select Swift; absolute local paths select local. The SMB constructor and cloudsoda network session are separate and not selected. A Windows UNC local path uses OS file APIs, which is not this Go SMB client; OS SMB safety is outside this claim.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "I",
+        "Y"
+      ],
+      "summary": "Out-of-bounds read and panic in ReadDir in github.com/cloudsoda/go-smb2 and github.com/hirochachacha/go-smb2",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "github.com/go-chi/chi/v5"
+      ],
+      "class": "Conditional: not enabled",
+      "fixed_version_hints": [
+        "v5.3.0"
+      ],
+      "id": "GO-2026-5774",
+      "input_condition": "Untrusted forwarded address passed through chi RealIP.",
+      "next_evidence": "Retain the no-child-server/default-config boundary; reassess if serving, RC or a forwarding-header trust policy is added.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-5774",
+      "osv_sha256": "59aaafe03939fecc72a5dd0b872b93688877e725cfda60dbe4c754854d11e86a",
+      "primary_advisory": "https://github.com/go-chi/chi/security/advisories/GHSA-3fxj-6jh8-hvhx",
+      "reasoning": "No child serve command is selected; RC/metrics listener starts are guarded by absent options. The actual parent gateway installs its own net/http handler and does not use chi RealIP. Header presence alone does not enable this middleware.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 3
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 3
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 3
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 3
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 3
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 3
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "C",
+        "N"
+      ],
+      "summary": "Chi has an IP spoofing vulnerability in middleware.RealIP in github.com/go-chi/chi",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "github.com/go-chi/chi/v5"
+      ],
+      "class": "Conditional: not enabled",
+      "fixed_version_hints": [
+        "v5.3.0"
+      ],
+      "id": "GO-2026-5775",
+      "input_condition": "Unvalidated X-Forwarded-For used by chi RealIP.",
+      "next_evidence": "Validate guarded listener startup and parent handler identity with the exact candidate.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-5775",
+      "osv_sha256": "a882942792474d21a4cc839d948274583255dd138cbbb322a141b08bd1ce259e",
+      "primary_advisory": "https://github.com/go-chi/chi/security/advisories/GHSA-9g5q-2w5x-hmxf",
+      "reasoning": "Same inspected server-role exclusion as 5774. Keep this ID separate because the scanner inventory retains it; no duplicate-ID collapse is used to claim remediation.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 3
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 3
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 3
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 3
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 3
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 3
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "C",
+        "N"
+      ],
+      "summary": "Chi Middleware vulnerable to IP spoofing via X-Forwarded-For header in github.com/go-chi/chi",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "github.com/go-chi/chi/v5"
+      ],
+      "class": "Conditional: not enabled",
+      "fixed_version_hints": [
+        "v5.3.0"
+      ],
+      "id": "GO-2026-5777",
+      "input_condition": "Spoofed forwarding header reaches chi RealIP middleware.",
+      "next_evidence": "Retain all three chi advisory IDs and re-evaluate any server/RC enablement.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-5777",
+      "osv_sha256": "edef566ad9d02fbda7ea805cdfca44916665b68633ba1cc78167927986db75bc",
+      "primary_advisory": "https://github.com/go-chi/chi/security/advisories/GHSA-rjr7-jggh-pgcp",
+      "reasoning": "The selected commands and gateway handler do not install this middleware. This conditional exclusion depends on the unchanged fixed command/config surface, not on the package name alone.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 3
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 3
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 3
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 3
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 3
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 3
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "C",
+        "N"
+      ],
+      "summary": "Chi's RealIP Middleware allows IP spoofing via unvalidated X-Forwarded-For header in github.com/go-chi/chi",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "stdlib"
+      ],
+      "class": "Conditional: not enabled",
+      "fixed_version_hints": [
+        "v1.26.5"
+      ],
+      "id": "GO-2026-5856",
+      "input_condition": "ECH-enabled child TLS handshake exposes PSK identity.",
+      "next_evidence": "Keep TLS termination in the parent; any future direct child TLS route requires separate ECH/session-resumption analysis.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-5856",
+      "osv_sha256": "ce150471f3fb94f54d9d807a372ed03d30561beffee24cccc27b8c8c6672bece",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-5856",
+      "reasoning": "The child network route is plaintext loopback HTTP, with no TLS/ECH or proxy options supplied. Real Swift TLS is owned by the parent, whose analyzed toolchain is Go 1.27.1. No child ECH handshake is enabled in this contract.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 21
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 21
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 21
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 21
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 21
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 21
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "N",
+        "S"
+      ],
+      "summary": "Invoking Encrypted Client Hello privacy leak in crypto/tls",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "golang.org/x/net",
+        "stdlib"
+      ],
+      "class": "Conditional: not enabled",
+      "fixed_version_hints": [
+        "v0.56.0",
+        "v1.26.6"
+      ],
+      "id": "GO-2026-5942",
+      "input_condition": "Malformed SVCB/HTTPS DNS resource parsed by affected resolver.",
+      "next_evidence": "Preserve literal-host and no-proxy invariants, including startup/auth retry; reopen if child hostnames become configurable.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-5942",
+      "osv_sha256": "f521653d946af0e9e086a9f302ec271977aca1d37170f522da19bd85f8fd091c",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-5942",
+      "reasoning": "Child storage addresses are literal loopback IPv4 and no proxy host is inherited. Upstream DNS resolution occurs in the parent transport. This excludes the inspected child network lookup input; native filesystem/UNC DNS behavior is not a claim about this Go resolver.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 2,
+          "package": 2,
+          "symbol": 11
+        },
+        "darwin-arm64": {
+          "module": 2,
+          "package": 2,
+          "symbol": 11
+        },
+        "linux-amd64": {
+          "module": 2,
+          "package": 2,
+          "symbol": 11
+        },
+        "linux-arm64": {
+          "module": 2,
+          "package": 2,
+          "symbol": 11
+        },
+        "windows-amd64": {
+          "module": 2,
+          "package": 2,
+          "symbol": 11
+        },
+        "windows-arm64": {
+          "module": 2,
+          "package": 2,
+          "symbol": 11
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "N",
+        "S"
+      ],
+      "summary": "Parsing an invalid SVCB or HTTPS RR can panic in golang.org/x/net/dns/dnsmessage",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "google.golang.org/grpc"
+      ],
+      "class": "Conditional: not enabled",
+      "fixed_version_hints": [
+        "v1.82.1"
+      ],
+      "id": "GO-2026-6061",
+      "input_condition": "xDS RBAC policy or client-initiated HTTP/2 stream reset against grpc-go server.",
+      "next_evidence": "Keep server-role and transport separation explicit; do not treat every reported gRPC client frame as an independently demonstrated client defect.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-6061",
+      "osv_sha256": "9895923b90063d54ba91d14e75b547b2c9423b7c9ebfca31466a80b120c3214e",
+      "primary_advisory": "https://github.com/grpc/grpc-go/security/advisories/GHSA-hrxh-6v49-42gf",
+      "reasoning": "The primary advisory describes server RBAC and server HTTP/2 conditions despite broad client symbols in the scan. Swift uses ncw/swift HTTP, not gRPC; no child server command is enabled and the parent gateway is net/http with upstream HTTP/2 disabled.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 2,
+          "symbol": 24
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 2,
+          "symbol": 24
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 2,
+          "symbol": 24
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 2,
+          "symbol": 24
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 2,
+          "symbol": 24
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 2,
+          "symbol": 24
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "C",
+        "N",
+        "S"
+      ],
+      "summary": "Vulnerabilities in the xDS RBAC authorization engine and the HTTP/2 transport server implementation in google.golang.org/grpc",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "stdlib"
+      ],
+      "class": "Conditional: not enabled",
+      "fixed_version_hints": [
+        "v1.26.6"
+      ],
+      "id": "GO-2026-6089",
+      "input_condition": "New connection to server configured for unencrypted HTTP/2.",
+      "next_evidence": "Preserve listener/default-protocol controls; actual application artifacts still need their own toolchain evidence.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-6089",
+      "osv_sha256": "3b24856691f31dc5829945f4f77d84df1261eabd0feb04ed33585473afb48da1",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6089",
+      "reasoning": "Child server commands/RC/metrics are not enabled. The parent gateway has its own net/http server, is built under the analyzed Go 1.27.1 toolchain, and does not configure h2c. The affected child server prerequisite is absent from the inspected route.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 8
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 8
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 8
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 8
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 8
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 8
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "C",
+        "N"
+      ],
+      "summary": "Apply ReadHeaderTimeout when doing unencrypted HTTP/2 check in net/http",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "stdlib"
+      ],
+      "class": "Conditional: not enabled",
+      "fixed_version_hints": [
+        "v1.26.6"
+      ],
+      "id": "GO-2026-6090",
+      "input_condition": "Malicious client floods TLS server with state-advancing post-handshake messages.",
+      "next_evidence": "Reassess if any child TLS listener is introduced; retain parent/child role distinction in candidate review.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-6090",
+      "osv_sha256": "07e0000e8418a4ede07162731ea705e46c13e7cf3c7542127cbbc0de3432a8aa",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6090",
+      "reasoning": "The advisory describes a server attacked by a client. The rclone child neither serves TLS nor uses TLS on its loopback Swift route. Parent upstream TLS is a separate client/toolchain. TLS symbol presence alone is not this server exposure.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 20
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 20
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 20
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 20
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 20
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 20
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "C",
+        "N",
+        "S"
+      ],
+      "summary": "Limit handshake messages we are willing to accept post-handshake in crypto/tls",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "stdlib"
+      ],
+      "class": "Conditional: not enabled",
+      "fixed_version_hints": [
+        "v1.26.6"
+      ],
+      "id": "GO-2026-6091",
+      "input_condition": "Attacker value rendered in a JavaScript regexp context by html/template.",
+      "next_evidence": "Keep server/OAuth exclusion and opaque-byte controls; do not use this row as frontend XSS clearance.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-6091",
+      "osv_sha256": "33189ace599afc2f9cb391bf80e534bbe0fcce99b60bf0375b50f1db50ae195f",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6091",
+      "reasoning": "Child server and OAuth HTML flows are not selected by the fixed Swift/local commands and supplied token/URL. Object HTML bytes are copied, not rendered by Go html/template. Frontend/WebView rendering is a separate assessment.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "S",
+        "T"
+      ],
+      "summary": "Fix Javascript regexp context tracking in html/template",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "github.com/rclone/rclone"
+      ],
+      "class": "Conditional: not enabled",
+      "fixed_version_hints": [
+        "v1.75.0"
+      ],
+      "id": "GO-2026-6181",
+      "input_condition": "RC job failure returned through remote-control API.",
+      "next_evidence": "Preserve no-RC listener controls and continue separate child-log privacy tests.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-6181",
+      "osv_sha256": "145b39cf217e9981b57b1bae26a12a5006dfff703b8e64edc022cf357c904a76",
+      "primary_advisory": "https://github.com/rclone/rclone/security/advisories/GHSA-gwfq-86j8-7qhv",
+      "reasoning": "RC start is gated by an option that defaults false and cannot be supplied by the fixed flags/environment. The parent gateway is not rclone RC. Ordinary child stderr failures are a different diagnostics surface.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 4
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 4
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 4
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 4
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 4
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 4
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "C",
+        "N"
+      ],
+      "summary": "Verbose stack trace disclosure in RC API error responses in github.com/rclone/rclone",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "github.com/rclone/rclone"
+      ],
+      "class": "Conditional: not enabled",
+      "fixed_version_hints": [
+        "v1.75.0"
+      ],
+      "id": "GO-2026-6182",
+      "input_condition": "Attacker filename interpolated into a remote SFTP PowerShell command.",
+      "next_evidence": "Keep backend-spec and argv controls; do not equate this exclusion with all Windows filename safety.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-6182",
+      "osv_sha256": "885a7406dfd659d43a178ac93a55324afad8c115467db5375bac49f3bab9cdda",
+      "primary_advisory": "https://github.com/rclone/rclone/security/advisories/GHSA-2m8m-jhrm-w6j2",
+      "reasoning": "The affected quoting helper is called by SFTP, whose constructor is not selected by fixed Swift or absolute local specs. Windows local transfers use native file operations, and the parent starts the child with exec.Command, not a shell.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 2
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "Q",
+        "Y"
+      ],
+      "summary": "Command execution via PowerShell smart quotes in github.com/rclone/rclone",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "github.com/rclone/rclone"
+      ],
+      "class": "Conditional: not enabled",
+      "fixed_version_hints": [
+        "v1.75.0"
+      ],
+      "id": "GO-2026-6183",
+      "input_condition": "WebDAV Infinite Scale TUS transport failure yields nil response.",
+      "next_evidence": "Preserve factory selection; retain independent Swift transport-error/cancellation behavior in the compatibility gate.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-6183",
+      "osv_sha256": "883b38e8fa22d5d82552bfa205b15acf9601ff9a266fe34ddadb498d67aef513",
+      "primary_advisory": "https://github.com/rclone/rclone/security/advisories/GHSA-3x6r-wxxg-53vv",
+      "reasoning": "The TUS helper belongs to WebDAV Fs. Inspected Swift construction selects ncw/swift and its ordinary request/upload API, so the TUS response path is not enabled by these fixed remote types.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 44
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 44
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 44
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 44
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 44
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 44
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "S",
+        "W"
+      ],
+      "summary": "Nil pointer dereference in Infinite Scale TUS uploads in github.com/rclone/rclone",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "github.com/rclone/rclone"
+      ],
+      "class": "Conditional: not enabled",
+      "fixed_version_hints": [
+        "v1.75.0"
+      ],
+      "id": "GO-2026-6184",
+      "input_condition": "Traversal request to rclone serve restic.",
+      "next_evidence": "Keep serve/RC disabled and test gateway confinement separately; this does not clear filesystem root authority.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-6184",
+      "osv_sha256": "b3eb43f6f023e6858162186193c161ed03eec42dac25e5148b11fab51d2aa560",
+      "primary_advisory": "https://github.com/rclone/rclone/security/advisories/GHSA-45pq-889g-fcgh",
+      "reasoning": "The affected middleware is installed by the separate restic server command, which is not an allowed invocation. The application gateway has a different handler/path policy and does not reuse that middleware.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 6
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 6
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 6
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 6
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 6
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 6
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "C",
+        "N"
+      ],
+      "summary": "Path traversal in serve restic in github.com/rclone/rclone",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "github.com/rclone/rclone"
+      ],
+      "class": "Conditional: not enabled",
+      "fixed_version_hints": [
+        "v1.74.4"
+      ],
+      "id": "GO-2026-6185",
+      "input_condition": "Crafted member paths processed by archive extract.",
+      "next_evidence": "Retain fixed-command controls and opaque archive-byte compatibility cases; reassess future extraction features.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-6185",
+      "osv_sha256": "cc03c99d57d32e6aebb801d8463409a0c220b1915c1f8e87266bf0e5b6ca39d2",
+      "primary_advisory": "https://github.com/rclone/rclone/security/advisories/GHSA-4vr5-p2gc-h23p",
+      "reasoning": "ArchiveExtract is a distinct command function. copy/copyto pass object bytes to selected backends without archive extraction; an archive object name or content type does not itself select this command.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 1
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 1
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 1
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 1
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 1
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 1
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "D",
+        "X"
+      ],
+      "summary": "Path traversal via crafted archive paths in github.com/rclone/rclone",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "github.com/rclone/rclone"
+      ],
+      "class": "Conditional: not enabled",
+      "fixed_version_hints": [
+        "v1.75.0"
+      ],
+      "id": "GO-2026-6186",
+      "input_condition": "Remote names decoded under local encoding omitting Dot or Windows BackSlash.",
+      "next_evidence": "Verify effective masks/flags on each candidate and platform; retain original-name/collateral checks and the separate P18 hold.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-6186",
+      "osv_sha256": "24dfd9a9544821c0adafdfc78d4447c4d7cb1e18f008de28ccad0dc581dbe723",
+      "primary_advisory": "https://github.com/rclone/rclone/security/advisories/GHSA-7p4m-qxvv-g567",
+      "reasoning": "Local conversion is enabled and names are untrusted. The required nondefault encoder is not exposed: default OS masks include Dot and Windows BackSlash, with no flag/config/env override. This excludes the documented encoding prerequisite only; pre-existing symlinks and concurrent filesystem changes remain P18 concerns.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 24
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 24
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 24
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 24
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 24
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 24
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "D",
+        "L",
+        "Y"
+      ],
+      "summary": "Path traversal via local backend encoding in github.com/rclone/rclone",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "github.com/rclone/rclone"
+      ],
+      "class": "Conditional: not enabled",
+      "fixed_version_hints": [
+        "v1.75.0"
+      ],
+      "id": "GO-2026-6187",
+      "input_condition": "Crafted name reaches FTP commands under custom encoding.",
+      "next_evidence": "Preserve selector/encoding exclusion and re-evaluate any future FTP or generic remote surface.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-6187",
+      "osv_sha256": "3e68581876d4736f3131ac1612e5b5d80d1cdd112f30a2be47cfd3f937d0dd07",
+      "primary_advisory": "https://github.com/rclone/rclone/security/advisories/GHSA-8c48-q9wj-3w37",
+      "reasoning": "FTP construction and custom FTP encoding are not selected by fixed Swift/local specs. This conclusion follows the actual backend selector and option boundary; it is not based just on the advisory title.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 1
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 1
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 1
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 1
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 1
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 1
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "F",
+        "S"
+      ],
+      "summary": "FTP command injection via custom encoding in github.com/rclone/rclone",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "github.com/rclone/rclone"
+      ],
+      "class": "Conditional: not enabled",
+      "fixed_version_hints": [
+        "v1.75.0"
+      ],
+      "id": "GO-2026-6188",
+      "input_condition": "Sensitive S3 headers survive backend redirect handling.",
+      "next_evidence": "Retain Swift real-child redirect tests; do not use an S3 fix or this exclusion to assert generic Swift redirect safety.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-6188",
+      "osv_sha256": "9903f48df25bf84de85b22cca0fe28e16a9a3116e62577466a049dc6e3a64648",
+      "primary_advisory": "https://github.com/rclone/rclone/security/advisories/GHSA-8mxv-9xhp-86h4",
+      "reasoning": "The S3 constructor builds an AWS client that the Swift constructor does not use. Shared ordinary HTTP transport does not by itself install S3 header logic. Independently, the gateway refuses upstream redirects before the Swift child receives them.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 35
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 35
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 35
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 35
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 35
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 35
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "N",
+        "O",
+        "S"
+      ],
+      "summary": "S3 redirect sanitization omits sensitive headers in github.com/rclone/rclone",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "github.com/rclone/rclone"
+      ],
+      "class": "Conditional: not enabled",
+      "fixed_version_hints": [
+        "v1.74.4"
+      ],
+      "id": "GO-2026-6189",
+      "input_condition": "Crafted object path sent to rclone serve s3.",
+      "next_evidence": "Maintain no-server controls and independently test app gateway path/authority behavior.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-6189",
+      "osv_sha256": "7c9af77ae03a382df74738da20daf332fa7b769d2ba0be9b8e75790a1d3f4ce1",
+      "primary_advisory": "https://github.com/rclone/rclone/security/advisories/GHSA-8v25-v8p6-qf7v",
+      "reasoning": "The S3 server is a separate command, not an enabled backend or gateway handler. It is not started by fixed copy/copyto invocations with RC/metrics defaults.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 17
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 17
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 17
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 17
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 17
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 17
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "C",
+        "N"
+      ],
+      "summary": "Path traversal in serve s3 in github.com/rclone/rclone",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "github.com/rclone/rclone"
+      ],
+      "class": "Conditional: not enabled",
+      "fixed_version_hints": [
+        "v1.74.4"
+      ],
+      "id": "GO-2026-6190",
+      "input_condition": "Untrusted mode/uid metadata restored to local destination.",
+      "next_evidence": "Retain effective metadata-off controls and per-platform output permission witnesses; do not enable metadata to improve fidelity without review.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-6190",
+      "osv_sha256": "bca1b5c2014e0e53e0cbfd659ea8842a8041588e20997a01f2c29883b3819610",
+      "primary_advisory": "https://github.com/rclone/rclone/security/advisories/GHSA-945v-v9p3-v5xw",
+      "reasoning": "Local writes are enabled, but metadata preservation defaults false and the wrapper supplies no metadata option/config/env. GetMetadataOptions returns before reading source metadata when disabled. This does not claim default file mode, native metadata or cleanup behavior is safe.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 19
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 19
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 19
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 19
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 19
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 19
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "D",
+        "M"
+      ],
+      "summary": "Unsafe file permission restoration from metadata in github.com/rclone/rclone",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "github.com/rclone/rclone"
+      ],
+      "class": "Conditional: not enabled",
+      "fixed_version_hints": [
+        "v1.74.4"
+      ],
+      "id": "GO-2026-6191",
+      "input_condition": "Untrusted translated .rclonelink target created under --links.",
+      "next_evidence": "Preserve effective links-off controls and opaque .rclonelink file behavior; retain distinct existing-link/rename/cleanup negative controls.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-6191",
+      "osv_sha256": "60755a17191b66422eeb97f91ae10e968fca888d85f5df03e445b75a068ac4b0",
+      "primary_advisory": "https://github.com/rclone/rclone/security/advisories/GHSA-cf44-9pgv-m4xc",
+      "reasoning": "Link translation and copy-links both default false and cannot be added through the fixed wrapper surface. That removes the described translated-link input path. Ordinary path-based writes can still follow existing descendant links, so this is not a P18 symlink-confinement disposition.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 21
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 21
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 21
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 21
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 21
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 21
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "D",
+        "Y"
+      ],
+      "summary": "Arbitrary file write via --links symlinks in github.com/rclone/rclone",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "github.com/rclone/rclone"
+      ],
+      "class": "Conditional: not enabled",
+      "fixed_version_hints": [
+        "v1.74.4"
+      ],
+      "id": "GO-2026-6195",
+      "input_condition": "Restic server private-folder authorization middleware.",
+      "next_evidence": "Keep serving unavailable and re-review if any rclone server role becomes supported.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-6195",
+      "osv_sha256": "0aee822fdc2760dcdfe44ee4cb2584de8c160b4028ed7044b74bcaa1a5f65e01",
+      "primary_advisory": "https://github.com/rclone/rclone/security/advisories/GHSA-fqj9-69pf-6pjg",
+      "reasoning": "No restic server command is invoked. Its authenticated-user/folder middleware is separate from the parent storage gateway. Keep this authorization advisory distinct from the restic path-traversal ID.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 6
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 6
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 6
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 6
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 6
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 6
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "C",
+        "N"
+      ],
+      "summary": "Authorization bypass in serve restic in github.com/rclone/rclone",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "github.com/rclone/rclone"
+      ],
+      "class": "Conditional: not enabled",
+      "fixed_version_hints": [
+        "v1.74.4"
+      ],
+      "id": "GO-2026-6196",
+      "input_condition": "S3 session token on HTTPS-to-HTTP redirect.",
+      "next_evidence": "Preserve backend selection and all real-child Swift redirect/token controls on the candidate.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-6196",
+      "osv_sha256": "88f0d07ff76a3920720a76a8d92bba6aceb38298831d5cf87295c4983c5569f5",
+      "primary_advisory": "https://github.com/rclone/rclone/security/advisories/GHSA-gx4c-2hqx-cw2r",
+      "reasoning": "No S3 remote/client or S3 session token is configured; Swift has a different client and token field. The parent gateway separately refuses redirects and retains the real Swift token. This is a conditional S3-path exclusion, not a general credential-leak guarantee.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 35
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 35
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 35
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 35
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 35
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 35
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "N",
+        "O",
+        "S"
+      ],
+      "summary": "S3 session token leakage on HTTPS to HTTP redirect in github.com/rclone/rclone",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "github.com/rclone/rclone"
+      ],
+      "class": "Conditional: not enabled",
+      "fixed_version_hints": [
+        "v1.75.0"
+      ],
+      "id": "GO-2026-6197",
+      "input_condition": "WebDAV authorization across downgrade redirect, including shared REST callback.",
+      "next_evidence": "Inventory any future REST helper caller before reusing it; retain independent Swift downgrade/same-host/cross-host tests.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-6197",
+      "osv_sha256": "248dca8618d130b3957bb516f32a6cc9388b627dc1a85195f37210046be5c967",
+      "primary_advisory": "https://github.com/rclone/rclone/security/advisories/GHSA-h4mf-4v27-hggj",
+      "reasoning": "The shared PreserveMethodRedirectFn is installed by inspected WebDAV code. Swift uses ncw/swift instead of this REST callback, and the gateway suppresses redirects. Exclusion is based on the caller/transport distinction, not merely the WebDAV label.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 2,
+          "symbol": 45
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 2,
+          "symbol": 45
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 2,
+          "symbol": 45
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 2,
+          "symbol": 45
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 2,
+          "symbol": 45
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 2,
+          "symbol": 45
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "N",
+        "S",
+        "W"
+      ],
+      "summary": "WebDAV credential leakage on HTTPS to HTTP redirect in github.com/rclone/rclone",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "github.com/rclone/rclone"
+      ],
+      "class": "Conditional: not enabled",
+      "fixed_version_hints": [
+        "v1.75.0"
+      ],
+      "id": "GO-2026-6199",
+      "input_condition": "Unbounded response from configured HTTP CONNECT proxy.",
+      "next_evidence": "Preserve no-proxy/no-other-backend controls, including startup and retries; reassess proxy support before enabling it.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-6199",
+      "osv_sha256": "b2544421b2172fe329fb0e28967080ca00fc5f0ed3880bebff92f391bf8f00d4",
+      "primary_advisory": "https://github.com/rclone/rclone/security/advisories/GHSA-xhf4-832v-7xcr",
+      "reasoning": "The shared helper is called by inspected FTP/SFTP proxy paths. Swift uses ordinary fshttp transport; fixed environment omits proxy variables and no proxy flag is supplied. Its literal loopback route does not request CONNECT, while parent upstream transport has no proxy configured.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 1
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 1
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 1
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 1
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 1
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 1
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "N",
+        "S",
+        "F",
+        "Q",
+        "P"
+      ],
+      "summary": "Resource exhaustion via unbounded HTTP CONNECT response in github.com/rclone/rclone",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "golang.org/x/crypto"
+      ],
+      "class": "Conditional: not enabled",
+      "fixed_version_hints": [
+        "v0.55.0"
+      ],
+      "id": "GO-2026-6303",
+      "input_condition": "SSH server accepts permissions from non-public-key authentication callback.",
+      "next_evidence": "Keep server/backend selection constraints; do not infer protection for any future SSH role.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-6303",
+      "osv_sha256": "43adfd5e5e2c30d8b050f7026188768eb275f3b08040e8ff074ab6ab3e3f3fdc",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6303",
+      "reasoning": "This requires an SSH server authentication callback. Fixed commands do not serve SSH; the selected Swift/local byte routes do not construct an SSH server. SFTP client code, although linked, is also not the selected route.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 3
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 3
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 3
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 3
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 3
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 3
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "C",
+        "Q",
+        "S"
+      ],
+      "summary": "Source-address critical option not enforced for non-public-key auth callbacks in golang.org/x/crypto/ssh",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "golang.org/x/crypto"
+      ],
+      "class": "Conditional: not enabled",
+      "fixed_version_hints": [
+        "v0.56.0"
+      ],
+      "id": "GO-2026-6354",
+      "input_condition": "Malicious SSH peer deadlocks an undecided channel.",
+      "next_evidence": "Retain both client-backend and server-role exclusions; candidate SSH library fixes remain desirable for inventory maintenance.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-6354",
+      "osv_sha256": "e202377be645bcc1a46b2f3246b95740b9a6b548f135d99f11d48adbdf56a58c",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6354",
+      "reasoning": "This advisory applies to SSH clients as well as servers, so server absence alone is insufficient. Inspected SFTP code is the SSH-client constructor; fixed Swift/local specs select neither SFTP nor an SSH server. Local UNC is a native file route, not SSH.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 10
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 10
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 10
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 10
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 10
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 10
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "C",
+        "Q",
+        "S",
+        "Y"
+      ],
+      "summary": "Prevent DoS on deadlocked undecided channel in golang.org/x/crypto/ssh",
+      "trigger_executed": false
+    },
+    {
+      "accepted_disposition": false,
+      "affected_modules_observed": [
+        "golang.org/x/crypto"
+      ],
+      "class": "Conditional: not enabled",
+      "fixed_version_hints": [
+        "v0.56.0"
+      ],
+      "id": "GO-2026-6355",
+      "input_condition": "Malicious SSH peer deadlocks an established channel.",
+      "next_evidence": "Keep this separate protocol-state condition in candidate inventory and re-evaluate any SSH/SFTP support.",
+      "official_go_advisory": "https://pkg.go.dev/vuln/GO-2026-6355",
+      "osv_sha256": "b4e70d7ebbc52c44a4e2e9b40a19277a97ef987a5cecb05b7639c4245afb1f88",
+      "primary_advisory": "https://pkg.go.dev/vuln/GO-2026-6355",
+      "reasoning": "The same client-and-server prerequisite applies as 6354. No SSH transport is selected by the fixed route contract; shared symbol presence is retained rather than collapsed into the preceding ID.",
+      "six_target_symbol_presence": {
+        "darwin-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 9
+        },
+        "darwin-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 9
+        },
+        "linux-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 9
+        },
+        "linux-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 9
+        },
+        "windows-amd64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 9
+        },
+        "windows-arm64": {
+          "module": 1,
+          "package": 1,
+          "symbol": 9
+        }
+      },
+      "source_bundles": [
+        "A",
+        "B",
+        "C",
+        "Q",
+        "S",
+        "Y"
+      ],
+      "summary": "Prevent DoS on deadlocked established channel in golang.org/x/crypto/ssh",
+      "trigger_executed": false
+    }
+  ],
+  "advisory_count": 42,
+  "application_source_head": "f88114958c7f5211b8953e0c757687146a4c4f5d",
+  "citations": 88,
+  "counts": {
+    "32-bit prerequisite absent": 1,
+    "Conditional: not enabled": 29,
+    "Unknown: shared input": 2,
+    "Unknown: transitive caller": 10
+  },
+  "engine": "rclone v1.74.3, six accepted sidecars",
+  "frozen_inputs": {
+    "baseline_assessment_sha256": "7d3f63184ef57fcde5bc42db6cda0606a2178686625c4bf9cab51fb32df1898f",
+    "draft_dispositions_sha256": "ff765dacbac6370b21d2a2f308fa8832c28828bf687985a5488cc9995992aaa2",
+    "draft_readme_sha256": "64f9d94c86f1c1d6e1d2ae9ace2a6abe5b25d06fdbf80ee4df125a8ebc7e6099",
+    "draft_table_sha256": "f2a34114370b44f8161506fb230bb16df4edb6ea2b929db3b8654830a2b5fe9b",
+    "frozen_assessment_manifest_sha256": "b53ca3682313b28bee768af98f89a96bfdb3b3ece2db984afb26f8aa963a863d",
+    "public_rclone_source_file_hashes": "rclone-source-provenance.json#regular_file_sha256",
+    "public_rclone_source_files": 49
+  },
+  "independent_approval": false,
+  "p31_complete": false,
+  "rclone_public_source_revision": "37e4117f48bdef0fa1ba27f6467d7a891b0b55ba",
+  "recorded": "2026-09-12T04:44:15.702843+00:00",
+  "source_bundles": {
+    "A": [
+      {
+        "line": 321,
+        "line_text": "\targs := []string{\"copy\", \"--no-traverse\", \"--ignore-times\", \"--use-json-log\", \"-vv\", \"--stats\", \"1s\",",
+        "owner": "app",
+        "path": "app/internal/transfer/rclone/runner.go",
+        "public_source": null,
+        "reason": "Copy and CopyTo commands are constructed, with a final -- separator.",
+        "sha256": "ad87bfb187a3b9229866c56c6b9d3823b26f2c30eb6c72f472bc9ee71e32f016"
+      },
+      {
+        "line": 360,
+        "line_text": "\targs := []string{\"copyto\", \"--ignore-times\", \"--use-json-log\", \"-vv\", \"--stats\", \"1s\", \"--config\", configPath}",
+        "owner": "app",
+        "path": "app/internal/transfer/rclone/runner.go",
+        "public_source": null,
+        "reason": "The second transfer command is copyto.",
+        "sha256": "ad87bfb187a3b9229866c56c6b9d3823b26f2c30eb6c72f472bc9ee71e32f016"
+      },
+      {
+        "line": 186,
+        "line_text": "\tprobe := exec.CommandContext(probeCtx, binary, \"version\")",
+        "owner": "app",
+        "path": "app/internal/transfer/rclone/runner.go",
+        "public_source": null,
+        "reason": "The version probe passes version without --check.",
+        "sha256": "ad87bfb187a3b9229866c56c6b9d3823b26f2c30eb6c72f472bc9ee71e32f016"
+      },
+      {
+        "line": 25,
+        "line_text": "\tcheck = false",
+        "owner": "rclone",
+        "path": "rclone/cmd/version/version.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/cmd/version/version.go#L25",
+        "reason": "Online version checking defaults false.",
+        "sha256": "fe3aa2737361739a68d9412b66a5d501ff884febb299a26ba707c0ebbfc552ea"
+      },
+      {
+        "line": 439,
+        "line_text": "\tcmd := exec.Command(r.binary, args...)",
+        "owner": "app",
+        "path": "app/internal/transfer/rclone/runner.go",
+        "public_source": null,
+        "reason": "Child is exec.Command with an explicit argv, not a shell.",
+        "sha256": "ad87bfb187a3b9229866c56c6b9d3823b26f2c30eb6c72f472bc9ee71e32f016"
+      }
+    ],
+    "B": [
+      {
+        "line": 370,
+        "line_text": "func (r *Runner) pacingArgs() []string {",
+        "owner": "app",
+        "path": "app/internal/transfer/rclone/runner.go",
+        "public_source": null,
+        "reason": "Pacing options are the only appended configurable flags.",
+        "sha256": "ad87bfb187a3b9229866c56c6b9d3823b26f2c30eb6c72f472bc9ee71e32f016"
+      },
+      {
+        "line": 403,
+        "line_text": "func buildEnvironment(workDir string, remotes []Remote) (configPath string, env []string, err error) {",
+        "owner": "app",
+        "path": "app/internal/transfer/rclone/runner.go",
+        "public_source": null,
+        "reason": "Empty config; PATH and private HOME plus fixed Swift remote fields only.",
+        "sha256": "ad87bfb187a3b9229866c56c6b9d3823b26f2c30eb6c72f472bc9ee71e32f016"
+      },
+      {
+        "line": 85,
+        "line_text": "\t\tif (remote.Name != \"aeronautes_src\" && remote.Name != \"aeronautes_dst\") || seen[remote.Name] {",
+        "owner": "app",
+        "path": "app/internal/transfer/rclone/gateway.go",
+        "public_source": null,
+        "reason": "Remote names must be the two fixed names.",
+        "sha256": "61a51ba96efc5bb918bb041272a7404b3d95304e2ba21aa0dc5c3ac5115504f6"
+      },
+      {
+        "line": 164,
+        "line_text": "func ParseRemote(path string) (fsInfo *RegInfo, configName, fsPath string, connectionStringConfig configmap.Simple, err error) {",
+        "owner": "rclone",
+        "path": "rclone/fs/newfs.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/fs/newfs.go#L164",
+        "reason": "Backend is selected from the remote type; paths without a remote name select local.",
+        "sha256": "dbdb53257366165bf64cdc641aca76528b201ed155c07424c883a1636b627530"
+      },
+      {
+        "line": 66,
+        "line_text": "func validUploadPath(path string) bool {",
+        "owner": "app",
+        "path": "app/internal/transfer/local/local.go",
+        "public_source": null,
+        "reason": "Local upload input is an absolute clean UTF-8 path.",
+        "sha256": "03da5aff91a73ae68fce62d0fa4c799bb8c925828e7a15c88e97e69a7d00281d"
+      },
+      {
+        "line": 155,
+        "line_text": "func validDownloadRoot(path string) bool {",
+        "owner": "app",
+        "path": "app/internal/transfer/local/local.go",
+        "public_source": null,
+        "reason": "Selected download root is an absolute clean UTF-8 path.",
+        "sha256": "03da5aff91a73ae68fce62d0fa4c799bb8c925828e7a15c88e97e69a7d00281d"
+      }
+    ],
+    "C": [
+      {
+        "line": 20,
+        "line_text": "// OptionsInfo describes the Options in use",
+        "owner": "rclone",
+        "path": "rclone/fs/rc/rc.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/fs/rc/rc.go#L20",
+        "reason": "Remote-control option defaults false.",
+        "sha256": "eca952eb868131b3e2d5ecc106166027568801e8af2582c0ce24d66fb5d4e1d7"
+      },
+      {
+        "line": 424,
+        "line_text": "\t// Start the remote control server if configured",
+        "owner": "rclone",
+        "path": "rclone/cmd/cmd.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/cmd/cmd.go#L424",
+        "reason": "Global startup delegates to guarded RC and metrics starts.",
+        "sha256": "b559a7b0a1360cc2a6ed72f157501e34772723bbc5a1cfcc25fcf26ae960a3f9"
+      },
+      {
+        "line": 38,
+        "line_text": "func Start(ctx context.Context, opt *rc.Options) (*Server, error) {",
+        "owner": "rclone",
+        "path": "rclone/fs/rc/rcserver/rcserver.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/fs/rc/rcserver/rcserver.go#L38",
+        "reason": "No RC listener starts unless Enabled is true.",
+        "sha256": "cf0cd25d3005e305d836b4fbc5f4d03fb95b5812072bd063ecf378173c1811b6"
+      },
+      {
+        "line": 38,
+        "line_text": "func MetricsStart(ctx context.Context, opt *rc.Options) (*MetricsServer, error) {",
+        "owner": "rclone",
+        "path": "rclone/fs/rc/rcserver/metrics.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/fs/rc/rcserver/metrics.go#L38",
+        "reason": "Metrics listener requires configured addresses.",
+        "sha256": "521984c475ac27241f130887eb8f77aaee467ed08e4f22ed13f950954b45160b"
+      },
+      {
+        "line": 192,
+        "line_text": "\tRun: func(command *cobra.Command, args []string) {",
+        "owner": "rclone",
+        "path": "rclone/cmd/serve/restic/restic.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/cmd/serve/restic/restic.go#L192",
+        "reason": "Restic starts from its own selected command.",
+        "sha256": "51f13038acf0109b22c63c6dfe9a2d0b764ad00d44055ce798b1ffa1dc6e5922"
+      },
+      {
+        "line": 106,
+        "line_text": "\tUse:   \"s3 remote:path\",",
+        "owner": "rclone",
+        "path": "rclone/cmd/serve/s3/s3.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/cmd/serve/s3/s3.go#L106",
+        "reason": "S3 server is a separate command.",
+        "sha256": "b8f5dec628b1219b4c9c70d35d30c6f16dc750abb05540abed8c2ce4a04903bf"
+      },
+      {
+        "line": 94,
+        "line_text": "\tSetDefault(\"metrics_addr\", []string{})",
+        "owner": "rclone",
+        "path": "rclone/fs/rc/rc.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/fs/rc/rc.go#L94",
+        "reason": "Metrics listen addresses default to an empty list.",
+        "sha256": "eca952eb868131b3e2d5ecc106166027568801e8af2582c0ce24d66fb5d4e1d7"
+      }
+    ],
+    "D": [
+      {
+        "line": 263,
+        "line_text": "\t\t\treport, err := local.Upload(innerCtx, session, engine, \"aeronautes_dst:\"+req.Container, req.Container, req.Prefix, job.ID,",
+        "owner": "app",
+        "path": "app/internal/app/localtransferservice.go",
+        "public_source": null,
+        "reason": "Upload uses fixed destination remote spec.",
+        "sha256": "14333b2deb403bdb808ff08765bb569039f56119e38063f4b85e83dec9da6936"
+      },
+      {
+        "line": 339,
+        "line_text": "\t\t\treturn local.Download(innerCtx, session, engine, \"aeronautes_src:\"+req.Container, req.Container, req.Prefix, destDir, job.ID, preflight, onProgress,",
+        "owner": "app",
+        "path": "app/internal/app/localtransferservice.go",
+        "public_source": null,
+        "reason": "Download uses fixed source remote spec and selected local directory.",
+        "sha256": "14333b2deb403bdb808ff08765bb569039f56119e38063f4b85e83dec9da6936"
+      },
+      {
+        "line": 321,
+        "line_text": "\t\tresult, err = e.cfg.Engine.Copy(ctx, e.enginePath(e.cfg.SrcSpec, e.cfg.SrcPrefix),",
+        "owner": "app",
+        "path": "app/internal/transfer/copy/executor.go",
+        "public_source": null,
+        "reason": "Cross-account Copy passes fixed remote specs into the same runner.",
+        "sha256": "39ca0fc9b6f9152e395d7a08d6124ce710b18ccdeb7c26247413f5870a85e43f"
+      },
+      {
+        "line": 152,
+        "line_text": "\tresult, err := d.copy(ctx, src, engine, srcSpec+\"/\"+strings.TrimSuffix(prefix, \"/\"), stageDir, engineNames)",
+        "owner": "app",
+        "path": "app/internal/transfer/local/download_execute.go",
+        "public_source": null,
+        "reason": "Engine download writes to generated local stage before native placement.",
+        "sha256": "f5e84024a44bd0251c3752f9bb67c7cc9ef39ecf943e9df235beea34d66434c7"
+      },
+      {
+        "line": 213,
+        "line_text": "func (c *copy) updateOrPut(ctx context.Context, in io.ReadCloser, uploadOptions []fs.OpenOption) (actionTaken string, newDst fs.Object, err error) {",
+        "owner": "rclone",
+        "path": "rclone/fs/operations/copy.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/fs/operations/copy.go#L213",
+        "reason": "Manual copy passes the source byte reader to the selected destination backend.",
+        "sha256": "57e4a678282a91197c5d66e475cafe0219b329dce7cb9955300867622dd28767"
+      },
+      {
+        "line": 244,
+        "line_text": "func (c *copy) manualCopy(ctx context.Context) (actionTaken string, newDst fs.Object, err error) {",
+        "owner": "rclone",
+        "path": "rclone/fs/operations/copy.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/fs/operations/copy.go#L244",
+        "reason": "Manual copy opens object bytes; this path does not select an image or archive decoder.",
+        "sha256": "57e4a678282a91197c5d66e475cafe0219b329dce7cb9955300867622dd28767"
+      },
+      {
+        "line": 47,
+        "line_text": "func MimeTypeFromName(remote string) (mimeType string) {",
+        "owner": "rclone",
+        "path": "rclone/fs/mimetype.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/fs/mimetype.go#L47",
+        "reason": "MIME fallback uses name extension, not image decoding.",
+        "sha256": "ac8207736146ed1459559ce3aa902dba9a1fd810a014a8269e787a0c7661b9e2"
+      }
+    ],
+    "F": [
+      {
+        "line": 49,
+        "line_text": "\t\tName:        \"ftp\",",
+        "owner": "rclone",
+        "path": "rclone/backend/ftp/ftp.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/backend/ftp/ftp.go#L49",
+        "reason": "FTP has a distinct registered constructor.",
+        "sha256": "61d86b683292f697ddba25817be90de7190b8b8674153f3c1a48db6e5e8e95b8"
+      },
+      {
+        "line": 464,
+        "line_text": "\t\tbaseDialer := fshttp.NewDialer(ctx)",
+        "owner": "rclone",
+        "path": "rclone/backend/ftp/ftp.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/backend/ftp/ftp.go#L464",
+        "reason": "FTP invokes CONNECT helper only when its proxy is configured.",
+        "sha256": "61d86b683292f697ddba25817be90de7190b8b8674153f3c1a48db6e5e8e95b8"
+      }
+    ],
+    "H": [
+      {
+        "line": 650,
+        "line_text": "\t\t\tu, err := req.URL.Parse(loc)",
+        "owner": "go",
+        "path": "go/src/net/http/client.go",
+        "public_source": "https://github.com/golang/go/blob/go1.26.4/src/net/http/client.go#L650",
+        "reason": "Redirect handling reads Location then calls URL.Parse before CheckRedirect.",
+        "sha256": "908d9d964cd157899b60e7ba839befa4bfd398b4fb8f7ff5a1aa389eae75f652"
+      },
+      {
+        "line": 1098,
+        "line_text": "func (u *URL) Parse(ref string) (*URL, error) {",
+        "owner": "go",
+        "path": "go/src/net/url/url.go",
+        "public_source": "https://github.com/golang/go/blob/go1.26.4/src/net/url/url.go#L1098",
+        "reason": "URL.Parse resolves a reference, unlike the package Parse function.",
+        "sha256": "17db8d6dc5764b64716060625495f308fd9179c8ab0310686e9ddfc9c5e7d6fa"
+      },
+      {
+        "line": 1112,
+        "line_text": "func (u *URL) ResolveReference(ref *URL) *URL {",
+        "owner": "go",
+        "path": "go/src/net/url/url.go",
+        "public_source": "https://github.com/golang/go/blob/go1.26.4/src/net/url/url.go#L1112",
+        "reason": "ResolveReference calls resolvePath.",
+        "sha256": "17db8d6dc5764b64716060625495f308fd9179c8ab0310686e9ddfc9c5e7d6fa"
+      },
+      {
+        "line": 9,
+        "line_text": "// URLJoin joins a URL and a path returning a new URL",
+        "owner": "rclone",
+        "path": "rclone/lib/rest/url.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/lib/rest/url.go#L9",
+        "reason": "The shared REST URLJoin helper resolves a reference; inspected Swift constructor uses ncw/swift instead.",
+        "sha256": "48c1939600941b9987313786394cedfad900d8b809bc182c8609e4ca08b299f0"
+      }
+    ],
+    "I": [
+      {
+        "line": 41,
+        "line_text": "\t\tName:        \"smb\",",
+        "owner": "rclone",
+        "path": "rclone/backend/smb/smb.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/backend/smb/smb.go#L41",
+        "reason": "SMB has a distinct registered constructor.",
+        "sha256": "59257ff71f27c585c60d01180faa698d124512590f53e10780fad2e1fa49385d"
+      },
+      {
+        "line": 24,
+        "line_text": "func (f *Fs) dial(ctx context.Context, network, addr string) (*conn, error) {",
+        "owner": "rclone",
+        "path": "rclone/backend/smb/connpool.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/backend/smb/connpool.go#L24",
+        "reason": "SMB Fs dials a network connection.",
+        "sha256": "62a4f2f4228806c1098e38ce43079b1096199b2fecd1890266264e6151119d60"
+      },
+      {
+        "line": 64,
+        "line_text": "\tsession, err := d.DialConn(ctx, tconn, addr)",
+        "owner": "rclone",
+        "path": "rclone/backend/smb/connpool.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/backend/smb/connpool.go#L64",
+        "reason": "SMB connection uses cloudsoda DialConn; native local filesystem helper is separate.",
+        "sha256": "62a4f2f4228806c1098e38ce43079b1096199b2fecd1890266264e6151119d60"
+      }
+    ],
+    "L": [
+      {
+        "line": 758,
+        "line_text": "func (f *Fs) localPath(name string) string {",
+        "owner": "rclone",
+        "path": "rclone/backend/local/local.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/backend/local/local.go#L758",
+        "reason": "Local names pass through encoding then filepath.Join.",
+        "sha256": "7ede36a8051257c38115e81e39aa04a31c56d67f59d28f7c5f17d6a95ed135c3"
+      },
+      {
+        "line": 327,
+        "line_text": "\t\t\t\tName:     config.ConfigEncoding,",
+        "owner": "rclone",
+        "path": "rclone/backend/local/local.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/backend/local/local.go#L327",
+        "reason": "Default local encoding is encoder.OS.",
+        "sha256": "7ede36a8051257c38115e81e39aa04a31c56d67f59d28f7c5f17d6a95ed135c3"
+      },
+      {
+        "line": 16,
+        "line_text": "const Base = (EncodeZero |",
+        "owner": "rclone",
+        "path": "rclone/lib/encoder/standard.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/lib/encoder/standard.go#L16",
+        "reason": "Base includes EncodeDot.",
+        "sha256": "c2ad677dd0847be3679632d7d1049f57fe97d13d357cb7476039865028322d51"
+      },
+      {
+        "line": 6,
+        "line_text": "const OS = Base",
+        "owner": "rclone",
+        "path": "rclone/lib/encoder/os_other.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/lib/encoder/os_other.go#L6",
+        "reason": "Linux defaults to Base.",
+        "sha256": "b7ce6c47b479484e0116e1f09f1781938b8394ee2289d4192724eb4ff9df3cfb"
+      },
+      {
+        "line": 8,
+        "line_text": "const OS = (Base |",
+        "owner": "rclone",
+        "path": "rclone/lib/encoder/os_darwin.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/lib/encoder/os_darwin.go#L8",
+        "reason": "Darwin defaults include Base.",
+        "sha256": "fc31921f690fc33d2cb4c6f69da5fe973749cd3506e1659d1c8e8ea55620620a"
+      },
+      {
+        "line": 27,
+        "line_text": "const OS = (Base |",
+        "owner": "rclone",
+        "path": "rclone/lib/encoder/os_windows.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/lib/encoder/os_windows.go#L27",
+        "reason": "Windows additionally encodes BackSlash.",
+        "sha256": "75f62dadc543d117d57f5c47f52dc184bbca2b91a6445465071e84816b08c238"
+      },
+      {
+        "line": 94,
+        "line_text": "func validDownloadItem(prefix string, item DownloadItem) bool {",
+        "owner": "app",
+        "path": "app/internal/transfer/local/download_recording.go",
+        "public_source": null,
+        "reason": "Admitted download items reject dot components, backslashes and invalid UTF-8.",
+        "sha256": "66195f642ced50598fe88d2e91a3a704a24aa0f4af7e31e0602fa1699ac4dd36"
+      }
+    ],
+    "M": [
+      {
+        "line": 518,
+        "line_text": "\tName:     \"metadata\",",
+        "owner": "rclone",
+        "path": "rclone/fs/config.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/fs/config.go#L518",
+        "reason": "Metadata preservation defaults false.",
+        "sha256": "b6df5c08794396fcd7ac9cd8ee5ee284cecbbf4963eb50acff6c7348e467757b"
+      },
+      {
+        "line": 155,
+        "line_text": "func GetMetadataOptions(ctx context.Context, dstFs Fs, o DirEntry, options []OpenOption) (metadata Metadata, err error) {",
+        "owner": "rclone",
+        "path": "rclone/fs/metadata.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/fs/metadata.go#L155",
+        "reason": "GetMetadataOptions returns nil before source metadata access when disabled.",
+        "sha256": "9867a576d905c569269600f942407af8a96d5bd2c123ce603cc007bbef826cc6"
+      },
+      {
+        "line": 1524,
+        "line_text": "\t// Fetch and set metadata if --metadata is in use",
+        "owner": "rclone",
+        "path": "rclone/backend/local/local.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/backend/local/local.go#L1524",
+        "reason": "Local Update requests metadata through that guard.",
+        "sha256": "7ede36a8051257c38115e81e39aa04a31c56d67f59d28f7c5f17d6a95ed135c3"
+      }
+    ],
+    "N": [
+      {
+        "line": 157,
+        "line_text": "\tdialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}",
+        "owner": "app",
+        "path": "app/internal/transfer/rclone/gateway.go",
+        "public_source": null,
+        "reason": "Parent dials the captured upstream directly and owns TLS.",
+        "sha256": "61a51ba96efc5bb918bb041272a7404b3d95304e2ba21aa0dc5c3ac5115504f6"
+      },
+      {
+        "line": 179,
+        "line_text": "\tlistener, err := net.Listen(\"tcp4\", \"127.0.0.1:0\")",
+        "owner": "app",
+        "path": "app/internal/transfer/rclone/gateway.go",
+        "public_source": null,
+        "reason": "Gateway listener is literal IPv4 loopback.",
+        "sha256": "61a51ba96efc5bb918bb041272a7404b3d95304e2ba21aa0dc5c3ac5115504f6"
+      },
+      {
+        "line": 208,
+        "line_text": "\tlocalURL := &url.URL{Scheme: \"http\", Host: gateway.localHost, Path: accountPath}",
+        "owner": "app",
+        "path": "app/internal/transfer/rclone/gateway.go",
+        "public_source": null,
+        "reason": "Only HTTP plus literal loopback host is sent to the child.",
+        "sha256": "61a51ba96efc5bb918bb041272a7404b3d95304e2ba21aa0dc5c3ac5115504f6"
+      },
+      {
+        "line": 294,
+        "line_text": "\tupstream := req.Clone(req.Context())",
+        "owner": "app",
+        "path": "app/internal/transfer/rclone/gateway.go",
+        "public_source": null,
+        "reason": "Captured upstream replaces request authority; response is obtained with RoundTrip.",
+        "sha256": "61a51ba96efc5bb918bb041272a7404b3d95304e2ba21aa0dc5c3ac5115504f6"
+      },
+      {
+        "line": 311,
+        "line_text": "\tif resp.StatusCode >= 300 && resp.StatusCode < 400 {",
+        "owner": "app",
+        "path": "app/internal/transfer/rclone/gateway.go",
+        "public_source": null,
+        "reason": "Every upstream 3xx is refused before forwarding.",
+        "sha256": "61a51ba96efc5bb918bb041272a7404b3d95304e2ba21aa0dc5c3ac5115504f6"
+      },
+      {
+        "line": 368,
+        "line_text": "func stripGatewayHeaders(headers http.Header) {",
+        "owner": "app",
+        "path": "app/internal/transfer/rclone/gateway.go",
+        "public_source": null,
+        "reason": "Location and credential/hop headers are removed.",
+        "sha256": "61a51ba96efc5bb918bb041272a7404b3d95304e2ba21aa0dc5c3ac5115504f6"
+      },
+      {
+        "line": 191,
+        "line_text": "\tgateway.server = &http.Server{",
+        "owner": "app",
+        "path": "app/internal/transfer/rclone/gateway.go",
+        "public_source": null,
+        "reason": "Parent server handler is storageGateway, not a child server or chi router.",
+        "sha256": "61a51ba96efc5bb918bb041272a7404b3d95304e2ba21aa0dc5c3ac5115504f6"
+      }
+    ],
+    "O": [
+      {
+        "line": 74,
+        "line_text": "\t\tName:        \"s3\",",
+        "owner": "rclone",
+        "path": "rclone/backend/s3/s3.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/backend/s3/s3.go#L74",
+        "reason": "S3 has a distinct registered constructor.",
+        "sha256": "cadc5296525be01d0c3201c39788e59a9532275934df83c52a12fae015603145"
+      },
+      {
+        "line": 1539,
+        "line_text": "\tawsConfig.HTTPClient = client",
+        "owner": "rclone",
+        "path": "rclone/backend/s3/s3.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/backend/s3/s3.go#L1539",
+        "reason": "S3 connection config selects AWS HTTP client.",
+        "sha256": "cadc5296525be01d0c3201c39788e59a9532275934df83c52a12fae015603145"
+      },
+      {
+        "line": 1815,
+        "line_text": "\tsrv := getClient(ctx, opt)",
+        "owner": "rclone",
+        "path": "rclone/backend/s3/s3.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/backend/s3/s3.go#L1815",
+        "reason": "S3 NewFs constructs that client; Swift constructor does not use it.",
+        "sha256": "cadc5296525be01d0c3201c39788e59a9532275934df83c52a12fae015603145"
+      }
+    ],
+    "P": [
+      {
+        "line": 23,
+        "line_text": "func HTTPConnectDial(network, addr string, proxyURL *url.URL, proxyDialer proxy.Dialer) (net.Conn, error) {",
+        "owner": "rclone",
+        "path": "rclone/lib/proxy/http.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/lib/proxy/http.go#L23",
+        "reason": "CONNECT helper uses an optional supplied proxy; nil proxy directly dials.",
+        "sha256": "adc6d8aa8e24c7fa21bb22e063b55b6586c0a38dfc73daad983434bca989044d"
+      },
+      {
+        "line": 70,
+        "line_text": "\tbr := bufio.NewReader(conn)",
+        "owner": "rclone",
+        "path": "rclone/lib/proxy/http.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/lib/proxy/http.go#L70",
+        "reason": "Configured CONNECT response uses unrestricted http.ReadResponse.",
+        "sha256": "adc6d8aa8e24c7fa21bb22e063b55b6586c0a38dfc73daad983434bca989044d"
+      }
+    ],
+    "Q": [
+      {
+        "line": 57,
+        "line_text": "\t\tName:        \"sftp\",",
+        "owner": "rclone",
+        "path": "rclone/backend/sftp/sftp.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/backend/sftp/sftp.go#L57",
+        "reason": "SFTP has a distinct registered constructor.",
+        "sha256": "cb32d55407f641df9571edb94aa1d271c79e6e177926f1b60daf2ebd5ae42391"
+      },
+      {
+        "line": 25,
+        "line_text": "func (f *Fs) newSSHClientInternal(ctx context.Context, network, addr string, sshConfig *ssh.ClientConfig) (sshClient, error) {",
+        "owner": "rclone",
+        "path": "rclone/backend/sftp/ssh_internal.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/backend/sftp/ssh_internal.go#L25",
+        "reason": "SFTP creates an SSH connection; optional CONNECT helper is local to that route.",
+        "sha256": "11eb972b1005f8b163b1ff55869e710af3787af0b8d7d1b0b99e2a2fb188b9d5"
+      },
+      {
+        "line": 2064,
+        "line_text": "func quoteOrEscapeShellPath(shellType string, shellPath string) (string, error) {",
+        "owner": "rclone",
+        "path": "rclone/backend/sftp/sftp.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/backend/sftp/sftp.go#L2064",
+        "reason": "PowerShell path quoting is in SFTP remote command construction.",
+        "sha256": "cb32d55407f641df9571edb94aa1d271c79e6e177926f1b60daf2ebd5ae42391"
+      }
+    ],
+    "S": [
+      {
+        "line": 474,
+        "line_text": "func swiftConnection(ctx context.Context, opt *Options, name string) (*swift.Connection, error) {",
+        "owner": "rclone",
+        "path": "rclone/backend/swift/swift.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/backend/swift/swift.go#L474",
+        "reason": "Swift uses ncw/swift with fshttp transport.",
+        "sha256": "5ba35a36d4da83eab8e489c953c128540ce89c5daff152fc52084b3b7cf5b1ae"
+      },
+      {
+        "line": 500,
+        "line_text": "\tif opt.EnvAuth {",
+        "owner": "rclone",
+        "path": "rclone/backend/swift/swift.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/backend/swift/swift.go#L500",
+        "reason": "Environment authentication is conditional; supplied storage URL and token avoid fresh remote authentication.",
+        "sha256": "5ba35a36d4da83eab8e489c953c128540ce89c5daff152fc52084b3b7cf5b1ae"
+      },
+      {
+        "line": 32,
+        "line_text": "func (a *auth) Request(ctx context.Context, c *swift.Connection) (*http.Request, error) {",
+        "owner": "rclone",
+        "path": "rclone/backend/swift/auth.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/backend/swift/auth.go#L32",
+        "reason": "The auth wrapper with no parent creates no authentication request.",
+        "sha256": "02fc26fefac60748e6a8759bda64d3b61a4aa8a739191713f919d19e4179440d"
+      },
+      {
+        "line": 507,
+        "line_text": "\tif c.client == nil {",
+        "owner": "swift",
+        "path": "swift/swift.go",
+        "public_source": "https://github.com/ncw/swift/blob/v2.0.5/swift.go#L507",
+        "reason": "The child Swift dependency owns a normal http.Client.",
+        "sha256": "0a744e73713ee185050dd85e2710b182e72ae4e3e5e6dd1bd96e9e29dbd81b02"
+      },
+      {
+        "line": 764,
+        "line_text": "func (c *Connection) Call(ctx context.Context, targetUrl string, p RequestOpts) (resp *http.Response, headers Headers, err error) {",
+        "owner": "swift",
+        "path": "swift/swift.go",
+        "public_source": "https://github.com/ncw/swift/blob/v2.0.5/swift.go#L764",
+        "reason": "Call uses package url.Parse and direct Path assembly.",
+        "sha256": "0a744e73713ee185050dd85e2710b182e72ae4e3e5e6dd1bd96e9e29dbd81b02"
+      },
+      {
+        "line": 1158,
+        "line_text": "func (c *Connection) Objects(ctx context.Context, container string, opts *ObjectsOpts) ([]Object, error) {",
+        "owner": "swift",
+        "path": "swift/swift.go",
+        "public_source": "https://github.com/ncw/swift/blob/v2.0.5/swift.go#L1158",
+        "reason": "Object listings explicitly request JSON and decode JSON.",
+        "sha256": "0a744e73713ee185050dd85e2710b182e72ae4e3e5e6dd1bd96e9e29dbd81b02"
+      },
+      {
+        "line": 211,
+        "line_text": "func NewTransportCustom(ctx context.Context, customize func(*http.Transport)) *Transport {",
+        "owner": "rclone",
+        "path": "rclone/fs/fshttp/http.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/fs/fshttp/http.go#L211",
+        "reason": "Swift shared transport is a net/http transport, with proxy settings from config or env.",
+        "sha256": "8d3238cf54976c9d00c83833fecd1f39b4fe5034f2705b5741bbef8d1891e2ff"
+      },
+      {
+        "line": 297,
+        "line_text": "// NewTransport returns an http.RoundTripper with the correct timeouts",
+        "owner": "rclone",
+        "path": "rclone/fs/fshttp/http.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/fs/fshttp/http.go#L297",
+        "reason": "NewTransport uses this constructor.",
+        "sha256": "8d3238cf54976c9d00c83833fecd1f39b4fe5034f2705b5741bbef8d1891e2ff"
+      }
+    ],
+    "T": [
+      {
+        "line": 12,
+        "line_text": "\t\"github.com/ProtonMail/go-crypto/openpgp\"",
+        "owner": "rclone",
+        "path": "rclone/cmd/selfupdate/verify.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/cmd/selfupdate/verify.go#L12",
+        "reason": "Self-update uses ProtonMail OpenPGP; this is not evidence about linked golang.org/x/crypto/openpgp callers.",
+        "sha256": "ca9a3b4e64c9742457dfee1b669c1e4c6251863e529b3bdfe30594b1e765f369"
+      },
+      {
+        "line": 939,
+        "line_text": "\t\tvar t = template.Must(template.New(\"authResponse\").Parse(templateString))",
+        "owner": "rclone",
+        "path": "rclone/lib/oauthutil/oauthutil.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/lib/oauthutil/oauthutil.go#L939",
+        "reason": "OAuth response renders a template; Swift token override has no OAuth setup.",
+        "sha256": "db2d22191323bce607345fb5efd39acdaa2495c9faff401ec922c7691904a95d"
+      },
+      {
+        "line": 134,
+        "line_text": "\ttpl, err := template.New(\"index\").Funcs(funcMap).Parse(string(data))",
+        "owner": "rclone",
+        "path": "rclone/lib/http/template.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/lib/http/template.go#L134",
+        "reason": "Template parsing belongs to server listing HTML.",
+        "sha256": "afe0ae64f734ad4a3081c9c9ba32c0c6f05cc7f68e78f1fda4aa716b0a2b4734"
+      }
+    ],
+    "U": [
+      {
+        "line": 69,
+        "line_text": "\t// Now create the matching transform",
+        "owner": "rclone",
+        "path": "rclone/fs/march/march.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/fs/march/march.go#L69",
+        "reason": "Copy traversal installs NFC comparison unless normalization is disabled.",
+        "sha256": "0e7e2623fed1809a1769ef383fef831fbda5d673329cc37b5922a53153dab111"
+      },
+      {
+        "line": 418,
+        "line_text": "func (f *Filter) IncludeRemote(remote string) bool {",
+        "owner": "rclone",
+        "path": "rclone/fs/filter/filter.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/fs/filter/filter.go#L418",
+        "reason": "files-from bypasses this filter normalization path, while hash filter can normalize.",
+        "sha256": "89957a4639e379fd4edd6d57b55b33a093a99c326232536463c2890c817f71f4"
+      },
+      {
+        "line": 741,
+        "line_text": "func (f *Fs) cleanRemote(dir, filename string) (remote string) {",
+        "owner": "rclone",
+        "path": "rclone/backend/local/local.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/backend/local/local.go#L741",
+        "reason": "Optional local normalization precedes invalid-UTF-8 warning.",
+        "sha256": "7ede36a8051257c38115e81e39aa04a31c56d67f59d28f7c5f17d6a95ed135c3"
+      },
+      {
+        "line": 117,
+        "line_text": "func RcloneUnsafe(name string) bool {",
+        "owner": "app",
+        "path": "app/internal/transfer/plan/plan.go",
+        "public_source": null,
+        "reason": "Name routing checks path syntax; it is not itself a UTF-8 validity check.",
+        "sha256": "7338ceefe48aba02317397e005b875bc89e5df1a02333c39916e20a2783a4108"
+      },
+      {
+        "line": 95,
+        "line_text": "\tif item.Name == \"\" || !utf8.ValidString(item.Name) || !utf8.ValidString(item.RelPath) || item.Size < 0 || !strings.HasPrefix(item.Name, prefix) {",
+        "owner": "app",
+        "path": "app/internal/transfer/local/download_recording.go",
+        "public_source": null,
+        "reason": "Recorded download names and paths require UTF-8.",
+        "sha256": "66195f642ced50598fe88d2e91a3a704a24aa0f4af7e31e0602fa1699ac4dd36"
+      },
+      {
+        "line": 41,
+        "line_text": "func gatewayPathSafe(path string) bool {",
+        "owner": "app",
+        "path": "app/internal/transfer/rclone/gateway_scope.go",
+        "public_source": null,
+        "reason": "Gateway request paths require UTF-8, checked after the child constructs them.",
+        "sha256": "16b233164caca48014eac15c427857ce8bbb3f7e08ca08cfbe5f944004408b41"
+      }
+    ],
+    "W": [
+      {
+        "line": 71,
+        "line_text": "\t\tName:        \"webdav\",",
+        "owner": "rclone",
+        "path": "rclone/backend/webdav/webdav.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/backend/webdav/webdav.go#L71",
+        "reason": "WebDAV has a distinct registered constructor.",
+        "sha256": "8e08f0213abd35c1d3e19ef231d5ba053e1b66f7e1a94883749ae970fbe51a4e"
+      },
+      {
+        "line": 344,
+        "line_text": "func (f *Fs) readMetaDataForPath(ctx context.Context, path string) (info *api.Prop, err error) {",
+        "owner": "rclone",
+        "path": "rclone/backend/webdav/webdav.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/backend/webdav/webdav.go#L344",
+        "reason": "WebDAV request uses shared PreserveMethodRedirectFn.",
+        "sha256": "8e08f0213abd35c1d3e19ef231d5ba053e1b66f7e1a94883749ae970fbe51a4e"
+      },
+      {
+        "line": 224,
+        "line_text": "func PreserveMethodRedirectFn(req *http.Request, via []*http.Request) error {",
+        "owner": "rclone",
+        "path": "rclone/lib/rest/rest.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/lib/rest/rest.go#L224",
+        "reason": "Shared callback changes redirect method; it is not a gateway policy.",
+        "sha256": "cadeee39916910013f98f087b6cb9c9274125c50f8eb8e51b10f646f08642cb1"
+      },
+      {
+        "line": 45,
+        "line_text": "func (f *Fs) getTusLocationOrRetry(ctx context.Context, resp *http.Response, err error) (bool, string, error) {",
+        "owner": "rclone",
+        "path": "rclone/backend/webdav/tus.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/backend/webdav/tus.go#L45",
+        "reason": "TUS response handling belongs to WebDAV Fs.",
+        "sha256": "1f75aa1d568784145fd7f7cd8cb7118ce50b96565ee3dc8961498fb933711a28"
+      }
+    ],
+    "X": [
+      {
+        "line": 29,
+        "line_text": "\tUse:   \"extract [flags] <source> <destination>\",",
+        "owner": "rclone",
+        "path": "rclone/cmd/archive/extract/extract.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/cmd/archive/extract/extract.go#L29",
+        "reason": "Archive extraction is its own selected command.",
+        "sha256": "155918ac25584cfa2936b7360311951b8440069ecc3904cec1037b9f4600bf40"
+      },
+      {
+        "line": 95,
+        "line_text": "func ArchiveExtract(ctx context.Context, dst fs.Fs, dstDir string, src fs.Fs, srcFile string) error {",
+        "owner": "rclone",
+        "path": "rclone/cmd/archive/extract/extract.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/cmd/archive/extract/extract.go#L95",
+        "reason": "ArchiveExtract is the advisory function, separate from Copy.",
+        "sha256": "155918ac25584cfa2936b7360311951b8440069ecc3904cec1037b9f4600bf40"
+      }
+    ],
+    "Y": [
+      {
+        "line": 95,
+        "line_text": "\t\t\t\tName:     \"copy_links\",",
+        "owner": "rclone",
+        "path": "rclone/backend/local/local.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/backend/local/local.go#L95",
+        "reason": "Follow links and translate links both default false.",
+        "sha256": "7ede36a8051257c38115e81e39aa04a31c56d67f59d28f7c5f17d6a95ed135c3"
+      },
+      {
+        "line": 412,
+        "line_text": "\tif ci.Links {",
+        "owner": "rclone",
+        "path": "rclone/backend/local/local.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/backend/local/local.go#L412",
+        "reason": "TranslateSymlinks can be enabled by global links flag.",
+        "sha256": "7ede36a8051257c38115e81e39aa04a31c56d67f59d28f7c5f17d6a95ed135c3"
+      },
+      {
+        "line": 1442,
+        "line_text": "\tif !o.translatedLink {",
+        "owner": "rclone",
+        "path": "rclone/backend/local/local.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/backend/local/local.go#L1442",
+        "reason": "Ordinary files use path-based OpenFile; translated links use a separate branch.",
+        "sha256": "7ede36a8051257c38115e81e39aa04a31c56d67f59d28f7c5f17d6a95ed135c3"
+      },
+      {
+        "line": 1398,
+        "line_text": "// mkdirAll makes all the directories needed to store the object",
+        "owner": "rclone",
+        "path": "rclone/backend/local/local.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/backend/local/local.go#L1398",
+        "reason": "Directory creation is also ordinary path-based file.MkdirAll.",
+        "sha256": "7ede36a8051257c38115e81e39aa04a31c56d67f59d28f7c5f17d6a95ed135c3"
+      },
+      {
+        "line": 15,
+        "line_text": "var OpenFile = os.OpenFile",
+        "owner": "rclone",
+        "path": "rclone/lib/file/file_other.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/lib/file/file_other.go#L15",
+        "reason": "Unix helper delegates to os.OpenFile.",
+        "sha256": "38a094c64d5890a08aebafb0b59f6cdee192979c75bd2518add81dfe629bbbc1"
+      },
+      {
+        "line": 21,
+        "line_text": "func OpenFile(path string, mode int, perm os.FileMode) (*os.File, error) {",
+        "owner": "rclone",
+        "path": "rclone/lib/file/file_windows.go",
+        "public_source": "https://github.com/rclone/rclone/blob/37e4117f48bdef0fa1ba27f6467d7a891b0b55ba/lib/file/file_windows.go#L21",
+        "reason": "Windows helper uses native syscall file operations.",
+        "sha256": "59892294574fc74a2ead15d7968fb81761769a6db1ca8d5c4b7e5230909c2938"
+      }
+    ]
+  },
+  "status": "proposal for independent review; no accepted disposition, no executed trigger, no closure",
+  "valuable_data_clearance": false
+}

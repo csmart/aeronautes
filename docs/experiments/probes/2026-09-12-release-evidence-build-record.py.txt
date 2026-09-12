@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""Turn the private P31 disposition draft into the repository record: a
+Markdown table of the 42 advisories and a structured JSON with every
+citation, its retained source hash and line text, and the digests of the
+frozen inputs. Nothing is reclassified; unknowns stay unknown."""
+import json, hashlib, re, os, sys, datetime
+D = '/home/csmart/code/.aeronautes-work/parallel/release_identity/p31-dispositions-f8811495-20260910'
+WT = '/home/csmart/code/worktrees/aeronautes/release_evidence'
+draft = json.load(open(D + '/dispositions.json'))
+manifest = json.load(open(D + '/evidence-manifest.json'))
+validation = json.load(open(D + '/final-validation.json'))
+table = open(D + '/table.md').read()
+CLASS = {'conditional_not_enabled': 'Conditional: not enabled', 'unknown_transitive_input': 'Unknown: transitive caller',
+         'unknown_shared_input': 'Unknown: shared input', 'platform_precondition_absent': '32-bit prerequisite absent'}
+# bundle citations from the structured draft
+bundles = draft['source_bundles']
+citations = 0
+record_bundles = {}
+for key in sorted(bundles):
+    entries = []
+    for item in bundles[key]:
+        path = item.get('path', '')
+        for prefix, short in (('/worktree/', 'app/'), ('/rclone-source/', 'rclone/'), ('/swift-source/', 'swift/'), ('/go1.26.4-source/', 'go/')):
+            if prefix in path:
+                path = short + path.split(prefix, 1)[1]
+        entries.append({'owner': item.get('owner'), 'path': path, 'line': item.get('line'), 'line_text': item.get('line_text'),
+                        'sha256': item.get('sha256'), 'public_source': item.get('public_source'), 'reason': item.get('reason')})
+        citations += 1
+    record_bundles[key] = entries
+rows = []
+for a in draft['advisories']:
+    rows.append({'id': a['id'], 'summary': a['summary'], 'affected_modules_observed': a['affected_modules_observed'],
+                 'class': CLASS[a['proposal']], 'input_condition': a['input_condition'], 'reasoning': a['reasoning'],
+                 'source_bundles': a['source_bundles'], 'next_evidence': a['next_evidence'], 'fixed_version_hints': a['fixed_version_hints'],
+                 'primary_advisory': a['primary_advisory'], 'official_go_advisory': a['official_go_advisory'], 'osv_sha256': a['osv_sha256'],
+                 'six_target_symbol_presence': a['six_target_symbol_presence'], 'trigger_executed': a['trigger_executed'], 'accepted_disposition': a['accepted_disposition']})
+counts = {}
+for r in rows:
+    counts[r['class']] = counts.get(r['class'], 0) + 1
+record = {
+  'recorded': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+  'status': 'proposal for independent review; no accepted disposition, no executed trigger, no closure',
+  'application_source_head': draft['head'],
+  'engine': 'rclone v1.74.3, six accepted sidecars',
+  'rclone_public_source_revision': draft['rclone_public_source_revision'],
+  'advisory_count': draft['advisory_count'], 'counts': counts, 'citations': citations,
+  'frozen_inputs': {
+     'draft_dispositions_sha256': hashlib.sha256(open(D + '/dispositions.json', 'rb').read()).hexdigest(),
+     'draft_readme_sha256': validation['readme_sha256'],
+     'draft_table_sha256': hashlib.sha256(open(D + '/table.md', 'rb').read()).hexdigest(),
+     'frozen_assessment_manifest_sha256': manifest['frozen_assessment_manifest_sha256'],
+     'baseline_assessment_sha256': draft['baseline_assessment_sha256'],
+     'public_rclone_source_files': len(manifest['public_rclone_source_file_hashes']),
+     'public_rclone_source_file_hashes': manifest['public_rclone_source_file_hashes']},
+  'independent_approval': False, 'p31_complete': False, 'valuable_data_clearance': False,
+  'advisories': rows, 'source_bundles': record_bundles}
+os.makedirs(WT + '/docs/experiments', exist_ok=True)
+json_path = WT + '/docs/experiments/2026-09-12-advisory-dispositions.json'
+json.dump(record, open(json_path, 'w'), indent=2, sort_keys=True); open(json_path, 'a').write('\n')
+# markdown
+lines = []
+lines.append('# Engine advisory dispositions proposed for review\n')
+lines.append('## Scope and oracle\n')
+lines.append('This record turns the private per-advisory disposition proposal of 9 September into a reviewable repository record for the 42 advisory identifiers reported by the retained scanner on all six accepted rclone 1.74.3 sidecars, against the application source at `%s` and the public engine source at revision `%s`.' % (draft['head'], draft['rclone_public_source_revision']))
+lines.append('The oracle is SEC-11 and P31 in the audit register: every retained advisory needs an evidence-backed disposition for the exact Swift and local surfaces and the shipped binary, and no disposition is accepted without independent review.')
+lines.append('Every row keeps its draft class; nothing is reclassified, no advisory trigger was executed, no candidate engine was run, and no row is an accepted disposition, an exposure assertion or a closure.')
+lines.append('The [structured record](2026-09-12-advisory-dispositions.json) carries, for every row, the observed modules, the six-target symbol presence, the primary references, the digests of the retained advisory entries and the exact source citations with their retained line text and file digests, together with the digests of the frozen draft and the public engine source files it cites.\n')
+lines.append('## Classes\n')
+lines.append('| Class | Rows | Meaning |\n| --- | ---: | --- |')
+meaning = {'Unknown: shared input': 'a shared input-processing path needs deeper caller and input closure',
+           'Unknown: transitive caller': 'the inspected enabled route does not establish a trigger, but the linked caller and input mapping is incomplete',
+           'Conditional: not enabled': 'the advisory\'s described prerequisite is absent under the inspected fixed route and configuration contract; exact-binary controls and independent review remain required',
+           '32-bit prerequisite absent': 'the advisory describes 32-bit decoding while every retained binary reports amd64 or arm64'}
+for cls in ['Unknown: shared input', 'Unknown: transitive caller', 'Conditional: not enabled', '32-bit prerequisite absent']:
+    lines.append('| %s | %d | %s |' % (cls, counts.get(cls, 0), meaning[cls]))
+lines.append('\n"Enabled input" means data admitted by the inspected application or source contract, such as object names, object bytes or response headers; it does not mean a vulnerable function was observed consuming that input at runtime.\n')
+lines.append('## Rows\n')
+lines.append('| Advisory | Observed module | Class | Input and route reasoning | Citations | Next check |\n| --- | --- | --- | --- | --- | --- |')
+for r in rows:
+    mods = ', '.join('`%s`' % m for m in r['affected_modules_observed'])
+    reasoning = ('**Input:** ' + r['input_condition'] + '. ' + r['reasoning']).replace('|', '\\|').replace('\n', ' ')
+    lines.append('| [%s](%s) | %s | %s | %s | %s | %s |' % (r['id'], r['official_go_advisory'], mods, r['class'], reasoning, ', '.join(r['source_bundles']), r['next_evidence'].replace('|', '\\|')))
+lines.append('\n## Highest-priority unresolved paths\n')
+lines.append('GO-2026-6218, relative URL resolution: the old HTTP client resolves a redirect Location through the affected method before the redirect callback, the gateway refuses upstream 3xx responses and strips Location, and the child Swift dependency assembles paths without the affected method, so the inspected ordinary redirect path is cut off; shared REST joining and other linked callers still need a complete input and caller disposition, so the row stays unknown.')
+lines.append('GO-2026-5970, Unicode normalization: copy traversal installs an NFC transformation, local upload paths and recorded download items require UTF-8, and the gateway path check occurs after the child constructs its request; cross-account copy names, backend encoding transformations and malformed-response conversions still need tracing to the affected iterator, so the row stays unknown.')
+lines.append('The other ten unknown rows need specific Root, image-decoder, baggage, compression-dictionary, deprecated OpenPGP, ASN.1 or XML caller and input mapping; unknown means this bounded inspection supplies no complete answer and is neither an exposure assertion nor an exclusion.\n')
+lines.append('## Conditions behind the proposed exclusions\n')
+lines.append('The wrapper constructs version, copy and copyto commands, closes flags before paths, creates an empty configuration and supplies only its named Swift fields with PATH and a private HOME; application local paths are absolute and remote types are fixed to Swift.')
+lines.append('The engine\'s factory selects the local backend for local paths, and the inspected SMB, FTP, SFTP, S3 and WebDAV constructors are distinct from the Swift constructor; remote control and metrics default off and their startup functions check those settings before listening; the parent gateway uses its own handler, literal loopback HTTP for the child, a direct captured upstream transport and parent-owned TLS.')
+lines.append('Local encoding, metadata and translated-link advisories remain conditional because local writes are enabled: the operating-system encoding masks include the full-stop class and, on Windows, the backslash class with no override, metadata and link translation default off, and these are narrow prerequisite exclusions that do not address the separate root-authority contract.')
+lines.append('The SSH deadlock advisories describe client as well as server paths, so their rows require exclusion of the SFTP client constructor as well as server commands; the WebDAV redirect advisory names a shared REST callback and its row cites the actual callback installation and the separate Swift transport; the CONNECT advisory names a shared proxy helper and its row cites its FTP and SFTP callers, the absent proxy settings and the child\'s literal loopback destination.\n')
+lines.append('## Source citations\n')
+lines.append('Each bundle names the exact retained source line inspected, with the first twelve hex digits of the retained file digest; paths are relative to the frozen application worktree (app), the public engine source (rclone), the Swift dependency source (swift) or the Go standard library source (go), and the structured record keeps the full digest, the line text and the public reference, which is not a reproducible-build proof for the shipped binary.\n')
+for key in sorted(record_bundles):
+    lines.append('### Bundle %s\n' % key)
+    for item in record_bundles[key]:
+        lines.append('- `%s:%s` (%s): %s' % (item['path'], item['line'], item['sha256'][:12], (item['reason'] or '').replace('\n', ' ')))
+    lines.append('')
+lines.append('## What this record does not establish\n')
+lines.append('No advisory was executed against a binary, no candidate engine was downloaded, built or scanned here, the twelve unknown rows are open, and the six-target compatibility gate, the npm scope, the native-library scope and the update policy remain the register\'s open SEC-11 items.')
+lines.append('SEC-11, P31 and the valuable-data release hold remain blocking.')
+md_path = WT + '/docs/experiments/2026-09-12-advisory-dispositions.md'
+open(md_path, 'w').write('\n'.join(lines) + '\n')
+print('rows', len(rows), 'citations', citations, 'counts', counts)
+print('validation counts', validation['proposal_counts'], 'validation citations', validation['exact_source_citations'])
