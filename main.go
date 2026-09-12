@@ -7,10 +7,12 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/adrg/xdg"
 	"github.com/csmart/aeronautes/internal/app"
@@ -34,9 +36,21 @@ func main() {
 		}
 		return
 	}
+	shutdown := &shellShutdown{}
+	// A failed database close retains the lock through error reporting,
+	// including GC, until the kernel releases it on process exit.
+	defer runtime.KeepAlive(shutdown)
+	if err := runDesktop(identity, shutdown, launchDesktop, secrets.OpenDefault); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func runDesktop(identity app.BuildIdentity, shutdown *shellShutdown,
+	launch func(application.Options) error, openSecrets func() (secrets.SecretStore, secrets.Backend)) (runErr error) {
+
 	statePath, err := xdg.StateFile("aeronautes/state.sqlite")
 	if err != nil {
-		log.Fatalf("resolve state dir: %v", err)
+		return fmt.Errorf("resolve state dir: %w", err)
 	}
 	if dev := os.Getenv("AERONAUTES_STATE_DIR"); dev != "" {
 		// Dev/test override so scratch runs never touch real state.
@@ -46,18 +60,19 @@ func main() {
 	// one's running jobs interrupted and sweep its staging litter.
 	releaseLock, err := app.AcquireInstanceLock(filepath.Dir(statePath))
 	if err != nil {
-		log.Fatalf("%v", err)
+		return fmt.Errorf("lock state directory: %w", err)
 	}
-	defer releaseLock()
+	shutdown.releaseLock = releaseLock
+	defer func() { runErr = errors.Join(runErr, shutdown.close()) }()
 	database, err := db.Open(context.Background(), statePath)
 	if err != nil {
-		log.Fatalf("open state database %s: %v", statePath, err)
+		return fmt.Errorf("open state database %s: %w", statePath, err)
 	}
-	defer database.Close()
+	shutdown.closeDatabase = database.Close
 
 	// OS keychain when reachable; otherwise session-only, surfaced in the
 	// UI — never a silent downgrade (§12.1, ADR 0012).
-	secretStore, secretBackend := secrets.OpenDefault()
+	secretStore, secretBackend := openSecrets()
 	if secretBackend == secrets.BackendSession {
 		log.Print("no OS keychain reachable: credentials are session-only and die with the process")
 	}
@@ -73,6 +88,10 @@ func main() {
 		log.Printf("job crash recovery: %d interrupted job(s) marked failed", interrupted)
 	}
 	jobRunner := app.NewJobRunner(jobStore, auditStore)
+	findService := app.NewFindService(connections)
+	shutdown.drain = func(ctx context.Context) error {
+		return app.ShutdownWork(ctx, jobRunner, findService)
+	}
 	transferService := app.NewTransferServiceWithRunner(connections, jobStore, jobRunner)
 	app.WireEvidenceStore(transferService, evidenceStore)
 	app.WireFilePicker(transferService, wailsPicker{})
@@ -81,9 +100,10 @@ func main() {
 	benchmarkService := app.NewBenchmarkService(connections, jobStore, jobRunner, database)
 	app.WireBenchmarkRecommendations(transferService, benchmarkService)
 
-	a := application.New(application.Options{
+	options := application.Options{
 		Name:        "Aeronautes",
 		Description: "Desktop operator workbench for OpenStack Swift",
+		OnShutdown:  shutdown.wait,
 		Services: []application.Service{
 			application.NewService(app.NewAppService(identity, string(secretBackend))),
 			application.NewService(app.NewBookmarkService(bookmarkStore, connections, jobStore)),
@@ -94,7 +114,7 @@ func main() {
 			application.NewService(transferService),
 			application.NewService(app.NewDeleteService(connections, jobStore, jobRunner, evidenceStore)),
 			application.NewService(app.NewJobService(jobStore)),
-			application.NewService(app.NewFindService(connections)),
+			application.NewService(findService),
 			application.NewService(settingsService),
 			application.NewService(benchmarkService),
 		},
@@ -104,7 +124,15 @@ func main() {
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
-	})
+	}
+	if err := launch(options); err != nil {
+		return fmt.Errorf("run desktop: %w", err)
+	}
+	return nil
+}
+
+func launchDesktop(options application.Options) error {
+	a := application.New(options)
 
 	a.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:     "Aeronautes",
@@ -123,9 +151,7 @@ func main() {
 		URL:                        "/",
 	})
 
-	if err := a.Run(); err != nil {
-		log.Fatal(err)
-	}
+	return a.Run()
 }
 
 // wailsPicker implements app.FilePicker over the Wails dialog manager —

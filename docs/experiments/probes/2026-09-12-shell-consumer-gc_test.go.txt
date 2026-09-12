@@ -1,0 +1,93 @@
+//go:build linux
+
+package main
+
+import (
+ "bytes"
+ "context"
+ "errors"
+ "fmt"
+ "log"
+ "os"
+ "os/exec"
+ "runtime"
+ "testing"
+ "time"
+
+ "github.com/csmart/aeronautes/internal/app"
+ "github.com/csmart/aeronautes/internal/db"
+ "github.com/csmart/aeronautes/internal/secrets"
+ "github.com/wailsapp/wails/v3/pkg/application"
+)
+
+var gcProbeDatabase *db.DB
+
+func gcProbeLaunch(application.Options) error { return nil }
+
+func gcProbeSecrets() (secrets.SecretStore, secrets.Backend) {
+ return secrets.NewSessionStore(), secrets.BackendSession
+}
+
+func gcProbeLock(path string) (func(), error) {
+ release, err := app.AcquireInstanceLock(path)
+ if err != nil { return nil, err }
+ return func() { fmt.Println("GC explicit lock release"); release() }, nil
+}
+
+func gcProbeClose(database *db.DB) func() error {
+ gcProbeDatabase = database
+ return func() error { return errors.New("injected close failure with real database open") }
+}
+
+type gcProbeWriter struct{}
+
+func (gcProbeWriter) Write(data []byte) (int, error) {
+ if !bytes.Contains(data, []byte("injected close failure")) {
+  return os.Stdout.Write(data)
+ }
+ fmt.Println("GC entered actual main fatal error reporting")
+ for i := range 5 {
+  completed := make(chan struct{})
+  sentinel := new([1024]byte)
+  runtime.SetFinalizer(sentinel, func(*[1024]byte) { close(completed) })
+  sentinel = nil
+  runtime.GC()
+  select {
+  case <-completed:
+  case <-time.After(5*time.Second):
+   fmt.Println("GC finalizer barrier failed")
+   return os.Stdout.Write(data)
+  }
+  readErr := gcProbeDatabase.Reader().PingContext(context.Background())
+  acquired, lockErr := shellOtherProcessLock(context.Background(), os.Getenv("AERONAUTES_STATE_DIR"))
+  fmt.Printf("GC barrier=%d real_database_readable=%t second_process_acquired=%t error=%v\n", i, readErr == nil, acquired, lockErr)
+  if readErr != nil || acquired || lockErr != nil { fmt.Println("GC unsafe resource release") }
+ }
+ return os.Stdout.Write(data)
+}
+
+func TestMainCloseFailureGCProbe(t *testing.T) {
+ if os.Getenv("AERONAUTES_MAIN_GC_PROBE") == "1" {
+  log.SetOutput(gcProbeWriter{})
+  main()
+  t.Fatal("actual main returned instead of reporting its close failure")
+ }
+ self, err := os.Executable()
+ if err != nil { t.Fatal(err) }
+ state := t.TempDir()
+ ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+ defer cancel()
+ cmd := exec.CommandContext(ctx, self, "-test.run=^TestMainCloseFailureGCProbe$", "-test.v", "-test.timeout=18s")
+ cmd.Env = append(os.Environ(), "AERONAUTES_MAIN_GC_PROBE=1", "AERONAUTES_STATE_DIR="+state)
+ output, err := cmd.CombinedOutput()
+ t.Logf("actual main GC error path: exit=%v\n%s", err, output)
+ var exit *exec.ExitError
+ if !errors.As(err, &exit) || exit.ExitCode() != 1 { t.Fatalf("missing actual fatal result: %v", err) }
+ if bytes.Count(output, []byte("real_database_readable=true second_process_acquired=false error=<nil>")) != 5 ||
+  bytes.Contains(output, []byte("GC unsafe")) || bytes.Contains(output, []byte("GC explicit lock release")) ||
+  !bytes.Contains(output, []byte("injected close failure with real database open")) {
+  t.Fatal("actual main did not keep lock ownership through GC and failed-close error reporting")
+ }
+ acquired, err := shellOtherProcessLock(t.Context(), state)
+ if !acquired || err != nil { t.Fatalf("kernel release after failure exit: acquired=%t error=%v", acquired, err) }
+}

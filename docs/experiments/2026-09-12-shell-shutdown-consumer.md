@@ -112,3 +112,36 @@ No consumer implementation approval is implied by this contract.
 Root delivery still requires final-base verification, independent review, all five PR jobs, protected merge and all five resulting-master jobs.
 Synchronous bridge/native-request ownership, Connections/SecretStore closure, retained-stage removal, non-Linux Run-not-return paths and full native shutdown acceptance remain open.
 DS-07, SEC-06, P20/P30 and the valuable-data release hold remain open.
+
+## Implementation evidence
+
+The implemented caller now uses the same `ShutdownWork` drain from its actual shutdown callback and its checked post-Run cleanup.
+The maintained root tests receive the twelve service instances from that same assembly.
+The final focused race baseline passes 39 leaves: 21 new app/root cases and 18 existing Find cases, including the original reserved-hook behaviour.
+Four isolated root cases hold a real download after its engine finishes, cancel through the actual shell callback or Run return, and check the live database, cross-process lock, final bookmark pin and native directory handles.
+The held stage deliberately survives cancellation, so its separate nonempty-directory cleanup failure produces the existing partial outcome with zero placed objects and one failed item.
+The first four assertions incorrectly expected cancelled; that failed packet and source remain preserved, and the corrected assertion requires the exact existing counters and both error reasons.
+Production cancellation outcomes and retained-stage policy were not changed.
+
+The two new real-child mock cases pass, and the two selected actual-Swift cases pass with no failures or skips.
+The actual fixture run requires both owned accounts and completes in 17.534 seconds: graceful cancellation takes 3.27 seconds and forced escalation takes 13.25 seconds.
+The parent uses the same `ShutdownWork` function, then proves the pinned child has already been reaped by observing `ECHILD` from `Wait4` before exposing the drain result.
+The checks preserve the exact 64 KiB write boundary, ten-second grace, terminal records, later filesystem state, both remote namespaces and idempotent recovery.
+The separate root tests establish the shared shell wiring; these native-child checks do not run a GTK window or Wails `Quit`.
+
+The private actual-main close-error proof has four narrow interpositions, documented in [the evidence twin](probes/2026-09-12-shell-consumer-after.json) and [its probe source](probes/2026-09-12-shell-consumer-gc_test.go.txt).
+During actual `log.Fatal` reporting, five completed GC/finalizer barriers leave the real database readable and refuse another process the instance lock.
+After the failing process exits with status one, the kernel releases the lock.
+Removing only the deferred `KeepAlive` and its unused import makes all five lock probes acquire while the database remains readable, and the assertion fails.
+The maintained close-error case separately checks the latched original error, one Close attempt and a live database and lock.
+The maintained unexpected-drain-error subprocess verifies that the actual caller remains blocked with its resources held after logging the error.
+
+All nine omission controls fail their intended assertions without a panic, race report, setup failure or test timeout.
+Their exact selected leaves, healthy controls, source hashes and stdout/stderr hashes are recorded in the evidence twin.
+They independently remove the actual callback, Find stop, Find join, job join, drain-before-close ordering, failed-Close unlock refusal, concurrent callback join, unexpected-error block and GC owner lifetime.
+Focused coverage reports 100 percent for `ShutdownWork`, Find stop and reserved hook, and checked shell Close; 95.3 percent for the shared caller; and 66.7 percent for shell wait because child-process coverage is not merged into the profile.
+The blocked-error and actual-main paths have separate behavioural evidence; native launch and window code remain untested here.
+`go vet` on the three affected packages, `gofmt`, `goimports` and `git diff --check` pass.
+`staticcheck` was not available and was not run.
+The bound-service action inventory remains byte-identical, and no action-coverage cell or broader shutdown clearance is claimed.
+Independent implementation approval and the root's final combined delivery gates are still required.
