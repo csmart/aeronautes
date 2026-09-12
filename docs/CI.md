@@ -93,6 +93,8 @@ The [bounded SAIO schedule](experiments/2026-09-09-saio-scheduling.md) lets four
 Each group retains its sequential cases and per-harness database, services, local paths and remote namespaces; random namespace text avoids depending on clock resolution for isolation.
 The [mock schedule](experiments/2026-09-09-mock-scheduling.md) gives mock fixtures explicit instance settings and adds thirteen existing counterparts to the same three slots, for twenty-seven initial eligible groups.
 The [checked download record cases](experiments/2026-09-09-checked-download-records.md) add six groups for complete item histories, SQL refusals and empty/marker selections on both providers, using the same three slots.
+The [transfer verification cases](experiments/2026-09-12-transfer-test-schedule.md) add eight independent outer child-lifetime, staged-content and representation groups to that existing schedule, retaining every inner case and deadline.
+Their complete local race run preserves all scenarios and outcomes after accounting for two existing generated test names; hosted package and job margins still require measurement.
 The remaining non-parallel tests finish before Go resumes those groups; no mock harness changes process-wide environment values.
 Use `go test -race -count=1 -parallel=3 ./...` for the matching local schedule, retaining the configured owned Swift and optional fixture environment when exercising those lanes.
 No tests or required jobs are removed, and the package/job limits and coverage/reconciliation settings above stay unchanged.

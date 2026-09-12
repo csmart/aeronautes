@@ -420,6 +420,7 @@ func assertRepresentationWire(t *testing.T, h *Harness, f stagedContentFixture, 
 }
 
 func TestCopyStagedRepresentationRealSwift(t *testing.T) {
+	t.Parallel()
 	plain := bytes.Repeat([]byte("opaque bytes"), 131072)
 	first := stagedGzipBytes(t, plain, "encoding-a")
 	second := stagedGzipBytes(t, plain, "encoding-b")
@@ -442,6 +443,7 @@ func TestCopyStagedRepresentationRealSwift(t *testing.T) {
 }
 
 func TestCopyPlainRepresentationRealSwift(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name, coding string
 		body         []byte

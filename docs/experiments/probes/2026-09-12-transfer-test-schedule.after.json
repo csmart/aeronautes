@@ -1,0 +1,242 @@
+{
+  "status": "complete local verification; independent implementation and range review and hosted delivery pending",
+  "reconciliation_path": "/tmp/aeronautes-transfer-schedule-reconciliation.json",
+  "reconciliation_sha256": "b99d487107269185a97e7a097816f7b369c8b0baa3334bf59dabc8e82991f0a5",
+  "reconciler_path": "/tmp/aeronautes-transfer-schedule-reconcile.py",
+  "reconciler_sha256": "36bb789a47946d11045b147a5d8f4ed35941db47b0e4de3cd41aa0b964d09a88",
+  "same_scenarios_and_outcomes": true,
+  "literal_inventory_equal": false,
+  "exact_generated_name_aliases": {
+    "baseline": {
+      "TestForceReauthChangesTheToken/expiry=1789216908": "TestForceReauthChangesTheToken/expiry=<current_time_plus_one_hour>",
+      "TestDestinationRootOpenDirectory//tmp/aeronautes-staged-copy-current-full-os4u_g5_/tmp/TestDestinationRootOpenDirectory211979773/001/outside": "TestDestinationRootOpenDirectory/<owned_temp_directory>/outside"
+    },
+    "candidate": {
+      "TestForceReauthChangesTheToken/expiry=1789218577": "TestForceReauthChangesTheToken/expiry=<current_time_plus_one_hour>",
+      "TestDestinationRootOpenDirectory//tmp/aeronautes-staged-copy-current-full-cwgriwxu/tmp/TestDestinationRootOpenDirectory1077763740/001/outside": "TestDestinationRootOpenDirectory/<owned_temp_directory>/outside"
+    }
+  },
+  "generated_name_oracles": {
+    "internal/swiftcontrol/bulkdelete_test.go:113": "One current-time-plus-one-hour expiry value; verify its timestamp against the actual outer run event.",
+    "internal/transfer/local/download_root_test.go:102": "One absolute outside path from t.TempDir; verify the exact run-owned root and generated directory shape."
+  },
+  "testing_source_sha256": "8d2437cfdcfb82fd8807e5063783de1d50f70e589e80cad10e17d8ef23f724d9",
+  "parallel_observation_limit": "Go releases its parallel slot at testing.go:2162 before reporting its terminal event at :2176. CONT-minus-terminal counts can therefore exceed the actual three-slot limit; retain that observation for both runs without relabelling it as active work. Leaf counts are narrower observations, not proof of setup or cleanup concurrency. The unchanged -parallel=3 and pinned Go scheduler enforce the group limit; every newly parallel group retains sequential children.",
+  "source_changes": [
+    "docs/DESIGN.md",
+    "docs/audits/2026-09-05/data-safety.md",
+    "docs/audits/2026-09-05/remediation-plan.md",
+    "docs/audits/2026-09-05/security-release.md",
+    "docs/audits/2026-09-05/ui-product.md",
+    "docs/experiments/2026-09-12-transfer-test-schedule.md",
+    "docs/experiments/probes/2026-09-12-transfer-test-schedule.before.json",
+    "internal/systemtest/child_lifetime_linux_test.go",
+    "internal/systemtest/copy_staged_content_test.go",
+    "internal/systemtest/copy_staged_representation_test.go"
+  ],
+  "baseline": {
+    "packet": "/tmp/aeronautes-staged-copy-current-full-os4u_g5_",
+    "head": "836ad0d2138f51741c65de948bab5c5edeb2f3f8",
+    "process": {
+      "argv": [
+        "/home/csmart/code/.aeronautes-work/go-mod/golang.org/toolchain@v0.0.1-go1.27.1.linux-amd64/bin/go",
+        "test",
+        "-race",
+        "-count=1",
+        "-json",
+        "-parallel=3",
+        "-p=2",
+        "-timeout=25m",
+        "./..."
+      ],
+      "cwd": "/home/csmart/code/worktrees/aeronautes/transfer_safety_batch",
+      "process_limit_seconds": 1800,
+      "started_utc": "2026-09-12T11:39:02.092344+00:00",
+      "exit": 0,
+      "timed_out": false,
+      "elapsed_seconds": 1032.8677365682088,
+      "finished_utc": "2026-09-12T11:56:14.960079+00:00",
+      "source_unchanged": true
+    },
+    "events": 21369,
+    "stream_sha256": "4388da22580b1c904661661b0ce204cb2c5a115404144b285d6752f9c29a01a3",
+    "source_files_rehashed": 823,
+    "artifacts_rehashed": 9,
+    "named": {
+      "pass": 4342,
+      "skip": 1
+    },
+    "leaf": {
+      "pass": 4010,
+      "skip": 1
+    },
+    "groups": {
+      "TestChildLifetimeMock": {
+        "elapsed": 26.79,
+        "passing_leaves": 5,
+        "paused": false
+      },
+      "TestChildLifetimeRealSwift": {
+        "elapsed": 29.17,
+        "passing_leaves": 5,
+        "paused": false
+      },
+      "TestCopyStagedContentMock": {
+        "elapsed": 4.12,
+        "passing_leaves": 5,
+        "paused": false
+      },
+      "TestCopyStagedContentRealSwift": {
+        "elapsed": 13.4,
+        "passing_leaves": 5,
+        "paused": false
+      },
+      "TestCopyStagedContentFaultMock": {
+        "elapsed": 2.28,
+        "passing_leaves": 3,
+        "paused": false
+      },
+      "TestCopyStagedContentFaultRealSwift": {
+        "elapsed": 7.59,
+        "passing_leaves": 3,
+        "paused": false
+      },
+      "TestCopyStagedRepresentationRealSwift": {
+        "elapsed": 12.36,
+        "passing_leaves": 5,
+        "paused": false
+      },
+      "TestCopyPlainRepresentationRealSwift": {
+        "elapsed": 8.19,
+        "passing_leaves": 4,
+        "paused": false
+      }
+    },
+    "reported_unterminated_outer_peak": 4,
+    "reported_leaf_peak": 3,
+    "lifecycle_valid": true,
+    "parallel_groups": 52,
+    "system_package": {
+      "action": "pass",
+      "elapsed": 859.57
+    },
+    "raw_inventory_sha256": "629e37e4c3764cfd6400e16d188c1845d9e3bd0e306c599f482e6800e956fe7a",
+    "scenario_inventory_sha256": "6ac7e6247b36861d2f5887b6a4a7e54543baff6bbc6de2a91f7774ecac3a83d0",
+    "producer_result_sha256": "25062dde5adb0e7ccb9650c983b473e3db8c15bd90816a09b7f73fcee5e37f51",
+    "inputs_sha256": "94fa3ce627ce70102bf9db049a6e59713994158c377c3d5e40945670e9f0d3bc",
+    "tracked_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "go_sha256": "30969f97169d7f43fe6a085873d75613adc21e30818a8c61d95bd27275df4624",
+    "rclone_sha256": "9700aa1273ac73d6d0833c43ba63fe830516422cb131960b8c1a24ced789cba0",
+    "test_source_sha256": {
+      "internal/systemtest/child_lifetime_linux_test.go": "0afaa447aa83daf2a125ddd585e1aca28f47791d8b54f415313cb7839b858a36",
+      "internal/systemtest/copy_staged_content_test.go": "90178c166d6a3a47da7addc7d0d509325cdad1245f6a86b96fafde7561a69a9e",
+      "internal/systemtest/copy_staged_representation_test.go": "c09ec9c94589444ae2c1f89d9788bb20baa8c417d17f27eede4560e8c2c61a78"
+    }
+  },
+  "candidate": {
+    "packet": "/tmp/aeronautes-staged-copy-current-full-cwgriwxu",
+    "head": "1a918577b2fa456e40ac1b86475af76897337ca2",
+    "process": {
+      "argv": [
+        "/home/csmart/code/.aeronautes-work/go-mod/golang.org/toolchain@v0.0.1-go1.27.1.linux-amd64/bin/go",
+        "test",
+        "-race",
+        "-count=1",
+        "-json",
+        "-parallel=3",
+        "-p=2",
+        "-timeout=25m",
+        "./..."
+      ],
+      "cwd": "/home/csmart/code/worktrees/aeronautes/transfer_safety_status",
+      "process_limit_seconds": 1800,
+      "started_utc": "2026-09-12T12:06:54.724026+00:00",
+      "exit": 0,
+      "timed_out": false,
+      "elapsed_seconds": 992.8233708669432,
+      "finished_utc": "2026-09-12T12:23:27.547393+00:00",
+      "source_unchanged": true
+    },
+    "events": 21421,
+    "stream_sha256": "3c15cf293251c4e8eba47d6a29abd6c251b9f051579cfaf091ed1cc1fc7aca37",
+    "source_files_rehashed": 825,
+    "artifacts_rehashed": 9,
+    "named": {
+      "pass": 4342,
+      "skip": 1
+    },
+    "leaf": {
+      "pass": 4010,
+      "skip": 1
+    },
+    "groups": {
+      "TestChildLifetimeMock": {
+        "elapsed": 26.91,
+        "passing_leaves": 5,
+        "paused": true
+      },
+      "TestChildLifetimeRealSwift": {
+        "elapsed": 29.99,
+        "passing_leaves": 5,
+        "paused": true
+      },
+      "TestCopyStagedContentMock": {
+        "elapsed": 4.71,
+        "passing_leaves": 5,
+        "paused": true
+      },
+      "TestCopyStagedContentRealSwift": {
+        "elapsed": 15.9,
+        "passing_leaves": 5,
+        "paused": true
+      },
+      "TestCopyStagedContentFaultMock": {
+        "elapsed": 2.65,
+        "passing_leaves": 3,
+        "paused": true
+      },
+      "TestCopyStagedContentFaultRealSwift": {
+        "elapsed": 9.47,
+        "passing_leaves": 3,
+        "paused": true
+      },
+      "TestCopyStagedRepresentationRealSwift": {
+        "elapsed": 15.56,
+        "passing_leaves": 5,
+        "paused": true
+      },
+      "TestCopyPlainRepresentationRealSwift": {
+        "elapsed": 10.33,
+        "passing_leaves": 4,
+        "paused": true
+      }
+    },
+    "reported_unterminated_outer_peak": 4,
+    "reported_leaf_peak": 4,
+    "lifecycle_valid": true,
+    "parallel_groups": 60,
+    "system_package": {
+      "action": "pass",
+      "elapsed": 823.778
+    },
+    "raw_inventory_sha256": "d865a4ac31c0b72c0d3c917cf62c4843fccc1f7b5ea594c8d0b6b4ce928f8a90",
+    "scenario_inventory_sha256": "6ac7e6247b36861d2f5887b6a4a7e54543baff6bbc6de2a91f7774ecac3a83d0",
+    "producer_result_sha256": "a5813b19abb74b1c50cc09fa21b74f42f614a5913d04f9e2ed040ba134eb8cf3",
+    "inputs_sha256": "c451837a3570a1c3ed0a6565e70a49df9b30812662360e16579dcde6ffef441b",
+    "tracked_patch_sha256": "30e4e25e67be87aab813cc347b3080dbfe4ae3576c0bf04495badd391d9453d8",
+    "go_sha256": "30969f97169d7f43fe6a085873d75613adc21e30818a8c61d95bd27275df4624",
+    "rclone_sha256": "9700aa1273ac73d6d0833c43ba63fe830516422cb131960b8c1a24ced789cba0",
+    "test_source_sha256": {
+      "internal/systemtest/child_lifetime_linux_test.go": "09fe6bc3fff687e436ac596a282e9f866c5a966db59d8e26cc511d2a3d85ed00",
+      "internal/systemtest/copy_staged_content_test.go": "5fffb996664ffed4bf0360f856dd440320824f7e47e22f385a4ef8c39342f7ea",
+      "internal/systemtest/copy_staged_representation_test.go": "180b7fb23ee9d6128364fb71d57acd78dbd70976dd91a67e6a979ffbbcb3464b"
+    }
+  },
+  "literal_check_failure": {
+    "record_kind": "author-observed tool result",
+    "exit": 1,
+    "reason": "The initial literal comparison found the two source-generated names recorded above; neither producer failed.",
+    "retained_script": "/tmp/aeronautes-transfer-schedule-reconcile-literal-before.py",
+    "retained_script_sha256": "3dc6babd28292c16e47b4eb537b21ec03b7246b83a4b17497fe743076cce0092"
+  }
+}
