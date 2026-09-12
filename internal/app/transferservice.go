@@ -71,6 +71,9 @@ type TransferService struct {
 	// so token refresh reaches long jobs (§26.2).
 	engineFactory         func(source transfercopy.RemoteSource, opts rclone.Options) (transfercopy.Engine, error)
 	downloadStageBoundary func(context.Context, string) error
+	// downloadPlacementBoundary, when wired, observes each progress step
+	// of a download so a fixture can act between two placements.
+	downloadPlacementBoundary func(ctx context.Context, jobID string, done, total int64)
 
 	// recommendations is the §42 per-bookmark lookup feeding Auto.
 	recommendations func(bookmarkID string) *TransferSettingsDTO

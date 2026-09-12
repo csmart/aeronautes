@@ -532,6 +532,9 @@ type Failure struct {
 	Name  string
 	Stage string
 	Err   string
+	// Cancelled marks a failure that is the cancellation itself, so a
+	// caller can tell a job that was only cancelled from one that failed.
+	Cancelled bool
 }
 
 // Report is the execution outcome.

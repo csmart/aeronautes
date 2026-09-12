@@ -32,6 +32,13 @@ func WireDownloadStageBoundary(s *TransferService, boundary func(context.Context
 	s.downloadStageBoundary = boundary
 }
 
+// WireDownloadPlacementBoundary lets an owned fixture act after each
+// download item outcome, so a cancel can land between two placements;
+// like the stage boundary it is composition, never a bridge method.
+func WireDownloadPlacementBoundary(s *TransferService, boundary func(ctx context.Context, jobID string, done, total int64)) {
+	s.downloadPlacementBoundary = boundary
+}
+
 // RunStartupRetention applies the persisted §51 retention policy.
 func RunStartupRetention(ctx context.Context, s *SettingsService, jobStore *jobs.Store, auditStore *audit.Store) {
 	s.runRetention(ctx, jobStore, auditStore)

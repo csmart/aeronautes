@@ -368,8 +368,8 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 
 	s.runner.launchWithQueuedOutcome(jobCtx, job.ID, req.BookmarkID, releasePins, func(runCtx context.Context) {
 		s.runLocal(runCtx, job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, func(innerCtx context.Context, onProgress func(done, total, bytes int64)) (*local.Report, error) {
-			return local.DownloadInto(innerCtx, session, engine, "aeronautes_src:"+req.Container, req.Container, req.Prefix, destination, job.ID, preflight, onProgress,
-				s.downloadItemRecorder(context.WithoutCancel(innerCtx), job.ID, req, destination.Path()))
+			return local.DownloadInto(innerCtx, session, engine, "aeronautes_src:"+req.Container, req.Container, req.Prefix, destination, job.ID, preflight,
+				s.downloadProgress(innerCtx, job.ID, onProgress), s.downloadItemRecorder(context.WithoutCancel(innerCtx), job.ID, req, destination.Path()))
 		})
 	}, func(cancelCtx context.Context) {
 		s.finishLocal(cancelCtx, job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, jobs.StateCancelled, "", "")
@@ -418,6 +418,18 @@ func (s *TransferService) finishLocal(ctx context.Context, jobID, bookmarkID str
 	if err != nil {
 		log.Printf("job %s terminal outcome was not saved: %v", jobID, err)
 	}
+}
+
+// onlyCancellations reports whether every recorded failure is the
+// cancellation itself; a job with such failures and nothing copied was
+// cancelled rather than partially done.
+func onlyCancellations(failures []local.Failure) bool {
+	for _, failure := range failures {
+		if !failure.Cancelled {
+			return false
+		}
+	}
+	return true
 }
 
 // runLocal is the shared local-transfer job goroutine: preflight was
@@ -521,6 +533,11 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 			message += "; " + err.Error()
 		}
 		finish(jobs.StatePartial, message)
+	case err != nil && errors.Is(err, context.Canceled) && report != nil && report.Done == 0 && onlyCancellations(report.Failures):
+		// Nothing landed and every failure is the cancellation itself:
+		// the job was cancelled, and its message still names what was
+		// interrupted so the retained stage or temporary is disclosed.
+		finish(jobs.StateCancelled, failures)
 	case err != nil && report != nil && (report.Done > 0 || len(report.Failures) > 0):
 		message := err.Error()
 		if len(report.Failures) > 0 {

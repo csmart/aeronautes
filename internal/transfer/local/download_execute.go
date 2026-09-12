@@ -258,8 +258,16 @@ func DownloadInto(ctx context.Context, src *swiftcontrol.Session, engine Engine,
 		progress()
 		return report, nil
 	}
-	for _, rel := range engineNames {
+	for index, rel := range engineNames {
 		if err := ctx.Err(); err != nil {
+			// The staged bytes of every item not yet placed stay in the
+			// stage; each such item gets the same record a cancel seen
+			// inside placement gives, so timing never changes the ledger.
+			for _, remaining := range engineNames[index:] {
+				if observeErr := d.observe(engineItems[remaining], downloadUnplacedAfterCancel(err)); observeErr != nil {
+					return report, errors.Join(err, observeErr)
+				}
+			}
 			return report, err
 		}
 		item := engineItems[rel]
@@ -270,6 +278,15 @@ func DownloadInto(ctx context.Context, src *swiftcontrol.Session, engine Engine,
 		progress()
 	}
 	return report, ctx.Err()
+}
+
+// downloadUnplacedAfterCancel is the one record a staged-but-unplaced
+// item carries after a cancel: the placement failed at the commit stage,
+// the effect is unresolved because the child wrote the stage, and the
+// diagnostic names the cancellation; the staging location recorded at
+// admission says where the bytes are.
+func downloadUnplacedAfterCancel(err error) downloadResult {
+	return downloadFailed(transfercopy.EffectUnresolved, transfercopy.StageCommit, transfercopy.CodeIncomplete, "place", err)
 }
 
 // noteDisplacement records when the captured pathname stops naming the
@@ -376,7 +393,7 @@ func placeDownloaded(ctx context.Context, destination, stage *DestinationRoot, s
 		return downloadVerificationFailed(transfercopy.StageVerification, transfercopy.CodeUnverified, "place", fmt.Errorf("size %d != object %d", info.Size(), item.Size))
 	}
 	if err := ctx.Err(); err != nil {
-		return downloadFailed(transfercopy.EffectUnresolved, transfercopy.StageCommit, transfercopy.CodeIncomplete, "place", err)
+		return downloadUnplacedAfterCancel(err)
 	}
 	targetParent, err := destination.openDirectory(filepath.Dir(item.RelPath), true)
 	if err != nil {
@@ -384,7 +401,7 @@ func placeDownloaded(ctx context.Context, destination, stage *DestinationRoot, s
 	}
 	defer targetParent.Close()
 	if err := ctx.Err(); err != nil {
-		return downloadFailed(transfercopy.EffectUnresolved, transfercopy.StageCommit, transfercopy.CodeIncomplete, "place", err)
+		return downloadUnplacedAfterCancel(err)
 	}
 	publish := publication{root: destination,
 		stagedRoot: stagedParent, stagedBase: base, stagedRel: filepath.Join(stageName, item.RelPath), stagedDisplay: stagedDisplay,

@@ -96,7 +96,8 @@ func (u *uploadRun) observe(item UploadItem, result uploadResult) error {
 	if result.failure != nil {
 		u.failed++
 		if len(u.report.Failures) < maxFailures {
-			u.report.Failures = append(u.report.Failures, Failure{Name: item.Name, Stage: result.label, Err: result.failure.Error()})
+			u.report.Failures = append(u.report.Failures, Failure{Name: item.Name, Stage: result.label, Err: result.failure.Error(),
+				Cancelled: result.Diagnostic.Code == transfercopy.CodeCancelled})
 		}
 	}
 	for _, issue := range result.issues {
