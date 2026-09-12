@@ -1,0 +1,49 @@
+{
+  "environment": {
+    "AERONAUTES_OFFICIAL_RCLONE_DIR": "<pinned rclone 1.74.3 directory>",
+    "GOFLAGS": "-mod=readonly",
+    "GOTOOLCHAIN": "go1.27.1",
+    "PATH": "pinned rclone first",
+    "real_swift": "AERONAUTES_SAIO_AUTH_URL=http://127.0.0.1:18080/auth/v1.0"
+  },
+  "probes": {
+    "internal/systemtest/download_name_limits_test.go": {
+      "archive": "probes/2026-09-12-download-name-limits-service_test.go.txt",
+      "sha256": "fd64ad5d4193cd71693f5774eb2ec9b2750d973847cf9ad3b6723692c3af886c"
+    },
+    "internal/transfer/local/download_name_limits_test.go": {
+      "archive": "probes/2026-09-12-download-name-limits-local_test.go.txt",
+      "sha256": "be801840f01d4114d8f37f5dbfa2cc3a1bf3d844174b2084c9b1ee9b9d20370f"
+    }
+  },
+  "producers": [
+    {
+      "command": "go test -race -count=1 -run 'TestDownloadNameLimitsProbe$' -v ./internal/transfer/local/",
+      "exit": 0,
+      "log_sha256": "6d7fa64373ab1dbd190594b63c02a12fba606cfedf550938662c9ff1f042ea7f",
+      "name": "preflight and executor admission",
+      "note": "every case asserts the observed current behaviour",
+      "passing_leaves": 12
+    },
+    {
+      "command": "go test -race -count=1 -run TestDownloadNameLimitsProbeMock -v ./internal/systemtest/",
+      "exit": 0,
+      "log_sha256": "5fa10badfae2785acc5ffad01e24f20c0f4286d4db42e3559003cbed187a999c",
+      "name": "service mock",
+      "note": "the 4,096-byte path case is admitted and fails at effect time with a retained stage on this provider",
+      "passing_leaves": 7
+    },
+    {
+      "command": "go test -race -count=1 -run TestDownloadNameLimitsProbeRealSwift -v ./internal/systemtest/",
+      "exit": 0,
+      "log_sha256": "4a7d19706b2fc209d78bc332f4c17753244aa1152a2d0e69696691fe6d1d3ddb",
+      "name": "service real Swift",
+      "note": "the 4,096-byte path case is refused by Swift at creation with HTTP 400, name length 4102 longer than 1024",
+      "passing_leaves": 7
+    }
+  ],
+  "rclone": "rclone v1.74.3",
+  "recorded": "2026-09-12T04:46:05.862593+00:00",
+  "source": "7c312a2fa90d13584af1d9c473146ea28e148047",
+  "tree_state": "unchanged production; probes applied as untracked test files and removed before commit"
+}
