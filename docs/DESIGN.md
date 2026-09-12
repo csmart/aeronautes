@@ -5435,6 +5435,18 @@ Block budget writes while an operation is pending or the observation is stale, u
 Preserve the full settings document, four existing choices, unrelated awaits and backend policy; prove same-value readback, duplicate admission and feedback retention with independent omitted-guard controls before local review and current-base delivery gates.
 The wider settings surface, bookmark/audit scopes, native acceptance and valuable-data hold remain open.
 
+The bounded [job presentation contract](experiments/2026-09-12-job-presentation.md) addresses UI-09's missing operation labels and generic Delete count nouns.
+The preserved 19-case probe confirms that active details and the real Delete numerator already work; ten failures include a separate missing-settings/defaults issue outside this first correction.
+
+1. Independently review the contract and unchanged-source proof before production changes.
+2. Give each row a visible operation/mode label and label the three real Delete modes' existing numerator and optional denominator as `objects reported deleted`, omitting their copied-byte suffix.
+   Preserve all count values, incomplete-accounting qualifiers, failures/refusals, historical Mirror totals, state, actions, telemetry guards and active diagnostics.
+3. Prove the bounded presentation change with dedicated mounted tests, healthy neighbouring controls and independent omissions, then obtain strict implementation review.
+   Replay the identical original probe honestly: the separately uncorrected settings case must remain a failure after this first slice.
+4. Renew current-base verification and range review, and require all five PR and resulting-master checks before delivery.
+
+Missing-settings interpretation, account filtering, additional diagnostics, wider UI-09/UI-10, native acceptance and the valuable-data hold remain open.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.

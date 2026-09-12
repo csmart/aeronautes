@@ -1,0 +1,1131 @@
+{
+  "scope": "UI-09 first slice: visible operation labels and Delete count nouns only",
+  "implementation_or_after_claim": false,
+  "source_head": "0066181da4a5dca19494964fdaad633d3d24e0da",
+  "original_result_sha256": "45d2d38919ffc9ecc3c04adc303e37e44ae32ad1f2a89ef8574bf01f78c2dbe8",
+  "original_private_index_sha256": "5dd87dcca1efc13e1188b94747fe3f0b0d63ee87788ba18bcf25dc4ec836a3e0",
+  "before_result": {
+    "head": "0066181da4a5dca19494964fdaad633d3d24e0da",
+    "source": "/home/csmart/code/worktrees/aeronautes/bookmark_observations",
+    "command": [
+      "node",
+      "/home/csmart/code/worktrees/aeronautes/bookmark_observations/frontend/node_modules/vitest/vitest.mjs",
+      "run",
+      "--config",
+      "/tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/job-probe.config.ts",
+      "src/features/jobs/job_presentation_before.test.ts",
+      "--reporter=default",
+      "--reporter=json",
+      "--outputFile=/tmp/aeronautes-job-presentation-before-5t6v9v90/vitest.json"
+    ],
+    "cwd": "/tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend",
+    "node": "v22.23.1",
+    "versions": {
+      "svelte": "5.57.0",
+      "vite": "8.2.2",
+      "vitest": "4.1.11",
+      "jsdom": "30.0.1"
+    },
+    "exit": 1,
+    "timeout": false,
+    "timeout_seconds": 90,
+    "elapsed_seconds": 2.8160960460081697,
+    "inputs": {
+      "docs/DESIGN.md": "a8d1ec21d6cc6a9718cb5389ff620681418cfdd253be39d8ab5ce777b8360a5e",
+      "docs/REQUIREMENTS.md": "d39e058a909622ae1b2febed898dfc83c649c586afb38e36656d704f9908bf40",
+      "frontend/.npmrc": "15f75ddd2ccf5181e815aed1237a54200bea4c34fc447c45cd0dcd92a2dca5d0",
+      "frontend/index.html": "3e21a0e84b848e103d25b718dc57ccd2aa496f8cb9552c55548de7a4ca01f62f",
+      "frontend/package-lock.json": "c601825823cc7d20b5ac96b4da60b8d3cba509b1000c52ebaa7cd2dbb64e3796",
+      "frontend/package.json": "d0fbb0b9ddc6bbcc9a23e32b490aecceb990d0a1b61996e0df1c127478df2f68",
+      "frontend/svelte.config.js": "a7e0a6ef9b2060092c7a1dea6ad69dedb8642ad16d41a3f9b8aea8dfcca7c5ed",
+      "frontend/tsconfig.json": "6d2be1659f193c13b2edc168eccfa26c9bfca600b9851939ed9b22f4db711ec7",
+      "frontend/vite.config.ts": "d3b9a602a45a15f25a73f54cf62dc7d061160adaace4c25d9e404d82b6bf6f5b",
+      "internal/app/benchmarkservice.go": "9afd2a9b5cee8ea4cd91a4e02dfd7f2480cbd86dc564b45b1c8cfe7f2c42203b",
+      "internal/app/deleteservice.go": "94c200620d28b13a78c6d103b999abdc31a050d5c998dae97dcc0e83e2091fdc",
+      "internal/app/localtransferservice.go": "794603039ff8da59b699526c485bab37f261b23acd2ad5e7081688a291574fe4",
+      "internal/app/transferservice.go": "ffdabd969101ffe9a3489c544a636563a046f9a1488266a9e42b1b892a64ff42",
+      "internal/deletion/accounting.go": "70490c9f1942ee8eecfb22035d70230bd5f50a217e38178f9e7d76de2e553985",
+      "internal/deletion/deletion.go": "82d00645ab742785f7bc75aef04260372940393f98525a0fdfc559d1a8917152",
+      "internal/jobs/jobs.go": "e283d2e9a711afcd4ff5b355bf0b52be8fd372e64271ac088fbe610755992f9c",
+      "frontend/src/App.svelte": "e7c55d7cff7eaa3871fecaee95722a32a410b3df3f740a7811c2e051c3d1fda8",
+      "frontend/src/app.css": "357cae388374755cbd7db182507d53788ae66e533c439081c8c91c3d0551aca3",
+      "frontend/src/main.ts": "d8ee657c56f7e0748c53c1b076ad1a9b5f512024c758cc86d31f55d40b4034de",
+      "frontend/src/vite-env.d.ts": "cc9c01ab82cd866d596b11028637a284c3cca4b115d2aa5a02c31d2c59977fc1",
+      "frontend/src/components/VirtualList.svelte": "10975d4cfbe81e53b5ccd02f4f42ad18ae8000ccf22be97d01355dd6beff56c7",
+      "frontend/src/components/VirtualList.test.ts": "176fcbc897f71fc13e9516b313499a0e7e5e69558438e5ae973549daf25a1b67",
+      "frontend/src/components/VirtualListTestHarness.svelte": "27c5dbf258ea939244b66d0d699965d107e5e2df135acc0a7fd9269fccb6b9f8",
+      "frontend/src/design/motion.css": "1e3b7b6769b69312c77b9c8cc8072447fe2f294eea12cf47c1e09fe0d8900909",
+      "frontend/src/design/textContrast.test.ts": "5f17479b778e1b1470f1d2166f781deb386b752bccb8a549d9a1db81c391aa36",
+      "frontend/src/design/tokens.css": "a0926957a2a7934dff623e5d4dcd5446f5108b59cda9da741e5fe7318119d051",
+      "frontend/src/design/tokens.test.ts": "640e9c35a7872f75f9737593d80a4a21140e683a8e3bb42856c09ff08f447f64",
+      "frontend/src/design/tokens.ts": "949e622ea264e3406ebe7904e208d4684c64547570caf74029bcf0e72331b300",
+      "frontend/src/design/typography.css": "f91c32c09f17c50d21ac56785f6817a57476738b64eb7a98d18fff157b18c3ae",
+      "frontend/src/lib/api.ts": "f6a2fc56473e3fa97d7445384ebec894cbbdf66f58c6f7d6516e26f1b7927d37",
+      "frontend/src/lib/fixtures.ts": "11bf958557344ed453f46a84994f19de0cac547bc948d55362fb0bebea706d25",
+      "frontend/src/lib/format.test.ts": "768e20d12dba1a9c685629d91c221e33fe6760bff24753c3563830d467d4fba7",
+      "frontend/src/lib/format.ts": "988614d7c90f8cfb008f567fb5b25eaadb59def5996fc58b2e320a78c97968ce",
+      "frontend/src/lib/listing.test.ts": "b4214e44aa2f608478fae16c71700e80c02efa40af91396b978fe2b8503e06f9",
+      "frontend/src/lib/listing.ts": "f642b6277f107c8105e27155e43bd7fd56b1811f7794176492f4ba87fceeae63",
+      "frontend/src/lib/metadataDiff.test.ts": "9684435b06e38572211019fa3455b5fb40b03f573bd97d0f28f87b6f8150d194",
+      "frontend/src/lib/metadataDiff.ts": "45e0cee7b001b61450a3b5b3a9adabe4aaa16acdfaa69cd4bd1845da1bd37b93",
+      "frontend/src/lib/trapFocus.ts": "b3a4f4e63ba44da839c1e68561093a5d25983b185ff34d106e25043ad6387cb6",
+      "frontend/src/lib/types.ts": "e0e84b48b612bd87786549b1dcfd8a4a7b657169ee8370813b91eb4e91107854",
+      "frontend/src/features/browser/AboutDialog.svelte": "178a65ebd4f967bf85c3a21f361a84c86e684091e9c798563a77b6785c264b91",
+      "frontend/src/features/browser/AboutDialog.test.ts": "ad4a6c590cce3e0f584f926aa9c73871b70a5e5439a6a45cbc878b5ab0a14289",
+      "frontend/src/features/browser/BookmarkEditor.svelte": "2fe6e59fa14040654e1a1b575fb5e72071676ae08b02d545f4cb78e950caf730",
+      "frontend/src/features/browser/BookmarkRail.svelte": "d0fb072d7b83c9f57a4f192e78c02723a0821b5fad6306e3fffff9178f7cc0d8",
+      "frontend/src/features/browser/BrowserScreen.svelte": "7bbf471c7c7efb54a155e025a61cfed55c8c3dc5d22689d015804595fb0c8099",
+      "frontend/src/features/browser/ContainerColumn.svelte": "253dc7eaab3b43de16e381cdb3a18aeefd11bd0fbbd0a920157861b7992aeff5",
+      "frontend/src/features/browser/CreateContainerDialog.svelte": "3ccc0b23c3ea89784c57e283e244ddd23fea5dd5542a264236016e2dd03d8bc0",
+      "frontend/src/features/browser/CredentialStatusDialog.svelte": "f7c8de190eb9d101a6f58891c1d2b9e63231a7c1ae26ecf48ab89bd1914cc135",
+      "frontend/src/features/browser/CredentialStatusDialog.test.ts": "204677ea84615be28cbe6c22f350f6d3ddbcc1d10047a921b3ab4b98d130c9f1",
+      "frontend/src/features/browser/FindPanel.svelte": "a9caf47dd25c52c9b02c64f75b09502c5ccca9190a68d71618502fdc2df6942a",
+      "frontend/src/features/browser/WorkingList.svelte": "031e32a2c4ac53b13d7cfdb51a96a5ee030315d47f7e7153fc2e8bb19749ce8a",
+      "frontend/src/features/browser/auditStatus.test.ts": "68826375c01c5683ff7d6418ad5b0a2af2b8e24890c611b8b1814b30eb12dd05",
+      "frontend/src/features/browser/bookmarkStatus.test.ts": "4f4da0345b81dc4313ccac2729f5f7f3f5ec52d7dc2ed90278340f04b8bee13a",
+      "frontend/src/features/browser/browserState.svelte.ts": "cf1e44cfd02b9e86671ea51567389880c9cbce49f2f5543153b7420aabf8a1de",
+      "frontend/src/features/browser/browserState.test.ts": "cf027c582ceeef696934ce1f36dce09327c554de7d328f4eff6a61e385c9fb27",
+      "frontend/src/features/browser/connectionBinding.test.ts": "07cae83c8d494c0f8cac0996a67c2a90065c377f2ead37b21f0388b22160516c",
+      "frontend/src/features/browser/containerModeTabs.test.ts": "ede429617d57b76f22cdf0ada888491c68a9914bed527f7f6900fd3a21ba7b49",
+      "frontend/src/features/browser/credentialStatus.test.ts": "3e14cc2a52ac8324e3c721962177b68a093d67ce15dc702c38a17b79209ddc07",
+      "frontend/src/features/browser/fakeApi.ts": "7621e6248949b097466022bd5678339210b03c8eacaa04a51e2b3c33c4e2d75d",
+      "frontend/src/features/browser/findBinding.test.ts": "4afb9aad58b6b8f22e4c855d9e5101ab87f4bd420e30800e579c6b1c0a04c9f4",
+      "frontend/src/features/browser/keyboardScope.test.ts": "2523046a8ed3779f024d3a7c48e735611877769770ed2e641834d3f8ffc70590",
+      "frontend/src/features/browser/literalPrefixes.test.ts": "250c54bf788cacdf66f39ce071b71f7834cd846efd1a0f256014d0006379d926",
+      "frontend/src/features/browser/pagingBinding.test.ts": "5300272ef4b644160ef07315139e180a14c339c0603c4dc84a941251c5424f2e",
+      "frontend/src/features/browser/recoveryStatus.test.ts": "63c0cadc917f14cf42d68f37006164414e5f8bb21b378bbac3ce468aefba626e",
+      "frontend/src/features/browser/sensitiveLabels.test.ts": "27d17644857c7a973ffb88386cc5aeac1f1e78dcfd32c99d3d2dfa06d9e0cbca",
+      "frontend/src/features/inspector/AclEditor.svelte": "19f4813c1bd97c33dcdd71d298539b755b0ac74e4ecbf6d35fbd5d526317c267",
+      "frontend/src/features/inspector/ContainerEditPanel.svelte": "e34f82aad71b2c3299dcd0bf10f60a9eee9492c328de92218fbe64d0d36879ab",
+      "frontend/src/features/inspector/Inspector.svelte": "36e83efbfe2a57aebfab522117d33b814a4510fc77eedff6723280aa8665690a",
+      "frontend/src/features/inspector/ManifestDeleteDialog.svelte": "080f6d65300c5d658bc4d0b3be9248d552e63d3f4a6ab3b4e255d86f1e872c3c",
+      "frontend/src/features/inspector/MetadataEditor.svelte": "d8c2bd262648872f92872eb2cc7095b6aab5b2a6e016ec796d4ee71232e385d1",
+      "frontend/src/features/inspector/ObjectEditPanel.svelte": "6ff7ca25e8f241452118b134e3b41f069022e86ae61c6a275a3c80718dbaa777",
+      "frontend/src/features/inspector/consentLayout.test.ts": "b8aa83b8dbc909be8f0a3b271b588f46e37b1929e20579b310dfada3527afc58",
+      "frontend/src/features/inspector/detailBinding.test.ts": "8d223afc535f5fbb5c1e5f306d2fa0d0c16f7925d346e9c618760fe1175a3b54",
+      "frontend/src/features/inspector/dialogBinding.test.ts": "b23b562b3072d96f459ec2c4e8faf16df5586c1566c5eaebf2e5d9f1374996a1",
+      "frontend/src/features/inspector/metadataIdentity.test.ts": "0572b7127e66a7808d1e965e3cc4088c6361d2b51a89188e7d2528b570e7d203",
+      "frontend/src/features/inspector/mutationDialogs.test.ts": "21c415948a3cf82f46c3b8acac34f595edbbfa69205af6965e6763f3e1dcd97a",
+      "frontend/src/features/jobs/JobHistory.svelte": "1b4d8b383c9e55541b633b63abc069c2f4eecc7dc3f86da3281639c27e3fbf0e",
+      "frontend/src/features/jobs/JobItems.svelte": "ebe32c3c04c59e67cce6bdafe5c7f3b97d8cf7ec8f9a45779f1dc09c58f12c89",
+      "frontend/src/features/jobs/JobsDrawer.svelte": "dff33e5f8ad202317f647e459c8e421bdb9e74dcf815fbb008e2a12cf394959b",
+      "frontend/src/features/jobs/JobsDrawer.test.ts": "b85eab46db4970e21e9359d88d765511caa197a4daee982c407dca323cfabf2f",
+      "frontend/src/features/jobs/auditStatus.test.ts": "e7c05ee08d69c1c7dd06a0be3a5cb0feedbc53b06fd4ccc84182abd22c1810bc",
+      "frontend/src/features/jobs/cancellationStatus.test.ts": "621482816536efa4f3b6ef40b2df88d9f37be4f2f74caec8441a8204915f58ac",
+      "frontend/src/features/jobs/itemRecords.test.ts": "ac272203ad6c63df86b3928a97235a6f140de012651a9a26878281aa511e8565",
+      "frontend/src/features/transfer/DeleteDialog.svelte": "51565cf35e76e042b311acee4185a8a7ac0a973a1b91987dc5fbea06c0a19fdf",
+      "frontend/src/features/transfer/LocalTransferDialog.svelte": "d23bf8084e1a0c513e4fe7b6cacfba8c116ba9cfc4267c232b5f219ab7e01237",
+      "frontend/src/features/transfer/LocalTransferDialog.test.ts": "d5edd2c7983e95b23a788200864469bfc294dcd2c44967f4aa65bb50a8bf435c",
+      "frontend/src/features/transfer/TransferDialog.svelte": "6089a159bf8707f468168181e406174c99482331842a5dc7e6221dec5d05ee7e",
+      "frontend/src/features/transfer/TransferDialog.test.ts": "581ac610fa06005f2c53bddf5067862f45088a6b46a2c36884cae14513c2ea84",
+      "frontend/src/features/transfer/previewBinding.test.ts": "152a0be5875d203395c437da143f378f0a148b74ab6fdeb6bb45e747552ce00b",
+      "frontend/src/features/transfer/previewFocus.test.ts": "577fffa1024d3583e2e43a66ae02e962d7968801207d879bd87762b5482c31fc",
+      "frontend/src/features/transfer/transferScopes.test.ts": "a011eb663921dffc8871e67e945ba38cd308ad7371c31b3b1714dd6cbc59ebe9",
+      "frontend/bindings/github.com/wailsapp/wails/v3/internal/eventcreate.ts": "6eaeafcf797a1670e8ae925e7d125ef4eff930171874462e37e767b1c52cf7ed",
+      "frontend/bindings/github.com/wailsapp/wails/v3/internal/eventdata.d.ts": "1d7b9f4209d8cb01d7f848c848b53dc582b8dd4df44b09ff3a001c2cef455858",
+      "frontend/bindings/github.com/csmart/aeronautes/internal/app/appservice.ts": "52e1c00194c7c1af119cd45fa0c737d6d3887396f0c21777afc873de119744dd",
+      "frontend/bindings/github.com/csmart/aeronautes/internal/app/auditservice.ts": "d11ee78e331a6dc0a7d97ef2a67a46589d0ae51aa2c6d6dd8fef065adde7bc3a",
+      "frontend/bindings/github.com/csmart/aeronautes/internal/app/benchmarkservice.ts": "9edb2a2b80b7a9a24583740009d65e57116f523ea6c882766f21bc62babc1983",
+      "frontend/bindings/github.com/csmart/aeronautes/internal/app/bookmarkservice.ts": "c0ae18f6e1ea757f6cff165410ceff11807b36295df2d3c659b5abcc5094cee5",
+      "frontend/bindings/github.com/csmart/aeronautes/internal/app/browseservice.ts": "cf015dc9523b14f638f1e2e4096d867904f7b7578d7f3a1d9d150b571d1ba58a",
+      "frontend/bindings/github.com/csmart/aeronautes/internal/app/deleteservice.ts": "2d1e5df3b271a180cc0776b8c4c2c7720f6fd2a7a1e19deeeae92d82290f672e",
+      "frontend/bindings/github.com/csmart/aeronautes/internal/app/findservice.ts": "a00eb2324ed141667cb033ad81de16ca26fe33ec1f4b01204c3172b4f1270388",
+      "frontend/bindings/github.com/csmart/aeronautes/internal/app/index.ts": "dcd51b57bfe4353a44a090975ae74fc56730b0b7a1ae18bc01f11ca6d7bf060e",
+      "frontend/bindings/github.com/csmart/aeronautes/internal/app/inspectorservice.ts": "5302ef6fd5399b7da52ff13106c8817af688ee20cd588d17fbd0b5855c77dc7a",
+      "frontend/bindings/github.com/csmart/aeronautes/internal/app/jobservice.ts": "a748aac7da6383d31fa78fa052b054d90992a3dc2816a0c890387f444001bc38",
+      "frontend/bindings/github.com/csmart/aeronautes/internal/app/models.ts": "c286a64228f7cbc6bdfdc57dff8f45ab1adabf6b60941e9aabf5d24232801751",
+      "frontend/bindings/github.com/csmart/aeronautes/internal/app/mutateservice.ts": "a86a72115d8c0deb684b3d9c09d4fb78a042bc53888ecb4bbf374d523db52e22",
+      "frontend/bindings/github.com/csmart/aeronautes/internal/app/settingsservice.ts": "b00791872425c41466cba1217596629d9981d32f818475f84c97aeceb84dba28",
+      "frontend/bindings/github.com/csmart/aeronautes/internal/app/transferservice.ts": "a5369daaad3f7500ef011fb9d8633e91dc707aed4fa9f0650647982b98ce67d6",
+      "frontend/bindings/github.com/csmart/aeronautes/internal/jobs/index.ts": "e748703d167aa4c83766cc092033fa4d372769814b97ab8ed213309d9f0e3068",
+      "frontend/bindings/github.com/csmart/aeronautes/internal/jobs/models.ts": "420f32303a7c16faef7b37cfcc22105fd31e1130f8eafb111e3670f1b6a750bc",
+      "frontend/bindings/github.com/csmart/aeronautes/internal/transfer/local/index.ts": "abf5e2ede278fbbc6c466b977fee819f1b4b52cd91e10335bb69ed37fc0e5f60",
+      "frontend/bindings/github.com/csmart/aeronautes/internal/transfer/local/models.ts": "2242830a4940fc1fe5176b52aa6f8640deeb1d158473fcae418191cb9d3154ad",
+      "frontend/bindings/github.com/csmart/aeronautes/internal/transfer/plan/index.ts": "60e263d532d2aff7924146e91d54404747bfc784e109f2b5548057a16c040f84",
+      "frontend/bindings/github.com/csmart/aeronautes/internal/transfer/plan/models.ts": "66cfd2856124bc0b754cc701dca11c9df3e678b53c973ad45a2d66746d444b6c",
+      "docs/audits/2026-09-05/remediation-plan.md": "4e16aa4261b0de84e025f1e3e79ebf3fce492bdb592ce08f0f34261fcfa7418c",
+      "docs/audits/2026-09-05/ui-product.md": "a8b995eee7c5a4f36009b9cfed66a1a4fddd23a9b41135b2279ff9a36836073c"
+    },
+    "source_unchanged": true,
+    "probe_sha256": "534df2a5b29cf42fd6b8a08db705c315198a88e3bf58d3b9cd81932641e0a4ee",
+    "config_sha256": "e0072cf81f2b1cb82d92a057ecbfc5c846c1011d903865a5c91c2bd1546c7917",
+    "evidence": {
+      "source.tar": "ef6d85a2d1f324d2588d1aeb512f9a17d5537e2bbb0535d35edf366003a10b1b",
+      "producer.py": "bb5519cdd394d310dea86b0cd5c8e832d795ed508669d4dfb970ce17ac43bbea",
+      "stdout": "7f2516c21bf9dd839a8de3d85e145dec50e6da5f08613ca6bbead6a38bf049ee",
+      "stderr": "727a8165c8e9084523444ab01e070c8c15764404abba7c9b7bc1ff01b7fe84e0",
+      "vitest.json": "4fbb4ac738161b98b7b52c370235afb105dbb5b948757be4545cb751e42c1de1"
+    }
+  },
+  "svelte_check": {
+    "command": [
+      "node",
+      "/home/csmart/code/worktrees/aeronautes/bookmark_observations/frontend/node_modules/svelte-check/bin/svelte-check",
+      "--tsconfig",
+      "./tsconfig.json",
+      "--threshold",
+      "error"
+    ],
+    "cwd": "/tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend",
+    "exit": 0,
+    "elapsed_seconds": 3.0164029579609632,
+    "timeout_seconds": 90
+  },
+  "cases": [
+    {
+      "file": "/tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/src/features/jobs/job_presentation_before.test.ts",
+      "name": "uses a deletion noun without transfer bytes for 'delete_prefix' 'running'",
+      "status": "failed"
+    },
+    {
+      "file": "/tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/src/features/jobs/job_presentation_before.test.ts",
+      "name": "uses a deletion noun without transfer bytes for 'empty_container' 'partial'",
+      "status": "failed"
+    },
+    {
+      "file": "/tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/src/features/jobs/job_presentation_before.test.ts",
+      "name": "uses a deletion noun without transfer bytes for 'delete_container' 'partial'",
+      "status": "failed"
+    },
+    {
+      "file": "/tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/src/features/jobs/job_presentation_before.test.ts",
+      "name": "visibly names the actual 'delete_prefix' operation in its row",
+      "status": "failed"
+    },
+    {
+      "file": "/tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/src/features/jobs/job_presentation_before.test.ts",
+      "name": "visibly names the actual 'empty_container' operation in its row",
+      "status": "failed"
+    },
+    {
+      "file": "/tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/src/features/jobs/job_presentation_before.test.ts",
+      "name": "visibly names the actual 'delete_container' operation in its row",
+      "status": "failed"
+    },
+    {
+      "file": "/tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/src/features/jobs/job_presentation_before.test.ts",
+      "name": "visibly names the actual 'copy' operation in its row",
+      "status": "failed"
+    },
+    {
+      "file": "/tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/src/features/jobs/job_presentation_before.test.ts",
+      "name": "visibly names the actual 'upload' operation in its row",
+      "status": "failed"
+    },
+    {
+      "file": "/tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/src/features/jobs/job_presentation_before.test.ts",
+      "name": "visibly names the actual 'download' operation in its row",
+      "status": "failed"
+    },
+    {
+      "file": "/tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/src/features/jobs/job_presentation_before.test.ts",
+      "name": "does not call unrecorded running Delete settings defaults",
+      "status": "failed"
+    },
+    {
+      "file": "/tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/src/features/jobs/job_presentation_before.test.ts",
+      "name": "control: preserves actual Delete numerator and terminal qualification for 'delete_prefix'",
+      "status": "passed"
+    },
+    {
+      "file": "/tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/src/features/jobs/job_presentation_before.test.ts",
+      "name": "control: preserves actual Delete numerator and terminal qualification for 'empty_container'",
+      "status": "passed"
+    },
+    {
+      "file": "/tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/src/features/jobs/job_presentation_before.test.ts",
+      "name": "control: preserves actual Delete numerator and terminal qualification for 'delete_container'",
+      "status": "passed"
+    },
+    {
+      "file": "/tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/src/features/jobs/job_presentation_before.test.ts",
+      "name": "control: copy keeps counters and allows running diagnostics without cancellation",
+      "status": "passed"
+    },
+    {
+      "file": "/tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/src/features/jobs/job_presentation_before.test.ts",
+      "name": "control: upload keeps counters and allows running diagnostics without cancellation",
+      "status": "passed"
+    },
+    {
+      "file": "/tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/src/features/jobs/job_presentation_before.test.ts",
+      "name": "control: download keeps counters and allows running diagnostics without cancellation",
+      "status": "passed"
+    },
+    {
+      "file": "/tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/src/features/jobs/job_presentation_before.test.ts",
+      "name": "control: incomplete deletion accounting remains last confirmed without final totals",
+      "status": "passed"
+    },
+    {
+      "file": "/tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/src/features/jobs/job_presentation_before.test.ts",
+      "name": "control: unknown planned count and first-poll rate do not invent a percent or ETA",
+      "status": "passed"
+    },
+    {
+      "file": "/tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/src/features/jobs/job_presentation_before.test.ts",
+      "name": "control: historical Mirror keeps destination deletions separate from copied objects",
+      "status": "passed"
+    }
+  ],
+  "observations": [
+    {
+      "name": "deletion noun",
+      "dto": {
+        "id": "job-delete_prefix",
+        "type": "delete_prefix",
+        "state": "running",
+        "source": "source/scope/",
+        "destination": "(deleted)",
+        "sourceBookmarkId": "a",
+        "destBookmarkId": "",
+        "createdAt": "2026-09-12T00:00:00Z",
+        "startedAt": "2026-09-12T00:00:01Z",
+        "finishedAt": "",
+        "engine": "native",
+        "settings": "",
+        "error": "",
+        "recoveryRecords": 0,
+        "counters": {
+          "objectsPlanned": 10,
+          "objectsCopied": 3,
+          "objectsVerified": 0,
+          "objectsFailed": 0,
+          "bytesPlanned": 80,
+          "bytesCopied": 0,
+          "overwrites": 0,
+          "overwritesRefused": 0,
+          "nativeRouted": 0,
+          "objectsDeleted": 0
+        }
+      },
+      "row": "running source/scope/ \u2192 (deleted) \u2026 \u2192 \u2026 3/10 obj \u00b7 0 B 2026-09-12 00:00:01 Cancel \u25b8",
+      "counts": "3/10 obj \u00b7 0 B",
+      "config": null,
+      "progress": "--p: 30%;",
+      "rate": null,
+      "actions": [
+        {
+          "text": "Cancel",
+          "label": null
+        },
+        {
+          "text": "\u25b8",
+          "label": "Item details for job job-delete_prefix"
+        }
+      ]
+    },
+    {
+      "name": "deletion noun",
+      "dto": {
+        "id": "job-empty_container",
+        "type": "empty_container",
+        "state": "partial",
+        "source": "source/scope/",
+        "destination": "(deleted)",
+        "sourceBookmarkId": "a",
+        "destBookmarkId": "",
+        "createdAt": "2026-09-12T00:00:00Z",
+        "startedAt": "2026-09-12T00:00:01Z",
+        "finishedAt": "2026-09-12T00:00:09Z",
+        "engine": "native",
+        "settings": "",
+        "error": "",
+        "recoveryRecords": 0,
+        "counters": {
+          "objectsPlanned": 10,
+          "objectsCopied": 3,
+          "objectsVerified": 3,
+          "objectsFailed": 1,
+          "bytesPlanned": 80,
+          "bytesCopied": 0,
+          "overwrites": 0,
+          "overwritesRefused": 0,
+          "nativeRouted": 0,
+          "objectsDeleted": 0
+        }
+      },
+      "row": "partial source/scope/ \u2192 (deleted) \u2026 \u2192 \u2026 3/10 obj \u00b7 0 B \u00b7 1 failed 2026-09-12 00:00:09 \u25b8",
+      "counts": "3/10 obj \u00b7 0 B \u00b7 1 failed",
+      "config": null,
+      "progress": null,
+      "rate": null,
+      "actions": [
+        {
+          "text": "\u25b8",
+          "label": "Item details for job job-empty_container"
+        }
+      ]
+    },
+    {
+      "name": "deletion noun",
+      "dto": {
+        "id": "job-delete_container",
+        "type": "delete_container",
+        "state": "partial",
+        "source": "source/scope/",
+        "destination": "(deleted)",
+        "sourceBookmarkId": "a",
+        "destBookmarkId": "",
+        "createdAt": "2026-09-12T00:00:00Z",
+        "startedAt": "2026-09-12T00:00:01Z",
+        "finishedAt": "2026-09-12T00:00:09Z",
+        "engine": "native",
+        "settings": "",
+        "error": "",
+        "recoveryRecords": 0,
+        "counters": {
+          "objectsPlanned": 10,
+          "objectsCopied": 3,
+          "objectsVerified": 3,
+          "objectsFailed": 1,
+          "bytesPlanned": 80,
+          "bytesCopied": 0,
+          "overwrites": 0,
+          "overwritesRefused": 0,
+          "nativeRouted": 0,
+          "objectsDeleted": 0
+        }
+      },
+      "row": "partial source/scope/ \u2192 (deleted) \u2026 \u2192 \u2026 3/10 obj \u00b7 0 B \u00b7 1 failed 2026-09-12 00:00:09 \u25b8",
+      "counts": "3/10 obj \u00b7 0 B \u00b7 1 failed",
+      "config": null,
+      "progress": null,
+      "rate": null,
+      "actions": [
+        {
+          "text": "\u25b8",
+          "label": "Item details for job job-delete_container"
+        }
+      ]
+    },
+    {
+      "name": "operation label",
+      "dto": {
+        "id": "job-delete_prefix",
+        "type": "delete_prefix",
+        "state": "running",
+        "source": "source/scope/",
+        "destination": "(deleted)",
+        "sourceBookmarkId": "a",
+        "destBookmarkId": "",
+        "createdAt": "2026-09-12T00:00:00Z",
+        "startedAt": "2026-09-12T00:00:01Z",
+        "finishedAt": "",
+        "engine": "native",
+        "settings": "",
+        "error": "",
+        "recoveryRecords": 0,
+        "counters": {
+          "objectsPlanned": 10,
+          "objectsCopied": 3,
+          "objectsVerified": 0,
+          "objectsFailed": 0,
+          "bytesPlanned": 80,
+          "bytesCopied": 0,
+          "overwrites": 0,
+          "overwritesRefused": 0,
+          "nativeRouted": 0,
+          "objectsDeleted": 0
+        }
+      },
+      "row": "running source/scope/ \u2192 (deleted) \u2026 \u2192 \u2026 3/10 obj \u00b7 0 B 2026-09-12 00:00:01 Cancel \u25b8",
+      "counts": "3/10 obj \u00b7 0 B",
+      "config": null,
+      "progress": "--p: 30%;",
+      "rate": null,
+      "actions": [
+        {
+          "text": "Cancel",
+          "label": null
+        },
+        {
+          "text": "\u25b8",
+          "label": "Item details for job job-delete_prefix"
+        }
+      ]
+    },
+    {
+      "name": "operation label",
+      "dto": {
+        "id": "job-empty_container",
+        "type": "empty_container",
+        "state": "partial",
+        "source": "source/scope/",
+        "destination": "(deleted)",
+        "sourceBookmarkId": "a",
+        "destBookmarkId": "",
+        "createdAt": "2026-09-12T00:00:00Z",
+        "startedAt": "2026-09-12T00:00:01Z",
+        "finishedAt": "2026-09-12T00:00:09Z",
+        "engine": "native",
+        "settings": "",
+        "error": "",
+        "recoveryRecords": 0,
+        "counters": {
+          "objectsPlanned": 10,
+          "objectsCopied": 3,
+          "objectsVerified": 3,
+          "objectsFailed": 1,
+          "bytesPlanned": 80,
+          "bytesCopied": 0,
+          "overwrites": 0,
+          "overwritesRefused": 0,
+          "nativeRouted": 0,
+          "objectsDeleted": 0
+        }
+      },
+      "row": "partial source/scope/ \u2192 (deleted) \u2026 \u2192 \u2026 3/10 obj \u00b7 0 B \u00b7 1 failed 2026-09-12 00:00:09 \u25b8",
+      "counts": "3/10 obj \u00b7 0 B \u00b7 1 failed",
+      "config": null,
+      "progress": null,
+      "rate": null,
+      "actions": [
+        {
+          "text": "\u25b8",
+          "label": "Item details for job job-empty_container"
+        }
+      ]
+    },
+    {
+      "name": "operation label",
+      "dto": {
+        "id": "job-delete_container",
+        "type": "delete_container",
+        "state": "partial",
+        "source": "source/scope/",
+        "destination": "(deleted)",
+        "sourceBookmarkId": "a",
+        "destBookmarkId": "",
+        "createdAt": "2026-09-12T00:00:00Z",
+        "startedAt": "2026-09-12T00:00:01Z",
+        "finishedAt": "2026-09-12T00:00:09Z",
+        "engine": "native",
+        "settings": "",
+        "error": "",
+        "recoveryRecords": 0,
+        "counters": {
+          "objectsPlanned": 10,
+          "objectsCopied": 3,
+          "objectsVerified": 3,
+          "objectsFailed": 1,
+          "bytesPlanned": 80,
+          "bytesCopied": 0,
+          "overwrites": 0,
+          "overwritesRefused": 0,
+          "nativeRouted": 0,
+          "objectsDeleted": 0
+        }
+      },
+      "row": "partial source/scope/ \u2192 (deleted) \u2026 \u2192 \u2026 3/10 obj \u00b7 0 B \u00b7 1 failed 2026-09-12 00:00:09 \u25b8",
+      "counts": "3/10 obj \u00b7 0 B \u00b7 1 failed",
+      "config": null,
+      "progress": null,
+      "rate": null,
+      "actions": [
+        {
+          "text": "\u25b8",
+          "label": "Item details for job job-delete_container"
+        }
+      ]
+    },
+    {
+      "name": "operation label",
+      "dto": {
+        "id": "job-copy",
+        "type": "copy",
+        "state": "running",
+        "source": "source/scope/",
+        "destination": "target/scope/",
+        "sourceBookmarkId": "a",
+        "destBookmarkId": "b",
+        "createdAt": "2026-09-12T00:00:00Z",
+        "startedAt": "2026-09-12T00:00:01Z",
+        "finishedAt": "",
+        "engine": "rclone+native",
+        "settings": "{\"transfers\":2,\"checkers\":4}",
+        "error": "",
+        "recoveryRecords": 0,
+        "counters": {
+          "objectsPlanned": 10,
+          "objectsCopied": 3,
+          "objectsVerified": 0,
+          "objectsFailed": 0,
+          "bytesPlanned": 80,
+          "bytesCopied": 24,
+          "overwrites": 0,
+          "overwritesRefused": 0,
+          "nativeRouted": 0,
+          "objectsDeleted": 0
+        }
+      },
+      "row": "running source/scope/ \u2192 target/scope/ \u2026 \u2192 \u2026 3/10 obj \u00b7 24 B 2026-09-12 00:00:01 Cancel \u25b8",
+      "counts": "3/10 obj \u00b7 24 B",
+      "config": null,
+      "progress": "--p: 30%;",
+      "rate": null,
+      "actions": [
+        {
+          "text": "Cancel",
+          "label": null
+        },
+        {
+          "text": "\u25b8",
+          "label": "Item details for job job-copy"
+        }
+      ]
+    },
+    {
+      "name": "operation label",
+      "dto": {
+        "id": "job-upload",
+        "type": "upload",
+        "state": "running",
+        "source": "source/scope/",
+        "destination": "target/scope/",
+        "sourceBookmarkId": "a",
+        "destBookmarkId": "b",
+        "createdAt": "2026-09-12T00:00:00Z",
+        "startedAt": "2026-09-12T00:00:01Z",
+        "finishedAt": "",
+        "engine": "rclone+native",
+        "settings": "{\"transfers\":2,\"checkers\":4}",
+        "error": "",
+        "recoveryRecords": 0,
+        "counters": {
+          "objectsPlanned": 10,
+          "objectsCopied": 3,
+          "objectsVerified": 0,
+          "objectsFailed": 0,
+          "bytesPlanned": 80,
+          "bytesCopied": 24,
+          "overwrites": 0,
+          "overwritesRefused": 0,
+          "nativeRouted": 0,
+          "objectsDeleted": 0
+        }
+      },
+      "row": "running source/scope/ \u2192 target/scope/ \u2026 \u2192 \u2026 3/10 obj \u00b7 24 B 2026-09-12 00:00:01 Cancel \u25b8",
+      "counts": "3/10 obj \u00b7 24 B",
+      "config": null,
+      "progress": "--p: 30%;",
+      "rate": null,
+      "actions": [
+        {
+          "text": "Cancel",
+          "label": null
+        },
+        {
+          "text": "\u25b8",
+          "label": "Item details for job job-upload"
+        }
+      ]
+    },
+    {
+      "name": "operation label",
+      "dto": {
+        "id": "job-download",
+        "type": "download",
+        "state": "partial",
+        "source": "source/scope/",
+        "destination": "target/scope/",
+        "sourceBookmarkId": "a",
+        "destBookmarkId": "b",
+        "createdAt": "2026-09-12T00:00:00Z",
+        "startedAt": "2026-09-12T00:00:01Z",
+        "finishedAt": "2026-09-12T00:00:09Z",
+        "engine": "rclone+native",
+        "settings": "{\"transfers\":2,\"checkers\":4}",
+        "error": "",
+        "recoveryRecords": 0,
+        "counters": {
+          "objectsPlanned": 10,
+          "objectsCopied": 3,
+          "objectsVerified": 0,
+          "objectsFailed": 0,
+          "bytesPlanned": 80,
+          "bytesCopied": 24,
+          "overwrites": 0,
+          "overwritesRefused": 0,
+          "nativeRouted": 0,
+          "objectsDeleted": 0
+        }
+      },
+      "row": "partial source/scope/ \u2192 target/scope/ \u2026 \u2192 \u2026 3/10 obj \u00b7 24 B 2026-09-12 00:00:09 \u25b8",
+      "counts": "3/10 obj \u00b7 24 B",
+      "config": null,
+      "progress": null,
+      "rate": null,
+      "actions": [
+        {
+          "text": "\u25b8",
+          "label": "Item details for job job-download"
+        }
+      ]
+    },
+    {
+      "name": "unrecorded settings",
+      "dto": {
+        "id": "job-delete_prefix",
+        "type": "delete_prefix",
+        "state": "running",
+        "source": "source/scope/",
+        "destination": "(deleted)",
+        "sourceBookmarkId": "a",
+        "destBookmarkId": "",
+        "createdAt": "2026-09-12T00:00:00Z",
+        "startedAt": "2026-09-12T00:00:01Z",
+        "finishedAt": "",
+        "engine": "native",
+        "settings": "",
+        "error": "",
+        "recoveryRecords": 0,
+        "counters": {
+          "objectsPlanned": 10,
+          "objectsCopied": 3,
+          "objectsVerified": 0,
+          "objectsFailed": 0,
+          "bytesPlanned": 80,
+          "bytesCopied": 0,
+          "overwrites": 0,
+          "overwritesRefused": 0,
+          "nativeRouted": 0,
+          "objectsDeleted": 0
+        }
+      },
+      "row": "running source/scope/ \u2192 (deleted) \u2026 \u2192 \u2026 3/10 obj \u00b7 0 B 2026-09-12 00:00:01 Cancel \u25be enginenative verified0 settingsdefaults Retained item records Last observed job state: running. Names and locations are quoted; escapes expose invisible characters. Expand a name to inspect its full locations. Job still active. Records are incomplete and may change. Refresh to see newly saved facts. First item page / refresh Item page 1 \u00b7 loading\u2026 Next item page",
+      "counts": "3/10 obj \u00b7 0 B",
+      "config": "enginenative verified0 settingsdefaults",
+      "progress": "--p: 30%;",
+      "rate": null,
+      "actions": [
+        {
+          "text": "Cancel",
+          "label": null
+        },
+        {
+          "text": "\u25be",
+          "label": "Item details for job job-delete_prefix"
+        }
+      ]
+    },
+    {
+      "name": "actual Delete numerator",
+      "dto": {
+        "id": "job-delete_prefix",
+        "type": "delete_prefix",
+        "state": "running",
+        "source": "source/scope/",
+        "destination": "(deleted)",
+        "sourceBookmarkId": "a",
+        "destBookmarkId": "",
+        "createdAt": "2026-09-12T00:00:00Z",
+        "startedAt": "2026-09-12T00:00:01Z",
+        "finishedAt": "",
+        "engine": "native",
+        "settings": "",
+        "error": "",
+        "recoveryRecords": 0,
+        "counters": {
+          "objectsPlanned": 10,
+          "objectsCopied": 3,
+          "objectsVerified": 0,
+          "objectsFailed": 0,
+          "bytesPlanned": 80,
+          "bytesCopied": 0,
+          "overwrites": 0,
+          "overwritesRefused": 0,
+          "nativeRouted": 0,
+          "objectsDeleted": 0
+        }
+      },
+      "row": "running source/scope/ \u2192 (deleted) \u2026 \u2192 \u2026 3/10 obj \u00b7 0 B 2026-09-12 00:00:01 Cancel \u25b8",
+      "counts": "3/10 obj \u00b7 0 B",
+      "config": null,
+      "progress": "--p: 30%;",
+      "rate": null,
+      "actions": [
+        {
+          "text": "Cancel",
+          "label": null
+        },
+        {
+          "text": "\u25b8",
+          "label": "Item details for job job-delete_prefix"
+        }
+      ]
+    },
+    {
+      "name": "actual Delete numerator",
+      "dto": {
+        "id": "job-empty_container",
+        "type": "empty_container",
+        "state": "partial",
+        "source": "source/scope/",
+        "destination": "(deleted)",
+        "sourceBookmarkId": "a",
+        "destBookmarkId": "",
+        "createdAt": "2026-09-12T00:00:00Z",
+        "startedAt": "2026-09-12T00:00:01Z",
+        "finishedAt": "2026-09-12T00:00:09Z",
+        "engine": "native",
+        "settings": "",
+        "error": "",
+        "recoveryRecords": 0,
+        "counters": {
+          "objectsPlanned": 10,
+          "objectsCopied": 3,
+          "objectsVerified": 3,
+          "objectsFailed": 1,
+          "bytesPlanned": 80,
+          "bytesCopied": 0,
+          "overwrites": 0,
+          "overwritesRefused": 0,
+          "nativeRouted": 0,
+          "objectsDeleted": 0
+        }
+      },
+      "row": "partial source/scope/ \u2192 (deleted) \u2026 \u2192 \u2026 3/10 obj \u00b7 0 B \u00b7 1 failed 2026-09-12 00:00:09 \u25b8",
+      "counts": "3/10 obj \u00b7 0 B \u00b7 1 failed",
+      "config": null,
+      "progress": null,
+      "rate": null,
+      "actions": [
+        {
+          "text": "\u25b8",
+          "label": "Item details for job job-empty_container"
+        }
+      ]
+    },
+    {
+      "name": "actual Delete numerator",
+      "dto": {
+        "id": "job-delete_container",
+        "type": "delete_container",
+        "state": "partial",
+        "source": "source/scope/",
+        "destination": "(deleted)",
+        "sourceBookmarkId": "a",
+        "destBookmarkId": "",
+        "createdAt": "2026-09-12T00:00:00Z",
+        "startedAt": "2026-09-12T00:00:01Z",
+        "finishedAt": "2026-09-12T00:00:09Z",
+        "engine": "native",
+        "settings": "",
+        "error": "",
+        "recoveryRecords": 0,
+        "counters": {
+          "objectsPlanned": 10,
+          "objectsCopied": 3,
+          "objectsVerified": 3,
+          "objectsFailed": 1,
+          "bytesPlanned": 80,
+          "bytesCopied": 0,
+          "overwrites": 0,
+          "overwritesRefused": 0,
+          "nativeRouted": 0,
+          "objectsDeleted": 0
+        }
+      },
+      "row": "partial source/scope/ \u2192 (deleted) \u2026 \u2192 \u2026 3/10 obj \u00b7 0 B \u00b7 1 failed 2026-09-12 00:00:09 \u25b8",
+      "counts": "3/10 obj \u00b7 0 B \u00b7 1 failed",
+      "config": null,
+      "progress": null,
+      "rate": null,
+      "actions": [
+        {
+          "text": "\u25b8",
+          "label": "Item details for job job-delete_container"
+        }
+      ]
+    },
+    {
+      "name": "live diagnostics already available",
+      "dto": {
+        "id": "job-copy",
+        "type": "copy",
+        "state": "running",
+        "source": "source/scope/",
+        "destination": "target/scope/",
+        "sourceBookmarkId": "a",
+        "destBookmarkId": "b",
+        "createdAt": "2026-09-12T00:00:00Z",
+        "startedAt": "2026-09-12T00:00:01Z",
+        "finishedAt": "",
+        "engine": "rclone+native",
+        "settings": "{\"transfers\":2,\"checkers\":4}",
+        "error": "",
+        "recoveryRecords": 0,
+        "counters": {
+          "objectsPlanned": 10,
+          "objectsCopied": 3,
+          "objectsVerified": 0,
+          "objectsFailed": 0,
+          "bytesPlanned": 80,
+          "bytesCopied": 24,
+          "overwrites": 0,
+          "overwritesRefused": 0,
+          "nativeRouted": 0,
+          "objectsDeleted": 0
+        }
+      },
+      "row": "running source/scope/ \u2192 target/scope/ \u2026 \u2192 \u2026 3/10 obj \u00b7 24 B 2026-09-12 00:00:01 Cancel \u25be enginerclone+native verified0 transfers2checkers4 Retained item records Last observed job state: running. Names and locations are quoted; escapes expose invisible characters. Expand a name to inspect its full locations. Job still active. Records are incomplete and may change. Refresh to see newly saved facts. First item page / refresh Item page 1 \u00b7 loading\u2026 Next item page",
+      "counts": "3/10 obj \u00b7 24 B",
+      "config": "enginerclone+native verified0 transfers2checkers4",
+      "progress": "--p: 30%;",
+      "rate": null,
+      "actions": [
+        {
+          "text": "Cancel",
+          "label": null
+        },
+        {
+          "text": "\u25be",
+          "label": "Item details for job job-copy"
+        }
+      ]
+    },
+    {
+      "name": "live diagnostics already available",
+      "dto": {
+        "id": "job-upload",
+        "type": "upload",
+        "state": "running",
+        "source": "source/scope/",
+        "destination": "target/scope/",
+        "sourceBookmarkId": "a",
+        "destBookmarkId": "b",
+        "createdAt": "2026-09-12T00:00:00Z",
+        "startedAt": "2026-09-12T00:00:01Z",
+        "finishedAt": "",
+        "engine": "rclone+native",
+        "settings": "{\"transfers\":2,\"checkers\":4}",
+        "error": "",
+        "recoveryRecords": 0,
+        "counters": {
+          "objectsPlanned": 10,
+          "objectsCopied": 3,
+          "objectsVerified": 0,
+          "objectsFailed": 0,
+          "bytesPlanned": 80,
+          "bytesCopied": 24,
+          "overwrites": 0,
+          "overwritesRefused": 0,
+          "nativeRouted": 0,
+          "objectsDeleted": 0
+        }
+      },
+      "row": "running source/scope/ \u2192 target/scope/ \u2026 \u2192 \u2026 3/10 obj \u00b7 24 B 2026-09-12 00:00:01 Cancel \u25be enginerclone+native verified0 transfers2checkers4 Retained item records Last observed job state: running. Names and locations are quoted; escapes expose invisible characters. Expand a name to inspect its full locations. Job still active. Records are incomplete and may change. Refresh to see newly saved facts. First item page / refresh Item page 1 \u00b7 loading\u2026 Next item page",
+      "counts": "3/10 obj \u00b7 24 B",
+      "config": "enginerclone+native verified0 transfers2checkers4",
+      "progress": "--p: 30%;",
+      "rate": null,
+      "actions": [
+        {
+          "text": "Cancel",
+          "label": null
+        },
+        {
+          "text": "\u25be",
+          "label": "Item details for job job-upload"
+        }
+      ]
+    },
+    {
+      "name": "live diagnostics already available",
+      "dto": {
+        "id": "job-download",
+        "type": "download",
+        "state": "running",
+        "source": "source/scope/",
+        "destination": "target/scope/",
+        "sourceBookmarkId": "a",
+        "destBookmarkId": "b",
+        "createdAt": "2026-09-12T00:00:00Z",
+        "startedAt": "2026-09-12T00:00:01Z",
+        "finishedAt": "",
+        "engine": "rclone+native",
+        "settings": "{\"transfers\":2,\"checkers\":4}",
+        "error": "",
+        "recoveryRecords": 0,
+        "counters": {
+          "objectsPlanned": 10,
+          "objectsCopied": 3,
+          "objectsVerified": 0,
+          "objectsFailed": 0,
+          "bytesPlanned": 80,
+          "bytesCopied": 24,
+          "overwrites": 0,
+          "overwritesRefused": 0,
+          "nativeRouted": 0,
+          "objectsDeleted": 0
+        }
+      },
+      "row": "running source/scope/ \u2192 target/scope/ \u2026 \u2192 \u2026 3/10 obj \u00b7 24 B 2026-09-12 00:00:01 Cancel \u25be enginerclone+native verified0 transfers2checkers4 Retained item records Last observed job state: running. Names and locations are quoted; escapes expose invisible characters. Expand a name to inspect its full locations. Job still active. Records are incomplete and may change. Refresh to see newly saved facts. First item page / refresh Item page 1 \u00b7 loading\u2026 Next item page",
+      "counts": "3/10 obj \u00b7 24 B",
+      "config": "enginerclone+native verified0 transfers2checkers4",
+      "progress": "--p: 30%;",
+      "rate": null,
+      "actions": [
+        {
+          "text": "Cancel",
+          "label": null
+        },
+        {
+          "text": "\u25be",
+          "label": "Item details for job job-download"
+        }
+      ]
+    },
+    {
+      "name": "incomplete deletion",
+      "dto": {
+        "id": "job-delete_container",
+        "type": "delete_container",
+        "state": "partial",
+        "source": "source/scope/",
+        "destination": "(deleted)",
+        "sourceBookmarkId": "a",
+        "destBookmarkId": "",
+        "createdAt": "2026-09-12T00:00:00Z",
+        "startedAt": "2026-09-12T00:00:01Z",
+        "finishedAt": "2026-09-12T00:00:09Z",
+        "engine": "native",
+        "settings": "",
+        "error": "Retained admitted-attempt evidence is incomplete.",
+        "recoveryRecords": 0,
+        "counters": {
+          "objectsPlanned": 10,
+          "objectsCopied": 3,
+          "objectsVerified": 3,
+          "objectsFailed": 1,
+          "bytesPlanned": 80,
+          "bytesCopied": 0,
+          "overwrites": 0,
+          "overwritesRefused": 0,
+          "nativeRouted": 0,
+          "objectsDeleted": 0,
+          "deletionAccountingIncomplete": true
+        }
+      },
+      "row": "partial source/scope/ \u2192 (deleted) \u2026 \u2192 \u2026 Last confirmed progress: 3 processed \u00b7 1 reported failures 2026-09-12 00:00:09 \u25be Retained admitted-attempt evidence is incomplete. Deletion accounting is incomplete. Final failure and unresolved totals are unavailable. enginenative settingsdefaults Retained item records Last observed job state: partial. Names and locations are quoted; escapes expose invisible characters. Expand a name to inspect its full locations. First item page / refresh Item page 1 \u00b7 loading\u2026 Next item page",
+      "counts": "Last confirmed progress: 3 processed \u00b7 1 reported failures",
+      "config": "enginenative settingsdefaults",
+      "progress": null,
+      "rate": null,
+      "actions": [
+        {
+          "text": "\u25be",
+          "label": "Item details for job job-delete_container"
+        }
+      ]
+    },
+    {
+      "name": "unknown telemetry",
+      "dto": {
+        "id": "job-copy",
+        "type": "copy",
+        "state": "running",
+        "source": "source/scope/",
+        "destination": "target/scope/",
+        "sourceBookmarkId": "a",
+        "destBookmarkId": "b",
+        "createdAt": "2026-09-12T00:00:00Z",
+        "startedAt": "2026-09-12T00:00:01Z",
+        "finishedAt": "",
+        "engine": "rclone+native",
+        "settings": "{\"transfers\":2,\"checkers\":4}",
+        "error": "",
+        "recoveryRecords": 0,
+        "counters": {
+          "objectsPlanned": 0,
+          "objectsCopied": 3,
+          "objectsVerified": 0,
+          "objectsFailed": 0,
+          "bytesPlanned": 0,
+          "bytesCopied": 24,
+          "overwrites": 0,
+          "overwritesRefused": 0,
+          "nativeRouted": 0,
+          "objectsDeleted": 0
+        }
+      },
+      "row": "running source/scope/ \u2192 target/scope/ \u2026 \u2192 \u2026 3 obj \u00b7 24 B 2026-09-12 00:00:01 Cancel \u25b8",
+      "counts": "3 obj \u00b7 24 B",
+      "config": null,
+      "progress": null,
+      "rate": null,
+      "actions": [
+        {
+          "text": "Cancel",
+          "label": null
+        },
+        {
+          "text": "\u25b8",
+          "label": "Item details for job job-copy"
+        }
+      ]
+    },
+    {
+      "name": "historical Mirror",
+      "dto": {
+        "id": "job-mirror",
+        "type": "mirror",
+        "state": "partial",
+        "source": "source/scope/",
+        "destination": "target/scope/",
+        "sourceBookmarkId": "a",
+        "destBookmarkId": "b",
+        "createdAt": "2026-09-12T00:00:00Z",
+        "startedAt": "2026-09-12T00:00:01Z",
+        "finishedAt": "2026-09-12T00:00:09Z",
+        "engine": "rclone+native",
+        "settings": "{\"transfers\":2,\"checkers\":4}",
+        "error": "",
+        "recoveryRecords": 0,
+        "counters": {
+          "objectsPlanned": 10,
+          "objectsCopied": 3,
+          "objectsVerified": 0,
+          "objectsFailed": 1,
+          "bytesPlanned": 80,
+          "bytesCopied": 24,
+          "overwrites": 0,
+          "overwritesRefused": 0,
+          "nativeRouted": 0,
+          "objectsDeleted": 7
+        }
+      },
+      "row": "partial source/scope/ \u2192 target/scope/ \u2026 \u2192 \u2026 3/10 obj \u00b7 24 B \u00b7 7 deleted \u00b7 1 failed 2026-09-12 00:00:09 \u25b8",
+      "counts": "3/10 obj \u00b7 24 B \u00b7 7 deleted \u00b7 1 failed",
+      "config": null,
+      "progress": null,
+      "rate": null,
+      "actions": [
+        {
+          "text": "\u25b8",
+          "label": "Item details for job job-mirror"
+        }
+      ]
+    }
+  ],
+  "raw_sha256": {
+    "/tmp/aeronautes-job-presentation-before-5t6v9v90/source.tar": "ef6d85a2d1f324d2588d1aeb512f9a17d5537e2bbb0535d35edf366003a10b1b",
+    "/tmp/aeronautes-job-presentation-before-5t6v9v90/producer.py": "bb5519cdd394d310dea86b0cd5c8e832d795ed508669d4dfb970ce17ac43bbea",
+    "/tmp/aeronautes-job-presentation-before-5t6v9v90/stdout": "7f2516c21bf9dd839a8de3d85e145dec50e6da5f08613ca6bbead6a38bf049ee",
+    "/tmp/aeronautes-job-presentation-before-5t6v9v90/stderr": "727a8165c8e9084523444ab01e070c8c15764404abba7c9b7bc1ff01b7fe84e0",
+    "/tmp/aeronautes-job-presentation-before-5t6v9v90/vitest.json": "4fbb4ac738161b98b7b52c370235afb105dbb5b948757be4545cb751e42c1de1",
+    "/tmp/aeronautes-job-presentation-before-5t6v9v90/RESULT.json": "45d2d38919ffc9ecc3c04adc303e37e44ae32ad1f2a89ef8574bf01f78c2dbe8",
+    "/tmp/aeronautes-job-presentation-before-5t6v9v90/check.stdout": "7c9b2274465dda5dfe16732e83581185d8daf77516a603561dcc9c5709fa7678",
+    "/tmp/aeronautes-job-presentation-before-5t6v9v90/check.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "/tmp/aeronautes-job-presentation-before-5t6v9v90/check.json": "8f277b2e60aa6bc245052295d60b2b2237b436034dac03b2dc8071169745b0a9"
+  },
+  "raw_text": {
+    "stdout": "\n RUN  v4.1.11 /tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend\n\nstdout | src/features/jobs/job_presentation_before.test.ts > uses a deletion noun without transfer bytes for 'delete_prefix' 'running'\nJOB_PRESENTATION_OBSERVATION {\"name\":\"deletion noun\",\"dto\":{\"id\":\"job-delete_prefix\",\"type\":\"delete_prefix\",\"state\":\"running\",\"source\":\"source/scope/\",\"destination\":\"(deleted)\",\"sourceBookmarkId\":\"a\",\"destBookmarkId\":\"\",\"createdAt\":\"2026-09-12T00:00:00Z\",\"startedAt\":\"2026-09-12T00:00:01Z\",\"finishedAt\":\"\",\"engine\":\"native\",\"settings\":\"\",\"error\":\"\",\"recoveryRecords\":0,\"counters\":{\"objectsPlanned\":10,\"objectsCopied\":3,\"objectsVerified\":0,\"objectsFailed\":0,\"bytesPlanned\":80,\"bytesCopied\":0,\"overwrites\":0,\"overwritesRefused\":0,\"nativeRouted\":0,\"objectsDeleted\":0}},\"row\":\"running source/scope/ \u2192 (deleted) \u2026 \u2192 \u2026 3/10 obj \u00b7 0 B 2026-09-12 00:00:01 Cancel \u25b8\",\"counts\":\"3/10 obj \u00b7 0 B\",\"config\":null,\"progress\":\"--p: 30%;\",\"rate\":null,\"actions\":[{\"text\":\"Cancel\",\"label\":null},{\"text\":\"\u25b8\",\"label\":\"Item details for job job-delete_prefix\"}]}\n\nstdout | src/features/jobs/job_presentation_before.test.ts > uses a deletion noun without transfer bytes for 'empty_container' 'partial'\nJOB_PRESENTATION_OBSERVATION {\"name\":\"deletion noun\",\"dto\":{\"id\":\"job-empty_container\",\"type\":\"empty_container\",\"state\":\"partial\",\"source\":\"source/scope/\",\"destination\":\"(deleted)\",\"sourceBookmarkId\":\"a\",\"destBookmarkId\":\"\",\"createdAt\":\"2026-09-12T00:00:00Z\",\"startedAt\":\"2026-09-12T00:00:01Z\",\"finishedAt\":\"2026-09-12T00:00:09Z\",\"engine\":\"native\",\"settings\":\"\",\"error\":\"\",\"recoveryRecords\":0,\"counters\":{\"objectsPlanned\":10,\"objectsCopied\":3,\"objectsVerified\":3,\"objectsFailed\":1,\"bytesPlanned\":80,\"bytesCopied\":0,\"overwrites\":0,\"overwritesRefused\":0,\"nativeRouted\":0,\"objectsDeleted\":0}},\"row\":\"partial source/scope/ \u2192 (deleted) \u2026 \u2192 \u2026 3/10 obj \u00b7 0 B \u00b7 1 failed 2026-09-12 00:00:09 \u25b8\",\"counts\":\"3/10 obj \u00b7 0 B \u00b7 1 failed\",\"config\":null,\"progress\":null,\"rate\":null,\"actions\":[{\"text\":\"\u25b8\",\"label\":\"Item details for job job-empty_container\"}]}\n\nstdout | src/features/jobs/job_presentation_before.test.ts > uses a deletion noun without transfer bytes for 'delete_container' 'partial'\nJOB_PRESENTATION_OBSERVATION {\"name\":\"deletion noun\",\"dto\":{\"id\":\"job-delete_container\",\"type\":\"delete_container\",\"state\":\"partial\",\"source\":\"source/scope/\",\"destination\":\"(deleted)\",\"sourceBookmarkId\":\"a\",\"destBookmarkId\":\"\",\"createdAt\":\"2026-09-12T00:00:00Z\",\"startedAt\":\"2026-09-12T00:00:01Z\",\"finishedAt\":\"2026-09-12T00:00:09Z\",\"engine\":\"native\",\"settings\":\"\",\"error\":\"\",\"recoveryRecords\":0,\"counters\":{\"objectsPlanned\":10,\"objectsCopied\":3,\"objectsVerified\":3,\"objectsFailed\":1,\"bytesPlanned\":80,\"bytesCopied\":0,\"overwrites\":0,\"overwritesRefused\":0,\"nativeRouted\":0,\"objectsDeleted\":0}},\"row\":\"partial source/scope/ \u2192 (deleted) \u2026 \u2192 \u2026 3/10 obj \u00b7 0 B \u00b7 1 failed 2026-09-12 00:00:09 \u25b8\",\"counts\":\"3/10 obj \u00b7 0 B \u00b7 1 failed\",\"config\":null,\"progress\":null,\"rate\":null,\"actions\":[{\"text\":\"\u25b8\",\"label\":\"Item details for job job-delete_container\"}]}\n\nstdout | src/features/jobs/job_presentation_before.test.ts > visibly names the actual 'delete_prefix' operation in its row\nJOB_PRESENTATION_OBSERVATION {\"name\":\"operation label\",\"dto\":{\"id\":\"job-delete_prefix\",\"type\":\"delete_prefix\",\"state\":\"running\",\"source\":\"source/scope/\",\"destination\":\"(deleted)\",\"sourceBookmarkId\":\"a\",\"destBookmarkId\":\"\",\"createdAt\":\"2026-09-12T00:00:00Z\",\"startedAt\":\"2026-09-12T00:00:01Z\",\"finishedAt\":\"\",\"engine\":\"native\",\"settings\":\"\",\"error\":\"\",\"recoveryRecords\":0,\"counters\":{\"objectsPlanned\":10,\"objectsCopied\":3,\"objectsVerified\":0,\"objectsFailed\":0,\"bytesPlanned\":80,\"bytesCopied\":0,\"overwrites\":0,\"overwritesRefused\":0,\"nativeRouted\":0,\"objectsDeleted\":0}},\"row\":\"running source/scope/ \u2192 (deleted) \u2026 \u2192 \u2026 3/10 obj \u00b7 0 B 2026-09-12 00:00:01 Cancel \u25b8\",\"counts\":\"3/10 obj \u00b7 0 B\",\"config\":null,\"progress\":\"--p: 30%;\",\"rate\":null,\"actions\":[{\"text\":\"Cancel\",\"label\":null},{\"text\":\"\u25b8\",\"label\":\"Item details for job job-delete_prefix\"}]}\n\nstdout | src/features/jobs/job_presentation_before.test.ts > visibly names the actual 'empty_container' operation in its row\nJOB_PRESENTATION_OBSERVATION {\"name\":\"operation label\",\"dto\":{\"id\":\"job-empty_container\",\"type\":\"empty_container\",\"state\":\"partial\",\"source\":\"source/scope/\",\"destination\":\"(deleted)\",\"sourceBookmarkId\":\"a\",\"destBookmarkId\":\"\",\"createdAt\":\"2026-09-12T00:00:00Z\",\"startedAt\":\"2026-09-12T00:00:01Z\",\"finishedAt\":\"2026-09-12T00:00:09Z\",\"engine\":\"native\",\"settings\":\"\",\"error\":\"\",\"recoveryRecords\":0,\"counters\":{\"objectsPlanned\":10,\"objectsCopied\":3,\"objectsVerified\":3,\"objectsFailed\":1,\"bytesPlanned\":80,\"bytesCopied\":0,\"overwrites\":0,\"overwritesRefused\":0,\"nativeRouted\":0,\"objectsDeleted\":0}},\"row\":\"partial source/scope/ \u2192 (deleted) \u2026 \u2192 \u2026 3/10 obj \u00b7 0 B \u00b7 1 failed 2026-09-12 00:00:09 \u25b8\",\"counts\":\"3/10 obj \u00b7 0 B \u00b7 1 failed\",\"config\":null,\"progress\":null,\"rate\":null,\"actions\":[{\"text\":\"\u25b8\",\"label\":\"Item details for job job-empty_container\"}]}\n\nstdout | src/features/jobs/job_presentation_before.test.ts > visibly names the actual 'delete_container' operation in its row\nJOB_PRESENTATION_OBSERVATION {\"name\":\"operation label\",\"dto\":{\"id\":\"job-delete_container\",\"type\":\"delete_container\",\"state\":\"partial\",\"source\":\"source/scope/\",\"destination\":\"(deleted)\",\"sourceBookmarkId\":\"a\",\"destBookmarkId\":\"\",\"createdAt\":\"2026-09-12T00:00:00Z\",\"startedAt\":\"2026-09-12T00:00:01Z\",\"finishedAt\":\"2026-09-12T00:00:09Z\",\"engine\":\"native\",\"settings\":\"\",\"error\":\"\",\"recoveryRecords\":0,\"counters\":{\"objectsPlanned\":10,\"objectsCopied\":3,\"objectsVerified\":3,\"objectsFailed\":1,\"bytesPlanned\":80,\"bytesCopied\":0,\"overwrites\":0,\"overwritesRefused\":0,\"nativeRouted\":0,\"objectsDeleted\":0}},\"row\":\"partial source/scope/ \u2192 (deleted) \u2026 \u2192 \u2026 3/10 obj \u00b7 0 B \u00b7 1 failed 2026-09-12 00:00:09 \u25b8\",\"counts\":\"3/10 obj \u00b7 0 B \u00b7 1 failed\",\"config\":null,\"progress\":null,\"rate\":null,\"actions\":[{\"text\":\"\u25b8\",\"label\":\"Item details for job job-delete_container\"}]}\n\nstdout | src/features/jobs/job_presentation_before.test.ts > visibly names the actual 'copy' operation in its row\nJOB_PRESENTATION_OBSERVATION {\"name\":\"operation label\",\"dto\":{\"id\":\"job-copy\",\"type\":\"copy\",\"state\":\"running\",\"source\":\"source/scope/\",\"destination\":\"target/scope/\",\"sourceBookmarkId\":\"a\",\"destBookmarkId\":\"b\",\"createdAt\":\"2026-09-12T00:00:00Z\",\"startedAt\":\"2026-09-12T00:00:01Z\",\"finishedAt\":\"\",\"engine\":\"rclone+native\",\"settings\":\"{\\\"transfers\\\":2,\\\"checkers\\\":4}\",\"error\":\"\",\"recoveryRecords\":0,\"counters\":{\"objectsPlanned\":10,\"objectsCopied\":3,\"objectsVerified\":0,\"objectsFailed\":0,\"bytesPlanned\":80,\"bytesCopied\":24,\"overwrites\":0,\"overwritesRefused\":0,\"nativeRouted\":0,\"objectsDeleted\":0}},\"row\":\"running source/scope/ \u2192 target/scope/ \u2026 \u2192 \u2026 3/10 obj \u00b7 24 B 2026-09-12 00:00:01 Cancel \u25b8\",\"counts\":\"3/10 obj \u00b7 24 B\",\"config\":null,\"progress\":\"--p: 30%;\",\"rate\":null,\"actions\":[{\"text\":\"Cancel\",\"label\":null},{\"text\":\"\u25b8\",\"label\":\"Item details for job job-copy\"}]}\n\nstdout | src/features/jobs/job_presentation_before.test.ts > visibly names the actual 'upload' operation in its row\nJOB_PRESENTATION_OBSERVATION {\"name\":\"operation label\",\"dto\":{\"id\":\"job-upload\",\"type\":\"upload\",\"state\":\"running\",\"source\":\"source/scope/\",\"destination\":\"target/scope/\",\"sourceBookmarkId\":\"a\",\"destBookmarkId\":\"b\",\"createdAt\":\"2026-09-12T00:00:00Z\",\"startedAt\":\"2026-09-12T00:00:01Z\",\"finishedAt\":\"\",\"engine\":\"rclone+native\",\"settings\":\"{\\\"transfers\\\":2,\\\"checkers\\\":4}\",\"error\":\"\",\"recoveryRecords\":0,\"counters\":{\"objectsPlanned\":10,\"objectsCopied\":3,\"objectsVerified\":0,\"objectsFailed\":0,\"bytesPlanned\":80,\"bytesCopied\":24,\"overwrites\":0,\"overwritesRefused\":0,\"nativeRouted\":0,\"objectsDeleted\":0}},\"row\":\"running source/scope/ \u2192 target/scope/ \u2026 \u2192 \u2026 3/10 obj \u00b7 24 B 2026-09-12 00:00:01 Cancel \u25b8\",\"counts\":\"3/10 obj \u00b7 24 B\",\"config\":null,\"progress\":\"--p: 30%;\",\"rate\":null,\"actions\":[{\"text\":\"Cancel\",\"label\":null},{\"text\":\"\u25b8\",\"label\":\"Item details for job job-upload\"}]}\n\nstdout | src/features/jobs/job_presentation_before.test.ts > visibly names the actual 'download' operation in its row\nJOB_PRESENTATION_OBSERVATION {\"name\":\"operation label\",\"dto\":{\"id\":\"job-download\",\"type\":\"download\",\"state\":\"partial\",\"source\":\"source/scope/\",\"destination\":\"target/scope/\",\"sourceBookmarkId\":\"a\",\"destBookmarkId\":\"b\",\"createdAt\":\"2026-09-12T00:00:00Z\",\"startedAt\":\"2026-09-12T00:00:01Z\",\"finishedAt\":\"2026-09-12T00:00:09Z\",\"engine\":\"rclone+native\",\"settings\":\"{\\\"transfers\\\":2,\\\"checkers\\\":4}\",\"error\":\"\",\"recoveryRecords\":0,\"counters\":{\"objectsPlanned\":10,\"objectsCopied\":3,\"objectsVerified\":0,\"objectsFailed\":0,\"bytesPlanned\":80,\"bytesCopied\":24,\"overwrites\":0,\"overwritesRefused\":0,\"nativeRouted\":0,\"objectsDeleted\":0}},\"row\":\"partial source/scope/ \u2192 target/scope/ \u2026 \u2192 \u2026 3/10 obj \u00b7 24 B 2026-09-12 00:00:09 \u25b8\",\"counts\":\"3/10 obj \u00b7 24 B\",\"config\":null,\"progress\":null,\"rate\":null,\"actions\":[{\"text\":\"\u25b8\",\"label\":\"Item details for job job-download\"}]}\n\nstdout | src/features/jobs/job_presentation_before.test.ts > does not call unrecorded running Delete settings defaults\nJOB_PRESENTATION_OBSERVATION {\"name\":\"unrecorded settings\",\"dto\":{\"id\":\"job-delete_prefix\",\"type\":\"delete_prefix\",\"state\":\"running\",\"source\":\"source/scope/\",\"destination\":\"(deleted)\",\"sourceBookmarkId\":\"a\",\"destBookmarkId\":\"\",\"createdAt\":\"2026-09-12T00:00:00Z\",\"startedAt\":\"2026-09-12T00:00:01Z\",\"finishedAt\":\"\",\"engine\":\"native\",\"settings\":\"\",\"error\":\"\",\"recoveryRecords\":0,\"counters\":{\"objectsPlanned\":10,\"objectsCopied\":3,\"objectsVerified\":0,\"objectsFailed\":0,\"bytesPlanned\":80,\"bytesCopied\":0,\"overwrites\":0,\"overwritesRefused\":0,\"nativeRouted\":0,\"objectsDeleted\":0}},\"row\":\"running source/scope/ \u2192 (deleted) \u2026 \u2192 \u2026 3/10 obj \u00b7 0 B 2026-09-12 00:00:01 Cancel \u25be enginenative verified0 settingsdefaults Retained item records Last observed job state: running. Names and locations are quoted; escapes expose invisible characters. Expand a name to inspect its full locations. Job still active. Records are incomplete and may change. Refresh to see newly saved facts. First item page / refresh Item page 1 \u00b7 loading\u2026 Next item page\",\"counts\":\"3/10 obj \u00b7 0 B\",\"config\":\"enginenative verified0 settingsdefaults\",\"progress\":\"--p: 30%;\",\"rate\":null,\"actions\":[{\"text\":\"Cancel\",\"label\":null},{\"text\":\"\u25be\",\"label\":\"Item details for job job-delete_prefix\"}]}\n\nstdout | src/features/jobs/job_presentation_before.test.ts > control: preserves actual Delete numerator and terminal qualification for 'delete_prefix'\nJOB_PRESENTATION_OBSERVATION {\"name\":\"actual Delete numerator\",\"dto\":{\"id\":\"job-delete_prefix\",\"type\":\"delete_prefix\",\"state\":\"running\",\"source\":\"source/scope/\",\"destination\":\"(deleted)\",\"sourceBookmarkId\":\"a\",\"destBookmarkId\":\"\",\"createdAt\":\"2026-09-12T00:00:00Z\",\"startedAt\":\"2026-09-12T00:00:01Z\",\"finishedAt\":\"\",\"engine\":\"native\",\"settings\":\"\",\"error\":\"\",\"recoveryRecords\":0,\"counters\":{\"objectsPlanned\":10,\"objectsCopied\":3,\"objectsVerified\":0,\"objectsFailed\":0,\"bytesPlanned\":80,\"bytesCopied\":0,\"overwrites\":0,\"overwritesRefused\":0,\"nativeRouted\":0,\"objectsDeleted\":0}},\"row\":\"running source/scope/ \u2192 (deleted) \u2026 \u2192 \u2026 3/10 obj \u00b7 0 B 2026-09-12 00:00:01 Cancel \u25b8\",\"counts\":\"3/10 obj \u00b7 0 B\",\"config\":null,\"progress\":\"--p: 30%;\",\"rate\":null,\"actions\":[{\"text\":\"Cancel\",\"label\":null},{\"text\":\"\u25b8\",\"label\":\"Item details for job job-delete_prefix\"}]}\n\nstdout | src/features/jobs/job_presentation_before.test.ts > control: preserves actual Delete numerator and terminal qualification for 'empty_container'\nJOB_PRESENTATION_OBSERVATION {\"name\":\"actual Delete numerator\",\"dto\":{\"id\":\"job-empty_container\",\"type\":\"empty_container\",\"state\":\"partial\",\"source\":\"source/scope/\",\"destination\":\"(deleted)\",\"sourceBookmarkId\":\"a\",\"destBookmarkId\":\"\",\"createdAt\":\"2026-09-12T00:00:00Z\",\"startedAt\":\"2026-09-12T00:00:01Z\",\"finishedAt\":\"2026-09-12T00:00:09Z\",\"engine\":\"native\",\"settings\":\"\",\"error\":\"\",\"recoveryRecords\":0,\"counters\":{\"objectsPlanned\":10,\"objectsCopied\":3,\"objectsVerified\":3,\"objectsFailed\":1,\"bytesPlanned\":80,\"bytesCopied\":0,\"overwrites\":0,\"overwritesRefused\":0,\"nativeRouted\":0,\"objectsDeleted\":0}},\"row\":\"partial source/scope/ \u2192 (deleted) \u2026 \u2192 \u2026 3/10 obj \u00b7 0 B \u00b7 1 failed 2026-09-12 00:00:09 \u25b8\",\"counts\":\"3/10 obj \u00b7 0 B \u00b7 1 failed\",\"config\":null,\"progress\":null,\"rate\":null,\"actions\":[{\"text\":\"\u25b8\",\"label\":\"Item details for job job-empty_container\"}]}\n\nstdout | src/features/jobs/job_presentation_before.test.ts > control: preserves actual Delete numerator and terminal qualification for 'delete_container'\nJOB_PRESENTATION_OBSERVATION {\"name\":\"actual Delete numerator\",\"dto\":{\"id\":\"job-delete_container\",\"type\":\"delete_container\",\"state\":\"partial\",\"source\":\"source/scope/\",\"destination\":\"(deleted)\",\"sourceBookmarkId\":\"a\",\"destBookmarkId\":\"\",\"createdAt\":\"2026-09-12T00:00:00Z\",\"startedAt\":\"2026-09-12T00:00:01Z\",\"finishedAt\":\"2026-09-12T00:00:09Z\",\"engine\":\"native\",\"settings\":\"\",\"error\":\"\",\"recoveryRecords\":0,\"counters\":{\"objectsPlanned\":10,\"objectsCopied\":3,\"objectsVerified\":3,\"objectsFailed\":1,\"bytesPlanned\":80,\"bytesCopied\":0,\"overwrites\":0,\"overwritesRefused\":0,\"nativeRouted\":0,\"objectsDeleted\":0}},\"row\":\"partial source/scope/ \u2192 (deleted) \u2026 \u2192 \u2026 3/10 obj \u00b7 0 B \u00b7 1 failed 2026-09-12 00:00:09 \u25b8\",\"counts\":\"3/10 obj \u00b7 0 B \u00b7 1 failed\",\"config\":null,\"progress\":null,\"rate\":null,\"actions\":[{\"text\":\"\u25b8\",\"label\":\"Item details for job job-delete_container\"}]}\n\nstdout | src/features/jobs/job_presentation_before.test.ts > control: copy keeps counters and allows running diagnostics without cancellation\nJOB_PRESENTATION_OBSERVATION {\"name\":\"live diagnostics already available\",\"dto\":{\"id\":\"job-copy\",\"type\":\"copy\",\"state\":\"running\",\"source\":\"source/scope/\",\"destination\":\"target/scope/\",\"sourceBookmarkId\":\"a\",\"destBookmarkId\":\"b\",\"createdAt\":\"2026-09-12T00:00:00Z\",\"startedAt\":\"2026-09-12T00:00:01Z\",\"finishedAt\":\"\",\"engine\":\"rclone+native\",\"settings\":\"{\\\"transfers\\\":2,\\\"checkers\\\":4}\",\"error\":\"\",\"recoveryRecords\":0,\"counters\":{\"objectsPlanned\":10,\"objectsCopied\":3,\"objectsVerified\":0,\"objectsFailed\":0,\"bytesPlanned\":80,\"bytesCopied\":24,\"overwrites\":0,\"overwritesRefused\":0,\"nativeRouted\":0,\"objectsDeleted\":0}},\"row\":\"running source/scope/ \u2192 target/scope/ \u2026 \u2192 \u2026 3/10 obj \u00b7 24 B 2026-09-12 00:00:01 Cancel \u25be enginerclone+native verified0 transfers2checkers4 Retained item records Last observed job state: running. Names and locations are quoted; escapes expose invisible characters. Expand a name to inspect its full locations. Job still active. Records are incomplete and may change. Refresh to see newly saved facts. First item page / refresh Item page 1 \u00b7 loading\u2026 Next item page\",\"counts\":\"3/10 obj \u00b7 24 B\",\"config\":\"enginerclone+native verified0 transfers2checkers4\",\"progress\":\"--p: 30%;\",\"rate\":null,\"actions\":[{\"text\":\"Cancel\",\"label\":null},{\"text\":\"\u25be\",\"label\":\"Item details for job job-copy\"}]}\n\nstdout | src/features/jobs/job_presentation_before.test.ts > control: upload keeps counters and allows running diagnostics without cancellation\nJOB_PRESENTATION_OBSERVATION {\"name\":\"live diagnostics already available\",\"dto\":{\"id\":\"job-upload\",\"type\":\"upload\",\"state\":\"running\",\"source\":\"source/scope/\",\"destination\":\"target/scope/\",\"sourceBookmarkId\":\"a\",\"destBookmarkId\":\"b\",\"createdAt\":\"2026-09-12T00:00:00Z\",\"startedAt\":\"2026-09-12T00:00:01Z\",\"finishedAt\":\"\",\"engine\":\"rclone+native\",\"settings\":\"{\\\"transfers\\\":2,\\\"checkers\\\":4}\",\"error\":\"\",\"recoveryRecords\":0,\"counters\":{\"objectsPlanned\":10,\"objectsCopied\":3,\"objectsVerified\":0,\"objectsFailed\":0,\"bytesPlanned\":80,\"bytesCopied\":24,\"overwrites\":0,\"overwritesRefused\":0,\"nativeRouted\":0,\"objectsDeleted\":0}},\"row\":\"running source/scope/ \u2192 target/scope/ \u2026 \u2192 \u2026 3/10 obj \u00b7 24 B 2026-09-12 00:00:01 Cancel \u25be enginerclone+native verified0 transfers2checkers4 Retained item records Last observed job state: running. Names and locations are quoted; escapes expose invisible characters. Expand a name to inspect its full locations. Job still active. Records are incomplete and may change. Refresh to see newly saved facts. First item page / refresh Item page 1 \u00b7 loading\u2026 Next item page\",\"counts\":\"3/10 obj \u00b7 24 B\",\"config\":\"enginerclone+native verified0 transfers2checkers4\",\"progress\":\"--p: 30%;\",\"rate\":null,\"actions\":[{\"text\":\"Cancel\",\"label\":null},{\"text\":\"\u25be\",\"label\":\"Item details for job job-upload\"}]}\n\nstdout | src/features/jobs/job_presentation_before.test.ts > control: download keeps counters and allows running diagnostics without cancellation\nJOB_PRESENTATION_OBSERVATION {\"name\":\"live diagnostics already available\",\"dto\":{\"id\":\"job-download\",\"type\":\"download\",\"state\":\"running\",\"source\":\"source/scope/\",\"destination\":\"target/scope/\",\"sourceBookmarkId\":\"a\",\"destBookmarkId\":\"b\",\"createdAt\":\"2026-09-12T00:00:00Z\",\"startedAt\":\"2026-09-12T00:00:01Z\",\"finishedAt\":\"\",\"engine\":\"rclone+native\",\"settings\":\"{\\\"transfers\\\":2,\\\"checkers\\\":4}\",\"error\":\"\",\"recoveryRecords\":0,\"counters\":{\"objectsPlanned\":10,\"objectsCopied\":3,\"objectsVerified\":0,\"objectsFailed\":0,\"bytesPlanned\":80,\"bytesCopied\":24,\"overwrites\":0,\"overwritesRefused\":0,\"nativeRouted\":0,\"objectsDeleted\":0}},\"row\":\"running source/scope/ \u2192 target/scope/ \u2026 \u2192 \u2026 3/10 obj \u00b7 24 B 2026-09-12 00:00:01 Cancel \u25be enginerclone+native verified0 transfers2checkers4 Retained item records Last observed job state: running. Names and locations are quoted; escapes expose invisible characters. Expand a name to inspect its full locations. Job still active. Records are incomplete and may change. Refresh to see newly saved facts. First item page / refresh Item page 1 \u00b7 loading\u2026 Next item page\",\"counts\":\"3/10 obj \u00b7 24 B\",\"config\":\"enginerclone+native verified0 transfers2checkers4\",\"progress\":\"--p: 30%;\",\"rate\":null,\"actions\":[{\"text\":\"Cancel\",\"label\":null},{\"text\":\"\u25be\",\"label\":\"Item details for job job-download\"}]}\n\nstdout | src/features/jobs/job_presentation_before.test.ts > control: incomplete deletion accounting remains last confirmed without final totals\nJOB_PRESENTATION_OBSERVATION {\"name\":\"incomplete deletion\",\"dto\":{\"id\":\"job-delete_container\",\"type\":\"delete_container\",\"state\":\"partial\",\"source\":\"source/scope/\",\"destination\":\"(deleted)\",\"sourceBookmarkId\":\"a\",\"destBookmarkId\":\"\",\"createdAt\":\"2026-09-12T00:00:00Z\",\"startedAt\":\"2026-09-12T00:00:01Z\",\"finishedAt\":\"2026-09-12T00:00:09Z\",\"engine\":\"native\",\"settings\":\"\",\"error\":\"Retained admitted-attempt evidence is incomplete.\",\"recoveryRecords\":0,\"counters\":{\"objectsPlanned\":10,\"objectsCopied\":3,\"objectsVerified\":3,\"objectsFailed\":1,\"bytesPlanned\":80,\"bytesCopied\":0,\"overwrites\":0,\"overwritesRefused\":0,\"nativeRouted\":0,\"objectsDeleted\":0,\"deletionAccountingIncomplete\":true}},\"row\":\"partial source/scope/ \u2192 (deleted) \u2026 \u2192 \u2026 Last confirmed progress: 3 processed \u00b7 1 reported failures 2026-09-12 00:00:09 \u25be Retained admitted-attempt evidence is incomplete. Deletion accounting is incomplete. Final failure and unresolved totals are unavailable. enginenative settingsdefaults Retained item records Last observed job state: partial. Names and locations are quoted; escapes expose invisible characters. Expand a name to inspect its full locations. First item page / refresh Item page 1 \u00b7 loading\u2026 Next item page\",\"counts\":\"Last confirmed progress: 3 processed \u00b7 1 reported failures\",\"config\":\"enginenative settingsdefaults\",\"progress\":null,\"rate\":null,\"actions\":[{\"text\":\"\u25be\",\"label\":\"Item details for job job-delete_container\"}]}\n\nstdout | src/features/jobs/job_presentation_before.test.ts > control: unknown planned count and first-poll rate do not invent a percent or ETA\nJOB_PRESENTATION_OBSERVATION {\"name\":\"unknown telemetry\",\"dto\":{\"id\":\"job-copy\",\"type\":\"copy\",\"state\":\"running\",\"source\":\"source/scope/\",\"destination\":\"target/scope/\",\"sourceBookmarkId\":\"a\",\"destBookmarkId\":\"b\",\"createdAt\":\"2026-09-12T00:00:00Z\",\"startedAt\":\"2026-09-12T00:00:01Z\",\"finishedAt\":\"\",\"engine\":\"rclone+native\",\"settings\":\"{\\\"transfers\\\":2,\\\"checkers\\\":4}\",\"error\":\"\",\"recoveryRecords\":0,\"counters\":{\"objectsPlanned\":0,\"objectsCopied\":3,\"objectsVerified\":0,\"objectsFailed\":0,\"bytesPlanned\":0,\"bytesCopied\":24,\"overwrites\":0,\"overwritesRefused\":0,\"nativeRouted\":0,\"objectsDeleted\":0}},\"row\":\"running source/scope/ \u2192 target/scope/ \u2026 \u2192 \u2026 3 obj \u00b7 24 B 2026-09-12 00:00:01 Cancel \u25b8\",\"counts\":\"3 obj \u00b7 24 B\",\"config\":null,\"progress\":null,\"rate\":null,\"actions\":[{\"text\":\"Cancel\",\"label\":null},{\"text\":\"\u25b8\",\"label\":\"Item details for job job-copy\"}]}\n\nstdout | src/features/jobs/job_presentation_before.test.ts > control: historical Mirror keeps destination deletions separate from copied objects\nJOB_PRESENTATION_OBSERVATION {\"name\":\"historical Mirror\",\"dto\":{\"id\":\"job-mirror\",\"type\":\"mirror\",\"state\":\"partial\",\"source\":\"source/scope/\",\"destination\":\"target/scope/\",\"sourceBookmarkId\":\"a\",\"destBookmarkId\":\"b\",\"createdAt\":\"2026-09-12T00:00:00Z\",\"startedAt\":\"2026-09-12T00:00:01Z\",\"finishedAt\":\"2026-09-12T00:00:09Z\",\"engine\":\"rclone+native\",\"settings\":\"{\\\"transfers\\\":2,\\\"checkers\\\":4}\",\"error\":\"\",\"recoveryRecords\":0,\"counters\":{\"objectsPlanned\":10,\"objectsCopied\":3,\"objectsVerified\":0,\"objectsFailed\":1,\"bytesPlanned\":80,\"bytesCopied\":24,\"overwrites\":0,\"overwritesRefused\":0,\"nativeRouted\":0,\"objectsDeleted\":7}},\"row\":\"partial source/scope/ \u2192 target/scope/ \u2026 \u2192 \u2026 3/10 obj \u00b7 24 B \u00b7 7 deleted \u00b7 1 failed 2026-09-12 00:00:09 \u25b8\",\"counts\":\"3/10 obj \u00b7 24 B \u00b7 7 deleted \u00b7 1 failed\",\"config\":null,\"progress\":null,\"rate\":null,\"actions\":[{\"text\":\"\u25b8\",\"label\":\"Item details for job job-mirror\"}]}\n\n \u276f src/features/jobs/job_presentation_before.test.ts (19 tests | 10 failed) 1091ms\n   \u00d7 uses a deletion noun without transfer bytes for 'delete_prefix' 'running' 84ms\n   \u00d7 uses a deletion noun without transfer bytes for 'empty_container' 'partial' 56ms\n   \u00d7 uses a deletion noun without transfer bytes for 'delete_container' 'partial' 57ms\n   \u00d7 visibly names the actual 'delete_prefix' operation in its row 57ms\n   \u00d7 visibly names the actual 'empty_container' operation in its row 56ms\n   \u00d7 visibly names the actual 'delete_container' operation in its row 55ms\n   \u00d7 visibly names the actual 'copy' operation in its row 55ms\n   \u00d7 visibly names the actual 'upload' operation in its row 54ms\n   \u00d7 visibly names the actual 'download' operation in its row 57ms\n   \u00d7 does not call unrecorded running Delete settings defaults 61ms\n   \u2713 control: preserves actual Delete numerator and terminal qualification for 'delete_prefix' 55ms\n   \u2713 control: preserves actual Delete numerator and terminal qualification for 'empty_container' 54ms\n   \u2713 control: preserves actual Delete numerator and terminal qualification for 'delete_container' 54ms\n   \u2713 control: copy keeps counters and allows running diagnostics without cancellation 57ms\n   \u2713 control: upload keeps counters and allows running diagnostics without cancellation 57ms\n   \u2713 control: download keeps counters and allows running diagnostics without cancellation 56ms\n   \u2713 control: incomplete deletion accounting remains last confirmed without final totals 57ms\n   \u2713 control: unknown planned count and first-poll rate do not invent a percent or ETA 55ms\n   \u2713 control: historical Mirror keeps destination deletions separate from copied objects 54ms\n\n Test Files  1 failed (1)\n      Tests  10 failed | 9 passed (19)\n   Start at  13:30:28\n   Duration  2.25s (transform 545ms, setup 0ms, import 681ms, tests 1.09s, environment 345ms)\n\nJSON report written to /tmp/aeronautes-job-presentation-before-5t6v9v90/vitest.json\n",
+    "stderr": "\n\u23af\u23af\u23af\u23af\u23af\u23af Failed Tests 10 \u23af\u23af\u23af\u23af\u23af\u23af\u23af\n\n FAIL  src/features/jobs/job_presentation_before.test.ts > uses a deletion noun without transfer bytes for 'delete_prefix' 'running'\nAssertionError: expected '3/10 obj \u00b7 0 B   ' to match /3\\s*\\/10\u2026/10\\s+objects reported deleted\n\n- Expected:\n/3\\s*\\/10\\s+objects reported deleted/\n\n+ Received:\n\"3/10 obj \u00b7 0 B   \"\n\n \u276f src/features/jobs/job_presentation_before.test.ts:89:18\n     87|   observe(\"deletion noun\", value, row, browser);\n     88|   const counts = row.querySelector(\".counts\")?.textContent;\n     89|   expect(counts).toMatch(/3\\s*\\/10\\s+objects reported deleted/);\n       |                  ^\n     90|   expect(counts).not.toContain(\"0 B\");\n     91| });\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/10]\u23af\n\n FAIL  src/features/jobs/job_presentation_before.test.ts > uses a deletion noun without transfer bytes for 'empty_container' 'partial'\n FAIL  src/features/jobs/job_presentation_before.test.ts > uses a deletion noun without transfer bytes for 'delete_container' 'partial'\nAssertionError: expected '3/10 obj \u00b7 0 B  \u00b7 1 failed ' to match /3\\s*\\/10\u2026/10\\s+objects reported deleted\n\n- Expected:\n/3\\s*\\/10\\s+objects reported deleted/\n\n+ Received:\n\"3/10 obj \u00b7 0 B  \u00b7 1 failed \"\n\n \u276f src/features/jobs/job_presentation_before.test.ts:89:18\n     87|   observe(\"deletion noun\", value, row, browser);\n     88|   const counts = row.querySelector(\".counts\")?.textContent;\n     89|   expect(counts).toMatch(/3\\s*\\/10\\s+objects reported deleted/);\n       |                  ^\n     90|   expect(counts).not.toContain(\"0 B\");\n     91| });\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[2/10]\u23af\n\n FAIL  src/features/jobs/job_presentation_before.test.ts > visibly names the actual 'delete_prefix' operation in its row\nAssertionError: expected 'running source/scope/ \u2192 (deleted) \u2026 \u2192\u2026' to contain 'Delete prefix'\n\nExpected: \"Delete prefix\"\nReceived: \"running source/scope/ \u2192 (deleted) \u2026 \u2192 \u2026 3/10 obj \u00b7 0 B    2026-09-12 00:00:01 Cancel \u25b8     \"\n\n \u276f src/features/jobs/job_presentation_before.test.ts:102:27\n    100|   const { browser, row } = await show(value);\n    101|   observe(\"operation label\", value, row, browser);\n    102|   expect(row.textContent).toContain(label);\n       |                           ^\n    103| });\n    104|\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[3/10]\u23af\n\n FAIL  src/features/jobs/job_presentation_before.test.ts > visibly names the actual 'empty_container' operation in its row\nAssertionError: expected 'partial source/scope/ \u2192 (deleted) \u2026 \u2192\u2026' to contain 'Empty container'\n\nExpected: \"Empty container\"\nReceived: \"partial source/scope/ \u2192 (deleted) \u2026 \u2192 \u2026 3/10 obj \u00b7 0 B  \u00b7 1 failed  2026-09-12 00:00:09  \u25b8     \"\n\n \u276f src/features/jobs/job_presentation_before.test.ts:102:27\n    100|   const { browser, row } = await show(value);\n    101|   observe(\"operation label\", value, row, browser);\n    102|   expect(row.textContent).toContain(label);\n       |                           ^\n    103| });\n    104|\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[4/10]\u23af\n\n FAIL  src/features/jobs/job_presentation_before.test.ts > visibly names the actual 'delete_container' operation in its row\nAssertionError: expected 'partial source/scope/ \u2192 (deleted) \u2026 \u2192\u2026' to contain 'Delete container'\n\nExpected: \"Delete container\"\nReceived: \"partial source/scope/ \u2192 (deleted) \u2026 \u2192 \u2026 3/10 obj \u00b7 0 B  \u00b7 1 failed  2026-09-12 00:00:09  \u25b8     \"\n\n \u276f src/features/jobs/job_presentation_before.test.ts:102:27\n    100|   const { browser, row } = await show(value);\n    101|   observe(\"operation label\", value, row, browser);\n    102|   expect(row.textContent).toContain(label);\n       |                           ^\n    103| });\n    104|\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[5/10]\u23af\n\n FAIL  src/features/jobs/job_presentation_before.test.ts > visibly names the actual 'copy' operation in its row\nAssertionError: expected 'running source/scope/ \u2192 target/scope/\u2026' to contain 'Copy'\n\nExpected: \"Copy\"\nReceived: \"running source/scope/ \u2192 target/scope/ \u2026 \u2192 \u2026 3/10 obj \u00b7 24 B    2026-09-12 00:00:01 Cancel \u25b8     \"\n\n \u276f src/features/jobs/job_presentation_before.test.ts:102:27\n    100|   const { browser, row } = await show(value);\n    101|   observe(\"operation label\", value, row, browser);\n    102|   expect(row.textContent).toContain(label);\n       |                           ^\n    103| });\n    104|\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[6/10]\u23af\n\n FAIL  src/features/jobs/job_presentation_before.test.ts > visibly names the actual 'upload' operation in its row\nAssertionError: expected 'running source/scope/ \u2192 target/scope/\u2026' to contain 'Upload'\n\nExpected: \"Upload\"\nReceived: \"running source/scope/ \u2192 target/scope/ \u2026 \u2192 \u2026 3/10 obj \u00b7 24 B    2026-09-12 00:00:01 Cancel \u25b8     \"\n\n \u276f src/features/jobs/job_presentation_before.test.ts:102:27\n    100|   const { browser, row } = await show(value);\n    101|   observe(\"operation label\", value, row, browser);\n    102|   expect(row.textContent).toContain(label);\n       |                           ^\n    103| });\n    104|\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[7/10]\u23af\n\n FAIL  src/features/jobs/job_presentation_before.test.ts > visibly names the actual 'download' operation in its row\nAssertionError: expected 'partial source/scope/ \u2192 target/scope/\u2026' to contain 'Download'\n\nExpected: \"Download\"\nReceived: \"partial source/scope/ \u2192 target/scope/ \u2026 \u2192 \u2026 3/10 obj \u00b7 24 B    2026-09-12 00:00:09  \u25b8     \"\n\n \u276f src/features/jobs/job_presentation_before.test.ts:102:27\n    100|   const { browser, row } = await show(value);\n    101|   observe(\"operation label\", value, row, browser);\n    102|   expect(row.textContent).toContain(label);\n       |                           ^\n    103| });\n    104|\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[8/10]\u23af\n\n FAIL  src/features/jobs/job_presentation_before.test.ts > does not call unrecorded running Delete settings defaults\nAssertionError: expected 'enginenative verified0  settingsdefau\u2026' to contain 'not recorded'\n\nExpected: \"not recorded\"\nReceived: \"enginenative verified0  settingsdefaults\"\n\n \u276f src/features/jobs/job_presentation_before.test.ts:112:53\n    110|   await vi.waitFor(() => expect(row.querySelector(\".config\")).not.toBe\u2026\n    111|   observe(\"unrecorded settings\", value, row, browser);\n    112|   expect(row.querySelector(\".config\")?.textContent).toContain(\"not rec\u2026\n       |                                                     ^\n    113|   expect(row.querySelector(\".config\")?.textContent).not.toContain(\"def\u2026\n    114|   expect(api.cancelJob).not.toHaveBeenCalled();\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[9/10]\u23af\n\n",
+    "vitest.json": "{\"numTotalTestSuites\":1,\"numPassedTestSuites\":0,\"numFailedTestSuites\":1,\"numPendingTestSuites\":0,\"numTotalTests\":19,\"numPassedTests\":9,\"numFailedTests\":10,\"numPendingTests\":0,\"numTodoTests\":0,\"snapshot\":{\"added\":0,\"failure\":false,\"filesAdded\":0,\"filesRemoved\":0,\"filesRemovedList\":[],\"filesUnmatched\":0,\"filesUpdated\":0,\"matched\":0,\"total\":0,\"unchecked\":0,\"uncheckedKeysByFile\":[],\"unmatched\":0,\"updated\":0,\"didUpdate\":false},\"startTime\":1789219828353,\"success\":false,\"testResults\":[{\"assertionResults\":[{\"ancestorTitles\":[],\"fullName\":\"uses a deletion noun without transfer bytes for 'delete_prefix' 'running'\",\"status\":\"failed\",\"title\":\"uses a deletion noun without transfer bytes for 'delete_prefix' 'running'\",\"duration\":84.09835799999996,\"failureMessages\":[\"AssertionError: expected '3/10 obj \u00b7 0 B   ' to match /3\\\\s*\\\\/10\u2026/10\\\\s+objects reported deleted\\n    at /tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/src/features/jobs/job_presentation_before.test.ts:89:18\\n    at file:///home/csmart/code/worktrees/aeronautes/bookmark_observations/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20\"],\"meta\":{},\"tags\":[]},{\"ancestorTitles\":[],\"fullName\":\"uses a deletion noun without transfer bytes for 'empty_container' 'partial'\",\"status\":\"failed\",\"title\":\"uses a deletion noun without transfer bytes for 'empty_container' 'partial'\",\"duration\":55.67698099999984,\"failureMessages\":[\"AssertionError: expected '3/10 obj \u00b7 0 B  \u00b7 1 failed ' to match /3\\\\s*\\\\/10\u2026/10\\\\s+objects reported deleted\\n    at /tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/src/features/jobs/job_presentation_before.test.ts:89:18\\n    at file:///home/csmart/code/worktrees/aeronautes/bookmark_observations/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20\"],\"meta\":{},\"tags\":[]},{\"ancestorTitles\":[],\"fullName\":\"uses a deletion noun without transfer bytes for 'delete_container' 'partial'\",\"status\":\"failed\",\"title\":\"uses a deletion noun without transfer bytes for 'delete_container' 'partial'\",\"duration\":56.82239500000014,\"failureMessages\":[\"AssertionError: expected '3/10 obj \u00b7 0 B  \u00b7 1 failed ' to match /3\\\\s*\\\\/10\u2026/10\\\\s+objects reported deleted\\n    at /tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/src/features/jobs/job_presentation_before.test.ts:89:18\\n    at file:///home/csmart/code/worktrees/aeronautes/bookmark_observations/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20\"],\"meta\":{},\"tags\":[]},{\"ancestorTitles\":[],\"fullName\":\"visibly names the actual 'delete_prefix' operation in its row\",\"status\":\"failed\",\"title\":\"visibly names the actual 'delete_prefix' operation in its row\",\"duration\":56.78268000000003,\"failureMessages\":[\"AssertionError: expected 'running source/scope/ \u2192 (deleted) \u2026 \u2192\u2026' to contain 'Delete prefix'\\n    at /tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/src/features/jobs/job_presentation_before.test.ts:102:27\\n    at file:///home/csmart/code/worktrees/aeronautes/bookmark_observations/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20\"],\"meta\":{},\"tags\":[]},{\"ancestorTitles\":[],\"fullName\":\"visibly names the actual 'empty_container' operation in its row\",\"status\":\"failed\",\"title\":\"visibly names the actual 'empty_container' operation in its row\",\"duration\":55.740430999999944,\"failureMessages\":[\"AssertionError: expected 'partial source/scope/ \u2192 (deleted) \u2026 \u2192\u2026' to contain 'Empty container'\\n    at /tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/src/features/jobs/job_presentation_before.test.ts:102:27\\n    at file:///home/csmart/code/worktrees/aeronautes/bookmark_observations/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20\"],\"meta\":{},\"tags\":[]},{\"ancestorTitles\":[],\"fullName\":\"visibly names the actual 'delete_container' operation in its row\",\"status\":\"failed\",\"title\":\"visibly names the actual 'delete_container' operation in its row\",\"duration\":54.946154000000206,\"failureMessages\":[\"AssertionError: expected 'partial source/scope/ \u2192 (deleted) \u2026 \u2192\u2026' to contain 'Delete container'\\n    at /tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/src/features/jobs/job_presentation_before.test.ts:102:27\\n    at file:///home/csmart/code/worktrees/aeronautes/bookmark_observations/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20\"],\"meta\":{},\"tags\":[]},{\"ancestorTitles\":[],\"fullName\":\"visibly names the actual 'copy' operation in its row\",\"status\":\"failed\",\"title\":\"visibly names the actual 'copy' operation in its row\",\"duration\":54.777323000000024,\"failureMessages\":[\"AssertionError: expected 'running source/scope/ \u2192 target/scope/\u2026' to contain 'Copy'\\n    at /tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/src/features/jobs/job_presentation_before.test.ts:102:27\\n    at file:///home/csmart/code/worktrees/aeronautes/bookmark_observations/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20\"],\"meta\":{},\"tags\":[]},{\"ancestorTitles\":[],\"fullName\":\"visibly names the actual 'upload' operation in its row\",\"status\":\"failed\",\"title\":\"visibly names the actual 'upload' operation in its row\",\"duration\":54.40811299999996,\"failureMessages\":[\"AssertionError: expected 'running source/scope/ \u2192 target/scope/\u2026' to contain 'Upload'\\n    at /tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/src/features/jobs/job_presentation_before.test.ts:102:27\\n    at file:///home/csmart/code/worktrees/aeronautes/bookmark_observations/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20\"],\"meta\":{},\"tags\":[]},{\"ancestorTitles\":[],\"fullName\":\"visibly names the actual 'download' operation in its row\",\"status\":\"failed\",\"title\":\"visibly names the actual 'download' operation in its row\",\"duration\":56.590254000000186,\"failureMessages\":[\"AssertionError: expected 'partial source/scope/ \u2192 target/scope/\u2026' to contain 'Download'\\n    at /tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/src/features/jobs/job_presentation_before.test.ts:102:27\\n    at file:///home/csmart/code/worktrees/aeronautes/bookmark_observations/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20\"],\"meta\":{},\"tags\":[]},{\"ancestorTitles\":[],\"fullName\":\"does not call unrecorded running Delete settings defaults\",\"status\":\"failed\",\"title\":\"does not call unrecorded running Delete settings defaults\",\"duration\":61.106604999999945,\"failureMessages\":[\"AssertionError: expected 'enginenative verified0  settingsdefau\u2026' to contain 'not recorded'\\n    at /tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/src/features/jobs/job_presentation_before.test.ts:112:53\\n    at file:///home/csmart/code/worktrees/aeronautes/bookmark_observations/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20\"],\"meta\":{},\"tags\":[]},{\"ancestorTitles\":[],\"fullName\":\"control: preserves actual Delete numerator and terminal qualification for 'delete_prefix'\",\"status\":\"passed\",\"title\":\"control: preserves actual Delete numerator and terminal qualification for 'delete_prefix'\",\"duration\":55.04246699999999,\"failureMessages\":[],\"meta\":{},\"tags\":[]},{\"ancestorTitles\":[],\"fullName\":\"control: preserves actual Delete numerator and terminal qualification for 'empty_container'\",\"status\":\"passed\",\"title\":\"control: preserves actual Delete numerator and terminal qualification for 'empty_container'\",\"duration\":54.287734,\"failureMessages\":[],\"meta\":{},\"tags\":[]},{\"ancestorTitles\":[],\"fullName\":\"control: preserves actual Delete numerator and terminal qualification for 'delete_container'\",\"status\":\"passed\",\"title\":\"control: preserves actual Delete numerator and terminal qualification for 'delete_container'\",\"duration\":54.08610200000021,\"failureMessages\":[],\"meta\":{},\"tags\":[]},{\"ancestorTitles\":[],\"fullName\":\"control: copy keeps counters and allows running diagnostics without cancellation\",\"status\":\"passed\",\"title\":\"control: copy keeps counters and allows running diagnostics without cancellation\",\"duration\":56.699481000000105,\"failureMessages\":[],\"meta\":{},\"tags\":[]},{\"ancestorTitles\":[],\"fullName\":\"control: upload keeps counters and allows running diagnostics without cancellation\",\"status\":\"passed\",\"title\":\"control: upload keeps counters and allows running diagnostics without cancellation\",\"duration\":57.26413300000013,\"failureMessages\":[],\"meta\":{},\"tags\":[]},{\"ancestorTitles\":[],\"fullName\":\"control: download keeps counters and allows running diagnostics without cancellation\",\"status\":\"passed\",\"title\":\"control: download keeps counters and allows running diagnostics without cancellation\",\"duration\":55.855740000000196,\"failureMessages\":[],\"meta\":{},\"tags\":[]},{\"ancestorTitles\":[],\"fullName\":\"control: incomplete deletion accounting remains last confirmed without final totals\",\"status\":\"passed\",\"title\":\"control: incomplete deletion accounting remains last confirmed without final totals\",\"duration\":57.103767999999945,\"failureMessages\":[],\"meta\":{},\"tags\":[]},{\"ancestorTitles\":[],\"fullName\":\"control: unknown planned count and first-poll rate do not invent a percent or ETA\",\"status\":\"passed\",\"title\":\"control: unknown planned count and first-poll rate do not invent a percent or ETA\",\"duration\":54.536637000000155,\"failureMessages\":[],\"meta\":{},\"tags\":[]},{\"ancestorTitles\":[],\"fullName\":\"control: historical Mirror keeps destination deletions separate from copied objects\",\"status\":\"passed\",\"title\":\"control: historical Mirror keeps destination deletions separate from copied objects\",\"duration\":54.31589899999972,\"failureMessages\":[],\"meta\":{},\"tags\":[]}],\"startTime\":1789219829518,\"endTime\":1789219830608.316,\"status\":\"failed\",\"message\":\"\",\"name\":\"/tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend/src/features/jobs/job_presentation_before.test.ts\"}]}",
+    "check.stdout": "Loading svelte-check in workspace: /tmp/aeronautes-job-presentation-before-5t6v9v90/source/frontend\nGetting Svelte diagnostics...\n\nsvelte-check found 0 errors and 0 warnings\n",
+    "check.stderr": ""
+  },
+  "remaining_after_first_slice": "The identical 19-case probe must retain its unrecorded-settings failure; do not claim a wholly green probe."
+}
