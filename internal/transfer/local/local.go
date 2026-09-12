@@ -253,6 +253,14 @@ func PreflightDownloadInto(ctx context.Context, src *swiftcontrol.Session, conta
 			problem("unportable-name", refusal)
 			continue
 		}
+		// Component length, also BEFORE the directory-marker branch and
+		// independent of what exists beneath the destination: the
+		// existing-destination inspection stops at the first absent
+		// component, so it can never be the length rule.
+		if refusal := componentLengthRefusal(trimmed); refusal != "" {
+			problem("name-length", refusal)
+			continue
+		}
 		if rel == "" || strings.HasSuffix(rel, "/") {
 			logical := object.Bytes
 			if logical == 0 {
@@ -426,6 +434,26 @@ func reservedDeviceBase(component string) bool {
 			base[3:] == "¹" || base[3:] == "²" || base[3:] == "³"
 	}
 	return false
+}
+
+// maxComponentBytes is the strictest per-name limit among the supported
+// targets for UTF-8 input: ext4, XFS, btrfs and APFS limit a name to 255
+// bytes, and NTFS to 255 UTF-16 code units, which a UTF-8 sequence never
+// needs fewer bytes than. One rule on every platform, measured in bytes
+// of the exact name, refuses before any write what every target would
+// refuse at write time; the host's own refusal stays as the backstop.
+const maxComponentBytes = 255
+
+// componentLengthRefusal reports why a component of rel is too long for
+// every supported target, or "" when every component fits. Like the
+// portable rule it inspects the exact bytes and never trims or renames.
+func componentLengthRefusal(rel string) string {
+	for _, component := range strings.Split(rel, "/") {
+		if len(component) > maxComponentBytes {
+			return fmt.Sprintf("path component of %d bytes exceeds the %d-byte name limit of the supported filesystems; refused on every platform", len(component), maxComponentBytes)
+		}
+	}
+	return ""
 }
 
 func asciiUpper(name string) string {

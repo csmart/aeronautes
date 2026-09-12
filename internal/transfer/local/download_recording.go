@@ -98,7 +98,7 @@ func validDownloadItem(prefix string, item DownloadItem) bool {
 	rel := strings.TrimPrefix(item.Name, prefix)
 	trimmed := strings.TrimSuffix(rel, "/")
 	if strings.HasPrefix(rel, "/") || hasDotSegment(trimmed) || strings.ContainsRune(rel, '\\') || strings.Contains(rel, "//") ||
-		strings.ContainsFunc(rel, func(c rune) bool { return c < 0x20 || c == 0x7f }) || portableNameRefusal(trimmed) != "" {
+		strings.ContainsFunc(rel, func(c rune) bool { return c < 0x20 || c == 0x7f }) || portableNameRefusal(trimmed) != "" || componentLengthRefusal(trimmed) != "" {
 		return false
 	}
 	if item.Dir {
