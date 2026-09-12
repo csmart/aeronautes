@@ -1,0 +1,562 @@
+package systemtest
+
+import (
+	"context"
+	"crypto/md5"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"reflect"
+	"sort"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/csmart/aeronautes/internal/app"
+	"github.com/csmart/aeronautes/internal/audit"
+	"github.com/csmart/aeronautes/internal/bookmarks"
+	"github.com/csmart/aeronautes/internal/db"
+	"github.com/csmart/aeronautes/internal/evidence"
+	"github.com/csmart/aeronautes/internal/jobs"
+	"github.com/csmart/aeronautes/internal/secrets"
+	"github.com/csmart/aeronautes/internal/swifttest"
+)
+
+func newCopyPhaseHarness(t *testing.T, cfg harnessConfig, probe *copyPhaseProbe) *Harness {
+	t.Helper()
+	if cfg.authURL == "" {
+		t.Skip("AERONAUTES_SAIO_AUTH_URL not set")
+	}
+	ctx := context.Background()
+	statePath := filepath.Join(t.TempDir(), "state.sqlite")
+	database, err := db.Open(ctx, statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	store := bookmarks.NewStore(database, secrets.NewSessionStore())
+	probe.store = store
+	connections := app.NewConnections(store)
+	ev := evidence.NewStore(database)
+	auditStore := audit.NewStore(database)
+	jobStore := jobs.NewStore(database)
+	runner := app.NewJobRunner(jobStore, auditStore)
+	transfer := app.NewTransferServiceWithRunner(connections, jobStore, runner)
+	app.WireEvidenceStore(transfer, ev)
+
+	h := &Harness{
+		T: t, ctx: ctx,
+		database: database, jobStore: jobStore, statePath: statePath,
+		// Parallel fixtures cannot rely on clock resolution for namespace isolation.
+		ns:        "st" + rand.Text(),
+		Bookmarks: app.NewBookmarkService(store, connections, jobStore),
+		Browse:    app.NewBrowseService(connections, ev),
+		Inspector: app.NewInspectorService(connections, ev),
+		Mutate:    app.NewMutateService(connections, auditStore, ev),
+		Transfer:  transfer,
+		Delete:    app.NewDeleteService(connections, jobStore, runner, ev),
+		Jobs:      app.NewJobService(jobStore),
+		Audit:     app.NewAuditService(auditStore),
+		Find:      app.NewFindService(connections),
+		Settings:  app.NewSettingsService(database, runner),
+	}
+
+	// Checked db close: a close/durability error fails the test (so its
+	// coverage claims are not credited by the reconciler) rather than being
+	// silently ignored.
+	t.Cleanup(func() {
+		if err := database.Close(); err != nil {
+			t.Errorf("harness db close: %v", err)
+		}
+	})
+
+	primary, err := h.account(cfg.authURL, cfg.user, cfg.key, "primary")
+	if err != nil {
+		t.Fatalf("primary SAIO account unavailable: %v", err)
+	}
+	h.Primary = primary
+
+	// A missing/unreachable secondary is a Skip locally, a Fatal in CI
+	// (where AERONAUTES_REQUIRE_TWO_ACCOUNTS is set) — never an
+	// unconditional Fatal that would sink the whole package on a
+	// one-account laptop.
+	secondary, secErr := h.account(cfg.authURL, cfg.user2, cfg.key2, "secondary")
+	h.Secondary = secondary
+	reach := secErr
+	if reach == nil {
+		reach = h.secondaryReachable()
+	}
+	if reach != nil {
+		if cfg.requireTwoAccounts {
+			t.Fatalf("second SAIO account unavailable but AERONAUTES_REQUIRE_TWO_ACCOUNTS is set: %v", reach)
+		}
+		t.Skipf("second SAIO account unavailable (%v); cross-account matrix needs it", reach)
+	}
+
+	// Primary is the active connection for browse/inspect/mutate.
+	if err := connections.Connect(ctx, h.Primary.BookmarkID); err != nil {
+		t.Fatal(err)
+	}
+
+	// The residue sweep runs after every Container purge (which the body
+	// registers later) and before the disposition capture registered above
+	// — so a leak fails the test and blocks credit.
+	t.Cleanup(h.assertNoResidue)
+	t.Cleanup(h.CloseFind)
+	return h
+}
+
+func findCopyPhaseHarness(t *testing.T, probe *copyPhaseProbe) *Harness {
+	t.Helper()
+	primary := swifttest.New("test:tester", "testing")
+	secondary := swifttest.New("test2:tester2", "testing2")
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/auth/v1.0" {
+			mock, account := primary, "/v1/AUTH_primary"
+			if r.Header.Get("X-Auth-User") == "test2:tester2" {
+				mock, account = secondary, "/v1/AUTH_secondary"
+			}
+			response := httptest.NewRecorder()
+			mock.ServeHTTP(response, r)
+			for name, values := range response.Header() {
+				w.Header()[name] = append([]string(nil), values...)
+			}
+			if response.Header().Get("X-Storage-Url") != "" {
+				w.Header().Set("X-Storage-Url", server.URL+account)
+			}
+			w.WriteHeader(response.Code)
+			_, _ = w.Write(response.Body.Bytes())
+			return
+		}
+		if r.URL.Path == "/info" {
+			primary.ServeHTTP(w, r)
+			return
+		}
+		for prefix, mock := range map[string]*swifttest.Server{
+			"/v1/AUTH_primary": primary, "/v1/AUTH_secondary": secondary,
+		} {
+			if r.URL.Path == prefix || strings.HasPrefix(r.URL.Path, prefix+"/") {
+				request := r.Clone(r.Context())
+				request.URL.Path = "/v1/AUTH_test" + strings.TrimPrefix(r.URL.Path, prefix)
+				if request.URL.RawPath != "" {
+					request.URL.RawPath = strings.Replace(request.URL.RawPath, prefix, "/v1/AUTH_test", 1)
+				}
+				if mock == primary {
+					probe.servePrimary(w, request, mock)
+				} else {
+					mock.ServeHTTP(w, request)
+				}
+				return
+			}
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(server.Close)
+	// Each mock owns its configuration so parallel fixtures cannot redirect
+	// one another's authentication or change the real-Swift environment.
+	return newCopyPhaseHarness(t, harnessConfig{
+		authURL: server.URL + "/auth/v1.0",
+		user:    "test:tester", key: "testing",
+		user2: "test2:tester2", key2: "testing2",
+		requireTwoAccounts: true,
+	}, probe)
+}
+
+func copyPhaseItemRecordsRun(t *testing.T, h *Harness, count int, probe *copyPhaseProbe) {
+	t.Helper()
+	src := h.Container(h.Primary, "failure-identity-src")
+	probe.sourceContainer.Store(src)
+	dst := h.Container(h.Secondary, "failure-identity-dst")
+	segments := h.Container(h.Secondary, "failure-identity-segments")
+	outside := h.Container(h.Secondary, "failure-identity-aliases")
+	body := []byte("copy bytes")
+	selected := map[string]bool{}
+	for i := 0; i < count; i++ {
+		name := fmt.Sprintf("f-%04d\nfailed", i)
+		selected[name] = true
+		h.Seed(h.Primary, src, "scope/"+name, body, nil)
+	}
+	h.Seed(h.Primary, src, "scope/z-engine.bin", body, nil)
+	h.Seed(h.Primary, src, "unselected", []byte("source sentinel"), nil)
+	h.Seed(h.Secondary, dst, "scope/.aeronautes/stage/other-job/keep", []byte("other job sentinel"), nil)
+	shared := []byte("shared bytes")
+	h.Seed(h.Secondary, segments, "shared/0", shared, nil)
+	h.Seed(h.Secondary, outside, "alias", nil, map[string]string{"X-Object-Manifest": segments + "/shared/"})
+	slo := fmt.Sprintf(`[{"path":%q,"etag":"%x","size_bytes":%d}]`, "/"+segments+"/shared/0", md5.Sum(shared), len(shared))
+	h.SeedSLO(h.Secondary, outside, "slo-alias", slo)
+	beforeA, beforeB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
+	srcTrace := copyItemRecordsProxy(t, h, src, selected)
+	dstTrace := copyCompletionProxy(t, h, h.Secondary, "")
+	if _, err := h.Browse.Connect(t.Context(), h.Secondary.BookmarkID); err != nil {
+		t.Fatal(err)
+	}
+	probe.beforeStart(h)
+	id, err := h.Transfer.StartCopy(t.Context(), app.CopyRequestDTO{SourceBookmarkID: h.Primary.BookmarkID, SourceContainer: src, SourcePrefix: "scope/", DestBookmarkID: h.Secondary.BookmarkID, DestContainer: dst, DestPrefix: "scope/"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe.afterStart(h, id)
+	saved := copyCompletionRead(t, h.database, id)
+	visible, err := h.Jobs.Get(t.Context(), id)
+	if err != nil || !reflect.DeepEqual(visible, saved.Job) {
+		t.Errorf("identity probe public/durable mismatch: %+v %v %+v", visible, err, saved)
+	}
+	wantState := "partial"
+	if count == 0 {
+		wantState = "complete"
+	}
+	want := jobs.Counters{ObjectsPlanned: int64(count + 1), BytesPlanned: int64((count + 1) * len(body)), ObjectsCopied: 1, BytesCopied: int64(len(body)), ObjectsVerified: 1, ObjectsFailed: int64(count), NativeRouted: int64(count)}
+	if saved.Job.State != wantState || saved.Job.Counters != want || saved.Job.StartedAt == "" || saved.Job.FinishedAt == "" {
+		t.Errorf("Copy does not count each failed identity once: got=%+v want=%s %+v", saved.Job, wantState, want)
+	}
+	if count == 0 && saved.Job.Error != "" {
+		t.Errorf("successful identity control acquired error: %q", saved.Job.Error)
+	}
+	srcTrace.mu.Lock()
+	refused := make(map[string]int, len(srcTrace.refused))
+	for name, n := range srcTrace.refused {
+		refused[name] = n
+	}
+	srcTrace.mu.Unlock()
+	if len(refused) != count {
+		t.Errorf("failed source identity set incomplete: got=%d want=%d", len(refused), count)
+	}
+	for name := range selected {
+		if refused[name] != 1 {
+			t.Errorf("source GET refusal for %q occurred %d times", name, refused[name])
+		}
+	}
+	result := audit.ResultVerifyMismatch
+	if count == 0 {
+		result = audit.ResultApplied
+	}
+	wantSummary := fmt.Sprintf("job %s · item outcomes: %d failed names, 0 conflicts, 0 refusals, 0 unresolved, 0 unverified, %d with problems", id, count, count)
+	if len(saved.Audit) != 1 || saved.Audit[0].Operation != "transfer.copy."+wantState || saved.Audit[0].Result != result || saved.Audit[0].Summary != wantSummary || saved.Audit[0].BookmarkID != h.Primary.BookmarkID || saved.Audit[0].Resource != src+"/scope/ → "+dst+"/scope/" {
+		t.Errorf("identity probe audit differs: %+v", saved.Audit)
+	}
+	assertCopyItemRecords(t, h, id, src, dst, count, len(body), selected, saved)
+	wantRows := []jobs.RecoveryRecord{{JobID: id, BookmarkID: h.Secondary.BookmarkID, Kind: jobs.RecoveryStaging, Container: dst, Prefix: "scope/.aeronautes/stage/" + id + "/"}}
+	if !reflect.DeepEqual(saved.Rows, wantRows) || saved.Job.RecoveryRecords != 1 || saved.Status != (app.RecoveryStatusDTO{Jobs: 1, Records: 1}) {
+		t.Errorf("identity probe recovery differs: %+v", saved)
+	}
+	if err := h.Transfer.CancelJob(t.Context(), id); err == nil {
+		t.Error("finished identity probe still accepts cancellation")
+	}
+	afterA, afterB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
+	h.AssertNoCollateral(beforeA, afterA)
+	got, ok := afterB.Containers[dst].Objects["scope/z-engine.bin"]
+	if !ok || got.Size != int64(len(body)) || got.Digest != fmt.Sprintf("%x", sha256.Sum256(body)) || got.Class != "plain" {
+		t.Errorf("successful engine control bytes differ: %+v", got)
+	}
+	if stray := collateral(beforeB, afterB, []string{dst + "/scope/z-engine.bin"}); len(stray) != 0 {
+		t.Errorf("identity probe changed collateral: %v", stray)
+	}
+	if len(srcTrace.traffic.writeSnapshot()) != 0 {
+		t.Errorf("identity probe wrote source: %v", srcTrace.traffic.writeSnapshot())
+	}
+	var namedInPublicSummary []string
+	for name := range selected {
+		found := strings.Contains(saved.Job.Error, name)
+		for _, event := range saved.Audit {
+			found = found || strings.Contains(event.Summary, name)
+		}
+		if found {
+			namedInPublicSummary = append(namedInPublicSummary, name)
+		}
+	}
+	sort.Strings(namedInPublicSummary)
+	observation := struct {
+		ExpectedFailed                 int
+		RefusedSourceGETs              map[string]int
+		NamesInExistingJobAuditSummary []string
+		Saved                          copyCompletionState
+	}{count, refused, namedInPublicSummary, saved}
+	encoded, err := json.Marshal(observation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("copy failure identity observation: %s", encoded)
+	requests := srcTrace.traffic.requestCount() + dstTrace.requestCount()
+	copyCompletionReopen(t, h, id, saved)
+	if requests != srcTrace.traffic.requestCount()+dstTrace.requestCount() {
+		t.Error("identity probe reopen contacted remote")
+	}
+	h.AssertNoCollateral(afterA, h.SnapshotNamespace(h.Primary))
+	h.AssertNoCollateral(afterB, h.SnapshotNamespace(h.Secondary))
+}
+
+type copyPhaseProbe struct {
+	t               *testing.T
+	mode            string
+	store           *bookmarks.Store
+	sourceContainer atomic.Value
+	origin          time.Time
+	arrived         chan struct{}
+	released        chan struct{}
+	ended           chan struct{}
+	releaseOnce     sync.Once
+	selected        atomic.Int32
+	observerStop    chan struct{}
+	observerDone    chan struct{}
+	observerStarted bool
+	pins            []func()
+}
+
+func newCopyPhaseProbe(t *testing.T, mode string) *copyPhaseProbe {
+	p := &copyPhaseProbe{t: t, mode: mode, origin: time.Now(), arrived: make(chan struct{}), released: make(chan struct{}), ended: make(chan struct{}), observerStop: make(chan struct{}), observerDone: make(chan struct{})}
+	p.sourceContainer.Store("")
+	return p
+}
+
+func (p *copyPhaseProbe) mark(name string, fields map[string]any) {
+	if fields == nil {
+		fields = map[string]any{}
+	}
+	fields["event"], fields["since_origin_ms"], fields["utc"] = name, float64(time.Since(p.origin))/float64(time.Millisecond), time.Now().UTC().Format(time.RFC3339Nano)
+	data, err := json.Marshal(fields)
+	if err != nil {
+		p.t.Errorf("phase observation encode: %v", err)
+		return
+	}
+	p.t.Logf("COPY_PHASE %s", data)
+}
+
+func (p *copyPhaseProbe) servePrimary(w http.ResponseWriter, r *http.Request, next http.Handler) {
+	if p.mode == "retained_pin" || r.Method != http.MethodGet || r.URL.Path != "/v1/AUTH_test/"+p.sourceContainer.Load().(string) || r.URL.Query().Get("prefix") != "scope/" || r.URL.Query().Get("marker") != "" {
+		next.ServeHTTP(w, r)
+		return
+	}
+	if p.selected.Add(1) != 1 {
+		next.ServeHTTP(w, r)
+		return
+	}
+	defer close(p.ended)
+	capture := httptest.NewRecorder()
+	next.ServeHTTP(capture, r)
+	body := capture.Body.Bytes()
+	if capture.Code != http.StatusOK || len(body) < 2 || body[0] != '[' {
+		p.t.Errorf("phase listing setup: status=%d bytes=%d", capture.Code, len(body))
+		http.Error(w, "private phase fixture setup", http.StatusInternalServerError)
+		return
+	}
+	for name, values := range capture.Header() {
+		w.Header()[name] = append([]string(nil), values...)
+	}
+	// Chunked flushing exposes an actual body wait through the existing proxy,
+	// without consuming its shorter response-header timeout.
+	w.Header().Del("Content-Length")
+	w.WriteHeader(capture.Code)
+	if _, err := w.Write(body[:1]); err != nil {
+		p.t.Errorf("phase first byte: %v", err)
+		return
+	}
+	if err := http.NewResponseController(w).Flush(); err != nil {
+		p.t.Errorf("phase header flush: %v", err)
+		return
+	}
+	p.mark("listing_body_held", map[string]any{"status": capture.Code, "bytes": len(body), "path": r.URL.EscapedPath(), "query": r.URL.RawQuery})
+	close(p.arrived)
+	timer := time.NewTimer(35 * time.Second)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		p.releaseOnce.Do(func() { close(p.released) })
+	case <-p.released:
+	case <-r.Context().Done():
+		p.t.Errorf("phase held response cancelled: %v", r.Context().Err())
+		return
+	}
+	p.mark("listing_body_released", nil)
+	if _, err := w.Write(body[1:]); err != nil {
+		p.t.Errorf("phase final bytes: %v", err)
+		return
+	}
+	p.mark("listing_body_write_returned", nil)
+}
+
+func (p *copyPhaseProbe) beforeStart(h *Harness) {
+	if p.mode != "retained_pin" {
+		return
+	}
+	for _, account := range []*Account{h.Primary, h.Secondary} {
+		var generation int64
+		if err := h.database.Reader().QueryRowContext(p.t.Context(), "SELECT generation FROM bookmarks WHERE id=?", account.BookmarkID).Scan(&generation); err != nil {
+			p.t.Fatal(err)
+		}
+		release, err := p.store.PinGeneration(p.t.Context(), account.BookmarkID, generation)
+		if err != nil {
+			p.t.Fatal(err)
+		}
+		p.pins = append(p.pins, release)
+	}
+	p.mark("test_owned_pins_acquired", map[string]any{"accounts": 2})
+}
+
+func (p *copyPhaseProbe) readState(h *Harness, id, event string) *app.JobDTO {
+	job, err := h.Jobs.Get(p.t.Context(), id)
+	if err != nil {
+		p.t.Fatal(err)
+	}
+	p.mark(event, map[string]any{"state": job.State, "job": id, "planned": job.Counters.ObjectsPlanned, "failed": job.Counters.ObjectsFailed, "finished_at": job.FinishedAt})
+	return job
+}
+
+func (p *copyPhaseProbe) refusedBoth(h *Harness) {
+	list, err := h.Bookmarks.List(p.t.Context())
+	if err != nil {
+		p.t.Fatal(err)
+	}
+	for _, account := range []*Account{h.Primary, h.Secondary} {
+		found := false
+		for _, bookmark := range list {
+			if bookmark.ID != account.BookmarkID {
+				continue
+			}
+			found = true
+			_, err := h.Bookmarks.Save(p.t.Context(), bookmark, account.key)
+			if !errors.Is(err, bookmarks.ErrInUse) {
+				p.t.Fatalf("phase expected held binding for %s: %v", account.BookmarkID, err)
+			}
+			p.mark("binding_refused", map[string]any{"bookmark": account.BookmarkID})
+		}
+		if !found {
+			p.t.Fatal("phase bookmark missing")
+		}
+	}
+}
+
+func (p *copyPhaseProbe) afterStart(h *Harness, id string) {
+	p.mark("start_returned", map[string]any{"job": id})
+	p.observerStarted = true
+	go func() {
+		defer close(p.observerDone)
+		tick := time.NewTicker(20 * time.Millisecond)
+		defer tick.Stop()
+		last := ""
+		for {
+			job, err := h.Jobs.Get(context.Background(), id)
+			if err != nil {
+				p.t.Errorf("phase state observer: %v", err)
+				return
+			}
+			if job.State != last {
+				p.mark("state_observed", map[string]any{"state": job.State, "job": id, "planned": job.Counters.ObjectsPlanned, "failed": job.Counters.ObjectsFailed})
+				last = job.State
+			}
+			if jobs.Terminal(jobs.State(job.State)) {
+				return
+			}
+			select {
+			case <-tick.C:
+			case <-p.observerStop:
+				return
+			}
+		}
+	}()
+	if p.mode != "retained_pin" {
+		select {
+		case <-p.arrived:
+		case <-time.After(5 * time.Second):
+			p.t.Fatal("phase listing hold not reached")
+		}
+		if jobs.Terminal(jobs.State(p.readState(h, id, "held_state").State)) {
+			p.t.Fatal("held Copy already terminal")
+		}
+		p.refusedBoth(h)
+	}
+	if p.mode == "guard_first" {
+		p.mark("unchanged_guard_begin", nil)
+		passed := p.t.Run("unchanged_guard", func(t *testing.T) { copyCompletionAwaitPins(t, h) })
+		p.mark("unchanged_guard_returned", map[string]any{"passed": passed})
+		if passed {
+			p.t.Error("phase expected unchanged guard rejection")
+		}
+		if jobs.Terminal(jobs.State(p.readState(h, id, "guard_expiry_state").State)) {
+			p.t.Error("phase guard did not expire during unfinished Copy work")
+		}
+		p.refusedBoth(h)
+	}
+	h.AwaitJob(id)
+	p.readState(h, id, "terminal_await_returned")
+	if p.mode == "retained_pin" {
+		p.refusedBoth(h)
+		p.mark("unchanged_guard_begin", nil)
+		passed := p.t.Run("unchanged_guard", func(t *testing.T) { copyCompletionAwaitPins(t, h) })
+		p.mark("unchanged_guard_returned", map[string]any{"passed": passed})
+		if passed {
+			p.t.Error("phase expected post-terminal retained-pin rejection")
+		}
+		if !jobs.Terminal(jobs.State(p.readState(h, id, "guard_expiry_state").State)) {
+			p.t.Error("phase terminal state regressed")
+		}
+		p.refusedBoth(h)
+		for _, release := range p.pins {
+			release()
+		}
+		p.pins = nil
+		p.mark("test_owned_pins_released", nil)
+	}
+	for _, account := range []*Account{h.Primary, h.Secondary} {
+		p.mark("post_terminal_save_wait", map[string]any{"bookmark": account.BookmarkID})
+		copyCompletionAwaitPins(p.t, h, account)
+		p.mark("binding_acknowledged", map[string]any{"bookmark": account.BookmarkID})
+	}
+	select {
+	case <-p.observerDone:
+	case <-time.After(5 * time.Second):
+		p.t.Fatal("phase state observer did not finish")
+	}
+	if p.mode != "retained_pin" {
+		select {
+		case <-p.ended:
+		case <-time.After(5 * time.Second):
+			p.t.Fatal("phase listing handler did not finish")
+		}
+		if p.selected.Load() != 2 {
+			p.t.Errorf("phase expected plan and verify listing count=2, got %d", p.selected.Load())
+		}
+	}
+	p.mark("phase_work_joined", nil)
+}
+
+func (p *copyPhaseProbe) close() {
+	p.releaseOnce.Do(func() { close(p.released) })
+	for _, release := range p.pins {
+		release()
+	}
+	if p.observerStarted {
+		close(p.observerStop)
+		select {
+		case <-p.observerDone:
+		case <-time.After(5 * time.Second):
+			p.t.Error("phase observer cleanup timed out")
+		}
+	}
+	if p.selected.Load() > 0 {
+		select {
+		case <-p.ended:
+		case <-time.After(5 * time.Second):
+			p.t.Error("phase handler cleanup timed out")
+		}
+	}
+}
+
+func TestCopyBindingPhaseProbe(t *testing.T) {
+	for _, mode := range []string{"guard_first", "terminal_first", "retained_pin"} {
+		t.Run(mode, func(t *testing.T) {
+			probe := newCopyPhaseProbe(t, mode)
+			defer probe.close()
+			h := findCopyPhaseHarness(t, probe)
+			copyPhaseItemRecordsRun(t, h, 401, probe)
+			probe.mark("all_original_assertions_reached", nil)
+		})
+	}
+}

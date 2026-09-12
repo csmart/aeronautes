@@ -1,0 +1,546 @@
+{
+  "kind": "derived public evidence twin; raw command paths normalized only in normalized_argv",
+  "source_commit": "3c5f7f7fe61bedc8199c72e8439400181643058a",
+  "original_files_unchanged": 782,
+  "probe_file": "copybind_phase_probe_test.go.txt",
+  "probe_sha256": "f703fe53d2aae1de7e3620835e74a8b321aefb74aa961e22e41ed8e35fa6883b",
+  "private_packet_file_count": 925,
+  "private_packet_index_sha256": "4d159fc213aaa7bd05beb48e8c975fee58a38d6d74937ea5bc0c08ced9d6205f",
+  "private_packet_report_sha256": "1085266a31985111a46da738db95bbb34ad3f4b68aaca5062df43ef6c48e8e99",
+  "producer_sha256": "df52472ab3da8d0e8d4b47c77377a83145883fcf43236ce9a619c7baf52408a4",
+  "builder_sha256": "011b5c5d5d42dc5e425602c130a90d353c873efb7341eb2a85251172f09614ad",
+  "original_source_inputs": {
+    "go.mod": "052b3b256f95c24ca347d42cbba6e87e528987e8522832d3d4cb84b667f82ea0",
+    "go.sum": "b22d11ae9a924d908a597eaebf76c928989c921e898224c29981391a92e5af47",
+    "internal/systemtest/copy_item_records_test.go": "f6bcf59760a112861a322a8bc3439afec1c62b1ca84df0d6817f042c4a5691fc",
+    "internal/systemtest/copy_completion_test.go": "e7e1c71fde203e81f330b738d3301d39c7349eeb19549c5c230b0da15f3bc8bd",
+    "internal/systemtest/harness.go": "d2279cf4ee47b10cd4d813a897fcc92d47cda20b8756487da2bb7ac088af4f28",
+    "internal/systemtest/upload_item_records_test.go": "41c732c71ed0e79e7cc0ed2f07d55747cee4ab0d04cd7dcb5d00b101af028089",
+    "internal/app/jobrunner.go": "5b695ba7d2195894f926e578c873c24a7733807ecbc74504447a203ae513e6a6",
+    "internal/app/transferservice.go": "fb5d189c463d028575d1fccf0d7bf79098d21177029d7fae11aad13943004d85",
+    "internal/transfer/rclone/runner.go": "7871ad066b24214f58c1064ce04dabbc7a46ee6be14accfdb6d8b0657f7e91ac",
+    "internal/transfer/rclone/gateway.go": "61a51ba96efc5bb918bb041272a7404b3d95304e2ba21aa0dc5c3ac5115504f6",
+    "third_party/ncw-swift/source/swift.go": "d2ca5b7a5aa89ebdf599c9294c72a21785737b48d0b7c2c9485aaae2f4842f5d"
+  },
+  "tools": [
+    {
+      "name": "go",
+      "version": "1.27.1",
+      "sha256": "30969f97169d7f43fe6a085873d75613adc21e30818a8c61d95bd27275df4624"
+    },
+    {
+      "name": "rclone",
+      "version": "1.74.3",
+      "sha256": "9700aa1273ac73d6d0833c43ba63fe830516422cb131960b8c1a24ced789cba0"
+    }
+  ],
+  "environment_contract": "offline readonly existing modules, GOTOOLCHAIN=local, GOENV=off, GOWORK=off, GOPROXY=off, GOSUMDB=off, CGO_ENABLED=1; pinned binaries on PATH; private Go temporary and per-run XDG cache/config paths; no SAIO variables",
+  "original_budgets_seconds": {
+    "native_idle": 60,
+    "owned_listing_body_hold": 35,
+    "terminal_wait": 90,
+    "binding_wait_per_account": 30
+  },
+  "runs": [
+    {
+      "label": "baseline",
+      "classification": "setup-only loopback socket denial; no behavioral credit",
+      "normalized_argv": [
+        "<go-1.27.1>",
+        "test",
+        "-race",
+        "-count=1",
+        "-mod=readonly",
+        "-json",
+        "-parallel=1",
+        "-p=2",
+        "-timeout=150s",
+        "./internal/systemtest",
+        "-run",
+        "^TestCopyItemRecordsMock$/^failed_401$"
+      ],
+      "go_exit": 1,
+      "process_timed_out": false,
+      "outer_process_bound_seconds": 240,
+      "process_seconds": 3.819048259407282,
+      "events": 38,
+      "actions": {
+        "start": 1,
+        "run": 2,
+        "output": 30,
+        "pause": 1,
+        "cont": 1,
+        "fail": 3
+      },
+      "packages": {
+        "github.com/csmart/aeronautes/internal/systemtest": {
+          "start": "2026-09-12T20:26:46.657534815+10:00",
+          "terminals": [
+            "fail"
+          ],
+          "end": "2026-09-12T20:26:46.671893247+10:00",
+          "elapsed": 0.014
+        }
+      },
+      "tests": [
+        {
+          "package": "github.com/csmart/aeronautes/internal/systemtest",
+          "name": "TestCopyItemRecordsMock",
+          "start": "2026-09-12T20:26:46.668459342+10:00",
+          "terminals": [
+            "fail"
+          ],
+          "end": "2026-09-12T20:26:46.671855646+10:00",
+          "elapsed": 0,
+          "leaf": false
+        },
+        {
+          "package": "github.com/csmart/aeronautes/internal/systemtest",
+          "name": "TestCopyItemRecordsMock/failed_401",
+          "start": "2026-09-12T20:26:46.66909054+10:00",
+          "terminals": [
+            "fail"
+          ],
+          "end": "2026-09-12T20:26:46.669252337+10:00",
+          "elapsed": 0,
+          "leaf": true
+        }
+      ],
+      "leaves": [
+        "TestCopyItemRecordsMock/failed_401"
+      ],
+      "lifecycle_errors": [],
+      "assertion_outputs": [],
+      "phase_count": 0,
+      "timings": {},
+      "source_unchanged": true,
+      "raw_hashes": {
+        "command.json": "18cf25fabeb56ed07d3a45be742b57059098ed034702f651e39ba073e88b08a3",
+        "result.json": "52eb7db25099d920fceb0b30084c9df1ca7f1de85b88c4f9d6c6e32bfe7cb46d",
+        "stdout.jsonl": "2e31562b0aaab0280474371975e37a5c47210242236afa46c0e4fde2a4b61944",
+        "stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout_bytes": 8750,
+      "stderr_bytes": 0
+    },
+    {
+      "label": "baseline-loopback",
+      "classification": "passing control",
+      "normalized_argv": [
+        "<go-1.27.1>",
+        "test",
+        "-race",
+        "-count=1",
+        "-mod=readonly",
+        "-json",
+        "-parallel=1",
+        "-p=2",
+        "-timeout=150s",
+        "./internal/systemtest",
+        "-run",
+        "^TestCopyItemRecordsMock$/^failed_401$"
+      ],
+      "go_exit": 0,
+      "process_timed_out": false,
+      "outer_process_bound_seconds": 240,
+      "process_seconds": 13.624098382890224,
+      "events": 381,
+      "actions": {
+        "start": 1,
+        "run": 2,
+        "output": 373,
+        "pause": 1,
+        "cont": 1,
+        "pass": 3
+      },
+      "packages": {
+        "github.com/csmart/aeronautes/internal/systemtest": {
+          "start": "2026-09-12T20:28:13.7597814+10:00",
+          "terminals": [
+            "pass"
+          ],
+          "end": "2026-09-12T20:28:26.873795761+10:00",
+          "elapsed": 13.114
+        }
+      },
+      "tests": [
+        {
+          "package": "github.com/csmart/aeronautes/internal/systemtest",
+          "name": "TestCopyItemRecordsMock",
+          "start": "2026-09-12T20:28:13.769782496+10:00",
+          "terminals": [
+            "pass"
+          ],
+          "end": "2026-09-12T20:28:25.868464317+10:00",
+          "elapsed": 12.1,
+          "leaf": false
+        },
+        {
+          "package": "github.com/csmart/aeronautes/internal/systemtest",
+          "name": "TestCopyItemRecordsMock/failed_401",
+          "start": "2026-09-12T20:28:13.770212592+10:00",
+          "terminals": [
+            "pass"
+          ],
+          "end": "2026-09-12T20:28:25.868385487+10:00",
+          "elapsed": 12.1,
+          "leaf": true
+        }
+      ],
+      "leaves": [
+        "TestCopyItemRecordsMock/failed_401"
+      ],
+      "lifecycle_errors": [],
+      "assertion_outputs": [],
+      "phase_count": 0,
+      "timings": {},
+      "source_unchanged": true,
+      "raw_hashes": {
+        "command.json": "dfff4d3328db027f787c36ab4129de884292e145649dae8039617c15409ded67",
+        "result.json": "d45b11a50d8966598d81c3fc731127358a357f865704706c0606c8ca7927c9e1",
+        "stdout.jsonl": "78aa37048ccf66b86e3be91ba31a41593d2f3decc0b15e47723a5a8592b17f4c",
+        "stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout_bytes": 490616,
+      "stderr_bytes": 0
+    },
+    {
+      "label": "terminal-first",
+      "classification": "passing control",
+      "normalized_argv": [
+        "<go-1.27.1>",
+        "test",
+        "-race",
+        "-count=1",
+        "-mod=readonly",
+        "-json",
+        "-parallel=1",
+        "-p=2",
+        "-timeout=150s",
+        "./internal/systemtest",
+        "-run",
+        "^TestCopyBindingPhaseProbe$/^terminal_first$"
+      ],
+      "go_exit": 0,
+      "process_timed_out": false,
+      "outer_process_bound_seconds": 240,
+      "process_seconds": 52.00466192467138,
+      "events": 396,
+      "actions": {
+        "start": 1,
+        "run": 2,
+        "output": 390,
+        "pass": 3
+      },
+      "packages": {
+        "github.com/csmart/aeronautes/internal/systemtest": {
+          "start": "2026-09-12T20:32:47.924126202+10:00",
+          "terminals": [
+            "pass"
+          ],
+          "end": "2026-09-12T20:33:37.720421885+10:00",
+          "elapsed": 49.796
+        }
+      },
+      "tests": [
+        {
+          "package": "github.com/csmart/aeronautes/internal/systemtest",
+          "name": "TestCopyBindingPhaseProbe",
+          "start": "2026-09-12T20:32:47.934842309+10:00",
+          "terminals": [
+            "pass"
+          ],
+          "end": "2026-09-12T20:33:36.713366173+10:00",
+          "elapsed": 48.78,
+          "leaf": false
+        },
+        {
+          "package": "github.com/csmart/aeronautes/internal/systemtest",
+          "name": "TestCopyBindingPhaseProbe/terminal_first",
+          "start": "2026-09-12T20:32:47.935023743+10:00",
+          "terminals": [
+            "pass"
+          ],
+          "end": "2026-09-12T20:33:36.712911281+10:00",
+          "elapsed": 48.78,
+          "leaf": true
+        }
+      ],
+      "leaves": [
+        "TestCopyBindingPhaseProbe/terminal_first"
+      ],
+      "lifecycle_errors": [],
+      "assertion_outputs": [],
+      "phase_count": 19,
+      "timings": {
+        "terminal_observed_ms": 46749.806234,
+        "terminal_await_ms": 46759.172481,
+        "acknowledgements_ms": [
+          46780.067186,
+          46799.878515
+        ],
+        "terminal_observation_to_ack_ms": [
+          30.260951999996905,
+          50.07228099999338
+        ],
+        "hold_ms": 35000.547016000004
+      },
+      "source_unchanged": true,
+      "raw_hashes": {
+        "command.json": "8be5f616396258f0e71a94177b45bd9b50512235965de66a205eae208674b246",
+        "result.json": "e9a23cd69099a07211a9beb288c24bfbbbb616c3450444baa509cb18280dddbf",
+        "stdout.jsonl": "558a9235be934c43017f0048301ad24131daf8df0000456d641b265da3f13d8c",
+        "stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout_bytes": 499837,
+      "stderr_bytes": 0
+    },
+    {
+      "label": "guard-first",
+      "classification": "intended unchanged binding guard failure; no other assertion output",
+      "normalized_argv": [
+        "<go-1.27.1>",
+        "test",
+        "-race",
+        "-count=1",
+        "-mod=readonly",
+        "-json",
+        "-parallel=1",
+        "-p=2",
+        "-timeout=150s",
+        "./internal/systemtest",
+        "-run",
+        "^TestCopyBindingPhaseProbe$/^guard_first$"
+      ],
+      "go_exit": 1,
+      "process_timed_out": false,
+      "outer_process_bound_seconds": 240,
+      "process_seconds": 50.45779367676005,
+      "events": 405,
+      "actions": {
+        "start": 1,
+        "run": 3,
+        "output": 397,
+        "fail": 4
+      },
+      "packages": {
+        "github.com/csmart/aeronautes/internal/systemtest": {
+          "start": "2026-09-12T20:34:25.165803638+10:00",
+          "terminals": [
+            "fail"
+          ],
+          "end": "2026-09-12T20:35:15.119343132+10:00",
+          "elapsed": 49.954
+        }
+      },
+      "tests": [
+        {
+          "package": "github.com/csmart/aeronautes/internal/systemtest",
+          "name": "TestCopyBindingPhaseProbe",
+          "start": "2026-09-12T20:34:25.176430627+10:00",
+          "terminals": [
+            "fail"
+          ],
+          "end": "2026-09-12T20:35:15.110932107+10:00",
+          "elapsed": 49.93,
+          "leaf": false
+        },
+        {
+          "package": "github.com/csmart/aeronautes/internal/systemtest",
+          "name": "TestCopyBindingPhaseProbe/guard_first",
+          "start": "2026-09-12T20:34:25.1765694+10:00",
+          "terminals": [
+            "fail"
+          ],
+          "end": "2026-09-12T20:35:15.110756705+10:00",
+          "elapsed": 49.93,
+          "leaf": false
+        },
+        {
+          "package": "github.com/csmart/aeronautes/internal/systemtest",
+          "name": "TestCopyBindingPhaseProbe/guard_first/unchanged_guard",
+          "start": "2026-09-12T20:34:25.856220121+10:00",
+          "terminals": [
+            "fail"
+          ],
+          "end": "2026-09-12T20:34:55.858657595+10:00",
+          "elapsed": 30,
+          "leaf": true
+        }
+      ],
+      "leaves": [
+        "TestCopyBindingPhaseProbe/guard_first/unchanged_guard"
+      ],
+      "lifecycle_errors": [],
+      "assertion_outputs": [
+        {
+          "test": "TestCopyBindingPhaseProbe/guard_first/unchanged_guard",
+          "output": "    copybind_phase_probe_test.go:477: copy body did not release binding: a starting, queued or running job still uses this bookmark; wait for the job and its cleanup to finish\n"
+        }
+      ],
+      "phase_count": 23,
+      "timings": {
+        "terminal_observed_ms": 47665.598617,
+        "terminal_await_ms": 47759.636877,
+        "acknowledgements_ms": [
+          47777.861818,
+          47796.724067
+        ],
+        "terminal_observation_to_ack_ms": [
+          112.2632009999943,
+          131.12544999999955
+        ],
+        "hold_ms": 35000.935755,
+        "guard_ms": 30002.521534000003
+      },
+      "source_unchanged": true,
+      "raw_hashes": {
+        "command.json": "b2a8e6a2d4c1c99582c0c0113b22b78352c9afef35518f33279f487735f77798",
+        "result.json": "7cb1ad0cce880a1b120dc5b59d6d9f79fb6bf74d57481b16ff0962e1a2848bbe",
+        "stdout.jsonl": "df1be8f1580873cc4381bcc464bcea8f1c4637f741b66a7822fb1b17931f628f",
+        "stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout_bytes": 501565,
+      "stderr_bytes": 0
+    },
+    {
+      "label": "retained-pin",
+      "classification": "intended unchanged binding guard failure; no other assertion output",
+      "normalized_argv": [
+        "<go-1.27.1>",
+        "test",
+        "-race",
+        "-count=1",
+        "-mod=readonly",
+        "-json",
+        "-parallel=1",
+        "-p=2",
+        "-timeout=150s",
+        "./internal/systemtest",
+        "-run",
+        "^TestCopyBindingPhaseProbe$/^retained_pin$"
+      ],
+      "go_exit": 1,
+      "process_timed_out": false,
+      "outer_process_bound_seconds": 240,
+      "process_seconds": 45.7096110903658,
+      "events": 404,
+      "actions": {
+        "start": 1,
+        "run": 3,
+        "output": 396,
+        "fail": 4
+      },
+      "packages": {
+        "github.com/csmart/aeronautes/internal/systemtest": {
+          "start": "2026-09-12T20:36:08.559335247+10:00",
+          "terminals": [
+            "fail"
+          ],
+          "end": "2026-09-12T20:36:53.770994457+10:00",
+          "elapsed": 45.212
+        }
+      },
+      "tests": [
+        {
+          "package": "github.com/csmart/aeronautes/internal/systemtest",
+          "name": "TestCopyBindingPhaseProbe",
+          "start": "2026-09-12T20:36:08.568159916+10:00",
+          "terminals": [
+            "fail"
+          ],
+          "end": "2026-09-12T20:36:53.762465539+10:00",
+          "elapsed": 45.19,
+          "leaf": false
+        },
+        {
+          "package": "github.com/csmart/aeronautes/internal/systemtest",
+          "name": "TestCopyBindingPhaseProbe/retained_pin",
+          "start": "2026-09-12T20:36:08.568387989+10:00",
+          "terminals": [
+            "fail"
+          ],
+          "end": "2026-09-12T20:36:53.762444008+10:00",
+          "elapsed": 45.19,
+          "leaf": false
+        },
+        {
+          "package": "github.com/csmart/aeronautes/internal/systemtest",
+          "name": "TestCopyBindingPhaseProbe/retained_pin/unchanged_guard",
+          "start": "2026-09-12T20:36:21.70811151+10:00",
+          "terminals": [
+            "fail"
+          ],
+          "end": "2026-09-12T20:36:51.710854884+10:00",
+          "elapsed": 30,
+          "leaf": true
+        }
+      ],
+      "leaves": [
+        "TestCopyBindingPhaseProbe/retained_pin/unchanged_guard"
+      ],
+      "lifecycle_errors": [],
+      "assertion_outputs": [
+        {
+          "test": "TestCopyBindingPhaseProbe/retained_pin/unchanged_guard",
+          "output": "    copybind_phase_probe_test.go:492: copy body did not release binding: a starting, queued or running job still uses this bookmark; wait for the job and its cleanup to finish\n"
+        }
+      ],
+      "phase_count": 22,
+      "timings": {
+        "terminal_observed_ms": 13133.048669,
+        "terminal_await_ms": 13134.912885,
+        "acknowledgements_ms": [
+          43169.007109,
+          43188.860859
+        ],
+        "terminal_observation_to_ack_ms": [
+          30035.95844,
+          30055.81219
+        ],
+        "guard_ms": 30002.854135
+      },
+      "source_unchanged": true,
+      "raw_hashes": {
+        "command.json": "d26182eb1c657c0b5dceb34b0b78b30346ed97d56ac869bde1e2b5ec54175ff9",
+        "result.json": "bfb457f3288d6f0c9b502ef0dedf48dbe410961b838e5cad1fdbab270b9eb097",
+        "stdout.jsonl": "ebdb6fa6e1034af976deb610534371bc55659ddb99c2e0d08f69c4063b442326",
+        "stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout_bytes": 501441,
+      "stderr_bytes": 0
+    }
+  ],
+  "parser_outcomes": [
+    {
+      "script": "assess.py",
+      "exit": 0,
+      "sha256": "57c83d7654d384719c30762fd6c3a94c4b7a6578218becc0509d0bfe9d3178d5",
+      "meaning": "complete Go lifecycle, phase and source reconciliation"
+    },
+    {
+      "script": "observe-outcomes.py",
+      "exit": 1,
+      "sha256": "5cbeaa15808d0ebaabf88d95a888d3c9b16672544888b17193c3401c877bbc2b",
+      "meaning": "incorrect extra empty-summary assumption; no product failure credit"
+    },
+    {
+      "script": "observe-outcomes-v2.py",
+      "exit": 0,
+      "sha256": "b406d94a200293b3302df7f3c13f5bee1eb5588a7fdf951b7361ef83980f6c63",
+      "meaning": "records the existing example-name summary without adding an assertion"
+    }
+  ],
+  "limits": [
+    "Historical failed_401 cause remains unclassified; suffix is failed-name count, not HTTP401.",
+    "The observed source refusals are HTTP403; no cancellation or auth lifetime probe.",
+    "Only Linux owned loopback mocks; no real Swift, full suite, current-base delivery, or valuable-data clearance.",
+    "Terminal timestamps are 20ms polling observations, not exact publication or production body-return times.",
+    "Expected-red child failure preserves its parent fixture; it does not reproduce original premature fixture teardown.",
+    "Retained-pin control uses additional actual test-owned pins and does not remove the production deferred release.",
+    "All 64 phase markers refer to this probe; worker join is not a generic child/transport quiescence guarantee.",
+    "Private runs were serial; host idleness and absence of other agents load were not measured.",
+    "An exploratory parser incorrectly read one split Output event and failed; complete joined output is valid.",
+    "Missing-path git/rg/sed and command-v failures are inspection notes, not independently captured process transcripts or regression proof."
+  ]
+}
