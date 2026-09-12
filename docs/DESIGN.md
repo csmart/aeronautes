@@ -5324,6 +5324,10 @@ Record the engine-stage cancellation with an unresolved effect and return the or
 Keep missing results, deadline expiry, uncancelled contexts and independent failures outside that classification, and preserve retained staging and its cleanup disclosure.
 Require executor controls for those exclusions and real-service cancellation regressions alongside the child-lifetime tests before delivery.
 
+The correction and maintained [Linux child-lifetime evidence](experiments/2026-09-12-linux-child-lifetime.md) have passed independent local review, including actual pinned-child completion, cancellation, escalation and both parent-death modes on Linux amd64.
+The final mock and real-Swift runs distinguish executed passes from skips, and controls that omit parent-death coupling, killing/reaping or the cancellation mapping fail their intended assertions.
+This establishes the tested direct-child and download-result scope only; combined-source verification and protected delivery are still required, while application shutdown, other native platforms and DS-07/SEC-06 remain open.
+
 The next bounded [UI-10 cancellation and audit sequence](experiments/2026-09-12-cancellation-feedback.md) separates an operator request's outcome from an independent status read.
 The unchanged drawer hides a rejected cancellation behind a successful refresh and admits duplicate requests while the first is pending; the audit reader also allows older queries and background Recent replies to replace a selected view.
 UI-10, P28, §§26.4/47/49/50/55 and K-UI-005 require honest status, while `CancelJob` acknowledges a graceful cancellation request without proving a terminal result, cleanup or child quiescence.

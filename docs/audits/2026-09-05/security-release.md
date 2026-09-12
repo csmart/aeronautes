@@ -156,6 +156,12 @@ Their importance is data integrity: cleanup and restart decisions require quiesc
 Remediation: specify a cross-platform shutdown protocol; establish owned process lifetime before the child can write; implement the appropriate Windows job object and macOS lifetime strategy; distinguish cooperative cleanup from hard termination and reconcile the latter conservatively.
 Acceptance: native tests on all six targets kill the parent at a child-write barrier and prove no subsequent child writes, safe recovery, proper cancellation result, and deterministic release of app locks and keychain resources.
 
+Current disposition: the locally reviewed [Linux child-lifetime evidence](../../experiments/2026-09-12-linux-child-lifetime.md) exercises the pinned direct child at a write barrier on Linux amd64, including an already stopped child when its parent is killed.
+An isolated controller verifies process identity and actual SIGKILL/reaping before another process acquires the instance lock and reconciles the retained records; later stage bytes and remote collateral remain unchanged.
+Independent omission controls expose missing parent-death coupling and missing kill/reap, and the associated download correction preserves cancellation-only outcomes without hiding independent failures.
+This scope still awaits combined-source verification and protected delivery; it does not establish descendant containment, complete application shutdown, keychain shutdown or native macOS/Windows lifetime guarantees.
+SEC-06 and the valuable-data hold remain open.
+
 ## SEC-07 — the bridge still trusts frontend-held confirmation and broad capabilities
 
 References: `internal/app/mutateservice.go:79`, `internal/app/segmentservice.go:193`, `:232`, `internal/app/selections.go:10`, `:37`, and `internal/app/localtransferservice.go:79`.
