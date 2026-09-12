@@ -505,17 +505,24 @@ func TestDownloadEngineCancellationBoundaries(t *testing.T) {
 			if admitted != 2 || errors.Is(err, context.Canceled) != (boundary != "control") {
 				t.Fatalf("cancellation lost admitted scope: %+v admitted=%d err=%v", report, admitted, err)
 			}
-			wantDone, wantExecuted := int64(0), 0
+			// Every item carries an execution record at every boundary; the
+			// ones a cancel left staged are recorded as unplaced failures.
+			wantDone, wantFailures := int64(0), 0
 			switch boundary {
 			case "control":
-				wantDone, wantExecuted = 2, 2
-			case "before_child":
-				wantExecuted = 2
+				wantDone = 2
+			case "after_child":
+				wantFailures = 2
 			case "between_placements":
-				wantDone, wantExecuted = 1, 1
+				wantDone, wantFailures = 1, 1
 			}
-			if report.Done != wantDone || report.Bytes != wantDone*7 || len(report.Failures) != 0 || len(executed) != wantExecuted || int64(len(verified)) != wantDone {
+			if report.Done != wantDone || report.Bytes != wantDone*7 || len(report.Failures) != wantFailures || len(executed) != 2 || int64(len(verified)) != wantDone {
 				t.Fatalf("cancellation invented or erased observed outcomes: %+v execution=%+v verification=%+v", report, executed, verified)
+			}
+			for _, failure := range report.Failures {
+				if !failure.Cancelled {
+					t.Fatalf("cancellation failure not marked as the cancellation: %+v", failure)
+				}
 			}
 			for index, name := range []string{"a", "b"} {
 				data, err := os.ReadFile(filepath.Join(root, name))
@@ -532,8 +539,8 @@ func TestDownloadEngineCancellationBoundaries(t *testing.T) {
 						t.Fatalf("undispatched cancellation lost positive no-effect knowledge: %+v", got)
 					}
 				} else if boundary != "control" && int64(index) >= wantDone {
-					if _, exists := executed["scope/"+name]; exists {
-						t.Fatal("started child acquired an invented no-effect observation")
+					if got := executed["scope/"+name]; got != unplacedAfterCancel {
+						t.Fatalf("staged item left unplaced by the cancel lacks its one record: %+v", got)
 					}
 					staged, err := os.ReadFile(filepath.Join(root, ".aeronautes-stage-fixture", name))
 					if err != nil || string(staged) != "bytes "+name {

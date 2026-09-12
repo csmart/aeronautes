@@ -32,6 +32,19 @@ func (e downloadStageBoundaryAnchoredEngine) CopyInto(ctx context.Context, src, 
 	return result, errors.Join(err, e.after(ctx, dst))
 }
 
+// downloadProgress keeps the runner's progress flush and, when a
+// placement boundary is wired, lets the fixture act after each item
+// outcome, which is between two placements on the engine route.
+func (s *TransferService) downloadProgress(ctx context.Context, jobID string, onProgress func(done, total, bytes int64)) func(done, total, bytes int64) {
+	boundary := s.downloadPlacementBoundary
+	return func(done, total, bytes int64) {
+		onProgress(done, total, bytes)
+		if boundary != nil {
+			boundary(ctx, jobID, done, total)
+		}
+	}
+}
+
 // wrapDownloadStageBoundary preserves the engine's anchored route when
 // it has one; a plain engine keeps the plain wrapper.
 func wrapDownloadStageBoundary(engine local.Engine, after func(context.Context, string) error) local.Engine {

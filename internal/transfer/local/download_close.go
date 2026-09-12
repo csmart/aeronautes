@@ -23,13 +23,21 @@ type nativeDownloadFile interface {
 // file.
 func finishNativeDownload(ctx context.Context, body io.ReadCloser, temp nativeDownloadFile, parent *os.Root, publish publication, wantSize int64) (result downloadResult) {
 	var verified os.FileInfo
+	cancelled := false
 	defer func() {
 		if cleanupErr := removeNativeTemporary(parent, publish.stagedBase, publish.stagedDisplay, verified); cleanupErr != nil {
 			result.addIssue(transfercopy.StageCleanup, "temporary-cleanup", fmt.Errorf("remove download temporary file: %w", cleanupErr))
+			if cancelled {
+				// The interrupted temporary is still there: residue.
+				result.Effect = transfercopy.EffectUnresolved
+			}
 		}
 	}()
 	written, err := io.Copy(temp, body)
 	verificationAttempted := err == nil
+	// A cancel that ends the read leaves a partial temporary and an
+	// untouched target; once the temporary is gone there is no effect.
+	cancelled = errors.Is(err, context.Canceled) && ctx.Err() != nil
 	if err == nil && written != wantSize {
 		err = fmt.Errorf("wrote %d bytes, object says %d — refusing to place a short file", written, wantSize)
 	}
@@ -49,7 +57,11 @@ func finishNativeDownload(ctx context.Context, body io.ReadCloser, temp nativeDo
 		if verificationAttempted {
 			return downloadVerificationFailed(transfercopy.StageVerification, transfercopy.CodeUnverified, "native-get", err)
 		}
-		result := downloadFailed(transfercopy.EffectUnresolved, transfercopy.StageSourceRead, transfercopy.CodeIO, "native-get", err)
+		effect := transfercopy.EffectUnresolved
+		if cancelled {
+			effect = transfercopy.EffectNotAttempted
+		}
+		result := downloadFailed(effect, transfercopy.StageSourceRead, transfercopy.CodeIO, "native-get", err)
 		if closeErr != nil {
 			result.verification = &transfercopy.Observation{Result: transfercopy.ResultFailed,
 				Effect:     transfercopy.EffectNotAttempted,

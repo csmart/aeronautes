@@ -151,7 +151,8 @@ func (d *downloadRun) observe(item DownloadItem, result downloadResult) error {
 	}
 	if result.Result == transfercopy.ResultFailed || result.Result == transfercopy.ResultConflict {
 		if len(d.report.Failures) < maxFailures {
-			d.report.Failures = append(d.report.Failures, Failure{Name: item.Name, Stage: result.label, Err: result.err().Error()})
+			d.report.Failures = append(d.report.Failures, Failure{Name: item.Name, Stage: result.label, Err: result.err().Error(),
+				Cancelled: result.Diagnostic.Code == transfercopy.CodeCancelled})
 		}
 	}
 	if d.recorder == nil {
