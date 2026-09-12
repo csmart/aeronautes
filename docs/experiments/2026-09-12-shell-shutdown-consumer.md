@@ -145,3 +145,15 @@ The blocked-error and actual-main paths have separate behavioural evidence; nati
 `staticcheck` was not available and was not run.
 The bound-service action inventory remains byte-identical, and no action-coverage cell or broader shutdown clearance is claimed.
 Independent implementation approval and the root's final combined delivery gates are still required.
+
+## Shutdown diagnostics and remaining feedback
+
+Today's `ShutdownWork` and `jobRunner.Shutdown` errors only describe an incomplete wait whose context is done.
+The production shell passes `context.Background()`, so its defensive failed-drain branch is unreachable with today's error set.
+A future error class or a changed caller could reach that branch, which deliberately keeps the database and lock held, emits one log message and blocks.
+Visible finishing state and operator-facing error feedback for that situation remain follow-up work; this slice supplies neither a quit-anyway path nor native-window feedback.
+
+Find's reserved hook retains its own five-second wait; its timeout reports only that wait and does not prove that the workers have exited.
+The shell still waits for the complete Find and job ownership drain before releasing their resources.
+Pinned Wails `v3.0.0-beta.16` runs the application shutdown hooks before service shutdown during normal cleanup, but `App.Run` also defers service shutdown on failure returns.
+Such a return can therefore report the Find hook's timeout before the shell's post-Run join finishes; that message alone does not mean the complete shell join failed.
