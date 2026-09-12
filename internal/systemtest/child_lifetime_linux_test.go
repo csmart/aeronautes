@@ -312,6 +312,9 @@ func TestChildLifetimeRealSwift(t *testing.T) {
 func childLifetimeCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 	controller := os.Getenv("AERONAUTES_LIFETIME_CONTROLLER") == "1"
 	if controller {
+		if os.Getenv("AERONAUTES_LIFETIME_OUTCOME") == "" {
+			t.Fatal("isolated controller needs an outcome path")
+		}
 		// A separate controller keeps subreaping out of the suite process
 		// and lets this test distinguish a killed orphan from gateway EOF.
 		if err := unix.Prctl(unix.PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0); err != nil {
@@ -327,15 +330,36 @@ func childLifetimeCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 				}
 				ctx, cancel := context.WithTimeout(t.Context(), 80*time.Second)
 				defer cancel()
+				outcomePath := filepath.Join(t.TempDir(), "outcome.json")
 				cmd := exec.CommandContext(ctx, self, "-test.run=^"+strings.ReplaceAll(t.Name(), "/", "$/^")+"$", "-test.v", "-test.timeout=75s")
-				cmd.Env = append(os.Environ(), "AERONAUTES_LIFETIME_CONTROLLER=1")
+				cmd.Env = append(os.Environ(), "AERONAUTES_LIFETIME_CONTROLLER=1", "AERONAUTES_LIFETIME_OUTCOME="+outcomePath)
 				output, err := cmd.CombinedOutput()
 				t.Logf("isolated controller: %s", output)
 				if err != nil {
 					t.Fatalf("controller failed: %v", err)
 				}
+				var outcome string
+				lifetimeReadJSON(t, outcomePath, &outcome)
+				switch outcome {
+				case "pass":
+				case "skip":
+					t.Skip("isolated controller skipped this scenario; see its output")
+				default:
+					t.Fatalf("unexpected controller outcome %q", outcome)
+				}
 				return
 			}
+			// A skipped Go test also exits zero; an explicit outcome prevents
+			// an unavailable fixture from being credited as a passing scenario.
+			t.Cleanup(func() {
+				outcome := "pass"
+				if t.Failed() {
+					outcome = "fail"
+				} else if t.Skipped() {
+					outcome = "skip"
+				}
+				lifetimeWriteJSON(t, os.Getenv("AERONAUTES_LIFETIME_OUTCOME"), outcome)
+			})
 			childLifetime(t, makeHarness(t), mode)
 		})
 	}
