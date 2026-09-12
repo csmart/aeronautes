@@ -1,0 +1,93 @@
+package local
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"testing"
+)
+
+// Probe, not a maintained test: records what the preflight and the
+// executor's admission do today with directory-only aliases, names whose
+// directory components differ only by case or Unicode normalization form
+// while no file collides with a file or with a directory.
+func TestDownloadDirAliasesProbe(t *testing.T) {
+	nfc, nfd := "Bär", "Bär"
+	for _, c := range []struct {
+		name    string
+		objects []string
+	}{
+		{"marker_twins", []string{"Foo/", "foo/"}},
+		{"marker_form_twins", []string{nfc + "/", nfd + "/"}},
+		{"marker_twins_with_children", []string{"Foo/", "foo/", "Foo/a.txt", "foo/b.txt"}},
+		{"marker_beside_implicit", []string{"Foo/", "foo/child.txt"}},
+		{"implicit_twins", []string{"Foo/a.txt", "foo/b.txt"}},
+		{"implicit_form_twins", []string{nfc + "/a.txt", nfd + "/b.txt"}},
+		{"deep_implicit_twins", []string{"top/Foo/a.txt", "TOP/foo/b.txt"}},
+		{"three_spellings", []string{"Foo/", "foo/a.txt", "FOO/b.txt"}},
+		{"file_twins", []string{"Foo", "foo"}},
+		{"file_twins_inside_aliases", []string{"Foo/x.txt", "foo/x.txt"}},
+		{"file_vs_marker", []string{"foo", "Foo/"}},
+		{"file_vs_implicit", []string{"foo", "Foo/child.txt"}},
+		{"file_vs_marker_form", []string{nfc, nfd + "/"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			source, mock := session(t)
+			for _, name := range c.objects {
+				seed(mock, "media", "scope/"+name, dirAliasBody(name))
+			}
+			root := t.TempDir()
+			plan, err := PreflightDownload(t.Context(), source, "media", "scope/", root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var items []string
+			for _, item := range plan.Items {
+				items = append(items, item.Name)
+			}
+			// The executor's own admission on the same selection, as a
+			// direct plan built from the listing.
+			owned := t.TempDir()
+			selected := filepath.Join(owned, "selected")
+			if err := os.Mkdir(selected, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, selected, "keep", "selected sentinel")
+			var planned []DownloadItem
+			var total int64
+			for _, name := range c.objects {
+				item := DownloadItem{Name: "scope/" + name, RelPath: filepath.FromSlash(strings.TrimSuffix(name, "/")), Route: "rclone"}
+				if strings.HasSuffix(name, "/") {
+					item.Dir, item.Route = true, ""
+				} else {
+					item.Size = int64(len(dirAliasBody(name)))
+					total += item.Size
+				}
+				planned = append(planned, item)
+			}
+			engine := &downloadRecordingEngine{Engine: &fsEngine{session: source}}
+			report, execErr := Download(t.Context(), source, engine, "remote:media", "media", "scope/", selected, "probe",
+				&DownloadPreflight{Items: planned, Objects: int64(len(planned)), TotalBytes: total}, nil)
+			var paths []string
+			for path := range downloadDestinationSnapshot(t, owned) {
+				paths = append(paths, path)
+			}
+			sort.Strings(paths)
+			encoded, _ := json.Marshal(map[string]any{
+				"case": c.name, "objects": c.objects, "preflight_items": items, "preflight_problems": plan.Problems,
+				"executor_error": fmt.Sprint(execErr), "executor_report": report, "engine_calls": engine.calls, "owned_after": paths,
+			})
+			t.Logf("dir-alias probe: %s", encoded)
+		})
+	}
+}
+
+func dirAliasBody(name string) string {
+	if strings.HasSuffix(name, "/") {
+		return ""
+	}
+	return "bytes for " + name
+}
