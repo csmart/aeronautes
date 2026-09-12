@@ -5343,6 +5343,10 @@ UI-10, P28, §§26.4/47/49/50/55 and K-UI-005 require honest status, while `Canc
 
 The cancellation slice changes presentation only; audit implementation requires its own reviewed contract, and settings, bookmarks, UI-09, native accessibility acceptance and the valuable-data hold remain open.
 
+The [cancellation request feedback](experiments/2026-09-12-cancellation-feedback.md) now passes independent local review and maintained component tests: pending, requested and unconfirmed notices retain their admitted job identity across unrelated status reads and view changes.
+Duplicate admission, bounded notice retention, explicit retry/dismissal and disposal guards have independent omission controls, while backend terminal states and counters remain authoritative.
+Combined-source verification and protected delivery remain pending; audit-read errors and ownership, settings, bookmark failures and the wider UI-10/P28 acceptance are still open.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.

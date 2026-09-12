@@ -173,6 +173,11 @@ Fix: per-operation structured status/error state and useful retry paths, preserv
 Tests: bridge rejection for each touchpoint, retry success, and normal empty-state controls.
 Confidence: high static evidence; failure displays were not run against a real Wails bridge.
 
+Current disposition: the locally reviewed [cancellation feedback correction](../../experiments/2026-09-12-cancellation-feedback.md) keeps pending, requested and unconfirmed notices bound to the admitted job across successful or failed job reads, filter changes and missing rows.
+It guards duplicate requests before rendering, retains up to 50 notices without silent eviction, and makes retry and dismissal explicit; a requested cancellation never invents a terminal outcome or counter.
+Maintained component regressions and deliberately omitted guards establish that presentation scope, with combined-source verification and protected delivery still pending.
+Audit-read availability and query ownership, settings and bookmark failures, native Wails observations and the wider UI-10/P28 gate remain open.
+
 ### UI-11 — P2: keyboard and dialog semantics are incomplete and interfere
 
 Evidence: `frontend/src/features/browser/BrowserScreen.svelte:44`–`:85`; `frontend/src/features/inspector/ManifestDeleteDialog.svelte:82`–`:86`; `frontend/src/features/browser/BookmarkEditor.svelte:83`; `frontend/src/features/browser/CreateContainerDialog.svelte:34`; `frontend/src/lib/trapFocus.ts:8`.
