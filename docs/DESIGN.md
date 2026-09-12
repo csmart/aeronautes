@@ -5294,6 +5294,23 @@ If issued outcomes cannot be indexed, stop new dispatch, report final identity t
 Require resource-growth and storage-failure controls, the existing identity/encoding/effect regressions, renewed range review and all five PR/master checks before delivery.
 The sweep re-attempt hazard, broader retention durability, DS-08/P24 closure and valuable-data acceptance remain open.
 
+The next Linux child-lifetime evidence slice addresses P30 under §26.4, §46 and the real-process interruption requirement in §65.10.
+It first establishes the behaviour of the existing process controls; production changes require a separately reviewed contract if that evidence exposes a defect.
+
+1. Build a private probe around a real parent subprocess, an instance-locked state directory and the pinned rclone child downloading into its anchored stage.
+   Hold the source response at a deterministic body barrier and observe actual staged bytes and the child's process identity before interruption.
+2. Compare normal completion, service cancellation, a stopped child that requires the existing ten-second kill escalation, and parent SIGKILL.
+   Check that the identified child has exited, that releasing the held response permits no later stage writes, and that unrelated local and remote data remain unchanged.
+3. Start a separate recovery process, acquire the released instance lock and run the existing interrupted-job reconciliation twice.
+   Compare the durable job and item records with the exact placed and retained filesystem state, distinguishing graceful cancellation from parent death and preserving ADR 0020's refusal of automatic reclamation.
+4. Turn the observed cases into maintained Linux regressions with deliberately broken controls for missing parent-death coupling and missing child reaping.
+   Each control must fail for its intended safeguard and explicitly terminate any child it owns.
+5. Record the exact source, engine, platform, commands, outcomes and remaining limits, then require independent review and the current-base PR and resulting-master checks before delivery.
+
+Stub-only tests, PID disappearance without process-identity checks and an orderly database reopen do not establish the required parent-kill evidence.
+No test result in this slice settles retained-stage removal, a complete application shutdown coordinator, descendant-process containment or native acceptance on the other five platform targets.
+DS-07, SEC-06 and the valuable-data release hold remain open.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
