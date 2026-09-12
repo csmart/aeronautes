@@ -68,9 +68,8 @@ func DownloadInto(ctx context.Context, src *swiftcontrol.Session, engine Engine,
 		return nil, errors.New("download needs an unchanged UTF-8 prefix ending in '/'")
 	}
 	seen := make(map[string]bool, len(preflight.Items))
-	// Both relations, exactly as the preflight applies them.
-	lowerSeen := make(map[string]bool, len(preflight.Items))
-	caselessSeen := make(map[string]bool, len(preflight.Items))
+	// Both relations, exactly as the preflight applies them: files are
+	// twin candidates, directories are aliases the target may merge.
 	filesByLower := make(map[string]bool, len(preflight.Items))
 	filesByCaseless := make(map[string]bool, len(preflight.Items))
 	for _, item := range preflight.Items {
@@ -78,15 +77,15 @@ func DownloadInto(ctx context.Context, src *swiftcontrol.Session, engine Engine,
 			return nil, errors.New("download item does not preserve its unique selected name and relative path")
 		}
 		seen[item.Name] = true
+		if item.Dir {
+			continue
+		}
 		relative := strings.TrimPrefix(item.Name, prefix)
 		lower, caseless := lowercaseIdentity(relative), caselessIdentity(relative)
-		if lowerSeen[lower] || caselessSeen[caseless] {
+		if filesByLower[lower] || filesByCaseless[caseless] {
 			return nil, errors.New("download selection contains names that collide on case or Unicode normalization form")
 		}
-		lowerSeen[lower], caselessSeen[caseless] = true, true
-		if !item.Dir {
-			filesByLower[lower], filesByCaseless[caseless] = true, true
-		}
+		filesByLower[lower], filesByCaseless[caseless] = true, true
 	}
 	for _, item := range preflight.Items {
 		relative := strings.TrimPrefix(item.Name, prefix)
