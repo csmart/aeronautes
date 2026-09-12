@@ -1,7 +1,7 @@
 # Whole-job shutdown ownership
 
 Date: 2026-09-12.
-Status: contract and preserved before observations; implementation and independent approval remain pending.
+Status: contract independently approved; the bounded implementation and focused evidence await independent implementation review.
 Implementation base: `836ad0d2138f51741c65de948bab5c5edeb2f3f8`.
 
 ## Oracle and scope
@@ -102,3 +102,47 @@ An error-returning service hook with the current database and lock defers is the
 The separately reviewed consumer must invoke actual owned drain before releasing shared resources, check database closure errors and route `a.Run` errors through cleanup instead of bypassing it with `log.Fatal`.
 It must not choose an arbitrary new deadline or interpret a logged timeout as successful drain.
 Find and synchronous bridge/native-request lifetimes need their own precise coverage; proof of five job families must remain labelled accordingly.
+
+## Maintained implementation and evidence
+
+The runner now admits each of the five Start families under the same mutex that closes admission.
+An owner begins before resource acquisition and survives complete refusal cleanup or the launched job's final pin/handle callback.
+Its startup context preserves caller cancellation, while its job context retains the existing asynchronous detachment.
+`CancelJob` still cancels only the registered job context, including the narrow interval before Start returns; owner shutdown additionally cancels the admitted synchronous startup.
+The final queue wake is synchronised with the condition mutex so cancellation cannot leave a queued owner asleep during shutdown.
+No executor result mapping, cleanup policy, process grace, database schema or bound frontend action changes.
+
+The [maintained evidence twin](probes/2026-09-12-job-shutdown-ownership-maintained.json) preserves the initial build failure for the then-absent API, both intermediate successful test sets, the final focused compatibility run, coverage and eight isolated removal controls.
+The initial build failure is not credited as a behavioural safety reproduction; the independently reviewed before observations remain the behavioural before evidence.
+The final compatibility run executes 62 passing leaves under `go test -race`, comprising 38 new ownership/service/handle cases and 24 existing cancellation, pinning, completion, Copy, upload/download and benchmark cases, with zero failures or skips in 15.106 seconds.
+The separate focused coverage run executes the same 38 new leaves successfully and reaches 100% statement coverage in the six added ownership/shutdown functions.
+Its whole-package percentage is only the focused selector's 27.0%, not a claim of full application coverage.
+`go vet ./internal/app` and `git diff --check` pass; `staticcheck` was not found on PATH or in the local tool cache.
+
+All five public start families refuse new starts after stop, retain ownership through held pre-registration I/O, cancel queued work without starting remote effects and drain failed creation paths.
+The held body, terminal cleanup and final pin callback cases show that neither terminal state nor zero slots/registrations permits an early drain.
+Cancelled and expired waiters preserve admission closure and ownership, while repeated/concurrent callers can still observe actual completion.
+Queued and running completion-write failures keep their previous durable rows and unavailable-store latch rather than inventing a saved cancellation result; ownership still drains and credential pins release.
+The Linux descriptor check observes the actual download's derived directory handles and requires them to disappear at drain while the picker-owned handle remains usable.
+This is native handle evidence around the actual service and an in-process HTTP engine, not native child-process or Wails shutdown evidence.
+
+| Isolated broken guard | Passing controls | Failing targeted leaves | Failure observed |
+| --- | ---: | ---: | --- |
+| Do not close admission | 1 | 5 | Every public Start returns a new id after shutdown |
+| Omit admitted-owner tracking | 1 | 5 | Held pre-registration starts are reported drained |
+| Do not cancel owners | 1 | 2 | Startup I/O remains uncancelled and a running owner cannot drain |
+| Release the owner before final cleanup | 1 | 1 | A held final pin callback is reported drained |
+| Omit the download destination close | 1 | 1 | One extra native directory descriptor remains after drain |
+| Make public job cancellation cancel startup too | 1 | 1 | `CancelJob` unexpectedly cancels the still-owned synchronous start |
+| Return success on a failed wait | 1 | 2 | Cancelled and expired waiters report a false drain |
+| Detach startup from the caller | 2 | 1 | Caller cancellation no longer reaches admitted startup |
+
+Every control exits 1 with no skipped leaf and retains a passing ordinary detached-download completion control.
+The last control also retains the already-cancelled-before-admission refusal.
+The source and raw-stream hashes are in the twin, and all mutations run through isolated overlays without modifying the reviewed worktree or its assertions.
+The source hashes remained unchanged across final verification and controls.
+
+The implementation is still unable to ship by itself.
+The separately assigned actual shell caller, Find drain and checked DB/lock consumer need their own contract, true entrypoint/system proof and independent approval before the same delivery can proceed.
+No shared Swift fixture, full Go suite, actual child shutdown, native Wails quit, hosted pipeline or other platform acceptance was run or credited here.
+Synchronous bridge/native-request ownership, credential-store lifecycle, retained-stage deletion and the valuable-data hold remain open.

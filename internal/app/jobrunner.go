@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log"
 	"sync"
 
@@ -22,6 +24,19 @@ type jobRunner struct {
 	capacity  int
 	slotFreed *sync.Cond
 	cancels   map[string]context.CancelFunc
+	stopped   bool
+	owners    map[*jobOwner]struct{}
+	drained   chan struct{}
+}
+
+var errJobRunnerStopped = errors.New("job shutdown has begun; new jobs are unavailable")
+
+type jobOwner struct {
+	runner      *jobRunner
+	ctx         context.Context
+	cancel      context.CancelFunc
+	cancelStart context.CancelFunc
+	handedOff   bool
 }
 
 // NewJobRunner is the exported constructor for the shell (main.go).
@@ -35,9 +50,105 @@ func newJobRunner(jobStore *jobs.Store, auditStore *audit.Store) *jobRunner {
 		audit:    auditStore,
 		capacity: defaultMaxActiveJobs,
 		cancels:  map[string]context.CancelFunc{},
+		owners:   map[*jobOwner]struct{}{},
+		drained:  make(chan struct{}),
 	}
 	r.slotFreed = sync.NewCond(&r.mu)
 	return r
+}
+
+// Startup must be owned before it acquires pins or performs I/O, since
+// shutdown can otherwise miss work that has not registered a job yet.
+func (r *jobRunner) admit(ctx context.Context) (*jobOwner, context.Context, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.stopped {
+		return nil, nil, errJobRunnerStopped
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, nil, fmt.Errorf("start job: %w", err)
+	}
+	startCtx, cancelStart := context.WithCancel(ctx)
+	jobCtx, cancelJob := context.WithCancel(context.WithoutCancel(ctx))
+	owner := &jobOwner{
+		runner: r, ctx: jobCtx, cancelStart: cancelStart,
+		cancel: cancelJob,
+	}
+	r.owners[owner] = struct{}{}
+	return owner, startCtx, nil
+}
+
+func (o *jobOwner) finishStart() {
+	o.cancelStart()
+	if !o.handedOff {
+		o.release()
+	}
+}
+
+func (o *jobOwner) launch(jobID, bookmarkID string, releasePins func(), body, queuedCancel func(context.Context)) {
+	o.handedOff = true
+	o.runner.launchWithQueuedOutcome(o.ctx, jobID, bookmarkID, func() {
+		// Slots and terminal records can disappear before handles and
+		// pins; only the end of this cleanup permits the owner to leave.
+		defer o.release()
+		releasePins()
+	}, body, queuedCancel)
+}
+
+func (o *jobOwner) release() {
+	o.cancelOwned()
+	r := o.runner
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, present := r.owners[o]; !present {
+		return
+	}
+	delete(r.owners, o)
+	if r.stopped && len(r.owners) == 0 {
+		close(r.drained)
+	}
+}
+
+func (o *jobOwner) cancelOwned() {
+	o.cancelStart()
+	o.cancel()
+}
+
+// Shutdown keeps admission closed even if this caller stops waiting.
+// A successful return joins every admitted start and its final cleanup.
+func (r *jobRunner) Shutdown(ctx context.Context) error {
+	r.mu.Lock()
+	var cancels []context.CancelFunc
+	if !r.stopped {
+		r.stopped = true
+		cancels = make([]context.CancelFunc, 0, len(r.owners))
+		for owner := range r.owners {
+			cancels = append(cancels, owner.cancelOwned)
+		}
+		if len(r.owners) == 0 {
+			close(r.drained)
+		}
+	}
+	r.mu.Unlock()
+	for _, cancel := range cancels {
+		cancel()
+	}
+	// Cancellation changes the queue predicate outside mu. Synchronise
+	// its final wake with Wait so a queued owner cannot miss shutdown.
+	r.mu.Lock()
+	r.slotFreed.Broadcast()
+	r.mu.Unlock()
+	select {
+	case <-r.drained:
+		return nil
+	default:
+	}
+	select {
+	case <-r.drained:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("wait for job shutdown: %w", ctx.Err())
+	}
 }
 
 // setMaxActiveJobs resizes the §38 ceiling. The budget is a COUNT, not
