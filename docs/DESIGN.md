@@ -5373,6 +5373,19 @@ The audit correction now passes independent local review, 74 dedicated state/com
 Selected queries and the bounded Recent summary retain separate owners; failed optional reads preserve the existing mutation/connection awaits and outcomes.
 The preserved before failures and twelve omitted-guard variants cover the bounded correction; final-base Go verification and protected delivery remain separate gates, without UI-10/P28 or valuable-data clearance.
 
+The bounded [bookmark observation contract](experiments/2026-09-12-bookmark-observations.md) follows the audit-query correction.
+Its ten-case unchanged-source probe distinguishes acknowledged Save from a failed following List, including a mounted duplicate empty-ID create, unavailable startup and obsolete List replies.
+
+1. Review the concrete contract and preserved six failures/four healthy controls before production changes.
+2. Give bookmark List explicit loading, available, unavailable and stale state with fixed safe feedback and read-only retry in the rail.
+   Require current request ownership for success, failure and completion; retire observations at mutation admission and effect settlement, including reads started during another pending mutation.
+3. Preserve every Save/Delete effect, await and authority boundary while allowing acknowledged Save identity to survive optional List failure.
+   Keep actual/uncertain mutation errors, credential cleanup and the unchanged editor's current-form/connection-scope checks; never invent saved rows or automatically retry a mutation.
+4. Prove the exact original cases, Save & connect, stale replies and independent broken-guard controls with maintained state/component tests, focused frontend verification and independent review.
+   Renew current-base range review and require all five PR and resulting-master jobs before delivery.
+
+This observation correction leaves settings, raw mutation-error sanitisation, unresolved backend publication, wider UI-09/UI-10, native acceptance and the valuable-data hold open.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.

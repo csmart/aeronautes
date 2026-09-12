@@ -1,0 +1,250 @@
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { flushSync, mount, unmount } from "svelte";
+import type { Api, BookmarkDTO } from "../../lib/api";
+import { BrowserState } from "./browserState.svelte";
+import { newFakeApi } from "./fakeApi";
+import BookmarkEditor from "./BookmarkEditor.svelte";
+import BrowserScreen from "./BrowserScreen.svelte";
+
+const live = vi.hoisted(() => ({} as Api));
+vi.mock("../../lib/api", () => ({ liveApi: live }));
+
+const mounted = new Set<ReturnType<typeof mount>>();
+const releases: (() => void)[] = [];
+
+beforeEach(() => Object.assign(live, newFakeApi()));
+afterEach(async () => {
+  for (const component of [...mounted].reverse()) await unmount(component);
+  mounted.clear();
+  for (const release of releases.splice(0)) release();
+  await settle();
+  document.body.innerHTML = "";
+  vi.restoreAllMocks();
+});
+
+function draft(displayName = "Created λ"): BookmarkDTO {
+  return { id: "", displayName, authUrl: "https://swift.example/auth/v1.0",
+    username: "fixture:user", storageUrlOverride: "", tlsMode: "system",
+    caPem: "", hasCa: false, hasCredential: false };
+}
+
+function heldList() {
+  let resolve!: (value: BookmarkDTO[]) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<BookmarkDTO[]>((yes, no) => { resolve = yes; reject = no; });
+  releases.push(() => resolve([]));
+  return { promise, resolve, reject };
+}
+
+async function settle() {
+  for (let i = 0; i < 16; i++) { await Promise.resolve(); flushSync(); }
+}
+
+function showEditor(browser: BrowserState) {
+  const closed = vi.fn();
+  const component = mount(BookmarkEditor, {
+    target: document.body, props: { browser, existing: null, onClose: closed },
+  });
+  mounted.add(component);
+  flushSync();
+  fillEditor();
+  return closed;
+}
+
+function field(selector: string, value: string) {
+  const input = document.querySelector<HTMLInputElement>(selector);
+  expect(input, selector).not.toBeNull();
+  input!.value = value;
+  input!.dispatchEvent(new Event("input", { bubbles: true }));
+  flushSync();
+}
+
+function fillEditor() {
+  field('input[placeholder="Prod AU"]', "Created λ");
+  field('input[placeholder="https://swift.example/auth/v1.0"]', "https://swift.example/auth/v1.0");
+  field('input[placeholder="account:user"]', "fixture:user");
+  field('input[type="password"]', "test-only-fixture-key");
+}
+
+function button(label: string): HTMLButtonElement {
+  const found = [...document.querySelectorAll<HTMLButtonElement>("button")]
+    .find((node) => node.textContent?.trim() === label);
+  expect(found, `button ${label}`).toBeDefined();
+  return found!;
+}
+
+function showScreen() {
+  const component = mount(BrowserScreen, { target: document.body });
+  mounted.add(component);
+  flushSync();
+}
+
+function railNames(): string[] {
+  return [...document.querySelectorAll('.bookmark-row .label')]
+    .map((node) => node.textContent ?? "");
+}
+
+it("healthy bookmark creation returns its acknowledged identity", async () => {
+  const api = newFakeApi();
+  api.saveBookmark = vi.fn(api.saveBookmark);
+  const state = new BrowserState(api);
+  const saved = await state.saveBookmark(draft(), "test-only-fixture-key");
+  expect(saved.id).not.toBe("");
+  expect(state.bookmarks.map((bookmark) => bookmark.id)).toEqual([saved.id]);
+  expect(api.saveBookmark).toHaveBeenCalledOnce();
+});
+
+it.each(["new", "existing"])("returns the acknowledged %s save after its list refresh fails", async (mode) => {
+  const api = newFakeApi();
+  const originalSave = api.saveBookmark;
+  const originalList = api.listBookmarks;
+  const target = mode === "existing" ? await originalSave(draft(), "test-only-fixture-key") : draft();
+  const state = new BrowserState(api);
+  await state.loadBookmarks();
+  let accepted: BookmarkDTO | undefined;
+  api.saveBookmark = vi.fn(async (bookmark, secret) => {
+    accepted = await originalSave(bookmark, secret);
+    return accepted;
+  });
+  api.listBookmarks = vi.fn().mockRejectedValue(new Error("fixture list observation unavailable"));
+  const result = await state.saveBookmark(target, "test-only-fixture-key")
+    .then((value) => ({ value }), (error: Error) => ({ error }));
+  console.log("acknowledged-save-read-failure", JSON.stringify({ mode,
+    acceptedId: accepted?.id, storedIds: (await originalList()).map((bookmark) => bookmark.id),
+    result: "error" in result ? result.error.message : result.value.id }));
+  expect(api.saveBookmark).toHaveBeenCalledOnce();
+  expect(api.listBookmarks).toHaveBeenCalledOnce();
+  expect(result).toEqual({ value: accepted });
+});
+
+it("keeps the existing save await until its list observation settles", async () => {
+  const api = newFakeApi();
+  const read = heldList();
+  const originalList = api.listBookmarks;
+  api.listBookmarks = vi.fn(() => read.promise);
+  const state = new BrowserState(api);
+  let finished = false;
+  const pending = state.saveBookmark(draft(), "test-only-fixture-key").then((value) => {
+    finished = true;
+    return value;
+  });
+  await settle();
+  expect(api.listBookmarks).toHaveBeenCalledOnce();
+  expect(finished).toBe(false);
+  const rows = await originalList();
+  read.resolve(rows);
+  const saved = await pending;
+  expect(saved.id).toBe(rows[0].id);
+  expect(finished).toBe(true);
+});
+
+it("preserves an actual save rejection without calling List", async () => {
+  const api = newFakeApi();
+  const failure = new Error("fixture save refused");
+  api.saveBookmark = vi.fn().mockRejectedValue(failure);
+  api.listBookmarks = vi.fn(api.listBookmarks);
+  const state = new BrowserState(api);
+  await expect(state.saveBookmark(draft(), "test-only-fixture-key")).rejects.toBe(failure);
+  expect(api.saveBookmark).toHaveBeenCalledOnce();
+  expect(api.listBookmarks).not.toHaveBeenCalled();
+  expect(state.bookmarks).toEqual([]);
+});
+
+it("does not invent an acknowledged identity when Save reports an uncertain effect", async () => {
+  const api = newFakeApi();
+  const originalSave = api.saveBookmark;
+  const originalList = api.listBookmarks;
+  const uncertain = new Error("fixture bookmark publication unresolved");
+  api.saveBookmark = vi.fn(async (bookmark, secret) => {
+    await originalSave(bookmark, secret);
+    throw uncertain;
+  });
+  api.listBookmarks = vi.fn(originalList);
+  const state = new BrowserState(api);
+  await expect(state.saveBookmark(draft(), "test-only-fixture-key")).rejects.toBe(uncertain);
+  expect(await originalList()).toHaveLength(1);
+  expect(api.saveBookmark).toHaveBeenCalledOnce();
+  expect(api.listBookmarks).not.toHaveBeenCalled();
+  expect(state.bookmarks).toEqual([]);
+});
+
+it("does not repeat empty-id creation after an acknowledged Save and failed List", async () => {
+  const api = newFakeApi();
+  const originalList = api.listBookmarks;
+  api.listBookmarks = vi.fn().mockRejectedValueOnce(new Error("fixture list observation unavailable"))
+    .mockImplementation(originalList);
+  api.saveBookmark = vi.fn(api.saveBookmark);
+  const state = new BrowserState(api);
+  const closed = showEditor(state);
+  button("Save").click();
+  await settle();
+  const firstRows = await originalList();
+  expect(firstRows).toHaveLength(1);
+  const first = { title: document.querySelector('[role="dialog"]')?.getAttribute("aria-label"),
+    alert: document.querySelector('[role="alert"]')?.textContent,
+    enabledRetry: !button("Save").disabled, storedId: firstRows[0].id };
+  button("Save").click();
+  await settle();
+  const rows = await originalList();
+  console.log("bookmark-create-retry", JSON.stringify({ first,
+    saveArgumentIds: vi.mocked(api.saveBookmark).mock.calls.map(([bookmark]) => bookmark.id),
+    storedIds: rows.map((bookmark) => bookmark.id), closeCalls: closed.mock.calls.length }));
+  expect(rows.map((bookmark) => bookmark.id)).toEqual([firstRows[0].id]);
+  expect(api.saveBookmark).toHaveBeenCalledOnce();
+});
+
+it("shows initial bookmark List failure as unavailable instead of an empty rail", async () => {
+  live.listBookmarks = vi.fn().mockRejectedValue(new Error("fixture private list diagnostic"));
+  showScreen();
+  await settle();
+  expect(live.listBookmarks).toHaveBeenCalledOnce();
+  expect(railNames()).toEqual([]);
+  console.log("bookmark-startup-read-failure", JSON.stringify({ rail: document.querySelector('nav[aria-label="Bookmarks"]')?.textContent,
+    alerts: [...document.querySelectorAll('[role="alert"]')].map((node) => node.textContent) }));
+  expect(document.body.textContent).not.toContain("fixture private list diagnostic");
+  expect(document.body.textContent).toMatch(/bookmarks?.*unavailable/i);
+});
+
+it("does not let a late startup List erase a newly saved bookmark", async () => {
+  const read = heldList();
+  const originalList = live.listBookmarks;
+  live.listBookmarks = vi.fn().mockReturnValueOnce(read.promise).mockImplementation(originalList);
+  live.saveBookmark = vi.fn(live.saveBookmark);
+  showScreen();
+  await settle();
+  expect(live.listBookmarks).toHaveBeenCalledOnce();
+  document.querySelector<HTMLButtonElement>('[title="Add bookmark"]')!.click();
+  flushSync();
+  fillEditor();
+  button("Save").click();
+  await settle();
+  expect(railNames()).toEqual(["Created λ"]);
+  read.resolve([]);
+  await settle();
+  console.log("bookmark-late-startup-read", JSON.stringify({ railNames: railNames(),
+    storedIds: (await originalList()).map((bookmark) => bookmark.id),
+    listCalls: vi.mocked(live.listBookmarks).mock.calls.length }));
+  expect(railNames()).toEqual(["Created λ"]);
+});
+
+it("does not let an older post-save List restore a successfully deleted bookmark", async () => {
+  const api = newFakeApi();
+  const first = await api.saveBookmark(draft("first"), "test-only-fixture-key");
+  const second = await api.saveBookmark(draft("second"), "test-only-fixture-key");
+  const state = new BrowserState(api);
+  await state.loadBookmarks();
+  const originalList = api.listBookmarks;
+  const read = heldList();
+  api.listBookmarks = vi.fn(() => read.promise);
+  const saving = state.saveBookmark({ ...first, displayName: "updated first" }, "");
+  await settle();
+  const beforeDelete = await originalList();
+  await state.deleteBookmark(second.id);
+  expect(state.bookmarks.map((bookmark) => bookmark.id)).toEqual([first.id]);
+  read.resolve(beforeDelete);
+  await saving;
+  console.log("bookmark-late-save-list-after-delete", JSON.stringify({
+    displayedIds: state.bookmarks.map((bookmark) => bookmark.id),
+    storedIds: (await originalList()).map((bookmark) => bookmark.id) }));
+  expect(state.bookmarks.map((bookmark) => bookmark.id)).toEqual([first.id]);
+});
