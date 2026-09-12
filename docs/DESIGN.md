@@ -5311,6 +5311,14 @@ Stub-only tests, PID disappearance without process-identity checks and an orderl
 No test result in this slice settles retained-stage removal, a complete application shutdown coordinator, descendant-process containment or native acceptance on the other five platform targets.
 DS-07, SEC-06 and the valuable-data release hold remain open.
 
+The [Linux child-lifetime probe](experiments/2026-09-12-linux-child-lifetime.md) reproduces a narrower cancellation-recording defect at the download engine result boundary.
+The reaped child reports cancellation without an independent engine or log error, but the executor records an unknown failure and the service ends partial despite placing nothing.
+Review the probe and correction contract before changing that boundary.
+Classify only an explicit context cancellation with a nonnil cancelled result, no engine-call error, an expected exit of 0, 130 or -1, and no log-stream, collected or counted error as cancellation-only.
+Record the engine-stage cancellation with an unresolved effect and return the original context cancellation to the existing terminal-state rule.
+Keep missing results, deadline expiry, uncancelled contexts and independent failures outside that classification, and preserve retained staging and its cleanup disclosure.
+Require executor controls for those exclusions and real-service cancellation regressions alongside the child-lifetime tests before delivery.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
