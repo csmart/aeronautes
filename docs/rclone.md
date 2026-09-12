@@ -91,6 +91,13 @@ PY
 go test -overlay=<printed-overlay-path> -count=1 -run '^TestRcloneMatrix$' -v ./internal/integration
 ```
 
+## Reserved runes (measured 2026-09-11 on v1.74.3)
+
+The engine decodes every listed remote name through its backend encoding and quotes a literal substitute with U+201B, doubling a literal quote rune.
+A raw selected-set entry whose decoded spelling differs from the raw name matches nothing the engine listed, so the engine copies nothing for it and exits 0: measured for U+201B anywhere, a C0 control picture (U+2401–U+241F), the DEL picture (U+2421) and a full-width full stop (U+FF0E) as a whole path component, against real Swift and the mock on both the download and copy routes; a full-width full stop component through the gateway fails the whole batch.
+The full-width slash, colon and backslash, the NUL picture and a trailing space picture round-trip unchanged on Linux because both backends treat them alike, while the Windows local default also quotes the full-width forms of the seven forbidden characters and the backslash and the trailing space and full-stop pictures, which is a reading of the frozen source rather than an observation.
+Names containing any rune of the pinned set (U+201B, U+2400–U+241F, U+2421, U+2420, U+FF0F, U+FF3C, U+FF0E, U+FF1A, U+FF1F, U+FF02, U+FF0A, U+FF1C, U+FF1E, U+FF5C) route native on every platform since PR97, through the same predicate that routes newline and dot-segment names; the set is derived from the frozen v1.74.3 encoder source whose digests the [experiment manifest](experiments/2026-09-11-download-name-encoding-probes.json) records, and it must be re-derived on any engine upgrade.
+
 ## Flags (per invocation)
 
 | Flag | Driven by | Spike verification |

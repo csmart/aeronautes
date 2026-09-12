@@ -159,7 +159,10 @@ Probe: `TestAuditDownloadDoesNotEscapePickedDirectory`.
 
 Current disposition: [PR77](../../experiments/2026-09-09-download-admission.md#protected-delivery) delivers the ADR 0034 refusal of evidenced existing destination hazards before Start and before the executor's first effect.
 Both owned providers, direct callers, queued jobs and witnessed inspection errors have maintained regressions; the accepted initial selected-root alias remains supported.
-Stable picker/job root identity, concurrent parent replacement, exact-file publication, cleanup authority and native Windows/macOS acceptance remain open, so DS-05/P18 and the valuable-data release hold are still blocking.
+[PR97](../../experiments/2026-09-11-download-root-authority.md#protected-delivery) then delivers [ADR 0035](../../adr/0035-download-root-authority.md): the picked directory is held by handle from the pick through every effect, every path beneath it is opened one component at a time through the parent handle with links, non-directories and foreign devices refused, the stage is bound and re-identified around the engine run, publication links by directory descriptor and confirms the target names the verified file, cleanup removes only planned empty directories through handles, the Linux engine child is anchored to the held stage by an inherited descriptor, and the engine route is refused where no anchor exists.
+A renamed selected directory keeps receiving effects and the job ends partial with the displacement named; a deleted one refuses the job; the operator settled the pick-reuse, rename, mount and engine-gate choices on 12 September 2026 as delivered.
+The archived probes are maintained regressions on both providers with four deliberately broken guards, and the anchor is shown by three retained engine experiments.
+Native Windows and macOS acceptance, reparse points and the engine route on those platforms remain open, so DS-05/P18 stays blocking for that native evidence only, and the valuable-data release hold remains.
 
 ### DS-06 — High: the cross-platform collision preflight misses case-folded ancestor conflicts
 
@@ -185,7 +188,10 @@ That rule is conservative on every host rather than a claim about any particular
 [PR91](../../experiments/2026-09-10-download-name-normalization.md#protected-delivery) then checks a canonical caseless relation beside the established lowercase relation at the same two boundaries, side by side and never joined transitively, so planned names that differ only by Unicode normalization form are refused as one collision while every single spelling stays selectable.
 The helper walks the canonical decomposition tables directly rather than calling the library's stream-safe normal forms, which would equate a long combining run with the same run broken by a real joiner and so refuse two distinct names.
 One consequence is recorded rather than hidden: a plain letter beside the same letter with a combining mark stays admitted, because only a chain through the precomposed character would join them.
-Compatibility equivalence, leading spaces, component and path length limits, directory-only aliases, encoding collisions and native target-filesystem acceptance remain open, so DS-06/P19 and the valuable-data release hold are still blocking.
+[PR97](../../experiments/2026-09-11-download-name-encoding.md#protected-delivery) then routes any name containing a rune the pinned engine reserves as a substitute or quote natively on every platform through the shared engine-safety predicate, on the download, upload and copy routes; before it such names were admitted to the engine route and silently dropped with a successful engine exit, and a full-width full stop component failed the whole batch.
+The reserved set is pinned to the frozen v1.74.3 encoder source and recorded in the engine pin document, with maintained regressions on both routes and both providers and one broken control per rune class; the operator settled native routing and the union set on 12 September 2026 as delivered.
+For the remainder the operator settled on the same day: components longer than 255 bytes are to be refused at both boundaries with a named reason, and leading spaces and compatibility look-alikes are admitted and recorded, as rsync, scp, rclone, Finder and Explorer treat them.
+Component and path length limits, directory-only aliases and native target-filesystem acceptance remain open, so DS-06/P19 and the valuable-data release hold are still blocking.
 
 ### DS-07 — High: cancellation after staging still places files and can report completion
 
