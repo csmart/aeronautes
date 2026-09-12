@@ -272,5 +272,559 @@
     "no other platform",
     "initial before1 harness panic is not acceptance",
     "parent-death and reaping mutants not yet executed"
-  ]
+  ],
+  "maintained_runs": [
+    {
+      "name": "maintained_before",
+      "command": [
+        "/home/csmart/code/.aeronautes-work/go-mod/golang.org/toolchain@v0.0.1-go1.27.1.linux-amd64/bin/go",
+        "test",
+        "-race",
+        "-count=1",
+        "-timeout=3m",
+        "-json",
+        "-run",
+        "^(TestDownloadEngineCancellationClassification|TestChildLifetimeMock|TestChildLifetimeRealSwift)$",
+        "./internal/transfer/local",
+        "./internal/systemtest"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 47.803,
+      "head": "b9be437e8c3ff5db7fa0af4a1a512b4be2badc2b",
+      "sources": {
+        "internal/systemtest/child_lifetime_linux_test.go": "d98c9a0b84a9cc846e15c43f8932918f5f6341e8a05e3ea73ad1e99b12fc81b8",
+        "internal/transfer/local/download_engine_cancellation_linux_test.go": "0c2bdb41c7c1e15c965662b36fd92fb8ce2d85340c33f134c34265749319c96d",
+        "internal/transfer/local/download_execute.go": "191acf2990bdea4fa76965faa86a968ba7f8e999b4ff39e3fa399262510f683e"
+      },
+      "sources_unchanged": true,
+      "leaf_pass": [
+        "TestDownloadEngineCancellationClassification/uncancelled_context",
+        "TestChildLifetimeMock/complete",
+        "TestDownloadEngineCancellationClassification/deadline",
+        "TestDownloadEngineCancellationClassification/call_error",
+        "TestDownloadEngineCancellationClassification/missing_result",
+        "TestDownloadEngineCancellationClassification/noncancel_exit",
+        "TestDownloadEngineCancellationClassification/unexpected_exit",
+        "TestDownloadEngineCancellationClassification/incomplete_log",
+        "TestDownloadEngineCancellationClassification/collected_error",
+        "TestDownloadEngineCancellationClassification/counted_error",
+        "TestChildLifetimeMock/parent_kill",
+        "TestChildLifetimeMock/stopped_parent_kill",
+        "TestChildLifetimeRealSwift/complete",
+        "TestChildLifetimeRealSwift/parent_kill",
+        "TestChildLifetimeRealSwift/stopped_parent_kill"
+      ],
+      "leaf_fail": [
+        "TestDownloadEngineCancellationClassification/interrupt",
+        "TestDownloadEngineCancellationClassification/forced_kill",
+        "TestDownloadEngineCancellationClassification/finished_during_cancel",
+        "TestChildLifetimeMock/cancel",
+        "TestChildLifetimeMock/escalate",
+        "TestChildLifetimeRealSwift/cancel",
+        "TestChildLifetimeRealSwift/escalate"
+      ],
+      "leaf_skip": [],
+      "raw_stream_sha256": "436547e270a3b4fec5c4a5ca5a885495c686d9a37ef20e0654c7e4a7ea92ecb9",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "maintained_after1",
+      "command": [
+        "/home/csmart/code/.aeronautes-work/go-mod/golang.org/toolchain@v0.0.1-go1.27.1.linux-amd64/bin/go",
+        "test",
+        "-race",
+        "-count=1",
+        "-timeout=3m",
+        "-json",
+        "-run",
+        "^(TestDownloadEngineCancellationClassification|TestChildLifetimeMock|TestChildLifetimeRealSwift)$",
+        "./internal/transfer/local",
+        "./internal/systemtest"
+      ],
+      "returncode": 0,
+      "elapsed_seconds": 49.0,
+      "head": "b9be437e8c3ff5db7fa0af4a1a512b4be2badc2b",
+      "sources": {
+        "internal/systemtest/child_lifetime_linux_test.go": "d98c9a0b84a9cc846e15c43f8932918f5f6341e8a05e3ea73ad1e99b12fc81b8",
+        "internal/transfer/local/download_engine_cancellation_linux_test.go": "0c2bdb41c7c1e15c965662b36fd92fb8ce2d85340c33f134c34265749319c96d",
+        "internal/transfer/local/download_execute.go": "be80766893a74ffe93e278a599d31192984bef3385a5af44e86e3c46a2aaa7f6"
+      },
+      "sources_unchanged": true,
+      "leaf_pass": [
+        "TestDownloadEngineCancellationClassification/interrupt",
+        "TestDownloadEngineCancellationClassification/forced_kill",
+        "TestDownloadEngineCancellationClassification/finished_during_cancel",
+        "TestDownloadEngineCancellationClassification/uncancelled_context",
+        "TestChildLifetimeMock/complete",
+        "TestDownloadEngineCancellationClassification/deadline",
+        "TestDownloadEngineCancellationClassification/call_error",
+        "TestDownloadEngineCancellationClassification/missing_result",
+        "TestDownloadEngineCancellationClassification/noncancel_exit",
+        "TestDownloadEngineCancellationClassification/unexpected_exit",
+        "TestDownloadEngineCancellationClassification/incomplete_log",
+        "TestDownloadEngineCancellationClassification/collected_error",
+        "TestDownloadEngineCancellationClassification/counted_error",
+        "TestChildLifetimeMock/cancel",
+        "TestChildLifetimeMock/escalate",
+        "TestChildLifetimeMock/parent_kill",
+        "TestChildLifetimeMock/stopped_parent_kill",
+        "TestChildLifetimeRealSwift/complete",
+        "TestChildLifetimeRealSwift/cancel",
+        "TestChildLifetimeRealSwift/escalate",
+        "TestChildLifetimeRealSwift/parent_kill",
+        "TestChildLifetimeRealSwift/stopped_parent_kill"
+      ],
+      "leaf_fail": [],
+      "leaf_skip": [],
+      "raw_stream_sha256": "3838c6920446510a40e4df6afe26a1b289c5f61cb98233934adaba2f4df7a60b",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "maintained_after2",
+      "command": [
+        "/home/csmart/code/.aeronautes-work/go-mod/golang.org/toolchain@v0.0.1-go1.27.1.linux-amd64/bin/go",
+        "test",
+        "-race",
+        "-count=1",
+        "-timeout=3m",
+        "-json",
+        "-run",
+        "^(TestDownloadEngineCancellationClassification|TestChildLifetimeMock|TestChildLifetimeRealSwift)$",
+        "./internal/transfer/local",
+        "./internal/systemtest"
+      ],
+      "returncode": 0,
+      "elapsed_seconds": 48.345,
+      "head": "b9be437e8c3ff5db7fa0af4a1a512b4be2badc2b",
+      "sources": {
+        "internal/systemtest/child_lifetime_linux_test.go": "3464a5bbff335eb8510ae75be2291072b2350885902ac3300a4079097c85d3ad",
+        "internal/transfer/local/download_engine_cancellation_linux_test.go": "0c2bdb41c7c1e15c965662b36fd92fb8ce2d85340c33f134c34265749319c96d",
+        "internal/transfer/local/download_execute.go": "be80766893a74ffe93e278a599d31192984bef3385a5af44e86e3c46a2aaa7f6"
+      },
+      "sources_unchanged": true,
+      "leaf_pass": [
+        "TestDownloadEngineCancellationClassification/interrupt",
+        "TestDownloadEngineCancellationClassification/forced_kill",
+        "TestDownloadEngineCancellationClassification/finished_during_cancel",
+        "TestDownloadEngineCancellationClassification/uncancelled_context",
+        "TestChildLifetimeMock/complete",
+        "TestDownloadEngineCancellationClassification/deadline",
+        "TestDownloadEngineCancellationClassification/call_error",
+        "TestDownloadEngineCancellationClassification/missing_result",
+        "TestDownloadEngineCancellationClassification/noncancel_exit",
+        "TestDownloadEngineCancellationClassification/unexpected_exit",
+        "TestDownloadEngineCancellationClassification/incomplete_log",
+        "TestDownloadEngineCancellationClassification/collected_error",
+        "TestDownloadEngineCancellationClassification/counted_error",
+        "TestChildLifetimeMock/cancel",
+        "TestChildLifetimeMock/escalate",
+        "TestChildLifetimeMock/parent_kill",
+        "TestChildLifetimeMock/stopped_parent_kill",
+        "TestChildLifetimeRealSwift/complete",
+        "TestChildLifetimeRealSwift/cancel",
+        "TestChildLifetimeRealSwift/escalate",
+        "TestChildLifetimeRealSwift/parent_kill",
+        "TestChildLifetimeRealSwift/stopped_parent_kill"
+      ],
+      "leaf_fail": [],
+      "leaf_skip": [],
+      "raw_stream_sha256": "6b22cf174d71def05ad5f28906357e90b16b3e25cb2358bdd1f1007c27addf70",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "control_no_pdeath",
+      "command": [
+        "/home/csmart/code/.aeronautes-work/go-mod/golang.org/toolchain@v0.0.1-go1.27.1.linux-amd64/bin/go",
+        "test",
+        "-overlay",
+        "/home/csmart/code/.aeronautes-work/20260912-child-lifetime/control_sources/no_pdeath.json",
+        "-race",
+        "-count=1",
+        "-timeout=3m",
+        "-json",
+        "-run",
+        "^(TestChildLifetimeMock|TestChildLifetimeRealSwift)$/(complete|stopped_parent_kill)$",
+        "./internal/systemtest"
+      ],
+      "returncode": 0,
+      "elapsed_seconds": 14.085,
+      "head": "b9be437e8c3ff5db7fa0af4a1a512b4be2badc2b",
+      "sources": {
+        "internal/systemtest/child_lifetime_linux_test.go": "3464a5bbff335eb8510ae75be2291072b2350885902ac3300a4079097c85d3ad",
+        "internal/transfer/local/download_engine_cancellation_linux_test.go": "0c2bdb41c7c1e15c965662b36fd92fb8ce2d85340c33f134c34265749319c96d",
+        "internal/transfer/local/download_execute.go": "be80766893a74ffe93e278a599d31192984bef3385a5af44e86e3c46a2aaa7f6"
+      },
+      "sources_unchanged": true,
+      "leaf_pass": [
+        "TestChildLifetimeMock/complete",
+        "TestChildLifetimeMock/stopped_parent_kill",
+        "TestChildLifetimeRealSwift/complete",
+        "TestChildLifetimeRealSwift/stopped_parent_kill"
+      ],
+      "leaf_fail": [],
+      "leaf_skip": [],
+      "raw_stream_sha256": "1a11356164e51820718a63b2cd1172879c9a9122214c3aa95ac52d8bc99ebd9a",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "historical_overlay_sources": {
+        "/home/csmart/code/worktrees/aeronautes/child_lifetime/internal/transfer/rclone/childproc_linux.go": {
+          "replacement": "/home/csmart/code/.aeronautes-work/20260912-child-lifetime/control_sources/no_pdeath.go",
+          "sha256": "b04af3568f936f0dbc84e169f8e3ce63ad42ab0ae0a7d3de7b5a9d39d95ee2f5"
+        }
+      },
+      "note": "Ineffective original control: passes do not prove Pdeathsig. Superseded by isolated subreaper and actual child wait status."
+    },
+    {
+      "name": "subreaper_probe_after",
+      "command": [
+        "/home/csmart/code/.aeronautes-work/go-mod/golang.org/toolchain@v0.0.1-go1.27.1.linux-amd64/bin/go",
+        "test",
+        "-overlay",
+        "/home/csmart/code/.aeronautes-work/20260912-child-lifetime/control_sources/subreaper1.json",
+        "-race",
+        "-count=1",
+        "-timeout=3m",
+        "-json",
+        "-run",
+        "^TestChildLifetimeMock$/(complete|parent_kill|stopped_parent_kill)$",
+        "./internal/systemtest"
+      ],
+      "returncode": 0,
+      "elapsed_seconds": 14.526,
+      "head": "b9be437e8c3ff5db7fa0af4a1a512b4be2badc2b",
+      "sources": {
+        "internal/systemtest/child_lifetime_linux_test.go": "3464a5bbff335eb8510ae75be2291072b2350885902ac3300a4079097c85d3ad",
+        "internal/transfer/local/download_engine_cancellation_linux_test.go": "0c2bdb41c7c1e15c965662b36fd92fb8ce2d85340c33f134c34265749319c96d",
+        "internal/transfer/local/download_execute.go": "be80766893a74ffe93e278a599d31192984bef3385a5af44e86e3c46a2aaa7f6"
+      },
+      "sources_unchanged": true,
+      "leaf_pass": [
+        "TestChildLifetimeMock/complete",
+        "TestChildLifetimeMock/parent_kill",
+        "TestChildLifetimeMock/stopped_parent_kill"
+      ],
+      "leaf_fail": [],
+      "leaf_skip": [],
+      "raw_stream_sha256": "8d1b4d9e482c1e5b71c20de7c0c5fd69cfe97bfa729cad8482ec26ef8fbdd204",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "historical_overlay_sources": {
+        "/home/csmart/code/worktrees/aeronautes/child_lifetime/internal/systemtest/child_lifetime_linux_test.go": {
+          "replacement": "/home/csmart/code/.aeronautes-work/20260912-child-lifetime/control_sources/subreaper1_test.go",
+          "sha256": "40d69a114eef20604c17c2095ae956273dbf3c8fccdd5ae43d1016f22e92aaad"
+        }
+      },
+      "note": "Private controller selector also ran stopped_parent_kill inside parent_kill. Outer terminal counts retained but not an exact one-controller-per-leaf inventory."
+    },
+    {
+      "name": "subreaper_probe_no_pdeath",
+      "command": [
+        "/home/csmart/code/.aeronautes-work/go-mod/golang.org/toolchain@v0.0.1-go1.27.1.linux-amd64/bin/go",
+        "test",
+        "-overlay",
+        "/home/csmart/code/.aeronautes-work/20260912-child-lifetime/control_sources/subreaper1_no_pdeath.json",
+        "-race",
+        "-count=1",
+        "-timeout=3m",
+        "-json",
+        "-run",
+        "^TestChildLifetimeMock$/(complete|parent_kill|stopped_parent_kill)$",
+        "./internal/systemtest"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 12.375,
+      "head": "b9be437e8c3ff5db7fa0af4a1a512b4be2badc2b",
+      "sources": {
+        "internal/systemtest/child_lifetime_linux_test.go": "3464a5bbff335eb8510ae75be2291072b2350885902ac3300a4079097c85d3ad",
+        "internal/transfer/local/download_engine_cancellation_linux_test.go": "0c2bdb41c7c1e15c965662b36fd92fb8ce2d85340c33f134c34265749319c96d",
+        "internal/transfer/local/download_execute.go": "be80766893a74ffe93e278a599d31192984bef3385a5af44e86e3c46a2aaa7f6"
+      },
+      "sources_unchanged": true,
+      "leaf_pass": [
+        "TestChildLifetimeMock/complete"
+      ],
+      "leaf_fail": [
+        "TestChildLifetimeMock/parent_kill",
+        "TestChildLifetimeMock/stopped_parent_kill"
+      ],
+      "leaf_skip": [],
+      "raw_stream_sha256": "a5ee0b482994cf6d319301d04abcf921dd65bae74240c582a9e4bd8b8bb745eb",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "historical_overlay_sources": {
+        "/home/csmart/code/worktrees/aeronautes/child_lifetime/internal/systemtest/child_lifetime_linux_test.go": {
+          "replacement": "/home/csmart/code/.aeronautes-work/20260912-child-lifetime/control_sources/subreaper1_test.go",
+          "sha256": "40d69a114eef20604c17c2095ae956273dbf3c8fccdd5ae43d1016f22e92aaad"
+        },
+        "/home/csmart/code/worktrees/aeronautes/child_lifetime/internal/transfer/rclone/childproc_linux.go": {
+          "replacement": "/home/csmart/code/.aeronautes-work/20260912-child-lifetime/control_sources/no_pdeath.go",
+          "sha256": "b04af3568f936f0dbc84e169f8e3ce63ad42ab0ae0a7d3de7b5a9d39d95ee2f5"
+        }
+      },
+      "note": "Same private selector defect as subreaper_probe_after. Ordinary child observed SIGPIPE; stopped child survived until cleanup."
+    },
+    {
+      "name": "subreaper_probe_no_reap",
+      "command": [
+        "/home/csmart/code/.aeronautes-work/go-mod/golang.org/toolchain@v0.0.1-go1.27.1.linux-amd64/bin/go",
+        "test",
+        "-overlay",
+        "/home/csmart/code/.aeronautes-work/20260912-child-lifetime/control_sources/subreaper2_no_reap.json",
+        "-race",
+        "-count=1",
+        "-timeout=3m",
+        "-json",
+        "-run",
+        "^TestChildLifetimeMock$/(complete|escalate)$",
+        "./internal/systemtest"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 18.131,
+      "head": "b9be437e8c3ff5db7fa0af4a1a512b4be2badc2b",
+      "sources": {
+        "internal/systemtest/child_lifetime_linux_test.go": "3464a5bbff335eb8510ae75be2291072b2350885902ac3300a4079097c85d3ad",
+        "internal/transfer/local/download_engine_cancellation_linux_test.go": "0c2bdb41c7c1e15c965662b36fd92fb8ce2d85340c33f134c34265749319c96d",
+        "internal/transfer/local/download_execute.go": "be80766893a74ffe93e278a599d31192984bef3385a5af44e86e3c46a2aaa7f6"
+      },
+      "sources_unchanged": true,
+      "leaf_pass": [
+        "TestChildLifetimeMock/complete"
+      ],
+      "leaf_fail": [
+        "TestChildLifetimeMock/escalate"
+      ],
+      "leaf_skip": [],
+      "raw_stream_sha256": "e691d3c30f3596cbdff7a4fb05868e4412ad4ea25b9202675ae97b8eefe0b466",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "historical_overlay_sources": {
+        "/home/csmart/code/worktrees/aeronautes/child_lifetime/internal/systemtest/child_lifetime_linux_test.go": {
+          "replacement": "/home/csmart/code/.aeronautes-work/20260912-child-lifetime/control_sources/subreaper2_test.go",
+          "sha256": "83d850f9325d65742f6f7bd64db98b03d15f37f9cd3917f3b4062ae4407f2854"
+        },
+        "/home/csmart/code/worktrees/aeronautes/child_lifetime/internal/transfer/rclone/runner.go": {
+          "replacement": "/home/csmart/code/.aeronautes-work/20260912-child-lifetime/control_sources/no_reap.go",
+          "sha256": "ecf5e04c539dc9feccd9b184e3e9ce1d83859052bfb087cba0b4e2f6505a51b9"
+        }
+      },
+      "note": "Private selector corrected; complete passes, escalate fails while parent remains alive."
+    },
+    {
+      "name": "maintained_subreaper_mock",
+      "command": [
+        "/home/csmart/code/.aeronautes-work/go-mod/golang.org/toolchain@v0.0.1-go1.27.1.linux-amd64/bin/go",
+        "test",
+        "-race",
+        "-count=1",
+        "-timeout=3m",
+        "-json",
+        "-run",
+        "^(TestDownloadEngineCancellationClassification|TestChildLifetimeMock)$",
+        "./internal/transfer/local",
+        "./internal/systemtest"
+      ],
+      "returncode": 0,
+      "elapsed_seconds": 30.144,
+      "head": "b9be437e8c3ff5db7fa0af4a1a512b4be2badc2b",
+      "sources": {
+        "internal/systemtest/child_lifetime_linux_test.go": "d33ff7f65ed6a502099aae431a006034204700a6345d1a8ac6b705912e4e6a31",
+        "internal/transfer/local/download_engine_cancellation_linux_test.go": "0c2bdb41c7c1e15c965662b36fd92fb8ce2d85340c33f134c34265749319c96d",
+        "internal/transfer/local/download_execute.go": "be80766893a74ffe93e278a599d31192984bef3385a5af44e86e3c46a2aaa7f6"
+      },
+      "sources_unchanged": true,
+      "leaf_pass": [
+        "TestDownloadEngineCancellationClassification/interrupt",
+        "TestDownloadEngineCancellationClassification/forced_kill",
+        "TestDownloadEngineCancellationClassification/finished_during_cancel",
+        "TestDownloadEngineCancellationClassification/uncancelled_context",
+        "TestDownloadEngineCancellationClassification/deadline",
+        "TestDownloadEngineCancellationClassification/call_error",
+        "TestDownloadEngineCancellationClassification/missing_result",
+        "TestDownloadEngineCancellationClassification/noncancel_exit",
+        "TestDownloadEngineCancellationClassification/unexpected_exit",
+        "TestDownloadEngineCancellationClassification/incomplete_log",
+        "TestDownloadEngineCancellationClassification/collected_error",
+        "TestDownloadEngineCancellationClassification/counted_error",
+        "TestChildLifetimeMock/complete",
+        "TestChildLifetimeMock/cancel",
+        "TestChildLifetimeMock/escalate",
+        "TestChildLifetimeMock/parent_kill",
+        "TestChildLifetimeMock/stopped_child_parent_kill"
+      ],
+      "leaf_fail": [],
+      "leaf_skip": [],
+      "raw_stream_sha256": "db47cfc082410b1cd8333dfef5e39e43212e499e4c82da34b7b0cb922e97d67e",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "note": "Final maintained controller and source. Real Swift rerun still pending the exclusive fixture slot."
+    },
+    {
+      "name": "maintained_control_no_pdeath",
+      "command": [
+        "/home/csmart/code/.aeronautes-work/go-mod/golang.org/toolchain@v0.0.1-go1.27.1.linux-amd64/bin/go",
+        "test",
+        "-overlay",
+        "/home/csmart/code/.aeronautes-work/20260912-child-lifetime/control_sources/no_pdeath.json",
+        "-race",
+        "-count=1",
+        "-timeout=3m",
+        "-json",
+        "-run",
+        "^TestChildLifetimeMock$/(complete|parent_kill|stopped_child_parent_kill)$",
+        "./internal/systemtest"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 9.671,
+      "head": "b9be437e8c3ff5db7fa0af4a1a512b4be2badc2b",
+      "sources": {
+        "internal/systemtest/child_lifetime_linux_test.go": "d33ff7f65ed6a502099aae431a006034204700a6345d1a8ac6b705912e4e6a31",
+        "internal/transfer/local/download_engine_cancellation_linux_test.go": "0c2bdb41c7c1e15c965662b36fd92fb8ce2d85340c33f134c34265749319c96d",
+        "internal/transfer/local/download_execute.go": "be80766893a74ffe93e278a599d31192984bef3385a5af44e86e3c46a2aaa7f6"
+      },
+      "sources_unchanged": true,
+      "leaf_pass": [
+        "TestChildLifetimeMock/complete"
+      ],
+      "leaf_fail": [
+        "TestChildLifetimeMock/parent_kill",
+        "TestChildLifetimeMock/stopped_child_parent_kill"
+      ],
+      "leaf_skip": [],
+      "raw_stream_sha256": "4b6bcc5bbae7522bf61659d2808750aa586bfe3c9cd391d93768d87c87628dc7",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "overlay_inputs": {
+        "/home/csmart/code/worktrees/aeronautes/child_lifetime/internal/transfer/rclone/childproc_linux.go": {
+          "replacement": "/home/csmart/code/.aeronautes-work/20260912-child-lifetime/control_sources/no_pdeath.go",
+          "sha256": "b04af3568f936f0dbc84e169f8e3ce63ad42ab0ae0a7d3de7b5a9d39d95ee2f5"
+        }
+      },
+      "overlay_inputs_unchanged": true,
+      "note": "Exact maintained control: complete passes; parent_kill fails SIGPIPE instead of SIGKILL; stopped_child_parent_kill survives until cleanup."
+    },
+    {
+      "name": "maintained_control_no_reap",
+      "command": [
+        "/home/csmart/code/.aeronautes-work/go-mod/golang.org/toolchain@v0.0.1-go1.27.1.linux-amd64/bin/go",
+        "test",
+        "-overlay",
+        "/home/csmart/code/.aeronautes-work/20260912-child-lifetime/control_sources/no_reap.json",
+        "-race",
+        "-count=1",
+        "-timeout=3m",
+        "-json",
+        "-run",
+        "^TestChildLifetimeMock$/(complete|escalate)$",
+        "./internal/systemtest"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 16.874,
+      "head": "b9be437e8c3ff5db7fa0af4a1a512b4be2badc2b",
+      "sources": {
+        "internal/systemtest/child_lifetime_linux_test.go": "d33ff7f65ed6a502099aae431a006034204700a6345d1a8ac6b705912e4e6a31",
+        "internal/transfer/local/download_engine_cancellation_linux_test.go": "0c2bdb41c7c1e15c965662b36fd92fb8ce2d85340c33f134c34265749319c96d",
+        "internal/transfer/local/download_execute.go": "be80766893a74ffe93e278a599d31192984bef3385a5af44e86e3c46a2aaa7f6"
+      },
+      "sources_unchanged": true,
+      "leaf_pass": [
+        "TestChildLifetimeMock/complete"
+      ],
+      "leaf_fail": [
+        "TestChildLifetimeMock/escalate"
+      ],
+      "leaf_skip": [],
+      "raw_stream_sha256": "e2044f42e0b3a920b01b9376303fabc6bd2ff41c9ecc457c796320f4d1181ce1",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "overlay_inputs": {
+        "/home/csmart/code/worktrees/aeronautes/child_lifetime/internal/transfer/rclone/runner.go": {
+          "replacement": "/home/csmart/code/.aeronautes-work/20260912-child-lifetime/control_sources/no_reap.go",
+          "sha256": "ecf5e04c539dc9feccd9b184e3e9ce1d83859052bfb087cba0b4e2f6505a51b9"
+        }
+      },
+      "overlay_inputs_unchanged": true,
+      "note": "Exact maintained control: complete passes; escalate reports a terminal job while child is still alive. Existing ten-second grace retained."
+    },
+    {
+      "name": "maintained_control_old_mapping",
+      "command": [
+        "/home/csmart/code/.aeronautes-work/go-mod/golang.org/toolchain@v0.0.1-go1.27.1.linux-amd64/bin/go",
+        "test",
+        "-overlay",
+        "/home/csmart/code/.aeronautes-work/20260912-child-lifetime/control_sources/old_mapping.json",
+        "-race",
+        "-count=1",
+        "-timeout=3m",
+        "-json",
+        "-run",
+        "^(TestDownloadEngineCancellationClassification|TestChildLifetimeMock)$/(interrupt|forced_kill|finished_during_cancel|uncancelled_context|deadline|call_error|missing_result|noncancel_exit|unexpected_exit|incomplete_log|collected_error|counted_error|complete|cancel|escalate)$",
+        "./internal/transfer/local",
+        "./internal/systemtest"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 21.73,
+      "head": "b9be437e8c3ff5db7fa0af4a1a512b4be2badc2b",
+      "sources": {
+        "internal/systemtest/child_lifetime_linux_test.go": "d33ff7f65ed6a502099aae431a006034204700a6345d1a8ac6b705912e4e6a31",
+        "internal/transfer/local/download_engine_cancellation_linux_test.go": "0c2bdb41c7c1e15c965662b36fd92fb8ce2d85340c33f134c34265749319c96d",
+        "internal/transfer/local/download_execute.go": "be80766893a74ffe93e278a599d31192984bef3385a5af44e86e3c46a2aaa7f6"
+      },
+      "sources_unchanged": true,
+      "leaf_pass": [
+        "TestDownloadEngineCancellationClassification/uncancelled_context",
+        "TestDownloadEngineCancellationClassification/deadline",
+        "TestDownloadEngineCancellationClassification/call_error",
+        "TestDownloadEngineCancellationClassification/missing_result",
+        "TestDownloadEngineCancellationClassification/noncancel_exit",
+        "TestDownloadEngineCancellationClassification/unexpected_exit",
+        "TestDownloadEngineCancellationClassification/incomplete_log",
+        "TestDownloadEngineCancellationClassification/collected_error",
+        "TestDownloadEngineCancellationClassification/counted_error",
+        "TestChildLifetimeMock/complete"
+      ],
+      "leaf_fail": [
+        "TestDownloadEngineCancellationClassification/interrupt",
+        "TestDownloadEngineCancellationClassification/forced_kill",
+        "TestDownloadEngineCancellationClassification/finished_during_cancel",
+        "TestChildLifetimeMock/cancel",
+        "TestChildLifetimeMock/escalate"
+      ],
+      "leaf_skip": [],
+      "raw_stream_sha256": "eb1f6080373e104ae19bc4eedfdc08e0bc761fcd5bc67694fbcb190c25d8a94b",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "overlay_inputs": {
+        "/home/csmart/code/worktrees/aeronautes/child_lifetime/internal/transfer/local/download_execute.go": {
+          "replacement": "/home/csmart/code/.aeronautes-work/20260912-child-lifetime/maintained_before/internal/transfer/local/download_execute.go",
+          "sha256": "191acf2990bdea4fa76965faa86a968ba7f8e999b4ff39e3fa399262510f683e"
+        }
+      },
+      "overlay_inputs_unchanged": true,
+      "note": "Exact maintained control: three positive executor cases and both mock service cancellation cases fail; nine exclusion cases and completion pass."
+    },
+    {
+      "name": "maintained_vet",
+      "command": [
+        "/home/csmart/code/.aeronautes-work/go-mod/golang.org/toolchain@v0.0.1-go1.27.1.linux-amd64/bin/go",
+        "vet",
+        "./internal/transfer/local",
+        "./internal/systemtest"
+      ],
+      "returncode": 0,
+      "elapsed_seconds": 1.067,
+      "head": "b9be437e8c3ff5db7fa0af4a1a512b4be2badc2b",
+      "sources": {
+        "internal/systemtest/child_lifetime_linux_test.go": "d33ff7f65ed6a502099aae431a006034204700a6345d1a8ac6b705912e4e6a31",
+        "internal/transfer/local/download_engine_cancellation_linux_test.go": "0c2bdb41c7c1e15c965662b36fd92fb8ce2d85340c33f134c34265749319c96d",
+        "internal/transfer/local/download_execute.go": "be80766893a74ffe93e278a599d31192984bef3385a5af44e86e3c46a2aaa7f6"
+      },
+      "sources_unchanged": true,
+      "leaf_pass": [],
+      "leaf_fail": [],
+      "leaf_skip": [],
+      "raw_stream_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "overlay_inputs": {},
+      "overlay_inputs_unchanged": true
+    }
+  ],
+  "final_maintained_status": {
+    "production": "narrow download result correction implemented",
+    "mock": "17 leaves pass; three effective causal controls",
+    "real_swift": "final subreaper harness and controls pending exclusive fixture slot",
+    "delivery": "final-base package/full-suite review and five-job hosted gates remain pending",
+    "platform_hold": "Linux amd64 only; issue 103 and valuable-data hold remain open"
+  }
 }

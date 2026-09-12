@@ -21,7 +21,7 @@ The actual engine reads a 311,296-byte object through the production gateway and
 The controller waits for those exact bytes in the engine's partial file before signalling anything.
 It discovers the direct rclone child through the parent's thread child lists and opens a Linux pidfd before any signal, so PID reuse cannot redirect signals or satisfy a liveness check.
 For ordinary cancellation and forced escalation, the service parent stays alive after writing the terminal record until the controller proves the child exited; parent-death signalling therefore cannot hide an early service result.
-The stopped-parent case prevents gateway EOF from being mistaken for proof of parent-death signalling.
+The initial stopped-child case was intended to distinguish parent-death signalling from gateway EOF; the later negative control below shows why that assertion alone was insufficient.
 A second actual process acquires the same instance lock, reads the database, calls FailInterrupted twice and records the retained state.
 Remote snapshots on both accounts and local snapshots remain separate witnesses.
 
@@ -69,9 +69,48 @@ Deliberately broken controls must remove parent-death coupling and return before
 The classification control must retain the existing wrong mapping and fail both real-service cancellation assertions.
 Every command retains its actual exit status and complete output; failing harness drafts are kept separate from product regressions.
 
+## Maintained proof and causal controls
+
+The production correction follows the reviewed predicate above without changing the child lifecycle code.
+The executor table covers the three recognised cancellation exits and nine independent-failure or context controls, including an actual deadline.
+The first maintained before run failed the three positive executor cases and both cancellation modes on each provider, with fifteen other leaves passing.
+The first after run passed all twenty-two leaves with the same test inputs and only the production boundary changed.
+A second after run strengthened process identity, terminal audit and recovery assertions and again passed all twenty-two leaves against mock and real Swift.
+Those two successful after runs are not by themselves causal proof of the parent-death signal.
+
+Removing Pdeathsig from the initial maintained harness unexpectedly passed all four selected completion and stopped-child parent-kill leaves on mock and real Swift.
+That ineffective control is retained as `control_no_pdeath`, with actual exit zero; it supplies no Pdeathsig acceptance.
+Linux sends SIGHUP and SIGCONT when a stopped process group becomes orphaned, so the stopped-child liveness check had an alternate termination path ([setpgid](https://man7.org/linux/man-pages/man2/setpgid.2.html)).
+The corrected harness runs each mode in its own controller process and uses PR_SET_CHILD_SUBREAPER so that controller adopts and waits for the direct engine after the service parent dies ([subreaper interface](https://man7.org/linux/man-pages/man2/PR_SET_CHILD_SUBREAPER.2const.html)).
+This keeps subreaping out of the rest of the test suite and makes the child's actual termination signal observable.
+The production service parent, engine, gateway and signal policy stay unchanged.
+The controller's process identity, pidfd liveness, same executable, direct parent and separate process group checks remain in place.
+After killing the parent, both running-child and stopped-child cases require an adopted-child wait status of SIGKILL before recovery begins.
+Every owned child is explicitly killed and, if adopted, reaped during failure cleanup.
+The stopped-child case is now named `stopped_child_parent_kill` to identify which process was stopped.
+
+The first private subreaper probe passed completion and both parent-kill modes, each observing SIGKILL.
+Its Pdeathsig control failed the ordinary parent-kill case with SIGPIPE and left the stopped child alive until cleanup.
+Its reexec selector initially allowed the `parent_kill` suffix to select `stopped_parent_kill` too; that raw run is retained and not used as an exact one-controller-per-leaf inventory.
+The maintained selector anchors each slash-separated test component, and the exact maintained controls below use the corrected selector.
+
+On the final maintained source, the mock plus executor run passed seventeen leaves with the race detector.
+Removing only Pdeathsig left completion green, made the running child fail with SIGPIPE instead of SIGKILL, and left the stopped child alive until explicit cleanup.
+Returning at the existing ten-second escalation deadline without killing and reaping the child left completion green and failed `terminal job left its child alive` while the service parent was still alive.
+Neither control shortened the production grace or any assertion deadline, and neither reported a cleanup or race failure.
+Restoring the old download result mapping is a separate classification control, keeping all process safeguards in place.
+It fails the three positive executor cases and both mock service cancellation cases, while the nine exclusion cases and completion pass.
+Exact commands, statuses, sources and stream hashes are recorded in the evidence twin.
+
+The final maintained subreaper harness still requires its real Swift rerun and causal controls in the coordinator's exclusive fixture slot before publication.
+The earlier real Swift mapping result remains valid for its recorded source; it is not presented as the final process-signal proof.
+Focused `go vet` on both changed packages and formatting checks pass.
+Final-base package verification, full-suite reconciliation, independent review and hosted delivery remain separate gates.
+
 ## Remaining limits
 
-The before evidence is a native Linux amd64 process test against an HTTP fixture, not a real Swift acceptance run or a production desktop journey.
+The final causal evidence here is a native Linux amd64 process test against an owned HTTP fixture; the earlier maintained runs also used real Swift, but the final harness still needs that provider rerun.
+This is not a production desktop journey.
 It proves the lifetime of the observed direct engine, not arbitrary detached grandchildren, a cross-platform shutdown coordinator or OS keychain release.
 The parent-kill record retains the admitted staging location; it does not invent an execution observation for the partially written engine temporary.
 The tests do not establish power-loss durability, atomic publication across every filesystem, cancellation during directory creation or cleanup, or the retained-stage removal product decision.
