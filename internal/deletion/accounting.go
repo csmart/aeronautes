@@ -93,6 +93,43 @@ func (a *deletionAccounting) record(ctx context.Context, pending []pendingIdenti
 	return true
 }
 
+// issue records every name in batch as issued by this job before any
+// request carries it, and returns only the names not issued before. A
+// name this job already requested is never sent again: it is counted
+// and sampled as not requested again, whatever a later listing says.
+// If the record cannot be written, nothing is sent and admission stops,
+// exactly as an unindexable outcome stops it.
+func (a *deletionAccounting) issue(ctx context.Context, batch []string) ([]string, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.err != nil || len(batch) == 0 {
+		return nil, a.err == nil
+	}
+	facets := make([]identityFacet, len(batch))
+	for i, name := range batch {
+		facets[i] = identityFacet{issuedIdentity, name}
+	}
+	inserted, err := a.index.add(context.WithoutCancel(ctx), facets)
+	if err != nil {
+		a.err = fmt.Errorf("%w: record issued names before the request: %w", ErrIdentityAccounting, err)
+		a.result.AccountingIncomplete = true
+		a.stopAdmission()
+		return nil, false
+	}
+	fresh := make([]string, 0, len(batch))
+	for i, name := range batch {
+		if inserted[i] {
+			fresh = append(fresh, name)
+			continue
+		}
+		a.result.NotRequestedAgain++
+		if len(a.result.NotRequestedAgainNames) < maxFailures {
+			a.result.NotRequestedAgainNames = append(a.result.NotRequestedAgainNames, name)
+		}
+	}
+	return fresh, true
+}
+
 func (a *deletionAccounting) progress() {
 	if a.opts.OnProgress != nil {
 		a.opts.OnProgress(a.result.Deleted, a.result.Failed)

@@ -296,6 +296,17 @@ func (s *DeleteService) runDelete(ctx context.Context, jobID string, req DeleteR
 			unresolvedDetail += "; " + retentionProblem
 		}
 	}
+	// A name a later listing offered again was not requested again by
+	// this job: whatever stands there now was never part of its consent.
+	if result != nil && result.NotRequestedAgain > 0 && len(result.NotRequestedAgainNames) > 0 {
+		detail := fmt.Sprintf("%d names were still listed after this job's only request for them and were not requested again (first: %s)",
+			result.NotRequestedAgain, result.NotRequestedAgainNames[0])
+		if unresolvedDetail == "" {
+			unresolvedDetail = detail
+		} else {
+			unresolvedDetail += "; " + detail
+		}
+	}
 	withUnresolved := func(reason string) string {
 		switch {
 		case unresolvedDetail == "":

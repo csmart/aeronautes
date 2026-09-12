@@ -17,8 +17,12 @@ import (
 type identityKind int
 
 const (
-	reportedFailureIdentity   identityKind = 1
-	unresolvedIdentity        identityKind = 2
+	reportedFailureIdentity identityKind = 1
+	unresolvedIdentity      identityKind = 2
+	// issuedIdentity records a name this job has sent a destructive
+	// request for, written before the request leaves, so the same job
+	// never sends a second request for the name in any later pass.
+	issuedIdentity            identityKind = 3
 	maxIdentityFacets                      = 2000
 	identityAccountingTimeout              = 10 * time.Second
 )
@@ -89,7 +93,7 @@ func newIdentityIndex(ctx context.Context, cacheRoot string) (_ *identityIndex, 
 		return nil, err
 	}
 	if _, err := index.conn.ExecContext(ctx, `CREATE TABLE seen (
-		kind INTEGER NOT NULL CHECK (kind IN (1, 2)),
+		kind INTEGER NOT NULL CHECK (kind IN (1, 2, 3)),
 		name BLOB NOT NULL CHECK (typeof(name) = 'blob'),
 		PRIMARY KEY (kind, name)
 	) WITHOUT ROWID`); err != nil {

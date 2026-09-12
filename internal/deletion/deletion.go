@@ -118,6 +118,12 @@ type Result struct {
 	// verification retries: eventual consistency or a concurrent writer.
 	// Remaining > 0 means Partial, never silent success.
 	Remaining int64
+	// NotRequestedAgain counts names a later listing offered that this
+	// job had already sent a request for and therefore did not send
+	// again; whatever now stands at such a name was never requested by
+	// this job. NotRequestedAgainNames is a bounded sample of them.
+	NotRequestedAgain      int64
+	NotRequestedAgainNames []string
 	// Passes is how many list+delete sweeps ran.
 	Passes int
 	// VerifyPolicy states the §32 postcondition this run checked.
@@ -244,10 +250,19 @@ func deletePass(ctx, admissionCtx context.Context, session *swiftcontrol.Session
 			if !accounting.admit(admissionCtx) {
 				return errors.Join(accounting.problem(), admissionCtx.Err())
 			}
-			bulk, err := session.BulkDelete(ctx, container, batch)
-			err = accounting.recordBatchOutcome(ctx, batch, bulk, err)
+			// One destructive request per name per job: the batch is
+			// recorded as issued before it is sent, and names this job
+			// already requested are dropped from it.
+			fresh, ok := accounting.issue(admissionCtx, batch)
 			batch = batch[:0]
-			return err
+			if !ok {
+				return errors.Join(accounting.problem(), admissionCtx.Err())
+			}
+			if len(fresh) == 0 {
+				return nil
+			}
+			bulk, err := session.BulkDelete(ctx, container, fresh)
+			return accounting.recordBatchOutcome(ctx, fresh, bulk, err)
 		}
 		for entry, err := range session.Objects(admissionCtx, container, swiftcontrol.ObjectListOptions{Deep: true, Prefix: prefix}) {
 			if err != nil {
@@ -275,6 +290,13 @@ func deletePass(ctx, admissionCtx context.Context, session *swiftcontrol.Session
 			for name := range names {
 				if !accounting.admit(admissionCtx) {
 					return
+				}
+				fresh, ok := accounting.issue(admissionCtx, []string{name})
+				if !ok {
+					return
+				}
+				if len(fresh) == 0 {
+					continue
 				}
 				err := session.DeleteObject(ctx, container, name)
 				accounting.recordSingleOutcome(ctx, name, err)
