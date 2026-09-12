@@ -9,8 +9,8 @@ The oracle is [K-DEL-002 and K-CON-001](../REQUIREMENTS.md) and DESIGN §32 with
 The DS-08 and SEC-08 rows require complete per-effect outcomes and fresh authority across replacement races.
 Exact typed confirmation, the optional preview count, the prefix scope, bounded batches, the checked reply validation, the unresolved and reported-failure facets and the partial outcome are preserved facts.
 
-This record establishes the defect on both owned providers through the public service and proposes a reviewable contract.
-It changes no production code and does not claim manual-deletion safety in general.
+The first part of this record establishes the defect on both owned providers through the public service and proposes a reviewable contract; the second part, from the section "Correction delivered" onward, records the correction and its evidence.
+It does not claim manual-deletion safety in general.
 
 ## Source finding
 
@@ -51,7 +51,7 @@ A replacement written between the listing and the first request is not covered h
 A name first listed in a later pass, because it was created after the first listing or paged in late, is not covered; the sweep still deletes it because the prefix scope is the operator's consent, and this record says so rather than freezing the membership.
 The wire helper's one-time re-authentication resend repeats the same request after a 401 and is a transport retry of one request, not a new pass; it is out of scope here.
 
-## Proposed contract
+## Contract
 
 1. One destructive request per name per job.
    Before a batch or a single request is sent, every name in it is recorded as issued in the private accounting index, in the same transaction discipline the facets use; a name already recorded as issued is never sent again by the same job, in any pass, on either the bulk or the parallel branch.
@@ -74,6 +74,48 @@ Two deliberately broken controls, one removing the issued check and one removing
 The existing accounting, cancellation, effect-substitution and shared-segment tests must stay green; the ledger test that counted identities across passes must keep its duplicate-facet proof at the accounting boundary without depending on a repeated destructive request.
 The full race suite runs with inventory reconciliation.
 
+## Correction delivered
+
+The correction is one commit on top of the plan, `send one destructive request per deletion name`, under [ADR 0039](../adr/0039-delete-request-authority.md).
+The private accounting index gains an issued kind beside the reported-failure and unresolved facets; `issue` in `internal/deletion/accounting.go` records every name of a batch as issued before the request is sent and returns only the names not issued before, counting and sampling the rest as not requested again, and latches the accounting error and stops admission if the record cannot be written.
+The bulk branch of `deletePass` sends only the returned names and skips the request when none remain; the parallel branch issues each name before its single request.
+The pass loop is unchanged: a pass that sends nothing leaves the deleted count where it was, so the sweep ends.
+The delete service reports the not-requested-again count and its first name beside the unresolved facets, and the job ends partial.
+
+## After evidence
+
+The archived probe became the maintained regression `TestDeleteSweepAuthorityMock` and `TestDeleteSweepAuthorityRealSwift`, five cases on each provider.
+
+| Case | Before | After |
+| --- | --- | --- |
+| partial_reply_replacement | two bulk requests, the blamed name issued twice, the replacement deleted | one bulk request, the blamed name issued once, the replacement survives with its exact bytes, the job partial with the unresolved facet and one name not requested again |
+| partial_reply_replacement_and_late_name | not probed | two bulk requests: the second carries exactly the late name, which is deleted; the replacement at the blamed name survives; this is the open membership hazard, witnessed |
+| partial_reply_no_replacement | one bulk request | one bulk request, the job partial with the unresolved facet and nothing reported as not requested again |
+| issued_record_refused | not probed | no bulk request, both planned objects survive, the job stops with incomplete accounting |
+| healthy_control | one bulk request, complete | one bulk request, complete |
+
+Unit tests in `internal/deletion/issued_record_test.go` cover the issued record's admission of each name once, the failure latch that stops admission before any request, the parallel branch requesting each listed name once across passes, and the distinct counting of repeated facets at the accounting boundary; the cross-pass ledger test now proves its counts with one request instead of skipping when the sweep does not repeat.
+The index-boundary helper of the accounting behaviour tests counts and refuses outcome facets only, because the issued records are a different fact and refusing them would stop the next request instead of leaving an already-sent request unindexed.
+Every delete-related service family passed on both providers after the change.
+
+## Deliberately broken controls
+
+Each guard was removed on its own in a private copy and the unit tests and the mock regression rerun; every control failed only its own cases and compiled cleanly.
+
+| Control | Mutation | Unit tests failing | Service cases failing on the mock |
+| --- | --- | --- | --- |
+| no issued filter | every name in a batch is sent whether or not this job already requested it | TestBulkLedgerCountsDistinctIdentitiesAcrossPasses, TestIssuedRecordAdmitsEachNameOnce, TestParallelSweepIssuesEachNameOnce | partial_reply_replacement, partial_reply_replacement_and_late_name |
+| issue failure ignored | an unwritable issued record still sends the request instead of stopping admission | TestIssuedRecordFailureStopsBeforeRequest | issued_record_refused |
+
+## Verification
+
+Focused producers on the committed source, all under the race detector: the deletion package's tests (46 top-level tests passing), and the service regression on the in-process mock (5 leaves) and on the real two-account Swift fixture (5 leaves).
+Every delete-related service family was rerun on both providers before the commit.
+The full race suite ran once on the committed source with the pinned engine directory and the real Swift fixture configured, exit 0: 4083 distinct names, 3786 leaves of which 3785 passing, 0 failing and 1 skipped, 4082 passing events including parents, 22 packages passing.
+A leaf is a recorded name that is not a slash-separated prefix of another recorded name in the same package.
+The change carries gofmt, vet on Linux and Windows, a macOS build, and no module change.
+The [manifest](2026-09-12-delete-sweep-authority-probes.json) records every producer command, exit, count and digest and the broken-control outcomes.
+
 ## Proposed shared-document text
 
 For an ADR under the next free number: the contract above, with the accounting index as the issued record and the two open hazards named.
@@ -82,6 +124,5 @@ For the register, the DS-08 and SEC-08 rows: the repeated-request hazard after a
 
 ## Remaining limits
 
-This record proves the defect and proposes a contract; it delivers no correction.
 Linux amd64 with owned fixtures is the only observed environment.
 DS-08, SEC-08, P12, P13, P28 and the valuable-data hold remain open.
