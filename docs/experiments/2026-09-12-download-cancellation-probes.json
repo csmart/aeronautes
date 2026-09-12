@@ -1,7 +1,7 @@
 {
   "record": "docs/experiments/2026-09-12-download-cancellation.md",
   "base": "0b5079abf533060d3f4381f40f7ec2b86b04b743",
-  "phase": "before",
+  "phase": "before and after",
   "producers": {
     "service": "docs/experiments/probes/2026-09-12-download-cancellation-service-probe_test.go.txt (package systemtest, both providers, AERONAUTES_CANCEL_PROBE_OUT set)",
     "executor": "docs/experiments/probes/2026-09-12-download-cancellation-executor-probe_test.go.txt (package local, mock)"
@@ -487,5 +487,650 @@
         "stage seen by boundary: .aeronautes-stage-1285d4d5a03a3602"
       ]
     }
+  },
+  "after": {
+    "head": "implementation commit 201991831b0cfbfabff0ca34ad5ac3c1def08718",
+    "cases": {
+      "executor-probe": {
+        "sha256": "139fc1eedea7bf75704ef141eea2e8185c1a8ef0df6138263a016fe5bec7c404",
+        "loop_check": {
+          "err": "context canceled",
+          "done": 1,
+          "executed": {
+            "scope/a": {
+              "Result": "copied",
+              "Effect": "reported_applied",
+              "Diagnostic": {
+                "Stage": "",
+                "Code": "",
+                "HTTPStatus": 0
+              },
+              "CopiedBytes": 7
+            },
+            "scope/b": {
+              "Result": "failed",
+              "Effect": "unresolved",
+              "Diagnostic": {
+                "Stage": "commit",
+                "Code": "cancelled",
+                "HTTPStatus": 0
+              },
+              "CopiedBytes": 0
+            }
+          },
+          "failures": [
+            {
+              "Name": "scope/b",
+              "Stage": "place",
+              "Err": "context canceled",
+              "Cancelled": true
+            }
+          ],
+          "stageEntries": {
+            "b": "-rw-r--r--"
+          },
+          "placed": [
+            "a"
+          ],
+          "stageCleanupIssues": 1
+        },
+        "in_placement_direct": {
+          "observation": {
+            "Result": "failed",
+            "Effect": "unresolved",
+            "Diagnostic": {
+              "Stage": "commit",
+              "Code": "cancelled",
+              "HTTPStatus": 0
+            },
+            "CopiedBytes": 0
+          },
+          "placed": false
+        }
+      },
+      "mock-native_held_headers": {
+        "sha256": "68c57eec2cf96db2fbee27068074ebf42adc8f91a5600fdffede5854e89a0121",
+        "provider": "mock",
+        "state": "cancelled",
+        "error": "transfer failures (first: scope/n／native.bin: Get \"http://127.0.0.1:46195/v1/AUTH_primary/st2W2WSYYTIWVQFHHJNVJMA3G5VB-cancel-probe-1/scope/n%EF%BC%8Fnative.bin\": read bookmark generation: context canceled)",
+        "counters": {
+          "objectsPlanned": 3,
+          "objectsFailed": 1,
+          "bytesPlanned": 26,
+          "nativeRouted": 1
+        },
+        "totals": {
+          "Items": 3,
+          "Planned": 3,
+          "Admitted": 3,
+          "Failed": 1,
+          "Conflicts": 0,
+          "Refused": 0,
+          "Unresolved": 0,
+          "Unverified": 0,
+          "Problems": 3
+        },
+        "audit": [
+          "transfer.local.cancelled:  · item outcomes: 1 failed names, 0 conflicts, 0 refusals, 0 unresolved, 0 unverified, 3 with problems"
+        ],
+        "items": [
+          {
+            "key": "scope/a.bin",
+            "staging": ".aeronautes-stage-9fa11a09e8e674f1/a.bin",
+            "execution": {
+              "Result": "not_attempted",
+              "Effect": "not_attempted",
+              "Diagnostic": {
+                "Stage": "engine",
+                "Code": "cancelled",
+                "HTTPStatus": 0
+              },
+              "CopiedBytes": 0
+            },
+            "verification": null
+          },
+          {
+            "key": "scope/b.bin",
+            "staging": ".aeronautes-stage-9fa11a09e8e674f1/b.bin",
+            "execution": {
+              "Result": "not_attempted",
+              "Effect": "not_attempted",
+              "Diagnostic": {
+                "Stage": "engine",
+                "Code": "cancelled",
+                "HTTPStatus": 0
+              },
+              "CopiedBytes": 0
+            },
+            "verification": null
+          },
+          {
+            "key": "scope/n／native.bin",
+            "staging": ".aeronautes-part-4a9d2480cd182c6cd8d6913417dfa554",
+            "execution": {
+              "Result": "failed",
+              "Effect": "not_attempted",
+              "Diagnostic": {
+                "Stage": "source_read",
+                "Code": "cancelled",
+                "HTTPStatus": 0
+              },
+              "CopiedBytes": 0
+            },
+            "verification": null
+          }
+        ],
+        "localDelta": {},
+        "requests": 5,
+        "writes": [],
+        "notes": [
+          "barrier err: HTTP response barrier {Operation:TestZZCancelProbeMock/native_held_headers Method:GET EscapedPath:/v1/AUTH_primary/st2W2WSYYTIWVQFHHJNVJMA3G5VB-cancel-probe-1/scope/n%EF%BC%8Fnative.bin RawQuery: Occurrence:1}: holding response: context canceled"
+        ]
+      },
+      "mock-native_mid_body": {
+        "sha256": "e5707e5aeaed92efab28642f8aac8e4530fa211da8d96582a6f476670f32abd1",
+        "provider": "mock",
+        "state": "cancelled",
+        "error": "transfer failures (first: scope/n／native.bin: context canceled)",
+        "counters": {
+          "objectsPlanned": 2,
+          "objectsFailed": 1,
+          "bytesPlanned": 262151,
+          "nativeRouted": 1
+        },
+        "totals": {
+          "Items": 2,
+          "Planned": 2,
+          "Admitted": 2,
+          "Failed": 1,
+          "Conflicts": 0,
+          "Refused": 0,
+          "Unresolved": 0,
+          "Unverified": 0,
+          "Problems": 2
+        },
+        "audit": [
+          "transfer.local.cancelled:  · item outcomes: 1 failed names, 0 conflicts, 0 refusals, 0 unresolved, 0 unverified, 2 with problems"
+        ],
+        "items": [
+          {
+            "key": "scope/a.bin",
+            "staging": ".aeronautes-stage-adc24c13fef3c852/a.bin",
+            "execution": {
+              "Result": "not_attempted",
+              "Effect": "not_attempted",
+              "Diagnostic": {
+                "Stage": "engine",
+                "Code": "cancelled",
+                "HTTPStatus": 0
+              },
+              "CopiedBytes": 0
+            },
+            "verification": null
+          },
+          {
+            "key": "scope/n／native.bin",
+            "staging": ".aeronautes-part-296a9d3e48147cda46c2131c3f9e54da",
+            "execution": {
+              "Result": "failed",
+              "Effect": "not_attempted",
+              "Diagnostic": {
+                "Stage": "source_read",
+                "Code": "cancelled",
+                "HTTPStatus": 0
+              },
+              "CopiedBytes": 0
+            },
+            "verification": null
+          }
+        ],
+        "localDelta": {},
+        "requests": 5,
+        "writes": [],
+        "notes": [
+          "temporary size before cancel: 65536"
+        ]
+      },
+      "mock-queued_cancel": {
+        "sha256": "1ed46b8636ffba1e92c17b6db2ccc2539155359ff2454f6d9bc244471e5b65ad",
+        "provider": "mock",
+        "state": "cancelled",
+        "error": "",
+        "counters": {
+          "objectsPlanned": 1,
+          "bytesPlanned": 7
+        },
+        "totals": {
+          "Items": 0,
+          "Planned": 0,
+          "Admitted": 0,
+          "Failed": 0,
+          "Conflicts": 0,
+          "Refused": 0,
+          "Unresolved": 0,
+          "Unverified": 0,
+          "Problems": 0
+        },
+        "audit": [
+          "transfer.local.cancelled:  · item outcomes: 0 failed names, 0 conflicts, 0 refusals, 0 unresolved, 0 unverified, 0 with problems"
+        ],
+        "items": [],
+        "localDelta": {},
+        "requests": 9,
+        "writes": [],
+        "notes": [
+          "first job state: complete"
+        ]
+      },
+      "mock-stage_boundary": {
+        "sha256": "8f2df3892df72b8d8206b65cec8aab94bcc35f8a3ac734bb8498d18651269f67",
+        "provider": "mock",
+        "state": "cancelled",
+        "error": "transfer failures (first: scope/a.bin: context canceled); download stage cleanup: 2 issues (first: rmdir /tmp/TestZZCancelProbeMockstage_boundary77845064/002/.aeronautes-stage-07aa59752ee665e7/nested: directory not empty)",
+        "counters": {
+          "objectsPlanned": 2,
+          "objectsFailed": 2,
+          "bytesPlanned": 14
+        },
+        "totals": {
+          "Items": 2,
+          "Planned": 2,
+          "Admitted": 2,
+          "Failed": 2,
+          "Conflicts": 0,
+          "Refused": 0,
+          "Unresolved": 2,
+          "Unverified": 0,
+          "Problems": 2
+        },
+        "audit": [
+          "transfer.local.cancelled: download stage cleanup: 2 issues · item outcomes: 2 failed names, 0 conflicts, 0 refusals, 2 unresolved, 0 unverified, 2 with problems"
+        ],
+        "items": [
+          {
+            "key": "scope/a.bin",
+            "staging": ".aeronautes-stage-07aa59752ee665e7/a.bin",
+            "execution": {
+              "Result": "failed",
+              "Effect": "unresolved",
+              "Diagnostic": {
+                "Stage": "commit",
+                "Code": "cancelled",
+                "HTTPStatus": 0
+              },
+              "CopiedBytes": 0
+            },
+            "verification": null
+          },
+          {
+            "key": "scope/nested/b.bin",
+            "staging": ".aeronautes-stage-07aa59752ee665e7/nested/b.bin",
+            "execution": {
+              "Result": "failed",
+              "Effect": "unresolved",
+              "Diagnostic": {
+                "Stage": "commit",
+                "Code": "cancelled",
+                "HTTPStatus": 0
+              },
+              "CopiedBytes": 0
+            },
+            "verification": null
+          }
+        ],
+        "localDelta": {
+          ".aeronautes-stage-07aa59752ee665e7": "dir",
+          ".aeronautes-stage-07aa59752ee665e7/a.bin": "file 7 bytes",
+          ".aeronautes-stage-07aa59752ee665e7/nested": "dir",
+          ".aeronautes-stage-07aa59752ee665e7/nested/b.bin": "file 7 bytes"
+        },
+        "requests": 0,
+        "writes": [],
+        "notes": [
+          "stage seen by boundary: .aeronautes-stage-07aa59752ee665e7"
+        ]
+      },
+      "swift-native_held_headers": {
+        "sha256": "804282d0fce1dfbdb0893d6ba4e187ec2344d91d2bc64578cad5f487270b97bc",
+        "provider": "swift",
+        "state": "cancelled",
+        "error": "transfer failures (first: scope/n／native.bin: Get \"http://127.0.0.1:44973/v1/AUTH_test/stE3FMN57BHBL4Y6YE6OWJHQ23U4-cancel-probe-1/scope/n%EF%BC%8Fnative.bin\": read bookmark generation: context canceled)",
+        "counters": {
+          "objectsPlanned": 3,
+          "objectsFailed": 1,
+          "bytesPlanned": 26,
+          "nativeRouted": 1
+        },
+        "totals": {
+          "Items": 3,
+          "Planned": 3,
+          "Admitted": 3,
+          "Failed": 1,
+          "Conflicts": 0,
+          "Refused": 0,
+          "Unresolved": 0,
+          "Unverified": 0,
+          "Problems": 3
+        },
+        "audit": [
+          "transfer.local.cancelled:  · item outcomes: 1 failed names, 0 conflicts, 0 refusals, 0 unresolved, 0 unverified, 3 with problems"
+        ],
+        "items": [
+          {
+            "key": "scope/a.bin",
+            "staging": ".aeronautes-stage-edb8808b8df3c030/a.bin",
+            "execution": {
+              "Result": "not_attempted",
+              "Effect": "not_attempted",
+              "Diagnostic": {
+                "Stage": "engine",
+                "Code": "cancelled",
+                "HTTPStatus": 0
+              },
+              "CopiedBytes": 0
+            },
+            "verification": null
+          },
+          {
+            "key": "scope/b.bin",
+            "staging": ".aeronautes-stage-edb8808b8df3c030/b.bin",
+            "execution": {
+              "Result": "not_attempted",
+              "Effect": "not_attempted",
+              "Diagnostic": {
+                "Stage": "engine",
+                "Code": "cancelled",
+                "HTTPStatus": 0
+              },
+              "CopiedBytes": 0
+            },
+            "verification": null
+          },
+          {
+            "key": "scope/n／native.bin",
+            "staging": ".aeronautes-part-ac22f95b4cfa506639b2d3c81110c025",
+            "execution": {
+              "Result": "failed",
+              "Effect": "not_attempted",
+              "Diagnostic": {
+                "Stage": "source_read",
+                "Code": "cancelled",
+                "HTTPStatus": 0
+              },
+              "CopiedBytes": 0
+            },
+            "verification": null
+          }
+        ],
+        "localDelta": {},
+        "requests": 5,
+        "writes": [],
+        "notes": [
+          "barrier err: HTTP response barrier {Operation:TestZZCancelProbeRealSwift/native_held_headers Method:GET EscapedPath:/v1/AUTH_test/stE3FMN57BHBL4Y6YE6OWJHQ23U4-cancel-probe-1/scope/n%EF%BC%8Fnative.bin RawQuery: Occurrence:1}: holding response: context canceled"
+        ]
+      },
+      "swift-native_mid_body": {
+        "sha256": "486b2de13881d4a7dc9327c0b4a6c63904cb42d62666422de057a3e985ac31c3",
+        "provider": "swift",
+        "state": "cancelled",
+        "error": "transfer failures (first: scope/n／native.bin: context canceled)",
+        "counters": {
+          "objectsPlanned": 2,
+          "objectsFailed": 1,
+          "bytesPlanned": 262151,
+          "nativeRouted": 1
+        },
+        "totals": {
+          "Items": 2,
+          "Planned": 2,
+          "Admitted": 2,
+          "Failed": 1,
+          "Conflicts": 0,
+          "Refused": 0,
+          "Unresolved": 0,
+          "Unverified": 0,
+          "Problems": 2
+        },
+        "audit": [
+          "transfer.local.cancelled:  · item outcomes: 1 failed names, 0 conflicts, 0 refusals, 0 unresolved, 0 unverified, 2 with problems"
+        ],
+        "items": [
+          {
+            "key": "scope/a.bin",
+            "staging": ".aeronautes-stage-91942675a4ec9aa8/a.bin",
+            "execution": {
+              "Result": "not_attempted",
+              "Effect": "not_attempted",
+              "Diagnostic": {
+                "Stage": "engine",
+                "Code": "cancelled",
+                "HTTPStatus": 0
+              },
+              "CopiedBytes": 0
+            },
+            "verification": null
+          },
+          {
+            "key": "scope/n／native.bin",
+            "staging": ".aeronautes-part-0fe3fe888848a23db4752896bd2a88c3",
+            "execution": {
+              "Result": "failed",
+              "Effect": "not_attempted",
+              "Diagnostic": {
+                "Stage": "source_read",
+                "Code": "cancelled",
+                "HTTPStatus": 0
+              },
+              "CopiedBytes": 0
+            },
+            "verification": null
+          }
+        ],
+        "localDelta": {},
+        "requests": 5,
+        "writes": [],
+        "notes": [
+          "temporary size before cancel: 65536"
+        ]
+      },
+      "swift-queued_cancel": {
+        "sha256": "38aa588cffeb434fdce9083f932c9a2c6e38dfda80c3f2d8d2d0995544f66360",
+        "provider": "swift",
+        "state": "cancelled",
+        "error": "",
+        "counters": {
+          "objectsPlanned": 1,
+          "bytesPlanned": 7
+        },
+        "totals": {
+          "Items": 0,
+          "Planned": 0,
+          "Admitted": 0,
+          "Failed": 0,
+          "Conflicts": 0,
+          "Refused": 0,
+          "Unresolved": 0,
+          "Unverified": 0,
+          "Problems": 0
+        },
+        "audit": [
+          "transfer.local.cancelled:  · item outcomes: 0 failed names, 0 conflicts, 0 refusals, 0 unresolved, 0 unverified, 0 with problems"
+        ],
+        "items": [],
+        "localDelta": {},
+        "requests": 9,
+        "writes": [],
+        "notes": [
+          "first job state: complete"
+        ]
+      },
+      "swift-stage_boundary": {
+        "sha256": "473dcd72742ecb35704b19ff258a6d5b0db204c236b9fbb5a38c54a578553126",
+        "provider": "swift",
+        "state": "cancelled",
+        "error": "transfer failures (first: scope/a.bin: context canceled); download stage cleanup: 2 issues (first: rmdir /tmp/TestZZCancelProbeRealSwiftstage_boundary1319316342/002/.aeronautes-stage-e39c477a13c5e646/nested: directory not empty)",
+        "counters": {
+          "objectsPlanned": 2,
+          "objectsFailed": 2,
+          "bytesPlanned": 14
+        },
+        "totals": {
+          "Items": 2,
+          "Planned": 2,
+          "Admitted": 2,
+          "Failed": 2,
+          "Conflicts": 0,
+          "Refused": 0,
+          "Unresolved": 2,
+          "Unverified": 0,
+          "Problems": 2
+        },
+        "audit": [
+          "transfer.local.cancelled: download stage cleanup: 2 issues · item outcomes: 2 failed names, 0 conflicts, 0 refusals, 2 unresolved, 0 unverified, 2 with problems"
+        ],
+        "items": [
+          {
+            "key": "scope/a.bin",
+            "staging": ".aeronautes-stage-e39c477a13c5e646/a.bin",
+            "execution": {
+              "Result": "failed",
+              "Effect": "unresolved",
+              "Diagnostic": {
+                "Stage": "commit",
+                "Code": "cancelled",
+                "HTTPStatus": 0
+              },
+              "CopiedBytes": 0
+            },
+            "verification": null
+          },
+          {
+            "key": "scope/nested/b.bin",
+            "staging": ".aeronautes-stage-e39c477a13c5e646/nested/b.bin",
+            "execution": {
+              "Result": "failed",
+              "Effect": "unresolved",
+              "Diagnostic": {
+                "Stage": "commit",
+                "Code": "cancelled",
+                "HTTPStatus": 0
+              },
+              "CopiedBytes": 0
+            },
+            "verification": null
+          }
+        ],
+        "localDelta": {
+          ".aeronautes-stage-e39c477a13c5e646": "dir",
+          ".aeronautes-stage-e39c477a13c5e646/a.bin": "file 7 bytes",
+          ".aeronautes-stage-e39c477a13c5e646/nested": "dir",
+          ".aeronautes-stage-e39c477a13c5e646/nested/b.bin": "file 7 bytes"
+        },
+        "requests": 0,
+        "writes": [],
+        "notes": [
+          "stage seen by boundary: .aeronautes-stage-e39c477a13c5e646"
+        ]
+      }
+    }
+  },
+  "brokenControls": {
+    "description": "Each control is an overlay on the implementation head applied to internal/transfer/local/download_execute.go; the selection is the executor cancellation tests and the system cancellation tests on both providers.",
+    "g01": "the placement loop and placeDownloaded ignore the cancel and place every staged item",
+    "g02": "after a cancel the loop also records the item it just placed as unplaced",
+    "results": {
+      "g01-places-after-cancel": {
+        "failing": [
+          "TestDownloadCancelledPlacementRecords/loop",
+          "TestDownloadCancelledPlacementRecords/placement",
+          "TestDownloadEngineCancellationBoundaries/after_child",
+          "TestDownloadEngineCancellationBoundaries/between_placements",
+          "TestDownloadCancellationMock/stage_boundary",
+          "TestDownloadCancellationMock/placement_boundary",
+          "TestDownloadCancellationRealSwift/stage_boundary",
+          "TestDownloadCancellationRealSwift/placement_boundary"
+        ],
+        "passing": [
+          "TestDownloadNativeBodyCancellation/removed",
+          "TestDownloadNativeBodyCancellation/replaced",
+          "TestDownloadNativeCancellationBetweenItems/false",
+          "TestDownloadNativeCancellationBetweenItems/true",
+          "TestDownloadEngineCancellationBoundaries/control",
+          "TestDownloadEngineCancellationBoundaries/before_child",
+          "TestDownloadCancellationMock/native_held_headers",
+          "TestDownloadCancellationMock/native_mid_body",
+          "TestDownloadCancellationMock/queued_cancel",
+          "TestDownloadCancellationRealSwift/native_held_headers",
+          "TestDownloadCancellationRealSwift/native_mid_body",
+          "TestDownloadCancellationRealSwift/queued_cancel"
+        ]
+      },
+      "g02-placed-recorded-unplaced": {
+        "failing": [
+          "TestDownloadCancelledPlacementRecords/loop",
+          "TestDownloadEngineCancellationBoundaries/between_placements",
+          "TestDownloadCancellationMock/placement_boundary",
+          "TestDownloadCancellationRealSwift/placement_boundary"
+        ],
+        "passing": [
+          "TestDownloadCancelledPlacementRecords/placement",
+          "TestDownloadNativeBodyCancellation/removed",
+          "TestDownloadNativeBodyCancellation/replaced",
+          "TestDownloadNativeCancellationBetweenItems/false",
+          "TestDownloadNativeCancellationBetweenItems/true",
+          "TestDownloadEngineCancellationBoundaries/control",
+          "TestDownloadEngineCancellationBoundaries/before_child",
+          "TestDownloadEngineCancellationBoundaries/after_child",
+          "TestDownloadCancellationMock/native_held_headers",
+          "TestDownloadCancellationMock/native_mid_body",
+          "TestDownloadCancellationMock/stage_boundary",
+          "TestDownloadCancellationMock/queued_cancel",
+          "TestDownloadCancellationRealSwift/native_held_headers",
+          "TestDownloadCancellationRealSwift/native_mid_body",
+          "TestDownloadCancellationRealSwift/stage_boundary",
+          "TestDownloadCancellationRealSwift/queued_cancel"
+        ]
+      },
+      "head": {
+        "passing": [
+          "TestDownloadCancelledPlacementRecords/loop",
+          "TestDownloadCancelledPlacementRecords/placement",
+          "TestDownloadNativeBodyCancellation/removed",
+          "TestDownloadNativeBodyCancellation/replaced",
+          "TestDownloadNativeCancellationBetweenItems/false",
+          "TestDownloadNativeCancellationBetweenItems/true",
+          "TestDownloadEngineCancellationBoundaries/control",
+          "TestDownloadEngineCancellationBoundaries/before_child",
+          "TestDownloadEngineCancellationBoundaries/after_child",
+          "TestDownloadEngineCancellationBoundaries/between_placements",
+          "TestDownloadCancellationMock/native_held_headers",
+          "TestDownloadCancellationMock/native_mid_body",
+          "TestDownloadCancellationMock/stage_boundary",
+          "TestDownloadCancellationMock/placement_boundary",
+          "TestDownloadCancellationMock/queued_cancel",
+          "TestDownloadCancellationRealSwift/native_held_headers",
+          "TestDownloadCancellationRealSwift/native_mid_body",
+          "TestDownloadCancellationRealSwift/stage_boundary",
+          "TestDownloadCancellationRealSwift/placement_boundary",
+          "TestDownloadCancellationRealSwift/queued_cancel"
+        ],
+        "failing": []
+      }
+    }
+  },
+  "fullSuite": {
+    "head": "implementation commit 201991831b0cfbfabff0ca34ad5ac3c1def08718",
+    "names": 4139,
+    "leaves": 3834,
+    "passing": 3833,
+    "failing": 0,
+    "skipped": [
+      "TestRcloneMatrix"
+    ],
+    "packagesPass": 22,
+    "packagesFail": 0,
+    "window": "2026-09-12T08:32:00Z..2026-09-12T08:40:04Z",
+    "streamBytes": 7607932,
+    "streamSha256": "a4629aeac43e9036a4ecaecfd11d602ebd7ad03224275fb60446e6137fb1df8a"
   }
 }
