@@ -185,3 +185,15 @@ The merge on a case-insensitive target is the recorded consequence of the decisi
 The engine's lowercase keying on case-insensitive hosts is cited from its frozen source and not observed; its NFC keying was observed on Linux.
 The executor keeps trusting the plan's route: a direct caller that plans files beneath aliased directories on the engine route gets the engine's drop reported as a file missing after the run, as before, rather than a refusal.
 DS-06/P19, the native journeys and the valuable-data release hold remain blocking.
+
+## Protected delivery
+
+[PR104](https://github.com/csmart/aeronautes/pull/104) delivered the three logical plan, correction and evidence commits from base `0b5079abf533060d` through reviewed head `7784692634b2dea0`.
+It merged at 09:04:41 UTC on 12 September 2026 as `951c31031fc8445e`.
+The reviewed and delivered ranges contain the same three corresponding trees, commit messages and author identities and dates.
+All five required jobs passed on the first attempt in both the [PR run](https://github.com/csmart/aeronautes/actions/runs/34683690443) and the [resulting-master run](https://github.com/csmart/aeronautes/actions/runs/34684899485).
+Those checks are Go with the race detector, frontend, headless smoke, containerized Swift integration and the aggregate gate.
+
+The earlier failed full-suite run and the copy-binding intermittent described above remain part of the evidence; green CI does not resolve that separate failure.
+This documentation integration records the delivered behaviour in DESIGN and the DS-06 register without closing native target-filesystem acceptance, P19 or the valuable-data hold.
+The Linux checks do not establish how APFS or NTFS merges directory spellings.

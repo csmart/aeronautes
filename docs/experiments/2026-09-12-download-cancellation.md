@@ -121,3 +121,22 @@ A cancel during stage cleanup or during directory materialisation has no seam an
 Child quiescence after the cancel grace period and parent death on Linux are the next slice, with a real engine child held at a gateway barrier.
 Every platform other than Linux amd64, the native parent-kill evidence on all six targets and the Windows and macOS lifetime solutions belong to GitHub issue 103.
 DS-07, SEC-06, P20, P30 and the valuable-data release hold remain blocking.
+
+## Protected delivery
+
+[PR105](https://github.com/csmart/aeronautes/pull/105) delivered the three logical plan, correction and evidence commits from base `951c31031fc8445e` through reviewed head `03a6cd91adb0e66c`.
+The range was copied from `download_cancellation` onto the directory-alias delivery without conflicts, and independent review approved the resulting range before publication.
+It merged at 09:42:15 UTC on 12 September 2026 as `3c5f7f7fe61bedc8`.
+The reviewed and delivered ranges contain the same three corresponding trees, commit messages and author identities and dates.
+All five required jobs passed on the first attempt in both the [PR run](https://github.com/csmart/aeronautes/actions/runs/34685322410) and the [resulting-master run](https://github.com/csmart/aeronautes/actions/runs/34686541361).
+Those checks are Go with the race detector, frontend, headless smoke, containerized Swift integration and the aggregate gate.
+
+Full local race verification on the combined delivered tree retained three runs with 3,887 leaves each.
+The first two failed the existing `TestCopyItemRecordsMock/failed_401` binding-release assertion; the third passed 3,886 leaves with the single expected matrix skip.
+Three isolated reruns also passed, but these successes do not resolve the intermittent failure or erase the failed runs.
+The resulting-master integration passed that leaf in 21.78 seconds; its system-test package took 1,350.405 seconds of the unchanged 1,500-second limit.
+
+This documentation integration narrows the proposed shared text to the observed native-read, stage and placement boundaries and preserves the native temporary-cleanup qualification and the independent-failure condition for a cancelled job.
+It does not claim that every engine cancellation has the same correct classification; that boundary remains part of the next Linux child-lifetime slice.
+Retained-stage removal, cancellation during cleanup or directory materialisation, child quiescence, parent death and other native platforms remain open.
+DS-07, SEC-06, P20, P30 and the valuable-data hold remain blocking.

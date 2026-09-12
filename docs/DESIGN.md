@@ -5162,6 +5162,18 @@ Every name is recorded as issued in the job's private accounting index before it
 A valid partial reply can therefore no longer lead to a second request that destroys a replacement written at the blamed name, which both providers witnessed before the change.
 The listing-to-request race and names first listed in a later pass remain open under DS-08 and SEC-08.
 
+The [directory alias admission](experiments/2026-09-12-download-directory-aliases.md) delivered in PR104 admits directory names that differ only by case or Unicode normalization form, whether spelled as markers or implied by files, because rsync, scp and the pinned engine copy directory names as given and let the target filesystem decide.
+A file whose ancestor has more than one planned spelling is routed natively on every platform, because the pinned engine keys directory entries by their NFC form everywhere and by their lowercase form on case-insensitive hosts and ignores the second spelling as a duplicate, which both providers witnessed as a partial job before the change.
+File twins and file-versus-directory pairs stay refused at both boundaries to prevent planned files from colliding when a case-insensitive target merges the directory spellings.
+Native target-filesystem acceptance remains open under DS-06 and P19.
+
+The [download cancellation correction](experiments/2026-09-12-download-cancellation.md) delivered in PR105 records each staged-but-unplaced item when cancellation reaches the placement loop or the placement itself.
+The record is failed with an unresolved effect at the commit stage and the cancelled code beside its retained staging location.
+A native item interrupted while its body is read records no effect at its target once its temporary is removed, and unresolved with a cleanup issue when it cannot be removed.
+At the tested native-read, stage and placement boundaries, a cancelled download ends cancelled when nothing was placed and no failure other than cancellation occurred, and partial otherwise.
+The retained stage remains disclosed when present.
+Engine-result cancellation classification, removal of the retained stage on a graceful cancel, cancellation during stage cleanup and directory materialisation, child quiescence, parent death and native-platform acceptance remain open under DS-07 and SEC-06.
+
 The next bounded [segmented-destination change detection](experiments/2026-09-11-copy-verification-strength.md) stops a same-size segment substitution being reported as an equal destination.
 The executor decides a non-plain pair from its own stored fingerprint and a matching logical length, so a destination whose segments were replaced with different bytes of the same length is skipped as equal.
 This is a prerequisite within DS-04 and not its remedy: comparing a destination against an identity this executor recorded detects change since that observation and cannot establish that the committed bytes were ever correct, which the staged-content sequence owns.

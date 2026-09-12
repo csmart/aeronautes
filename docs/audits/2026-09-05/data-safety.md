@@ -192,7 +192,8 @@ One consequence is recorded rather than hidden: a plain letter beside the same l
 The reserved set is pinned to the frozen v1.74.3 encoder source and recorded in the engine pin document, with maintained regressions on both routes and both providers and one broken control per rune class; the operator settled native routing and the union set on 12 September 2026 as delivered.
 For the remainder the operator settled on the same day: components longer than 255 bytes are to be refused at both boundaries with a named reason, and leading spaces and compatibility look-alikes are admitted and recorded, as rsync, scp, rclone, Finder and Explorer treat them.
 [PR101](../../experiments/2026-09-12-download-name-limits.md#protected-delivery) then refuses components longer than 255 bytes at both boundaries with the kind name-length and the measured length, admits leading spaces and compatibility look-alikes with maintained controls on both providers, and records the whole-path bound as unreachable through a default Swift.
-Directory-only aliases and native target-filesystem acceptance remain open, so DS-06/P19 and the valuable-data release hold are still blocking.
+[PR104](../../experiments/2026-09-12-download-directory-aliases.md#protected-delivery) then admits directory-only aliases as markers or implied directories, routing the files beneath them natively so the pinned engine's duplicate-directory drop never applies, and records that a case-insensitive target merges the spellings into one directory as rsync, scp and the engine's own local backend leave it.
+Native target-filesystem acceptance remains open, so DS-06/P19 and the valuable-data release hold are still blocking.
 
 ### DS-07 — High: cancellation after staging still places files and can report completion
 
@@ -214,7 +215,9 @@ Probe: `TestAuditCancelledDownloadStopsBeforePlacement`.
 
 Current disposition: that archived reproduction [no longer reproduces on master](../../experiments/2026-09-11-archived-probe-status.md#result), and maintained tests cover cancellation between items, cancelled body closure and the engine cancellation boundaries in the local transfer package.
 This records coverage of the reproduced scenario on Linux and nothing more.
-Cancellation at native writes and placements, exact partial outcomes, child quiescence and the native parent-kill evidence on all six targets are untouched, so DS-07/SEC-06 stays blocking.
+[PR105](../../experiments/2026-09-12-download-cancellation.md#protected-delivery) then records each staged-but-unplaced item at both placement cancellation boundaries and classifies an interrupted native body as cancelled, with no target effect once its owned temporary is removed or an unresolved effect and cleanup issue when removal fails.
+At the tested native-read, stage and placement boundaries on both providers, a cancelled job ends cancelled when nothing was placed and no independent failure occurred, and partial otherwise; a second process reopens the same durable records.
+Engine-result cancellation classification, cancellation during stage cleanup and directory materialisation, removal of the retained stage on a graceful cancel, child quiescence and native parent-kill evidence on all six targets remain open, so DS-07/SEC-06 stays blocking.
 
 ### DS-08 — High: outcomes are event counts and samples, not an exact identity ledger
 
