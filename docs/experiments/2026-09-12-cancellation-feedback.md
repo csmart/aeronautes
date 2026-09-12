@@ -78,3 +78,29 @@ Separate background Recent refreshes from the selected paginated view.
 Audit-read failures after successful mutations must remain read failures rather than changing the mutation outcome or encouraging a blind retry.
 The maintained follow-up needs the three reproduced races, failed initial/retry reads, successful empty controls, stale-row attribution, filter changes during More, mounted retry/error presentation and post-mutation read-failure controls.
 Settings, bookmarks, UI-09 features, native accessibility acceptance and the valuable-data hold remain open.
+
+## Maintained correction and local evidence
+
+The drawer now stores pending, requested and unconfirmed notices by the job ID admitted to the cancellation call.
+The request guard acts before a render can disable the button, and a separate job remains cancellable while notice capacity remains.
+A successful call updates only its request notice; the returned job state and counters remain unchanged.
+A rejected call records fixed unconfirmed feedback before the existing read-only refresh, so either a successful or unavailable job view preserves that feedback.
+Notice storage is independent of account filters, tabs, drawer collapse and row lifetime, with the reviewed explicit-dismissal and 50-notice admission rules.
+The component suppresses its late completion updates and rejection-triggered reads after disposal.
+
+The [source-bound evidence](probes/2026-09-12-cancellation-feedback.after.json) records the exact final frontend inputs, commands, raw output hashes and local results.
+All 20 maintained cancellation cases fail against the unchanged drawer, then pass with the correction.
+The original exact-job passing control and the two original failing cancellation probes also pass unchanged against the correction.
+Their five audit peers were explicitly unselected in that focused replay and remain separate open work.
+Earlier red runs are retained separately: the final tests strengthen the replacement-row fixture and make the missing-notice assertion explicit, without loosening any outcome, deadline or capacity assertion.
+
+Six independent private controls remove pending admission, filter retention, immutable reply attribution, notice capacity, disposal protection or the distinction between acknowledgement and a terminal result.
+They produce eight intended assertion failures: duplicate requests, lost feedback, a notice left pending under the wrong reply identity, capacity admission, an extra read after disposal, and two fabricated-cancelled outcomes.
+Each control preserves the final maintained tests and changes only its named production guard; unselected tests are explicitly counted.
+No control times out or fails during test setup.
+
+The final focused run passes all 76 cancellation, drawer, retained-record and recovery tests without a skip.
+Svelte checking reports zero errors and zero warnings, and the production build passes.
+All final command inputs remain unchanged during execution and match the recorded source hashes.
+These component checks provide no native Wails, platform, accessibility, Swift or full-repository acceptance evidence.
+Independent implementation and current-base range review, the full applicable frontend gates and all five PR/master jobs are still required before delivery; UI-10 and the valuable-data hold remain open.
