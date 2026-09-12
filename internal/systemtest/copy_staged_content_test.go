@@ -296,12 +296,14 @@ func copyStagedContent(t *testing.T, h *Harness, mode string) {
 }
 
 func TestCopyStagedContentMock(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"control", "same_size_corruption", "permuted_segments", "missing_with_duplicate", "resegmented_control"} {
 		t.Run(mode, func(t *testing.T) { copyStagedContent(t, findMockHarness(t), mode) })
 	}
 }
 
 func TestCopyStagedContentRealSwift(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"control", "same_size_corruption", "permuted_segments", "missing_with_duplicate", "resegmented_control"} {
 		t.Run(mode, func(t *testing.T) { copyStagedContent(t, New(t), mode) })
 	}
@@ -479,12 +481,14 @@ func copyStagedContentFault(t *testing.T, h *Harness, mode string) {
 }
 
 func TestCopyStagedContentFaultMock(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"cancel_final_read", "record_refusal", "terminal_refusal"} {
 		t.Run(mode, func(t *testing.T) { copyStagedContentFault(t, findMockHarness(t), mode) })
 	}
 }
 
 func TestCopyStagedContentFaultRealSwift(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"cancel_final_read", "record_refusal", "terminal_refusal"} {
 		t.Run(mode, func(t *testing.T) { copyStagedContentFault(t, New(t), mode) })
 	}

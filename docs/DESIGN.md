@@ -5364,6 +5364,8 @@ This is a focused test seam; the wider P02/P03 fault and HTTP barrier harness re
 
 The owner requires a successful pipeline on every PR before merge and verification of master after merge.
 The [new transfer-test schedule](experiments/2026-09-12-transfer-test-schedule.md) must preserve those gates when adding the child-lifetime and staged-content groups: review their isolation, admit only the eight independent outer groups to the existing three-slot schedule, then reconcile the complete unchanged test inventory and actual producer exit before protected delivery.
+The eight-call implementation passed a complete race run with all 4,342 named passes and the same optional skip, with only the two existing generated test names requiring explicit inventory mapping.
+The recorded local schedule evidence preserves Go's terminal-report ordering limits; independent implementation/range review and all five PR/resulting-master jobs remain required.
 Keep each group's cases sequential, its fixture and process cleanup owned, and every assertion, per-operation deadline and package/job budget unchanged.
 The CI protection slice removes the coverage bot's direct master pushes, adds an aggregate gate that rejects any required job without success, and removes the obsolete checks that skipped absent application code.
 The reviewed [master ruleset](../.github/master-ruleset.json) requires the latest base, binds all five checks to GitHub Actions, and allows no bypass actors.

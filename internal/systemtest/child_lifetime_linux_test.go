@@ -302,10 +302,12 @@ func lifetimeSnapshot(t *testing.T, root string) map[string]lifetimeFile {
 }
 
 func TestChildLifetimeMock(t *testing.T) {
+	t.Parallel()
 	childLifetimeCases(t, findMockHarness)
 }
 
 func TestChildLifetimeRealSwift(t *testing.T) {
+	t.Parallel()
 	childLifetimeCases(t, New)
 }
 
