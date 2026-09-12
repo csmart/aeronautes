@@ -107,6 +107,18 @@ The earlier real Swift mapping result remains valid for its recorded source; it 
 Focused `go vet` on both changed packages and formatting checks pass.
 Final-base package verification, full-suite reconciliation, independent review and hosted delivery remain separate gates.
 
+## Controller outcome reporting
+
+The independent review's fast no-fixture run exposed a separate reporting defect in the reexec wrapper.
+At `14ef1d922e5fc660`, removing the Swift auth URL made every inner provider case skip, but each outer case still reported pass because a skipped Go test exits zero.
+The retained `no_fixture_before` run therefore has five falsely passed outer leaves and supplies no Swift evidence.
+The wrapper now requires an explicit outcome file written after the inner case's cleanup, propagates skip to its own test, and rejects a missing or unexpected outcome.
+A nonzero child exit remains an outer failure.
+The corrected no-fixture run has exactly five skipped leaves and no passed or failed leaves.
+A fresh mock plus executor run still passes seventeen leaves, and the repeated Pdeathsig control passes completion while failing both parent-kill leaves at their intended signal/liveness checks.
+These outcomes cover actual pass, skip and failure propagation with the final wrapper.
+The reporting correction changes only the dedicated system test and its evidence, with the production source unchanged.
+
 ## Remaining limits
 
 The final causal evidence here is a native Linux amd64 process test against an owned HTTP fixture; the earlier maintained runs also used real Swift, but the final harness still needs that provider rerun.
