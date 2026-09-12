@@ -5411,6 +5411,10 @@ The [new transfer-test schedule](experiments/2026-09-12-transfer-test-schedule.m
 The eight-call implementation passed a complete race run with all 4,342 named passes and the same optional skip, with only the two existing generated test names requiring explicit inventory mapping.
 The recorded local schedule evidence preserves Go's terminal-report ordering limits; independent implementation/range review and all five PR/resulting-master jobs remain required.
 Keep each group's cases sequential, its fixture and process cleanup owned, and every assertion, per-operation deadline and package/job budget unchanged.
+The next [serial-group scheduling contract](experiments/2026-09-12-remaining-test-schedule.md) addresses the small remaining master package margin without changing those limits.
+First review the nine groups' private-resource isolation and preserved failed/passing baselines; then add only their outer parallel calls, keeping both self-reexecuting child branches before the new calls and excluding process-environment-dependent groups.
+Reconcile the complete actual combined delivery source under the existing three-slot policy, review the measured implementation and final range, and record both PR and resulting-master package/job margins before delivery.
+This proposed schedule has no candidate run yet and grants no new scenario, audit, native-platform or valuable-data acceptance.
 The CI protection slice removes the coverage bot's direct master pushes, adds an aggregate gate that rejects any required job without success, and removes the obsolete checks that skipped absent application code.
 The reviewed [master ruleset](../.github/master-ruleset.json) requires the latest base, binds all five checks to GitHub Actions, and allows no bypass actors.
 Apply and read back that configuration after the new gate has passed on the PR; a repository file alone does not change GitHub settings.
