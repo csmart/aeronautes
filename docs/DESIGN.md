@@ -5347,6 +5347,19 @@ The [cancellation request feedback](experiments/2026-09-12-cancellation-feedback
 Duplicate admission, bounded notice retention, explicit retry/dismissal and disposal guards have independent omission controls, while backend terminal states and counters remain authoritative.
 Combined-source verification and protected delivery remain pending; audit-read errors and ownership, settings, bookmark failures and the wider UI-10/P28 acceptance are still open.
 
+The bounded [audit query contract](experiments/2026-09-12-audit-query-state.md) follows the reviewed cancellation correction.
+Its unchanged-source probe uses a legal full 50-row Search before overlapping More requests and also reproduces stale filter replies, a Recent overwrite and premature empty-state text.
+
+1. Review the concrete read contract and preserved before failures before changing audit production code.
+2. Give selected Search and the bounded Recent summary separate response ownership and loading, empty, unavailable and stale states.
+   Capture exact literal filters, generation and cursor; filter edits synchronously retire old intent, and only the current owner may publish success, failure or loading completion.
+   Guard concurrent More requests and require bounded descending unique IDs with strict cursor progress; preserve prior attributable rows and offer explicit read-only retry without silently repairing invalid pages.
+3. Correct the audit drawer projection and its last-loaded Recent count with the state change, preserving every existing mutation/connection await and result.
+   Prove legal paging, late success/failure/finally, independent Recent/query completion, stale zero, safe errors and mutation-follow-up failures through dedicated state and mounted tests, with only three exact Recent-cache assertion updates in the existing mutation tests.
+4. Preserve before/after evidence and independent omitted-guard controls, obtain local review, then renew current-base verification and require all five PR and resulting-master checks before delivery.
+
+All-account query scope remains explicit; the promised bookmark filter and broader UI-09 diagnostics, UI-10 settings/bookmarks, P24 history bounds, native acceptance and the valuable-data hold remain open.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
