@@ -80,7 +80,9 @@ func TestDestinationChunkSettings(t *testing.T) {
 								t.Fatal(err)
 							}
 							want := rclone.Options{ChunkSize: tc.want, Transfers: 7, Checkers: 9, TPSLimit: 11, BWLimit: "10M"}
-							if job.State != "complete" || len(*seen) != 1 || (*seen)[0] != want || recorded.options() != want {
+							wantEngine := want
+							wantEngine.NoGzipEncoding = operation == "copy"
+							if job.State != "complete" || len(*seen) != 1 || (*seen)[0] != wantEngine || recorded.options() != want {
 								t.Errorf("effective settings differ: state=%s recorded=%+v engine=%+v want=%+v", job.State, recorded, *seen, want)
 							}
 						}
