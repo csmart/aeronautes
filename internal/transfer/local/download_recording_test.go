@@ -211,7 +211,7 @@ func TestDownloadAdmittedTemporaryCollision(t *testing.T) {
 }
 
 func TestDownloadRejectsConstructedIdentity(t *testing.T) {
-	for _, fault := range []string{"prefix", "relative", "dot", "empty", "control", "backslash", "bytes", "duplicate", "directory_size", "directory_name", "case_fold", "directory_case_fold", "file_parent", "file_parent_nonadjacent"} {
+	for _, fault := range []string{"prefix", "relative", "dot", "empty", "control", "backslash", "bytes", "duplicate", "directory_size", "directory_name", "case_fold", "file_parent", "file_parent_nonadjacent"} {
 		t.Run(fault, func(t *testing.T) {
 			root := t.TempDir()
 			item := DownloadItem{Name: "scope/selected", RelPath: "selected", Size: 5, Route: "native"}
@@ -241,9 +241,10 @@ func TestDownloadRejectsConstructedIdentity(t *testing.T) {
 			}
 			switch fault {
 			case "case_fold":
+				// Two directories that differ only by case are an alias
+				// the executor admits (TestDownloadDirAliasesDirect); two
+				// files are a collision it refuses.
 				items = append(items, DownloadItem{Name: "scope/Selected", RelPath: "Selected", Size: 5})
-			case "directory_case_fold":
-				items = []DownloadItem{{Name: "scope/selected/", RelPath: "selected", Dir: true}, {Name: "scope/Selected/", RelPath: "Selected", Dir: true}}
 			case "file_parent", "file_parent_nonadjacent":
 				if fault == "file_parent_nonadjacent" {
 					items = append(items, DownloadItem{Name: "scope/selected.txt", RelPath: "selected.txt", Size: 5})

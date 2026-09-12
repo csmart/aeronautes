@@ -214,9 +214,15 @@ func PreflightDownloadInto(ctx context.Context, src *swiftcontrol.Session, conta
 		}
 		rel := object.Name[len(prefix):]
 		names = append(names, rel)
-		lower, caseless := lowercaseIdentity(rel), caselessIdentity(rel)
-		byLower[lower] = append(byLower[lower], rel)
-		byCaseless[caseless] = append(byCaseless[caseless], rel)
+		// Files only: two directories that differ only by spelling are
+		// not a collision but an alias, admitted like the same two
+		// directories implied by files; a file against a directory is
+		// the ancestor rule's case below.
+		if rel != "" && !strings.HasSuffix(rel, "/") {
+			lower, caseless := lowercaseIdentity(rel), caselessIdentity(rel)
+			byLower[lower] = append(byLower[lower], rel)
+			byCaseless[caseless] = append(byCaseless[caseless], rel)
+		}
 
 		problem := func(kind, detail string) {
 			report.Problems = append(report.Problems, Problem{Name: object.Name, Kind: kind, Detail: detail, Reject: true})
@@ -301,6 +307,32 @@ func PreflightDownloadInto(ctx context.Context, src *swiftcontrol.Session, conta
 		})
 	}
 
+	// Directory aliases: a planned directory identity with more than one
+	// spelling, from markers or from the ancestors of files. The pinned
+	// engine keys directory entries by their NFC form everywhere and by
+	// their lowercase form on case-insensitive hosts and ignores the
+	// second spelling as a duplicate while exiting successfully, so files
+	// beneath an aliased directory go natively on every platform; the
+	// target filesystem then decides, as it does for rsync and scp.
+	spellingsByLower, spellingsByCaseless := map[string]map[string]bool{}, map[string]map[string]bool{}
+	for _, name := range names {
+		for _, dir := range plannedDirectories(name) {
+			noteSpelling(spellingsByLower, lowercaseIdentity(dir), dir)
+			noteSpelling(spellingsByCaseless, caselessIdentity(dir), dir)
+		}
+	}
+	for i, item := range candidates {
+		if item.Dir {
+			continue
+		}
+		for _, dir := range plannedDirectories(item.Name[len(prefix):]) {
+			if len(spellingsByLower[lowercaseIdentity(dir)]) > 1 || len(spellingsByCaseless[caselessIdentity(dir)]) > 1 {
+				candidates[i].Route = "native"
+				break
+			}
+		}
+	}
+
 	// File-vs-prefix conflicts: a real ancestor lookup, not sorted
 	// adjacency — "foo", "foo.txt", "foo/child" sorts foo.txt between
 	// the conflicting pair and adjacency misses it (follow-up review).
@@ -373,6 +405,29 @@ func PreflightDownloadInto(ctx context.Context, src *swiftcontrol.Session, conta
 		report.TotalBytes += item.Size
 	}
 	return report, nil
+}
+
+// plannedDirectories lists every directory a relative name plans, the
+// marker's own directory included, shallowest first.
+func plannedDirectories(rel string) []string {
+	trimmed := strings.TrimSuffix(rel, "/")
+	var dirs []string
+	for i, c := range trimmed {
+		if c == '/' {
+			dirs = append(dirs, trimmed[:i])
+		}
+	}
+	if rel != "" && strings.HasSuffix(rel, "/") {
+		dirs = append(dirs, trimmed)
+	}
+	return dirs
+}
+
+func noteSpelling(spellings map[string]map[string]bool, identity, spelling string) {
+	if spellings[identity] == nil {
+		spellings[identity] = map[string]bool{}
+	}
+	spellings[identity][spelling] = true
 }
 
 func hasDotSegment(rel string) bool {
