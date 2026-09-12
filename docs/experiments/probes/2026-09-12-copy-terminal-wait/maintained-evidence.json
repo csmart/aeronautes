@@ -1,0 +1,99 @@
+{
+  "kind": "derived maintained-test result; normalized argv replaces only the pinned Go binary path",
+  "parent_commit": "6b4e5e50a199293f7497246a3cd221faf6a60738",
+  "test_path": "internal/systemtest/copy_item_records_test.go",
+  "test_sha256": "485a3fd3c4d6526baf485f66f2d27197c6c8bb2098cacce2b64a7cb4fccf5184",
+  "exact_source_change": "Only the stated why-comment and h.AwaitJob(id) were added before the unchanged copyCompletionAwaitPins(t, h). Removing those two lines restores the complete original file byte-for-byte.",
+  "normalized_argv": [
+    "<go-1.27.1>",
+    "test",
+    "-race",
+    "-count=1",
+    "-mod=readonly",
+    "-json",
+    "-parallel=1",
+    "-p=2",
+    "-timeout=150s",
+    "./internal/systemtest",
+    "-run",
+    "^TestCopyItemRecordsMock$"
+  ],
+  "go_exit": 0,
+  "timed_out": false,
+  "process_seconds": 26.48680279729888,
+  "package_seconds": 22.658,
+  "package_count": 1,
+  "top_level_tests": 1,
+  "named_tests": 5,
+  "leaf_tests": 4,
+  "skips": 0,
+  "event_count": 587,
+  "all_lifecycles_valid": true,
+  "terminals": {
+    "TestCopyItemRecordsMock/failed_0": {
+      "action": "pass",
+      "seconds": 1.63
+    },
+    "TestCopyItemRecordsMock/failed_1": {
+      "action": "pass",
+      "seconds": 1.62
+    },
+    "TestCopyItemRecordsMock/failed_201": {
+      "action": "pass",
+      "seconds": 6.58
+    },
+    "TestCopyItemRecordsMock/failed_401": {
+      "action": "pass",
+      "seconds": 11.81
+    },
+    "TestCopyItemRecordsMock": {
+      "action": "pass",
+      "seconds": 21.64
+    }
+  },
+  "original_refusal_observations": {
+    "TestCopyItemRecordsMock/failed_0": {
+      "failed_names": 0,
+      "unique_refused_source_gets": 0,
+      "every_refusal_once": true
+    },
+    "TestCopyItemRecordsMock/failed_1": {
+      "failed_names": 1,
+      "unique_refused_source_gets": 1,
+      "every_refusal_once": true
+    },
+    "TestCopyItemRecordsMock/failed_201": {
+      "failed_names": 201,
+      "unique_refused_source_gets": 201,
+      "every_refusal_once": true
+    },
+    "TestCopyItemRecordsMock/failed_401": {
+      "failed_names": 401,
+      "unique_refused_source_gets": 401,
+      "every_refusal_once": true
+    }
+  },
+  "source_inputs_unchanged": 785,
+  "raw_hashes": {
+    "command.json": "9baefbb404b65bfa35a8f5d1bb404258e66ec7dd85c358707eb7f637b560391e",
+    "result.json": "c7318113d19100d5e6952bd3089172efebb534b0a3633856baf2292be3de16f5",
+    "stdout.jsonl": "8351ee76fd25393fd41d34f0d243585041c5ddd6428cfc70468d7b79896e397b",
+    "stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source.tar": "028fb33970815c1ebb8cf72b6301509bf8a57b16c31daa080cab04e1a1daf04b",
+    "tracked-diff.stdout": "a750612aeddf1aa092854ad02929a972892c404c32110bfeadffd2fbc43907b8",
+    "copy_item_records_test.go.txt": "485a3fd3c4d6526baf485f66f2d27197c6c8bb2098cacce2b64a7cb4fccf5184"
+  },
+  "producer_sha256": "936c1a60dd2e754e632752fb796f8395ab5527a2f0f7756ce61b6aca5b9b595f",
+  "assessor_sha256": "50dd806f7fe83faccb4e0c986e9c68d7e7b85333de22968a6a98b16cf5063985",
+  "binary_sha256": {
+    "go": "30969f97169d7f43fe6a085873d75613adc21e30818a8c61d95bd27275df4624",
+    "rclone": "9700aa1273ac73d6d0833c43ba63fe830516422cb131960b8c1a24ced789cba0"
+  },
+  "stderr_bytes": 0,
+  "limits": [
+    "Linux owned loopback mocks only; no Swift, full-suite contention, cancellation or other platform execution.",
+    "The unchanged held-body and retained-pin source-bound controls remain the separately recorded earlier executions, not fresh corrected-file executions.",
+    "The shared scenario also serves real Swift, whose current-base execution remains the delivery owner gate.",
+    "Historical intermittent remains unclassified; no production change or valuable-data clearance."
+  ]
+}

@@ -108,3 +108,24 @@ Reuse the sealed held-body and retained-pin controls according to their actual s
 Obtain independent review of the test correction before integration, followed by current-base verification and all five protected PR/master checks under the delivery owner.
 Do not change production, the shared completion helper, persistence-failure tests, workflow budgets or an audit disposition in this slice.
 No new product contract, historical-issue closure, DS-04 closure or valuable-data clearance is implied.
+
+## Maintained correction and evidence
+
+After independent approval of the preceding contract, `copyItemRecordsRun` now calls the existing `h.AwaitJob(id)` before its release check.
+The only Go additions are that call and a why-comment; removing those two lines restores the complete original file byte for byte.
+All original case sizes and assertions remain, and the shared completion helper and production code are unchanged.
+The corrected file SHA256 is `485a3fd3c4d6526baf485f66f2d27197c6c8bb2098cacce2b64a7cb4fccf5184`.
+
+The [maintained evidence twin](probes/2026-09-12-copy-terminal-wait/maintained-evidence.json) binds the actual corrected-file execution to parent `6b4e5e50a199293f7497246a3cd221faf6a60738`, its captured two-line diff and all 785 unchanged producer inputs.
+The command uses the same Go flags and pinned binaries as above, with selector `^TestCopyItemRecordsMock$`, a 150-second Go limit and 240-second outer containment.
+It exits 0 in 26.487 seconds; the package passes in 22.658 seconds.
+All 587 events form complete valid lifecycles: one package, one top-level test, five named tests and four leaves pass, with no skips and empty stderr.
+The four leaf times are 1.63, 1.62, 6.58 and 11.81 seconds for 0, 1, 201 and 401 refused names respectively.
+The unchanged per-name source-refusal observations also reconcile, and formatting and diff checks pass.
+No setup, producer, parser or test failure occurs in this maintained run; the unsuccessful before-proof attempts remain recorded separately above.
+
+The held-body and retained-pin controls are reused from the exact earlier immutable-source proof, whose production and shared helper are unchanged.
+They are not relabelled as fresh corrected-file executions.
+No full-suite load, real Swift, cancellation or other-platform result is inferred from these four mock leaves.
+The same scenario also serves the real-Swift variant, so its current-base integration remains a delivery gate for the owner.
+Independent implementation review and protected PR/master delivery are still required; the historical failure remains unclassified and the valuable-data hold stays in place.

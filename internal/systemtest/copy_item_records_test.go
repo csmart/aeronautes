@@ -118,6 +118,8 @@ func copyItemRecordsRun(t *testing.T, h *Harness, count int) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Copy work can outlast the separate binding-release wait.
+	h.AwaitJob(id)
 	copyCompletionAwaitPins(t, h)
 	saved := copyCompletionRead(t, h.database, id)
 	visible, err := h.Jobs.Get(t.Context(), id)
