@@ -76,3 +76,48 @@ The full race suite with the real fixture reconciled on the range head.
 For DESIGN, after the deletion request authority paragraph: the [download cancellation correction](experiments/2026-09-12-download-cancellation.md) delivered in PRNN gives every staged-but-unplaced item one record after a cancel, failed with an unresolved effect at the commit stage and the cancelled code beside its retained staging location, whether the placement loop or the placement itself sees the cancel; a native item interrupted while its body is read records no effect at its target once its temporary is removed, and unresolved with a cleanup issue when it cannot be; a cancelled download ends cancelled when nothing was placed and no failure other than a cancellation occurred, and partial otherwise, with the cancellation and the retained stage named in either case; removal of the retained stage on a graceful cancel, cancellation during stage cleanup and directory materialisation, child quiescence, parent death and the native platforms remain open under DS-07 and SEC-06.
 For the DS-07 disposition in the data-safety register, before its closing sentence: PRNN then records one truthful outcome per staged-but-unplaced item after a cancel at every cancel point, classifies a native item interrupted mid-body as cancelled with no local residue, and ends a cancelled job cancelled when nothing was placed and partial when anything was, on both providers with a second-process reopen; and the closing sentence names what stays untouched: cancellation during stage cleanup and directory materialisation, removal of the retained stage on a graceful cancel, child quiescence and the native parent-kill evidence on all six targets.
 For the DS-07 / SEC-06 remediation-plan row: PRNN establishes cancellation at native reads and placements with exact partial outcomes on Linux, one record per unplaced staged item, a cancelled classification for an interrupted native body and a cancelled state only when nothing was placed; P20/P30 must still establish cancellation during stage cleanup and directory materialisation and child quiescence before recovery.
+
+## Correction delivered
+
+The correction is one commit on top of the plan, `record every unplaced download item after a cancel`.
+The placement loop in `internal/transfer/local/download_execute.go` gives every staged-but-unplaced item the record a cancel seen inside `placeDownloaded` already gave, through one helper both use: failed, unresolved at the commit stage, cancelled, with the label place and the staging location recorded at admission.
+`finishNativeDownload` in `download_close.go` treats a read ended by the cancel as an interrupted body: the record has no effect at the target once the temporary is removed, and unresolved with a cleanup issue when the temporary is no longer the file the executor created.
+Every recorded failure now carries whether it is the cancellation itself, set from the diagnostic by both local executors, and `runLocal` in `internal/app/localtransferservice.go` ends a cancelled run cancelled when nothing was copied and every failure is the cancellation, partial when anything was copied or any other failure occurred, with the message naming the interrupted item in both cases; the retained stage is appended as before.
+`WireDownloadPlacementBoundary` beside the stage boundary lets an owned fixture act after each item outcome, which is between two placements on the engine route; it is composition in `internal/app/wiring.go`, excluded from the bridge like the stage boundary.
+Nothing else changed: every existing context check, the retained stage, its cleanup and the root-authority effects are as they were.
+
+## After evidence
+
+The archived probes ran again on the corrected head and the maintained tests assert the same facts on both providers.
+
+| Case | State and message | Item records | Totals | Local delta |
+| --- | --- | --- | --- | --- |
+| native GET held | cancelled; `transfer failures (first: scope/n／native.bin: Get …: read bookmark generation: context canceled)` | native item failed, not_attempted, source_read, cancelled; both engine items not_attempted, engine, cancelled | 1 failed, 0 unresolved, 3 with problems | none |
+| native body interrupted | cancelled; `transfer failures (first: scope/n／native.bin: context canceled)` | native item failed, not_attempted, source_read, cancelled with its temporary removed; engine item not_attempted | 1 failed, 0 unresolved, 2 with problems | none |
+| stage boundary | cancelled; `transfer failures (first: scope/a.bin: context canceled); download stage cleanup: 2 issues (first: rmdir …/nested: directory not empty)` | both items failed, unresolved, commit, cancelled beside their staging locations | 2 failed, 2 unresolved, 2 with problems | the stage with a.bin, nested and nested/b.bin |
+| placement boundary | partial; `transfer failures (first: scope/b.bin: context canceled); context canceled; download stage cleanup: 1 issues (first: rmdir …: directory not empty)` | a.bin copied and verified; b.bin failed, unresolved, commit, cancelled beside its staging location | 1 failed, 1 unresolved, 1 with problems | a.bin placed; the stage with b.bin |
+| queued cancel | cancelled with an empty message | no item record | all zero | none; the slot-owning job completes |
+
+At the executor the loop check and the placement give the same record, the report names the unplaced item once as a cancellation, and the interrupted native body leaves no temporary behind, while a temporary replaced by a directory during the interruption is retained and reported with the effect unresolved.
+Every case ends with a second-process reopen that reads the same durable job, item and audit records, and no case writes to either account.
+
+## Deliberately broken controls
+
+Two overlays on the implementation head were run against the executor cancellation tests and the system cancellation tests on both providers, with the head passing all twenty-six cases.
+The first control makes the placement loop and the placement ignore the cancel; it fails exactly the loop and placement record tests, the after-child and between-placements boundaries, and the stage-boundary and placement-boundary cases on both providers, where a later placement is observed, and passes every native and queued case.
+The second control records the item just placed as unplaced after a cancel; it fails exactly the loop record test, the between-placements boundary and the placement-boundary case on both providers, where a placed item's record must stay copied and verified, and passes every other case.
+The twin lists each control's failing and passing cases.
+
+## Verification
+
+Static: gofmt clean; go vet on the local, app and systemtest packages; go build ./...; git diff --check clean.
+Packages: the local transfer, app, jobs and systemtest packages pass with the change on both providers, including every earlier interruption, stage and root-authority case.
+Full race suite with the real Swift fixture on the range head: on the implementation head, 4,139 distinct names, 3,834 leaves (3,833 passing, 0 failing, 1 skipped: the expected TestRcloneMatrix matrix skip), 22 test packages passing and none failing, run 2026-09-12T08:32:00Z to 08:40:04Z, stream 7,607,932 bytes sha256 a4629aeac43e9036a4ecaecfd11d602ebd7ad03224275fb60446e6137fb1df8a, retained with its reconciled text and checksums in the private evidence root; the record commit that follows changes documents only.
+
+## Remaining limits
+
+Whether a graceful cancel should remove the retained stage is an open operator decision; this slice keeps the stage exactly as before and names it in the message.
+A cancel during stage cleanup or during directory materialisation has no seam and is not observed here; the parent open before a native temporary is created still records unresolved at the staging stage, which may over-report a created parent directory.
+Child quiescence after the cancel grace period and parent death on Linux are the next slice, with a real engine child held at a gateway barrier.
+Every platform other than Linux amd64, the native parent-kill evidence on all six targets and the Windows and macOS lifetime solutions belong to GitHub issue 103.
+DS-07, SEC-06, P20, P30 and the valuable-data release hold remain blocking.
