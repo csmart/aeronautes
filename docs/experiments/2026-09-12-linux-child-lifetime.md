@@ -94,7 +94,7 @@ Its Pdeathsig control failed the ordinary parent-kill case with SIGPIPE and left
 Its reexec selector initially allowed the `parent_kill` suffix to select `stopped_parent_kill` too; that raw run is retained and not used as an exact one-controller-per-leaf inventory.
 The maintained selector anchors each slash-separated test component, and the exact maintained controls below use the corrected selector.
 
-On the final maintained source, the mock plus executor run passed seventeen leaves with the race detector.
+On the maintained subreaper source, the mock plus executor run passed seventeen leaves with the race detector.
 Removing only Pdeathsig left completion green, made the running child fail with SIGPIPE instead of SIGKILL, and left the stopped child alive until explicit cleanup.
 Returning at the existing ten-second escalation deadline without killing and reaping the child left completion green and failed `terminal job left its child alive` while the service parent was still alive.
 Neither control shortened the production grace or any assertion deadline, and neither reported a cleanup or race failure.
@@ -102,8 +102,8 @@ Restoring the old download result mapping is a separate classification control, 
 It fails the three positive executor cases and both mock service cancellation cases, while the nine exclusion cases and completion pass.
 Exact commands, statuses, sources and stream hashes are recorded in the evidence twin.
 
-The final maintained subreaper harness still requires its real Swift rerun and causal controls in the coordinator's exclusive fixture slot before publication.
 The earlier real Swift mapping result remains valid for its recorded source; it is not presented as the final process-signal proof.
+The final provider run followed the outcome-reporting correction below.
 Focused `go vet` on both changed packages and formatting checks pass.
 Final-base package verification, full-suite reconciliation, independent review and hosted delivery remain separate gates.
 
@@ -119,9 +119,36 @@ A fresh mock plus executor run still passes seventeen leaves, and the repeated P
 These outcomes cover actual pass, skip and failure propagation with the final wrapper.
 The reporting correction changes only the dedicated system test and its evidence, with the production source unchanged.
 
+## Final two-account Swift proof
+
+The final source at `00eff59cb944eb9bcc62b7a1be98394340347a2f` ran in the coordinator's exclusive Swift fixture slot with both accounts required.
+The selected engine was rclone v1.74.3 with SHA-256 `9700aa1273ac73d6d0833c43ba63fe830516422cb131960b8c1a24ced789cba0` on Linux x86_64, kernel `7.1.8-200.fc44.x86_64`.
+The source hashes were unchanged throughout all four commands: system test `0afaa447…`, executor table `0c2bdb41…` and production boundary `be807668…`; the twin contains the full hashes and actual commands.
+The normal run executed all five selected cases with the race detector and no skips.
+
+| Run | Go exit | Passed leaves | Failed leaves | Skipped leaves | Elapsed |
+| --- | --- | --- | --- | --- | --- |
+| final Swift | 0 | 5 | 0 | 0 | 30.556 s |
+| remove Pdeathsig | 1 | 1 | 2 | 0 | 8.674 s |
+| omit kill and reap at the existing grace deadline | 1 | 1 | 1 | 0 | 17.832 s |
+| restore old cancellation mapping | 1 | 1 | 2 | 0 | 22.882 s |
+
+Completion placed and verified all 311,296 bytes, and graceful cancellation placed nothing and removed the engine partial.
+Forced cancellation retained exactly the 65,536-byte partial and its stage, reported the retained path, and ended cancelled with one failed, unresolved engine item carrying the cancelled diagnostic.
+Both parent-kill cases produced an adopted-child SIGKILL status before recovery and retained the exact partial and stage.
+The next process acquired the released instance lock and changed the running job to interrupted failure exactly once, without fabricating execution or verification for the admitted item.
+All cases retained the sentinel, preserved both accounts' snapshots, issued no remote writes and left the post-child filesystem unchanged through recovery.
+
+The Pdeathsig control's running child died from SIGPIPE, so it failed the required SIGKILL assertion; its stopped child survived until the controller's explicit cleanup.
+The omitted-kill control failed because the job was terminal while its child remained alive, with the service parent intentionally kept alive.
+The old-mapping control failed both cancellation record assertions while completion remained green.
+The actual Go exits are retained as failures, and no control reported a race or owned-process cleanup failure.
+Together with the final seventeen-leaf mock/executor run, this supplies twenty-two passing scoped cases on the final test and production sources.
+The coordinator's combined final-base suite, independent range review and all five PR and resulting-master jobs remain required before delivery.
+
 ## Remaining limits
 
-The final causal evidence here is a native Linux amd64 process test against an owned HTTP fixture; the earlier maintained runs also used real Swift, but the final harness still needs that provider rerun.
+The final causal evidence covers native Linux amd64 direct-child processes against both the owned HTTP fixture and a local two-account Swift fixture.
 This is not a production desktop journey.
 It proves the lifetime of the observed direct engine, not arbitrary detached grandchildren, a cross-platform shutdown coordinator or OS keychain release.
 The parent-kill record retains the admitted staging location; it does not invent an execution observation for the partially written engine temporary.

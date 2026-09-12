@@ -1051,15 +1051,411 @@
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "overlay_inputs": {},
       "overlay_inputs_unchanged": true
+    },
+    {
+      "name": "final_swift",
+      "command": [
+        "/home/csmart/code/.aeronautes-work/go-mod/golang.org/toolchain@v0.0.1-go1.27.1.linux-amd64/bin/go",
+        "test",
+        "-race",
+        "-count=1",
+        "-timeout=3m",
+        "-json",
+        "-run",
+        "^TestChildLifetimeRealSwift$",
+        "./internal/systemtest"
+      ],
+      "returncode": 0,
+      "elapsed_seconds": 30.556,
+      "head": "00eff59cb944eb9bcc62b7a1be98394340347a2f",
+      "sources": {
+        "internal/systemtest/child_lifetime_linux_test.go": "0afaa447aa83daf2a125ddd585e1aca28f47791d8b54f415313cb7839b858a36",
+        "internal/transfer/local/download_engine_cancellation_linux_test.go": "0c2bdb41c7c1e15c965662b36fd92fb8ce2d85340c33f134c34265749319c96d",
+        "internal/transfer/local/download_execute.go": "be80766893a74ffe93e278a599d31192984bef3385a5af44e86e3c46a2aaa7f6"
+      },
+      "sources_unchanged": true,
+      "fixture_auth_configured": true,
+      "leaf_pass": [
+        "TestChildLifetimeRealSwift/complete",
+        "TestChildLifetimeRealSwift/cancel",
+        "TestChildLifetimeRealSwift/escalate",
+        "TestChildLifetimeRealSwift/parent_kill",
+        "TestChildLifetimeRealSwift/stopped_child_parent_kill"
+      ],
+      "leaf_fail": [],
+      "leaf_skip": [],
+      "raw_stream_sha256": "032bbb71ab328c50a47cf373f05773129a8083527bedc978436f6c601ee28a23",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "overlay_inputs": {},
+      "overlay_inputs_unchanged": true
+    },
+    {
+      "name": "final_swift_control_no_pdeath",
+      "command": [
+        "/home/csmart/code/.aeronautes-work/go-mod/golang.org/toolchain@v0.0.1-go1.27.1.linux-amd64/bin/go",
+        "test",
+        "-overlay",
+        "/home/csmart/code/.aeronautes-work/20260912-child-lifetime/control_sources/no_pdeath.json",
+        "-race",
+        "-count=1",
+        "-timeout=3m",
+        "-json",
+        "-run",
+        "^TestChildLifetimeRealSwift$/(complete|parent_kill|stopped_child_parent_kill)$",
+        "./internal/systemtest"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 8.674,
+      "head": "00eff59cb944eb9bcc62b7a1be98394340347a2f",
+      "sources": {
+        "internal/systemtest/child_lifetime_linux_test.go": "0afaa447aa83daf2a125ddd585e1aca28f47791d8b54f415313cb7839b858a36",
+        "internal/transfer/local/download_engine_cancellation_linux_test.go": "0c2bdb41c7c1e15c965662b36fd92fb8ce2d85340c33f134c34265749319c96d",
+        "internal/transfer/local/download_execute.go": "be80766893a74ffe93e278a599d31192984bef3385a5af44e86e3c46a2aaa7f6"
+      },
+      "sources_unchanged": true,
+      "fixture_auth_configured": true,
+      "leaf_pass": [
+        "TestChildLifetimeRealSwift/complete"
+      ],
+      "leaf_fail": [
+        "TestChildLifetimeRealSwift/parent_kill",
+        "TestChildLifetimeRealSwift/stopped_child_parent_kill"
+      ],
+      "leaf_skip": [],
+      "raw_stream_sha256": "75955d8767218eafa3b57f3d9695f695771fcd8b6204f9c55a21d82567bac5ca",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "overlay_inputs": {
+        "/home/csmart/code/worktrees/aeronautes/child_lifetime/internal/transfer/rclone/childproc_linux.go": {
+          "replacement": "/home/csmart/code/.aeronautes-work/20260912-child-lifetime/control_sources/no_pdeath.go",
+          "sha256": "b04af3568f936f0dbc84e169f8e3ce63ad42ab0ae0a7d3de7b5a9d39d95ee2f5"
+        }
+      },
+      "overlay_inputs_unchanged": true
+    },
+    {
+      "name": "final_swift_control_no_reap",
+      "command": [
+        "/home/csmart/code/.aeronautes-work/go-mod/golang.org/toolchain@v0.0.1-go1.27.1.linux-amd64/bin/go",
+        "test",
+        "-overlay",
+        "/home/csmart/code/.aeronautes-work/20260912-child-lifetime/control_sources/no_reap.json",
+        "-race",
+        "-count=1",
+        "-timeout=3m",
+        "-json",
+        "-run",
+        "^TestChildLifetimeRealSwift$/(complete|escalate)$",
+        "./internal/systemtest"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 17.832,
+      "head": "00eff59cb944eb9bcc62b7a1be98394340347a2f",
+      "sources": {
+        "internal/systemtest/child_lifetime_linux_test.go": "0afaa447aa83daf2a125ddd585e1aca28f47791d8b54f415313cb7839b858a36",
+        "internal/transfer/local/download_engine_cancellation_linux_test.go": "0c2bdb41c7c1e15c965662b36fd92fb8ce2d85340c33f134c34265749319c96d",
+        "internal/transfer/local/download_execute.go": "be80766893a74ffe93e278a599d31192984bef3385a5af44e86e3c46a2aaa7f6"
+      },
+      "sources_unchanged": true,
+      "fixture_auth_configured": true,
+      "leaf_pass": [
+        "TestChildLifetimeRealSwift/complete"
+      ],
+      "leaf_fail": [
+        "TestChildLifetimeRealSwift/escalate"
+      ],
+      "leaf_skip": [],
+      "raw_stream_sha256": "2ac557fd1e422fe993724b45afe935279cc7d5a11e1316fd3b9f122a105582e7",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "overlay_inputs": {
+        "/home/csmart/code/worktrees/aeronautes/child_lifetime/internal/transfer/rclone/runner.go": {
+          "replacement": "/home/csmart/code/.aeronautes-work/20260912-child-lifetime/control_sources/no_reap.go",
+          "sha256": "ecf5e04c539dc9feccd9b184e3e9ce1d83859052bfb087cba0b4e2f6505a51b9"
+        }
+      },
+      "overlay_inputs_unchanged": true
+    },
+    {
+      "name": "final_swift_control_old_mapping",
+      "command": [
+        "/home/csmart/code/.aeronautes-work/go-mod/golang.org/toolchain@v0.0.1-go1.27.1.linux-amd64/bin/go",
+        "test",
+        "-overlay",
+        "/home/csmart/code/.aeronautes-work/20260912-child-lifetime/control_sources/old_mapping.json",
+        "-race",
+        "-count=1",
+        "-timeout=3m",
+        "-json",
+        "-run",
+        "^TestChildLifetimeRealSwift$/(complete|cancel|escalate)$",
+        "./internal/systemtest"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 22.882,
+      "head": "00eff59cb944eb9bcc62b7a1be98394340347a2f",
+      "sources": {
+        "internal/systemtest/child_lifetime_linux_test.go": "0afaa447aa83daf2a125ddd585e1aca28f47791d8b54f415313cb7839b858a36",
+        "internal/transfer/local/download_engine_cancellation_linux_test.go": "0c2bdb41c7c1e15c965662b36fd92fb8ce2d85340c33f134c34265749319c96d",
+        "internal/transfer/local/download_execute.go": "be80766893a74ffe93e278a599d31192984bef3385a5af44e86e3c46a2aaa7f6"
+      },
+      "sources_unchanged": true,
+      "fixture_auth_configured": true,
+      "leaf_pass": [
+        "TestChildLifetimeRealSwift/complete"
+      ],
+      "leaf_fail": [
+        "TestChildLifetimeRealSwift/cancel",
+        "TestChildLifetimeRealSwift/escalate"
+      ],
+      "leaf_skip": [],
+      "raw_stream_sha256": "b1145388d5bfb351482780b7cec9dd180169e6b79b3e18c33c5d42dc1d725778",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "overlay_inputs": {
+        "/home/csmart/code/worktrees/aeronautes/child_lifetime/internal/transfer/local/download_execute.go": {
+          "replacement": "/home/csmart/code/.aeronautes-work/20260912-child-lifetime/maintained_before/internal/transfer/local/download_execute.go",
+          "sha256": "191acf2990bdea4fa76965faa86a968ba7f8e999b4ff39e3fa399262510f683e"
+        }
+      },
+      "overlay_inputs_unchanged": true
     }
   ],
   "final_maintained_status": {
     "production": "narrow download result correction implemented",
     "mock": "17 leaves pass; three effective causal controls",
-    "real_swift": "final subreaper harness and controls pending exclusive fixture slot",
-    "delivery": "final-base package/full-suite review and five-job hosted gates remain pending",
+    "real_swift": "Five executed leaves pass with zero skips; all three causal controls retain their intended failures and passing completion controls.",
+    "delivery": "Scoped local proof complete on 00eff59; combined final-base full-suite verification, independent range review and five-job hosted gates remain pending.",
     "platform_hold": "Linux amd64 only; issue 103 and valuable-data hold remain open",
     "controller_reporting": "Explicit outcome file preserves five missing-fixture skips; mock pass and intended failure paths remain effective.",
     "system_test_sha256": "0afaa447aa83daf2a125ddd585e1aca28f47791d8b54f415313cb7839b858a36"
+  },
+  "final_swift_observations": [
+    {
+      "mode": "complete",
+      "elapsed_after_signal": "2.326801824s",
+      "before_job_state": "complete",
+      "after_job_state": "complete",
+      "counters": {
+        "objectsPlanned": 1,
+        "objectsCopied": 1,
+        "objectsVerified": 1,
+        "objectsFailed": 0,
+        "bytesPlanned": 311296,
+        "bytesCopied": 311296,
+        "overwrites": 0,
+        "overwritesRefused": 0,
+        "nativeRouted": 0,
+        "objectsDeleted": 0
+      },
+      "execution": {
+        "Result": "copied",
+        "Effect": "reported_applied",
+        "Diagnostic": {
+          "Stage": "",
+          "Code": "",
+          "HTTPStatus": 0
+        },
+        "CopiedBytes": 311296,
+        "CreatedAt": "2026-09-12T10:56:59.696607488Z"
+      },
+      "verification": {
+        "Result": "verified",
+        "Effect": "not_attempted",
+        "Diagnostic": {
+          "Stage": "",
+          "Code": "",
+          "HTTPStatus": 0
+        },
+        "CopiedBytes": 0,
+        "CreatedAt": "2026-09-12T10:56:59.703277014Z"
+      },
+      "totals": {
+        "Items": 1,
+        "Planned": 1,
+        "Admitted": 1,
+        "Failed": 0,
+        "Conflicts": 0,
+        "Refused": 0,
+        "Unresolved": 0,
+        "Unverified": 0,
+        "Problems": 0
+      },
+      "interrupted": 0,
+      "repeated": 0,
+      "audit_operations": [
+        "transfer.local.complete"
+      ]
+    },
+    {
+      "mode": "cancel",
+      "elapsed_after_signal": "2.335982756s",
+      "before_job_state": "cancelled",
+      "after_job_state": "cancelled",
+      "counters": {
+        "objectsPlanned": 1,
+        "objectsCopied": 0,
+        "objectsVerified": 0,
+        "objectsFailed": 1,
+        "bytesPlanned": 311296,
+        "bytesCopied": 0,
+        "overwrites": 0,
+        "overwritesRefused": 0,
+        "nativeRouted": 0,
+        "objectsDeleted": 0
+      },
+      "execution": {
+        "Result": "failed",
+        "Effect": "unresolved",
+        "Diagnostic": {
+          "Stage": "engine",
+          "Code": "cancelled",
+          "HTTPStatus": 0
+        },
+        "CopiedBytes": 0,
+        "CreatedAt": "2026-09-12T10:57:03.928776157Z"
+      },
+      "verification": null,
+      "totals": {
+        "Items": 1,
+        "Planned": 1,
+        "Admitted": 1,
+        "Failed": 1,
+        "Conflicts": 0,
+        "Refused": 0,
+        "Unresolved": 1,
+        "Unverified": 0,
+        "Problems": 1
+      },
+      "interrupted": 0,
+      "repeated": 0,
+      "audit_operations": [
+        "transfer.local.cancelled"
+      ]
+    },
+    {
+      "mode": "escalate",
+      "elapsed_after_signal": "12.276633234s",
+      "before_job_state": "cancelled",
+      "after_job_state": "cancelled",
+      "counters": {
+        "objectsPlanned": 1,
+        "objectsCopied": 0,
+        "objectsVerified": 0,
+        "objectsFailed": 1,
+        "bytesPlanned": 311296,
+        "bytesCopied": 0,
+        "overwrites": 0,
+        "overwritesRefused": 0,
+        "nativeRouted": 0,
+        "objectsDeleted": 0
+      },
+      "execution": {
+        "Result": "failed",
+        "Effect": "unresolved",
+        "Diagnostic": {
+          "Stage": "engine",
+          "Code": "cancelled",
+          "HTTPStatus": 0
+        },
+        "CopiedBytes": 0,
+        "CreatedAt": "2026-09-12T10:57:18.192172725Z"
+      },
+      "verification": null,
+      "totals": {
+        "Items": 1,
+        "Planned": 1,
+        "Admitted": 1,
+        "Failed": 1,
+        "Conflicts": 0,
+        "Refused": 0,
+        "Unresolved": 1,
+        "Unverified": 0,
+        "Problems": 1
+      },
+      "interrupted": 0,
+      "repeated": 0,
+      "audit_operations": [
+        "transfer.local.cancelled"
+      ]
+    },
+    {
+      "mode": "parent_kill",
+      "elapsed_after_signal": "1.235880659s",
+      "before_job_state": "running",
+      "after_job_state": "failed",
+      "counters": {
+        "objectsPlanned": 1,
+        "objectsCopied": 0,
+        "objectsVerified": 0,
+        "objectsFailed": 0,
+        "bytesPlanned": 311296,
+        "bytesCopied": 0,
+        "overwrites": 0,
+        "overwritesRefused": 0,
+        "nativeRouted": 0,
+        "objectsDeleted": 0
+      },
+      "execution": null,
+      "verification": null,
+      "totals": {
+        "Items": 1,
+        "Planned": 1,
+        "Admitted": 1,
+        "Failed": 0,
+        "Conflicts": 0,
+        "Refused": 0,
+        "Unresolved": 1,
+        "Unverified": 0,
+        "Problems": 0
+      },
+      "interrupted": 1,
+      "repeated": 0,
+      "audit_operations": [],
+      "adopted_child_signal": "SIGKILL"
+    },
+    {
+      "mode": "stopped_child_parent_kill",
+      "elapsed_after_signal": "1.214012862s",
+      "before_job_state": "running",
+      "after_job_state": "failed",
+      "counters": {
+        "objectsPlanned": 1,
+        "objectsCopied": 0,
+        "objectsVerified": 0,
+        "objectsFailed": 0,
+        "bytesPlanned": 311296,
+        "bytesCopied": 0,
+        "overwrites": 0,
+        "overwritesRefused": 0,
+        "nativeRouted": 0,
+        "objectsDeleted": 0
+      },
+      "execution": null,
+      "verification": null,
+      "totals": {
+        "Items": 1,
+        "Planned": 1,
+        "Admitted": 1,
+        "Failed": 0,
+        "Conflicts": 0,
+        "Refused": 0,
+        "Unresolved": 1,
+        "Unverified": 0,
+        "Problems": 0
+      },
+      "interrupted": 1,
+      "repeated": 0,
+      "audit_operations": [],
+      "adopted_child_signal": "SIGKILL"
+    }
+  ],
+  "final_fixture": {
+    "platform": "Linux",
+    "architecture": "x86_64",
+    "kernel": "7.1.8-200.fc44.x86_64",
+    "info_sha256": "04fccaf6c4d9d10402755992425621fbba6dfe193b95ec17e8fb9420da4668da",
+    "rclone_sha256": "9700aa1273ac73d6d0833c43ba63fe830516422cb131960b8c1a24ced789cba0",
+    "rclone_version": "rclone v1.74.3",
+    "fixture": "http://127.0.0.1:18080",
+    "require_two_accounts": true,
+    "producer": "verify.py explicitly configures both fixture accounts and AERONAUTES_REQUIRE_TWO_ACCOUNTS=1"
   }
 }
