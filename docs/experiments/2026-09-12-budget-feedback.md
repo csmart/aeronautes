@@ -125,3 +125,89 @@ The complete private raw packet remains available for independent local review.
 
 Only settings cache/status/Get/Set in BrowserState and budget state/action/markup in JobsDrawer are production scope.
 Any need to change another author's fields, settings document, API, profile policy, scheduler or mutation semantics is a stop condition.
+
+## Maintained correction evidence
+
+The contract commit is `d3adfb8cd9697ebfc52c430ecfc3fd24b7b58a09` on the immutable source above.
+The correction uses separate observation, pending-operation and latest-attempt state, with one synchronous Get/Set owner.
+The drawer renders fixed feedback and an explicit read-only refresh; it catches rejected save callbacks while BrowserState retains the unconfirmed attempt.
+The select represents the admitted attempt while pending or unconfirmed, then the returned observation after a successful read, including the same-value case.
+A refused duplicate DOM event restores the admitted display immediately.
+A failed recovery Get adds a stale-read qualifier without discarding the unconfirmed write notice.
+
+The dedicated BrowserState file contains 11 flat cases and the mounted JobsDrawer file contains 10.
+They cover complete-document acknowledgement, cold/cached failure and recovery, pending Get/Set ownership, duplicate dispatch, both uncertain Set fixtures and same-value readback.
+They also preserve pending state through tabs, collapse and remount, and unconfirmed state through failed recovery reads and remount.
+Every owned deferred reply has an afterEach release, and mounted fixtures unmount and clear their document after each case.
+These are maintained state and mounted-component tests, not native browser or backend tests.
+
+The [maintained evidence twin](probes/2026-09-12-budget-feedback/maintained-evidence.json) records all 24 actual test/check/build runs, exact case dispositions, both private omission rounds, source/output hashes and parser failures.
+It replaces private paths with documented placeholders; original command records and raw outputs remain separate and hashed.
+The test producer uses the same pinned Node binary and copied dependency inputs as the initial probe, without installing or fetching anything.
+Its 833-file source snapshots include the approved plan and two maintained test files; every before/after execution snapshot and archive member matched.
+The source ID is the committed plan parent, so the archive and four final source hashes below identify the tested dirty implementation precisely.
+
+| Run | Test / producer exit | Pass / fail / excluded | Unhandled rejections | Process seconds |
+| --- | --- | --- | --- | --- |
+| before: maintained tests, unchanged production | 1 / 1 | 3 / 18 / 0 | 3 | 4.066954 |
+| focused: initial correction | 0 / 0 | 21 / 0 / 0 | 0 | 3.366595 |
+| final-focused: simplified correction | 0 / 0 | 21 / 0 / 0 | 0 | 3.368100 |
+| adjacent: initial compatibility run | 0 / 0 | 194 / 0 / 0 | 0 | 21.332550 |
+| recovery-read-before: added failed-refresh assertion | 1 / 1 | 0 / 1 / 9 | 0 | 1.815091 |
+| final: final-source compatibility run with coverage | 0 / 0 | 194 / 0 / 0 | 0 | 21.280720 |
+
+The first 18 failures include assertions on newly named state fields as well as actual API admission and DOM outcomes; they are not 18 independently reproduced historical defects.
+The recovery-read assertion was added after the earlier passes and failed on missing stale-read feedback before its correction.
+Its earlier passing runs receive no credit for that added assertion.
+The original probe failures and its unreachable-assertion limits remain unchanged.
+
+The final 194 cases span nine files: browser audit status 61, browser state 23, browser budget status 11, browser recovery status 6, JobsDrawer 11, jobs audit status 13, jobs budget status 10, cancellation status 20 and item records 39.
+No case was skipped and no unhandled rejection occurred in that final run.
+The focused command targets `src/features/jobs` plus the browser `browserState`, `auditStatus`, `recoveryStatus` and `budgetStatus` test files.
+It retains one worker, no file parallelism, five-second test/hook limits and verbose plus JSON reporting; coverage adds only JSON and JSON-summary reporters.
+Containment limits were 120 seconds per ordinary test/check/build process and 180 seconds for coverage, with five-second terminate and kill/join allowances; none timed out.
+Final `svelte-check --tsconfig ./tsconfig.json` exited 0 with zero errors and warnings in 3.266973 seconds.
+Final `vite build --mode production` exited 0 in 0.965767 seconds, transforming 209 modules; its native build duration was 560 milliseconds.
+The earlier pre-recovery check also exited 0; it is retained separately.
+
+Final coverage hit all 25 statements and all 11 instrumented branch arms within the three changed BrowserState methods/getter.
+Whole-file coverage in this focused run was BrowserState 74.55% lines / 56.59% branches and JobsDrawer 92.52% lines / 79.77% branches.
+Those figures do not establish whole-frontend coverage or a native acceptance result.
+
+| Final private omission | Failed cases / unhandled rejections | Catching outcome |
+| --- | --- | --- |
+| Hide failed recovery-read feedback | 1 / 0 | Missing stale-read notice |
+| Remove write-owner guard | 2 / 0 | Duplicate state and mounted Set admission |
+| Remove Get-owner guard | 2 / 0 | Duplicate cold/cached Get admission |
+| Hide the unconfirmed notice | 2 / 0 | Missing attempted-write outcome before/after recovery |
+| Keep attempted choice after successful read | 1 / 0 | DOM 4 when current observation is 2 |
+| Rethrow from the component callback | 0 / 2 | Both rejected Set callbacks become unhandled |
+| Treat Get as historical Set acknowledgement | 2 / 0 | Read incorrectly rewrites the unconfirmed attempt |
+| Restore automatic remount Get | 1 / 0 | Remount dispatches an unrequested recovery read |
+
+All eight final controls returned actual test and producer exit 1 with the intended assertion or unhandled-error evidence.
+The callback control has two passing cases but two unhandled rejections and process exit 1; Vitest's JSON `success: true` describes its case results and does not make that run successful.
+The other selected cases and all explicit exclusions are recorded in the twin.
+The earlier seven controls remain a separate round on the simplified source; repeated behaviours are not additional unique coverage.
+Each private control changed exactly one declared production file, leaving its maintained tests unchanged.
+
+Reconciliation first exited 1 because excluded Vitest cases may omit `duration`, then exited 1 because the parser incorrectly equated JSON case success with successful process completion in the unhandled-error control.
+Both parser sources and actual available receipts remain retained, and the corrected parser exited 0 in 5.067002 seconds without rerunning application tests.
+The first parser receipt is explicitly transcribed from the tool result, with no reconstructed raw output or exact-argv claim.
+The dependency manifest was captured after the maintained before run; later comparisons admitted only recorded private Vite cache changes.
+Reconciliation rehashed all 5,085 original packet entries and all 4,192 dependency entries in each of 16 copies.
+For a private control, `tracked.patch` records the author worktree delta; its separate `mutation.patch`, input manifest and full source archive establish the actual mutated source.
+
+| Final source or artifact | SHA256 |
+| --- | --- |
+| BrowserState | `e21f4f99742373bdcd39d84f4e823f179db27ada94fcfdfe1ff48d3f4eb6ad8b` |
+| JobsDrawer | `4661d68e1fb9b31cae667d6b8a2e32ad5c8108004fec3a27830779ae2be21147` |
+| BrowserState budget tests | `b2ff2ca6dc637193aecac17a343932ca30a19b138927a90833201e40767fde99` |
+| Mounted budget tests | `51f186d2d6ccfe75f7afdabf84921535a482aad52522bf753d6e75838096ac61` |
+| Final execution source archive | `274031cff08cd597e324ff7d8d801e0f4f4c637757eb1164780ccacc0df2016a` |
+| Maintained producer | `1e7634e6feaf036f6b67e7f7cfb1f0a2149ee4e5ba4f85b422d4a1ed3810ac57` |
+| Corrected reconciliation source | `32364ead5d08ee7f2f7278a936e8b48d6930b3982856a48191c9af8d62aed9d5` |
+
+Independent implementation approval, current-base combined verification and protected delivery remain required.
+Native visual/accessibility acceptance, actual settings persistence and scheduler behaviour were not exercised here.
+UI-10/P28 and the valuable-data hold remain open.
