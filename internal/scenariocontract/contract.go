@@ -109,7 +109,7 @@ var inventory = map[string]Action{
 	"BookmarkService.Delete":           {Kind: Destructive},
 	"BookmarkService.CredentialStatus": {Kind: Read, Scenarios: []string{"happy", "refusal"}},
 	// BrowseService
-	"BrowseService.Connect":      {Kind: Session},
+	"BrowseService.Connect":      {Kind: Session, Scenarios: []string{"happy", "refusal"}},
 	"BrowseService.Account":      {Kind: Read},
 	"BrowseService.Capabilities": {Kind: Read},
 	"BrowseService.Containers":   {Kind: Read, Scenarios: []string{"happy", "refusal"}},

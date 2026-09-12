@@ -135,3 +135,49 @@ Stop if wider callers depend on old display wording, a test needs a new auth/tra
 This is Linux amd64 owned-loopback HTTP/1.1 evidence at the Go public service boundary, without rendered Wails, TLS/HTTP2, real Swift, native keychain or full application audit proof.
 The fixture models an approved auth endpoint or intermediary reflecting a key it received; it does not establish interception of another endpoint or a deployed-provider incident.
 No rclone process, shared Swift fixture, frontend bundle, full suite or remote operation was used for the before evidence.
+
+## Maintained result
+
+The correction follows the independently approved contract at `b72391f0000cb2ae699f6026c5ed9a84614d8ab3`, whose parent is the authoring source above.
+The native error branch now selects local status text or the fixed fallback, without changing classification, cause, passthrough or transaction-ID code.
+The only scenario inventory change adds the approved Connect refusal requirement while retaining its existing happy requirement.
+The dedicated wrapper captures the actual public call; the system test checks the failed endpoint's request, returned error, old active account and container listing, public bookmarks and both complete owned namespaces before crediting refusal.
+The new failed endpoint checks its write, flush, close and handler join; the reused healthy mock harness retains its existing response-write handling.
+
+Every run below used a private copy of all 823 tracked parent blobs plus the four new Go files, with the declared production/contract overlays.
+All 827 executed inputs were unchanged within each run and their archive contents were verified against their source manifests; every parent blob was also checked against Git.
+The before, positive and omission runs differ only in `internal/swiftcontrol/errors.go`.
+The [maintained evidence twin](probes/2026-09-12-public-http-errors/maintained-evidence.json) binds the final six claimed Go inputs, commands, streams, actual exits and source archives to their SHA256 hashes.
+
+All Go test commands used pinned Go 1.27.1 with `-race -count=1 -mod=readonly -json -parallel=1 -p=2 -timeout=60s` and a 120-second external process deadline.
+The three-package boundary selection was `^(TestNormalizePublicHTTP.*|TestPublicConnectHTTPError.*)$` for `./internal/swiftcontrol ./internal/app ./internal/systemtest`.
+The compatibility selection ran the existing Normalize, passthrough and transaction-ID tests plus the new six passthrough leaves in `./internal/swiftcontrol`; the separate healthy selection ran `^TestPublicConnectHTTPError$/^healthy$` in `./internal/app`.
+
+| Run | Actual Go / producer exit | Events | Top-level / named / leaf tests | Leaf results | Process seconds |
+| --- | --- | --- | --- | --- | --- |
+| Compatibility before | 0 / 0 | 96 | 4 / 23 / 21 | 21 pass | 2.315279 |
+| Healthy Connect before | 0 / 0 | 13 | 1 / 2 / 1 | 1 pass | 4.467600 |
+| Maintained before | 1 / 1 | 383 | 5 / 73 / 51 | 11 pass, 40 fail | 5.168443 |
+| Fixed boundary | 0 / 0 | 310 | 5 / 73 / 51 | 51 pass | 6.972584 |
+| Omitted projection | 1 / 1 | 383 | 5 / 73 / 51 | 11 pass, 40 fail | 5.168864 |
+| Compatibility after | 0 / 0 | 96 | 4 / 23 / 21 | 21 pass | 2.365108 |
+
+All 1,281 application/unit events have complete unique terminal lifecycles, without skips, malformed records, race reports, external timeouts or test stderr.
+The boundary inventory contains 45 swiftcontrol leaves, five public app cases and one public system scenario.
+The failed before and omission runs each retain 35 normalization/message failures, four app wording/secrecy failures and the exact system `SEC-PUBLIC-REASON` failure after its authority and namespace checks.
+The system failure emits no scenario claim; restoring only `Message: we.Text` in a private copy therefore catches the public defect independently of fixture acquisition.
+The successful package durations were 1.015 seconds for swiftcontrol, 2.039 for app and 1.258 for systemtest; these isolated timings are not a hosted/full-suite margin estimate.
+
+Scoped `go vet` passed for the three claimed packages.
+Five contract tests and four focused scenario-reconciler controls passed under the same race profile, with 44 additional complete events and no skips.
+The original collector's reconciler build failed VCS stamping because the private source archive had no `.git`, then its wrapper attempted the missing binary and exited 1 before saving its final result record.
+The child logs and an explicitly labelled tool-output receipt preserve that setup failure; its per-step process durations were not retained and it receives no scenario or regression credit.
+Only the build/parser steps were resumed with archive-only `-buildvcs=false`; target modules and release stamping were unchanged.
+The resumed collector exited 0 while retaining the real parser exits 1, 0 and 1 for before, fixed and omission streams.
+The independent assessor also exited 0.
+
+The fixed report is valid and credits only `BrowseService.Connect/refusal`: 1 of 117 required cells across 52 actions in this isolated selection.
+The existing Connect happy gap remains.
+Before and omission reports credit zero and are invalid because their Go producers/packages failed, even though their raw event lifecycles are complete.
+The setup/inspection failures and unexecuted private helper selector are separately retained in the twin; none changes the test inventory or earns credit.
+Full-suite integration, current-base review, all five PR and resulting-master jobs, wider error boundaries, native platform evidence and the valuable-data hold remain separate gates.
