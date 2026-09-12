@@ -1,0 +1,141 @@
+{
+  "evidence_kind": "preserved before observations of missing shutdown ownership, not shutdown acceptance",
+  "command": [
+    "go",
+    "test",
+    "-race",
+    "-count=1",
+    "-timeout=60s",
+    "-json",
+    "-overlay",
+    "<owned probe overlay>",
+    "-run",
+    "^TestPrivateShutdown(ResourceOrder|PublicContext)$",
+    "./internal/app"
+  ],
+  "go_version": "go1.27.1 linux/amd64",
+  "archived_probe": "2026-09-12-job-shutdown-ownership-probe_test.go.txt",
+  "archived_probe_run": "before_3",
+  "implementation_base": "836ad0d2138f51741c65de948bab5c5edeb2f3f8",
+  "source_difference_from_before": "Only transferservice.go Copy NoGzipEncoding constructor option differs across inspected lifecycle sources; the before runs retain their actual head attribution.",
+  "initial_failures": "before_1 and before_2 fail the detached completion control on GET shutdown-probe//file HTTP 404. before_2 exposes the full result. before_3 corrects only fixture names to scope/file and scope/; all outcome assertions remain.",
+  "runs": {
+    "before_1": {
+      "head": "1f57000cf0a6f3788ae8e8436fd57a4a6ffd008f",
+      "returncode": 1,
+      "package_elapsed_seconds": 4.267,
+      "elapsed_seconds": 6.21805248176679,
+      "probe_sha256": "94e2f6f1257105e48760790cf1c13909b44edccc723e6846837a0ab45e0517f2",
+      "stdout_sha256": "27ea1158c8c62cb500ec02f1e4497b926e16ed9c4f3e830c4d80c2d2568f3f47",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sources": {
+        "main.go": "4c0b34ab281d1a8775e86b020272f9a75f7168a4564337edc6d22248ab3f79dc",
+        "go.mod": "052b3b256f95c24ca347d42cbba6e87e528987e8522832d3d4cb84b667f82ea0",
+        "internal/app/jobrunner.go": "5b695ba7d2195894f926e578c873c24a7733807ecbc74504447a203ae513e6a6",
+        "internal/app/localtransferservice.go": "794603039ff8da59b699526c485bab37f261b23acd2ad5e7081688a291574fe4",
+        "internal/app/transferservice.go": "fb5d189c463d028575d1fccf0d7bf79098d21177029d7fae11aad13943004d85",
+        "internal/app/deleteservice.go": "94c200620d28b13a78c6d103b999abdc31a050d5c998dae97dcc0e83e2091fdc",
+        "internal/app/benchmarkservice.go": "9afd2a9b5cee8ea4cd91a4e02dfd7f2480cbd86dc564b45b1c8cfe7f2c42203b",
+        "internal/app/findservice.go": "afa3fadc6ed258a2cb8a38fece9bec84b9057f1932d6c5ee8738af0a249c7ecd",
+        "internal/app/instancelock_unix.go": "19d0ac0103248c6da2e089406c18e79ad1e12631f8f5727b3fd92eef107efe63",
+        "internal/jobs/interrupted.go": "a57525522c392e6b6d50d6763e951f65b063ff49de05da17c9631ef79ce85978",
+        "internal/db/db.go": "eae709f5378a9032dcb85aa16819b2449e6f6c2cb1ef755afdcbb47fa59ad3d0",
+        "internal/app/services_test.go": "fcf716092f297d9e6f3406544a617d832969c54cd8bb82f5cdcc2ccc0320ecff",
+        "internal/app/transferservice_test.go": "d6952463f45538cbbfa6a164e3bbaf69c7eff6a1a390f676f933fbed5abb9b7b",
+        "internal/app/jobgeneration_test.go": "fc4b6fe92719957d0aa3dd81c3122c87da43a2736a53835b49cde466bbb0fd74"
+      },
+      "sources_unchanged": true,
+      "fixture_environment_present": false,
+      "leaves": {
+        "TestPrivateShutdownResourceOrder/running_body": "pass",
+        "TestPrivateShutdownResourceOrder/terminal_body_cleanup": "pass",
+        "TestPrivateShutdownResourceOrder/pin_cleanup": "pass",
+        "TestPrivateShutdownPublicContext/cancel_job_false": "fail",
+        "TestPrivateShutdownPublicContext/cancel_job_true": "pass"
+      },
+      "counts": {
+        "pass": 4,
+        "fail": 1,
+        "skip": 0
+      }
+    },
+    "before_2": {
+      "head": "1f57000cf0a6f3788ae8e8436fd57a4a6ffd008f",
+      "returncode": 1,
+      "package_elapsed_seconds": 4.814,
+      "elapsed_seconds": 6.820553722791374,
+      "probe_sha256": "e96a1c3c0d5a7eed83abf1b0212878845005162fe0c6bcfe8e71f2b8283541fc",
+      "stdout_sha256": "dfed18391b55e677ffc54dcc01dedf28853a5b4beea5ba6b59b19474fce1b502",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sources": {
+        "main.go": "4c0b34ab281d1a8775e86b020272f9a75f7168a4564337edc6d22248ab3f79dc",
+        "go.mod": "052b3b256f95c24ca347d42cbba6e87e528987e8522832d3d4cb84b667f82ea0",
+        "internal/app/jobrunner.go": "5b695ba7d2195894f926e578c873c24a7733807ecbc74504447a203ae513e6a6",
+        "internal/app/localtransferservice.go": "794603039ff8da59b699526c485bab37f261b23acd2ad5e7081688a291574fe4",
+        "internal/app/transferservice.go": "fb5d189c463d028575d1fccf0d7bf79098d21177029d7fae11aad13943004d85",
+        "internal/app/deleteservice.go": "94c200620d28b13a78c6d103b999abdc31a050d5c998dae97dcc0e83e2091fdc",
+        "internal/app/benchmarkservice.go": "9afd2a9b5cee8ea4cd91a4e02dfd7f2480cbd86dc564b45b1c8cfe7f2c42203b",
+        "internal/app/findservice.go": "afa3fadc6ed258a2cb8a38fece9bec84b9057f1932d6c5ee8738af0a249c7ecd",
+        "internal/app/instancelock_unix.go": "19d0ac0103248c6da2e089406c18e79ad1e12631f8f5727b3fd92eef107efe63",
+        "internal/jobs/interrupted.go": "a57525522c392e6b6d50d6763e951f65b063ff49de05da17c9631ef79ce85978",
+        "internal/db/db.go": "eae709f5378a9032dcb85aa16819b2449e6f6c2cb1ef755afdcbb47fa59ad3d0",
+        "internal/app/services_test.go": "fcf716092f297d9e6f3406544a617d832969c54cd8bb82f5cdcc2ccc0320ecff",
+        "internal/app/transferservice_test.go": "d6952463f45538cbbfa6a164e3bbaf69c7eff6a1a390f676f933fbed5abb9b7b",
+        "internal/app/jobgeneration_test.go": "fc4b6fe92719957d0aa3dd81c3122c87da43a2736a53835b49cde466bbb0fd74"
+      },
+      "sources_unchanged": true,
+      "fixture_environment_present": false,
+      "leaves": {
+        "TestPrivateShutdownResourceOrder/running_body": "pass",
+        "TestPrivateShutdownResourceOrder/terminal_body_cleanup": "pass",
+        "TestPrivateShutdownResourceOrder/pin_cleanup": "pass",
+        "TestPrivateShutdownPublicContext/cancel_job_false": "fail",
+        "TestPrivateShutdownPublicContext/cancel_job_true": "pass"
+      },
+      "counts": {
+        "pass": 4,
+        "fail": 1,
+        "skip": 0
+      }
+    },
+    "before_3": {
+      "head": "1f57000cf0a6f3788ae8e8436fd57a4a6ffd008f",
+      "returncode": 0,
+      "package_elapsed_seconds": 5.538,
+      "elapsed_seconds": 7.620772985275835,
+      "probe_sha256": "31287f69e35bcb137c43d3414cad6b39f83d8bd1e6adc14c076c371c5672650e",
+      "stdout_sha256": "9051f325223fec525786f8cdb47b45aef9b5ad25768280fb489d3f584f53fcea",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sources": {
+        "main.go": "4c0b34ab281d1a8775e86b020272f9a75f7168a4564337edc6d22248ab3f79dc",
+        "go.mod": "052b3b256f95c24ca347d42cbba6e87e528987e8522832d3d4cb84b667f82ea0",
+        "internal/app/jobrunner.go": "5b695ba7d2195894f926e578c873c24a7733807ecbc74504447a203ae513e6a6",
+        "internal/app/localtransferservice.go": "794603039ff8da59b699526c485bab37f261b23acd2ad5e7081688a291574fe4",
+        "internal/app/transferservice.go": "fb5d189c463d028575d1fccf0d7bf79098d21177029d7fae11aad13943004d85",
+        "internal/app/deleteservice.go": "94c200620d28b13a78c6d103b999abdc31a050d5c998dae97dcc0e83e2091fdc",
+        "internal/app/benchmarkservice.go": "9afd2a9b5cee8ea4cd91a4e02dfd7f2480cbd86dc564b45b1c8cfe7f2c42203b",
+        "internal/app/findservice.go": "afa3fadc6ed258a2cb8a38fece9bec84b9057f1932d6c5ee8738af0a249c7ecd",
+        "internal/app/instancelock_unix.go": "19d0ac0103248c6da2e089406c18e79ad1e12631f8f5727b3fd92eef107efe63",
+        "internal/jobs/interrupted.go": "a57525522c392e6b6d50d6763e951f65b063ff49de05da17c9631ef79ce85978",
+        "internal/db/db.go": "eae709f5378a9032dcb85aa16819b2449e6f6c2cb1ef755afdcbb47fa59ad3d0",
+        "internal/app/services_test.go": "fcf716092f297d9e6f3406544a617d832969c54cd8bb82f5cdcc2ccc0320ecff",
+        "internal/app/transferservice_test.go": "d6952463f45538cbbfa6a164e3bbaf69c7eff6a1a390f676f933fbed5abb9b7b",
+        "internal/app/jobgeneration_test.go": "fc4b6fe92719957d0aa3dd81c3122c87da43a2736a53835b49cde466bbb0fd74"
+      },
+      "sources_unchanged": true,
+      "fixture_environment_present": false,
+      "leaves": {
+        "TestPrivateShutdownResourceOrder/running_body": "pass",
+        "TestPrivateShutdownResourceOrder/terminal_body_cleanup": "pass",
+        "TestPrivateShutdownResourceOrder/pin_cleanup": "pass",
+        "TestPrivateShutdownPublicContext/cancel_job_false": "pass",
+        "TestPrivateShutdownPublicContext/cancel_job_true": "pass"
+      },
+      "counts": {
+        "pass": 5,
+        "fail": 0,
+        "skip": 0
+      }
+    }
+  }
+}

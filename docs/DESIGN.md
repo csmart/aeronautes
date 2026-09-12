@@ -5337,6 +5337,26 @@ The correction and maintained [Linux child-lifetime evidence](experiments/2026-0
 The final mock and real-Swift runs distinguish executed passes from skips, and controls that omit parent-death coupling, killing/reaping or the cancellation mapping fail their intended assertions.
 This establishes the tested direct-child and download-result scope only; combined-source verification and protected delivery are still required, while application shutdown, other native platforms and DS-07/SEC-06 remain open.
 
+The next bounded [job shutdown ownership prerequisite](experiments/2026-09-12-job-shutdown-ownership.md) covers the five job-start families and their complete resource lifetime.
+The preserved before model shows that a terminal record, an empty cancellation registry, a free active slot, database closure and reacquisition of a released instance lock do not prove that the previous job owner finished cleanup.
+The oracle remains §§26.4/32.1/38/46/65.10, SEC-06/P30 and ADR 0020 retention; ordinary asynchronous caller detachment is preserved.
+
+1. Admit Copy, Upload, Download, Delete and Benchmark under one runner-owned stop boundary before any credential pin, session acquisition, preflight, durable row or engine setup.
+   Refuse every new start after stop begins without those effects, and own an already admitted start through either complete refusal cleanup or handoff to its queued job.
+2. Keep the whole-job owner separate from active slots and the public cancellation registry.
+   Retain ownership through queued cancellation, terminal persistence or its failure, cancellation deregistration, child/body return, final credential-pin release and local handle closure.
+   Serialise admission and stop so no start, registration or launch can escape the drain, including a start held before registration.
+3. Expose a checked runner shutdown that closes admission, requests cancellation of every admitted owner and waits for the final owner to exit.
+   Preserve existing executor outcomes, persistence-unavailable state, the ten-second child grace and retained-stage policy.
+   Repeated and concurrent shutdown remain safe; cancellation or deadline expiry of a waiter returns an error without reopening admission, releasing owners or reporting a drain.
+   Add no independent overall shutdown deadline.
+4. Require deterministic race tests across all five public start families, held pre-registration starts, queued jobs, post-terminal cleanup and final pin/handle release, plus independent removal controls for admission, owner cancellation and the final cleanup join.
+   Record existing mock-fixture failures separately from lifecycle observations, and add the real shell caller and process-level ordering evidence under a separate reviewed contract before delivery.
+
+This prerequisite cannot ship alone: the actual shell shutdown caller and checked resource-order consumer must accompany it in the same eventual delivery.
+The shell, Find, synchronous bridge/native-request drain and credential-store lifecycle remain separate claimed work, and job hooks alone do not establish application-wide shutdown.
+DS-07, SEC-06, P20/P30, the six-platform acceptance hold and valuable-data release hold remain open.
+
 The next bounded [UI-10 cancellation and audit sequence](experiments/2026-09-12-cancellation-feedback.md) separates an operator request's outcome from an independent status read.
 The unchanged drawer hides a rejected cancellation behind a successful refresh and admits duplicate requests while the first is pending; the audit reader also allows older queries and background Recent replies to replace a selected view.
 UI-10, P28, §§26.4/47/49/50/55 and K-UI-005 require honest status, while `CancelJob` acknowledges a graceful cancellation request without proving a terminal result, cleanup or child quiescence.
