@@ -47,7 +47,7 @@ Every row states the observed current behaviour; `Bär` is spelled with the prec
 | Case | Selection | Preflight today | Executor today | Linux result |
 | --- | --- | --- | --- | --- |
 | marker_twins | `Foo/`, `foo/` | refused, `case-fold` naming `Foo/` | refused, names collide on case or normalization form | nothing written |
-| marker_form_twins | `Bär/` NFC, `Bär/` NFD | refused, `name-form` naming the NFC marker | refused, same | nothing written |
+| marker_form_twins | `Bär/` NFC, `Bär/` NFD | refused, `name-form` naming the NFD marker, which the listing orders first | refused, same | nothing written |
 | marker_twins_with_children | `Foo/`, `foo/`, `Foo/a.txt`, `foo/b.txt` | refused, `case-fold` naming `Foo/` | refused, same | nothing written |
 | marker_beside_implicit | `Foo/`, `foo/child.txt` | admitted, two items | admitted | `Foo` and `foo/child.txt` |
 | implicit_twins | `Foo/a.txt`, `foo/b.txt` | admitted, two items | admitted | `Foo/a.txt` and `foo/b.txt` |
@@ -129,3 +129,59 @@ For the DS-06 disposition in `docs/audits/2026-09-05/data-safety.md`, replacing 
 For the DS-06 row in `docs/audits/2026-09-05/remediation-plan.md`, replacing the sentence "P19 still needs directory-only aliases and real target filesystems rejecting the complete unsafe plan before any placement.":
 
 > PRNN admits directory-only aliases with native routing beneath them and records the merge consequence. P19 still needs real target filesystems rejecting the complete unsafe plan before any placement.
+
+## Correction delivered
+
+The correction is one commit on top of the plan, `admit directory-only aliases at both boundaries`.
+`PreflightDownload` in `internal/transfer/local/local.go` now enters only file names into the two twin groups, so a directory marker is never a twin, and `DownloadInto` in `download_execute.go` skips directory items when it repeats the two relations and keeps the ancestor rule unchanged, so both boundaries admit and refuse identically.
+`plannedDirectories` lists every directory a name plans, the marker's own directory included; the preflight records each planned directory's spellings under both relations and routes every file beneath a directory with more than one spelling natively, exactly as engine-reserved names are routed, while markers stay native as before and every other file keeps its route.
+The constructed-identity regression's two-directory case, which asserted the old refusal, moves into the alias regression as an admission; no other delivered test changed.
+
+## After evidence
+
+The maintained regressions `TestDownloadDirAliasesPreflight` and `TestDownloadDirAliasesDirect` in `internal/transfer/local` and `TestDownloadDirAliasesMock` and `TestDownloadDirAliasesRealSwift` in `internal/systemtest` replace the archived probes.
+The unit regressions drive the preflight against the in-process mock and the executor with a direct plan and a session-backed engine; the service regressions drive the picker, preflight, start, the queued job and the durable records on both providers with the pinned engine.
+
+| Case | Both boundaries | Native-routed files | Service on both providers |
+| --- | --- | --- | --- |
+| marker_twins | admitted, two directory items | none | complete, `Foo` and `foo` as separate directories |
+| marker_form_twins | admitted, two directory items | none | complete, both spellings as separate directories |
+| marker_twins_with_children | admitted, four items | `Foo/a.txt`, `foo/b.txt` | complete, four objects, exact bytes |
+| marker_beside_implicit | admitted, two items | `foo/child.txt` | complete, `Foo` and `foo/child.txt` |
+| implicit_twins | admitted, two items | both files | complete, exact bytes in separate directories |
+| implicit_form_twins | admitted, two items | both files | complete on both providers, where it ended partial before the change |
+| deep_implicit_twins | admitted, two items | both files | complete, both directory chains |
+| three_spellings | admitted, three items | `foo/a.txt`, `FOO/b.txt` | complete, three objects |
+| alias_beside_plain | admitted, four items; `bar/c.txt` and `d.txt` keep the engine route | `Foo/a.txt`, `foo/b.txt` | complete, four objects, two native and two through the engine |
+| file_twins | refused, `case-fold` naming `Foo` | | unit only |
+| file_twins_inside_aliases | refused, `case-fold` naming `Foo/x.txt` | | refused at preflight, start refused, nothing written |
+| file_form_twins_inside_aliases | refused, `name-form` naming the NFD spelling the listing orders first | | refused at preflight, nothing written |
+| file_vs_marker, file_vs_implicit, file_vs_marker_form | refused, `file-vs-prefix` naming the file | | `file_vs_marker` refused at preflight, nothing written |
+
+Every admitted case ends `complete` with no error, the copied count equal to the selection, the native-routed counter equal to the files beneath aliased directories, no failed item, exact bytes at every file, every spelling as its own directory on this case-sensitive host, no remote write and no collateral change on either account.
+The service stream for both providers holds 24 passing leaves and no failure.
+
+## Deliberately broken controls
+
+Each control is a one-line change applied to a detached copy of the implementation commit by a retained producer, compiled and run against the whole `internal/transfer/local` package and the alias service regression on both providers; the failing leaves are listed in the JSON twin.
+
+| Control | Change | Fails | Everything else |
+| --- | --- | --- | --- |
+| g01 | markers back in the twin groups at both boundaries | only the three marker-twin cases at preflight and in the direct executor test, and the same three cases on both providers | 979 other local leaves and 18 service leaves pass |
+| g02 | the file-twin refusal removed at both boundaries | only the file-twin assertions: the three alias cases at both boundaries, the delivered name-form twin cases, the constructed `case_fold` identity, and the two file-twin cases on both providers | 907 other local leaves and 20 service leaves pass |
+| g03 | no native routing beneath aliased directories | only the seven routed cases at preflight and the seven admitted cases with files on both providers, where `implicit_form_twins` ends partial again with one object missing after the engine run | 978 other local leaves and 10 service leaves pass |
+
+## Verification
+
+Static: gofmt clean, `go vet` of the local and system-test packages, `GOOS=windows` vet of the local package and a `GOOS=darwin` build of `internal`.
+The whole `internal/transfer/local` package passes under the race detector with the new regressions and the amended constructed-identity case.
+The alias service regression passes on both providers under the race detector: 24 leaves, none failing.
+Full race suite with the real Swift fixture on the implementation commit: two runs on the same head: the first reconciled to 4,178 distinct names and 3,873 leaves with 3,871 passing, one failing and the single expected matrix skip, the failing leaf being `TestCopyItemRecordsMock/failed_401`, the recorded [copy-binding intermittent](2026-09-11-copy-binding-release.md) on the copy path this change does not touch, which then passed three consecutive isolated runs under the race detector; the second reconciled to 4,178 distinct names and 3,873 leaves with 3,872 passing, none failing and the same skip, with the streams, reconciled texts and digests retained in the evidence.
+
+## Remaining limits
+
+Native target-filesystem acceptance stays open under DS-06 and P19: how APFS or NTFS merges the spellings, and whether the executor's handle-based placement and stage cleanup behave on a merged directory, are assertions from the code and not observations, because no macOS or Windows machine is available and no case-insensitive filesystem can be mounted in this container.
+The merge on a case-insensitive target is the recorded consequence of the decision: aliased directories become one directory, named by whichever spelling is created first, with every planned file inside it and no bytes lost.
+The engine's lowercase keying on case-insensitive hosts is cited from its frozen source and not observed; its NFC keying was observed on Linux.
+The executor keeps trusting the plan's route: a direct caller that plans files beneath aliased directories on the engine route gets the engine's drop reported as a file missing after the run, as before, rather than a refusal.
+DS-06/P19, the native journeys and the valuable-data release hold remain blocking.
