@@ -1,0 +1,92 @@
+package local
+
+// Before-evidence probe for the download cancellation slice (executor
+// level, mock only). Not maintained.
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+
+	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
+)
+
+func TestZZCancelProbeExecutor(t *testing.T) {
+	out := os.Getenv("AERONAUTES_CANCEL_PROBE_OUT")
+	if out == "" {
+		t.Skip("probe output directory not set")
+	}
+	result := map[string]any{}
+	t.Run("loop_check", func(t *testing.T) {
+		source, mock := session(t)
+		for _, name := range []string{"a", "b"} {
+			seed(mock, "media", "scope/"+name, "bytes "+name)
+		}
+		root := t.TempDir()
+		preflight, err := PreflightDownload(t.Context(), source, "media", "scope/", root)
+		if err != nil || preflight.Rejected() {
+			t.Fatalf("preflight: %+v %v", preflight, err)
+		}
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		executed := map[string]transfercopy.Observation{}
+		verified := map[string]transfercopy.Observation{}
+		recorder := &DownloadRecorder{
+			Admit:   func(DownloadAdmission) error { return nil },
+			Execute: func(item DownloadItem, o transfercopy.Observation) error { executed[item.Name] = o; return nil },
+			Verify: func(item DownloadItem, o transfercopy.Observation) error {
+				verified[item.Name] = o
+				cancel()
+				return nil
+			},
+		}
+		report, err := Download(ctx, source, &fsEngine{session: source}, "remote:media", "media", "scope/", root, "probe", preflight, nil, recorder)
+		stage := map[string]string{}
+		entries, _ := os.ReadDir(filepath.Join(root, ".aeronautes-stage-probe"))
+		for _, e := range entries {
+			info, _ := e.Info()
+			stage[e.Name()] = info.Mode().String()
+		}
+		placed := []string{}
+		for _, name := range []string{"a", "b"} {
+			if _, err := os.Stat(filepath.Join(root, name)); err == nil {
+				placed = append(placed, name)
+			}
+		}
+		result["loop_check"] = map[string]any{"err": err.Error(), "done": report.Done, "failures": report.Failures, "executed": executed, "verified": verified,
+			"stageCleanup": report.StageCleanup, "stageEntries": stage, "placed": placed}
+	})
+	t.Run("in_placement_direct", func(t *testing.T) {
+		root := t.TempDir()
+		destination, err := OpenDestinationRoot(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer destination.Close()
+		stageName := ".aeronautes-stage-probe"
+		stage, err := openDownloadStage(destination, stageName)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer stage.Close()
+		if err := os.WriteFile(filepath.Join(root, stageName, "b"), []byte("bytes b"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		item := DownloadItem{Name: "scope/b", RelPath: "b", Size: 7, Route: "rclone"}
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		outcome := placeDownloaded(ctx, destination, stage, stageName, item)
+		_, placedErr := os.Stat(filepath.Join(root, "b"))
+		result["in_placement_direct"] = map[string]any{"observation": outcome.Observation, "label": outcome.label, "failure": outcome.failure.Error(), "placed": placedErr == nil}
+	})
+	encoded, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(out, "executor-probe.json"), encoded, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("%s", encoded)
+}
