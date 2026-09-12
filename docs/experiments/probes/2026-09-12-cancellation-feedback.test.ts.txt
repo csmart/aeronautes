@@ -1,0 +1,160 @@
+import { afterEach, expect, it, vi } from "vitest";
+import { flushSync, mount, unmount } from "svelte";
+import type { AuditEventDTO, JobDTO } from "../../lib/api";
+import { BrowserState } from "../browser/browserState.svelte";
+import { newFakeApi } from "../browser/fakeApi";
+import JobsDrawer from "./JobsDrawer.svelte";
+
+let drawer: ReturnType<typeof mount> | null = null;
+
+afterEach(async () => {
+  if (drawer) await unmount(drawer);
+  drawer = null;
+  document.body.innerHTML = "";
+});
+
+function job(state = "running"): JobDTO {
+  return {
+    id: "job-a", type: "copy", state, source: "source/file", destination: "dest/file",
+    sourceBookmarkId: "a", destBookmarkId: "b", createdAt: "", startedAt: "", finishedAt: "",
+    engine: "native", settings: "", error: "", recoveryRecords: 0,
+    counters: { objectsPlanned: 1, objectsCopied: 0, objectsVerified: 0, objectsFailed: 0,
+      bytesPlanned: 8, bytesCopied: 0, overwrites: 0, overwritesRefused: 0,
+      nativeRouted: 0, objectsDeleted: 0 },
+  };
+}
+
+function audit(id: number, operation: string): AuditEventDTO {
+  return { id, at: "", operation, resource: "same-name", summary: operation, result: "applied", transIds: ["tx-owned"] };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+async function show(browser: BrowserState) {
+  drawer = mount(JobsDrawer, { target: document.body, props: { browser } });
+  flushSync();
+  document.querySelector<HTMLButtonElement>(".bar")!.click();
+  flushSync();
+  await vi.waitFor(() => expect(document.querySelector(".badge")?.textContent).toBe("running"));
+}
+
+it("control: the Cancel button requests the exact job and observes the returned terminal state", async () => {
+  const api = newFakeApi();
+  let current = job();
+  api.jobs = vi.fn(async () => [current]);
+  api.cancelJob = vi.fn(async () => { current = job("cancelled"); });
+  await show(new BrowserState(api));
+  document.querySelector<HTMLButtonElement>(".cancel")!.click();
+  await vi.waitFor(() => expect(document.querySelector(".badge")?.textContent).toBe("cancelled"));
+  expect(api.cancelJob).toHaveBeenCalledExactlyOnceWith("job-a");
+  expect(document.querySelector(".cancel")).toBeNull();
+});
+
+it("before: a rejected cancellation has visible action feedback despite a successful refresh", async () => {
+  const api = newFakeApi();
+  api.jobs = vi.fn(async () => [job()]);
+  api.cancelJob = vi.fn(async () => { throw new Error("owned bridge rejection"); });
+  await show(new BrowserState(api));
+  document.querySelector<HTMLButtonElement>(".cancel")!.click();
+  await vi.waitFor(() => expect(api.jobs).toHaveBeenCalledTimes(2));
+  flushSync();
+  expect(api.cancelJob).toHaveBeenCalledExactlyOnceWith("job-a");
+  expect(document.querySelector(".badge")?.textContent).toBe("running");
+  const alerts = [...document.querySelectorAll('[role="alert"]')].map((node) => node.textContent ?? "");
+  console.info("UI10_CANCEL_REJECTION", JSON.stringify({ alerts, text: document.body.textContent }));
+  expect(alerts.some((text) => /cancel/i.test(text))).toBe(true);
+});
+
+it("before: a pending cancellation admits only one request for the same job", async () => {
+  const api = newFakeApi();
+  const pending = deferred<void>();
+  api.jobs = vi.fn(async () => [job()]);
+  api.cancelJob = vi.fn(() => pending.promise);
+  await show(new BrowserState(api));
+  try {
+    const button = document.querySelector<HTMLButtonElement>(".cancel")!;
+    button.click();
+    flushSync();
+    button.click();
+    flushSync();
+    console.info("UI10_CANCEL_PENDING", JSON.stringify({ calls: vi.mocked(api.cancelJob).mock.calls, disabled: button.disabled }));
+    expect(api.cancelJob).toHaveBeenCalledTimes(1);
+  } finally {
+    pending.resolve();
+    await pending.promise;
+  }
+});
+
+it("control: a successful empty audit search is a successful empty result", async () => {
+  const api = newFakeApi();
+  api.auditSearch = vi.fn(async () => []);
+  const browser = new BrowserState(api);
+  await browser.searchAudit();
+  expect(browser.auditEvents).toEqual([]);
+  expect(browser.auditExhausted).toBe(true);
+  expect(api.auditSearch).toHaveBeenCalledExactlyOnceWith({ operationPrefix: "", result: "", bookmarkId: "", beforeId: 0, limit: 50 });
+});
+
+it("diagnostic: failed recent and search reads retain no distinct error state", async () => {
+  const api = newFakeApi();
+  api.auditRecent = vi.fn(async () => { throw new Error("owned recent refusal"); });
+  api.auditSearch = vi.fn(async () => { throw new Error("owned search refusal"); });
+  const browser = new BrowserState(api);
+  await browser.loadAudit();
+  expect(browser.auditEvents).toEqual([]);
+  await expect(browser.searchAudit()).rejects.toThrow("owned search refusal");
+  expect(browser.auditEvents).toEqual([]);
+  expect(browser.auditExhausted).toBe(false);
+  console.info("UI10_AUDIT_ERROR", JSON.stringify({ events: browser.auditEvents, exhausted: browser.auditExhausted, stateKeys: Object.keys(browser).filter((key) => /audit/i.test(key)) }));
+});
+
+it("before: an old audit filter response cannot replace a newer filter result", async () => {
+  const api = newFakeApi();
+  const old = deferred<AuditEventDTO[]>();
+  const current = deferred<AuditEventDTO[]>();
+  api.auditSearch = vi.fn().mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise);
+  const browser = new BrowserState(api);
+  browser.auditFilterOp = "copy.";
+  const first = browser.searchAudit();
+  browser.auditFilterOp = "delete.";
+  const second = browser.searchAudit();
+  current.resolve([audit(22, "delete.container")]);
+  await second;
+  old.resolve([audit(11, "copy.object")]);
+  await first;
+  console.info("UI10_AUDIT_FILTER", JSON.stringify({ filter: browser.auditFilterOp, events: browser.auditEvents }));
+  expect(browser.auditEvents.map((event) => event.id)).toEqual([22]);
+});
+
+it("before: overlapping audit More requests cannot append the same page twice", async () => {
+  const api = newFakeApi();
+  const page = deferred<AuditEventDTO[]>();
+  api.auditSearch = vi.fn(() => page.promise);
+  const browser = new BrowserState(api);
+  browser.auditEvents = [audit(50, "copy.object"), audit(49, "copy.object")];
+  const first = browser.searchAudit(true);
+  const second = browser.searchAudit(true);
+  page.resolve([audit(48, "copy.object")]);
+  await Promise.all([first, second]);
+  console.info("UI10_AUDIT_MORE", JSON.stringify({ calls: vi.mocked(api.auditSearch).mock.calls, ids: browser.auditEvents.map((event) => event.id) }));
+  expect(browser.auditEvents.map((event) => event.id)).toEqual([50, 49, 48]);
+});
+
+it("before: a late recent-audit refresh cannot overwrite a filtered view", async () => {
+  const api = newFakeApi();
+  const recent = deferred<AuditEventDTO[]>();
+  api.auditRecent = vi.fn(() => recent.promise);
+  api.auditSearch = vi.fn(async () => [audit(22, "delete.container")]);
+  const browser = new BrowserState(api);
+  const refresh = browser.loadAudit();
+  browser.auditFilterOp = "delete.";
+  await browser.searchAudit();
+  recent.resolve([audit(30, "copy.object")]);
+  await refresh;
+  console.info("UI10_AUDIT_RECENT", JSON.stringify({ filter: browser.auditFilterOp, events: browser.auditEvents }));
+  expect(browser.auditEvents.map((event) => event.id)).toEqual([22]);
+});
