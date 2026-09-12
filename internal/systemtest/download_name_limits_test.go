@@ -1,0 +1,175 @@
+package systemtest
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/csmart/aeronautes/internal/app"
+	"github.com/csmart/aeronautes/internal/systemtest/oracle"
+)
+
+// Through the real service on both providers: a path component longer
+// than 255 bytes is refused before any write with the named length rule
+// wherever it sits, leading spaces and compatibility look-alikes are
+// admitted and complete with exact bytes, and a relative path that fits
+// every component but not the engine's pathname limit is the recorded,
+// unenforced bound that a default Swift makes unreachable.
+type nameLimitsCase struct {
+	name    string
+	objects []string
+	// refusedKind names the preflight problem kind when the selection is
+	// refused today; empty means the selection is admitted.
+	refusedKind   string
+	refusedDetail string
+	// failsAfterAdmission records that the admitted selection fails at
+	// effect time today, with the host's own wording in the job error.
+	failsAfterAdmission string
+	// providerMayRefuse records that a provider can refuse to create the
+	// object itself; the refusal text is then the recorded observation.
+	providerMayRefuse string
+}
+
+func nameLimitsCases() []nameLimitsCase {
+	return []nameLimitsCase{
+		{name: "leading_space", objects: []string{" a.txt", "a.txt"}},
+		{name: "compatibility_ligature", objects: []string{"ﬁle.txt", "file.txt"}},
+		{name: "compatibility_fullwidth_letter", objects: []string{"Ａ.txt", "A.txt"}},
+		{name: "component_255_bytes", objects: []string{strings.Repeat("b", 255)}},
+		{name: "component_300_bytes", objects: []string{"safe.txt", strings.Repeat("a", 300)}, refusedKind: "name-length", refusedDetail: "path component of 300 bytes exceeds the 255-byte name limit"},
+		{name: "nested_component_300_bytes", objects: []string{"safe.txt", "dir/" + strings.Repeat("a", 300) + "/leaf.txt"}, refusedKind: "name-length", refusedDetail: "path component of 300 bytes exceeds the 255-byte name limit"},
+		{name: "marker_component_300_bytes", objects: []string{"safe.txt", strings.Repeat("a", 300) + "/"}, refusedKind: "name-length", refusedDetail: "path component of 300 bytes exceeds the 255-byte name limit"},
+		// Seventeen components of 240 bytes: every component fits, the
+		// relative path is 4,096 bytes and exceeds the Linux pathname limit
+		// once the engine's anchored destination prefix is added; a
+		// default Swift refuses to create the object at all.
+		{name: "path_4096_bytes", objects: []string{"safe.txt", strings.TrimSuffix(strings.Repeat(strings.Repeat("p", 240)+"/", 17), "/")}, failsAfterAdmission: "file name too long", providerMayRefuse: "longer than 1024"},
+	}
+}
+
+func TestDownloadNameLimitsMock(t *testing.T) {
+	t.Parallel()
+	for _, c := range nameLimitsCases() {
+		t.Run(c.name, func(t *testing.T) { downloadNameLimits(t, findMockHarness(t), c) })
+	}
+}
+
+func TestDownloadNameLimitsRealSwift(t *testing.T) {
+	t.Parallel()
+	for _, c := range nameLimitsCases() {
+		t.Run(c.name, func(t *testing.T) { downloadNameLimits(t, New(t), c) })
+	}
+}
+
+func nameLimitsBody(name string) []byte { return []byte("bytes for " + name) }
+
+func downloadNameLimits(t *testing.T, h *Harness, c nameLimitsCase) {
+	t.Helper()
+	source := h.Container(h.Primary, "name-limits")
+	owned := t.TempDir()
+	selected := filepath.Join(owned, "selected")
+	seedListingLocal(t, owned, "selected/keep", []byte("selected sentinel"))
+	for _, name := range c.objects {
+		if c.providerMayRefuse != "" {
+			status, message := seedStatus(t, h.Primary, source, "scope/"+name, nameLimitsBody(name))
+			if status/100 != 2 {
+				// Swift's default object name limit is 1,024 bytes; the
+				// name cannot exist on this provider and the observation
+				// is the provider's own refusal.
+				if status != 400 || !strings.Contains(message, c.providerMayRefuse) {
+					t.Fatalf("provider refusal differs from the recorded claim: HTTP %d %s", status, message)
+				}
+				t.Logf("name limits observation: provider refused %q at creation: HTTP %d %s", name, status, message)
+				return
+			}
+			continue
+		}
+		h.Seed(h.Primary, source, "scope/"+name, nameLimitsBody(name), nil)
+	}
+	h.Seed(h.Primary, source, "outside-selection", []byte("unselected remote sentinel"), nil)
+	beforeA := h.SnapshotNamespace(h.Primary)
+	trace := copyCompletionProxy(t, h, h.Primary, "")
+	app.WireDownloadStageBoundary(h.Transfer, func(context.Context, string) error { return nil })
+	app.WireFilePicker(h.Transfer, listingFilePicker{dir: selected})
+	picked, err := h.Transfer.PickDownloadDir(t.Context())
+	if err != nil || picked == nil {
+		t.Fatalf("pick: %+v %v", picked, err)
+	}
+	request := app.DownloadRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: source, Prefix: "scope/", DestDirToken: picked.Token}
+	before := snapshotListingLocal(t, owned)
+	preflight, err := h.Transfer.PreflightDownload(t.Context(), request)
+	if err != nil || preflight == nil {
+		t.Fatalf("preflight: %+v %v", preflight, err)
+	}
+	encoded, _ := json.Marshal(map[string]any{"case": c.name, "items": len(preflight.Items), "problems": preflight.Problems})
+	t.Logf("name limits observation: %s", encoded)
+	if c.refusedKind != "" {
+		// The safe name is admitted and the over-long name refused by the
+		// named rule; the whole selection is rejected before any write.
+		if !preflight.Rejected() || len(preflight.Problems) != 1 || preflight.Problems[0].Kind != c.refusedKind || !strings.Contains(preflight.Problems[0].Detail, c.refusedDetail) || len(preflight.Items) != len(c.objects)-1 {
+			t.Fatalf("refusal differs: %+v items=%d", preflight.Problems, len(preflight.Items))
+		}
+		if _, err := h.Transfer.StartDownload(t.Context(), request); err == nil {
+			t.Fatal("start accepted a refused selection")
+		}
+		if after := snapshotListingLocal(t, owned); len(after) != len(before) {
+			t.Fatalf("refused selection changed the local tree: %v", after)
+		}
+	} else {
+		if preflight.Rejected() || len(preflight.Items) != len(c.objects) {
+			t.Fatalf("selection was not admitted: %+v", preflight)
+		}
+		id, err := h.Transfer.StartDownload(t.Context(), request)
+		if err != nil {
+			t.Fatalf("start: %v", err)
+		}
+		job := h.AwaitJob(id)
+		copyCompletionAwaitPins(t, h, h.Primary)
+		saved := uploadRecoveryRead(t, h.database, id)
+		encoded, _ := json.Marshal(map[string]any{"case": c.name, "state": job.State, "error": job.Error, "counters": job.Counters, "totals": saved.ItemTotals})
+		t.Logf("name limits outcome: %s", encoded)
+		if c.failsAfterAdmission != "" {
+			// Admitted today and refused only by the host at effect time,
+			// after the job has started.
+			if job.State == "complete" || !strings.Contains(job.Error, c.failsAfterAdmission) || saved.ItemTotals.Failed == 0 {
+				t.Fatalf("effect-time outcome differs from the recorded claim: state=%s error=%q totals=%+v", job.State, job.Error, saved.ItemTotals)
+			}
+		} else {
+			if job.State != "complete" || job.Error != "" || job.Counters.ObjectsCopied != int64(len(c.objects)) || saved.ItemTotals.Failed != 0 {
+				t.Fatalf("job outcome differs: state=%s error=%q counters=%+v totals=%+v", job.State, job.Error, job.Counters, saved.ItemTotals)
+			}
+			files := map[string][]byte{}
+			for _, name := range c.objects {
+				files["selected/"+name] = nameLimitsBody(name)
+			}
+			assertListingLocalDelta(t, before, snapshotListingLocal(t, owned), files)
+		}
+	}
+	if len(trace.writeSnapshot()) != 0 {
+		t.Errorf("download changed remote data: %v", trace.writeSnapshot())
+	}
+	h.AssertNoCollateral(beforeA, h.SnapshotNamespace(h.Primary))
+}
+
+// seedStatus writes one object and returns the provider's status and
+// message instead of failing, for cases where a provider's own limit is
+// the observation.
+func seedStatus(t *testing.T, a *Account, container, name string, body []byte) (int, string) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPut, a.storageURL+"/"+container+"/"+oracle.Escape(name), strings.NewReader(string(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-Auth-Token", a.token)
+	resp, err := a.rawClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	message, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, strings.TrimSpace(string(message))
+}
