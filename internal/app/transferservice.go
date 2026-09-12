@@ -323,6 +323,11 @@ func (s *TransferService) StartCopy(ctx context.Context, req CopyRequestDTO) (st
 	if err := validateCopyRequest(req); err != nil {
 		return "", err
 	}
+	owner, ctx, err := s.runner.admit(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer owner.finishStart()
 	releasePins, err := s.connections.pinForJob(ctx, req.SourceBookmarkID, req.DestBookmarkID)
 	if err != nil {
 		return "", err
@@ -355,19 +360,18 @@ func (s *TransferService) StartCopy(ctx context.Context, req CopyRequestDTO) (st
 		return "", err
 	}
 
-	jobCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	s.runner.register(job.ID, cancel)
+	s.runner.register(job.ID, owner.cancel)
 
 	if err := s.runner.audit.Append(ctx, audit.Event{
 		BookmarkID: req.SourceBookmarkID, Operation: "transfer.copy.start",
 		Resource: job.Source + " → " + job.Destination, Summary: "job " + job.ID + " · " + job.Settings,
 		Result: audit.ResultApplied,
 	}); err != nil {
-		cancel()
+		owner.cancel()
 		s.finishCopy(context.WithoutCancel(ctx), job.ID, req, job.Counters, jobs.StateFailed, "start audit unavailable before first write: "+err.Error())
 		return "", fmt.Errorf("start audit unavailable: %w", err)
 	}
-	s.runner.launchWithQueuedOutcome(jobCtx, job.ID, req.SourceBookmarkID, releasePins, func(runCtx context.Context) {
+	owner.launch(job.ID, req.SourceBookmarkID, releasePins, func(runCtx context.Context) {
 		s.runCopy(runCtx, job.ID, req, src, dst, engine)
 	}, func(background context.Context) {
 		s.finishCopy(background, job.ID, req, job.Counters, jobs.StateCancelled, "")

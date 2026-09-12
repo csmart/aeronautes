@@ -219,6 +219,11 @@ func (b boundLocal) CopyInto(ctx context.Context, src, dst string, anchor *os.Fi
 // StartUpload re-runs the preflight (state may have moved since the UI
 // showed it), rejects on any collision, and launches the job.
 func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO) (string, error) {
+	owner, ctx, err := s.runner.admit(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer owner.finishStart()
 	releasePins, err := s.connections.pinForJob(ctx, req.BookmarkID)
 	if err != nil {
 		return "", err
@@ -262,24 +267,23 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 	if err != nil {
 		return "", err
 	}
-	jobCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	s.runner.register(job.ID, cancel)
+	s.runner.register(job.ID, owner.cancel)
 	// Retained staging intent makes uncertain residue visible after a
 	// crash; it does not prove that reclaiming that residue is safe.
 	if err := s.jobs.RecoveryAdd(context.WithoutCancel(ctx), jobs.RecoveryRecord{
 		JobID: job.ID, BookmarkID: req.BookmarkID, Kind: jobs.RecoveryStaging,
 		Container: req.Container, Prefix: ".aeronautes/stage/" + job.ID + "/",
 	}); err != nil {
-		cancel()
+		owner.cancel()
 		s.finishLocal(context.WithoutCancel(ctx), job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, jobs.StateFailed, "recovery store unavailable before first write: "+err.Error(), "")
 		return "", fmt.Errorf("recovery store unavailable: %w", err)
 	}
 	if err := s.startLocalAudit(ctx, job, req.BookmarkID, "transfer.upload.start"); err != nil {
-		cancel()
+		owner.cancel()
 		return "", err
 	}
 
-	s.runner.launchWithQueuedOutcome(jobCtx, job.ID, req.BookmarkID, releasePins, func(runCtx context.Context) {
+	owner.launch(job.ID, req.BookmarkID, releasePins, func(runCtx context.Context) {
 		s.runLocal(runCtx, job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, func(innerCtx context.Context, onProgress func(done, total, bytes int64)) (*local.Report, error) {
 			background := context.WithoutCancel(innerCtx)
 			report, err := local.Upload(innerCtx, session, engine, "aeronautes_dst:"+req.Container, req.Container, req.Prefix, job.ID,
@@ -300,6 +304,11 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 
 // StartDownload mirrors StartUpload for materialization.
 func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequestDTO) (string, error) {
+	owner, ctx, err := s.runner.admit(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer owner.finishStart()
 	releasePins, err := s.connections.pinForJob(ctx, req.BookmarkID)
 	if err != nil {
 		return "", err
@@ -359,14 +368,13 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 	if err != nil {
 		return "", err
 	}
-	jobCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	s.runner.register(job.ID, cancel)
+	s.runner.register(job.ID, owner.cancel)
 	if err := s.startLocalAudit(ctx, job, req.BookmarkID, "transfer.download.start"); err != nil {
-		cancel()
+		owner.cancel()
 		return "", err
 	}
 
-	s.runner.launchWithQueuedOutcome(jobCtx, job.ID, req.BookmarkID, releasePins, func(runCtx context.Context) {
+	owner.launch(job.ID, req.BookmarkID, releasePins, func(runCtx context.Context) {
 		s.runLocal(runCtx, job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, func(innerCtx context.Context, onProgress func(done, total, bytes int64)) (*local.Report, error) {
 			return local.DownloadInto(innerCtx, session, engine, "aeronautes_src:"+req.Container, req.Container, req.Prefix, destination, job.ID, preflight,
 				s.downloadProgress(innerCtx, job.ID, onProgress), s.downloadItemRecorder(context.WithoutCancel(innerCtx), job.ID, req, destination.Path()))

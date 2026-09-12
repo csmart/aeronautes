@@ -126,6 +126,11 @@ func (s *DeleteService) StartDelete(ctx context.Context, req DeleteRequestDTO) (
 	if req.Confirm != req.Container {
 		return "", fmt.Errorf("confirmation %q does not match the container name — type it exactly", req.Confirm)
 	}
+	owner, ctx, err := s.runner.admit(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer owner.finishStart()
 	releasePins, err := s.connections.pinForJob(ctx, req.BookmarkID)
 	if err != nil {
 		return "", err
@@ -159,14 +164,13 @@ func (s *DeleteService) StartDelete(ctx context.Context, req DeleteRequestDTO) (
 	if err != nil {
 		return "", err
 	}
-	jobCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	s.runner.register(job.ID, cancel)
+	s.runner.register(job.ID, owner.cancel)
 	s.runner.record(ctx, req.BookmarkID, "delete."+string(req.Mode)+".start",
 		req.Container+"/"+req.Prefix, "job "+job.ID, audit.ResultApplied)
 
-	s.runner.launch(jobCtx, job.ID, req.BookmarkID, releasePins, func(runCtx context.Context) {
+	owner.launch(job.ID, req.BookmarkID, releasePins, func(runCtx context.Context) {
 		s.runDelete(runCtx, job.ID, req, session, capabilities)
-	})
+	}, nil)
 	releasePins = nil
 	return job.ID, nil
 }
