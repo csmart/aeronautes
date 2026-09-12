@@ -1,0 +1,396 @@
+{
+  "kind": "maintained run summary; full source/event reconciliation retained separately",
+  "source_parent": "b72391f0000cb2ae699f6026c5ed9a84614d8ab3",
+  "parent_git_blobs_verified": 823,
+  "executed_files_per_run": 827,
+  "final_claimed_source_sha256": {
+    "internal/swiftcontrol/errors.go": "a8994f4a4038a7b26234c3491efaf0c90001cfc33aa0aae63219d71695c36a65",
+    "internal/swiftcontrol/errors_public_test.go": "7da544c9db4bd1c6c3b3d423746b1f6bd67e2537d33f6ae9c7479e1ee2089977",
+    "internal/app/public_http_errors_test.go": "25d08f85120e1c8a85544ef8f886efa4e3fb5d460136ab79c706d0963590260f",
+    "internal/systemtest/public_http_errors.go": "b3698572c8849ebb28aa1c1006be3f2960440fe28a905603aec883af271b76a6",
+    "internal/systemtest/public_http_errors_test.go": "de58a4e48d258fc4c26ae2f2e34991eb7bd5a164c40ded82f4c48c36351fb596",
+    "internal/scenariocontract/contract.go": "84f5de2623bd8e54f5fffa101518d20099f2ffc89b165ddc7a16747d9316110a"
+  },
+  "go_version": "go1.27.1 linux/amd64",
+  "test_flags": [
+    "-race",
+    "-count=1",
+    "-mod=readonly",
+    "-json",
+    "-parallel=1",
+    "-p=2",
+    "-timeout=60s"
+  ],
+  "external_process_deadline_seconds": 120,
+  "runs": {
+    "controls-1": {
+      "actual_go_exit": 0,
+      "process_seconds": 2.3152792039327323,
+      "events": 96,
+      "packages": {
+        "github.com/csmart/aeronautes/internal/swiftcontrol": {
+          "state": "pass",
+          "elapsed": 1.01
+        }
+      },
+      "top_level_count": 4,
+      "named_count": 23,
+      "leaf_count": 21,
+      "named_terminals": {
+        "pass": 23
+      },
+      "leaf_terminals": {
+        "pass": 21
+      },
+      "hashes": {
+        "command.json": "1aa79fe1113da4d19e851bc9161cc7b37e115d887ee5e08affc1f9d5ebf45468",
+        "inputs.json": "ede01cbb93722e7fef6c8a178dbc263002dbfc43216c6eee4255a95010b5adb6",
+        "stdout.jsonl": "962f2426fdee989810daf91b2907fc12c9bb688a3e5cedfb57521616f83ef426",
+        "stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "result.json": "20580d2e67bef1fa26022af47d3d577c35270a8fae3f33fe600c6ff2cdb4e08e",
+        "executed-source.tar": "7b45190efd274c69fe3b4a1520e08a0f88101362436d1df893b667fdcaaef6e6"
+      }
+    },
+    "healthy-1": {
+      "actual_go_exit": 0,
+      "process_seconds": 4.467600421980023,
+      "events": 13,
+      "packages": {
+        "github.com/csmart/aeronautes/internal/app": {
+          "state": "pass",
+          "elapsed": 1.212
+        }
+      },
+      "top_level_count": 1,
+      "named_count": 2,
+      "leaf_count": 1,
+      "named_terminals": {
+        "pass": 2
+      },
+      "leaf_terminals": {
+        "pass": 1
+      },
+      "hashes": {
+        "command.json": "fc2daaeb4b897bfe4884979580e0e27da594bd978d2ca34665e205c0d93d45d6",
+        "inputs.json": "ede01cbb93722e7fef6c8a178dbc263002dbfc43216c6eee4255a95010b5adb6",
+        "stdout.jsonl": "eae5a26bd9c518b3b88f6c7734de4c9d226b192944cfeaf5c95773ed590ad59f",
+        "stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "result.json": "8caa826849c7debce29042969bea235c0d723e9a39baa7520345c9a71787e04d",
+        "executed-source.tar": "1f045e22e1f21b63daf3935a2e3c17246464798c03c4665d611d6cd87047a17c"
+      }
+    },
+    "before-1": {
+      "actual_go_exit": 1,
+      "process_seconds": 5.168443427886814,
+      "events": 383,
+      "packages": {
+        "github.com/csmart/aeronautes/internal/swiftcontrol": {
+          "state": "fail",
+          "elapsed": 0.014
+        },
+        "github.com/csmart/aeronautes/internal/app": {
+          "state": "fail",
+          "elapsed": 1.051
+        },
+        "github.com/csmart/aeronautes/internal/systemtest": {
+          "state": "fail",
+          "elapsed": 0.291
+        }
+      },
+      "top_level_count": 5,
+      "named_count": 73,
+      "leaf_count": 51,
+      "named_terminals": {
+        "fail": 59,
+        "pass": 14
+      },
+      "leaf_terminals": {
+        "pass": 11,
+        "fail": 40
+      },
+      "hashes": {
+        "command.json": "985f4414704b03df4c1f760a1cc3d92c7a0f1ba53179c90cdaee13c755f6e18d",
+        "inputs.json": "ede01cbb93722e7fef6c8a178dbc263002dbfc43216c6eee4255a95010b5adb6",
+        "stdout.jsonl": "34b1d3a064db245d6589285a67fdcd2ea5685afa97c271bfdc47bf0c82f4a522",
+        "stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "result.json": "e103196caac9d539b3de645ba0814633bd108c5126977eee928b10e860a74455",
+        "executed-source.tar": "f8011882c2f4177cedfb3be2ab11b85d45ba63c83ad572037c23838fc1df45de"
+      }
+    },
+    "after-1": {
+      "actual_go_exit": 0,
+      "process_seconds": 6.972584136761725,
+      "events": 310,
+      "packages": {
+        "github.com/csmart/aeronautes/internal/swiftcontrol": {
+          "state": "pass",
+          "elapsed": 1.015
+        },
+        "github.com/csmart/aeronautes/internal/app": {
+          "state": "pass",
+          "elapsed": 2.039
+        },
+        "github.com/csmart/aeronautes/internal/systemtest": {
+          "state": "pass",
+          "elapsed": 1.258
+        }
+      },
+      "top_level_count": 5,
+      "named_count": 73,
+      "leaf_count": 51,
+      "named_terminals": {
+        "pass": 73
+      },
+      "leaf_terminals": {
+        "pass": 51
+      },
+      "hashes": {
+        "command.json": "1be49d2fc36fe386a66e63e4c2cb3a3d73fee0210cfa069a80b11d212839b440",
+        "inputs.json": "34d13fc96421022649c67bc3c4e6464d227d07bb66f5d13978b835eda9e7acc7",
+        "stdout.jsonl": "b877300fdf927bd04f8b3650aaf4263da01a830948aebeecfc286d8cabf93605",
+        "stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "result.json": "ad5b9d27b36126f7cfe9dafe39ac09734964fe42c34b75f0697814ee7a6fcb7e",
+        "executed-source.tar": "4410ee0742ceebb6ddd9b881682b80e0c8c1ba097ffa801fa4d07c86f8f5ea70"
+      }
+    },
+    "omitted-1": {
+      "actual_go_exit": 1,
+      "process_seconds": 5.168864205945283,
+      "events": 383,
+      "packages": {
+        "github.com/csmart/aeronautes/internal/swiftcontrol": {
+          "state": "fail",
+          "elapsed": 0.011
+        },
+        "github.com/csmart/aeronautes/internal/app": {
+          "state": "fail",
+          "elapsed": 1.019
+        },
+        "github.com/csmart/aeronautes/internal/systemtest": {
+          "state": "fail",
+          "elapsed": 0.279
+        }
+      },
+      "top_level_count": 5,
+      "named_count": 73,
+      "leaf_count": 51,
+      "named_terminals": {
+        "fail": 59,
+        "pass": 14
+      },
+      "leaf_terminals": {
+        "pass": 11,
+        "fail": 40
+      },
+      "hashes": {
+        "command.json": "ac040f92dae7cf336077cd7cbb27f17746dadcdf2f6876e6e19d47e1c85c7e1d",
+        "inputs.json": "93a293e8f59a35ef41203fb6291d853e4cb64ad97347f99fa5f6fc1a1ab12529",
+        "stdout.jsonl": "b43dd56b25a33b6cc8532049a7c16e693a743de04a8cde6b8bd82691143c8e4c",
+        "stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "result.json": "3e6161454531e377ebb2ffd45740f1eb48d3cc416e1f55396046979065a70e86",
+        "executed-source.tar": "8f136e8098a04d108126aae0f62c4d69fa365d5de0cd8d016dd047ae07ce780d"
+      }
+    },
+    "controls-2": {
+      "actual_go_exit": 0,
+      "process_seconds": 2.3651076648384333,
+      "events": 96,
+      "packages": {
+        "github.com/csmart/aeronautes/internal/swiftcontrol": {
+          "state": "pass",
+          "elapsed": 1.012
+        }
+      },
+      "top_level_count": 4,
+      "named_count": 23,
+      "leaf_count": 21,
+      "named_terminals": {
+        "pass": 23
+      },
+      "leaf_terminals": {
+        "pass": 21
+      },
+      "hashes": {
+        "command.json": "c3ec6f6e470d793a64596b10d6def0e1dc5c210d39a4044da534b303c06052e0",
+        "inputs.json": "34d13fc96421022649c67bc3c4e6464d227d07bb66f5d13978b835eda9e7acc7",
+        "stdout.jsonl": "d287178b4d80045b55ba1b4e01789afa8e4c5d94d3351a111610bd92e4b6bfb3",
+        "stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "result.json": "5228759920474d6eb4022cd4bf7d095774a6008847c1ef12f714ed0adc92f381",
+        "executed-source.tar": "41810f92260ef43fb48b508986fa40b56619c50d333c42f4063ff89b49e6cbc4"
+      }
+    }
+  },
+  "scenario_reports": {
+    "before-1": {
+      "schemaVersion": 3,
+      "valid": false,
+      "processSucceeded": false,
+      "streamComplete": false,
+      "contractValid": true,
+      "coverageComplete": false,
+      "commitSha": "",
+      "goVersion": "go1.27.1",
+      "saioConfigured": false,
+      "contractHash": "77af54c6744cec99",
+      "totalActions": 52,
+      "totalRequired": 117,
+      "totalCovered": 0,
+      "actionsWithGaps": 52,
+      "failedPackages": [
+        "github.com/csmart/aeronautes/internal/app",
+        "github.com/csmart/aeronautes/internal/swiftcontrol",
+        "github.com/csmart/aeronautes/internal/systemtest"
+      ],
+      "nonJSONLines": 0,
+      "Connect": {
+        "action": "BrowseService.Connect",
+        "kind": "session",
+        "required": [
+          "happy",
+          "refusal"
+        ],
+        "covered": null,
+        "gaps": [
+          "happy",
+          "refusal"
+        ]
+      }
+    },
+    "after-1": {
+      "schemaVersion": 3,
+      "valid": true,
+      "processSucceeded": true,
+      "streamComplete": true,
+      "contractValid": true,
+      "coverageComplete": false,
+      "commitSha": "",
+      "goVersion": "go1.27.1",
+      "saioConfigured": false,
+      "contractHash": "77af54c6744cec99",
+      "totalActions": 52,
+      "totalRequired": 117,
+      "totalCovered": 1,
+      "actionsWithGaps": 52,
+      "nonJSONLines": 0,
+      "Connect": {
+        "action": "BrowseService.Connect",
+        "kind": "session",
+        "required": [
+          "happy",
+          "refusal"
+        ],
+        "covered": [
+          {
+            "scenario": "refusal",
+            "tests": [
+              "github.com/csmart/aeronautes/internal/systemtest\tTestPublicConnectHTTPErrorRefusalMock"
+            ],
+            "evidence": [
+              "refused: swift: Internal Server Error (server, HTTP 500)"
+            ]
+          }
+        ],
+        "gaps": [
+          "happy"
+        ]
+      }
+    },
+    "omitted-1": {
+      "schemaVersion": 3,
+      "valid": false,
+      "processSucceeded": false,
+      "streamComplete": false,
+      "contractValid": true,
+      "coverageComplete": false,
+      "commitSha": "",
+      "goVersion": "go1.27.1",
+      "saioConfigured": false,
+      "contractHash": "77af54c6744cec99",
+      "totalActions": 52,
+      "totalRequired": 117,
+      "totalCovered": 0,
+      "actionsWithGaps": 52,
+      "failedPackages": [
+        "github.com/csmart/aeronautes/internal/app",
+        "github.com/csmart/aeronautes/internal/swiftcontrol",
+        "github.com/csmart/aeronautes/internal/systemtest"
+      ],
+      "nonJSONLines": 0,
+      "Connect": {
+        "action": "BrowseService.Connect",
+        "kind": "session",
+        "required": [
+          "happy",
+          "refusal"
+        ],
+        "covered": null,
+        "gaps": [
+          "happy",
+          "refusal"
+        ]
+      }
+    }
+  },
+  "supplementary_tests": {
+    "contract": {
+      "events": 24,
+      "packages": {
+        "github.com/csmart/aeronautes/internal/scenariocontract": {
+          "state": "pass",
+          "elapsed": 1.01
+        }
+      },
+      "top_level_count": 5,
+      "named_count": 5,
+      "leaf_count": 5,
+      "leaf_terminals": {
+        "pass": 5
+      }
+    },
+    "reconciler-controls": {
+      "events": 20,
+      "packages": {
+        "github.com/csmart/aeronautes/internal/systemtest/cmd/scenariocov": {
+          "state": "pass",
+          "elapsed": 1.01
+        }
+      },
+      "top_level_count": 4,
+      "named_count": 4,
+      "leaf_count": 4,
+      "leaf_terminals": {
+        "pass": 4
+      }
+    }
+  },
+  "producer_exits": {
+    "controls-1": 0,
+    "healthy-1": 0,
+    "before-1": 1,
+    "after-1": 0,
+    "omitted-1": 1,
+    "controls-2": 0,
+    "initial_verification": 1,
+    "resumed_reconciliation": 0,
+    "assessment": 0
+  },
+  "limits": [
+    "Only owned loopback HTTP/1.1 and synthetic session credentials; no real Swift, native keychain, Wails rendering or full application audit proof.",
+    "Before and omitted streams have complete event lifecycles but the product reconciler marks failed packages streamComplete=false; neither earns scenario credit.",
+    "The initial reconciler binary build failed VCS stamping in a source archive; its wrapper then raised FileNotFoundError before saving results.json. An author receipt preserves actual tool exits; original per-step monotonic durations were not persisted.",
+    "The resumed build uses -buildvcs=false solely for this private archive. No target module or release identity policy changes.",
+    "The private run producer contains an unused contract selection with an incorrect package path; it was never executed. Actual contract checks use the separately retained verification producer.",
+    "Two early edit/inspection failures occurred before tests: atomic matrix patch context mismatch and an absent-file rg exit2; neither has regression credit.",
+    "The reused findMockHarness has existing unchecked mock response writes; the new rejecting endpoint checks write, flush, close and owned handler join.",
+    "The original cause still contains provider text; other Normalize branches and transaction-ID policy remain unchanged."
+  ],
+  "provenance_sha256": {
+    "run.py": "a3c9965a272d675f6980a01795fe955e0ec9759126e075de2b1b4e013f7ca328",
+    "verify.py": "8a825c39c666c0c433d19e383390f96c67926207badf51de21891c5c7d53dee3",
+    "reconcile.py": "9c23e1e50fe7efcec6db2e4088cbf9e0d97b22daadae38784569689f88c1a08f",
+    "assess.py": "63bb45531f26a2e76ab8ffa050f6aaa3bb87a65d3ff5174af90bab7ae4a47b2d",
+    "assessment.json": "c7e78c8874d15941bac1dcf3c742910cf8a58a616ec9dd0d33a5c358e47e23b2",
+    "verification/initial-producer-receipt.json": "88ebd59ef184c5514f41c41f7408f963d984922b6945773838ae0259df657902",
+    "verification-resume/results.json": "fdf48ed9bfab254d7232a9b1668b81e51563e222b0deaa34c0f17b2f6e3565f4"
+  }
+}

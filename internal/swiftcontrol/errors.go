@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 
 	"github.com/ncw/swift/v2"
 )
@@ -78,10 +79,15 @@ func Normalize(err error) error {
 	var we *swift.Error
 	if errors.As(err, &we) {
 		kind, retryable := classifyStatus(we.StatusCode)
+		// Provider reason phrases can echo credentials into public errors.
+		message := http.StatusText(we.StatusCode)
+		if message == "" {
+			message = "Swift request failed"
+		}
 		return &SwiftError{
 			Kind:       kind,
 			HTTPStatus: we.StatusCode,
-			Message:    we.Text,
+			Message:    message,
 			Retryable:  retryable,
 			err:        err,
 		}
