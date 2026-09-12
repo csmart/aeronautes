@@ -194,8 +194,16 @@
       {:else}
         No active transfers
       {/if}
-      {#if browser.auditEvents.length > 0}
-        · {browser.auditEvents.length} recent changes
+      {#if browser.recentAuditError}
+        · Recent changes unavailable
+        {#if browser.recentAuditLoaded}({browser.recentAuditEvents.length} last loaded; stale){/if}
+      {:else if browser.recentAuditLoading}
+        · Loading recent changes
+        {#if browser.recentAuditLoaded}({browser.recentAuditEvents.length} last loaded){/if}
+      {:else if browser.recentAuditLoaded}
+        · {browser.recentAuditEvents.length} last loaded recent changes
+      {:else}
+        · Recent changes not loaded
       {/if}
       {#if cancellationNotices.length > 0}
         · {cancellationNotices.length} cancellation {cancellationNotices.length === 1 ? "notice" : "notices"}
@@ -465,6 +473,28 @@
       {:else if tab === "history"}
         <JobHistory {browser} />
       {:else}
+        <div class="audit-recent">
+          <p role={browser.recentAuditError ? "alert" : "status"}>
+            {#if browser.recentAuditError}
+              Recent changes are unavailable.
+              {#if browser.recentAuditLoaded}
+                The last loaded slice of {browser.recentAuditEvents.length} events may be stale.
+              {/if}
+            {:else if browser.recentAuditLoading}
+              Loading recent changes.
+              {#if browser.recentAuditLoaded}
+                Previously loaded slice: {browser.recentAuditEvents.length} events.
+              {/if}
+            {:else if browser.recentAuditLoaded}
+              Last loaded recent slice: {browser.recentAuditEvents.length} events, up to 50 across all accounts.
+            {:else}
+              Recent changes have not been loaded.
+            {/if}
+          </p>
+          <button disabled={browser.recentAuditLoading} onclick={() => browser.loadAudit()}>
+            {browser.recentAuditError ? "Retry recent changes" : browser.recentAuditLoaded ? "Refresh recent changes" : "Load recent changes"}
+          </button>
+        </div>
         <div class="audit-filters num">
           <label for={`${id}-audit-operation`}>Operation prefix</label>
           <input
@@ -493,8 +523,32 @@
             <option value="failed">failed</option>
           </select>
         </div>
+        <p class="audit-scope">
+          All accounts · Operation prefix:
+          <span class="type-mono">{browser.auditFilterOp === "" ? "any" : JSON.stringify(browser.auditFilterOp)}</span>
+          · Result: <span class="type-mono">{browser.auditFilterResult === "" ? "any" : JSON.stringify(browser.auditFilterResult)}</span>
+        </p>
+        <div class="audit-status" role="status">
+          {#if browser.auditError}
+            <p role="alert">{browser.auditError}</p>
+            {#if browser.auditLoaded}<p>Previously loaded results may be stale.</p>{/if}
+          {:else if browser.auditLoading}
+            <p>{browser.auditLoaded ? "Refreshing audit events. Previously loaded results are shown." : "Loading audit events."}</p>
+          {:else if browser.auditMoreLoading}
+            <p>Loading more audit events. Previously loaded results are shown.</p>
+          {:else if browser.auditMoreError}
+            <p role="alert">{browser.auditMoreError}</p>
+          {:else if !browser.auditLoaded}
+            <p>Audit events have not been loaded for these filters.</p>
+          {:else}
+            <p>Last loaded results for these filters.</p>
+          {/if}
+          <button disabled={browser.auditLoading} onclick={() => browser.searchAudit()}>
+            {browser.auditError ? "Retry audit search" : browser.auditLoaded ? "Refresh audit search" : "Load audit events"}
+          </button>
+        </div>
         <div class="rows">
-          {#if browser.auditEvents.length === 0}
+          {#if browser.auditLoaded && !browser.auditLoading && !browser.auditError && browser.auditEvents.length === 0}
             <p class="empty">No matching audit events.</p>
           {:else}
             {#each browser.auditEvents as event (event.id)}
@@ -506,8 +560,10 @@
                 <span class="when">{timeOf(event.at)}</span>
               </div>
             {/each}
-            {#if !browser.auditExhausted}
-              <button class="more" onclick={() => browser.searchAudit(true)}>Load more…</button>
+            {#if browser.auditLoaded && browser.auditEvents.length > 0 && !browser.auditExhausted && !browser.auditError}
+              <button class="more" disabled={!browser.auditCanMore} onclick={() => browser.searchAudit(true)}>
+                {browser.auditMoreError ? "Retry audit page" : "Load more…"}
+              </button>
             {/if}
           {/if}
         </div>
@@ -543,6 +599,16 @@
 
   .body {
     padding: 0 var(--space-4) var(--space-2);
+  }
+
+  .audit-recent, .audit-status, .audit-scope {
+    margin: var(--space-2) 0;
+    font-size: var(--text-sm);
+    overflow-wrap: anywhere;
+  }
+
+  .audit-recent p, .audit-status p {
+    margin: var(--space-1) 0;
   }
 
   .cancellation-feedback {

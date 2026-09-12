@@ -105,3 +105,52 @@ Search, page and Recent retries call read methods only.
 Do not change cancellation, connection or selection authority, mutation methods/timing, API/DTOs, fake API behaviour, backend storage, settings, bookmarks, retention policy or existing test/CI budgets in this slice.
 Stop and return any required expansion or conflicting active ownership to the coordinator.
 No implementation or after result is claimed by this contract commit.
+
+## Local implementation proof
+
+The independently approved contract is `4b112f80cc9edc47e220e1d97efb633db04df413`, based on integrated implementation `836ad0d2138f51741c65de948bab5c5edeb2f3f8`.
+The following results apply to the source hashes in the [after evidence twin](probes/2026-09-12-audit-query-state.after.json); local implementation review and protected delivery are separate gates.
+The private packet is `/tmp/aeronautes-audit-verification`, including its exact named-test inventory, commands, raw outputs, immutable control source archive and reconciliation index.
+
+The selected query now retains rows only for its literal filters, retires old replies on both filter edits and new requests, and records loading, unavailable, successful-empty and stale states.
+More is admitted once per pending page, requires a successful current query and validates the exact descending exclusive cursor before appending.
+The independent Recent cache remains bounded at 50; its summary count and unavailable/stale state no longer depend on Search.
+All retry controls read the trail only.
+The existing seven mutation wrappers and connection awaits are unchanged; the three existing Recent assertions still require the exact same operation values.
+
+| Actual verification | Result |
+| --- | --- |
+| Dedicated BrowserState audit tests | 61 passed, including seven rejected-follow-up reads and seven true mutation rejection controls. |
+| Dedicated mounted JobsDrawer audit tests | 13 passed; pending, empty, unavailable, stale, paging, read retry, literal scope and collapsed summary checked. |
+| Existing neighbouring tests in nine files | 376 passed, including connection, paging, post-audit detail/navigation, sensitive labels and all 20 cancellation cases. |
+| Exact named-test reconciliation | The two dedicated and nine neighbouring files contain 450 distinct passing file/name pairs; repeated incremental runs and the six archived probes are not added to this count. |
+| Original six-case probe, unchanged | Six passed against the corrected source, with no skipped case; legal More now makes two total calls and appends IDs 50 and 49 once. |
+| Svelte check | Exit 0, zero errors and zero warnings. |
+| Production frontend build | Exit 0. |
+
+All positive runs above completed without a timeout or skipped test.
+Earlier incremental state and drawer failures remain in the packet, separately labelled: the first state test draft ran before the production correction, and the drawer draft ran after the state correction but before its presentation change.
+Those incremental failures are not substituted for the unchanged-source six-case proof or counted as independent final successes.
+
+Twelve independent private broken-guard variants each returned actual exit 1 without setup failure or timeout.
+They produced 18 targeted failing tests; other tests were deliberately unselected by the recorded name filters and do not count as passing controls.
+The seven mutation failures belong to one variant that rethrows Recent errors; the control runner's successful assessment does not replace those failing command exits.
+
+| Broken boundary | Observed targeted failure |
+| --- | --- |
+| Query generation | Older ID 11 replaced newer ID 22. |
+| Synchronous filter retirement | A change away and back allowed retired ID 11 to publish. |
+| Guarded query catch | An older failure set an error on the current query. |
+| Guarded query finally | An older completion cleared the newer pending state. |
+| More admission | Two overlapping More actions issued three total API calls. |
+| Exclusive cursor | A page at the same cursor appended a repeated boundary ID. |
+| Strict page uniqueness | Duplicate IDs appended instead of leaving prior rows intact. |
+| Recent/query separation | Recent ID 40 replaced the selected query's ID 22. |
+| Recent generation | An older zero marked the newer unavailable cache loaded. |
+| Nonthrowing post-mutation Recent | All seven successful mutation wrappers rejected with the injected read error. |
+| Pending/empty projection | The mounted pending first query announced “No matching audit events.” |
+| Recent count attribution | The summary counted the 50-row query instead of its two-event Recent slice. |
+
+This is focused frontend proof with the repository's existing fake API and mounted Svelte components.
+It does not establish native Wails, deployed Swift, full repository CI or valuable-data readiness.
+UI-10 settings/bookmarks, UI-09 account/transaction diagnostics, P24 history bounds and all remaining release gates stay open.

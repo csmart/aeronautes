@@ -164,7 +164,7 @@ describe("mutations (§65.2)", () => {
     expect(result.outcome).toBe("applied");
     expect(s.objectDetail?.meta?.Camera).toBe("fx6");
     expect(s.objectDetail?.meta?.Origin).toBe("fixture");
-    expect(s.auditEvents[0]?.operation).toBe("object.metadata.update");
+    expect(s.recentAuditEvents[0]?.operation).toBe("object.metadata.update");
   });
 
   it("conflicts on a stale fingerprint and applies with force", async () => {
@@ -231,7 +231,7 @@ describe("mutations (§65.2)", () => {
     await s.deleteMarker("implied/");
     // Children keep the prefix alive as implied.
     expect(s.entries.some((e) => e.kind === "prefix" && e.name === "implied/")).toBe(true);
-    expect(s.auditEvents[0]?.operation).toBe("marker.delete");
+    expect(s.recentAuditEvents[0]?.operation).toBe("marker.delete");
   });
 });
 
@@ -266,7 +266,7 @@ describe("large-object read semantics (§65.3)", () => {
 
     await s.deleteManifest("fixtures", "external-dlo");
     expect(s.entries.some((e) => e.name === "external-dlo")).toBe(false);
-    expect(s.auditEvents[0]?.operation).toBe("manifest.delete");
+    expect(s.recentAuditEvents[0]?.operation).toBe("manifest.delete");
 
     // Segments survive in the store.
     await s.openBackstage("external-dlo-segments", "wedding-video/", "gone");
