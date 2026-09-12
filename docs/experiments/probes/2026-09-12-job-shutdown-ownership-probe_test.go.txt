@@ -1,0 +1,268 @@
+//go:build linux
+
+package app
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/csmart/aeronautes/internal/audit"
+	"github.com/csmart/aeronautes/internal/db"
+	"github.com/csmart/aeronautes/internal/jobs"
+)
+
+// This private probe observes the existing runner and the shell's resource
+// close order; it does not simulate Wails quitting or claim native acceptance.
+func TestPrivateShutdownResourceOrder(t *testing.T) {
+	for _, phase := range []string{"running_body", "terminal_body_cleanup", "pin_cleanup"} {
+		t.Run(phase, func(t *testing.T) {
+			stateDir := t.TempDir()
+			releaseLock, err := AcquireInstanceLock(stateDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var lockOnce sync.Once
+			release := func() { lockOnce.Do(releaseLock) }
+			t.Cleanup(release)
+			database, err := db.Open(t.Context(), filepath.Join(stateDir, "state.sqlite"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if err := database.Close(); err != nil {
+					t.Error(err)
+				}
+			})
+			store := jobs.NewStore(database)
+			runner := newJobRunner(store, audit.NewStore(database))
+			job, err := store.Create(t.Context(), jobs.Job{Type: jobs.TypeDownload})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, state := range []jobs.State{jobs.StatePlanning, jobs.StateRunning} {
+				if err := store.Transition(t.Context(), job.ID, state); err != nil {
+					t.Fatal(err)
+				}
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			t.Cleanup(cancel)
+			gate := make(chan struct{})
+			var gateOnce sync.Once
+			unblock := func() { gateOnce.Do(func() { close(gate) }) }
+			reached, done := make(chan struct{}), make(chan struct{})
+			bodyResult := make(chan error, 1)
+			t.Cleanup(func() { unblock(); privateShutdownAwait(t, done) })
+			runner.register(job.ID, cancel)
+			runner.launch(ctx, job.ID, "", func() {
+				if phase == "pin_cleanup" {
+					close(reached)
+					<-gate
+				}
+				close(done)
+			}, func(context.Context) {
+				if phase != "running_body" {
+					runner.release(job.ID)
+					if err := store.Transition(context.Background(), job.ID, jobs.StateCancelled); err != nil {
+						bodyResult <- err
+						return
+					}
+				}
+				if phase != "pin_cleanup" {
+					close(reached)
+					<-gate
+				}
+				if phase == "running_body" {
+					runner.release(job.ID)
+				}
+				bodyResult <- nil
+			})
+			privateShutdownAwait(t, reached)
+			runner.mu.Lock()
+			active, registered := runner.active, len(runner.cancels)
+			runner.mu.Unlock()
+			wantActive, wantRegistered := 1, 0
+			if phase == "pin_cleanup" {
+				wantActive = 0
+			}
+			if phase == "running_body" {
+				wantRegistered = 1
+			}
+			if active != wantActive || registered != wantRegistered {
+				t.Fatalf("unexpected runner state: active=%d registered=%d", active, registered)
+			}
+			if other, err := AcquireInstanceLock(stateDir); err == nil {
+				other()
+				t.Fatal("lock was not exclusive before explicit resource closure")
+			}
+			if err := database.Close(); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-done:
+				t.Fatal("fixture unexpectedly drained before resource closure")
+			default:
+			}
+			release()
+			output := filepath.Join(stateDir, "recovery.json")
+			helperCtx, stop := context.WithTimeout(t.Context(), 10*time.Second)
+			defer stop()
+			command := exec.CommandContext(helperCtx, os.Args[0], "-test.run=^TestPrivateShutdownRecoveryHelper$")
+			command.Env = append(os.Environ(), "AERONAUTES_PRIVATE_SHUTDOWN_STATE="+stateDir,
+				"AERONAUTES_PRIVATE_SHUTDOWN_JOB="+job.ID, "AERONAUTES_PRIVATE_SHUTDOWN_OUTPUT="+output)
+			if text, err := command.CombinedOutput(); err != nil {
+				t.Fatalf("recovery helper: %v\n%s", err, text)
+			}
+			encoded, err := os.ReadFile(output)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var recovery privateShutdownRecovery
+			if err := json.Unmarshal(encoded, &recovery); err != nil {
+				t.Fatal(err)
+			}
+			wantInterrupted, wantState := int64(0), jobs.StateCancelled
+			if phase == "running_body" {
+				wantInterrupted, wantState = 1, jobs.StateFailed
+			}
+			if recovery.Interrupted != wantInterrupted || recovery.Repeated != 0 || recovery.State != wantState {
+				t.Fatalf("unexpected recovery: %+v", recovery)
+			}
+			select {
+			case <-done:
+				t.Fatal("fixture unexpectedly drained during second-process recovery")
+			default:
+			}
+			t.Logf("OBSERVED phase=%s active=%d registered=%d db_closed=true lock_reacquired=true owner_not_drained=true recovery=%s", phase, active, registered, encoded)
+			unblock()
+			privateShutdownAwait(t, done)
+			if err := <-bodyResult; err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+type privateShutdownRecovery struct {
+	Interrupted int64      `json:"interrupted"`
+	Repeated    int64      `json:"repeated"`
+	State       jobs.State `json:"state"`
+}
+
+func TestPrivateShutdownRecoveryHelper(t *testing.T) {
+	stateDir := os.Getenv("AERONAUTES_PRIVATE_SHUTDOWN_STATE")
+	if stateDir == "" {
+		t.Skip("private reexec helper")
+	}
+	release, err := AcquireInstanceLock(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	database, err := db.Open(t.Context(), filepath.Join(stateDir, "state.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := database.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	store := jobs.NewStore(database)
+	count, err := store.FailInterrupted(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	repeated, err := store.FailInterrupted(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.Get(t.Context(), os.Getenv("AERONAUTES_PRIVATE_SHUTDOWN_JOB"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(privateShutdownRecovery{count, repeated, job.State})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(os.Getenv("AERONAUTES_PRIVATE_SHUTDOWN_OUTPUT"), encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPrivateShutdownPublicContext(t *testing.T) {
+	for _, requestCancel := range []bool{false, true} {
+		t.Run(fmt.Sprintf("cancel_job_%t", requestCancel), func(t *testing.T) {
+			h := newHarness(t)
+			h.connect(t)
+			bookmark := h.transfer.connections.ActiveBookmarkID()
+			h.mock.AddContainer("shutdown-probe", "standard")
+			seedObject(h.mock, "shutdown-probe", "scope/file", "retained contents", nil)
+			barrier := newEngineBarrier(t)
+			h.installEngine(barrier)
+			directory := t.TempDir()
+			h.transfer.setFilePicker(fakePicker{dir: directory})
+			picked, err := h.transfer.PickDownloadDir(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			id, err := h.transfer.StartDownload(ctx, DownloadRequestDTO{BookmarkID: bookmark,
+				Container: "shutdown-probe", Prefix: "scope/", DestDirToken: picked.Token})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { barrier.unblock(); awaitTerminal(t, h, id) })
+			barrier.waitUntilEntered(t)
+			cancel()
+			_, transferHook := any(h.transfer).(interface{ ServiceShutdown() error })
+			_, runnerHook := any(h.transfer.runner).(interface{ ServiceShutdown() error })
+			find := NewFindService(h.transfer.connections)
+			if err := find.ServiceShutdown(); err != nil {
+				t.Fatal(err)
+			}
+			if transferHook || runnerHook {
+				t.Fatal("source changed: review the new lifecycle hook before using this before probe")
+			}
+			if requestCancel {
+				if err := h.transfer.CancelJob(t.Context(), id); err != nil {
+					t.Fatal(err)
+				}
+			}
+			barrier.unblock()
+			job := awaitTerminal(t, h, id)
+			t.Logf("PUBLIC RESULT cancel_job=%t job=%+v", requestCancel, job)
+			data, readErr := os.ReadFile(filepath.Join(directory, "file"))
+			wantState := "complete"
+			if requestCancel {
+				wantState = "cancelled"
+				if !os.IsNotExist(readErr) {
+					t.Fatalf("CancelJob left a final file: %q %v", data, readErr)
+				}
+			} else if readErr != nil || string(data) != "retained contents" {
+				t.Fatalf("detached job control: %q %v", data, readErr)
+			}
+			if job.State != wantState {
+				t.Fatalf("state=%s want=%s", job.State, wantState)
+			}
+			awaitJobBindingsReleased(t, h, []string{bookmark})
+			t.Logf("OBSERVED caller_context_cancelled=true transfer_shutdown_hook=false runner_shutdown_hook=false find_shutdown=nil cancel_job=%t state=%s final_file=%t", requestCancel, job.State, readErr == nil)
+		})
+	}
+}
+
+func privateShutdownAwait(t *testing.T, done <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("private shutdown probe barrier did not complete")
+	}
+}
