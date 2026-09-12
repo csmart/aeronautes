@@ -5365,6 +5365,10 @@ Its unchanged-source probe uses a legal full 50-row Search before overlapping Mo
 
 All-account query scope remains explicit; the promised bookmark filter and broader UI-09 diagnostics, UI-10 settings/bookmarks, P24 history bounds, native acceptance and the valuable-data hold remain open.
 
+The audit correction now passes independent local review, 74 dedicated state/component tests and the integrated 1,244-test frontend suite.
+Selected queries and the bounded Recent summary retain separate owners; failed optional reads preserve the existing mutation/connection awaits and outcomes.
+The preserved before failures and twelve omitted-guard variants cover the bounded correction; final-base Go verification and protected delivery remain separate gates, without UI-10/P28 or valuable-data clearance.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.

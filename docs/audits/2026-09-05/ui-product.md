@@ -176,7 +176,11 @@ Confidence: high static evidence; failure displays were not run against a real W
 Current disposition: the locally reviewed [cancellation feedback correction](../../experiments/2026-09-12-cancellation-feedback.md) keeps pending, requested and unconfirmed notices bound to the admitted job across successful or failed job reads, filter changes and missing rows.
 It guards duplicate requests before rendering, retains up to 50 notices without silent eviction, and makes retry and dismissal explicit; a requested cancellation never invents a terminal outcome or counter.
 Maintained component regressions and deliberately omitted guards establish that presentation scope, with combined-source verification and protected delivery still pending.
-Audit-read availability and query ownership, settings and bookmark failures, native Wails observations and the wider UI-10/P28 gate remain open.
+The locally reviewed [audit-read correction](../../experiments/2026-09-12-audit-query-state.md) separates the selected literal query from the bounded Recent summary and prevents obsolete replies or overlapping More requests from replacing or duplicating current results.
+Unavailable reads and retained stale rows have explicit status and read-only retry; a pending or failed query is never presented as a successful empty result.
+The 74 dedicated state/component tests, preserved before failures and twelve independently omitted guards cover that correction, and the integrated frontend suite passes all 1,244 tests.
+Optional Recent failures preserve the existing mutation and connection awaits and outcomes.
+Current-base Go verification and protected delivery, settings and bookmark failures, bookmark-scoped audit filtering and diagnostics, native Wails observations and the wider UI-10/P28 gate remain open.
 
 ### UI-11 — P2: keyboard and dialog semantics are incomplete and interfere
 
