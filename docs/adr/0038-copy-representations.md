@@ -1,6 +1,6 @@
 # ADR 0038 — preserve encoded bytes in Copy
 
-**Status:** Proposed; the representation contract requires independent review before implementation.
+**Status:** Accepted; the Copy-only implementation has passed local review and compatibility tests, and requires one combined current-base delivery with ADR 0037.
 **Scope:** The rclone child created by `TransferService` for Copy, as a compatibility prerequisite for ADR 0037.
 
 ## Problem and oracle

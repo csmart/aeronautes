@@ -1,6 +1,6 @@
 # ADR 0037 — own staged-content reads
 
-**Status:** Accepted; the native prerequisite and first consumer require separate implementation review and one combined delivery.
+**Status:** Accepted; the native prerequisite and first consumer have passed separate local implementation reviews and require one combined current-base delivery with ADR 0038.
 **Scope:** One native-read prerequisite and its first plain-source to staged-DLO consumer within DS-04/P16.
 
 ## Problem and oracle

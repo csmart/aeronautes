@@ -134,9 +134,12 @@ Current disposition: [PR93’s bounded destination change detection](../../exper
 A DLO destination additionally needs a usable staged aggregate stamp matching its live aggregate; an SLO destination is refused by this predicate.
 The optional stamp uses the existing conditional publication only when it fits the complete advertised metadata allowance, preserving every user value; it does not strengthen post-copy content verification.
 A skip means only that no aggregate difference was observed against the staged observation this executor recorded when it published the name; it never means that the destination equals the source, because a wrong initial copy still skips and a stale segment listing can still conceal a substitution.
-The staged-content half, current source/destination binding, large-source/plain-destination case and local-transfer verification remain open under P16.
+The locally reviewed [ADR 0037/0038 sequence](../../experiments/2026-09-11-staged-copy-content.md) adds a complete staged-DLO byte count and MD5 comparison against a non-symlink plain source HEAD, plus Copy-only preservation of opaque stored representations.
+Owned mock/real-Swift corruption and representation tests cover that bounded route, but the sequence remains pending combined current-base delivery.
+It does not pin the source version or bind the stage through publication, cover segmented sources or local-transfer verification, or replace legacy verification-strength labels.
+Current source/destination binding, the large-source/plain-destination case and the remaining staged-content paths stay open under P16.
 Logical-content verification must accommodate legitimate resegmentation, with its content-read cost and policy reviewed separately; comparing source and destination segment layouts is not a substitute.
-DS-04 remains blocking, Mirror starts remain refused under ADR 0020, and this slice grants no destructive follow-up authority.
+DS-04 remains blocking, Mirror starts remain refused under ADR 0020, and these partial corrections grant no destructive follow-up authority or valuable-data clearance.
 
 ### DS-05 — High: downloads escape the selected directory through parent symlinks
 
