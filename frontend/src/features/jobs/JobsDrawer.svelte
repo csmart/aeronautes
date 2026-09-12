@@ -18,6 +18,14 @@
   let tab: "jobs" | "history" | "changes" = $state("jobs");
   let expanded: string | null = $state(null);
   let budgetSaving = $state(false);
+  type CancellationNotice = {
+    jobId: string;
+    state: "pending" | "requested" | "unconfirmed";
+  };
+  const CANCELLATION_NOTICE_LIMIT = 50;
+  let cancellationNotices = $state<CancellationNotice[]>([]);
+  let cancellationRefreshing = $state(false);
+  let disposed = false;
   // §42 benchmark: typed-account consent inline.
   let benchOpen = $state(false);
   let benchConfirm = $state("");
@@ -52,11 +60,62 @@
     return iso === "" ? "" : iso.replace("T", " ").replace(/(\.\d+)?Z$/, "");
   }
 
-  async function cancel(job: JobDTO) {
+  function cancellationState(jobId: string) {
+    return cancellationNotices.find((notice) => notice.jobId === jobId)?.state;
+  }
+
+  function cancelLabel(jobId: string): string {
+    switch (cancellationState(jobId)) {
+      case "pending": return "Requesting…";
+      case "requested": return "Requested";
+      case "unconfirmed": return "Retry cancellation";
+      default: return "Cancel";
+    }
+  }
+
+  function canCancel(jobId: string): boolean {
+    if (disposed || browser.jobsError || !browser.jobs.some((job) => job.id === jobId && isActive(job))) {
+      return false;
+    }
+    const state = cancellationState(jobId);
+    if (state === "pending" || state === "requested") return false;
+    return state === "unconfirmed" || cancellationNotices.length < CANCELLATION_NOTICE_LIMIT;
+  }
+
+  function updateCancellation(jobId: string, state: CancellationNotice["state"]) {
+    if (disposed) return;
+    cancellationNotices = cancellationNotices.map((notice) =>
+      notice.jobId === jobId ? { jobId, state } : notice);
+  }
+
+  async function cancel(jobId: string) {
+    // Admission must be guarded before the next render disables the button.
+    if (!canCancel(jobId)) return;
+    const owner = browser;
+    if (cancellationState(jobId)) updateCancellation(jobId, "pending");
+    else cancellationNotices = [...cancellationNotices, { jobId, state: "pending" }];
     try {
-      await browser.cancelJob(job.id);
+      await owner.cancelJob(jobId);
+      updateCancellation(jobId, "requested");
     } catch {
+      if (disposed) return;
+      updateCancellation(jobId, "unconfirmed");
+      await owner.loadJobs();
+    }
+  }
+
+  function dismissCancellation(jobId: string) {
+    if (cancellationState(jobId) === "pending") return;
+    cancellationNotices = cancellationNotices.filter((notice) => notice.jobId !== jobId);
+  }
+
+  async function refreshCancellationStatus() {
+    if (disposed || cancellationRefreshing) return;
+    cancellationRefreshing = true;
+    try {
       await browser.loadJobs();
+    } finally {
+      if (!disposed) cancellationRefreshing = false;
     }
   }
 
@@ -79,7 +138,10 @@
     refresh();
     void browser.loadAppSettings();
     const tick = setInterval(refresh, 1500);
-    return () => clearInterval(tick);
+    return () => {
+      disposed = true;
+      clearInterval(tick);
+    };
   });
 
   // ETA from the live rate and the remaining planned bytes.
@@ -135,6 +197,9 @@
       {#if browser.auditEvents.length > 0}
         · {browser.auditEvents.length} recent changes
       {/if}
+      {#if cancellationNotices.length > 0}
+        · {cancellationNotices.length} cancellation {cancellationNotices.length === 1 ? "notice" : "notices"}
+      {/if}
       {#if browser.recoveryStatusError}
         · Recovery status unavailable
       {:else if browser.recoveryStatus && browser.recoveryStatus.records > 0}
@@ -146,6 +211,47 @@
 
   {#if open}
     <div class="body">
+      {#if cancellationNotices.length > 0}
+        <section class="cancellation-feedback" aria-label="Cancellation requests">
+          <ul class="cancellation-notices">
+            {#each cancellationNotices as notice (notice.jobId)}
+              <li class="cancellation-notice" aria-label="Cancellation request for job {notice.jobId}">
+                <span class="type-mono">Job {notice.jobId}</span>
+                {#if notice.state === "pending"}
+                  <p role="status">Requesting cancellation; waiting for the request and status refresh.</p>
+                {:else if notice.state === "requested"}
+                  <p role="status">Cancellation requested. The job's reported state determines its outcome.</p>
+                {:else}
+                  <p role="alert" class="bad">Cancellation could not be confirmed. The job may still be running. Refresh status before retrying.</p>
+                {/if}
+                <div class="cancellation-actions">
+                  {#if notice.state === "unconfirmed"}
+                    {#if canCancel(notice.jobId)}
+                      <button class="retry-cancellation" aria-label="Retry cancellation for job {notice.jobId}" onclick={() => cancel(notice.jobId)}>
+                        Retry cancellation
+                      </button>
+                    {:else}
+                      <span>Refresh status or select the job's account before retrying.</span>
+                    {/if}
+                  {/if}
+                  {#if notice.state !== "pending"}
+                    <button class="dismiss-cancellation" aria-label="Dismiss cancellation notice for job {notice.jobId}" onclick={() => dismissCancellation(notice.jobId)}>
+                      Dismiss notice
+                    </button>
+                  {/if}
+                </div>
+              </li>
+            {/each}
+          </ul>
+          {#if cancellationNotices.length >= CANCELLATION_NOTICE_LIMIT}
+            <p role="status">Cancellation notice limit reached. Wait for a pending reply or dismiss a settled notice to make room for another job.</p>
+          {/if}
+          <p>Dismissing a notice only hides feedback; it does not stop a job or establish its outcome.</p>
+          <button disabled={cancellationRefreshing} onclick={refreshCancellationStatus}>
+            {cancellationRefreshing ? "Refreshing job status…" : "Refresh job status"}
+          </button>
+        </section>
+      {/if}
       <div class="tabs" role="tablist">
         <button
           role="tab"
@@ -304,7 +410,9 @@
                 </span>
                 <span class="row-actions">
                   {#if isActive(job)}
-                    <button class="cancel" onclick={() => cancel(job)}>Cancel</button>
+                    <button class="cancel" disabled={!canCancel(job.id)} onclick={() => cancel(job.id)}>
+                      {cancelLabel(job.id)}
+                    </button>
                   {:else if job.type === "copy"}
                     <button
                       class="rerun"
@@ -435,6 +543,37 @@
 
   .body {
     padding: 0 var(--space-4) var(--space-2);
+  }
+
+  .cancellation-feedback {
+    border-bottom: 1px solid var(--color-border);
+    margin-bottom: var(--space-2);
+    padding-bottom: var(--space-2);
+    font-size: var(--text-sm);
+  }
+
+  .cancellation-notices {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 12rem;
+    overflow-y: auto;
+  }
+
+  .cancellation-notice {
+    padding: var(--space-2) 0;
+    overflow-wrap: anywhere;
+  }
+
+  .cancellation-feedback p {
+    margin: var(--space-1) 0;
+  }
+
+  .cancellation-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
   }
 
   .tabs {
