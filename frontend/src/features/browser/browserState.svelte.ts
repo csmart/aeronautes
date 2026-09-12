@@ -167,6 +167,13 @@ export class BrowserState {
   deleteOpen = $state(false);
   // Application settings (§38/§40).
   appSettings: AppSettingsDTO | null = $state(null);
+  appSettingsStatus = $state<"unavailable" | "current" | "stale" | "unconfirmed">("unavailable");
+  appSettingsOperation = $state<"get" | "set" | null>(null);
+  appSettingsReadError = $state(false);
+  appSettingsAttempt = $state<{ value: number; state: "pending" | "acknowledged" | "unconfirmed" } | null>(null);
+  get canSaveAppSettings(): boolean {
+    return this.appSettingsOperation === null && this.appSettingsStatus === "current" && this.appSettings !== null;
+  }
   // Per-job throughput (bytes/s) computed from successive poll deltas.
   jobRates: Record<string, number> = $state({});
   #lastPoll: Record<string, { bytes: number; at: number }> = {};
@@ -834,11 +841,41 @@ export class BrowserState {
   }
 
   async loadAppSettings() {
-    this.appSettings = await this.#api.appSettings().catch(() => this.appSettings);
+    // A late read must never replace a newer acknowledged settings write.
+    if (this.appSettingsOperation !== null) return;
+    this.appSettingsOperation = "get";
+    this.appSettingsReadError = false;
+    try {
+      this.appSettings = await this.#api.appSettings();
+      this.appSettingsStatus = "current";
+    } catch {
+      this.appSettingsReadError = true;
+      if (this.appSettingsStatus !== "unconfirmed") {
+        this.appSettingsStatus = this.appSettings ? "stale" : "unavailable";
+      }
+    } finally {
+      this.appSettingsOperation = null;
+    }
   }
 
   async saveAppSettings(settings: AppSettingsDTO) {
-    this.appSettings = await this.#api.saveAppSettings(settings);
+    if (!this.canSaveAppSettings) {
+      throw new Error("Refresh settings before making another change.");
+    }
+    const request = { ...settings };
+    this.appSettingsOperation = "set";
+    this.appSettingsAttempt = { value: request.maxActiveJobs, state: "pending" };
+    try {
+      this.appSettings = await this.#api.saveAppSettings(request);
+      this.appSettingsStatus = "current";
+      this.appSettingsAttempt = { value: request.maxActiveJobs, state: "acknowledged" };
+    } catch (error) {
+      this.appSettingsStatus = "unconfirmed";
+      this.appSettingsAttempt = { value: request.maxActiveJobs, state: "unconfirmed" };
+      throw error;
+    } finally {
+      this.appSettingsOperation = null;
+    }
   }
 
   /** Active (non-terminal) jobs — the drawer badge. */

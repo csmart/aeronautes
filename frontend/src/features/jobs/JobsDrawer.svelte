@@ -17,7 +17,11 @@
   let open = $state(false);
   let tab: "jobs" | "history" | "changes" = $state("jobs");
   let expanded: string | null = $state(null);
-  let budgetSaving = $state(false);
+  const budgetValue = $derived(String(
+    browser.appSettingsOperation === "set" || browser.appSettingsStatus === "unconfirmed"
+      ? browser.appSettingsAttempt?.value ?? ""
+      : browser.appSettings?.maxActiveJobs ?? "",
+  ));
   type CancellationNotice = {
     jobId: string;
     state: "pending" | "requested" | "unconfirmed";
@@ -136,7 +140,8 @@
       void browser.loadRecoveryStatus();
     };
     refresh();
-    void browser.loadAppSettings();
+    // Reopening the drawer is not the explicit recovery read after a lost reply.
+    if (browser.appSettingsAttempt?.state !== "unconfirmed") void browser.loadAppSettings();
     const tick = setInterval(refresh, 1500);
     return () => {
       disposed = true;
@@ -159,12 +164,11 @@
   }
 
   async function saveBudget(value: number) {
-    if (!browser.appSettings) return;
-    budgetSaving = true;
+    if (disposed || !browser.canSaveAppSettings || !browser.appSettings) return;
     try {
       await browser.saveAppSettings({ ...browser.appSettings, maxActiveJobs: value });
-    } finally {
-      budgetSaving = false;
+    } catch {
+      // BrowserState retains the unconfirmed attempt even if this drawer unmounts.
     }
   }
 
@@ -287,9 +291,14 @@
             <label class="filter" title="whole-application active-job ceiling">
               <span>Active-job budget</span>
               <select
-                value={String(browser.appSettings.maxActiveJobs)}
-                disabled={budgetSaving}
-                onchange={(e) => void saveBudget(Number(e.currentTarget.value))}
+                value={budgetValue}
+                disabled={!browser.canSaveAppSettings}
+                aria-describedby={`${id}-budget-status`}
+                onchange={(e) => {
+                  const value = Number(e.currentTarget.value);
+                  e.currentTarget.value = budgetValue;
+                  void saveBudget(value);
+                }}
               >
                 {#each [1, 2, 4, 8] as n (n)}
                   <option value={String(n)}>{n}</option>
@@ -326,6 +335,31 @@
       </div>
 
       {#if tab === "jobs"}
+        <div class="budget-status" id={`${id}-budget-status`} role="status" aria-busy={browser.appSettingsOperation !== null}>
+          {#if browser.appSettingsOperation === "get"}
+            <span>Loading settings…</span>
+          {:else if browser.appSettingsStatus === "unavailable"}
+            <span>Settings are unavailable.</span>
+          {:else if browser.appSettingsStatus === "stale" || browser.appSettingsReadError}
+            <span>Settings could not be refreshed; the last observation is stale.</span>
+          {/if}
+          {#if browser.appSettingsAttempt?.state === "pending"}
+            <span>Saving budget {browser.appSettingsAttempt.value}…</span>
+          {:else if browser.appSettingsAttempt?.state === "unconfirmed"}
+            <span>Budget change to {browser.appSettingsAttempt.value} is unconfirmed.</span>
+          {:else if browser.appSettingsAttempt?.state === "acknowledged"}
+            <span>Budget change acknowledged.</span>
+          {/if}
+          {#if browser.appSettings}
+            <span>Last observed budget: {browser.appSettings.maxActiveJobs}.</span>
+          {/if}
+          {#if browser.appSettingsStatus === "unconfirmed"}
+            <span>Refresh settings before another change.</span>
+          {:else if browser.appSettingsStatus === "current" && browser.appSettingsAttempt?.state === "unconfirmed"}
+            <span>Current settings were read; the earlier save was not acknowledged.</span>
+          {/if}
+          <button disabled={browser.appSettingsOperation !== null} onclick={() => void browser.loadAppSettings()}>Refresh settings</button>
+        </div>
         <div class="recovery" role="status" aria-busy={browser.recoveryStatusLoading}>
           {#if browser.recoveryStatusError}
             <p>Recovery status is unavailable. Retained counts are unknown.</p>
@@ -599,6 +633,15 @@
 
   .body {
     padding: 0 var(--space-4) var(--space-2);
+  }
+
+  .budget-status {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    margin: var(--space-2) 0;
+    font-size: var(--text-sm);
   }
 
   .audit-recent, .audit-status, .audit-scope {
