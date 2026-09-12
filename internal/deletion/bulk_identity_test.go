@@ -468,6 +468,7 @@ func TestBulkRejectsMalformedRepliesThatReconcile(t *testing.T) {
 // so a name the service keeps blaming is observed on every pass, and
 // one identity must remain one record, one stream event and one count.
 func TestBulkLedgerCountsDistinctIdentitiesAcrossPasses(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	session, capabilities, mock, crafted := craftedCluster(t,
 		reply(1, 0, [2]string{wire("media", "doomed/b"), "500 Internal Server Error"}))
 	mock.PutObject("media", "doomed/a", swifttest.Object{Bytes: 1, ETag: "aa", Data: []byte("a")})
@@ -484,20 +485,23 @@ func TestBulkLedgerCountsDistinctIdentitiesAcrossPasses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a valid partial reply must not surface an error: %v", err)
 	}
-	if crafted.calls < 2 {
-		t.Skipf("the sweep did not repeat (%d request), so this case proves nothing", crafted.calls)
+	// The canned reply credits one deletion without applying any, so the
+	// second pass lists both names again; the job had already requested
+	// both and sends nothing more.
+	if crafted.calls != 1 {
+		t.Fatalf("the sweep sent %d bulk requests, want exactly one", crafted.calls)
 	}
-	if result.Failed != 1 || len(failed) != 1 {
-		t.Errorf("Failed = %d over %d stream events, want one distinct identity across %d requests",
-			result.Failed, len(failed), crafted.calls)
+	if result.Passes != 2 || result.NotRequestedAgain != 2 {
+		t.Errorf("passes=%d notRequestedAgain=%d, want 2 and 2", result.Passes, result.NotRequestedAgain)
 	}
-	if result.Unresolved != 1 || len(unresolved) != 1 {
-		t.Errorf("Unresolved = %d over %d stream events, want one distinct identity",
-			result.Unresolved, len(unresolved))
+	if result.Failed != 1 || len(failed) != 1 || result.Unresolved != 1 || len(unresolved) != 1 {
+		t.Errorf("distinct identities: Failed=%d/%d Unresolved=%d/%d, want one each", result.Failed, len(failed), result.Unresolved, len(unresolved))
 	}
 	if len(result.Failures) != 1 || len(result.Unresolveds) != 1 {
-		t.Errorf("retained sets hold %d failures and %d unresolved, want one each",
-			len(result.Failures), len(result.Unresolveds))
+		t.Errorf("retained sets hold %d failures and %d unresolved, want one each", len(result.Failures), len(result.Unresolveds))
+	}
+	if result.Remaining != 1 {
+		t.Errorf("remaining=%d, want 1: names still listed after the only request keep the run partial", result.Remaining)
 	}
 }
 

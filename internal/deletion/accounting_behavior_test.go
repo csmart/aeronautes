@@ -165,12 +165,16 @@ func accountingIndexBoundary(t *testing.T, cache string, wantRows int, refuse bo
 	side.SetMaxOpenConns(1)
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
+	// Only the outcome facets are counted and, when asked, refused: the
+	// issued records written before each request are a different fact,
+	// and refusing them would stop the next request instead of leaving
+	// an already-sent request unindexed, which is what these cases model.
 	var rows int
-	readErr := side.QueryRowContext(ctx, "SELECT count(*) FROM seen").Scan(&rows)
+	readErr := side.QueryRowContext(ctx, "SELECT count(*) FROM seen WHERE kind IN (1, 2)").Scan(&rows)
 	var writeErr error
 	if readErr == nil && refuse {
 		_, writeErr = side.ExecContext(ctx, `CREATE TRIGGER refuse_seen BEFORE INSERT ON seen
-			BEGIN SELECT RAISE(ABORT, 'fixture deletion index refusal'); END`)
+			WHEN NEW.kind IN (1, 2) BEGIN SELECT RAISE(ABORT, 'fixture deletion index refusal'); END`)
 	}
 	closeErr := side.Close()
 	if readErr != nil || rows != wantRows || writeErr != nil || closeErr != nil || side.Stats().OpenConnections != 0 {
