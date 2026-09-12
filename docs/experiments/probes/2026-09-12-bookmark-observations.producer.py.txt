@@ -1,0 +1,87 @@
+"""Preserve a private bookmark observation probe on unchanged source."""
+
+import hashlib
+import json
+from pathlib import Path
+import shutil
+import subprocess
+import tarfile
+import tempfile
+import time
+
+
+SOURCE = Path('/home/csmart/code/worktrees/aeronautes/audit_query_state')
+EXPECTED = '4f9e356da7b8ae118bfa1bdbfc2c04623c434af4'
+DEPENDENCIES = SOURCE / 'frontend/node_modules'
+
+
+def git(*args: str) -> str:
+    return subprocess.check_output(
+        ['git', '-C', str(SOURCE), *args], timeout=30,
+    ).decode().strip()
+
+
+def sha(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def main() -> int:
+    assert git('rev-parse', 'HEAD') == EXPECTED
+    assert not git('status', '--porcelain')
+    packet = Path(tempfile.mkdtemp(prefix='aeronautes-bookmark-observation-before-'))
+    archive = packet / 'source.tar'
+    with archive.open('wb') as out:
+        subprocess.run(
+            ['git', '-C', str(SOURCE), 'archive', '--format=tar', EXPECTED, 'frontend'],
+            stdout=out, check=True, timeout=30,
+        )
+    snapshot = packet / 'source'
+    snapshot.mkdir()
+    with tarfile.open(archive) as saved:
+        saved.extractall(snapshot, filter='data')
+    frontend = snapshot / 'frontend'
+    inputs = {str(path.relative_to(snapshot)): sha(path)
+              for path in frontend.rglob('*') if path.is_file()}
+    relative_probe = 'src/features/browser/bookmark_observation_before.test.ts'
+    probe = frontend / relative_probe
+    shutil.copyfile(Path(__file__).with_name('before.test.ts'), probe)
+    (frontend / 'node_modules').symlink_to(DEPENDENCIES, target_is_directory=True)
+    config = frontend / 'bookmark-probe.config.ts'
+    config.write_text('import original from "./vite.config.ts";\n'
+                      'export default { ...original, cacheDir: '
+                      + json.dumps(str(packet / 'vite-cache')) + ' };\n')
+    shutil.copyfile(__file__, packet / 'producer.py')
+    command = ['node', str(DEPENDENCIES / 'vitest/vitest.mjs'), 'run',
+               '--config', str(config), relative_probe,
+               '--reporter=default', '--reporter=json',
+               '--outputFile=' + str(packet / 'vitest.json')]
+    print(packet, flush=True)
+    start = time.monotonic()
+    with (packet / 'stdout').open('wb') as stdout, (packet / 'stderr').open('wb') as stderr:
+        try:
+            result = subprocess.run(command, cwd=frontend, stdout=stdout, stderr=stderr,
+                                    timeout=90, check=False)
+            exit_code, timed_out = result.returncode, False
+        except subprocess.TimeoutExpired:
+            exit_code, timed_out = 124, True
+    elapsed = time.monotonic() - start
+    assert all(sha(snapshot / name) == digest for name, digest in inputs.items())
+    assert git('rev-parse', 'HEAD') == EXPECTED and not git('status', '--porcelain')
+    record = {
+        'head': EXPECTED, 'source': str(SOURCE), 'command': command, 'cwd': str(frontend),
+        'node': subprocess.check_output(['node', '--version'], timeout=10).decode().strip(),
+        'versions': {name: json.loads((DEPENDENCIES / name / 'package.json').read_text())['version']
+                     for name in ('svelte', 'vite', 'vitest', 'jsdom')},
+        'exit': exit_code, 'timeout': timed_out, 'timeout_seconds': 90,
+        'elapsed_seconds': elapsed, 'inputs': inputs, 'source_unchanged': True,
+        'probe_sha256': sha(probe), 'config_sha256': sha(config),
+        'evidence': {path.name: sha(path) for path in packet.iterdir() if path.is_file()},
+    }
+    (packet / 'RESULT.json').write_text(json.dumps(record, indent=2) + '\n')
+    print(json.dumps({'packet': str(packet), 'exit': exit_code,
+                      'timeout': timed_out, 'elapsed_seconds': elapsed}), flush=True)
+    return exit_code
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
