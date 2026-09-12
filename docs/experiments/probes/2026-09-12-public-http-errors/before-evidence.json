@@ -1,0 +1,239 @@
+{
+  "source": "2f576f77da2e5d05ec2c172ec494aaaf0ad03247",
+  "git_tree_exit": 0,
+  "git_archive_blobs_verified": 782,
+  "executed_inputs_verified": 783,
+  "production_and_modules_unchanged": true,
+  "runs": {
+    "controls-1": {
+      "actual_go_exit": 1,
+      "producer_exit": 1,
+      "event_count": 32,
+      "package_count": 1,
+      "top_level_count": 1,
+      "named_count": 2,
+      "leaf_count": 1,
+      "skip_count": 0,
+      "tests": {
+        "TestPublicConnectErrorBoundaryProbe": {
+          "terminal": "fail",
+          "elapsed": 0.26
+        },
+        "TestPublicConnectErrorBoundaryProbe/healthy": {
+          "terminal": "fail",
+          "elapsed": 0.26
+        }
+      },
+      "package": {
+        "terminal": "fail",
+        "elapsed": 0.269
+      },
+      "process_seconds": 3.93538617528975,
+      "observations": [],
+      "assertion_outputs": [],
+      "credit": "setup failure only"
+    },
+    "controls-2": {
+      "actual_go_exit": 0,
+      "producer_exit": 0,
+      "event_count": 23,
+      "package_count": 1,
+      "top_level_count": 1,
+      "named_count": 4,
+      "leaf_count": 3,
+      "skip_count": 0,
+      "tests": {
+        "TestPublicConnectErrorBoundaryProbe": {
+          "terminal": "pass",
+          "elapsed": 0.73
+        },
+        "TestPublicConnectErrorBoundaryProbe/healthy": {
+          "terminal": "pass",
+          "elapsed": 0.25
+        },
+        "TestPublicConnectErrorBoundaryProbe/mapped_403": {
+          "terminal": "pass",
+          "elapsed": 0.24
+        },
+        "TestPublicConnectErrorBoundaryProbe/unmapped_standard_500": {
+          "terminal": "pass",
+          "elapsed": 0.23
+        }
+      },
+      "package": {
+        "terminal": "pass",
+        "elapsed": 1.738
+      },
+      "process_seconds": 2.282929350156337,
+      "observations": [
+        {
+          "account": {
+            "name": "AUTH_test",
+            "containers": 0,
+            "objects": 0,
+            "bytesUsed": 0,
+            "quotaBytes": 0,
+            "meta": {},
+            "tempUrlKeySlots": null
+          },
+          "bookmarks_unchanged": true,
+          "case": "healthy",
+          "database_closed": true,
+          "http_status": 0,
+          "kind": "",
+          "native_error_text": "",
+          "normalized_message": "",
+          "private_unwrapped_cause": "",
+          "public_error": "",
+          "requests": [
+            {
+              "method": "GET",
+              "path": "/auth/v1.0",
+              "protocol": "HTTP/1.1",
+              "auth_key_matched": true
+            },
+            {
+              "method": "GET",
+              "path": "/info",
+              "protocol": "HTTP/1.1",
+              "auth_key_matched": false
+            },
+            {
+              "method": "HEAD",
+              "path": "/v1/AUTH_test",
+              "protocol": "HTTP/1.1",
+              "auth_key_matched": false
+            }
+          ],
+          "server_closed_handlers_joined": true
+        },
+        {
+          "account": {
+            "name": "",
+            "containers": 0,
+            "objects": 0,
+            "bytesUsed": 0,
+            "quotaBytes": 0,
+            "meta": null,
+            "tempUrlKeySlots": null
+          },
+          "bookmarks_unchanged": true,
+          "case": "mapped_403",
+          "database_closed": true,
+          "http_status": 403,
+          "kind": "forbidden",
+          "native_error_text": "Operation forbidden",
+          "normalized_message": "Operation forbidden",
+          "private_unwrapped_cause": "Operation forbidden",
+          "public_error": "swift: Operation forbidden (forbidden, HTTP 403)",
+          "requests": [
+            {
+              "method": "GET",
+              "path": "/auth/v1.0",
+              "protocol": "HTTP/1.1",
+              "auth_key_matched": true,
+              "reason_sent": "reason-only-SYNTHETIC_CONNECT_KEY_b39126",
+              "body_sent": "body-only-SYNTHETIC_BODY_ONLY_c057da"
+            }
+          ],
+          "server_closed_handlers_joined": true
+        },
+        {
+          "account": {
+            "name": "",
+            "containers": 0,
+            "objects": 0,
+            "bytesUsed": 0,
+            "quotaBytes": 0,
+            "meta": null,
+            "tempUrlKeySlots": null
+          },
+          "bookmarks_unchanged": true,
+          "case": "unmapped_standard_500",
+          "database_closed": true,
+          "http_status": 500,
+          "kind": "server",
+          "native_error_text": "HTTP Error: 500: 500 Internal Server Error",
+          "normalized_message": "HTTP Error: 500: 500 Internal Server Error",
+          "private_unwrapped_cause": "HTTP Error: 500: 500 Internal Server Error",
+          "public_error": "swift: HTTP Error: 500: 500 Internal Server Error (server, HTTP 500)",
+          "requests": [
+            {
+              "method": "GET",
+              "path": "/auth/v1.0",
+              "protocol": "HTTP/1.1",
+              "auth_key_matched": true,
+              "reason_sent": "Internal Server Error",
+              "body_sent": "body-only-SYNTHETIC_BODY_ONLY_c057da"
+            }
+          ],
+          "server_closed_handlers_joined": true
+        }
+      ],
+      "assertion_outputs": [],
+      "credit": "passing controls"
+    },
+    "before-1": {
+      "actual_go_exit": 1,
+      "producer_exit": 1,
+      "event_count": 14,
+      "package_count": 1,
+      "top_level_count": 1,
+      "named_count": 2,
+      "leaf_count": 1,
+      "skip_count": 0,
+      "tests": {
+        "TestPublicConnectErrorBoundaryProbe": {
+          "terminal": "fail",
+          "elapsed": 0.21
+        },
+        "TestPublicConnectErrorBoundaryProbe/unmapped_custom_500": {
+          "terminal": "fail",
+          "elapsed": 0.21
+        }
+      },
+      "package": {
+        "terminal": "fail",
+        "elapsed": 0.221
+      },
+      "process_seconds": 0.7310720146633685,
+      "observations": [
+        {
+          "account": {
+            "name": "",
+            "containers": 0,
+            "objects": 0,
+            "bytesUsed": 0,
+            "quotaBytes": 0,
+            "meta": null,
+            "tempUrlKeySlots": null
+          },
+          "bookmarks_unchanged": true,
+          "case": "unmapped_custom_500",
+          "database_closed": true,
+          "http_status": 500,
+          "kind": "server",
+          "native_error_text": "HTTP Error: 500: 500 reason-only-SYNTHETIC_CONNECT_KEY_b39126",
+          "normalized_message": "HTTP Error: 500: 500 reason-only-SYNTHETIC_CONNECT_KEY_b39126",
+          "private_unwrapped_cause": "HTTP Error: 500: 500 reason-only-SYNTHETIC_CONNECT_KEY_b39126",
+          "public_error": "swift: HTTP Error: 500: 500 reason-only-SYNTHETIC_CONNECT_KEY_b39126 (server, HTTP 500)",
+          "requests": [
+            {
+              "method": "GET",
+              "path": "/auth/v1.0",
+              "protocol": "HTTP/1.1",
+              "auth_key_matched": true,
+              "reason_sent": "reason-only-SYNTHETIC_CONNECT_KEY_b39126",
+              "body_sent": "body-only-SYNTHETIC_BODY_ONLY_c057da"
+            }
+          ],
+          "server_closed_handlers_joined": true
+        }
+      ],
+      "assertion_outputs": [
+        "public_connect_error_before_probe_test.go:226: SEC-PUBLIC-REASON: public Connect returned the synthetic saved key from the HTTP reason phrase"
+      ],
+      "credit": "intended semantic failure"
+    }
+  }
+}

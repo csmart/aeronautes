@@ -4400,6 +4400,11 @@ After design approval, implement the isolated fixture, required Linux lane and d
 These observations do not establish original-store authority, bounded native prompts or completed cleanup; retain the existing conservative journal policy and valuable-data hold.
 The [keychain validation record](experiments/2026-09-06-keychain-writes.md) separates protocol fault injection, publication/barrier regressions, cross-compilation and the remaining native platform proof.
 
+The [public HTTP error reproduction](experiments/2026-09-12-public-http-errors.md) records an owned auth endpoint reflecting a saved synthetic key through the native error reason into public Connect output.
+Review that evidence and the local `http.StatusText` display contract first, including intentional mapped-wording changes and a fixed unknown-status fallback.
+Then add maintained normalization, public Connect and receipt-bound system refusal regressions before changing only the native HTTP Message projection, preserving classification, retryability, cause identity, cancellation and transaction-ID policy.
+Review the correction and its intended omission failure separately; keep general error redaction, native P10 authority/cleanup and the valuable-data hold open.
+
 The next harness prerequisite is P02 / TEST-01, following [ADR 0018](adr/0018-snapshot-representations.md).
 The archived gzip/plain probe still fails after the keychain slice because the independent oracle implicitly decodes and loses the stored encoding header.
 After local design approval, preserve content-coded bytes and encoding evidence as one reviewed fix, then reject incomplete snapshot responses as a second reviewed fix.
