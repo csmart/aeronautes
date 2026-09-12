@@ -5357,6 +5357,24 @@ This prerequisite cannot ship alone: the actual shell shutdown caller and checke
 The shell, Find, synchronous bridge/native-request drain and credential-store lifecycle remain separate claimed work, and job hooks alone do not establish application-wide shutdown.
 DS-07, SEC-06, P20/P30, the six-platform acceptance hold and valuable-data release hold remain open.
 
+The next bounded [shell shutdown consumer](experiments/2026-09-12-shell-shutdown-consumer.md) connects the approved job ownership prerequisite to the actual shell and Find.
+The preserved actual-main probe closes the database and releases the instance lock while real Find and Delete workers remain held, bypasses cleanup on a Run error, and ignores an injected database-close failure.
+Its controlled runtime receives the actual Options and bound services; it is not native window-quit acceptance.
+
+1. Share Find's existing private stop-and-drain state with a concrete context-aware job-plus-Find shutdown function.
+   Preserve the reserved Find hook and its five-second wait; incomplete context waits remain errors and never reopen either admission boundary.
+2. Wire one complete, idempotent background drain into actual OnShutdown and post-Run cleanup.
+   Keep the DB and lock held through all admitted job cleanup and actual Find worker exit, without a new total deadline or quit-anyway policy.
+   An unexpected drain error is reported and leaves shutdown blocked.
+3. Check database closure before explicitly releasing the instance lock.
+   Latch any Close error without retrying it into an idempotent nil, retain the lock owner through the top-level failure exit, and preserve both Run and Close errors.
+   Kernel release after process failure is distinct from successful graceful cleanup.
+4. Require maintained tests through the same shell assembly/caller, separate-process lock checks, database-close and held-owner failures, and independent broken-guard controls.
+   Add a separately accounted Linux real-child consumer test for graceful cancellation and the existing forced escalation, with exact records and stable filesystem/remote state.
+
+This consumer and its ownership prerequisite form one delivery dependency.
+Synchronous bridge/native-request drain, credential-store closure, retained-stage removal and native platform acceptance remain separate work; the valuable-data hold remains in place.
+
 The next bounded [UI-10 cancellation and audit sequence](experiments/2026-09-12-cancellation-feedback.md) separates an operator request's outcome from an independent status read.
 The unchanged drawer hides a rejected cancellation behind a successful refresh and admits duplicate requests while the first is pending; the audit reader also allows older queries and background Recent replies to replace a selected view.
 UI-10, P28, §§26.4/47/49/50/55 and K-UI-005 require honest status, while `CancelJob` acknowledges a graceful cancellation request without proving a terminal result, cleanup or child quiescence.

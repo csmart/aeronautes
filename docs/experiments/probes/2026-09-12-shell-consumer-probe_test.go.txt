@@ -1,0 +1,289 @@
+//go:build linux
+
+package main
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/csmart/aeronautes/internal/app"
+	"github.com/csmart/aeronautes/internal/db"
+	"github.com/csmart/aeronautes/internal/secrets"
+	"github.com/csmart/aeronautes/internal/swifttest"
+	"github.com/wailsapp/wails/v3/pkg/application"
+)
+
+const shellProbeScenario = "AERONAUTES_SHELL_CONSUMER_PROBE"
+
+type shellProbeWindow struct{}
+
+func (shellProbeWindow) NewWithOptions(application.WebviewWindowOptions) {}
+
+type shellProbeApplication struct {
+	Window  shellProbeWindow
+	options application.Options
+}
+
+var shellProbeAfterRun func(*testing.T)
+
+func shellProbeNew(options application.Options) *shellProbeApplication {
+	return &shellProbeApplication{options: options}
+}
+
+func shellProbeSecrets() (secrets.SecretStore, secrets.Backend) {
+	return secrets.NewSessionStore(), secrets.BackendSession
+}
+
+func shellProbeLock(stateDir string) (func(), error) {
+	release, err := app.AcquireInstanceLock(stateDir)
+	if err != nil {
+		return nil, err
+	}
+	return func() {
+		fmt.Println("PROBE lock release")
+		release()
+	}, nil
+}
+
+func shellProbeClose(database *db.DB) error {
+	if os.Getenv(shellProbeScenario) == "close_error" {
+		shellProbeAfterRun = func(t *testing.T) {
+			t.Helper()
+			defer func() {
+				if err := database.Close(); err != nil {
+					t.Errorf("probe database cleanup: %v", err)
+				}
+			}()
+			readErr := database.Reader().PingContext(t.Context())
+			acquired, lockErr := shellProbeAnotherProcess(t.Context())
+			if lockErr != nil {
+				t.Fatal(lockErr)
+			}
+			fmt.Printf("PROBE after database close error: database_usable=%t second_process_lock_acquired=%t\n", readErr == nil, acquired)
+			if acquired {
+				t.Error("actual main released the instance lock after an unclosed database returned an error")
+			}
+		}
+		err := errors.New("injected database close failure; handle remains open")
+		fmt.Printf("PROBE database close: %v\n", err)
+		return err
+	}
+	err := database.Close()
+	fmt.Printf("PROBE database close: %v\n", err)
+	return err
+}
+
+func (p *shellProbeApplication) Run() error {
+	fmt.Printf("PROBE actual options: services=%d on_shutdown=%t\n", len(p.options.Services), p.options.OnShutdown != nil)
+	switch os.Getenv(shellProbeScenario) {
+	case "run_error":
+		return errors.New("injected runtime run failure")
+	case "held_work":
+		return p.holdWork()
+	default:
+		return nil
+	}
+}
+
+func (p *shellProbeApplication) holdWork() error {
+	var bookmarkService *app.BookmarkService
+	var browseService *app.BrowseService
+	var deleteService *app.DeleteService
+	var transferService *app.TransferService
+	var jobService *app.JobService
+	var findService *app.FindService
+	for _, bound := range p.options.Services {
+		switch service := bound.Instance().(type) {
+		case *app.BookmarkService:
+			bookmarkService = service
+		case *app.BrowseService:
+			browseService = service
+		case *app.DeleteService:
+			deleteService = service
+		case *app.TransferService:
+			transferService = service
+		case *app.JobService:
+			jobService = service
+		case *app.FindService:
+			findService = service
+		}
+	}
+	if bookmarkService == nil || browseService == nil || deleteService == nil || transferService == nil || jobService == nil || findService == nil {
+		return errors.New("actual shell service assembly is incomplete")
+	}
+	cluster := swifttest.New("test:tester", "testing")
+	cluster.AddContainer("shell-probe", "standard")
+	entered := make(chan context.Context, 4)
+	release := make(chan struct{})
+	var unblock sync.Once
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/shell-probe") {
+			entered <- r.Context()
+			<-release
+		}
+		cluster.ServeHTTP(w, r)
+	}))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	saved, err := bookmarkService.Save(ctx, app.BookmarkDTO{
+		DisplayName: "shell-probe", AuthURL: server.URL + "/auth/v1.0", Username: "test:tester",
+	}, "testing")
+	if err != nil {
+		unblock.Do(func() { close(release) })
+		server.Close()
+		return fmt.Errorf("save owned fixture bookmark: %w", err)
+	}
+	if _, err := browseService.Connect(ctx, saved.ID); err != nil {
+		unblock.Do(func() { close(release) })
+		server.Close()
+		return fmt.Errorf("connect owned fixture: %w", err)
+	}
+	caller, cancelCaller := context.WithCancel(context.Background())
+	defer cancelCaller()
+	findID, err := findService.StartFind(caller, "shell-probe", "", "match")
+	if err != nil {
+		unblock.Do(func() { close(release) })
+		server.Close()
+		return fmt.Errorf("start actual shell Find: %w", err)
+	}
+	jobID, err := deleteService.StartDelete(caller, app.DeleteRequestDTO{
+		BookmarkID: saved.ID, Container: "shell-probe", Prefix: "scope/",
+		Mode: app.ModePrefix, Confirm: "shell-probe",
+	})
+	if err != nil {
+		unblock.Do(func() { close(release) })
+		server.Close()
+		return fmt.Errorf("start actual shell job: %w", err)
+	}
+	requests := make([]context.Context, 0, 2)
+	for range 2 {
+		select {
+		case request := <-entered:
+			requests = append(requests, request)
+		case <-ctx.Done():
+			unblock.Do(func() { close(release) })
+			server.Close()
+			return fmt.Errorf("wait actual workers: %w", ctx.Err())
+		}
+	}
+	cancelCaller()
+	fmt.Println("PROBE two actual shell workers at acknowledged HTTP boundaries")
+	shellProbeAfterRun = func(t *testing.T) {
+		t.Helper()
+		defer server.Close()
+		defer unblock.Do(func() { close(release) })
+		defer func() {
+			if err := findService.ServiceShutdown(); err != nil {
+				t.Errorf("probe Find cleanup: %v", err)
+			}
+		}()
+		defer func() {
+			if err := findService.CancelFind(context.Background(), findID); err != nil {
+				t.Errorf("probe Find cancel: %v", err)
+			}
+			if err := transferService.CancelJob(context.Background(), jobID); err != nil {
+				t.Errorf("probe job cancel: %v", err)
+			}
+			unblock.Do(func() { close(release) })
+		}()
+		for _, request := range requests {
+			if request.Err() != nil {
+				t.Errorf("worker did not survive caller detachment: %v", request.Err())
+			}
+		}
+		_, getErr := jobService.Get(context.Background(), jobID)
+		acquired, lockErr := shellProbeAnotherProcess(t.Context())
+		if lockErr != nil {
+			t.Fatal(lockErr)
+		}
+		fmt.Printf("PROBE after actual main return: job_read_error=%v second_process_lock_acquired=%t\n", getErr, acquired)
+		if getErr != nil || acquired {
+			t.Error("actual main released job resources while both uncancelled workers remained held")
+		}
+	}
+	if p.options.OnShutdown != nil {
+		p.options.OnShutdown()
+	}
+	return nil
+}
+
+func shellProbeAnotherProcess(ctx context.Context) (bool, error) {
+	executable, err := os.Executable()
+	if err != nil {
+		return false, fmt.Errorf("locate lock probe process: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, executable, "-test.run=^TestShellConsumerBefore$", "-test.v")
+	command.Env = append(os.Environ(), shellProbeScenario+"=lock_probe")
+	output, err := command.CombinedOutput()
+	if err != nil {
+		return false, fmt.Errorf("run second lock process: %w: %s", err, output)
+	}
+	if bytes.Contains(output, []byte("PROBE child lock acquired=true")) {
+		return true, nil
+	}
+	if !bytes.Contains(output, []byte("PROBE child lock acquired=false")) {
+		return false, fmt.Errorf("missing second lock process result: %s", output)
+	}
+	return false, nil
+}
+
+func TestShellConsumerBefore(t *testing.T) {
+	if os.Getenv(shellProbeScenario) == "lock_probe" {
+		release, err := app.AcquireInstanceLock(os.Getenv("AERONAUTES_STATE_DIR"))
+		if err == nil {
+			release()
+		}
+		fmt.Printf("PROBE child lock acquired=%t\n", err == nil)
+		return
+	}
+	if scenario := os.Getenv(shellProbeScenario); scenario != "" {
+		main()
+		if shellProbeAfterRun != nil {
+			shellProbeAfterRun(t)
+		}
+		return
+	}
+	for _, scenario := range []string{"no_work", "held_work", "run_error", "close_error"} {
+		t.Run(scenario, func(t *testing.T) {
+			executable, err := os.Executable()
+			if err != nil {
+				t.Fatal(err)
+			}
+			stateDir := t.TempDir()
+			ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+			defer cancel()
+			command := exec.CommandContext(ctx, executable, "-test.run=^TestShellConsumerBefore$", "-test.v")
+			command.Env = append(os.Environ(), shellProbeScenario+"="+scenario, "AERONAUTES_STATE_DIR="+stateDir,
+				"XDG_STATE_HOME="+filepath.Join(stateDir, "xdg"))
+			var output bytes.Buffer
+			command.Stdout, command.Stderr = &output, &output
+			runErr := command.Run()
+			t.Logf("actual main child: exit=%v\n%s", runErr, output.String())
+			if scenario == "run_error" {
+				if runErr == nil || !strings.Contains(output.String(), "injected runtime run failure") {
+					t.Fatal("runtime failure control did not execute")
+				}
+				if !strings.Contains(output.String(), "PROBE database close: <nil>") || !strings.Contains(output.String(), "PROBE lock release") {
+					t.Error("actual main fatal Run error bypassed both resource defers")
+				}
+				return
+			}
+			if runErr != nil {
+				t.Errorf("actual main did not preserve owned work: %v", runErr)
+			}
+		})
+	}
+}
