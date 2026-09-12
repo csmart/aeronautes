@@ -5429,6 +5429,12 @@ Acknowledged Save identity survives an optional List failure after the existing 
 The ten original probes pass unchanged, and ten independently broken variants fail twelve intended assertions covering observation ownership, mutation boundaries and rail feedback.
 Current-base focused Go checks pass; complete Go verification, protected delivery, native acceptance and the wider UI-10/P28 and valuable-data gates remain separate obligations.
 
+The bounded [active-job budget feedback sequence](experiments/2026-09-12-budget-feedback.md) follows with independent contract review before production.
+Preserve the mounted before failures, then implement one synchronous settings Get/Set owner, qualified current/stale/unavailable observations and separate pending/acknowledged/unconfirmed write feedback with dedicated state and mounted component tests.
+Block budget writes while an operation is pending or the observation is stale, unavailable or unconfirmed; after an uncertain Set require a successful explicit read before another user choice, without treating that read as historical write acknowledgement.
+Preserve the full settings document, four existing choices, unrelated awaits and backend policy; prove same-value readback, duplicate admission and feedback retention with independent omitted-guard controls before local review and current-base delivery gates.
+The wider settings surface, bookmark/audit scopes, native acceptance and valuable-data hold remain open.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.
