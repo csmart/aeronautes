@@ -1,4 +1,203 @@
 {
+  "after": {
+    "broken_controls": {
+      "g01": {
+        "change": "markers back in the twin groups at both boundaries",
+        "local_failed_leaves": [
+          "TestDownloadDirAliasesDirect/marker_form_twins",
+          "TestDownloadDirAliasesDirect/marker_twins",
+          "TestDownloadDirAliasesDirect/marker_twins_with_children",
+          "TestDownloadDirAliasesPreflight/marker_form_twins",
+          "TestDownloadDirAliasesPreflight/marker_twins",
+          "TestDownloadDirAliasesPreflight/marker_twins_with_children"
+        ],
+        "local_passed_leaves": 979,
+        "local_sha256": "960ad61cd4ba28a069ef30e4d020a67677c0a1e1d308880bf2b5aa911f59d589",
+        "service_failed_leaves": [
+          "TestDownloadDirAliasesMock/marker_form_twins",
+          "TestDownloadDirAliasesMock/marker_twins",
+          "TestDownloadDirAliasesMock/marker_twins_with_children",
+          "TestDownloadDirAliasesRealSwift/marker_form_twins",
+          "TestDownloadDirAliasesRealSwift/marker_twins",
+          "TestDownloadDirAliasesRealSwift/marker_twins_with_children"
+        ],
+        "service_passed_leaves": 18,
+        "service_sha256": "18c6ab4b6d9044261c26dba57a609294df23cced9af09da0a65d4ed580fa4dfd",
+        "setup_failed": false
+      },
+      "g02": {
+        "change": "file twins admitted at both boundaries",
+        "local_failed_leaves": [
+          "TestDownloadDirAliasesDirect/file_form_twins_inside_aliases",
+          "TestDownloadDirAliasesDirect/file_twins",
+          "TestDownloadDirAliasesDirect/file_twins_inside_aliases",
+          "TestDownloadDirAliasesPreflight/file_form_twins_inside_aliases",
+          "TestDownloadDirAliasesPreflight/file_twins",
+          "TestDownloadDirAliasesPreflight/file_twins_inside_aliases",
+          "TestDownloadNameFormDirect/native/twin_dotted_i_canonical/recorded_false/reverse_false",
+          "TestDownloadNameFormDirect/native/twin_dotted_i_canonical/recorded_false/reverse_true",
+          "TestDownloadNameFormDirect/native/twin_dotted_i_canonical/recorded_true/reverse_false",
+          "TestDownloadNameFormDirect/native/twin_dotted_i_canonical/recorded_true/reverse_true",
+          "TestDownloadNameFormDirect/native/twin_dotted_i_case/recorded_false/reverse_false",
+          "TestDownloadNameFormDirect/native/twin_dotted_i_case/recorded_false/reverse_true",
+          "TestDownloadNameFormDirect/native/twin_dotted_i_case/recorded_true/reverse_false",
+          "TestDownloadNameFormDirect/native/twin_dotted_i_case/recorded_true/reverse_true",
+          "TestDownloadNameFormDirect/native/twin_dotted_i_plain/recorded_false/reverse_false",
+          "TestDownloadNameFormDirect/native/twin_dotted_i_plain/recorded_false/reverse_true",
+          "TestDownloadNameFormDirect/native/twin_dotted_i_plain/recorded_true/reverse_false",
+          "TestDownloadNameFormDirect/native/twin_dotted_i_plain/recorded_true/reverse_true",
+          "TestDownloadNameFormDirect/native/twin_file/recorded_false/reverse_false",
+          "TestDownloadNameFormDirect/native/twin_file/recorded_false/reverse_true",
+          "TestDownloadNameFormDirect/native/twin_file/recorded_true/reverse_false",
+          "TestDownloadNameFormDirect/native/twin_file/recorded_true/reverse_true",
+          "TestDownloadNameFormDirect/native/twin_mixed_case_and_form/recorded_false/reverse_false",
+          "TestDownloadNameFormDirect/native/twin_mixed_case_and_form/recorded_false/reverse_true",
+          "TestDownloadNameFormDirect/native/twin_mixed_case_and_form/recorded_true/reverse_false",
+          "TestDownloadNameFormDirect/native/twin_mixed_case_and_form/recorded_true/reverse_true",
+          "TestDownloadNameFormDirect/native/twin_shared_parent/recorded_false/reverse_false",
+          "TestDownloadNameFormDirect/native/twin_shared_parent/recorded_false/reverse_true",
+          "TestDownloadNameFormDirect/native/twin_shared_parent/recorded_true/reverse_false",
+          "TestDownloadNameFormDirect/native/twin_shared_parent/recorded_true/reverse_true",
+          "TestDownloadNameFormDirect/native/twin_unicode_case/recorded_false/reverse_false",
+          "TestDownloadNameFormDirect/native/twin_unicode_case/recorded_false/reverse_true",
+          "TestDownloadNameFormDirect/native/twin_unicode_case/recorded_true/reverse_false",
+          "TestDownloadNameFormDirect/native/twin_unicode_case/recorded_true/reverse_true",
+          "TestDownloadNameFormDirect/rclone/twin_dotted_i_canonical/recorded_false/reverse_false",
+          "TestDownloadNameFormDirect/rclone/twin_dotted_i_canonical/recorded_false/reverse_true",
+          "TestDownloadNameFormDirect/rclone/twin_dotted_i_canonical/recorded_true/reverse_false",
+          "TestDownloadNameFormDirect/rclone/twin_dotted_i_canonical/recorded_true/reverse_true",
+          "TestDownloadNameFormDirect/rclone/twin_dotted_i_case/recorded_false/reverse_false",
+          "TestDownloadNameFormDirect/rclone/twin_dotted_i_case/recorded_false/reverse_true",
+          "TestDownloadNameFormDirect/rclone/twin_dotted_i_case/recorded_true/reverse_false",
+          "TestDownloadNameFormDirect/rclone/twin_dotted_i_case/recorded_true/reverse_true",
+          "TestDownloadNameFormDirect/rclone/twin_dotted_i_plain/recorded_false/reverse_false",
+          "TestDownloadNameFormDirect/rclone/twin_dotted_i_plain/recorded_false/reverse_true",
+          "TestDownloadNameFormDirect/rclone/twin_dotted_i_plain/recorded_true/reverse_false",
+          "TestDownloadNameFormDirect/rclone/twin_dotted_i_plain/recorded_true/reverse_true",
+          "TestDownloadNameFormDirect/rclone/twin_file/recorded_false/reverse_false",
+          "TestDownloadNameFormDirect/rclone/twin_file/recorded_false/reverse_true",
+          "TestDownloadNameFormDirect/rclone/twin_file/recorded_true/reverse_false",
+          "TestDownloadNameFormDirect/rclone/twin_file/recorded_true/reverse_true",
+          "TestDownloadNameFormDirect/rclone/twin_mixed_case_and_form/recorded_false/reverse_false",
+          "TestDownloadNameFormDirect/rclone/twin_mixed_case_and_form/recorded_false/reverse_true",
+          "TestDownloadNameFormDirect/rclone/twin_mixed_case_and_form/recorded_true/reverse_false",
+          "TestDownloadNameFormDirect/rclone/twin_mixed_case_and_form/recorded_true/reverse_true",
+          "TestDownloadNameFormDirect/rclone/twin_shared_parent/recorded_false/reverse_false",
+          "TestDownloadNameFormDirect/rclone/twin_shared_parent/recorded_false/reverse_true",
+          "TestDownloadNameFormDirect/rclone/twin_shared_parent/recorded_true/reverse_false",
+          "TestDownloadNameFormDirect/rclone/twin_shared_parent/recorded_true/reverse_true",
+          "TestDownloadNameFormDirect/rclone/twin_unicode_case/recorded_false/reverse_false",
+          "TestDownloadNameFormDirect/rclone/twin_unicode_case/recorded_false/reverse_true",
+          "TestDownloadNameFormDirect/rclone/twin_unicode_case/recorded_true/reverse_false",
+          "TestDownloadNameFormDirect/rclone/twin_unicode_case/recorded_true/reverse_true",
+          "TestDownloadNameFormPreflight/native/twin_dotted_i_canonical",
+          "TestDownloadNameFormPreflight/native/twin_dotted_i_case",
+          "TestDownloadNameFormPreflight/native/twin_dotted_i_plain",
+          "TestDownloadNameFormPreflight/native/twin_file",
+          "TestDownloadNameFormPreflight/native/twin_mixed_case_and_form",
+          "TestDownloadNameFormPreflight/native/twin_shared_parent",
+          "TestDownloadNameFormPreflight/native/twin_unicode_case",
+          "TestDownloadNameFormPreflight/rclone/twin_dotted_i_canonical",
+          "TestDownloadNameFormPreflight/rclone/twin_dotted_i_case",
+          "TestDownloadNameFormPreflight/rclone/twin_dotted_i_plain",
+          "TestDownloadNameFormPreflight/rclone/twin_file",
+          "TestDownloadNameFormPreflight/rclone/twin_mixed_case_and_form",
+          "TestDownloadNameFormPreflight/rclone/twin_shared_parent",
+          "TestDownloadNameFormPreflight/rclone/twin_unicode_case",
+          "TestDownloadRejectsConstructedIdentity/case_fold",
+          "TestPreflightDownloadRejections"
+        ],
+        "local_passed_leaves": 907,
+        "local_sha256": "99897b3f0f48d922f91c7263f2fbccef425bc3ebd1518e3a9e7aadb21e27aec3",
+        "service_failed_leaves": [
+          "TestDownloadDirAliasesMock/file_form_twins_inside_aliases",
+          "TestDownloadDirAliasesMock/file_twins_inside_aliases",
+          "TestDownloadDirAliasesRealSwift/file_form_twins_inside_aliases",
+          "TestDownloadDirAliasesRealSwift/file_twins_inside_aliases"
+        ],
+        "service_passed_leaves": 20,
+        "service_sha256": "490289ffc8cbabb033f1ad8fbb61feec1871d8e10216231725ec7c883257826b",
+        "setup_failed": false
+      },
+      "g03": {
+        "change": "no native routing beneath aliased directories",
+        "local_failed_leaves": [
+          "TestDownloadDirAliasesPreflight/alias_beside_plain",
+          "TestDownloadDirAliasesPreflight/deep_implicit_twins",
+          "TestDownloadDirAliasesPreflight/implicit_form_twins",
+          "TestDownloadDirAliasesPreflight/implicit_twins",
+          "TestDownloadDirAliasesPreflight/marker_beside_implicit",
+          "TestDownloadDirAliasesPreflight/marker_twins_with_children",
+          "TestDownloadDirAliasesPreflight/three_spellings"
+        ],
+        "local_passed_leaves": 978,
+        "local_sha256": "cbf2277fb87314296899a2ef6e204f175f687b94e2a930b3a82b8c700f170bfd",
+        "service_failed_leaves": [
+          "TestDownloadDirAliasesMock/alias_beside_plain",
+          "TestDownloadDirAliasesMock/deep_implicit_twins",
+          "TestDownloadDirAliasesMock/implicit_form_twins",
+          "TestDownloadDirAliasesMock/implicit_twins",
+          "TestDownloadDirAliasesMock/marker_beside_implicit",
+          "TestDownloadDirAliasesMock/marker_twins_with_children",
+          "TestDownloadDirAliasesMock/three_spellings",
+          "TestDownloadDirAliasesRealSwift/alias_beside_plain",
+          "TestDownloadDirAliasesRealSwift/deep_implicit_twins",
+          "TestDownloadDirAliasesRealSwift/implicit_form_twins",
+          "TestDownloadDirAliasesRealSwift/implicit_twins",
+          "TestDownloadDirAliasesRealSwift/marker_beside_implicit",
+          "TestDownloadDirAliasesRealSwift/marker_twins_with_children",
+          "TestDownloadDirAliasesRealSwift/three_spellings"
+        ],
+        "service_passed_leaves": 10,
+        "service_sha256": "dd4541443257c107cb04b8ff29d0c2070008a5dce6847ff9d8dc6bfd7dd51eea",
+        "setup_failed": false
+      }
+    },
+    "full_suite": {
+      "failed_leaf_rerun": {
+        "command": "go test ./internal/systemtest/ -run TestCopyItemRecordsMock$ -count=3 -race",
+        "result": "15 leaves passed, none failed",
+        "stream_sha256": "1893fee407020dc7909ada77cbb42a8134392b1d45e5c354e452a1195627c09e"
+      },
+      "head": "2b6f002405f7372ba08fceafdd909500b25562fa",
+      "run1": {
+        "classification": "the recorded copy-binding intermittent (docs/experiments/2026-09-11-copy-binding-release.md and the retained recurrence record), on the copy path that this change does not touch",
+        "distinct_names": 4178,
+        "failing": 1,
+        "failing_leaf": "internal/systemtest TestCopyItemRecordsMock/failed_401",
+        "failure": "copy body did not release binding after the bounded 30 second poll",
+        "leaves": 3873,
+        "passing": 3871,
+        "skipped": 1,
+        "stream_sha256": "96c85bea0f394eef7895ae2b6c5cc4b55f2fb5f5aa46c11e626173a8071470d6",
+        "window": "2026-09-12T08:11:33Z..2026-09-12T08:19:26Z"
+      },
+      "run2": {
+        "distinct_names": 4178,
+        "failing": 0,
+        "leaves": 3873,
+        "note": "the two experiment documents were uncommitted in the worktree during this run; no Go file differed from the commit",
+        "packages_pass": 22,
+        "passing": 3872,
+        "skipped": 1,
+        "skipped_leaves": [
+          "TestRcloneMatrix"
+        ],
+        "stream_sha256": "e638b6d9ebd94e895ea918d990d383d0fb91ba556c72c285dd265dc7df3fb0d6",
+        "window": "2026-09-12T08:21:42Z..2026-09-12T08:30:12Z"
+      }
+    },
+    "local_package": {
+      "log_sha256": "cf4d4aa9a67109c906f33b5bf111a8ba8e1df66647d4d16618e603b5ba9c2641",
+      "result": "ok  \tgithub.com/csmart/aeronautes/internal/transfer/local\t3.968s"
+    },
+    "service": {
+      "failed_leaves": [],
+      "passed_leaves": 24,
+      "sha256": "a569ade15fe044bb6a2fb6dc3f30cba54ba510d492d7b13d19bc3f22dd59868c"
+    },
+    "streams": {}
+  },
   "before": {
     "boundaries": {
       "deep_implicit_twins": {
