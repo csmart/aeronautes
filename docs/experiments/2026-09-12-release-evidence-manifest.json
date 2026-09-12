@@ -1,0 +1,71 @@
+{
+  "disposition_record": {
+    "builder": "probes/2026-09-12-release-evidence-build-record.py.txt",
+    "citations": 88,
+    "draft_dispositions_sha256": "ff765dacbac6370b21d2a2f308fa8832c28828bf687985a5488cc9995992aaa2",
+    "rows": 42
+  },
+  "recorded": "2026-09-12T04:45:23.173660+00:00",
+  "rescan": {
+    "database": {
+      "archive_sha256": "fa24a0544fdb3427812a6328ac8514c97b349f9b381c13b73086a82093d7b79b",
+      "flat_entries": 4378,
+      "flat_tree_sha256_of_sorted_file_digests": "e4a65cbb4634eafe439f06157cc44d5a99523809fb7bf7ba2734606e1c90a549",
+      "snapshot_recorded_by_the_earlier_assessment": "fc5d44d2"
+    },
+    "network": "GOPROXY=off, GOSUMDB=off; toolchain from the local module cache; no registry or advisory service contacted",
+    "scanner": {
+      "path": "tools/govulncheck retained with the 2026-09-10 assessment",
+      "sha256": "ef8bd4dac6956e563c4162adcbddf3b3766143f851c18666d9a1d04c91420cbd",
+      "version": "v1.7.0"
+    },
+    "scans": {
+      "source-darwin-arm64": {
+        "exit": 0,
+        "findings": 0,
+        "inputs_sha256": "7f96d03d34532247dbd85c59a3cde6cb599a6c5eb3d82c553f61e86eb005d8be",
+        "modules": 16,
+        "osv_records_loaded": 174,
+        "roots": 19,
+        "scanner_version": "v1.7.0",
+        "stream_sha256": "0bc94b15c7daa6a08f5529c9777f71cecdf99edd3ff4b9be0a180edca7b5bbcf",
+        "x_text": [
+          "golang.org/x/text@v0.39.0"
+        ]
+      },
+      "source-linux-amd64": {
+        "exit": 0,
+        "findings": 0,
+        "inputs_sha256": "a0acfe7c2743a3cc5516a57b0c19e8aeb801fc4ae7cef1751a01aa010d129d6f",
+        "modules": 15,
+        "osv_records_loaded": 174,
+        "roots": 20,
+        "scanner_version": "v1.7.0",
+        "stream_sha256": "09515490a48a75639f34ee237ac5ff2b5cf230358310301e999c8906ba0e5e25",
+        "x_text": [
+          "golang.org/x/text@v0.39.0"
+        ]
+      },
+      "source-windows-amd64": {
+        "exit": 0,
+        "findings": 0,
+        "inputs_sha256": "bfa6ae096d397903a5d5b2f1893118e2531004bf5e7bc087531c356009b6b4bb",
+        "modules": 20,
+        "osv_records_loaded": 174,
+        "roots": 22,
+        "scanner_version": "v1.7.0",
+        "stream_sha256": "c90c4348c65aab88d8e7421b4fc78f0ca24e3726a525161c522365b095384142",
+        "x_text": [
+          "golang.org/x/text@v0.39.0"
+        ]
+      }
+    },
+    "x_text_entries_in_snapshot": [
+      "GO-2020-0015 golang.org/x/text [{'introduced': '0'}, {'fixed': '0.3.3'}]",
+      "GO-2021-0113 golang.org/x/text [{'introduced': '0'}, {'fixed': '0.3.7'}]",
+      "GO-2022-1059 golang.org/x/text [{'introduced': '0'}, {'fixed': '0.3.8'}]",
+      "GO-2026-5970 golang.org/x/text [{'introduced': '0'}, {'fixed': '0.39.0'}]"
+    ]
+  },
+  "source": "7c312a2fa90d13584af1d9c473146ea28e148047"
+}
