@@ -62,6 +62,12 @@ Record the legitimate endpoint-migration policy in the security ADR.
 
 Acceptance: direct bridge calls cannot retarget an existing key; origin/port/scheme/custom-CA/insecure transitions have explicit tests; legitimate approved migration works; stale queued operations cannot acquire the new identity; no key appears in errors, audit entries, logs, or frontend DTOs.
 
+The locally reviewed [native HTTP message correction](../../experiments/2026-09-12-public-http-errors.md) stops provider reason text from supplying the public Message on normalized native Swift HTTP errors.
+An owned HTTP/1.1 fixture reproduced a saved synthetic key in public Connect output; 51 maintained race-tested leaves pass after the correction, and removing its message guard restores the intended failure.
+Local status wording and a fixed unknown-status fallback preserve status, classification, retryability and wrapped cause identity.
+The cause can still contain provider text; network, unknown and joined-error paths, transaction headers, native credential authority/cleanup and wider P10 acceptance remain open.
+This bounded evidence does not establish general redaction, native platform acceptance or valuable-data clearance; current-base verification and protected delivery remain required.
+
 ## SEC-02 — the pinned rclone follows a token-bearing redirect
 
 References: `internal/swiftcontrol/tls.go:31`, `internal/swiftcontrol/session.go:74`, and `internal/transfer/rclone/runner.go:337`, `:394`, `:476`.

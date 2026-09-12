@@ -4405,6 +4405,10 @@ Review that evidence and the local `http.StatusText` display contract first, inc
 Then add maintained normalization, public Connect and receipt-bound system refusal regressions before changing only the native HTTP Message projection, preserving classification, retryability, cause identity, cancellation and transaction-ID policy.
 Review the correction and its intended omission failure separately; keep general error redaction, native P10 authority/cleanup and the valuable-data hold open.
 
+The native HTTP Message correction now passes independent local review and 51 dedicated race-tested leaves; the original and one-line omission retain the intended public Connect failure.
+Public Message uses local status wording or the fixed unknown-status fallback, while machine fields and wrapped causes keep their original meaning.
+The wider error paths, raw transaction headers, native credential authority/cleanup and final-base protected delivery remain separate obligations.
+
 The next harness prerequisite is P02 / TEST-01, following [ADR 0018](adr/0018-snapshot-representations.md).
 The archived gzip/plain probe still fails after the keychain slice because the independent oracle implicitly decodes and loses the stored encoding header.
 After local design approval, preserve content-coded bytes and encoding evidence as one reviewed fix, then reject incomplete snapshot responses as a second reviewed fix.
