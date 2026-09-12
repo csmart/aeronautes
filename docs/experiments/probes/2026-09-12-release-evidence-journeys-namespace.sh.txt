@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Run a command in a private user and mount namespace where the X socket
+# directory is writable and the runtime's xkbcomp is visible at the path
+# the virtual display server expects. No host file is changed.
+set -eu
+J=/home/csmart/code/.aeronautes-work/20260912-claude/release-evidence/journeys
+exec unshare -Urm --propagation unchanged bash -c '
+  mkdir -p /tmp/realbin
+  mount --bind /usr/bin /tmp/realbin
+  mount --bind "$1" /usr/bin
+  mount -t tmpfs -o mode=1777 none /tmp/.X11-unix
+  shift
+  exec "$@"
+' -- "$J/usrbin-merged" "$@"

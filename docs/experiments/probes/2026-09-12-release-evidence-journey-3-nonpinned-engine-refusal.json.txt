@@ -1,0 +1,205 @@
+[
+ {
+  "op": "seed",
+  "container": "src",
+  "objects": {
+   "alpha.txt": "payload-alpha",
+   "bravo.txt": "payload-bravo",
+   "charlie.txt": "payload-charlie"
+  }
+ },
+ {
+  "op": "seed",
+  "container": "dst",
+  "objects": {}
+ },
+ {
+  "op": "env",
+  "set": {
+   "PATH": "/home/csmart/code/.aeronautes-work/20260912-claude/release-evidence/journeys/fakebin:/home/csmart/code/.aeronautes-work/parallel/keyboard_scope/native/runtime-root/usr/bin:/usr/local/bin:/usr/bin:/bin"
+  }
+ },
+ {
+  "op": "launch"
+ },
+ {
+  "op": "shot",
+  "name": "00-launched"
+ },
+ {
+  "op": "x",
+  "args": [
+   "key",
+   "Escape"
+  ],
+  "pause": 1
+ },
+ {
+  "op": "x",
+  "args": [
+   "mousemove",
+   "42",
+   "50",
+   "click",
+   "1"
+  ],
+  "pause": 2
+ },
+ {
+  "op": "type",
+  "text": "Journey"
+ },
+ {
+  "op": "x",
+  "args": [
+   "key",
+   "Tab"
+  ]
+ },
+ {
+  "op": "type",
+  "text": "{origin}/auth/v1.0",
+  "delay": 10
+ },
+ {
+  "op": "x",
+  "args": [
+   "key",
+   "Tab"
+  ]
+ },
+ {
+  "op": "type",
+  "text": "test:tester"
+ },
+ {
+  "op": "x",
+  "args": [
+   "key",
+   "Tab"
+  ]
+ },
+ {
+  "op": "type",
+  "text": "testing"
+ },
+ {
+  "op": "x",
+  "args": [
+   "key",
+   "Return"
+  ],
+  "pause": 1
+ },
+ {
+  "op": "wire",
+  "pattern": "GET /v1/AUTH_test(?:\\?|$)",
+  "seconds": 15
+ },
+ {
+  "op": "shot",
+  "name": "01-connected"
+ },
+ {
+  "op": "x",
+  "args": [
+   "mousemove",
+   "113",
+   "165",
+   "click",
+   "1"
+  ],
+  "pause": 2
+ },
+ {
+  "op": "wire",
+  "pattern": "GET /v1/AUTH_test/src",
+  "seconds": 10
+ },
+ {
+  "op": "shot",
+  "name": "02-browse-src"
+ },
+ {
+  "op": "x",
+  "args": [
+   "mousemove",
+   "872",
+   "82",
+   "click",
+   "1"
+  ],
+  "pause": 2
+ },
+ {
+  "op": "x",
+  "args": [
+   "key",
+   "Tab",
+   "Tab",
+   "Tab",
+   "Tab"
+  ],
+  "pause": 0.5
+ },
+ {
+  "op": "type",
+  "text": "dst",
+  "pause": 1
+ },
+ {
+  "op": "x",
+  "args": [
+   "key",
+   "Tab",
+   "Tab",
+   "Tab"
+  ],
+  "pause": 0.5
+ },
+ {
+  "op": "x",
+  "args": [
+   "key",
+   "Return"
+  ],
+  "pause": 3
+ },
+ {
+  "op": "shot",
+  "name": "03-preview-fake-engine"
+ },
+ {
+  "op": "x",
+  "args": [
+   "mousemove",
+   "945",
+   "608",
+   "click",
+   "1"
+  ],
+  "pause": 3
+ },
+ {
+  "op": "shot",
+  "name": "04-after-start-fake-engine"
+ },
+ {
+  "op": "sleep",
+  "seconds": 3
+ },
+ {
+  "op": "shot",
+  "name": "05-later-fake-engine"
+ },
+ {
+  "op": "wire-count",
+  "pattern": "PUT /v1/AUTH_test/dst/"
+ },
+ {
+  "op": "jobs"
+ },
+ {
+  "op": "finish"
+ }
+]

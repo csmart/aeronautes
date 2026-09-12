@@ -5,6 +5,167 @@
     "draft_dispositions_sha256": "ff765dacbac6370b21d2a2f308fa8832c28828bf687985a5488cc9995992aaa2",
     "rows": 42
   },
+  "journeys": {
+    "archived_sources": [
+      "probes/2026-09-12-release-evidence-journeys-driver.py.txt",
+      "probes/2026-09-12-release-evidence-journeys-capture.py.txt",
+      "probes/2026-09-12-release-evidence-journeys-namespace.sh.txt",
+      "probes/2026-09-12-release-evidence-journeys-fake-engine.sh.txt"
+    ],
+    "build": {
+      "app_sha256": "b3a1dad7c4689ac15a229e87e930958bd3fba4b81e0bf4ad33d274c5867d8661",
+      "head": "7c312a2fa90d13584af1d9c473146ea28e148047",
+      "mock_sha256": "330243c36c2d61a19f8ab233d52e47c97d467aa6a9f02cb0cd28325061b0e45c"
+    },
+    "capture_sha256": "5b42c45ce4d1362be62cf67187b18f866b631f9a2224e31132536b52ab576a62",
+    "driver_sha256": "e7f8890c75f7ae88d41bd00ca65123e26b7d00dcef77ac843cb82f6706ebe3d4",
+    "fake_engine_sha256": "045d5104a1c13de43fc8e2b713415bfc8984d8f5503418c96927cf17d839aba2",
+    "namespace_wrapper_sha256": "a8ec0bf1f72eefb6043061f5813fefc542678e67d7dd657daf025fc9f07eaaf6",
+    "platform": "Linux amd64 under a virtual X display in a private user and mount namespace; no other platform observed",
+    "recorded": "2026-09-12T05:09:00.287967+00:00",
+    "runs": {
+      "1-launch-connect-copy-restart": {
+        "app_sha256": "b3a1dad7c4689ac15a229e87e930958bd3fba4b81e0bf4ad33d274c5867d8661",
+        "archived_sequence": "probes/2026-09-12-release-evidence-journey-1-launch-connect-copy-restart.json.txt",
+        "captures": [
+          "00-launched.png",
+          "01-connected.png",
+          "02-browse-src.png",
+          "03-preview.png",
+          "04-started.png",
+          "05-drawer-after-copy.png",
+          "06-relaunched.png",
+          "07-drawer-after-restart.png",
+          "08-job-history-after-restart.png"
+        ],
+        "destination_put_counts": [
+          6
+        ],
+        "display": ":90",
+        "finished_utc": "2026-09-12T05:05:41Z",
+        "job_rows_at_each_read": [
+          [
+            {
+              "counters_json": "{\"objectsPlanned\":3,\"objectsCopied\":3,\"objectsVerified\":3,\"objectsFailed\":0,\"bytesPlanned\":41,\"bytesCopied\":41,\"overwrites\":0,\"overwritesRefused\":0,\"nativeRouted\":0,\"objectsDeleted\":0}",
+              "error": null,
+              "finished_at": "2026-09-12T05:05:20Z",
+              "id": "3af01505ad076f23",
+              "state": "complete"
+            }
+          ],
+          [
+            {
+              "counters_json": "{\"objectsPlanned\":3,\"objectsCopied\":3,\"objectsVerified\":3,\"objectsFailed\":0,\"bytesPlanned\":41,\"bytesCopied\":41,\"overwrites\":0,\"overwritesRefused\":0,\"nativeRouted\":0,\"objectsDeleted\":0}",
+              "error": null,
+              "finished_at": "2026-09-12T05:05:20Z",
+              "id": "3af01505ad076f23",
+              "state": "complete"
+            }
+          ]
+        ],
+        "mock_sha256": "330243c36c2d61a19f8ab233d52e47c97d467aa6a9f02cb0cd28325061b0e45c",
+        "result_sha256": "a7dd3a23199915d4b3328974049d120380482342ce039ba08006f0305d3d39fa",
+        "screen": "1280x800x24",
+        "sequence_sha256": "8a38b3301f9dc18f6a113e9730f982238357b9030f08d16a2e7d63f8fbbd0b1d",
+        "started_utc": "2026-09-12T05:05:00Z",
+        "status": "completed"
+      },
+      "2-cancel-running-copy": {
+        "app_sha256": "b3a1dad7c4689ac15a229e87e930958bd3fba4b81e0bf4ad33d274c5867d8661",
+        "archived_sequence": "probes/2026-09-12-release-evidence-journey-2-cancel-running-copy.json.txt",
+        "captures": [
+          "00-launched.png",
+          "01-connected.png",
+          "02-browse-src.png",
+          "03-preview.png",
+          "04-started.png",
+          "05-drawer-running-a.png",
+          "06-drawer-running-b.png",
+          "07-after-cancel-click.png",
+          "08-after-cancel-settled.png",
+          "09-job-history.png"
+        ],
+        "destination_put_counts": [
+          1000,
+          1000,
+          1000
+        ],
+        "display": ":90",
+        "finished_utc": "2026-09-12T05:06:22Z",
+        "job_rows_at_each_read": [
+          [
+            {
+              "counters_json": "{\"objectsPlanned\":588,\"objectsCopied\":500,\"objectsVerified\":0,\"objectsFailed\":0,\"bytesPlanned\":601101,\"bytesCopied\":510989,\"overwrites\":0,\"overwritesRefused\":0,\"nativeRouted\":0,\"objectsDeleted\":0}",
+              "error": "source listing: context canceled\ncontext canceled\nsource listing: context canceled\nsource listing: context canceled",
+              "finished_at": "2026-09-12T05:06:10Z",
+              "id": "23f3c3336d2d0747",
+              "state": "partial"
+            }
+          ]
+        ],
+        "mock_sha256": "330243c36c2d61a19f8ab233d52e47c97d467aa6a9f02cb0cd28325061b0e45c",
+        "result_sha256": "bfb37a62b5bc6bdaf48bf3585869f243cc87e4ea70d2f81af381ce96703b0d29",
+        "screen": "1280x800x24",
+        "sequence_sha256": "0817137506225cb9f3bda2dd229058875319b6b0082e680c7aa15772e110308e",
+        "started_utc": "2026-09-12T05:05:41Z",
+        "status": "completed"
+      },
+      "3-nonpinned-engine-refusal": {
+        "app_sha256": "b3a1dad7c4689ac15a229e87e930958bd3fba4b81e0bf4ad33d274c5867d8661",
+        "archived_sequence": "probes/2026-09-12-release-evidence-journey-3-nonpinned-engine-refusal.json.txt",
+        "captures": [
+          "00-launched.png",
+          "01-connected.png",
+          "02-browse-src.png",
+          "03-preview-fake-engine.png",
+          "04-after-start-fake-engine.png",
+          "05-later-fake-engine.png"
+        ],
+        "destination_put_counts": [
+          0
+        ],
+        "display": ":90",
+        "finished_utc": "2026-09-12T05:06:49Z",
+        "job_rows_at_each_read": [
+          []
+        ],
+        "mock_sha256": "330243c36c2d61a19f8ab233d52e47c97d467aa6a9f02cb0cd28325061b0e45c",
+        "result_sha256": "ae995dc77a15d501c881908ba6ce7fc80c1ac7a1da85c180bcf4b043535889bc",
+        "screen": "1280x800x24",
+        "sequence_sha256": "d030b1030d537a676045800f466b724142a46b017142ebacc2636549faba6d67",
+        "started_utc": "2026-09-12T05:06:22Z",
+        "status": "completed"
+      },
+      "4-native-picker-attempt": {
+        "app_sha256": "b3a1dad7c4689ac15a229e87e930958bd3fba4b81e0bf4ad33d274c5867d8661",
+        "archived_sequence": "probes/2026-09-12-release-evidence-journey-4-native-picker-attempt.json.txt",
+        "captures": [
+          "05-chooser-open.png",
+          "06-chooser-resized.png",
+          "07-typed-leading-space-path.png",
+          "08-after-return.png",
+          "09-after-open-click.png",
+          "10-after-alt-o.png"
+        ],
+        "display": ":90",
+        "finished_utc": "2026-09-12T05:07:22Z",
+        "job_rows_at_each_read": [
+          []
+        ],
+        "local_trees": [
+          {
+            " leading": "dir"
+          }
+        ],
+        "mock_sha256": "330243c36c2d61a19f8ab233d52e47c97d467aa6a9f02cb0cd28325061b0e45c",
+        "result_sha256": "2e578153ab96a082f0102899193636c859b3780141ffdd46210828247eb3e79d",
+        "screen": "1280x800x24",
+        "sequence_sha256": "d8dfee0635a74492f7d49a324ab58c9a13cef88547bc81ff211355c3e754bb4d",
+        "started_utc": "2026-09-12T05:06:49Z",
+        "status": "completed"
+      }
+    }
+  },
   "recorded": "2026-09-12T04:45:23.173660+00:00",
   "rescan": {
     "database": {
