@@ -1,0 +1,726 @@
+{
+  "before": {
+    "boundaries": {
+      "deep_implicit_twins": {
+        "engine_calls": 1,
+        "executor_error": null,
+        "objects": [
+          "top/Foo/a.txt",
+          "TOP/foo/b.txt"
+        ],
+        "owned_after": [
+          "/TOP",
+          "/TOP/foo",
+          "/TOP/foo/b.txt",
+          "/keep",
+          "/top",
+          "/top/Foo",
+          "/top/Foo/a.txt"
+        ],
+        "preflight_items": 2,
+        "preflight_problems": []
+      },
+      "file_twins": {
+        "engine_calls": 0,
+        "executor_error": "download selection contains names that collide on case or Unicode normalization form",
+        "objects": [
+          "Foo",
+          "foo"
+        ],
+        "owned_after": [
+          "/keep"
+        ],
+        "preflight_items": 2,
+        "preflight_problems": [
+          {
+            "detail": "2 names collide on case-insensitive filesystems: [\"Foo\" \"foo\"]",
+            "kind": "case-fold",
+            "name": "scope/Foo"
+          }
+        ]
+      },
+      "file_twins_inside_aliases": {
+        "engine_calls": 0,
+        "executor_error": "download selection contains names that collide on case or Unicode normalization form",
+        "objects": [
+          "Foo/x.txt",
+          "foo/x.txt"
+        ],
+        "owned_after": [
+          "/keep"
+        ],
+        "preflight_items": 2,
+        "preflight_problems": [
+          {
+            "detail": "2 names collide on case-insensitive filesystems: [\"Foo/x.txt\" \"foo/x.txt\"]",
+            "kind": "case-fold",
+            "name": "scope/Foo/x.txt"
+          }
+        ]
+      },
+      "file_vs_implicit": {
+        "engine_calls": 0,
+        "executor_error": "download selection needs the same path as a file and a directory",
+        "objects": [
+          "foo",
+          "Foo/child.txt"
+        ],
+        "owned_after": [
+          "/keep"
+        ],
+        "preflight_items": 2,
+        "preflight_problems": [
+          {
+            "detail": "object \"foo\" needs to be both a file and the directory holding \"Foo/child.txt\"",
+            "kind": "file-vs-prefix",
+            "name": "scope/foo"
+          }
+        ]
+      },
+      "file_vs_marker": {
+        "engine_calls": 0,
+        "executor_error": "download selection needs the same path as a file and a directory",
+        "objects": [
+          "foo",
+          "Foo/"
+        ],
+        "owned_after": [
+          "/keep"
+        ],
+        "preflight_items": 2,
+        "preflight_problems": [
+          {
+            "detail": "object \"foo\" needs to be both a file and the directory holding \"Foo/\"",
+            "kind": "file-vs-prefix",
+            "name": "scope/foo"
+          }
+        ]
+      },
+      "file_vs_marker_form": {
+        "engine_calls": 0,
+        "executor_error": "download selection needs the same path as a file and a directory",
+        "objects": [
+          "Bär",
+          "Bär/"
+        ],
+        "owned_after": [
+          "/keep"
+        ],
+        "preflight_items": 2,
+        "preflight_problems": [
+          {
+            "detail": "object \"Bär\" needs to be both a file and the directory holding \"Bär/\"",
+            "kind": "file-vs-prefix",
+            "name": "scope/Bär"
+          }
+        ]
+      },
+      "implicit_form_twins": {
+        "engine_calls": 1,
+        "executor_error": null,
+        "objects": [
+          "Bär/a.txt",
+          "Bär/b.txt"
+        ],
+        "owned_after": [
+          "/Bär",
+          "/Bär/b.txt",
+          "/Bär",
+          "/Bär/a.txt",
+          "/keep"
+        ],
+        "preflight_items": 2,
+        "preflight_problems": []
+      },
+      "implicit_twins": {
+        "engine_calls": 1,
+        "executor_error": null,
+        "objects": [
+          "Foo/a.txt",
+          "foo/b.txt"
+        ],
+        "owned_after": [
+          "/Foo",
+          "/Foo/a.txt",
+          "/foo",
+          "/foo/b.txt",
+          "/keep"
+        ],
+        "preflight_items": 2,
+        "preflight_problems": []
+      },
+      "marker_beside_implicit": {
+        "engine_calls": 1,
+        "executor_error": null,
+        "objects": [
+          "Foo/",
+          "foo/child.txt"
+        ],
+        "owned_after": [
+          "/Foo",
+          "/foo",
+          "/foo/child.txt",
+          "/keep"
+        ],
+        "preflight_items": 2,
+        "preflight_problems": []
+      },
+      "marker_form_twins": {
+        "engine_calls": 0,
+        "executor_error": "download selection contains names that collide on case or Unicode normalization form",
+        "objects": [
+          "Bär/",
+          "Bär/"
+        ],
+        "owned_after": [
+          "/keep"
+        ],
+        "preflight_items": 2,
+        "preflight_problems": [
+          {
+            "detail": "2 names collide on filesystems that ignore case or Unicode normalization form: [\"Bär/\" \"Bär/\"]",
+            "kind": "name-form",
+            "name": "scope/Bär/"
+          }
+        ]
+      },
+      "marker_twins": {
+        "engine_calls": 0,
+        "executor_error": "download selection contains names that collide on case or Unicode normalization form",
+        "objects": [
+          "Foo/",
+          "foo/"
+        ],
+        "owned_after": [
+          "/keep"
+        ],
+        "preflight_items": 2,
+        "preflight_problems": [
+          {
+            "detail": "2 names collide on case-insensitive filesystems: [\"Foo/\" \"foo/\"]",
+            "kind": "case-fold",
+            "name": "scope/Foo/"
+          }
+        ]
+      },
+      "marker_twins_with_children": {
+        "engine_calls": 0,
+        "executor_error": "download selection contains names that collide on case or Unicode normalization form",
+        "objects": [
+          "Foo/",
+          "foo/",
+          "Foo/a.txt",
+          "foo/b.txt"
+        ],
+        "owned_after": [
+          "/keep"
+        ],
+        "preflight_items": 4,
+        "preflight_problems": [
+          {
+            "detail": "2 names collide on case-insensitive filesystems: [\"Foo/\" \"foo/\"]",
+            "kind": "case-fold",
+            "name": "scope/Foo/"
+          }
+        ]
+      },
+      "three_spellings": {
+        "engine_calls": 1,
+        "executor_error": null,
+        "objects": [
+          "Foo/",
+          "foo/a.txt",
+          "FOO/b.txt"
+        ],
+        "owned_after": [
+          "/FOO",
+          "/FOO/b.txt",
+          "/Foo",
+          "/foo",
+          "/foo/a.txt",
+          "/keep"
+        ],
+        "preflight_items": 3,
+        "preflight_problems": []
+      }
+    },
+    "engine": {
+      "copied": [
+        "Foo/a.txt",
+        "foo/b.txt",
+        "Bär/b.txt"
+      ],
+      "destination": [
+        "Bär",
+        "Bär/b.txt",
+        "Foo",
+        "Foo/a.txt",
+        "foo",
+        "foo/b.txt"
+      ],
+      "engine": "rclone v1.74.3 (pinned)",
+      "exit": 0,
+      "flags": [
+        "copy",
+        "--no-traverse",
+        "--ignore-times",
+        "--use-json-log",
+        "-vv",
+        "--stats",
+        "1s",
+        "--files-from-raw"
+      ],
+      "log_sha256": "5659e61cfa5f23e4485e7b037124755ca592308a72889ec63a6ce2783815dbeb",
+      "notices": [
+        "Duplicate directory found in source - ignoring"
+      ],
+      "selection": [
+        "Bär/a.txt",
+        "Bär/b.txt",
+        "Foo/a.txt",
+        "foo/b.txt"
+      ]
+    },
+    "service": {
+      "deep_implicit_twins": {
+        "mock": {
+          "error": "",
+          "items": 2,
+          "native_routed": 0,
+          "owned_after": [
+            "selected/TOP",
+            "selected/TOP/foo",
+            "selected/TOP/foo/b.txt",
+            "selected/keep",
+            "selected/top",
+            "selected/top/Foo",
+            "selected/top/Foo/a.txt"
+          ],
+          "problems": [],
+          "state": "complete",
+          "totals": {
+            "Admitted": 2,
+            "Conflicts": 0,
+            "Failed": 0,
+            "Items": 2,
+            "Planned": 2,
+            "Problems": 0,
+            "Refused": 0,
+            "Unresolved": 0,
+            "Unverified": 0
+          }
+        },
+        "real_swift": {
+          "error": "",
+          "items": 2,
+          "native_routed": 0,
+          "owned_after": [
+            "selected/TOP",
+            "selected/TOP/foo",
+            "selected/TOP/foo/b.txt",
+            "selected/keep",
+            "selected/top",
+            "selected/top/Foo",
+            "selected/top/Foo/a.txt"
+          ],
+          "problems": [],
+          "state": "complete",
+          "totals": {
+            "Admitted": 2,
+            "Conflicts": 0,
+            "Failed": 0,
+            "Items": 2,
+            "Planned": 2,
+            "Problems": 0,
+            "Refused": 0,
+            "Unresolved": 0,
+            "Unverified": 0
+          }
+        }
+      },
+      "file_twins_inside_aliases": {
+        "mock": {
+          "error": null,
+          "items": 2,
+          "native_routed": null,
+          "owned_after": [
+            "selected/keep"
+          ],
+          "problems": [
+            {
+              "kind": "case-fold",
+              "name": "scope/Foo/x.txt"
+            }
+          ],
+          "state": null,
+          "totals": null
+        },
+        "real_swift": {
+          "error": null,
+          "items": 2,
+          "native_routed": null,
+          "owned_after": [
+            "selected/keep"
+          ],
+          "problems": [
+            {
+              "kind": "case-fold",
+              "name": "scope/Foo/x.txt"
+            }
+          ],
+          "state": null,
+          "totals": null
+        }
+      },
+      "file_vs_marker": {
+        "mock": {
+          "error": null,
+          "items": 2,
+          "native_routed": null,
+          "owned_after": [
+            "selected/keep"
+          ],
+          "problems": [
+            {
+              "kind": "file-vs-prefix",
+              "name": "scope/foo"
+            }
+          ],
+          "state": null,
+          "totals": null
+        },
+        "real_swift": {
+          "error": null,
+          "items": 2,
+          "native_routed": null,
+          "owned_after": [
+            "selected/keep"
+          ],
+          "problems": [
+            {
+              "kind": "file-vs-prefix",
+              "name": "scope/foo"
+            }
+          ],
+          "state": null,
+          "totals": null
+        }
+      },
+      "implicit_form_twins": {
+        "mock": {
+          "error": "transfer failures (first: scope/Bär/a.txt: missing after download (silent drop?): lstat /tmp/TestDownloadDirAliasesProbeMockimplicit_form_twins1585311643/002/selected/.aeronautes-stage-46ce577110dbb6f8/Bär: no such file or directory)",
+          "items": 2,
+          "native_routed": 0,
+          "owned_after": [
+            "selected/Bär",
+            "selected/Bär/b.txt",
+            "selected/keep"
+          ],
+          "problems": [],
+          "state": "partial",
+          "totals": {
+            "Admitted": 2,
+            "Conflicts": 0,
+            "Failed": 1,
+            "Items": 2,
+            "Planned": 2,
+            "Problems": 1,
+            "Refused": 0,
+            "Unresolved": 1,
+            "Unverified": 0
+          }
+        },
+        "real_swift": {
+          "error": "transfer failures (first: scope/Bär/a.txt: missing after download (silent drop?): lstat /tmp/TestDownloadDirAliasesProbeRealSwiftimplicit_form_twins3039179729/002/selected/.aeronautes-stage-fbd5fec6444ed82d/Bär: no such file or directory)",
+          "items": 2,
+          "native_routed": 0,
+          "owned_after": [
+            "selected/Bär",
+            "selected/Bär/b.txt",
+            "selected/keep"
+          ],
+          "problems": [],
+          "state": "partial",
+          "totals": {
+            "Admitted": 2,
+            "Conflicts": 0,
+            "Failed": 1,
+            "Items": 2,
+            "Planned": 2,
+            "Problems": 1,
+            "Refused": 0,
+            "Unresolved": 1,
+            "Unverified": 0
+          }
+        }
+      },
+      "implicit_twins": {
+        "mock": {
+          "error": "",
+          "items": 2,
+          "native_routed": 0,
+          "owned_after": [
+            "selected/Foo",
+            "selected/Foo/a.txt",
+            "selected/foo",
+            "selected/foo/b.txt",
+            "selected/keep"
+          ],
+          "problems": [],
+          "state": "complete",
+          "totals": {
+            "Admitted": 2,
+            "Conflicts": 0,
+            "Failed": 0,
+            "Items": 2,
+            "Planned": 2,
+            "Problems": 0,
+            "Refused": 0,
+            "Unresolved": 0,
+            "Unverified": 0
+          }
+        },
+        "real_swift": {
+          "error": "",
+          "items": 2,
+          "native_routed": 0,
+          "owned_after": [
+            "selected/Foo",
+            "selected/Foo/a.txt",
+            "selected/foo",
+            "selected/foo/b.txt",
+            "selected/keep"
+          ],
+          "problems": [],
+          "state": "complete",
+          "totals": {
+            "Admitted": 2,
+            "Conflicts": 0,
+            "Failed": 0,
+            "Items": 2,
+            "Planned": 2,
+            "Problems": 0,
+            "Refused": 0,
+            "Unresolved": 0,
+            "Unverified": 0
+          }
+        }
+      },
+      "marker_beside_implicit": {
+        "mock": {
+          "error": "",
+          "items": 2,
+          "native_routed": 0,
+          "owned_after": [
+            "selected/Foo",
+            "selected/foo",
+            "selected/foo/child.txt",
+            "selected/keep"
+          ],
+          "problems": [],
+          "state": "complete",
+          "totals": {
+            "Admitted": 2,
+            "Conflicts": 0,
+            "Failed": 0,
+            "Items": 2,
+            "Planned": 2,
+            "Problems": 0,
+            "Refused": 0,
+            "Unresolved": 0,
+            "Unverified": 0
+          }
+        },
+        "real_swift": {
+          "error": "",
+          "items": 2,
+          "native_routed": 0,
+          "owned_after": [
+            "selected/Foo",
+            "selected/foo",
+            "selected/foo/child.txt",
+            "selected/keep"
+          ],
+          "problems": [],
+          "state": "complete",
+          "totals": {
+            "Admitted": 2,
+            "Conflicts": 0,
+            "Failed": 0,
+            "Items": 2,
+            "Planned": 2,
+            "Problems": 0,
+            "Refused": 0,
+            "Unresolved": 0,
+            "Unverified": 0
+          }
+        }
+      },
+      "marker_form_twins": {
+        "mock": {
+          "error": null,
+          "items": 2,
+          "native_routed": null,
+          "owned_after": [
+            "selected/keep"
+          ],
+          "problems": [
+            {
+              "kind": "name-form",
+              "name": "scope/Bär/"
+            }
+          ],
+          "state": null,
+          "totals": null
+        },
+        "real_swift": {
+          "error": null,
+          "items": 2,
+          "native_routed": null,
+          "owned_after": [
+            "selected/keep"
+          ],
+          "problems": [
+            {
+              "kind": "name-form",
+              "name": "scope/Bär/"
+            }
+          ],
+          "state": null,
+          "totals": null
+        }
+      },
+      "marker_twins": {
+        "mock": {
+          "error": null,
+          "items": 2,
+          "native_routed": null,
+          "owned_after": [
+            "selected/keep"
+          ],
+          "problems": [
+            {
+              "kind": "case-fold",
+              "name": "scope/Foo/"
+            }
+          ],
+          "state": null,
+          "totals": null
+        },
+        "real_swift": {
+          "error": null,
+          "items": 2,
+          "native_routed": null,
+          "owned_after": [
+            "selected/keep"
+          ],
+          "problems": [
+            {
+              "kind": "case-fold",
+              "name": "scope/Foo/"
+            }
+          ],
+          "state": null,
+          "totals": null
+        }
+      },
+      "marker_twins_with_children": {
+        "mock": {
+          "error": null,
+          "items": 4,
+          "native_routed": null,
+          "owned_after": [
+            "selected/keep"
+          ],
+          "problems": [
+            {
+              "kind": "case-fold",
+              "name": "scope/Foo/"
+            }
+          ],
+          "state": null,
+          "totals": null
+        },
+        "real_swift": {
+          "error": null,
+          "items": 4,
+          "native_routed": null,
+          "owned_after": [
+            "selected/keep"
+          ],
+          "problems": [
+            {
+              "kind": "case-fold",
+              "name": "scope/Foo/"
+            }
+          ],
+          "state": null,
+          "totals": null
+        }
+      },
+      "three_spellings": {
+        "mock": {
+          "error": "",
+          "items": 3,
+          "native_routed": 0,
+          "owned_after": [
+            "selected/FOO",
+            "selected/FOO/b.txt",
+            "selected/Foo",
+            "selected/foo",
+            "selected/foo/a.txt",
+            "selected/keep"
+          ],
+          "problems": [],
+          "state": "complete",
+          "totals": {
+            "Admitted": 3,
+            "Conflicts": 0,
+            "Failed": 0,
+            "Items": 3,
+            "Planned": 3,
+            "Problems": 0,
+            "Refused": 0,
+            "Unresolved": 0,
+            "Unverified": 0
+          }
+        },
+        "real_swift": {
+          "error": "",
+          "items": 3,
+          "native_routed": 0,
+          "owned_after": [
+            "selected/FOO",
+            "selected/FOO/b.txt",
+            "selected/Foo",
+            "selected/foo",
+            "selected/foo/a.txt",
+            "selected/keep"
+          ],
+          "problems": [],
+          "state": "complete",
+          "totals": {
+            "Admitted": 3,
+            "Conflicts": 0,
+            "Failed": 0,
+            "Items": 3,
+            "Planned": 3,
+            "Problems": 0,
+            "Refused": 0,
+            "Unresolved": 0,
+            "Unverified": 0
+          }
+        }
+      }
+    }
+  },
+  "experiment": "2026-09-12-download-directory-aliases",
+  "probes": {
+    "local": "probes/2026-09-12-download-directory-aliases-local_test.go.txt",
+    "service": "probes/2026-09-12-download-directory-aliases-service_test.go.txt"
+  },
+  "streams": {
+    "probe-local-before.jsonl": "4aba9ef667415d6f78358cc7a826711b09b82b09c2e8f63bace1b717dfe4d82c",
+    "probe-service-before.jsonl": "0f60bed1a65af109ffcd64960ca9d52641c4f9c3c99e2105f39499529ebed5bc"
+  }
+}

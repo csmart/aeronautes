@@ -1,0 +1,101 @@
+package systemtest
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"path/filepath"
+	"sort"
+	"strings"
+	"testing"
+
+	"github.com/csmart/aeronautes/internal/app"
+)
+
+// Probe, not a maintained test: the real service on both providers with
+// directory-only aliases, recording admission and the Linux result.
+type dirAliasProbeCase struct {
+	name    string
+	objects []string
+}
+
+func dirAliasProbeCases() []dirAliasProbeCase {
+	nfc, nfd := "Bär", "Bär"
+	return []dirAliasProbeCase{
+		{"marker_twins", []string{"Foo/", "foo/"}},
+		{"marker_form_twins", []string{nfc + "/", nfd + "/"}},
+		{"marker_twins_with_children", []string{"Foo/", "foo/", "Foo/a.txt", "foo/b.txt"}},
+		{"marker_beside_implicit", []string{"Foo/", "foo/child.txt"}},
+		{"implicit_twins", []string{"Foo/a.txt", "foo/b.txt"}},
+		{"implicit_form_twins", []string{nfc + "/a.txt", nfd + "/b.txt"}},
+		{"deep_implicit_twins", []string{"top/Foo/a.txt", "TOP/foo/b.txt"}},
+		{"three_spellings", []string{"Foo/", "foo/a.txt", "FOO/b.txt"}},
+		{"file_twins_inside_aliases", []string{"Foo/x.txt", "foo/x.txt"}},
+		{"file_vs_marker", []string{"foo", "Foo/"}},
+	}
+}
+
+func TestDownloadDirAliasesProbeMock(t *testing.T) {
+	t.Parallel()
+	for _, c := range dirAliasProbeCases() {
+		t.Run(c.name, func(t *testing.T) { downloadDirAliasesProbe(t, findMockHarness(t), c) })
+	}
+}
+
+func TestDownloadDirAliasesProbeRealSwift(t *testing.T) {
+	t.Parallel()
+	for _, c := range dirAliasProbeCases() {
+		t.Run(c.name, func(t *testing.T) { downloadDirAliasesProbe(t, New(t), c) })
+	}
+}
+
+func dirAliasProbeBody(name string) []byte {
+	if strings.HasSuffix(name, "/") {
+		return nil
+	}
+	return []byte("bytes for " + name)
+}
+
+func downloadDirAliasesProbe(t *testing.T, h *Harness, c dirAliasProbeCase) {
+	t.Helper()
+	source := h.Container(h.Primary, "dir-aliases")
+	owned := t.TempDir()
+	selected := filepath.Join(owned, "selected")
+	seedListingLocal(t, owned, "selected/keep", []byte("selected sentinel"))
+	for _, name := range c.objects {
+		h.Seed(h.Primary, source, "scope/"+name, dirAliasProbeBody(name), nil)
+	}
+	h.Seed(h.Primary, source, "outside-selection", []byte("unselected remote sentinel"), nil)
+	beforeA := h.SnapshotNamespace(h.Primary)
+	trace := copyCompletionProxy(t, h, h.Primary, "")
+	app.WireDownloadStageBoundary(h.Transfer, func(context.Context, string) error { return nil })
+	app.WireFilePicker(h.Transfer, listingFilePicker{dir: selected})
+	picked, err := h.Transfer.PickDownloadDir(t.Context())
+	if err != nil || picked == nil {
+		t.Fatalf("pick: %+v %v", picked, err)
+	}
+	request := app.DownloadRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: source, Prefix: "scope/", DestDirToken: picked.Token}
+	preflight, err := h.Transfer.PreflightDownload(t.Context(), request)
+	if err != nil || preflight == nil {
+		t.Fatalf("preflight: %+v %v", preflight, err)
+	}
+	observation := map[string]any{"case": c.name, "objects": c.objects, "items": len(preflight.Items), "problems": preflight.Problems}
+	id, startErr := h.Transfer.StartDownload(t.Context(), request)
+	observation["start_error"] = startErr
+	if id != "" {
+		job := h.AwaitJob(id)
+		copyCompletionAwaitPins(t, h, h.Primary)
+		saved := uploadRecoveryRead(t, h.database, id)
+		observation["state"], observation["error"], observation["counters"], observation["totals"] = job.State, job.Error, job.Counters, saved.ItemTotals
+	}
+	var after []string
+	for path, state := range snapshotListingLocal(t, owned) {
+		after = append(after, fmt.Sprintf("%s mode=%v size=%d", path, state.mode, state.size))
+	}
+	sort.Strings(after)
+	observation["owned_after"] = after
+	observation["remote_writes"] = trace.writeSnapshot()
+	encoded, _ := json.Marshal(observation)
+	t.Logf("dir-alias service probe: %s", encoded)
+	h.AssertNoCollateral(beforeA, h.SnapshotNamespace(h.Primary))
+}
