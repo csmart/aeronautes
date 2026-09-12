@@ -8,7 +8,7 @@ It follows the delivered name policy of [PR78](2026-09-09-download-path-case.md)
 The oracle is K-XFER-011, DESIGN §27.5, the DS-06 acceptance in the audit register and the one-namespace-policy stance of §65.9 item 13: a selection that cannot be materialized on every supported target is refused as a whole before any write, at preflight and again at the executor's item admission, with the same lexical rule at both boundaries.
 The operator settled the three product choices on 12 September 2026: refuse path components longer than 255 bytes with a named reason, admit leading spaces and record why, and admit compatibility look-alikes and record why.
 
-This record establishes the current behaviour and proposes the bounded rule; it changes no production code.
+The first part of this record establishes the current behaviour and proposes the bounded rule; the second part, from the section "Correction delivered" onward, records the correction and its evidence.
 
 ## Source finding
 
@@ -101,9 +101,48 @@ For the design sequence, after the engine-reserved rune sequence: the next bound
 4. Turn the archived probes into maintained regressions with a deliberately broken control for the length rule, and record the verification.
 5. Obtain independent review and deliver only the reviewed current-base source through all five protected checks.
 
+## Correction delivered
+
+The correction is one commit on top of the plan, `refuse path components longer than 255 bytes`.
+`componentLengthRefusal` in `internal/transfer/local/local.go` reports the first component of a relative name longer than `maxComponentBytes`, 255, with a detail naming the component's byte length and the limit.
+`PreflightDownload` applies it after the portable component rule and before the marker branch, refusing the name with the kind `name-length` across the whole selection, and `validDownloadItem` applies it again at the executor's item admission, so a plan carrying an over-long component is refused before any marker or filesystem effect whether it arrives through preflight or directly.
+The host's own refusal through the existing-destination inspection is unchanged and remains the backstop; no whole-path rule is enforced; leading spaces and compatibility look-alikes are admitted exactly as before.
+
+## After evidence
+
+The local probe became the maintained regression `TestDownloadNameLimits`, twelve preflight cases including a marker whose component is over-long, plus `TestDownloadNameLimitsExecutorAdmission`, six item-admission cases and one executor run that refuses a plan carrying a 300-byte component with nothing written and the engine never invoked.
+The service probe became `TestDownloadNameLimitsMock` and `TestDownloadNameLimitsRealSwift`, eight cases on each provider.
+
+| Case | Before, both providers | After, both providers |
+| --- | --- | --- |
+| component_255_bytes | admitted, complete, exact bytes | same |
+| component_300_bytes beside a safe name | refused at preflight as `local-inspection` with the host text | refused at preflight as `name-length` naming 300 bytes and the 255-byte limit; the safe name admitted; nothing written |
+| nested_component_300_bytes beside a safe name | admitted, then the engine failed the whole batch after start | refused at preflight as `name-length`; nothing written |
+| marker_component_300_bytes beside a safe name | not probed | refused at preflight as `name-length`; nothing written |
+| leading_space, compatibility_ligature, compatibility_fullwidth_letter | admitted, complete, exact bytes | same |
+| path_4096_bytes, seventeen 240-byte components | mock: admitted, failed at effect time with a retained stage; Swift: refused at creation, name longer than 1,024 bytes | same on both, recorded as the unenforced whole-path bound |
+
+## Deliberately broken controls
+
+Two controls were run on private copies with the files restored from the commit afterwards, and each failed only the cases its change protects while compiling cleanly.
+
+| Control | Mutation | Failing cases |
+| --- | --- | --- |
+| no length rule | the helper never reports a component as too long | the six preflight length cases and the three executor length cases; on the mock the three service length cases; every admitted case still passes |
+| no executor length check | the executor's item admission omits the helper | the three executor length cases only; preflight and the service refusals still hold |
+
+## Verification
+
+Focused producers on the committed source, all under the race detector: the preflight and executor regressions pass 18 leaves; the service regression passes 8 leaves on the in-process mock and 8 on the real two-account Swift fixture.
+The two deliberately broken controls were run on the committed source before the documents were recorded and are listed above.
+The full race suite ran once on the committed source with the pinned engine directory and the real Swift fixture configured, exit 0: 4105 distinct names, 3806 leaves of which 3805 passing, 0 failing and 1 skipped, 4104 passing events including parents, 22 packages passing.
+A leaf is a recorded name that is not a slash-separated prefix of another recorded name in the same package.
+The change carries gofmt, vet on Linux, Windows and macOS, builds for Windows and macOS on arm64, and no module change.
+The [manifest](2026-09-12-download-name-limits-probes.json) records every producer command, exit, count and digest and the broken-control outcomes.
+
 ## Remaining limits
 
-This record proves the current behaviour and proposes the rule; it delivers no correction.
-Linux amd64 is the only observed platform; the NTFS and APFS limits are readings.
+Linux amd64 is the only observed platform; the NTFS and APFS limits are readings, and the rule is conservative on NTFS, which could hold some multi-byte components this rule refuses.
+The whole-path bound stays recorded and unenforced; a numeric rule would be a product decision.
 Directory-only aliases and native target-filesystem acceptance stay open under DS-06 and P19.
 DS-06, P19, P20 and the valuable-data hold remain open.
