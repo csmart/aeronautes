@@ -4999,6 +4999,11 @@ The complete race run, twenty-five negative-control runs, frontend/build checks 
 Independent local review and all five protected PR/master checks passed for [PR62](https://github.com/csmart/aeronautes/pull/62); its [delivery record](experiments/2026-09-08-checked-copy-records.md#delivery) confirms the exact reviewed tree, three preserved logical commits and measured integration durations.
 That delivery left historical and local transfers unrecorded, with the wider outcome, authority, durability and valuable-data gates still open.
 
+The [Copy terminal-wait reproduction](experiments/2026-09-12-copy-terminal-wait.md) shows the item-record scenario's immediate release guard expiring during legitimate running work, while completion-first observation succeeds and retained test-owned pins still fail the same release predicate.
+Review that evidence first, then add the existing terminal-state wait only in `copyItemRecordsRun` before its unchanged successful-save release check and verify all four maintained mock case sizes with race detection.
+Keep the separate 90-second job and 30-second per-account release budgets, explicitly accepting their larger combined possible observation window, and preserve every existing assertion and the shared helper's persistence-failure uses.
+Review the test correction separately before current-base integration and protected PR/master delivery; production, historical failure classification, audit dispositions and the valuable-data hold do not change.
+
 The next local caller is upload, with [archived before-fix prerequisites](experiments/2026-09-08-upload-item-boundaries.md) for complete failure identities, required recovery-record stop boundaries and captured source-path fidelity.
 The archived services truncate 201 and 401 failed uploads to 200 on mock Swift and SAIO; supplementary local/mock probes expose later work after recovery refusal and a same-length source-path mismatch.
 These differently scoped reproductions require a concrete upload design and actual boundary evidence before caller opt-in; they do not close a valuable-data gate.
