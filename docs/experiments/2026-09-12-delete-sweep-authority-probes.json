@@ -1,0 +1,89 @@
+{
+  "environment": {
+    "GOFLAGS": "-mod=readonly",
+    "GOTOOLCHAIN": "go1.27.1",
+    "XDG_CACHE_HOME": "owned temporary directory per case",
+    "real_swift": "AERONAUTES_SAIO_AUTH_URL=http://127.0.0.1:18080/auth/v1.0"
+  },
+  "probes": {
+    "internal/systemtest/delete_sweep_authority_test.go": {
+      "archive": "probes/2026-09-12-delete-sweep-authority_test.go.txt",
+      "sha256": "88cddf0e161c995c10e472284f6df952f5dc9a5fbe32093b004f359450bc1d84"
+    }
+  },
+  "producers": [
+    {
+      "command": "go test -race -count=1 -run TestDeleteSweepAuthorityProbeMock -v ./internal/systemtest/",
+      "exit": 0,
+      "log_sha256": "6c5b88d5bc8c343e94dd8d7e4e894371f6bdd0143a08f43d4cec94a6e2e3ad76",
+      "name": "service mock",
+      "observations": [
+        {
+          "blamedNameIssued": 2,
+          "blamedNamePresentAfter": false,
+          "bulkRequests": 2,
+          "case": "partial_reply_replacement",
+          "replacementSize": 43,
+          "state": "partial",
+          "survivorSize": 0
+        },
+        {
+          "blamedNameIssued": 1,
+          "blamedNamePresentAfter": false,
+          "bulkRequests": 1,
+          "case": "partial_reply_no_replacement",
+          "replacementSize": 43,
+          "state": "partial",
+          "survivorSize": 0
+        },
+        {
+          "blamedNameIssued": 1,
+          "blamedNamePresentAfter": false,
+          "bulkRequests": 1,
+          "case": "healthy_control",
+          "replacementSize": 43,
+          "state": "complete",
+          "survivorSize": 0
+        }
+      ]
+    },
+    {
+      "command": "go test -race -count=1 -run TestDeleteSweepAuthorityProbeRealSwift -v ./internal/systemtest/",
+      "exit": 0,
+      "log_sha256": "f4bfac106d71b2fb3eb09f8d0f9c353491b8912b12018707a6185fe692b68ac2",
+      "name": "service real Swift",
+      "observations": [
+        {
+          "blamedNameIssued": 2,
+          "blamedNamePresentAfter": false,
+          "bulkRequests": 2,
+          "case": "partial_reply_replacement",
+          "replacementSize": 43,
+          "state": "partial",
+          "survivorSize": 0
+        },
+        {
+          "blamedNameIssued": 1,
+          "blamedNamePresentAfter": false,
+          "bulkRequests": 1,
+          "case": "partial_reply_no_replacement",
+          "replacementSize": 43,
+          "state": "partial",
+          "survivorSize": 0
+        },
+        {
+          "blamedNameIssued": 1,
+          "blamedNamePresentAfter": false,
+          "bulkRequests": 1,
+          "case": "healthy_control",
+          "replacementSize": 43,
+          "state": "complete",
+          "survivorSize": 0
+        }
+      ]
+    }
+  ],
+  "recorded": "2026-09-12T04:45:18.826199+00:00",
+  "source": "7c312a2fa90d13584af1d9c473146ea28e148047",
+  "tree_state": "unchanged production; the probe was applied as an untracked test file and removed before commit"
+}
