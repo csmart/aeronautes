@@ -46,6 +46,22 @@
     return !TERMINAL.includes(job.state);
   }
 
+  function operationLabel(type: string): string {
+    switch (type) {
+      case "copy": return "Copy";
+      case "upload": return "Upload";
+      case "download": return "Download";
+      case "delete_prefix": return "Delete prefix";
+      case "empty_container": return "Empty container";
+      case "delete_container": return "Delete container";
+      default: return type || "Unknown operation";
+    }
+  }
+
+  function isDeleteType(type: string): boolean {
+    return type === "delete_prefix" || type === "empty_container" || type === "delete_container";
+  }
+
   function progressOf(job: JobDTO): number | null {
     const planned = job.counters.objectsPlanned;
     if (planned <= 0 || !isActive(job) || job.counters.deletionAccountingIncomplete) {
@@ -417,7 +433,10 @@
           <div class="rows">
             {#each browser.jobs as job (job.id)}
               <div class="job">
-                <span class="badge {job.state}">{job.state}</span>
+                <span class="operation-state">
+                  <span class="operation">{operationLabel(job.type)}</span>
+                  <span class="badge {job.state}">{job.state}</span>
+                </span>
                 <span class="route type-mono" title="{job.source} → {job.destination}">
                   {job.source} → {job.destination}
                 </span>
@@ -430,7 +449,11 @@
                   {:else}
                     {job.counters.objectsCopied}{#if job.counters.objectsPlanned > 0}/{job.counters
                         .objectsPlanned}{/if}
-                    obj · {formatBytes(job.counters.bytesCopied)}
+                    {#if isDeleteType(job.type)}
+                      objects reported deleted
+                    {:else}
+                      obj · {formatBytes(job.counters.bytesCopied)}
+                    {/if}
                     {#if job.counters.objectsDeleted > 0}
                       · {job.counters.objectsDeleted} deleted
                     {/if}
@@ -774,6 +797,18 @@
   .job:hover,
   .event:hover {
     background: var(--color-bg-card);
+  }
+
+  .operation-state {
+    display: grid;
+    gap: var(--space-1);
+    min-width: 0;
+    align-self: start;
+  }
+
+  .operation {
+    overflow-wrap: anywhere;
+    color: var(--color-text-secondary);
   }
 
   .route,

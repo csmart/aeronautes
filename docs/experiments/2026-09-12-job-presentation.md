@@ -72,4 +72,55 @@ Do not remove that case, invert its assertion, mark it skipped or report the who
 
 Stop for counter or authority changes, a need to alter existing diagnostic/action behaviour, overlapping ownership, ambiguous operation semantics, source/evidence drift or any need to weaken tests or budgets.
 Account filtering, missing-settings interpretation, additional diagnostics, native accessibility/release evidence, wider UI-09/UI-10 and valuable-data acceptance remain separate.
-This contract commit claims no production correction or after result.
+The original contract commit claimed no production correction or after result.
+
+## Bounded implementation evidence
+
+The implementation adds the operation above the state badge within the existing first grid cell.
+It retains the six existing columns, route title, counts, timing, actions and expandable details.
+The first cell permits long literal types to wrap.
+The real `mirror` and `mirror_preview` types deliberately retain their literal stored names in this first slice.
+The complete `progressOf` helper, including its stale `"delete"` comparison and comment, stays byte-identical.
+Three maintained cases supply each real Delete mode with `objectsCopied: 3`, `objectsDeleted: 7` and `objectsPlanned: 10`, and require 30% progress plus `3/10 objects reported deleted · 7 deleted`.
+The separate suffix never changes the reported numerator.
+
+The [after evidence twin](probes/2026-09-12-job-presentation.after.json) retains the exact commands, actual exits, raw test outputs, complete named-case inventories, helper sources and artifact hashes.
+Its private packet is `/tmp/aeronautes-job-presentation-implementation-8daBd9`.
+Before and after snapshots each bind 115 inputs at contract head `2f877e36530a79e808a94feafc4293af836e30e3`, including the same new maintained test file.
+Only JobsDrawer differs between those input sets; every other selected source and existing assertion is unchanged.
+The maintained before run occurred before any production change and its archived source was verified unchanged afterwards.
+The after source remained unchanged through the focused commands and evidence sealing.
+
+| Command or control | Actual result | Seconds | Process budget |
+| --- | --- | ---: | ---: |
+| New maintained tests before production | Exit 1: 25 intended assertion failures, 19 healthy controls | 4.268 | 90 |
+| Same maintained tests after production | Exit 0: 44 passed | 4.167 | 90 |
+| Identical original 19-case probe after production | Exit 1: 18 passed, one remaining settings failure | 2.816 | 90 |
+| Omit the visible label in a private copy | Exit 1: 13 failed, 31 passed | 4.969 | 90 |
+| Omit Empty container from exact Delete classification | Exit 1: three failed, 41 passed | 5.071 | 90 |
+| Substitute the separate deleted counter for the numerator | Exit 1: 25 failed, 19 passed | 4.668 | 90 |
+| Restore the copied-byte suffix on Delete rows | Exit 1: 12 failed, 32 passed | 4.718 | 90 |
+| New tests and four existing neighbouring files | Exit 0: 127 passed | 9.122 | 120 |
+| Svelte check | Exit 0: zero errors and zero warnings | 3.617 | 90 |
+| Production frontend build | Exit 0 | 1.015 | 90 |
+
+The original remaining failure is exactly `does not call unrecorded running Delete settings defaults`: expanded details still lack `not recorded` and show `settings defaults`.
+The original probe is byte-identical to the preserved before probe, and its exit 1 remains a failure.
+Every omission used the unchanged maintained assertions and deadline in a separate source copy.
+None of these test runs timed out, skipped cases or reported an unhandled error.
+The combined 127-case run contains the same 44 new cases and 83 existing cases: 11 drawer, 13 audit status, 20 cancellation status and 39 retained-item cases.
+The dedicated and combined counts overlap and must not be added.
+Node and package versions match the preserved original before run.
+
+### Minimum-window rendering limit
+
+A private component entry using the production drawer, BrowserState, FakeApi and global CSS built successfully for both source snapshots.
+The attempted owned Xvfb/WebKit geometry run then exited 1 before starting WebKit: Xvfb could not create its Unix listener and reported `Failed to find a socket to listen on`.
+It produced **zero geometry observations and no screenshot**; the helper result and full failed raw log remain indexed in the private packet.
+Shared X state was not altered and no host execution path was substituted.
+The unchanged grid columns and wrapped first-cell label are source evidence only: minimum-window geometry, platform layout and native acceptance remain unverified.
+This component failure does not change the maintained test or omission outcomes above.
+
+These checks establish bounded frontend presentation behaviour only.
+They do not establish a Go effect, native Wails journey, Swift operation, UI-09/P28 closure or valuable-data acceptance.
+Current-base integration, independent implementation/range review and all five required PR and resulting-master checks remain delivery gates.
