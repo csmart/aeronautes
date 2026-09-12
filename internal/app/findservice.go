@@ -272,7 +272,26 @@ func (s *FindService) retireFind(scan *findScan) {
 // ServiceShutdown is Wails' reserved lifecycle hook, not a bridge action.
 // Waiting for actual exit distinguishes cleanup from a cancellation request.
 func (s *FindService) ServiceShutdown() error {
+	drained := s.stopFind()
+	select {
+	case <-drained:
+		return nil
+	default:
+	}
+	timedOut := make(chan struct{})
+	timer := s.clock.afterFunc(findShutdownWait, func() { close(timedOut) })
+	defer timer.Stop()
+	select {
+	case <-drained:
+		return nil
+	case <-timedOut:
+		return errors.New("Find workers did not exit within the shutdown wait")
+	}
+}
+
+func (s *FindService) stopFind() <-chan struct{} {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	if !s.closed {
 		s.closed = true
 		for _, scan := range s.scans {
@@ -285,19 +304,5 @@ func (s *FindService) ServiceShutdown() error {
 			close(s.drained)
 		}
 	}
-	s.mu.Unlock()
-	select {
-	case <-s.drained:
-		return nil
-	default:
-	}
-	timedOut := make(chan struct{})
-	timer := s.clock.afterFunc(findShutdownWait, func() { close(timedOut) })
-	defer timer.Stop()
-	select {
-	case <-s.drained:
-		return nil
-	case <-timedOut:
-		return errors.New("Find workers did not exit within the shutdown wait")
-	}
+	return s.drained
 }

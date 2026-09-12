@@ -1,0 +1,1154 @@
+{
+  "version": 1,
+  "plan_commit": "860de3e5192ec0e647a8af898846300867011f48",
+  "prerequisite_commit": "997e7f0220e9b2b553116bf0ede52e50a7840e81",
+  "oracle": "DESIGN 26.4/32.1/38/46/55/65.10, approved shell consumer contract, existing Find five-second hook, ADR 0020",
+  "source_sha256": {
+    "main.go": "db9b72bc6f6fb43ba786181d507e947552957720817a95eda087874dd4d25b1f",
+    "shutdown.go": "3c3ff63dd9c521afe7cdeb34b4991fd9998b30b0b15b612d6dd33ee1b59e4651",
+    "shutdown_test.go": "52b06645f534d4c1a05a1ee8d3b595e2ae59b49a035418ea4fdd1aaddda4fd24",
+    "shutdown_linux_test.go": "5f647dfa1689481899b7979b8d50e0d69f946b71e6287c92da5338a0684f718e",
+    "internal/app/findservice.go": "868e880d795adef332f042f139ac65a580f99b418db12a07cd6d9e229e907329",
+    "internal/app/shutdown.go": "143cd22fe3b222dc825567c5b0f05d098afe000350db92e09251ff9ae94d4d60",
+    "internal/app/shutdown_work_test.go": "07b276f5c873d78e8a255fda053307f075538cf8aa7defd0c2dbf653948576f3",
+    "internal/systemtest/shutdown_linux_test.go": "7b93eb3ba6005e9f40c446e142e6ee48e2b272e57bbc7dd3b0256913aef076fc",
+    "internal/scenariocontract/contract.go": "d6c1941899c89cef0fb920e48cce5802818ea611d4b6d30d1a6ca3176e04c6fd"
+  },
+  "environment": {
+    "go": "go1.27.1 linux/amd64",
+    "race": true,
+    "mod_readonly": true,
+    "rclone": "v1.74.3",
+    "rclone_sha256": "9700aa1273ac73d6d0833c43ba63fe830516422cb131960b8c1a24ced789cba0",
+    "actual_swift": "2.38.2.dev23",
+    "fixture": "owned loopback Swift18080 with both required accounts",
+    "fixture_info_sha256": "04fccaf6c4d9d10402755992425621fbba6dfe193b95ec17e8fb9420da4668da",
+    "swift_producer_bound_seconds": 600,
+    "swift_package_timeout_seconds": 90
+  },
+  "maintained_baseline": {
+    "selected_leaf_tests": 39,
+    "new_leaf_tests": 21,
+    "existing_find_leaf_tests": 18,
+    "failed": 0,
+    "skipped": 0,
+    "command": "go test -race -count=1 -timeout=90s -coverprofile=consumer.cover -json -run '^Test(ShutdownWork|ShellShutdown|Desktop|Find)' ./internal/app ."
+  },
+  "native_mock": {
+    "command": "go test -race -count=1 -timeout=90s -json -run '^Test(DesktopHeldDownload|ShutdownChildMock)$' . ./internal/systemtest",
+    "executed_root_leaves": 4,
+    "executed_system_leaves": 2,
+    "failed": 0,
+    "skipped": 0
+  },
+  "native_swift": {
+    "command": "go test -race -count=1 -timeout=90s -json -run '^TestShutdownChildRealSwift$' ./internal/systemtest",
+    "executed": 2,
+    "failed": 0,
+    "skipped": 0,
+    "require_two_accounts": true,
+    "assertions": [
+      "64 KiB exact real-child write barrier",
+      "identity-checked pinned rclone PID and live pidfd",
+      "real parent Wait4 returns ECHILD after consumer drain, proving prior reap",
+      "original ten-second SIGINT grace before escalation",
+      "separate process cannot lock until parent's resources are released",
+      "exact final job/item/audit records before database close and after idempotent recovery",
+      "unchanged remote namespaces on both accounts and zero traced remote writes",
+      "exact terminal and later filesystem maps; recovery does not alter retained stage",
+      "recovery FailInterrupted counts zero on first and repeated invocation"
+    ]
+  },
+  "wrong_held_expectation": {
+    "packet": "held_first",
+    "preserved_source_sha256": "f95dc53e7b7ab6a035a45d314a8222de8784459f778f95fe9e1bc71c8e5b02c8",
+    "exit": 1,
+    "failed_leaves": 4,
+    "explanation": "The post-engine barrier leaves a complete staged file, so cancellation is accompanied by a separate ENOTEMPTY cleanup error. Existing semantics report partial, zero copied or verified and one failed item. The corrected maintained assertion requires that exact outcome and both the cancellation and cleanup reasons. No production outcome or retention change was made."
+  },
+  "gc_probe": {
+    "command": "go test -race -count=1 -timeout=40s -json -overlay=gc_overlay.json -run '^TestMainCloseFailureGCProbe$' .",
+    "source_sha256": "d74c54a91a1d567c30d09c71f22cf483926c9db4198fe7e953fcbcc7695b3a4b",
+    "committed_probe_sha256": "c64241048773bfc23b88b8f4b867ac0c70ab7b45d921b6a8636e8f0782c87c61",
+    "committed_probe_normalisation": "Only the extra blank line at EOF was removed; the executed private source and its original hash are preserved.",
+    "overlay_main_sha256": "ddb13cf3c048ecbf01fa12d193eff433fb4baf2cbcefb0073255a67ab4a0f645",
+    "overlay_sha256": "97243298a47dc849118ca9cb9463330572483dabd6fdf55632b90e9f9554d4ad",
+    "interpositions": [
+      "actual main passes controlled native-launch and isolated secret constructors to the unchanged shared runDesktop function",
+      "lock acquisition remains real; the returned closure only adds an explicit-release observer",
+      "database close returns an injected error without closing the real database",
+      "test log writer observes actual main log.Fatal reporting and performs five GC/finalizer barriers plus independent process lock probes"
+    ],
+    "result": "One private leaf passes. At all five barriers the real database stays readable and another process is refused. After actual fatal exit1 the kernel releases the lock.",
+    "omission_result": "Removing only main's deferred KeepAlive and its now-unused import makes all five independent probes acquire the lock while the real database is still readable; the test fails. This is not a native Wails quit test."
+  },
+  "controls": [
+    {
+      "name": "no_hook",
+      "production_path": "main.go",
+      "selector": "^Test(DesktopCallerUsesActualServices|DesktopStartupFailureCleansAcquiredLock)$",
+      "package": ".",
+      "exit": 1,
+      "source_sha256": "f2fc2767dfc07f78c67781e022825e777be4382d6bc56e7578a20fcfb022b67b",
+      "overlay_sha256": "c63129eeda2e3b074b3b0f003032f6c49833b3e46e14791bc7c6f2b7f735ed67"
+    },
+    {
+      "name": "no_find_stop",
+      "production_path": "internal/app/shutdown.go",
+      "selector": "^Test(ShutdownWorkKeepsBothAdmissionsClosed|FindCurrentResultsRemainBoundedAndCopied)$",
+      "package": "./internal/app",
+      "exit": 1,
+      "source_sha256": "cb4f4674761b19d1387cc25872a10544c43d5dce9efa0772e35aa710ed33e76f",
+      "overlay_sha256": "7f58166c01c386e7e3ecaf2a04e6929d63242f982d88108439b32eb5f7781228"
+    },
+    {
+      "name": "no_find_join",
+      "production_path": "internal/app/shutdown.go",
+      "selector": "^Test(ShutdownWorkKeepsBothAdmissionsClosed|FindCurrentResultsRemainBoundedAndCopied)$",
+      "package": "./internal/app",
+      "exit": 1,
+      "source_sha256": "fa1f78e90e496654dbb9262e66371a255d615447c0a8dc7e5681043f4d60dc30",
+      "overlay_sha256": "41fa8965fa3646a0bde4ad468e832f36eebfb0101af0134131ef46fee735a107"
+    },
+    {
+      "name": "no_job_join",
+      "production_path": "internal/app/shutdown.go",
+      "selector": "^Test(ShutdownWorkKeepsBothAdmissionsClosed|FindCurrentResultsRemainBoundedAndCopied)$",
+      "package": "./internal/app",
+      "exit": 1,
+      "source_sha256": "72a1271c403c3c80804412a5517fdbcc55302d551196b2370b644f7cab1c7f62",
+      "overlay_sha256": "2fc785a901002e6459bb023c326e3070e0bde530d4e06fcc99723c5d639fb9b8"
+    },
+    {
+      "name": "close_before_drain",
+      "production_path": "shutdown.go",
+      "selector": "^TestDesktopHeldDownload$/^return$",
+      "package": ".",
+      "exit": 1,
+      "source_sha256": "f0ff6253013249d4292756f24406cce87cff76f2f1c771bb879521e8f494f807",
+      "overlay_sha256": "844911dc0bc7e6966c55253ec32edebf6ce5a9c2c48edbfe72696ce81ed92655"
+    },
+    {
+      "name": "unlock_after_close_error",
+      "production_path": "shutdown.go",
+      "selector": "^Test(DesktopCloseFailureRetainsResources|ShellShutdownCloseFailureIsLatched|DesktopStartupFailureCleansAcquiredLock)$",
+      "package": ".",
+      "exit": 1,
+      "source_sha256": "acb6be36cb7bfab039d963120f000dce7a119702007c5cc418ca0d9158429838",
+      "overlay_sha256": "62a98f5ec8f8a5429f9c446047da8c97cc3fa7bcabfd1059ffd611ef7cddf98d"
+    },
+    {
+      "name": "callback_does_not_join",
+      "production_path": "shutdown.go",
+      "selector": "^TestShellShutdownJoinsConcurrentCallbacks$",
+      "package": ".",
+      "exit": 1,
+      "source_sha256": "18efaac058ce3401452d8b4ff492f4c1fa731720eee5a39f0c49b97b47ddf0e8",
+      "overlay_sha256": "eded7bff460e9b1e9b7620facf4645a8e1a52d15599bc58176407ee88c06f202"
+    },
+    {
+      "name": "drain_error_allows_return",
+      "production_path": "shutdown.go",
+      "selector": "^Test(ShellShutdownDrainFailureStaysBlocked|DesktopCallerUsesActualServices)$",
+      "package": ".",
+      "exit": 1,
+      "source_sha256": "cd51f5bc2bb2e746f4a09169a513f5f280d27b208f8b59099eec4adbaa74b211",
+      "overlay_sha256": "607402fb3c5824a601eac98e6c6ea5ae04e3a93d2d097145d9cf4c42e4710241"
+    },
+    {
+      "name": "no_gc_owner",
+      "production_path": "main.go",
+      "selector": "^TestMainCloseFailureGCProbe$",
+      "package": ".",
+      "exit": 1,
+      "source_sha256": "976c74c862dcdb08d3fa8e81a90a4dd20e42d6ae6a313d97ffa7ad47e45e0acc",
+      "overlay_sha256": "8f55b9059bad178f0cc124e598478791011fc5161519eae48f71c3878e4150ef"
+    }
+  ],
+  "coverage": {
+    "ShutdownWork": 100,
+    "stopFind": 100,
+    "ServiceShutdown": 100,
+    "shell_close": 100,
+    "runDesktop": 95.3,
+    "shell_wait": 66.7,
+    "limitation": "The profile omits coverage executed in child test processes; the blocked-error path and actual main GC proof have separate behavioural results. Existing native launch/window/picker code is not exercised and total package coverage is not a release claim."
+  },
+  "static_checks": {
+    "go_vet": "go vet ./internal/app . ./internal/systemtest: exit0",
+    "gofmt": "all eight production/test files formatted",
+    "goimports": "goimports -l on all eight files: exit0, empty",
+    "diff_check": "git diff --check: exit0",
+    "staticcheck": "not found on PATH; not run",
+    "bound_action_inventory": "byte-identical to plan parent; no new coverage cell"
+  },
+  "packets": [
+    {
+      "name": "maintained_first",
+      "counts": {
+        "pass": 30,
+        "fail": 0,
+        "skip": 0
+      },
+      "packages": [
+        {
+          "name": "github.com/csmart/aeronautes",
+          "status": "pass",
+          "elapsed": 1.817
+        },
+        {
+          "name": "github.com/csmart/aeronautes/internal/app",
+          "status": "pass",
+          "elapsed": 6.018
+        }
+      ],
+      "leaves": [
+        {
+          "name": "TestShellShutdownJoinsConcurrentCallbacks",
+          "status": "pass",
+          "elapsed": 0
+        },
+        {
+          "name": "TestShellShutdownCloseFailureIsLatched",
+          "status": "pass",
+          "elapsed": 0
+        },
+        {
+          "name": "TestFindWorkerAdmissionBound",
+          "status": "pass",
+          "elapsed": 0.21
+        },
+        {
+          "name": "TestDesktopCallerUsesActualServices/run_error_false/callback_false",
+          "status": "pass",
+          "elapsed": 0.19
+        },
+        {
+          "name": "TestDesktopCallerUsesActualServices/run_error_false/callback_true",
+          "status": "pass",
+          "elapsed": 0.2
+        },
+        {
+          "name": "TestFindRetainedRecordBound",
+          "status": "pass",
+          "elapsed": 0.27
+        },
+        {
+          "name": "TestDesktopCallerUsesActualServices/run_error_true/callback_false",
+          "status": "pass",
+          "elapsed": 0.19
+        },
+        {
+          "name": "TestFindIdleExpiryWithoutAnotherCall/completed",
+          "status": "pass",
+          "elapsed": 0.22
+        },
+        {
+          "name": "TestDesktopCallerUsesActualServices/run_error_true/callback_true",
+          "status": "pass",
+          "elapsed": 0.19
+        },
+        {
+          "name": "TestFindIdleExpiryWithoutAnotherCall/running",
+          "status": "pass",
+          "elapsed": 0.21
+        },
+        {
+          "name": "TestFindLeaseRenewalAndStaleCallbacks",
+          "status": "pass",
+          "elapsed": 0.19
+        },
+        {
+          "name": "TestFindPollCannotReviveExpiredLease",
+          "status": "pass",
+          "elapsed": 0.19
+        },
+        {
+          "name": "TestFindCancelledPollDoesNotRenew",
+          "status": "pass",
+          "elapsed": 0.19
+        },
+        {
+          "name": "TestFindCancellationRetainsWorkerSlotsUntilExit/cancel",
+          "status": "pass",
+          "elapsed": 0.19
+        },
+        {
+          "name": "TestFindCancellationRetainsWorkerSlotsUntilExit/expire",
+          "status": "pass",
+          "elapsed": 0.19
+        },
+        {
+          "name": "TestFindCancellationRetainsWorkerSlotsUntilExit/shutdown",
+          "status": "pass",
+          "elapsed": 0.2
+        },
+        {
+          "name": "TestFindShutdownReportsAnUndrainedWorker",
+          "status": "pass",
+          "elapsed": 0.21
+        },
+        {
+          "name": "TestFindQueuedCallbackCannotUndoRenewal",
+          "status": "pass",
+          "elapsed": 0.19
+        },
+        {
+          "name": "TestFindQueuedCallbackCannotRetireAnotherRecord",
+          "status": "pass",
+          "elapsed": 0.2
+        },
+        {
+          "name": "TestFindRecordLimitIncludesRunningScans",
+          "status": "pass",
+          "elapsed": 0.23
+        },
+        {
+          "name": "TestFindEvictsByCompletionThenAdmissionOrder",
+          "status": "pass",
+          "elapsed": 0.25
+        },
+        {
+          "name": "TestFindCurrentResultsRemainBoundedAndCopied",
+          "status": "pass",
+          "elapsed": 0.29
+        },
+        {
+          "name": "TestFindCurrentErrorAndStoppedThroughput",
+          "status": "pass",
+          "elapsed": 0.22
+        },
+        {
+          "name": "TestShutdownWorkKeepsBothAdmissionsClosed/find_exits_first",
+          "status": "pass",
+          "elapsed": 0.21
+        },
+        {
+          "name": "TestShutdownWorkKeepsBothAdmissionsClosed/job_exits_first",
+          "status": "pass",
+          "elapsed": 0.2
+        },
+        {
+          "name": "TestShutdownWorkWaitErrors/job/cancelled",
+          "status": "pass",
+          "elapsed": 0.19
+        },
+        {
+          "name": "TestShutdownWorkWaitErrors/job/deadline",
+          "status": "pass",
+          "elapsed": 0.19
+        },
+        {
+          "name": "TestShutdownWorkWaitErrors/find/cancelled",
+          "status": "pass",
+          "elapsed": 0.19
+        },
+        {
+          "name": "TestShutdownWorkWaitErrors/find/deadline",
+          "status": "pass",
+          "elapsed": 0.19
+        },
+        {
+          "name": "TestFindInContainer",
+          "status": "pass",
+          "elapsed": 0.21
+        }
+      ],
+      "errors": [],
+      "panic": false,
+      "stdout_sha256": "a7825156cb5ac2b03568d9335ce3b055f13077bb3663c996b1ab2629a9e8f740",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "held_first",
+      "counts": {
+        "pass": 0,
+        "fail": 4,
+        "skip": 0
+      },
+      "packages": [
+        {
+          "name": "github.com/csmart/aeronautes",
+          "status": "fail",
+          "elapsed": 9.902
+        }
+      ],
+      "leaves": [
+        {
+          "name": "TestDesktopHeldDownload/return",
+          "status": "fail",
+          "elapsed": 2.47
+        },
+        {
+          "name": "TestDesktopHeldDownload/callback",
+          "status": "fail",
+          "elapsed": 2.47
+        },
+        {
+          "name": "TestDesktopHeldDownload/return_error",
+          "status": "fail",
+          "elapsed": 2.46
+        },
+        {
+          "name": "TestDesktopHeldDownload/callback_error",
+          "status": "fail",
+          "elapsed": 2.46
+        }
+      ],
+      "errors": [
+        "shutdown_linux_test.go:48: actual caller did not prove cleanup: exit status 1",
+        "shutdown_linux_test.go:48: actual caller did not prove cleanup: exit status 1",
+        "shutdown_linux_test.go:48: actual caller did not prove cleanup: exit status 1",
+        "shutdown_linux_test.go:48: actual caller did not prove cleanup: exit status 1"
+      ],
+      "panic": false,
+      "stdout_sha256": "70622472133cf8d38cefdca54112fc60d1813ffc2c378624b0d9a242495f763d",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "held_native_first",
+      "counts": {
+        "pass": 6,
+        "fail": 0,
+        "skip": 0
+      },
+      "packages": [
+        {
+          "name": "github.com/csmart/aeronautes",
+          "status": "pass",
+          "elapsed": 14.844
+        },
+        {
+          "name": "github.com/csmart/aeronautes/internal/systemtest",
+          "status": "pass",
+          "elapsed": 16.374
+        }
+      ],
+      "leaves": [
+        {
+          "name": "TestDesktopHeldDownload/return",
+          "status": "pass",
+          "elapsed": 3.46
+        },
+        {
+          "name": "TestShutdownChildMock/cancel",
+          "status": "pass",
+          "elapsed": 2.69
+        },
+        {
+          "name": "TestDesktopHeldDownload/callback",
+          "status": "pass",
+          "elapsed": 3.46
+        },
+        {
+          "name": "TestDesktopHeldDownload/return_error",
+          "status": "pass",
+          "elapsed": 3.44
+        },
+        {
+          "name": "TestDesktopHeldDownload/callback_error",
+          "status": "pass",
+          "elapsed": 3.45
+        },
+        {
+          "name": "TestShutdownChildMock/escalate",
+          "status": "pass",
+          "elapsed": 12.66
+        }
+      ],
+      "errors": [],
+      "panic": false,
+      "stdout_sha256": "1884b854a60ffb383f7dda6f606458627f921e35b68fd9570fb1fa30def3842c",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "gc_first",
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0
+      },
+      "packages": [
+        {
+          "name": "github.com/csmart/aeronautes",
+          "status": "pass",
+          "elapsed": 7.491
+        }
+      ],
+      "leaves": [
+        {
+          "name": "TestMainCloseFailureGCProbe",
+          "status": "pass",
+          "elapsed": 6.45
+        }
+      ],
+      "errors": [],
+      "panic": false,
+      "stdout_sha256": "ab5adca57d98437176d0cbd6ebde07eac2cbdcbac62a5d9d9964414beefdb754",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "failure_first",
+      "counts": {
+        "pass": 5,
+        "fail": 0,
+        "skip": 0
+      },
+      "packages": [
+        {
+          "name": "github.com/csmart/aeronautes",
+          "status": "pass",
+          "elapsed": 5.554
+        }
+      ],
+      "leaves": [
+        {
+          "name": "TestDesktopCloseFailureRetainsResources",
+          "status": "pass",
+          "elapsed": 1.22
+        },
+        {
+          "name": "TestShellShutdownDrainFailureStaysBlocked",
+          "status": "pass",
+          "elapsed": 3.29
+        },
+        {
+          "name": "TestDesktopStartupFailureCleansAcquiredLock/lock_held",
+          "status": "pass",
+          "elapsed": 0
+        },
+        {
+          "name": "TestDesktopStartupFailureCleansAcquiredLock/database_open",
+          "status": "pass",
+          "elapsed": 0
+        },
+        {
+          "name": "TestDesktopStartupFailureCleansAcquiredLock/missing_directory",
+          "status": "pass",
+          "elapsed": 0
+        }
+      ],
+      "errors": [],
+      "panic": false,
+      "stdout_sha256": "1cf9c4036201876a47768d4821a591a54f5eb755cc9129cb53d983f788351e3e",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "consumer_baseline",
+      "counts": {
+        "pass": 39,
+        "fail": 0,
+        "skip": 0
+      },
+      "packages": [
+        {
+          "name": "github.com/csmart/aeronautes/internal/app",
+          "status": "pass",
+          "elapsed": 8.408
+        },
+        {
+          "name": "github.com/csmart/aeronautes",
+          "status": "pass",
+          "elapsed": 20.578
+        }
+      ],
+      "leaves": [
+        {
+          "name": "TestFindWorkerAdmissionBound",
+          "status": "pass",
+          "elapsed": 0.26
+        },
+        {
+          "name": "TestFindRetainedRecordBound",
+          "status": "pass",
+          "elapsed": 0.41
+        },
+        {
+          "name": "TestFindIdleExpiryWithoutAnotherCall/completed",
+          "status": "pass",
+          "elapsed": 0.54
+        },
+        {
+          "name": "TestFindIdleExpiryWithoutAnotherCall/running",
+          "status": "pass",
+          "elapsed": 0.54
+        },
+        {
+          "name": "TestFindLeaseRenewalAndStaleCallbacks",
+          "status": "pass",
+          "elapsed": 0.62
+        },
+        {
+          "name": "TestFindPollCannotReviveExpiredLease",
+          "status": "pass",
+          "elapsed": 0.62
+        },
+        {
+          "name": "TestFindCancelledPollDoesNotRenew",
+          "status": "pass",
+          "elapsed": 0.41
+        },
+        {
+          "name": "TestFindCancellationRetainsWorkerSlotsUntilExit/cancel",
+          "status": "pass",
+          "elapsed": 0.32
+        },
+        {
+          "name": "TestDesktopHeldDownload/return",
+          "status": "pass",
+          "elapsed": 3.78
+        },
+        {
+          "name": "TestFindCancellationRetainsWorkerSlotsUntilExit/expire",
+          "status": "pass",
+          "elapsed": 0.3
+        },
+        {
+          "name": "TestFindCancellationRetainsWorkerSlotsUntilExit/shutdown",
+          "status": "pass",
+          "elapsed": 0.27
+        },
+        {
+          "name": "TestFindShutdownReportsAnUndrainedWorker",
+          "status": "pass",
+          "elapsed": 0.25
+        },
+        {
+          "name": "TestFindQueuedCallbackCannotUndoRenewal",
+          "status": "pass",
+          "elapsed": 0.24
+        },
+        {
+          "name": "TestFindQueuedCallbackCannotRetireAnotherRecord",
+          "status": "pass",
+          "elapsed": 0.23
+        },
+        {
+          "name": "TestFindRecordLimitIncludesRunningScans",
+          "status": "pass",
+          "elapsed": 0.24
+        },
+        {
+          "name": "TestFindEvictsByCompletionThenAdmissionOrder",
+          "status": "pass",
+          "elapsed": 0.27
+        },
+        {
+          "name": "TestFindCurrentResultsRemainBoundedAndCopied",
+          "status": "pass",
+          "elapsed": 0.27
+        },
+        {
+          "name": "TestFindCurrentErrorAndStoppedThroughput",
+          "status": "pass",
+          "elapsed": 0.21
+        },
+        {
+          "name": "TestShutdownWorkKeepsBothAdmissionsClosed/find_exits_first",
+          "status": "pass",
+          "elapsed": 0.2
+        },
+        {
+          "name": "TestShutdownWorkKeepsBothAdmissionsClosed/job_exits_first",
+          "status": "pass",
+          "elapsed": 0.21
+        },
+        {
+          "name": "TestShutdownWorkWaitErrors/job/cancelled",
+          "status": "pass",
+          "elapsed": 0.2
+        },
+        {
+          "name": "TestShutdownWorkWaitErrors/job/deadline",
+          "status": "pass",
+          "elapsed": 0.2
+        },
+        {
+          "name": "TestShutdownWorkWaitErrors/find/cancelled",
+          "status": "pass",
+          "elapsed": 0.19
+        },
+        {
+          "name": "TestShutdownWorkWaitErrors/find/deadline",
+          "status": "pass",
+          "elapsed": 0.19
+        },
+        {
+          "name": "TestFindInContainer",
+          "status": "pass",
+          "elapsed": 0.2
+        },
+        {
+          "name": "TestDesktopHeldDownload/callback",
+          "status": "pass",
+          "elapsed": 3.59
+        },
+        {
+          "name": "TestDesktopHeldDownload/return_error",
+          "status": "pass",
+          "elapsed": 3.47
+        },
+        {
+          "name": "TestDesktopHeldDownload/callback_error",
+          "status": "pass",
+          "elapsed": 3.46
+        },
+        {
+          "name": "TestDesktopCloseFailureRetainsResources",
+          "status": "pass",
+          "elapsed": 1.22
+        },
+        {
+          "name": "TestShellShutdownDrainFailureStaysBlocked",
+          "status": "pass",
+          "elapsed": 3.31
+        },
+        {
+          "name": "TestShellShutdownJoinsConcurrentCallbacks",
+          "status": "pass",
+          "elapsed": 0
+        },
+        {
+          "name": "TestShellShutdownCloseFailureIsLatched",
+          "status": "pass",
+          "elapsed": 0
+        },
+        {
+          "name": "TestDesktopCallerUsesActualServices/run_error_false/callback_false",
+          "status": "pass",
+          "elapsed": 0.17
+        },
+        {
+          "name": "TestDesktopCallerUsesActualServices/run_error_false/callback_true",
+          "status": "pass",
+          "elapsed": 0.17
+        },
+        {
+          "name": "TestDesktopCallerUsesActualServices/run_error_true/callback_false",
+          "status": "pass",
+          "elapsed": 0.17
+        },
+        {
+          "name": "TestDesktopCallerUsesActualServices/run_error_true/callback_true",
+          "status": "pass",
+          "elapsed": 0.17
+        },
+        {
+          "name": "TestDesktopStartupFailureCleansAcquiredLock/lock_held",
+          "status": "pass",
+          "elapsed": 0
+        },
+        {
+          "name": "TestDesktopStartupFailureCleansAcquiredLock/database_open",
+          "status": "pass",
+          "elapsed": 0
+        },
+        {
+          "name": "TestDesktopStartupFailureCleansAcquiredLock/missing_directory",
+          "status": "pass",
+          "elapsed": 0
+        }
+      ],
+      "errors": [],
+      "panic": false,
+      "stdout_sha256": "0d4f54f66b79e61d2e0a2daad8f6460a8d7e0ecc8bd5e279c6c0d161925b63af",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "control_no_hook",
+      "counts": {
+        "pass": 3,
+        "fail": 4,
+        "skip": 0
+      },
+      "packages": [
+        {
+          "name": "github.com/csmart/aeronautes",
+          "status": "fail",
+          "elapsed": 0.735
+        }
+      ],
+      "leaves": [
+        {
+          "name": "TestDesktopCallerUsesActualServices/run_error_false/callback_false",
+          "status": "fail",
+          "elapsed": 0.18
+        },
+        {
+          "name": "TestDesktopCallerUsesActualServices/run_error_false/callback_true",
+          "status": "fail",
+          "elapsed": 0.17
+        },
+        {
+          "name": "TestDesktopCallerUsesActualServices/run_error_true/callback_false",
+          "status": "fail",
+          "elapsed": 0.17
+        },
+        {
+          "name": "TestDesktopCallerUsesActualServices/run_error_true/callback_true",
+          "status": "fail",
+          "elapsed": 0.18
+        },
+        {
+          "name": "TestDesktopStartupFailureCleansAcquiredLock/lock_held",
+          "status": "pass",
+          "elapsed": 0
+        },
+        {
+          "name": "TestDesktopStartupFailureCleansAcquiredLock/database_open",
+          "status": "pass",
+          "elapsed": 0
+        },
+        {
+          "name": "TestDesktopStartupFailureCleansAcquiredLock/missing_directory",
+          "status": "pass",
+          "elapsed": 0
+        }
+      ],
+      "errors": [
+        "shutdown_test.go:105: actual desktop service/callback assembly is incomplete",
+        "shutdown_test.go:105: actual desktop service/callback assembly is incomplete",
+        "shutdown_test.go:105: actual desktop service/callback assembly is incomplete",
+        "shutdown_test.go:105: actual desktop service/callback assembly is incomplete"
+      ],
+      "panic": false,
+      "stdout_sha256": "ae89743016339821a6682f8ffdc06f78ee0201dd85c43fab122acaa8d314ae11",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "control_no_find_stop",
+      "counts": {
+        "pass": 1,
+        "fail": 2,
+        "skip": 0
+      },
+      "packages": [
+        {
+          "name": "github.com/csmart/aeronautes/internal/app",
+          "status": "fail",
+          "elapsed": 0.665
+        }
+      ],
+      "leaves": [
+        {
+          "name": "TestFindCurrentResultsRemainBoundedAndCopied",
+          "status": "pass",
+          "elapsed": 0.26
+        },
+        {
+          "name": "TestShutdownWorkKeepsBothAdmissionsClosed/find_exits_first",
+          "status": "fail",
+          "elapsed": 0.19
+        },
+        {
+          "name": "TestShutdownWorkKeepsBothAdmissionsClosed/job_exits_first",
+          "status": "fail",
+          "elapsed": 0.2
+        }
+      ],
+      "errors": [
+        "shutdown_work_test.go:48: work was not cancelled: find=<nil> start=context canceled",
+        "shutdown_work_test.go:48: work was not cancelled: find=<nil> start=context canceled"
+      ],
+      "panic": false,
+      "stdout_sha256": "218aceb65b1f4e3c3e9ea8a865ecdc54b482e8ddedf0214372b8507eda55357f",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "control_no_find_join",
+      "counts": {
+        "pass": 2,
+        "fail": 1,
+        "skip": 0
+      },
+      "packages": [
+        {
+          "name": "github.com/csmart/aeronautes/internal/app",
+          "status": "fail",
+          "elapsed": 0.665
+        }
+      ],
+      "leaves": [
+        {
+          "name": "TestFindCurrentResultsRemainBoundedAndCopied",
+          "status": "pass",
+          "elapsed": 0.27
+        },
+        {
+          "name": "TestShutdownWorkKeepsBothAdmissionsClosed/find_exits_first",
+          "status": "pass",
+          "elapsed": 0.19
+        },
+        {
+          "name": "TestShutdownWorkKeepsBothAdmissionsClosed/job_exits_first",
+          "status": "fail",
+          "elapsed": 0.19
+        }
+      ],
+      "errors": [
+        "shutdown_work_test.go:64: incomplete work drain = <nil>"
+      ],
+      "panic": false,
+      "stdout_sha256": "542592aa1477ad75491aa97e3aa973411005bfb47682920c8888959700a3dd0d",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "control_no_job_join",
+      "counts": {
+        "pass": 1,
+        "fail": 2,
+        "skip": 0
+      },
+      "packages": [
+        {
+          "name": "github.com/csmart/aeronautes/internal/app",
+          "status": "fail",
+          "elapsed": 0.652
+        }
+      ],
+      "leaves": [
+        {
+          "name": "TestFindCurrentResultsRemainBoundedAndCopied",
+          "status": "pass",
+          "elapsed": 0.26
+        },
+        {
+          "name": "TestShutdownWorkKeepsBothAdmissionsClosed/find_exits_first",
+          "status": "fail",
+          "elapsed": 0.19
+        },
+        {
+          "name": "TestShutdownWorkKeepsBothAdmissionsClosed/job_exits_first",
+          "status": "fail",
+          "elapsed": 0.19
+        }
+      ],
+      "errors": [
+        "shutdown_work_test.go:48: work was not cancelled: find=context canceled start=<nil>",
+        "shutdown_work_test.go:48: work was not cancelled: find=context canceled start=<nil>"
+      ],
+      "panic": false,
+      "stdout_sha256": "9185f5d0fa5147797bf369e6eeef859d22e4bad4e3023358987e293c5c391c45",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "control_close_before_drain",
+      "counts": {
+        "pass": 0,
+        "fail": 1,
+        "skip": 0
+      },
+      "packages": [
+        {
+          "name": "github.com/csmart/aeronautes",
+          "status": "fail",
+          "elapsed": 6.409
+        }
+      ],
+      "leaves": [
+        {
+          "name": "TestDesktopHeldDownload/return",
+          "status": "fail",
+          "elapsed": 6.37
+        }
+      ],
+      "errors": [
+        "shutdown_linux_test.go:50: actual caller did not prove cleanup: exit status 1"
+      ],
+      "panic": false,
+      "stdout_sha256": "7b4c7e6c2648c7a6031d3bcb726ad3c5164e629ac9f47527fc73dadd1112153d",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "control_unlock_after_close_error",
+      "counts": {
+        "pass": 3,
+        "fail": 2,
+        "skip": 0
+      },
+      "packages": [
+        {
+          "name": "github.com/csmart/aeronautes",
+          "status": "fail",
+          "elapsed": 1.262
+        }
+      ],
+      "leaves": [
+        {
+          "name": "TestDesktopCloseFailureRetainsResources",
+          "status": "fail",
+          "elapsed": 1.22
+        },
+        {
+          "name": "TestShellShutdownCloseFailureIsLatched",
+          "status": "fail",
+          "elapsed": 0
+        },
+        {
+          "name": "TestDesktopStartupFailureCleansAcquiredLock/lock_held",
+          "status": "pass",
+          "elapsed": 0
+        },
+        {
+          "name": "TestDesktopStartupFailureCleansAcquiredLock/database_open",
+          "status": "pass",
+          "elapsed": 0
+        },
+        {
+          "name": "TestDesktopStartupFailureCleansAcquiredLock/missing_directory",
+          "status": "pass",
+          "elapsed": 0
+        }
+      ],
+      "errors": [
+        "shutdown_linux_test.go:331: failed close released process lock: acquired=true error=<nil>",
+        "shutdown_test.go:83: failed database close order: [drain close release]"
+      ],
+      "panic": false,
+      "stdout_sha256": "caf8d2347d17e7419719822dba88098d77a3c532d33b0afb833b4ce1b9c968cc",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "control_callback_does_not_join",
+      "counts": {
+        "pass": 0,
+        "fail": 1,
+        "skip": 0
+      },
+      "packages": [
+        {
+          "name": "github.com/csmart/aeronautes",
+          "status": "fail",
+          "elapsed": 0.04
+        }
+      ],
+      "leaves": [
+        {
+          "name": "TestShellShutdownJoinsConcurrentCallbacks",
+          "status": "fail",
+          "elapsed": 0
+        }
+      ],
+      "errors": [
+        "shutdown_test.go:51: held drain permitted resource release"
+      ],
+      "panic": false,
+      "stdout_sha256": "c52416450c37bc01f56130c043f65d970307e02f5d238ff64a0c37d296df3d31",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "control_drain_error_allows_return",
+      "counts": {
+        "pass": 4,
+        "fail": 1,
+        "skip": 0
+      },
+      "packages": [
+        {
+          "name": "github.com/csmart/aeronautes",
+          "status": "fail",
+          "elapsed": 0.981
+        }
+      ],
+      "leaves": [
+        {
+          "name": "TestShellShutdownDrainFailureStaysBlocked",
+          "status": "fail",
+          "elapsed": 0.2
+        },
+        {
+          "name": "TestDesktopCallerUsesActualServices/run_error_false/callback_false",
+          "status": "pass",
+          "elapsed": 0.19
+        },
+        {
+          "name": "TestDesktopCallerUsesActualServices/run_error_false/callback_true",
+          "status": "pass",
+          "elapsed": 0.19
+        },
+        {
+          "name": "TestDesktopCallerUsesActualServices/run_error_true/callback_false",
+          "status": "pass",
+          "elapsed": 0.18
+        },
+        {
+          "name": "TestDesktopCallerUsesActualServices/run_error_true/callback_true",
+          "status": "pass",
+          "elapsed": 0.17
+        }
+      ],
+      "errors": [
+        "shutdown_linux_test.go:352: failed drain did not retain ownership: exit status 1"
+      ],
+      "panic": false,
+      "stdout_sha256": "ff2b3f6cb02cd885f93bd0f153103408ca172a1f9ae7a271686ada3dc8fe639b",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "control_no_gc_owner",
+      "counts": {
+        "pass": 0,
+        "fail": 1,
+        "skip": 0
+      },
+      "packages": [
+        {
+          "name": "github.com/csmart/aeronautes",
+          "status": "fail",
+          "elapsed": 5.454
+        }
+      ],
+      "leaves": [
+        {
+          "name": "TestMainCloseFailureGCProbe",
+          "status": "fail",
+          "elapsed": 5.42
+        }
+      ],
+      "errors": [
+        "gc_probe_test.go:89: actual main did not keep lock ownership through GC and failed-close error reporting"
+      ],
+      "panic": false,
+      "stdout_sha256": "6770d4ffbf31e9c29d2f386a7b117cc7f1056d35b598de37bdee3bccf82e0b37",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "consumer_swift",
+      "counts": {
+        "pass": 2,
+        "fail": 0,
+        "skip": 0
+      },
+      "packages": [
+        {
+          "name": "github.com/csmart/aeronautes/internal/systemtest",
+          "status": "pass",
+          "elapsed": 17.534
+        }
+      ],
+      "leaves": [
+        {
+          "name": "TestShutdownChildRealSwift/cancel",
+          "status": "pass",
+          "elapsed": 3.27
+        },
+        {
+          "name": "TestShutdownChildRealSwift/escalate",
+          "status": "pass",
+          "elapsed": 13.25
+        }
+      ],
+      "errors": [],
+      "panic": false,
+      "stdout_sha256": "71c3927b4032206a6a11f6f9cfe514def74a5fbb7b9f9be89dff0cfcf850cc95",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "limits": [
+    "Prerequisite and reviewed actual shell consumer must ship together.",
+    "No native GTK/window-close/Wails Quit acceptance; no new overall timeout or quit-anyway policy.",
+    "Synchronous bridge/native request ownership, Connections and SecretStore remain open.",
+    "Non-Linux exit paths, arbitrary descendants, retained-stage removal and valuable-data release remain open.",
+    "Root owns current-base integration, full suite, independent final range review and all-five PR/master gates."
+  ]
+}
