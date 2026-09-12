@@ -47,11 +47,7 @@
     } catch {
       shellInfo = "service bridge unavailable";
     }
-    try {
-      await browser.loadBookmarks();
-    } catch {
-      // Surfaced through the empty states; nothing to do here.
-    }
+    await browser.loadBookmarks();
   });
 
   function isEditing(target: EventTarget | null): boolean {

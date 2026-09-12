@@ -109,6 +109,11 @@ export class BrowserState {
 
   // Bookmarks and connection.
   bookmarks: BookmarkDTO[] = $state([]);
+  bookmarksLoaded = $state(false);
+  bookmarksLoading = $state(false);
+  bookmarksError: string | null = $state(null);
+  bookmarksStale = $state(false);
+  #bookmarksSeq = 0;
   // UI previews must notice a scope change even if its names are then restored.
   // This revision does not replace the backend's credential generation.
   #scopeRevision = $state(0);
@@ -306,8 +311,32 @@ export class BrowserState {
       && name === this.containerName;
   }
 
-  async loadBookmarks() {
-    this.bookmarks = await this.#api.listBookmarks();
+  async loadBookmarks(): Promise<void> {
+    const seq = ++this.#bookmarksSeq;
+    this.bookmarksLoading = true;
+    this.bookmarksError = null;
+    this.bookmarksStale = this.bookmarksLoaded;
+    try {
+      const bookmarks = await this.#api.listBookmarks();
+      if (seq === this.#bookmarksSeq) {
+        this.bookmarks = bookmarks;
+        this.bookmarksLoaded = true;
+        this.bookmarksStale = false;
+      }
+    } catch {
+      if (seq === this.#bookmarksSeq) {
+        this.bookmarksError = "Bookmarks unavailable. Refresh the list.";
+        this.bookmarksStale = true;
+      }
+    } finally {
+      if (seq === this.#bookmarksSeq) this.bookmarksLoading = false;
+    }
+  }
+
+  #retireBookmarkList() {
+    this.#bookmarksSeq++;
+    this.bookmarksLoading = false;
+    this.bookmarksStale = true;
   }
 
   #resetConnection() {
@@ -384,9 +413,16 @@ export class BrowserState {
 
   async deleteBookmark(id: string): Promise<void> {
     this.#beginBookmarkChange(id);
+    this.#retireBookmarkList();
     this.#invalidateCredentialStatus();
     try {
-      await this.#api.deleteBookmark(id);
+      try {
+        await this.#api.deleteBookmark(id);
+      } finally {
+        // A read started during the mutation can still predate its effect,
+        // including an uncertain effect reported as an error.
+        this.#retireBookmarkList();
+      }
       this.bookmarks = this.bookmarks.filter((b) => b.id !== id);
     } finally {
       this.#endBookmarkChange(id);
@@ -399,9 +435,17 @@ export class BrowserState {
   async saveBookmark(bookmark: BookmarkDTO, secret: string): Promise<BookmarkDTO> {
     const id = bookmark.id;
     this.#beginBookmarkChange(id);
+    this.#retireBookmarkList();
     this.#invalidateCredentialStatus();
     try {
-      const saved = await this.#api.saveBookmark(bookmark, secret);
+      let saved: BookmarkDTO;
+      try {
+        saved = await this.#api.saveBookmark(bookmark, secret);
+      } finally {
+        // Retire reads across the possible effect before the acknowledged
+        // Save's own refresh, not after that refresh has settled.
+        this.#retireBookmarkList();
+      }
       await this.loadBookmarks();
       return saved;
     } finally {

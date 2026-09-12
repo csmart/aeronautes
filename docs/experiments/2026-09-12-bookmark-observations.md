@@ -86,3 +86,61 @@ No list sorting, deduplication, storage reconciliation, additional backend calls
 Settings, raw mutation-error sanitisation, unresolved backend publication, UI-09 and all other release gates remain separate.
 Stop for ambiguous unacknowledged Save outcomes, mutation timing/authority changes, conflicting ownership, source/evidence drift or any need to weaken tests or budgets.
 This contract commit claims no production correction or after result.
+
+## Local implementation proof
+
+The independently approved contract is `15255cd219962d6157b50297b4dee9c057e22485`.
+The following evidence applies to the exact frontend hashes in the [after evidence twin](probes/2026-09-12-bookmark-observations.after.json).
+The private packet `/tmp/aeronautes-bookmark-verification-q3woru50` contains commands, raw outputs, source archive, named-test inventory, independent controls and reconciliation.
+Implementation review and protected delivery are separate gates.
+
+Bookmark List now records loading, successful empty/nonempty, unavailable and stale observations separately from Save/Delete outcomes.
+Current request ownership governs success, error and completion; mutation admission and effect settlement retire older observations, including reads admitted while another mutation was pending.
+An acknowledged Save still awaits its existing List, returns its acknowledged DTO through read failure and preserves all connection and credential lifecycle guards.
+Actual/uncertain Save and Delete errors retain their original outcome.
+The rail displays fixed safe unavailability and previously loaded status, and its refresh action calls List only with a synchronous duplicate guard.
+The editor, backend, audit implementation and every existing test remain unchanged.
+
+| Actual verification | Result |
+| --- | --- |
+| Dedicated bookmark state/component regressions | 45 passed. |
+| Eight unchanged neighbouring files | 405 passed: connection 74, credential 8, keyboard 33, container mode 9, browser state 23, transfer preview 89, paging 64 and inspector detail 105. |
+| Reconciled final focused command | 450 distinct passing file/name pairs across nine files; no skipped case or timeout. |
+| Exact original ten-case probe | Ten passed; probe bytes unchanged from the six-failure/four-control before record. |
+| Svelte check | Exit 0, zero errors and zero warnings. |
+| Production build | Exit 0. |
+
+The original mounted duplicate-create trigger now records one empty-ID Save, one stored identity and one close, with the closed form refusing the second Save.
+The mounted startup read failure displays “Bookmarks unavailable” without the injected private diagnostic.
+The late startup reply cannot erase Created λ, and the older post-save List cannot restore a deleted ID.
+Additional tests preserve a known saved ID after both List and Connect fail, gate stale Save & connect after close/replacement/scope change, and preserve per-bookmark authority until the existing post-save read settles.
+The interleaving tests also cover a post-save List admitted while another bookmark's Save or Delete is pending and an observation that succeeded before a mutation later rejected.
+
+Ten independent broken variants each returned actual exit 1 with their intended unchanged assertion failures, producing twelve targeted failures altogether.
+Each variant changes one production input in an isolated copy of the same final source; maintained test bytes, per-test defaults and the 90-second command deadline remain unchanged.
+Other tests are explicitly unselected by the recorded name filter and do not count as passing controls.
+The successful control-runner assessment does not replace those failing command exits.
+
+| Broken boundary | Actual targeted failure |
+| --- | --- |
+| Rethrow List error | Both new and existing acknowledged Save returned the read error. |
+| Unguarded read success | The obsolete row replaced the current pending view. |
+| Unguarded read error | An obsolete rejection set the current read error. |
+| Unguarded read completion | An old completion cleared a newer pending state. |
+| Omitted mutation admission retirement | Both Save and Delete left the older List loading/current. |
+| Omitted Delete effect-settlement retirement | A during-mutation List remained current after acknowledged Delete. |
+| Omitted Save effect-settlement retirement | A previously successful during-mutation observation stayed current after Save rejected. |
+| Retirement in the Save wrapper's final release | An older Save wrapper cleared a newer List's pending state. |
+| Omitted retired-empty qualifier | The rail announced “No bookmarks saved” for a retired observation. |
+| Omitted synchronous refresh guard | Two same-turn refresh clicks issued two List requests. |
+
+The packet preserves incremental failures separately from the original unchanged-source proof.
+The first 39-test draft returned 33 failures and six controls before production changed; its first after run returned one failure because the new Save & connect test observed the close callback before the final continuation.
+That new test now awaits the actual close callback with the same test/command budgets and all assertions retained.
+The first type check reported four tuple-inference errors in new mock forwarding functions; explicit typed arguments corrected those without production changes.
+The same-turn retry probe failed before its guard, and the added retired-empty test first exposed an uncaught expected fixture Delete rejection; it now explicitly requires that original rejection before checking the stale state.
+None of these incremental failures is discarded or counted as a passing final command.
+
+All 103 final frontend inputs and 97 indexed raw artifacts were rehashed, with the 450-name inventory and twelve intended control failures reconciled.
+This is focused frontend proof using the existing FakeApi and mounted Svelte components, not native Wails, keychain/SQLite publication, real Swift or full repository acceptance.
+Settings, raw mutation-error sanitisation, UI-09, broader UI-10 and the valuable-data hold remain open.

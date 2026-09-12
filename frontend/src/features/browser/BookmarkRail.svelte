@@ -23,6 +23,11 @@
     setTheme(theme);
   }
 
+  function refreshBookmarks() {
+    if (browser.bookmarksLoading) return;
+    void browser.loadBookmarks();
+  }
+
   function initials(label: string): string {
     const words = label.split(/\s+/).filter(Boolean);
     return words
@@ -35,6 +40,22 @@
 
 <nav class="rail" aria-label="Bookmarks">
   <div class="bookmarks">
+    <div class="list-status">
+      {#if browser.bookmarksLoading}
+        <p role="status">{browser.bookmarksLoaded ? "Refreshing bookmarks…" : "Loading bookmarks…"}</p>
+      {:else if browser.bookmarksError}
+        <p role="alert">{browser.bookmarksError}</p>
+      {:else if !browser.bookmarksLoaded}
+        <p role="status">Bookmarks not loaded.</p>
+      {:else if !browser.bookmarksStale && browser.bookmarks.length === 0}
+        <p role="status">No bookmarks saved.</p>
+      {/if}
+      {#if browser.bookmarksLoaded && browser.bookmarksStale}
+        <p role="status">Previously loaded list may be out of date.</p>
+      {/if}
+      <button class="list-refresh" aria-label="Refresh bookmark list"
+        disabled={browser.bookmarksLoading} onclick={refreshBookmarks}>Refresh list</button>
+    </div>
     {#each browser.bookmarks as bookmark (bookmark.id)}
       <div class="bookmark-row">
         <button
@@ -82,6 +103,37 @@
 </nav>
 
 <style>
+  .list-status {
+    font-size: var(--text-xs);
+    color: var(--color-text-secondary);
+    text-align: center;
+    overflow-wrap: anywhere;
+  }
+
+  .list-status p {
+    margin: 0 0 var(--space-2);
+  }
+
+  .list-status [role="alert"] {
+    color: var(--color-danger);
+  }
+
+  .list-refresh {
+    max-width: 100%;
+    padding: var(--space-1);
+    font: inherit;
+    color: inherit;
+    background: var(--color-bg-pane);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+    cursor: pointer;
+  }
+
+  .list-refresh:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+
   .bookmark-row {
     position: relative;
   }
