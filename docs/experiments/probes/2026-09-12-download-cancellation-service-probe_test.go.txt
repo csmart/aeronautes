@@ -1,0 +1,374 @@
+package systemtest
+
+// Before-evidence probe for the download cancellation slice. Not
+// maintained: it runs only when AERONAUTES_CANCEL_PROBE_OUT names a
+// directory and writes one JSON observation per provider and case.
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/csmart/aeronautes/internal/app"
+	"github.com/csmart/aeronautes/internal/jobs"
+)
+
+type cancelProbeHold struct {
+	after   int64
+	reached chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+type cancelProbeReader struct {
+	io.ReadCloser
+	ctx  context.Context
+	hold *cancelProbeHold
+	sent int64
+}
+
+func (r *cancelProbeReader) Read(p []byte) (int, error) {
+	if r.sent >= r.hold.after {
+		r.hold.once.Do(func() { close(r.hold.reached) })
+		select {
+		case <-r.hold.release:
+		case <-r.ctx.Done():
+			return 0, r.ctx.Err()
+		}
+	}
+	if remaining := r.hold.after - r.sent; remaining > 0 && int64(len(p)) > remaining {
+		p = p[:remaining]
+	}
+	n, err := r.ReadCloser.Read(p)
+	r.sent += int64(n)
+	return n, err
+}
+
+type cancelProbeTrace struct {
+	mu       sync.Mutex
+	requests int
+	writes   []string
+}
+
+func (c *cancelProbeTrace) record(r *http.Request) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.requests++
+	if r.Method == http.MethodPut || r.Method == http.MethodPost || r.Method == http.MethodDelete {
+		c.writes = append(c.writes, r.Method+" "+r.URL.Path)
+	}
+}
+
+func (c *cancelProbeTrace) snapshot() (int, []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.requests, append([]string(nil), c.writes...)
+}
+
+// cancelProbeBodyProxy fronts the primary account and holds the body of the
+// selected GET after the first `after` bytes reached the client.
+func cancelProbeBodyProxy(t *testing.T, h *Harness, container, name string, after int64) (*cancelProbeHold, *cancelProbeTrace) {
+	t.Helper()
+	storage, err := url.Parse(h.Primary.storageURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected := (&url.URL{Path: storage.Path + "/" + container + "/" + name}).EscapedPath()
+	target := *storage
+	target.Path, target.RawPath, target.RawQuery = "", "", ""
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DisableCompression = true
+	t.Cleanup(transport.CloseIdleConnections)
+	proxy := httputil.NewSingleHostReverseProxy(&target)
+	proxy.Transport = transport
+	proxy.FlushInterval = -1
+	hold := &cancelProbeHold{after: after, reached: make(chan struct{}), release: make(chan struct{})}
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		if resp.Request.Method == http.MethodGet && resp.Request.URL.EscapedPath() == selected {
+			resp.Body = &cancelProbeReader{ReadCloser: resp.Body, ctx: resp.Request.Context(), hold: hold}
+		}
+		return nil
+	}
+	trace := &cancelProbeTrace{}
+	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		trace.record(r)
+		proxy.ServeHTTP(w, r)
+	}))
+	t.Cleanup(front.Close)
+	t.Cleanup(func() {
+		hold.once.Do(func() { close(hold.reached) })
+		select {
+		case <-hold.release:
+		default:
+			close(hold.release)
+		}
+	})
+	bookmarks, err := h.Bookmarks.List(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, bookmark := range bookmarks {
+		if bookmark.ID != h.Primary.BookmarkID {
+			continue
+		}
+		bookmark.StorageURLOverride = front.URL + storage.EscapedPath()
+		if _, err := h.Bookmarks.Save(t.Context(), bookmark, h.Primary.key); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := h.Browse.Connect(t.Context(), h.Primary.BookmarkID); err != nil {
+		t.Fatal(err)
+	}
+	return hold, trace
+}
+
+type cancelProbeItem struct {
+	Key          string
+	Staging      string
+	Execution    *jobs.ItemObservation
+	Verification *jobs.ItemObservation
+}
+
+type cancelProbeObservation struct {
+	Provider, Case string
+	State, Error   string
+	Counters       jobs.Counters
+	Totals         jobs.ItemTotals
+	AuditSummaries []string
+	Items          []cancelProbeItem
+	LocalDelta     map[string]string
+	Requests       int
+	Writes         []string
+	Notes          []string
+}
+
+func cancelProbeLocalDelta(before, after map[string]listingLocalState) map[string]string {
+	delta := map[string]string{}
+	for name, state := range after {
+		if old, ok := before[name]; ok && old == state {
+			continue
+		}
+		switch {
+		case state.mode.IsDir():
+			delta[name] = "dir"
+		case state.mode.IsRegular():
+			delta[name] = fmt.Sprintf("file %d bytes", state.size)
+		default:
+			delta[name] = state.mode.String()
+		}
+	}
+	for name := range before {
+		if _, ok := after[name]; !ok {
+			delta[name] = "removed"
+		}
+	}
+	return delta
+}
+
+func cancelProbeObserve(t *testing.T, h *Harness, provider, name, id, root string, before map[string]listingLocalState, requests int, writes []string, notes func() []string) {
+	t.Helper()
+	h.AwaitJob(id)
+	saved := uploadRecoveryRead(t, h.database, id)
+	observation := cancelProbeObservation{Provider: provider, Case: name, State: saved.Job.State, Error: saved.Job.Error,
+		Counters: saved.Job.Counters, Totals: saved.ItemTotals, LocalDelta: cancelProbeLocalDelta(before, snapshotListingLocal(t, root)),
+		Requests: requests, Writes: writes}
+	if notes != nil {
+		observation.Notes = notes()
+	}
+	for _, event := range saved.Audit {
+		if event.Resource == "job "+id {
+			observation.AuditSummaries = append(observation.AuditSummaries, event.Operation+": "+event.Summary)
+		}
+	}
+	for _, item := range saved.Items {
+		probe := cancelProbeItem{Key: item.Key}
+		if item.Staging != nil {
+			probe.Staging = strings.TrimPrefix(item.Staging.LocalPath, root+string(filepath.Separator))
+		}
+		if item.Execution != nil {
+			probe.Execution = &item.Execution.ItemObservation
+		}
+		if item.Verification != nil {
+			probe.Verification = &item.Verification.ItemObservation
+		}
+		observation.Items = append(observation.Items, probe)
+	}
+	sort.Slice(observation.Items, func(i, j int) bool { return observation.Items[i].Key < observation.Items[j].Key })
+	encoded, err := json.MarshalIndent(observation, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := os.Getenv("AERONAUTES_CANCEL_PROBE_OUT")
+	if err := os.WriteFile(filepath.Join(out, provider+"-"+name+".json"), encoded, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("%s", encoded)
+	uploadRecoveryReopen(t, h, id, saved)
+}
+
+func cancelProbeStart(t *testing.T, h *Harness, container, prefix, root string) string {
+	t.Helper()
+	app.WireFilePicker(h.Transfer, listingFilePicker{dir: root})
+	picked, err := h.Transfer.PickDownloadDir(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := h.Transfer.StartDownload(t.Context(), app.DownloadRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: container, Prefix: prefix, DestDirToken: picked.Token})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func cancelProbeCases(t *testing.T, provider string, makeHarness func(*testing.T) *Harness) {
+	if os.Getenv("AERONAUTES_CANCEL_PROBE_OUT") == "" {
+		t.Skip("probe output directory not set")
+	}
+	native := "scope/n／native.bin" // U+FF0F routes natively and is admitted
+	t.Run("native_held_headers", func(t *testing.T) {
+		h := makeHarness(t)
+		container := h.Container(h.Primary, "cancel-probe")
+		h.Seed(h.Primary, container, "scope/a.bin", []byte("bytes a"), nil)
+		h.Seed(h.Primary, container, "scope/b.bin", []byte("bytes b"), nil)
+		h.Seed(h.Primary, container, native, []byte("native bytes"), nil)
+		root := t.TempDir()
+		seedListingLocal(t, root, "keep", []byte("sentinel"))
+		before := snapshotListingLocal(t, root)
+		barrier, ended, selected, trace := interruptionProxy(t, h, container, http.MethodGet, native, nil)
+		id := cancelProbeStart(t, h, container, "scope/", root)
+		event, err := barrier.Wait(t.Context())
+		if err != nil || event.StatusCode != http.StatusOK || selected.Load() != 1 {
+			t.Fatalf("held native GET: %+v %v", event, err)
+		}
+		if err := h.Transfer.CancelJob(t.Context(), id); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-ended:
+		case <-time.After(5 * time.Second):
+			t.Fatal("held request did not end")
+		}
+		cancelProbeObserve(t, h, provider, "native_held_headers", id, root, before, trace.requestCount(), trace.writeSnapshot(), func() []string { return []string{fmt.Sprintf("barrier err: %v", barrier.Err())} })
+	})
+	t.Run("native_mid_body", func(t *testing.T) {
+		h := makeHarness(t)
+		container := h.Container(h.Primary, "cancel-probe")
+		body := make([]byte, 256*1024)
+		for i := range body {
+			body[i] = byte('a' + i%26)
+		}
+		h.Seed(h.Primary, container, "scope/a.bin", []byte("bytes a"), nil)
+		h.Seed(h.Primary, container, native, body, nil)
+		root := t.TempDir()
+		seedListingLocal(t, root, "keep", []byte("sentinel"))
+		before := snapshotListingLocal(t, root)
+		hold, trace := cancelProbeBodyProxy(t, h, container, native, 64*1024)
+		id := cancelProbeStart(t, h, container, "scope/", root)
+		select {
+		case <-hold.reached:
+		case <-time.After(15 * time.Second):
+			t.Fatal("native body hold never reached")
+		}
+		// The executor must have consumed the delivered bytes into its
+		// temporary before the cancel, or the cancel lands before the copy.
+		tempSize := int64(-1)
+		deadline := time.Now().Add(15 * time.Second)
+		for time.Now().Before(deadline) {
+			entries, _ := os.ReadDir(root)
+			for _, entry := range entries {
+				if strings.HasPrefix(entry.Name(), ".aeronautes-part-") {
+					if info, err := entry.Info(); err == nil {
+						tempSize = info.Size()
+					}
+				}
+			}
+			if tempSize >= 64*1024 {
+				break
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		if err := h.Transfer.CancelJob(t.Context(), id); err != nil {
+			t.Fatal(err)
+		}
+		requests, writes := trace.snapshot()
+		cancelProbeObserve(t, h, provider, "native_mid_body", id, root, before, requests, writes, func() []string { return []string{fmt.Sprintf("temporary size before cancel: %d", tempSize)} })
+	})
+	t.Run("stage_boundary", func(t *testing.T) {
+		h := makeHarness(t)
+		container := h.Container(h.Primary, "cancel-probe")
+		h.Seed(h.Primary, container, "scope/a.bin", []byte("bytes a"), nil)
+		h.Seed(h.Primary, container, "scope/nested/b.bin", []byte("bytes b"), nil)
+		root := t.TempDir()
+		seedListingLocal(t, root, "keep", []byte("sentinel"))
+		before := snapshotListingLocal(t, root)
+		idCh := make(chan string, 1)
+		var stageSeen string
+		app.WireDownloadStageBoundary(h.Transfer, func(ctx context.Context, stage string) error {
+			stageSeen = stage
+			id := <-idCh
+			idCh <- id
+			return h.Transfer.CancelJob(context.Background(), id)
+		})
+		id := cancelProbeStart(t, h, container, "scope/", root)
+		idCh <- id
+		cancelProbeObserve(t, h, provider, "stage_boundary", id, root, before, 0, nil, func() []string {
+			return []string{"stage seen by boundary: " + strings.TrimPrefix(stageSeen, root+string(filepath.Separator))}
+		})
+	})
+	t.Run("queued_cancel", func(t *testing.T) {
+		h := makeHarness(t)
+		settings, err := h.Settings.Get(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		settings.MaxActiveJobs = 1
+		if _, err := h.Settings.Set(t.Context(), settings); err != nil {
+			t.Fatal(err)
+		}
+		container := h.Container(h.Primary, "cancel-probe")
+		h.Seed(h.Primary, container, "hold/first.bin", []byte("hold bytes"), nil)
+		h.Seed(h.Primary, container, "scope/a.bin", []byte("bytes a"), nil)
+		root, holdRoot := t.TempDir(), t.TempDir()
+		seedListingLocal(t, root, "keep", []byte("sentinel"))
+		before := snapshotListingLocal(t, root)
+		barrier, ended, selected, trace := interruptionProxy(t, h, container, http.MethodGet, "hold/first.bin", nil)
+		first := cancelProbeStart(t, h, container, "hold/", holdRoot)
+		if event, err := barrier.Wait(t.Context()); err != nil || event.StatusCode != http.StatusOK || selected.Load() != 1 {
+			t.Fatalf("slot-owning barrier: %+v %v", event, err)
+		}
+		id := cancelProbeStart(t, h, container, "scope/", root)
+		queued, err := h.Jobs.Get(t.Context(), id)
+		if err != nil || queued.State != "queued" {
+			t.Fatalf("second job not queued: %+v %v", queued, err)
+		}
+		if err := h.Transfer.CancelJob(t.Context(), id); err != nil {
+			t.Fatal(err)
+		}
+		h.AwaitJob(id)
+		if err := barrier.Release(); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-ended:
+		case <-time.After(5 * time.Second):
+			t.Fatal("slot-owning request did not end")
+		}
+		h.AwaitJob(first)
+		cancelProbeObserve(t, h, provider, "queued_cancel", id, root, before, trace.requestCount(), trace.writeSnapshot(), func() []string { return []string{"first job state: " + h.AwaitJob(first).State} })
+	})
+}
+
+func TestZZCancelProbeMock(t *testing.T)      { cancelProbeCases(t, "mock", findMockHarness) }
+func TestZZCancelProbeRealSwift(t *testing.T) { cancelProbeCases(t, "swift", New) }
