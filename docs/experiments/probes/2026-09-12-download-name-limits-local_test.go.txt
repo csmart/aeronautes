@@ -1,0 +1,71 @@
+package local
+
+import (
+	"strings"
+	"testing"
+)
+
+// Before probe for the DS-06 remainder: what the delivered preflight and
+// executor admission do today with over-long components, leading spaces
+// and compatibility look-alikes. Each expectation states the observed
+// current behaviour, so a wrong claim fails here.
+func TestDownloadNameLimitsProbe(t *testing.T) {
+	long255 := strings.Repeat("b", 255)
+	long256 := strings.Repeat("c", 256)
+	long300 := strings.Repeat("a", 300)
+	long400 := strings.Repeat("é", 200) // 400 bytes, 200 UTF-16 units
+	for _, c := range []struct {
+		name     string
+		objects  []string
+		items    int
+		problems int
+		kind     string
+		detail   string
+	}{
+		{"component_255_bytes", []string{"scope/" + long255}, 1, 0, "", ""},
+		{"component_256_bytes", []string{"scope/" + long256}, 0, 1, "local-inspection", "file name too long"},
+		{"component_300_bytes", []string{"scope/" + long300}, 0, 1, "local-inspection", "file name too long"},
+		{"component_400_bytes_200_units", []string{"scope/" + long400}, 0, 1, "local-inspection", "file name too long"},
+		// The existing-destination inspection stops at the first absent
+		// component, so an over-long component beneath an absent parent is
+		// never inspected and the selection is admitted today.
+		{"nested_component_300_bytes", []string{"scope/dir/" + long300 + "/leaf.txt"}, 1, 0, "", ""},
+		{"long_component_beside_safe", []string{"scope/safe.txt", "scope/" + long300}, 1, 1, "local-inspection", "file name too long"},
+		{"leading_space", []string{"scope/ a.txt", "scope/a.txt"}, 2, 0, "", ""},
+		{"leading_space_device", []string{"scope/ CON"}, 1, 0, "", ""},
+		{"compatibility_ligature", []string{"scope/ﬁle.txt", "scope/file.txt"}, 2, 0, "", ""},
+		{"compatibility_fullwidth_letter", []string{"scope/Ａ.txt", "scope/A.txt"}, 2, 0, "", ""},
+		{"compatibility_superscript", []string{"scope/x².txt", "scope/x2.txt"}, 2, 0, "", ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			source, mock := session(t)
+			for _, name := range c.objects {
+				seed(mock, "media", name, "bytes for "+name)
+			}
+			plan, err := PreflightDownload(t.Context(), source, "media", "scope/", t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Logf("items=%d problems=%+v", len(plan.Items), plan.Problems)
+			if len(plan.Items) != c.items || len(plan.Problems) != c.problems {
+				t.Fatalf("admission differs from the recorded claim: %d items %d problems", len(plan.Items), len(plan.Problems))
+			}
+			if c.problems > 0 && (plan.Problems[0].Kind != c.kind || !strings.Contains(plan.Problems[0].Detail, c.detail)) {
+				t.Fatalf("refusal differs: %+v", plan.Problems[0])
+			}
+		})
+	}
+	// The executor's item admission repeats the lexical policy and has no
+	// length rule today: an over-long component passes it and is left to
+	// the operating system at effect time.
+	t.Run("executor_admits_long_component", func(t *testing.T) {
+		item := DownloadItem{Name: "scope/" + long300, RelPath: long300, Size: 1, Route: "rclone"}
+		if !validDownloadItem("scope/", item) {
+			t.Fatal("executor admission refused a 300-byte component; the record expected admission today")
+		}
+		item = DownloadItem{Name: "scope/ a.txt", RelPath: " a.txt", Size: 1, Route: "rclone"}
+		if !validDownloadItem("scope/", item) {
+			t.Fatal("executor admission refused a leading space")
+		}
+	})
+}
