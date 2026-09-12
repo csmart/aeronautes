@@ -1,0 +1,286 @@
+"""Native Linux journeys for TEST-04 on a clean build of the branch head
+against the in-repository mock Swift server under an Xvfb display: launch,
+connect, browse, download with the native directory picker, cancel a
+running download, restart with durable job history, exact picker path
+preservation, and refusal of a non-pinned engine. Every step is driven with
+xdotool, observed on the mock's request log and the local filesystem, and
+captured as a screenshot. Usage: journeys_driver.py <label> <binary> <sequence.json>."""
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import select
+import shutil
+import socket
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.request
+
+evidence = Path(__file__).resolve().parent
+sys.path.insert(0, str(evidence))
+from native_capture import capture
+
+label, binary_path, sequence_path = sys.argv[1:4]
+assert re.fullmatch(r'journey-[a-z0-9-]+', label)
+binary = Path(binary_path).resolve()
+sequence = Path(sequence_path).resolve()
+out = evidence / label
+out.mkdir()
+(out / 'driver.py').write_bytes(Path(__file__).read_bytes())
+(out / 'capture.py').write_bytes((evidence / 'native_capture.py').read_bytes())
+commands = json.loads(sequence.read_text())
+(out / 'sequence.json').write_bytes(sequence.read_bytes())
+runtime = Path('/home/csmart/code/.aeronautes-work/parallel/keyboard_scope/native/runtime-root')
+mock_binary = evidence.parent / 'mockswift'
+pin_dir = '/home/csmart/code/.aeronautes-work/rclone-pin'
+env = os.environ.copy()
+env.update(LD_LIBRARY_PATH=str(runtime / 'usr/lib64'), GDK_BACKEND='x11', WAYLAND_DISPLAY='',
+           GTK_USE_PORTAL='0', XKB_BINDIR=str(runtime / 'usr/bin'), GTK_A11Y='none',
+           WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS='1', DCONF_PROFILE='/dev/null', TZ='UTC',
+           AERONAUTES_STATE_DIR=str(out / 'state'), AERONAUTES_OFFICIAL_RCLONE_DIR=pin_dir)
+env['PATH'] = str(runtime / 'usr/bin') + ':' + pin_dir + ':' + env['PATH']
+for key, name in [('XDG_CONFIG_HOME', 'config'), ('XDG_CACHE_HOME', 'cache'), ('XDG_DATA_HOME', 'data')]:
+    (out / name).mkdir(mode=0o700)
+    env[key] = str(out / name)
+(out / 'state').mkdir(mode=0o700)
+(out / 'home').mkdir(mode=0o700)
+env['HOME'] = str(out / 'home')
+env['XDG_RUNTIME_DIR'] = tempfile.mkdtemp(prefix='aeronautes-journey-')
+with socket.socket() as reservation:
+    reservation.bind(('127.0.0.1', 0))
+    port = reservation.getsockname()[1]
+origin = f'http://127.0.0.1:{port}'
+processes = []
+result = {'label': label, 'kind': 'TEST-04 native Linux journey on the mock Swift server', 'status': 'running',
+          'port': port, 'app_sha256': hashlib.sha256(binary.read_bytes()).hexdigest(),
+          'mock_sha256': hashlib.sha256(mock_binary.read_bytes()).hexdigest(),
+          'sequence_sha256': hashlib.sha256(sequence.read_bytes()).hexdigest(), 'commands': [],
+          'platform': 'linux amd64 under Xvfb; no other platform observed',
+          'started_utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
+token = None
+window = ''
+last_geometry = {}
+app = None
+wire_start = 0
+
+
+def request(path, method='GET', data=None, extra=None):
+    headers = {'X-Auth-Token': token} if token else {'X-Auth-User': 'test:tester', 'X-Auth-Key': 'testing'}
+    headers.update(extra or {})
+    with urllib.request.urlopen(urllib.request.Request(origin + path, data=data, method=method, headers=headers), timeout=10) as reply:
+        return reply.headers, reply.read()
+
+
+def wire(pattern, seconds):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if re.search(pattern, (out / 'mockswift.log').read_text()[wire_start:], re.MULTILINE):
+            return True
+        time.sleep(.2)
+    return False
+
+
+def x(*args, check=True):
+    args = tuple(window if part == '{window}' else part for part in args)
+    return subprocess.run([str(runtime / 'usr/bin/xdotool'), *args], env=env, capture_output=True, text=True, timeout=20, check=check)
+
+
+def dialog_window():
+    found = x('search', '--onlyvisible', '--name', 'Choose a destination directory', check=False)
+    ids = [line for line in found.stdout.split() if line.strip()]
+    assert ids, 'the directory chooser is not visible'
+    return ids[-1]
+
+
+def save():
+    (out / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
+
+
+def launch(record):
+    global app, window
+    applog = (out / ('app-%d.log' % sum(1 for c in result['commands'] if c['command']['op'] == 'launch'))).open('a')
+    app = subprocess.Popen(['dbus-run-session', '--', str(binary)], env=env, stdout=applog, stderr=applog)
+    processes.append(app)
+    deadline = time.monotonic() + 40
+    while True:
+        found = x('search', '--onlyvisible', '--name', 'Aeronautes', check=False)
+        if found.returncode == 0 and found.stdout.strip():
+            window = found.stdout.splitlines()[0]
+            break
+        assert app.poll() is None and time.monotonic() < deadline, 'app window did not appear'
+        time.sleep(.2)
+    x('windowfocus', '--sync', window)
+    time.sleep(2)
+    record['window'] = window
+    record['pid'] = app.pid
+
+
+def tree(root):
+    listing = {}
+    for path in sorted(Path(root).rglob('*')):
+        rel = str(path.relative_to(root))
+        if path.is_symlink():
+            listing[rel] = 'link:' + os.readlink(path)
+        elif path.is_dir():
+            listing[rel] = 'dir'
+        else:
+            listing[rel] = 'file:%d:%s' % (path.stat().st_size, hashlib.sha256(path.read_bytes()).hexdigest()[:16])
+    return listing
+
+
+def jobs_rows():
+    db = out / 'state' / 'state.sqlite'
+    if not db.exists():
+        return {'missing': str(db)}
+    connection = sqlite3.connect('file:%s?mode=ro' % db, uri=True)
+    try:
+        tables = [r[0] for r in connection.execute("select name from sqlite_master where type='table'")]
+        rows = {}
+        for table in tables:
+            if 'job' in table:
+                cursor = connection.execute('select * from %s' % table)
+                names = [d[0] for d in cursor.description]
+                rows[table] = [dict(zip(names, r)) for r in cursor.fetchall()]
+        return rows
+    finally:
+        connection.close()
+
+
+try:
+    identity = subprocess.run([str(binary), '--version'], env=env, capture_output=True, text=True, check=True)
+    result['identity_stdout'] = identity.stdout
+    expected_head = (binary.parent / 'head.txt').read_text().strip()
+    result['expected_head'] = expected_head
+    assert expected_head[:12] in identity.stdout, identity.stdout
+    mocklog = (out / 'mockswift.log').open('w')
+    mock = subprocess.Popen([str(mock_binary), '-addr', f'127.0.0.1:{port}', '-fixtures=false'], stdout=mocklog, stderr=mocklog, env=env)
+    processes.append(mock)
+    deadline = time.monotonic() + 10
+    while True:
+        try:
+            headers, _ = request('/auth/v1.0')
+            break
+        except OSError:
+            assert mock.poll() is None and time.monotonic() < deadline
+            time.sleep(.1)
+    token = headers['X-Auth-Token']
+    displaylog = (out / 'xvfb.log').open('w')
+    # The display lives in a private socket namespace (run_in_ns.sh), so
+    # this number never touches a host display; :90 is chosen explicitly.
+    screen = os.environ.get('JOURNEY_SCREEN', '1280x800x24')
+    result['screen'] = screen
+    display = subprocess.Popen([str(runtime / 'usr/bin/Xvfb'), ':90', '-screen', '0', screen, '-nolisten', 'tcp'],
+                               env=env, stdout=displaylog, stderr=displaylog, text=True)
+    processes.append(display)
+    env['DISPLAY'] = ':90'
+    deadline = time.monotonic() + 20
+    while True:
+        probe = subprocess.run([str(runtime / 'usr/bin/xdotool'), 'getdisplaygeometry'], env=env, capture_output=True, text=True)
+        if probe.returncode == 0:
+            break
+        assert display.poll() is None and time.monotonic() < deadline, 'virtual display did not start'
+        time.sleep(.2)
+    result['display'] = env['DISPLAY']
+    save()
+    for position, command in enumerate(commands):
+        record = {'index': position, 'command': command, 'utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
+        result['commands'].append(record)
+        op = command['op']
+        if op == 'seed':
+            request('/v1/AUTH_test/' + command['container'], 'PUT')
+            for name, body in command.get('objects', {}).items():
+                request('/v1/AUTH_test/' + command['container'] + '/' + name, 'PUT', data=body.encode())
+            for prefix, count, size in command.get('bulk', []):
+                for index in range(count):
+                    request('/v1/AUTH_test/%s/%s%05d' % (command['container'], prefix, index), 'PUT', data=(b'x' * size))
+            wire_start = len((out / 'mockswift.log').read_text())
+            record['seeded'] = True
+        elif op == 'launch':
+            launch(record)
+        elif op == 'env':
+            for key, value in command['set'].items():
+                env[key] = value.replace('{out}', str(out))
+            record['env'] = {k: env[k] for k in command['set']}
+        elif op == 'mkdir':
+            path = out / command['path']
+            path.mkdir(parents=True, exist_ok=True)
+            record['path'] = str(path)
+        elif op == 'x':
+            active = ''
+            if any('{dialog}' in part for part in command['args']):
+                active = dialog_window()
+                record['dialog'] = active
+            reply = x(*[part.replace('{out}', str(out)).replace('{origin}', origin).replace('{dialog}', active) for part in command['args']])
+            record['stdout'], record['stderr'] = reply.stdout, reply.stderr
+            time.sleep(command.get('pause', .5))
+        elif op == 'type':
+            x('type', '--delay', str(command.get('delay', 15)), command['text'].replace('{out}', str(out)).replace('{origin}', origin))
+            time.sleep(command.get('pause', .3))
+        elif op == 'shot':
+            capture(env['DISPLAY'], out / (command['name'] + '.png'))
+        elif op == 'geometry':
+            target = dialog_window() if command.get('window', 'dialog') == 'dialog' else window
+            record['target'] = target
+            geometry = x('getwindowgeometry', '--shell', target).stdout
+            record['geometry'] = dict(line.split('=', 1) for line in geometry.split())
+            last_geometry = record['geometry']
+        elif op == 'x-rel':
+            gx, gy, gw, gh = (int(last_geometry[k]) for k in ('X', 'Y', 'WIDTH', 'HEIGHT'))
+            px, py = gx + gw + command['dx'], gy + gh + command['dy']
+            record['point'] = [px, py]
+            reply = x('mousemove', str(px), str(py), 'click', '1')
+            time.sleep(command.get('pause', .5))
+        elif op == 'wire':
+            record['seen'] = wire(command['pattern'], command.get('seconds', 15))
+            assert record['seen'] or not command.get('require', True), 'wire pattern not seen: ' + command['pattern']
+        elif op == 'sleep':
+            time.sleep(command['seconds'])
+        elif op == 'tree':
+            record['tree'] = tree(out / command['path'])
+        elif op == 'jobs':
+            record['jobs'] = jobs_rows()
+        elif op == 'stop-app':
+            app.terminate()
+            try:
+                app.wait(15)
+            except subprocess.TimeoutExpired:
+                app.kill()
+                app.wait(5)
+            record['returncode'] = app.returncode
+            window = ''
+        elif op == 'wire-count':
+            text = (out / 'mockswift.log').read_text()[wire_start:]
+            record['count'] = len(re.findall(command['pattern'], text, re.MULTILINE))
+        elif op == 'assert':
+            expression = command['expr']
+            context = {'result': result, 'out': out, 're': re, 'Path': Path, 'jobs_rows': jobs_rows, 'tree': tree}
+            record['value'] = bool(eval(expression, context))
+            assert record['value'], 'assertion failed: ' + expression
+        elif op == 'finish':
+            result['status'] = 'completed'
+            break
+        else:
+            raise AssertionError('unknown operation ' + op)
+        save()
+except BaseException as error:
+    result['status'] = 'failed'
+    result['error'] = '%s: %s' % (type(error).__name__, error)
+    try:
+        capture(env['DISPLAY'], out / 'zz-failure.png')
+    except Exception:
+        pass
+    raise
+finally:
+    for process in reversed(processes):
+        if process is not None and process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+    result['finished_utc'] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+    save()

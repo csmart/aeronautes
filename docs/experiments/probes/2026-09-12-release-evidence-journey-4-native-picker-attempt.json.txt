@@ -1,0 +1,211 @@
+[
+ {
+  "op": "seed",
+  "container": "src",
+  "objects": {
+   "alpha.txt": "payload-alpha",
+   "bravo.txt": "payload-bravo",
+   "charlie.txt": "payload-charlie"
+  }
+ },
+ {
+  "op": "mkdir",
+  "path": "pick/ leading"
+ },
+ {
+  "op": "launch"
+ },
+ {
+  "op": "x",
+  "args": [
+   "key",
+   "Escape"
+  ],
+  "pause": 1
+ },
+ {
+  "op": "x",
+  "args": [
+   "mousemove",
+   "42",
+   "50",
+   "click",
+   "1"
+  ],
+  "pause": 2
+ },
+ {
+  "op": "type",
+  "text": "Journey"
+ },
+ {
+  "op": "x",
+  "args": [
+   "key",
+   "Tab"
+  ]
+ },
+ {
+  "op": "type",
+  "text": "{origin}/auth/v1.0",
+  "delay": 10
+ },
+ {
+  "op": "x",
+  "args": [
+   "key",
+   "Tab"
+  ]
+ },
+ {
+  "op": "type",
+  "text": "test:tester"
+ },
+ {
+  "op": "x",
+  "args": [
+   "key",
+   "Tab"
+  ]
+ },
+ {
+  "op": "type",
+  "text": "testing"
+ },
+ {
+  "op": "x",
+  "args": [
+   "key",
+   "Return"
+  ],
+  "pause": 1
+ },
+ {
+  "op": "wire",
+  "pattern": "GET /v1/AUTH_test(?:\\?|$)",
+  "seconds": 15
+ },
+ {
+  "op": "x",
+  "args": [
+   "mousemove",
+   "113",
+   "110",
+   "click",
+   "1"
+  ],
+  "pause": 2
+ },
+ {
+  "op": "wire",
+  "pattern": "GET /v1/AUTH_test/src",
+  "seconds": 10
+ },
+ {
+  "op": "x",
+  "args": [
+   "mousemove",
+   "508",
+   "119",
+   "click",
+   "1"
+  ],
+  "pause": 2.5
+ },
+ {
+  "op": "x",
+  "args": [
+   "mousemove",
+   "906",
+   "434",
+   "click",
+   "1"
+  ],
+  "pause": 4
+ },
+ {
+  "op": "shot",
+  "name": "05-chooser-open"
+ },
+ {
+  "op": "x",
+  "args": [
+   "windowsize",
+   "{dialog}",
+   "1280",
+   "760"
+  ],
+  "pause": 2
+ },
+ {
+  "op": "shot",
+  "name": "06-chooser-resized"
+ },
+ {
+  "op": "x",
+  "args": [
+   "key",
+   "ctrl+l"
+  ],
+  "pause": 1
+ },
+ {
+  "op": "type",
+  "text": "{out}/pick/ leading",
+  "delay": 10,
+  "pause": 1.5
+ },
+ {
+  "op": "shot",
+  "name": "07-typed-leading-space-path"
+ },
+ {
+  "op": "x",
+  "args": [
+   "key",
+   "Return"
+  ],
+  "pause": 2
+ },
+ {
+  "op": "shot",
+  "name": "08-after-return"
+ },
+ {
+  "op": "x",
+  "args": [
+   "mousemove",
+   "1231",
+   "737",
+   "click",
+   "1"
+  ],
+  "pause": 3
+ },
+ {
+  "op": "shot",
+  "name": "09-after-open-click"
+ },
+ {
+  "op": "x",
+  "args": [
+   "key",
+   "alt+o"
+  ],
+  "pause": 3
+ },
+ {
+  "op": "shot",
+  "name": "10-after-alt-o"
+ },
+ {
+  "op": "tree",
+  "path": "pick"
+ },
+ {
+  "op": "jobs"
+ },
+ {
+  "op": "finish"
+ }
+]

@@ -1,0 +1,41 @@
+import ctypes as c
+import struct
+import zlib
+from pathlib import Path
+
+class XImage(c.Structure):
+    _fields_ = [('width', c.c_int), ('height', c.c_int), ('xoffset', c.c_int), ('format', c.c_int),
+                ('data', c.c_void_p), ('byte_order', c.c_int), ('bitmap_unit', c.c_int),
+                ('bitmap_bit_order', c.c_int), ('bitmap_pad', c.c_int), ('depth', c.c_int),
+                ('bytes_per_line', c.c_int), ('bits_per_pixel', c.c_int),
+                ('red_mask', c.c_ulong), ('green_mask', c.c_ulong), ('blue_mask', c.c_ulong)]
+
+def capture(display_name, destination):
+    x = c.CDLL('libX11.so.6')
+    x.XOpenDisplay.argtypes, x.XOpenDisplay.restype = [c.c_char_p], c.c_void_p
+    x.XDefaultRootWindow.argtypes, x.XDefaultRootWindow.restype = [c.c_void_p], c.c_ulong
+    x.XGetImage.argtypes = [c.c_void_p, c.c_ulong, c.c_int, c.c_int, c.c_uint, c.c_uint, c.c_ulong, c.c_int]
+    x.XGetImage.restype = c.POINTER(XImage)
+    x.XCloseDisplay.argtypes = [c.c_void_p]
+    x.XDisplayWidth.argtypes, x.XDisplayWidth.restype = [c.c_void_p, c.c_int], c.c_int
+    x.XDisplayHeight.argtypes, x.XDisplayHeight.restype = [c.c_void_p, c.c_int], c.c_int
+    display = x.XOpenDisplay(display_name.encode())
+    assert display
+    width, height = x.XDisplayWidth(display, 0), x.XDisplayHeight(display, 0)
+    pointer = x.XGetImage(display, x.XDefaultRootWindow(display), 0, 0, width, height, c.c_ulong(-1), 2)
+    assert pointer
+    image = pointer.contents
+    assert (image.width, image.height, image.bits_per_pixel, image.byte_order) == (width, height, 32, 0)
+    assert (image.red_mask, image.green_mask, image.blue_mask) == (0xff0000, 0xff00, 0xff)
+    raw = c.string_at(image.data, image.bytes_per_line * image.height)
+    rows = bytearray()
+    for row in range(image.height):
+        rows.append(0)
+        for column in range(image.width):
+            offset = row * image.bytes_per_line + column * 4
+            rows.extend((raw[offset+2], raw[offset+1], raw[offset]))
+    def chunk(kind, data):
+        return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data))
+    png = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0))
+    Path(destination).write_bytes(png + chunk(b'IDAT', zlib.compress(rows)) + chunk(b'IEND', b''))
+    x.XCloseDisplay(display)
