@@ -90,6 +90,9 @@ Remedy: require identity/preview/cancellation/error component regressions plus r
 Add a small supported-platform smoke/materialization/secret-store matrix using real runners and packaged artifacts, then grow filesystem and assistive-technology coverage by the supported contract.
 Acceptance: each claimed platform installs, launches, connects, uses native pickers/secret storage, completes and cancels a tiny transfer, preserves exact local paths, restarts, and exposes usable keyboard/focus/error behaviour.
 
+Current disposition: [the release evidence record](../../experiments/2026-09-12-release-evidence.md#native-journeys-on-linux-amd64) records three native Linux amd64 journeys of the production binary against the mock under a virtual display, covering the launch, connect, transfer, cancel, restart and error-behaviour rows for that one target with the pinned engine, and a native picker attempt blocked headless.
+The frontend and platform gaps above remain the audit-time before evidence, and every other target and journey remains open.
+
 ## PERF-01 — High at scale: bounding workers does not bound the application's memory
 
 Disposition: source-backed requirement gap; no large-namespace RSS measurement was completed.

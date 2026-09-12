@@ -5153,6 +5153,15 @@ The [engine-reserved name routing correction](experiments/2026-09-11-download-na
 Before it, such names were admitted to the engine route and silently dropped with a successful engine exit, and a full-width full stop component failed the whole batch; the set is pinned to the frozen engine source and recorded in the engine pin document.
 Compatibility equivalence, leading spaces and length limits remain separate DS-06 items with their own decisions.
 
+The [name length rule](experiments/2026-09-12-download-name-limits.md) delivered in PR101 refuses any path component longer than 255 bytes at preflight and at executor admission with a named reason and the measured length, before any write, because every supported target filesystem refuses such a component and the engine failed the whole batch after start when one hid beneath an absent parent.
+Leading spaces and compatibility look-alikes such as a ligature beside its letters are admitted and recorded, because no supported target or the pinned engine mishandles them; the whole-path bound is recorded and unreachable through a default Swift, whose object names stop at 1,024 bytes.
+Directory-only aliases and native target-filesystem acceptance remain open under DS-06 and P19.
+
+The [deletion sweep authority correction](experiments/2026-09-12-delete-sweep-authority.md) delivered in PR101 gives each deletion job at most one destructive request per name, under [ADR 0039](adr/0039-delete-request-authority.md).
+Every name is recorded as issued in the job's private accounting index before its request leaves, a name recorded as issued is never sent again by the same job in any later pass on either branch, and a sweep that lists only names already requested ends without a request while the job names the ones it did not request again.
+A valid partial reply can therefore no longer lead to a second request that destroys a replacement written at the blamed name, which both providers witnessed before the change.
+The listing-to-request race and names first listed in a later pass remain open under DS-08 and SEC-08.
+
 The next bounded [segmented-destination change detection](experiments/2026-09-11-copy-verification-strength.md) stops a same-size segment substitution being reported as an equal destination.
 The executor decides a non-plain pair from its own stored fingerprint and a matching logical length, so a destination whose segments were replaced with different bytes of the same length is skipped as equal.
 This is a prerequisite within DS-04 and not its remedy: comparing a destination against an identity this executor recorded detects change since that observation and cannot establish that the committed bytes were ever correct, which the staged-content sequence owns.

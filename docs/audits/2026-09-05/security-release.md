@@ -253,6 +253,7 @@ Acceptance: retained advisory dispositions name their reachability evidence; the
 
 Current evidence: all six accepted v1.74.3 sidecars retain 42 reported IDs; the six assessed v1.75.1 candidate artifacts report one at the same module-version precision.
 The [complete comparison and OpenPGP follow-up](sidecar-assessment.md) retain the unexplained Linux modified-source metadata, incomplete source closure, unperformed full candidate compatibility gate and pending native/application/npm scopes.
+On 12 September 2026 [the dispositions record](../../experiments/2026-09-12-advisory-dispositions.md) brought the 42-row proposal into the repository for review, every row keeping its draft class with its source citations, and [the release evidence record](../../experiments/2026-09-12-release-evidence.md#offline-rescan-covering-the-added-text-dependency) reran the three application scan scopes offline at the 9 September database snapshot with the added text dependency in scope and zero findings, which says nothing about advisories published later.
 No candidate pin or advisory disposition is accepted, and SEC-11/P31 and the valuable-data release hold remain blocking.
 
 ## SEC-12 — Linux package installation does not guarantee a usable engine
@@ -268,6 +269,8 @@ No current Ubuntu version is asserted here; primary package-page retrieval was i
 Remediation: choose a supported distribution/version envelope with satisfiable exact dependencies, a managed private sidecar, or another explicit tested distribution policy.
 Document install, upgrade, and repair behaviour and align the security-update policy from SEC-11.
 Acceptance: clean installation and ordinary upgrade on every advertised Linux release either provide the accepted engine or reject the unsupported configuration before presenting transfer capability; version drift has an actionable diagnostic.
+
+Current disposition: [the release evidence record](../../experiments/2026-09-12-release-evidence.md#native-journeys-on-linux-amd64) observed the version refusal natively in the production binary on Linux amd64, with both versions named before any job existed; the distribution envelope, installation, upgrade and rollback remain open.
 
 ## Previously recorded credential/session work still applies
 
