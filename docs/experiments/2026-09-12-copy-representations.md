@@ -1,7 +1,7 @@
 # Copy representation prerequisite
 
 The ADR 0037 compatibility gate found an existing gzip staging failure on the unchanged prerequisite baseline and on the uncommitted first consumer.
-This record supplies before evidence for [ADR 0038](../adr/0038-copy-representations.md); it is not an implementation or delivery result.
+This record preserves the before evidence and the bounded local implementation of [ADR 0038](../adr/0038-copy-representations.md); protected delivery remains a separate gate.
 
 ## Fixture and source identity
 
@@ -63,7 +63,70 @@ The parent gateway already streams opaque responses with decompression disabled,
 ADR 0038 proposes the fixed Copy-only `--no-gzip-encoding` option at service construction, retaining false defaults for local transfers.
 The flag affects requests through the child's cached Swift HTTP transport and sends no encoding header itself; it is not equivalent to the later native reader's explicit identity request.
 
-No flag-enabled runtime result is recorded yet.
-Required after evidence includes all five original positive cases, small/empty Copy cases, both command builders, factory/real construction, local default scope, independent removed-option controls and preserved authority/lifecycle tests.
-The consumer, native prerequisite and approved representation fix must ship together after complete current-base verification and five green PR/master jobs.
-DS-04, general metadata fidelity, source-version/final-publication binding and the valuable-data hold remain open.
+## Local implementation and verification
+
+The Copy service now creates one options value after resolving destination limits and enables `NoGzipEncoding` for both its injected factory and its real runner constructor.
+The private builder shared by `Copy` and descriptor-based `CopyInto`, and the separate `CopyTo` builder, append the flag only when that option is true.
+The option stays false in the shared settings mapping and ordinary local upload/download construction.
+The existing destination-limit test separately checks engine policy and persisted pacing settings, without changing any limit or recording this fixed policy as a user setting.
+
+The verified candidate starts from the four unpublished staged-content commits ending at `a21bb0050bab50cb9ca47cd0cf2b2d7ba4f29152`.
+Its runner source SHA-256 is `14d38223a514a4dd594064489a9b43ea0a10736515959299ad2304d863c4c468` and Copy service source SHA-256 is `e67e4673c830eb306d8ee5a26b338cb12d3e84aaff60bc8b668773d2839d5b12`.
+The maintained [representation test](../../internal/systemtest/copy_staged_representation_test.go) has SHA-256 `c09ec9c94589444ae2c1f89d9788bb20baa8c417d17f27eede4560e8c2c61a78`.
+Each producer retained all 769 input file hashes, the source archive and patch, exact command and exit, complete Go JSON output and unchanged-source check.
+The deliberately changed variants differ in only their named policy file from that candidate.
+
+These local runs used Go 1.27.1 and the same SHA-256-checked rclone v1.74.3 executable recorded above.
+The exclusive owned namespace was on the existing Linux fixture `aeronautes-saio-20260908`, using the same pinned SAIO image through `127.0.0.1:18080`, with both accounts required.
+No container restart or configuration change was needed.
+Every run used `-race -count=1 -json -p=2 -timeout=480s` and an independent 600-second process limit.
+The service cases were serial with `-parallel=1`; the affected-package run retained `-parallel=3`.
+All producers finished without process timeout, race report or skipped leaf, and their sources stayed unchanged while running.
+
+| Run | Go exit | Passed leaves | Failed leaves | Seconds |
+| --- | ---: | ---: | ---: | ---: |
+| Constructor and argv tests before wiring | 1 | 26 | 4 intended | 9.895 |
+| Constructor, argv and destination-limit tests after wiring | 0 | 30 | 0 | 9.846 |
+| Actual-Swift representation cases | 0 | 9 | 0 | 21.751 |
+| Existing staged-content cases, mock and actual Swift | 0 | 16 | 0 | 29.612 |
+| Copy argument removed independently | 1 | 3 | 1 intended | 3.642 |
+| CopyTo argument removed independently | 1 | 3 | 1 intended | 3.637 |
+| Shared settings default enabled independently | 1 | 0 | 4 intended | 2.836 |
+| Copy service assignment removed independently | 1 | 0 | 2 intended | 37.960 |
+| Complete copy, swiftcontrol, rclone, local and app packages | 0 | 2,137 | 0 | 134.289 |
+
+The nine actual-Swift cases retain the original five DLO successes and add four plain-stage controls:
+
+| Case | Stage | Stored bytes | Result |
+| --- | --- | ---: | --- |
+| Unencoded | DLO | 1,572,864 | Complete, identical stored bytes |
+| Valid gzip | DLO | 1,573,020 | Complete, identical stored bytes |
+| Same decoded content, different gzip stream | DLO | 1,573,020 | Complete, identical stored bytes |
+| Malformed gzip | DLO | 1,572,881 | Complete, identical stored bytes |
+| Unknown coding | DLO | 1,572,864 | Complete, identical stored bytes |
+| Empty | Plain | 0 | Complete, identical stored bytes |
+| Empty labelled gzip | Plain | 0 | Complete, identical stored bytes |
+| Small valid gzip | Plain | 51 | Complete, identical stored bytes |
+| Small malformed gzip | Plain | 17 | Complete, identical stored bytes |
+
+Both gzip streams independently decode to equal content and have distinct stored MD5 values, `53fea0e99de577fc2815200cc3fc9493` and `9a965c32eee53e13cb5ef6e204b41914`.
+Each DLO case observed exactly one native identity staged GET before conditional publication, and independently checked both backing segments, assembled stored bytes, metadata, source, collateral, recovery and public/durable outcomes after body and pin release.
+The plain cases exercised the existing native plain-publication GET, which still advertised gzip, and preserved all stored bytes through that separate path.
+They do not claim the new DLO reader ran for a plain stage.
+The child sent no `Accept-Encoding` on its recorded requests; this does not imply the parent changed its other native read policies.
+No source Range request was observed in these successful routes, and no encoded-listing acceptance is inferred.
+
+Removing only the service assignment restored two gzip source GETs and the original second-chunk mismatch, `ContentLength=524444 with Body length 524288`.
+The job ended partial with zero copied or verified names, two failed/unresolved names, two engine bulk-cleanup attempts and three recovery rows.
+Source and collateral remained unchanged; the only destination residue was the first control's stage, with neither subject stage nor live publication.
+Two proxy context-cancellation errors accompanied the child's abort and remain in the failed producer output.
+The selected unencoded case also failed its explicit absent-encoding-header assertion after its other outcome checks; it is not counted as a passing control.
+Neither required-success assertion was weakened, and neither failed producer was relabelled as successful compatibility evidence.
+
+The independent builder controls fail only their own opted-in argv assertion, with each other's opted-in command and both defaults passing.
+Enabling the shared settings default fails both local factory checks and both actual local constructor argv checks, including descriptor-based download on this Linux host.
+The existing corruption, read/close, cancellation, required-record, completion, gateway, TLS, admission and child-lifecycle regressions remain in the passing inherited and affected-package suites.
+The timings describe these bounded fixture runs, not a throughput gain or an operating-ceiling measurement.
+
+The consumer, native prerequisite and representation fix still ship together after complete current-base verification, independent range review and five green PR/resulting-master jobs.
+Native fallback verification, general metadata fidelity, source-version/final-publication binding, DS-04 and the valuable-data hold remain open.

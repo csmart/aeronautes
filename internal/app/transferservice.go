@@ -302,11 +302,15 @@ func (s *TransferService) buildEngine(ctx context.Context, req CopyRequestDTO, s
 	if err != nil {
 		return nil, TransferSettingsDTO{}, err
 	}
+	options := effective.options()
+	// Source sizes and digests describe stored bytes, so Copy must not
+	// decode content while staging it through the child.
+	options.NoGzipEncoding = true
 	if s.engineFactory != nil {
-		engine, err := s.engineFactory(source, effective.options())
+		engine, err := s.engineFactory(source, options)
 		return engine, effective, err
 	}
-	runner, err := rclone.NewRunner(effective.options())
+	runner, err := rclone.NewRunner(options)
 	if err != nil {
 		return nil, TransferSettingsDTO{}, err
 	}

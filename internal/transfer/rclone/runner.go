@@ -130,6 +130,9 @@ type Options struct {
 	// AllowVersionMismatch skips the pin check (compatibility matrix
 	// only; never the default).
 	AllowVersionMismatch bool
+	// NoGzipEncoding keeps stored representations opaque for Copy;
+	// other callers retain the child's default transport policy.
+	NoGzipEncoding bool
 	// ChunkSize is the §25 single knob (e.g. "5Gi"); "" leaves rclone's
 	// default in place.
 	ChunkSize string
@@ -340,6 +343,9 @@ func (r *Runner) copy(ctx context.Context, remotes []Remote, src, dst string, na
 	args := []string{"copy", "--no-traverse", "--ignore-times", "--use-json-log", "-vv", "--stats", "1s",
 		"--files-from-raw", listPath, "--config", configPath}
 	args = append(args, r.pacingArgs()...)
+	if r.opts.NoGzipEncoding {
+		args = append(args, "--no-gzip-encoding")
+	}
 	// Flags close before "--": nothing in a path can ever be parsed as
 	// a flag, whatever it starts with.
 	args = append(args, "--", src, dst)
@@ -382,6 +388,9 @@ func (r *Runner) CopyTo(ctx context.Context, remotes []Remote, src, dst string, 
 	}
 	args := []string{"copyto", "--ignore-times", "--use-json-log", "-vv", "--stats", "1s", "--config", configPath}
 	args = append(args, r.pacingArgs()...)
+	if r.opts.NoGzipEncoding {
+		args = append(args, "--no-gzip-encoding")
+	}
 	args = append(args, "--", src, dst)
 	return r.run(ctx, args, env, onEvent, nil)
 }
