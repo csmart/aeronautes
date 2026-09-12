@@ -1,0 +1,276 @@
+{
+  "production_base": "3c5f7f7fe61bedc8199c72e8439400181643058a",
+  "plan_head": "14d229f7eb01eb12ef1dba88fd75a9a5a8319568",
+  "platform": "linux/amd64",
+  "provider": "owned HTTP fixture",
+  "go_version": "go1.27.1",
+  "rclone_version": "v1.74.3",
+  "rclone_sha256": "9700aa1273ac73d6d0833c43ba63fe830516422cb131960b8c1a24ced789cba0",
+  "command": "go test -overlay overlay.json -race -count=1 -timeout=120s -json -run ^TestChildLifetimeProbeMock$ ./internal/systemtest",
+  "returncode": 1,
+  "leaf_pass": [
+    "complete",
+    "parent_kill",
+    "stopped_parent_kill"
+  ],
+  "leaf_fail": [
+    "cancel",
+    "escalate"
+  ],
+  "assertion": "cancelled engine recorded as a non-cancellation failure",
+  "raw_stream_sha256": "3e96360875c01832d35948e97d42bb4b5dec73e64d3049045967cac8fa5930ad",
+  "probe_sha256": "e208342acf5732e7894abaaaa2f289deaf28d20a018a63c86d468e33bb194f53",
+  "observations": [
+    {
+      "mode": "complete",
+      "before_job_state": "complete",
+      "after_job_state": "complete",
+      "counters": {
+        "objectsPlanned": 1,
+        "objectsCopied": 1,
+        "objectsVerified": 1,
+        "objectsFailed": 0,
+        "bytesPlanned": 311296,
+        "bytesCopied": 311296,
+        "overwrites": 0,
+        "overwritesRefused": 0,
+        "nativeRouted": 0,
+        "objectsDeleted": 0
+      },
+      "execution": {
+        "Result": "copied",
+        "Effect": "reported_applied",
+        "Diagnostic": {
+          "Stage": "",
+          "Code": "",
+          "HTTPStatus": 0
+        },
+        "CopiedBytes": 311296,
+        "CreatedAt": "2026-09-12T10:08:20.028026135Z"
+      },
+      "verification": {
+        "Result": "verified",
+        "Effect": "not_attempted",
+        "Diagnostic": {
+          "Stage": "",
+          "Code": "",
+          "HTTPStatus": 0
+        },
+        "CopiedBytes": 0,
+        "CreatedAt": "2026-09-12T10:08:20.035541116Z"
+      },
+      "totals": {
+        "Items": 1,
+        "Planned": 1,
+        "Admitted": 1,
+        "Failed": 0,
+        "Conflicts": 0,
+        "Refused": 0,
+        "Unresolved": 0,
+        "Unverified": 0,
+        "Problems": 0
+      },
+      "interrupted": 0,
+      "repeated": 0,
+      "runner_result": {
+        "ExitCode": 0,
+        "Cancelled": false,
+        "SegmentPrefixes": null,
+        "Errors": null,
+        "LogStreamErr": "",
+        "Stats": {
+          "Bytes": 311296,
+          "TotalBytes": 311296,
+          "Transfers": 1,
+          "TotalTransfers": 1,
+          "Speed": 0,
+          "Errors": 0
+        }
+      }
+    },
+    {
+      "mode": "cancel",
+      "before_job_state": "partial",
+      "after_job_state": "partial",
+      "counters": {
+        "objectsPlanned": 1,
+        "objectsCopied": 0,
+        "objectsVerified": 0,
+        "objectsFailed": 1,
+        "bytesPlanned": 311296,
+        "bytesCopied": 0,
+        "overwrites": 0,
+        "overwritesRefused": 0,
+        "nativeRouted": 0,
+        "objectsDeleted": 0
+      },
+      "execution": {
+        "Result": "failed",
+        "Effect": "unresolved",
+        "Diagnostic": {
+          "Stage": "engine",
+          "Code": "unknown",
+          "HTTPStatus": 0
+        },
+        "CopiedBytes": 0,
+        "CreatedAt": "2026-09-12T10:08:22.777964958Z"
+      },
+      "verification": null,
+      "totals": {
+        "Items": 1,
+        "Planned": 1,
+        "Admitted": 1,
+        "Failed": 1,
+        "Conflicts": 0,
+        "Refused": 0,
+        "Unresolved": 1,
+        "Unverified": 0,
+        "Problems": 1
+      },
+      "interrupted": 0,
+      "repeated": 0,
+      "runner_result": {
+        "ExitCode": 130,
+        "Cancelled": true,
+        "SegmentPrefixes": null,
+        "Errors": null,
+        "LogStreamErr": "",
+        "Stats": {
+          "Bytes": 0,
+          "TotalBytes": 0,
+          "Transfers": 0,
+          "TotalTransfers": 0,
+          "Speed": 0,
+          "Errors": 0
+        }
+      }
+    },
+    {
+      "mode": "escalate",
+      "before_job_state": "partial",
+      "after_job_state": "partial",
+      "counters": {
+        "objectsPlanned": 1,
+        "objectsCopied": 0,
+        "objectsVerified": 0,
+        "objectsFailed": 1,
+        "bytesPlanned": 311296,
+        "bytesCopied": 0,
+        "overwrites": 0,
+        "overwritesRefused": 0,
+        "nativeRouted": 0,
+        "objectsDeleted": 0
+      },
+      "execution": {
+        "Result": "failed",
+        "Effect": "unresolved",
+        "Diagnostic": {
+          "Stage": "engine",
+          "Code": "unknown",
+          "HTTPStatus": 0
+        },
+        "CopiedBytes": 0,
+        "CreatedAt": "2026-09-12T10:08:35.512144605Z"
+      },
+      "verification": null,
+      "totals": {
+        "Items": 1,
+        "Planned": 1,
+        "Admitted": 1,
+        "Failed": 1,
+        "Conflicts": 0,
+        "Refused": 0,
+        "Unresolved": 1,
+        "Unverified": 0,
+        "Problems": 1
+      },
+      "interrupted": 0,
+      "repeated": 0,
+      "runner_result": {
+        "ExitCode": -1,
+        "Cancelled": true,
+        "SegmentPrefixes": null,
+        "Errors": null,
+        "LogStreamErr": "",
+        "Stats": {
+          "Bytes": 0,
+          "TotalBytes": 0,
+          "Transfers": 0,
+          "TotalTransfers": 0,
+          "Speed": 0,
+          "Errors": 0
+        }
+      }
+    },
+    {
+      "mode": "parent_kill",
+      "before_job_state": "running",
+      "after_job_state": "failed",
+      "counters": {
+        "objectsPlanned": 1,
+        "objectsCopied": 0,
+        "objectsVerified": 0,
+        "objectsFailed": 0,
+        "bytesPlanned": 311296,
+        "bytesCopied": 0,
+        "overwrites": 0,
+        "overwritesRefused": 0,
+        "nativeRouted": 0,
+        "objectsDeleted": 0
+      },
+      "execution": null,
+      "verification": null,
+      "totals": {
+        "Items": 1,
+        "Planned": 1,
+        "Admitted": 1,
+        "Failed": 0,
+        "Conflicts": 0,
+        "Refused": 0,
+        "Unresolved": 1,
+        "Unverified": 0,
+        "Problems": 0
+      },
+      "interrupted": 1,
+      "repeated": 0
+    },
+    {
+      "mode": "stopped_parent_kill",
+      "before_job_state": "running",
+      "after_job_state": "failed",
+      "counters": {
+        "objectsPlanned": 1,
+        "objectsCopied": 0,
+        "objectsVerified": 0,
+        "objectsFailed": 0,
+        "bytesPlanned": 311296,
+        "bytesCopied": 0,
+        "overwrites": 0,
+        "overwritesRefused": 0,
+        "nativeRouted": 0,
+        "objectsDeleted": 0
+      },
+      "execution": null,
+      "verification": null,
+      "totals": {
+        "Items": 1,
+        "Planned": 1,
+        "Admitted": 1,
+        "Failed": 0,
+        "Conflicts": 0,
+        "Refused": 0,
+        "Unresolved": 1,
+        "Unverified": 0,
+        "Problems": 0
+      },
+      "interrupted": 1,
+      "repeated": 0
+    }
+  ],
+  "limits": [
+    "no real Swift run",
+    "no other platform",
+    "initial before1 harness panic is not acceptance",
+    "parent-death and reaping mutants not yet executed"
+  ]
+}
