@@ -1,0 +1,342 @@
+{
+  "source_head": "997e7f0220e9b2b553116bf0ede52e50a7840e81",
+  "pinned_wails": "v3.0.0-beta.16",
+  "command": "go test -race -count=1 -timeout=60s -json -overlay=<private before-overlay.json> -run '^TestShellConsumerBefore$' .",
+  "scope": "Actual main assembly/control flow, controlled runtime and isolated session secret store; no native Wails Quit, GTK, real rclone, shared Swift or action-coverage credit.",
+  "interpositions": [
+    {
+      "file": "main.go",
+      "from": "application.New(application.Options{",
+      "to": "shellProbeNew(application.Options{",
+      "purpose": "Receive actual Options and bound service instances in an injected runtime."
+    },
+    {
+      "file": "main.go",
+      "from": "secrets.OpenDefault()",
+      "to": "shellProbeSecrets()",
+      "purpose": "Use owned in-memory fixture credentials only."
+    },
+    {
+      "file": "main.go",
+      "from": "app.AcquireInstanceLock(filepath.Dir(statePath))",
+      "to": "shellProbeLock(filepath.Dir(statePath))",
+      "purpose": "Pass through and record actual lock acquisition/release."
+    },
+    {
+      "file": "main.go",
+      "from": "defer database.Close()",
+      "to": "defer shellProbeClose(database)",
+      "purpose": "Pass through and record Close, or inject an explicit error while the real database remains open."
+    }
+  ],
+  "source_sha256": {
+    "main.go": "4c0b34ab281d1a8775e86b020272f9a75f7168a4564337edc6d22248ab3f79dc",
+    "internal/app/findservice.go": "afa3fadc6ed258a2cb8a38fece9bec84b9057f1932d6c5ee8738af0a249c7ecd",
+    "internal/app/jobrunner.go": "8efcf7e79c16a01785c17fa200e34a46a07728e30ab431896af1229c383cd781",
+    "internal/db/db.go": "eae709f5378a9032dcb85aa16819b2449e6f6c2cb1ef755afdcbb47fa59ad3d0",
+    "internal/app/instancelock_unix.go": "19d0ac0103248c6da2e089406c18e79ad1e12631f8f5727b3fd92eef107efe63",
+    "frontend/dist/index.html": "d28e0d70555833a770cfa1876ea52701df7849ee858ebea6f1d2c34dbb53087b"
+  },
+  "private_interposed_main_sha256": "38cd8ee85e14db6a3c4506894d9090e3b02daf1f2d934d466ffa715d76a2e71a",
+  "raw_overlay_sha256": "821f8fcf2ab8e2318d2c50b12a1fcc6dbd189a613e8bdfa112bf44c12bc04e86",
+  "runs": [
+    {
+      "id": "before_1",
+      "exit_code": 1,
+      "package_result": "fail",
+      "package_seconds": 1.831,
+      "source_sha256": "f1496c2d7103318db165f7062dc4737725025cc786dbfee25b9a09e7a07e7377",
+      "stdout_sha256": "5c0c87137ec51f61b2316ade5a8d5ba9fd4923ccaadd7af07b7d1b50e0591ef4",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "counts": {
+        "pass": 1,
+        "fail": 2,
+        "skip": 0
+      },
+      "leaves": [
+        {
+          "test": "TestShellConsumerBefore/no_work",
+          "result": "pass",
+          "seconds": 1.26
+        },
+        {
+          "test": "TestShellConsumerBefore/held_work",
+          "result": "fail",
+          "seconds": 0.29
+        },
+        {
+          "test": "TestShellConsumerBefore/run_error",
+          "result": "fail",
+          "seconds": 0.24
+        }
+      ],
+      "observations": [
+        {
+          "test": "TestShellConsumerBefore/no_work",
+          "output": "PROBE actual options: services=12 on_shutdown=false"
+        },
+        {
+          "test": "TestShellConsumerBefore/no_work",
+          "output": "PROBE database close: <nil>"
+        },
+        {
+          "test": "TestShellConsumerBefore/no_work",
+          "output": "PROBE lock release"
+        },
+        {
+          "test": "TestShellConsumerBefore/held_work",
+          "output": "PROBE actual options: services=12 on_shutdown=false"
+        },
+        {
+          "test": "TestShellConsumerBefore/held_work",
+          "output": "PROBE two actual shell workers at acknowledged HTTP boundaries"
+        },
+        {
+          "test": "TestShellConsumerBefore/held_work",
+          "output": "PROBE database close: <nil>"
+        },
+        {
+          "test": "TestShellConsumerBefore/held_work",
+          "output": "PROBE lock release"
+        },
+        {
+          "test": "TestShellConsumerBefore/held_work",
+          "output": "PROBE after actual main return: job_read_error=sql: database is closed second_lock_acquired=true"
+        },
+        {
+          "test": "TestShellConsumerBefore/held_work",
+          "output": "shell_consumer_probe_test.go:203: actual main released job resources while both uncancelled workers remained held"
+        },
+        {
+          "test": "TestShellConsumerBefore/run_error",
+          "output": "PROBE actual options: services=12 on_shutdown=false"
+        },
+        {
+          "test": "TestShellConsumerBefore/run_error",
+          "output": "shell_consumer_probe_test.go:228: actual main fatal Run error bypassed both resource defers"
+        }
+      ],
+      "limitations": "Separate lock open occurred inside the held main process; this is not the cross-process lock proof."
+    },
+    {
+      "id": "before_2",
+      "exit_code": 1,
+      "package_result": "fail",
+      "package_seconds": 1.935,
+      "source_sha256": "f11ef1fe6c9f7ac54b0a216bab76619a88715c6e3d23afc614b9979df830eb60",
+      "stdout_sha256": "6750bbd138981300d4e97d4223422e65fb72f884732871d89ecac4b9b6b693b9",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "counts": {
+        "pass": 1,
+        "fail": 3,
+        "skip": 0
+      },
+      "leaves": [
+        {
+          "test": "TestShellConsumerBefore/no_work",
+          "result": "pass",
+          "seconds": 1.22
+        },
+        {
+          "test": "TestShellConsumerBefore/held_work",
+          "result": "fail",
+          "seconds": 0.26
+        },
+        {
+          "test": "TestShellConsumerBefore/run_error",
+          "result": "fail",
+          "seconds": 0.21
+        },
+        {
+          "test": "TestShellConsumerBefore/close_error",
+          "result": "fail",
+          "seconds": 0.21
+        }
+      ],
+      "observations": [
+        {
+          "test": "TestShellConsumerBefore/no_work",
+          "output": "PROBE actual options: services=12 on_shutdown=false"
+        },
+        {
+          "test": "TestShellConsumerBefore/no_work",
+          "output": "PROBE database close: <nil>"
+        },
+        {
+          "test": "TestShellConsumerBefore/no_work",
+          "output": "PROBE lock release"
+        },
+        {
+          "test": "TestShellConsumerBefore/held_work",
+          "output": "PROBE actual options: services=12 on_shutdown=false"
+        },
+        {
+          "test": "TestShellConsumerBefore/held_work",
+          "output": "PROBE two actual shell workers at acknowledged HTTP boundaries"
+        },
+        {
+          "test": "TestShellConsumerBefore/held_work",
+          "output": "PROBE database close: <nil>"
+        },
+        {
+          "test": "TestShellConsumerBefore/held_work",
+          "output": "PROBE lock release"
+        },
+        {
+          "test": "TestShellConsumerBefore/held_work",
+          "output": "PROBE after actual main return: job_read_error=sql: database is closed second_lock_acquired=true"
+        },
+        {
+          "test": "TestShellConsumerBefore/held_work",
+          "output": "shell_consumer_probe_test.go:225: actual main released job resources while both uncancelled workers remained held"
+        },
+        {
+          "test": "TestShellConsumerBefore/run_error",
+          "output": "PROBE actual options: services=12 on_shutdown=false"
+        },
+        {
+          "test": "TestShellConsumerBefore/run_error",
+          "output": "shell_consumer_probe_test.go:250: actual main fatal Run error bypassed both resource defers"
+        },
+        {
+          "test": "TestShellConsumerBefore/close_error",
+          "output": "PROBE actual options: services=12 on_shutdown=false"
+        },
+        {
+          "test": "TestShellConsumerBefore/close_error",
+          "output": "PROBE database close: injected database close failure; handle remains open"
+        },
+        {
+          "test": "TestShellConsumerBefore/close_error",
+          "output": "PROBE lock release"
+        },
+        {
+          "test": "TestShellConsumerBefore/close_error",
+          "output": "PROBE after database close error: database_usable=true second_lock_acquired=true"
+        },
+        {
+          "test": "TestShellConsumerBefore/close_error",
+          "output": "shell_consumer_probe_test.go:225: actual main released the instance lock after an unclosed database returned an error"
+        }
+      ],
+      "limitations": "Separate lock open occurred inside the held main process; this is not the cross-process lock proof."
+    },
+    {
+      "id": "before_3",
+      "exit_code": 1,
+      "package_result": "fail",
+      "package_seconds": 4.185,
+      "source_sha256": "74b667a423ee7151295d05502421e13097987e7e29d2a13a7e13b6d47661040a",
+      "stdout_sha256": "87650bd7008c97b92b0f8ec9c1e53ebc34fc44be13a1bad8f27ea4af42b14ed3",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "counts": {
+        "pass": 1,
+        "fail": 3,
+        "skip": 0
+      },
+      "leaves": [
+        {
+          "test": "TestShellConsumerBefore/no_work",
+          "result": "pass",
+          "seconds": 1.25
+        },
+        {
+          "test": "TestShellConsumerBefore/held_work",
+          "result": "fail",
+          "seconds": 1.37
+        },
+        {
+          "test": "TestShellConsumerBefore/run_error",
+          "result": "fail",
+          "seconds": 0.23
+        },
+        {
+          "test": "TestShellConsumerBefore/close_error",
+          "result": "fail",
+          "seconds": 1.28
+        }
+      ],
+      "observations": [
+        {
+          "test": "TestShellConsumerBefore/no_work",
+          "output": "PROBE actual options: services=12 on_shutdown=false"
+        },
+        {
+          "test": "TestShellConsumerBefore/no_work",
+          "output": "PROBE database close: <nil>"
+        },
+        {
+          "test": "TestShellConsumerBefore/no_work",
+          "output": "PROBE lock release"
+        },
+        {
+          "test": "TestShellConsumerBefore/held_work",
+          "output": "PROBE actual options: services=12 on_shutdown=false"
+        },
+        {
+          "test": "TestShellConsumerBefore/held_work",
+          "output": "PROBE two actual shell workers at acknowledged HTTP boundaries"
+        },
+        {
+          "test": "TestShellConsumerBefore/held_work",
+          "output": "PROBE database close: <nil>"
+        },
+        {
+          "test": "TestShellConsumerBefore/held_work",
+          "output": "PROBE lock release"
+        },
+        {
+          "test": "TestShellConsumerBefore/held_work",
+          "output": "PROBE after actual main return: job_read_error=sql: database is closed second_process_lock_acquired=true"
+        },
+        {
+          "test": "TestShellConsumerBefore/held_work",
+          "output": "shell_consumer_probe_test.go:255: actual main released job resources while both uncancelled workers remained held"
+        },
+        {
+          "test": "TestShellConsumerBefore/run_error",
+          "output": "PROBE actual options: services=12 on_shutdown=false"
+        },
+        {
+          "test": "TestShellConsumerBefore/run_error",
+          "output": "shell_consumer_probe_test.go:280: actual main fatal Run error bypassed both resource defers"
+        },
+        {
+          "test": "TestShellConsumerBefore/close_error",
+          "output": "PROBE actual options: services=12 on_shutdown=false"
+        },
+        {
+          "test": "TestShellConsumerBefore/close_error",
+          "output": "PROBE database close: injected database close failure; handle remains open"
+        },
+        {
+          "test": "TestShellConsumerBefore/close_error",
+          "output": "PROBE lock release"
+        },
+        {
+          "test": "TestShellConsumerBefore/close_error",
+          "output": "PROBE after database close error: database_usable=true second_process_lock_acquired=true"
+        },
+        {
+          "test": "TestShellConsumerBefore/close_error",
+          "output": "shell_consumer_probe_test.go:255: actual main released the instance lock after an unclosed database returned an error"
+        }
+      ],
+      "limitations": "Lock check occurs in a separate subprocess while the first process remains alive."
+    }
+  ],
+  "frontend_build": {
+    "install": "npm ci --no-audit --no-fund",
+    "install_exit": 0,
+    "build": "npm run build",
+    "build_exit": 0,
+    "generated_index_sha256": "d28e0d70555833a770cfa1876ea52701df7849ee858ebea6f1d2c34dbb53087b",
+    "note": "Real lockfile install/build; no placeholder assets."
+  },
+  "residual": [
+    "No production correction yet; this evidence preserves intended failing assertions.",
+    "Held-work cleanup logs the expected closed-database persistence failure, which is not successful job completion.",
+    "Xvfb was unavailable; no native window-quit acceptance.",
+    "Synchronous bridge/native requests, SecretStore closure, other platform exits, retained-stage policy and valuable-data hold remain open."
+  ]
+}
