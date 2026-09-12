@@ -1,4 +1,89 @@
 {
+  "after": {
+    "broken_controls": {
+      "g01_no_issued_filter": {
+        "log_sha256": "42452b10355aa7d17a59241175fe981ae901fabdc5f26a2a482097f628682896",
+        "service_cases_failing": [
+          "partial_reply_replacement",
+          "partial_reply_replacement_and_late_name"
+        ],
+        "service_exit": 1,
+        "setup_failed": false,
+        "unit_exit": 1,
+        "unit_failed": [
+          "TestBulkLedgerCountsDistinctIdentitiesAcrossPasses",
+          "TestIssuedRecordAdmitsEachNameOnce",
+          "TestParallelSweepIssuesEachNameOnce"
+        ]
+      },
+      "g02_issue_failure_ignored": {
+        "log_sha256": "3f4be43c2603a916598a8f8d55d51b6885a7f5534408c3bd0ae821e8ea35e8e6",
+        "service_cases_failing": [
+          "issued_record_refused"
+        ],
+        "service_exit": 1,
+        "setup_failed": false,
+        "unit_exit": 1,
+        "unit_failed": [
+          "TestIssuedRecordFailureStopsBeforeRequest"
+        ]
+      }
+    },
+    "environment": {
+      "GOFLAGS": "-mod=readonly",
+      "GOTOOLCHAIN": "go1.27.1",
+      "XDG_CACHE_HOME": "owned temporary directory per case",
+      "real_swift": "AERONAUTES_SAIO_AUTH_URL=http://127.0.0.1:18080/auth/v1.0"
+    },
+    "producers": [
+      {
+        "command": "go test -race -count=1 -v ./internal/deletion/",
+        "exit": 0,
+        "log_sha256": "012c01e6718520cc236ff65166ddc8005393b893367757c59243d2c8c19aba82",
+        "name": "deletion unit tests",
+        "top_level_passing": 46
+      },
+      {
+        "command": "go test -race -count=1 -run 'TestDeleteSweepAuthorityMock$' -v ./internal/systemtest/",
+        "exit": 0,
+        "failing_leaves": 0,
+        "log_sha256": "de9c76584c640d4c7308196e65185ed3d4a7fe6db045c9707df9a0c82a8115ab",
+        "name": "service mock",
+        "passing_leaves": 5
+      },
+      {
+        "command": "go test -race -count=1 -run 'TestDeleteSweepAuthorityRealSwift$' -v ./internal/systemtest/",
+        "exit": 0,
+        "failing_leaves": 0,
+        "log_sha256": "551788138431ebf8bf5be83145f8f6a91a83180f1871e28346573852914c41de",
+        "name": "service real Swift",
+        "passing_leaves": 5
+      },
+      {
+        "command": "go test -race -count=1 -timeout=40m -json ./...",
+        "exit": 0,
+        "leaf_rule": "a leaf is a recorded name that is not a slash-separated prefix of another recorded name in the same package",
+        "name": "full race suite",
+        "reconciled": {
+          "distinct names": 4083,
+          "failing": 0,
+          "leaves": 3786,
+          "packages": 22,
+          "pass events": 4082,
+          "passing": 3785,
+          "skipped": 1
+        },
+        "stream_bytes": 7483199,
+        "stream_sha256": "d5f02340a6f0024d77b41acaa941e3f2ee5279ef56f85767a8ff9b23021127d3",
+        "window_utc": [
+          "2026-09-12T05:02:31Z",
+          "2026-09-12T05:10:26Z"
+        ]
+      }
+    ],
+    "recorded": "2026-09-12T05:12:12.509920+00:00",
+    "source": "edf502f8c9719e79b56540a9572f839a33f52886"
+  },
   "environment": {
     "GOFLAGS": "-mod=readonly",
     "GOTOOLCHAIN": "go1.27.1",
