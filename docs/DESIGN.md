@@ -5386,6 +5386,11 @@ Its ten-case unchanged-source probe distinguishes acknowledged Save from a faile
 
 This observation correction leaves settings, raw mutation-error sanitisation, unresolved backend publication, wider UI-09/UI-10, native acceptance and the valuable-data hold open.
 
+The bookmark correction now passes independent local review, 45 dedicated state/component tests and the integrated 1,289-test frontend suite.
+Acknowledged Save identity survives an optional List failure after the existing await, while actual or uncertain mutation errors and connection/credential authority remain unchanged.
+The ten original probes pass unchanged, and ten independently broken variants fail twelve intended assertions covering observation ownership, mutation boundaries and rail feedback.
+Current-base focused Go checks pass; complete Go verification, protected delivery, native acceptance and the wider UI-10/P28 and valuable-data gates remain separate obligations.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.

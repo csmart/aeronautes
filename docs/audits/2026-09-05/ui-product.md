@@ -180,7 +180,11 @@ The locally reviewed [audit-read correction](../../experiments/2026-09-12-audit-
 Unavailable reads and retained stale rows have explicit status and read-only retry; a pending or failed query is never presented as a successful empty result.
 The 74 dedicated state/component tests, preserved before failures and twelve independently omitted guards cover that correction, and the integrated frontend suite passes all 1,244 tests.
 Optional Recent failures preserve the existing mutation and connection awaits and outcomes.
-Current-base Go verification and protected delivery, settings and bookmark failures, bookmark-scoped audit filtering and diagnostics, native Wails observations and the wider UI-10/P28 gate remain open.
+The locally reviewed [bookmark observation correction](../../experiments/2026-09-12-bookmark-observations.md) preserves acknowledged Save identity through an optional List failure and prevents obsolete Lists from erasing a known Save or restoring an acknowledged deletion.
+The rail distinguishes unavailable or stale observations from a successful empty list and offers an explicit List-only retry, without automatic mutation retries or guessed rows.
+All 45 dedicated cases and the ten unchanged original probes pass; ten broken variants fail twelve intended assertions, and the integrated frontend suite passes all 1,289 tests.
+Actual or uncertain mutation errors, existing waits and connection/credential authority are preserved.
+Complete current-base Go verification and protected delivery, settings feedback, raw mutation-error sanitisation, bookmark-scoped audit filtering and diagnostics, native Wails observations and the wider UI-10/P28 gate remain open.
 
 ### UI-11 — P2: keyboard and dialog semantics are incomplete and interfere
 
