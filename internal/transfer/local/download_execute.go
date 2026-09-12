@@ -229,17 +229,26 @@ func DownloadInto(ctx context.Context, src *swiftcontrol.Session, engine Engine,
 	result, err := d.copy(ctx, src, func(copyCtx context.Context) (*rclone.Result, error) {
 		return copyIntoStage(copyCtx, engine, source, stage, engineNames)
 	})
+	cancelled := err == nil && downloadEngineCancelled(ctx, result)
 	if err == nil {
 		err = transfercopy.ResultFailure(result)
 	}
 	if err != nil {
+		code := transfercopy.CodeUnknown
+		if cancelled {
+			code = transfercopy.CodeCancelled
+			err = ctx.Err()
+		}
 		for _, rel := range engineNames {
-			outcome := downloadFailed(transfercopy.EffectUnresolved, transfercopy.StageEngine, transfercopy.CodeUnknown, "engine", err)
+			outcome := downloadFailed(transfercopy.EffectUnresolved, transfercopy.StageEngine, code, "engine", err)
 			if observeErr := d.observe(engineItems[rel], outcome); observeErr != nil {
 				return report, errors.Join(err, observeErr)
 			}
 		}
 		progress()
+		if cancelled {
+			return report, err
+		}
 		return report, nil
 	}
 	// The engine was given the stage by name. Bytes that reached a
@@ -278,6 +287,21 @@ func DownloadInto(ctx context.Context, src *swiftcontrol.Session, engine Engine,
 		progress()
 	}
 	return report, ctx.Err()
+}
+
+func downloadEngineCancelled(ctx context.Context, result *rclone.Result) bool {
+	// A concurrent cancellation must not conceal an independent engine
+	// failure or incomplete log when selecting the terminal job state.
+	if !errors.Is(ctx.Err(), context.Canceled) || result == nil || !result.Cancelled ||
+		result.LogStreamErr != "" || len(result.Errors) != 0 || result.Stats.Errors != 0 {
+		return false
+	}
+	switch result.ExitCode {
+	case 0, 130, -1:
+		return true
+	default:
+		return false
+	}
 }
 
 // downloadUnplacedAfterCancel is the one record a staged-but-unplaced
