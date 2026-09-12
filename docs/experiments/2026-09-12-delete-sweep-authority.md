@@ -126,3 +126,18 @@ For the register, the DS-08 and SEC-08 rows: the repeated-request hazard after a
 
 Linux amd64 with owned fixtures is the only observed environment.
 DS-08, SEC-08, P12, P13, P28 and the valuable-data hold remain open.
+
+## Protected delivery
+
+The delivered range is the nine logical commits between master 5a374826ddc2f69a and the reviewed head 121ce214abfe3421, cherry-picked patch for patch from three independently approved branches: this slice's three commits (the plan, the issued record that limits each name to one destructive request per job, and this record's after evidence with ADR 0039), together with the three commits of the name length rule and the three documentation commits of the release evidence records.
+Independent review approved each slice on its own base and then the combined range on its final base, with every patch marked identical by range-diff and no shared document in the range.
+
+Its check run 34676247429 completed at the first attempt with all five required jobs successful: the frontend job in one minute and thirteen seconds, the headless smoke job in one minute and fifty-three seconds, the race-detector Go job in nine minutes and nineteen seconds, the containerized Swift integration job in twenty-four minutes and thirty-eight seconds, and the aggregate job.
+The run retained the two coverage badges, the 481,236-byte scenario coverage artifact, the 6,114,561-byte smoke artifact and a 6,936-byte Swift diagnostics artifact.
+The retained badges report combined Go statement coverage of 88.1 per cent and frontend coverage of 91.07 per cent.
+On the same head the full race suite with the real Swift fixture reconciled to 3,820 leaves with 3,819 passing, none failing and the single expected matrix skip; no frontend file is in the range.
+
+The pull request then left draft state after thirty-one premerge guards passed and was merged by rebase pinned to the reviewed head object at 06:07:38 UTC on 12 September 2026.
+Master became ca95bad8a6226746, whose tree 70f19c19a077b799 is identical to the reviewed head's tree, and each of the nine commits kept its patch identity, message and author identity.
+The resulting master check run 34677323044 concluded success at the first attempt with the same five required jobs.
+The pipeline exercised Linux runners only, so native acceptance on the other platforms remains unproven, and the shared design and register text for this slice is in the same integration range as this record.

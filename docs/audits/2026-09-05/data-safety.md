@@ -191,7 +191,8 @@ One consequence is recorded rather than hidden: a plain letter beside the same l
 [PR97](../../experiments/2026-09-11-download-name-encoding.md#protected-delivery) then routes any name containing a rune the pinned engine reserves as a substitute or quote natively on every platform through the shared engine-safety predicate, on the download, upload and copy routes; before it such names were admitted to the engine route and silently dropped with a successful engine exit, and a full-width full stop component failed the whole batch.
 The reserved set is pinned to the frozen v1.74.3 encoder source and recorded in the engine pin document, with maintained regressions on both routes and both providers and one broken control per rune class; the operator settled native routing and the union set on 12 September 2026 as delivered.
 For the remainder the operator settled on the same day: components longer than 255 bytes are to be refused at both boundaries with a named reason, and leading spaces and compatibility look-alikes are admitted and recorded, as rsync, scp, rclone, Finder and Explorer treat them.
-Component and path length limits, directory-only aliases and native target-filesystem acceptance remain open, so DS-06/P19 and the valuable-data release hold are still blocking.
+[PR101](../../experiments/2026-09-12-download-name-limits.md#protected-delivery) then refuses components longer than 255 bytes at both boundaries with the kind name-length and the measured length, admits leading spaces and compatibility look-alikes with maintained controls on both providers, and records the whole-path bound as unreachable through a default Swift.
+Directory-only aliases and native target-filesystem acceptance remain open, so DS-06/P19 and the valuable-data release hold are still blocking.
 
 ### DS-07 — High: cancellation after staging still places files and can report completion
 
@@ -249,7 +250,9 @@ The affected bulk request or admitted worker requests form a separate bounded at
 An ordinary retained-list open/write/flush/close failure with a healthy index preserves exact counts but offers no complete available list, while checked index close/removal failure after all outcomes were recorded reports cleanup failure without invalidating the known totals.
 Deletion and benchmark terminal counters, qualifier, reason, state and audit now use the existing atomic completion path; absent qualifiers on older jobs do not retrospectively prove complete accounting.
 The forced DLO error path discloses its already-deleted manifest and any incomplete segment accounting, but does not supply a complete ordinary DLO/SLO reported-failure ledger.
-The [existing sweep still re-attempts unresolved names](../../experiments/2026-09-11-bulk-delete-identities.md#the-sweep-re-attempts-an-unresolved-name), so fresh authority through replacement races remains a blocking follow-up; healthy parallel deletion still lacks the separate unresolved stream.
+The [existing sweep still re-attempts unresolved names](../../experiments/2026-09-11-bulk-delete-identities.md#the-sweep-re-attempts-an-unresolved-name), so fresh authority through replacement races became the next blocking follow-up; healthy parallel deletion still lacks the separate unresolved stream.
+[PR101](../../experiments/2026-09-12-delete-sweep-authority.md#protected-delivery) then gives each job at most one destructive request per name under [ADR 0039](../../adr/0039-delete-request-authority.md), recorded in the private index before the request leaves, with a sweep that ends when a pass lists only names already requested and a job that names the ones not requested again; the replacement-after-partial-reply loss witnessed on both providers no longer occurs.
+The listing-to-request race and names first listed in a later pass stay open.
 Those hazards, complete per-effect/durable outcomes, ordinary segment-failure retention and the wider P12/P13/P28 acceptance work keep DS-08/SEC-08 and the valuable-data hold blocking.
 
 ### DS-09 — High: metadata-only changes never propagate through Copy/Mirror
