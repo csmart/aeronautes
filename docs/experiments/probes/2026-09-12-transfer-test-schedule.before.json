@@ -1,0 +1,92 @@
+{
+  "scope": "scheduling observations and proposed isolation check; no full-run success or hosted timing prediction",
+  "source_head": "836ad0d2138f51741c65de948bab5c5edeb2f3f8",
+  "observed_utc": "2026-09-12T11:55:19.971584+00:00",
+  "partial_stream_sha256": "d2e443de291906f4d1c0afe4b498c5ac3b4877484e2d10579740e755e3b6f7ec",
+  "partial_stream_lines": 20582,
+  "groups": [
+    {
+      "name": "TestChildLifetimeMock",
+      "elapsed_seconds": 26.79,
+      "executed_leaves": 5,
+      "skipped_leaves": 0,
+      "status": "pass",
+      "schedule": "sequential outer group"
+    },
+    {
+      "name": "TestChildLifetimeRealSwift",
+      "elapsed_seconds": 29.17,
+      "executed_leaves": 5,
+      "skipped_leaves": 0,
+      "status": "pass",
+      "schedule": "sequential outer group"
+    },
+    {
+      "name": "TestCopyStagedContentMock",
+      "elapsed_seconds": 4.12,
+      "executed_leaves": 5,
+      "skipped_leaves": 0,
+      "status": "pass",
+      "schedule": "sequential outer group"
+    },
+    {
+      "name": "TestCopyStagedContentRealSwift",
+      "elapsed_seconds": 13.4,
+      "executed_leaves": 5,
+      "skipped_leaves": 0,
+      "status": "pass",
+      "schedule": "sequential outer group"
+    },
+    {
+      "name": "TestCopyStagedContentFaultMock",
+      "elapsed_seconds": 2.28,
+      "executed_leaves": 3,
+      "skipped_leaves": 0,
+      "status": "pass",
+      "schedule": "sequential outer group"
+    },
+    {
+      "name": "TestCopyStagedContentFaultRealSwift",
+      "elapsed_seconds": 7.59,
+      "executed_leaves": 3,
+      "skipped_leaves": 0,
+      "status": "pass",
+      "schedule": "sequential outer group"
+    },
+    {
+      "name": "TestCopyStagedRepresentationRealSwift",
+      "elapsed_seconds": 12.36,
+      "executed_leaves": 5,
+      "skipped_leaves": 0,
+      "status": "pass",
+      "schedule": "sequential outer group"
+    },
+    {
+      "name": "TestCopyPlainRepresentationRealSwift",
+      "elapsed_seconds": 8.19,
+      "executed_leaves": 4,
+      "skipped_leaves": 0,
+      "status": "pass",
+      "schedule": "sequential outer group"
+    }
+  ],
+  "sequential_groups_total_seconds": 103.9,
+  "source_sha256": {
+    "internal/systemtest/child_lifetime_linux_test.go": "0afaa447aa83daf2a125ddd585e1aca28f47791d8b54f415313cb7839b858a36",
+    "internal/systemtest/copy_staged_content_test.go": "90178c166d6a3a47da7addc7d0d509325cdad1245f6a86b96fafde7561a69a9e",
+    "internal/systemtest/copy_staged_representation_test.go": "c09ec9c94589444ae2c1f89d9788bb20baa8c417d17f27eede4560e8c2c61a78",
+    "internal/systemtest/harness.go": "d2279cf4ee47b10cd4d813a897fcc92d47cda20b8756487da2bb7ac088af4f28",
+    "internal/systemtest/find_test.go": "079a88e38d7d234b0dd180d479a0ce98d7043e7aa15d9d8e67bcb980dac3e08b"
+  },
+  "prior_master": {
+    "run": 34689630364,
+    "head": "2f576f77da2e5d05ec2c172ec494aaaf0ad03247",
+    "system_seconds": 1478.204,
+    "package_budget_seconds": 1500,
+    "package_margin_seconds": 21.796,
+    "job_seconds": 1768.0,
+    "job_budget_seconds": 2100,
+    "all_five_jobs_success": true
+  },
+  "all_individual_deadlines_and_ci_budgets_unchanged": true
+}

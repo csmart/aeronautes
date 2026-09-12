@@ -5363,6 +5363,8 @@ The affected Mirror, cancellation and queue tests now wait for an acknowledged e
 This is a focused test seam; the wider P02/P03 fault and HTTP barrier harness remains open.
 
 The owner requires a successful pipeline on every PR before merge and verification of master after merge.
+The [new transfer-test schedule](experiments/2026-09-12-transfer-test-schedule.md) must preserve those gates when adding the child-lifetime and staged-content groups: review their isolation, admit only the eight independent outer groups to the existing three-slot schedule, then reconcile the complete unchanged test inventory and actual producer exit before protected delivery.
+Keep each group's cases sequential, its fixture and process cleanup owned, and every assertion, per-operation deadline and package/job budget unchanged.
 The CI protection slice removes the coverage bot's direct master pushes, adds an aggregate gate that rejects any required job without success, and removes the obsolete checks that skipped absent application code.
 The reviewed [master ruleset](../.github/master-ruleset.json) requires the latest base, binds all five checks to GitHub Actions, and allows no bypass actors.
 Apply and read back that configuration after the new gate has passed on the PR; a repository file alone does not change GitHub settings.
