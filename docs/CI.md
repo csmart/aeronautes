@@ -102,6 +102,9 @@ The [protected PR70 delivery record](experiments/2026-09-09-mock-scheduling.md#i
 Observed PR/master system packages take 792.682/826.057 seconds and integration jobs take 1,011/1,064 seconds within the unchanged limits.
 Keep measuring the complete inventory and both hosted durations as maintained download cases are added.
 
+PR108's [proposed fixture partition](experiments/2026-09-12-remaining-test-schedule.md#proposed-partition-across-fixtures) separates three heavy groups from the complementary internal suite while preserving all tests and limits.
+Its Integration check will require both producers, complete disjoint execution and compatible combined coverage before success; the contract requires independent review before workflow changes.
+
 ## September 2026 incident
 
 [PR17](https://github.com/csmart/aeronautes/pull/17) ran all four then-required checks successfully in [run 33974249668](https://github.com/csmart/aeronautes/actions/runs/33974249668), completed at 15:20:54 UTC on 5 September, before merge at 15:24:05 UTC.
