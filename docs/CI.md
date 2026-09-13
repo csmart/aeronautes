@@ -61,7 +61,7 @@ Read the ruleset and effective master rules back to verify the saved checks, pro
 Changing protection to get a failing or missing check through is forbidden.
 
 Coverage SVGs remain downloadable as `badge-go` and `badge-frontend` artifacts on each CI run; the scenario report and event stream are in `scenario-coverage`.
-The `saio-diagnostics` artifact retains container and runner observations after successful and failed integration suites for seven days.
+The `saio-diagnostics-main` and `saio-diagnostics-heavy` artifacts retain each fixture's container and runner observations after successful and failed integration suites for seven days.
 Each probe records its command, UTC start, elapsed time, exit or timeout, and redacted output; unsuccessful probes do not prevent the remaining probes from running.
 Before the pinned image starts, a small helper corrects its demonstrated error-filter typo while preserving every other byte and then runs the original `/init`.
 An already-corrected rule needs no write; missing, duplicate or ambiguous forms refuse startup.
@@ -102,7 +102,11 @@ The [protected PR70 delivery record](experiments/2026-09-09-mock-scheduling.md#i
 Observed PR/master system packages take 792.682/826.057 seconds and integration jobs take 1,011/1,064 seconds within the unchanged limits.
 Keep measuring the complete inventory and both hosted durations as maintained download cases are added.
 
-PR108's [proposed fixture partition](experiments/2026-09-12-remaining-test-schedule.md#proposed-partition-across-fixtures) separates three heavy groups from the complementary internal suite while preserving all tests and limits.
+The [fixture partition](experiments/2026-09-12-remaining-test-schedule.md#proposed-partition-across-fixtures) separates three heavy groups from the complementary internal suite while preserving all tests and limits.
+The two producers use separate runners and fixtures; `fail-fast: false` lets both retain diagnostics, while newer PR pushes still cancel the superseded workflow run.
+The protected Integration check requires both producers to succeed and validates their inventories, source/toolchain/run identity, actual exits and artifact hashes before combining atomic coverage with Go's normal reader.
+`saio-tests-main` and `saio-tests-heavy` retain each complete producer; `scenario-coverage` retains the combined profile and both independently validated scenario reports, with main's unchanged credits and the heavy report required to have zero credits.
+The fixture jobs retain their 35-minute limits; the artifact-only join has a separate ten-minute limit, and the five protected check names remain unchanged.
 Its Integration check will require both producers, complete disjoint execution and compatible combined coverage before success; the contract requires independent review before workflow changes.
 
 ## September 2026 incident
