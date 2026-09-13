@@ -157,11 +157,32 @@ A moved test matching the main lane's skip pattern is correct behaviour, not a f
 Acceptance is the measured package and whole-job margins on the reviewed head's own pull-request run and on the resulting master run, with every current budget and gate preserved.
 The projections above are not acceptance evidence.
 
+## Local reconciliation of the delivered list
+
+Both lanes were run locally the way the workflow runs them, listing the inventory, preparing
+the plan, running the selection and then reconciling with `saio-partition.py check`.
+Both passed with a producer exit of zero, a writer exit of zero, a scenario reader exit of
+zero and a partition check exit of zero, and both wrote their receipts.
+
+The heavy lane selected all fifteen tests and reported `totalCovered` of zero, so the longer
+list still satisfies the requirement that fixes it, which is the thing most at risk from
+adding twelve names.
+The main lane selected 955 tests and reported 42 covered cells with 38 gapped actions, which
+is exactly the CI baseline at `76c30e90`, so no scenario credit moved or was lost.
+
+Local wall clock was 436.438 seconds for the heavy lane and 580.707 seconds for the main lane,
+with another suite sharing the host at load 4 to 11.
+Those figures reconcile selections and outcomes and are not comparable to hosted timings on
+different hardware; the acceptance timings remain the ones named above.
+The heavy lane ran at `0bd042136734a25e` and the main lane at `6dbcc379054ee4ef`; the only
+changes after those points are this record's own prose, so neither selection nor outcome
+depends on them.
+
 ## Evidence
 
-Durable private packet `~/code/.aeronautes-work/20260913-claude/sched/`, digests in `SHA256SUMS` beside the files, that file hashing to `66aaae9b99f28d690cd1cb1d119e0aeb8a800ede489e459214a36847cf2a8710`.
-It holds the unpacked lane artifacts of run 34766363502, the `attribute.py` producer and its saved output for the per-test attribution, and `lane-history.sh` with its saved output for the five-run two-lane table.
-Every figure above comes from one of those two producers.
+Durable private packet `~/code/.aeronautes-work/20260913-claude/sched/`, digests in `SHA256SUMS` beside the files, that file hashing to `cd5b177f25be06a9e68b2ff862537c2e99737e350c25afd5878b431add46322c`.
+It holds the unpacked lane artifacts of runs 34766363502, 34781972618 attempt 2 and 34785741219, the `attribute.py` producer for the per-test attribution, `lane-history.sh` for the six-run two-lane table, `variance.py` for the same-tree comparison, `run-lane.sh` with both local lane directories, and every producer's saved output.
+Every figure above comes from one of those producers.
 The upstream pipeline artifacts of run 34766363502 expire on 2026-12-12, so the packet is the durable copy rather than a pointer to them.
 
 ## What this does not establish
