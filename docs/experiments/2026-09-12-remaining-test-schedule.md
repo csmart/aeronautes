@@ -87,7 +87,7 @@ Retained private packet: workspace-relative `.aeronautes-work/evidence/20260913-
 No expiring CI artifact is the sole evidence pointer for this measurement.
 At delivery, record hosted package and job durations; if the resulting master system package does not improve on the last passing 1,470.197-second attempt, revert these nine calls through review and green CI rather than retain an unproved scheduling change.
 
-## PR108 timeout and proposed four-slot experiment
+## PR108 timeout and controlled comparison
 
 [PR108 run 34739228050](https://github.com/csmart/aeronautes/actions/runs/34739228050), at reviewed source `6a2427b608e0aa5639f774aaefaa35e0a8e7913a`, passed Go, frontend and smoke but exhausted the system package's 25-minute budget at 1,500.233 seconds; the integration job took 1,796 seconds.
 The complete event stream contains no earlier failed assertion, and both new shutdown cases passed.
@@ -96,11 +96,26 @@ The three-slot run reached its first CONT after 236.057 seconds versus 338.372 i
 All eleven diagnostics completed; their final snapshots show no OOM, restart or storage exhaustion, and Swift was serving requests near the timeout, without establishing whole-run resource behaviour.
 The failed packet is workspace-relative `.aeronautes-work/evidence/20260913-service-delivery/pr108-integration-failure`, with `SHA256SUMS` digest `ca93ce8b5f737fc66e11eae976d2a9d4db44b76a53f3e431c110e3e0cb37433f`; retained CI diagnostics expire on 20 September and scenario artifacts on 12 December 2026.
 
-The behaviour oracle remains every existing test, owned fixture and required CI check; the hypothesis is that one additional test slot reduces queued work enough to restore margin without harmful contention.
-After independent contract review, change only the integration command's `-parallel=3` to `-parallel=4`, with the matching current instructions in `docs/CI.md`.
-Keep ordinary Go CI at three slots, all outer and inner test structure, race and coverage flags, package selection, the 25-minute package and 35-minute job limits, producer/tee checks, scenarios and fixture cleanup unchanged.
-Run the complete local candidate against the owned two-account Swift fixture with integration's race and coverage settings, preserving its exact source, command, producer exit, complete event stream, scenario reconciliation and bounded process observations.
-Inspect the complete inventory and actual sampled resources, then independently review the implementation and evidence before pushing; local timing cannot predict hosted margin.
-Require all five latest-head PR checks and all five resulting-master checks, and inspect both hosted package and job duration before accepting the experiment.
-Preserve the nine-call revert condition above; any failure, lost inventory, leaked ownership or resource conflict stops this experiment for diagnosis and review, without another concurrency increase or a retry merely to obtain green.
-A narrow passing margin remains insufficient evidence of stable headroom, and this experiment changes no product capability, Linux finish-line area or release acceptance.
+Per-group resume and completion analysis shows longer bodies and a late tail: CopyCompletion resumed 40.229 seconds later than on passing master, where its body took 80.128 seconds; the failed run interrupted it after 71.020 seconds.
+The last queued group resumed at 1,454.758 seconds, with only CopyCompletion still reported active after 1,491.423 seconds.
+The largest common body increases were CopySegmentChangeDetection (101.39 seconds), UploadItemRecords (64.00) and DownloadRecords (60.24).
+The package therefore lacks demonstrated headroom, but the streams cannot distinguish underlying resource contention from other host or fixture slowdown, or prove that changing admission order would have avoided the timeout.
+Reported CONT-to-terminal intervals even briefly imply four overlapping groups under the three-slot cap; they are not exact slot or CPU utilisation observations.
+Both source streams, per-group tables and derivation are retained at `.aeronautes-work/evidence/20260913-service-delivery/pr108-timing`, `SHA256SUMS` digest `2a0e923533623c37089599bd6d452f88a085fd537ca7072d228ab72b57bf0337`.
+
+Separating the shutdown groups into another job with its own Swift fixture avoids adding pressure to this fixture, but moves only 32.36 reported body seconds and does not establish enough margin.
+An exact outer-test selector can retain their private helpers in this package; physical extraction would require shared support or duplication across five existing test files.
+Either separation needs reviewed, disjoint full-suite coverage, preserved subprocess helper selection, independently reconciled producer results and both coverage contributions; simply concatenating two streams violates the current scenario reader's unique package-lifecycle contract.
+Reverting the nine calls restores the previous serial shape, but that older shape already had little margin, so it is an available rollback rather than a demonstrated timeout remedy.
+
+The behaviour oracle remains every existing test, owned fixture and required CI check.
+After independent contract review, run one sequential three-slot then four-slot local comparison on the same clean committed source, tools, owned two-account fixture and integration race/coverage/package settings, changing only `-parallel` between commands.
+Keep CI unchanged during the experiment, retain the local two-package limit and 1,800-second outer bound, and preserve each exact command, source, producer exit, full event stream, scenario result and bounded process observations.
+Compare package and producer wall clock, serial and parallel phases, complete inventories, each outer body's elapsed time and the summed body time for the identical completed group set.
+Stop before the four-slot run if the baseline fails or is incomplete; stop after the comparison if summed body time rises at four, even if wall clock improves.
+Any failed assertion, timeout, unexpected skip, lost inventory, report error, leaked ownership or resource conflict also stops for diagnosis and review; do not retry merely to obtain green.
+Only an improvement in wall clock without that body-time regression may support a separately reviewed change of the integration command to four slots; local timing cannot establish hosted margin.
+Keep ordinary Go CI at three slots, all test structure, assertions, coverage, producer/tee checks, scenario rules, cleanup and the 25-minute package and 35-minute job limits unchanged.
+Require all five latest-head PR and resulting-master checks and inspect both hosted package and job duration before accepting any delivery change.
+Preserve the nine-call revert condition above, with no further concurrency increase; a narrow passing margin remains insufficient evidence of stable headroom.
+This release-path diagnosis changes no product capability, Linux finish-line area or release acceptance.
