@@ -5468,7 +5468,9 @@ The next [serial-group scheduling contract](experiments/2026-09-12-remaining-tes
 First review the nine groups' private-resource isolation and preserved failed/passing baselines; then add only their outer parallel calls, keeping both self-reexecuting child branches before the new calls and excluding process-environment-dependent groups.
 Reconcile the complete actual combined delivery source under the existing three-slot policy, review the measured implementation and final range, and record both PR and resulting-master package/job margins before delivery.
 The combined local candidate passed, but PR108 exhausted the unchanged package budget without an earlier failed assertion.
-The [bounded follow-up experiment](experiments/2026-09-12-remaining-test-schedule.md#pr108-timeout-and-proposed-four-slot-experiment) requires independent review before changing only the integration lane to four parallel test slots; ordinary Go CI, group isolation, assertions, coverage, reporting and deadlines remain unchanged.
+The [bounded follow-up experiment](experiments/2026-09-12-remaining-test-schedule.md#pr108-timeout-and-controlled-comparison) first compares three and four slots locally on one committed source and fixture, reporting body time beside wall clock and stopping if body time increases.
+CI stays unchanged until that comparison and a concrete implementation pass independent review; package or job separation and reverting the nine calls remain alternatives.
+Preserve group isolation, assertions, coverage, reporting and deadlines throughout.
 Neither schedule grants new scenario, audit, native-platform or valuable-data acceptance.
 The CI protection slice removes the coverage bot's direct master pushes, adds an aggregate gate that rejects any required job without success, and removes the obsolete checks that skipped absent application code.
 The reviewed [master ruleset](../.github/master-ruleset.json) requires the latest base, binds all five checks to GitHub Actions, and allows no bypass actors.
