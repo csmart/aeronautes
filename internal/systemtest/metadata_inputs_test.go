@@ -168,10 +168,12 @@ func metadataInputRefusals(t *testing.T, h *Harness) {
 }
 
 func TestMetadataInputRefusalsMock(t *testing.T) {
+	t.Parallel()
 	metadataInputRefusals(t, findMockHarness(t))
 }
 
 func TestMetadataInputRefusalsRealSwift(t *testing.T) {
+	t.Parallel()
 	metadataInputRefusals(t, New(t))
 }
 

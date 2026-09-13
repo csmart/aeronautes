@@ -122,6 +122,7 @@ func TestTransferItemStorageReopen(t *testing.T) {
 		}
 		return
 	}
+	t.Parallel()
 	dir := t.TempDir()
 	request := itemStorageRequest{Database: filepath.Join(dir, "state.sqlite"), Output: filepath.Join(dir, "out.json")}
 	database, err := db.Open(t.Context(), request.Database)
