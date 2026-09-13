@@ -323,7 +323,7 @@ export function newFakeApi(): Api {
       }
       if (baseFingerprint !== "" && baseFingerprint !== objectFingerprint(container, name)) {
         record("object.metadata.update", `${container}/${name}`, "conflict");
-        return { outcome: "conflict", mismatch: "", transIds: ["txfake"], objectAfter: null, containerAfter: null };
+        return { outcome: "conflict", mismatch: "", limitation: "", transIds: ["txfake"], objectAfter: null, containerAfter: null };
       }
       objectMeta[`${container}/${name}`] = cleanMap(edit.meta);
       if (edit.contentType !== "") {
@@ -334,6 +334,10 @@ export function newFakeApi(): Api {
       return {
         outcome: "applied",
         mismatch: "",
+        // A completed save carries its limit here too: the fake must not
+        // model a stronger guarantee than the product gives (ADR 0046).
+        limitation:
+          "this does not establish that no concurrent edit was overwritten: the check before the write cannot see a change that lands after it",
         transIds: ["txfake", "txfake", "txfake"],
         objectAfter: objectDetailOf(container, name),
         containerAfter: null,
@@ -353,7 +357,7 @@ export function newFakeApi(): Api {
       }
       if (baseFingerprint !== "" && baseFingerprint !== containerFingerprint(name)) {
         record("container.update", name, "conflict");
-        return { outcome: "conflict", mismatch: "", transIds: ["txfake"], objectAfter: null, containerAfter: null };
+        return { outcome: "conflict", mismatch: "", limitation: "", transIds: ["txfake"], objectAfter: null, containerAfter: null };
       }
       const s = stateOf(name);
       s.meta = cleanMap(edit.meta);
@@ -367,6 +371,9 @@ export function newFakeApi(): Api {
       return {
         outcome: "applied",
         mismatch: "",
+        // The container edit path shares this shape and is deliberately
+        // NOT qualified by this slice; it is named as open in ADR 0046.
+        limitation: "",
         transIds: ["txfake", "txfake", "txfake"],
         objectAfter: null,
         containerAfter: containerDetailOf(name),

@@ -194,6 +194,10 @@ export class BrowserState {
   findStatus: FindStatusDTO | null = $state(null);
   findRunning = $state(false);
   findNotice: string | null = $state(null);
+  /** What the last COMPLETED metadata save did not establish. It outlives
+   * the editor, which closes itself on success, so the qualification does
+   * not vanish with the panel that earned it (ADR 0046). */
+  mutationNotice: string | null = $state(null);
   #findSeq = 0;
   #findRequest: FindRequest | null = null;
   #findResults: FindRequest | null = null;
@@ -698,6 +702,8 @@ export class BrowserState {
    * (§14.2) — object detail or prefix classification. */
   select(index: number) {
     this.selectedIndex = index;
+    // The qualification belongs to the object it was earned on.
+    this.mutationNotice = null;
     const entry = this.selectedEntry;
     const seq = ++this.#detailSeq;
     this.#detailScope = this.#scopeRevision;
@@ -1223,10 +1229,16 @@ export class BrowserState {
     this.detailLoading = false;
     this.detailError = null;
     const base = force ? "" : detail.editableFingerprint;
+    this.mutationNotice = null;
     const result = await this.#api.updateObjectMetadata(identity.container, identity.name, base, edit);
     if (this.#currentDetail(request) && result.outcome === "applied" && result.objectAfter
       && result.objectAfter.name === identity.name) {
       this.objectDetail = result.objectAfter;
+    }
+    // A save that wrote carries its limit whatever the outcome; a refused
+    // one wrote nothing and has nothing to qualify.
+    if (this.#currentDetail(request) && result.limitation) {
+      this.mutationNotice = result.limitation;
     }
     await this.loadAudit();
     return result;

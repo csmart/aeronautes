@@ -56,16 +56,22 @@ func (s *MutateService) UpdateObjectMetadata(ctx context.Context, container, nam
 	}
 
 	dto := MutationResultDTO{
-		Outcome:  string(result.Outcome),
-		Mismatch: result.Mismatch,
-		TransIDs: result.TransIDs,
+		Outcome:    string(result.Outcome),
+		Mismatch:   result.Mismatch,
+		TransIDs:   result.TransIDs,
+		Limitation: result.Limitation,
 	}
 	if result.After != nil {
 		after := toObjectDetailDTO(result.After)
 		dto.ObjectAfter = &after
 	}
-	s.record(ctx, "object.metadata.update", resource,
-		fmt.Sprintf("set %d metadata keys", len(edit.Meta)),
+	// The audit row carries the same qualification as the result: a
+	// completed save must not read, later, as evidence of exclusivity.
+	summary := fmt.Sprintf("set %d metadata keys", len(edit.Meta))
+	if result.Limitation != "" {
+		summary += "; " + result.Limitation
+	}
+	s.record(ctx, "object.metadata.update", resource, summary,
 		auditResult(result.Outcome), result.TransIDs)
 	return dto, nil
 }
