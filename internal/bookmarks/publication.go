@@ -161,9 +161,13 @@ func (st *Store) ConnectionConfig(ctx context.Context, id string) (swiftcontrol.
 		return swiftcontrol.Config{}, 0, err
 	}
 	delete(st.unresolved, id)
-	if r.ref == "" || !r.origin.ReadableBy(st.secrets.Origin()) {
+	if r.ref == "" {
 		st.mu.Unlock()
 		return swiftcontrol.Config{}, 0, secrets.ErrNotFound
+	}
+	if !r.origin.ReadableBy(st.secrets.Origin()) {
+		st.mu.Unlock()
+		return swiftcontrol.Config{}, 0, secrets.ErrAuthorityUnreachable
 	}
 	if r.TLSMode == swiftcontrol.TLSModeCustomCA && !r.ca.Valid {
 		st.mu.Unlock()
@@ -191,10 +195,15 @@ func (st *Store) ConnectionConfig(ctx context.Context, id string) (swiftcontrol.
 		return swiftcontrol.Config{}, 0, ErrChanged
 	}
 	if keyErr != nil {
-		if errors.Is(keyErr, secrets.ErrNotFound) {
+		// Absence proves erasure only from the authority that recorded the
+		// write. A keychain adapter instance is not a verified persistent
+		// store and a legacy reference records no provenance, so their
+		// negative lookups leave the key's fate unknown. Return the bare
+		// sentinel: a backend message can name the reference.
+		if errors.Is(keyErr, secrets.ErrNotFound) && r.origin.VerifiedBy(st.secrets.Origin()) {
 			return swiftcontrol.Config{}, 0, secrets.ErrNotFound
 		}
-		return swiftcontrol.Config{}, 0, errors.New("credential backend could not read the saved key")
+		return swiftcontrol.Config{}, 0, secrets.ErrAuthorityUnreachable
 	}
 	var ca []byte
 	if r.TLSMode == swiftcontrol.TLSModeCustomCA {

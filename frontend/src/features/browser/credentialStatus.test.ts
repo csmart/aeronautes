@@ -3,8 +3,8 @@ import type { BookmarkDTO, CredentialStatusDTO } from "../../lib/api";
 import { BrowserState } from "./browserState.svelte";
 import { newFakeApi } from "./fakeApi";
 
-const empty: CredentialStatusDTO = { retired: 0, unfinished: 0, saving: 0 };
-const retained: CredentialStatusDTO = { retired: 2, unfinished: 1, saving: 0 };
+const empty: CredentialStatusDTO = { retired: 0, unfinished: 0, saving: 0, unverified: 0 };
+const retained: CredentialStatusDTO = { retired: 2, unfinished: 1, saving: 0, unverified: 1 };
 const bookmark: BookmarkDTO = {
   id: "", displayName: "test", authUrl: "https://swift.example/auth/v1.0",
   username: "account:user", storageUrlOverride: "", tlsMode: "system",

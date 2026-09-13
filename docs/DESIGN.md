@@ -5459,6 +5459,9 @@ ADR 0015 already decided the rule: an absence reported by session fallback canno
    Preserve every binding, reference, stored value and journal record across refused reads, and carry no reference, instance identifier or credential value into an error or DTO.
 5. Prove the four original failures and the five controls, add store, service, status and frontend cases, and require independent broken-guard controls before local review and current-base delivery gates.
 
+The correction now passes independent contract review and the whole-module race suite: 22 packages, 4,142 leaves and 4,511 named passes with the expected rclone-matrix skip.
+Eight independent broken-guard controls were each caught, and two existing whole-struct comparisons were updated to carry the new field without relaxing what they pin.
+
 Verified persistent-backend selection, physical cleanup, wider P10 and SEC-01/04, native acceptance and the valuable-data hold remain open.
 
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.

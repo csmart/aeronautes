@@ -19,6 +19,11 @@ import (
 // ErrNotFound is returned by Get and Delete when no secret has the name.
 var ErrNotFound = errors.New("secret not found")
 
+// ErrAuthorityUnreachable reports that the authority recorded for a
+// reference cannot be confirmed by the active backend. It never proves
+// that the value was removed, so it must not satisfy ErrNotFound.
+var ErrAuthorityUnreachable = errors.New("credential authority is unreachable")
+
 // SecretStore stores credential material by name. Names are opaque,
 // stable identifiers such as "bookmark/<id>"; values are the raw secret
 // bytes. Implementations must be safe for concurrent use and must never
@@ -45,8 +50,19 @@ func newOrigin(kind Backend) Origin {
 	return Origin{Kind: kind, Instance: rand.Text()}
 }
 
-// ReadableBy preserves legacy reads but prevents a fresh session fallback
-// from impersonating the memory store that accepted a recorded value.
+// VerifiedBy reports whether active is the exact authority that recorded
+// this origin, which only a live session store reading its own instance
+// can be. A keychain adapter instance can follow a changed OS default and
+// a legacy origin records no provenance, so neither is ever verified.
+// Absence reported by an unverified authority is not erasure evidence.
+func (o Origin) VerifiedBy(active Origin) bool {
+	return o.Kind == BackendSession && o.Instance != "" && o == active
+}
+
+// ReadableBy is permission to attempt a read, not a reachability claim: it
+// admits any keychain adapter instance and a locked adapter alike. It
+// preserves legacy reads but prevents a fresh session fallback from
+// impersonating the memory store that accepted a recorded value.
 func (o Origin) ReadableBy(active Origin) bool {
 	switch o.Kind {
 	case "":

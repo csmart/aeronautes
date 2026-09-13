@@ -94,8 +94,14 @@ func TestRecordedSessionCannotChangeLifetime(t *testing.T) {
 		t.Fatal(err)
 	}
 	reopened := NewStore(d, other)
-	if config, _, err := reopened.ConnectionConfig(t.Context(), b.ID); !errors.Is(err, secrets.ErrNotFound) || config.APIKey != "" {
+	// A new memory store is not the recorded authority, so its refusal
+	// reports unreachable authority and never claims the key was erased.
+	config, _, err := reopened.ConnectionConfig(t.Context(), b.ID)
+	if !errors.Is(err, secrets.ErrAuthorityUnreachable) || config.APIKey != "" {
 		t.Fatalf("new memory store impersonated original lifetime: %+v, %v", config, err)
+	}
+	if errors.Is(err, secrets.ErrNotFound) {
+		t.Fatalf("changed lifetime was reported as erasure: %v", err)
 	}
 	if err := reopened.Delete(t.Context(), b.ID); err != nil {
 		t.Fatal(err)
@@ -252,8 +258,10 @@ func TestRestartRetainsPersistentWorkAcrossFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	fallback := NewStore(reopenedDB, fallbackMemory)
-	if _, _, err := fallback.ConnectionConfig(ctx, a.ID); !errors.Is(err, secrets.ErrNotFound) {
+	if _, _, err := fallback.ConnectionConfig(ctx, a.ID); !errors.Is(err, secrets.ErrAuthorityUnreachable) {
 		t.Fatalf("session fallback read a persistent reference: %v", err)
+	} else if errors.Is(err, secrets.ErrNotFound) {
+		t.Fatalf("session fallback claimed the persistent key was erased: %v", err)
 	}
 	if got := pendingWork(t, fallback); !slices.Equal(got, before) {
 		t.Fatalf("fallback erased or rerouted durable work: %+v", got)

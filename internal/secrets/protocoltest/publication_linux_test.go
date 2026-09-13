@@ -125,7 +125,9 @@ func TestFailedKeychainPublicationPreservesAuthority(t *testing.T) {
 						}
 					}
 					status, err := store.CredentialStatus(t.Context())
-					if err != nil || status != (bookmarks.CredentialStatus{Unfinished: 1}) {
+					// The candidate was recorded by the keychain adapter, whose
+					// authority this session cannot confirm.
+					if err != nil || status != (bookmarks.CredentialStatus{Unfinished: 1, Unverified: 1}) {
 						t.Errorf("failed publication lost its unfinished work: %+v, %v", status, err)
 					}
 					var ref, owner, state, originKind, originInstance string

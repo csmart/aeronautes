@@ -46,11 +46,12 @@ func TestCredentialCleanupStatusAfterDeletedBookmark(t *testing.T) {
 		t.Fatal(err)
 	}
 	status, read := h.CredentialStatus(t.Context())
+	// The session store that recorded this work is still the active one.
 	if read.Err() != nil || status != (app.CredentialStatusDTO{Retired: 2}) {
 		t.Fatalf("deleted bookmark's retained work = %+v, %v", status, read.Err())
 	}
 	encoded, err := json.Marshal(status)
-	if err != nil || string(encoded) != `{"retired":2,"unfinished":0,"saving":0}` {
+	if err != nil || string(encoded) != `{"retired":2,"unfinished":0,"saving":0,"unverified":0}` {
 		t.Fatalf("status bridge must expose only counts: %s, %v", encoded, err)
 	}
 	list, err := h.Bookmarks.List(t.Context())
