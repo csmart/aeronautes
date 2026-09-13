@@ -51,7 +51,9 @@ func TestNativeStagingCancelIsNotAttempted(t *testing.T) {
 	ctx := &cancelAfterFirstCheck{Context: t.Context()}
 	item := DownloadItem{Name: "scope/deep/inner/f.bin", RelPath: filepath.Join("deep", "inner", "f.bin"), Size: 7, Route: "native"}
 	body := &heldBody{}
-	outcome := nativeDownloadBody(ctx, body, item, destination, filepath.Join(root, "deep", "inner", ".aeronautes-part-x"))
+	// The body is never read at this boundary, so no content expectation
+	// applies; an empty ladder keeps this case about the cancel.
+	outcome := nativeDownloadBody(ctx, body, item, destination, filepath.Join(root, "deep", "inner", ".aeronautes-part-x"), transfercopy.Ladder{})
 	if ctx.checks < 2 {
 		t.Fatalf("the boundary under test was not reached: %d checks", ctx.checks)
 	}

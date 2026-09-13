@@ -74,7 +74,26 @@ That case needs the same complete read, or an explicit unverified result.
 Cheapness is not the same as sufficiency, and the fourth reproduction shows where the two part company.
 `commitStagedUpload` reads the stage and then sends a separate live PUT, and the probe alters that PUT while leaving the stage intact.
 A comparison that stops at the staged object therefore answers a question nobody asked: the stage was fine.
-Whatever a route accumulates or digests, the value it must be compared against is the one the published name reports.
+For that plain upload case specifically, the value the local digest must be compared against is the one the final live HEAD reports.
+This is not a licence to defer the other checks until after publication: a segmented staged upload still reads and verifies the assembled stage before any committing fact or live manifest PUT, and a download still compares before it publishes anything.
+
+### The lesson these three review rounds cost
+
+The contract needed three rounds, and two of the corrections were the same error in different clothes.
+
+The first draft proposed settling a segmented staged upload from a remote segment listing recombined against the live aggregate.
+[ADR 0042](../adr/0042-source-content-ladder.md) had already disproved exactly that: a same-size replacement leaves both the listing row and the aggregate derived from it unchanged.
+The second draft then bound the plain staged upload comparison to the staged object — while the fourth reproduction in this very record alters the separate live PUT and leaves the stage intact, so the proposed comparison would have passed on the case being reproduced.
+
+Both are the same mistake: comparing something other than the thing being claimed.
+A listing is not the content it describes, and a stage is not the live name.
+The rule that generalises, and the one the next author on these routes will need, is that **every comparison must be bound to the boundary it claims** — the byte stream that was actually written, and the name that was actually published.
+Reaching for the cheaper adjacent observation is the shortcut that keeps looking sound and keeps being wrong.
+
+A second decision is worth carrying forward for its own sake.
+Withholding the fingerprint until content is verified sounds like a strict improvement, but there is no way to bind that later write to the object that was checked: `UpdateObjectMetadata` preflights with a HEAD and then performs a replace-all POST, with no atomic content condition.
+A replacement landing in between would receive a valid fingerprint while holding other bytes.
+A stamp that cannot be bound to what it certifies is not a weaker proof, it is not a proof, so the stamp is dropped rather than moved.
 
 ## The asymmetry that cannot be engineered away here
 
@@ -109,3 +128,108 @@ Durable private packet `~/code/.aeronautes-work/20260913-claude/l05b/`, with `SH
 
 The probe is archived rather than kept in the repository because it asserts behaviour that does not exist yet.
 The two evidence files are cited by their own digests rather than by the packet's checksum file, because that file also covers the working state note and changes whenever it does.
+
+## A finding about the engine, stated at the strength the evidence supports
+
+A comparison was written into the engine download path and then removed before delivery, because a broken-guard control disproved the evidence for it.
+With that comparison deleted, the altered engine case still refused: nothing was staged and nothing was placed.
+The refusal therefore came from the pinned engine, not from the added code.
+
+The honest claim is narrow.
+On the pinned engine version, with these fixtures, a same-size alteration of a downloaded body ends with no retained staged file and nothing published.
+That is what was observed after the failure; absence afterwards does not establish that no local effect occurred at any point during the attempt.
+That is evidence about this engine and these fixtures.
+It is not an established contract: nothing here pins the engine's guarantee, enumerates the classes it covers, or fixes it against a version change.
+
+Both directions matter.
+If the engine's guarantee holds and can be pinned, it is stronger protection than a post-hoc comparison, because it refuses before any local effect exists at all.
+If it does not hold — for a class not covered, or after a version bump — then the engine download path currently has no content binding whatever, and the absence would be silent.
+Either way the current position is that this project has not established which it is.
+
+A separate slice should pin it: reproduce the engine's refusal across the classes L05 names, record the version it was measured on, and decide whether to depend on it or to add the comparison behind a fixture that can prove the comparison works.
+Until then the engine download path is recorded as unbound by this project's own evidence, rather than treated as protected.
+
+### A worse defect than the one this slice set out to fix
+
+This slice INTRODUCED a cleanup hazard that destroys data belonging to another writer, and it was caught in review before delivery rather than being something the route always handled.
+It is recorded here at that weight because it is more serious than the unverified download it was written to prevent: a missing content check leaves a bad copy in place, while this deleted a file that was never ours to touch.
+
+It is also the shape of defect this project keeps finding, in its purest form.
+The record said the temporary was retained as residue.
+The code deleted it.
+A document describing a safety property the code does not have is worse than no document, because every later reader takes the property as established.
+
+The first implementation of the mismatch branch set its error before capturing the written file's identity, so cleanup received nothing to compare against and unlinked whatever regular file held the temporary's name — the rejected bytes, and a replacement another writer had put there.
+The first attempted fix scoped retention by whether the source's stated length agreed with the listing, which still left the unequal-length paths deleting that replacement.
+Capturing the identity unconditionally then produced a third variant: a Stat that FAILS still leaves nothing to compare against, and cleanup again read that as permission to unlink any regular file.
+
+Three revisions each destroyed another writer's file in a different way, and the first two failed for the same reason — both conditioned the protection on something about the source.
+The reviewer's ruling is the sentence a future author needs, and it is more useful than any of the specific fixes:
+
+> Preserving an existing rule that cleans up our own failed temporary does not permit deleting somebody else's file... do not use source-length agreement as the condition for protecting another writer.
+
+The completed rule follows from it.
+Capture the identity of what this call wrote on every path, successful or not.
+An identity that could not be established is not a weaker identity but none at all, so the file is retained and reported as unresolved residue, and the failure to read it is joined with any earlier error rather than replacing it.
+Cleanup never reads a missing identity as authority to unlink.
+Retention of our own rejected bytes is the narrower promise, and an actual close failure keeps the existing cleanup contract where the identity IS known.
+
+This is also why the comparison was removed rather than kept as defence in depth.
+Code that cannot be shown to do anything is not a second layer; it is an unproven claim in a data-safety path, and the next reader would reasonably assume it was doing the work.
+
+## Two explanations that were wrong, and what replaced them
+
+Both were written to explain why this slice's retention is safe, and both explained something adjacent to the thing that mattered.
+
+The first said cancellation is always decided before the comparison, so a cancelled item and a content mismatch could never be the same item.
+That ordering does not exist in the code.
+Cancellation is observed at particular boundaries, and a cancel arriving during a successful `Sync`, or during `Close` after the comparison has run, leaves the mismatch detected and its bytes retained.
+An item can be both.
+That is still consistent with the cancelled-delta contract, because that contract scopes its delta to its own staging boundaries and already permits surviving residue to remain unresolved — but the reason is that, not an ordering.
+
+The second said the retention survives because `removeEmptyStageDirectory` cannot unlink a file.
+True, and irrelevant here: the native temporary is a sibling of its target, chosen by `downloadTemporaryPath` and written through the held target parent, so no engine stage governs it, and `DownloadInto` returns before opening one when there are no engine items.
+What preserves a rejected native temporary is this route's own deferred cleanup declining to run.
+
+The pattern is the same one this record already documents twice: verifying a claim next to the one being made.
+The first time it deleted another writer's file, and these two only put false sentences in a decision record — but a decision record is what the next author reasons from.
+
+## The case continuous integration caught that the authoring host did not
+
+The maintained retention case for a content mismatch combined with a close failure passed
+here and failed in two independent integration jobs on the same head.
+
+It was not a missed leaf.
+The case ran locally and passed by luck.
+`os.SameFile` compares device and inode, and the fixture removed the temporary and created
+the replacement at the same name, so the kernel was free to hand the new file the inode it
+had just released — after which the check reports "still ours" for somebody else's file.
+On this host that happened in twelve of five hundred remove-and-recreate cycles; on the
+runner it happened every time.
+Two hundred and three hundred count local reruns did not surface it.
+
+The first lesson drawn from this was wrong and is corrected here, because the wrong version
+would have thrown away the thing that worked.
+
+It is tempting to conclude that a fixture must never remove and recreate at the same path.
+That sequence is exactly what found a real product defect, and it should be kept.
+Reuse of the freed inode is genuinely observable: this host produced it during a
+five-hundred-cycle probe, and independent review reproduced it too, confirming that the
+corrected code preserves the replacement after a reuse while the old branch deletes it.
+Those are first observations, not frequency estimates, and neither says how often the
+integration runner will do it.
+
+The real lesson is about controls rather than fixtures.
+**Establish which condition a control actually exercises.**
+The mutation that removes this retention was first pointed at the replacement case, where
+the damage only appears if the freed inode happens to be reused, so it could not fire
+reliably and was written off as unavoidably probabilistic. That was a selection error: the
+same mutation deterministically breaks the existing `source_close` case, which loses its
+retained temporary, and `source_close_cleanup`, which then records a cleanup attempt that
+must not happen.
+
+So keep the adversarial sequence for what it finds, and complement it with a deterministic
+check of the same property, rather than treating an unreliable control as the best available.
+
+The correction to the product removes the dependency rather than making it more likely to
+hold: a rejected download no longer reaches the identity check at all.
