@@ -621,6 +621,15 @@ export interface MutationResultDTO {
     "transIds": string[] | null;
 
     /**
+     * Limitation states what a COMPLETED save does not establish, and is
+     * empty when nothing was written. An applied outcome means written
+     * and verified, never exclusive: this path cannot distinguish a
+     * concurrent write from an undisturbed one, so the qualification is
+     * unconditional (ADR 0046).
+     */
+    "limitation": string;
+
+    /**
      * ObjectAfter / ContainerAfter carry the verified post-write state
      * for whichever resource was edited (nil otherwise, and nil on
      * conflict).

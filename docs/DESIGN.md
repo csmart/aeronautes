@@ -1102,11 +1102,13 @@ compare editable fields / Last-Modified / fingerprints
 
 Aeronautes must not imply this is an atomic compare-and-swap guarantee.
 
-What a completed save may claim is decided in [ADR 0046](adr/0046-metadata-write-window.md), which is proposed and not yet implemented.
+What a completed save may claim is decided in [ADR 0046](adr/0046-metadata-write-window.md) and delivered for the object metadata path.
 The interval between the preflight read and the replace-all POST is not covered by the fingerprint comparison, and a second editor's save landing there is overwritten: the [metadata write window record](experiments/2026-09-14-metadata-write-window.md) reproduces that through the service against the real fixture, with the write reported as applied and no mismatch.
 The verify read cannot detect it, because it asserts that the state after the write equals the intended edit and a successful overwrite satisfies that exactly.
-No conditional metadata write is available to close it: `If-Match`, `If-None-Match` and `If-Unmodified-Since` are each measured as ignored on an object POST, and the entity tag is the content digest, which a metadata POST does not change.
-The correction is therefore to what a successful save reports rather than to what it detects, and narrowing the interval is not a bound on it.
+No conditional metadata write is available on the supported path to close it: `If-Match`, `If-None-Match` and `If-Unmodified-Since` are each measured as ignored on an object POST against the tested fixture, and the entity tag is the content digest, which a metadata POST does not change.
+That measurement decides what this product may claim; it is not a proof about every Swift deployment.
+The correction is therefore to what a completed save reports rather than to what it detects: every save that wrote states that it does not establish that no concurrent edit was overwritten, in the result, in the audit row and in the editor, while a refused save states nothing because it wrote nothing.
+The container edit path shares this shape and is not yet qualified.
 
 ---
 

@@ -56,9 +56,10 @@ Measured directly against the fixture, each with a condition that should fail:
 | `If-None-Match: *` on an existing object | 202 | yes |
 | `If-Unmodified-Since` at the epoch | 202 | yes |
 
-All three are ignored.
+All three are ignored on the tested fixture.
 Even were `If-Match` honoured it could not carry this check, because the entity tag is the content digest and a metadata POST does not change it.
-Atomicity is therefore unavailable at the protocol level rather than merely unimplemented, and that is measured here rather than taken from documentation.
+No conditional write is therefore available on the supported path, measured here rather than taken from documentation.
+This is a measurement of that fixture: three ignored headers do not establish that no Swift deployment anywhere honours a precondition, and it is sufficient only to decide what this product may claim about itself.
 
 ### The empty base fingerprint is deliberate, and is not this finding
 
@@ -71,10 +72,19 @@ No change is proposed for it here.
 
 It cannot be detection.
 There is no conditional write to make the comparison atomic, and no post-write read can recover the state that our own write replaced.
-Narrowing the interval between the read and the write shortens the exposure without bounding it, and a shorter unbounded window must not be described as a smaller guarantee.
+Narrowing the interval between the read and the write shortens the exposure without bounding it.
+No such narrowing is included: it improves nothing measurable and would invite a later reader to believe the interval is handled.
 
 What is wrong today is therefore not that the window exists — that is decided and recorded — but that a write landing inside it is reported as a plain success.
 The correction is to make the reported outcome state what it establishes and what it does not, so that neither the record, the audit entry nor the editor presents a completed save as evidence that no concurrent edit was overwritten.
+
+## What was delivered
+
+The statement travels with the result, the audit row and the editor.
+It is set once the write has happened, so a refused save carries none and invents no effect.
+The `applied` outcome is unchanged, because it already meant written and verified rather than exclusive, and a new failure state would claim a detection that does not exist.
+The editor's notice outlives its own immediate close on success.
+Four maintained regressions assert the reported shape: an undisturbed save still states its limit, a refused save states none and changes nothing, a save that overwrites a concurrent edit states its limit and leaves content byte-identical, and the audit row carries the same sentence.
 
 ## What this does not establish
 
@@ -85,6 +95,7 @@ The container edit path shares this shape and is not examined here.
 ## Evidence
 
 Durable private packet `/home/csmart/code/.aeronautes-work/20260913-claude/meta/`, with digests in `SHA256SUMS` beside the files.
+The contract-phase manifest digest is `288736de73323f25998b40d75c55caaa0a71744060b9d9d920a56dbf9a66d296`; the delivered-phase manifest is resealed with this range and its digest is given in the review request.
 `probe-before-verbose.log` is the reproduction and its two controls in one run.
 `conditional-post.log` is the conditional-write measurement.
 `metadata_race_probe_test.go.txt` is the probe source, retained outside the repository because it asserts current behaviour rather than the intended contract.

@@ -54,7 +54,7 @@ it.each(["object", "container"] as const)("an obsolete %s save cannot close a ne
   await settle();
   button(f.root, label).click(); flushSync();
   expect([...f.root.querySelectorAll(".card-title")].some((title) => title.textContent?.trim() === label)).toBe(true);
-  old.resolve({ outcome: "applied", objectAfter: object, containerAfter: container, mismatch: "", transIds: [] });
+  old.resolve({ outcome: "applied", objectAfter: object, containerAfter: container, mismatch: "", limitation: "", transIds: [] });
   await settle();
   expect([...f.root.querySelectorAll("button")].some((b) => b.textContent?.trim() === "Save")).toBe(true);
 });
@@ -90,7 +90,7 @@ async function showEditor(kind: Kind) {
   const mutate = vi.fn((..._args: unknown[]) => { const reply = deferred<MutationResultDTO>(); replies.push(reply); return reply.promise; });
   f.api.updateObjectMetadata = mutate; f.api.updateContainer = mutate;
   const result = (outcome: string): MutationResultDTO => ({
-    outcome, mismatch: outcome === "verify_mismatch" ? "current mismatch" : "", transIds: [],
+    outcome, mismatch: outcome === "verify_mismatch" ? "current mismatch" : "", limitation: "", transIds: [],
     objectAfter: outcome === "applied" ? f.browser.objectDetail : null,
     containerAfter: outcome === "applied" ? f.browser.containerDetail : null,
   });

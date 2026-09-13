@@ -77,7 +77,7 @@ function mutation(f: Fixture, kind: Mutation, label: string) {
   f.api.updateContainer = vi.fn(() => result.promise);
   f.api.createMarker = vi.fn(() => marker.promise);
   const returned: MutationResultDTO = {
-    outcome: "applied", mismatch: "", transIds: [label],
+    outcome: "applied", mismatch: "", limitation: "", transIds: [label],
     objectAfter: { ...f.object, name: "empty-object", meta: { Completion: label } },
     containerAfter: { ...f.container, name: "fixtures", meta: { Completion: label } },
   };
@@ -286,7 +286,7 @@ it.each(["object", "container"] as const)("preserves current %s conflict and mis
     const f = await show();
     await prepare(f, kind);
     const before = portrait(f, kind);
-    const result: MutationResultDTO = { outcome, objectAfter: null, containerAfter: null, mismatch: "changed", transIds: ["tx-result"] };
+    const result: MutationResultDTO = { outcome, objectAfter: null, containerAfter: null, mismatch: "changed", limitation: "", transIds: ["tx-result"] };
     f.api.updateObjectMetadata = vi.fn().mockResolvedValue(result);
     f.api.updateContainer = vi.fn().mockResolvedValue(result);
     const actual = kind === "object" ? await f.browser.saveObjectMetadata(objectEdit) : await f.browser.saveContainer(containerEdit);
@@ -413,7 +413,7 @@ it.each(["object", "container", "marker"] as const)("does not publish a current 
   await prepare(f, kind);
   const initial = portrait(f, kind);
   const wrong: MutationResultDTO = {
-    outcome: "applied", mismatch: "", transIds: ["tx-wrong"],
+    outcome: "applied", mismatch: "", limitation: "", transIds: ["tx-wrong"],
     objectAfter: { ...f.object, name: "wrong" }, containerAfter: { ...f.container, name: "wrong" },
   };
   f.api.updateObjectMetadata = vi.fn().mockResolvedValue(wrong);

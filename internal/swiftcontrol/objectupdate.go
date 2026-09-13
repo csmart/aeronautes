@@ -31,6 +31,13 @@ type ObjectMetadataEdit struct {
 	DeleteAt time.Time
 }
 
+// ConcurrentEditLimitation is what every completed metadata save must
+// say about itself. It is a statement of what was NOT established, never
+// a claim that a conflict was detected: this path cannot tell a
+// concurrent write from an undisturbed one, so the qualification is
+// unconditional (ADR 0046).
+const ConcurrentEditLimitation = "this does not establish that no concurrent edit was overwritten: the check before the write cannot see a change that lands after it"
+
 // UpdateOutcome is how an update ended.
 type UpdateOutcome string
 
@@ -54,6 +61,16 @@ type ObjectUpdateResult struct {
 	After  *ObjectDetail
 	// Mismatch says what verify found different, for UpdateVerifyMismatch.
 	Mismatch string
+	// Limitation states what a COMPLETED write does not establish, and is
+	// empty when nothing was written. The preflight comparison cannot see
+	// a write that lands after it, and the verify read asserts the
+	// intended post-state, which an overwrite satisfies exactly — so a
+	// write that succeeded is written and verified, never exclusive
+	// (ADR 0046, K-META-003). Reported rather than detected because this
+	// store offers no conditional metadata write to build a comparison
+	// on, and the entity tag a condition would carry is the content
+	// digest, which a metadata POST does not change.
+	Limitation string
 	// TransIDs are the Swift transaction ids: preflight, write, verify.
 	TransIDs []string
 }
@@ -92,6 +109,9 @@ func (s *Session) UpdateObjectMetadata(ctx context.Context, container, name, bas
 		return nil, err
 	}
 	result.TransIDs = append(result.TransIDs, writeTransID)
+	// The write has happened; from here every outcome is a completed save
+	// and carries the same limit, including a verify mismatch.
+	result.Limitation = ConcurrentEditLimitation
 
 	after, err := s.ObjectDetail(ctx, container, name)
 	if err != nil {

@@ -133,6 +133,10 @@
       </section>
     {/if}
 
+    {#if browser.mutationNotice}
+      <p class="mutation-notice" role="status">{browser.mutationNotice}</p>
+    {/if}
+
     {#if detail && !editingObject}
       <button class="edit-btn" onclick={() => (editingObject = true)}>Edit metadata</button>
     {:else if detail && editingObject}
@@ -451,6 +455,14 @@
 </aside>
 
 <style>
+  .mutation-notice {
+    margin: 0.5rem 0;
+    padding: 0.5rem 0.6rem;
+    border-left: 3px solid var(--warn, #b8860b);
+    font-size: 0.85rem;
+    line-height: 1.35;
+  }
+
   .pane {
     min-height: 0;
     overflow-y: auto;
