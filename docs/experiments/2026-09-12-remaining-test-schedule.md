@@ -1,6 +1,6 @@
 # Remaining serial test groups
 
-Status: contract and implementation independently reviewed; the combined local run passed, with hosted comparison and protected delivery still pending.
+Status: the nine-call contract and implementation were independently reviewed and passed locally; PR108 timed out, so delivery is held pending review and validation of the proposed follow-up below.
 The behaviour oracle is the existing [three-slot CI schedule](../CI.md), unchanged test assertions and cleanup, and each group's private resources.
 The inspected source is `dcdef302b2e61d0c0a8607751d4605287a0cff85`, tree `60dd8e19737a4f2fb5afdcc93560418081aa6f11`.
 The six candidate files and ten relevant harness, helper and CI inputs match protected master `c098faffeaf160630f538b03639a87cd7f7549aa` byte for byte.
@@ -86,3 +86,21 @@ The inventory reader's two apparent missing-parent errors came from slash-contai
 Retained private packet: workspace-relative `.aeronautes-work/evidence/20260913-test-schedule`, `SHA256SUMS` SHA-256 `0605e8aab5a38de76389b9e41833966f410de7f46db1c6d0f8c2a9a9397e6b99`.
 No expiring CI artifact is the sole evidence pointer for this measurement.
 At delivery, record hosted package and job durations; if the resulting master system package does not improve on the last passing 1,470.197-second attempt, revert these nine calls through review and green CI rather than retain an unproved scheduling change.
+
+## PR108 timeout and proposed four-slot experiment
+
+[PR108 run 34739228050](https://github.com/csmart/aeronautes/actions/runs/34739228050), at reviewed source `6a2427b608e0aa5639f774aaefaa35e0a8e7913a`, passed Go, frontend and smoke but exhausted the system package's 25-minute budget at 1,500.233 seconds; the integration job took 1,796 seconds.
+The complete event stream contains no earlier failed assertion, and both new shutdown cases passed.
+`TestCopyCompletionRealSwift` resumed after 1,429.213 seconds and was the only unfinished outer group at the alarm, while its recovery case took an independent namespace snapshot.
+The three-slot run reached its first CONT after 236.057 seconds versus 338.372 in the previous passing master, but common completed outer bodies took 3,877.03 versus 3,613.48 summed seconds; these different hosted runs establish no cause or controlled speedup.
+All eleven diagnostics completed; their final snapshots show no OOM, restart or storage exhaustion, and Swift was serving requests near the timeout, without establishing whole-run resource behaviour.
+The failed packet is workspace-relative `.aeronautes-work/evidence/20260913-service-delivery/pr108-integration-failure`, with `SHA256SUMS` digest `ca93ce8b5f737fc66e11eae976d2a9d4db44b76a53f3e431c110e3e0cb37433f`; retained CI diagnostics expire on 20 September and scenario artifacts on 12 December 2026.
+
+The behaviour oracle remains every existing test, owned fixture and required CI check; the hypothesis is that one additional test slot reduces queued work enough to restore margin without harmful contention.
+After independent contract review, change only the integration command's `-parallel=3` to `-parallel=4`, with the matching current instructions in `docs/CI.md`.
+Keep ordinary Go CI at three slots, all outer and inner test structure, race and coverage flags, package selection, the 25-minute package and 35-minute job limits, producer/tee checks, scenarios and fixture cleanup unchanged.
+Run the complete local candidate against the owned two-account Swift fixture with integration's race and coverage settings, preserving its exact source, command, producer exit, complete event stream, scenario reconciliation and bounded process observations.
+Inspect the complete inventory and actual sampled resources, then independently review the implementation and evidence before pushing; local timing cannot predict hosted margin.
+Require all five latest-head PR checks and all five resulting-master checks, and inspect both hosted package and job duration before accepting the experiment.
+Preserve the nine-call revert condition above; any failure, lost inventory, leaked ownership or resource conflict stops this experiment for diagnosis and review, without another concurrency increase or a retry merely to obtain green.
+A narrow passing margin remains insufficient evidence of stable headroom, and this experiment changes no product capability, Linux finish-line area or release acceptance.
