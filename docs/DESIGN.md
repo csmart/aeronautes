@@ -4094,12 +4094,9 @@ matrix → copy/upload/download matrix → mirror + deletion variants →
 cancellation/crash/fault-injection matrix → UI-to-bridge and dialog coverage →
 macOS/Windows platform matrix → hard CI gates with report artifacts.
 
-**Standing rule (phased, per review consensus):** until the harness lands, the
-existing discipline holds — no merge without a regression test (unit/SAIO).
-Once the harness exists, every behavior-changing feature adds a matrix row and
-system test, every bug fix carries the system-level reproduction that failed
-before it, and build/CI-only bugs get the equivalent pipeline regression. No
-system test, no merge.
+**Standing rule:** apply the risk-based requirements in §65.12.
+Safety changes use the existing system harness, add the relevant scenario coverage and retain the system reproduction that catches the defect.
+Ordinary UI and prose changes use their appropriate evidence and review tier; required CI remains unchanged.
 
 Also riding this milestone: the §65.9 deferred list (adaptive concurrency,
 plan tokens, six-platform materialization/cancellation, metadata-only
@@ -4296,7 +4293,7 @@ Conflicting ownership/concurrency/durability contracts must be resolved in this 
 ### 65.11. Audit remediation
 
 The owner authorised implementation of the [5 September audit plan](https://github.com/csmart/aeronautes/blob/c3da04c45fd214ed166118c0debc12d3a9996763/docs/audits/2026-09-05/remediation-plan.md).
-Implement each logical fix with a failing-before/passing-after regression and independent local review before pushing.
+Implement each logical fix with the evidence and independent local review required by §65.12 before pushing.
 Keep the valuable-data release hold until the plan's safety and release gates have evidence.
 On 8 September the owner reaffirmed safe operation on valuable data as the first milestone.
 The [current execution order and finding dispositions](audits/2026-09-05/remediation-plan.md#execution-order-for-valuable-data-safety) reconcile delivered slices and prioritise P12/P13 recovery and exact outcomes, with bounded P21 callers and authority, verification, containment and native-lifetime prerequisites at each dependent effect.
@@ -5476,6 +5473,44 @@ The reviewed [master ruleset](../.github/master-ruleset.json) requires the lates
 Apply and read back that configuration after the new gate has passed on the PR; a repository file alone does not change GitHub settings.
 The [merge procedure](CI.md) records the incident evidence and requires independent local review, a verified current head, green PR checks and post-merge monitoring.
 Coverage artifacts retain their existing soft thresholds; hard scenario and coverage gates remain P34 work.
+
+### 65.12. Proportionate remediation and a fixed finish line
+
+Safe, secure operation on valuable production data remains the first milestone.
+[ADR 0040](adr/0040-proportionate-remediation.md) replaces uniform process requirements with these risk-based rules for new work, including follow-ups to historical §65.11 sequences.
+Use the highest tier whose guarantee the change can affect; line count is not the measure of risk.
+
+| Tier | Author evidence | Independent review |
+| --- | --- | --- |
+| 1 — deletion, placement, credentials, authority, recovery or process lifetime | Catching before/after regression through the relevant system boundary, including necessary faults/interleavings and collateral/durable outcomes | Reproduce the author's evidence independently and create targeted mutants; verdict about a screen, longer for material findings |
+| 2 — ordinary UI or reliability | Focused behaviour tests and relevant existing checks | One substantive review; reproduce where a number or safety claim depends on it, without mutants |
+| 3 — prose, status or formatting | Check accuracy against the source and relevant static checks | Accuracy review, no suite reruns; verdict about a paragraph |
+
+A UI change that changes destructive scope, consent or authority belongs in tier 1.
+Keep maintained regressions and required safety-scenario coverage in the repository.
+Extend the fault/barrier harness only for a concrete required case, with the first caller that needs it.
+Review a new or changed locked contract before dependent code; tiers 2 and 3 do not require separate plan commits or experiment records by default.
+Every implementation commit still passes independent local review.
+
+Keep raw evidence, one-off probe output and structured evidence twins outside the product repository.
+Retain a durable private packet, record its path and digest, and bind measured claims to a committed source checkpoint.
+State expiry whenever citing a CI artifact and retain the supporting evidence privately; an expiring artifact cannot be the sole pointer.
+An experiment record should be about a page: oracle, result, evidence pointer and limits.
+Append a short follow-up to the existing subject record rather than creating a new record for every slice.
+When touching a finding-register row, keep the current disposition, one evidence link and one sentence of remaining work; keep history in the subject record.
+Do not bulk-rewrite old records or evidence solely to meet this forward rule.
+
+Include necessary documentation in the implementation PR; do not open another PR merely to record delivery.
+Retain atomic commits, independent approval and all five successful jobs on the reviewed latest PR head with current master incorporated, a protected merge and all five resulting-master jobs.
+No tier introduces a CI skip or bypass.
+
+The [Linux finish line](audits/2026-09-05/linux-finish-line.md) is the single frozen list for this implementation checkpoint and defines the six production gates.
+It requires independent review before execution; additions require operator sign-off recorded there.
+Report a newly discovered material risk and keep affected release acceptance blocked while the operator decides its scope; do not silently expand the queue.
+Declare the Linux implementation checkpoint complete when its named work and required Linux checks are complete, even while native, artifact or deployment gates remain open.
+Those external obligations cannot create indefinite extra Linux slices.
+Production readiness still requires the gates for the supported scope, including the ADR 0020 refusals, accepted v1 requirements and all six platform targets.
+Neither audit percentage nor document volume grants release approval.
 
 ## 66. Final project statement
 
