@@ -1,7 +1,10 @@
 package local
 
 import (
+	"bytes"
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"io"
 	"os"
@@ -116,7 +119,7 @@ func TestNativeDownloadClosure(t *testing.T) {
 				wantSize--
 			}
 			destination := testDestination(t, dir)
-			outcome := finishNativeDownload(ctx, body, file, testDirectory(t, destination, "."), nativePublication(t, destination, ".", filepath.Base(temp.Name()), ".", "final"), wantSize)
+			outcome := finishNativeDownload(ctx, body, file, testDirectory(t, destination, "."), nativePublication(t, destination, ".", filepath.Base(temp.Name()), ".", "final"), wantSize, ladderFor(t, []byte("complete bytes")))
 			placed, err := outcome.Result == transfercopy.ResultCopied, outcome.err()
 			if placed != (fault == "control") || (err == nil) != (fault == "control") {
 				t.Fatalf("placement outcome: placed=%v error=%v", placed, err)
@@ -197,7 +200,7 @@ func TestNativeDownloadCleanupRefusal(t *testing.T) {
 				return nil
 			}}
 			destination := testDestination(t, dir)
-			outcome := finishNativeDownload(t.Context(), body, temp, testDirectory(t, destination, "temporary"), nativePublication(t, destination, "temporary", filepath.Base(temp.Name()), ".", "final"), int64(len("complete bytes")))
+			outcome := finishNativeDownload(t.Context(), body, temp, testDirectory(t, destination, "temporary"), nativePublication(t, destination, "temporary", filepath.Base(temp.Name()), ".", "final"), int64(len("complete bytes")), ladderFor(t, []byte("complete bytes")))
 			placed, err := outcome.Result == transfercopy.ResultCopied, outcome.err()
 			if placed != (primary == "none") || !errors.Is(err, os.ErrPermission) {
 				t.Fatalf("cleanup refusal lacks actual placement/permission facts: %v %v", placed, err)
@@ -238,6 +241,170 @@ func TestNativeDownloadCleanupRefusal(t *testing.T) {
 				}
 			} else if _, err := os.Lstat(final); !errors.Is(err, os.ErrNotExist) {
 				t.Errorf("source close refusal placed final file: %v", err)
+			}
+		})
+	}
+}
+
+// ladderFor is the source content expectation these fixtures stand in
+// for: the length and MD5 of the bytes the case is about. A nil body
+// gives an empty expectation, which is what a case that never reaches
+// the comparison needs.
+func ladderFor(t *testing.T, body []byte) transfercopy.Ladder {
+	t.Helper()
+	if body == nil {
+		return transfercopy.Ladder{}
+	}
+	sum := md5.Sum(body)
+	ladder, err := transfercopy.PlainLadder(int64(len(body)), hex.EncodeToString(sum[:]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ladder
+}
+
+// Every failing path must hand cleanup a real identity, so that cleanup
+// refuses to unlink an entry another writer has put at the temporary's
+// name. Protecting somebody else's file cannot depend on why this call
+// failed, so the unequal-length and close-failure paths are checked
+// alongside the same-size mismatch. Retention of our OWN bytes is the
+// narrower promise: it applies to a comparison that failed on its own,
+// and an actual close failure keeps the existing cleanup contract.
+func TestMismatchedDownloadRetainsWhatItRejected(t *testing.T) {
+	served := []byte("served bytes..")
+	for _, c := range []struct {
+		name        string
+		expect      []byte
+		substituted bool
+		closeFails  bool
+		retainsOwn  bool
+	}{
+		{name: "same_size_mismatch_retains_rejected_bytes", expect: bytes.Repeat([]byte("x"), len(served)), retainsOwn: true},
+		{name: "same_size_mismatch_preserves_a_replacement", expect: bytes.Repeat([]byte("x"), len(served)), substituted: true},
+		{name: "longer_expectation_preserves_a_replacement", expect: append(bytes.Repeat([]byte("x"), len(served)), 'x'), substituted: true},
+		{name: "shorter_expectation_preserves_a_replacement", expect: bytes.Repeat([]byte("x"), len(served)-1), substituted: true},
+		{name: "longer_expectation_with_close_failure_preserves_a_replacement", expect: append(bytes.Repeat([]byte("x"), len(served)), 'x'), substituted: true, closeFails: true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			staging := filepath.Join(dir, "temporary")
+			if err := os.MkdirAll(staging, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			temp, err := os.CreateTemp(staging, ".aeronautes-part-*")
+			if err != nil {
+				t.Fatal(err)
+			}
+			base := filepath.Base(temp.Name())
+			replacement := []byte("another writer")
+			closeRefusal := errors.New("source close refused")
+			body := downloadCloseReader{Reader: bytes.NewReader(served), close: func() error {
+				if c.substituted {
+					// Another actor replaces the entry while the read ends.
+					if err := os.Remove(temp.Name()); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(temp.Name(), replacement, 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if c.closeFails {
+					return closeRefusal
+				}
+				return nil
+			}}
+			destination := testDestination(t, dir)
+			outcome := finishNativeDownload(t.Context(), body, temp,
+				testDirectory(t, destination, "temporary"),
+				nativePublication(t, destination, "temporary", base, ".", "final"),
+				int64(len(served)), ladderFor(t, c.expect))
+
+			if outcome.Result == transfercopy.ResultCopied || outcome.err() == nil {
+				t.Fatalf("a rejected download was accepted: %+v %v", outcome.Observation, outcome.err())
+			}
+			if _, err := os.Lstat(filepath.Join(dir, "final")); !os.IsNotExist(err) {
+				t.Errorf("something was published despite the rejection: %v", err)
+			}
+			held, readErr := os.ReadFile(temp.Name())
+			switch {
+			case c.substituted:
+				if readErr != nil || !bytes.Equal(held, replacement) {
+					t.Fatalf("another writer's replacement was destroyed: err=%v content=%q", readErr, held)
+				}
+			case c.retainsOwn:
+				if readErr != nil || !bytes.Equal(held, served) {
+					t.Fatalf("the rejected bytes were not retained: err=%v content=%q", readErr, held)
+				}
+				if outcome.Effect != transfercopy.EffectUnresolved {
+					t.Errorf("retained residue left effect %v, want unresolved", outcome.Effect)
+				}
+			}
+		})
+	}
+}
+
+// statFailingFile makes the identity acquisition fail while everything
+// else about the temporary behaves normally. An identity that could not
+// be established must retain, not fall back to "any regular file will
+// do" — which is how another writer's replacement gets unlinked.
+type statFailingFile struct {
+	*os.File
+	err error
+}
+
+func (f statFailingFile) Stat() (os.FileInfo, error) { return nil, f.err }
+
+func TestUnknownTemporaryIdentityRetainsRatherThanUnlinks(t *testing.T) {
+	for _, substituted := range []bool{false, true} {
+		name := "retains_when_identity_is_unknown"
+		if substituted {
+			name = "preserves_a_replacement_when_identity_is_unknown"
+		}
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			staging := filepath.Join(dir, "temporary")
+			if err := os.MkdirAll(staging, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			temp, err := os.CreateTemp(staging, ".aeronautes-part-*")
+			if err != nil {
+				t.Fatal(err)
+			}
+			base := filepath.Base(temp.Name())
+			served := []byte("served bytes..")
+			replacement := []byte("another writer")
+			statErr := errors.New("input/output error")
+			body := downloadCloseReader{Reader: bytes.NewReader(served), close: func() error {
+				if !substituted {
+					return nil
+				}
+				if err := os.Remove(temp.Name()); err != nil {
+					t.Fatal(err)
+				}
+				return os.WriteFile(temp.Name(), replacement, 0o600)
+			}}
+			destination := testDestination(t, dir)
+			outcome := finishNativeDownload(t.Context(), body, statFailingFile{File: temp, err: statErr},
+				testDirectory(t, destination, "temporary"),
+				nativePublication(t, destination, "temporary", base, ".", "final"),
+				int64(len(served)), ladderFor(t, served))
+
+			if outcome.Result == transfercopy.ResultCopied || !errors.Is(outcome.err(), statErr) {
+				t.Fatalf("a failed identity was not reported: %+v %v", outcome.Observation, outcome.err())
+			}
+			if outcome.Effect != transfercopy.EffectUnresolved {
+				t.Errorf("unknown identity left effect %v, want unresolved residue", outcome.Effect)
+			}
+			if _, err := os.Lstat(filepath.Join(dir, "final")); !os.IsNotExist(err) {
+				t.Errorf("something was published: %v", err)
+			}
+			held, readErr := os.ReadFile(temp.Name())
+			want := served
+			if substituted {
+				want = replacement
+			}
+			if readErr != nil || !bytes.Equal(held, want) {
+				t.Fatalf("the file at the temporary's name was destroyed: err=%v content=%q want %q", readErr, held, want)
 			}
 		})
 	}

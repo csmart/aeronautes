@@ -199,6 +199,24 @@ func downloadCloseRun(t *testing.T, h *Harness, scenario string) {
 		t.Fatalf("close probe missed actual wire length check: gets=%d heads=%d", gets.Load(), lengthHeads.Load())
 	}
 	delta := map[string][]byte{}
+	if fault && !cleanup && !collision {
+		// The source advertises more bytes than it serves, so the content
+		// comparison rejects what arrived and its bytes are retained as
+		// unresolved residue (ADR 0045). This fault previously cleaned the
+		// temporary up; it no longer does, because a rejected download
+		// must not reach a cleanup whose identity check cannot tell our
+		// own file from a replacement that reused its inode.
+		paths, globErr := filepath.Glob(filepath.Join(destination, ".aeronautes-part-*"))
+		if globErr != nil || len(paths) != 1 {
+			t.Fatalf("a rejected download did not retain exactly one temporary: %v %v", paths, globErr)
+		}
+		held, readErr := os.ReadFile(paths[0])
+		if readErr != nil || !bytes.Equal(held, body) {
+			t.Fatalf("the retained temporary does not hold the served bytes: %v %q", readErr, held)
+		}
+		retained = paths[0]
+		delta["selected/"+filepath.Base(retained)] = body
+	}
 	if cleanup {
 		delta["selected/"+filepath.Base(retained)] = body
 	}
@@ -287,7 +305,14 @@ func downloadCloseRun(t *testing.T, h *Harness, scenario string) {
 	if collision && !strings.Contains(saved.Job.Error, "file exists") {
 		t.Errorf("download lost no-replace refusal: %+v", saved.Job)
 	}
-	if cleanup && (!strings.Contains(saved.Job.Error, "remove download temporary file") || !strings.Contains(saved.Job.Error, "permission denied")) {
+	// A rejected download no longer attempts cleanup at all, so there is
+	// no refusal to record: its temporary is retained by decision rather
+	// than because a removal failed (ADR 0045). The refusal assertion
+	// still applies to the cleanup variant that does attempt a removal.
+	if cleanup && fault && strings.Contains(saved.Job.Error, "remove download temporary file") {
+		t.Errorf("a rejected download attempted a cleanup it should not have: %+v", saved.Job)
+	}
+	if cleanup && !fault && (!strings.Contains(saved.Job.Error, "remove download temporary file") || !strings.Contains(saved.Job.Error, "permission denied")) {
 		t.Errorf("download lost temporary cleanup refusal: %+v", saved.Job)
 	}
 	if scenario == "link_cleanup" && !strings.Contains(saved.Job.Error, "link ") {

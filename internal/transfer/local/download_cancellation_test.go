@@ -155,7 +155,7 @@ func TestDownloadNativeBodyCancellation(t *testing.T) {
 					}
 				}
 			}
-			outcome := nativeDownloadBody(ctx, body, item, destination, temporary)
+			outcome := nativeDownloadBody(ctx, body, item, destination, temporary, ladderFor(t, nil))
 			want := transfercopy.Observation{Result: transfercopy.ResultFailed, Effect: transfercopy.EffectNotAttempted,
 				Diagnostic: transfercopy.Diagnostic{Stage: transfercopy.StageSourceRead, Code: transfercopy.CodeCancelled}}
 			if mode == "replaced" {

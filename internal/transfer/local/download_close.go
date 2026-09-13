@@ -21,10 +21,29 @@ type nativeDownloadFile interface {
 // closes both ends, and publishes exactly the file it verified into the
 // inspected parent. The temporary is removed only while it is still that
 // file.
-func finishNativeDownload(ctx context.Context, body io.ReadCloser, temp nativeDownloadFile, parent *os.Root, publish publication, wantSize int64) (result downloadResult) {
+func finishNativeDownload(ctx context.Context, body io.ReadCloser, temp nativeDownloadFile, parent *os.Root, publish publication, wantSize int64, ladder transfercopy.Ladder) (result downloadResult) {
 	var verified os.FileInfo
 	cancelled := false
+	// A comparison failure retains its rejected bytes (ADR 0045), and it
+	// does so whatever else went wrong afterwards. That is not only about
+	// keeping the bytes: it keeps this path out of removeNativeTemporary
+	// altogether, so no identity check is load-bearing here. The check
+	// there compares device and inode, which a replacement can reuse after
+	// an unlink, so it cannot tell our own temporary from somebody else's
+	// file at the same name. Never reaching it is the only version of this
+	// that cannot be reopened by a filesystem, a close reordering or a
+	// change to that comparison.
+	contentMismatch := false
+	// An identity we could not establish is never authority to unlink:
+	// cleanup would fall back to "any regular file will do", which is
+	// exactly how another writer's replacement gets destroyed. Unlike a
+	// content mismatch, this is not overridden by a close failure.
+	identityFailed := false
 	defer func() {
+		if identityFailed || contentMismatch {
+			result.Effect = transfercopy.EffectUnresolved
+			return
+		}
 		if cleanupErr := removeNativeTemporary(parent, publish.stagedBase, publish.stagedDisplay, verified); cleanupErr != nil {
 			result.addIssue(transfercopy.StageCleanup, "temporary-cleanup", fmt.Errorf("remove download temporary file: %w", cleanupErr))
 			if cancelled {
@@ -33,7 +52,10 @@ func finishNativeDownload(ctx context.Context, body io.ReadCloser, temp nativeDo
 			}
 		}
 	}()
-	written, err := io.Copy(temp, body)
+	// The body already streams into the temporary, so the content
+	// comparison rides that stream and costs no second read (ADR 0045).
+	digest := transfercopy.NewLadderDigest(ladder)
+	written, err := io.Copy(io.MultiWriter(temp, digest), body)
 	verificationAttempted := err == nil
 	// A cancel that ends the read leaves a partial temporary and an
 	// untouched target; once the temporary is gone there is no effect.
@@ -41,13 +63,37 @@ func finishNativeDownload(ctx context.Context, body io.ReadCloser, temp nativeDo
 	if err == nil && written != wantSize {
 		err = fmt.Errorf("wrote %d bytes, object says %d — refusing to place a short file", written, wantSize)
 	}
+	// The comparison decides before anything is published: a mismatch
+	// leaves the temporary as retained residue and places nothing.
+	//
+	// Its own code is deliberately not propagated. The digester
+	// distinguishes shapes of mismatch internally — content that ended
+	// early reads as incomplete — but at this boundary the fact is that
+	// the content could not be verified, and ADR 0045 keeps incomplete
+	// for a ladder that could not be built. Propagating it reclassified
+	// a source that advertised more bytes than it served, which the
+	// close-fault regressions already pin as unverified.
 	if err == nil {
 		err = temp.Sync()
 	}
+	// The identity of the bytes this call wrote, taken while the handle
+	// that wrote them is still open, and taken on EVERY path rather than
+	// only the successful one. Cleanup uses it to refuse to unlink an
+	// entry that is no longer ours; without it a failing path hands
+	// cleanup a nil identity, which unlinks whatever regular file holds
+	// the name -- including a replacement another writer put there.
+	// Protecting somebody else's file cannot depend on why we failed.
+	if info, statErr := temp.Stat(); statErr == nil {
+		verified = info
+	} else {
+		identityFailed = true
+		err = errors.Join(err, fmt.Errorf("cannot establish the identity of the downloaded temporary: %w", statErr))
+	}
 	if err == nil {
-		// The identity of the verified bytes, taken while the handle that
-		// wrote them is still open.
-		verified, err = temp.Stat()
+		if _, contentErr := digest.Result(); contentErr != nil {
+			contentMismatch = true
+			err = fmt.Errorf("downloaded content does not match the source: %w", contentErr)
+		}
 	}
 	// Swift can report corruption only on Close after a successful read.
 	// Both handles must close successfully before the final name appears.

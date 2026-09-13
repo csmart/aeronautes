@@ -469,14 +469,21 @@ func nativeDownload(ctx context.Context, src *swiftcontrol.Session, container st
 	if err := ctx.Err(); err != nil {
 		return downloadNotAttempted(transfercopy.StageSourceRead, err)
 	}
-	body, _, err := src.OpenObject(ctx, container, item.Name)
+	body, detail, err := src.OpenObject(ctx, container, item.Name)
 	if err != nil {
 		return downloadFailed(transfercopy.EffectNotAttempted, transfercopy.StageSourceRead, transfercopy.CodeIO, "native-get", err)
 	}
-	return nativeDownloadBody(ctx, body, item, destination, temporary)
+	// The open already carried the source's own detail, so a plain source
+	// needs no further request and only a large one costs a listing.
+	ladder, ladderErr := transfercopy.SourceLadder(ctx, src, container, detail)
+	if ladderErr != nil {
+		return downloadFailed(transfercopy.EffectNotAttempted, transfercopy.StageSourceRead, transfercopy.CodeIncomplete, "native-get",
+			errors.Join(fmt.Errorf("source states no usable content expectation: %w", ladderErr), body.Close()))
+	}
+	return nativeDownloadBody(ctx, body, item, destination, temporary, ladder)
 }
 
-func nativeDownloadBody(ctx context.Context, body io.ReadCloser, item DownloadItem, destination *DestinationRoot, temporary string) (result downloadResult) {
+func nativeDownloadBody(ctx context.Context, body io.ReadCloser, item DownloadItem, destination *DestinationRoot, temporary string, ladder transfercopy.Ladder) (result downloadResult) {
 	if err := ctx.Err(); err != nil {
 		if closeErr := body.Close(); closeErr != nil {
 			result := downloadFailed(transfercopy.EffectNotAttempted, transfercopy.StageSourceRead, transfercopy.CodeIO, "native-close", closeErr)
@@ -523,7 +530,7 @@ func nativeDownloadBody(ctx context.Context, body io.ReadCloser, item DownloadIt
 	publish := publication{root: destination,
 		stagedRoot: parent, stagedBase: temporaryBase, stagedRel: filepath.Join(filepath.Dir(item.RelPath), temporaryBase), stagedDisplay: temporary,
 		targetRoot: parent, targetBase: base, targetRel: item.RelPath, targetDisplay: filepath.Join(destination.Path(), item.RelPath)}
-	return finishNativeDownload(ctx, body, temp, parent, publish, item.Size)
+	return finishNativeDownload(ctx, body, temp, parent, publish, item.Size, ladder)
 }
 
 func (d *downloadRun) copy(ctx context.Context, session *swiftcontrol.Session, run func(context.Context) (*rclone.Result, error)) (*rclone.Result, error) {
