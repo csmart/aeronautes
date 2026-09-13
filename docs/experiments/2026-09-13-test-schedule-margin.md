@@ -40,7 +40,7 @@ A hosted budget question is answered by hosted measurements.
 | heavy | 312.61 s | 3 | 845.6 s | 90 per cent |
 
 The heavy fixture is close to idle.
-It spends 312 seconds of the same 1500 second budget while the main lane spends 1167, so the partition places 79 per cent of its systemtest work on one of its two fixtures.
+It spends 312 seconds of the same 1500 second budget while the main lane spends 1167, so the main lane holds 79 per cent of the two lanes' combined wall clock and 77 per cent of their summed test elapsed.
 
 The twelve most expensive main-lane tests:
 
@@ -62,8 +62,9 @@ The twelve most expensive main-lane tests:
 Seventy-eight of these tests exist as a `Mock` and a `RealSwift` twin asserting the same behaviour against a local mock and against the containerized Swift.
 The `RealSwift` halves take 2722.4 seconds against their twins' 803.0, a ratio of 3.4.
 That is an observed difference between two elapsed sums, not a measurement of network round trips, and this record does not attribute it to any single cause.
-It is reported because it bounds what the expensive tests have in common with their cheaper twins, and because a future cost improvement would have to explain that difference before claiming the coverage can be kept.
-Nothing here rules out cheaper execution; it is simply not the direction this contract takes.
+It is reported because it bounds what the expensive tests have in common with their cheaper twins.
+Nothing here rules out cheaper execution, and a future attempt at it owes evidence that the coverage is preserved rather than an account of every timing difference between a test and its twin.
+It is simply not the direction this contract takes.
 
 ## Why the heavy lane can absorb the work
 
