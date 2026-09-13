@@ -5251,6 +5251,28 @@ Encoded listings and Range retries were not established by the successful object
 This scope preserves stored content without weakening the length/MD5 oracle or enabling another transfer capability.
 Native fallbacks, source-version binding, later stage changes, final publication, broader fidelity and the valuable-data hold remain separate unresolved obligations.
 
+The next bounded correction within DS-04/P16 binds a published copy to the source's own content for every source class, under [ADR 0042](adr/0042-source-content-ladder.md) and the [staged-content follow-up](experiments/2026-09-11-staged-copy-content.md#follow-up-the-source-content-ladder).
+The measured gap is that a segmented source is published with no content evidence at all: the commit compares logical length, sums the staged segment bytes, and skips the content comparison because that comparison admits only a plain source.
+The live name is then stamped with the source identity the commit-time HEAD reported, so an in-window source change is recorded as the identity of bytes the destination does not hold, and every later skip decision trusts that stamp.
+
+1. Review ADR 0042 and this amendment, with the retained before evidence, before changing production code.
+2. Build the source's content expectation as an ordered ladder of length and MD5 runs.
+   A plain source contributes one run.
+   A dynamic large object source contributes one run per listed segment, admitted only when every entry carries a valid MD5, the run lengths sum to the source's logical length, and the MD5 of the concatenated entity tags reproduces the source's reported entity tag, which is what binds an advisory listing to the authoritative HEAD.
+   A static large object source states its ladder in its own manifest, whose entries record the length and MD5 the object was created from and recombine to the tag it reports; only entries stating a whole segment's own content MD5 qualify, so a ranged entry, a nested manifest or an unrecognised entry refuses.
+   A source whose class cannot be established, whose segments are themselves large objects, or which declares more segments than one comparison holds, supplies no ladder and refuses the covered name.
+3. Satisfy the ladder by reading the complete assembled staged content once and digesting it along the ladder's boundaries, for a plain staged object as well as a segmented one; two plain objects are the one pair not read, because their entity tags come from their own object HEADs and are already compared.
+   Destination boundaries never enter the comparison, so legitimate resegmentation still passes, and the large-source to plain-destination case is closed.
+   Do not accept a staged segment listing that reproduces the ladder in place of that read: a same-size replacement can leave the container rows, and the aggregate a manifest HEAD derives from them, agreeing with the source while the stored bytes do not.
+4. Treat a failed comparison as a staging unverified failure and an unbuildable ladder as a staging incomplete failure, both with unresolved effects, retaining the staged manifest, its segments and every recovery fact, adds no committing or committed fact, performs no live PUT or new cleanup, and reports the retained staged name as residue.
+5. Extend the same expectation to the native copy route, which digests the streamed body at no extra read, and then to the local upload and download routes, as separately reviewed commits.
+
+The added cost per covered candidate, over the plain-source read already accepted, is one listing of the source segment prefix or one small manifest fetch, plus one complete read of the assembled staged object; that read streams to the application rather than staying server-local, so a covered copy moves the object's bytes over the network a second time.
+The published aggregate stamp and the existing skip decisions keep their current meanings and their current tests.
+MD5 remains Swift's honest-provider integrity expectation rather than authenticity; the ladder is bound to an observation rather than to current segment contents, because a dynamic large object's reported aggregate is itself derived from a container listing; and the stale later listing limitation is unchanged.
+The deployed fixture validates a static large object's recorded segment digests when it serves the object, so a same-size substitution there fails the source read rather than producing wrong bytes; that protection is the store's and is recorded as an observation, not claimed as a verification result.
+DS-04, finish-line item L05 and the valuable-data hold stay open until the local routes in this sequence are also delivered.
+
 The bounded [Swift integration failure investigation](experiments/2026-09-11-swift-ci-failures.md) follows two failed PR93 runs whose test streams retain HTTP 503 responses but no server or runner diagnostics.
 The existing CI contract requires investigation before retry, every required job to succeed on the current head and base, and a checked master after merge.
 

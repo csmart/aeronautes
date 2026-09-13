@@ -119,3 +119,29 @@ The source HEAD is not a pinned version of the engine's original source read, an
 MD5 supplies Swift's existing honest-provider integrity expectation, not authenticity against forged or colliding evidence.
 Segmented sources, symlinks, other staged classes, local transfers, metadata/replication fidelity, final publication binding, stale later listings and legacy strength labels remain separate work.
 This change grants no overwrite, Mirror start, source deletion, automatic segment cleanup or credential reclamation authority.
+
+## Follow-up: the source content ladder
+
+This slice's comparison admitted only a plain source, so a segmented source publishes with no content evidence: `commitStaged` compares logical length, sums the staged segment bytes, and skips the comparison because `src.Class` is not `ClassPlain`.
+It then stamps the live name with the identity the commit-time HEAD reported, so a source that changed while the engine was reading is recorded as the identity of bytes the destination does not hold.
+A segmented source materialised as a plain staged object is checked on logical length alone.
+
+The archived probe reproduces this at the executor boundary against the two-account mock cluster: a four-byte segment of a dynamic large object source replaced with different bytes of the same length inside the copy window is published as copied, with no failure, holding the old content under the new source's fingerprint.
+The plain-source control refuses and retains its staging; the unchanged control publishes.
+That probe, its JSON twin and the raw logs are retained privately at `/home/csmart/code/.aeronautes-work/20260913-claude/l05/`, with digests in `SHA256SUMS` in that directory.
+
+The proposed correction is [ADR 0042](../adr/0042-source-content-ladder.md).
+A source's expectation is an ordered ladder of length and MD5 runs: one run for a plain object, one per listed segment for a dynamic large object whose recombined entity tags must reproduce the tag its HEAD reports, and the recorded manifest for a static large object.
+The complete assembled staged content is read once and digested along those boundaries, for a plain staged object as well as a segmented one; the destination's own boundaries never enter the comparison, so legitimate resegmentation still publishes.
+Two plain objects are the one pair not read, because their entity tags come from their own object HEADs and `verifyCopied` has already compared them.
+
+Listing evidence is not accepted in place of that read.
+The review of the first proposal built the case: a same-size segment replacement can leave the container row at its previous length and entity tag, and a dynamic large object's reported aggregate is derived from those same rows, so both agree with the source while the stored bytes do not.
+That would be an initial-content regression against the guard this slice already provides, and it becomes a required catching regression rather than a permitted shortcut.
+
+Cost, over what this slice already accepted: one additional listing of the source's segment prefix, or one small manifest fetch for a static large object, and one complete read of the assembled staged object.
+That read is not server-local — `OpenObjectContent` streams the bytes to the application — so a covered copy moves the object's bytes over the network a second time.
+
+The ladder is bound to an observation, not to current segment contents: a source listing that has not caught up can agree with a source HEAD derived from the same listing.
+Required proof is a catching before and after regression on both owned providers for a same-size staged corruption, a permutation, missing content compensated by a duplicate, a stale staged listing and an unusable ladder, with valid resegmentation and the plain-source controls preserved, plus deliberately broken controls that each fail their own named case.
+Source and publication substitutions, the native copy route and the local upload and download routes stay open, and DS-04 stays blocking.
