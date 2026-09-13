@@ -1,6 +1,6 @@
 # Remaining serial test groups
 
-Status: PR108 timed out, the controlled comparison rejected four slots, and delivery is held pending review of the proposed nine-call rollback below.
+Status: PR108 timed out, the controlled comparison rejected four slots, and the approved nine-call rollback awaits committed-source measurement and implementation review.
 The behaviour oracle is the existing [three-slot CI schedule](../CI.md), unchanged test assertions and cleanup, and each group's private resources.
 The inspected source is `dcdef302b2e61d0c0a8607751d4605287a0cff85`, tree `60dd8e19737a4f2fb5afdcc93560418081aa6f11`.
 The six candidate files and ten relevant harness, helper and CI inputs match protected master `c098faffeaf160630f538b03639a87cd7f7549aa` byte for byte.
@@ -116,14 +116,16 @@ Sampled process/descendant maxima rose from 6/5 to 7/6, and summed RSS from 618,
 A single pair cannot establish repeatability or hosted margin, and cache state may favour the later producer.
 Retained packet: `.aeronautes-work/evidence/20260913-service-delivery/parallel-comparison`, `SHA256SUMS` digest `f4ce9fb5fe67cbb3cdea97c84d2a8db79f079e854812713ed39ab137b2a45aa1`.
 
-## Proposed rollback for PR108
+## Rollback for PR108
 
 The behaviour oracle is the pre-experiment schedule, every existing test and required CI check, and the six independently reviewed functional fixes in this delivery.
-After independent contract review, remove exactly the nine outer `t.Parallel()` calls listed above; leave all groups, inner cases, child branches, assertions, cleanup and functional code unchanged.
+Independent contract review approved removal of exactly the nine outer `t.Parallel()` calls listed above; the implementation restores the six files byte for byte to their pre-experiment versions, leaving all groups, inner cases, child branches, assertions, cleanup and functional code unchanged.
 This withdraws an optimisation without demonstrated hosted benefit; it does not claim that restoring the older schedule solves its already narrow margin.
 Keep both CI lanes at three slots and preserve race/coverage settings, package selection, producer/tee checks, scenarios and the 25-minute package and 35-minute job limits.
 Run the complete covered internal suite on the committed rollback with the same local two-package and 1,800-second producer limits, retaining the exact source, tools, fixture, raw events, actual exits, complete inventory and scenario report.
 The inventory must remain identical apart from the two documented generated names, with exactly the original 60 PAUSE/CONT pairs; compare body and wall times with the covered three-slot baseline above.
-Independently review the implementation and evidence before pushing, then require all five latest-head/current-base PR checks and all five resulting-master checks and inspect their package/job margins.
+If system-package time is not better than the 927.830-second covered baseline, skip a hosted attempt and proceed to a separately reviewed partition across owned fixtures.
+That partition is now the likely delivery path, since the previous serial shape already had little margin; its design can be reviewed during the rollback measurement.
+Independently review the implementation and evidence before pushing; any hosted delivery then requires all five latest-head/current-base PR checks and all five resulting-master checks and inspection of their package/job margins.
 A repeated timeout or other failed check stops for diagnosis and a separately reviewed partition across owned fixtures; do not retry merely to obtain green or increase a budget.
 A narrow passing margin still does not establish stable headroom; this rollback closes no audit finding and changes no product capability or release acceptance.

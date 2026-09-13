@@ -257,14 +257,12 @@ func assertCopyRecordFault(t *testing.T, h *Harness, mode, id, first, src, dst s
 }
 
 func TestCopyRecordRefusalMock(t *testing.T) {
-	t.Parallel()
 	for _, mode := range []string{"admission", "execution", "staged_execution", "verification"} {
 		t.Run(mode, func(t *testing.T) { copyRecordFault(t, findMockHarness(t), mode) })
 	}
 }
 
 func TestCopyRecordRefusalRealSwift(t *testing.T) {
-	t.Parallel()
 	for _, mode := range []string{"admission", "execution", "staged_execution", "verification"} {
 		t.Run(mode, func(t *testing.T) { copyRecordFault(t, New(t), mode) })
 	}
