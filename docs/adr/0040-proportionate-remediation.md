@@ -1,6 +1,6 @@
 # ADR 0040 — proportionate remediation
 
-**Status:** Proposed; operator adoption and independent local review are both required.
+**Status:** Accepted by the operator on 13 September 2026 after independent local review.
 **Scope:** Execution and evidence discipline; no change to supported operations, safety guarantees or release acceptance.
 
 ## Problem
@@ -11,7 +11,7 @@ Continuing to subdivide broad audit rows also left no finite implementation chec
 ## Decision
 
 [DESIGN §65.12](../DESIGN.md#6512-proportionate-remediation-and-a-fixed-finish-line) owns the three review tiers and short-record rules.
-Record the operator's adoption in the project context; engineering review alone does not adopt these norms.
+The operator's adoption is recorded in the project context.
 Keep safety regressions and independent reproduction, but match other evidence to the changed behaviour.
 Retain raw evidence and structured twins in durable private packets with path and digest, including artifact expiry where applicable.
 Deliver related documentation with the code.

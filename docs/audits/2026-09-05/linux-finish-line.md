@@ -1,7 +1,7 @@
 # Linux implementation finish line — 13 September 2026
 
 This is the single scope list for the current Linux implementation checkpoint, based on source `e5be8215eb1d58cd26f62333c2cb6bc2dfbb2d40` and the [finding register](remediation-plan.md#finding-to-plan-coverage).
-Independent review and operator adoption gate execution; after both the list is frozen, and additions require operator sign-off recorded here.
+The operator adopted this independently reviewed list on 13 September 2026; its scope is frozen, and additions require operator sign-off recorded here.
 New material risks must be reported for that decision, with affected release acceptance held.
 The 34 open or partial findings remain open; these work areas are not equivalent-sized tasks or new finding IDs.
 
