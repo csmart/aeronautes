@@ -551,11 +551,33 @@ type Report struct {
 	// RootDisplacement records when the captured pathname stopped naming
 	// the held destination; effects continued through the handle.
 	RootDisplacement string
+	// CreatedDirectories counts the directories the ancestor walks made
+	// inside the picked directory for items that did not copy, from
+	// observed creation rather than from a directory existing afterwards
+	// (ADR 0043). Those are residue: a job that stopped leaves them
+	// behind and the operator is told what now exists that did not
+	// before. An item that copied is not counted, because its
+	// directories are the intended outcome and its own record carries
+	// the placed file. Bound the examples without truncating the count.
+	CreatedDirectories      int64
+	CreatedDirectorySamples []string
 	// CapturedPrefixes: large uploads segment like any engine write.
 	CapturedPrefixes []rclone.SegmentPrefix
 }
 
 const maxFailures = 200
+
+// createdDirectories records observed ancestor creation. Callers pass
+// what the walk actually made, so a pre-existing or raced directory
+// never arrives here.
+func (r *Report) createdDirectories(created []string) {
+	for _, dir := range created {
+		r.CreatedDirectories++
+		if len(r.CreatedDirectorySamples) < maxFailures {
+			r.CreatedDirectorySamples = append(r.CreatedDirectorySamples, dir)
+		}
+	}
+}
 
 func (r *Report) postCommitIssue(name, stage string, err error) {
 	r.PostCommitIssues++

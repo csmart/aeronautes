@@ -2,7 +2,7 @@
 
 **Status:** Proposed, revised after independent contract review. Contract only; no implementation is claimed by this record.
 **Scope:** The native staging boundary of a cancelled download: what it may leave in the directory the operator picked, and what the durable records say about it.
-The engine route keeps its existing cancellation coverage. The open product choice in decision 5 is the operator's and is not decided here.
+The engine route keeps its existing cancellation coverage. The open product choice in decision 7 is the operator's and is not decided here.
 
 ## Problem and oracle
 
@@ -29,29 +29,34 @@ Read as an accepted *set* of effects with records that say which occurred, that 
    Both cancellation checks either side of the ancestor walk stay. Neither is removed, because each prevents work the other cannot.
 2. Do not report an effect that certainly did not happen as uncertain.
    The check between the ancestor walk and the temporary fires before the temporary's exclusive creation, so at that point no file and no temporary exists for the item.
-   Its record becomes `not_attempted` with code `cancelled`, which is what both neighbouring checks and the upload twin already record, rather than `unresolved` with code `incomplete`.
+   Its record becomes `not_attempted` at `source_read`, which is what both neighbouring checks and the upload twin already record, rather than `failed` and `unresolved` at `staging`.
+   The diagnostic code was already `cancelled` in both, because classification maps a cancelled error to it whatever code the call site passes; what changes is the result, the effect and the stage.
    `unresolved` keeps its meaning of residue the operator must go and look for, which is what makes it worth acting on.
-3. Record observed creation, never inferred creation.
+3. Report residue, not intended placement.
+   Ancestors are reported for an item that did not copy.
+   An item that copied has the directories it needed as its intended outcome and its own record already carries the placed file, so counting them again would describe the result rather than what a stopped job left behind.
+   The distinction is intended placement against residue; it is a per-item scope, and it sits beside the job-level condition in decision 5 rather than replacing it.
+4. Record observed creation, never inferred creation.
    The component walk already distinguishes the two: it creates a component only when the entry is absent and its `Mkdir` succeeds, and an entry that already exists or is won by another writer is not a creation by this executor.
    The walk reports the components it created; a partial walk reports the prefix it got through; a pre-existing or raced directory is never counted.
    Nothing infers creation from a directory merely existing afterwards.
-4. Carry it on the existing job-level channel, not a new structure.
+5. Carry it on the existing job-level channel, not a new structure.
    Created ancestors are reported the way root displacement already is: a job-level fact on the report that the service appends to the terminal message and the audit summary, so a cancelled job says what now exists inside the picked directory that did not before.
    This is reporting only and grants no removal authority.
-5. Directories are never removed to tidy a cancellation.
+6. Directories are never removed to tidy a cancellation.
    A destination ancestor may already have held the operator's own data, and once it exists this executor cannot tell one it created from one it merely opened.
    This concerns destination ancestors only. The owned stage directory and the planned directories beneath it keep the cleanup ADR 0035 decision 7 already gives them, unchanged by this record.
-6. Open product choice, for the operator and not for this contract.
+7. Open product choice, for the operator and not for this contract.
    Whether a graceful cancel removes the retained stage is unresolved and is recorded here so it can be answered without redoing this work.
    Current behaviour: cleanup runs, removes only empty planned directories, and reports an issue per directory it cannot remove, so a stage holding staged bytes is retained by failure rather than by decision, and `StageCleanupResult.Retained` stays false while the stage is in fact retained.
    The options are to keep that, to retain deliberately and say so, or to remove the stage and its staged bytes on a graceful cancel.
    The recommendation, offered as a recommendation and not as a decision, is to retain deliberately and say so: the staged bytes are the operator's data, a cancel is not a request to discard them, and the flag should describe the disk rather than the code path that reached it.
-   Decisions 1 to 5 do not depend on the answer.
+   Decisions 1 to 6 do not depend on the answer.
 
 ## Consequences
 
 A cancelled download still varies in when it stops, and now states which of the permitted effects occurred.
 No check is removed, so no ordering gains an attempt it does not have today.
-The behaviour change is confined to two records: an item cancelled before its temporary exists is `not_attempted` rather than `unresolved`, and created ancestors appear in the terminal message and audit summary.
+The behaviour change is confined to two records: an item cancelled before its temporary exists is `not_attempted` at `source_read` rather than `failed` and `unresolved` at `staging`, and ancestors created for items that did not copy appear in the terminal message and audit summary.
 Items already attempted keep every record they have, and no existing refusal, verification, placement or stage-cleanup assertion is relaxed.
 Whether the stage survives a graceful cancel is unchanged by this record and remains the operator's to settle.

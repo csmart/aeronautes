@@ -33,6 +33,11 @@ type downloadResult struct {
 	label        string
 	failure      error
 	issues       []downloadIssue
+	// created names the directories the ancestor walk made for this
+	// item, relative to the held root, observed rather than inferred
+	// (ADR 0043). It is reported whatever the item's own outcome is,
+	// because the directories exist either way.
+	created []string
 }
 
 func downloadFailed(effect transfercopy.Effect, stage transfercopy.Stage, code transfercopy.Code, label string, err error) downloadResult {
@@ -142,6 +147,14 @@ func (d *downloadRun) admit(item DownloadItem, staging string) error {
 }
 
 func (d *downloadRun) observe(item DownloadItem, result downloadResult) error {
+	// Only residue is reported. An item that copied got the directories
+	// it needed and its own record already shows the placed file; an
+	// item that failed or was never attempted leaves ancestors nobody
+	// asked for, and that is what the operator has to be told (ADR
+	// 0043).
+	if result.Result != transfercopy.ResultCopied {
+		d.report.createdDirectories(result.created)
+	}
 	if result.Result == transfercopy.ResultCopied {
 		d.report.Done++
 		d.report.Bytes += result.CopiedBytes

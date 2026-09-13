@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/jobs"
@@ -555,6 +556,8 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 	counters := base
 	var stageCleanup *local.StageCleanupResult
 	rootDisplacement := ""
+	createdDirectories := int64(0)
+	var createdSamples []string
 	finish := func(state jobs.State, message string) {
 		auditSummary := ""
 		if stageCleanup != nil && (stageCleanup.Issues > 0 || stageCleanup.Retained) {
@@ -588,6 +591,29 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 			}
 			auditSummary += rootDisplacement
 		}
+		// A job that did not finish leaves these behind, and they are the
+		// operator's own directory (ADR 0043). On a complete job the same
+		// directories are the intended outcome and the item records
+		// already carry them, so this says nothing there. It is a fact
+		// about the disk and never changes the state.
+		if createdDirectories > 0 && state != jobs.StateComplete {
+			created := fmt.Sprintf("created %d directories inside the selected directory that were not there before", createdDirectories)
+			if len(createdSamples) > 0 {
+				created += " (" + strings.Join(createdSamples, ", ")
+				if int64(len(createdSamples)) < createdDirectories {
+					created += ", …"
+				}
+				created += ")"
+			}
+			if message != "" {
+				message += "; "
+			}
+			message += created
+			if auditSummary != "" {
+				auditSummary += "; "
+			}
+			auditSummary += created
+		}
 		s.finishLocal(background, jobID, bookmarkID, version, counters, state, message, auditSummary)
 	}
 	for _, state := range []jobs.State{jobs.StatePlanning, jobs.StateRunning} {
@@ -615,6 +641,8 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 	if report != nil {
 		stageCleanup = report.StageCleanup
 		rootDisplacement = report.RootDisplacement
+		createdDirectories = report.CreatedDirectories
+		createdSamples = report.CreatedDirectorySamples
 		counters.ObjectsCopied = report.Done
 		counters.ObjectsVerified = report.Done
 		counters.BytesCopied = report.Bytes
