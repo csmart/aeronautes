@@ -31,8 +31,17 @@ UI-10/P28, protected delivery and the valuable-data hold remain open.
 
 ## Evidence retention
 
-The original record, probes, structured evidence, failed runs and raw verification outputs are retained in the private packet `/home/csmart/code/.aeronautes-work/evidence/20260913-service-records`.
+The original record, probes, structured evidence, failed runs and raw verification outputs are retained in `.aeronautes-work/evidence/20260913-service-records`, relative to the private workspace root.
 Its `SHA256SUMS` digest is `d0ce6823082a0aab3ddb7f0b563ccc4028aba68c6471b124cad41c925650ae99`.
 `original/docs/experiments/` preserves the record and probe paths at checkpoint `860ddec9ce72c241f349f491ca3b63dbab8ed5ce`; `INDEX.json` maps the raw packets and lists excluded dependency/cache directories.
 Historical receipts remain unchanged; this archive does not claim to retain those excluded execution inputs or constitute a hermetic environment.
 The maintained regression tests remain in the repository.
+
+## Native smoke follow-up
+
+[PR108's first smoke run](https://github.com/csmart/aeronautes/actions/runs/34738691982) failed before opening the bookmark editor: its fixed click at `(42, 50)` hit the new list-status text instead of Add at `(42, 150)`.
+The 1280×800 screenshots and mock log show misplaced typing and no application authentication request.
+The driver now targets the visible Add button below the empty-list status; its connection and real-engine three-object landing assertions remain unchanged.
+The raw log and screenshots are retained in `.aeronautes-work/evidence/20260913-service-delivery/smoke-failure`, with `SHA256SUMS` digest `d2fb4355ace13d9db02b8fc3ee3931bfaa24b7d2a846c78f60f4ff99aca9b2c9`.
+The CI artifact expires on 20 September 2026 at 04:48:54 UTC; the private copy is the retained evidence.
+Shell syntax and the captured geometry were checked locally; native display tools are unavailable here, so the replacement hosted run must establish success.

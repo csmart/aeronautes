@@ -81,7 +81,7 @@ connected=""
 for attempt in 1 2 3; do
   X windowfocus --sync "$WIN" 2>/dev/null || true
   X key Escape; sleep 1                 # clear any half-open state
-  X mousemove 42 50 click 1; sleep 2    # Add bookmark
+  X mousemove 42 150 click 1; sleep 2   # below the empty-list status
   # The dialog's focus trap puts focus on the Display-name field at
   # mount — type straight in, no pixel-hunting for the field.
   X type --delay 15 "Smoke"
