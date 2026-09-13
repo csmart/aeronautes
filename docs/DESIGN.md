@@ -5524,6 +5524,20 @@ Apply and read back that configuration after the new gate has passed on the PR; 
 The [merge procedure](CI.md) records the incident evidence and requires independent local review, a verified current head, green PR checks and post-merge monitoring.
 Coverage artifacts retain their existing soft thresholds; hard scenario and coverage gates remain P34 work.
 
+P11 owns the backend half of selection authority under [ADR 0041](adr/0041-scoped-selection-capabilities.md).
+A picker selection was an opaque handle that recorded the selection and nothing else, so a retained token was accepted with a different requested bookmark, under a moved credential generation, for a different prefix, and for an unbounded number of later starts.
+A selection is now a capability: it records the operation it may perform, the bookmark and credential generation it was made under, the container and prefix it was made for, and the time it was issued.
+The pick methods take the bookmark, container and prefix the selection is being made for, and the backend resolves that named bookmark's current generation itself rather than accepting one from the caller.
+A pick for an account other than the connected one is refused when a connection exists.
+The connection endpoint is read before the native dialog opens and read again when it returns and the two observations must be identical, so an account swapped under an open dialog refuses the pick; the named bookmark's generation is re-read at the same point, which is what catches a re-save while nothing is connected.
+Both preflights validate that binding read-only and may repeat, and both starts consume it atomically under the store lock, so a confirmed selection cannot be replayed into further jobs and two concurrent starts cannot both win.
+An unstarted selection expires after ten minutes, and each binding-validation refusal carries its own sentinel.
+The [scoped selection record](experiments/2026-09-13-scoped-selection-capabilities.md) preserves the four reproduced failures, twenty-one Go regressions, four frontend cases and eleven independently broken controls.
+This binds a selection to one account for its whole life, which is the retained-token defect the finding names.
+It does not authenticate which account the user approved: the connect action is itself reachable from the bridge, so a page can connect elsewhere before the picker opens.
+Trusted acknowledgement of account, container and prefix for selected local resources remains open, separate from the trusted acknowledgement the forged force and public access-control cases need.
+P11 does not close with this slice, and neither native authority nor the valuable-data release hold is affected.
+
 ### 65.12. Proportionate remediation and a fixed finish line
 
 Safe, secure operation on valuable production data remains the first milestone.
