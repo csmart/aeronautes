@@ -1,6 +1,6 @@
 # Remaining serial test groups
 
-Status: contract proposed for independent review; no scheduling change or candidate run yet.
+Status: contract and implementation independently reviewed; the combined local run passed, with hosted comparison and protected delivery still pending.
 The behaviour oracle is the existing [three-slot CI schedule](../CI.md), unchanged test assertions and cleanup, and each group's private resources.
 The inspected source is `dcdef302b2e61d0c0a8607751d4605287a0cff85`, tree `60dd8e19737a4f2fb5afdcc93560418081aa6f11`.
 The six candidate files and ten relevant harness, helper and CI inputs match protected master `c098faffeaf160630f538b03639a87cd7f7549aa` byte for byte.
@@ -74,3 +74,15 @@ Stop for diagnosis and independent review if a race, deadlock, resource conflict
 Keep the failed attempt and its limits; do not drop cases, suppress failures, increase timeouts or repeat a run merely to replace failure with green evidence.
 A passing run with little remaining time does not establish durable headroom; further changes need a concrete diagnosis and separate review.
 Scheduling does not close audit findings or establish native-platform or valuable-data acceptance.
+
+## Combined measurement — 13 September
+
+The nine calls are committed as `e5be8215eb1d58cd26f62333c2cb6bc2dfbb2d40`, tree `ef169a754f6315f3570b941a9e783ae7b8adf2b5`; all 879 captured inputs match that checkpoint.
+The same local command passed with 4,496 named tests, one optional matrix skip and 69 PAUSE/CONT pairs in 1,073.4 seconds; the system package took 891.120 seconds against the earlier 879.732 seconds.
+The candidate also includes the approved shutdown work and a resource observer, so this is not a controlled speedup comparison; the three real-Swift candidate bodies grew from 11.20/13.69/13.80 to 16.18/16.72/19.37 seconds.
+The 1,074 resource samples retain 407 samples with observation issues and maxima of six live owned processes, five descendants and 648,441,856 bytes of summed RSS; sequential sampling can miss short-lived processes and shared pages are counted more than once, with no baseline resource comparison or proof of quiescence.
+The independent reviewer passed the nine groups together twice under race against the real fixture and approved delivery; the complete-stream scenario report is valid but remains incomplete at 42/117 required cells and 38 gapped actions.
+The inventory reader's two apparent missing-parent errors came from slash-containing sibling names; source inspection resolved that inference without rerunning the suite or changing its failed reader receipt.
+Retained private packet: workspace-relative `.aeronautes-work/evidence/20260913-test-schedule`, `SHA256SUMS` SHA-256 `0605e8aab5a38de76389b9e41833966f410de7f46db1c6d0f8c2a9a9397e6b99`.
+No expiring CI artifact is the sole evidence pointer for this measurement.
+At delivery, record hosted package and job durations; if the resulting master system package does not improve on the last passing 1,470.197-second attempt, revert these nine calls through review and green CI rather than retain an unproved scheduling change.
