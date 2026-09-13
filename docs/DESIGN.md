@@ -5548,6 +5548,20 @@ They are reported for an item that did not copy, because a copied item has the d
 Destination ancestors are never removed to tidy a cancellation, because once one exists this executor cannot tell one it created from one it merely opened; the owned stage directory keeps the cleanup ADR 0035 already gives it.
 Whether a graceful cancel removes the retained stage is unresolved and left to the operator, with current behaviour, the options and a recommendation recorded so it can be settled without redoing this work.
 This is a contract and a reproduction; no correction is delivered by it, and the existing cancellation coverage at the held-header, mid-body, stage and placement boundaries is unchanged.
+P15 owns the destructive scope of segment deletion under [ADR 0044](adr/0044-segment-deletion-namespace.md).
+A dynamic large object's manifest names a container and a prefix, and Swift reads the object as every name in that container beginning with that string, so the prefix is a raw string match rather than a namespace.
+The sweep passed that raw prefix through unchanged while the ownership evidence displayed beside the decision was canonicalised to the slash-terminated form, so the proof described `job1/` while the effect acted on `job1*`.
+The [segment scope record](experiments/2026-09-13-segment-deletion-namespace.md) reproduces the consequence through the service against the real fixture: a forced, typed-confirmed deletion reported as proven also destroyed a sibling namespace, a name that merely shares the string, and the live backing of a second manifest, leaving that manifest reading as different content.
+The pinned engine writes the header without a trailing slash, so the shape comes from this project's own transfers.
+The proposed correction authorises segment deletion over the namespace boundary alone, and is not yet implemented.
+Its invariant is unconditional: no delete this route issues escapes the canonical namespace, which rests on the sweep's own argument rather than on any listing.
+Its refusal is conditional on observation: when a preflight listing of the raw prefix observes a name outside the boundary, the operation refuses before deleting anything, naming the boundary, the count and a bounded display sample that never limits the decision, and a listing that fails or is cancelled refuses.
+Absence of such names is not established, because K-CON-001 records listings as advisory and eventually consistent, so an unobserved outside name costs the refusal rather than the containment: the manifest is deleted and those bytes are orphaned rather than destroyed.
+Sweeping the namespace and reporting the rest as residue was rejected because it destroys the manifest that gives those bytes their meaning.
+A manifest stating a container and no prefix refuses, which this store already rejects at creation, so that guard is defence in depth rather than a reproduced defect.
+The dialog reports the boundary that would be swept rather than the raw header.
+This does not make recorded evidence a proof of exclusivity: no live reverse-reference scan exists, the Backstage force and typed confirmation remain required for every segment deletion, and creation provenance still never proves exclusivity.
+Static large object nested and shared collateral, another job's active staging, transfer-cleanup authority, first and later-pass replacements and the concurrent-writer protocol are unchanged, and P15 does not close with this slice.
 
 ### 65.12. Proportionate remediation and a fixed finish line
 
