@@ -5478,8 +5478,7 @@ Coverage artifacts retain their existing soft thresholds; hard scenario and cove
 
 Safe, secure operation on valuable production data remains the first milestone.
 [ADR 0040](adr/0040-proportionate-remediation.md) replaces uniform process requirements with these risk-based rules for new work, including follow-ups to historical §65.11 sequences.
-These rules take effect after operator adoption and independent local review.
-Until then, keep the existing mandatory system-regression and before/after evidence requirements.
+The operator adopted these rules on 13 September 2026 after independent local review.
 Use the highest tier whose guarantee the change can affect; line count is not the measure of risk.
 
 | Tier | Author evidence | Independent review |
@@ -5509,7 +5508,7 @@ Retain atomic commits, independent approval and all five successful jobs on the 
 No tier introduces a CI skip or bypass.
 
 The [Linux finish line](audits/2026-09-05/linux-finish-line.md) is the single frozen list for this implementation checkpoint and defines the six production gates.
-It requires independent review and operator adoption before execution; additions require operator sign-off recorded there.
+The independently reviewed list was adopted with these rules; additions require operator sign-off recorded there.
 Report a newly discovered material risk and keep affected release acceptance blocked while the operator decides its scope; do not silently expand the queue.
 Declare the Linux implementation checkpoint complete when its named work and required Linux checks are complete, even while native, artifact or deployment gates remain open.
 Those external obligations cannot create indefinite extra Linux slices.
