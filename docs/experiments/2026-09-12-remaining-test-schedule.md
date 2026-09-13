@@ -1,6 +1,6 @@
 # Remaining serial test groups
 
-Status: PR108 timed out, the controlled comparison rejected four slots, and the approved nine-call rollback awaits committed-source measurement and implementation review.
+Status: the nine-call rollback is verified and independently approved, but the timeout remains unresolved; a partition across separate fixtures is proposed below before another hosted attempt.
 The behaviour oracle is the existing [three-slot CI schedule](../CI.md), unchanged test assertions and cleanup, and each group's private resources.
 The inspected source is `dcdef302b2e61d0c0a8607751d4605287a0cff85`, tree `60dd8e19737a4f2fb5afdcc93560418081aa6f11`.
 The six candidate files and ten relevant harness, helper and CI inputs match protected master `c098faffeaf160630f538b03639a87cd7f7549aa` byte for byte.
@@ -129,3 +129,30 @@ That partition is now the likely delivery path, since the previous serial shape 
 Independently review the implementation and evidence before pushing; any hosted delivery then requires all five latest-head/current-base PR checks and all five resulting-master checks and inspection of their package/job margins.
 A repeated timeout or other failed check stops for diagnosis and a separately reviewed partition across owned fixtures; do not retry merely to obtain green or increase a budget.
 A narrow passing margin still does not establish stable headroom; this rollback closes no audit finding and changes no product capability or release acceptance.
+
+The committed rollback `07eac453cd6ac402ace371408b4ed43be2e4b1ba` passed the covered internal race suite with 4,451 named passes, one optional skip, 20 packages, exactly 60 PAUSE/CONT pairs, 88.6% statement coverage and the same valid but incomplete scenario report.
+Its 927.167 system-package seconds differ from the earlier 927.830 by only 0.663 seconds, and the resumed process inherited `LANG=C.UTF-8` instead of `en_AU.UTF-8`; no controlled speedup or useful headroom is established, so no hosted rollback attempt will run.
+The first reader's environment-equality refusal and the separate successful functional reconciliation are retained at `.aeronautes-work/evidence/20260913-service-delivery/rollback`, with `SHA256SUMS` digest `469502f28ccd18304ff3bc75901b3f19dd1b7c5c3cafc1eddc08babccd8f422c`.
+
+## Proposed partition across fixtures
+
+Preserve the complete suite and every assertion, inner case, child deadline, race/coverage option, three-slot ceiling, 25-minute package limit and 35-minute fixture-job limit.
+Run two fixed producers on separate runners, each using the existing pinned SAIO/XFS setup, both required accounts, verified rclone, diagnostics and checked teardown; one failure must not cancel the other producer's diagnostic collection.
+One closed list selects exactly `TestCopySegmentChangeDetectionRealSwift`, `TestUploadItemRecordsRealSwift` and `TestDownloadRecordsRealSwift` for the heavy producer's `./internal/systemtest` run, and constructs the exact complementary exclusion for main's `./internal/...` run.
+Keep the tests and private helpers in their current package, including the explicit `TestUploadRecoveryRealSwift` child selector and its existing deadline.
+Enumerate the complete top-level inventory with the same source and toolchain, then verify that actual execution matches both selections without overlap or omission; require all heavy cases to pass without skips.
+For delivery, also reconcile the union of named outcomes with the unpartitioned run, preserving only the existing documented generated-name mappings and optional skip.
+
+Run the unchanged scenario reader separately with each producer's actual exit and exact expected packages, retaining both raw streams and reports rather than concatenating package lifecycles.
+The three selected groups currently emit no scenario credits; require that to remain true, preserve main's credits and incomplete status, and stop for deliberate report handling if the heavy lane gains a credit.
+Use ordinary atomic coverage profiles so Go retains its normal auxiliary and no-test metadata handling.
+Before combining them, require compatible source/toolchain identity, valid complete records, the same block structure and statement counts for each shared file, and all heavy coverage units within main's full internal-source denominator.
+Write one atomic header and both complete profile bodies for the existing Go coverage reader, which sums duplicate block counters; preserve zero-count units and never average percentages.
+Missing, failed or incompatible producer artifacts must prevent a successful joined result.
+
+Keep the protected Integration check as the join of both successful producers and their validated artifacts, with the existing coverage badge and both scenario reports retained.
+The existing aggregate must still reject any missing, skipped, cancelled or failed dependency, and all five protected check names remain unchanged.
+Limit the change to the workflow, a small helper with focused tests, and existing documentation; no test-source moves, new dependency or scheduling framework.
+Tests must catch selection gaps/overlap, missing or failed producers, heavy skips and malformed or conflicting coverage, and a two-profile control must retain both exclusive covered branches and the original zero-count denominator through the real Go reader.
+Verify each real partition once under owned fixture scheduling, inspect its complete results and measured margins, and obtain independent implementation review before pushing.
+Local observations do not establish hosted headroom; current-head/current-base PR checks, protected merge and resulting-master checks remain required.
