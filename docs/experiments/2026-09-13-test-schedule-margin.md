@@ -19,15 +19,41 @@ Package wall clock for `internal/systemtest` on both lanes, every master run sin
 | `80367243` | 1019.861 | 386.442 |
 | `7af01ad4` | 1078.126 | 308.209 |
 | `76c30e90` | 1166.776 | 312.609 |
+| `3f663a7a` | 1042.138 | 353.208 |
 
 The main lane has stayed between 1019.9 and 1166.8 seconds against a 1500 second limit, and the worst of those leaves 333 seconds.
 A run needs to be 29 per cent slower than that worst case to breach the budget, and pull request 115 was.
-Its second attempt then passed at 1197.681 seconds, the highest figure yet recorded, so the same range on the same test set produced both a breach and the largest passing value.
+Its second attempt then passed at 1197.681 seconds, above every master run, so the same tree produced both a breach and the largest passing figure.
 
 The imbalance is not new and there is no growth trend in this data.
-The first master run after the partition already measured 1115.603 against 332.991, close to the latest pair, and the intervening runs move in both directions.
+The first master run after the partition already measured 1115.603 against 332.991, and the latest measures 1042.138 against 353.208, with the intervening runs moving in both directions.
 The heavy lane's own spread, 186.9 to 386.4, is more than half its mean.
 So the observed variation on both lanes is large relative to the main lane's margin, and the partition's split has been carrying this imbalance since it landed rather than drifting into it.
+
+## What varies between two runs of the same tree
+
+Pull request 115's head became master `3f663a7a` unchanged, so its second attempt and that
+master run executed an identical tree on the same test set.
+They differ by 155.5 seconds of package wall clock, 1197.681 against 1042.138, and its first
+attempt on the same tree exceeded 1500 and failed.
+That is a larger spread than the whole 1019.9 to 1166.8 range of master runs, so run-to-run
+variance rather than accumulated test growth is what the margin has to absorb.
+
+The variance is broad rather than concentrated.
+Comparing the two runs test by test, 142 of the 196 top-level tests were slower and the ten
+largest contributors account for only half the slowdown.
+Across the 62 tests that take at least ten seconds the median ratio is 1.11 and the upper
+quartile 1.25, against an aggregate of 1.151, and four of them ran more than five per cent
+faster.
+That is the shape of a slower runner applied broadly, not a few groups misbehaving, so there
+is no small set whose removal would fix it and moving work is the only lever these
+measurements support.
+
+The heavy lane moved the other way between the same two runs, 328.528 against 353.208 seconds.
+All three of its tests were faster on the run where the main lane was 15 per cent slower, at
+an aggregate ratio of 0.940.
+The lanes are separate jobs on separate runners, so their excursions are independent, and
+splitting the work halves how much of one lane's budget a single unlucky runner can consume.
 
 ## Where the time goes
 
@@ -99,6 +125,19 @@ Projected against the `76c30e90` measurements, by applying each lane's own measu
 
 These are projections, not results.
 They assume each lane keeps its measured packing efficiency at a different test mix, which is the weakest assumption in this record.
+
+Against the excursions actually observed, applied to the worse projected lane:
+
+| excursion | worst lane | |
+| --- | --- | --- |
+| the measured 15.1 per cent same-tree runner difference | 855 s | within budget |
+| the 29 per cent that breached the main lane today | 959 s | within budget |
+| 50 per cent | 1115 s | within budget |
+| 102 per cent | 1502 s | breach |
+
+Today the main lane breaches at 29 per cent above its worst passing run, and pull request 115
+supplied that. After the move the worst lane holds 757 seconds of headroom and needs roughly
+a doubling, which is about three times the largest excursion in this data.
 
 Alternatives considered: a fourth parallel slot, already rejected on the earlier evidence that summed body time increased; and a third fixture, which adds an aggregate dependency for a need the two existing fixtures do not yet demonstrate.
 
