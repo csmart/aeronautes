@@ -30,6 +30,9 @@ type CredentialStatusDTO struct {
 	Retired    int64 `json:"retired"`
 	Unfinished int64 `json:"unfinished"`
 	Saving     int64 `json:"saving"`
+	// Unverified is the subset of the retired and unfinished counts whose
+	// recorded authority this session cannot confirm it can reach.
+	Unverified int64 `json:"unverified"`
 }
 
 // AccountDTO is the connected account's portrait (§53).

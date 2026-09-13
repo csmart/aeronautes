@@ -328,6 +328,12 @@ export interface CredentialStatusDTO {
     "retired": number;
     "unfinished": number;
     "saving": number;
+
+    /**
+     * Unverified is the subset of the retired and unfinished counts whose
+     * recorded authority this session cannot confirm it can reach.
+     */
+    "unverified": number;
 }
 
 /**

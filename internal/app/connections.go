@@ -50,8 +50,13 @@ func NewConnections(store *bookmarks.Store) *Connections {
 func (c *Connections) open(ctx context.Context, bookmarkID string) (cachedSession, error) {
 	config, generation, err := c.store.ConnectionConfig(ctx, bookmarkID)
 	if err != nil {
+		// The two are different facts: one store cannot be confirmed, the
+		// other has no key. Neither message may claim the key was erased.
+		if errors.Is(err, secrets.ErrAuthorityUnreachable) {
+			return cachedSession{}, fmt.Errorf("the credential store holding this key cannot be reached; unlock or reconnect it, or enter the key again: %w", err)
+		}
 		if errors.Is(err, secrets.ErrNotFound) {
-			return cachedSession{}, fmt.Errorf("saved key is unavailable; unlock credential storage or re-enter it: %w", err)
+			return cachedSession{}, fmt.Errorf("no saved key is available; enter it again: %w", err)
 		}
 		return cachedSession{}, err
 	}

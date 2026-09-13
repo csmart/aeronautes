@@ -46,6 +46,7 @@ func (s *BookmarkService) CredentialStatus(ctx context.Context) (CredentialStatu
 	}
 	return CredentialStatusDTO{
 		Retired: status.Retired, Unfinished: status.Unfinished, Saving: status.Saving,
+		Unverified: status.Unverified,
 	}, nil
 }
 

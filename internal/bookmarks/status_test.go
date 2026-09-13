@@ -51,7 +51,9 @@ func TestCredentialStatusSurvivesDeletionAndFallback(t *testing.T) {
 			}
 			t.Cleanup(func() { reopened.Close() })
 			fallback := NewStore(reopened, secrets.NewSessionStore())
-			want := CredentialStatus{Retired: 2, Unfinished: 1}
+			// The fallback store recorded none of this work, so every
+			// retired and unfinished row is unconfirmed against it.
+			want := CredentialStatus{Retired: 2, Unfinished: 1, Unverified: 3}
 			if got, err := fallback.CredentialStatus(t.Context()); err != nil || got != want {
 				t.Fatalf("fallback status = %+v, %v; want %+v", got, err, want)
 			}

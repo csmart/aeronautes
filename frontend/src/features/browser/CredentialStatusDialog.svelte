@@ -34,11 +34,25 @@
           <dt>Old key records</dt><dd>{status.retired}</dd>
           <dt>Unfinished saves</dt><dd>{status.unfinished}</dd>
           <dt>Saves in progress in this app</dt><dd>{status.saving}</dd>
+          <dt>Old key records and unfinished saves in a store this session cannot confirm</dt>
+          <dd>{status.unverified}</dd>
         </dl>
         {#if status.retired + status.unfinished > 0}
           <p>Recorded key changes await cleanup.</p>
         {:else}
           <p>No pending credential cleanup is recorded.</p>
+        {/if}
+        {#if status.unverified > 0}
+          <p>
+            Some of that work names a credential store this session cannot confirm it can
+            reach, such as a keychain opened by another session or a record kept before
+            this app tracked its store. It may still exist there.
+          </p>
+        {:else if status.retired + status.unfinished > 0}
+          <p>
+            Every counted record names the credential store this session is using. That
+            does not mean the keys were removed.
+          </p>
         {/if}
       {/if}
     </div>
@@ -48,7 +62,9 @@
     </p>
     <p>
       These counts describe recorded work and cannot confirm which keys still exist
-      in the OS keychain or a previous session.
+      in the OS keychain or a previous session. A bookmark whose store cannot be
+      reached is not proof that its key was erased: unlock or reconnect that store,
+      or enter the key again.
     </p>
     <footer>
       <button onclick={() => browser.loadCredentialStatus()} disabled={browser.credentialStatusLoading}>
