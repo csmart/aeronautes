@@ -374,16 +374,24 @@ func materializeDownloadDirectory(ctx context.Context, destination *DestinationR
 	if rel == "" || rel == "." {
 		return observeDownloadDirectory(destination.root, ".")
 	}
-	parent, err := destination.openDirectory(filepath.Dir(rel), true)
+	parent, created, err := destination.openDirectory(filepath.Dir(rel), true)
 	if err != nil {
-		return downloadFailed(transfercopy.EffectUnresolved, transfercopy.StageCommit, transfercopy.CodeIO, "mkdir", err)
+		result := downloadFailed(transfercopy.EffectUnresolved, transfercopy.StageCommit, transfercopy.CodeIO, "mkdir", err)
+		result.created = created
+		return result
 	}
 	defer parent.Close()
 	base := filepath.Base(rel)
 	if err := parent.Mkdir(base, 0o755); err != nil && !errors.Is(err, os.ErrExist) {
-		return downloadFailed(transfercopy.EffectUnresolved, transfercopy.StageCommit, transfercopy.CodeIO, "mkdir", atPath(err, "mkdir", filepath.Join(destination.Path(), rel)))
+		result := downloadFailed(transfercopy.EffectUnresolved, transfercopy.StageCommit, transfercopy.CodeIO, "mkdir", atPath(err, "mkdir", filepath.Join(destination.Path(), rel)))
+		result.created = created
+		return result
 	}
-	return observeDownloadDirectory(parent, base)
+	result := observeDownloadDirectory(parent, base)
+	// The item's own directory is its item record; only the ancestors
+	// the walk made are reported through this channel.
+	result.created = created
+	return result
 }
 
 func observeDownloadDirectory(parent *os.Root, base string) downloadResult {
@@ -397,10 +405,10 @@ func observeDownloadDirectory(parent *os.Root, base string) downloadResult {
 	return downloadVerified(0)
 }
 
-func placeDownloaded(ctx context.Context, destination, stage *DestinationRoot, stageName string, item DownloadItem) downloadResult {
+func placeDownloaded(ctx context.Context, destination, stage *DestinationRoot, stageName string, item DownloadItem) (result downloadResult) {
 	stagedDisplay := filepath.Join(stage.Path(), item.RelPath)
 	targetDisplay := filepath.Join(destination.Path(), item.RelPath)
-	stagedParent, err := stage.openDirectory(filepath.Dir(item.RelPath), false)
+	stagedParent, _, err := stage.openDirectory(filepath.Dir(item.RelPath), false)
 	if err != nil {
 		return stagedFileUnavailable(err)
 	}
@@ -419,7 +427,8 @@ func placeDownloaded(ctx context.Context, destination, stage *DestinationRoot, s
 	if err := ctx.Err(); err != nil {
 		return downloadUnplacedAfterCancel(err)
 	}
-	targetParent, err := destination.openDirectory(filepath.Dir(item.RelPath), true)
+	targetParent, createdTarget, err := destination.openDirectory(filepath.Dir(item.RelPath), true)
+	defer func() { result.created = append(createdTarget, result.created...) }()
 	if err != nil {
 		return downloadFailed(transfercopy.EffectUnresolved, transfercopy.StageCommit, transfercopy.CodeIO, "place", err)
 	}
@@ -433,9 +442,9 @@ func placeDownloaded(ctx context.Context, destination, stage *DestinationRoot, s
 	if err := publish.publishVerified(info); err != nil {
 		return downloadPlacementFailed("place", err)
 	}
-	result := downloadVerified(item.Size)
-	result.addIssue(transfercopy.StageCleanup, "staging-cleanup", unlinkFileAt(stagedParent, base, stagedDisplay))
-	return result
+	placed := downloadVerified(item.Size)
+	placed.addIssue(transfercopy.StageCleanup, "staging-cleanup", unlinkFileAt(stagedParent, base, stagedDisplay))
+	return placed
 }
 
 // stagedFileUnavailable keeps the silent-drop diagnosis for an absent
@@ -467,7 +476,7 @@ func nativeDownload(ctx context.Context, src *swiftcontrol.Session, container st
 	return nativeDownloadBody(ctx, body, item, destination, temporary)
 }
 
-func nativeDownloadBody(ctx context.Context, body io.ReadCloser, item DownloadItem, destination *DestinationRoot, temporary string) downloadResult {
+func nativeDownloadBody(ctx context.Context, body io.ReadCloser, item DownloadItem, destination *DestinationRoot, temporary string) (result downloadResult) {
 	if err := ctx.Err(); err != nil {
 		if closeErr := body.Close(); closeErr != nil {
 			result := downloadFailed(transfercopy.EffectNotAttempted, transfercopy.StageSourceRead, transfercopy.CodeIO, "native-close", closeErr)
@@ -476,13 +485,26 @@ func nativeDownloadBody(ctx context.Context, body io.ReadCloser, item DownloadIt
 		}
 		return downloadNotAttempted(transfercopy.StageSourceRead, err)
 	}
-	parent, err := destination.openDirectory(filepath.Dir(item.RelPath), true)
+	parent, created, err := destination.openDirectory(filepath.Dir(item.RelPath), true)
+	// Whatever the walk made exists from here on, whichever way this
+	// item ends, so every later return carries it (ADR 0043).
+	defer func() { result.created = append(created, result.created...) }()
 	if err != nil {
 		return downloadFailed(transfercopy.EffectUnresolved, transfercopy.StageStaging, transfercopy.CodeIO, "native-get", errors.Join(err, body.Close()))
 	}
 	defer parent.Close()
+	// Nothing exists for this item yet: the temporary's exclusive
+	// creation is below. A cancel here is certain, not uncertain, so it
+	// records what the check above and the upload twin record rather
+	// than sending the operator to look for residue that cannot exist
+	// (ADR 0043). Ancestors the walk created are reported separately.
 	if err := ctx.Err(); err != nil {
-		return downloadFailed(transfercopy.EffectUnresolved, transfercopy.StageStaging, transfercopy.CodeIncomplete, "native-get", errors.Join(err, body.Close()))
+		if closeErr := body.Close(); closeErr != nil {
+			result := downloadFailed(transfercopy.EffectNotAttempted, transfercopy.StageSourceRead, transfercopy.CodeIO, "native-close", closeErr)
+			result.failure = errors.Join(err, closeErr)
+			return result
+		}
+		return downloadNotAttempted(transfercopy.StageSourceRead, err)
 	}
 	// The admitted name must be the only attempted temporary name.
 	// Failed exclusive creation gives no authority to unlink that entry.

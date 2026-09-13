@@ -80,7 +80,7 @@ func removeEmptyStageDirectory(destination, stage *DestinationRoot, stageName, r
 		return removeDirAt(destination.root, stageName, stage.Path())
 	}
 	display := filepath.Join(stage.Path(), relative)
-	parent, err := stage.openDirectory(filepath.Dir(relative), false)
+	parent, _, err := stage.openDirectory(filepath.Dir(relative), false)
 	if err != nil {
 		if downloadChildAbsent(err) {
 			return nil

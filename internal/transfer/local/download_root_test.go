@@ -25,7 +25,7 @@ func testDestination(t *testing.T, path string) *DestinationRoot {
 // destination, closing it with the test.
 func testDirectory(t *testing.T, destination *DestinationRoot, rel string) *os.Root {
 	t.Helper()
-	dir, err := destination.openDirectory(rel, false)
+	dir, _, err := destination.openDirectory(rel, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestDestinationRootOpenDirectory(t *testing.T) {
 		{rel: filepath.Join(base, "outside"), refusal: "is not a clean relative path"},
 	} {
 		t.Run(c.rel, func(t *testing.T) {
-			dir, err := destination.openDirectory(c.rel, c.create)
+			dir, _, err := destination.openDirectory(c.rel, c.create)
 			if c.refusal != "" {
 				if err == nil || !strings.Contains(err.Error(), c.refusal) {
 					t.Fatalf("expected refusal %q, got %v", c.refusal, err)

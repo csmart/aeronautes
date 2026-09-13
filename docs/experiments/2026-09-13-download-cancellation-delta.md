@@ -78,13 +78,106 @@ executor has reached a fixed boundary, so it selects the region the cancel lands
 not the instruction.
 Nothing here establishes anything about the engine route's own cancellation, which keeps
 its existing coverage, nor about whether a graceful cancel should remove the retained
-stage, which ADR 0043 decision 5 leaves to the operator.
+stage, which ADR 0043 decision 7 leaves to the operator.
+
+## The correction
+
+Nothing was removed. Both cancellation checks either side of the ancestor walk stay,
+because each prevents work the other cannot and a cancel cannot be made to land in one
+place.
+
+An item cancelled between the walk and the temporary is now recorded not attempted at the
+source read rather than failed and unresolved at staging: the temporary's exclusive
+creation is below that check, so no file and no temporary exists for the item and the
+effect is certain.
+That is what the check above it and the upload twin already record.
+The diagnostic code was already cancelled in both, because classification maps a cancelled
+error to it whatever the call site passes; the result, the effect and the stage are what
+change.
+
+The component walk reports the components it created, and the decision is a named
+predicate rather than a condition buried in the walk: a component counts only when the
+entry was absent when inspected and this call's own `Mkdir` succeeded.
+A directory that already existed, or one another writer won in the same window and whose
+`Mkdir` therefore returned `ErrExist`, is never counted.
+Every return after the walk carries what the walk made, whichever way the item ends,
+because the directories exist either way.
+Ancestors are counted for an item that did not copy.
+An item that copied has the directories it needed as its intended outcome and its own
+record already carries the placed file, so counting them again would describe the result
+rather than what a stopped job left behind: the distinction is intended placement against
+residue.
+That per-item scope sits beside the job-level one — the report counts them with a bounded
+sample that never truncates the count, and the service names them in the terminal message
+and audit summary of a job that did not complete.
+
+## What the controls found
+
+Seven independently broken controls, each removing one guard in a scratch copy of the
+committed tree, all caught by their own named case.
+Three of them found real weaknesses in the first version of these tests rather than
+confirming it, and all three are worth recording.
+
+`g02` and `g03` were undetected at first: the creation decision was a condition inside the
+walk, and no test could reach the raced `ErrExist` branch without a filesystem race.
+Extracting `componentCreated` as a predicate made the property testable directly, which is
+why it is a named function rather than an inline condition.
+
+`g07` removes the guard that a walk told not to create never creates.
+It was undetected because nothing asserted that at all, and the stage cleanup walks that
+way — a cleanup that materialised the directory it was inspecting would leave the operator
+a directory nobody asked for.
+That is now a test.
+
+`g06` removes the operator-facing sentence, and it was caught, then undetected, then
+caught again.
+The middle state was the honest one: the system regression only asserted the reporting
+invariant on runs where the walk happened to create directories, so a run that cancelled
+earlier passed it vacuously.
+The first repair repeated the scenario until it reached that case, which independent
+review rejected: every early cancellation it retried past is permitted by this contract,
+so a test that fails after eight of them reports a scheduling outcome as a defect.
+The reporting case now waits for the walk's own effect before cancelling, and early
+cancellation is a separate mode asserted in its own right.
+
+`g04` was reported as caught and was not: it removed the propagation in a way that left an
+unused variable, so the package did not compile and no assertion ran. A control that does
+not build proves nothing, and the producer now says so — a build failure is recorded as a
+build failure and can never read as caught. The control is now a compilable omission, and
+the maintained case catches it with `created ancestors were not reported in order: []`.
+
+## Verification on the delivered head
+
+Whole module with the race detector, the two-account Swift fixture on loopback and the
+pinned official rclone: exit 0, 22 packages passing with none failing, 4,609 distinct test
+names, 4,226 leaves of which 4,225 pass, 4,608 passing events including parents, and the
+only skip the expected `TestRcloneMatrix`.
+Empty standard error.
+No other suite ran alongside it at the start and two did by the end, with the load average
+moving from 3.86 to 7.68 on 24 cores; nothing timing-sensitive failed, so no case needed
+an isolated re-run.
+
+The system regression runs against both mock Swift and the real fixture, in two modes.
+The reporting mode waits until the ancestor walk has actually created its directories
+before cancelling, because the proxy releasing bytes says the server made progress and not
+that the executor reached any particular point; observing the walk's own effect makes the
+case deterministic instead of hoping the scheduler obliges.
+The early mode cancels as soon as the body is held, which is an equally permitted ordering
+that must leave nothing behind and claim nothing.
+Both modes assert the durable job message and the audit summary against what is on disk,
+and require the cancelled item's own record to exist.
 
 ## Evidence
 
 Durable private packet `~/code/.aeronautes-work/20260913-claude/l07/`, digests in
 `SHA256SUMS` beside the files, that manifest's own SHA-256 being
-`5a41f3c90e0b3b42c45f17d49f63a4e33a7dea0174f4f721ed9e0c5c5bc9e231`.
+`fab6439818aaed9f10c9830c37d668b665c56450dd7a362a79e46a0ad40b610e`.
 `before-probe-mock.log` is the twelve-run reproduction;
 `probe_system_dir_cancel_test.go.txt` and `probe_local_dir_cancel_test.go.txt` are the
 probes that produced it, archived rather than committed because they assert nothing.
+`build_guards.py` is the single producer and `guards.json` its results with the head each
+control was built from; `full-suite.jsonl`, `full-suite.meta` and `full-suite.stderr` are
+the delivered-head run and the load and concurrency recorded around it.
+The controls were built from the code at the delivered head, which `guards.json` records;
+the only change after that is the line naming this manifest, because sealing the packet
+changes the digest the line cites.
