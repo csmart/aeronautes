@@ -831,6 +831,18 @@ export interface SegmentsDeleteResultDTO {
 }
 
 /**
+ * SelectionScopeDTO is the scope a pick is being made for. The service
+ * resolves the named bookmark's current generation itself and, whenever
+ * there is an active connection, requires the pick to name it — before
+ * the dialog opens and again when it returns (ADR 0041).
+ */
+export interface SelectionScopeDTO {
+    "bookmarkId": string;
+    "container": string;
+    "prefix": string;
+}
+
+/**
  * StoragePolicyDTO is one advertised storage policy (§20).
  */
 export interface StoragePolicyDTO {

@@ -51,7 +51,7 @@ func TestDownloadRootGuardBeforeEngineConstruction(t *testing.T) {
 				}
 			}
 			h.transfer.setFilePicker(fakePicker{dir: captured})
-			picked, err := h.transfer.PickDownloadDir(t.Context())
+			picked, err := h.transfer.PickDownloadDir(t.Context(), SelectionScopeDTO{BookmarkID: h.transfer.connections.ActiveBookmarkID(), Container: "media", Prefix: prefix})
 			if err != nil || picked == nil || picked.Dir != captured {
 				t.Fatalf("captured picker spelling differs: %+v %v", picked, err)
 			}

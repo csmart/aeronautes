@@ -18,18 +18,20 @@ func TestJobShutdownClosesDownloadHandles(t *testing.T) {
 	h.installEngine(barrier)
 	directory := t.TempDir()
 	h.transfer.setFilePicker(fakePicker{dir: directory})
-	picked, err := h.transfer.PickDownloadDir(t.Context())
+	picked, err := h.transfer.PickDownloadDir(t.Context(), SelectionScopeDTO{BookmarkID: bookmark, Container: "shutdown-handles", Prefix: "scope/"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	h.transfer.selections.mu.Lock()
-	pickerRoot := h.transfer.selections.dirs[picked.Token].root
-	h.transfer.selections.mu.Unlock()
-	if pickerRoot == nil {
-		t.Fatal("picker did not retain a directory handle")
+	// A read-only lease is what a preflight takes. It is this test's own
+	// handle and must survive both the start, which consumes the
+	// selection, and the drain.
+	ownLease, _, err := h.transfer.selections.leaseDir(picked.Token,
+		activeScope(t, h, "shutdown-handles", "scope/"))
+	if err != nil || ownLease == nil {
+		t.Fatalf("picker did not retain a directory handle: %v %v", ownLease, err)
 	}
 	t.Cleanup(func() {
-		if err := pickerRoot.Close(); err != nil {
+		if err := ownLease.Close(); err != nil {
 			t.Error(err)
 		}
 	})
@@ -37,6 +39,9 @@ func TestJobShutdownClosesDownloadHandles(t *testing.T) {
 	if before == 0 {
 		t.Fatal("native descriptor control did not find the picker handle")
 	}
+	// Starting consumes the selection and closes the pick's own handle
+	// (ADR 0041), so the settled count is one below the pre-start one.
+	settled := before - 1
 	id, err := h.transfer.StartDownload(t.Context(), DownloadRequestDTO{BookmarkID: bookmark,
 		Container: "shutdown-handles", Prefix: "scope/", DestDirToken: picked.Token})
 	if err != nil {
@@ -44,15 +49,15 @@ func TestJobShutdownClosesDownloadHandles(t *testing.T) {
 	}
 	t.Cleanup(func() { barrier.unblock(); cleanupShutdownJob(t, h, id) })
 	barrier.waitUntilEntered(t)
-	if held := shutdownDirectoryHandles(t, directory); held <= before {
-		t.Fatalf("download did not acquire its own directory handles: before=%d held=%d", before, held)
+	if held := shutdownDirectoryHandles(t, directory); held <= settled {
+		t.Fatalf("download did not acquire its own directory handles: settled=%d held=%d", settled, held)
 	}
 	shutdownTestRunner(t, h.transfer.runner)
-	if after := shutdownDirectoryHandles(t, directory); after != before {
-		t.Fatalf("drain left job directory handles open: before=%d after=%d", before, after)
+	if after := shutdownDirectoryHandles(t, directory); after != settled {
+		t.Fatalf("drain left job directory handles open: settled=%d after=%d", settled, after)
 	}
-	if removed, err := pickerRoot.Removed(); removed || err != nil {
-		t.Fatalf("job shutdown closed the picker lifetime: removed=%v error=%v", removed, err)
+	if removed, err := ownLease.Removed(); removed || err != nil {
+		t.Fatalf("job shutdown closed a derived lease: removed=%v error=%v", removed, err)
 	}
 	assertJobBindingsReleased(t, h, []string{bookmark})
 }

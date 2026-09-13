@@ -103,7 +103,8 @@ func testDesktopHeldDownload(t *testing.T, callback, runError bool) {
 			t.Fatal(err)
 		}
 		app.WireFilePicker(transfer, shellPicker{directory: root})
-		picked, err := transfer.PickDownloadDir(t.Context())
+		picked, err := transfer.PickDownloadDir(t.Context(),
+			app.SelectionScopeDTO{BookmarkID: saved.ID, Container: "shutdown", Prefix: "scope/"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -130,8 +131,12 @@ func testDesktopHeldDownload(t *testing.T, callback, runError bool) {
 		if jobContext.Err() != nil {
 			t.Fatal("accepted download inherited caller cancellation")
 		}
-		if held := shellDirectoryHandles(t, root); held <= pickerHandles {
-			t.Fatalf("no owned download handle: held=%d picker=%d", held, pickerHandles)
+		// Starting consumes the selection and closes the pick's own
+		// handle (ADR 0041), so the job's handle is measured against the
+		// settled count rather than the pre-start one.
+		settled := pickerHandles - 1
+		if held := shellDirectoryHandles(t, root); held <= settled {
+			t.Fatalf("no owned download handle: held=%d settled=%d", held, settled)
 		}
 		closed := make(chan struct{})
 		closeDatabase := shutdown.closeDatabase
@@ -144,8 +149,8 @@ func testDesktopHeldDownload(t *testing.T, callback, runError bool) {
 				!strings.Contains(job.Error, "context canceled") || !strings.Contains(job.Error, "directory not empty") {
 				t.Errorf("database close preceded terminal job: job=%+v err=%v", job, err)
 			}
-			if after := shellDirectoryHandles(t, root); after != pickerHandles {
-				t.Errorf("database close preceded job handle release: got=%d want=%d", after, pickerHandles)
+			if after := shellDirectoryHandles(t, root); after != settled {
+				t.Errorf("database close preceded job handle release: got=%d want=%d", after, settled)
 			}
 			if _, err := bookmarkService.Save(t.Context(), saved, "replacement"); err != nil {
 				t.Errorf("database close preceded final bookmark pin release: %v", err)

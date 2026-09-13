@@ -103,13 +103,16 @@
     checking = true;
     try {
       if (intent.mode === "upload") {
-        const picked = await browser.pickUploadFiles();
+        // The pick is bound to this scope for its whole life (ADR 0041).
+        const picked = await browser.pickUploadFiles(
+          { bookmarkId: capturedScope.bookmarkId, container: capturedScope.container, prefix: capturedScope.prefix });
         if (!isCurrent(intent) || !picked?.token || !picked.files?.length) return;
         const req = Object.freeze({ ...capturedScope, selectionToken: picked.token });
         const result = await browser.preflightUpload(req);
         if (isCurrent(intent)) prepared = { intent, mode: "upload", request: req, report: result, destination: "" };
       } else {
-        const dir = await browser.pickDownloadDir();
+        const dir = await browser.pickDownloadDir(
+          { bookmarkId: capturedScope.bookmarkId, container: capturedScope.container, prefix: capturedScope.prefix });
         if (!isCurrent(intent) || !dir?.token) return;
         const req = Object.freeze({ ...capturedScope, destDirToken: dir.token });
         const result = await browser.preflightDownload(req);

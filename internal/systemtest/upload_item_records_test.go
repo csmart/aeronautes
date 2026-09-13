@@ -117,7 +117,7 @@ func uploadItemRecordsRun(t *testing.T, h *Harness, count int, native bool) {
 	localBefore := snapshotListingLocal(t, localRoot)
 	trace := uploadItemRecordsProxy(t, h, dst, selected)
 	app.WireFilePicker(h.Transfer, listingFilePicker{files: paths})
-	picked, err := h.Transfer.PickUploadFiles(t.Context())
+	picked, err := h.Transfer.PickUploadFiles(t.Context(), app.SelectionScopeDTO{BookmarkID: h.Primary.BookmarkID, Container: dst, Prefix: "scope/"})
 	if err != nil {
 		t.Fatal(err)
 	}

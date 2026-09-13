@@ -44,7 +44,7 @@ func TestDestinationChunkSettings(t *testing.T) {
 							t.Fatal(err)
 						}
 						h.transfer.setFilePicker(fakePicker{files: []string{path}})
-						picked, pickErr := h.transfer.PickUploadFiles(t.Context())
+						picked, pickErr := h.transfer.PickUploadFiles(t.Context(), SelectionScopeDTO{BookmarkID: bookmark, Container: "chunk-destination"})
 						if pickErr != nil {
 							t.Fatal(pickErr)
 						}

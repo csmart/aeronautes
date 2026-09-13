@@ -482,7 +482,7 @@ func TestUploadAndDownloadJobs(t *testing.T) {
 	h.transfer.setFilePicker(fakePicker{
 		files: []string{filepath.Join(dir, "a.txt"), filepath.Join(dir, "b.txt")},
 	})
-	picked, err := h.transfer.PickUploadFiles(ctx)
+	picked, err := h.transfer.PickUploadFiles(ctx, SelectionScopeDTO{BookmarkID: bookmark, Container: "media", Prefix: "up/"})
 	if err != nil || picked == nil || len(picked.Files) != 2 {
 		t.Fatalf("pick: %+v %v", picked, err)
 	}
@@ -505,6 +505,14 @@ func TestUploadAndDownloadJobs(t *testing.T) {
 	if job.State != "complete" || job.Counters.ObjectsCopied != 2 || job.Type != "upload" {
 		t.Fatalf("upload job = %+v", job)
 	}
+	// The start consumed that selection (ADR 0041), so pick again: the
+	// assertion under test is the existing-name refusal, not the
+	// lifetime of a spent token.
+	repicked, err := h.transfer.PickUploadFiles(ctx, SelectionScopeDTO{BookmarkID: bookmark, Container: "media", Prefix: "up/"})
+	if err != nil || repicked == nil {
+		t.Fatalf("re-pick after the start consumed the selection: %+v %v", repicked, err)
+	}
+	upload.SelectionToken = repicked.Token
 	preflight, err = h.transfer.PreflightUpload(ctx, upload)
 	if err != nil || !preflight.Rejected() || len(preflight.Items) != 0 || len(preflight.Problems) != 2 {
 		t.Fatalf("second upload preflight should refuse both existing names: %+v %v", preflight, err)
@@ -521,7 +529,7 @@ func TestUploadAndDownloadJobs(t *testing.T) {
 	// Download the uploaded prefix into a fresh directory.
 	destDir := t.TempDir()
 	h.transfer.setFilePicker(fakePicker{dir: destDir})
-	pickedDir, err := h.transfer.PickDownloadDir(ctx)
+	pickedDir, err := h.transfer.PickDownloadDir(ctx, SelectionScopeDTO{BookmarkID: bookmark, Container: "media", Prefix: "up/"})
 	if err != nil || pickedDir == nil {
 		t.Fatalf("pick dir: %+v %v", pickedDir, err)
 	}
@@ -544,7 +552,14 @@ func TestUploadAndDownloadJobs(t *testing.T) {
 	}); err == nil || !strings.Contains(err.Error(), "selection") {
 		t.Errorf("forged selection token = %v, want refusal", err)
 	}
-	// Re-running rejects on local-exists — nothing overwritten.
+	// Re-running rejects on local-exists — nothing overwritten. The
+	// first start consumed the selection, so pick the same directory
+	// again; the assertion is the overwrite refusal, not token reuse.
+	repickedDir, err := h.transfer.PickDownloadDir(ctx, SelectionScopeDTO{BookmarkID: bookmark, Container: "media", Prefix: "up/"})
+	if err != nil || repickedDir == nil {
+		t.Fatalf("re-pick destination: %+v %v", repickedDir, err)
+	}
+	download.DestDirToken = repickedDir.Token
 	if _, err := h.transfer.StartDownload(ctx, download); err == nil || !strings.Contains(err.Error(), "problems") {
 		t.Errorf("second download should hit local-exists: %v", err)
 	}

@@ -51,12 +51,14 @@ import type {
   SLOManifestDTO,
   PickedDirDTO,
   PickedFilesDTO,
+  SelectionScopeDTO,
 } from "../../bindings/github.com/csmart/aeronautes/internal/app";
 
 export type {
   AccountDTO,
   PickedDirDTO,
   PickedFilesDTO,
+  SelectionScopeDTO,
   AuditEventDTO,
   BookmarkDTO,
   CredentialStatusDTO,
@@ -177,8 +179,8 @@ export interface Api {
   jobItems(jobId: string, cursor: string, limit: number): Promise<JobItemPageDTO>;
   jobItemTotals(jobId: string): Promise<JobItemTotalsDTO>;
   recoveryStatus(): Promise<RecoveryStatusDTO>;
-  pickUploadFiles(): Promise<PickedFilesDTO | null>;
-  pickDownloadDir(): Promise<PickedDirDTO | null>;
+  pickUploadFiles(scope: SelectionScopeDTO): Promise<PickedFilesDTO | null>;
+  pickDownloadDir(scope: SelectionScopeDTO): Promise<PickedDirDTO | null>;
   preflightUpload(req: UploadRequestDTO): Promise<UploadPreflight>;
   startUpload(req: UploadRequestDTO): Promise<string>;
   preflightDownload(req: DownloadRequestDTO): Promise<DownloadPreflight>;
@@ -249,8 +251,8 @@ export const liveApi: Api = {
   jobHistory: (bookmarkId, cursor, limit) => JobService.History(bookmarkId, cursor, limit),
   jobItems: (jobId, cursor, limit) => JobService.Items(jobId, cursor, limit),
   jobItemTotals: (jobId) => JobService.ItemTotals(jobId),
-  pickUploadFiles: () => TransferService.PickUploadFiles(),
-  pickDownloadDir: () => TransferService.PickDownloadDir(),
+  pickUploadFiles: (scope) => TransferService.PickUploadFiles(scope),
+  pickDownloadDir: (scope) => TransferService.PickDownloadDir(scope),
   preflightUpload: async (req) => {
     const report = await TransferService.PreflightUpload(req);
     if (!report) throw new Error("empty preflight");

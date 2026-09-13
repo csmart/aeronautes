@@ -610,7 +610,7 @@ func copyCompletionQueued(t *testing.T, h *Harness, fault string) {
 	seedListingLocal(t, root, "keep", []byte("local sentinel"))
 	localBefore := snapshotListingLocal(t, root)
 	app.WireFilePicker(h.Transfer, listingFilePicker{dir: root})
-	picked, err := h.Transfer.PickDownloadDir(t.Context())
+	picked, err := h.Transfer.PickDownloadDir(t.Context(), app.SelectionScopeDTO{BookmarkID: h.Primary.BookmarkID, Container: src, Prefix: "hold/"})
 	if err != nil {
 		t.Fatal(err)
 	}

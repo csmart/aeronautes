@@ -140,14 +140,14 @@ func uploadSourcePaths(t *testing.T, h *Harness, tc uploadSourceCase) {
 	if tc.noncanonical {
 		files = []string{first, captured}
 	}
-	app.WireFilePicker(h.Transfer, listingFilePicker{files: files})
-	picked, err := h.Transfer.PickUploadFiles(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
 	prefix, route := "scope/", "rclone"
 	if tc.native {
 		prefix, route = "native\n/", "native"
+	}
+	app.WireFilePicker(h.Transfer, listingFilePicker{files: files})
+	picked, err := h.Transfer.PickUploadFiles(t.Context(), app.SelectionScopeDTO{BookmarkID: h.Primary.BookmarkID, Container: dst, Prefix: prefix})
+	if err != nil {
+		t.Fatal(err)
 	}
 	name := prefix + filepath.Base(captured)
 	request := app.UploadRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: dst, Prefix: prefix, SelectionToken: picked.Token}

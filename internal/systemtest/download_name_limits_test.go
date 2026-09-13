@@ -95,7 +95,7 @@ func downloadNameLimits(t *testing.T, h *Harness, c nameLimitsCase) {
 	trace := copyCompletionProxy(t, h, h.Primary, "")
 	app.WireDownloadStageBoundary(h.Transfer, func(context.Context, string) error { return nil })
 	app.WireFilePicker(h.Transfer, listingFilePicker{dir: selected})
-	picked, err := h.Transfer.PickDownloadDir(t.Context())
+	picked, err := h.Transfer.PickDownloadDir(t.Context(), app.SelectionScopeDTO{BookmarkID: h.Primary.BookmarkID, Container: source, Prefix: "scope/"})
 	if err != nil || picked == nil {
 		t.Fatalf("pick: %+v %v", picked, err)
 	}

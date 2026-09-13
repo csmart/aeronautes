@@ -48,7 +48,7 @@ func uploadRecoveryStop(t *testing.T, h *Harness, fault string) {
 	}
 	trace := uploadRecoveryProxy(t, h, dst, uploadRecoveryCase{fault: "none"})
 	app.WireFilePicker(h.Transfer, listingFilePicker{files: paths})
-	picked, err := h.Transfer.PickUploadFiles(t.Context())
+	picked, err := h.Transfer.PickUploadFiles(t.Context(), app.SelectionScopeDTO{BookmarkID: h.Primary.BookmarkID, Container: dst, Prefix: "live/"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -164,7 +164,7 @@ func downloadRootAuthorityService(t *testing.T, h *Harness, c rootAuthorityServi
 		return nil
 	})
 	app.WireFilePicker(h.Transfer, listingFilePicker{dir: selected})
-	picked, err := h.Transfer.PickDownloadDir(t.Context())
+	picked, err := h.Transfer.PickDownloadDir(t.Context(), app.SelectionScopeDTO{BookmarkID: h.Primary.BookmarkID, Container: source, Prefix: prefix})
 	if err != nil || picked == nil || picked.Dir != selected {
 		t.Fatalf("picker changed the selected spelling: %+v %v", picked, err)
 	}

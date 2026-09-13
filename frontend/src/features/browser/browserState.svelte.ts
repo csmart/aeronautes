@@ -38,6 +38,7 @@ import type {
   PickedFilesDTO,
   PrefixDetailDTO,
   SLOManifestDTO,
+  SelectionScopeDTO,
 } from "../../lib/api";
 import { parentPrefix } from "../../lib/listing";
 
@@ -912,12 +913,12 @@ export class BrowserState {
     return id;
   }
 
-  async pickUploadFiles(): Promise<PickedFilesDTO | null> {
-    return await this.#api.pickUploadFiles();
+  async pickUploadFiles(scope: SelectionScopeDTO): Promise<PickedFilesDTO | null> {
+    return await this.#api.pickUploadFiles(scope);
   }
 
-  async pickDownloadDir(): Promise<PickedDirDTO | null> {
-    return await this.#api.pickDownloadDir();
+  async pickDownloadDir(scope: SelectionScopeDTO): Promise<PickedDirDTO | null> {
+    return await this.#api.pickDownloadDir(scope);
   }
 
   async preflightUpload(req: UploadRequestDTO): Promise<UploadPreflight> {

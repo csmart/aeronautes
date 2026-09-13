@@ -135,8 +135,14 @@ func shortListingUpload(t *testing.T, h *Harness) {
 	localBefore := snapshotListingLocal(t, root)
 	beforeA, beforeB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
 	limitListingPages(t, h, h.Secondary, dest, "short", "")
+	// The dialog uploads into the connected account, and a selection is
+	// bound to it at the pick (ADR 0041), so connect where the upload
+	// is going before choosing the files.
+	if _, err := h.Browse.Connect(t.Context(), h.Secondary.BookmarkID); err != nil {
+		t.Fatalf("connect the upload destination account: %v", err)
+	}
 	app.WireFilePicker(h.Transfer, listingFilePicker{files: paths})
-	selection, err := h.Transfer.PickUploadFiles(t.Context())
+	selection, err := h.Transfer.PickUploadFiles(t.Context(), app.SelectionScopeDTO{BookmarkID: h.Secondary.BookmarkID, Container: dest, Prefix: "scope/"})
 	if err != nil || selection == nil || selection.Token == "" || len(selection.Files) != 4 {
 		t.Fatalf("owned upload selection: %+v, %v", selection, err)
 	}
@@ -197,7 +203,7 @@ func shortListingDownload(t *testing.T, h *Harness) {
 	beforeA, beforeB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
 	trace := limitListingPages(t, h, h.Primary, source, "short", "")
 	app.WireFilePicker(h.Transfer, listingFilePicker{dir: filepath.Join(root, "download")})
-	selection, err := h.Transfer.PickDownloadDir(t.Context())
+	selection, err := h.Transfer.PickDownloadDir(t.Context(), app.SelectionScopeDTO{BookmarkID: h.Primary.BookmarkID, Container: source, Prefix: "scope/"})
 	if err != nil || selection == nil || selection.Token == "" {
 		t.Fatalf("owned download selection: %+v, %v", selection, err)
 	}

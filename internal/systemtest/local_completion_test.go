@@ -192,13 +192,13 @@ func localCompletionRun(t *testing.T, h *Harness, direction, fault, class string
 	var id string
 	var startErr error
 	if direction == "upload" {
-		picked, err := h.Transfer.PickUploadFiles(t.Context())
+		picked, err := h.Transfer.PickUploadFiles(t.Context(), app.SelectionScopeDTO{BookmarkID: h.Primary.BookmarkID, Container: container, Prefix: "live/"})
 		if err != nil {
 			t.Fatal(err)
 		}
 		id, startErr = h.Transfer.StartUpload(t.Context(), app.UploadRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: container, Prefix: "live/", SelectionToken: picked.Token, Settings: settings})
 	} else {
-		picked, err := h.Transfer.PickDownloadDir(t.Context())
+		picked, err := h.Transfer.PickDownloadDir(t.Context(), app.SelectionScopeDTO{BookmarkID: h.Primary.BookmarkID, Container: container, Prefix: "live/"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -249,7 +249,7 @@ func localCompletionRun(t *testing.T, h *Harness, direction, fault, class string
 			t.Fatal("job list hid persistence failure")
 		}
 		app.WireFilePicker(h.Transfer, listingFilePicker{files: []string{blockedPath}})
-		picked, err := h.Transfer.PickUploadFiles(t.Context())
+		picked, err := h.Transfer.PickUploadFiles(t.Context(), app.SelectionScopeDTO{BookmarkID: h.Primary.BookmarkID, Container: container, Prefix: "blocked/"})
 		if err != nil {
 			t.Fatal(err)
 		}

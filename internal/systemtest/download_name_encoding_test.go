@@ -97,7 +97,7 @@ func downloadNameEncoding(t *testing.T, h *Harness, c nameEncodingCase) {
 	stageCalls := &atomic.Int32{}
 	app.WireDownloadStageBoundary(h.Transfer, func(context.Context, string) error { stageCalls.Add(1); return nil })
 	app.WireFilePicker(h.Transfer, listingFilePicker{dir: selected})
-	picked, err := h.Transfer.PickDownloadDir(t.Context())
+	picked, err := h.Transfer.PickDownloadDir(t.Context(), app.SelectionScopeDTO{BookmarkID: h.Primary.BookmarkID, Container: source, Prefix: "scope/"})
 	if err != nil || picked == nil {
 		t.Fatalf("pick: %+v %v", picked, err)
 	}

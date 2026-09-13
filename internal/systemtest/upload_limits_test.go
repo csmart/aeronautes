@@ -117,7 +117,7 @@ func destinationChunkSettings(t *testing.T, h *Harness, operation, chunk string)
 	var err error
 	if operation == "upload" {
 		app.WireFilePicker(h.Transfer, listingFilePicker{files: []string{path}})
-		picked, pickErr := h.Transfer.PickUploadFiles(t.Context())
+		picked, pickErr := h.Transfer.PickUploadFiles(t.Context(), app.SelectionScopeDTO{BookmarkID: account.BookmarkID, Container: destination})
 		if pickErr != nil {
 			t.Fatal(pickErr)
 		}

@@ -39,7 +39,7 @@ func generationJobStart(t *testing.T, h *harness, kind, source string) (func() (
 			t.Fatal(err)
 		}
 		h.transfer.setFilePicker(fakePicker{files: []string{file}})
-		picked, pickErr := h.transfer.PickUploadFiles(t.Context())
+		picked, pickErr := h.transfer.PickUploadFiles(t.Context(), SelectionScopeDTO{BookmarkID: source, Container: "media", Prefix: "new/"})
 		if pickErr != nil {
 			t.Fatal(pickErr)
 		}
@@ -50,7 +50,7 @@ func generationJobStart(t *testing.T, h *harness, kind, source string) (func() (
 		}
 	case "download":
 		h.transfer.setFilePicker(fakePicker{dir: t.TempDir()})
-		picked, pickErr := h.transfer.PickDownloadDir(t.Context())
+		picked, pickErr := h.transfer.PickDownloadDir(t.Context(), SelectionScopeDTO{BookmarkID: source, Container: "media", Prefix: "scope/"})
 		if pickErr != nil {
 			t.Fatal(pickErr)
 		}

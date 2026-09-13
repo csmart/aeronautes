@@ -54,7 +54,7 @@ func downloadDestinationQueued(t *testing.T, h *Harness, route, fault string) {
 	selected := filepath.Join(owned, "selected")
 	pick := func(path, prefix string) app.DownloadRequestDTO {
 		app.WireFilePicker(h.Transfer, listingFilePicker{dir: path})
-		picked, err := h.Transfer.PickDownloadDir(t.Context())
+		picked, err := h.Transfer.PickDownloadDir(t.Context(), app.SelectionScopeDTO{BookmarkID: h.Primary.BookmarkID, Container: source, Prefix: prefix})
 		if err != nil || picked == nil || picked.Dir != path {
 			t.Fatalf("queued fixture picker: %+v error=%v", picked, err)
 		}

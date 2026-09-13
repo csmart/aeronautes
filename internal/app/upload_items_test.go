@@ -140,7 +140,7 @@ func TestUploadItemDiagnosticsExcludeProviderText(t *testing.T) {
 				t.Fatal(err)
 			}
 			h.transfer.setFilePicker(fakePicker{files: []string{path}})
-			picked, err := h.transfer.PickUploadFiles(t.Context())
+			picked, err := h.transfer.PickUploadFiles(t.Context(), SelectionScopeDTO{BookmarkID: bookmark, Container: "media"})
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -100,7 +100,7 @@ func downloadPortableNameService(t *testing.T, h *Harness, route, shape string) 
 	beforeA, beforeB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
 	trace := downloadRecordsProxy(t, h, source, prefix, nil)
 	app.WireFilePicker(h.Transfer, listingFilePicker{dir: selected})
-	picked, err := h.Transfer.PickDownloadDir(t.Context())
+	picked, err := h.Transfer.PickDownloadDir(t.Context(), app.SelectionScopeDTO{BookmarkID: h.Primary.BookmarkID, Container: source, Prefix: prefix})
 	if err != nil || picked == nil || picked.Token == "" || picked.Dir != selected {
 		t.Fatalf("owned picker did not preserve the selected spelling: %+v %v", picked, err)
 	}
