@@ -5585,6 +5585,21 @@ The twelve names are the change and the sixty-five second threshold is the one-t
 Every test, assertion, per-operation deadline, slot count, fixture ownership, required context and both-lane aggregate is unchanged, and a fourth slot, a third fixture and a longer timeout are each declined with reasons.
 Projected lane wall clock near seven hundred seconds each is labelled as a projection; acceptance is the measured package and whole-job margins on the reviewed head's own run and the resulting master run.
 
+The staged copy route's content binding leaves three routes on the same finding, and [ADR 0045](adr/0045-route-content-binding.md) proposes the next step in that sequence.
+The [route content record](experiments/2026-09-14-route-content-binding.md) reproduces four same-size differences that publish or place successfully today: a native copy of a segmented source, a native upload, a native download, and a staged upload commit.
+Each is reached end to end through the transfer service against the two-account fixture, with a proxy that inverts one body and preserves its length, and the first three each pass a healthy control through the same proxy.
+The cause in every case is that the route compares logical length and nothing else, because `verifyCopied` compares entity tags only when both sides are plain, `verifyUpload` never digests the local file, and both download paths check only the written or staged file's size.
+
+The proposed correction reuses the ladder unchanged and changes which byte stream each route compares against it.
+The native copy, native upload and native download bodies already stream through the process, and an engine-staged download file is already on local disk, so those comparisons add no object bytes to the network; only a staged upload publishing a segmented live object pays a complete read, because a remote segment listing recombined against the live aggregate is the counterexample ADR 0042 already disproved and does not become sound on another route.
+Every comparison is bound to the boundary it claims: the native routes compare their accumulated digest against the live object's own HEAD rather than merely accumulating it, a plain staged upload is settled against the final live HEAD because the staged object establishes only the stage, and a segmented staged upload reads the staged content before the committing fact and the live manifest PUT rather than after.
+A download compares before publishing and refuses with the staged file retained, binding the digest to the same file the no-replace link publishes.
+A native copy and a native upload publish at the live name in one request, so they can only report an unresolved effect with retained residue; the fingerprint is dropped from the initial PUT and not added afterwards, because the available metadata update is a HEAD-preflighted replace-all POST that cannot be bound atomically to the object just checked, so the route publishes unstamped and later skips stay conservative.
+A name recorded as a content failure is excluded from verified counts and later equality and skip claims, and an abandoned request is treated as a possible effect rather than none.
+Routing those two behind a staged name is recommended as separate work.
+The bridge surface does not widen and no generated binding changes.
+This proposal closes neither L05 nor DS-04: missing and reordered segments, whole-job substitution and the valuable-data release hold remain open.
+
 ### 65.12. Proportionate remediation and a fixed finish line
 
 Safe, secure operation on valuable production data remains the first milestone.
