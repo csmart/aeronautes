@@ -155,3 +155,34 @@ The parent-kill record retains the admitted staging location; it does not invent
 The tests do not establish power-loss durability, atomic publication across every filesystem, cancellation during directory creation or cleanup, or the retained-stage removal product decision.
 Other platforms and architectures remain under GitHub issue 103.
 DS-07, SEC-06, P20, P30 and the valuable-data hold remain open.
+
+## Addendum, 14 September 2026: the running-child signal is a race
+
+The resulting-master run for `e053cb73d6cc61e97ca23dc4478568ac71a9193d` failed one leaf.
+`TestChildLifetimeRealSwift/parent_kill` reaped its adopted child with status 13, SIGPIPE, where the assertion requires status 9.
+The same run recorded status 9 for `TestChildLifetimeMock/parent_kill`, `TestChildLifetimeMock/stopped_child_parent_kill` and `TestChildLifetimeRealSwift/stopped_child_parent_kill`, and the package completed in 1171.054 seconds rather than timing out.
+The same leaf had failed the same way earlier that day on the mock provider, and an attribution to host load was rejected as unestablished.
+
+A standalone probe outside this repository isolates the mechanism.
+A parent sets `Setpgid` and `Pdeathsig` exactly as `internal/transfer/rclone/childproc_linux.go` does, gives its child a stderr pipe it drains, and a subreaper kills that parent and records which signal reaped the orphan.
+With a child saturating its stderr pipe, two runs of two hundred trials each reaped 8 and 5 children with SIGPIPE and the remainder with SIGKILL, a combined 13 of 400.
+With the child stopped before the parent is killed, two hundred trials reaped two hundred children with SIGKILL and none with SIGPIPE.
+The host was 24 cores at load average 3.48 with other suites present, and the rate is for a saturating writer rather than for the engine's actual stderr volume.
+
+The parent's file descriptors are released before its parent-death signal reaches the child, so a child that is inside a write to that pipe when the parent dies takes SIGPIPE first.
+A stopped child cannot execute a write, so it cannot take SIGPIPE, and only the parent-death signal can reap it.
+That asymmetry explains why the stopped mode has never produced this failure and the running mode does.
+
+The guarantee is intact.
+`Pdeathsig: syscall.SIGKILL` is set, no child survived its parent in any trial, and both signals are consequences of the parent's death.
+What the assertion actually rests on is narrower than it reads: SIGPIPE in the running case is the dominant outcome when parent-death coupling is absent, as the control above the addendum records, but it is also a rare outcome when the coupling is present, so the two are not distinguishable by that status alone.
+
+The proposed correction accepts either SIGKILL or SIGPIPE in `parent_kill`, keeps the exact SIGKILL requirement in `stopped_child_parent_kill`, and states that the stopped mode is the retained proof of parent-death coupling.
+This narrows that proof from two modes to one and is the cost of the change.
+It is acceptable only if the stopped mode still fails when the coupling is removed, which the earlier control recorded and which must be rebuilt and reproved on current source before the correction is implemented, not taken from this record.
+Every other assertion in both modes, including the exact retained partial, the stage, both accounts' collateral, the absence of remote writes and the recovery records, is unchanged.
+
+Holding the child's stderr read end open in the controller was considered and rejected.
+It would remove the race and keep the exact assertion in both modes, but the parent owning that pipe and its EOF when the group dies is the production wiring this test exists to exercise, and a controller that holds it open no longer observes what production does.
+
+This addendum establishes no ordering inside the kernel beyond what the trials show, and grants no native, scenario or release acceptance.

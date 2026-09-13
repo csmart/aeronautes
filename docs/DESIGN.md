@@ -5354,6 +5354,8 @@ Require executor controls for those exclusions and real-service cancellation reg
 
 The correction and maintained [Linux child-lifetime evidence](experiments/2026-09-12-linux-child-lifetime.md) have passed independent local review, including actual pinned-child completion, cancellation, escalation and both parent-death modes on Linux amd64.
 The final mock and real-Swift runs distinguish executed passes from skips, and controls that omit parent-death coupling, killing/reaping or the cancellation mapping fail their intended assertions.
+The running-child parent-kill mode cannot prove which signal reaped the engine: the parent's descriptors are released before its parent-death signal arrives, so a child inside a write to its stderr pipe takes SIGPIPE first, measured at 13 of 400 trials with the coupling present.
+The stopped-child mode is therefore the retained proof of parent-death coupling, because a stopped child cannot write and so cannot take SIGPIPE, and removing the coupling leaves it alive against its own liveness assertion.
 This establishes the tested direct-child and download-result scope only; combined-source verification and protected delivery are still required, while application shutdown, other native platforms and DS-07/SEC-06 remain open.
 
 The next bounded [job shutdown ownership prerequisite](experiments/2026-09-12-job-shutdown-ownership.md) covers the five job-start families and their complete resource lifetime.
