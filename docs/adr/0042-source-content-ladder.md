@@ -1,6 +1,6 @@
 # ADR 0042 — verify copies against the source's content ladder
 
-**Status:** Proposed, revised after review; the staged copy route is proposed here, and the native copy route and the local upload and download routes remain in the sequence.
+**Status:** Accepted for the staged copy route, which is delivered with this decision; the native copy route and the local upload and download routes remain in the sequence.
 **Scope:** Content verification of a staged copy before publication, for every source class the route accepts, within DS-04/P16 and finish-line item L05.
 
 ## Problem
@@ -23,8 +23,14 @@ A plain source yields one run: its logical length and its entity tag.
 A dynamic large object source yields one run per segment, from an ordered listing of its manifest prefix.
 The ladder is admitted only when every entry states a complete MD5, the run lengths sum to the source's reported logical length, and the MD5 of the concatenated entity tags equals the source's reported entity tag.
 
-A static large object source yields its manifest's recorded ladder: each entry states the length and MD5 the object was created from, and their recombination is the entity tag it reports.
-Only entries stating a whole segment's own content MD5 qualify — a ranged entry records the containing segment's tag rather than the range's, a nested manifest records an aggregate, and an unrecognised entry states nothing.
+A static large object source yields its manifest's recorded ladder: each entry states the length and MD5 the object was created from, and their recombination is the entity tag it reports, checked against the HEAD exactly as the dynamic case is.
+Each entry is reduced to the length and MD5 of the bytes it contributes: a recorded whole segment states both, and an inline data entry carries its own bytes, so its run is read from them rather than the source class being narrowed to exclude it.
+An entry that states neither refuses — a ranged entry records the containing segment's tag rather than the range's, a nested manifest records an aggregate, and an unrecognised entry states nothing.
+
+That manifest is read through its own bounded reader rather than the exact-model getter the browser uses.
+A safety input has to be complete and bounded. Complete means the response contract `OpenObjectContent` already uses — HTTP 200 with no Content-Range — because a partial body that happens to parse is not the manifest; a clean end of stream rather than merely an end, because an end-of-stream carrying another read failure is a body that did not finish; and a successful close, for the same reason. Bounded means the byte budget limits what the decoder may draw, covering the opening token, every entry and the read that confirms the end of the stream, so an oversized entry cannot be buffered before the budget is consulted; past the budget, or past the entry ceiling, or with trailing content after the list, the read refuses rather than truncating.
+The budget is an inclusive limit: one probe byte past it distinguishes a body that ends exactly at the limit from one byte too many, so an exact fit is admitted rather than conservatively refused.
+The display getter keeps every entry shape in place and is unchanged.
 
 A source whose class cannot be established, whose segments are themselves large objects, or which declares more segments than one comparison holds, yields no ladder.
 No ladder means no publication for that name.
@@ -58,7 +64,7 @@ No overwrite, Mirror start, source deletion, automatic segment cleanup or creden
 
 ## Cost
 
-Per covered candidate, over what ADR 0037 already accepted for a plain source: one additional listing of the source's segment prefix, or one small manifest fetch for a static large object, and one complete read of the assembled staged object.
+Per covered candidate, over what ADR 0037 already accepted for a plain source: one additional listing of the source's segment prefix, or one bounded manifest read for a static large object, and one complete read of the assembled staged object.
 
 That read is not server-local.
 `OpenObjectContent` streams the assembled bytes to the application through the Go client, so a covered copy moves the object's bytes over the network a second time — once into the destination by the engine, once back out to verify.

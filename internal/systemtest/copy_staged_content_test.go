@@ -115,6 +115,10 @@ type stagedContentFixture struct {
 	src, dst, segments      string
 	control, subject, later []byte
 	beforeA, beforeB        *oracle.AccountSnapshot
+	// listedSubjectBytes is what the source listing reports for the
+	// subject, which is its logical length for a plain object and zero
+	// for a dynamic large object manifest row.
+	listedSubjectBytes int64
 }
 
 func newStagedContentFixture(t *testing.T, h *Harness) stagedContentFixture {
@@ -137,6 +141,7 @@ func newStagedContentFixture(t *testing.T, h *Harness) stagedContentFixture {
 	h.Seed(h.Secondary, f.segments, "shared/0", shared, nil)
 	h.Seed(h.Secondary, aliases, "dlo", nil, map[string]string{"X-Object-Manifest": f.segments + "/shared/"})
 	h.SeedSLO(h.Secondary, aliases, "slo", fmt.Sprintf(`[{"path":%q,"etag":"%x","size_bytes":%d}]`, "/"+f.segments+"/shared/0", md5.Sum(shared), len(shared)))
+	f.listedSubjectBytes = int64(len(f.subject))
 	f.beforeA, f.beforeB = h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
 	return f
 }

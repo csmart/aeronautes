@@ -122,26 +122,41 @@ This change grants no overwrite, Mirror start, source deletion, automatic segmen
 
 ## Follow-up: the source content ladder
 
-This slice's comparison admitted only a plain source, so a segmented source publishes with no content evidence: `commitStaged` compares logical length, sums the staged segment bytes, and skips the comparison because `src.Class` is not `ClassPlain`.
-It then stamps the live name with the identity the commit-time HEAD reported, so a source that changed while the engine was reading is recorded as the identity of bytes the destination does not hold.
-A segmented source materialised as a plain staged object is checked on logical length alone.
+This slice's comparison admitted only a plain source, so a segmented source published with no content evidence: `commitStaged` compared logical length, summed the staged segment bytes, and skipped the comparison because `src.Class` was not `ClassPlain`.
+It then stamped the live name with the identity the commit-time HEAD reported, so a source that changed while the engine was reading was recorded as the identity of bytes the destination did not hold.
+A segmented source materialised as a plain staged object was checked on logical length alone.
 
-The archived probe reproduces this at the executor boundary against the two-account mock cluster: a four-byte segment of a dynamic large object source replaced with different bytes of the same length inside the copy window is published as copied, with no failure, holding the old content under the new source's fingerprint.
-The plain-source control refuses and retains its staging; the unchanged control publishes.
-That probe, its JSON twin and the raw logs are retained privately at `/home/csmart/code/.aeronautes-work/20260913-claude/l05/`, with digests in `SHA256SUMS` in that directory.
-
-The proposed correction is [ADR 0042](../adr/0042-source-content-ladder.md).
+The correction is [ADR 0042](../adr/0042-source-content-ladder.md).
 A source's expectation is an ordered ladder of length and MD5 runs: one run for a plain object, one per listed segment for a dynamic large object whose recombined entity tags must reproduce the tag its HEAD reports, and the recorded manifest for a static large object.
 The complete assembled staged content is read once and digested along those boundaries, for a plain staged object as well as a segmented one; the destination's own boundaries never enter the comparison, so legitimate resegmentation still publishes.
 Two plain objects are the one pair not read, because their entity tags come from their own object HEADs and `verifyCopied` has already compared them.
 
 Listing evidence is not accepted in place of that read.
 The review of the first proposal built the case: a same-size segment replacement can leave the container row at its previous length and entity tag, and a dynamic large object's reported aggregate is derived from those same rows, so both agree with the source while the stored bytes do not.
-That would be an initial-content regression against the guard this slice already provides, and it becomes a required catching regression rather than a permitted shortcut.
+`TestStaleStagedListingCannotStandInForContent` holds that case.
 
-Cost, over what this slice already accepted: one additional listing of the source's segment prefix, or one small manifest fetch for a static large object, and one complete read of the assembled staged object.
+The maintained regressions are `internal/transfer/copy/source_ladder_test.go` and `internal/systemtest/copy_source_ladder_test.go`.
+On the owned mock and the owned two-account real Swift fixture, a same-size staged corruption, a permutation and missing content compensated by a duplicate all refuse before publication with the stage, its segments and every recovery fact retained, while a valid four-piece resegmentation of a two-segment source publishes.
+The stale staged listing is held at the executor boundary only, against the mock, by `TestStaleStagedListingCannotStandInForContent`: it needs a container row that still describes the bytes it replaced, and the real Swift fixture cannot be made to lag its own listing on demand.
+That is a stated residual gap in provider coverage for that one case, not a claim of two providers.
+A source segment carrying no complete MD5, a listing that does not recombine to the reported aggregate, a ranged manifest entry and a manifest disagreeing with its own tag each refuse before any read.
+The manifest is read through a bounded reader written for this decision rather than the exact-model getter the browser uses.
+It requires a complete response, HTTP 200 with no Content-Range, on the same contract `OpenObjectContent` uses, because a partial body that happens to parse is not the manifest.
+Its byte budget bounds the decoder's input rather than being checked after the fact: the opening token, every entry and the read that confirms the end of the stream all draw on it, so an enormous single entry or a megabyte of leading whitespace stops inside the budget instead of being buffered first.
+`TestSLOManifestDigestsBudgetBoundsTheRead` measures the consumption and shows each such body refused after 257 of more than a million bytes: the budget plus the single probe byte that tells a body ending exactly at the limit from one byte too many, so the limit is inclusive rather than conservative.
+It also refuses rather than truncating past its entry ceiling, refuses trailing content, refuses a body it cannot close cleanly, and requires a clean end rather than merely an end — an end-of-stream carrying another read failure is a body that did not finish, and `TestSLOManifestDigestsRequiresACleanEnd` holds that, preserving the underlying failure in the refusal.
+Each entry is reduced to the length and MD5 of the bytes it contributes, so an inline data entry is read from its own bytes rather than refused, and only an entry stating neither — ranged, nested or unrecognised — refuses.
+`TestSLOManifestDigestsBoundedInput` holds those cases and asserts the display getter is unchanged.
+A consistent static large object source publishes against its recorded manifest; replacing one of its segments made the deployed fixture refuse to serve the object at all, with `HTTP Error: 409: 409 Conflict` at the source read, which is the store's own protection and is recorded as an observation rather than claimed here.
+Thirteen deliberately broken controls, built from the delivered source by one producer at the delivered head, each fail their own named case; the producer records every exit and log digest and refuses to finish if any control leaves its named case passing.
+They include one that restores the rejected listing shortcut, one that removes the manifest reader's entry ceiling, one that lets it accept trailing content, one that drops the ladder ceiling, one that admits a partial HTTP response as a complete manifest, one that stops the byte budget bounding the read, one that accepts an end-of-stream carrying another failure, and one that makes the budget exclusive again so a body ending exactly at the limit is refused.
+
+Cost, over what this slice already accepted: one additional listing of the source's segment prefix, or one bounded manifest read for a static large object, and one complete read of the assembled staged object.
 That read is not server-local — `OpenObjectContent` streams the bytes to the application — so a covered copy moves the object's bytes over the network a second time.
 
 The ladder is bound to an observation, not to current segment contents: a source listing that has not caught up can agree with a source HEAD derived from the same listing.
-Required proof is a catching before and after regression on both owned providers for a same-size staged corruption, a permutation, missing content compensated by a duplicate, a stale staged listing and an unusable ladder, with valid resegmentation and the plain-source controls preserved, plus deliberately broken controls that each fail their own named case.
+A ladder is bounded at a quarter of a million runs and a static large object's manifest at sixty-four mebibytes; a source past either refuses rather than being compared against a truncated expectation, and raising a ceiling is a separate decision.
+A ranged or nested manifest entry is refused rather than guessed at, which narrows what a static large object source may contain and is recorded as a limit; an inline data entry is read rather than refused, so it costs no capability.
 Source and publication substitutions, the native copy route and the local upload and download routes stay open, and DS-04 stays blocking.
+
+Before and after evidence, the archived probe and its JSON twin are retained privately at `/home/csmart/code/.aeronautes-work/20260913-claude/l05/`, with the digests in `SHA256SUMS` in that directory.

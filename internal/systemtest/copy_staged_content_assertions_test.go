@@ -71,7 +71,7 @@ func assertStagedContentResult(t *testing.T, h *Harness, f stagedContentFixture,
 	t.Helper()
 	assertStagedContentEffects(t, h, f, id, stageName, stage, accepted, sourceTrace, trace)
 	wantState, wantResult := "partial", audit.ResultVerifyMismatch
-	wantCounters := jobs.Counters{ObjectsPlanned: 2, BytesPlanned: int64(len(f.control) + len(f.subject)),
+	wantCounters := jobs.Counters{ObjectsPlanned: 2, BytesPlanned: int64(len(f.control)) + f.listedSubjectBytes,
 		ObjectsCopied: 1, BytesCopied: int64(len(f.control)), ObjectsVerified: 1, ObjectsFailed: 1}
 	wantTotals := jobs.ItemTotals{Items: 2, Planned: 2, Admitted: 2, Failed: 1, Unresolved: 1, Problems: 1}
 	if accepted {
@@ -92,13 +92,14 @@ func assertStagedContentResult(t *testing.T, h *Harness, f stagedContentFixture,
 	}
 	for i, name := range []string{"a-control", "b-subject"} {
 		body := f.control
+		listed := int64(len(f.control))
 		if i == 1 {
-			body = f.subject
+			body, listed = f.subject, f.listedSubjectBytes
 		}
 		item := saved.Items[i]
 		wantStage := jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Secondary.BookmarkID, Container: f.dst,
 			Object: "scope/.aeronautes/stage/" + id + "/batch/" + name}
-		if item.JobID != id || item.Key != name || !item.Planned || !item.Admitted || item.ListedBytes != int64(len(body)) ||
+		if item.JobID != id || item.Key != name || !item.Planned || !item.Admitted || item.ListedBytes != listed ||
 			item.Source != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: f.src, Object: "scope/" + name}) ||
 			item.Destination != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Secondary.BookmarkID, Container: f.dst, Object: "scope/" + name}) ||
 			item.Staging == nil || *item.Staging != wantStage || item.Execution == nil || item.Verification == nil {
