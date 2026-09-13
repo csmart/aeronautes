@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -342,21 +343,31 @@ func TestConnectionObservationNeverReadsAChangeAsAbsence(t *testing.T) {
 	first := h.transfer.connections.ActiveBookmarkID()
 	second, _ := secondCluster(t, h)
 
+	// The worker's own failure must not read as a passing test: without
+	// reporting it, a Connect error ends the worker, the reader sees the
+	// closed channel and returns having asserted nothing.
 	done := make(chan struct{})
+	var workerErr error
 	go func() {
 		defer close(done)
 		for range 150 {
 			if _, err := h.browse.Connect(ctx, second); err != nil {
+				workerErr = fmt.Errorf("connect to the replacing account: %w", err)
 				return
 			}
 			if _, err := h.browse.Connect(ctx, first); err != nil {
+				workerErr = fmt.Errorf("connect back to the original account: %w", err)
 				return
 			}
 		}
 	}()
+	t.Cleanup(func() { <-done })
 	for {
 		select {
 		case <-done:
+			if workerErr != nil {
+				t.Fatalf("the replacing worker stopped early, so nothing was observed: %v", workerErr)
+			}
 			return
 		default:
 		}
