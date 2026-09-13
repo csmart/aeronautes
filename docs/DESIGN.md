@@ -5444,6 +5444,23 @@ The preserved 19-case probe confirms that active details and the real Delete num
 
 Missing-settings interpretation, account filtering, additional diagnostics, wider UI-09/UI-10, native acceptance and the valuable-data hold remain open.
 
+The bounded [credential authority follow-up](experiments/2026-09-06-credential-publication.md#l01-authority-reachability-follow-up--2026-09-13) is the L01 slice of the frozen Linux finish line.
+Its four-failure unchanged-source probe shows that a changed origin and a genuinely erased credential both return `secrets.ErrNotFound`, while a locked read returns a third untyped refusal, so the two unreachable cases are classified differently and neither is recognisable to a caller.
+Cleanup counts are also identical whether or not this session can confirm the storing authority.
+ADR 0015 already decided the rule: an absence reported by session fallback cannot prove that a key in an unavailable keychain was removed, so the slice carries a contract and no further decision record.
+
+1. Independently review the contract and unchanged-source proof before production changes.
+2. Add one predicate for the exact authority that recorded a reference, verified only by a live session store reading its own instance; keep `ReadableBy` as permission to attempt a read, since it admits any keychain adapter instance and a locked adapter alike.
+   Treat reported absence as erasure only under that predicate, leaving keychain and legacy absence unproven until verified persistent-backend selection exists.
+3. Add one recognisable unreachable-authority error for those refusals and every other failed backend read, keeping the erasure sentinel for a bookmark with no reference or an absence its recording authority reports.
+   Separate the two in the connection registry: erasure asks for re-entry, and unreachable authority asks the operator to unlock or reconnect the original store or enter the key again, without claiming the old key was erased.
+4. Add an unverified facet to the credential cleanup counts using that same predicate, so the count and the read decision cannot disagree.
+   Count every keychain and legacy row, exclude saves in progress so the facet overlaps only the retired and unfinished counts, and never let zero imply that work was cleaned up or that a native key is reachable.
+   Preserve every binding, reference, stored value and journal record across refused reads, and carry no reference, instance identifier or credential value into an error or DTO.
+5. Prove the four original failures and the five controls, add store, service, status and frontend cases, and require independent broken-guard controls before local review and current-base delivery gates.
+
+Verified persistent-backend selection, physical cleanup, wider P10 and SEC-01/04, native acceptance and the valuable-data hold remain open.
+
 The [post-gateway master CI run](https://github.com/csmart/aeronautes/actions/runs/33974684916) exposed an existing audit-read race in the copy-job test.
 The terminal job row is written before the separate audit append; a temporary 250 ms delay in that existing gap reproduces premature assertions in the copy, container-delete and audit-search tests.
 Those tests now wait boundedly for the exact operation and job identity before checking the trail; absent audit events and database errors still fail.

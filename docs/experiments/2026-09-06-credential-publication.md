@@ -86,3 +86,34 @@ Go build/vet and Wails beta15 binding generation pass; the generated bindings ha
 The secret and bookmark packages compile for Linux, Windows and macOS on amd64 and arm64; this is compile evidence, not native runtime or keychain-erasure evidence.
 The full run and focused red/green records are retained as local review evidence under the `p10-publication-*` filenames.
 These results do not close the broader P02/P03 fault harness or P34 coverage gates.
+
+## L01 authority reachability follow-up — 2026-09-13
+
+The oracle is unchanged: ADR 0015 holds that an absence reported by session fallback cannot prove that a key in an unavailable keychain was removed, and that a read through the active backend may report unavailable without establishing absence in another store.
+This follow-up is the [Linux finish line](../audits/2026-09-05/linux-finish-line.md) L01 slice and closes the gap between that decision and the read boundary.
+No further decision record is proposed.
+
+`Store.ConnectionConfig` returns `secrets.ErrNotFound` both when the recorded origin fails `Origin.ReadableBy` and when the backend reports the value absent, so a changed origin and a genuinely erased credential are one result.
+A locked read takes a third path and returns the untyped `credential backend could not read the saved key`, so the two situations that are both unreachable authority are classified differently and neither is recognisable to a caller.
+`Connections.open` is the only caller that classifies the result, can test only the erasure sentinel, and hedges its message because the type cannot tell it which is true.
+`CredentialStatus` has no facet separating recorded work whose storing authority this session can confirm from work it cannot.
+
+Nine cases ran under the race detector against a `git archive` of the tracked tree at `31c6c3d51f2fd29539c72e4935a7b766b918863b`.
+Actual exit was 1 after 6.823 seconds: four intended assertion failures and five passing controls, with no skip, timeout or setup failure.
+The changed-origin cases start from session provenance rather than a recorded keychain authority, and the retained restart case constructs a new `Store` over the same open database rather than restarting a process or reopening the database.
+They are Go store tests over the real SQLite schema; they establish nothing about a native keychain or physical erasure.
+The private packet `/home/csmart/code/.aeronautes-work/20260913-claude/l01/before` retains the probe, producer, command, digests and raw output; the probe SHA256 is `81a73d2815b3d56cf1ec68a4f03665e5854b103a80e65d507e4e38715064462b` and the raw output SHA256 is `702dd025e92a351d3a8dd485e5d7cfae36dcd1efaa744e36e851138726512185`.
+
+The contract adds one predicate for the exact authority that recorded a reference: an origin is verified only by a live session store reading its own instance.
+`ReadableBy` stays as permission to attempt a read and is not a reachability claim, because it admits any keychain adapter instance and a locked adapter alike.
+Absence proves erasure only under the verified predicate; a keychain or legacy absence stays unproven until verified persistent-backend selection exists, and is refused as unreachable authority rather than reported as erasure.
+`secrets.ErrAuthorityUnreachable` carries those refusals and every other failed backend read; it neither wraps nor satisfies `secrets.ErrNotFound`, and carries no reference, instance identifier or credential value.
+`Connections.open` separates the two: erasure asks for re-entry, and unreachable authority asks the operator to unlock or reconnect the original store or enter the key again, without claiming the old key was erased.
+
+`CredentialStatus` gains an `Unverified` facet using that same predicate, so the count and the read decision cannot disagree.
+It counts recorded work this session cannot confirm it can reach, including every keychain and legacy row, and excludes saves in progress in this app so it overlaps only the retired and unfinished counts.
+Zero means every recorded row was written by the store this session is using; it never means work was cleaned up or that a native key is reachable.
+
+A refused read rewrites no binding, retires no reference, deletes no value and removes no journal evidence.
+Generation admission, publication leases, job pins and the existing refusals are unchanged.
+Verified persistent-backend selection, physical cleanup, the wider P10 and SEC-01/04 rows, native acceptance and the valuable-data hold remain open.
