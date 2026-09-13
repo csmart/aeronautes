@@ -105,9 +105,9 @@ Same durable private packet, `~/code/.aeronautes-work/20260913-claude/l02/`.
 
 | File | SHA-256 |
 | --- | --- |
-| `after-run.log` | `5b309f635f3cd72b3817e7be932665667029083018ba726540f665c8c950b032` |
-| `guards.json` | `b51ab34684d228ffd12da172683e981fd92e7836fb6dde6dc5721d43df1555c8` |
-| `build_guards.py` (the producer) | `e11f362b92e363e27ff5b6312310ffd1bc7d93c66ee2be47f5859ab516de153d` |
+| `after-run-dd1cdfbb.log` | `11ae2ad05c7f859b450dbaba3e5d59e40667f07dd185e244b1f8e4a6c2ebb090` |
+| `guards-dd1cdfbb.json` | `a85a6da904ff35245e87330ac191b1d3ea6b674571770a8e2457721ee6e63c82` |
+| `build_guards.py` (the producer) | `54feeafaf9dc99c3eca081096dd6c1648a8f6dc081f8742174de8746fa6b8de1` |
 
 ### Further limits
 
@@ -145,12 +145,13 @@ Independent review then found the remaining conflation: the validating snapshot 
 Reading the endpoint directly removes the ambiguity, and a regression drives connects concurrently and asserts the endpoint is never read as absent while a connection exists.
 
 Eleven deliberately broken controls, each caught only by its own cases, none undetected.
-`guards.json` records the head it was built from and whether the working tree carried uncommitted changes, because the guards describe the tree they were built from rather than the named commit alone.
+`guards-dd1cdfbb.json` records the head it was built from and whether the working tree carried uncommitted changes, because the guards describe the tree they were built from rather than the named commit alone.
 
 ### Evidence
 
 Durable private packet `~/code/.aeronautes-work/20260913-claude/l02/`, digests in `SHA256SUMS` beside the files.
-`after-run.log` is the focused proof, `guards.json` the broken controls with the head they were built from, `suite-final.json` the full run.
+`after-run-dd1cdfbb.log` is the focused proof, `guards-dd1cdfbb.json` the broken controls with the head they were built from, and `suite-dd1cdfbb.json` the full run.
+Each name carries the head it was produced at, so a later run cannot be mistaken for this one.
 
 ### Further limits
 
