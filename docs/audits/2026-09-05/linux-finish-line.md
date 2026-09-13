@@ -1,7 +1,7 @@
 # Linux implementation finish line — 13 September 2026
 
 This is the single scope list for the current Linux implementation checkpoint, based on source `e5be8215eb1d58cd26f62333c2cb6bc2dfbb2d40` and the [finding register](remediation-plan.md#finding-to-plan-coverage).
-Independent review gates execution; after that review the list is frozen, and additions require operator sign-off recorded here.
+Independent review and operator adoption gate execution; after both the list is frozen, and additions require operator sign-off recorded here.
 New material risks must be reported for that decision, with affected release acceptance held.
 The 34 open or partial findings remain open; these work areas are not equivalent-sized tasks or new finding IDs.
 
@@ -37,6 +37,7 @@ Then complete these bounded areas under [DESIGN §65.12](../../DESIGN.md#6512-pr
 | L11 | Safety P28 account-specific results ([audit UI](../../../frontend/src/features/browser/browserState.svelte.ts)) | Identical names in different accounts remain distinguishable; account-scoped results, paging, retry and error state stay bound to the selected account. |
 
 These are source-supported residual boundaries, not eleven new runtime reproductions.
+P01/P04/P05 containment remains under ADR 0020, P03 follows the harness rule in §65.12, and P08's remaining retention and queue bounds sit in L10.
 Missing concurrency, durability, retained-stage removal, native approval or workload-limit decisions must be resolved before dependent implementation.
 This list does not itself accept a new capability restriction, concurrency assumption or workload ceiling.
 Existing root/namespace and destructive-consent guards remain required regressions; no additional P18/P19/P29 Linux defect was established by this scoping pass.
@@ -52,4 +53,5 @@ Native code changes retain their existing native-evidence gate.
 Several production gates therefore cannot close on this workstation.
 Declare the Linux checkpoint complete when its own conditions pass even while those gates remain open; that declaration never clears the valuable-data release hold.
 Adaptive tuning, optional layout/shortcut polish and absent convenience features stay in the later v1 backlog, whose accepted scope is unchanged.
+P27's exact-object deletion and remaining accepted account/directory-upload capabilities are outside this checkpoint and must be delivered or explicitly re-scoped before v1.
 New implementation needed by external acceptance requires an explicit scope decision instead of silently reopening this list.
