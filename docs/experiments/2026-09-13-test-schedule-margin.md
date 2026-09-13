@@ -34,26 +34,29 @@ So the observed variation on both lanes is large relative to the main lane's mar
 
 Pull request 115's head became master `3f663a7a` unchanged, so its second attempt and that
 master run executed an identical tree on the same test set.
-They differ by 155.5 seconds of package wall clock, 1197.681 against 1042.138, and its first
-attempt on the same tree exceeded 1500 and failed.
-That is a larger spread than the whole 1019.9 to 1166.8 range of master runs, so run-to-run
-variance rather than accumulated test growth is what the margin has to absorb.
+They differ by 155.5 seconds of package wall clock, 1197.681 against 1042.138.
+Its first attempt on that same tree did not complete within 1500 seconds, which is a lower
+bound on what that run would have taken rather than a measured figure.
+The 155.5 second difference alone is larger than the whole 1019.9 to 1166.8 range of master
+runs, so the margin has to absorb differences between runs of unchanged code and not only
+whatever future tests add.
 
-The variance is broad rather than concentrated.
-Comparing the two runs test by test, 142 of the 196 top-level tests were slower and the ten
-largest contributors account for only half the slowdown.
-Across the 62 tests that take at least ten seconds the median ratio is 1.11 and the upper
-quartile 1.25, against an aggregate of 1.151, and four of them ran more than five per cent
-faster.
-That is the shape of a slower runner applied broadly, not a few groups misbehaving, so there
-is no small set whose removal would fix it and moving work is the only lever these
-measurements support.
+Comparing those two runs test by test, the difference is spread across the suite rather than
+sitting in a few tests: 142 of the 196 top-level tests took longer, the ten largest
+contributors account for half of that, and across the 62 tests of at least ten seconds the
+median ratio is 1.11 and the upper quartile 1.25 against an aggregate of 1.151, with four
+running more than five per cent faster.
+Two runs do not establish why, and this record does not claim a cause.
+What they do show is that no small group carries the difference, so trimming a few tests is
+not indicated by this data, and rebalancing is the bounded response chosen rather than the
+only possible one.
 
-The heavy lane moved the other way between the same two runs, 328.528 against 353.208 seconds.
-All three of its tests were faster on the run where the main lane was 15 per cent slower, at
-an aggregate ratio of 0.940.
-The lanes are separate jobs on separate runners, so their excursions are independent, and
-splitting the work halves how much of one lane's budget a single unlucky runner can consume.
+Between the same two runs the heavy lane moved the other way, 328.528 against 353.208 seconds,
+with all three of its tests faster at an aggregate ratio of 0.940.
+The lanes are separate jobs on separate runners.
+Two paired observations do not establish that their excursions are statistically independent,
+but they do show the lanes moving in opposite directions on one occasion, and work placed on
+the heavy lane is not subject to whatever the main lane's runner is doing at the time.
 
 ## Where the time goes
 
@@ -126,18 +129,10 @@ Projected against the `76c30e90` measurements, by applying each lane's own measu
 These are projections, not results.
 They assume each lane keeps its measured packing efficiency at a different test mix, which is the weakest assumption in this record.
 
-Against the excursions actually observed, applied to the worse projected lane:
-
-| excursion | worst lane | |
-| --- | --- | --- |
-| the measured 15.1 per cent same-tree runner difference | 855 s | within budget |
-| the 29 per cent that breached the main lane today | 959 s | within budget |
-| 50 per cent | 1115 s | within budget |
-| 102 per cent | 1502 s | breach |
-
-Today the main lane breaches at 29 per cent above its worst passing run, and pull request 115
-supplied that. After the move the worst lane holds 757 seconds of headroom and needs roughly
-a doubling, which is about three times the largest excursion in this data.
+The worse projected lane would hold 757 seconds below the budget, against a main lane that
+today holds 333 seconds below it at its worst passing run.
+No claim is made here about what slowdown that survives: the one run that did breach reports
+only a lower bound, so this data does not bound the excursions the schedule must absorb.
 
 Alternatives considered: a fourth parallel slot, already rejected on the earlier evidence that summed body time increased; and a third fixture, which adds an aggregate dependency for a need the two existing fixtures do not yet demonstrate.
 
@@ -183,7 +178,7 @@ depends on them.
 Durable private packet `~/code/.aeronautes-work/20260913-claude/sched/`, digests in `SHA256SUMS` beside the files, that file hashing to `cd5b177f25be06a9e68b2ff862537c2e99737e350c25afd5878b431add46322c`.
 It holds the unpacked lane artifacts of runs 34766363502, 34781972618 attempt 2 and 34785741219, the `attribute.py` producer for the per-test attribution, `lane-history.sh` for the six-run two-lane table, `variance.py` for the same-tree comparison, `run-lane.sh` with both local lane directories, and every producer's saved output.
 Every figure above comes from one of those producers.
-The upstream pipeline artifacts of run 34766363502 expire on 2026-12-12, so the packet is the durable copy rather than a pointer to them.
+The upstream pipeline artifacts of all three runs, 34766363502, 34781972618 and 34785741219, expire on 2026-12-12, so the packet is the durable copy rather than a pointer to them.
 
 ## What this does not establish
 
