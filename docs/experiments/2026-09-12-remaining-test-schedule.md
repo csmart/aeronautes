@@ -1,6 +1,6 @@
 # Remaining serial test groups
 
-Status: the nine-call contract and implementation were independently reviewed and passed locally; PR108 timed out, so delivery is held pending review and validation of the proposed follow-up below.
+Status: PR108 timed out, the controlled comparison rejected four slots, and delivery is held pending review of the proposed nine-call rollback below.
 The behaviour oracle is the existing [three-slot CI schedule](../CI.md), unchanged test assertions and cleanup, and each group's private resources.
 The inspected source is `dcdef302b2e61d0c0a8607751d4605287a0cff85`, tree `60dd8e19737a4f2fb5afdcc93560418081aa6f11`.
 The six candidate files and ten relevant harness, helper and CI inputs match protected master `c098faffeaf160630f538b03639a87cd7f7549aa` byte for byte.
@@ -108,14 +108,22 @@ An exact outer-test selector can retain their private helpers in this package; p
 Either separation needs reviewed, disjoint full-suite coverage, preserved subprocess helper selection, independently reconciled producer results and both coverage contributions; simply concatenating two streams violates the current scenario reader's unique package-lifecycle contract.
 Reverting the nine calls restores the previous serial shape, but that older shape already had little margin, so it is an available rollback rather than a demonstrated timeout remedy.
 
-The behaviour oracle remains every existing test, owned fixture and required CI check.
-After independent contract review, run one sequential three-slot then four-slot local comparison on the same clean committed source, tools, owned two-account fixture and integration race/coverage/package settings, changing only `-parallel` between commands.
-Keep CI unchanged during the experiment, retain the local two-package limit and 1,800-second outer bound, and preserve each exact command, source, producer exit, full event stream, scenario result and bounded process observations.
-Compare package and producer wall clock, serial and parallel phases, complete inventories, each outer body's elapsed time and the summed body time for the identical completed group set.
-Stop before the four-slot run if the baseline fails or is incomplete; stop after the comparison if summed body time rises at four, even if wall clock improves.
-Any failed assertion, timeout, unexpected skip, lost inventory, report error, leaked ownership or resource conflict also stops for diagnosis and review; do not retry merely to obtain green.
-Only an improvement in wall clock without that body-time regression may support a separately reviewed change of the integration command to four slots; local timing cannot establish hosted margin.
-Keep ordinary Go CI at three slots, all test structure, assertions, coverage, producer/tee checks, scenario rules, cleanup and the 25-minute package and 35-minute job limits unchanged.
-Require all five latest-head PR and resulting-master checks and inspect both hosted package and job duration before accepting any delivery change.
-Preserve the nine-call revert condition above, with no further concurrency increase; a narrow passing margin remains insufficient evidence of stable headroom.
-This release-path diagnosis changes no product capability, Linux finish-line area or release acceptance.
+Independent review approved one sequential, covered three-versus-four comparison on clean `f0e3468bdb0d28ff33d389de1db328fa6cd6d881`, using identical tools, owned two-account fixture and test settings apart from the slot count and output paths.
+Both runs passed and reconciled to 4,451 named passes, one optional matrix skip, 20 packages, 69 PAUSE/CONT pairs and 88.6% statement coverage; both scenario reports were valid but incomplete at 42/117 cells and 38 gapped actions.
+Three slots took 927.830 system-package seconds and 2,308.95 summed system-body seconds; four took 799.688 and 2,523.40 respectively.
+The 9.29% body-time increase triggers the approved stop rule despite 13.81% faster completion, so no four-slot CI change is accepted.
+Sampled process/descendant maxima rose from 6/5 to 7/6, and summed RSS from 618,008,576 to 738,414,592 bytes; 421/1,112 and 376/982 samples respectively had observation issues, so these are not exact peaks or proof of quiescence.
+A single pair cannot establish repeatability or hosted margin, and cache state may favour the later producer.
+Retained packet: `.aeronautes-work/evidence/20260913-service-delivery/parallel-comparison`, `SHA256SUMS` digest `f4ce9fb5fe67cbb3cdea97c84d2a8db79f079e854812713ed39ab137b2a45aa1`.
+
+## Proposed rollback for PR108
+
+The behaviour oracle is the pre-experiment schedule, every existing test and required CI check, and the six independently reviewed functional fixes in this delivery.
+After independent contract review, remove exactly the nine outer `t.Parallel()` calls listed above; leave all groups, inner cases, child branches, assertions, cleanup and functional code unchanged.
+This withdraws an optimisation without demonstrated hosted benefit; it does not claim that restoring the older schedule solves its already narrow margin.
+Keep both CI lanes at three slots and preserve race/coverage settings, package selection, producer/tee checks, scenarios and the 25-minute package and 35-minute job limits.
+Run the complete covered internal suite on the committed rollback with the same local two-package and 1,800-second producer limits, retaining the exact source, tools, fixture, raw events, actual exits, complete inventory and scenario report.
+The inventory must remain identical apart from the two documented generated names, with exactly the original 60 PAUSE/CONT pairs; compare body and wall times with the covered three-slot baseline above.
+Independently review the implementation and evidence before pushing, then require all five latest-head/current-base PR checks and all five resulting-master checks and inspect their package/job margins.
+A repeated timeout or other failed check stops for diagnosis and a separately reviewed partition across owned fixtures; do not retry merely to obtain green or increase a budget.
+A narrow passing margin still does not establish stable headroom; this rollback closes no audit finding and changes no product capability or release acceptance.
