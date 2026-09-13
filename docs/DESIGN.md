@@ -5537,6 +5537,16 @@ This binds a selection to one account for its whole life, which is the retained-
 It does not authenticate which account the user approved: the connect action is itself reachable from the bridge, so a page can connect elsewhere before the picker opens.
 Trusted acknowledgement of account, container and prefix for selected local resources remains open, separate from the trusted acknowledgement the forged force and public access-control cases need.
 P11 does not close with this slice, and neither native authority nor the valuable-data release hold is affected.
+L07 owns what a cancelled download may leave behind, under [ADR 0043](adr/0043-cancellation-delta-authority.md).
+[ADR 0035](adr/0035-download-root-authority.md) bound every effect to the held directory handle but did not say which effects are permitted when the operator cancels part way, and the records do not describe the ones that occur.
+The [cancellation delta record](experiments/2026-09-13-download-cancellation-delta.md) reproduces one selection and one held body producing three outcomes across twelve bridge-facing runs: seven created the native item's ancestor directories and recorded the item unresolved at the staging stage, four created nothing and recorded it not attempted at the source read, and one failed the source read itself before the ancestor walk.
+A cancel is asynchronous, so which check observes it is not fixed and cannot be made fixed; review established that removing the check between the ancestor walk and the temporary does not collapse the orderings and would permit a temporary to be created after cancellation where today none is.
+The contract therefore keeps every existing check and states the permitted effects instead: no effect, or the item's ancestor directories created by the walk, and in no ordering a final file at the item's name.
+An effect that certainly did not happen is not reported as uncertain, so an item cancelled before its temporary exists is recorded not attempted rather than unresolved, which is what the upload twin and both neighbouring checks already record, and unresolved keeps its meaning of residue the operator must look for.
+Created ancestors are recorded from observed creation in the component walk, never inferred from a directory existing afterwards, with a partial walk reporting the prefix it reached and a pre-existing or raced directory never counted; they are carried on the same job-level channel as root displacement rather than a new structure.
+Destination ancestors are never removed to tidy a cancellation, because once one exists this executor cannot tell one it created from one it merely opened; the owned stage directory keeps the cleanup ADR 0035 already gives it.
+Whether a graceful cancel removes the retained stage is unresolved and left to the operator, with current behaviour, the options and a recommendation recorded so it can be settled without redoing this work.
+This is a contract and a reproduction; no correction is delivered by it, and the existing cancellation coverage at the held-header, mid-body, stage and placement boundaries is unchanged.
 
 ### 65.12. Proportionate remediation and a fixed finish line
 
