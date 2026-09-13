@@ -87,12 +87,10 @@ the reference/first-polish platform. App id: `io.csmart.aeronautes`.
   cross-platform namespace policy, the destructive-job family with exact accounting, evidence-gated
   segment cleanup, TLS trust identities, and release hardening. Gate evidence lives in
   `DESIGN.md` §65.x status blocks; items §65.9 defers are named in §65.10, not implied done.
-  Requirements not yet met are marked in `docs/REQUIREMENTS.md` context: adaptive concurrency
-  (K-PERF-003), plan tokens, the six-platform materialization matrix, vault (ADR 0006). New work
-  means a new §65.x commit-sequence plan first, same discipline — and the test rule is phased: until the
-  §65.10 behavioral harness lands, no merge without a regression test (unit/SAIO); once it
-  exists, every behavior-changing feature adds a system-matrix row and test, and every bug fix
-  carries the system-level reproduction that failed before it. No system test, no merge.
+  Requirements not yet met are marked in `docs/REQUIREMENTS.md` context: adaptive concurrency (K-PERF-003), plan tokens, the six-platform materialization matrix, vault (ADR 0006).
+  New work follows the frozen [Linux finish line](docs/audits/2026-09-05/linux-finish-line.md) and the risk-based evidence and review rules in DESIGN §65.12.
+  Name the behaviour oracle and keep changes atomic; review a new or changed locked contract before dependent code.
+  Safety changes retain catching system regressions and independent reproduction; ordinary UI and prose use the lighter tiers without weakening required CI.
   The preceding dated capability list is historical: Copy now refuses overwrites, and Mirror supports comparison preview only and refuses every start until P14 establishes the required concurrency boundary.
 - **CI is live** (`.github/workflows/ci.yml`): Go, frontend, containerized-Swift integration, headless smoke and their aggregate gate are required checks on master through PRs.
   The six-target release matrix builds unsigned artifacts on dispatch/tag (§61.0).
@@ -151,3 +149,4 @@ docs and commit messages the same way as code — plain and clear, no filler.
   problem or feature, the fix or implementation approach, and the tests that cover it. No
   `Co-Authored-By` trailer.
 - Branch before committing on the default branch. Keep the design and code in sync.
+- Apply DESIGN §65.12 to new work: short subject records, durable private evidence packets, related documentation in the implementation PR, and operator sign-off before expanding the frozen Linux list.

@@ -6,7 +6,8 @@ The current disposition is recorded against delivered master `ae3ecd4962cbbc830d
 The domain reports preserve audit-time defects and experiments; the [finding register below](#finding-to-plan-coverage) distinguishes delivered fixes, containment, remaining safety blockers and later work.
 An implementation-order change does not accept a new locked product decision, close a finding or waive a release requirement.
 Keep the existing valuable-data release hold until the safety and release gates below have evidence.
-Implement through the project's commit/review discipline, with a catching regression for every fix and an independent system reproduction once the relevant harness layer exists.
+Implement through the project's commit/review discipline and the risk-based evidence rules in [DESIGN §65.12](../../DESIGN.md#6512-proportionate-remediation-and-a-fixed-finish-line).
+The [frozen Linux finish line](linux-finish-line.md) controls the current implementation checkpoint; the packages below retain the full safety, native, release and later v1 obligations.
 
 ## Execution order for valuable-data safety
 
@@ -360,7 +361,7 @@ Not all of those prior cases were independently re-executed in this audit.
 
 ## Acceptance gates and completion
 
-For each logical fix, require a failing-before/passing-after behaviour test, relevant existing tests, accurate contract/docs, and independent review of the actual resulting commit.
+For each logical fix, apply [DESIGN §65.12](../../DESIGN.md#6512-proportionate-remediation-and-a-fixed-finish-line): safety changes require a catching system regression and independent reproduction; ordinary UI and prose receive proportionate tests and review.
 Include the fault event and independent before/after state in the review evidence for irreversible paths.
 Do not record an unexecuted scenario, a setup failure, a skipped platform or a weak size-only comparison as a pass.
 Require all five actual PR jobs to succeed on the latest reviewed head with current master incorporated, then merge only that head through protection and check all five resulting master jobs.
