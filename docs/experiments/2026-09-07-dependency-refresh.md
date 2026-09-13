@@ -176,3 +176,18 @@ Its tree `8df21116da0f50c1718cf872cd5e7155b3203516` exactly matches the reviewed
 Both Dependabot updates are delivered without a bypass, direct master push, failed-check rerun or post-push code repair.
 The successful desktop smoke and six-target build matrix do not establish native functional validation on all six platforms or valuable-data release approval.
 P12, P13, the remaining P23 browser/metadata slices and the broader audit hold remain open.
+
+## Refresh of 13 September 2026
+
+Two Dependabot proposals were verified together rather than separately, because the Wails Go module and its JavaScript runtime must move as a pair: merging one alone would leave master with mismatched halves of the same framework between merges.
+The combined change is Wails Go and runtime beta.16 to beta.19, `golang.org/x/sys` 0.47.0 to 0.48.0, `golang.org/x/text` 0.39.0 to 0.42.0, and the frontend test runner from vitest 4.1.11 to 5.0.0 with its matching coverage reporter.
+
+The delivered shutdown consumer depends on the framework's shutdown order, so that order was compared between the two versions before anything else: application shutdown hooks still run before service shutdown during cleanup, the run loop still defers service shutdown for failure returns, and the double-call guard on service shutdown is unchanged.
+Those three functions are byte-identical between the versions, so the consumer's guarantees are unaffected.
+
+The name-equivalence rules read the Unicode tables that `golang.org/x/text` carries, so the canonical and caseless identity regressions were run first and pass unchanged.
+The complete frontend suite passes on the new runner with the same 37 files and 1,354 cases as before, the type check reports no error, and the production build succeeds.
+
+The build tool is pinned separately from the module, so the generator was moved with it: the pins in both workflows and the makefile now name beta.19.
+Regenerating the bindings with the matching generator produces output byte-identical to the committed bindings, so no binding change accompanies this refresh.
+The vendored Swift library keeps its module replacement and is untouched.
