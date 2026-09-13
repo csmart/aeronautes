@@ -6,10 +6,10 @@ require (
 	github.com/adrg/xdg v0.5.3
 	github.com/godbus/dbus/v5 v5.2.2
 	github.com/ncw/swift/v2 v2.0.5
-	github.com/wailsapp/wails/v3 v3.0.0-beta.16
+	github.com/wailsapp/wails/v3 v3.0.0-beta.19
 	github.com/zalando/go-keyring v0.2.8
-	golang.org/x/sys v0.47.0
-	golang.org/x/text v0.39.0
+	golang.org/x/sys v0.48.0
+	golang.org/x/text v0.42.0
 	modernc.org/sqlite v1.58.0
 )
 
