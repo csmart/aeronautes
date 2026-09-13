@@ -83,6 +83,84 @@ func sloSegmentRefs(manifest *swiftcontrol.SLOManifest) (refs []swiftcontrol.Obj
 	return refs, provable
 }
 
+// dloNamespace is the boundary a dynamic large object's segment
+// deletion is authorised over: the manifest prefix when it already ends
+// in a slash, and that prefix followed by one when it does not.
+//
+// Swift reads X-Object-Manifest as a RAW string match, so the set the
+// manifest reads can be wider than this boundary — "job1" reads
+// "job10/0000" too. The destructive set never is. The evidence store
+// canonicalises the same way, so the proof shown to the operator and
+// the set the sweep acts on describe one set (ADR 0044).
+func dloNamespace(prefix string) string {
+	if strings.HasSuffix(prefix, "/") {
+		return prefix
+	}
+	return prefix + "/"
+}
+
+// outsideNames is what a preflight retains: how many names the manifest
+// reads from outside its namespace, and at most a sample of them for the
+// message. The full list is never held — a wide namespace would otherwise
+// grow resident data without a bound for a five-name diagnostic — but
+// every page is still consumed and every name still counted, so the
+// bound is on memory and never on the decision (ADR 0044).
+type outsideNames struct {
+	count  int
+	sample []string
+}
+
+// outsideSample bounds the MESSAGE only.
+const outsideSample = 5
+
+func (o *outsideNames) add(name string) {
+	o.count++
+	if len(o.sample) < outsideSample {
+		o.sample = append(o.sample, name)
+	}
+}
+
+// namesOutsideNamespace lists the RAW manifest prefix and reports the
+// names the manifest reads that fall outside its namespace.
+//
+// The listing is consumed completely and any error refuses: a truncated
+// listing would otherwise read as "no outside names" and authorise the
+// deletion it should have stopped. Listings are advisory and eventually
+// consistent (K-CON-001), so an empty result means none were OBSERVED
+// and never that none exist — the caller must not report absence.
+func namesOutsideNamespace(ctx context.Context, session *swiftcontrol.Session,
+	container, rawPrefix, namespace string) (outsideNames, error) {
+
+	var outside outsideNames
+	for entry, err := range session.Objects(ctx, container,
+		swiftcontrol.ObjectListOptions{Deep: true, Prefix: rawPrefix}) {
+		if err != nil {
+			return outsideNames{}, fmt.Errorf("listing %s/%s before deleting segments: %w", container, rawPrefix, err)
+		}
+		object, ok := entry.(swiftcontrol.ObjectEntry)
+		if !ok {
+			continue
+		}
+		if !strings.HasPrefix(object.Name, namespace) {
+			outside.add(object.Name)
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return outsideNames{}, fmt.Errorf("listing %s/%s before deleting segments: %w", container, rawPrefix, err)
+	}
+	return outside, nil
+}
+
+// outsideRefusal names the boundary, the count and the retained sample.
+func outsideRefusal(container, namespace string, outside outsideNames) error {
+	more := ""
+	if outside.count > len(outside.sample) {
+		more = fmt.Sprintf(" and %d more", outside.count-len(outside.sample))
+	}
+	return fmt.Errorf("this manifest also reads %d name(s) outside its own namespace %s/%s, which other objects may reference, so its segments were not deleted and nothing was removed: %s%s",
+		outside.count, container, namespace, strings.Join(outside.sample, ", "), more)
+}
+
 // segmentScope resolves a manifest's authoritative class and scope.
 func (s *DeleteService) segmentScope(ctx context.Context, session *swiftcontrol.Session,
 	req SegmentsDeleteRequestDTO) (*swiftcontrol.ObjectDetail, *SegmentOwnershipDTO, []swiftcontrol.ObjectRef, error) {
@@ -94,12 +172,24 @@ func (s *DeleteService) segmentScope(ctx context.Context, session *swiftcontrol.
 	ownership := &SegmentOwnershipDTO{Class: string(detail.Class)}
 	switch detail.Class {
 	case swiftcontrol.ClassDLO:
-		ownership.Target = detail.Manifest
 		slash := strings.Index(detail.Manifest, "/")
 		if slash <= 0 {
 			return nil, nil, nil, fmt.Errorf("malformed X-Object-Manifest %q", detail.Manifest)
 		}
-		proven, err := s.evidence.HasExclusiveOwnership(ctx, req.BookmarkID, detail.Manifest[:slash], detail.Manifest[slash+1:])
+		segContainer, segPrefix := detail.Manifest[:slash], detail.Manifest[slash+1:]
+		if segPrefix == "" {
+			// A manifest naming a container and no prefix would make the
+			// namespace the whole container, which no manifest's
+			// authority reaches. This store rejects the header at
+			// creation, so the guard is defence in depth against one
+			// that does not (ADR 0044).
+			return nil, nil, nil, fmt.Errorf("X-Object-Manifest %q names a whole container and no segment prefix — segment deletion has no bounded scope here", detail.Manifest)
+		}
+		// The dialog states the boundary that would be swept, not the
+		// raw header, so the operator is shown the set the operation
+		// acts on.
+		ownership.Target = segContainer + "/" + dloNamespace(segPrefix)
+		proven, err := s.evidence.HasExclusiveOwnership(ctx, req.BookmarkID, segContainer, segPrefix)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -225,6 +315,33 @@ func (s *DeleteService) DeleteManifestWithSegments(ctx context.Context, req Segm
 		basis = "backstage-forced-with-evidence"
 	}
 
+	// The segment preflight runs BEFORE the final identity recheck. It
+	// issues a listing, and a listing between that recheck and the DELETE
+	// would widen the very window the recheck exists to close, so the
+	// order is: resolve the destructive scope, refuse when it is wider
+	// than this manifest's namespace, and only then re-read identity.
+	//
+	// A refusal here leaves the graph exactly as it was, including the
+	// selected manifest, which is a separate authorised deletion that
+	// normally sits outside the namespace it points at.
+	var segContainer, namespace string
+	if detail.Class == swiftcontrol.ClassDLO {
+		slash := strings.Index(detail.Manifest, "/")
+		segPrefix := detail.Manifest[slash+1:]
+		segContainer, namespace = detail.Manifest[:slash], dloNamespace(segPrefix)
+		outside, err := namesOutsideNamespace(ctx, session, segContainer, segPrefix, namespace)
+		if err != nil {
+			s.runner.record(ctx, req.BookmarkID, "segments.delete", resource,
+				"refused: the segment listing did not complete, so the destructive scope is unknown", audit.ResultFailed)
+			return nil, err
+		}
+		if outside.count > 0 {
+			s.runner.record(ctx, req.BookmarkID, "segments.delete", resource,
+				fmt.Sprintf("refused: %d observed name(s) outside the namespace %s/%s", outside.count, segContainer, namespace), audit.ResultFailed)
+			return nil, outsideRefusal(segContainer, namespace, outside)
+		}
+	}
+
 	// The proof/delete gap is bound as tightly as Swift allows: DELETE
 	// ignores If-Match (measured on SAIO — a wrong etag still 204s), so
 	// the manifest is re-HEADed IMMEDIATELY before deletion and any
@@ -269,20 +386,18 @@ func (s *DeleteService) DeleteManifestWithSegments(ctx context.Context, req Segm
 			return result, fmt.Errorf("%d segment deletes failed; the manifest is gone and %d segments were removed — retry the leftover names", result.SegmentsFailed, result.SegmentsDeleted)
 		}
 	case swiftcontrol.ClassDLO:
-		// Manifest first, then the exact prefix through the native
-		// engine (manifest-only per object; this scope IS the segments).
+		// Manifest first, then the namespace through the native engine
+		// (manifest-only per object; this scope IS the segments).
 		if err := session.DeleteObject(ctx, req.Container, req.Name); err != nil {
 			s.runner.record(ctx, req.BookmarkID, "segments.delete", resource, "manifest delete failed: "+err.Error(), audit.ResultFailed)
 			return nil, err
 		}
 		result.ManifestDeleted = true
-		slash := strings.Index(detail.Manifest, "/")
-		segContainer, segPrefix := detail.Manifest[:slash], detail.Manifest[slash+1:]
 		capabilities, err := session.FetchCapabilities(ctx)
 		if err != nil {
 			return result, err
 		}
-		sweep, err := deletion.DeletePrefix(ctx, session, capabilities, segContainer, segPrefix, deletion.Options{})
+		sweep, err := deletion.DeletePrefix(ctx, session, capabilities, segContainer, namespace, deletion.Options{})
 		if sweep != nil {
 			result.SegmentsDeleted = sweep.Deleted
 			result.SegmentsFailed = sweep.Failed
@@ -317,9 +432,9 @@ func (s *DeleteService) DeleteManifestWithSegments(ctx context.Context, req Segm
 			// and the retained prefix for a retry.
 			s.runner.record(ctx, req.BookmarkID, "segments.delete", resource,
 				fmt.Sprintf("PARTIAL: %d segments deleted, %d failed, %d still answering under %s/%s (%s)",
-					sweep.Deleted, sweep.Failed, sweep.Remaining, segContainer, segPrefix, basis), audit.ResultVerifyMismatch)
+					sweep.Deleted, sweep.Failed, sweep.Remaining, segContainer, namespace, basis), audit.ResultVerifyMismatch)
 			return result, fmt.Errorf("%d segment deletes failed and %d names still answer under %s/%s — the manifest is gone; retry the prefix",
-				sweep.Failed, sweep.Remaining, segContainer, segPrefix)
+				sweep.Failed, sweep.Remaining, segContainer, namespace)
 		}
 	}
 	s.runner.record(ctx, req.BookmarkID, "segments.delete", resource,

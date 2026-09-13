@@ -63,6 +63,9 @@ type Harness struct {
 	Audit     *app.AuditService
 	Find      *app.FindService
 	Settings  *app.SettingsService
+	// Evidence lets a fixture record the ownership proofs the segment
+	// dialog reads, so a test can state what the operator was shown.
+	Evidence *evidence.Store
 
 	Primary   *Account // the active browse/inspect/mutate account
 	Secondary *Account // for cross-account Copy/Mirror
@@ -126,6 +129,7 @@ func newHarness(t *testing.T, cfg harnessConfig) *Harness {
 		Audit:     app.NewAuditService(auditStore),
 		Find:      app.NewFindService(connections),
 		Settings:  app.NewSettingsService(database, runner),
+		Evidence:  ev,
 	}
 
 	// Checked db close: a close/durability error fails the test (so its
