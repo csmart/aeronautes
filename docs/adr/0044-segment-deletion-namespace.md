@@ -1,6 +1,6 @@
 # ADR 0044 — authorise segment deletion over a namespace, not a string prefix
 
-**Status:** Proposed. Nothing in it is implemented yet; the correction is delivered only after its own independent review. Static large object collateral, active-job staging protection and the final-hop concurrent-writer protocol remain in the sequence.
+**Status:** Accepted for the dynamic large object segment sweep, which is delivered with this decision. Static large object collateral, active-job staging protection and the final-hop concurrent-writer protocol remain in the sequence, and P15 does not close.
 **Scope:** The destructive scope of `DeleteManifestWithSegments` for a dynamic large object, within P15 and finish-line item L03.
 
 ## Problem
@@ -54,8 +54,9 @@ It destroys the manifest that gives those bytes their meaning while leaving the 
 
 Three separate statements, because they carry different weight.
 
-The invariant is unconditional: no delete issued by this route escapes the canonical namespace.
+The invariant is unconditional: no SEGMENT delete issued by this route escapes the canonical namespace.
 It rests on the sweep's own argument and not on any listing, so no listing behaviour can weaken it.
+The explicitly selected manifest is a separate authorised deletion, named and typed by the operator, and it normally sits outside that namespace; the invariant governs the segments the manifest points at, not the manifest itself.
 
 The refusal is conditional on observation: when the preflight observes a name outside the namespace, the route refuses.
 
