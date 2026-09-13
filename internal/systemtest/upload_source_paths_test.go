@@ -402,11 +402,9 @@ func uploadSourcePathsCases(t *testing.T, makeHarness func(*testing.T) *Harness)
 }
 
 func TestUploadSourcePathsMock(t *testing.T) {
-	t.Parallel()
 	uploadSourcePathsCases(t, findMockHarness)
 }
 
 func TestUploadSourcePathsRealSwift(t *testing.T) {
-	t.Parallel()
 	uploadSourcePathsCases(t, New)
 }

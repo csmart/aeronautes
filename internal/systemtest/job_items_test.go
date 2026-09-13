@@ -23,7 +23,6 @@ func retainedIntent(key string) jobs.ItemIntent {
 
 // These fixtures exercise the actual read service; transfer callers have not opted in yet.
 func TestJobItemAccessBeyondRecentJobsAndLargeCursors(t *testing.T) {
-	t.Parallel()
 	h, store, database := recoveryStatusHarness(t)
 	ctx := t.Context()
 	job, err := store.Create(ctx, jobs.Job{Type: jobs.TypeCopy, ItemRecordsVersion: 1})
