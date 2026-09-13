@@ -11,15 +11,42 @@ import sys
 
 
 SYSTEM = "github.com/csmart/aeronautes/internal/systemtest"
+# The heavy fixture carries the slowest real-Swift groups so the main lane keeps
+# margin against its package budget. The names are a fixed selection, not a rule
+# the schedule re-evaluates: they were chosen once from the measured 76c30e90 run
+# as the systemtest tests that earn no scenario credit and took at least sixty-five
+# seconds. A heavy test must earn no scenario credit, because join() refuses a
+# heavy report with any.
 HEAVY = (
     "TestCopySegmentChangeDetectionRealSwift",
     "TestUploadItemRecordsRealSwift",
     "TestDownloadRecordsRealSwift",
+    "TestUploadRecoveryRealSwift",
+    "TestCopyItemRecordsRealSwift",
+    "TestDownloadDestinationRealSwift",
+    "TestDownloadRootGuardRealSwift",
+    "TestDownloadNameFormRealSwift",
+    "TestCopyCompletionRealSwift",
+    "TestCopyInterruptionRealSwift",
+    "TestDownloadRecordRefusalRealSwift",
+    "TestLocalCompletionRealSwift",
+    "TestCopyUnchangedRecordsRealSwift",
+    "TestDownloadNameEncodingRealSwift",
+    "TestCopyStagedContentRealSwift",
 )
 ARTIFACTS = (
     "all-packages.txt", "test-list.jsonl", "plan.json", "expected-packages.txt",
     "events.jsonl", "exits.json", "scenario-coverage.json", "cover.out",
 )
+
+
+def pattern_text():
+    """Anchored alternation selecting exactly the heavy tests.
+
+    Both lanes derive their -run and -skip argument from this, so it must not
+    match a name that merely extends a heavy one.
+    """
+    return "^(" + "|".join(HEAVY) + ")$"
 
 
 def read_json(path):
@@ -232,7 +259,7 @@ def main():
             command.add_argument("--" + name, required=True)
     args = parser.parse_args()
     if args.command == "pattern":
-        print("^(" + "|".join(HEAVY) + ")$")
+        print(pattern_text())
     elif args.command == "check":
         check(args.root, args.test_exit, args.tee_exit)
     else:

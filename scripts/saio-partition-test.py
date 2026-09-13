@@ -5,6 +5,7 @@ import copy
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -66,6 +67,25 @@ class PartitionTests(unittest.TestCase):
             self.assertEqual(left | right, set(map(tuple, main["all_tests"])))
             self.assertIn((SYSTEM, "TestAddedLater"), left)
             self.assertEqual({name for package, name in right}, set(PARTITION.HEAVY))
+
+    def test_heavy_names_are_unique(self):
+        # A repeated name would silently shrink the selection, because the plan
+        # builds a set from the tuple. With fifteen entries a duplicate is easy
+        # to introduce and invisible in the resulting selection.
+        self.assertEqual(len(PARTITION.HEAVY), len(set(PARTITION.HEAVY)))
+
+    def test_pattern_matches_the_heavy_names_and_nothing_that_extends_them(self):
+        # The lane selection is a regular expression handed to -run and -skip, so
+        # an unanchored one would carry a sibling whose name merely starts with a
+        # heavy name into the wrong lane. The longer the list, the likelier that
+        # collision, so pin the anchoring rather than the current names.
+        pattern = re.compile(PARTITION.pattern_text())
+        for name in PARTITION.HEAVY:
+            self.assertRegex(name, pattern)
+            for affix in ("Mock", "Two", "Extra"):
+                self.assertNotRegex(name + affix, pattern)
+                self.assertNotRegex(affix + name, pattern)
+        self.assertNotRegex("TestOrdinary", pattern)
 
     def test_missing_or_duplicate_listing_is_refused(self):
         for change in ("missing", "duplicate", "incomplete"):
