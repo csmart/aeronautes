@@ -5473,7 +5473,7 @@ The independently reviewed rollback removes those nine calls, retaining every te
 Verify the committed rollback on the full covered internal suite and review the implementation before delivery.
 If its system-package time is not better than the 927.830-second covered baseline, skip a hosted attempt and proceed to a separately reviewed partition across owned fixtures.
 The verified rollback took 927.167 seconds with a different inherited locale, establishing no useful headroom; no hosted rollback attempt is accepted.
-Review the [partition contract](experiments/2026-09-12-remaining-test-schedule.md#proposed-partition-across-fixtures) before implementation: isolate the three heavy groups on another fixture, reconcile complete disjoint execution and both coverage contributions, and retain the five protected checks.
+The independently reviewed [partition contract](experiments/2026-09-12-remaining-test-schedule.md#proposed-partition-across-fixtures) isolates the three heavy groups on another fixture, reconciles complete disjoint execution and both coverage contributions, and retains the five protected checks.
 Preserve group isolation, assertions, coverage, reporting and deadlines throughout.
 Neither schedule grants new scenario, audit, native-platform or valuable-data acceptance.
 The CI protection slice removes the coverage bot's direct master pushes, adds an aggregate gate that rejects any required job without success, and removes the obsolete checks that skipped absent application code.

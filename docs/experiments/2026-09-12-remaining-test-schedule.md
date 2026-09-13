@@ -156,3 +156,9 @@ Limit the change to the workflow, a small helper with focused tests, and existin
 Tests must catch selection gaps/overlap, missing or failed producers, heavy skips and malformed or conflicting coverage, and a two-profile control must retain both exclusive covered branches and the original zero-count denominator through the real Go reader.
 Verify each real partition once under owned fixture scheduling, inspect its complete results and measured margins, and obtain independent implementation review before pushing.
 Local observations do not establish hosted headroom; current-head/current-base PR checks, protected merge and resulting-master checks remain required.
+Retain and diagnose intermittent failures from either producer; the other producer passing is not a reason to quietly retry.
+
+The implementation keeps a fixed two-entry workflow matrix and one standard-library helper for selection, artifact validation and ordinary coverage combination; no Go source or scenario-reader changes are needed.
+Focused controls cover an entirely absent producer artifact directory, missing/changed/foreign receipts, selection gaps and overlap, failures and heavy skips, and preservation of both exclusive coverage branches and an uncalled function through the real Go reader.
+Both fixture jobs keep the existing setup, diagnostics and checked cleanup; the separate artifact join retains the protected Integration name and has a ten-minute limit.
+Local partition evidence will be retained at workspace-relative `.aeronautes-work/evidence/20260913-service-delivery/partition`; delivery remains pending until both real selections and the required PR/master checks have passed.
