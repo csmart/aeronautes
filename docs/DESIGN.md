@@ -5565,6 +5565,15 @@ The dialog reports the boundary that will be swept rather than the raw header.
 This does not make recorded evidence a proof of exclusivity: no live reverse-reference scan exists, the Backstage force and typed confirmation remain required for every segment deletion, and creation provenance still never proves exclusivity.
 Static large object nested and shared collateral, another job's active staging, transfer-cleanup authority, first and later-pass replacements and the concurrent-writer protocol are unchanged, and P15 does not close with this slice.
 
+Pull request 115 exhausted the `internal/systemtest` budget on a range that adds no test to that package, with nineteen packages passing and no assertion failure before it.
+The [schedule margin record](experiments/2026-09-13-test-schedule-margin.md) measures both lanes from the retained pipeline artifacts rather than from a workstation, because a hosted budget is not a local question.
+The main lane has stayed between 1019.9 and 1166.8 seconds of a 1500 second limit across every master run since the partition landed, while the heavy lane has stayed between 186.9 and 386.4, so the imbalance has been carried since the partition rather than drifting into it and the observed variation on both lanes is large against the main lane's margin.
+At the measured run the main lane spends 1166.78 seconds and the heavy lane 312.61, placing seventy-nine per cent of the systemtest work on one of two fixtures.
+Ninety-four scenario-earning tests cost 183.9 seconds between them while the hundred and two uncredited ones cost 2685.2, so twelve named uncredited tests move to the heavy list, leaving every scenario credit and the heavy lane's enforced zero-credit report untouched.
+The twelve names are the change and the sixty-five second threshold is the one-time rationale for choosing them, not a rule the schedule re-evaluates.
+Every test, assertion, per-operation deadline, slot count, fixture ownership, required context and both-lane aggregate is unchanged, and a fourth slot, a third fixture and a longer timeout are each declined with reasons.
+Projected lane wall clock near seven hundred seconds each is labelled as a projection; acceptance is the measured package and whole-job margins on the reviewed head's own run and the resulting master run.
+
 ### 65.12. Proportionate remediation and a fixed finish line
 
 Safe, secure operation on valuable production data remains the first milestone.
