@@ -695,10 +695,26 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 		if err := e.verifyStagedSegments(ctx, staged, src.ContentLength); err != nil {
 			return failed(EffectUnresolved, StageStaging, CodeIncomplete, "stage-segments", err)
 		}
-		if src.Class == swiftcontrol.ClassPlain {
-			if code, err := e.verifyStagedContent(ctx, src, stagedName); err != nil {
-				return failed(EffectUnresolved, StageStaging, code, "stage-content", err)
-			}
+	}
+	// ADR 0042: the source's own content ladder is the expectation every
+	// staged object answers before it becomes live. A source that states
+	// no usable ladder refuses rather than publishes on length alone.
+	//
+	// Two plain objects are the one pair this does not read. Their entity
+	// tags come from their own object HEADs, which state stored content
+	// rather than container metadata, and verifyCopied has already
+	// compared them. Every other pair is answered by reading the staged
+	// bytes: a segment listing and the aggregate a manifest HEAD derives
+	// from it are both container metadata, and metadata that has not
+	// caught up with a same-size replacement agrees with the source while
+	// the bytes underneath do not.
+	if src.Class != swiftcontrol.ClassPlain || staged.Class != swiftcontrol.ClassPlain {
+		ladder, err := e.sourceLadder(ctx, src)
+		if err != nil {
+			return failed(EffectUnresolved, StageStaging, CodeIncomplete, "stage-ladder", err)
+		}
+		if code, err := e.verifyStagedLadder(ctx, ladder, stagedName); err != nil {
+			return failed(EffectUnresolved, StageStaging, code, "stage-content", err)
 		}
 	}
 

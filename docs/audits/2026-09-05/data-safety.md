@@ -137,7 +137,13 @@ A skip means only that no aggregate difference was observed against the staged o
 The locally reviewed [ADR 0037/0038 sequence](../../experiments/2026-09-11-staged-copy-content.md) adds a complete staged-DLO byte count and MD5 comparison against a non-symlink plain source HEAD, plus Copy-only preservation of opaque stored representations.
 Owned mock/real-Swift corruption and representation tests cover that bounded route, but the sequence remains pending combined current-base delivery.
 It does not pin the source version or bind the stage through publication, cover segmented sources or local-transfer verification, or replace legacy verification-strength labels.
-Current source/destination binding, the large-source/plain-destination case and the remaining staged-content paths stay open under P16.
+The [source content ladder](../../experiments/2026-09-11-staged-copy-content.md#follow-up-the-source-content-ladder) under [ADR 0042](../../adr/0042-source-content-ladder.md) then extends that comparison to every source class the staged copy route accepts.
+A dynamic large object source supplies an ordered ladder of per-segment lengths and MD5s from a listing whose recombination must reproduce the entity tag its own HEAD reports, and the staged object answers that ladder by one complete assembled read digested along the source's boundaries; listing evidence is not accepted in its place, because a same-size replacement can leave the container rows and the aggregate derived from them agreeing with the source while the bytes do not.
+Destination boundaries never enter the comparison, so legitimate resegmentation still publishes, and the check covers a plain staged object, which closes the large-source/plain-destination case.
+A static large object source states an entity tag its manifest recorded rather than one derived from the segments that are there now, so its ladder comes from that manifest, which records a length and MD5 per entry and recombines to the reported tag.
+The deployed fixture additionally validates those recorded digests when it serves the object, so a same-size segment substitution there fails the source read rather than producing wrong bytes.
+Owned mock and real-Swift fixtures agree on same-size corruption, permutation, missing content compensated by a duplicate, a stale staged listing and valid resegmentation.
+Local upload and download verification, the native copy route, source changes after the commit HEAD and the stale later listing stay open under P16.
 Logical-content verification must accommodate legitimate resegmentation, with its content-read cost and policy reviewed separately; comparing source and destination segment layouts is not a substitute.
 DS-04 remains blocking, Mirror starts remain refused under ADR 0020, and these partial corrections grant no destructive follow-up authority or valuable-data clearance.
 
