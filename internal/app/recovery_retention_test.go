@@ -74,7 +74,7 @@ func TestUploadRetainsFinalSweepResidue(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.transfer.setFilePicker(fakePicker{files: []string{file}})
-	picked, err := h.transfer.PickUploadFiles(ctx)
+	picked, err := h.transfer.PickUploadFiles(ctx, SelectionScopeDTO{BookmarkID: bookmark, Container: "uploads"})
 	if err != nil {
 		t.Fatal(err)
 	}

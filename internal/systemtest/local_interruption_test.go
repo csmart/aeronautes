@@ -193,7 +193,7 @@ func interruptedUpload(t *testing.T, h *Harness, mode string) {
 	refused := map[string]bool{"live/" + names[0]: firstFailed, "live/" + names[1]: mode != "complete_control"}
 	barrier, ended, selected, trace := interruptionProxy(t, h, container, http.MethodPut, "live/"+names[1], refused)
 	app.WireFilePicker(h.Transfer, listingFilePicker{files: paths})
-	picked, err := h.Transfer.PickUploadFiles(t.Context())
+	picked, err := h.Transfer.PickUploadFiles(t.Context(), app.SelectionScopeDTO{BookmarkID: h.Primary.BookmarkID, Container: container, Prefix: "live/"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -368,7 +368,7 @@ func interruptedDownload(t *testing.T, h *Harness, mode string) {
 	barrier, ended, selected, trace := interruptionProxy(t, h, container, http.MethodGet, "hold/first.bin", nil)
 	start := func(prefix, destination string) string {
 		app.WireFilePicker(h.Transfer, listingFilePicker{dir: destination})
-		picked, err := h.Transfer.PickDownloadDir(t.Context())
+		picked, err := h.Transfer.PickDownloadDir(t.Context(), app.SelectionScopeDTO{BookmarkID: h.Primary.BookmarkID, Container: container, Prefix: prefix})
 		if err != nil {
 			t.Fatal(err)
 		}

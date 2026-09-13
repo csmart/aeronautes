@@ -401,7 +401,7 @@ func uploadRecoveryRun(t *testing.T, h *Harness, test uploadRecoveryCase) {
 		}
 	}
 	trace := uploadRecoveryProxy(t, h, dest, test)
-	picked, err := h.Transfer.PickUploadFiles(t.Context())
+	picked, err := h.Transfer.PickUploadFiles(t.Context(), app.SelectionScopeDTO{BookmarkID: h.Primary.BookmarkID, Container: dest, Prefix: "live/"})
 	if err != nil {
 		t.Fatal(err)
 	}

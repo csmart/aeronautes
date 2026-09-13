@@ -339,3 +339,25 @@ it.each(["upload", "download"] as const)("forwards the complete captured %s requ
     expect(api.startDownload).toHaveBeenCalledExactlyOnceWith(req);
   }
 });
+
+// ADR 0041: the pick is bound to the scope the dialog captured before
+// opening it, so a late navigation cannot retarget a selection already
+// being made.
+describe.each(["upload", "download"] as Mode[])("%s selection scope", (mode) => {
+  it("passes the captured scope to the picker", async () => {
+    const f = show(mode);
+    f.choose();
+    const picker = mode === "upload" ? f.api.pickUploadFiles : f.api.pickDownloadDir;
+    expect(picker).toHaveBeenCalledExactlyOnceWith({ bookmarkId: "source", container: "media", prefix: "selected/" });
+  });
+
+  it("does not retarget a pick that is already open", async () => {
+    const f = show(mode);
+    f.choose();
+    changeScope(f, "container");
+    changeScope(f, "prefix");
+    await settle();
+    const picker = mode === "upload" ? f.api.pickUploadFiles : f.api.pickDownloadDir;
+    expect(picker).toHaveBeenCalledExactlyOnceWith({ bookmarkId: "source", container: "media", prefix: "selected/" });
+  });
+});

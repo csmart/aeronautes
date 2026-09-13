@@ -162,7 +162,7 @@ func downloadRootGuardService(t *testing.T, h *Harness, spelling string, native,
 	beforeLocal := snapshotListingLocal(t, root)
 	trace := copyCompletionProxy(t, h, h.Primary, "")
 	app.WireFilePicker(h.Transfer, listingFilePicker{dir: captured})
-	picked, err := h.Transfer.PickDownloadDir(t.Context())
+	picked, err := h.Transfer.PickDownloadDir(t.Context(), app.SelectionScopeDTO{BookmarkID: h.Primary.BookmarkID, Container: source, Prefix: prefix})
 	if err != nil || picked == nil || picked.Dir != captured {
 		t.Fatalf("picker changed captured spelling: %+v %v", picked, err)
 	}

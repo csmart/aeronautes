@@ -196,6 +196,21 @@ func (c *Connections) forgetObsolete(id string, entry cachedSession, cause error
 	}
 }
 
+// activeEndpoint reports the connection endpoint as it stands, without
+// validating it. activeSnapshot reports ErrNotConnected both for nothing
+// being connected and for a snapshot that changed under it, and those
+// mean opposite things to a pick: the second can leave another account
+// connected. Reading the fields under the lock keeps absence honest
+// (ADR 0041).
+func (c *Connections) activeEndpoint() (string, int64, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.active.session == nil || c.activeID == "" {
+		return "", 0, false
+	}
+	return c.activeID, c.active.generation, true
+}
+
 func (c *Connections) activeSnapshot() (cachedSession, string, *swiftcontrol.Capabilities, error) {
 	c.mu.Lock()
 	entry, id := c.active, c.activeID

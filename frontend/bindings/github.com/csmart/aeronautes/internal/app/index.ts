@@ -81,6 +81,7 @@ export type {
     SegmentOwnershipDTO,
     SegmentsDeleteRequestDTO,
     SegmentsDeleteResultDTO,
+    SelectionScopeDTO,
     StoragePolicyDTO,
     TransferSettingsDTO,
     UploadRequestDTO

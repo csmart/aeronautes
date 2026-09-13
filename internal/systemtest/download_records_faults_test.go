@@ -86,7 +86,7 @@ func downloadRecordFault(t *testing.T, h *Harness, mode string) {
 		downloadRecordRefusal(t, h, mode)
 	}
 	app.WireFilePicker(h.Transfer, listingFilePicker{dir: destination})
-	picked, err := h.Transfer.PickDownloadDir(t.Context())
+	picked, err := h.Transfer.PickDownloadDir(t.Context(), app.SelectionScopeDTO{BookmarkID: h.Primary.BookmarkID, Container: source, Prefix: prefix})
 	if err != nil {
 		t.Fatal(err)
 	}

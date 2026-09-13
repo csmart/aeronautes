@@ -136,7 +136,7 @@ func downloadCloseRun(t *testing.T, h *Harness, scenario string) {
 		}
 	}
 	app.WireFilePicker(h.Transfer, listingFilePicker{dir: destination})
-	picked, err := h.Transfer.PickDownloadDir(t.Context())
+	picked, err := h.Transfer.PickDownloadDir(t.Context(), app.SelectionScopeDTO{BookmarkID: h.Primary.BookmarkID, Container: source, Prefix: prefix})
 	if err != nil {
 		t.Fatal(err)
 	}

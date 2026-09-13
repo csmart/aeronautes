@@ -32,8 +32,8 @@ export function CancelJob(jobID: string): $CancellablePromise<void> {
 /**
  * PickDownloadDir opens the OS directory picker. Nil when cancelled.
  */
-export function PickDownloadDir(): $CancellablePromise<$models.PickedDirDTO | null> {
-    return $Call.ByID(1743209014);
+export function PickDownloadDir(scope: $models.SelectionScopeDTO): $CancellablePromise<$models.PickedDirDTO | null> {
+    return $Call.ByID(1743209014, scope);
 }
 
 /**
@@ -42,8 +42,8 @@ export function PickDownloadDir(): $CancellablePromise<$models.PickedDirDTO | nu
  * page must not be able to name ~/.ssh/id_rsa). Nil token when
  * cancelled.
  */
-export function PickUploadFiles(): $CancellablePromise<$models.PickedFilesDTO | null> {
-    return $Call.ByID(24924697);
+export function PickUploadFiles(scope: $models.SelectionScopeDTO): $CancellablePromise<$models.PickedFilesDTO | null> {
+    return $Call.ByID(24924697, scope);
 }
 
 /**

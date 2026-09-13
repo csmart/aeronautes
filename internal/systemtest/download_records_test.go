@@ -137,7 +137,7 @@ func downloadRecordsRun(t *testing.T, h *Harness, count int, native bool) {
 	localBefore := snapshotListingLocal(t, root)
 	destination := filepath.Join(root, "selected")
 	app.WireFilePicker(h.Transfer, listingFilePicker{dir: destination})
-	picked, err := h.Transfer.PickDownloadDir(t.Context())
+	picked, err := h.Transfer.PickDownloadDir(t.Context(), app.SelectionScopeDTO{BookmarkID: h.Primary.BookmarkID, Container: source, Prefix: prefix})
 	if err != nil || picked == nil || picked.Token == "" {
 		t.Fatalf("owned picker failed: %+v %v", picked, err)
 	}
@@ -194,6 +194,17 @@ func downloadRecordsRun(t *testing.T, h *Harness, count int, native bool) {
 			}
 		}
 	}
+	// The fixture proxies above republish the bookmark, which moves its
+	// generation and retires the selection taken for the report. Choose
+	// again so the start carries a selection bound to the account as it
+	// now stands (ADR 0041).
+	restarted, err := h.Transfer.PickDownloadDir(t.Context(), app.SelectionScopeDTO{
+		BookmarkID: h.Primary.BookmarkID, Container: source, Prefix: prefix,
+	})
+	if err != nil || restarted == nil || restarted.Token == "" {
+		t.Fatalf("owned picker failed after the fixture proxy: %+v %v", restarted, err)
+	}
+	req.DestDirToken = restarted.Token
 	id, err := h.Transfer.StartDownload(t.Context(), req)
 	if err != nil || id == "" {
 		t.Fatalf("download was not admitted: %q %v", id, err)

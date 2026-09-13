@@ -120,7 +120,7 @@ func downloadCancelBodyProxy(t *testing.T, h *Harness, container, name string, a
 func downloadCancelStart(t *testing.T, h *Harness, container, prefix, root string) string {
 	t.Helper()
 	app.WireFilePicker(h.Transfer, listingFilePicker{dir: root})
-	picked, err := h.Transfer.PickDownloadDir(t.Context())
+	picked, err := h.Transfer.PickDownloadDir(t.Context(), app.SelectionScopeDTO{BookmarkID: h.Primary.BookmarkID, Container: container, Prefix: prefix})
 	if err != nil {
 		t.Fatal(err)
 	}

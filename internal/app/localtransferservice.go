@@ -45,6 +45,16 @@ type DownloadRequestDTO struct {
 	Settings TransferSettingsDTO `json:"settings"`
 }
 
+// SelectionScopeDTO is the scope a pick is being made for. The service
+// resolves the named bookmark's current generation itself and, whenever
+// there is an active connection, requires the pick to name it — before
+// the dialog opens and again when it returns (ADR 0041).
+type SelectionScopeDTO struct {
+	BookmarkID string `json:"bookmarkId"`
+	Container  string `json:"container"`
+	Prefix     string `json:"prefix"`
+}
+
 // PickedFilesDTO is what the webview learns about a file selection:
 // display names and a token — never the paths.
 type PickedFilesDTO struct {
@@ -77,33 +87,115 @@ func (s *TransferService) setFilePicker(picker FilePicker) {
 // plus display names — the paths stay in Go (ADR 0011: a compromised
 // page must not be able to name ~/.ssh/id_rsa). Nil token when
 // cancelled.
-func (s *TransferService) PickUploadFiles(ctx context.Context) (*PickedFilesDTO, error) {
+func (s *TransferService) PickUploadFiles(ctx context.Context, scope SelectionScopeDTO) (*PickedFilesDTO, error) {
 	if s.picker == nil {
 		return nil, errors.New("no file picker available (headless shell)")
 	}
+	observed, bound, err := s.beginPick(ctx, scope)
+	if err != nil {
+		return nil, err
+	}
 	paths, err := s.picker.PickFiles("Choose files to upload")
 	if err != nil || len(paths) == 0 {
+		return nil, err
+	}
+	if err := s.endPick(ctx, observed, bound); err != nil {
 		return nil, err
 	}
 	names := make([]string, len(paths))
 	for i, p := range paths {
 		names[i] = filepath.Base(p)
 	}
-	return &PickedFilesDTO{Token: s.selections.putFiles(paths), Files: names}, nil
+	return &PickedFilesDTO{Token: s.selections.putFiles(bound, paths), Files: names}, nil
 }
 
 // PickDownloadDir opens the OS directory picker. Nil when cancelled.
-func (s *TransferService) PickDownloadDir(ctx context.Context) (*PickedDirDTO, error) {
+func (s *TransferService) PickDownloadDir(ctx context.Context, scope SelectionScopeDTO) (*PickedDirDTO, error) {
 	if s.picker == nil {
 		return nil, errors.New("no file picker available (headless shell)")
+	}
+	observed, bound, err := s.beginPick(ctx, scope)
+	if err != nil {
+		return nil, err
 	}
 	dir, err := s.picker.PickDirectory("Choose a destination directory")
 	if err != nil || dir == "" {
 		return nil, err
 	}
+	if err := s.endPick(ctx, observed, bound); err != nil {
+		return nil, err
+	}
 	// The pick captures the directory behind a handle; the token names
 	// that directory, not whatever its pathname names later.
-	return &PickedDirDTO{Token: s.selections.putDir(dir), Dir: dir}, nil
+	return &PickedDirDTO{Token: s.selections.putDir(bound, dir), Dir: dir}, nil
+}
+
+// pickScope reads the account half of the binding from the connection
+// registry and joins it to the remote scope the pick is for.
+// activeObservation is the connection endpoint as it stood at one
+// moment, including the honest absence of one. The pick compares the
+// observation either side of the dialog, so a connection that moved —
+// to another account, to a new generation, or to none at all — is seen.
+type activeObservation struct {
+	connected  bool
+	bookmarkID string
+	generation int64
+}
+
+// observeConnection reads the endpoint. Absence means nothing is
+// connected and nothing else, so a connection that merely changed while
+// being read can never be mistaken for one that is gone.
+func (s *TransferService) observeConnection() activeObservation {
+	id, generation, connected := s.connections.activeEndpoint()
+	if !connected {
+		return activeObservation{}
+	}
+	return activeObservation{connected: true, bookmarkID: id, generation: generation}
+}
+
+// beginPick binds the selection to the named bookmark's current
+// generation and records the endpoint the dialog is opening under.
+func (s *TransferService) beginPick(ctx context.Context, scope SelectionScopeDTO) (activeObservation, selectionScope, error) {
+	if scope.BookmarkID == "" || scope.Container == "" {
+		return activeObservation{}, selectionScope{}, errors.New("a bookmark and container are required before picking")
+	}
+	observed := s.observeConnection()
+	if observed.connected && observed.bookmarkID != scope.BookmarkID {
+		return activeObservation{}, selectionScope{}, errors.New("pick for the account you are connected to")
+	}
+	entry, err := s.connections.sessionEntryFor(ctx, scope.BookmarkID)
+	if err != nil {
+		return activeObservation{}, selectionScope{}, err
+	}
+	return observed, selectionScope{
+		bookmarkID: scope.BookmarkID,
+		generation: entry.generation,
+		container:  scope.Container,
+		prefix:     scope.Prefix,
+	}, nil
+}
+
+// stillPicking re-reads the registry when the native dialog returns.
+// The picker blocks, so a page can connect elsewhere while the user is
+// choosing; a selection made under a connection that has since moved is
+// refused rather than issued. These are two observations and not a
+// record of every transient change (ADR 0041).
+// endPick re-reads both halves when the dialog returns. The endpoint
+// must be the same observation it was, and the named bookmark must still
+// be at the generation the selection is about to record. These are two
+// observations and not a record of every transient change (ADR 0041).
+func (s *TransferService) endPick(ctx context.Context, before activeObservation, bound selectionScope) error {
+	if after := s.observeConnection(); after != before {
+		return errors.New("the connected account changed while you were choosing; pick again")
+	}
+	entry, err := s.connections.sessionEntryFor(ctx, bound.bookmarkID)
+	if err != nil {
+		return err
+	}
+	if entry.generation != bound.generation {
+		return errors.New("the account's credentials changed while you were choosing; pick again")
+	}
+	return nil
 }
 
 // PreflightUpload is the BRIDGE-facing report: absolute local paths are
@@ -130,11 +222,11 @@ func (s *TransferService) uploadPreflight(ctx context.Context, req UploadRequest
 	if req.BookmarkID == "" || req.Container == "" {
 		return nil, errors.New("bookmark and container are required")
 	}
-	paths, err := s.selections.getFiles(req.SelectionToken)
+	scope, session, err := s.requestScope(ctx, req.BookmarkID, req.Container, req.Prefix)
 	if err != nil {
 		return nil, err
 	}
-	session, err := s.connections.SessionFor(ctx, req.BookmarkID)
+	paths, err := s.selections.getFiles(req.SelectionToken, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -149,15 +241,12 @@ func (s *TransferService) PreflightDownload(ctx context.Context, req DownloadReq
 	if req.BookmarkID == "" || req.Container == "" {
 		return nil, errors.New("bookmark and container are required")
 	}
-	destination, destDir, err := s.selections.leaseDir(req.DestDirToken)
+	scope, session, err := s.requestScope(ctx, req.BookmarkID, req.Container, req.Prefix)
 	if err != nil {
 		return nil, err
 	}
-	session, err := s.connections.SessionFor(ctx, req.BookmarkID)
+	destination, destDir, err := s.selections.leaseDir(req.DestDirToken, scope)
 	if err != nil {
-		if destination != nil {
-			err = errors.Join(err, destination.Close())
-		}
 		return nil, err
 	}
 	if destination == nil {
@@ -243,6 +332,15 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 	}
 	if preflight.Rejected() {
 		return "", errors.New("preflight found problems; resolve them and retry (nothing was written)")
+	}
+	// The start consumes the selection, so a confirmed pick cannot be
+	// replayed into further jobs; two concurrent starts cannot both win.
+	scope, _, err := s.requestScope(ctx, req.BookmarkID, req.Container, req.Prefix)
+	if err != nil {
+		return "", err
+	}
+	if _, err := s.selections.takeFiles(req.SelectionToken, scope); err != nil {
+		return "", err
 	}
 	settings, err := req.Settings.forDestination(ctx, session)
 	if err != nil {
@@ -332,7 +430,13 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 	if err := req.Settings.Validate(); err != nil {
 		return "", err
 	}
-	destination, _, err := s.selections.leaseDir(req.DestDirToken)
+	// The start consumes the selection, so a confirmed pick cannot be
+	// replayed into further jobs; two concurrent starts cannot both win.
+	scope, _, err := s.requestScope(ctx, req.BookmarkID, req.Container, req.Prefix)
+	if err != nil {
+		return "", err
+	}
+	destination, _, err := s.selections.takeDir(req.DestDirToken, scope)
 	if err != nil {
 		return "", err
 	}
@@ -571,4 +675,20 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 			finish(jobs.StateComplete, "")
 		}
 	}
+}
+
+// requestScope builds the scope a request is asking for. Resolving the
+// session revalidates the bookmark's generation, so the value compared
+// against the selection is the live one.
+func (s *TransferService) requestScope(ctx context.Context, bookmarkID, container, prefix string) (selectionScope, *swiftcontrol.Session, error) {
+	entry, err := s.connections.sessionEntryFor(ctx, bookmarkID)
+	if err != nil {
+		return selectionScope{}, nil, err
+	}
+	return selectionScope{
+		bookmarkID: bookmarkID,
+		generation: entry.generation,
+		container:  container,
+		prefix:     prefix,
+	}, entry.session, nil
 }

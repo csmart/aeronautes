@@ -42,17 +42,39 @@ func newDownloadStageFixture(t *testing.T, h *Harness) *downloadStageFixture {
 	seedListingLocal(t, f.root, "selected/keep", []byte("local sentinel"))
 	seedListingLocal(t, f.root, "other-job/keep", []byte("other local job"))
 	f.beforeLocal = snapshotListingLocal(t, f.root)
-	app.WireFilePicker(h.Transfer, listingFilePicker{dir: filepath.Join(f.root, "selected")})
-	picked, err := h.Transfer.PickDownloadDir(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.request = app.DownloadRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: f.source, Prefix: "scope/", DestDirToken: picked.Token}
+	return f
+}
+
+// choose picks the destination and takes the report. It is separate from
+// seeding because a selection is bound to the account's current
+// generation (ADR 0041), and a fixture proxy that republishes the
+// bookmark must be installed before the user would have chosen.
+func (f *downloadStageFixture) choose(t *testing.T) {
+	t.Helper()
+	h := f.h
+	f.request = f.selectionFor(t, "scope/")
 	preflight, err := h.Transfer.PreflightDownload(t.Context(), f.request)
 	if err != nil || preflight == nil || preflight.Rejected() || len(preflight.Items) != 1 || preflight.Items[0].Route != "rclone" || preflight.Items[0].RelPath != "nested/proof.bin" {
 		t.Fatalf("stage fixture engine preflight: %+v %v", preflight, err)
 	}
-	return f
+}
+
+// selectionFor picks the same destination for one prefix. Each prefix
+// needs its own selection, because a selection authorises the one scope
+// it was made for (ADR 0041).
+func (f *downloadStageFixture) selectionFor(t *testing.T, prefix string) app.DownloadRequestDTO {
+	t.Helper()
+	h := f.h
+	app.WireFilePicker(h.Transfer, listingFilePicker{dir: filepath.Join(f.root, "selected")})
+	picked, err := h.Transfer.PickDownloadDir(t.Context(), app.SelectionScopeDTO{
+		BookmarkID: h.Primary.BookmarkID, Container: f.source, Prefix: prefix,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return app.DownloadRequestDTO{
+		BookmarkID: h.Primary.BookmarkID, Container: f.source, Prefix: prefix, DestDirToken: picked.Token,
+	}
 }
 
 func (f *downloadStageFixture) check(t *testing.T, id, state, reason string, issues int, counters jobs.Counters, trace *uploadDeleteTrace, checkLocal func()) {
@@ -145,6 +167,7 @@ func downloadStagePlacement(t *testing.T, h *Harness, fault string) {
 	t.Helper()
 	f := newDownloadStageFixture(t, h)
 	trace := copyCompletionProxy(t, h, h.Primary, "")
+	f.choose(t)
 	entered, release := make(chan string, 1), make(chan error, 1)
 	var calls atomic.Int32
 	var once sync.Once
@@ -246,6 +269,7 @@ func downloadStageForeign(t *testing.T, h *Harness, kind string) {
 	t.Helper()
 	f := newDownloadStageFixture(t, h)
 	barrier, ended, hits, trace := interruptionProxy(t, h, f.source, http.MethodGet, "scope/nested/proof.bin", nil)
+	f.choose(t)
 	id, err := h.Transfer.StartDownload(t.Context(), f.request)
 	if err != nil {
 		t.Fatal(err)
@@ -315,10 +339,10 @@ func downloadStageExisting(t *testing.T, h *Harness, kind string) {
 		t.Fatal(err)
 	}
 	barrier, ended, hits, trace := interruptionProxy(t, h, f.source, http.MethodGet, "hold/first.bin", nil)
+	f.choose(t)
 	var calls atomic.Int32
 	app.WireDownloadStageBoundary(h.Transfer, func(context.Context, string) error { calls.Add(1); return nil })
-	firstRequest := f.request
-	firstRequest.Prefix = "hold/"
+	firstRequest := f.selectionFor(t, "hold/")
 	first, err := h.Transfer.StartDownload(t.Context(), firstRequest)
 	if err != nil {
 		t.Fatal(err)

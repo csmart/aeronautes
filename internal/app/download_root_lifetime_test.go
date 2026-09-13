@@ -18,15 +18,18 @@ func TestDirectorySelectionLifetime(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := &selectionStore{}
-	token := store.putDir(selected)
-	if dir, err := store.getDir(token); err != nil || dir != selected {
+	// One scope throughout: this test is about handle lifetime, not the
+	// ADR 0041 binding, which has its own regressions.
+	scope := selectionScope{bookmarkID: "b", generation: 1, container: "media", prefix: "scope/"}
+	token := store.putDir(scope, selected)
+	if dir, err := store.getDir(token, scope); err != nil || dir != selected {
 		t.Fatalf("spelling changed: %q %v", dir, err)
 	}
-	first, path, err := store.leaseDir(token)
+	first, path, err := store.leaseDir(token, scope)
 	if err != nil || first == nil || path != selected {
 		t.Fatalf("lease failed: %v %q %v", first, path, err)
 	}
-	second, _, err := store.leaseDir(token)
+	second, _, err := store.leaseDir(token, scope)
 	if err != nil || second == nil {
 		t.Fatalf("second lease failed: %v %v", second, err)
 	}
@@ -43,12 +46,12 @@ func TestDirectorySelectionLifetime(t *testing.T) {
 	}
 	// Evicting the token closes the pick's handle, not the lease.
 	for range maxSelections {
-		store.putFiles([]string{"filler"})
+		store.putFiles(scope, []string{"filler"})
 	}
-	if _, err := store.getDir(token); err == nil {
+	if _, err := store.getDir(token, scope); err == nil {
 		t.Fatal("evicted token still resolves")
 	}
-	if _, _, err := store.leaseDir(token); err == nil {
+	if _, _, err := store.leaseDir(token, scope); err == nil {
 		t.Fatal("evicted token still leases")
 	}
 	if removed, err := second.Removed(); err != nil || removed {
@@ -60,13 +63,13 @@ func TestDirectorySelectionLifetime(t *testing.T) {
 
 	// A pick that cannot be held keeps its spelling and yields no handle,
 	// so the preflight report says why instead of any effect.
-	unusable := store.putDir(selected + string(os.PathSeparator))
-	root, path, err := store.leaseDir(unusable)
+	unusable := store.putDir(scope, selected+string(os.PathSeparator))
+	root, path, err := store.leaseDir(unusable, scope)
 	if err != nil || root != nil || !strings.HasSuffix(path, string(os.PathSeparator)) {
 		t.Fatalf("unusable pick was held or lost its spelling: %v %q %v", root, path, err)
 	}
-	absent := store.putDir(filepath.Join(base, "absent"))
-	if root, _, err := store.leaseDir(absent); err != nil || root != nil {
+	absent := store.putDir(scope, filepath.Join(base, "absent"))
+	if root, _, err := store.leaseDir(absent, scope); err != nil || root != nil {
 		t.Fatalf("absent directory was held: %v %v", root, err)
 	}
 }

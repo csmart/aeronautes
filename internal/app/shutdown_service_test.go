@@ -150,7 +150,7 @@ func TestJobShutdownPreservesDetachedCaller(t *testing.T) {
 			h.installEngine(barrier)
 			directory := t.TempDir()
 			h.transfer.setFilePicker(fakePicker{dir: directory})
-			picked, err := h.transfer.PickDownloadDir(t.Context())
+			picked, err := h.transfer.PickDownloadDir(t.Context(), SelectionScopeDTO{BookmarkID: bookmark, Container: "shutdown", Prefix: "scope/"})
 			if err != nil {
 				t.Fatal(err)
 			}

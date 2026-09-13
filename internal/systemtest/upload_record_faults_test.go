@@ -69,7 +69,7 @@ func uploadRecordFault(t *testing.T, h *Harness, mode string) {
 		uploadRecordRefusal(t, h, mode)
 	}
 	app.WireFilePicker(h.Transfer, listingFilePicker{files: paths})
-	picked, err := h.Transfer.PickUploadFiles(t.Context())
+	picked, err := h.Transfer.PickUploadFiles(t.Context(), app.SelectionScopeDTO{BookmarkID: h.Primary.BookmarkID, Container: dst, Prefix: prefix})
 	if err != nil {
 		t.Fatal(err)
 	}

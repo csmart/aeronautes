@@ -28,13 +28,16 @@ A widened scope here destroys or discloses the wrong data, which is why L02 lead
 A selection becomes a capability that names the operation it may perform and the single scope it may perform it in.
 
 **Bind at issue.**
-The pick methods take the container and prefix the selection is being made for.
-They do not take an account: the backend reads the active bookmark identifier and its generation from its own connection registry.
+The pick methods take the bookmark, container and prefix the selection is being made for, and the backend resolves that bookmark's current generation itself.
+When there is an active connection the pick must name it, so a page cannot pick for an account the user is not looking at.
+The check only narrows: re-saving a bookmark drops the active connection, and the selection is still pinned to the one account it names for its whole life.
 
-**Snapshot across the blocking picker.**
-The registry is read before the native dialog opens and read again when it returns.
-If the active bookmark or its generation moved while the user was choosing, the pick is refused and no token is issued.
-This closes the window in which a page swaps the account underneath a dialog the user is already looking at.
+**Observe the endpoint across the blocking picker.**
+The connection endpoint — the connected bookmark and its generation, or the honest absence of one — is read before the native dialog opens and read again when it returns, and the two observations must be identical.
+Absence means nothing is connected and nothing else.
+The endpoint is read directly rather than through the validating snapshot, which reports the same condition both when nothing is connected and when the connection changed while it was being read — states that mean opposite things here, since the second can leave another account connected.
+The named bookmark's generation is re-read at the same point, which is what catches a re-save while nothing is connected.
+Together these close the window in which a page swaps, retires or republishes the account underneath a dialog the user is already looking at.
 
 The store records, per token: operation, bookmark identifier, generation, container, prefix and issue time.
 
@@ -57,7 +60,7 @@ Refusals are distinct sentinel errors, so a caller, a test and the dialog can te
 Reading the connection registry is **partial** protection against retargeting, not proof of what the user approved.
 
 `BrowseService.Connect` is a bridge method (`frontend/src/lib/api.ts` calls it).
-A page can therefore connect to account B before opening the picker while still rendering account A, and the registry will honestly report B.
+A page can therefore connect to account B before opening the picker while still rendering account A, and every check then passes for B.
 Every check above passes, because the selection really was made while B was active.
 What the binding defeats is the finding as SEC-07 words it — a **retained** token used with a different requested bookmark — together with replay, expiry, operation confusion, generation drift and mid-dialog account swaps.
 What it cannot do is authenticate which account, container and prefix the user believed they were selecting for.
@@ -75,9 +78,14 @@ It needs no contract change and it closes replay.
 It does not close the retained-token case at all: a hostile page pairs a fresh pick with another account and the first use then defines that account as legitimate.
 Rejected.
 
-*Frontend-supplied account at pick time.*
-Symmetrical with container and prefix, but it moves even the retained-token protection into the caller's gift.
-Rejected in favour of reading the registry, while recording that the registry is itself caller-reachable.
+*Reading the account only from the connection registry, never from the caller.*
+This was the first decision here.
+It fails for a reason that has nothing to do with security: republishing a bookmark drops the active connection, and no other local transfer method needs one, so the pick alone would refuse whenever credentials had just been edited.
+Superseded by the caller-named bookmark with a connection check layered on top, which pins the token to one account just as firmly.
+
+*Caller-named account with no connection check at all.*
+Simplest, and it still defeats the retained-token case, because the token is pinned to the one account it names.
+Rejected because it would let a page open a picker for an account the user is not looking at whenever a connection does exist, and that check costs nothing.
 
 *Single use for validation as well as start.*
 Rejected because preflight is read-only and a user may reasonably re-run a report; consumption is placed at the effect instead.
