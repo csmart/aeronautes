@@ -1,156 +1,38 @@
-# Audit query ownership and read status
+# Audit query and Recent observations
 
-This is the bounded UI-10 audit-read contract proposed after the independently reviewed cancellation slice.
-It does not close UI-10, P28, UI-09, P24 or the valuable-data hold.
-The oracle is UI-10's distinction between empty, unavailable and stale data, DESIGN §§47/49/50/55, K-UI-005, K-SEC-002 and K-SEC-006.
-The local audit store returns descending unique IDs with an exclusive `beforeId` cursor; these observations are not proof of remote state, complete accounting or successful verification.
+The UI-10 correction makes failed, pending, empty and stale audit observations distinct.
+The oracle is DESIGN §§47, 49, 50 and 55, K-UI-005, K-SEC-002/006, and the store's descending unique-ID pages with an exclusive before-ID cursor.
 
-## Before evidence
+## Behaviour
 
-The unchanged integrated implementation is `836ad0d2138f51741c65de948bab5c5edeb2f3f8`.
-Its BrowserState lets older Search replies and unfiltered Recent replies replace the selected query, admits overlapping More requests, and has no distinct audit read status.
-JobsDrawer uses the shared query array for its recent count and displays “No matching audit events” from an empty array alone.
-The existing mutation wrappers await `loadAudit()` after their effects; that read currently fulfils even when Recent fails.
-Changing it to throw would misreport successful mutations and bypass their existing post-audit view guards.
+A selected literal operation/result pair owns its query generation and cursor.
+Changing either filter retires old success, failure and finalisation replies, including an away-and-back change.
+More admits only one request synchronously and accepts at most 50 positive safe integer IDs, strictly descending and below the cursor.
+An invalid page is rejected whole, preserving the previous rows and retry cursor.
+Recent has its own bounded 50-row observation and generation; its counts do not describe the selected Search query.
 
-The [six-case probe](probes/2026-09-12-audit-query-state.test.ts.txt) ran against an isolated archive of that unchanged implementation.
-The [producer](probes/2026-09-12-audit-query-state.producer.py.txt) preserves the exact command, all 100 frontend input hashes, raw result and exit in `/tmp/aeronautes-audit-query-before-jah_04xb`.
-Its [evidence twin](probes/2026-09-12-audit-query-state.before.json) preserves both the original JSON-only run in `/tmp/aeronautes-audit-query-before-2txxcc77` and the same probe repeated with the default reporter to retain complete request/ID diagnostics.
-Both record actual exit 1, five intended regression failures and one healthy empty-search control, with no skipped test, timeout or setup failure.
-The original took 2.466 seconds and the repeat took 1.865 seconds; the repeat's stderr contains the expected assertion failures.
-This probe uses real BrowserState and mounted Svelte with held fake API replies; it does not establish native Wails acceptance.
+Pending, successful empty, unavailable, stale and failed-page states use fixed safe wording and explicit read-only recovery.
+Audit read failure no longer rejects an otherwise acknowledged mutation.
+All seven existing mutation wrappers and connection awaits retain their ordering; actual mutation errors still reject.
 
-| Probe | Observed unchanged behaviour |
-| --- | --- |
-| Literal successful-empty control | Passed; exact prefix ` delete.λ `, result `failed`, all-account scope, cursor 0 and limit 50. |
-| Legal full first page followed by two More calls | Three API calls instead of two; IDs 50 and 49 each append twice after the first 50 descending IDs 100 through 51. |
-| Old first-page reply after a new filter result | IDs `[11]` replace expected `[22]`. |
-| Filter changes away and back without dispatching another search | The retired reply publishes ID 11 instead of leaving the current view not loaded. |
-| Late unfiltered Recent reply | IDs `[30]` replace the selected query's `[22]`. |
-| Initial query pending in the mounted drawer | The drawer already announces “No matching audit events.” |
+## Verification and limits
 
-The earlier eight-case archive in the [cancellation experiment](2026-09-12-cancellation-feedback.md) remains unchanged.
-Its manually seeded two-row More diagnostic is historical evidence, not a valid fixture for owned-query admission.
-The new legal 50-row fixture must become a maintained regression without weakening its one-call, cursor or exact-ID assertions.
-The earlier audit-error diagnostic intentionally observes the undesirable swallowed/propagated split and must not count as an after acceptance test.
+On unchanged source `836ad0d2`, the exact six-case mounted probe produced five intended assertion failures and one healthy control in two actual exit-1 runs.
+The legal 50-row More case is the paging proof; an earlier manually seeded two-row diagnostic is not a legal-page reproduction.
+Contract `4b112f80` preceded the correction at `4f9e356d`.
+The final focused selection passed 450 distinct cases: 61 state, 13 mounted audit and 376 neighbouring cases; the original six cases also passed.
+Frontend check and build passed.
+Twelve isolated broken variants produced 18 targeted failures with actual exit 1; repeated selections are not additional coverage.
 
-## Selected query contract
+The packet retains the initial test failures, source hashes, complete inventories and parser/command receipts.
+Raw folders are `aeronautes-audit-query-before-2txxcc77`, `aeronautes-audit-query-before-jah_04xb` and `aeronautes-audit-verification`.
+These results establish frontend observation behaviour, without native Wails, deployed Swift or full-repository acceptance.
+Account-specific history, broader P24/P28 obligations, protected delivery and the valuable-data hold remain open.
 
-BrowserState owns the selected audit query throughout its lifetime, independently of drawer collapse or the active tab.
-Retain the existing explicit first-page read when Recent changes is selected and when the operation or result control changes.
-Capture the exact literal operation prefix and result, fixed `bookmarkId: ""`, request generation and admitted cursor before awaiting Search.
-Changing either filter value synchronously retires pending reads and previous-filter rows, even if the value changes away and back without another request.
-Keep the filter controls' existing change-event submission; do not add per-keystroke search or normalise their values.
-A new first-page request retires every older first-page or More request, including same-filter refreshes.
-Success, failure and loading completion must all require the current generation and unchanged captured literal filters.
-An obsolete reply cannot publish rows, errors or exhaustion or clear a newer pending read.
+## Evidence retention
 
-| Current state | Presentation and available action |
-| --- | --- |
-| Not loaded | State that the query is not loaded; permit an explicit first-page read. |
-| Initial or changed-filter read pending | Remove previous-filter rows before dispatch; show loading and the current literal scope; no More. |
-| Successful empty first page | Show “No matching audit events” only for that successful query; permit refresh. |
-| Successful nonempty query | Show its last loaded rows; permit first-page refresh and More when admissible. |
-| Same-query refresh pending | Keep earlier rows with a previously-loaded/refreshing qualifier; no More. |
-| First-page failure, including after earlier empty success | Show a fixed unavailable alert; keep only prior same-query rows and label them stale; offer explicit first-page retry. |
-| More pending or failure | Keep prior rows and cursor; show loading-more or page-unavailable feedback; permit page retry after settlement or first-page refresh. |
-
-Use fixed safe errors such as “Audit events are unavailable. Retry this search.” and “More audit events are unavailable. Previously loaded results are shown.”
-Never render raw bridge or SQLite exceptions.
-Show the all-accounts scope explicitly, independently of the jobs account filter.
-Use escaped Svelte text, existing per-instance labels and status/alert semantics.
-The promised bookmark filter, per-row account/transaction diagnostics and broader UI-09 work remain open; this slice does not change DTOs or the existing event vocabulary.
-
-## Paging admission and progress
-
-More requires a successfully loaded current query, nonempty rows, a usable last ID, no pending query request and no confirmed exhaustion.
-Admit it synchronously so two same-turn calls issue one Search request.
-Keep the existing page size of 50 and explicit append behaviour.
-A failed page preserves its cursor and exhaustion state; retry uses that same cursor, while first-page refresh or a filter change retires it.
-Require positive safe integer IDs in strictly descending order, at most 50 rows, and every More ID below the captured cursor.
-A duplicate, reversed, oversized or non-advancing page is unavailable: append nothing, preserve prior rows and offer retry or refresh.
-Do not repair malformed pages by sorting, deduplicating, truncating or partially appending them.
-A successful empty More reply may establish exhaustion while preserving prior rows.
-This preserves explicitly requested accumulated history; P24's wider retained-row bound remains open.
-
-## Separate Recent summary
-
-Keep `auditEvents` for Search and a separate Recent cache bounded by the existing limit of 50.
-Recent has independent not-loaded, loading, available and unavailable state and its own latest-request generation.
-Validate its bounded descending IDs before accepting the cache rather than presenting a malformed slice as current.
-The summary count must come from the last successful Recent slice and identify that scope, never a filtered query or total-trail count.
-A failed refresh keeps any previous cache only with an unavailable/stale qualifier, including a previous zero.
-An older Recent success, failure or finally cannot replace a newer cache, error or pending state.
-Recent must never mutate selected-query rows, errors, exhaustion or loading, in either completion order.
-Expose Recent unavailability in the collapsed summary and provide an explicit read-only Recent retry in the audit view.
-Keep every existing connect/mutation `loadAudit()` call and its await ordering; add no polling or automatic effect retry.
-`loadAudit()` records a read error and fulfils normally, so successful mutation return values and post-audit navigation checks stay intact.
-An actual mutation rejection must still reject.
-Search, page and Recent retries call read methods only.
-
-## Implementation and validation sequence
-
-1. Review this contract and the legal unchanged-source reproduction before production changes.
-2. Correct only BrowserState audit fields, `searchAudit()` and `loadAudit()`, and the audit summary/view in JobsDrawer as one coherent implementation.
-   Add dedicated browser and jobs `auditStatus.test.ts` files.
-   Change only the three existing mutation-test assertions that observe Recent through the shared array; keep their exact `object.metadata.update`, `marker.delete` and `manifest.delete` expectations and every sibling assertion.
-3. Exercise initial pending/rejection/retry/empty states, retained nonempty and empty results on failed refresh, older success/failure/finally, literal filter edits and change-away-and-back, legal More admission, replacement searches during More, failed-page retry and malformed-page rejection.
-   Cover Recent/Search independence in both completion orders, overlapping Recent reads, stale zero and nonempty caches, summary attribution and mounted read-only retry controls.
-   For every existing mutation wrapper, reject its following Recent read and prove the exact successful return/effect remains; retain true mutation rejection controls and the unchanged connection and post-audit navigation tests.
-4. Preserve the before packet, run the same six probes on the final source, and run independent controls removing query ownership, guarded failure/finally, duplicate More admission, page progress, Recent separation and nonthrowing post-mutation reads.
-   Each control must fail its named unchanged behavioural assertion with its actual exit and unchanged timeout/budget.
-   Run focused frontend tests, Svelte check and build, then obtain strict independent implementation review before handback.
-5. Integrate on the actual current master with renewed verification and range review; require all five current-head/current-base PR checks, protected merge and all five resulting-master checks before recording delivery.
-
-Do not change cancellation, connection or selection authority, mutation methods/timing, API/DTOs, fake API behaviour, backend storage, settings, bookmarks, retention policy or existing test/CI budgets in this slice.
-Stop and return any required expansion or conflicting active ownership to the coordinator.
-No implementation or after result is claimed by this contract commit.
-
-## Local implementation proof
-
-The independently approved contract is `4b112f80cc9edc47e220e1d97efb633db04df413`, based on integrated implementation `836ad0d2138f51741c65de948bab5c5edeb2f3f8`.
-The following results apply to the source hashes in the [after evidence twin](probes/2026-09-12-audit-query-state.after.json); local implementation review and protected delivery are separate gates.
-The private packet is `/tmp/aeronautes-audit-verification`, including its exact named-test inventory, commands, raw outputs, immutable control source archive and reconciliation index.
-
-The selected query now retains rows only for its literal filters, retires old replies on both filter edits and new requests, and records loading, unavailable, successful-empty and stale states.
-More is admitted once per pending page, requires a successful current query and validates the exact descending exclusive cursor before appending.
-The independent Recent cache remains bounded at 50; its summary count and unavailable/stale state no longer depend on Search.
-All retry controls read the trail only.
-The existing seven mutation wrappers and connection awaits are unchanged; the three existing Recent assertions still require the exact same operation values.
-
-| Actual verification | Result |
-| --- | --- |
-| Dedicated BrowserState audit tests | 61 passed, including seven rejected-follow-up reads and seven true mutation rejection controls. |
-| Dedicated mounted JobsDrawer audit tests | 13 passed; pending, empty, unavailable, stale, paging, read retry, literal scope and collapsed summary checked. |
-| Existing neighbouring tests in nine files | 376 passed, including connection, paging, post-audit detail/navigation, sensitive labels and all 20 cancellation cases. |
-| Exact named-test reconciliation | The two dedicated and nine neighbouring files contain 450 distinct passing file/name pairs; repeated incremental runs and the six archived probes are not added to this count. |
-| Original six-case probe, unchanged | Six passed against the corrected source, with no skipped case; legal More now makes two total calls and appends IDs 50 and 49 once. |
-| Svelte check | Exit 0, zero errors and zero warnings. |
-| Production frontend build | Exit 0. |
-
-All positive runs above completed without a timeout or skipped test.
-Earlier incremental state and drawer failures remain in the packet, separately labelled: the first state test draft ran before the production correction, and the drawer draft ran after the state correction but before its presentation change.
-Those incremental failures are not substituted for the unchanged-source six-case proof or counted as independent final successes.
-
-Twelve independent private broken-guard variants each returned actual exit 1 without setup failure or timeout.
-They produced 18 targeted failing tests; other tests were deliberately unselected by the recorded name filters and do not count as passing controls.
-The seven mutation failures belong to one variant that rethrows Recent errors; the control runner's successful assessment does not replace those failing command exits.
-
-| Broken boundary | Observed targeted failure |
-| --- | --- |
-| Query generation | Older ID 11 replaced newer ID 22. |
-| Synchronous filter retirement | A change away and back allowed retired ID 11 to publish. |
-| Guarded query catch | An older failure set an error on the current query. |
-| Guarded query finally | An older completion cleared the newer pending state. |
-| More admission | Two overlapping More actions issued three total API calls. |
-| Exclusive cursor | A page at the same cursor appended a repeated boundary ID. |
-| Strict page uniqueness | Duplicate IDs appended instead of leaving prior rows intact. |
-| Recent/query separation | Recent ID 40 replaced the selected query's ID 22. |
-| Recent generation | An older zero marked the newer unavailable cache loaded. |
-| Nonthrowing post-mutation Recent | All seven successful mutation wrappers rejected with the injected read error. |
-| Pending/empty projection | The mounted pending first query announced “No matching audit events.” |
-| Recent count attribution | The summary counted the 50-row query instead of its two-event Recent slice. |
-
-This is focused frontend proof with the repository's existing fake API and mounted Svelte components.
-It does not establish native Wails, deployed Swift, full repository CI or valuable-data readiness.
-UI-10 settings/bookmarks, UI-09 account/transaction diagnostics, P24 history bounds and all remaining release gates stay open.
+The original record, probes, structured evidence, failed runs and raw verification outputs are retained in the private packet `/home/csmart/code/.aeronautes-work/evidence/20260913-service-records`.
+Its `SHA256SUMS` digest is `d0ce6823082a0aab3ddb7f0b563ccc4028aba68c6471b124cad41c925650ae99`.
+`original/docs/experiments/` preserves the record and probe paths at checkpoint `860ddec9ce72c241f349f491ca3b63dbab8ed5ce`; `INDEX.json` maps the raw packets and lists excluded dependency/cache directories.
+Historical receipts remain unchanged; this archive does not claim to retain those excluded execution inputs or constitute a hermetic environment.
+The maintained regression tests remain in the repository.
