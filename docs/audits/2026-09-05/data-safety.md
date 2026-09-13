@@ -220,10 +220,10 @@ Current disposition: that archived reproduction [no longer reproduces on master]
 This records coverage of the reproduced scenario on Linux and nothing more.
 [PR105](../../experiments/2026-09-12-download-cancellation.md#protected-delivery) then records each staged-but-unplaced item at both placement cancellation boundaries and classifies an interrupted native body as cancelled, with no target effect once its owned temporary is removed or an unresolved effect and cleanup issue when removal fails.
 At the tested native-read, stage and placement boundaries on both providers, a cancelled job ends cancelled when nothing was placed and no independent failure occurred, and partial otherwise; a second process reopens the same durable records.
-The locally reviewed [Linux child-lifetime correction](../../experiments/2026-09-12-linux-child-lifetime.md) now preserves cancellation-only engine outcomes while keeping independent engine and log failures outside that classification.
-Final maintained runs exercise five direct-child modes against each owned provider, with actual signal/reaping, unchanged post-exit staging, collateral and durable recovery checks; deliberately omitted safeguards still fail, and missing-fixture leaves report skips.
-Combined-source verification and protected delivery are pending for that scope.
-Cancellation during stage cleanup and directory materialisation, the retained-stage removal decision, a complete shutdown coordinator, descendant containment and native acceptance on the other five targets remain open, so DS-07/SEC-06 stays blocking.
+PR107 delivered the [Linux child-lifetime correction](../../experiments/2026-09-12-linux-child-lifetime.md), preserving cancellation-only engine outcomes with actual signal/reaping, retained staging and separate-process recovery evidence.
+The new [job and Find shell consumer](../../experiments/2026-09-12-shell-shutdown-consumer.md) is locally reviewed and passed combined local verification; protected delivery remains required.
+It keeps SQLite and the instance lock until those actual owners drain, including final pin/handle cleanup.
+Stage-cleanup and directory cancellation, retained-stage removal policy, synchronous bridge/native-request and credential-store ownership, descendant containment and native acceptance across all supported targets remain open, so DS-07/SEC-06 stays blocking.
 
 ### DS-08 — High: outcomes are event counts and samples, not an exact identity ledger
 

@@ -164,6 +164,11 @@ Fix: operation-specific counts, live expandable diagnostics, bookmark-scoped aud
 Tests: running and partial copy/mirror/delete jobs, two accounts with identical path names, audit paging/filter changes, and transaction-ID visibility.
 Confidence: high static evidence.
 
+Current disposition: the locally reviewed [job presentation correction](../../experiments/2026-09-12-job-presentation.md) supplies operation labels and reported Delete nouns while retaining the already working numerator and active details.
+The original zero-numerator and active-details claims above are historical.
+Unrecorded settings still incorrectly appear as defaults; account filters, transaction IDs, complete failure access, other diagnostics and native acceptance remain open.
+Protected delivery still gates the new presentation correction.
+
 ### UI-10 — P2: operational errors are swallowed or presented as empty state
 
 Evidence: `frontend/src/features/jobs/JobsDrawer.svelte:47`–`:52`, `:90`–`:97`; `frontend/src/features/browser/BrowserScreen.svelte:37`–`:41`; `frontend/src/features/browser/browserState.svelte.ts:214`, `:329`, `:593`.
@@ -173,18 +178,10 @@ Fix: per-operation structured status/error state and useful retry paths, preserv
 Tests: bridge rejection for each touchpoint, retry success, and normal empty-state controls.
 Confidence: high static evidence; failure displays were not run against a real Wails bridge.
 
-Current disposition: the locally reviewed [cancellation feedback correction](../../experiments/2026-09-12-cancellation-feedback.md) keeps pending, requested and unconfirmed notices bound to the admitted job across successful or failed job reads, filter changes and missing rows.
-It guards duplicate requests before rendering, retains up to 50 notices without silent eviction, and makes retry and dismissal explicit; a requested cancellation never invents a terminal outcome or counter.
-Maintained component regressions and deliberately omitted guards establish that presentation scope, with combined-source verification and protected delivery still pending.
-The locally reviewed [audit-read correction](../../experiments/2026-09-12-audit-query-state.md) separates the selected literal query from the bounded Recent summary and prevents obsolete replies or overlapping More requests from replacing or duplicating current results.
-Unavailable reads and retained stale rows have explicit status and read-only retry; a pending or failed query is never presented as a successful empty result.
-The 74 dedicated state/component tests, preserved before failures and twelve independently omitted guards cover that correction, and the integrated frontend suite passes all 1,244 tests.
-Optional Recent failures preserve the existing mutation and connection awaits and outcomes.
-The locally reviewed [bookmark observation correction](../../experiments/2026-09-12-bookmark-observations.md) preserves acknowledged Save identity through an optional List failure and prevents obsolete Lists from erasing a known Save or restoring an acknowledged deletion.
-The rail distinguishes unavailable or stale observations from a successful empty list and offers an explicit List-only retry, without automatic mutation retries or guessed rows.
-All 45 dedicated cases and the ten unchanged original probes pass; ten broken variants fail twelve intended assertions, and the integrated frontend suite passes all 1,289 tests.
-Actual or uncertain mutation errors, existing waits and connection/credential authority are preserved.
-Complete current-base Go verification and protected delivery, settings feedback, raw mutation-error sanitisation, bookmark-scoped audit filtering and diagnostics, native Wails observations and the wider UI-10/P28 gate remain open.
+Current disposition: the prepared, locally reviewed corrections preserve job-attributed cancellation requests, independent audit query/Recent ownership, acknowledged bookmark Save identity through List failure and explicit [budget read/write outcomes](../../experiments/2026-09-12-budget-feedback.md).
+Read-only retries, current/stale observations and unconfirmed mutation outcomes remain distinct, with existing authority and awaits preserved.
+The combined source passed its full local Go race suite and all 1,354 frontend tests, check and build; protected delivery remains required.
+Broader mutation-error sanitisation, account-specific audit filtering/diagnostics, native Wails observations and the wider UI-10/P28 gate remain open.
 
 ### UI-11 — P2: keyboard and dialog semantics are incomplete and interfere
 
