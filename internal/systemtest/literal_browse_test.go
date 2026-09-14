@@ -79,7 +79,7 @@ func literalBrowse(t *testing.T, h *Harness) {
 				if pageNumber > len(tc.want) {
 					t.Fatal("listing did not terminate within the fixture bound")
 				}
-				page, receipt := h.BrowseObjects(t.Context(), containers[i], tc.prefix, marker, 2)
+				page, receipt := h.BrowseObjects(t.Context(), h.Primary.BookmarkID, containers[i], tc.prefix, marker, 2)
 				if receipt.Err() != nil {
 					t.Fatal(receipt.Err())
 				}

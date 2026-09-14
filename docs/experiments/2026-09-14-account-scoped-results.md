@@ -42,6 +42,23 @@ It does not establish anything about inspector detail reads, audit queries, job 
 It does not measure how often a connection moves mid-listing in ordinary use; the probe moves it deliberately to show the consequence when it does.
 No production source was changed to produce these results.
 
+## Three method faults hit while implementing this
+
+The broken-guard producer first reported all three controls as build failures.
+That was the producer and not the controls: it copied four chosen files into each
+throwaway worktree, leaving callers disagreeing with the signatures they call, so
+every control failed to build for a reason that was not its mutation.
+Three identical build failures are a signal about the harness, not three findings about the code.
+It now carries the whole working tree, and the deliberate-syntax-error control is retained beside the others to show that a build failure is recorded as one rather than credited as a catch.
+
+A bare `git stash` was used to take a baseline measurement, which this repository's working agreement forbids.
+The stash stack is shared across every worktree on this machine and other work was running at the time, so the command could have taken somebody else's changes rather than these, and dropping what looked like the right entry afterwards is how that becomes unrecoverable.
+The changes were recovered from the stash list, but the rule names a real trap rather than a theoretical one, and this is an instance of it.
+
+A plan commit and its implementation shipped in one range with both documents still denying the implementation beside them: the design text read that the correction was not yet implemented, and this decision record's status read "Proposed. Nothing in it is implemented yet."
+Two independent approvals passed that head without catching it, and it is the third occurrence of the same fault in this repository in a week.
+The rule that a plan's tense is corrected before handover therefore works only when somebody runs the check as a step of its own; review has now demonstrably not caught it three times, so it cannot be relied on as the place this is found.
+
 ## Evidence
 
 Durable private packet `~/code/.aeronautes-work/20260914-claude/l11/`, digests in `SHA256SUMS` beside the files.

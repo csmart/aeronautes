@@ -190,7 +190,7 @@ func shortListingReads(t *testing.T, h *Harness) {
 	h.Seed(h.Secondary, secondary, names[0], []byte("secondary"), nil)
 	beforeA, beforeB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
 	containerTrace := limitListingPages(t, h, h.Primary, "", "short", h.ns)
-	page, containerRead := h.BrowseContainers(t.Context(), h.ns, 3)
+	page, containerRead := h.BrowseContainers(t.Context(), h.Primary.BookmarkID, h.ns, 3)
 	if containerRead.Err() != nil || len(page.Rows) != 3 || page.NextMarker != containers[2] {
 		t.Fatalf("short container pages hid a tail: %+v, error=%v", page, containerRead.Err())
 	}
@@ -202,7 +202,7 @@ func shortListingReads(t *testing.T, h *Harness) {
 	containerTrace.assertMarkers(t, "", "", h.ns, containers[0], containers[1])
 
 	objectTrace := limitListingPages(t, h, h.Primary, primary, "short", "")
-	objects, objectRead := h.BrowseObjects(t.Context(), primary, "scope/", "", 3)
+	objects, objectRead := h.BrowseObjects(t.Context(), h.Primary.BookmarkID, primary, "scope/", "", 3)
 	if objectRead.Err() != nil || len(objects.Rows) != 3 || objects.NextMarker != "scope/nested/" {
 		t.Fatalf("short delimiter pages hid a tail: %+v, error=%v", objects, objectRead.Err())
 	}
@@ -215,7 +215,7 @@ func shortListingReads(t *testing.T, h *Harness) {
 			t.Fatalf("delimiter row %d = %+v", index, objects.Rows[index])
 		}
 	}
-	empty, endRead := h.BrowseObjects(t.Context(), primary, "scope/", objects.NextMarker, 3)
+	empty, endRead := h.BrowseObjects(t.Context(), h.Primary.BookmarkID, primary, "scope/", objects.NextMarker, 3)
 	if endRead.Err() != nil || len(empty.Rows) != 0 || empty.NextMarker != "" {
 		t.Fatalf("terminal listing = %+v, error=%v", empty, endRead.Err())
 	}
@@ -359,13 +359,13 @@ func laterListingRefusal(t *testing.T, h *Harness, kind, mode string) *Receipt {
 	var receipt *Receipt
 	switch kind {
 	case "containers":
-		page, call := h.BrowseContainers(t.Context(), initial, 3)
+		page, call := h.BrowseContainers(t.Context(), h.Primary.BookmarkID, initial, 3)
 		receipt = call
 		if call.Err() == nil || len(page.Rows) != 0 || page.NextMarker != "" {
 			t.Fatalf("invalid later container page was accepted: %+v, error=%v", page, call.Err())
 		}
 	case "objects":
-		page, call := h.BrowseObjects(t.Context(), primary, "scope/", "", 3)
+		page, call := h.BrowseObjects(t.Context(), h.Primary.BookmarkID, primary, "scope/", "", 3)
 		receipt = call
 		if call.Err() == nil || len(page.Rows) != 0 || page.NextMarker != "" {
 			t.Fatalf("invalid later object page was accepted: %+v, error=%v", page, call.Err())

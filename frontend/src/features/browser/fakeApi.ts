@@ -233,7 +233,7 @@ export function newFakeApi(): Api {
 
     capabilities: async () => ({ ...capabilities }),
 
-    containers: async (marker, limit) => {
+    containers: async (bookmarkId, marker, limit) => {
       const rows = containers
         .map((c) => ({
           name: c.name,
@@ -245,10 +245,12 @@ export function newFakeApi(): Api {
         .filter((c) => c.name > marker)
         .slice(0, limit);
       const full = rows.length === limit;
-      return { rows, nextMarker: full ? rows[rows.length - 1].name : "" };
+      // The fake echoes the bookmark it was asked for, as the backend
+      // does: a page states the account that answered it (ADR 0049).
+      return { rows, nextMarker: full ? rows[rows.length - 1].name : "", scope: { bookmarkId, generation: 1 } };
     },
 
-    objects: async (container, prefix, marker, limit) => {
+    objects: async (bookmarkId, container, prefix, marker, limit) => {
       const view = delimiterView(objects[container] ?? [], prefix);
       const rows: ListingRowDTO[] = view
         .map((e): ListingRowDTO =>
@@ -275,7 +277,9 @@ export function newFakeApi(): Api {
         .filter((r) => r.name > marker)
         .slice(0, limit);
       const full = rows.length === limit;
-      return { rows, nextMarker: full ? rows[rows.length - 1].name : "" };
+      // The fake echoes the bookmark it was asked for, as the backend
+      // does: a page states the account that answered it (ADR 0049).
+      return { rows, nextMarker: full ? rows[rows.length - 1].name : "", scope: { bookmarkId, generation: 1 } };
     },
 
     objectDetail: async (container, name) => objectDetailOf(container, name),

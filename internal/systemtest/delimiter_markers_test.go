@@ -72,7 +72,7 @@ func delimiterMarkerHTTP(t *testing.T, h *Harness) {
 			if len(rows) > 0 && rows[0].Subdir != "" && rows[0].Subdir <= tc.marker {
 				// Provider grouping can move an interior marker backwards;
 				// the application must refuse rather than publish that page.
-				page, read := h.BrowseObjects(t.Context(), container, tc.prefix, tc.marker, 100)
+				page, read := h.BrowseObjects(t.Context(), h.Primary.BookmarkID, container, tc.prefix, tc.marker, 100)
 				if read.Err() == nil || len(page.Rows) != 0 || page.NextMarker != "" {
 					t.Fatalf("non-advancing provider page was accepted: %+v error=%v", page, read.Err())
 				}
@@ -102,7 +102,7 @@ func ownMarkerBrowse(t *testing.T, h *Harness) {
 	for _, prefix := range prefixes {
 		t.Run(prefix, func(t *testing.T) {
 			trace := limitListingPages(t, h, h.Primary, container, "short", "")
-			page, receipt := h.BrowseObjects(t.Context(), container, prefix, "", 2)
+			page, receipt := h.BrowseObjects(t.Context(), h.Primary.BookmarkID, container, prefix, "", 2)
 			if receipt.Err() != nil {
 				t.Fatal(receipt.Err())
 			}
@@ -111,7 +111,7 @@ func ownMarkerBrowse(t *testing.T, h *Harness) {
 				t.Fatalf("own marker hid or changed its children: %+v", page)
 			}
 			trace.assertMarkers(t, prefix, "/", "", prefix, prefix+"a/")
-			empty, end := h.BrowseObjects(t.Context(), container, prefix, page.NextMarker, 2)
+			empty, end := h.BrowseObjects(t.Context(), h.Primary.BookmarkID, container, prefix, page.NextMarker, 2)
 			if end.Err() != nil || len(empty.Rows) != 0 || empty.NextMarker != "" {
 				t.Fatalf("listing did not terminate: %+v error=%v", empty, end.Err())
 			}

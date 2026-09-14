@@ -116,9 +116,22 @@ type DLOSegmentsDTO struct {
 
 // ContainerPageDTO is one page of containers; an empty NextMarker means
 // the listing is exhausted.
+// ListingScopeDTO states which account produced a listing page. The
+// protocol names no account in a listing, so without this a caller cannot
+// attribute rows to the account they came from and two accounts' answers
+// to identical arguments are indistinguishable (ADR 0049). Generation is
+// the backend's own reading of the connected bookmark, never a value a
+// caller supplied.
+type ListingScopeDTO struct {
+	BookmarkID string `json:"bookmarkId"`
+	Generation int64  `json:"generation"`
+}
+
 type ContainerPageDTO struct {
 	Rows       []ContainerRowDTO `json:"rows"`
 	NextMarker string            `json:"nextMarker"`
+	// Scope is the account that answered (ADR 0049).
+	Scope ListingScopeDTO `json:"scope"`
 }
 
 // ListingRowDTO is one working-list row: kind "object" or "prefix".
@@ -140,6 +153,8 @@ type ListingRowDTO struct {
 type ObjectPageDTO struct {
 	Rows       []ListingRowDTO `json:"rows"`
 	NextMarker string          `json:"nextMarker"`
+	// Scope is the account that answered (ADR 0049).
+	Scope ListingScopeDTO `json:"scope"`
 }
 
 // StoragePolicyDTO is one advertised storage policy (§20).

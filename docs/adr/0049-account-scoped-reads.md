@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Nothing in it is implemented yet.
+Accepted. Implemented in the range that carries this record.
 
 ## Context
 

@@ -67,6 +67,7 @@ export type {
     JobItemTotalsDTO,
     LicenseEntry,
     ListingRowDTO,
+    ListingScopeDTO,
     MirrorRequestDTO,
     MutationResultDTO,
     ObjectDetailDTO,

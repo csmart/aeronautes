@@ -152,7 +152,7 @@ async function heldConnection(stage: Stage) {
   const f = await connected(); await populate(f.state);
   const gate = deferred<void>();
   const account = f.state.account!; const capabilities = f.state.capabilities!;
-  const containers = await f.api.containers('', 1000);
+  const containers = await f.api.containers(f.bookmark.id, '', 1000);
   f.api.connect = vi.fn(async () => { if (stage === 'connect') await gate.promise; return account; });
   f.api.capabilities = vi.fn(async () => { if (stage === 'capabilities') await gate.promise; return capabilities; });
   f.api.containers = vi.fn(async () => { if (stage === 'containers') await gate.promise; return containers; });
@@ -207,7 +207,7 @@ describe.each(['connect', 'capabilities', 'containers', 'audit'] as Stage[])('Co
 describe('reset-crossing reads', () => {
   it.each(['containers', 'objects'] as const)('retires a pending initial %s reply after an active save', async (kind) => {
     const f = await connected(); const gate = deferred<void>();
-    const containers = await f.api.containers('', 1000); const objects = await f.api.objects('fixtures', '', '', 1000);
+    const containers = await f.api.containers(f.bookmark.id, '', 1000); const objects = await f.api.objects(f.bookmark.id, 'fixtures', '', '', 1000);
     f.api.containers = vi.fn(async () => { await gate.promise; return containers; });
     f.api.objects = vi.fn(async () => { await gate.promise; return objects; });
     const pending = kind === 'containers' ? f.state.loadContainers() : f.state.goTo('');
@@ -230,7 +230,7 @@ describe('reset-crossing reads', () => {
   it.each(['containers', 'objects'] as const)('retires pending %s pages on success or failure', async (kind) => {
     for (const failure of [false, true]) {
       const f = await connected(); const gate = deferred<void>();
-      const containers = await f.api.containers('', 1000); const objects = await f.api.objects('fixtures', '', '', 1000);
+      const containers = await f.api.containers(f.bookmark.id, '', 1000); const objects = await f.api.objects(f.bookmark.id, 'fixtures', '', '', 1000);
       f.state.containersMarker = 'more'; f.state.entriesMarker = 'more';
       f.api.containers = vi.fn(async () => { await gate.promise; return containers; });
       f.api.objects = vi.fn(async () => { await gate.promise; return objects; });
@@ -250,9 +250,9 @@ describe('reset-crossing reads', () => {
 
   it.each(['container', 'prefix'])('retires backstage navigation and its label during the %s load', async (stage) => {
     const f = await connected(); const gate = deferred<void>(); const objects = f.api.objects;
-    f.api.objects = vi.fn(async (container, prefix, marker, limit) => {
+    f.api.objects = vi.fn(async (bookmarkId, container, prefix, marker, limit) => {
       if (prefix === (stage === 'container' ? '' : 'segments/')) await gate.promise;
-      return objects(container, prefix, marker, limit);
+      return objects(bookmarkId, container, prefix, marker, limit);
     });
     const pending = f.state.openBackstage('photos_segments', 'segments/', 'old manifest'); await settle();
     const calls = vi.mocked(f.api.objects).mock.calls.length;

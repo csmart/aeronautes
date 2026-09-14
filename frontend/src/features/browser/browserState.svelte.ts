@@ -39,6 +39,7 @@ import type {
   PrefixDetailDTO,
   SLOManifestDTO,
   SelectionScopeDTO,
+  ListingScope,
 } from "../../lib/api";
 import { parentPrefix } from "../../lib/listing";
 
@@ -487,9 +488,9 @@ export class BrowserState {
       const capabilities = await this.#api.capabilities().catch(() => null);
       if (!current()) return false;
       let containersError: string | null = null;
-      const containers = await this.#api.containers("", pageLimit).catch((err) => {
+      const containers = await this.#api.containers(bookmarkId, "", pageLimit).catch((err) => {
         containersError = messageOf(err);
-        return { rows: [], nextMarker: "" };
+        return { rows: [], nextMarker: "", scope: { bookmarkId, generation: 0 } };
       });
       if (!current()) return false;
       await this.loadAudit();
@@ -510,7 +511,19 @@ export class BrowserState {
     }
   }
 
+  /** A page is applied only when the account that answered is the one this
+   * client asked for. The scope counter above covers transitions this
+   * client makes; it cannot see a connection moved through the bridge by
+   * anything else, because it tracks intent rather than the backend's
+   * state. The reply states who answered, so that gap closes here
+   * (ADR 0049). */
+  #answeredBy(scope: ListingScope | undefined, bookmarkId: string): boolean {
+    return scope !== undefined && scope.bookmarkId === bookmarkId;
+  }
+
   async loadContainers() {
+    const bookmarkId = this.connectedBookmarkId;
+    if (bookmarkId === null) return;
     const scope = this.#scopeRevision;
     const seq = ++this.#containersSeq;
     this.#containersLoadingScope = scope;
@@ -519,8 +532,8 @@ export class BrowserState {
     this.containersMarker = "";
     this.containersError = null;
     try {
-      const page = await this.#api.containers("", pageLimit);
-      if (scope === this.#scopeRevision && seq === this.#containersSeq) {
+      const page = await this.#api.containers(bookmarkId, "", pageLimit);
+      if (scope === this.#scopeRevision && seq === this.#containersSeq && this.#answeredBy(page.scope, bookmarkId)) {
         this.containers = page.rows;
         this.containersMarker = page.nextMarker;
       }
@@ -536,12 +549,15 @@ export class BrowserState {
       || this.containersLoading || this.containersError || this.containersMoreLoading) {
       return;
     }
+    const bookmarkId = this.connectedBookmarkId;
+    if (bookmarkId === null) return;
     const request = { scope: this.#scopeRevision, seq: this.#containersSeq, marker: this.containersMarker };
     this.#containersPage = request;
     this.#containersPageError = null;
     try {
-      const page = await this.#api.containers(request.marker, pageLimit);
+      const page = await this.#api.containers(bookmarkId, request.marker, pageLimit);
       if (!this.#currentContainersPage(request)) return;
+      if (!this.#answeredBy(page.scope, bookmarkId)) return;
       requireAdvancingMarker(request.marker, page.nextMarker);
       const names = new Set(this.containers.map((row) => row.name));
       const rows = page.rows.filter((row) => {
@@ -646,13 +662,16 @@ export class BrowserState {
     this.filter = "";
     this.select(-1);
     const scope = this.#scopeRevision;
+    const bookmarkId = this.connectedBookmarkId;
     this.entriesLoading = true;
     this.entriesError = null;
     try {
-      const page = await this.#api.objects(this.containerName ?? "", prefix, "", pageLimit);
+      if (bookmarkId === null) return;
+      const page = await this.#api.objects(bookmarkId, this.containerName ?? "", prefix, "", pageLimit);
       if (seq !== this.#listSeq || scope !== this.#scopeRevision) {
         return; // a newer navigation superseded this load
       }
+      if (!this.#answeredBy(page.scope, bookmarkId)) return;
       this.entries = page.rows;
       this.entriesMarker = page.nextMarker;
     } catch (err) {
@@ -672,12 +691,14 @@ export class BrowserState {
       || this.entriesLoading || this.entriesError || this.entriesMoreLoading) {
       return;
     }
+    const bookmarkId = this.connectedBookmarkId;
     const request = { scope: this.#scopeRevision, seq: this.#listSeq, marker: this.entriesMarker };
     this.#entriesPage = request;
     this.#entriesPageError = null;
     try {
-      const page = await this.#api.objects(this.containerName, this.prefix, request.marker, pageLimit);
+      const page = await this.#api.objects(bookmarkId, this.containerName, this.prefix, request.marker, pageLimit);
       if (!this.#currentEntriesPage(request)) return;
+      if (!this.#answeredBy(page.scope, bookmarkId)) return;
       requireAdvancingMarker(request.marker, page.nextMarker);
       const identity = (row: ListingRowDTO) => row.kind + ":" + row.name;
       const names = new Set(this.entries.map(identity));

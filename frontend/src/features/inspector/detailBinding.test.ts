@@ -34,11 +34,14 @@ async function show() {
   const api = newFakeApi();
   const object = await api.objectDetail("fixtures", "empty-object");
   const container = await api.containerDetail("fixtures");
-  api.objects = vi.fn().mockResolvedValue({ rows: [
+  // Echo the bookmark the caller named, as the backend does: a page states
+  // the account that answered it, and the browser applies only its own.
+  api.objects = vi.fn(async (bookmarkId: string, _c: string, _p: string, _m: string, _l: number) => ({ rows: [
     { kind: "object", name: "empty-object", bytes: 0, etag: "one", lastModified: "", contentType: "text/plain", sloListed: false },
     { kind: "object", name: "other", bytes: 1, etag: "two", lastModified: "", contentType: "text/plain", sloListed: false },
-    { kind: "prefix", name: "implied/" }, { kind: "prefix", name: "other/" },
-  ], nextMarker: "" });
+    { kind: "prefix", name: "implied/", bytes: 0, etag: "", lastModified: "", contentType: "", sloListed: false },
+    { kind: "prefix", name: "other/", bytes: 0, etag: "", lastModified: "", contentType: "", sloListed: false },
+  ], nextMarker: "", scope: { bookmarkId, generation: 1 } }));
   api.objectDetail = vi.fn(async (at, name) => ({ ...object, name,
     editableFingerprint: `${at}/${name}`, meta: { Source: `${at}/${name}` } }));
   api.containerDetail = vi.fn(async (name) => ({ ...container, name,
