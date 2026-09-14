@@ -1,7 +1,7 @@
 # What a cancelled download leaves behind — 14 September 2026
 
 This records what a graceful cancel leaves on disk on each download route, and what the report says about it, so [ADR 0048](../adr/0048-cancelled-stage-removal.md) is written against observed behaviour rather than against a reading of the code.
-It is a reproduction and a contract; no correction is delivered by it.
+It is the reproduction, the contract and the correction delivered against them.
 
 ## Why it was measured
 
@@ -38,14 +38,14 @@ Probe and run are in the private packet at `~/code/.aeronautes-work/20260914-cla
 The probe is inert and is not carried in the repository.
 It ran at load average 0.74 on twenty-four cores with no other suite on the host.
 
-## What the contract will change
+## What the correction changed
 
-Removal of the files a job planned into its own stage, bounded by planned names and issued through the held stage handle, with anything that is not an ordinary file at a planned name retained and reported.
-`Retained` becomes a statement about the disk rather than about one code path.
+Cleanup removes the files a job planned into its own stage, bounded by planned names and issued through the held stage handle, with anything that is not an ordinary file at a planned name retained and reported.
+`Retained` is a statement about the disk rather than about one code path.
 The decisions and their limits are in ADR 0048.
 
-Eight maintained test cases change, across six test functions, not the two first estimated.
-The unit is the failing test case; ADR 0048 lists all eight and marks the one that carries two assertions.
+Fourteen maintained test cases changed, across ten test functions in three packages, against the two first estimated and the eight reported after the second count.
+The unit is the failing test case; ADR 0048 lists them and marks the one that carries two assertions.
 The list came from running the package against the implementation rather than from reading it, and the correction is recorded rather than absorbed, because the first figure was carried into a contract review and the second was stated without saying what it counted.
 Five cases that do not move are the evidence that the bound holds: every foreign entry in the stage is still retained and reported, because only names this job planned are candidates.
 
@@ -110,6 +110,20 @@ Restoring the narrow guard demonstrates the difference: the still-present case p
 Whole module, race detector, real two-account fixture, pinned engine, frontend built so the root package compiles.
 Exit 0; 22 packages pass and `cmd/mockswift` has no tests; 4,650 distinct test names; 4,260 leaves; 4,649 passing events including parents; `TestRcloneMatrix` the only skip; empty stderr.
 It ran alone on a 24-core host, load 1.06 at the start and 6.21 at the end, with no other suite present, so the timing-sensitive cancellation, interruption and child-lifetime groups were not competing for the machine.
+
+## Why a plan sentence outlives its plan
+
+This record's own plan text reached master describing the correction as proposed and not yet implemented, beside the passage describing the delivered behaviour, and was found by an author working nearby rather than by the range that delivered it.
+That is the fourth occurrence of the same fault in a week and the first to reach master.
+
+It survives because the sentence is correct when it is written.
+A plan commit is written before the implementation exists, so nothing about the range later going red, or about a reviewer reading it naturally, re-examines it.
+There is no moment at which it becomes wrong in a way anything notices; it simply stops being true while every check still passes.
+A deliberate step is the only thing that catches it, and it has now been missed by authors and reviewers alike, including on a range that was bounced for precisely this fault.
+
+Checking the reported line alone is also not enough.
+One sentence was reported here and the neighbourhood held four: the design passage, the decision record's status, this record's own framing, and a superseded count that contradicted a corrected one later in the same file.
+The same shape appeared when the segment-deletion slice was bounced for one sentence and turned out to carry three.
 
 ## What this does not establish
 
