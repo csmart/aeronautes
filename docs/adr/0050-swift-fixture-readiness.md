@@ -1,6 +1,6 @@
 # ADR 0050 — prove a Swift fixture is writable before a test uses it
 
-**Status:** Proposed. Contract only; no implementation is claimed by this record.
+**Status:** Accepted and implemented in the harness.
 **Scope:** The readiness gate the system tests and the pipeline apply to the Swift fixture before the first harness writes to it.
 It changes no product source, no assertion, no deadline and no lane membership.
 
@@ -25,18 +25,18 @@ It is the reason the failure was legible rather than silent, and it is also why 
 ## Decision
 
 1. **Gate on a client round trip, not on the proxy answering.**
-   Before the first test writes, authenticate and complete a container PUT followed by a container DELETE, and treat the fixture as ready only when both succeed.
+   Before the first test writes, the harness authenticates and completes a container PUT followed by a container DELETE, and treats the fixture as ready only when both succeed.
 2. **Gate both accounts.**
    The suite requires two accounts where `AERONAUTES_REQUIRE_TWO_ACCOUNTS` is set, and a fixture whose secondary account is not yet writable is not ready for a cross-account test.
    Where the secondary is legitimately absent the existing skip applies unchanged; readiness is not a new requirement for a one-account workstation.
 3. **Retry to a deadline, then fail with what was observed.**
    A readiness gate that gives up silently, or that waits without bound, replaces one unhelpful failure with another.
-   The deadline is stated in the implementation and the last status and body are reported when it passes.
+   The deadline is thirty seconds, and the last status, body, error and attempt count are reported when it passes.
 4. **Put the gate in the harness, not only in the pipeline.**
-   A workstation run has the same fixture and the same first write, and a check that exists only in a workflow leaves local runs proving less than the pipeline does.
+   A workstation run has the same fixture and the same first write, so the gate is `Harness.writableWithin`, called for every required account before the primary connection is made.
    The pipeline keeps its own wait, which remains useful as an early and cheap failure.
 5. **Use a namespace the suite already owns.**
-   The probe container is created and removed under the harness namespace, so a readiness probe cannot collide with a concurrent suite or leave residue that a later assertion reads.
+   The probe container is created and removed under the harness namespace, so a readiness probe cannot collide with a concurrent suite, and a probe that failed to remove its own container is caught by the residue sweep and by a named case.
 
 ## What this does not establish
 
