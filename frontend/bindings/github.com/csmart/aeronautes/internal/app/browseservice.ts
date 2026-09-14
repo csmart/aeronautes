@@ -44,14 +44,14 @@ export function Connect(bookmarkID: string): $CancellablePromise<$models.Account
  * Containers returns one page of the account's containers starting after
  * marker.
  */
-export function Containers(marker: string, limit: number): $CancellablePromise<$models.ContainerPageDTO> {
-    return $Call.ByID(3903276755, marker, limit);
+export function Containers(bookmarkID: string, marker: string, limit: number): $CancellablePromise<$models.ContainerPageDTO> {
+    return $Call.ByID(3903276755, bookmarkID, marker, limit);
 }
 
 /**
  * Objects returns one delimiter-view page of a container under prefix,
  * starting after marker.
  */
-export function Objects(container: string, prefix: string, marker: string, limit: number): $CancellablePromise<$models.ObjectPageDTO> {
-    return $Call.ByID(1188006837, container, prefix, marker, limit);
+export function Objects(bookmarkID: string, container: string, prefix: string, marker: string, limit: number): $CancellablePromise<$models.ObjectPageDTO> {
+    return $Call.ByID(1188006837, bookmarkID, container, prefix, marker, limit);
 }

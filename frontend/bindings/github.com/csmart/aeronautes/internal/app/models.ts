@@ -244,13 +244,14 @@ export interface ContainerEditDTO {
     "ackPublic": boolean;
 }
 
-/**
- * ContainerPageDTO is one page of containers; an empty NextMarker means
- * the listing is exhausted.
- */
 export interface ContainerPageDTO {
     "rows": ContainerRowDTO[] | null;
     "nextMarker": string;
+
+    /**
+     * Scope is the account that answered (ADR 0049).
+     */
+    "scope": ListingScopeDTO;
 }
 
 /**
@@ -588,6 +589,21 @@ export interface ListingRowDTO {
 }
 
 /**
+ * ContainerPageDTO is one page of containers; an empty NextMarker means
+ * the listing is exhausted.
+ * ListingScopeDTO states which account produced a listing page. The
+ * protocol names no account in a listing, so without this a caller cannot
+ * attribute rows to the account they came from and two accounts' answers
+ * to identical arguments are indistinguishable (ADR 0049). Generation is
+ * the backend's own reading of the connected bookmark, never a value a
+ * caller supplied.
+ */
+export interface ListingScopeDTO {
+    "bookmarkId": string;
+    "generation": number;
+}
+
+/**
  * MirrorRequestDTO preserves the bridge shape for callers that still
  * request Mirror while execution is unavailable under ADR 0020.
  */
@@ -697,6 +713,11 @@ export interface ObjectMetadataEditDTO {
 export interface ObjectPageDTO {
     "rows": ListingRowDTO[] | null;
     "nextMarker": string;
+
+    /**
+     * Scope is the account that answered (ADR 0049).
+     */
+    "scope": ListingScopeDTO;
 }
 
 /**

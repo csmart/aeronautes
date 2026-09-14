@@ -116,13 +116,13 @@ func listingResponseRefusal(t *testing.T, h *Harness, kind, fault string) *Recei
 	var receipt *Receipt
 	switch kind {
 	case "containers":
-		page, call := h.BrowseContainers(t.Context(), "", 3)
+		page, call := h.BrowseContainers(t.Context(), h.Primary.BookmarkID, "", 3)
 		receipt = call
 		if receipt.Err() == nil || len(page.Rows) != 0 || page.NextMarker != "" {
 			t.Fatalf("malformed container page was accepted: rows=%d marker=%q error=%v", len(page.Rows), page.NextMarker, receipt.Err())
 		}
 	case "objects":
-		page, call := h.BrowseObjects(t.Context(), primary, "", "", 3)
+		page, call := h.BrowseObjects(t.Context(), h.Primary.BookmarkID, primary, "", "", 3)
 		receipt = call
 		if receipt.Err() == nil || len(page.Rows) != 0 || page.NextMarker != "" {
 			t.Fatalf("malformed object page was accepted: rows=%d marker=%q error=%v", len(page.Rows), page.NextMarker, receipt.Err())
@@ -195,7 +195,7 @@ func listingReadOnly(t *testing.T, h *Harness) {
 	h.Seed(h.Primary, primary, "outside", []byte("unchanged"), nil)
 	h.Seed(h.Secondary, secondary, name, []byte("secondary"), nil)
 	beforeA, beforeB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
-	containers, containerRead := h.BrowseContainers(t.Context(), "", 10000)
+	containers, containerRead := h.BrowseContainers(t.Context(), h.Primary.BookmarkID, "", 10000)
 	if containerRead.Err() != nil {
 		t.Fatal(containerRead.Err())
 	}
@@ -211,7 +211,7 @@ func listingReadOnly(t *testing.T, h *Harness) {
 	if !found || containers.NextMarker != "" {
 		t.Fatalf("owned container missing or listing unfinished: %+v", containers)
 	}
-	page, objectRead := h.BrowseObjects(t.Context(), primary, " scope/", "", 3)
+	page, objectRead := h.BrowseObjects(t.Context(), h.Primary.BookmarkID, primary, " scope/", "", 3)
 	if objectRead.Err() != nil || len(page.Rows) != 2 || page.NextMarker != "" {
 		t.Fatalf("object listing = %+v, error=%v", page, objectRead.Err())
 	}
@@ -222,7 +222,7 @@ func listingReadOnly(t *testing.T, h *Harness) {
 	if prefix.Kind != "prefix" || prefix.Name != " scope/nested/" {
 		t.Fatalf("delimiter row = %+v", prefix)
 	}
-	empty, emptyRead := h.BrowseObjects(t.Context(), primary, "absent/", "", 3)
+	empty, emptyRead := h.BrowseObjects(t.Context(), h.Primary.BookmarkID, primary, "absent/", "", 3)
 	if emptyRead.Err() != nil || len(empty.Rows) != 0 || empty.NextMarker != "" {
 		t.Fatalf("empty listing = %+v, error=%v", empty, emptyRead.Err())
 	}

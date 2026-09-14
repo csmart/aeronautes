@@ -68,7 +68,7 @@ describe("literal browser prefixes", () => {
     const f = await fixture("normal/");
     const listing = vi.spyOn(f.api, "objects");
     const input = await f.enter(prefix);
-    expect(listing).toHaveBeenCalledExactlyOnceWith("fixtures", prefix, "", 1000);
+    expect(listing).toHaveBeenCalledExactlyOnceWith(f.browser.connectedBookmarkId!, "fixtures", prefix, "", 1000);
     expect(f.browser.prefix).toBe(prefix);
     expect(input.value).toBe(prefix);
   });
@@ -82,7 +82,7 @@ describe("literal browser prefixes", () => {
     { prefix: "literal%2", name: "literal%2F/", label: "literal%2F/", kind: "prefix" },
   ])("keeps the complete leaf label for $prefix → $name", async ({ prefix, name, label, kind }) => {
     const f = await fixture();
-    f.api.objects = vi.fn().mockResolvedValue({ rows: [f.row(name, kind)], nextMarker: "" });
+    f.api.objects = vi.fn().mockResolvedValue({ rows: [f.row(name, kind)], nextMarker: "", scope: { bookmarkId: f.browser.connectedBookmarkId!, generation: 0 } });
     f.api.objectDetail = vi.fn().mockResolvedValue({ ...f.detail, name });
     await f.browser.goTo(prefix);
     await settle();
@@ -98,7 +98,7 @@ describe("literal browser prefixes", () => {
   it("separates the SLO badge from the exact object label", async () => {
     const f = await fixture();
     const name = "  scope //雪 name  ";
-    f.api.objects = vi.fn().mockResolvedValue({ rows: [{ ...f.row(name), sloListed: true }], nextMarker: "" });
+    f.api.objects = vi.fn().mockResolvedValue({ rows: [{ ...f.row(name), sloListed: true }], nextMarker: "", scope: { bookmarkId: f.browser.connectedBookmarkId!, generation: 0 } });
     await f.browser.goTo("  scope //雪");
     await settle();
     expect(f.target.querySelector(".name")?.textContent).toBe("雪 name   SLO");
@@ -127,31 +127,31 @@ describe("literal browser prefixes", () => {
     expect(getComputedStyle(crumbs[2]).whiteSpace).toBe("pre");
     crumbs[3].click();
     await settle();
-    expect(listing).toHaveBeenLastCalledWith("fixtures", "  scope //", "", 1000);
+    expect(listing).toHaveBeenLastCalledWith(f.browser.connectedBookmarkId!, "fixtures", "  scope //", "", 1000);
     expect(f.target.querySelector(".prefix-filter")).toBeNull();
     f.target.querySelector<HTMLButtonElement>('[aria-label="Up one level"]')!.click();
     await settle();
-    expect(listing).toHaveBeenLastCalledWith("fixtures", "  scope /", "", 1000);
+    expect(listing).toHaveBeenLastCalledWith(f.browser.connectedBookmarkId!, "fixtures", "  scope /", "", 1000);
   });
 
   it("uses exact folder activation and Up without turning a filter into a folder", async () => {
     const f = await fixture();
-    f.api.objects = vi.fn().mockResolvedValue({ rows: [f.row("  scope //雪/", "prefix")], nextMarker: "" });
+    f.api.objects = vi.fn().mockResolvedValue({ rows: [f.row("  scope //雪/", "prefix")], nextMarker: "", scope: { bookmarkId: f.browser.connectedBookmarkId!, generation: 0 } });
     await f.enter("  scope //雪");
     f.target.querySelector<HTMLElement>('[role="option"]')!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
     await settle();
-    expect(f.api.objects).toHaveBeenLastCalledWith("fixtures", "  scope //雪/", "", 1000);
+    expect(f.api.objects).toHaveBeenLastCalledWith(f.browser.connectedBookmarkId!, "fixtures", "  scope //雪/", "", 1000);
     const up = f.target.querySelector<HTMLButtonElement>('[aria-label="Up one level"]')!;
     up.click();
     await settle();
-    expect(f.api.objects).toHaveBeenLastCalledWith("fixtures", "  scope //", "", 1000);
+    expect(f.api.objects).toHaveBeenLastCalledWith(f.browser.connectedBookmarkId!, "fixtures", "  scope //", "", 1000);
     await f.enter("  scope //雪");
     up.click();
     await settle();
-    expect(f.api.objects).toHaveBeenLastCalledWith("fixtures", "  scope //", "", 1000);
+    expect(f.api.objects).toHaveBeenLastCalledWith(f.browser.connectedBookmarkId!, "fixtures", "  scope //", "", 1000);
     f.target.querySelector<HTMLButtonElement>(".crumb.root")!.click();
     await settle();
-    expect(f.api.objects).toHaveBeenLastCalledWith("fixtures", "", "", 1000);
+    expect(f.api.objects).toHaveBeenLastCalledWith(f.browser.connectedBookmarkId!, "fixtures", "", "", 1000);
     up.click();
     await settle();
     expect(f.browser.containerName).toBeNull();
@@ -163,8 +163,8 @@ describe("literal browser prefixes", () => {
     const marker = "  scope //雪 %2F  ";
     const first = f.row(marker);
     const second = f.row("  scope //雪 next");
-    f.api.objects = vi.fn().mockResolvedValueOnce({ rows: [first], nextMarker: marker })
-      .mockResolvedValue({ rows: [first, second], nextMarker: "" });
+    f.api.objects = vi.fn().mockResolvedValueOnce({ rows: [first], nextMarker: marker, scope: { bookmarkId: f.browser.connectedBookmarkId!, generation: 0 } })
+      .mockResolvedValue({ rows: [first, second], nextMarker: "", scope: { bookmarkId: f.browser.connectedBookmarkId!, generation: 0 } });
     f.api.objectDetail = vi.fn().mockResolvedValue({ ...f.detail, name: marker });
     await f.enter(prefix);
     f.browser.select(0);
@@ -173,7 +173,7 @@ describe("literal browser prefixes", () => {
     const detail = f.browser.objectDetail;
     f.target.querySelector<HTMLButtonElement>(".more")!.click();
     await settle();
-    expect(f.api.objects).toHaveBeenLastCalledWith("fixtures", prefix, marker, 1000);
+    expect(f.api.objects).toHaveBeenLastCalledWith(f.browser.connectedBookmarkId!, "fixtures", prefix, marker, 1000);
     expect(f.browser.entries.map((row) => row.name)).toEqual([marker, second.name]);
     expect(f.browser.selectedEntry?.name).toBe(marker);
     expect(f.browser.detailIdentity).toBe(identity);
@@ -185,12 +185,12 @@ describe("literal browser prefixes", () => {
     const page = deferred<void>();
     const detail = deferred<void>();
     const oldName = " old name ";
-    f.api.objects = vi.fn(async (_container, prefix, marker) => {
+    f.api.objects = vi.fn(async (_bookmarkId, _container, prefix, marker) => {
       if (marker !== "") {
         await page.promise;
-        return { rows: [f.row("obsolete")], nextMarker: "" };
+        return { rows: [f.row("obsolete")], nextMarker: "", scope: { bookmarkId: f.browser.connectedBookmarkId!, generation: 0 } };
       }
-      return { rows: [f.row(prefix === " old" ? oldName : "new name")], nextMarker: "next" };
+      return { rows: [f.row(prefix === " old" ? oldName : "new name")], nextMarker: "next", scope: { bookmarkId: f.browser.connectedBookmarkId!, generation: 0 } };
     });
     f.api.objectDetail = vi.fn(async () => {
       await detail.promise;

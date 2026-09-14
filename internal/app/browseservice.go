@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/csmart/aeronautes/internal/evidence"
@@ -89,16 +91,59 @@ func clampLimit(limit int) int {
 	return limit
 }
 
+// ErrAccountScopeChanged refuses a listing read issued under a stale belief
+// about which account is connected. A listing names no account in the
+// protocol and the connect action is reachable from the bridge, so without
+// this a page begun under one account is continued under another and the
+// caller sees one listing spanning two (ADR 0049).
+var ErrAccountScopeChanged = errors.New("the connected account changed; the listing was not read")
+
+// scopedListing binds a listing read to the account the caller named. The
+// caller states the bookmark it believes it is reading; every value used to
+// judge that belief is the backend's own, so a caller cannot assert a scope
+// it does not have. A mismatch refuses rather than answering from whichever
+// connection happens to be active (ADR 0049).
+//
+// The bookmark's generation is resolved afresh rather than taken from the
+// connected endpoint, because a bookmark re-saved to a different account
+// WITHOUT reconnecting is exactly the case a cached endpoint value cannot
+// see: the endpoint still reports the generation it connected under. The
+// resolution is a local store read rather than a request to the cluster.
+func (s *BrowseService) scopedListing(ctx context.Context, bookmarkID string) (*swiftcontrol.Session, ListingScopeDTO, error) {
+	if bookmarkID == "" {
+		return nil, ListingScopeDTO{}, fmt.Errorf("%w: name the bookmark the listing is for", ErrNotConnected)
+	}
+	activeID, connectedGeneration, connected := s.connections.activeEndpoint()
+	if !connected {
+		return nil, ListingScopeDTO{}, ErrNotConnected
+	}
+	if activeID != bookmarkID {
+		return nil, ListingScopeDTO{}, ErrAccountScopeChanged
+	}
+	entry, err := s.connections.sessionEntryFor(ctx, bookmarkID)
+	if err != nil {
+		return nil, ListingScopeDTO{}, err
+	}
+	if entry.generation != connectedGeneration {
+		return nil, ListingScopeDTO{}, ErrAccountScopeChanged
+	}
+	session, err := s.connections.Session()
+	if err != nil {
+		return nil, ListingScopeDTO{}, err
+	}
+	return session, ListingScopeDTO{BookmarkID: activeID, Generation: connectedGeneration}, nil
+}
+
 // Containers returns one page of the account's containers starting after
 // marker.
-func (s *BrowseService) Containers(ctx context.Context, marker string, limit int) (ContainerPageDTO, error) {
-	session, err := s.connections.Session()
+func (s *BrowseService) Containers(ctx context.Context, bookmarkID, marker string, limit int) (ContainerPageDTO, error) {
+	session, scope, err := s.scopedListing(ctx, bookmarkID)
 	if err != nil {
 		return ContainerPageDTO{}, err
 	}
 	limit = clampLimit(limit)
 
-	page := ContainerPageDTO{Rows: []ContainerRowDTO{}}
+	page := ContainerPageDTO{Rows: []ContainerRowDTO{}, Scope: scope}
 	for entry, err := range session.Containers(ctx, swiftcontrol.ListOptions{Marker: marker, PageSize: limit}) {
 		if err != nil {
 			return ContainerPageDTO{}, err
@@ -115,7 +160,7 @@ func (s *BrowseService) Containers(ctx context.Context, marker string, limit int
 	for i, row := range page.Rows {
 		names[i] = row.Name
 	}
-	classes, err := s.evidence.ClassifyContainers(ctx, s.connections.ActiveBookmarkID(), names)
+	classes, err := s.evidence.ClassifyContainers(ctx, scope.BookmarkID, names)
 	if err != nil {
 		return ContainerPageDTO{}, err
 	}
@@ -127,14 +172,14 @@ func (s *BrowseService) Containers(ctx context.Context, marker string, limit int
 
 // Objects returns one delimiter-view page of a container under prefix,
 // starting after marker.
-func (s *BrowseService) Objects(ctx context.Context, container, prefix, marker string, limit int) (ObjectPageDTO, error) {
-	session, err := s.connections.Session()
+func (s *BrowseService) Objects(ctx context.Context, bookmarkID, container, prefix, marker string, limit int) (ObjectPageDTO, error) {
+	session, scope, err := s.scopedListing(ctx, bookmarkID)
 	if err != nil {
 		return ObjectPageDTO{}, err
 	}
 	limit = clampLimit(limit)
 
-	page := ObjectPageDTO{Rows: []ListingRowDTO{}}
+	page := ObjectPageDTO{Rows: []ListingRowDTO{}, Scope: scope}
 	opts := swiftcontrol.ObjectListOptions{Prefix: prefix, Marker: marker, PageSize: limit}
 	for entry, err := range session.Objects(ctx, container, opts) {
 		if err != nil {

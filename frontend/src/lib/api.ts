@@ -120,14 +120,24 @@ import type {
   UploadRequestDTO,
 } from "../../bindings/github.com/csmart/aeronautes/internal/app";
 
+/** Which account produced a page (ADR 0049). A listing names no account
+ * in the protocol, so the reply states it and the caller binds what it
+ * displays to the account it asked for. */
+export interface ListingScope {
+  bookmarkId: string;
+  generation: number;
+}
+
 export interface ContainerPage {
   rows: ContainerRowDTO[];
   nextMarker: string;
+  scope: ListingScope;
 }
 
 export interface ObjectPage {
   rows: ListingRowDTO[];
   nextMarker: string;
+  scope: ListingScope;
 }
 
 export interface Api {
@@ -138,8 +148,9 @@ export interface Api {
   saveBookmark(bookmark: BookmarkDTO, secret: string): Promise<BookmarkDTO>;
   deleteBookmark(id: string): Promise<void>;
   connect(bookmarkId: string): Promise<AccountDTO>;
-  containers(marker: string, limit: number): Promise<ContainerPage>;
+  containers(bookmarkId: string, marker: string, limit: number): Promise<ContainerPage>;
   objects(
+    bookmarkId: string,
     container: string,
     prefix: string,
     marker: string,
@@ -211,13 +222,13 @@ export const liveApi: Api = {
   saveBookmark: (bookmark, secret) => BookmarkService.Save(bookmark, secret),
   deleteBookmark: (id) => BookmarkService.Delete(id),
   connect: (bookmarkId) => BrowseService.Connect(bookmarkId),
-  containers: async (marker, limit) => {
-    const page = await BrowseService.Containers(marker, limit);
-    return { rows: page.rows ?? [], nextMarker: page.nextMarker };
+  containers: async (bookmarkId, marker, limit) => {
+    const page = await BrowseService.Containers(bookmarkId, marker, limit);
+    return { rows: page.rows ?? [], nextMarker: page.nextMarker, scope: page.scope };
   },
-  objects: async (container, prefix, marker, limit) => {
-    const page = await BrowseService.Objects(container, prefix, marker, limit);
-    return { rows: page.rows ?? [], nextMarker: page.nextMarker };
+  objects: async (bookmarkId, container, prefix, marker, limit) => {
+    const page = await BrowseService.Objects(bookmarkId, container, prefix, marker, limit);
+    return { rows: page.rows ?? [], nextMarker: page.nextMarker, scope: page.scope };
   },
   objectDetail: (container, name) => InspectorService.Object(container, name),
   prefixDetail: (container, prefix) => InspectorService.Prefix(container, prefix),

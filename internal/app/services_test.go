@@ -138,7 +138,7 @@ func TestBookmarkServiceRoundTrip(t *testing.T) {
 
 func TestBrowseRequiresConnection(t *testing.T) {
 	h := newHarness(t)
-	_, err := h.browse.Containers(context.Background(), "", 100)
+	_, err := h.browse.Containers(context.Background(), "any-bookmark", "", 100)
 	if !errors.Is(err, ErrNotConnected) {
 		t.Fatalf("err = %v, want ErrNotConnected", err)
 	}
@@ -178,7 +178,7 @@ func TestContainersPaging(t *testing.T) {
 	marker := ""
 	pages := 0
 	for {
-		page, err := h.browse.Containers(ctx, marker, 2)
+		page, err := h.browse.Containers(ctx, h.browse.connections.ActiveBookmarkID(), marker, 2)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -204,7 +204,7 @@ func TestObjectsDelimiterPage(t *testing.T) {
 	h.connect(t)
 	ctx := context.Background()
 
-	page, err := h.browse.Objects(ctx, "fixtures", "", "", 100)
+	page, err := h.browse.Objects(ctx, h.browse.connections.ActiveBookmarkID(), "fixtures", "", "", 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +228,7 @@ func TestObjectsDelimiterPage(t *testing.T) {
 	seen := map[string]int{}
 	marker := ""
 	for i := 0; i < 20; i++ {
-		p, err := h.browse.Objects(ctx, "fixtures", "", marker, 2)
+		p, err := h.browse.Objects(ctx, h.browse.connections.ActiveBookmarkID(), "fixtures", "", marker, 2)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -282,7 +282,7 @@ func TestClassificationLearnsFromInspection(t *testing.T) {
 
 	classOf := func(name string) string {
 		t.Helper()
-		page, err := h.browse.Containers(ctx, "", 100)
+		page, err := h.browse.Containers(ctx, h.browse.connections.ActiveBookmarkID(), "", 100)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -588,7 +588,7 @@ func TestDeleteManifestService(t *testing.T) {
 	}
 
 	// Segments survive: the store still lists all three under the prefix.
-	inner, err := h.browse.Objects(ctx, "external-dlo-segments", "wedding-video/", "", 100)
+	inner, err := h.browse.Objects(ctx, h.browse.connections.ActiveBookmarkID(), "external-dlo-segments", "wedding-video/", "", 100)
 	if err != nil {
 		t.Fatal(err)
 	}

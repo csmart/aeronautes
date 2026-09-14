@@ -115,7 +115,7 @@ func TestPublicConnectHTTPErrorRefusalMock(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(beforeAccount, afterAccount) {
 		t.Fatalf("refused Connect changed active account: before=%+v after=%+v error=%v", beforeAccount, afterAccount, err)
 	}
-	page, err := h.Browse.Containers(ctx, "", 100)
+	page, err := h.Browse.Containers(ctx, h.Primary.BookmarkID, "", 100)
 	if err != nil || len(page.Rows) != 1 || page.Rows[0].Name != primary || page.NextMarker != "" {
 		t.Fatalf("refused Connect changed active namespace: page=%+v error=%v", page, err)
 	}
