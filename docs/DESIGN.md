@@ -5614,6 +5614,23 @@ The cause of that refusal is not established and the correction is not offered a
 The harness keeps its existing refusal of any non-2xx seed, which is why an unready fixture costs a run rather than asserting a completed copy against absent objects.
 Three regressions and five independently broken controls hold it, and the cause of the observed refusal remains unestablished.
 
+P20 settles what a cancelled download leaves behind, under [ADR 0048](adr/0048-cancelled-stage-removal.md).
+[ADR 0043](adr/0043-cancellation-delta-authority.md) decision 7 left that choice open for the operator, who has answered it: a graceful cancel removes the partial files the job created and says so, a crash or a kill retains them and that is reported accurately, and there is no setting and no prompt.
+The reasoning is that these are the application's own incomplete work product, written under a name it invented into a directory it created, rather than the operator's data, and that with no resume feature a retained fragment cannot be continued but only deleted by hand.
+The answer is the opposite of the recommendation ADR 0043 offered, because that recommendation rested on the staged bytes being the operator's, and where the bytes sit was established rather than assumed.
+The [cancelled stage record](experiments/2026-09-14-cancelled-stage-removal.md) reproduces both routes: a cancel on the engine route leaves every unplaced item's staged file inside `.aeronautes-stage-<job>` in the picked directory and reports a directory-not-empty cleanup issue, while `StageCleanupResult.Retained` reads false; a cancel on the native route removes its `.aeronautes-part-<random>` temporary under an identity check and leaves nothing.
+So the stage is retained by failure rather than by decision, and the field naming that condition denies it.
+The proposed correction removes the files a job planned into its own stage, then its planned directories, then the stage, and is not yet implemented.
+Its bound is unconditional: removal is limited to names this job planned and is issued through the held stage directory handle, never by listing the stage and never through a pathname.
+Its refusal is conditional on what is found: only an ordinary file at a planned name is removed, and a link, a directory or anything else there is retained and reported.
+Identity of the bytes is not established and is not claimed, because the engine writes those files as a child process and this executor never holds a descriptor to them.
+Retention after a failed item recording stays deliberate and untouched, and the native route is unchanged.
+Two independent facts get two fields rather than one flag carrying both: `Attempted` says whether cleanup ran, false only under that recording-failure rule, and `Retained` says whether anything remains under the stage afterwards, whatever kept it there.
+They are independent in both directions, because cleanup can run and still leave residue and can be skipped with nothing on disk, so one boolean cannot carry both without a reader having to know which era it was written in; adding a field rather than redefining one also leaves any reader that is missed with its old meaning instead of a silently acquired new one.
+The service then names one of three outcomes and asserts neither of the others: cleanup was not attempted because item recording failed, or it ran and left residue with the count and first reason, or it ran and left nothing.
+That reader is the reason the split exists: the operator-facing message and the audit summary were selected by `Retained` alone, which meant only the first outcome, so redefining that flag without changing its reader would have told an operator that recording had failed and cleanup had been skipped whenever cleanup ran and deliberately left files behind.
+Residue from a killed run is unaffected and needs a separate operator-facing action, which this does not authorise, and P20 does not close with this record.
+
 ### 65.12. Proportionate remediation and a fixed finish line
 
 Safe, secure operation on valuable production data remains the first milestone.
