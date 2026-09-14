@@ -164,6 +164,18 @@ func newHarness(t *testing.T, cfg harnessConfig) *Harness {
 		t.Skipf("second SAIO account unavailable (%v); cross-account matrix needs it", reach)
 	}
 
+	// Prove the fixture is writable before any test writes to it. The
+	// pipeline's wait proves the proxy answers /info, which is weaker
+	// (ADR 0050).
+	if err := h.writableWithin("primary", h.Primary, fixtureWritableDeadline); err != nil {
+		t.Fatal(err)
+	}
+	if h.Secondary != nil {
+		if err := h.writableWithin("secondary", h.Secondary, fixtureWritableDeadline); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	// Primary is the active connection for browse/inspect/mutate.
 	if err := connections.Connect(ctx, h.Primary.BookmarkID); err != nil {
 		t.Fatal(err)
@@ -460,6 +472,63 @@ func (h *Harness) secondaryReachable() error {
 		return fmt.Errorf("secondary resolves to the same account as primary")
 	}
 	return nil
+}
+
+// fixtureWritableDeadline bounds the readiness gate. A fixture that
+// cannot take a container within this window is reported with what was
+// last observed, rather than waited on until the package timeout turns
+// it into a report about the wrong thing.
+const fixtureWritableDeadline = 30 * time.Second
+
+// writableWithin proves what a test actually needs before its first write:
+// that an authenticated client can create a container on the account it
+// was given. The pipeline gates on the proxy answering /info, and a run
+// has recorded that gate passing while the first test's raw container
+// PUT answered 404 on the same fixture (ADR 0050). Authentication does
+// not establish this either: it yields a token and a storage URL without
+// writing anything.
+//
+// It does not prove the fixture STAYS writable. One round trip before
+// the run is all this claims; a fixture that fails later fails the test
+// that reaches it, as it does today.
+//
+// The probe carries the harness namespace, so a concurrent suite cannot
+// collide with it and the residue sweep accounts for it like any other
+// container of this harness.
+func (h *Harness) writableWithin(label string, a *Account, within time.Duration) error {
+	name := fmt.Sprintf("%s-readiness-%d", h.ns, atomic.AddInt64(&h.counter, 1))
+	deadline := time.Now().Add(within)
+	for attempt := 1; ; attempt++ {
+		status, body, err := h.probeWritable(a, name)
+		if err == nil && status/100 == 2 {
+			// Leave nothing behind: the probe is setup, not a fixture.
+			h.rawDeleteChecked(a, "/"+name)
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("%s account not writable within %s: PUT /%s after %d attempts, last status %d %q, last error %v",
+				label, within, name, attempt, status, body, err)
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+}
+
+// probeWritable issues one container PUT and reports what happened. It
+// does not fail the test: an unready fixture is expected to refuse for a
+// while, and only the deadline in writableWithin decides.
+func (h *Harness) probeWritable(a *Account, name string) (int, string, error) {
+	req, err := http.NewRequest(http.MethodPut, a.storageURL+"/"+name, nil)
+	if err != nil {
+		return 0, "", err
+	}
+	req.Header.Set("X-Auth-Token", a.token)
+	resp, err := a.rawClient.Do(req)
+	if err != nil {
+		return 0, "", err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, strings.TrimSpace(string(body)), nil
 }
 
 // Container returns a unique throwaway container name on the given

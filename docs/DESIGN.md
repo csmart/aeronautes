@@ -5605,9 +5605,9 @@ This proposal closes neither L05 nor DS-04: missing and reordered segments, whol
 The Swift fixture's readiness gate proves the proxy answers `/info`, which is a weaker property than a test needs before it writes.
 The [readiness record](experiments/2026-09-14-swift-fixture-readiness.md) observes that gate passing on one fixture while, fifty-nine seconds later, the first test's raw container PUT answered `HTTP 404`, so the gate did not establish that an authenticated client could create a container on the account it was given.
 The cause of that refusal is not established and the correction is not offered as its fix; the gap stands on the observation.
-[ADR 0050](adr/0050-swift-fixture-readiness.md) proposes gating on an authenticated container PUT and DELETE round trip on every required account, retried to a stated deadline and reported with the last status and body when it passes, placed in the harness so a workstation run proves what the pipeline proves and probing under the harness namespace so it cannot collide with a concurrent suite.
+[ADR 0050](adr/0050-swift-fixture-readiness.md) gates on an authenticated container PUT and DELETE round trip on every required account, retried to a thirty second deadline and reported with the attempt count, last status, body and error when it passes, in the harness so a workstation run proves what the pipeline proves and probing under the harness namespace so it cannot collide with a concurrent suite.
 The harness keeps its existing refusal of any non-2xx seed, which is why an unready fixture costs a run rather than asserting a completed copy against absent objects.
-This is a proposed contract and no implementation is claimed by it.
+Three regressions and five independently broken controls hold it, and the cause of the observed refusal remains unestablished.
 
 ### 65.12. Proportionate remediation and a fixed finish line
 

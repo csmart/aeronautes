@@ -63,12 +63,23 @@ A test needs an authenticated client to be able to create a container on the acc
 The recorded run shows the existing gate passing at 09:41:15 while that client write did not succeed at 09:42:14 on the same fixture.
 Whether or not the account layer explains that particular 404, the gate demonstrably does not establish the property the suite depends on, and correcting it stands on that observation rather than on a diagnosis.
 
-## Contract
+## Contract and what was built
 
 [ADR 0050](../adr/0050-swift-fixture-readiness.md) records the decision: gate on an authenticated container PUT and DELETE round trip on every required account, retried to a stated deadline, reported with the last status and body when the deadline passes, placed in the harness so a workstation run proves what the pipeline proves, and probing under the harness namespace so it cannot collide with a concurrent suite or leave residue.
 
 ## What this record does not claim
 
 It does not claim to fix the observed failure, and no later green run may be cited as having closed it.
-It establishes a gap the failure exposed.
+It closes a gap the failure exposed.
 No product source, assertion, deadline, lane membership, gate or release disposition changes, and the valuable-data hold is untouched.
+
+## The gate as delivered
+
+`Harness.writableWithin` runs for the primary account and, when one is present, the secondary, before the primary connection is made.
+It issues a container PUT under the harness namespace through `probeWritable`, which reports a status rather than failing the test so that only the deadline decides, deletes the probe container through the existing checked delete on success, and returns an error naming the account, the deadline, the container, the attempt count, the last status and body and the last transport error when thirty seconds pass.
+The caller fails the test with that error, so an unready fixture is reported as an unready fixture rather than as a seed failure inside whichever case happened to write first.
+
+Three regressions hold it: a writable account is admitted and leaves no probe container behind; an account whose PUT is refused is not admitted, the refusal names the status, and the gate does not give up before its own deadline; and the probe reports a non-2xx rather than failing the test.
+
+Five deliberately broken controls, built by one producer in isolated detached worktrees, are each caught by their own named case: accepting any status, trusting the probe without running it, leaving the probe container behind, failing the test inside the probe, and expiring the deadline immediately.
+The producer compiles the tests with `go vet` rather than `go build`, which does not compile test files, and records a build failure as a build failure so it can never be credited as a catch — two of the five were reported that way on the first run and were mutation errors of mine, corrected before this result.
