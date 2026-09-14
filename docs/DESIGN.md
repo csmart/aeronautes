@@ -5640,6 +5640,15 @@ The service then names one of three outcomes and asserts neither of the others: 
 That reader is the reason the split exists: the operator-facing message and the audit summary were selected by `Retained` alone, which meant only the first outcome, so redefining that flag without changing its reader would have told an operator that recording had failed and cleanup had been skipped whenever cleanup ran and deliberately left files behind.
 Residue from a killed run is unaffected and needs a separate operator-facing action, which this does not authorise, and P20 does not close with this record.
 
+Fixture setup in the system tests retries one step and not the step before it.
+[ADR 0050](adr/0050-swift-fixture-readiness.md) made the harness retry a container round trip every 250 milliseconds to a thirty second deadline before a test writes, while `Harness.account` authenticates with two unretried calls whose first error becomes a fatal or a skip.
+The [authentication retry record](experiments/2026-09-14-fixture-auth-retry.md) shows that ordering in `Harness.New` and the retry behaviour of each step, and records the run that exposed it: a transport error authenticating the secondary account inside harness construction, unreproduced across ten isolated runs on two ranges, with its cause not established.
+The proposed correction is not offered as that failure's fix and is not yet implemented; the gap stands on the asymmetry, which is visible in the source without reference to any failure.
+[ADR 0051](adr/0051-fixture-auth-retry.md) retries fixture authentication in the harness rather than in `oracle.Connect`, because four of that function's eight callers authenticate against a test server where an absent endpoint is the expected condition and must fail at once.
+It retries a transport error, a 5xx or any other non-2xx to the readiness gate's own deadline, and refuses a 401 or 403 immediately, because tempauth answers an absent account with 401 and a one-account workstation would otherwise wait thirty seconds at each of the harness's twenty-two construction sites before skipping.
+An exhausted deadline names the account, the deadline, the attempt count and the last failure, and a success that needed more than one attempt logs its attempt count, because a retry otherwise makes an unhealthy fixture indistinguishable from a sound one.
+The skip and fatal conditions, their wording and every assertion are unchanged, and a retried setup is not evidence that the fixture is healthy.
+
 ### 65.12. Proportionate remediation and a fixed finish line
 
 Safe, secure operation on valuable production data remains the first milestone.
