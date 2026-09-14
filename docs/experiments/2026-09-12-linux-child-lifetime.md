@@ -169,13 +169,16 @@ With a child saturating its stderr pipe, two runs of two hundred trials each rea
 With the child stopped before the parent is killed, two hundred trials reaped two hundred children with SIGKILL and none with SIGPIPE.
 The host was 24 cores at load average 3.48 with other suites present, and the rate is for a saturating writer rather than for the engine's actual stderr volume.
 
-The parent's file descriptors are released before its parent-death signal reaches the child, so a child that is inside a write to that pipe when the parent dies takes SIGPIPE first.
+A child that is inside a write to that pipe when the parent dies can be reaped by SIGPIPE before the parent-death signal reaches it, which is what the trials observe; the ordering inside the kernel is not established here.
 A stopped child cannot execute a write, so it cannot take SIGPIPE, and only the parent-death signal can reap it.
 That asymmetry explains why the stopped mode has never produced this failure and the running mode does.
 
 The guarantee is intact.
 `Pdeathsig: syscall.SIGKILL` is set, no child survived its parent in any trial, and both signals are consequences of the parent's death.
-What the assertion actually rests on is narrower than it reads: SIGPIPE in the running case is the dominant outcome when parent-death coupling is absent, as the control above the addendum records, but it is also a rare outcome when the coupling is present, so the two are not distinguishable by that status alone.
+What the assertion actually rests on is narrower than it reads.
+The control recorded above this addendum states that removing the coupling makes the running child die of SIGPIPE, and that is true but incomplete: SIGPIPE is also a few-per-cent outcome with the coupling present.
+A reader relying on that sentence alone would conclude from a SIGPIPE reaping that the coupling had been removed, which is why this looked like a product defect for a day.
+The status alone does not distinguish the two.
 
 The proposed correction accepts either SIGKILL or SIGPIPE in `parent_kill`, keeps the exact SIGKILL requirement in `stopped_child_parent_kill`, and states that the stopped mode is the retained proof of parent-death coupling.
 This narrows that proof from two modes to one and is the cost of the change.
@@ -185,4 +188,26 @@ Every other assertion in both modes, including the exact retained partial, the s
 Holding the child's stderr read end open in the controller was considered and rejected.
 It would remove the race and keep the exact assertion in both modes, but the parent owning that pipe and its EOF when the group dies is the production wiring this test exists to exercise, and a controller that holds it open no longer observes what production does.
 
-This addendum establishes no ordering inside the kernel beyond what the trials show, and grants no native, scenario or release acceptance.
+These observations show that SIGPIPE is compatible with configured parent-death coupling.
+They do not prove a universal lifetime guarantee, and they establish no ordering inside the kernel beyond what the trials show, and the probe's rate describes a saturating writer rather than any rate of failure on this suite or on master.
+The documented signal is tied to the creating parent thread rather than to the parent process, which matters when describing the exit of a multithreaded parent.
+This addendum grants no native, scenario or release acceptance.
+
+The precondition is met on current source.
+Removing only `Pdeathsig` from `childSysProcAttr` and running the stopped mode against the mock fixture fails `child still alive after parent terminal` at `child_lifetime_linux_test.go:507`, which is the named liveness assertion and fires before cleanup kills the child.
+The delivered assertion therefore keeps the exact requirement in the stopped mode and accepts SIGKILL or SIGPIPE in the running mode, with the accepted list closed so an unexpected crash or a normal exit still fails.
+
+Three controls built by one producer at the delivered head, each credited only because its package built and its named case failed:
+
+| Control | Removed | Case | Assertion that fired |
+| --- | --- | --- | --- |
+| `g01_no_pdeath` | parent-death coupling | stopped child, parent kill | child still alive after parent terminal |
+| `g02_other_signal` | the closed list, by reaping SIGTERM | running child, parent kill | child did not terminate from parent death by SIGKILL or SIGPIPE |
+| `g03_normal_exit` | the closed list, by reaping a normal exit | running child, parent kill | child did not terminate from parent death by SIGKILL or SIGPIPE |
+
+`g01` is the retained coupling proof and fires before cleanup kills the child.
+It also shows the cost: with the coupling removed the running mode passes, so the stopped mode is the only mode that still detects a missing `Pdeathsig`, and deleting it as duplicate coverage would remove the proof rather than a duplicate.
+`g02` and `g03` show the running mode's relaxation did not become an acceptance of any termination.
+All ten leaves of both providers pass at the delivered head under the race detector, on a host at load average 0.69 with no other suite running.
+
+The independent review packet for the delivered range is `/home/csmart/code/.aeronautes-work/reviews/20260914-db503-c9e8a21e`, whose 35-file manifest has SHA-256 `d3dcda0eb1df54428f257e0209f98961e26ee7b1f2aaf47d4f587ebefc155cc7`.

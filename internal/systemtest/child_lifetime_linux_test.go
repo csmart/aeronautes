@@ -509,8 +509,34 @@ func childLifetime(t *testing.T, h *Harness, mode string) {
 	if mode == "parent_kill" || mode == "stopped_child_parent_kill" {
 		status, err := lifetimeReapChild(pid)
 		t.Logf("adopted child wait: pid=%d status=%v signal=%v error=%v", pid, status, status.Signal(), err)
-		if err != nil || !status.Signaled() || status.Signal() != unix.SIGKILL {
-			t.Fatalf("child did not terminate from parent-death SIGKILL: pid=%d status=%v error=%v", pid, status, err)
+		// Which signal reaps a RUNNING child is not decidable here. A child
+		// inside a write to its stderr pipe when the parent dies can be
+		// reaped by SIGPIPE before the parent-death signal: observed in 13
+		// of 400 probe trials WITH the coupling configured, under a child
+		// saturating that pipe. That rate describes the probe and not this
+		// suite, but it is enough to show SIGPIPE does not indicate the
+		// coupling is missing, so requiring SIGKILL here fails
+		// intermittently on a healthy tree. Both signals follow from the
+		// parent dying; the list stays closed so an unexpected crash or a
+		// normal exit still fails.
+		//
+		// DO NOT DELETE stopped_child_parent_kill AS DUPLICATE COVERAGE.
+		// A stopped child cannot execute a write, so it cannot take
+		// SIGPIPE, and only the parent-death signal can reap it: 200 of 200
+		// probe trials. It is the ONLY mode that still detects a missing
+		// Pdeathsig: with the coupling removed this running mode PASSES,
+		// and the stopped mode fails the liveness assertion above before
+		// cleanup kills the child. Deleting that mode, or relaxing this
+		// requirement for it, removes the proof rather than a duplicate.
+		wantExact := mode == "stopped_child_parent_kill"
+		reaped := err == nil && status.Signaled() &&
+			(status.Signal() == unix.SIGKILL || (!wantExact && status.Signal() == unix.SIGPIPE))
+		if !reaped {
+			want := "SIGKILL"
+			if !wantExact {
+				want = "SIGKILL or SIGPIPE"
+			}
+			t.Fatalf("child did not terminate from parent death by %s: pid=%d status=%v error=%v", want, pid, status, err)
 		}
 	}
 	after := lifetimeSnapshot(t, root)
