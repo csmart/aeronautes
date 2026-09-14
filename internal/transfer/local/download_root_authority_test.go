@@ -188,10 +188,14 @@ func rootAuthorityCases() []rootAuthorityCase {
 	marker := []DownloadItem{rootAuthorityFile("a.bin", "native"), rootAuthorityMarker("m")}
 	markerNested := []DownloadItem{rootAuthorityFile("a.bin", "native"), rootAuthorityMarker("redirect/m")}
 	return []rootAuthorityCase{
+		// Cleanup now removes the planned files as well as the planned
+		// directories, so these two leave no residue and report none. The
+		// invariant below still binds: residue implies a report, and no
+		// residue implies none (ADR 0048).
 		{name: "engine_parent_after_stage", items: engineNested, seam: "stage", replace: "redirect",
-			wantFailed: []string{"scope/redirect/payload.bin"}, wantFailure: rootAuthorityRefusal, wantIssues: true, realRoot: "selected"},
+			wantFailed: []string{"scope/redirect/payload.bin"}, wantFailure: rootAuthorityRefusal, realRoot: "selected"},
 		{name: "engine_existing_parent_after_stage", items: engineNested, seam: "stage", replace: "redirect", existingParent: true,
-			wantFailed: []string{"scope/redirect/payload.bin"}, wantFailure: rootAuthorityRefusal, wantIssues: true, realRoot: "selected"},
+			wantFailed: []string{"scope/redirect/payload.bin"}, wantFailure: rootAuthorityRefusal, realRoot: "selected"},
 		{name: "engine_root_after_stage", items: engine, seam: "stage", replace: "root",
 			wantDone: 1, wantDisplaced: "after the last effect", realRoot: "moved"},
 		{name: "engine_stage_replaced", items: engine, seam: "stage", replace: "stage",

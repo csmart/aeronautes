@@ -264,7 +264,11 @@ func downloadRootAuthorityService(t *testing.T, h *Harness, c rootAuthorityServi
 			t.Errorf("control reported an error: %q", job.Error)
 		}
 	case stageRelocated:
-		if !strings.Contains(job.Error, rootAuthorityStageReplace) || !strings.Contains(job.Error, "stage cleanup") {
+		// A displaced stage is retained wherever it was moved, so the
+		// outcome is now the retained one rather than a bare issue count
+		// (ADR 0048 decision 9, ADR 0035 decision 7).
+		if !strings.Contains(job.Error, rootAuthorityStageReplace) ||
+			!strings.Contains(job.Error, "stage cleanup") && !strings.Contains(job.Error, "stage retained") {
 			t.Errorf("relocated stage was not reported with its diagnosis and retained cleanup: %q", job.Error)
 		}
 		key := "moved-stage/" + objects[0].rel
@@ -321,11 +325,18 @@ func downloadRootAuthorityService(t *testing.T, h *Harness, c rootAuthorityServi
 			residue++
 		}
 	}
-	if residue > 0 && !strings.Contains(job.Error, "stage cleanup") {
+	// Residue is always reported, under whichever of the three outcomes
+	// applies: cleanup not attempted, or cleanup ran and left some (ADR 0048).
+	if residue > 0 && !strings.Contains(job.Error, "stage cleanup") && !strings.Contains(job.Error, "stage retained") {
 		t.Errorf("%d stage or temporary entries remain while the job reports %q with error %q", residue, job.State, job.Error)
 	}
-	if c.route == "engine" && (c.replace == "parent" || c.replace == "stage") && !engineRefused && residue == 0 {
-		t.Errorf("refused engine placement left no retained stage: added=%v", added)
+	// A refused engine placement used to leave its stage behind. Cleanup now
+	// removes the files this job staged, so the stage goes with them and the
+	// refusal is carried by the item records rather than by residue.
+	// A stage this executor still owns is cleaned; one another actor moved
+	// is retained wherever it went, so the relocated case is excluded.
+	if c.route == "engine" && (c.replace == "parent" || c.replace == "stage") && !engineRefused && !stageRelocated && residue > 0 {
+		t.Errorf("refused engine placement retained a stage it staged itself: added=%v", added)
 	}
 	if c.route == "engine" && !engineRefused && stageCalls.Load() != 1 {
 		t.Errorf("engine boundary observed %d times", stageCalls.Load())

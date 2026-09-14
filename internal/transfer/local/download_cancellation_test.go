@@ -56,8 +56,11 @@ func TestDownloadCancelledPlacementRecords(t *testing.T) {
 		if len(report.Failures) != 1 || report.Failures[0].Name != "scope/b" || report.Failures[0].Stage != "place" || !report.Failures[0].Cancelled {
 			t.Fatalf("report failures do not name the unplaced item once: %+v", report.Failures)
 		}
-		if data, err := os.ReadFile(filepath.Join(root, ".aeronautes-stage-fixture", "b")); err != nil || string(data) != "bytes b" {
-			t.Fatalf("unplaced staged bytes were touched: %q %v", data, err)
+		// A cancel removes the partial files this job staged (ADR 0048).
+		// The stage itself goes with them, so nothing of this job's own
+		// scratch survives in the directory the operator picked.
+		if _, err := os.Lstat(filepath.Join(root, ".aeronautes-stage-fixture")); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("cancel left this job's own stage behind: %v", err)
 		}
 		if _, err := os.Lstat(filepath.Join(root, "b")); !errors.Is(err, os.ErrNotExist) {
 			t.Fatal("cancelled placement still placed the file")
@@ -65,7 +68,9 @@ func TestDownloadCancelledPlacementRecords(t *testing.T) {
 		if data, err := os.ReadFile(filepath.Join(root, "a")); err != nil || string(data) != "bytes a" {
 			t.Fatal("cancel between placements lost the placed file")
 		}
-		if report.StageCleanup == nil || report.StageCleanup.Retained || report.StageCleanup.Issues != 1 {
+		// Retained describes the disk: the stage is gone, so it is false
+		// and there is nothing left to report (ADR 0048).
+		if report.StageCleanup == nil || report.StageCleanup.Retained || report.StageCleanup.Issues != 0 {
 			t.Fatalf("stage retention after cancel differs: %+v", report.StageCleanup)
 		}
 	})

@@ -147,14 +147,14 @@ func TestDownloadRecordsPartialChildEffects(t *testing.T) {
 	beforeRequests := mock.Requests()
 	report, err := Download(t.Context(), source, partialDownloadEngine{&fsEngine{session: source}}, "remote:media", "media", "scope/", root, "fixture", plan, nil, recorder)
 	if err != nil || admitted != 2 || executed != 2 || verified != 0 || report.Done != 0 || report.Bytes != 0 || len(report.Failures) != 2 ||
-		report.StageCleanup == nil || report.StageCleanup.Retained || report.StageCleanup.Issues != 1 || mock.Requests() != beforeRequests+1 {
+		report.StageCleanup == nil || report.StageCleanup.Retained || report.StageCleanup.Issues != 0 || mock.Requests() != beforeRequests+1 {
 		t.Fatalf("partial child lost uncertainty or invented verification: %+v admit=%d execute=%d verify=%d err=%v", report, admitted, executed, verified, err)
 	}
 	stage := filepath.Join(root, ".aeronautes-stage-fixture")
-	if data, err := os.ReadFile(filepath.Join(stage, "a")); err != nil || string(data) != "byt" {
-		t.Fatalf("partial child bytes were reclaimed: %q %v", data, err)
-	}
-	for _, path := range []string{filepath.Join(stage, "b"), filepath.Join(root, "a"), filepath.Join(root, "b")} {
+	// The partial bytes the child wrote are this job's own scratch and go
+	// with the stage when the job ends (ADR 0048). The uncertainty they
+	// carried is preserved in the records, which is where it belongs.
+	for _, path := range []string{stage, filepath.Join(stage, "a"), filepath.Join(stage, "b"), filepath.Join(root, "a"), filepath.Join(root, "b")} {
 		if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("partial child created an unwitnessed final or staged file: %q %v", path, err)
 		}

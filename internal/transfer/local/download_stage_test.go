@@ -150,8 +150,9 @@ func TestDownloadStageCleanupPreservesOtherEntries(t *testing.T) {
 				link("stage/other")
 				issues = 1
 			case "partial_file":
+				// The planned file itself: this job staged it, so cleanup
+				// removes it and the directories above it follow (ADR 0048).
 				writeDownloadStageFile(t, root, "stage/nested/leaf/proof", "partial bytes")
-				issues = 3
 			case "selected_file":
 				remove("stage/nested/leaf")
 				writeDownloadStageFile(t, root, "stage/nested/leaf", "replacement bytes")
@@ -175,6 +176,10 @@ func TestDownloadStageCleanupPreservesOtherEntries(t *testing.T) {
 			}
 			want := snapshotDownloadStage(t, root)
 			if issues < 3 {
+				// The planned file goes with the planned directories when
+				// cleanup can reach them; absent in every other case, where
+				// this is a no-op (ADR 0048).
+				delete(want, filepath.Join("stage", "nested", "leaf", "proof"))
 				delete(want, filepath.Join("stage", "nested", "leaf"))
 				delete(want, filepath.Join("stage", "nested"))
 				if issues == 0 {

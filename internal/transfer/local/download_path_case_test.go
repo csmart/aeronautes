@@ -161,7 +161,7 @@ func TestDownloadPathCaseDirect(t *testing.T) {
 						wantCalls := 0
 						if route == "rclone" && files > 0 {
 							wantCalls = 1
-							want.StageCleanup = &StageCleanupResult{}
+							want.StageCleanup = &StageCleanupResult{Attempted: true}
 						}
 						if err != nil || !reflect.DeepEqual(report, want) || engine.calls != wantCalls || progressCalls == 0 {
 							t.Fatalf("safe direct control failed: report=%+v error=%v Copy calls=%d progress=%d", report, err, engine.calls, progressCalls)

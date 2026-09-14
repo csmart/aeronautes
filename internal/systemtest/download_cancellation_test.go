@@ -296,7 +296,6 @@ func downloadCancellationCase(t *testing.T, h *Harness, mode string) {
 		id = downloadCancelStart(t, h, container, "scope/", root)
 	}
 	stageName := ".aeronautes-stage-" + id
-	stage := filepath.Join(root, stageName)
 	var state string
 	var counters jobs.Counters
 	var fragments []string
@@ -327,25 +326,29 @@ func downloadCancellationCase(t *testing.T, h *Harness, mode string) {
 	case "stage_boundary":
 		state = "cancelled"
 		counters = jobs.Counters{ObjectsPlanned: 2, BytesPlanned: 14, ObjectsFailed: 2}
-		fragments = []string{"transfer failures (first: scope/a.bin: context canceled)", "download stage cleanup: 2 issues", filepath.Join(stage, "nested")}
+		// A cancel removes the files it staged, so the stage goes with them
+		// and there is no cleanup issue to report (ADR 0048).
+		fragments = []string{"transfer failures (first: scope/a.bin: context canceled)"}
 		want = map[string]downloadCancelWant{
 			"scope/a.bin":        {staging: filepath.Join(stageName, "a.bin"), execution: downloadCancelUnplaced},
 			"scope/nested/b.bin": {staging: filepath.Join(stageName, "nested", "b.bin"), execution: downloadCancelUnplaced},
 		}
 		totals = jobs.ItemTotals{Items: 2, Planned: 2, Admitted: 2, Failed: 2, Unresolved: 2, Problems: 2}
-		files = map[string][]byte{stageName + "/a.bin": a, stageName + "/nested/b.bin": b}
-		dirs = []string{stageName, stageName + "/nested"}
+		files = map[string][]byte{}
+		dirs = nil
 	case "placement_boundary":
 		state = "partial"
 		counters = jobs.Counters{ObjectsPlanned: 2, BytesPlanned: 14, ObjectsCopied: 1, ObjectsVerified: 1, BytesCopied: 7, ObjectsFailed: 1}
-		fragments = []string{"transfer failures (first: scope/b.bin: context canceled)", "context canceled", "download stage cleanup: 1 issues", stage}
+		fragments = []string{"transfer failures (first: scope/b.bin: context canceled)", "context canceled"}
 		want = map[string]downloadCancelWant{
 			"scope/a.bin": {staging: filepath.Join(stageName, "a.bin"), execution: downloadCancelCopied(7), verification: downloadCancelVerified},
 			"scope/b.bin": {staging: filepath.Join(stageName, "b.bin"), execution: downloadCancelUnplaced},
 		}
 		totals = jobs.ItemTotals{Items: 2, Planned: 2, Admitted: 2, Failed: 1, Unresolved: 1, Problems: 1}
-		files = map[string][]byte{"a.bin": a, stageName + "/b.bin": b}
-		dirs = []string{stageName}
+		// The placed file stays; the unplaced item's staged bytes are this
+		// job's own scratch and go with the stage (ADR 0048).
+		files = map[string][]byte{"a.bin": a}
+		dirs = nil
 	}
 	saved := interruptionOutcome(t, h, id, state, counters, fragments...)
 	if len(saved.Rows) != 0 || saved.Status != (app.RecoveryStatusDTO{}) || saved.Job.RecoveryRecords != 0 {

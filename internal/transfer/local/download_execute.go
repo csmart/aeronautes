@@ -220,7 +220,9 @@ func DownloadInto(ctx context.Context, src *swiftcontrol.Session, engine Engine,
 	}()
 	defer func() {
 		if d.stopped != nil {
-			report.StageCleanup = &StageCleanupResult{Retained: true}
+			// Recording failed, so cleanup was never attempted and the
+			// stage is still there. Both facts are stated (ADR 0048).
+			report.StageCleanup = &StageCleanupResult{Attempted: false, Retained: true}
 			return
 		}
 		report.StageCleanup = cleanupDownloadStage(destination, stage, stageName, engineItems)

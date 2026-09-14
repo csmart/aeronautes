@@ -542,9 +542,12 @@ func TestDownloadEngineCancellationBoundaries(t *testing.T) {
 					if got := executed["scope/"+name]; got != unplacedAfterCancel {
 						t.Fatalf("staged item left unplaced by the cancel lacks its one record: %+v", got)
 					}
-					staged, err := os.ReadFile(filepath.Join(root, ".aeronautes-stage-fixture", name))
-					if err != nil || string(staged) != "bytes "+name {
-						t.Fatal("cancellation reclaimed uncertain child data")
+					// A cancel removes the partial files this job staged
+					// (ADR 0048). These are the application's own scratch
+					// under a name it invented, not the operator's data,
+					// and the source still holds the object.
+					if _, err := os.Lstat(filepath.Join(root, ".aeronautes-stage-fixture", name)); !errors.Is(err, os.ErrNotExist) {
+						t.Fatalf("cancellation left this job's staged file behind: %v", err)
 					}
 				}
 			}
@@ -555,7 +558,7 @@ func TestDownloadEngineCancellationBoundaries(t *testing.T) {
 				if _, err := os.Lstat(filepath.Join(root, ".aeronautes-stage-fixture")); !errors.Is(err, os.ErrNotExist) {
 					t.Fatal("known cancellation created staging")
 				}
-			} else if report.StageCleanup == nil || report.StageCleanup.Retained || report.StageCleanup.Issues != map[bool]int64{true: 0, false: 1}[boundary == "control"] {
+			} else if report.StageCleanup == nil || report.StageCleanup.Retained || report.StageCleanup.Issues != 0 {
 				t.Fatalf("cancellation confused conservative cleanup with record-refusal retention: %+v", report.StageCleanup)
 			}
 			if data, err := os.ReadFile(filepath.Join(root, "keep")); err != nil || string(data) != "unrelated" {

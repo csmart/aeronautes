@@ -63,10 +63,10 @@ func assertDownloadRecords(t *testing.T, h *Harness, id, source, prefix, root st
 		byKey[item.Key] = item
 	}
 	assertDownloadItemPages(t, h, id, byKey, want)
+	// Cleanup now removes the files this job staged, so an engine download
+	// that failed items leaves nothing behind and reports no cleanup
+	// outcome (ADR 0048).
 	summary := ""
-	if !native && count > 0 {
-		summary = "download stage cleanup: 1 issues"
-	}
 	summary += fmt.Sprintf(" · item outcomes: %d failed names, %d conflicts, 0 refusals, %d unresolved, 0 unverified, %d with problems", want.Failed, want.Conflicts, want.Unresolved, want.Problems)
 	if len(saved.Audit) != 1 || saved.Audit[0].Summary != summary {
 		t.Fatalf("download terminal audit is not item-derived: %+v want=%q", saved.Audit, summary)
