@@ -2107,6 +2107,11 @@ Transfer memory budget             8 GiB
 
 These are **whole-application ceilings**, not copied independently to every job.
 
+For v1 the maximum active jobs ceiling is one and is enforced rather than defaulted, under [ADR 0047](adr/0047-single-active-job.md).
+The runner owns admission and holds that ceiling, the resize path clamps to it, and a second start queues rather than being refused.
+Application settings report the effective ceiling and refuse a larger value rather than storing one that has no effect, while leaving the persisted value as written so the decision can be reverted to the operator's earlier intent.
+This is a proposed contract and is not yet implemented.
+
 ### 38.2 Bookmark/endpoint budgets
 
 Each Swift endpoint may override:
