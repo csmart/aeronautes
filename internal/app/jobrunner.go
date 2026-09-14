@@ -20,8 +20,13 @@ type jobRunner struct {
 	mu    sync.Mutex
 	// active/capacity are the §38 admission budget; slotFreed wakes
 	// queued launches on release, resize, or queued-cancel.
-	active    int
-	capacity  int
+	active   int
+	capacity int
+	// ceiling is the hard limit capacity may never exceed, seeded from
+	// maxActiveJobsCeiling (ADR 0047). It is a runner value rather than
+	// the constant itself so TestJobCeilingSurvivesResize can still raise
+	// a runner and exercise the resize machinery; see setMaxActiveJobs.
+	ceiling   int
 	slotFreed *sync.Cond
 	cancels   map[string]context.CancelFunc
 	stopped   bool
@@ -49,6 +54,7 @@ func newJobRunner(jobStore *jobs.Store, auditStore *audit.Store) *jobRunner {
 		jobs:     jobStore,
 		audit:    auditStore,
 		capacity: defaultMaxActiveJobs,
+		ceiling:  maxActiveJobsCeiling,
 		cancels:  map[string]context.CancelFunc{},
 		owners:   map[*jobOwner]struct{}{},
 		drained:  make(chan struct{}),
@@ -155,11 +161,17 @@ func (r *jobRunner) Shutdown(ctx context.Context) error {
 // a swapped channel (review G24/H-16): running jobs stay accounted, a
 // lowered ceiling admits nothing until enough of them finish, and a
 // raised one wakes queued jobs immediately.
+// The ceiling is clamped here rather than at the settings surface because
+// this is where admission is decided: any future direct caller of this
+// path would otherwise raise a runner past the §38 limit (ADR 0047).
 func (r *jobRunner) setMaxActiveJobs(n int) {
 	if n <= 0 {
 		n = defaultMaxActiveJobs
 	}
 	r.mu.Lock()
+	if n > r.ceiling {
+		n = r.ceiling
+	}
 	r.capacity = n
 	r.mu.Unlock()
 	r.slotFreed.Broadcast()
