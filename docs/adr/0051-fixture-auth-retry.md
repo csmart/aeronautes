@@ -1,6 +1,6 @@
 # ADR 0051 — retry fixture authentication as the readiness gate already retries the write
 
-**Status:** Proposed. Nothing in it is implemented yet.
+**Status:** Accepted. Implemented in the range that carries this record.
 **Scope:** Authentication of a Swift account during `internal/systemtest` harness construction.
 It changes no product source, no assertion, no test deadline and no lane membership, and it does not alter `oracle.Connect` or any caller of it outside the harness.
 
@@ -38,7 +38,7 @@ The gap stands on the asymmetry, which is visible in the source without referenc
 
 4. **A retried success is reported, not swallowed.**
    Exhausting the deadline returns an error naming the account, the deadline, the attempt count and the last failure.
-   Succeeding after more than one attempt logs the attempt count.
+   Succeeding after more than one attempt logs the attempt count, which `Harness.account` does from the count `authenticateWithin` returns.
    A fixture that authenticates only on the fourth try is then visible in the run.
 
 5. **Nothing else changes.**
