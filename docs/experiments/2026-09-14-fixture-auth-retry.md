@@ -4,7 +4,7 @@
 
 ## What this is and is not
 
-This records an asymmetry in system-test fixture setup and proposes closing it.
+This records an asymmetry in system-test fixture setup and the change that closes it.
 It does **not** establish the cause of the failure that exposed it, and no claim here should be read as fixing that failure.
 
 ## The observation that exposed it
@@ -71,7 +71,11 @@ Retrying every failure to a thirty second deadline would make a one-account work
 
 The measurement above is what avoids it: a genuinely absent account answers 401 and can be refused at once.
 
-## Proposed contract
+That consequence was measured rather than reasoned about.
+With `AERONAUTES_SAIO_USER2` pointed at an account that does not exist and `AERONAUTES_REQUIRE_TWO_ACCOUNTS` unset, `TestDelimiterMarkerHTTPRealSwift` skips in **0.20 seconds** against the live fixture, reporting `secondary account refused authentication with HTTP 401, which no retry changes`.
+A retry that did not separate the two would have made that 30 seconds.
+
+## The contract, as delivered
 
 1. **Retry fixture authentication in `Harness.account`, not in `oracle.Connect`.**
    Eight call sites use `oracle.Connect`, and four of them authenticate against an `httptest` server — `internal/app/recovery_retention_test.go`, `internal/app/mirror_refusal_test.go`, `internal/transfer/copy/response_barrier_test.go` and `internal/transfer/local/upload_refusal_test.go`.
@@ -97,6 +101,26 @@ The retry exists so that a transient failure costs 250 milliseconds instead of a
 
 This also does not make the observed failure impossible.
 If the condition is a connection being broken repeatedly rather than once, the retry will exhaust its deadline and the test will still fail — with a better diagnosis than a single-shot error gives.
+
+## Controls, and two requirements a guard producer must meet
+
+Five controls hold this, each failing its own named case: the retry removed, a credential refusal retried, the attempt count pinned to one, the deadline reaching its branch without reporting, and the oracle not recorded on success.
+A retained self-test inserts a deliberate syntax error and confirms the producer reports a build failure rather than crediting a control that never ran.
+
+Three of those controls first failed for reasons that were not their mutation, and two of the three are requirements rather than anecdotes.
+
+**A control that hangs is not a catch, and a producer must record it as its own outcome.**
+One mutation pushed the deadline an hour out. The case then retried until the subprocess timeout, which cost ten minutes and produced no named failure.
+Had the producer treated a timeout as a catch it would have reported success for a control that never demonstrated anything, and had it crashed on the timeout it would have lost the whole run.
+The producer records `TIMED_OUT`, credits nothing for it, and the control was retargeted to break the deadline's *report* so it fails in under a second.
+
+**A producer's all-caught summary must compare the expected set against the credited set, never filter on a field that failing entries do not carry.**
+This producer first computed `all_caught` by filtering results on a key that only successfully-run controls carry, so entries recorded as `BUILD_FAILED` were skipped by the filter entirely.
+It reported `all_caught=True` while two of five controls had not run at all.
+That is worse than losing a result: it fabricates confidence, and the number it prints is the number a reader trusts instead of reading the log.
+It now compares the set of controls expected to catch against the set actually credited, and names the difference.
+
+Two smaller faults of the same family, where a name said something the value did not: two mutations rewrote the deadline test in a way that left `deadline` declared and unused, so they failed to compile rather than testing the retry; and the test fixture's counter counted HTTP requests while being named `attempts`, when one attempt makes two requests, so the first expectations were wrong against correct code.
 
 ## A count corrected in review
 

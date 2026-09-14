@@ -430,41 +430,115 @@ func (h *Harness) account(authURL, user, key, name string) (*Account, error) {
 	if err != nil {
 		return nil, err
 	}
-	ora, err := oracle.Connect(authURL, user, key)
-	if err != nil {
-		return nil, err
-	}
-	h.T.Cleanup(ora.Close)
-	a := &Account{BookmarkID: saved.ID, Oracle: ora, authURL: authURL, user: user, key: key, rawClient: &http.Client{
+	a := &Account{BookmarkID: saved.ID, authURL: authURL, user: user, key: key, rawClient: &http.Client{
 		Timeout: 30 * time.Second,
 		// The raw seed/teardown client refuses redirects too, so a
 		// misrouted setup write cannot silently land elsewhere or resend
 		// the token (match the oracle).
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}}
-	if err := h.rawAuth(a); err != nil {
+	attempts, err := h.authenticateWithin(name, a, fixtureWritableDeadline)
+	if err != nil {
 		return nil, err
+	}
+	if attempts > 1 {
+		// A retry hides an unhealthy fixture from the result. It must not
+		// hide it from the run: without this line a fourth-attempt success
+		// and a first-attempt success read identically (ADR 0051).
+		h.T.Logf("%s account authenticated on attempt %d; the fixture refused at least once", name, attempts)
 	}
 	return a, nil
 }
 
+// definitiveAuthRefusal reports whether the fixture has answered and its
+// answer settles the question. 401 and 403 mean these credentials do not
+// name a usable account, which no amount of waiting changes: tempauth
+// answers an absent account and a wrong key that way (ADR 0051). Keeping
+// this immediate is what leaves the one-account skip as fast as it was,
+// rather than costing thirty seconds at every harness construction.
+func definitiveAuthRefusal(status int) bool {
+	return status == http.StatusUnauthorized || status == http.StatusForbidden
+}
+
+// authenticateWithin connects the oracle and the raw client, retrying a
+// transient failure to the same deadline the readiness gate uses.
+//
+// The retry is here rather than in oracle.Connect because four of that
+// function's eight callers authenticate against an httptest server, where
+// an absent endpoint is the expected condition and must fail at once
+// (ADR 0051).
+//
+// A retried setup is NOT evidence of a healthy fixture. That is why a
+// success needing more than one attempt logs its attempt count: without
+// it a fixture that authenticates only on the fourth try is
+// indistinguishable from one that answered first time.
+// It returns the number of attempts it took, so the caller reports a
+// retried setup rather than this function deciding how to say it.
+func (h *Harness) authenticateWithin(label string, a *Account, within time.Duration) (int, error) {
+	h.T.Helper()
+	deadline := time.Now().Add(within)
+	for attempt := 1; ; attempt++ {
+		ora, status, err := h.tryAuthenticate(a)
+		if err == nil {
+			h.T.Cleanup(ora.Close)
+			a.Oracle = ora
+			return attempt, nil
+		}
+		if definitiveAuthRefusal(status) {
+			return attempt, fmt.Errorf("%s account refused authentication with HTTP %d, which no retry changes: %w", label, status, err)
+		}
+		if time.Now().After(deadline) {
+			return attempt, fmt.Errorf("%s account not authenticated within %s after %d attempts, last status %d: %w",
+				label, within, attempt, status, err)
+		}
+		time.Sleep(fixtureRetryInterval)
+	}
+}
+
+// tryAuthenticate makes one attempt at both calls and reports the status
+// that decided it, so the caller can tell a definitive refusal from a
+// transient one. A zero status means no answer arrived at all.
+//
+// The raw client goes first because it is the call whose status this
+// harness can observe directly. oracle.Connect reports a non-2xx only
+// inside an error string, and deciding whether to retry by parsing that
+// string would rest the decision on a message rather than on a status.
+// Once the raw client has a 2xx from the same endpoint with the same
+// credentials, an oracle failure cannot be a credential refusal, so it
+// is transient by construction and needs no status of its own.
+func (h *Harness) tryAuthenticate(a *Account) (*oracle.Oracle, int, error) {
+	status, err := h.rawAuthStatus(a)
+	if err != nil {
+		return nil, status, err
+	}
+	ora, err := oracle.Connect(a.authURL, a.user, a.key)
+	if err != nil {
+		return nil, 0, err
+	}
+	return ora, status, nil
+}
+
 // rawAuth gives the account a raw writer for test setup/teardown that
 // never touches the product.
-func (h *Harness) rawAuth(a *Account) error {
+// rawAuthStatus authenticates the raw client and returns the status that
+// decided the outcome alongside any error, so a caller can distinguish a
+// credential refusal from a connection that never answered. A zero status
+// means the request produced no response.
+func (h *Harness) rawAuthStatus(a *Account) (int, error) {
 	req, _ := http.NewRequest(http.MethodGet, a.authURL, nil)
 	req.Header.Set("X-Auth-User", a.user)
 	req.Header.Set("X-Auth-Key", a.key)
 	resp, err := a.rawClient.Do(req)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("raw auth %s as %s: HTTP %d", a.authURL, a.user, resp.StatusCode)
+		return resp.StatusCode, fmt.Errorf("raw auth %s as %s: HTTP %d", a.authURL, a.user, resp.StatusCode)
 	}
 	a.storageURL = resp.Header.Get("X-Storage-Url")
 	a.token = resp.Header.Get("X-Auth-Token")
-	return nil
+	return resp.StatusCode, nil
 }
 
 func (h *Harness) secondaryReachable() error {
@@ -479,6 +553,11 @@ func (h *Harness) secondaryReachable() error {
 // last observed, rather than waited on until the package timeout turns
 // it into a report about the wrong thing.
 const fixtureWritableDeadline = 30 * time.Second
+
+// fixtureRetryInterval paces both setup retries. Short enough that a
+// transient refusal costs a fraction of a second, long enough not to
+// spin against a fixture that is still starting.
+const fixtureRetryInterval = 250 * time.Millisecond
 
 // writableWithin proves what a test actually needs before its first write:
 // that an authenticated client can create a container on the account it
@@ -509,7 +588,7 @@ func (h *Harness) writableWithin(label string, a *Account, within time.Duration)
 			return fmt.Errorf("%s account not writable within %s: PUT /%s after %d attempts, last status %d %q, last error %v",
 				label, within, name, attempt, status, body, err)
 		}
-		time.Sleep(250 * time.Millisecond)
+		time.Sleep(fixtureRetryInterval)
 	}
 }
 
