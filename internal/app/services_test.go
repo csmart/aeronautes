@@ -646,6 +646,13 @@ func TestJobCeilingSurvivesResize(t *testing.T) {
 	// running jobs release into an orphaned channel while new jobs used
 	// an empty fresh one.
 	runner := newJobRunner(nil, nil)
+	// The production ceiling is one (ADR 0047). This raises it in-package
+	// so the case can still express its own setup. The exemption exists to
+	// preserve the only detector of the count-based admission correction
+	// below, not to make a test pass: with a clamp against the constant
+	// this case could not admit two, and the proof that a lowered ceiling
+	// holds running jobs accountable would go with it.
+	runner.ceiling = 2
 	runner.setMaxActiveJobs(2)
 	ctx := context.Background()
 	if !runner.acquireSlot(ctx) || !runner.acquireSlot(ctx) {

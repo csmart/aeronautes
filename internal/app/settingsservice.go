@@ -61,7 +61,9 @@ func (s *SettingsService) runRetention(ctx context.Context, jobStore *jobs.Store
 
 // AppSettingsDTO is the whole application-settings document.
 type AppSettingsDTO struct {
-	// MaxActiveJobs is the §38 whole-application ceiling (1..16).
+	// MaxActiveJobs is the §38 whole-application ceiling. For v1 it is
+	// enforced at one (ADR 0047), so reads report the effective value and
+	// a write above it is refused rather than stored with no effect.
 	MaxActiveJobs int `json:"maxActiveJobs"`
 	// DefaultProfile seeds transfer dialogs (§40).
 	DefaultProfile string `json:"defaultProfile"`
@@ -108,13 +110,30 @@ func (s *SettingsService) Get(ctx context.Context) (AppSettingsDTO, error) {
 			}
 		}
 	}
-	return settings, rows.Err()
+	if err := rows.Err(); err != nil {
+		return settings, err
+	}
+	// Report what will happen, not what is stored. A value persisted
+	// before the ceiling was enforced must not be read back as though it
+	// still applied; the stored row is deliberately left as written so a
+	// later revert restores the operator's earlier intent (ADR 0047).
+	if settings.MaxActiveJobs > maxActiveJobsCeiling {
+		settings.MaxActiveJobs = maxActiveJobsCeiling
+	}
+	return settings, nil
 }
 
 // Set validates, persists, and applies the settings.
 func (s *SettingsService) Set(ctx context.Context, settings AppSettingsDTO) (AppSettingsDTO, error) {
 	if settings.MaxActiveJobs < 1 || settings.MaxActiveJobs > 16 {
 		return AppSettingsDTO{}, fmt.Errorf("max active jobs %d out of range 1..16", settings.MaxActiveJobs)
+	}
+	// Refused rather than clamped: a control that appears to change
+	// something it cannot is worse than no control (ADR 0047).
+	if settings.MaxActiveJobs > maxActiveJobsCeiling {
+		return AppSettingsDTO{}, fmt.Errorf(
+			"max active jobs %d exceeds the enforced ceiling of %d",
+			settings.MaxActiveJobs, maxActiveJobsCeiling)
 	}
 	if _, err := profileBase(Profile(settings.DefaultProfile)); err != nil {
 		return AppSettingsDTO{}, err

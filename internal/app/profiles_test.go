@@ -78,8 +78,14 @@ func TestSettingsServicePersistsAndApplies(t *testing.T) {
 	if _, err := service.Set(ctx, AppSettingsDTO{MaxActiveJobs: 4, DefaultProfile: "ludicrous"}); err == nil {
 		t.Fatal("unknown default profile accepted")
 	}
-	saved, err := service.Set(ctx, AppSettingsDTO{MaxActiveJobs: 4, DefaultProfile: "aggressive"})
-	if err != nil || saved.MaxActiveJobs != 4 {
+	// Four was a valid save until the §38 ceiling became a limit rather
+	// than a default (ADR 0047). It is now refused, naming the ceiling,
+	// rather than stored as a value that would not apply.
+	if _, err := service.Set(ctx, AppSettingsDTO{MaxActiveJobs: 4, DefaultProfile: "aggressive"}); err == nil {
+		t.Fatal("a budget above the enforced ceiling was accepted")
+	}
+	saved, err := service.Set(ctx, AppSettingsDTO{MaxActiveJobs: 1, DefaultProfile: "aggressive"})
+	if err != nil || saved.MaxActiveJobs != 1 {
 		t.Fatal(err)
 	}
 	// A fresh service over the same database reads it back and applies
@@ -87,13 +93,13 @@ func TestSettingsServicePersistsAndApplies(t *testing.T) {
 	runner2 := newJobRunner(nil, nil)
 	service2 := NewSettingsService(d, runner2)
 	settings, err = service2.Get(ctx)
-	if err != nil || settings.MaxActiveJobs != 4 || settings.DefaultProfile != "aggressive" {
+	if err != nil || settings.MaxActiveJobs != 1 || settings.DefaultProfile != "aggressive" {
 		t.Fatalf("reloaded = %+v %v", settings, err)
 	}
 	runner2.mu.Lock()
 	capacity := runner2.capacity
 	runner2.mu.Unlock()
-	if capacity != 4 {
+	if capacity != 1 {
 		t.Fatalf("budget not applied at construction: capacity %d", capacity)
 	}
 }
@@ -176,7 +182,7 @@ func TestRetentionPrunesExactly(t *testing.T) {
 
 	// Retention 0 disables: nothing further is pruned.
 	if _, err := service.Set(ctx, AppSettingsDTO{
-		MaxActiveJobs: 2, DefaultProfile: "auto", AuditRetentionDays: 0, JobRetentionDays: 0,
+		MaxActiveJobs: 1, DefaultProfile: "auto", AuditRetentionDays: 0, JobRetentionDays: 0,
 	}); err != nil {
 		t.Fatal(err)
 	}

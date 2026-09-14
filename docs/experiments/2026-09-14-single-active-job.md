@@ -47,7 +47,52 @@ because it is the only test proving the resize admits against a running count ra
 through a swapped channel.
 Clamping it to the production ceiling would delete that proof rather than a duplicate.
 
-## What the implementation must show
+## What the implementation shows
+
+The ceiling is `maxActiveJobsCeiling`, one, in `internal/app/transferservice.go`.
+The runner seeds its own `ceiling` from it and `setMaxActiveJobs` clamps to that value, so
+a stored sixteen applied through the resize path leaves the capacity at one.
+A second start queues and runs when the slot frees, which the regression asserts as an
+admission rather than a refusal.
+Reading settings reports the effective ceiling while leaving the stored row as written;
+writing above the ceiling is refused with the ceiling named.
+
+The probe archived with the plan no longer completes: its first case blocks on a second
+admission that never arrives, and the run ends at the package timeout naming that case.
+That is the behaviour change, recorded in `probe-after.log`.
+The maintained regressions in `internal/app/single_active_job_test.go` are the positive
+form of the same three observations.
+
+Five deliberately broken controls, built by one producer, are each caught by their own
+named case: the resize clamp removed, the ceiling returned to two, the settings write
+refusal removed, the settings read reporting the stored value, and the runner ceiling
+seeded above the constant.
+The producer compiles the tests rather than relying on a build, because `go build` does
+not compile test files, and it records a build failure as a build failure.
+A retained self-test inserts a deliberate syntax error and confirms the producer reports
+`BUILD_FAILED` and refuses to credit it.
+
+`g05` first named the admits-one case and did not fire.
+That was a selection error rather than a gap: seeding the ceiling high leaves the capacity
+seeded from the constant, so admission is unchanged until something resizes.
+Retargeted at the resize case it fails deterministically.
+The miss is recorded because a control that appears not to fire is either a real finding
+about the code or a defect in the harness, and the two are indistinguishable until
+someone looks.
+
+## The exemption in the resize regression
+
+`TestJobCeilingSurvivesResize` raises a runner's ceiling in-package.
+That exemption exists to preserve a detector, not to make a test pass.
+It is the only case proving the correction that admission counts running jobs rather than
+swapping a channel, and with a clamp against the package constant it could not admit two,
+so the proof would go with the setup.
+Holding the ceiling on the runner keeps the application unable to raise it while that case
+still can.
+
+## What the contract required
+
+
 
 Two admissions before and one admission with the second queued after, from the same probe
 shape.
