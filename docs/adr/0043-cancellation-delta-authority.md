@@ -52,6 +52,7 @@ Read as an accepted *set* of effects with records that say which occurred, that 
    The options are to keep that, to retain deliberately and say so, or to remove the stage and its staged bytes on a graceful cancel.
    The recommendation, offered as a recommendation and not as a decision, is to retain deliberately and say so: the staged bytes are the operator's data, a cancel is not a request to discard them, and the flag should describe the disk rather than the code path that reached it.
    Decisions 1 to 6 do not depend on the answer.
+   The operator answered this on 14 September 2026, against the recommendation above, and [ADR 0048](0048-cancelled-stage-removal.md) records the decision and its limits.
 
 ## Consequences
 
