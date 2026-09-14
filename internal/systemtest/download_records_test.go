@@ -231,14 +231,9 @@ func downloadRecordsRun(t *testing.T, h *Harness, count int, native bool) {
 		t.Errorf("download loses exact failed-name totals: got=%+v want=%s %+v", saved.Job, state, want)
 	}
 	assertDownloadRecords(t, h, id, source, prefix, destination, selected, originals, native, saved)
+	// Cleanup removes the files this job staged, so an engine download with
+	// failed items leaves neither the staged copies nor the stage (ADR 0048).
 	var dirs []string
-	if !native && count > 0 {
-		stageRel := "selected/.aeronautes-stage-" + id
-		dirs = append(dirs, stageRel)
-		for name := range selected {
-			expected[stageRel+"/"+name] = originals[name]
-		}
-	}
 	assertListingLocalDelta(t, localBefore, snapshotListingLocal(t, root), expected, dirs...)
 	h.AssertNoCollateral(beforeA, h.SnapshotNamespace(h.Primary))
 	h.AssertNoCollateral(beforeB, h.SnapshotNamespace(h.Secondary))

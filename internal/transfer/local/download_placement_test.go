@@ -126,7 +126,12 @@ func TestDownloadPlacementOutcome(t *testing.T) {
 				if report.Done != 1 || report.Bytes != int64(len(body)) {
 					t.Errorf("placed bytes hidden by failed staged unlink: %+v", report)
 				}
-				if report.PostCommitIssues != 1 || len(report.Failures) != 0 || report.StageCleanup == nil || report.StageCleanup.Issues != 1 || report.StageCleanup.FirstError == "" {
+				// Cleanup now attempts the planned file before the stage
+				// directory, so a refused unlink is reported once and the
+				// rmdir it blocks once more. Retained says so: the stage
+				// really is still there (ADR 0048).
+				if report.PostCommitIssues != 1 || len(report.Failures) != 0 || report.StageCleanup == nil ||
+					report.StageCleanup.Issues != 2 || !report.StageCleanup.Retained || report.StageCleanup.FirstError == "" {
 					t.Errorf("download dropped staging cleanup refusal: %+v", report)
 				}
 			} else if report.Done != 1 || report.Bytes != int64(len(body)) || len(report.Failures) != 0 || report.PostCommitIssues != 0 || report.StageCleanup == nil || report.StageCleanup.Issues != 0 {

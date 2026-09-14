@@ -269,7 +269,7 @@ func TestDownloadNameFormDirect(t *testing.T) {
 								want.NativeRouted = fileCount
 							} else if fileCount > 0 {
 								wantCalls = 1
-								want.StageCleanup = &StageCleanupResult{}
+								want.StageCleanup = &StageCleanupResult{Attempted: true}
 							}
 							if err != nil || !reflect.DeepEqual(report, want) || engine.calls != wantCalls || progressCalls == 0 {
 								t.Fatalf("accepted control lost its exact outcome: report=%+v want=%+v error=%v Copy calls=%d want=%d progress=%d",

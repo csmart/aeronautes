@@ -55,7 +55,9 @@ So the two routes already disagree, the engine route retains by failure rather t
 
 A cancelled engine download now leaves the picked directory as it found it, apart from placed files and any ancestor directories the run created, which ADR 0043 decision 6 already refuses to remove.
 
-Eight maintained test cases change, across six test functions.
+Fourteen maintained test cases change, across ten test functions in three packages.
+The eight in `internal/transfer/local` are listed below; the other six are `TestDownloadStage`, `TestDownloadCancellation`, `TestDownloadRecords` and `TestDownloadRootAuthority` in `internal/systemtest`, each in both its mock and real-Swift form, and `TestDesktopHeldDownload` in the root package.
+The first count named only the package being edited, which is where the flag was produced rather than where it was read.
 The unit of that count is the test case that fails today against the implementation, not the assertion and not the file; one of the eight carries two distinct assertions and is marked below.
 The list was produced by running the package against the implementation rather than by reading it, after a first estimate of two proved wrong, and it is complete.
 

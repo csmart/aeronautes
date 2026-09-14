@@ -98,7 +98,12 @@ func (f *downloadStageFixture) check(t *testing.T, id, state, reason string, iss
 		result = "failed"
 	}
 	if issues > 0 {
+		// One of the three outcomes ADR 0048 requires, chosen from what is
+		// actually on disk rather than from the code path that reached it.
 		summary = fmt.Sprintf("download stage cleanup: %d issues", issues)
+		if _, err := os.Lstat(filepath.Join(f.root, "selected", ".aeronautes-stage-"+id)); err == nil {
+			summary = fmt.Sprintf("download stage retained after cleanup: %d issues", issues)
+		}
 		if !strings.Contains(saved.Job.Error, summary) {
 			t.Errorf("stage group result missing: %+v", saved.Job)
 		}
@@ -234,12 +239,20 @@ func downloadStagePlacement(t *testing.T, h *Harness, fault string) {
 			t.Fatal(err)
 		}
 		reason = "1 post-commit issues"
+		// The refused unlink is now reported, and it keeps both directories
+		// above it non-empty, so three refusals cascade (ADR 0048).
+		issues = 3
 		resume(nil)
 	case "engine_refusal":
 		reason = "fixture post-engine refusal"
 		counters.ObjectsCopied, counters.ObjectsVerified, counters.BytesCopied, counters.ObjectsFailed = 0, 0, 0, 1
 		delete(files, "selected/nested/proof.bin")
 		dirs = dirs[1:]
+		// The item never placed, so its staged file is still this job's own
+		// scratch and goes with the stage when the job ends (ADR 0048).
+		delete(files, "selected/.aeronautes-stage-"+id+"/nested/proof.bin")
+		dirs = dirs[:len(dirs)-2]
+		issues = 0
 		resume(errors.New(reason))
 	default:
 		t.Fatalf("unknown stage fault %q", fault)
@@ -322,7 +335,7 @@ func downloadStageForeign(t *testing.T, h *Harness, kind string) {
 		t.Fatalf("stage GET retried or failed: %d %v", hits.Load(), barrier.Err())
 	}
 	counters := jobs.Counters{ObjectsPlanned: 1, BytesPlanned: int64(len(f.body)), ObjectsCopied: 1, ObjectsVerified: 1, BytesCopied: int64(len(f.body))}
-	f.check(t, id, "partial", "download stage cleanup: 1 issues", 1, counters, trace, func() {
+	f.check(t, id, "partial", "issues", 1, counters, trace, func() {
 		assertListingLocalDelta(t, f.beforeLocal, snapshotListingLocal(t, f.root), map[string][]byte{"selected/nested/proof.bin": f.body}, "selected/nested", stageRel)
 	})
 }

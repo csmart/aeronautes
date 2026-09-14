@@ -567,10 +567,19 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 			if message != "" {
 				message += "; "
 			}
-			if stageCleanup.Retained {
+			// One of three outcomes, and never an assertion of the other
+			// two: cleanup did not run, or it ran and left residue, or it
+			// ran and left none (ADR 0048). Selecting on Retained alone
+			// claimed a recording failure whenever cleanup ran and
+			// deliberately left files behind.
+			switch {
+			case !stageCleanup.Attempted:
 				auditSummary = "download stage retained after required item recording failed; cleanup was not attempted"
 				message += auditSummary
-			} else {
+			case stageCleanup.Retained:
+				auditSummary = fmt.Sprintf("download stage retained after cleanup: %d issues", stageCleanup.Issues)
+				message += fmt.Sprintf("%s (first: %s)", auditSummary, stageCleanup.FirstError)
+			default:
 				auditSummary = fmt.Sprintf("download stage cleanup: %d issues", stageCleanup.Issues)
 				message += fmt.Sprintf("%s (first: %s)", auditSummary, stageCleanup.FirstError)
 			}

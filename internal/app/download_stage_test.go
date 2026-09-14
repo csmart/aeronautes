@@ -36,7 +36,7 @@ func TestDownloadStageCleanupKeepsEarlierOutcome(t *testing.T) {
 				t.Fatal(err)
 			}
 			report := &local.Report{Done: test.done, Bytes: test.done * 21,
-				StageCleanup: &local.StageCleanupResult{Issues: 3, FirstError: "owned directory retained"}}
+				StageCleanup: &local.StageCleanupResult{Issues: 3, FirstError: "owned directory retained", Attempted: true}}
 			if test.failure {
 				report.Failures = []local.Failure{{Name: "selected", Err: "selected placement refused"}}
 			}
@@ -111,5 +111,62 @@ func TestDownloadStageBoundaryPreservesEngineFailure(t *testing.T) {
 	got, err := engine.Copy(t.Context(), "source", "owned stage", []string{"selected"}, nil)
 	if !observed || got != result || !errors.Is(err, engineErr) || !errors.Is(err, boundaryErr) {
 		t.Errorf("boundary erased an engine result or either error: %+v %v", got, err)
+	}
+}
+
+// ADR 0048 decision 9: the terminal message and the audit summary name one
+// of three outcomes and assert neither of the others. Selecting on Retained
+// alone claimed a recording failure whenever cleanup ran and deliberately
+// left files behind.
+func TestDownloadStageCleanupNamesOneOfThreeOutcomes(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		cleanup *local.StageCleanupResult
+		want    string
+		absent  []string
+	}{
+		{
+			name:    "cleanup did not run",
+			cleanup: &local.StageCleanupResult{Attempted: false, Retained: true},
+			want:    "retained after required item recording failed; cleanup was not attempted",
+			absent:  []string{"retained after cleanup", "download stage cleanup:"},
+		},
+		{
+			name:    "cleanup ran and left residue",
+			cleanup: &local.StageCleanupResult{Attempted: true, Retained: true, Issues: 2, FirstError: "a link at a planned name"},
+			want:    "download stage retained after cleanup: 2 issues",
+			absent:  []string{"item recording failed", "cleanup was not attempted"},
+		},
+		{
+			name:    "cleanup ran and left nothing",
+			cleanup: &local.StageCleanupResult{Attempted: true, Issues: 1, FirstError: "a name outside the cleanup scope"},
+			want:    "download stage cleanup: 1 issues",
+			absent:  []string{"item recording failed", "retained after cleanup"},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h := newHarness(t)
+			base := jobs.Counters{ObjectsPlanned: 1, BytesPlanned: 21}
+			job, err := h.transfer.jobs.Create(t.Context(), jobs.Job{Type: jobs.TypeDownload, Counters: base})
+			if err != nil {
+				t.Fatal(err)
+			}
+			report := &local.Report{Done: 1, Bytes: 21, StageCleanup: test.cleanup}
+			h.transfer.runLocal(t.Context(), job.ID, "", 0, base, func(context.Context, func(int64, int64, int64)) (*local.Report, error) {
+				return report, nil
+			})
+			finished, err := h.transfer.jobs.Get(t.Context(), job.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(finished.Error, test.want) {
+				t.Errorf("terminal message %q does not name the outcome %q", finished.Error, test.want)
+			}
+			for _, other := range test.absent {
+				if strings.Contains(finished.Error, other) {
+					t.Errorf("terminal message %q also asserts %q", finished.Error, other)
+				}
+			}
+		})
 	}
 }
