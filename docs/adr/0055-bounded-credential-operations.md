@@ -1,6 +1,7 @@
 # ADR 0055: bounded native credential operations
 
-**Status:** Proposed. Nothing in it is implemented yet.
+**Status:** Accepted for the Linux Secret Service adapter wait bound.
+Native acceptance on the six targets remains separately required. L01 does not close.
 
 ## Context
 

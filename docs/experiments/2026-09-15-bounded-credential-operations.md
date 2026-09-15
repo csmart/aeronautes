@@ -1,7 +1,7 @@
 # Bounded native credential operations — 15 September 2026
 
 The credential adapter accepts a context and discards it.
-This record reproduces what that costs, proposes the correction in [ADR 0055](../adr/0055-bounded-credential-operations.md), and states what it leaves open.
+This record reproduces what that costs, records the correction in [ADR 0055](../adr/0055-bounded-credential-operations.md), and states what it leaves open.
 
 ## What was reproduced
 
