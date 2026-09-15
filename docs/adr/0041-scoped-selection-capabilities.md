@@ -1,6 +1,7 @@
 # ADR 0041 — scoped selection capabilities
 
-**Status:** Proposed on 13 September 2026 for the Linux finish-line item L02.
+**Status:** Accepted for the picker-issued selection token and the two local transfer boundaries that consume it, which are delivered with this decision.
+This is a bounded part of L02, not L02 itself: a trusted acknowledgement of account, container and prefix for selected local resources, presented outside the webview's control, remains open, as does the separate acknowledgement the forged force and public access-control cases need, and L02 does not close.
 **Scope:** The picker-issued selection token and the two local transfer boundaries that consume it.
 No change to supported operations or to the ADR 0020 refusals.
 This is a bounded part of L02, not L02 itself; the open remainder is named below.
