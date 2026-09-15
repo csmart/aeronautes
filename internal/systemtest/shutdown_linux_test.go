@@ -22,6 +22,7 @@ import (
 	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/bookmarks"
 	"github.com/csmart/aeronautes/internal/db"
+	"github.com/csmart/aeronautes/internal/evidence"
 	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/secrets"
 	"golang.org/x/sys/unix"
@@ -78,8 +79,10 @@ func TestShutdownParentHelper(t *testing.T) {
 	if err := connections.Connect(t.Context(), saved.ID); err != nil {
 		t.Fatal(err)
 	}
-	runner := app.NewJobRunner(store, audit.NewStore(database))
+	auditStore := audit.NewStore(database)
+	runner := app.NewJobRunner(store, auditStore)
 	find := app.NewFindService(connections)
+	mutate := app.NewMutateService(connections, auditStore, evidence.NewStore(database))
 	transfer := app.NewTransferServiceWithRunner(connections, store, runner)
 	h := &Harness{T: t, ctx: t.Context(), Transfer: transfer, Jobs: app.NewJobService(store), Primary: &Account{BookmarkID: saved.ID}}
 	id := downloadCancelStart(t, h, request.Container, "scope/", request.Root)
@@ -90,7 +93,7 @@ func TestShutdownParentHelper(t *testing.T) {
 		t.Fatalf("shutdown command: %q %v", command, err)
 	}
 	child := lifetimeChild(t, os.Getpid())
-	if err := app.ShutdownWork(context.Background(), runner, find); err != nil {
+	if err := app.ShutdownWork(context.Background(), runner, find, mutate); err != nil {
 		t.Fatal(err)
 	}
 	var status unix.WaitStatus

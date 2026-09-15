@@ -1,6 +1,7 @@
 # ADR 0053: synchronous writer shutdown ownership
 
-**Status:** Proposed. Nothing in it is implemented yet.
+**Status:** Accepted for the metadata writes v1 keeps, which are delivered with this decision.
+It does not address crash or kill, does not establish whether closing the webview window cancels an in-flight call's context, and does not close L08 or the valuable-data hold.
 
 ## Context
 

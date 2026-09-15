@@ -36,7 +36,7 @@ func TestShutdownWorkKeepsBothAdmissionsClosed(t *testing.T) {
 			cancel()
 			assertPending := func() {
 				t.Helper()
-				if err := ShutdownWork(cancelled, runner, find); !errors.Is(err, context.Canceled) {
+				if err := ShutdownWork(cancelled, runner, find, h.mutate); !errors.Is(err, context.Canceled) {
 					t.Fatalf("incomplete work drain = %v", err)
 				}
 				if err := h.db.Reader().PingContext(t.Context()); err != nil {
@@ -53,6 +53,9 @@ func TestShutdownWorkKeepsBothAdmissionsClosed(t *testing.T) {
 			if late, _, err := runner.admit(t.Context()); late != nil || !errors.Is(err, errJobRunnerStopped) {
 				t.Fatalf("job admission reopened: owner=%v err=%v", late, err)
 			}
+			if err := h.mutate.occupy(); !errors.Is(err, errWritersStopped) {
+				t.Fatalf("writer admission reopened: err=%v", err)
+			}
 			if releaseJobFirst {
 				owner.finishStart()
 			} else {
@@ -64,10 +67,10 @@ func TestShutdownWorkKeepsBothAdmissionsClosed(t *testing.T) {
 			assertPending()
 			owner.finishStart()
 			gate.unblock()
-			if err := ShutdownWork(t.Context(), runner, find); err != nil {
+			if err := ShutdownWork(t.Context(), runner, find, h.mutate); err != nil {
 				t.Fatal(err)
 			}
-			if err := ShutdownWork(cancelled, runner, find); err != nil {
+			if err := ShutdownWork(cancelled, runner, find, h.mutate); err != nil {
 				t.Fatalf("already-drained work rejected repeated wait: %v", err)
 			}
 		})
@@ -113,11 +116,11 @@ func TestShutdownWorkWaitErrors(t *testing.T) {
 					cancel()
 				}
 				defer cancel()
-				if err := ShutdownWork(ctx, runner, find); !errors.Is(err, want) {
+				if err := ShutdownWork(ctx, runner, find, h.mutate); !errors.Is(err, want) {
 					t.Fatalf("wait %s = %v, want %v", held, err, want)
 				}
 				finish()
-				if err := ShutdownWork(t.Context(), runner, find); err != nil {
+				if err := ShutdownWork(t.Context(), runner, find, h.mutate); err != nil {
 					t.Fatal(err)
 				}
 			})

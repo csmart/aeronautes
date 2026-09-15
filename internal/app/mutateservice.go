@@ -21,16 +21,34 @@ type MutateService struct {
 	connections *Connections
 	audit       *audit.Store
 	evidence    *evidence.Store
+	writers     *writerGate
 }
 
 // NewMutateService builds the service.
 func NewMutateService(connections *Connections, auditStore *audit.Store, evidenceStore *evidence.Store) *MutateService {
-	return &MutateService{connections: connections, audit: auditStore, evidence: evidenceStore}
+	return &MutateService{
+		connections: connections, audit: auditStore, evidence: evidenceStore,
+		writers: newWriterGate(),
+	}
+}
+
+// ShutdownWriters closes writer admission and waits for entered writes
+// to leave after their final record (ADR 0053).
+func (s *MutateService) ShutdownWriters(ctx context.Context) error {
+	return s.writers.Shutdown(ctx)
+}
+
+func (s *MutateService) occupy() error {
+	return s.writers.enter()
 }
 
 // UpdateObjectMetadata applies a complete metadata working copy to one
 // object (§17, §18).
 func (s *MutateService) UpdateObjectMetadata(ctx context.Context, container, name, baseFingerprint string, edit ObjectMetadataEditDTO) (MutationResultDTO, error) {
+	if err := s.occupy(); err != nil {
+		return MutationResultDTO{}, err
+	}
+	defer s.writers.leave()
 	session, err := s.connections.Session()
 	if err != nil {
 		return MutationResultDTO{}, err
@@ -78,6 +96,10 @@ func (s *MutateService) UpdateObjectMetadata(ctx context.Context, container, nam
 
 // UpdateContainer applies a complete container edit (§18, §19, §21).
 func (s *MutateService) UpdateContainer(ctx context.Context, name, baseFingerprint string, edit ContainerEditDTO) (MutationResultDTO, error) {
+	if err := s.occupy(); err != nil {
+		return MutationResultDTO{}, err
+	}
+	defer s.writers.leave()
 	session, err := s.connections.Session()
 	if err != nil {
 		return MutationResultDTO{}, err
