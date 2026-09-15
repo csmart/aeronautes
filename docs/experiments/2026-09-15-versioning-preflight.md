@@ -3,6 +3,8 @@
 15 September 2026.
 Finish-line item L09, the portion v1 keeps: unknown or changed mode
 refuses, and modern editing remains refused.
+The correction in [ADR 0054](../adr/0054-versioning-preflight-authority.md)
+establishes the mode from the write preflight and refuses when it cannot.
 The legacy transfer, delete and cleanup matrix is deferred with those
 routes and is not examined here.
 
@@ -90,4 +92,5 @@ digests in `SHA256SUMS` beside the files.
 `probe-before.log` is the four-case run, `probe-consequence.log` the
 after-state read, `conditional-container-post.log` the container
 precondition measurement, and `versioning_preflight_probe_test.go.txt`
-the probe, archived rather than committed.
+the archived before-probe. The four cases are maintained in
+`internal/systemtest/versioning_preflight_test.go`.
