@@ -3,7 +3,10 @@ package swiftcontrol
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/ncw/swift/v2"
@@ -110,6 +113,103 @@ func TestUpdateContainerConflict(t *testing.T) {
 	current, _ := s.ContainerDetail(ctx, "media")
 	if current.Meta["Interloper"] != "yes" {
 		t.Error("conflicted update clobbered the interloper's change")
+	}
+}
+
+// containerUpdateWire is a container endpoint that records HEAD and POST
+// counts so a refused edit can be shown not to have reached the store.
+type containerUpdateWire struct {
+	heads, posts atomic.Int32
+	head         func(http.Header, int32)
+}
+
+func newContainerUpdateSession(t *testing.T, wire *containerUpdateWire) *Session {
+	t.Helper()
+	auth := &fakeAuth{user: "acct:user", key: "sekrit", storagePath: "/v1/AUTH_acct"}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/auth/v1.0", auth.handle)
+	mux.HandleFunc("/v1/AUTH_acct/media", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodHead:
+			n := wire.heads.Add(1)
+			h := w.Header()
+			h.Set("X-Container-Object-Count", "0")
+			h.Set("X-Container-Bytes-Used", "0")
+			if wire.head != nil {
+				wire.head(h, n)
+			}
+			if h.Get("X-Fail-Head") == "1" {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		case http.MethodPost:
+			wire.posts.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	auth.serverURL = srv.URL
+	s, err := New(Config{AuthURL: srv.URL + "/auth/v1.0", Username: "acct:user", APIKey: "sekrit"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func TestUpdateContainerRefusesUnestablishedMode(t *testing.T) {
+	wire := &containerUpdateWire{head: func(h http.Header, n int32) {
+		if n == 1 {
+			h.Set("X-Fail-Head", "1")
+		}
+	}}
+	s := newContainerUpdateSession(t, wire)
+	_, err := s.UpdateContainer(context.Background(), "media", "", ContainerEdit{
+		Meta: map[string]string{"Note": "edited"}, Versioning: ContainerVersioning{Mode: VersioningOff},
+	})
+	if !errors.Is(err, ErrVersioningUnestablished) {
+		t.Fatalf("unestablished HEAD = %v", err)
+	}
+	if wire.posts.Load() != 0 {
+		t.Fatalf("POST count = %d, want 0", wire.posts.Load())
+	}
+	if wire.heads.Load() != 1 {
+		t.Fatalf("HEAD count = %d, want 1 (the write preflight, not a separate probe)", wire.heads.Load())
+	}
+}
+
+func TestUpdateContainerRefusesModernVersioning(t *testing.T) {
+	wire := &containerUpdateWire{head: func(h http.Header, _ int32) {
+		h.Set("X-Versions-Enabled", "true")
+	}}
+	s := newContainerUpdateSession(t, wire)
+	_, err := s.UpdateContainer(context.Background(), "media", "", ContainerEdit{
+		Meta: map[string]string{"Note": "edited"}, Versioning: ContainerVersioning{Mode: VersioningOff},
+	})
+	if !errors.Is(err, ErrModernVersioning) {
+		t.Fatalf("modern rewrite = %v", err)
+	}
+	if wire.posts.Load() != 0 {
+		t.Fatalf("POST count = %d, want 0", wire.posts.Load())
+	}
+}
+
+func TestUpdateContainerRefusesLegacyRewriteOfModern(t *testing.T) {
+	wire := &containerUpdateWire{head: func(h http.Header, _ int32) {
+		h.Set("X-Versions-Enabled", "true")
+	}}
+	s := newContainerUpdateSession(t, wire)
+	_, err := s.UpdateContainer(context.Background(), "media", "", ContainerEdit{
+		Versioning: ContainerVersioning{Mode: VersioningHistoryLocation, Archive: "media-history"},
+	})
+	if !errors.Is(err, ErrModernVersioning) {
+		t.Fatalf("legacy rewrite = %v", err)
+	}
+	if wire.posts.Load() != 0 {
+		t.Fatalf("POST count = %d, want 0", wire.posts.Load())
 	}
 }
 

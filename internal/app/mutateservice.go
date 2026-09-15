@@ -115,14 +115,6 @@ func (s *MutateService) UpdateContainer(ctx context.Context, name, baseFingerpri
 		return MutationResultDTO{}, fmt.Errorf(
 			"read ACL %q makes %s publicly readable: set ackPublic to confirm the exposure", edit.ReadACL, name)
 	}
-	// Modern object versioning (X-Versions-Enabled) has no safe editable
-	// representation in v1; refuse to rewrite such a container into a
-	// legacy location shape (grok follow-up 3, §65.10 tracks the path).
-	if current := s.currentVersioningMode(ctx, name); current == swiftcontrol.VersioningEnabled &&
-		swiftcontrol.VersioningMode(edit.VersioningMode) != swiftcontrol.VersioningEnabled {
-		return MutationResultDTO{}, fmt.Errorf(
-			"%s uses modern object versioning, which v1 cannot edit safely — manage it with swift/CLI", name)
-	}
 	adapterEdit := swiftcontrol.ContainerEdit{
 		Meta:     edit.Meta,
 		ReadACL:  edit.ReadACL,
@@ -371,18 +363,4 @@ func grantsPublicRead(acl string) bool {
 		}
 	}
 	return false
-}
-
-// currentVersioningMode reads the live container's versioning mode, or
-// "" when it cannot be resolved (the caller treats unknown as editable).
-func (s *MutateService) currentVersioningMode(ctx context.Context, name string) swiftcontrol.VersioningMode {
-	session, err := s.connections.Session()
-	if err != nil {
-		return ""
-	}
-	detail, err := session.ContainerDetail(ctx, name)
-	if err != nil {
-		return ""
-	}
-	return detail.Versioning.Mode
 }

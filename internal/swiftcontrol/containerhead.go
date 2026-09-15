@@ -136,6 +136,7 @@ func buildContainerDetail(headers map[string]string, now time.Time) *ContainerDe
 		case "X-Versions-Enabled":
 			// Modern object versioning (§21 display-only): deletes and
 			// overwrites here accumulate versions in-container.
+			editable[k] = v
 			if isTrue(v) {
 				d.Versioning = ContainerVersioning{Mode: VersioningEnabled}
 			}
