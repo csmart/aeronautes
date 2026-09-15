@@ -77,19 +77,130 @@ func TestShutdownWorkRefusesWritesAfterDrain(t *testing.T) {
 	if err := ShutdownWork(t.Context(), h.transfer.runner, find, h.mutate); err != nil {
 		t.Fatal(err)
 	}
-	result, err := h.mutate.UpdateObjectMetadata(t.Context(), "fixtures", "normal/hello.txt", "",
-		ObjectMetadataEditDTO{Meta: map[string]string{"After": "drain"}})
-	if !errors.Is(err, errWritersStopped) {
-		t.Fatalf("post-drain write = %+v err=%v", result, err)
+	for _, c := range mutateStoreWrites(h) {
+		t.Run(c.name, func(t *testing.T) {
+			if err := c.run(); !errors.Is(err, errWritersStopped) {
+				t.Fatalf("post-drain %s = %v", c.name, err)
+			}
+		})
 	}
 	after := h.mock.RequestLog()
 	if len(after) != len(before) {
 		t.Fatalf("post-drain issued store requests: before=%v after=%v", before, after)
 	}
-	if _, err := h.mutate.CreateContainer(t.Context(), ContainerCreateDTO{Name: "after-drain"}); !errors.Is(err, errWritersStopped) {
-		t.Fatalf("post-drain CreateContainer = %v", err)
+}
+
+func TestShutdownWorkWaitsForEveryMutateStoreWrite(t *testing.T) {
+	for _, c := range []struct {
+		name, method, path string
+		run                func(*MutateService) error
+	}{
+		{"CreateContainer", "PUT", "/after-hold-create", func(m *MutateService) error {
+			_, err := m.CreateContainer(context.Background(), ContainerCreateDTO{Name: "after-hold-create"})
+			return err
+		}},
+		{"CreateMarker", "PUT", "held-marker/", func(m *MutateService) error {
+			_, err := m.CreateMarker(context.Background(), "fixtures", "held-marker/")
+			return err
+		}},
+		{"DeleteMarker", "DELETE", "folder-marker/", func(m *MutateService) error {
+			return m.DeleteMarker(context.Background(), "fixtures", "folder-marker/")
+		}},
+		{"DeleteManifest", "DELETE", "external-dlo", func(m *MutateService) error {
+			_, err := m.DeleteManifest(context.Background(), "fixtures", "external-dlo")
+			return err
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			assertDrainWaitsForStoreWrite(t, c.method, c.path, c.run)
+		})
 	}
-	if err := h.mutate.DeleteMarker(t.Context(), "fixtures", "folder-marker"); !errors.Is(err, errWritersStopped) {
-		t.Fatalf("post-drain DeleteMarker = %v", err)
+}
+
+type mutateWrite struct {
+	name string
+	run  func() error
+}
+
+func mutateStoreWrites(h *harness) []mutateWrite {
+	return []mutateWrite{
+		{"UpdateObjectMetadata", func() error {
+			_, err := h.mutate.UpdateObjectMetadata(context.Background(), "fixtures", "normal/hello.txt", "",
+				ObjectMetadataEditDTO{Meta: map[string]string{"After": "drain"}})
+			return err
+		}},
+		{"UpdateContainer", func() error {
+			_, err := h.mutate.UpdateContainer(context.Background(), "fixtures", "", ContainerEditDTO{})
+			return err
+		}},
+		{"CreateContainer", func() error {
+			_, err := h.mutate.CreateContainer(context.Background(), ContainerCreateDTO{Name: "after-drain"})
+			return err
+		}},
+		{"CreateMarker", func() error {
+			_, err := h.mutate.CreateMarker(context.Background(), "fixtures", "after-drain-marker/")
+			return err
+		}},
+		{"DeleteMarker", func() error {
+			return h.mutate.DeleteMarker(context.Background(), "fixtures", "folder-marker/")
+		}},
+		{"DeleteManifest", func() error {
+			_, err := h.mutate.DeleteManifest(context.Background(), "fixtures", "external-dlo")
+			return err
+		}},
+	}
+}
+
+func assertDrainWaitsForStoreWrite(t *testing.T, method, pathPart string, run func(*MutateService) error) {
+	t.Helper()
+	h := newHarness(t)
+	h.connect(t)
+	held := make(chan struct{})
+	release := make(chan struct{})
+	var once, released sync.Once
+	unblock := func() { released.Do(func() { close(release) }) }
+	t.Cleanup(unblock)
+	h.mock.AfterRequest = func(gotMethod, path string) {
+		if gotMethod != method || !strings.Contains(path, pathPart) {
+			return
+		}
+		once.Do(func() {
+			close(held)
+			<-release
+		})
+	}
+	done := make(chan error, 1)
+	go func() { done <- run(h.mutate) }()
+	select {
+	case <-held:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("%s %s never reached the store", method, pathPart)
+	}
+	find := NewFindService(h.transfer.connections)
+	drained := make(chan error, 1)
+	go func() {
+		drained <- ShutdownWork(context.Background(), h.transfer.runner, find, h.mutate)
+	}()
+	select {
+	case err := <-drained:
+		t.Fatalf("drain returned while %s is held: %v", pathPart, err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	unblock()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("held %s = %v", pathPart, err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("held %s did not finish after release", pathPart)
+	}
+	select {
+	case err := <-drained:
+		if err != nil {
+			t.Fatalf("drain after %s left = %v", pathPart, err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("drain did not finish after %s left", pathPart)
 	}
 }
