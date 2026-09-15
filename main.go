@@ -89,8 +89,9 @@ func runDesktop(identity app.BuildIdentity, shutdown *shellShutdown,
 	}
 	jobRunner := app.NewJobRunner(jobStore, auditStore)
 	findService := app.NewFindService(connections)
+	mutateService := app.NewMutateService(connections, auditStore, evidenceStore)
 	shutdown.drain = func(ctx context.Context) error {
-		return app.ShutdownWork(ctx, jobRunner, findService)
+		return app.ShutdownWork(ctx, jobRunner, findService, mutateService)
 	}
 	transferService := app.NewTransferServiceWithRunner(connections, jobStore, jobRunner)
 	app.WireEvidenceStore(transferService, evidenceStore)
@@ -109,7 +110,7 @@ func runDesktop(identity app.BuildIdentity, shutdown *shellShutdown,
 			application.NewService(app.NewBookmarkService(bookmarkStore, connections, jobStore)),
 			application.NewService(app.NewBrowseService(connections, evidenceStore)),
 			application.NewService(app.NewInspectorService(connections, evidenceStore)),
-			application.NewService(app.NewMutateService(connections, auditStore, evidenceStore)),
+			application.NewService(mutateService),
 			application.NewService(app.NewAuditService(auditStore)),
 			application.NewService(transferService),
 			application.NewService(app.NewDeleteService(connections, jobStore, jobRunner, evidenceStore)),

@@ -58,13 +58,13 @@ That matters for the correction: the record can still be written during shutdown
 Not established: whether closing the webview window ends that request and cancels the call's context in a live shell.
 That needs a real window rather than the mock transport these probes use, and it is recorded as a limit rather than assumed either way.
 
-## Proposed correction
+## Correction
 
-Give the shell one owner for synchronous writers, in the shape it already uses for jobs and Find, and join it from the same place.
+The shell now owns synchronous writers in the shape it already uses for jobs and Find, and joins that owner from the same place.
 
 A small admission gate in `internal/app`: entering it succeeds while the shell is running and fails once shutdown has begun, and closing it refuses further entry and waits for entered work to leave.
 `MutateService` enters the gate for the whole of a write, leaving only after its final record, so the record is inside the owned region rather than after it.
-`ShutdownWork` joins that gate alongside the job runner and Find, so `wait` already covers it and `close` cannot reach the database first.
+`ShutdownWork` joins that gate alongside the job runner and Find, so `wait` covers it and `close` cannot reach the database first.
 A refused mutation returns a named sentinel, so the interface can say something true rather than reporting a write it did not attempt.
 
 The scope of the claim is the metadata capability v1 keeps.
