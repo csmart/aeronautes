@@ -1,4 +1,4 @@
-# ADR 0053: bounded native credential operations
+# ADR 0055: bounded native credential operations
 
 **Status:** Proposed. Nothing in it is implemented yet.
 
