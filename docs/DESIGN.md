@@ -5667,7 +5667,7 @@ The third is the one that matters, because `OpenDefault` runs before the shell a
 The test binary already carries a forty-five second abort for this, commented that the pinned client's prompt wait has no context; the product carries no equivalent.
 The proposed correction in [ADR 0055](adr/0055-bounded-credential-operations.md) bounds the wait at the adapter and is not yet implemented.
 Bounding a wait is not cancelling an operation: the abandoned native call continues until the service answers or the process exits, so an abandoned read returns no value while an abandoned write or delete reports an unresolved effect rather than a failure, matching what the save path already tells the operator about a key that may remain.
-Backend selection is bounded by its own deadline because it has no caller context, and a probe that does not answer selects the session store.
+Backend selection is bounded by a ten-second deadline because it has no caller context, and a probe that does not answer in that time selects the session store.
 This establishes nothing about native keychain behaviour on the six targets, which remains separately required, and it does not close L01: verified persistent-backend selection and physical cleanup and retry are untouched.
 
 ### 65.12. Proportionate remediation and a fixed finish line

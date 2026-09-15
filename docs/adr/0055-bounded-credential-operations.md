@@ -42,8 +42,10 @@ Bound the *wait*, at the adapter, and say plainly that bounding a wait is not ca
    The Secret Service may complete the operation after the caller has given up.
    This matches the existing save path, which already tells the operator that "an unused key may remain in credential storage" when a write fails.
 
-5. Backend selection is bounded by its own deadline rather than by a caller's context, because `OpenDefault` has no caller context and runs before the shell.
-   A probe that does not answer within the deadline selects the session store, which is the visible fallback §12.1 already requires.
+5. Backend selection is bounded by a **ten-second** deadline rather than by a caller's context, because `OpenDefault` has no caller context and runs before the shell.
+   Ten seconds is an order of magnitude above a healthy Secret Service delete-get-delete round trip, and short enough that a wedged service does not look like a hung launch.
+   It is not the protocol-test binary's forty-five second abort, which exists only to stop a prompt wait from hanging the suite.
+   A probe that does not answer within ten seconds selects the session store, which is the visible fallback §12.1 already requires.
    The probe entry it may have written is not treated as removed.
 
 ## What this does not establish
@@ -57,8 +59,12 @@ Verified persistent-backend selection and physical cleanup and retry are untouch
 
 It grants no release acceptance, and the valuable-data hold is unchanged.
 
-## Open for the reviewer
+## Caller context
 
-Whether a backstop deadline should also apply to the three methods when a caller supplies a context that never completes.
-The recommendation, offered as a recommendation, is no: a legitimate native prompt can take as long as an operator takes to type a password, and a fixed ceiling would cancel a working interaction.
+No backstop deadline applies to `Get`, `Put` or `Delete` when the caller supplies a context.
+A legitimate native prompt can take as long as an operator takes to type a password, and a fixed ceiling would abandon a working interaction.
 The caller's context is the mechanism; the startup probe is the one place a deadline is unavoidable because there is no caller.
+
+`Connections.activeSnapshot` passes `context.Background()` into `guardCache`.
+That path runs `bookmarks.Store.WithCurrentGeneration`, which reads the SQLite generation row and does not call the secret store.
+It is not a hole in the caller-context mechanism.
