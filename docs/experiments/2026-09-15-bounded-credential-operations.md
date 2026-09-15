@@ -34,6 +34,7 @@ The operator gets no window and no warning, and there is nothing to cancel.
 
 `internal/secrets/protocoltest/main_linux_test.go` aborts its own binary after forty-five seconds, commented "the pinned client's prompt wait has no context".
 The test binary was given a guard; the product was not.
+The production `OpenDefault` deadline is ten seconds, not that forty-five second abort: three healthy native calls return in milliseconds, and ten seconds is short enough that a wedged Secret Service does not look like a hung launch.
 
 `internal/bookmarks.Store.Save` already tells the operator that "an unused key may remain in credential storage" when a write fails, because the backend may have accepted the write before reporting failure.
 An abandoned write is the same fact arrived at by a different route, so the correction has an existing honest message to reuse rather than a new claim to invent.
