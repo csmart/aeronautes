@@ -24,6 +24,11 @@ var ErrNotFound = errors.New("secret not found")
 // that the value was removed, so it must not satisfy ErrNotFound.
 var ErrAuthorityUnreachable = errors.New("credential authority is unreachable")
 
+// ErrUnresolved reports that a native credential write or delete was
+// abandoned while the OS keychain may still complete it (ADR 0055).
+// It must not be reported as "did not happen".
+var ErrUnresolved = errors.New("credential operation unresolved")
+
 // SecretStore stores credential material by name. Names are opaque,
 // stable identifiers such as "bookmark/<id>"; values are the raw secret
 // bytes. Implementations must be safe for concurrent use and must never
