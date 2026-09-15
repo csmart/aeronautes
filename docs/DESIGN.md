@@ -5649,6 +5649,16 @@ It retries a transport error, a 5xx or any other non-2xx to the readiness gate's
 An exhausted deadline names the account, the deadline, the attempt count and the last failure; `authenticateWithin` returns the count it took and `Harness.account` logs it when it exceeds one, because a retry otherwise makes an unhealthy fixture indistinguishable from a sound one.
 The skip and fatal conditions, their wording and every assertion are unchanged, and a retried setup is not evidence that the fixture is healthy.
 
+The operator narrowed v1 on 14 September 2026 to browse, inspect, download, and metadata reading and writing, deferring copy, mirror, upload and bulk delete until each is proven.
+The [finish line](audits/2026-09-05/linux-finish-line.md) recorded that deferral describes what v1 must prove rather than what the binary refuses, leaving reachability undecided.
+[ADR 0052](adr/0052-v1-capability-gate.md) proposes that a v1 build refuse the deferred capabilities at the service entry point and hide their affordances, and it is not yet implemented.
+Refusal is the load-bearing half: hiding alone protects nothing, because the bridge is reachable from the webview independently of what the interface offers.
+The classification lives in one table naming the deferred actions, so returning a capability is removing a name rather than editing call sites, and a test holds that table exhaustive against the action inventory so a new bridge method cannot land unclassified.
+The [capability gate record](experiments/2026-09-15-v1-capability-gate.md) derives that inventory twice, from the generated bindings and from the coverage contract, and the two agree at fifty-two actions.
+Two of the fifty-two are deferred on behaviour rather than on name: a benchmark writes real objects and bulk-deletes them, and a re-run refuses every job type except copy.
+Deferred code, its tests and its existing refusals are unchanged, because those routes must work when the gate is lifted and their tests are how anyone will know; in particular the ADR 0020 Mirror refusal is checked independently of the gate, so lifting the gate cannot enable Mirror.
+A refused action is not a proven one: this bounds what a v1 build offers, closes no finding, and leaves the valuable-data release hold untouched.
+
 P30 owns shutdown ownership of synchronous writers under [ADR 0053](adr/0053-synchronous-writer-shutdown-ownership.md).
 The shell drains the job runner and the Find service, then closes the state database and releases the instance lock, and a synchronous metadata write is joined by neither.
 The [shutdown writer ownership record](experiments/2026-09-15-shutdown-writer-ownership.md) reproduces the consequence against the actual shell wiring: a write held between its store POST and its audit append does not delay the drain, the database is closed and the lock released while it is still in flight, the append then fails because the database is closed, and the call returns a nil error to its caller.
