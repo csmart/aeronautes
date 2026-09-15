@@ -5670,6 +5670,14 @@ Bounding a wait is not cancelling an operation: the abandoned native call contin
 Backend selection is bounded by a ten-second deadline because it has no caller context, and a probe that does not answer in that time selects the session store.
 This establishes nothing about native keychain behaviour on the six targets, which remains separately required, and it does not close L01: verified persistent-backend selection and physical cleanup and retry are untouched.
 
+P26 owns the versioning preflight for container metadata editing under [ADR 0054](adr/0054-versioning-preflight-authority.md).
+A container using modern object versioning is refused, because rewriting one into a legacy location shape has no safe representation in v1.
+That refusal reads the mode through a probe that returns the empty mode on any error, and refuses only on an exact match, so an unestablished mode is treated as an established absence and the edit proceeds.
+The [versioning preflight record](experiments/2026-09-15-versioning-preflight.md) reproduces it through the service against the real fixture: one refused container HEAD, with every later request passing, admitted an edit that rewrote a modern-versioned container into a legacy shape, which is the hazard the refusal names.
+The proposed correction establishes the mode from the write's own preflight read and refuses when it cannot be established, and is not yet implemented.
+It is a refusal rather than a prevention: a container carries no entity tag, and conditional container writes were measured as ignored, so the window between reading and writing cannot be closed on this protocol and is narrowed rather than removed.
+The legacy transfer, delete and cleanup portions of this item are deferred with those routes, and whether a legacy rewrite destroys stored version history is not established.
+
 ### 65.12. Proportionate remediation and a fixed finish line
 
 Safe, secure operation on valuable production data remains the first milestone.
