@@ -41,8 +41,9 @@ A metadata write in flight at shutdown delays the close until its record is dura
 A metadata write attempted after shutdown has begun is refused, with a reason the interface can state.
 The drain gains a third owner and can therefore block on a writer that does not return; that is the existing and deliberate behaviour for the other two owners, where an unproved drain is not permission to quit.
 
-The claim is scoped to the metadata writes v1 keeps.
-The gate is general and the other writes on the mutation service may enter it, but this record does not claim them.
+Every `MutateService` method that reaches the store occupies the gate: `UpdateObjectMetadata`, `UpdateContainer`, `CreateContainer`, `CreateMarker`, `DeleteMarker` and `DeleteManifest`.
+The delivered v1 claim remains the two metadata writes.
+`CreateContainer`, `CreateMarker`, `DeleteMarker` and `DeleteManifest` occupy the same gate so they cannot lose a record if they are reached; they are not claimed as v1 capabilities.
 
 This does not address crash or kill, where no drain runs.
 It does not establish whether closing the webview window cancels an in-flight call's context in a live shell, which the record states as an open limit.

@@ -14,7 +14,9 @@ func TestShutdownWorkWaitsForHeldMetadataWrite(t *testing.T) {
 	h.connect(t)
 	held := make(chan struct{})
 	release := make(chan struct{})
-	var once sync.Once
+	var once, released sync.Once
+	unblock := func() { released.Do(func() { close(release) }) }
+	t.Cleanup(unblock)
 	h.mock.AfterRequest = func(method, path string) {
 		if method != "POST" || !strings.Contains(path, "/fixtures/normal/hello.txt") {
 			return
@@ -32,7 +34,7 @@ func TestShutdownWorkWaitsForHeldMetadataWrite(t *testing.T) {
 	}()
 	select {
 	case <-held:
-	case <-time.After(10 * time.Second):
+	case <-time.After(2 * time.Second):
 		t.Fatal("write never reached the POST that changes the object")
 	}
 	find := NewFindService(h.transfer.connections)
@@ -48,12 +50,22 @@ func TestShutdownWorkWaitsForHeldMetadataWrite(t *testing.T) {
 	if err := h.db.Reader().PingContext(t.Context()); err != nil {
 		t.Fatalf("database closed under the held write: %v", err)
 	}
-	close(release)
-	if err := <-done; err != nil {
-		t.Fatalf("held write = %v", err)
+	unblock()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("held write = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("held write did not finish after release")
 	}
-	if err := <-drained; err != nil {
-		t.Fatalf("drain after leave = %v", err)
+	select {
+	case err := <-drained:
+		if err != nil {
+			t.Fatalf("drain after leave = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("drain did not finish after the write left")
 	}
 }
 
@@ -73,5 +85,11 @@ func TestShutdownWorkRefusesWritesAfterDrain(t *testing.T) {
 	after := h.mock.RequestLog()
 	if len(after) != len(before) {
 		t.Fatalf("post-drain issued store requests: before=%v after=%v", before, after)
+	}
+	if _, err := h.mutate.CreateContainer(t.Context(), ContainerCreateDTO{Name: "after-drain"}); !errors.Is(err, errWritersStopped) {
+		t.Fatalf("post-drain CreateContainer = %v", err)
+	}
+	if err := h.mutate.DeleteMarker(t.Context(), "fixtures", "folder-marker"); !errors.Is(err, errWritersStopped) {
+		t.Fatalf("post-drain DeleteMarker = %v", err)
 	}
 }

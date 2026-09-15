@@ -10,8 +10,10 @@ import (
 // renderer action.
 func ShutdownWork(ctx context.Context, runner *jobRunner, find *FindService, mutate *MutateService) error {
 	drained := find.stopFind()
-	jobErr := runner.Shutdown(ctx)
+	// Writers first: a held metadata record is unrecoverable, and a job
+	// wait can consume a shared deadline. The shell passes Background.
 	writerErr := mutate.ShutdownWriters(ctx)
+	jobErr := runner.Shutdown(ctx)
 	var findErr error
 	select {
 	case <-drained:

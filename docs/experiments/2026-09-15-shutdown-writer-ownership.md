@@ -67,8 +67,9 @@ A small admission gate in `internal/app`: entering it succeeds while the shell i
 `ShutdownWork` joins that gate alongside the job runner and Find, so `wait` covers it and `close` cannot reach the database first.
 A refused mutation returns a named sentinel, so the interface can say something true rather than reporting a write it did not attempt.
 
-The scope of the claim is the metadata capability v1 keeps.
-The gate is general, and applying it to the other writes on the mutation service costs nothing, but this record claims only the metadata writes.
+The delivered v1 claim is the metadata capability.
+Every store-reaching `MutateService` method occupies the gate: `UpdateObjectMetadata`, `UpdateContainer`, `CreateContainer`, `CreateMarker`, `DeleteMarker` and `DeleteManifest`.
+The last four are not claimed as v1 capabilities; they occupy the gate so a reached write cannot lose its record.
 
 ## Limits
 
