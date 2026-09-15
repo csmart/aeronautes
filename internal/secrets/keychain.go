@@ -40,19 +40,19 @@ func newKeychainStore(ctx context.Context) (*KeychainStore, error) {
 	}
 	probe := "probe-" + hex.EncodeToString(nonce[:])
 	if err := setKeychainValue(ctx, probe, "probe"); err != nil {
-		_ = awaitKeychain(context.Background(), "delete", func() error {
-			return keyring.Delete(service, probe)
+		_, _ = awaitKeychain(context.Background(), "delete", func() (string, error) {
+			return "", keyring.Delete(service, probe)
 		})
 		return nil, fmt.Errorf("keychain unavailable: %w", err)
 	}
-	if err := awaitKeychain(ctx, "delete", func() error {
-		return keyring.Delete(service, probe)
+	if _, err := awaitKeychain(ctx, "delete", func() (string, error) {
+		return "", keyring.Delete(service, probe)
 	}); err != nil {
 		return nil, fmt.Errorf("keychain delete failed: %w", err)
 	}
-	err := awaitKeychain(ctx, "read", func() error {
+	_, err := awaitKeychain(ctx, "read", func() (string, error) {
 		_, err := keyring.Get(service, probe)
-		return err
+		return "", err
 	})
 	if !errors.Is(err, keyring.ErrNotFound) {
 		if err == nil {
@@ -67,11 +67,8 @@ func (s *KeychainStore) Origin() Origin { return s.origin }
 
 // Get returns the named secret.
 func (*KeychainStore) Get(ctx context.Context, name string) ([]byte, error) {
-	var encoded string
-	err := awaitKeychain(ctx, "read", func() error {
-		value, err := keyring.Get(service, name)
-		encoded = value
-		return err
+	encoded, err := awaitKeychain(ctx, "read", func() (string, error) {
+		return keyring.Get(service, name)
 	})
 	if errors.Is(err, keyring.ErrNotFound) {
 		return nil, ErrNotFound
@@ -93,21 +90,18 @@ func (*KeychainStore) Put(ctx context.Context, name string, value []byte) error 
 
 func setKeychainValue(ctx context.Context, name, value string) error {
 	// Native error text may carry the key or reference being verified.
-	if err := awaitKeychain(ctx, "write", func() error {
+	if _, err := awaitKeychain(ctx, "write", func() (string, error) {
 		if err := keyring.Set(service, name, value); err != nil {
-			return errors.New("keychain write failed")
+			return "", errors.New("keychain write failed")
 		}
-		return nil
+		return "", nil
 	}); err != nil {
 		return err
 	}
 	// The pinned client can return nil after a dismissed creation prompt.
 	// Publication must not select that reference without reading its value.
-	var stored string
-	err := awaitKeychain(ctx, "read", func() error {
-		value, err := keyring.Get(service, name)
-		stored = value
-		return err
+	stored, err := awaitKeychain(ctx, "read", func() (string, error) {
+		return keyring.Get(service, name)
 	})
 	if err != nil {
 		if errors.Is(err, ErrUnresolved) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -123,8 +117,8 @@ func setKeychainValue(ctx context.Context, name, value string) error {
 
 // Delete removes the named secret.
 func (*KeychainStore) Delete(ctx context.Context, name string) error {
-	err := awaitKeychain(ctx, "delete", func() error {
-		return keyring.Delete(service, name)
+	_, err := awaitKeychain(ctx, "delete", func() (string, error) {
+		return "", keyring.Delete(service, name)
 	})
 	if errors.Is(err, keyring.ErrNotFound) {
 		return ErrNotFound
@@ -132,17 +126,25 @@ func (*KeychainStore) Delete(ctx context.Context, name string) error {
 	return err
 }
 
-func awaitKeychain(ctx context.Context, op string, run func() error) error {
+type nativeResult struct {
+	value string
+	err   error
+}
+
+func awaitKeychain(ctx context.Context, op string, run func() (string, error)) (string, error) {
 	if err := ctx.Err(); err != nil {
-		return boundKeychainError(op, err)
+		return "", boundKeychainError(op, err)
 	}
-	done := make(chan error, 1)
-	go func() { done <- run() }()
+	done := make(chan nativeResult, 1)
+	go func() {
+		value, err := run()
+		done <- nativeResult{value: value, err: err}
+	}()
 	select {
-	case err := <-done:
-		return err
+	case r := <-done:
+		return r.value, r.err
 	case <-ctx.Done():
-		return boundKeychainError(op, ctx.Err())
+		return "", boundKeychainError(op, ctx.Err())
 	}
 }
 

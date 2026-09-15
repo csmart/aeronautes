@@ -60,6 +60,10 @@ Verified persistent-backend selection and physical cleanup and retry are untouch
 
 It grants no release acceptance, and the valuable-data hold is unchanged.
 
+An abandoned write is surfaced by `bookmarks.Store.Save`, which already maps any `Put` error — including `ErrUnresolved` — to "could not save the key; an unused key may remain in credential storage".
+That is the operator-visible text; the adapter does not invent a second message.
+An abandoned read returns the context error and no value, and does not claim the key was erased.
+
 ## Caller context
 
 No backstop deadline applies to `Get`, `Put` or `Delete` when the caller supplies a context.
