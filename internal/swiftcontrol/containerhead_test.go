@@ -175,4 +175,8 @@ func TestVersionsEnabledParses(t *testing.T) {
 	if d.Versioning.Mode != VersioningEnabled {
 		t.Fatalf("mode = %q, want enabled (object_versioning)", d.Versioning.Mode)
 	}
+	off := buildContainerDetail(map[string]string{}, time.Now())
+	if d.EditableFingerprint == off.EditableFingerprint {
+		t.Fatal("X-Versions-Enabled must join the editable fingerprint")
+	}
 }

@@ -2,6 +2,7 @@ package swiftcontrol
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/textproto"
 	"sort"
@@ -10,6 +11,14 @@ import (
 
 	"github.com/ncw/swift/v2"
 )
+
+// ErrVersioningUnestablished refuses a container edit whose preflight
+// HEAD did not yield a versioning mode (ADR 0054).
+var ErrVersioningUnestablished = errors.New("versioning mode could not be established")
+
+// ErrModernVersioning refuses rewriting a container that uses modern
+// object versioning, which v1 cannot edit safely (ADR 0054).
+var ErrModernVersioning = errors.New("uses modern object versioning, which v1 cannot edit safely")
 
 // Container mutation (§18, §19, §20, §21): the caller states the
 // complete intended editable surface — the same working-copy contract as
@@ -53,7 +62,10 @@ func (s *Session) UpdateContainer(ctx context.Context, name, baseFingerprint str
 	}
 	before, err := s.ContainerDetail(ctx, name)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", name, errors.Join(ErrVersioningUnestablished, err))
+	}
+	if before.Versioning.Mode == VersioningEnabled && edit.Versioning.Mode != VersioningEnabled {
+		return nil, fmt.Errorf("%s: %w — manage it with swift/CLI", name, ErrModernVersioning)
 	}
 	result := &ContainerUpdateResult{Before: before, TransIDs: []string{before.TransID}}
 

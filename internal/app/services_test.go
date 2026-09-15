@@ -1,9 +1,11 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -484,6 +486,16 @@ func TestCreateContainerPolicyGate(t *testing.T) {
 	events, _ := h.auditSvc.Recent(ctx, 5)
 	if len(events) == 0 || events[0].Operation != "container.create" || events[0].Result != "applied" {
 		t.Errorf("audit = %+v", events)
+	}
+}
+
+func TestUpdateContainerHasNoSeparateVersioningProbe(t *testing.T) {
+	src, err := os.ReadFile("mutateservice.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(src, []byte("currentVersioningMode")) {
+		t.Fatal("a separate versioning probe treats a failed HEAD as editable; the write preflight must establish the mode")
 	}
 }
 
