@@ -32,9 +32,10 @@ func NewMutateService(connections *Connections, auditStore *audit.Store, evidenc
 	}
 }
 
-// ShutdownWriters closes writer admission and waits for entered writes
-// to leave after their final record (ADR 0053).
-func (s *MutateService) ShutdownWriters(ctx context.Context) error {
+// shutdownWriters closes writer admission and waits for entered writes
+// to leave after their final record (ADR 0053). Unexported so it is not
+// a bound Wails bridge method.
+func (s *MutateService) shutdownWriters(ctx context.Context) error {
 	return s.writers.Shutdown(ctx)
 }
 
