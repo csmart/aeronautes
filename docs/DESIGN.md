@@ -5660,6 +5660,16 @@ The correction gives synchronous writers one admission gate in the shape the job
 A refused write returns a named sentinel and issues no store request, because refusing after changing the operator's data would be worse than either refusing or proceeding.
 Crash and kill are untouched, whether closing the webview window cancels an in-flight call's context is recorded as an open limit, and P30's wider durable-outcome work and the valuable-data release hold are unchanged, so L08 does not close with this.
 
+The P10 credential adapter accepts a context on every method and discards it, because the pinned keyring client offers no context-aware call.
+A Secret Service that accepts a request and holds its reply therefore blocks the caller for as long as it likes, and cancelling that caller changes nothing.
+The [bounded credential record](experiments/2026-09-15-bounded-credential-operations.md) reproduces three intended failures against the private Secret Service fixture with two healthy controls in the same run: a cancelled write and a cancelled read each fail to return, and backend selection at startup never settles.
+The third is the one that matters, because `OpenDefault` runs before the shell and its probe is what would reject an unusable keychain; a held reply keeps the §12.1 fallback to the session store from ever being chosen, so the operator gets no window, no warning and nothing to cancel.
+The test binary already carries a forty-five second abort for this, commented that the pinned client's prompt wait has no context; the product carries no equivalent.
+The proposed correction in [ADR 0053](adr/0053-bounded-credential-operations.md) bounds the wait at the adapter and is not yet implemented.
+Bounding a wait is not cancelling an operation: the abandoned native call continues until the service answers or the process exits, so an abandoned read returns no value while an abandoned write or delete reports an unresolved effect rather than a failure, matching what the save path already tells the operator about a key that may remain.
+Backend selection is bounded by its own deadline because it has no caller context, and a probe that does not answer selects the session store.
+This establishes nothing about native keychain behaviour on the six targets, which remains separately required, and it does not close L01: verified persistent-backend selection and physical cleanup and retry are untouched.
+
 ### 65.12. Proportionate remediation and a fixed finish line
 
 Safe, secure operation on valuable production data remains the first milestone.
