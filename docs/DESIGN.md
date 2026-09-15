@@ -5649,6 +5649,17 @@ It retries a transport error, a 5xx or any other non-2xx to the readiness gate's
 An exhausted deadline names the account, the deadline, the attempt count and the last failure; `authenticateWithin` returns the count it took and `Harness.account` logs it when it exceeds one, because a retry otherwise makes an unhealthy fixture indistinguishable from a sound one.
 The skip and fatal conditions, their wording and every assertion are unchanged, and a retried setup is not evidence that the fixture is healthy.
 
+P30 owns shutdown ownership of synchronous writers under [ADR 0053](adr/0053-synchronous-writer-shutdown-ownership.md).
+The shell drains the job runner and the Find service, then closes the state database and releases the instance lock, and a synchronous metadata write is joined by neither.
+The [shutdown writer ownership record](experiments/2026-09-15-shutdown-writer-ownership.md) reproduces the consequence against the actual shell wiring: a write held between its store POST and its audit append does not delay the drain, the database is closed and the lock released while it is still in flight, the append then fails because the database is closed, and the call returns a nil error to its caller.
+A write started after the drain is admitted, reaches the store and reports success.
+So the operator's data can change, its durable record can be lost, and the interface can report success, in one shutdown.
+The framework does not close this window: its shutdown cancels the application context, runs the hooks and then calls service shutdown, and nothing waits for an in-flight service method.
+The context a service method receives is the webview request's rather than the application's, so an in-flight write is not cancelled by shutdown and its record can still be written while the database is open, which makes this an ownership and ordering problem rather than a context problem.
+The proposed correction gives synchronous writers one admission gate in the shape the job runner already uses, has a metadata write occupy it until after its final record, and joins it from the same place as the other two owners; it is not yet implemented.
+A refused write returns a named sentinel and issues no store request, because refusing after changing the operator's data would be worse than either refusing or proceeding.
+Crash and kill are untouched, whether closing the webview window cancels an in-flight call's context is recorded as an open limit, and P30's wider durable-outcome work and the valuable-data release hold are unchanged, so L08 does not close with this.
+
 ### 65.12. Proportionate remediation and a fixed finish line
 
 Safe, secure operation on valuable production data remains the first milestone.
