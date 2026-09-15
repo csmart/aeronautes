@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/csmart/aeronautes/internal/db"
@@ -65,6 +66,26 @@ func TestSaveGetRoundTrip(t *testing.T) {
 	}
 	if !bytes.Equal(key, []byte("swift-key")) {
 		t.Fatalf("Credential = %q", key)
+	}
+}
+
+type unresolvedPutStore struct{ secrets.SecretStore }
+
+func (s unresolvedPutStore) Put(context.Context, string, []byte) error {
+	return fmt.Errorf("abandoned write: %w", secrets.ErrUnresolved)
+}
+
+func TestSaveUnresolvedPutKeepsUnusedKeyWarning(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.sqlite")
+	d, err := db.Open(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { d.Close() })
+	st := NewStore(d, unresolvedPutStore{secrets.NewSessionStore()})
+	_, err = st.Save(context.Background(), sample(), []byte("swift-key"))
+	if err == nil || !strings.Contains(err.Error(), "an unused key may remain in credential storage") {
+		t.Fatalf("unresolved Put = %v", err)
 	}
 }
 
