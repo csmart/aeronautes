@@ -1,6 +1,7 @@
 # ADR 0054: the versioning refusal must rest on an established mode
 
-**Status:** Proposed. Contract only; nothing in it is implemented yet.
+**Status:** Accepted for the container-edit refusal on an established mode.
+The legacy transfer, delete and cleanup matrix is deferred. L09 does not close.
 
 ## Context
 
