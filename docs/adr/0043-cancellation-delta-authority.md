@@ -1,6 +1,7 @@
 # ADR 0043 — permitted effects and observed creation for a cancelled download
 
-**Status:** Proposed, revised after independent contract review. Contract only; no implementation is claimed by this record.
+**Status:** Accepted for the native staging boundary of a cancelled download, which is delivered with this decision.
+The open product choice in decision 7 was answered by the operator on 14 September 2026 and is recorded in [ADR 0048](0048-cancelled-stage-removal.md); engine-route cancellation and the remainder of P20 stay open.
 **Scope:** The native staging boundary of a cancelled download: what it may leave in the directory the operator picked, and what the durable records say about it.
 The engine route keeps its existing cancellation coverage. The open product choice in decision 7 is the operator's and is not decided here.
 

@@ -1,6 +1,7 @@
 # ADR 0045 — bind the remaining transfer routes to their source's content
 
-**Status:** Proposed.
+**Status:** Accepted for the local download route, which is delivered with this decision; the native copy route, the native upload route and the staged upload commit remain in the sequence.
+It does not close L05: missing and reordered segments, and whole-job source and publication substitution, remain open, as does the release hold on valuable data.
 **Scope:** Content verification on the native copy route, the local upload route and the local download route, within DS-04/P16 and finish-line item L05.
 
 ## Problem
