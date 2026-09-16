@@ -752,14 +752,28 @@ func (s *JobService) List(ctx context.Context, bookmarkID string, activeOnly boo
 	return out, nil
 }
 
-// Get returns one job.
-func (s *JobService) Get(ctx context.Context, jobID string) (*JobDTO, error) {
-	j, err := s.jobs.Get(ctx, jobID)
+// Get returns one job bound to the named bookmark (ADR 0059).
+func (s *JobService) Get(ctx context.Context, bookmarkID, jobID string) (*JobDTO, error) {
+	j, err := s.jobInAccount(ctx, bookmarkID, jobID)
 	if err != nil {
 		return nil, err
 	}
 	dto := jobDTO(j)
 	return &dto, nil
+}
+
+func (s *JobService) jobInAccount(ctx context.Context, bookmarkID, jobID string) (jobs.Job, error) {
+	if bookmarkID == "" {
+		return jobs.Job{}, fmt.Errorf("%w: name the bookmark the read is for", ErrAccountScopeChanged)
+	}
+	j, err := s.jobs.Get(ctx, jobID)
+	if err != nil {
+		return jobs.Job{}, err
+	}
+	if j.SourceBookmarkID != bookmarkID && j.DestBookmarkID != bookmarkID {
+		return jobs.Job{}, fmt.Errorf("%w: job is not for that bookmark", ErrAccountScopeChanged)
+	}
+	return j, nil
 }
 
 func jobDTO(j jobs.Job) JobDTO {

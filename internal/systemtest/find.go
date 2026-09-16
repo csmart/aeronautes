@@ -17,12 +17,12 @@ func (h *Harness) CloseFind() {
 }
 
 func (h *Harness) StartFind(ctx context.Context, container, prefix, query string) (string, *Receipt) {
-	id, err := h.Find.StartFind(ctx, container, prefix, query)
+	id, err := h.Find.StartFind(ctx, h.Primary.BookmarkID, container, prefix, query)
 	return id, &Receipt{h: h, action: "FindService.StartFind", scanID: id, err: err}
 }
 
 func (h *Harness) FindStatus(ctx context.Context, id string) (*app.FindStatusDTO, *Receipt) {
-	status, err := h.Find.FindStatus(ctx, id)
+	status, err := h.Find.FindStatus(ctx, h.Primary.BookmarkID, id)
 	r := &Receipt{h: h, action: "FindService.FindStatus", scanID: id, err: err}
 	if status != nil {
 		captured := *status
@@ -33,7 +33,7 @@ func (h *Harness) FindStatus(ctx context.Context, id string) (*app.FindStatusDTO
 }
 
 func (h *Harness) CancelFind(ctx context.Context, id string) *Receipt {
-	err := h.Find.CancelFind(ctx, id)
+	err := h.Find.CancelFind(ctx, h.Primary.BookmarkID, id)
 	return &Receipt{h: h, action: "FindService.CancelFind", scanID: id, err: err}
 }
 
@@ -60,7 +60,7 @@ func (r *Receipt) CreditFindCancelled(cancel *Receipt, requestEnded <-chan struc
 	default:
 		r.h.T.Fatal("Find cancellation credit needs observed request termination")
 	}
-	if _, err := r.h.Find.FindStatus(context.Background(), r.scanID); err == nil || err.Error() != fmt.Sprintf("no such scan %s", r.scanID) {
+	if _, err := r.h.Find.FindStatus(context.Background(), r.h.Primary.BookmarkID, r.scanID); err == nil || err.Error() != fmt.Sprintf("no such scan %s", r.scanID) {
 		r.h.T.Fatalf("Find cancellation credit needs the cancelled id to be absent: %v", err)
 	}
 	r.emit("cancel", "scan "+r.scanID+" cancelled; selected request terminated")

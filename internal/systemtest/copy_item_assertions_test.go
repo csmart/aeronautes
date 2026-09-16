@@ -48,7 +48,7 @@ func assertCopyItemRecords(t *testing.T, h *Harness, id, src, dst string, failed
 	}
 	seen := map[string]bool{}
 	for cursor := ""; ; {
-		page, err := h.Jobs.Items(t.Context(), id, cursor, 100)
+		page, err := h.Jobs.Items(t.Context(), h.Primary.BookmarkID, id, cursor, 100)
 		if err != nil || page.Status != "available" || len(page.Items) > 100 {
 			t.Fatalf("actual Copy public page unavailable: %+v %v", page, err)
 		}
@@ -82,7 +82,7 @@ func assertCopyItemRecords(t *testing.T, h *Harness, id, src, dst string, failed
 		t.Fatal(err)
 	}
 	assertCopyItemDiagnosticText(t, encoded)
-	public, err := h.Jobs.ItemTotals(t.Context(), id)
+	public, err := h.Jobs.ItemTotals(t.Context(), h.Primary.BookmarkID, id)
 	if err != nil || public.Status != "available" || public.Failed != want.Failed || public.Unresolved != 0 || public.Unverified != 0 {
 		t.Fatalf("public Copy totals differ: %+v %v", public, err)
 	}

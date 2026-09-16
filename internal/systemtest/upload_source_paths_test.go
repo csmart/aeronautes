@@ -235,7 +235,7 @@ func uploadSourcePaths(t *testing.T, h *Harness, tc uploadSourceCase) {
 			t.Errorf("actual upload read a different source: selected=%q uploaded=%q", selected, body)
 		}
 	}
-	visible, err := h.Jobs.Get(t.Context(), id)
+	visible, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
 	if err != nil || !reflect.DeepEqual(visible, saved.Job) {
 		t.Errorf("public and durable source result differ: %+v %v", visible, err)
 	}

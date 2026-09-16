@@ -98,7 +98,7 @@ func TestJobShutdownCancelsQueuedFamilies(t *testing.T) {
 			t.Cleanup(func() { cleanupShutdownJob(t, h, id) })
 			requests := h.mock.Requests()
 			shutdownTestRunner(t, runner)
-			job, err := h.jobsSvc.Get(t.Context(), id)
+			job, err := h.jobsSvc.Get(t.Context(), h.bookmarkID(), id)
 			if err != nil || job.State != "cancelled" || job.StartedAt != "" {
 				t.Fatalf("queued shutdown: job=%+v error=%v", job, err)
 			}
@@ -252,7 +252,7 @@ func TestJobShutdownPreservesPersistenceFailure(t *testing.T) {
 					if runner.jobs.Available() == nil || string(row.State) != phase || len(events) != 0 {
 						t.Fatalf("failed completion appeared saved: row=%+v audit=%v available=%v", row, events, runner.jobs.Available())
 					}
-					if visible, err := h.jobsSvc.Get(t.Context(), id); visible != nil || err == nil {
+					if visible, err := h.jobsSvc.Get(t.Context(), h.bookmarkID(), id); visible != nil || err == nil {
 						t.Fatalf("stale result remained available: job=%+v error=%v", visible, err)
 					}
 				}

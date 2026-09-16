@@ -101,11 +101,11 @@ func checkHistoricalDownloadRecordVersion(t *testing.T, h *Harness) {
 	if err := h.jobStore.Transition(t.Context(), historical.ID, jobs.StateCancelled); err != nil {
 		t.Fatal(err)
 	}
-	page, err := h.Jobs.Items(t.Context(), historical.ID, "", 100)
+	page, err := h.Jobs.Items(t.Context(), h.Primary.BookmarkID, historical.ID, "", 100)
 	if err != nil || page.Status != "not_captured" || len(page.Items) != 0 || page.NextCursor != "" {
 		t.Fatalf("historical version-zero download was reinterpreted as available empty history: %+v %v", page, err)
 	}
-	oldTotals, err := h.Jobs.ItemTotals(t.Context(), historical.ID)
+	oldTotals, err := h.Jobs.ItemTotals(t.Context(), h.Primary.BookmarkID, historical.ID)
 	if err != nil || oldTotals != (app.JobItemTotalsDTO{Status: "not_captured"}) {
 		t.Fatalf("historical totals changed: %+v %v", oldTotals, err)
 	}

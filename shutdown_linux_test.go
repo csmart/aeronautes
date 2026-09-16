@@ -142,7 +142,7 @@ func testDesktopHeldDownload(t *testing.T, callback, runError bool) {
 		closeDatabase := shutdown.closeDatabase
 		shutdown.closeDatabase = func() error {
 			defer close(closed)
-			job, err := jobService.Get(t.Context(), jobID)
+			job, err := jobService.Get(t.Context(), saved.ID, jobID)
 			if err != nil || job.State != "partial" || job.FinishedAt == "" ||
 				job.Counters.ObjectsPlanned != 1 || job.Counters.ObjectsFailed != 1 ||
 				job.Counters.ObjectsCopied != 0 || job.Counters.ObjectsVerified != 0 ||
@@ -170,7 +170,7 @@ func testDesktopHeldDownload(t *testing.T, callback, runError bool) {
 				observed <- errors.New("actual shell did not cancel its owned download")
 				return
 			}
-			if _, err := jobService.Get(context.Background(), jobID); err != nil {
+			if _, err := jobService.Get(context.Background(), saved.ID, jobID); err != nil {
 				observed <- fmt.Errorf("held owner lost database: %w", err)
 				return
 			}
@@ -208,7 +208,7 @@ func testDesktopHeldDownload(t *testing.T, callback, runError bool) {
 	if !checkedClose {
 		t.Fatal("actual caller skipped checked database close")
 	}
-	if _, err := jobService.Get(t.Context(), jobID); err == nil {
+	if _, err := jobService.Get(t.Context(), jobID, jobID); err == nil {
 		t.Fatal("successful return left the state database open")
 	}
 	if acquired, err := shellOtherProcessLock(t.Context(), shellStateDir(t)); !acquired || err != nil {

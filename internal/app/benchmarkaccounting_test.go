@@ -290,7 +290,7 @@ func (f *benchmarkAccountingFixture) join(t *testing.T) {
 
 func (f *benchmarkAccountingFixture) assertOutcome(t *testing.T, requests []string) {
 	t.Helper()
-	job, err := f.h.jobsSvc.Get(t.Context(), f.jobID)
+	job, err := f.h.jobsSvc.Get(t.Context(), f.h.bookmarkID(), f.jobID)
 	if err != nil || job == nil {
 		t.Fatalf("Get after joined benchmark: %+v %v", job, err)
 	}
@@ -354,7 +354,7 @@ func (f *benchmarkAccountingFixture) assertOutcome(t *testing.T, requests []stri
 	if err != nil || len(history.Jobs) != 1 || !reflect.DeepEqual(history.Jobs[0], *job) {
 		t.Errorf("public Get/History disagree after join: %+v %v", history, err)
 	}
-	events, err := f.h.auditSvc.Recent(t.Context(), 20)
+	events, err := f.h.auditSvc.RecentFor(t.Context(), f.h.bookmarkID(), 20)
 	if err != nil {
 		t.Fatal(err)
 	}

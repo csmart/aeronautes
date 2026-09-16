@@ -227,7 +227,7 @@ func assertUploadFaultObservation(t *testing.T, item jobs.ItemRecord, mode strin
 
 func assertUploadFaultAvailability(t *testing.T, h *Harness, id string, control bool) {
 	t.Helper()
-	visible, err := h.Jobs.Get(t.Context(), id)
+	visible, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
 	if control {
 		if err != nil || visible == nil || h.jobStore.Available() != nil {
 			t.Fatalf("writable upload control acquired an unavailable latch: %+v %v", visible, err)
@@ -237,10 +237,10 @@ func assertUploadFaultAvailability(t *testing.T, h *Harness, id string, control 
 	if err == nil || visible != nil || !strings.Contains(err.Error(), "unavailable") {
 		t.Fatalf("upload recording failure exposed stale status: %+v %v", visible, err)
 	}
-	if items, err := h.Jobs.Items(t.Context(), id, "", 100); err == nil || items.Items != nil {
+	if items, err := h.Jobs.Items(t.Context(), h.Primary.BookmarkID, id, "", 100); err == nil || items.Items != nil {
 		t.Fatalf("upload recording failure exposed partial public history: %+v %v", items, err)
 	}
-	if totals, err := h.Jobs.ItemTotals(t.Context(), id); err == nil || totals != (app.JobItemTotalsDTO{}) {
+	if totals, err := h.Jobs.ItemTotals(t.Context(), h.Primary.BookmarkID, id); err == nil || totals != (app.JobItemTotalsDTO{}) {
 		t.Fatalf("upload recording failure invented public totals: %+v %v", totals, err)
 	}
 	for _, kind := range []jobs.Type{jobs.TypeCopy, jobs.TypeUpload, jobs.TypeDownload, jobs.TypeMirror, jobs.TypeMirrorPreview, jobs.TypeDeletePrefix, jobs.TypeEmpty, jobs.TypeDeleteCont} {

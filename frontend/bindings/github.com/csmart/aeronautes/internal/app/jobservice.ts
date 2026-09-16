@@ -15,25 +15,25 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as $models from "./models.js";
 
 /**
- * Get returns one job.
+ * Get returns one job bound to the named bookmark (ADR 0059).
  */
-export function Get(jobID: string): $CancellablePromise<$models.JobDTO | null> {
-    return $Call.ByID(3943386922, jobID);
+export function Get(bookmarkID: string, jobID: string): $CancellablePromise<$models.JobDTO | null> {
+    return $Call.ByID(3943386922, bookmarkID, jobID);
 }
 
 export function History(bookmarkID: string, cursor: string, limit: number): $CancellablePromise<$models.JobHistoryDTO> {
     return $Call.ByID(2144743990, bookmarkID, cursor, limit);
 }
 
-export function ItemTotals(jobID: string): $CancellablePromise<$models.JobItemTotalsDTO> {
-    return $Call.ByID(2590407842, jobID);
+export function ItemTotals(bookmarkID: string, jobID: string): $CancellablePromise<$models.JobItemTotalsDTO> {
+    return $Call.ByID(2590407842, bookmarkID, jobID);
 }
 
 /**
  * Items keeps SQLite cursors as decimal strings across the JavaScript boundary.
  */
-export function Items(jobID: string, cursor: string, limit: number): $CancellablePromise<$models.JobItemPageDTO> {
-    return $Call.ByID(1806834634, jobID, cursor, limit);
+export function Items(bookmarkID: string, jobID: string, cursor: string, limit: number): $CancellablePromise<$models.JobItemPageDTO> {
+    return $Call.ByID(1806834634, bookmarkID, jobID, cursor, limit);
 }
 
 /**

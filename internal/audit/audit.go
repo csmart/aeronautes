@@ -10,6 +10,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -146,38 +147,14 @@ func (s *Store) AppendTx(ctx context.Context, tx *sql.Tx, e Event) error {
 	return err
 }
 
-// Recent returns the newest events, newest first, at most limit.
-func (s *Store) Recent(ctx context.Context, limit int) ([]Event, error) {
-	if limit <= 0 || limit > 1000 {
-		limit = 100
-	}
-	rows, err := s.db.Reader().QueryContext(ctx, `
-		SELECT id, at, COALESCE(bookmark_id,''), operation, resource, summary, result, COALESCE(transaction_ids_json,'')
-		FROM audit_events ORDER BY id DESC LIMIT ?`, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
+// ErrBookmarkRequired refuses an unscoped trail read (ADR 0059).
+var ErrBookmarkRequired = errors.New("name the bookmark the read is for")
 
-	var out []Event
-	for rows.Next() {
-		var e Event
-		var at, result, transIDs string
-		if err := rows.Scan(&e.ID, &at, &e.BookmarkID, &e.Operation, &e.Resource, &e.Summary, &result, &transIDs); err != nil {
-			return nil, err
-		}
-		if e.At, err = time.Parse(time.RFC3339, at); err != nil {
-			return nil, fmt.Errorf("audit event %d: bad timestamp: %w", e.ID, err)
-		}
-		e.Result = Result(result)
-		if transIDs != "" {
-			if err := json.Unmarshal([]byte(transIDs), &e.TransIDs); err != nil {
-				return nil, fmt.Errorf("audit event %d: bad transaction ids: %w", e.ID, err)
-			}
-		}
-		out = append(out, e)
-	}
-	return out, rows.Err()
+// Recent is the unscoped newest-events path. It always refuses: a trail
+// read must name the bookmark, so the bridge method that still calls this
+// cannot answer across accounts (ADR 0059).
+func (s *Store) Recent(ctx context.Context, limit int) ([]Event, error) {
+	return nil, ErrBookmarkRequired
 }
 
 // Query narrows a trail read (§50 viewer): all filters AND together.

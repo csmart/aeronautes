@@ -41,7 +41,7 @@ func TestMirrorRefusesAllWorkRealSwift(t *testing.T) {
 			t.Fatalf("outside alias %s is not readable: %+v", name, object)
 		}
 	}
-	auditBefore, err := h.Audit.Recent(ctx, 100)
+	auditBefore, err := h.Audit.RecentFor(ctx, h.Primary.BookmarkID, 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestMirrorRefusesAllWorkRealSwift(t *testing.T) {
 		if rows, err := h.Jobs.List(ctx, "", false, 100); err != nil || len(rows) != 0 {
 			t.Fatalf("refused Mirror created jobs: %+v, %v", rows, err)
 		}
-		if events, err := h.Audit.Recent(ctx, 100); err != nil || !reflect.DeepEqual(events, auditBefore) {
+		if events, err := h.Audit.RecentFor(ctx, h.Primary.BookmarkID, 100); err != nil || !reflect.DeepEqual(events, auditBefore) {
 			t.Fatalf("refused Mirror changed audit history: %+v, %v", events, err)
 		}
 	}

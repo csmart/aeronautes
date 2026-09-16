@@ -141,7 +141,7 @@ func copyListingFidelityRun(t *testing.T, h *Harness, tc copyListingFidelityCase
 	}
 	copyCompletionAwaitPins(t, h)
 	saved := copyCompletionRead(t, h.database, id)
-	visible, err := h.Jobs.Get(t.Context(), id)
+	visible, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
 	if err != nil || !reflect.DeepEqual(visible, saved.Job) {
 		t.Errorf("public/durable summary mismatch: %v", err)
 	}

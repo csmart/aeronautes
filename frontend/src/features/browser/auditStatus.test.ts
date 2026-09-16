@@ -7,7 +7,7 @@ const queryError = "Audit events are unavailable. Retry this search.";
 const pageError = "More audit events are unavailable. Previously loaded results are shown.";
 
 function audit(id: number, operation = "copy.object"): AuditEventDTO {
-  return { id, at: "", operation, resource: `object-${id}`, summary: operation,
+  return { id, at: "", bookmarkId: "", operation, resource: `object-${id}`, summary: operation,
     result: "applied", transIds: ["tx-owned"] };
 }
 

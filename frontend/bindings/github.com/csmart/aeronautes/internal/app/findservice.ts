@@ -22,21 +22,21 @@ import * as $models from "./models.js";
  * CancelFind stops a scan and forgets it (the UI keeps whatever it
  * last polled).
  */
-export function CancelFind(id: string): $CancellablePromise<void> {
-    return $Call.ByID(4018385367, id);
+export function CancelFind(bookmarkID: string, id: string): $CancellablePromise<void> {
+    return $Call.ByID(4018385367, bookmarkID, id);
 }
 
 /**
  * FindStatus polls one scan.
  */
-export function FindStatus(id: string): $CancellablePromise<$models.FindStatusDTO | null> {
-    return $Call.ByID(1953031115, id);
+export function FindStatus(bookmarkID: string, id: string): $CancellablePromise<$models.FindStatusDTO | null> {
+    return $Call.ByID(1953031115, bookmarkID, id);
 }
 
 /**
  * StartFind begins one scan over the container (optionally under a
  * prefix), matching a case-insensitive substring. Returns the scan id.
  */
-export function StartFind(container: string, prefix: string, query: string): $CancellablePromise<string> {
-    return $Call.ByID(3651149465, container, prefix, query);
+export function StartFind(bookmarkID: string, container: string, prefix: string, query: string): $CancellablePromise<string> {
+    return $Call.ByID(3651149465, bookmarkID, container, prefix, query);
 }

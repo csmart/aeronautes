@@ -348,6 +348,37 @@ func (c *Connections) Session() (*swiftcontrol.Session, error) {
 	return entry.session, err
 }
 
+// scopedSession binds a live Swift read to the bookmark the caller named.
+// The generation is resolved from the store rather than taken from the
+// connected endpoint, matching ADR 0049: a bookmark re-saved to another
+// account without reconnecting is exactly what a cached endpoint cannot
+// see. A mismatch refuses rather than answering from whichever connection
+// happens to be active (ADR 0049, ADR 0059).
+func (c *Connections) scopedSession(ctx context.Context, bookmarkID string) (*swiftcontrol.Session, ListingScopeDTO, error) {
+	if bookmarkID == "" {
+		return nil, ListingScopeDTO{}, fmt.Errorf("%w: name the bookmark the read is for", ErrNotConnected)
+	}
+	activeID, connectedGeneration, connected := c.activeEndpoint()
+	if !connected {
+		return nil, ListingScopeDTO{}, ErrNotConnected
+	}
+	if activeID != bookmarkID {
+		return nil, ListingScopeDTO{}, ErrAccountScopeChanged
+	}
+	entry, err := c.sessionEntryFor(ctx, bookmarkID)
+	if err != nil {
+		return nil, ListingScopeDTO{}, err
+	}
+	if entry.generation != connectedGeneration {
+		return nil, ListingScopeDTO{}, ErrAccountScopeChanged
+	}
+	session, err := c.Session()
+	if err != nil {
+		return nil, ListingScopeDTO{}, err
+	}
+	return session, ListingScopeDTO{BookmarkID: activeID, Generation: connectedGeneration}, nil
+}
+
 // ActiveBookmarkID returns the connected bookmark's id, "" when none —
 // the scope key for evidence and other per-endpoint state.
 func (c *Connections) ActiveBookmarkID() string {

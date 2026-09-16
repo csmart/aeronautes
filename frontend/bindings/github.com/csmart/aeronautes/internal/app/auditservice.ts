@@ -22,6 +22,16 @@ export function Recent(limit: number): $CancellablePromise<$models.AuditEventDTO
 }
 
 /**
+ * RecentFor is the bound §50 newest-events read (ADR 0059). It returns
+ * only the named bookmark's events, each restating that bookmark.
+ * The unscoped Recent method still exists on this type but the store
+ * refuses it, so it cannot answer across accounts.
+ */
+export function RecentFor(bookmarkID: string, limit: number): $CancellablePromise<$models.AuditEventDTO[] | null> {
+    return $Call.ByID(1656045624, bookmarkID, limit);
+}
+
+/**
  * Search reads the trail under filters, newest first.
  */
 export function Search(q: $models.AuditQueryDTO): $CancellablePromise<$models.AuditEventDTO[] | null> {

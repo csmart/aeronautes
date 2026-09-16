@@ -94,6 +94,7 @@ export function newFakeApi(): Api {
     audit.push({
       id: auditId++,
       at: new Date().toISOString(),
+      bookmarkId: "",
       operation,
       resource,
       summary: `${operation} on ${resource}`,
@@ -141,6 +142,7 @@ export function newFakeApi(): Api {
       rawHeaders: { "X-Trans-Id": "txfake" },
       transId: "txfake",
       editableFingerprint: objectFingerprint(container, name),
+      scope: { bookmarkId: "", generation: 0 },
     };
   }
 
@@ -169,6 +171,7 @@ export function newFakeApi(): Api {
       transId: "txfake",
       editableFingerprint: containerFingerprint(name),
       class: c.segmentRole,
+      scope: { bookmarkId: "", generation: 0 },
     };
   }
 
@@ -282,23 +285,31 @@ export function newFakeApi(): Api {
       return { rows, nextMarker: full ? rows[rows.length - 1].name : "", scope: { bookmarkId, generation: 1 } };
     },
 
-    objectDetail: async (container, name) => objectDetailOf(container, name),
+    objectDetail: async (container, name, bookmarkId) => ({
+      ...objectDetailOf(container, name),
+      scope: { bookmarkId: bookmarkId ?? "", generation: 1 },
+    }),
 
-    prefixDetail: async (container, prefix): Promise<PrefixDetailDTO> => {
+    prefixDetail: async (container, prefix, bookmarkId): Promise<PrefixDetailDTO> => {
       const self = findObject(container, prefix);
+      const scope = { bookmarkId: bookmarkId ?? "", generation: 1 };
       if (!self) {
-        return { prefix, markerBacked: false, selfObject: null };
+        return { prefix, markerBacked: false, selfObject: null, scope };
       }
       return {
         prefix,
         markerBacked: self.bytes === 0 && self.contentType === "application/directory",
         selfObject: objectDetailOf(container, prefix),
+        scope,
       };
     },
 
-    containerDetail: async (name) => containerDetailOf(name),
+    containerDetail: async (name, bookmarkId) => ({
+      ...containerDetailOf(name),
+      scope: { bookmarkId: bookmarkId ?? "", generation: 1 },
+    }),
 
-    sloManifest: async (_container, name) => {
+    sloManifest: async (_container, name, bookmarkId) => {
       const large = largeObjectDetail[name];
       if (!large || large.kind !== "slo") {
         throw new Error("not an SLO");
@@ -317,6 +328,7 @@ export function newFakeApi(): Api {
             dataSize: 0,
           };
         }),
+        scope: { bookmarkId: bookmarkId ?? "", generation: 1 },
       };
     },
 
@@ -420,7 +432,8 @@ export function newFakeApi(): Api {
         contentType: "application/directory",
       });
       record("marker.create", `${container}/${prefix}`, "applied");
-      return { prefix, markerBacked: true, selfObject: objectDetailOf(container, prefix) };
+      return { prefix, markerBacked: true, selfObject: objectDetailOf(container, prefix),
+        scope: { bookmarkId: "", generation: 0 } };
     },
 
     deleteMarker: async (container, prefix) => {
@@ -437,7 +450,7 @@ export function newFakeApi(): Api {
       record("marker.delete", `${container}/${prefix}`, "applied");
     },
 
-    dloSegments: async (manifest) => {
+    dloSegments: async (manifest, bookmarkId) => {
       const slash = manifest.indexOf("/");
       const container = manifest.slice(0, slash);
       const prefix = manifest.slice(slash + 1);
@@ -462,6 +475,7 @@ export function newFakeApi(): Api {
         segments,
         hasMore: all.length > limit,
         previewBytes: segments.reduce((sum, s) => sum + s.bytes, 0),
+        scope: { bookmarkId: bookmarkId ?? "", generation: 1 },
       };
     },
 
@@ -721,7 +735,7 @@ export function newFakeApi(): Api {
     appSettings: async () => ({ maxActiveJobs: 2, defaultProfile: "auto", auditRetentionDays: 90, jobRetentionDays: 30 }),
     saveAppSettings: async (settings) => settings,
     startFind: async (container, prefix, query) => "find-1",
-    findStatus: async (id) => ({
+    findStatus: async (id, bookmarkId) => ({
       scanned: 1234,
       matches: [
         { name: "photos/report.jpg", bytes: 100 },
@@ -731,6 +745,7 @@ export function newFakeApi(): Api {
       done: true,
       error: "",
       objectsPerSecond: 5000,
+      scope: bookmarkId ? { bookmarkId, generation: 1 } : undefined,
     }),
     cancelFind: async (id) => {},
     checkSegmentOwnership: async (req) => ({

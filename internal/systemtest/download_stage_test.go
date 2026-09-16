@@ -83,7 +83,7 @@ func (f *downloadStageFixture) check(t *testing.T, id, state, reason string, iss
 	h.AwaitJob(id)
 	copyCompletionAwaitPins(t, h, h.Primary)
 	saved := uploadRecoveryRead(t, h.database, id)
-	visible, err := h.Jobs.Get(t.Context(), id)
+	visible, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
 	if err != nil || !reflect.DeepEqual(visible, saved.Job) || saved.Job.State != state || saved.Job.Counters != counters {
 		t.Fatalf("stage public/durable outcome differs: %+v %v", saved.Job, err)
 	}
@@ -367,7 +367,7 @@ func downloadStageExisting(t *testing.T, h *Harness, kind string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	queued, err := h.Jobs.Get(t.Context(), id)
+	queued, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
 	if err != nil || queued.State != "queued" || queued.StartedAt != "" {
 		t.Fatalf("stage job was not queued: %+v %v", queued, err)
 	}
@@ -408,7 +408,7 @@ func downloadStageExisting(t *testing.T, h *Harness, kind string) {
 	h.AwaitJob(first)
 	h.AwaitJob(id)
 	copyCompletionAwaitPins(t, h, h.Primary)
-	firstJob, err := h.Jobs.Get(t.Context(), first)
+	firstJob, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, first)
 	firstCounters := jobs.Counters{ObjectsPlanned: 1, BytesPlanned: 10, ObjectsCopied: 1, ObjectsVerified: 1, BytesCopied: 10}
 	if err != nil || firstJob.State != "complete" || firstJob.Counters != firstCounters || firstJob.Error != "" {
 		t.Fatalf("holding download changed: %+v %v", firstJob, err)

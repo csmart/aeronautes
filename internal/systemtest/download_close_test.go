@@ -282,7 +282,7 @@ func downloadCloseRun(t *testing.T, h *Harness, scenario string) {
 	if err := h.database.Reader().QueryRowContext(t.Context(), "SELECT bookmark_id FROM audit_events WHERE id=?", saved.Audit[0].ID).Scan(&bookmarkID); err != nil || bookmarkID != h.Primary.BookmarkID {
 		t.Errorf("native close audit binding differs: %q %v", bookmarkID, err)
 	}
-	visible, err := h.Jobs.Get(t.Context(), id)
+	visible, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
 	if err != nil || !reflect.DeepEqual(visible, saved.Job) {
 		t.Fatalf("close probe public/durable mismatch: %+v %v", visible, err)
 	}

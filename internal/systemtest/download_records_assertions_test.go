@@ -84,7 +84,7 @@ func assertDownloadItemPages(t *testing.T, h *Harness, id string, stored map[str
 	seen := map[string]bool{}
 	lastID := int64(0)
 	for cursor := ""; ; {
-		page, err := h.Jobs.Items(t.Context(), id, cursor, 100)
+		page, err := h.Jobs.Items(t.Context(), h.Primary.BookmarkID, id, cursor, 100)
 		if err != nil || page.Status != "available" || len(page.Items) > 100 {
 			t.Fatalf("public download items unavailable: %+v %v", page, err)
 		}
@@ -122,7 +122,7 @@ func assertDownloadItemPages(t *testing.T, h *Harness, id string, stored map[str
 	if len(seen) != len(stored) {
 		t.Fatalf("public download pages lost identities: got=%d want=%d", len(seen), len(stored))
 	}
-	public, err := h.Jobs.ItemTotals(t.Context(), id)
+	public, err := h.Jobs.ItemTotals(t.Context(), h.Primary.BookmarkID, id)
 	expected := app.JobItemTotalsDTO{Status: "available", Items: want.Items, Planned: want.Planned, Admitted: want.Admitted,
 		Failed: want.Failed, Conflicts: want.Conflicts, Refused: want.Refused, Unresolved: want.Unresolved, Unverified: want.Unverified, Problems: want.Problems}
 	if err != nil || public != expected {

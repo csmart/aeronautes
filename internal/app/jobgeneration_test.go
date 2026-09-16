@@ -100,7 +100,7 @@ func TestQueuedJobsKeepCredentialGenerations(t *testing.T) {
 				_ = h.transfer.CancelJob(context.Background(), jobID)
 				awaitTerminal(t, h, jobID)
 			})
-			job, err := h.jobsSvc.Get(t.Context(), jobID)
+			job, err := h.jobsSvc.Get(t.Context(), h.bookmarkID(), jobID)
 			if err != nil || job.State != "queued" || job.StartedAt != "" {
 				t.Fatalf("job did not remain queued: %+v, %v", job, err)
 			}

@@ -264,7 +264,15 @@ func awaitTerminal(t *testing.T, h *harness, jobID string) JobDTO {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		job, err := h.jobsSvc.Get(context.Background(), jobID)
+		raw, err := h.jobsSvc.jobs.Get(context.Background(), jobID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bookmark := raw.SourceBookmarkID
+		if bookmark == "" {
+			bookmark = raw.DestBookmarkID
+		}
+		job, err := h.jobsSvc.Get(context.Background(), bookmark, jobID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -364,7 +372,7 @@ func TestPlanAndStartCopyAcrossBookmarks(t *testing.T) {
 
 	// Audit: a start and a terminal event.
 	awaitJobAudit(t, h, jobID, "transfer.copy.partial")
-	events, err := h.auditSvc.Recent(ctx, 10)
+	events, err := h.auditSvc.RecentFor(ctx, h.bookmarkID(), 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -643,9 +651,9 @@ func TestSchedulerBudgetQueues(t *testing.T) {
 	// The budget is 1: the first job runs (blocked in the engine), the
 	// others stay Queued.
 	block.waitUntilEntered(t)
-	j1, _ := h.jobsSvc.Get(ctx, first)
-	j2, _ := h.jobsSvc.Get(ctx, second)
-	j3, _ := h.jobsSvc.Get(ctx, third)
+	j1, _ := h.jobsSvc.Get(ctx, h.bookmarkID(), first)
+	j2, _ := h.jobsSvc.Get(ctx, h.bookmarkID(), second)
+	j3, _ := h.jobsSvc.Get(ctx, h.bookmarkID(), third)
 	if j1.State != "running" || j2.State != "queued" || j3.State != "queued" {
 		t.Fatalf("states = %s / %s / %s, want running / queued / queued", j1.State, j2.State, j3.State)
 	}
@@ -692,14 +700,14 @@ func TestFindInContainer(t *testing.T) {
 	seedObject(h.mock, "media", "docs/Report-Final.pdf", "pdf", nil)
 	seedObject(h.mock, "media", "docs/report-draft.pdf", "pdf", nil)
 
-	id, err := find.StartFind(ctx, "media", "", "REPORT")
+	id, err := find.StartFind(ctx, findBM(find), "media", "", "REPORT")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var status *FindStatusDTO
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		status, err = find.FindStatus(ctx, id)
+		status, err = find.FindStatus(ctx, findBM(find), id)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -715,13 +723,13 @@ func TestFindInContainer(t *testing.T) {
 	if len(status.Matches) != 2 || status.Scanned != 42 {
 		t.Fatalf("matches = %+v scanned = %d", status.Matches, status.Scanned)
 	}
-	if _, err := find.StartFind(ctx, "media", "", "   "); err == nil {
+	if _, err := find.StartFind(ctx, findBM(find), "media", "", "   "); err == nil {
 		t.Error("blank query accepted")
 	}
-	if err := find.CancelFind(ctx, id); err != nil {
+	if err := find.CancelFind(ctx, findBM(find), id); err != nil {
 		t.Error(err)
 	}
-	if _, err := find.FindStatus(ctx, id); err == nil {
+	if _, err := find.FindStatus(ctx, findBM(find), id); err == nil {
 		t.Error("cancelled scan still answers")
 	}
 }

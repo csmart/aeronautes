@@ -191,7 +191,7 @@ func TestRecoveryRecordsAfterProcessReopen(t *testing.T) {
 	if !reflect.DeepEqual(reopened, facts) || !reflect.DeepEqual(retainedRows(t, h.db), facts) {
 		t.Fatalf("reopened process lost recovery evidence: %+v", reopened)
 	}
-	got, err := h.jobsSvc.Get(context.Background(), job.ID)
+	got, err := h.jobsSvc.Get(context.Background(), h.bookmarkID(), job.ID)
 	if err != nil || got.State != "failed" || got.Error != "interrupted by shutdown; data and recovery records retained, remote residue unverified; counters show the last saved progress" {
 		t.Fatalf("interrupted job = %+v, %v", got, err)
 	}

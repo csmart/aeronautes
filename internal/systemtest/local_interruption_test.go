@@ -209,7 +209,7 @@ func interruptedUpload(t *testing.T, h *Harness, mode string) {
 	if err != nil || event.StatusCode != wantHTTP || selected.Load() != 1 {
 		t.Fatalf("selected native PUT barrier: %+v %v count=%d", event, err, selected.Load())
 	}
-	pending, err := h.Jobs.Get(t.Context(), id)
+	pending, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
 	if err != nil || pending.State != "running" || pending.Counters.ObjectsCopied != 1 {
 		t.Fatalf("first native item did not finish before the barrier: %+v %v", pending, err)
 	}
@@ -384,7 +384,7 @@ func interruptedDownload(t *testing.T, h *Harness, mode string) {
 		t.Fatalf("slot-owning download barrier: %+v %v count=%d", event, err, selected.Load())
 	}
 	id := start("scope/", root)
-	queued, err := h.Jobs.Get(t.Context(), id)
+	queued, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
 	if err != nil || queued.State != "queued" || queued.StartedAt != "" {
 		t.Fatalf("second download was not held after preflight: %+v %v", queued, err)
 	}

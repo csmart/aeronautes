@@ -195,7 +195,7 @@ func downloadNameFormService(t *testing.T, h *Harness, route, shape string) {
 		h.AwaitJob(id)
 		copyCompletionAwaitPins(t, h, h.Primary)
 		saved = uploadRecoveryRead(t, h.database, id)
-		public, err := h.Jobs.Get(t.Context(), id)
+		public, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
 		if err != nil || !reflect.DeepEqual(public, saved.Job) {
 			t.Errorf("public job differs from the durable outcome: %+v error=%v", public, err)
 		}

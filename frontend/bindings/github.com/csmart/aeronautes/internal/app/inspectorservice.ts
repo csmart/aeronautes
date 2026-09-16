@@ -21,38 +21,38 @@ import * as $models from "./models.js";
  * Container HEADs one container for the §53 inspector section, folding
  * in its §24 classification.
  */
-export function Container(name: string): $CancellablePromise<$models.ContainerDetailDTO> {
-    return $Call.ByID(63633335, name);
+export function Container(bookmarkID: string, name: string): $CancellablePromise<$models.ContainerDetailDTO> {
+    return $Call.ByID(63633335, bookmarkID, name);
 }
 
 /**
  * DLOSegments returns the bounded §23.1 segment preview for a DLO
  * manifest value ("container/prefix").
  */
-export function DLOSegments(manifest: string): $CancellablePromise<$models.DLOSegmentsDTO> {
-    return $Call.ByID(751654327, manifest);
+export function DLOSegments(bookmarkID: string, manifest: string): $CancellablePromise<$models.DLOSegmentsDTO> {
+    return $Call.ByID(751654327, bookmarkID, manifest);
 }
 
 /**
  * Object HEADs one object and returns its inspector detail; a DLO's
  * manifest reference becomes Confirmed evidence.
  */
-export function Object(container: string, name: string): $CancellablePromise<$models.ObjectDetailDTO> {
-    return $Call.ByID(3225180167, container, name);
+export function Object(bookmarkID: string, container: string, name: string): $CancellablePromise<$models.ObjectDetailDTO> {
+    return $Call.ByID(3225180167, bookmarkID, container, name);
 }
 
 /**
  * Prefix classifies a prefix on selection (§14.1): marker-backed vs
  * implied, surfacing any folder-ish real object at the name.
  */
-export function Prefix(container: string, prefix: string): $CancellablePromise<$models.PrefixDetailDTO> {
-    return $Call.ByID(3304830540, container, prefix);
+export function Prefix(bookmarkID: string, container: string, prefix: string): $CancellablePromise<$models.PrefixDetailDTO> {
+    return $Call.ByID(3304830540, bookmarkID, container, prefix);
 }
 
 /**
  * SLOManifest fetches the exact manifest for the inspector's segment
  * table (§23.2); every referenced location becomes Confirmed evidence.
  */
-export function SLOManifest(container: string, name: string): $CancellablePromise<$models.SLOManifestDTO> {
-    return $Call.ByID(1601699845, container, name);
+export function SLOManifest(bookmarkID: string, container: string, name: string): $CancellablePromise<$models.SLOManifestDTO> {
+    return $Call.ByID(1601699845, bookmarkID, container, name);
 }

@@ -24,6 +24,7 @@ async function settle() {
   for (let i = 0; i < 12; i++) { await Promise.resolve(); flushSync(); }
 }
 
+const scope = { bookmarkId: "", generation: 0 };
 const objectEdit = { meta: { Team: "ops" }, contentType: "", deleteAt: "" };
 const containerEdit: ContainerEditDTO = {
   meta: { Team: "ops" }, readAcl: "", writeAcl: "", versioningMode: "off",
@@ -46,7 +47,7 @@ async function show() {
     editableFingerprint: `${at}/${name}`, meta: { Source: `${at}/${name}` } }));
   api.containerDetail = vi.fn(async (name) => ({ ...container, name,
     editableFingerprint: name, meta: { Source: name } }));
-  api.prefixDetail = vi.fn(async (_at, prefix) => ({ prefix, markerBacked: false, selfObject: null }));
+  api.prefixDetail = vi.fn(async (_at, prefix) => ({ prefix, markerBacked: false, selfObject: null, scope: { bookmarkId: "", generation: 0 } }));
   api.connect = vi.fn().mockRejectedValue(new Error("reconnect failed"));
   api.auditRecent = vi.fn().mockResolvedValue([]);
   const browser = new BrowserState(api);
@@ -88,7 +89,7 @@ function mutation(f: Fixture, kind: Mutation, label: string) {
     : kind === "container" ? f.browser.saveContainer(containerEdit) : f.browser.createMarker("implied/");
   return { task, returned,
     resolve: () => kind === "marker"
-      ? marker.resolve({ prefix: "implied/", markerBacked: true, selfObject: { ...f.object, name: "implied/", meta: { Completion: label } } })
+      ? marker.resolve({ prefix: "implied/", markerBacked: true, selfObject: { ...f.object, name: "implied/", meta: { Completion: label } }, scope })
       : result.resolve(returned),
     reject: () => kind === "marker" ? marker.reject(new Error(label)) : result.reject(new Error(label)),
   };
@@ -195,7 +196,7 @@ describe.each(["object", "container", "marker"] as const)("%s detail read owners
       if (fail) reply.reject(new Error("obsolete read"));
       else if (kind === "object") object.resolve({ ...f.object, meta: { Completion: "obsolete" } });
       else if (kind === "container") container.resolve({ ...f.container, meta: { Completion: "obsolete" } });
-      else prefix.resolve({ prefix: "implied/", markerBacked: true, selfObject: null });
+      else prefix.resolve({ prefix: "implied/", markerBacked: true, selfObject: null, scope });
       await pending; await settle();
       expect(portrait(f, kind)).toEqual(current);
       expect(f.browser.detailLoading).toBe(loading);
@@ -244,7 +245,7 @@ it.each(["object", "container", "marker"] as const)("refuses a mismatched %s wor
   f.api.createMarker = vi.fn().mockResolvedValue(f.browser.prefixDetail);
   if (kind === "object") f.browser.objectDetail = { ...f.browser.objectDetail!, name: "wrong" };
   if (kind === "container") f.browser.containerDetail = { ...f.browser.containerDetail!, name: "wrong" };
-  if (kind === "marker") f.browser.prefixDetail = { prefix: "wrong/", markerBacked: false, selfObject: null };
+  if (kind === "marker") f.browser.prefixDetail = { prefix: "wrong/", markerBacked: false, selfObject: null, scope };
   const task = kind === "object" ? f.browser.saveObjectMetadata(objectEdit)
     : kind === "container" ? f.browser.saveContainer(containerEdit) : f.browser.createMarker("implied/");
   const error = await task.then(() => null, (cause: unknown) => cause);
@@ -263,8 +264,8 @@ it.each(["slo", "dlo"] as const)("drops a late %s subordinate response after rec
   vi.mocked(f.api.objectDetail).mockResolvedValue({ ...f.object, class: kind, manifest: "parts/data/" });
   f.browser.refreshDetail(); await settle();
   await expect(f.browser.connect("source")).rejects.toThrow("reconnect failed");
-  if (kind === "slo") slo.resolve({ entries: [] });
-  else dlo.resolve({ container: "parts", prefix: "data/", segments: [], hasMore: false, previewBytes: 0 });
+  if (kind === "slo") slo.resolve({ entries: [], scope });
+  else dlo.resolve({ container: "parts", prefix: "data/", segments: [], hasMore: false, previewBytes: 0, scope });
   await settle();
   expect(f.browser.sloManifest).toBeNull(); expect(f.browser.dloSegments).toBeNull();
 });
@@ -355,7 +356,7 @@ it.each(["object", "container", "marker"] as const)("rejects a current %s read w
   await prepare(f, kind);
   if (kind === "object") vi.mocked(f.api.objectDetail).mockResolvedValueOnce({ ...f.object, name: "wrong" });
   if (kind === "container") vi.mocked(f.api.containerDetail).mockResolvedValueOnce({ ...f.container, name: "wrong" });
-  if (kind === "marker") vi.mocked(f.api.prefixDetail).mockResolvedValueOnce({ prefix: "wrong/", markerBacked: false, selfObject: null });
+  if (kind === "marker") vi.mocked(f.api.prefixDetail).mockResolvedValueOnce({ prefix: "wrong/", markerBacked: false, selfObject: null, scope });
   if (kind === "container") await f.browser.refreshContainerDetail();
   else f.browser.refreshDetail();
   await settle();
@@ -382,7 +383,7 @@ describe.each(["object", "container", "marker"] as const)("overlapping %s reads"
         if (index === 0 && fail) reply.reject(new Error("obsolete failure"));
         else if (kind === "object") objects[index].resolve({ ...f.object, meta: { Completion: String(index) } });
         else if (kind === "container") containers[index].resolve({ ...f.container, meta: { Completion: String(index) } });
-        else prefixes[index].resolve({ prefix: "implied/", markerBacked: index === 1, selfObject: null });
+        else prefixes[index].resolve({ prefix: "implied/", markerBacked: index === 1, selfObject: null, scope });
         await (index === 0 ? old : current); await settle();
       };
       if (oldFirst) {

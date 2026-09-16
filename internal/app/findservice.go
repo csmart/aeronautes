@@ -62,6 +62,7 @@ type findScan struct {
 	cancel  context.CancelFunc
 	timer   findTimer
 	expires time.Time
+	scope   ListingScopeDTO
 
 	scanned   int64
 	matches   []FindMatchDTO
@@ -89,6 +90,8 @@ type FindStatusDTO struct {
 	Error     string `json:"error"`
 	// ObjectsPerSecond is the live scan throughput.
 	ObjectsPerSecond float64 `json:"objectsPerSecond"`
+	// Scope is the account the scan was bound to at start (ADR 0059).
+	Scope *ListingScopeDTO `json:"scope,omitempty"`
 }
 
 const (
@@ -101,7 +104,7 @@ const (
 
 // StartFind begins one scan over the container (optionally under a
 // prefix), matching a case-insensitive substring. Returns the scan id.
-func (s *FindService) StartFind(ctx context.Context, container, prefix, query string) (string, error) {
+func (s *FindService) StartFind(ctx context.Context, bookmarkID, container, prefix, query string) (string, error) {
 	if container == "" || strings.TrimSpace(query) == "" {
 		return "", errors.New("container and a non-empty query are required")
 	}
@@ -114,7 +117,7 @@ func (s *FindService) StartFind(ctx context.Context, container, prefix, query st
 	if closed {
 		return "", errors.New("Find service is shutting down")
 	}
-	session, err := s.connections.Session()
+	session, scope, err := s.connections.scopedSession(ctx, bookmarkID)
 	if err != nil {
 		return "", err
 	}
@@ -149,7 +152,7 @@ func (s *FindService) StartFind(ctx context.Context, container, prefix, query st
 	}
 	scanCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	s.order++
-	scan := &findScan{id: id, order: s.order, cancel: cancel, started: s.clock.now()}
+	scan := &findScan{id: id, order: s.order, cancel: cancel, started: s.clock.now(), scope: scope}
 	s.scans[id] = scan
 	s.workers[scan] = struct{}{}
 	s.renewFind(scan)
@@ -202,9 +205,12 @@ func (s *FindService) StartFind(ctx context.Context, container, prefix, query st
 }
 
 // FindStatus polls one scan.
-func (s *FindService) FindStatus(ctx context.Context, id string) (*FindStatusDTO, error) {
+func (s *FindService) FindStatus(ctx context.Context, bookmarkID, id string) (*FindStatusDTO, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	if bookmarkID == "" {
+		return nil, fmt.Errorf("%w: name the bookmark the read is for", ErrNotConnected)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -216,6 +222,9 @@ func (s *FindService) FindStatus(ctx context.Context, id string) (*FindStatusDTO
 	if !ok {
 		return nil, fmt.Errorf("no such scan %s", id)
 	}
+	if scan.scope.BookmarkID != bookmarkID {
+		return nil, ErrAccountScopeChanged
+	}
 	s.renewFind(scan)
 	end := scan.finished
 	if end.IsZero() {
@@ -226,6 +235,7 @@ func (s *FindService) FindStatus(ctx context.Context, id string) (*FindStatusDTO
 		Scanned: scan.scanned, Truncated: scan.truncated,
 		Done: scan.done, Error: scan.err,
 		Matches: append([]FindMatchDTO(nil), scan.matches...),
+		Scope:   &scan.scope,
 	}
 	if elapsed > 0 {
 		status.ObjectsPerSecond = float64(scan.scanned) / elapsed
@@ -235,12 +245,18 @@ func (s *FindService) FindStatus(ctx context.Context, id string) (*FindStatusDTO
 
 // CancelFind stops a scan and forgets it (the UI keeps whatever it
 // last polled).
-func (s *FindService) CancelFind(ctx context.Context, id string) error {
+func (s *FindService) CancelFind(ctx context.Context, bookmarkID, id string) error {
+	if bookmarkID == "" {
+		return fmt.Errorf("%w: name the bookmark the read is for", ErrNotConnected)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	scan, ok := s.scans[id]
 	if !ok {
 		return nil
+	}
+	if scan.scope.BookmarkID != bookmarkID {
+		return ErrAccountScopeChanged
 	}
 	s.retireFind(scan)
 	return nil

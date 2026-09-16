@@ -27,8 +27,8 @@ func NewInspectorService(connections *Connections, ev *evidence.Store) *Inspecto
 
 // Object HEADs one object and returns its inspector detail; a DLO's
 // manifest reference becomes Confirmed evidence.
-func (s *InspectorService) Object(ctx context.Context, container, name string) (ObjectDetailDTO, error) {
-	session, err := s.connections.Session()
+func (s *InspectorService) Object(ctx context.Context, bookmarkID, container, name string) (ObjectDetailDTO, error) {
+	session, scope, err := s.connections.scopedSession(ctx, bookmarkID)
 	if err != nil {
 		return ObjectDetailDTO{}, err
 	}
@@ -36,14 +36,16 @@ func (s *InspectorService) Object(ctx context.Context, container, name string) (
 	if err != nil {
 		return ObjectDetailDTO{}, err
 	}
-	s.record(ctx, evidence.FromObjectDetail(d))
-	return toObjectDetailDTO(d), nil
+	s.record(ctx, scope.BookmarkID, evidence.FromObjectDetail(d))
+	dto := toObjectDetailDTO(d)
+	dto.Scope = scope
+	return dto, nil
 }
 
 // Prefix classifies a prefix on selection (§14.1): marker-backed vs
 // implied, surfacing any folder-ish real object at the name.
-func (s *InspectorService) Prefix(ctx context.Context, container, prefix string) (PrefixDetailDTO, error) {
-	session, err := s.connections.Session()
+func (s *InspectorService) Prefix(ctx context.Context, bookmarkID, container, prefix string) (PrefixDetailDTO, error) {
+	session, scope, err := s.connections.scopedSession(ctx, bookmarkID)
 	if err != nil {
 		return PrefixDetailDTO{}, err
 	}
@@ -51,13 +53,15 @@ func (s *InspectorService) Prefix(ctx context.Context, container, prefix string)
 	if err != nil {
 		return PrefixDetailDTO{}, err
 	}
-	return toPrefixDetailDTO(d), nil
+	dto := toPrefixDetailDTO(d)
+	dto.Scope = scope
+	return dto, nil
 }
 
 // Container HEADs one container for the §53 inspector section, folding
 // in its §24 classification.
-func (s *InspectorService) Container(ctx context.Context, name string) (ContainerDetailDTO, error) {
-	session, err := s.connections.Session()
+func (s *InspectorService) Container(ctx context.Context, bookmarkID, name string) (ContainerDetailDTO, error) {
+	session, scope, err := s.connections.scopedSession(ctx, bookmarkID)
 	if err != nil {
 		return ContainerDetailDTO{}, err
 	}
@@ -65,17 +69,19 @@ func (s *InspectorService) Container(ctx context.Context, name string) (Containe
 	if err != nil {
 		return ContainerDetailDTO{}, err
 	}
-	classes, err := s.evidence.ClassifyContainers(ctx, s.connections.ActiveBookmarkID(), []string{name})
+	classes, err := s.evidence.ClassifyContainers(ctx, scope.BookmarkID, []string{name})
 	if err != nil {
 		return ContainerDetailDTO{}, err
 	}
-	return containerDetailDTO(d, string(classes[name])), nil
+	dto := containerDetailDTO(d, string(classes[name]))
+	dto.Scope = scope
+	return dto, nil
 }
 
 // SLOManifest fetches the exact manifest for the inspector's segment
 // table (§23.2); every referenced location becomes Confirmed evidence.
-func (s *InspectorService) SLOManifest(ctx context.Context, container, name string) (SLOManifestDTO, error) {
-	session, err := s.connections.Session()
+func (s *InspectorService) SLOManifest(ctx context.Context, bookmarkID, container, name string) (SLOManifestDTO, error) {
+	session, scope, err := s.connections.scopedSession(ctx, bookmarkID)
 	if err != nil {
 		return SLOManifestDTO{}, err
 	}
@@ -83,7 +89,7 @@ func (s *InspectorService) SLOManifest(ctx context.Context, container, name stri
 	if err != nil {
 		return SLOManifestDTO{}, err
 	}
-	s.record(ctx, evidence.FromSLOManifest(container+"/"+name, m))
+	s.record(ctx, scope.BookmarkID, evidence.FromSLOManifest(container+"/"+name, m))
 
 	dto := SLOManifestDTO{Entries: make([]SLOSegmentDTO, 0, len(m.Entries))}
 	for _, entry := range m.Entries {
@@ -109,13 +115,13 @@ func (s *InspectorService) SLOManifest(ctx context.Context, container, name stri
 			dto.Entries = append(dto.Entries, SLOSegmentDTO{Kind: "unknown"})
 		}
 	}
+	dto.Scope = scope
 	return dto, nil
 }
 
-// record stores observations against the active bookmark; evidence is a
+// record stores observations against the named bookmark; evidence is a
 // side effect of inspection and must never fail the inspection itself.
-func (s *InspectorService) record(ctx context.Context, observations []evidence.Observation) {
-	bookmarkID := s.connections.ActiveBookmarkID()
+func (s *InspectorService) record(ctx context.Context, bookmarkID string, observations []evidence.Observation) {
 	if bookmarkID == "" {
 		return
 	}
@@ -185,8 +191,8 @@ func toObjectDetailDTO(d *swiftcontrol.ObjectDetail) ObjectDetailDTO {
 
 // DLOSegments returns the bounded §23.1 segment preview for a DLO
 // manifest value ("container/prefix").
-func (s *InspectorService) DLOSegments(ctx context.Context, manifest string) (DLOSegmentsDTO, error) {
-	session, err := s.connections.Session()
+func (s *InspectorService) DLOSegments(ctx context.Context, bookmarkID, manifest string) (DLOSegmentsDTO, error) {
+	session, scope, err := s.connections.scopedSession(ctx, bookmarkID)
 	if err != nil {
 		return DLOSegmentsDTO{}, err
 	}
@@ -212,5 +218,6 @@ func (s *InspectorService) DLOSegments(ctx context.Context, manifest string) (DL
 			SLOListed:    segment.SLOListed,
 		})
 	}
+	dto.Scope = scope
 	return dto, nil
 }

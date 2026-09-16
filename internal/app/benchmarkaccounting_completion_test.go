@@ -18,7 +18,7 @@ func TestBenchmarkAccountingCompletionIsAtomic(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			before, err := fixture.h.jobsSvc.Get(t.Context(), fixture.jobID)
+			before, err := fixture.h.jobsSvc.Get(t.Context(), fixture.h.bookmarkID(), fixture.jobID)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -62,7 +62,7 @@ func TestBenchmarkAccountingCompletionIsAtomic(t *testing.T) {
 				fixture.assertOutcome(t, fixture.h.mock.RequestLog())
 				return
 			}
-			visible, getErr := fixture.h.jobsSvc.Get(t.Context(), fixture.jobID)
+			visible, getErr := fixture.h.jobsSvc.Get(t.Context(), fixture.h.bookmarkID(), fixture.jobID)
 			list, listErr := fixture.h.jobsSvc.List(t.Context(), fixture.bookmark, false, 10)
 			history, historyErr := fixture.h.jobsSvc.History(t.Context(), fixture.bookmark, "", 10)
 			if visible != nil || getErr == nil || list != nil || listErr == nil || historyErr == nil || len(history.Jobs) != 0 {

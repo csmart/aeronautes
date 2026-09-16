@@ -218,7 +218,7 @@ func downloadRootGuardService(t *testing.T, h *Harness, spelling string, native,
 	assertListingLocalDelta(t, beforeLocal, snapshotListingLocal(t, root), allowed)
 	h.AssertNoCollateral(beforeA, h.SnapshotNamespace(h.Primary))
 	h.AssertNoCollateral(beforeB, h.SnapshotNamespace(h.Secondary))
-	visible, err := h.Jobs.Get(t.Context(), id)
+	visible, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
 	if err != nil || !reflect.DeepEqual(visible, saved.Job) || len(saved.Audit) != 1 || saved.Audit[0].Operation != "transfer.local.complete" || saved.Audit[0].Resource != "job "+id || saved.Audit[0].Result != "applied" {
 		t.Fatalf("public, durable or audit outcome differs: %+v %v", saved, err)
 	}

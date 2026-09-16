@@ -80,7 +80,10 @@ func (s *JobService) History(ctx context.Context, bookmarkID, cursor string, lim
 }
 
 // Items keeps SQLite cursors as decimal strings across the JavaScript boundary.
-func (s *JobService) Items(ctx context.Context, jobID, cursor string, limit int) (JobItemPageDTO, error) {
+func (s *JobService) Items(ctx context.Context, bookmarkID, jobID, cursor string, limit int) (JobItemPageDTO, error) {
+	if _, err := s.jobInAccount(ctx, bookmarkID, jobID); err != nil {
+		return JobItemPageDTO{}, err
+	}
 	var after int64
 	if cursor != "" {
 		var err error
@@ -106,7 +109,10 @@ func (s *JobService) Items(ctx context.Context, jobID, cursor string, limit int)
 	return out, nil
 }
 
-func (s *JobService) ItemTotals(ctx context.Context, jobID string) (JobItemTotalsDTO, error) {
+func (s *JobService) ItemTotals(ctx context.Context, bookmarkID, jobID string) (JobItemTotalsDTO, error) {
+	if _, err := s.jobInAccount(ctx, bookmarkID, jobID); err != nil {
+		return JobItemTotalsDTO{}, err
+	}
 	totals, err := s.jobs.ReadItemTotals(ctx, jobID)
 	if errors.Is(err, jobs.ErrItemRecordsNotCaptured) {
 		return JobItemTotalsDTO{Status: "not_captured"}, nil

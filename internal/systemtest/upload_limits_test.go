@@ -141,7 +141,7 @@ func destinationChunkSettings(t *testing.T, h *Harness, operation, chunk string)
 		if err != nil || id == "" {
 			t.Fatalf("default refused: id=%q error=%v", id, err)
 		}
-		job, err := h.Jobs.Get(t.Context(), id)
+		job, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
 		if err != nil || job.State != "complete" || job.Counters.ObjectsCopied != 1 || job.Counters.ObjectsVerified != 1 || job.Counters.BytesCopied != int64(len(body)) || job.Counters.ObjectsFailed != 0 {
 			t.Fatalf("capped default outcome: %+v %v", job, err)
 		}

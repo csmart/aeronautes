@@ -190,13 +190,13 @@ func assertCopyRecordFault(t *testing.T, h *Harness, mode, id, first, src, dst s
 	if !reflect.DeepEqual(saved.Rows, wantRows) {
 		t.Fatalf("record refusal changed retained recovery facts: %+v", saved.Rows)
 	}
-	if visible, err := h.Jobs.Get(t.Context(), id); err == nil || visible != nil || !strings.Contains(err.Error(), "unavailable") {
+	if visible, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id); err == nil || visible != nil || !strings.Contains(err.Error(), "unavailable") {
 		t.Fatalf("record refusal exposed stale job status: %+v %v", visible, err)
 	}
-	if items, err := h.Jobs.Items(t.Context(), id, "", 100); err == nil || items.Items != nil {
+	if items, err := h.Jobs.Items(t.Context(), h.Primary.BookmarkID, id, "", 100); err == nil || items.Items != nil {
 		t.Fatalf("record refusal exposed a partial public ledger: %+v %v", items, err)
 	}
-	if totals, err := h.Jobs.ItemTotals(t.Context(), id); err == nil || totals != (app.JobItemTotalsDTO{}) {
+	if totals, err := h.Jobs.ItemTotals(t.Context(), h.Primary.BookmarkID, id); err == nil || totals != (app.JobItemTotalsDTO{}) {
 		t.Fatalf("record refusal invented public totals: %+v %v", totals, err)
 	}
 	for _, kind := range []jobs.Type{jobs.TypeCopy, jobs.TypeUpload, jobs.TypeDownload, jobs.TypeMirror, jobs.TypeMirrorPreview, jobs.TypeDeletePrefix, jobs.TypeEmpty, jobs.TypeDeleteCont} {

@@ -131,7 +131,7 @@ func uploadItemRecordsRun(t *testing.T, h *Harness, count int, native bool) {
 	copyCompletionAwaitPins(t, h, h.Primary)
 	serviceTime := time.Since(started)
 	saved := uploadRecoveryRead(t, h.database, id)
-	visible, err := h.Jobs.Get(t.Context(), id)
+	visible, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
 	if err != nil || !reflect.DeepEqual(visible, saved.Job) {
 		t.Fatalf("public/durable mismatch: %+v %v %+v", visible, err, saved)
 	}
@@ -178,11 +178,11 @@ func uploadItemRecordsRun(t *testing.T, h *Harness, count int, native bool) {
 	if !reflect.DeepEqual(saved.Rows, wantRows) || saved.Job.RecoveryRecords != 1 || saved.Status != (app.RecoveryStatusDTO{Jobs: 1, Records: 1}) {
 		t.Errorf("upload recovery differs: %+v", saved)
 	}
-	page, err := h.Jobs.Items(t.Context(), id, "", 100)
+	page, err := h.Jobs.Items(t.Context(), h.Primary.BookmarkID, id, "", 100)
 	if err != nil {
 		t.Fatal(err)
 	}
-	totals, err := h.Jobs.ItemTotals(t.Context(), id)
+	totals, err := h.Jobs.ItemTotals(t.Context(), h.Primary.BookmarkID, id)
 	if err != nil {
 		t.Fatal(err)
 	}
