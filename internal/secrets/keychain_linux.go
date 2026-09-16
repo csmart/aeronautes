@@ -149,28 +149,35 @@ func (s *KeychainStore) collection() (dbus.ObjectPath, error) {
 	return path, nil
 }
 
+func writeFailed(err error) error {
+	if errors.Is(err, ErrAuthorityUnreachable) {
+		return fmt.Errorf("keychain write failed: %w", ErrAuthorityUnreachable)
+	}
+	return errors.New("keychain write failed")
+}
+
 func (s *KeychainStore) writePinned(name, value string) error {
 	path, err := s.collection()
 	if err != nil {
-		return errors.New("keychain write failed")
+		return writeFailed(err)
 	}
 	svc, err := ss.NewSecretService()
 	if err != nil {
-		return errors.New("keychain write failed")
+		return writeFailed(err)
 	}
 	session, err := svc.OpenSession()
 	if err != nil {
-		return errors.New("keychain write failed")
+		return writeFailed(err)
 	}
 	defer svc.Close(session)
 	if err := svc.Unlock(path); err != nil {
-		return errors.New("keychain write failed")
+		return writeFailed(err)
 	}
 	secret := ss.NewSecret(session.Path(), value)
 	if err := svc.CreateItem(svc.Object(ssServiceName, path),
 		fmt.Sprintf("Password for '%s' on '%s'", name, service),
 		map[string]string{"username": name, "service": service}, secret); err != nil {
-		return errors.New("keychain write failed")
+		return writeFailed(err)
 	}
 	return nil
 }

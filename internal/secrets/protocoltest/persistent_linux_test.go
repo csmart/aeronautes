@@ -110,11 +110,25 @@ func TestMissingOriginalCollectionIsUnreachable(t *testing.T) {
 	}
 	f.setCollections([]dbus.ObjectPath{extraPath})
 	_, err = store.Get(t.Context(), name)
+	assertHiddenUnreachable(t, "Get", err)
+	err = store.Put(t.Context(), name, []byte("again"))
+	assertHiddenUnreachable(t, "Put", err)
+	err = store.Delete(t.Context(), name)
+	assertHiddenUnreachable(t, "Delete", err)
+}
+
+func assertHiddenUnreachable(t *testing.T, op string, err error) {
+	t.Helper()
 	if !errors.Is(err, secrets.ErrAuthorityUnreachable) {
-		t.Fatalf("hidden collection = %v, want unreachable", err)
+		t.Fatalf("%s hidden collection = %v, want unreachable", op, err)
 	}
 	if errors.Is(err, secrets.ErrNotFound) {
-		t.Fatal("hidden collection was reported as erasure")
+		t.Fatalf("%s hidden collection was reported as erasure", op)
+	}
+	for _, private := range []string{string(extraPath), string(loginPath), t.Name()} {
+		if private != "" && strings.Contains(err.Error(), private) {
+			t.Fatalf("%s error exposed a collection path or reference", op)
+		}
 	}
 }
 
