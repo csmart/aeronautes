@@ -2,6 +2,7 @@
 
 **Status:** Accepted for the local download route, which is delivered with this decision; the native copy route, the native upload route and the staged upload commit remain in the sequence.
 It does not close L05: missing and reordered segments, and whole-job source and publication substitution, remain open, as does the release hold on valuable data.
+The native-download remainder of those cases is [ADR 0060](0060-native-download-content-binding.md).
 **Scope:** Content verification on the native copy route, the local upload route and the local download route, within DS-04/P16 and finish-line item L05.
 
 ## Problem
@@ -188,3 +189,4 @@ Nothing here audits the engine's internal behaviour.
 
 This decision covers same-size content binding for the enabled routes.
 It does not close L05: missing and reordered segments, and whole-job source and publication substitution, remain open, as does the release hold on valuable data.
+The native-download remainder is [ADR 0060](0060-native-download-content-binding.md).
