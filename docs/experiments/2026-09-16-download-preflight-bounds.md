@@ -3,7 +3,6 @@
 Finish-line item L10 asks for reviewed bounds on namespace and browser retention, queued work, child batches and aggregate resources, where overload refuses without truncating correctness.
 This record searches for silent truncation first, then scopes one slice.
 The contract is [ADR 0056](../adr/0056-download-preflight-view.md).
-Nothing in it is implemented yet.
 
 ## Truncation search, on current master
 
@@ -64,14 +63,13 @@ Queued work still waits rather than refusing, per ADR 0047.
 A download still hands every engine name to one rclone `files-from-raw` batch.
 Those are remaining L10 surface, not this slice.
 
-## Proposed correction
+## Correction
 
 A distinct bridge view carries complete `Objects`, `TotalBytes`, `ProblemCount` and `Rejected`, and samples of items and problems capped at the existing 200.
 `StartDownload` uses the complete internal report.
 The dialog reads the first-class fields.
 A collision detail keeps its true name count and bounds the names it quotes.
-
-It is not yet implemented.
+The dialog discloses when the problem sample is shorter than the true count.
 
 ## What this does not claim
 

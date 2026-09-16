@@ -1594,7 +1594,8 @@ So define a **per-target local materialization policy** before enabling download
 
 The complete check is not the bridge payload.
 [ADR 0056](adr/0056-download-preflight-view.md) keeps the execution inventory complete and returns a distinct view of first-class counts plus bounded samples, so a display cap cannot drop names from the job or from the object count.
-That correction is not yet implemented, and it does not bound the memory the check itself retains.
+The dialog discloses when the problem sample is shorter than the true count.
+It does not bound the memory the check itself retains.
 
 ---
 
@@ -5705,7 +5706,7 @@ L04, P12, P13 and the valuable-data hold stay open.
 L10's first slice is the download preflight view under [ADR 0056](adr/0056-download-preflight-view.md).
 `TransferService.PreflightDownload` returns the complete collision inventory across the bridge, `StartDownload` executes that same value, and the dialog counts objects from the items array length, so a bound applied in place would drop names from the job and from the displayed count.
 The [download preflight bounds record](experiments/2026-09-16-download-preflight-bounds.md) searched listing continuation, Find retention, job-item paging and the download inventory for silent truncation first: those paths grow or page with a count beside a sample, and a measured 20 000-object preflight kept items equal to the seeded count.
-The proposed correction splits execution from the bridge the way upload already does, copies ADR 0023's sample-and-count pattern onto a distinct view type, and is not yet implemented.
+The correction splits execution from the bridge the way upload already does and copies ADR 0023's sample-and-count pattern onto a distinct view type.
 It does not bound Go RSS, browser accumulation, queued work or child batches, and L10 does not close with this.
 
 ### 65.12. Proportionate remediation and a fixed finish line

@@ -1,15 +1,14 @@
 # ADR 0056: download preflight execution is not the bridge view
 
-**Status:** Proposed.
-Contract only; nothing in it is implemented yet.
-This does not close L10, P24 or the valuable-data hold.
+**Status:** Accepted for the download preflight bridge view, which is delivered with this decision.
+It does not bound Go RSS, browser accumulation, queued work or child batches, and it does not close L10, P24 or the valuable-data hold.
 
 ## Context
 
-`TransferService.PreflightDownload` returns `local.DownloadPreflight` across the bridge.
+`TransferService.PreflightDownload` returned `local.DownloadPreflight` across the bridge.
 That struct is the complete collision inventory: every planned item and every problem, plus `Objects` and `TotalBytes`.
-`StartDownload` calls the same method and passes the result to `DownloadInto`, which iterates `preflight.Items` as the transfer set.
-The download dialog then counts objects as `items.length` and treats rejection as `problems.some(p => p.reject)`.
+`StartDownload` called the same method and passed the result to `DownloadInto`, which iterates `preflight.Items` as the transfer set.
+The download dialog then counted objects as `items.length` and treated rejection as `problems.some(p => p.reject)`.
 
 The [download preflight bounds record](../experiments/2026-09-16-download-preflight-bounds.md) searched for silent truncation first, because a dropped tail outranks growth.
 Listing continuation, Find matches, job-item pages and the measured 20 000-object preflight all keep the names they saw; they grow, or they page with a count beside a sample.
