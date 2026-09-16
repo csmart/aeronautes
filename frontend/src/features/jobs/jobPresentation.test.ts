@@ -182,7 +182,7 @@ it.each(["running", "complete"])("keeps unknown rate and later rate/ETA qualific
   } else {
     expect(text(row, ".when")).toBe("2026-09-12 00:00:09");
     expect(row.querySelector(".cancel")).toBeNull();
-    expect(row.querySelector<HTMLButtonElement>(".rerun")?.textContent?.trim()).toBe("Re-run");
+    expect(row.querySelector(".rerun")).toBeNull();
     expect(row.querySelector(".progress")).toBeNull();
   }
 });

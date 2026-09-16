@@ -3,6 +3,7 @@
   import { breadcrumbs } from "../../lib/listing";
   import { formatBytes } from "../../lib/format";
   import type { ListingRowDTO } from "../../lib/api";
+  import { v1Offers } from "../../lib/v1";
   import type { BrowserState } from "./browserState.svelte";
   import FindPanel from "./FindPanel.svelte";
 
@@ -90,38 +91,46 @@
       >
         Find in container
       </button>
-      <button
-        class="find"
-        title="Copy this container/prefix to another account or container"
-        disabled={browser.containerName === null || browser.backstageFrom !== null}
-        onclick={() => (browser.transferOpen = true)}
-      >
-        Copy to…
-      </button>
-      <button
-        class="find"
-        title="Upload local files to this prefix"
-        disabled={browser.containerName === null || browser.backstageFrom !== null}
-        onclick={() => (browser.localTransfer = "upload")}
-      >
-        Upload…
-      </button>
-      <button
-        class="find"
-        title="Download this prefix to a local directory"
-        disabled={browser.containerName === null || browser.backstageFrom !== null}
-        onclick={() => (browser.localTransfer = "download")}
-      >
-        Download…
-      </button>
-      <button
-        class="find danger"
-        title="Bulk delete: empty this prefix or container, or delete the container — NOT the selected object"
-        disabled={browser.containerName === null || browser.backstageFrom !== null}
-        onclick={() => (browser.deleteOpen = true)}
-      >
-        Delete scope…
-      </button>
+      {#if v1Offers.copy}
+        <button
+          class="find"
+          title="Copy this container/prefix to another account or container"
+          disabled={browser.containerName === null || browser.backstageFrom !== null}
+          onclick={() => (browser.transferOpen = true)}
+        >
+          Copy to…
+        </button>
+      {/if}
+      {#if v1Offers.upload}
+        <button
+          class="find"
+          title="Upload local files to this prefix"
+          disabled={browser.containerName === null || browser.backstageFrom !== null}
+          onclick={() => (browser.localTransfer = "upload")}
+        >
+          Upload…
+        </button>
+      {/if}
+      {#if v1Offers.download}
+        <button
+          class="find"
+          title="Download this prefix to a local directory"
+          disabled={browser.containerName === null || browser.backstageFrom !== null}
+          onclick={() => (browser.localTransfer = "download")}
+        >
+          Download…
+        </button>
+      {/if}
+      {#if v1Offers.bulkDelete}
+        <button
+          class="find danger"
+          title="Bulk delete: empty this prefix or container, or delete the container — NOT the selected object"
+          disabled={browser.containerName === null || browser.backstageFrom !== null}
+          onclick={() => (browser.deleteOpen = true)}
+        >
+          Delete scope…
+        </button>
+      {/if}
     </div>
 
     {#if browser.findOpen}

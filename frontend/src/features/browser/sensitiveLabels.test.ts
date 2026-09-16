@@ -248,28 +248,13 @@ describe("audit and benchmark labels", () => {
     expect(labelled(second.root, "Result")).not.toBe(labelled(first.root, "Result"));
   });
 
-  it.each([false, true])("preserves benchmark confirmation before explicit submission (second drawer %s)", async (duplicate) => {
+  it.each([false, true])("does not offer a benchmark in a v1 build (second drawer %s)", async (duplicate) => {
     const first = duplicate ? await drawer() : null;
     const f = await drawer();
-    if (first) click(button(first.root, "Benchmark…"));
-    click(button(f.root, "Benchmark…"));
-    const confirm = inputFor(f.root, "Type the account name to run:");
-    if (first) expect(confirm).not.toBe(inputFor(first.root, "Type the account name to run:"));
+    const labels = (root: HTMLElement) => [...root.querySelectorAll("button")].map((b) => b.textContent?.trim());
+    expect(labels(f.root)).not.toContain("Benchmark…");
+    if (first) expect(labels(first.root)).not.toContain("Benchmark…");
     expect(f.api.startBenchmark).not.toHaveBeenCalled();
-    const submit = button(f.root, "Run benchmark");
-    edit(confirm, "wrong");
-    expect(submit.disabled).toBe(true);
-    click(submit);
-    expect(f.api.startBenchmark).not.toHaveBeenCalled();
-    edit(confirm, f.browser.account!.name);
-    expect(submit.disabled).toBe(false);
-    expect(f.api.startBenchmark).not.toHaveBeenCalled();
-    click(submit);
-    await settle();
-    expect(f.api.startBenchmark).toHaveBeenCalledExactlyOnceWith({
-      bookmarkId: f.bookmark.id, confirm: f.browser.account!.name,
-    });
-    if (first) expect(first.api.startBenchmark).not.toHaveBeenCalled();
   });
 });
 

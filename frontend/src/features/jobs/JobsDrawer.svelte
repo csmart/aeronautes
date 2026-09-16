@@ -8,6 +8,7 @@
   import type { BrowserState } from "../browser/browserState.svelte";
   import type { JobDTO } from "../../lib/api";
   import { formatBytes } from "../../lib/format";
+  import { v1Offers } from "../../lib/v1";
   import JobHistory from "./JobHistory.svelte";
   import JobItems from "./JobItems.svelte";
 
@@ -322,14 +323,16 @@
               </select>
             </label>
           {/if}
-          <button
-            class="bench"
-            title="Measure this cluster: writes real objects to a temporary Aeronautes-owned container"
-            disabled={browser.connectedBookmarkId === null}
-            onclick={() => (benchOpen = !benchOpen)}
-          >
-            Benchmark…
-          </button>
+          {#if v1Offers.benchmark}
+            <button
+              class="bench"
+              title="Measure this cluster: writes real objects to a temporary Aeronautes-owned container"
+              disabled={browser.connectedBookmarkId === null}
+              onclick={() => (benchOpen = !benchOpen)}
+            >
+              Benchmark…
+            </button>
+          {/if}
         {/if}
         {#if tab === "jobs" || tab === "history"}
           <label class="filter">
@@ -392,7 +395,7 @@
             objects or failed transfers. Automatic recovery cleanup is unavailable.
           </p>
         </div>
-        {#if benchOpen}
+        {#if v1Offers.benchmark && benchOpen}
           <form
             class="bench-form num"
             onsubmit={async (e) => {
@@ -478,7 +481,7 @@
                     <button class="cancel" disabled={!canCancel(job.id)} onclick={() => cancel(job.id)}>
                       {cancelLabel(job.id)}
                     </button>
-                  {:else if job.type === "copy"}
+                  {:else if v1Offers.rerun && job.type === "copy"}
                     <button
                       class="rerun"
                       title="Start a fresh Copy after checking retained item records for unresolved effects and unverified copies; the new job replans the current scope"

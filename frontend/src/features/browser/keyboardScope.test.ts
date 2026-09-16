@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
 import type { Api, SegmentOwnershipDTO } from "../../lib/api";
+import { BrowserState } from "./browserState.svelte";
 import { newFakeApi } from "./fakeApi";
 import BrowserScreen from "./BrowserScreen.svelte";
 import AboutDialog from "./AboutDialog.svelte";
+import ManifestDeleteDialog from "../inspector/ManifestDeleteDialog.svelte";
 
 const api = vi.hoisted(() => ({} as Api));
 vi.mock("../../lib/api", () => ({ liveApi: api }));
@@ -69,10 +71,27 @@ async function manifest() {
   const row = [...document.querySelectorAll<HTMLElement>('[role="option"]')]
     .find((el) => el.querySelector(".name")?.textContent?.trim() === "external-dlo")!;
   row.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); flushSync(); await settle();
-  const opener = button("Delete manifest…"); opener.focus();
+  const opener = button("Download…"); opener.focus();
   const ownership = deferred<SegmentOwnershipDTO>(); api.checkSegmentOwnership = vi.fn(() => ownership.promise);
-  click(opener); await settle();
-  return { ...f, opener, ownership, dialog: get('[role="alertdialog"]') };
+  const bookmarks = await api.listBookmarks();
+  const browser = new BrowserState(api);
+  browser.connectedBookmarkId = bookmarks[0]!.id;
+  await browser.loadContainers(); await browser.openContainer("fixtures");
+  browser.select(browser.entries.findIndex((entry) => entry.name === "external-dlo")); await settle();
+  let dialogComponent: ReturnType<typeof mount>;
+  const close = () => { const done = unmount(dialogComponent); mounted.delete(dialogComponent); return done; };
+  dialogComponent = mount(ManifestDeleteDialog, { target: document.body, props: {
+    browser, detail: browser.objectDetail!, segmentsAt: "backing/old/", onClose: close,
+  } });
+  mounted.add(dialogComponent); flushSync(); await settle();
+  return { ...f, opener, ownership, browser, close, dialog: get('[role="alertdialog"]'),
+    reopen() {
+      dialogComponent = mount(ManifestDeleteDialog, { target: document.body, props: {
+        browser, detail: browser.objectDetail!, segmentsAt: "backing/old/", onClose: close,
+      } });
+      mounted.add(dialogComponent); flushSync();
+    },
+  };
 }
 
 describe("browser keyboard ownership", () => {
@@ -162,8 +181,7 @@ describe("browser keyboard ownership", () => {
 describe("production modal ownership", () => {
   it.each([
     ["Add", "Add bookmark"], ["Create container", "Create container"],
-    ["Copy to…", "Transfer"], ["Delete scope…", "Delete"],
-    ["Upload…", "Upload"], ["Download…", "Download"], ["key cleanup", "Credential cleanup"],
+    ["Download…", "Download"], ["key cleanup", "Credential cleanup"],
   ])("isolates and dismisses the %s dialog through its own callback", async (label, name) => {
     await screen();
     const opener = label === "Create container" ? get('[title="Create container"]')
@@ -241,7 +259,7 @@ describe("production modal ownership", () => {
     press(window, "Tab"); expect(document.activeElement).toBe(f.dialog);
     press(window, "Escape"); await settle();
     expect(document.querySelector('[role="alertdialog"]')).toBeNull();
-    click(f.opener); await settle(); const replacement = get('[role="alertdialog"]');
+    f.reopen(); await settle(); const replacement = get('[role="alertdialog"]');
     if (outcome === "success") reply.resolve(await api.objectDetail("fixtures", "external-dlo"));
     else reply.reject(new Error("retired deletion failure"));
     await settle();
@@ -272,6 +290,7 @@ describe("production modal ownership", () => {
     const top = mount(AboutDialog, { target: layer, props: { onClose: () => {} } }); mounted.add(top); flushSync(); await settle();
     const active = document.activeElement;
     expect(layer.contains(active)).toBe(true);
+    await f.close();
     await unmount(f.component); mounted.delete(f.component); await settle();
     expect(document.activeElement).toBe(active);
     await unmount(top); mounted.delete(top); await settle();
@@ -295,7 +314,7 @@ describe("production modal ownership", () => {
   it("isolates later background nodes and restores existing inert values", async () => {
     await screen();
     const existing = document.createElement("div"); existing.setAttribute("inert", "existing"); document.body.append(existing);
-    click(button("Copy to…")); await settle(); const dialog = get('[role="dialog"]');
+    click(button("Download…")); await settle(); const dialog = get('[role="dialog"]');
     const late = document.createElement("button"); late.textContent = "late background"; document.body.append(late); await settle();
     expect(late.hasAttribute("inert")).toBe(true);
     late.focus(); expect(dialog.contains(document.activeElement)).toBe(true);
@@ -333,19 +352,16 @@ describe("production modal ownership", () => {
     expect(get(".crumb.root").textContent?.trim()).toBe("fixtures");
   });
 
-  it("cycles Tab over visible enabled controls and includes the disclosure summary", async () => {
-    await screen(); click(button("Copy to…")); await settle();
-    const dialog = get('[role="dialog"]'); const summary = get("summary", dialog);
-    const first = get("button, input, select", dialog); first.focus();
-    expect(button("Preview", dialog).disabled).toBe(true);
-    first.focus(); press(first, "Tab", { shiftKey: true });
-    expect(document.activeElement).toBe(summary);
-    press(summary, "Tab"); expect(document.activeElement).toBe(first);
-    get<HTMLDetailsElement>("details", dialog).open = true;
-    first.focus(); press(first, "Tab", { shiftKey: true });
-    expect(document.activeElement).toBe(get('[placeholder="unlimited"]', dialog));
-    get<HTMLDetailsElement>("details", dialog).open = false;
-    first.focus(); press(first, "Tab", { shiftKey: true });
-    expect(document.activeElement).toBe(summary);
+  it("cycles Tab over the download dialog's enabled controls", async () => {
+    await screen(); click(button("Download…")); await settle();
+    const dialog = get('[role="dialog"]');
+    expect(dialog.getAttribute("aria-label")).toBe("Download");
+    const close = get('[aria-label="Close"]', dialog);
+    const choose = button("Choose directory…", dialog);
+    expect(choose.disabled).toBe(false);
+    close.focus(); press(close, "Tab", { shiftKey: true });
+    expect(document.activeElement).toBe(choose);
+    press(choose, "Tab");
+    expect(document.activeElement).toBe(close);
   });
 });
