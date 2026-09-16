@@ -89,10 +89,10 @@ func finishNativeDownload(ctx context.Context, body io.ReadCloser, temp nativeDo
 		identityFailed = true
 		err = errors.Join(err, fmt.Errorf("cannot establish the identity of the downloaded temporary: %w", statErr))
 	}
-	if err == nil {
+	if verificationAttempted {
 		if _, contentErr := digest.Result(); contentErr != nil {
 			contentMismatch = true
-			err = fmt.Errorf("downloaded content does not match the source: %w", contentErr)
+			err = errors.Join(err, fmt.Errorf("downloaded content does not match the source: %w", contentErr))
 		}
 	}
 	// Swift can report corruption only on Close after a successful read.
@@ -122,7 +122,11 @@ func finishNativeDownload(ctx context.Context, body io.ReadCloser, temp nativeDo
 	if err := publish.publishVerified(verified); err != nil {
 		return downloadPlacementFailed("native-get", err)
 	}
-	return downloadVerified(wantSize)
+	result = downloadVerified(wantSize)
+	result.deferVerify = true
+	result.published = verified
+	result.publishedRel = publish.targetRel
+	return result
 }
 
 // removeNativeTemporary unlinks the temporary while the entry at its name

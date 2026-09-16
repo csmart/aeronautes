@@ -2,6 +2,7 @@ package local
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
@@ -38,6 +39,11 @@ type downloadResult struct {
 	// (ADR 0043). It is reported whatever the item's own outcome is,
 	// because the directories exist either way.
 	created []string
+	// deferVerify holds a native publication until the job confirms the
+	// published name still identifies this inode (ADR 0060).
+	deferVerify  bool
+	published    os.FileInfo
+	publishedRel string
 }
 
 func downloadFailed(effect transfercopy.Effect, stage transfercopy.Stage, code transfercopy.Code, label string, err error) downloadResult {
@@ -126,10 +132,16 @@ func (item DownloadItem) LocalPath(root, prefix string) (string, error) {
 	return filepath.Join(root, item.RelPath), nil
 }
 
+type nativePublished struct {
+	item   DownloadItem
+	copied downloadResult
+}
+
 type downloadRun struct {
-	recorder *DownloadRecorder
-	report   *Report
-	stopped  error
+	recorder      *DownloadRecorder
+	report        *Report
+	stopped       error
+	pendingNative []nativePublished
 }
 
 func (d *downloadRun) stop(err error) error {
@@ -168,11 +180,17 @@ func (d *downloadRun) observe(item DownloadItem, result downloadResult) error {
 				Cancelled: result.Diagnostic.Code == transfercopy.CodeCancelled})
 		}
 	}
-	if d.recorder == nil {
+	if d.recorder != nil {
+		if err := d.recorder.Execute(item, result.Observation); err != nil {
+			return d.stop(err)
+		}
+	}
+	if result.deferVerify && result.Result == transfercopy.ResultCopied {
+		d.pendingNative = append(d.pendingNative, nativePublished{item: item, copied: result})
 		return nil
 	}
-	if err := d.recorder.Execute(item, result.Observation); err != nil {
-		return d.stop(err)
+	if d.recorder == nil {
+		return nil
 	}
 	if result.verification != nil {
 		if err := d.recorder.Verify(item, *result.verification); err != nil {

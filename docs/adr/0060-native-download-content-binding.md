@@ -1,7 +1,6 @@
 # ADR 0060 — bind native download to missing segments and whole-job substitution
 
-**Status:** Proposed.
-Contract only; nothing in it is implemented yet.
+**Status:** Accepted for the native download remainder, which is delivered with this decision.
 This does not close L05, DS-04 or the valuable-data hold.
 
 **Scope:** The remaining L05 cases on the native download route only: missing and reordered segments, and whole-job source and publication substitution.

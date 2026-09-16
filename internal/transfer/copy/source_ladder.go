@@ -239,6 +239,18 @@ func PlainLadder(length int64, etag string) (Ladder, error) {
 	return Ladder{runs: contentLadder{{length: length, digest: digest}}}, nil
 }
 
+// SegmentedLadder is the ordered expectation of concatenated runs.
+// Each part is one run: its length and MD5. The GET the caller compares
+// is assembled independently, so a permutation or duplicate is a
+// different stream rather than a second hash of the same buffer.
+func SegmentedLadder(parts ...[]byte) Ladder {
+	runs := make(contentLadder, 0, len(parts))
+	for _, part := range parts {
+		runs = append(runs, contentRun{length: int64(len(part)), digest: md5.Sum(part)})
+	}
+	return Ladder{runs: runs}
+}
+
 // LadderDigest folds bytes into a source's ladder as they pass, so a
 // route that already streams its content pays no second read. It is the
 // one implementation of the comparison: the read-side comparator drives

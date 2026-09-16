@@ -78,7 +78,7 @@ func TestNativeDownloadAdmissionClosesSource(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				outcome := nativeDownload(t.Context(), source, "media", item, testDestination(t, dest), temporary)
+				outcome := nativeDownload(t.Context(), source, "media", item, testDestination(t, dest), temporary, downloadSourceIdentity{})
 				placed, err := outcome.Result == transfercopy.ResultCopied, outcome.err()
 				if placed || err == nil || gets.Load() != 1 || closes.Load() != 1 {
 					t.Fatalf("admission did not close the actual GET exactly once: placed=%v gets=%d closes=%d error=%v", placed, gets.Load(), closes.Load(), err)
