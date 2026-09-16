@@ -38,7 +38,7 @@ Job get is a local row read.
 The remaining metadata *reads* are those inspector HEADs.
 `MutateService` writes are a different surface and are not this decision.
 
-The browser state's monotonic scope counter still tracks what that client intended rather than what the backend did, and this slice does not edit `frontend/src/features/browser/browserState.svelte.ts`.
+The browser state's monotonic scope counter still tracks what that client intended rather than what the backend did.
 
 ## Decision
 
@@ -76,9 +76,9 @@ The remaining P28 read surfaces name the account they are for, and their replies
 A stale belief about which account a remaining read is for is refused rather than answered from elsewhere.
 Existing callers of the bound methods must name the account, so the generated bindings and `frontend/src/lib/api.ts` move with the signatures.
 
-`browserState.svelte.ts` is not edited here.
-That file's inspector, find, audit-recent and job-Get call sites remain a named remainder, and so do any TypeScript fixtures that only exist to serve it.
-Proof that a bound method refuses a stale belief is a Go service test against the two-account fixture or the local store, not a change in that file.
+`loadAudit` names the connecting or connected bookmark, so the recent-changes read is not issued empty.
+Inspector, find and job-Get call sites in `browserState.svelte.ts` remain a named remainder.
+Proof that a bound method refuses a stale belief is a Go service test against the two-account fixture or the local store.
 
 This does not make a live read atomic with the connection.
 The account can still move after the check and before the request reaches the store, which is the limit ADR 0049 already records.

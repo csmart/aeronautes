@@ -177,7 +177,7 @@ export interface Api {
   createContainer(create: ContainerCreateDTO): Promise<ContainerDetailDTO>;
   createMarker(container: string, prefix: string): Promise<PrefixDetailDTO>;
   deleteMarker(container: string, prefix: string): Promise<void>;
-  auditRecent(limit: number, bookmarkId?: string): Promise<AuditEventDTO[]>;
+  auditRecent(limit: number, bookmarkId: string): Promise<AuditEventDTO[]>;
   auditSearch(q: AuditQueryDTO): Promise<AuditEventDTO[]>;
   planCopy(req: CopyRequestDTO): Promise<CopyPlanDTO>;
   startCopy(req: CopyRequestDTO): Promise<string>;
@@ -245,7 +245,7 @@ export const liveApi: Api = {
   createMarker: (container, prefix) => MutateService.CreateMarker(container, prefix),
   deleteMarker: (container, prefix) => MutateService.DeleteMarker(container, prefix),
   auditRecent: async (limit, bookmarkId) =>
-    (await AuditService.RecentFor(bookmarkId ?? "", limit)) ?? [],
+    (await AuditService.RecentFor(bookmarkId, limit)) ?? [],
   auditSearch: async (q) => (await AuditService.Search(q)) ?? [],
   planCopy: async (req) => {
     const dto = await TransferService.PlanCopy(req);
