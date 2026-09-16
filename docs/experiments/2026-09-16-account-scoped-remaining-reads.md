@@ -4,6 +4,7 @@ Finish-line item L11, safety package P28, the surfaces [ADR 0049](../adr/0049-ac
 The completion test is that identical names in different accounts remain distinguishable, and that results, paging, retry and error state stay bound to the selected account.
 This record is the source survey of those remaining methods on `e770f8a9`.
 It is not a new runtime probe and it does not close L11 or P28.
+The correction in [ADR 0059](../adr/0059-account-scoped-remaining-reads.md) is implemented against that survey.
 
 ## What was asked
 
@@ -45,7 +46,6 @@ It does not measure how often a connection moves under an inspector HEAD or a Fi
 
 It does not claim P28 or L11 closed, and it does not authenticate which account the operator approved.
 
-## Proposed correction
+## Correction
 
 [ADR 0059](../adr/0059-account-scoped-remaining-reads.md) applies ADR 0049's binding to the remaining live Swift reads, binds a Find scan at start, and filters the local audit-recent and job-Get reads by the named bookmark.
-Nothing in that decision is implemented yet.
