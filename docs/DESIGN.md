@@ -5651,7 +5651,7 @@ The skip and fatal conditions, their wording and every assertion are unchanged, 
 
 The operator narrowed v1 on 14 September 2026 to browse, inspect, download, and metadata reading and writing, deferring copy, mirror, upload and bulk delete until each is proven.
 The [finish line](audits/2026-09-05/linux-finish-line.md) recorded that deferral describes what v1 must prove rather than what the binary refuses, leaving reachability undecided.
-[ADR 0052](adr/0052-v1-capability-gate.md) proposes that a v1 build refuse the deferred capabilities at the service entry point and hide their affordances, and it is not yet implemented.
+[ADR 0052](adr/0052-v1-capability-gate.md) refuses the deferred capabilities at the service entry point and hides their affordances.
 Refusal is the load-bearing half: hiding alone protects nothing, because the bridge is reachable from the webview independently of what the interface offers.
 The classification lives in one table naming the deferred actions, so returning a capability is removing a name rather than editing call sites, and a test holds that table exhaustive against the action inventory so a new bridge method cannot land unclassified.
 The [capability gate record](experiments/2026-09-15-v1-capability-gate.md) derives that inventory twice, from the generated bindings and from the coverage contract, and the two agree at fifty-two actions.

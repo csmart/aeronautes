@@ -13,9 +13,8 @@ This record settles what to build and leaves the decision itself to
 
 ## What this is not
 
-No slice here has been implemented yet.
-This is the contract and the enumeration it rests on; the correction it proposes is not
-delivered by this record.
+The correction this record proposed is delivered: a v1 build refuses the deferred actions at the service entry point and hides their affordances.
+It still does not make any kept capability proven, close any finding, or lift the valuable-data hold.
 
 ## The surface, derived twice
 
