@@ -54,7 +54,7 @@ func TestV1DeferredActionsAreInTheInventory(t *testing.T) {
 func TestEveryBridgeActionIsClassified(t *testing.T) {
 	kept := map[string]bool{
 		"AppService.About": true, "AppService.Info": true,
-		"AuditService.Recent": true, "AuditService.Search": true,
+		"AuditService.Recent": true, "AuditService.RecentFor": true, "AuditService.Search": true,
 		"BenchmarkService.Latest":          true,
 		"BookmarkService.CredentialStatus": true, "BookmarkService.Delete": true,
 		"BookmarkService.List": true, "BookmarkService.Save": true,

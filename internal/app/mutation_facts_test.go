@@ -17,7 +17,7 @@ import (
 
 func objectMetaEdit(t *testing.T, h *harness) ObjectMetadataEditDTO {
 	t.Helper()
-	before, err := h.inspector.Object(context.Background(), "fixtures", "normal/hello.txt")
+	before, err := h.inspector.Object(context.Background(), h.bookmarkID(), "fixtures", "normal/hello.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestObjectMetadataOutcomeAbortAfterPOSTIsResidue(t *testing.T) {
 			if newObjectPOSTs(before, h.mock.RequestLog()) == 0 {
 				t.Fatal("expected POST before outcome abort")
 			}
-			detail, err := h.inspector.Object(context.Background(), "fixtures", "normal/hello.txt")
+			detail, err := h.inspector.Object(context.Background(), h.bookmarkID(), "fixtures", "normal/hello.txt")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -206,7 +206,7 @@ func TestObjectMetadataVerifyReadFailureIsUnverified(t *testing.T) {
 	if len(all) != 1 || all[0].Outcome != mutationfacts.OutcomeUnverified {
 		t.Fatalf("facts = %+v", all)
 	}
-	events, err := h.auditSvc.Recent(context.Background(), 10)
+	events, err := h.auditSvc.RecentFor(context.Background(), h.bookmarkID(), 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +234,7 @@ func TestObjectMetadataTransportFailureIsUnverified(t *testing.T) {
 	if len(all) != 1 || all[0].Outcome != mutationfacts.OutcomeUnverified {
 		t.Fatalf("facts = %+v", all)
 	}
-	events, err := h.auditSvc.Recent(context.Background(), 10)
+	events, err := h.auditSvc.RecentFor(context.Background(), h.bookmarkID(), 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +259,7 @@ func TestObjectMetadataStoreRefusalIsFailed(t *testing.T) {
 	if len(all) != 1 || all[0].Outcome != mutationfacts.OutcomeFailed {
 		t.Fatalf("facts = %+v", all)
 	}
-	detail, err := h.inspector.Object(context.Background(), "fixtures", "normal/hello.txt")
+	detail, err := h.inspector.Object(context.Background(), h.bookmarkID(), "fixtures", "normal/hello.txt")
 	if err != nil {
 		t.Fatal(err)
 	}

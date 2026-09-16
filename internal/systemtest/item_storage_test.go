@@ -130,6 +130,7 @@ func TestTransferItemStorageReopen(t *testing.T) {
 	}
 	defer database.Close()
 	store := jobs.NewStore(database)
+	insertFixtureBookmark(t, database, "source")
 	legacy, err := store.Create(t.Context(), jobs.Job{Type: jobs.TypeCopy})
 	if err != nil {
 		t.Fatal(err)
@@ -195,7 +196,7 @@ func TestTransferItemStorageReopen(t *testing.T) {
 			}
 		}
 	}
-	empty, err := store.Create(t.Context(), jobs.Job{Type: jobs.TypeCopy, ItemRecordsVersion: 1})
+	empty, err := store.Create(t.Context(), jobs.Job{Type: jobs.TypeCopy, ItemRecordsVersion: 1, SourceBookmarkID: "source"})
 	if err != nil {
 		t.Fatal(err)
 	}

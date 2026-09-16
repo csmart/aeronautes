@@ -25,7 +25,7 @@ func retainedIntent(key string) jobs.ItemIntent {
 func TestJobItemAccessBeyondRecentJobsAndLargeCursors(t *testing.T) {
 	h, store, database := recoveryStatusHarness(t)
 	ctx := t.Context()
-	job, err := store.Create(ctx, jobs.Job{Type: jobs.TypeCopy, ItemRecordsVersion: 1})
+	job, err := store.Create(ctx, jobs.Job{Type: jobs.TypeCopy, ItemRecordsVersion: 1, SourceBookmarkID: h.Primary.BookmarkID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,7 @@ func TestJobItemAccessDistinguishesMissingFactsAndFacets(t *testing.T) {
 	h, store, _ := recoveryStatusHarness(t)
 	ctx := t.Context()
 	for _, version := range []int{0, 1} {
-		job, err := store.Create(ctx, jobs.Job{Type: jobs.TypeCopy, ItemRecordsVersion: version})
+		job, err := store.Create(ctx, jobs.Job{Type: jobs.TypeCopy, ItemRecordsVersion: version, SourceBookmarkID: h.Primary.BookmarkID})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -180,7 +180,7 @@ func TestJobItemAccessDistinguishesMissingFactsAndFacets(t *testing.T) {
 			t.Fatalf("uncaptured/empty conflated: %+v %+v, %v %v", page, totals, read.Err(), totalRead.Err())
 		}
 	}
-	job, err := store.Create(ctx, jobs.Job{Type: jobs.TypeUpload, ItemRecordsVersion: 1})
+	job, err := store.Create(ctx, jobs.Job{Type: jobs.TypeUpload, ItemRecordsVersion: 1, SourceBookmarkID: h.Primary.BookmarkID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,14 +228,14 @@ func TestJobItemAccessDistinguishesMissingFactsAndFacets(t *testing.T) {
 func TestJobItemAccessRefusesInvalidPages(t *testing.T) {
 	h, store, _ := recoveryStatusHarness(t)
 	ctx := t.Context()
-	job, err := store.Create(ctx, jobs.Job{Type: jobs.TypeCopy, ItemRecordsVersion: 1})
+	job, err := store.Create(ctx, jobs.Job{Type: jobs.TypeCopy, ItemRecordsVersion: 1, SourceBookmarkID: h.Primary.BookmarkID})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := store.AdmitItems(ctx, job.ID, []jobs.ItemIntent{retainedIntent("a"), retainedIntent("b")}); err != nil {
 		t.Fatal(err)
 	}
-	other, err := store.Create(ctx, jobs.Job{Type: jobs.TypeCopy, ItemRecordsVersion: 1})
+	other, err := store.Create(ctx, jobs.Job{Type: jobs.TypeCopy, ItemRecordsVersion: 1, SourceBookmarkID: h.Primary.BookmarkID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,7 +284,7 @@ func jobItemAccessRefusesUnavailable(t *testing.T, fault string) {
 	t.Helper()
 	h, store, database := recoveryStatusHarness(t)
 	ctx := t.Context()
-	job, err := store.Create(ctx, jobs.Job{Type: jobs.TypeCopy, ItemRecordsVersion: 1})
+	job, err := store.Create(ctx, jobs.Job{Type: jobs.TypeCopy, ItemRecordsVersion: 1, SourceBookmarkID: h.Primary.BookmarkID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -329,7 +329,7 @@ func jobItemAccessRefusesUnavailable(t *testing.T, fault string) {
 func TestJobItemAccessDropsPageOnInvalidRetainedIdentity(t *testing.T) {
 	h, store, database := recoveryStatusHarness(t)
 	ctx := t.Context()
-	job, err := store.Create(ctx, jobs.Job{Type: jobs.TypeCopy, ItemRecordsVersion: 1})
+	job, err := store.Create(ctx, jobs.Job{Type: jobs.TypeCopy, ItemRecordsVersion: 1, SourceBookmarkID: h.Primary.BookmarkID})
 	if err != nil {
 		t.Fatal(err)
 	}
