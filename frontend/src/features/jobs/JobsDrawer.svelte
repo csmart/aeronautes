@@ -546,7 +546,7 @@
                 Previously loaded slice: {browser.recentAuditEvents.length} events.
               {/if}
             {:else if browser.recentAuditLoaded}
-              Last loaded recent slice: {browser.recentAuditEvents.length} events, up to 50 across all accounts.
+              Last loaded recent slice: {browser.recentAuditEvents.length} events, up to 50 for the connected account.
             {:else}
               Recent changes have not been loaded.
             {/if}

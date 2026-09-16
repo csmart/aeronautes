@@ -1220,10 +1220,11 @@ export class BrowserState {
 
   async loadAudit() {
     const seq = ++this.#recentAuditSeq;
+    const bookmarkId = this.#connectingBookmarkId ?? this.connectedBookmarkId ?? "";
     this.recentAuditLoading = true;
     this.recentAuditError = false;
     try {
-      const page = await this.#api.auditRecent(50);
+      const page = await this.#api.auditRecent(50, bookmarkId);
       if (seq !== this.#recentAuditSeq) return;
       this.#requireAuditPage(page);
       this.recentAuditEvents = page;

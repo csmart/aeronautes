@@ -308,12 +308,22 @@ describe("audit paging", () => {
 });
 
 describe("independent Recent audit cache", () => {
+  it("refuses a Recent read that names no bookmark", async () => {
+    const api = newFakeApi();
+    await expect(api.auditRecent(50, "")).rejects.toThrow(/name the bookmark the read is for/);
+    const browser = new BrowserState(api);
+    await browser.loadAudit();
+    expect(browser.recentAuditError).toBe(true);
+    expect(browser.recentAuditLoaded).toBe(false);
+  });
+
   it.each([{ initial: [] }, { initial: [audit(30)] }])("labels a failed Recent refresh unavailable while retaining $initial", async ({ initial }) => {
     const api = newFakeApi();
     const pending = deferred<AuditEventDTO[]>();
     api.auditRecent = vi.fn().mockResolvedValueOnce(initial)
       .mockReturnValueOnce(pending.promise).mockResolvedValueOnce([audit(40)]);
     const browser = new BrowserState(api);
+    browser.connectedBookmarkId = "source";
     expect(browser.recentAuditLoaded).toBe(false);
     await browser.loadAudit();
     expect(browser.recentAuditLoaded).toBe(true);
@@ -330,7 +340,7 @@ describe("independent Recent audit cache", () => {
     await browser.loadAudit();
     expect(ids(browser.recentAuditEvents)).toEqual([40]);
     expect(browser.recentAuditError).toBe(false);
-    expect(api.auditRecent).toHaveBeenLastCalledWith(50);
+    expect(api.auditRecent).toHaveBeenLastCalledWith(50, "source");
   });
 
   it.each(["success", "failure"])("ignores an older Recent %s and finally during a newer read", async (outcome) => {
@@ -340,6 +350,7 @@ describe("independent Recent audit cache", () => {
     api.auditRecent = vi.fn().mockResolvedValueOnce([audit(30)])
       .mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
     const browser = new BrowserState(api);
+    browser.connectedBookmarkId = "source";
     await browser.loadAudit();
     const first = browser.loadAudit();
     const second = browser.loadAudit();
@@ -361,6 +372,7 @@ describe("independent Recent audit cache", () => {
     api.auditRecent = vi.fn().mockReturnValueOnce(older.promise)
       .mockRejectedValueOnce(new Error("current Recent error"));
     const browser = new BrowserState(api);
+    browser.connectedBookmarkId = "source";
     const first = browser.loadAudit();
     await browser.loadAudit();
     older.resolve([]);
@@ -382,6 +394,7 @@ describe("independent Recent audit cache", () => {
     api.auditSearch = vi.fn().mockResolvedValueOnce([audit(22, "delete.container")])
       .mockReturnValueOnce(search.promise);
     const browser = new BrowserState(api);
+    browser.connectedBookmarkId = "source";
     browser.auditFilterOp = "delete.";
     await browser.loadAudit();
     await browser.searchAudit();
@@ -421,6 +434,7 @@ describe("independent Recent audit cache", () => {
     api.auditRecent = vi.fn().mockResolvedValueOnce([audit(30)])
       .mockResolvedValueOnce(Array.from({ length: 51 }, (_, index) => audit(100 - index)));
     const browser = new BrowserState(api);
+    browser.connectedBookmarkId = "source";
     await browser.loadAudit();
     await browser.loadAudit();
     expect(ids(browser.recentAuditEvents)).toEqual([30]);
@@ -515,7 +529,7 @@ describe("audit reads after mutations", () => {
     expect(browser.recentAuditError).toBe(true);
     expect(browser.recentAuditLoaded).toBe(true);
     expect(browser.recentAuditEvents).toEqual([]);
-    const recorded = await readTrail(50);
+    const recorded = await readTrail(50, browser.connectedBookmarkId!);
     expect(recorded).toHaveLength(1);
     expect(recorded[0]).toMatchObject({ operation: scenario.operation, result: "applied" });
     await browser.loadAudit();
@@ -523,7 +537,7 @@ describe("audit reads after mutations", () => {
     expect(effect).toHaveBeenCalledTimes(1);
     expect(browser.recentAuditEvents).toEqual(recorded);
     expect(browser.recentAuditError).toBe(false);
-    expect(await readTrail(50)).toEqual(recorded);
+    expect(await readTrail(50, browser.connectedBookmarkId!)).toEqual(recorded);
   });
 
   it.each(mutationCases)("preserves a real $method rejection without issuing the optional audit read", async (scenario) => {
@@ -537,7 +551,7 @@ describe("audit reads after mutations", () => {
     await expect(scenario.run(browser)).rejects.toBe(refusal);
     expect(effect).toHaveBeenCalledTimes(1);
     expect(api.auditRecent).not.toHaveBeenCalled();
-    expect(await readTrail(50)).toEqual([]);
+    expect(await readTrail(50, browser.connectedBookmarkId!)).toEqual([]);
     expect(browser.recentAuditError).toBe(false);
   });
 });

@@ -232,6 +232,7 @@ it("counts only the independent Recent slice while Search is filtered and paged"
   api.auditRecent = vi.fn(() => recent.promise);
   api.auditSearch = vi.fn().mockResolvedValueOnce(page()).mockResolvedValueOnce([audit(50)]);
   const browser = new BrowserState(api);
+  browser.connectedBookmarkId = "source";
   const refresh = browser.loadAudit();
   browser.auditFilterOp = "copy.";
   browser.jobsFilter = "other-account";
@@ -257,6 +258,7 @@ it("reports Recent unavailable in the collapsed summary and retries only the rea
   api.auditSearch = vi.fn(async () => []);
   api.cancelJob = vi.fn();
   const browser = new BrowserState(api);
+  browser.connectedBookmarkId = "source";
   drawer = mount(JobsDrawer, { target: document.body, props: { browser } });
   flushSync();
   expect(bar().textContent).toContain("Recent changes not loaded");
@@ -279,6 +281,7 @@ it("reports Recent unavailable in the collapsed summary and retries only the rea
   expect(bar().textContent).toContain("0 last loaded recent changes");
   expect(browser.recentAuditError).toBe(false);
   expect(api.auditRecent).toHaveBeenCalledTimes(2);
+  expect(api.auditRecent).toHaveBeenLastCalledWith(50, "source");
   expect(api.auditSearch).toHaveBeenCalledTimes(1);
   expect(api.cancelJob).not.toHaveBeenCalled();
 });
@@ -287,6 +290,7 @@ it.each([{ initial: [] }, { initial: [audit(30)] }])("marks the earlier Recent s
   const api = newFakeApi();
   api.auditRecent = vi.fn().mockResolvedValueOnce(initial).mockRejectedValueOnce(new Error("Recent unavailable"));
   const browser = new BrowserState(api);
+  browser.connectedBookmarkId = "source";
   await browser.loadAudit();
   show(browser);
   button("Refresh recent changes").click();
@@ -312,4 +316,18 @@ it("keeps a query owned by BrowserState while the drawer is collapsed", async ()
   flushSync();
   expect(resources()).toEqual(["object-22"]);
   expect(api.auditSearch).toHaveBeenCalledTimes(1);
+});
+
+it("attributes the recent slice to the connected account, not every account", async () => {
+  const api = newFakeApi();
+  api.auditRecent = vi.fn(api.auditRecent);
+  const browser = new BrowserState(api);
+  browser.connectedBookmarkId = "source";
+  await browser.loadAudit();
+  show(browser);
+  expect(document.querySelector(".audit-recent")?.textContent)
+    .toContain("up to 50 for the connected account");
+  expect(document.querySelector(".audit-recent")?.textContent)
+    .not.toContain("across all accounts");
+  expect(api.auditRecent).toHaveBeenLastCalledWith(50, "source");
 });

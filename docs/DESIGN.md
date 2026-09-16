@@ -5631,7 +5631,9 @@ Those remaining P28 reads named no account.
 The [remaining-reads record](experiments/2026-09-16-account-scoped-remaining-reads.md) surveys them on the listing-bound head: inspector HEADs and Find start still resolve `connections.Session()` with no bookmark, their replies state none, `AuditService.Recent` returns newest events across every bookmark with `BookmarkID` omitted from the DTO, and `JobService.Get` loads any job id even though `List` already filters by bookmark.
 The correction in [ADR 0059](adr/0059-account-scoped-remaining-reads.md) is implemented.
 Live Swift inspector reads and `FindService.StartFind` take the bookmark the caller believes they are for, reuse ADR 0049's generation check and `ErrAccountScopeChanged`, and restate that scope on the reply; a Find scan stores the binding at start so a poll cannot be retargeted by a later `Connect`; local `RecentFor` and job Get/item pages filter by the named bookmark and do not require the live connection.
-`browserState.svelte.ts` is not edited with this slice, `AuditService.Recent` remains in `mutateservice.go` but the store refuses an unscoped trail read, `Search` and the account portrait stay unbound, and L11, P28 and the valuable-data hold remain open.
+`loadAudit` names the connecting or connected bookmark, and the drawer states a recent slice as up to 50 for the connected account.
+Inspector, find and job-Get call sites in `browserState.svelte.ts` remain a remainder.
+`AuditService.Recent` remains in `mutateservice.go` but the store refuses an unscoped trail read, `Search` and the account portrait stay unbound, and L11, P28 and the valuable-data hold remain open.
 
 P20 settles what a cancelled download leaves behind, under [ADR 0048](adr/0048-cancelled-stage-removal.md).
 [ADR 0043](adr/0043-cancellation-delta-authority.md) decision 7 left that choice open for the operator, who has answered it: a graceful cancel removes the partial files the job created and says so, a crash or a kill retains them and that is reported accurately, and there is no setting and no prompt.

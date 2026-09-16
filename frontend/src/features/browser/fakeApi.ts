@@ -490,7 +490,12 @@ export function newFakeApi(): Api {
       return detail;
     },
 
-    auditRecent: async (limit) => [...audit].reverse().slice(0, limit),
+    auditRecent: async (limit, bookmarkId) => {
+      if (!bookmarkId) {
+        throw new Error("name the bookmark the read is for");
+      }
+      return [...audit].reverse().slice(0, limit);
+    },
     auditSearch: async (q) =>
       [...audit]
         .reverse()
