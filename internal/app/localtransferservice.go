@@ -243,8 +243,20 @@ func (s *TransferService) uploadPreflight(ctx context.Context, req UploadRequest
 	return local.PreflightUpload(ctx, session, req.Container, req.Prefix, paths)
 }
 
-// PreflightDownload runs the complete §27.5 materialization report.
-func (s *TransferService) PreflightDownload(ctx context.Context, req DownloadRequestDTO) (*local.DownloadPreflight, error) {
+// PreflightDownload is the BRIDGE-facing collision report (ADR 0056):
+// complete counts and a bounded sample. Execution uses downloadPreflight.
+func (s *TransferService) PreflightDownload(ctx context.Context, req DownloadRequestDTO) (*local.DownloadPreflightView, error) {
+	report, err := s.downloadPreflight(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	view := report.View()
+	return &view, nil
+}
+
+// downloadPreflight computes the complete report for execution — never
+// returned across the bridge.
+func (s *TransferService) downloadPreflight(ctx context.Context, req DownloadRequestDTO) (*local.DownloadPreflight, error) {
 	if req.BookmarkID == "" || req.Container == "" {
 		return nil, errors.New("bookmark and container are required")
 	}
@@ -430,7 +442,7 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 	if err != nil {
 		return "", err
 	}
-	preflight, err := s.PreflightDownload(ctx, req)
+	preflight, err := s.downloadPreflight(ctx, req)
 	if err != nil {
 		return "", err
 	}

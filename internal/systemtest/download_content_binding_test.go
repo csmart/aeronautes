@@ -170,15 +170,15 @@ func TestDownloadContentIsBoundToTheSource(t *testing.T) {
 			}
 			request := app.DownloadRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: container, Prefix: "scope/", DestDirToken: picked.Token}
 			preflight, err := h.Transfer.PreflightDownload(t.Context(), request)
-			if err != nil || preflight == nil || len(preflight.Items) != 1 {
+			if err != nil || preflight == nil || int(preflight.Objects) != 1 {
 				t.Fatalf("preflight: %+v %v", preflight, err)
 			}
 			wantRoute := "native"
 			if !strings.Contains(testCase.base, engineReservedRune) {
 				wantRoute = "rclone"
 			}
-			if preflight.Items[0].Route != wantRoute {
-				t.Fatalf("case is about the %s route but planned %q", wantRoute, preflight.Items[0].Route)
+			if preflight.ItemSamples[0].Route != wantRoute {
+				t.Fatalf("case is about the %s route but planned %q", wantRoute, preflight.ItemSamples[0].Route)
 			}
 			id, err := h.Transfer.StartDownload(t.Context(), request)
 			if err != nil {

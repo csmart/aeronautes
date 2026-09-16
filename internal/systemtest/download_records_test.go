@@ -143,10 +143,10 @@ func downloadRecordsRun(t *testing.T, h *Harness, count int, native bool) {
 	}
 	req := app.DownloadRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: source, Prefix: prefix, DestDirToken: picked.Token}
 	preflight, err := h.Transfer.PreflightDownload(t.Context(), req)
-	if err != nil || preflight == nil || preflight.Rejected() || len(preflight.Items) != count+1 || preflight.TotalBytes != totalBytes {
+	if err != nil || preflight == nil || preflight.Rejected || int(preflight.Objects) != count+1 || preflight.TotalBytes != totalBytes {
 		t.Fatalf("download fixture did not pass complete preflight: %+v %v", preflight, err)
 	}
-	for _, item := range preflight.Items {
+	for _, item := range preflight.ItemSamples {
 		name := strings.TrimPrefix(item.Name, prefix)
 		body, exists := originals[name]
 		route := "rclone"

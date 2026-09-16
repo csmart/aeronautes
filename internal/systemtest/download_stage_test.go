@@ -54,7 +54,7 @@ func (f *downloadStageFixture) choose(t *testing.T) {
 	h := f.h
 	f.request = f.selectionFor(t, "scope/")
 	preflight, err := h.Transfer.PreflightDownload(t.Context(), f.request)
-	if err != nil || preflight == nil || preflight.Rejected() || len(preflight.Items) != 1 || preflight.Items[0].Route != "rclone" || preflight.Items[0].RelPath != "nested/proof.bin" {
+	if err != nil || preflight == nil || preflight.Rejected || int(preflight.Objects) != 1 || preflight.ItemSamples[0].Route != "rclone" || preflight.ItemSamples[0].RelPath != "nested/proof.bin" {
 		t.Fatalf("stage fixture engine preflight: %+v %v", preflight, err)
 	}
 }

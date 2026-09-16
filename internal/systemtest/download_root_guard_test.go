@@ -61,10 +61,10 @@ func downloadRootGuardRefused(t *testing.T, h *Harness, request app.DownloadRequ
 	before := downloadRootGuardCounts(t, h)
 	requests := trace.requestCount()
 	preflight, err := h.Transfer.PreflightDownload(t.Context(), request)
-	if err != nil || preflight == nil || !preflight.Rejected() || len(preflight.Items) != 0 || len(preflight.Problems) != 1 || preflight.Objects != 0 || preflight.TotalBytes != 0 {
+	if err != nil || preflight == nil || !preflight.Rejected || int(preflight.Objects) != 0 || int(preflight.ProblemCount) != 1 || preflight.Objects != 0 || preflight.TotalBytes != 0 {
 		t.Errorf("unsafe destination was not refused before planning: %+v %v", preflight, err)
 	} else {
-		problem := preflight.Problems[0]
+		problem := preflight.ProblemSamples[0]
 		const detail = "the selected destination path cannot be used unchanged; select it again using an absolute UTF-8 path without dot or empty components"
 		if problem.Name != "destination" || problem.Kind != "destination-path" || problem.Detail != detail || !problem.Reject {
 			t.Errorf("unsafe destination lost its constant refusal: %+v", problem)
@@ -181,7 +181,7 @@ func downloadRootGuardService(t *testing.T, h *Harness, spelling string, native,
 	if empty {
 		want = 0
 	}
-	if err != nil || preflight == nil || preflight.Rejected() || int64(len(preflight.Items)) != want {
+	if err != nil || preflight == nil || preflight.Rejected || preflight.Objects != want {
 		t.Fatalf("valid destination preflight differs: %+v %v", preflight, err)
 	}
 	if !empty {
@@ -189,8 +189,8 @@ func downloadRootGuardService(t *testing.T, h *Harness, spelling string, native,
 		if native {
 			route = "native"
 		}
-		if preflight.Items[0].Route != route || preflight.Items[0].Name != prefix+"proof.bin" || preflight.Items[0].RelPath != "proof.bin" {
-			t.Fatalf("accepted destination changed route or identity: %+v", preflight.Items[0])
+		if preflight.ItemSamples[0].Route != route || preflight.ItemSamples[0].Name != prefix+"proof.bin" || preflight.ItemSamples[0].RelPath != "proof.bin" {
+			t.Fatalf("accepted destination changed route or identity: %+v", preflight.ItemSamples[0])
 		}
 	}
 	id, err := h.Transfer.StartDownload(t.Context(), req)

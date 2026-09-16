@@ -55,9 +55,10 @@ export function PlanCopy(req: $models.CopyRequestDTO): $CancellablePromise<$mode
 }
 
 /**
- * PreflightDownload runs the complete §27.5 materialization report.
+ * PreflightDownload is the BRIDGE-facing collision report (ADR 0056):
+ * complete counts and a bounded sample. Execution uses downloadPreflight.
  */
-export function PreflightDownload(req: $models.DownloadRequestDTO): $CancellablePromise<local$0.DownloadPreflight | null> {
+export function PreflightDownload(req: $models.DownloadRequestDTO): $CancellablePromise<local$0.DownloadPreflightView | null> {
     return $Call.ByID(2765768397, req);
 }
 

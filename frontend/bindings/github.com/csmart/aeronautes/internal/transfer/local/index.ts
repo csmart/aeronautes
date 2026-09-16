@@ -4,6 +4,7 @@
 export type {
     DownloadItem,
     DownloadPreflight,
+    DownloadPreflightView,
     Problem,
     UploadItem,
     UploadPreflight

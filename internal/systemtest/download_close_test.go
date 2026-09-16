@@ -142,7 +142,7 @@ func downloadCloseRun(t *testing.T, h *Harness, scenario string) {
 	}
 	request := app.DownloadRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: source, Prefix: prefix, DestDirToken: picked.Token}
 	preflight, err := h.Transfer.PreflightDownload(t.Context(), request)
-	if err != nil || preflight == nil || preflight.Rejected() || len(preflight.Items) != 1 || preflight.Items[0].Route != "native" {
+	if err != nil || preflight == nil || preflight.Rejected || int(preflight.Objects) != 1 || preflight.ItemSamples[0].Route != "native" {
 		t.Fatalf("close probe native preflight: %+v %v", preflight, err)
 	}
 	id, err := h.Transfer.StartDownload(t.Context(), request)

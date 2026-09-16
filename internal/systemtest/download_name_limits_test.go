@@ -105,13 +105,13 @@ func downloadNameLimits(t *testing.T, h *Harness, c nameLimitsCase) {
 	if err != nil || preflight == nil {
 		t.Fatalf("preflight: %+v %v", preflight, err)
 	}
-	encoded, _ := json.Marshal(map[string]any{"case": c.name, "items": len(preflight.Items), "problems": preflight.Problems})
+	encoded, _ := json.Marshal(map[string]any{"case": c.name, "items": int(preflight.Objects), "problems": preflight.ProblemSamples})
 	t.Logf("name limits observation: %s", encoded)
 	if c.refusedKind != "" {
 		// The safe name is admitted and the over-long name refused by the
 		// named rule; the whole selection is rejected before any write.
-		if !preflight.Rejected() || len(preflight.Problems) != 1 || preflight.Problems[0].Kind != c.refusedKind || !strings.Contains(preflight.Problems[0].Detail, c.refusedDetail) || len(preflight.Items) != len(c.objects)-1 {
-			t.Fatalf("refusal differs: %+v items=%d", preflight.Problems, len(preflight.Items))
+		if !preflight.Rejected || int(preflight.ProblemCount) != 1 || preflight.ProblemSamples[0].Kind != c.refusedKind || !strings.Contains(preflight.ProblemSamples[0].Detail, c.refusedDetail) || int(preflight.Objects) != len(c.objects)-1 {
+			t.Fatalf("refusal differs: %+v items=%d", preflight.ProblemSamples, int(preflight.Objects))
 		}
 		if _, err := h.Transfer.StartDownload(t.Context(), request); err == nil {
 			t.Fatal("start accepted a refused selection")
@@ -120,7 +120,7 @@ func downloadNameLimits(t *testing.T, h *Harness, c nameLimitsCase) {
 			t.Fatalf("refused selection changed the local tree: %v", after)
 		}
 	} else {
-		if preflight.Rejected() || len(preflight.Items) != len(c.objects) {
+		if preflight.Rejected || int(preflight.Objects) != len(c.objects) {
 			t.Fatalf("selection was not admitted: %+v", preflight)
 		}
 		id, err := h.Transfer.StartDownload(t.Context(), request)
