@@ -768,10 +768,10 @@ func (s *JobService) jobInAccount(ctx context.Context, bookmarkID, jobID string)
 	}
 	j, err := s.jobs.Get(ctx, jobID)
 	if err != nil {
-		if strings.HasSuffix(err.Error(), " not found") {
+		if errors.Is(err, jobs.ErrItemJobNotFound) {
 			return jobs.Job{}, jobs.ErrItemJobNotFound
 		}
-		return jobs.Job{}, itemReadError(err)
+		return jobs.Job{}, err
 	}
 	if j.SourceBookmarkID != bookmarkID && j.DestBookmarkID != bookmarkID {
 		return jobs.Job{}, fmt.Errorf("%w: job is not for that bookmark", ErrAccountScopeChanged)

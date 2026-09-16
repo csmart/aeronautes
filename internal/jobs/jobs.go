@@ -258,7 +258,7 @@ func (s *Store) Get(ctx context.Context, id string) (Job, error) {
 	row := s.db.Reader().QueryRowContext(ctx, selectJob+` WHERE id=?`, id)
 	j, err := scanJob(row.Scan)
 	if err == sql.ErrNoRows {
-		return Job{}, fmt.Errorf("job %s not found", id)
+		return Job{}, fmt.Errorf("job %s: %w", id, ErrItemJobNotFound)
 	}
 	return j, err
 }
