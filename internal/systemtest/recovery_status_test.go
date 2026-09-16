@@ -51,7 +51,7 @@ func TestRecoveryStatusBeyondRecentJobs(t *testing.T) {
 		{jobs.StateFailed, []jobs.State{jobs.StateFailed}},
 	}
 	for i, test := range cases {
-		job, err := store.Create(ctx, jobs.Job{Type: jobs.TypeCopy})
+		job, err := store.Create(ctx, jobs.Job{Type: jobs.TypeCopy, SourceBookmarkID: h.Primary.BookmarkID})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -89,7 +89,7 @@ func TestRecoveryStatusBeyondRecentJobs(t *testing.T) {
 		t.Fatal(err)
 	}
 	for range 65 {
-		job, err := store.Create(ctx, jobs.Job{Type: jobs.TypeDownload})
+		job, err := store.Create(ctx, jobs.Job{Type: jobs.TypeDownload, SourceBookmarkID: h.Primary.BookmarkID})
 		if err != nil {
 			t.Fatal(err)
 		}

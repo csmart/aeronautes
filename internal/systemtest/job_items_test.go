@@ -70,7 +70,7 @@ func TestJobItemAccessBeyondRecentJobsAndLargeCursors(t *testing.T) {
 		}
 	}
 	for range 65 {
-		if _, err := store.Create(ctx, jobs.Job{Type: jobs.TypeDownload}); err != nil {
+		if _, err := store.Create(ctx, jobs.Job{Type: jobs.TypeDownload, SourceBookmarkID: h.Primary.BookmarkID}); err != nil {
 			t.Fatal(err)
 		}
 	}
