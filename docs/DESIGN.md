@@ -5695,7 +5695,7 @@ A POST that succeeds when that transaction fails returns residue rather than app
 A verify-read failure after a POST is unverified, not failed; [ADR 0046](adr/0046-metadata-write-window.md) still qualifies a completed POST as not establishing exclusivity.
 The ledger is `mutation_facts`; compacted `audit_events` are not it.
 The [object metadata durable-facts record](experiments/2026-09-16-object-metadata-durable-facts.md) states the prior path and the delivered proofs.
-Create, marker and manifest stay on today's gate plus best-effort audit, container metadata waits for L09, and download terminal writes stay on ADR 0024/0033.
+Create, marker and manifest stay on today's gate plus best-effort audit, container metadata remains a follow-up, and download terminal writes stay on ADR 0024/0033.
 L04, P12, P13 and the valuable-data hold stay open.
 
 ### 65.12. Proportionate remediation and a fixed finish line
