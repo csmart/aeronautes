@@ -71,13 +71,13 @@ func TestDownloadNativeCancellationBetweenItems(t *testing.T) {
 					if observation.Result != transfercopy.ResultCopied || observation.CopiedBytes != 7 {
 						t.Fatalf("native cancellation lost placed content: %+v", observation)
 					}
+					if cancelAfterFirst {
+						cancel()
+					}
 					return nil
 				},
 				Verify: func(DownloadItem, transfercopy.Observation) error {
 					verified++
-					if cancelAfterFirst {
-						cancel()
-					}
 					return nil
 				},
 			}

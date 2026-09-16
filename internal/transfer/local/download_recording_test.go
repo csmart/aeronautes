@@ -97,8 +97,11 @@ func TestDownloadRecordingAcknowledgement(t *testing.T) {
 						return nil
 					},
 					Verify: func(item DownloadItem, o transfercopy.Observation) error {
-						if !acknowledged[item.Name] || len(phases) == 0 || phases[len(phases)-1] != "execute:"+item.Name || o.Result != transfercopy.ResultVerified {
+						if !acknowledged[item.Name] || o.Result != transfercopy.ResultVerified {
 							t.Fatalf("verification preceded execution acknowledgement: %v %+v", phases, o)
+						}
+						if !native && (len(phases) == 0 || phases[len(phases)-1] != "execute:"+item.Name) {
+							t.Fatalf("engine verification was not next to its execution: %v %+v", phases, o)
 						}
 						phases = append(phases, "verify:"+item.Name)
 						if refusal == "verify" {
@@ -116,6 +119,9 @@ func TestDownloadRecordingAcknowledgement(t *testing.T) {
 					wantDone = 0
 				} else if refusal != "none" {
 					wantDone = 1
+					if native && refusal == "verify" {
+						wantDone = 2
+					}
 				}
 				if report.Done != wantDone || report.Bytes != wantDone*7 || len(report.Failures) != 0 {
 					t.Fatalf("record refusal changed witnessed placement: %+v", report)
@@ -124,8 +130,10 @@ func TestDownloadRecordingAcknowledgement(t *testing.T) {
 					t.Fatal("admission refusal allowed dependent transfer work")
 				}
 				if refusal != "none" {
-					if _, err := os.Lstat(filepath.Join(root, "b")); !errors.Is(err, os.ErrNotExist) {
-						t.Fatal("required record refusal allowed a later placement")
+					if !(native && refusal == "verify") {
+						if _, err := os.Lstat(filepath.Join(root, "b")); !errors.Is(err, os.ErrNotExist) {
+							t.Fatal("required record refusal allowed a later placement")
+						}
 					}
 					if native && mock.Requests() != beforeRequests+int(wantDone) {
 						t.Fatalf("required record refusal allowed another native GET: %d -> %d", beforeRequests, mock.Requests())

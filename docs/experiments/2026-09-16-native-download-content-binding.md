@@ -45,4 +45,7 @@ Copy, native upload and staged upload commit stay the named deferred gap ADR 004
 L07 cancellation boundaries are not this slice.
 This record closes neither L05 nor DS-04, and the valuable-data hold is unchanged.
 
-No implementation is proposed here; ADR 0060 carries the decision, and no code changed.
+The native remainder is now delivered under ADR 0060.
+Package tests against the in-process mock cover a two-run GET permutation, a missing run replaced by a duplicate, a short body at a run boundary, a same-size source replacement after the transfer set is built, and a published name replaced before verification is recorded.
+The engine path is unchanged.
+This still closes neither L05 nor DS-04, and the valuable-data hold is unchanged.

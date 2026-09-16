@@ -164,15 +164,18 @@ func DownloadInto(ctx context.Context, src *swiftcontrol.Session, engine Engine,
 			outcome = materializeDownloadDirectory(ctx, destination, item.RelPath)
 		} else {
 			report.NativeRouted++
-			outcome = nativeDownload(ctx, src, container, item, destination, staging)
+			outcome = nativeDownload(ctx, src, container, item, destination, staging, preflight.nativeSource[item.Name])
 		}
 		if err := d.observe(item, outcome); err != nil {
 			return report, err
 		}
 		progress()
 		if err := ctx.Err(); err != nil {
-			return report, errors.Join(err, outcome.err())
+			return report, errors.Join(err, outcome.err(), d.confirmNativePublications(destination))
 		}
+	}
+	if err := d.confirmNativePublications(destination); err != nil {
+		return report, err
 	}
 	if len(engineNames) == 0 {
 		return report, nil
@@ -467,13 +470,17 @@ func downloadPlacementFailed(label string, err error) downloadResult {
 	return result
 }
 
-func nativeDownload(ctx context.Context, src *swiftcontrol.Session, container string, item DownloadItem, destination *DestinationRoot, temporary string) downloadResult {
+func nativeDownload(ctx context.Context, src *swiftcontrol.Session, container string, item DownloadItem, destination *DestinationRoot, temporary string, source downloadSourceIdentity) downloadResult {
 	if err := ctx.Err(); err != nil {
 		return downloadNotAttempted(transfercopy.StageSourceRead, err)
 	}
 	body, detail, err := src.OpenObject(ctx, container, item.Name)
 	if err != nil {
 		return downloadFailed(transfercopy.EffectNotAttempted, transfercopy.StageSourceRead, transfercopy.CodeIO, "native-get", err)
+	}
+	if matchErr := source.match(detail); matchErr != nil {
+		return downloadVerificationFailed(transfercopy.StageVerification, transfercopy.CodeUnverified, "native-get",
+			errors.Join(fmt.Errorf("source was substituted: %w", matchErr), body.Close()))
 	}
 	// The open already carried the source's own detail, so a plain source
 	// needs no further request and only a large one costs a listing.
@@ -533,6 +540,45 @@ func nativeDownloadBody(ctx context.Context, body io.ReadCloser, item DownloadIt
 		stagedRoot: parent, stagedBase: temporaryBase, stagedRel: filepath.Join(filepath.Dir(item.RelPath), temporaryBase), stagedDisplay: temporary,
 		targetRoot: parent, targetBase: base, targetRel: item.RelPath, targetDisplay: filepath.Join(destination.Path(), item.RelPath)}
 	return finishNativeDownload(ctx, body, temp, parent, publish, item.Size, ladder)
+}
+
+func (d *downloadRun) confirmNativePublications(destination *DestinationRoot) error {
+	if d == nil || destination == nil {
+		return nil
+	}
+	pending := d.pendingNative
+	d.pendingNative = nil
+	for _, published := range pending {
+		current, err := destination.root.Lstat(published.copied.publishedRel)
+		if err == nil && published.copied.published != nil && os.SameFile(current, published.copied.published) {
+			if d.recorder != nil && published.copied.verification != nil {
+				if err := d.recorder.Verify(published.item, *published.copied.verification); err != nil {
+					return d.stop(err)
+				}
+			}
+			continue
+		}
+		reason := errors.New("published file no longer names the verified download")
+		if err != nil {
+			reason = fmt.Errorf("published file no longer names the verified download: %w", err)
+		}
+		if d.report.Done > 0 {
+			d.report.Done--
+		}
+		if published.copied.CopiedBytes > 0 && d.report.Bytes >= published.copied.CopiedBytes {
+			d.report.Bytes -= published.copied.CopiedBytes
+		}
+		failed := downloadVerificationFailed(transfercopy.StageVerification, transfercopy.CodeUnverified, "native-get", reason)
+		if len(d.report.Failures) < maxFailures {
+			d.report.Failures = append(d.report.Failures, Failure{Name: published.item.Name, Stage: failed.label, Err: failed.err().Error()})
+		}
+		if d.recorder != nil && failed.verification != nil {
+			if err := d.recorder.Verify(published.item, *failed.verification); err != nil {
+				return d.stop(err)
+			}
+		}
+	}
+	return d.stopped
 }
 
 func (d *downloadRun) copy(ctx context.Context, session *swiftcontrol.Session, run func(context.Context) (*rclone.Result, error)) (*rclone.Result, error) {

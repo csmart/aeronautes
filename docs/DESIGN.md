@@ -5739,16 +5739,16 @@ Observed preflight, POST and verification transaction IDs survive in committed o
 It preserves all existing admission, versioning and writer-shutdown rules and does not claim exclusivity or trusted public-ACL approval.
 The named finish-line and release holds remain open.
 
-Native download still has the L05 cases ADR 0045 named and did not close.
-The [remainder record](experiments/2026-09-16-native-download-content-binding.md) states them from the delivered source: the maintained native cases are a one-run plain object, the transfer set stores no source identity, and verification is recorded in the same observation as publication so a later substitute cannot un-verify the row.
-[ADR 0060](adr/0060-native-download-content-binding.md) proposes that remainder on the native route only.
+Native download still had the L05 cases ADR 0045 named and did not close.
+The [remainder record](experiments/2026-09-16-native-download-content-binding.md) stated them from the delivered source: the maintained native cases were a one-run plain object, the transfer set stored no source identity, and verification was recorded in the same observation as publication so a later substitute could not un-verify the row.
+[ADR 0060](adr/0060-native-download-content-binding.md) delivers that remainder on the native route only.
 The GET still digests along the existing ladder, and a segmented native GET that is a same-size permutation, a missing run replaced by a duplicate, or a short body at a run boundary refuses before publishing with the temporary retained.
 Start captures source identity internally from the listing and from the zero-byte HEADs preflight already takes, not on the bridge DTO, and `OpenObject` must match that identity before a temporary is created; a disagreement is unverified with an unresolved effect because the GET was issued.
 Verification of a native file is recorded only after a confirmation that the published name still identifies the verified inode; a substitute is retained, not unlinked.
 The engine download path stays unbound: no comparison is added without a fixture that fails when that comparison is deleted.
 Copy, native upload and staged upload commit stay the named deferred gap.
 L07 cancellation checks in the same executor are not this slice.
-This proposal closes neither L05 nor DS-04, and the valuable-data release hold remains.
+This does not close L05 or DS-04, and the valuable-data release hold remains.
 
 ### 65.12. Proportionate remediation and a fixed finish line
 

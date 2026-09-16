@@ -148,6 +148,9 @@ type DownloadPreflight struct {
 	Problems   []Problem      `json:"problems"`
 	TotalBytes int64          `json:"totalBytes"`
 	Objects    int64          `json:"objects"`
+	// nativeSource is the Start listing/HEAD identity for native files.
+	// It is not a bridge field (ADR 0060).
+	nativeSource map[string]downloadSourceIdentity
 }
 
 func (p *DownloadPreflight) Rejected() bool { return rejected(p.Problems) }
@@ -251,6 +254,7 @@ func PreflightDownloadInto(ctx context.Context, src *swiftcontrol.Session, conta
 	}
 	var names []string
 	var candidates []DownloadItem
+	nativeSource := map[string]downloadSourceIdentity{}
 	// One group per relation; a collision in either refuses the selection.
 	byLower := map[string][]string{}
 	byCaseless := map[string][]string{}
@@ -340,6 +344,7 @@ func PreflightDownloadInto(ctx context.Context, src *swiftcontrol.Session, conta
 		}
 
 		size := object.Bytes
+		var source downloadSourceIdentity
 		if size == 0 {
 			// A zero-byte listing row may be a DLO manifest whose logical
 			// size the listing does not show (§28.4); one HEAD resolves it.
@@ -348,6 +353,9 @@ func PreflightDownloadInto(ctx context.Context, src *swiftcontrol.Session, conta
 				return nil, err
 			}
 			size = detail.ContentLength
+			source = headSourceIdentity(detail)
+		} else {
+			source = listingSourceIdentity(object)
 		}
 		route := "rclone"
 		if plan.RcloneUnsafe(prefix + rel) {
@@ -356,6 +364,7 @@ func PreflightDownloadInto(ctx context.Context, src *swiftcontrol.Session, conta
 		candidates = append(candidates, DownloadItem{
 			Name: object.Name, RelPath: filepath.FromSlash(rel), Size: size, Route: route,
 		})
+		nativeSource[object.Name] = source
 	}
 
 	// Directory aliases: a planned directory identity with more than one
@@ -455,6 +464,7 @@ func PreflightDownloadInto(ctx context.Context, src *swiftcontrol.Session, conta
 		report.Objects++
 		report.TotalBytes += item.Size
 	}
+	report.nativeSource = nativeSource
 	return report, nil
 }
 

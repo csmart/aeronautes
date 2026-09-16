@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -41,9 +42,10 @@ import (
 // responses whose path ends in the given suffix, preserving length
 // exactly so every length check on the route still passes.
 type contentProxy struct {
-	hits   int
-	alter  func([]byte) []byte
-	suffix string
+	hits        int
+	alter       func([]byte) []byte
+	suffix      string
+	allowLength bool
 }
 
 func invertBytes(b []byte) []byte {
@@ -102,11 +104,13 @@ func installContentProxy(t *testing.T, h *Harness, account *Account, suffix stri
 			return err
 		}
 		altered := p.alter(original)
-		if len(altered) != len(original) {
+		if len(altered) != len(original) && !p.allowLength {
 			t.Fatalf("fixture changed length %d -> %d; these cases are only about same-size difference", len(original), len(altered))
 		}
 		p.hits++
 		resp.Body = io.NopCloser(bytes.NewReader(altered))
+		resp.ContentLength = int64(len(altered))
+		resp.Header.Set("Content-Length", strconv.Itoa(len(altered)))
 		return nil
 	}
 	front := httptest.NewServer(proxy)
@@ -221,6 +225,89 @@ func TestDownloadContentIsBoundToTheSource(t *testing.T) {
 			after := h.SnapshotNamespace(h.Primary)
 			if stored := after.Containers[container].Objects[name]; stored.Digest != objectDigest(body) {
 				t.Errorf("the source object changed: %+v", stored)
+			}
+		})
+	}
+}
+
+func TestNativeDownloadSegmentedGETIsBound(t *testing.T) {
+	left, right := bytes.Repeat([]byte("A"), 32), bytes.Repeat([]byte("B"), 32)
+	assembled := append(append([]byte(nil), left...), right...)
+	for _, c := range []struct {
+		name        string
+		alter       func([]byte) []byte
+		allowLength bool
+		wantPlace   bool
+	}{
+		{name: "control", alter: passBytes, wantPlace: true},
+		{name: "permuted_segments", alter: func(b []byte) []byte {
+			out := make([]byte, len(b))
+			copy(out, b[len(left):])
+			copy(out[len(left):], b[:len(left)])
+			return out
+		}},
+		{name: "missing_with_duplicate", alter: func(b []byte) []byte {
+			out := make([]byte, len(b))
+			copy(out, b[:len(left)])
+			copy(out[len(left):], b[:len(left)])
+			return out
+		}},
+		{name: "short_at_run_boundary", alter: func(b []byte) []byte { return append([]byte(nil), b[:len(left)]...) }, allowLength: true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			h := New(t)
+			container := h.Container(h.Primary, "download-dlo")
+			segments := h.Container(h.Primary, "download-dlo-segments")
+			base := "subject" + engineReservedRune + ".bin"
+			name := "scope/" + base
+			h.Seed(h.Primary, segments, "subject/00000000", left, nil)
+			h.Seed(h.Primary, segments, "subject/00000001", right, nil)
+			h.Seed(h.Primary, container, name, nil, map[string]string{"X-Object-Manifest": segments + "/subject/"})
+
+			root := t.TempDir()
+			proxy := installContentProxy(t, h, h.Primary, "/"+container+"/"+name, c.alter)
+			proxy.allowLength = c.allowLength
+
+			app.WireFilePicker(h.Transfer, bindingPicker{dir: filepath.Join(root, "selected")})
+			picked, err := h.Transfer.PickDownloadDir(t.Context(), app.SelectionScopeDTO{
+				BookmarkID: h.Primary.BookmarkID, Container: container, Prefix: "scope/"})
+			if err != nil || picked == nil {
+				t.Fatalf("pick the destination: %+v %v", picked, err)
+			}
+			request := app.DownloadRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: container, Prefix: "scope/", DestDirToken: picked.Token}
+			preflight, err := h.Transfer.PreflightDownload(t.Context(), request)
+			if err != nil || preflight == nil || preflight.Objects != 1 || len(preflight.ItemSamples) != 1 || preflight.ItemSamples[0].Route != "native" {
+				t.Fatalf("preflight: %+v %v", preflight, err)
+			}
+			id, err := h.Transfer.StartDownload(t.Context(), request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			job := h.AwaitJob(id)
+			if proxy.hits == 0 {
+				t.Fatal("the fixture never saw the assembled GET; the case proved nothing")
+			}
+			placed, readErr := os.ReadFile(filepath.Join(root, "selected", base))
+			if c.wantPlace {
+				if readErr != nil || !bytes.Equal(placed, assembled) {
+					t.Fatalf("matching segmented GET was not placed: err=%v", readErr)
+				}
+				if job.Counters.ObjectsVerified != 1 || job.Counters.ObjectsFailed != 0 {
+					t.Fatalf("matching segmented GET: verified=%d failed=%d", job.Counters.ObjectsVerified, job.Counters.ObjectsFailed)
+				}
+				return
+			}
+			if c.name == "permuted_segments" {
+				got := c.alter(assembled)
+				if bytes.Equal(got[:len(left)], left) || bytes.Equal(got, assembled) {
+					t.Fatal("permuted fixture did not differ from the ladder's first run")
+				}
+			}
+			if readErr == nil {
+				t.Fatalf("a GET that differed from the ladder was published: %d bytes", len(placed))
+			}
+			if job.Counters.ObjectsVerified != 0 || job.Counters.ObjectsFailed != 1 {
+				t.Errorf("differing GET: verified=%d failed=%d, want 0 and 1", job.Counters.ObjectsVerified, job.Counters.ObjectsFailed)
 			}
 		})
 	}
