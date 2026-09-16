@@ -6,13 +6,14 @@ import (
 	"sync"
 
 	"github.com/godbus/dbus/v5"
-	"github.com/godbus/dbus/v5/prop"
 	ss "github.com/zalando/go-keyring/secret_service"
 )
 
 const (
 	rootPath     = dbus.ObjectPath("/org/freedesktop/secrets")
 	loginPath    = rootPath + "/collection/login"
+	extraPath    = rootPath + "/collection/extra"
+	aliasPath    = dbus.ObjectPath("/org/freedesktop/secrets/aliases/default")
 	sessionPath  = rootPath + "/session/test"
 	serviceIF    = "org.freedesktop.Secret.Service"
 	collectionIF = "org.freedesktop.Secret.Collection"
@@ -24,8 +25,10 @@ const (
 type secretService struct {
 	mu          sync.Mutex
 	conn        *dbus.Conn
+	listed      []dbus.ObjectPath
 	next        int
 	items       map[dbus.ObjectPath]*secretItem
+	aliases     map[string]dbus.ObjectPath
 	failure     string
 	faults      int
 	lastWrite   string
@@ -40,7 +43,10 @@ type readBarrier struct {
 	once    sync.Once
 }
 
-type collection struct{ service *secretService }
+type collection struct {
+	service *secretService
+	path    dbus.ObjectPath
+}
 type session struct{}
 type prompt struct {
 	conn   *dbus.Conn
@@ -50,6 +56,7 @@ type prompt struct {
 type secretItem struct {
 	service    *secretService
 	path       dbus.ObjectPath
+	collection dbus.ObjectPath
 	attributes map[string]string
 	value      string
 }
@@ -59,7 +66,12 @@ func newSecretService(address string) (*secretService, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &secretService{conn: conn, items: map[dbus.ObjectPath]*secretItem{}}
+	s := &secretService{
+		conn:    conn,
+		listed:  []dbus.ObjectPath{loginPath},
+		items:   map[dbus.ObjectPath]*secretItem{},
+		aliases: map[string]dbus.ObjectPath{"default": loginPath},
+	}
 	fail := func(err error) (*secretService, error) {
 		conn.Close()
 		return nil, err
@@ -70,17 +82,15 @@ func newSecretService(address string) (*secretService, error) {
 		iface string
 	}{
 		{s, rootPath, serviceIF},
-		{&collection{s}, loginPath, collectionIF},
+		{s, rootPath, "org.freedesktop.DBus.Properties"},
+		{&collection{s, loginPath}, loginPath, collectionIF},
+		{&collection{s, extraPath}, extraPath, collectionIF},
+		{&collection{s, aliasPath}, aliasPath, collectionIF},
 		{&session{}, sessionPath, sessionIF},
 	} {
 		if err := conn.Export(export.value, export.path, export.iface); err != nil {
 			return fail(err)
 		}
-	}
-	if _, err := prop.Export(conn, rootPath, prop.Map{
-		serviceIF: {"Collections": {Value: []dbus.ObjectPath{loginPath}}},
-	}); err != nil {
-		return fail(err)
 	}
 	reply, err := conn.RequestName("org.freedesktop.secrets", dbus.NameFlagDoNotQueue)
 	if err != nil {
@@ -111,6 +121,30 @@ func (s *secretService) Unlock(paths []dbus.ObjectPath) ([]dbus.ObjectPath, dbus
 
 func (*session) Close() *dbus.Error { return nil }
 
+func (s *secretService) Get(iface, property string) (dbus.Variant, *dbus.Error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if iface == serviceIF && property == "Collections" {
+		return dbus.MakeVariant(append([]dbus.ObjectPath(nil), s.listed...)), nil
+	}
+	return dbus.MakeVariant(""), dbus.MakeFailedError(errors.New("unknown fixture property"))
+}
+
+func (s *secretService) GetAll(iface string) (map[string]dbus.Variant, *dbus.Error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if iface != serviceIF {
+		return nil, dbus.MakeFailedError(errors.New("unknown fixture interface"))
+	}
+	return map[string]dbus.Variant{
+		"Collections": dbus.MakeVariant(append([]dbus.ObjectPath(nil), s.listed...)),
+	}, nil
+}
+
+func (*secretService) Set(iface, property string, value dbus.Variant) *dbus.Error {
+	return dbus.MakeFailedError(errors.New("fixture properties are read-only"))
+}
+
 func (c *collection) CreateItem(properties map[string]dbus.Variant, secret ss.Secret, replace bool) (dbus.ObjectPath, dbus.ObjectPath, *dbus.Error) {
 	s := c.service
 	s.mu.Lock()
@@ -120,6 +154,7 @@ func (c *collection) CreateItem(properties map[string]dbus.Variant, secret ss.Se
 		return "/", "/", dbus.MakeFailedError(errors.New("invalid fixture create request"))
 	}
 	s.lastWrite = attributes["username"]
+	target := c.targetLocked()
 	if s.failure == "dismiss-set" {
 		path, err := s.dismissedPrompt(dbus.MakeVariant(dbus.ObjectPath("/")))
 		return "/", path, err
@@ -130,15 +165,15 @@ func (c *collection) CreateItem(properties map[string]dbus.Variant, secret ss.Se
 	}
 	if replace {
 		for _, item := range s.items {
-			if sameAttributes(item.attributes, attributes) {
+			if item.collection == target && sameAttributes(item.attributes, attributes) {
 				item.value = string(secret.Value)
 				return item.path, "/", nil
 			}
 		}
 	}
 	s.next++
-	path := dbus.ObjectPath(fmt.Sprintf("%s/i%d", loginPath, s.next))
-	item := &secretItem{s, path, attributes, string(secret.Value)}
+	path := dbus.ObjectPath(fmt.Sprintf("%s/i%d", target, s.next))
+	item := &secretItem{s, path, target, attributes, string(secret.Value)}
 	if err := s.conn.Export(item, path, itemIF); err != nil {
 		return "/", "/", dbus.MakeFailedError(err)
 	}
@@ -215,13 +250,67 @@ func (c *collection) SearchItems(attributes map[string]string) ([]dbus.ObjectPat
 			return nil, dbus.MakeFailedError(errors.New("injected post-delete lookup failure"))
 		}
 	}
+	target := c.targetLocked()
 	paths := []dbus.ObjectPath{}
 	for path, item := range s.items {
-		if sameAttributes(item.attributes, attributes) {
+		if item.collection == target && sameAttributes(item.attributes, attributes) {
 			paths = append(paths, path)
 		}
 	}
 	return paths, nil
+}
+
+func (c *collection) targetLocked() dbus.ObjectPath {
+	if c.path == aliasPath {
+		if aliased := c.service.aliases["default"]; aliased != "" {
+			return aliased
+		}
+	}
+	return c.path
+}
+
+func (s *secretService) ReadAlias(name string) (dbus.ObjectPath, *dbus.Error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.failure == "read-alias-error" {
+		s.faults++
+		return "/", dbus.MakeFailedError(errors.New("injected alias read failure"))
+	}
+	path := s.aliases[name]
+	if path == "" {
+		return "/", nil
+	}
+	return path, nil
+}
+
+func (s *secretService) SetAlias(name string, collection dbus.ObjectPath) *dbus.Error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.aliases[name] = collection
+	return nil
+}
+
+func (s *secretService) setCollections(paths []dbus.ObjectPath) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.listed = append([]dbus.ObjectPath(nil), paths...)
+}
+
+func (s *secretService) restoreDefaults() {
+	s.failWith("")
+	s.setCollections([]dbus.ObjectPath{loginPath})
+	_ = s.SetAlias("default", loginPath)
+}
+
+func (s *secretService) valueIn(collection dbus.ObjectPath, name string) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, item := range s.items {
+		if item.collection == collection && item.attributes["username"] == name {
+			return item.value, true
+		}
+	}
+	return "", false
 }
 
 func (i *secretItem) GetSecret(session dbus.ObjectPath) (ss.Secret, *dbus.Error) {

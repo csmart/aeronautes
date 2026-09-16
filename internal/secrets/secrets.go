@@ -44,11 +44,13 @@ type SecretStore interface {
 	Delete(ctx context.Context, name string) error
 }
 
-// Origin is internal routing metadata. A keychain adapter can follow a
-// changed OS default, so its instance does not prove persistent authority.
+// Origin is internal routing metadata. Instance is an adapter lifetime.
+// Persistent is a resolved native collection path on Linux; empty means
+// unverified (session, legacy, non-Linux, or unresolved alias).
 type Origin struct {
-	Kind     Backend
-	Instance string
+	Kind       Backend
+	Instance   string
+	Persistent string
 }
 
 func newOrigin(kind Backend) Origin {
@@ -56,26 +58,35 @@ func newOrigin(kind Backend) Origin {
 }
 
 // VerifiedBy reports whether active is the exact authority that recorded
-// this origin, which only a live session store reading its own instance
-// can be. A keychain adapter instance can follow a changed OS default and
-// a legacy origin records no provenance, so neither is ever verified.
+// this origin. A live session store matches its own instance. A keychain
+// origin matches only a non-empty Persistent equal to the active store's.
+// Empty Persistent, including legacy and unresolved alias, is never verified.
 // Absence reported by an unverified authority is not erasure evidence.
 func (o Origin) VerifiedBy(active Origin) bool {
-	return o.Kind == BackendSession && o.Instance != "" && o == active
+	if o.Kind == BackendSession {
+		return o.Instance != "" && o == active
+	}
+	return o.Kind == BackendKeychain && o.Persistent != "" &&
+		active.Kind == BackendKeychain && o.Persistent == active.Persistent
 }
 
-// ReadableBy is permission to attempt a read, not a reachability claim: it
-// admits any keychain adapter instance and a locked adapter alike. It
-// preserves legacy reads but prevents a fresh session fallback from
-// impersonating the memory store that accepted a recorded value.
+// ReadableBy is permission to attempt a read, not a reachability claim.
+// A keychain origin with empty Persistent still admits any keychain
+// adapter. A recorded Persistent admits only the same collection path.
 func (o Origin) ReadableBy(active Origin) bool {
 	switch o.Kind {
 	case "":
-		return o.Instance == ""
+		return o.Instance == "" && o.Persistent == ""
 	case BackendSession:
 		return o.Instance != "" && o == active
 	case BackendKeychain:
-		return o.Instance != "" && active.Kind == BackendKeychain && active.Instance != ""
+		if active.Kind != BackendKeychain {
+			return false
+		}
+		if o.Persistent != "" {
+			return o.Persistent == active.Persistent
+		}
+		return o.Instance != "" && active.Instance != ""
 	default:
 		return false
 	}

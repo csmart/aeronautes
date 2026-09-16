@@ -125,14 +125,13 @@ func TestFailedKeychainPublicationPreservesAuthority(t *testing.T) {
 						}
 					}
 					status, err := store.CredentialStatus(t.Context())
-					// The candidate was recorded by the keychain adapter, whose
-					// authority this session cannot confirm.
-					if err != nil || status != (bookmarks.CredentialStatus{Unfinished: 1, Unverified: 1}) {
+					// The candidate was recorded by this Linux collection pin.
+					if err != nil || status != (bookmarks.CredentialStatus{Unfinished: 1}) {
 						t.Errorf("failed publication lost its unfinished work: %+v, %v", status, err)
 					}
-					var ref, owner, state, originKind, originInstance string
-					err = d.Reader().QueryRowContext(t.Context(), "SELECT secret_ref, bookmark_id, state, origin_kind, origin_instance FROM credential_work").Scan(&ref, &owner, &state, &originKind, &originInstance)
-					if err != nil || ref != candidate || owner == "" || (replace && owner != before.ID) || state != "prepared" || originKind != string(backend.Origin().Kind) || originInstance != backend.Origin().Instance {
+					var ref, owner, state, originKind, originInstance, originPersistent string
+					err = d.Reader().QueryRowContext(t.Context(), "SELECT secret_ref, bookmark_id, state, origin_kind, origin_instance, origin_persistent FROM credential_work").Scan(&ref, &owner, &state, &originKind, &originInstance, &originPersistent)
+					if err != nil || ref != candidate || owner == "" || (replace && owner != before.ID) || state != "prepared" || originKind != string(backend.Origin().Kind) || originInstance != backend.Origin().Instance || originPersistent != backend.Origin().Persistent {
 						t.Error("failed publication lost the candidate's prepared provenance")
 					}
 					stored, err := keyring.Get("aeronautes", candidate)

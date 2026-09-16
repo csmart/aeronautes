@@ -1,7 +1,7 @@
 # Verified persistent-backend selection — 16 September 2026
 
 The Linux keychain adapter still follows the current Secret Service selector on every call.
-This record confirms that, proposes the correction in [ADR 0057](../adr/0057-persistent-backend-selection.md), and states what it leaves open.
+This record confirms that, records the correction in [ADR 0057](../adr/0057-persistent-backend-selection.md), and states what it leaves open.
 
 ## What was already shown
 
@@ -45,6 +45,12 @@ The dialog already says that a zero unverified count does not mean keys were rem
 A test that only retargets the default alias while `/collection/login` remains in `Collections` does not exercise the changed-default miss.
 The existing protocol fixture currently exports only the login collection.
 The implementation extends that fixture with a second collection, `ReadAlias`, and alias retargeting, including a case where login is not listed so the default alias is the selector, and a case where `ReadAlias` fails.
+
+## Correction delivered
+
+Linux `KeychainStore` drives `secret_service` with a held collection object and records the resolved path as `Origin.Persistent`.
+Protocol tests cover same-store retarget, a new store after a changed default, a hidden original collection, a failed `ReadAlias`, pinned absence as erasure, and cancelled waits.
+Physical Delete and the collector stay unstarted.
 
 ## What this does not claim
 

@@ -14,8 +14,9 @@ type CredentialStatus struct {
 	Unfinished int64
 	Saving     int64
 	// Unverified counts retired and unfinished work whose recorded
-	// authority this session cannot confirm it can reach, which is every
-	// keychain and legacy row until verified backend selection exists.
+	// authority this session cannot confirm it can reach, including
+	// empty-Persistent keychain and legacy rows and any recorded
+	// collection that does not match the active store.
 	// It uses the same predicate as the credential read, so a count and a
 	// refusal cannot disagree. Zero means every retired and unfinished row
 	// counted here was written by the store in use now. It says nothing
@@ -54,7 +55,7 @@ func (st *Store) CredentialStatus(ctx context.Context) (CredentialStatus, error)
 // retired and unfinished counts. Callers hold st.mu.
 func (st *Store) unverifiedWork(ctx context.Context) (int64, error) {
 	rows, err := st.db.Reader().QueryContext(ctx,
-		`SELECT secret_ref, origin_kind, origin_instance FROM credential_work`)
+		`SELECT secret_ref, origin_kind, origin_instance, origin_persistent FROM credential_work`)
 	if err != nil {
 		return 0, err
 	}
@@ -68,11 +69,11 @@ func (st *Store) unverifiedWork(ctx context.Context) (int64, error) {
 	}
 	var count int64
 	for rows.Next() {
-		var ref, kind, instance string
-		if err := rows.Scan(&ref, &kind, &instance); err != nil {
+		var ref, kind, instance, persistent string
+		if err := rows.Scan(&ref, &kind, &instance, &persistent); err != nil {
 			return 0, err
 		}
-		origin := secrets.Origin{Kind: secrets.Backend(kind), Instance: instance}
+		origin := secrets.Origin{Kind: secrets.Backend(kind), Instance: instance, Persistent: persistent}
 		if !st.preparing[ref] && !origin.VerifiedBy(active) {
 			count++
 		}

@@ -152,5 +152,8 @@ func fixture(t *testing.T) *secretService {
 	if privateAddress == "" || os.Getenv("DBUS_SESSION_BUS_ADDRESS") != privateAddress {
 		t.Fatal("refusing any bus except the per-run private fixture")
 	}
+	t.Cleanup(func() {
+		service.restoreDefaults()
+	})
 	return service
 }

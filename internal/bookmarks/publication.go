@@ -39,8 +39,8 @@ func readRecord(ctx context.Context, reader rowReader, id string) (record, error
 func recordWork(ctx context.Context, tx *sql.Tx, r record, state string) error {
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO credential_work (secret_ref, bookmark_id, origin_kind,
-			origin_instance, state, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		r.ref, r.ID, string(r.origin.Kind), r.origin.Instance, state,
+			origin_instance, origin_persistent, state, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		r.ref, r.ID, string(r.origin.Kind), r.origin.Instance, r.origin.Persistent, state,
 		time.Now().UTC().Format(time.RFC3339))
 	return err
 }
@@ -68,13 +68,13 @@ func publishRecord(ctx context.Context, tx *sql.Tx, previous, proposed record, c
 			INSERT INTO bookmarks (id, display_name, auth_url, username,
 				storage_url_override, secret_ref, tls_mode, tls_ca_id,
 				performance_profile, segment_placement, chunk_size_bytes,
-				created_at, updated_at, origin_kind, origin_instance, generation, revision)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				created_at, updated_at, origin_kind, origin_instance, origin_persistent, generation, revision)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			proposed.ID, proposed.DisplayName, proposed.AuthURL, proposed.Username,
 			nullable(proposed.StorageURLOverride), nullable(proposed.ref), string(proposed.TLSMode), nullable(proposed.TLSCAID),
 			proposed.PerformanceProfile, string(proposed.SegmentPlacement), nullableInt(proposed.ChunkSizeBytes),
 			proposed.CreatedAt.Format(time.RFC3339), proposed.UpdatedAt.Format(time.RFC3339),
-			string(proposed.origin.Kind), proposed.origin.Instance, proposed.generation, proposed.revision)
+			string(proposed.origin.Kind), proposed.origin.Instance, proposed.origin.Persistent, proposed.generation, proposed.revision)
 		if err != nil {
 			return err
 		}
@@ -83,12 +83,12 @@ func publishRecord(ctx context.Context, tx *sql.Tx, previous, proposed record, c
 			UPDATE bookmarks SET display_name=?, auth_url=?, username=?,
 				storage_url_override=?, secret_ref=?, tls_mode=?, tls_ca_id=?,
 				performance_profile=?, segment_placement=?, chunk_size_bytes=?,
-				updated_at=?, origin_kind=?, origin_instance=?, generation=?, revision=?
+				updated_at=?, origin_kind=?, origin_instance=?, origin_persistent=?, generation=?, revision=?
 			WHERE id=? AND generation=? AND revision=?`,
 			proposed.DisplayName, proposed.AuthURL, proposed.Username,
 			nullable(proposed.StorageURLOverride), nullable(proposed.ref), string(proposed.TLSMode), nullable(proposed.TLSCAID),
 			proposed.PerformanceProfile, string(proposed.SegmentPlacement), nullableInt(proposed.ChunkSizeBytes),
-			proposed.UpdatedAt.Format(time.RFC3339), string(proposed.origin.Kind), proposed.origin.Instance,
+			proposed.UpdatedAt.Format(time.RFC3339), string(proposed.origin.Kind), proposed.origin.Instance, proposed.origin.Persistent,
 			proposed.generation, proposed.revision, proposed.ID, previous.generation, previous.revision)
 		if err != nil {
 			return err

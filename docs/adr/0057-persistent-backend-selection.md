@@ -1,6 +1,6 @@
 # ADR 0057: verified persistent-backend selection
 
-**Status:** Proposed. Nothing in it is implemented yet.
+**Status:** Accepted for the Linux Secret Service fixture pin.
 Native acceptance on the six targets remains separately required. L01 does not close.
 
 ## Context
@@ -31,7 +31,7 @@ Production never calls `SecretStore.Delete` outside tests; this decision does no
 ## Decision
 
 The Linux adapter stops using `keyring.Get`, `keyring.Set` and `keyring.Delete`.
-It drives `secret_service` directly: open and close a session, search by the existing service and username attributes, create items on a held collection object, map empty search results to `ErrNotFound`, and inherit the helper's prompt path.
+It drives `secret_service` directly: open and close a session, unlock the collection before SearchItems and the item before GetSecret, search by the existing service and username attributes, create items on a held collection object, map empty search results to `ErrNotFound`, and inherit the helper's prompt path.
 Non-Linux platforms keep the current `keyring` API.
 `internal/secrets` has no build-tagged files today, so that split is new.
 

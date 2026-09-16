@@ -8,8 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"time"
-
-	"github.com/zalando/go-keyring"
 )
 
 // service is the keychain namespace all Aeronautes entries live under.
@@ -19,11 +17,14 @@ const service = "aeronautes"
 // probe before selecting the session store (ADR 0055 decision 5).
 const openDefaultTimeout = 10 * time.Second
 
-// KeychainStore is the OS-keychain SecretStore (§12.1, ADR 0012): the
-// Secret Service on Linux, Credential Manager on Windows, Keychain on
-// macOS, via zalando/go-keyring. Values are base64-wrapped so arbitrary
-// bytes survive the string-shaped keyring API.
-type KeychainStore struct{ origin Origin }
+// KeychainStore is the OS-keychain SecretStore (§12.1, ADR 0012).
+// Values are base64-wrapped so arbitrary bytes survive the string-shaped
+// keyring API. pin is the Linux collection object path used for later
+// operations; empty on other platforms.
+type KeychainStore struct {
+	origin Origin
+	pin    string
+}
 
 // NewKeychainStore probes the OS keychain with a write/read/delete
 // round-trip and returns the store only when the keychain actually
@@ -33,97 +34,22 @@ func NewKeychainStore() (*KeychainStore, error) {
 	return newKeychainStore(context.Background())
 }
 
-func newKeychainStore(ctx context.Context) (*KeychainStore, error) {
-	var nonce [8]byte
-	if _, err := rand.Read(nonce[:]); err != nil {
-		return nil, err
-	}
-	probe := "probe-" + hex.EncodeToString(nonce[:])
-	if err := setKeychainValue(ctx, probe, "probe"); err != nil {
-		_, _ = awaitKeychain(context.Background(), "delete", func() (string, error) {
-			return "", keyring.Delete(service, probe)
-		})
-		return nil, fmt.Errorf("keychain unavailable: %w", err)
-	}
-	if _, err := awaitKeychain(ctx, "delete", func() (string, error) {
-		return "", keyring.Delete(service, probe)
-	}); err != nil {
-		return nil, fmt.Errorf("keychain delete failed: %w", err)
-	}
-	_, err := awaitKeychain(ctx, "read", func() (string, error) {
-		_, err := keyring.Get(service, probe)
-		return "", err
-	})
-	if !errors.Is(err, keyring.ErrNotFound) {
-		if err == nil {
-			return nil, errors.New("keychain probe deletion could not be verified")
-		}
-		return nil, fmt.Errorf("keychain probe verify: %w", err)
-	}
-	return &KeychainStore{origin: newOrigin(BackendKeychain)}, nil
-}
-
 func (s *KeychainStore) Origin() Origin { return s.origin }
 
-// Get returns the named secret.
-func (*KeychainStore) Get(ctx context.Context, name string) ([]byte, error) {
-	encoded, err := awaitKeychain(ctx, "read", func() (string, error) {
-		return keyring.Get(service, name)
-	})
-	if errors.Is(err, keyring.ErrNotFound) {
-		return nil, ErrNotFound
+func probeName() (string, error) {
+	var nonce [8]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return "", err
 	}
-	if err != nil {
-		return nil, err
-	}
+	return "probe-" + hex.EncodeToString(nonce[:]), nil
+}
+
+func decodeKeychainValue(encoded string) ([]byte, error) {
 	value, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
 		return nil, fmt.Errorf("keychain entry is not aeronautes-encoded: %w", err)
 	}
 	return value, nil
-}
-
-// Put stores the named secret, replacing any existing value.
-func (*KeychainStore) Put(ctx context.Context, name string, value []byte) error {
-	return setKeychainValue(ctx, name, base64.StdEncoding.EncodeToString(value))
-}
-
-func setKeychainValue(ctx context.Context, name, value string) error {
-	// Native error text may carry the key or reference being verified.
-	if _, err := awaitKeychain(ctx, "write", func() (string, error) {
-		if err := keyring.Set(service, name, value); err != nil {
-			return "", errors.New("keychain write failed")
-		}
-		return "", nil
-	}); err != nil {
-		return err
-	}
-	// The pinned client can return nil after a dismissed creation prompt.
-	// Publication must not select that reference without reading its value.
-	stored, err := awaitKeychain(ctx, "read", func() (string, error) {
-		return keyring.Get(service, name)
-	})
-	if err != nil {
-		if errors.Is(err, ErrUnresolved) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return fmt.Errorf("keychain write read-back unresolved: %w", errors.Join(ErrUnresolved, err))
-		}
-		return errors.New("keychain write read-back failed")
-	}
-	if stored != value {
-		return errors.New("keychain write read-back did not match")
-	}
-	return nil
-}
-
-// Delete removes the named secret.
-func (*KeychainStore) Delete(ctx context.Context, name string) error {
-	_, err := awaitKeychain(ctx, "delete", func() (string, error) {
-		return "", keyring.Delete(service, name)
-	})
-	if errors.Is(err, keyring.ErrNotFound) {
-		return ErrNotFound
-	}
-	return err
 }
 
 type nativeResult struct {
@@ -153,6 +79,13 @@ func boundKeychainError(op string, err error) error {
 		return fmt.Errorf("keychain read: %w", err)
 	}
 	return fmt.Errorf("keychain %s unresolved: %w", op, errors.Join(ErrUnresolved, err))
+}
+
+func readBackError(err error) error {
+	if errors.Is(err, ErrUnresolved) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("keychain write read-back unresolved: %w", errors.Join(ErrUnresolved, err))
+	}
+	return errors.New("keychain write read-back failed")
 }
 
 // Backend names the active secret backend for display (§12.1: the UI
