@@ -2,9 +2,11 @@
 
 ## Status
 
-Proposed. Nothing in it is implemented yet.
+Accepted.
+Refusal at the service entry point and hiding of deferred affordances are delivered
+with this decision.
 
-Two parts of it are the lead author's reading awaiting the operator's confirmation, and
+Two parts remain the lead author's reading awaiting the operator's confirmation, and
 are marked where they appear: that deferral should mean refusal rather than mere absence
 of proof, and where the boundary falls inside `MutateService`.
 
