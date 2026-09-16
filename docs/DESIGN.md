@@ -1592,6 +1592,10 @@ A Swift namespace does not map injectively onto a local filesystem, and this bit
 
 So define a **per-target local materialization policy** before enabling download or local Mirror, and run a **complete collision preflight first** — never start writing and discover collisions incrementally. Acceptable policies: reject the whole operation after the preflight reports a collision; use a reversible escaped namespace plus a sidecar mapping manifest; or download an archive. Tests cover case, Unicode normalization, reserved names, full-width-substitute pairs, file-vs-prefix conflicts, and the §14.3 suite on representative filesystems for all three OS families. (K-XFER-011.)
 
+The complete check is not the bridge payload.
+[ADR 0056](adr/0056-download-preflight-view.md) keeps the execution inventory complete and returns a distinct view of first-class counts plus bounded samples, so a display cap cannot drop names from the job or from the object count.
+That correction is not yet implemented, and it does not bound the memory the check itself retains.
+
 ---
 
 ## 28. Transfer planning
@@ -5697,6 +5701,12 @@ The ledger is `mutation_facts`; compacted `audit_events` are not it.
 The [object metadata durable-facts record](experiments/2026-09-16-object-metadata-durable-facts.md) states the prior path and the delivered proofs.
 Create, marker and manifest stay on today's gate plus best-effort audit, container metadata remains a follow-up, and download terminal writes stay on ADR 0024/0033.
 L04, P12, P13 and the valuable-data hold stay open.
+
+L10's first slice is the download preflight view under [ADR 0056](adr/0056-download-preflight-view.md).
+`TransferService.PreflightDownload` returns the complete collision inventory across the bridge, `StartDownload` executes that same value, and the dialog counts objects from the items array length, so a bound applied in place would drop names from the job and from the displayed count.
+The [download preflight bounds record](experiments/2026-09-16-download-preflight-bounds.md) searched listing continuation, Find retention, job-item paging and the download inventory for silent truncation first: those paths grow or page with a count beside a sample, and a measured 20 000-object preflight kept items equal to the seeded count.
+The proposed correction splits execution from the bridge the way upload already does, copies ADR 0023's sample-and-count pattern onto a distinct view type, and is not yet implemented.
+It does not bound Go RSS, browser accumulation, queued work or child batches, and L10 does not close with this.
 
 ### 65.12. Proportionate remediation and a fixed finish line
 
