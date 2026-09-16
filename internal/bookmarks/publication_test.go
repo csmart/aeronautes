@@ -415,7 +415,7 @@ type workRecord struct {
 
 func pendingWork(t *testing.T, st *Store) []workRecord {
 	t.Helper()
-	rows, err := st.db.Reader().Query(`SELECT secret_ref, bookmark_id, state, origin_kind, origin_instance
+	rows, err := st.db.Reader().Query(`SELECT secret_ref, bookmark_id, state, origin_kind, origin_instance, origin_persistent
 		FROM credential_work ORDER BY secret_ref`)
 	if err != nil {
 		t.Fatal(err)
@@ -424,7 +424,7 @@ func pendingWork(t *testing.T, st *Store) []workRecord {
 	var result []workRecord
 	for rows.Next() {
 		var item workRecord
-		if err := rows.Scan(&item.ref, &item.owner, &item.state, &item.origin.Kind, &item.origin.Instance); err != nil {
+		if err := rows.Scan(&item.ref, &item.owner, &item.state, &item.origin.Kind, &item.origin.Instance, &item.origin.Persistent); err != nil {
 			t.Fatal(err)
 		}
 		result = append(result, item)

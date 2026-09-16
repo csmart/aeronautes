@@ -408,7 +408,7 @@ const selectColumns = `
 		tls_mode, COALESCE(tls_ca_id, ''), performance_profile,
 		segment_placement, COALESCE(chunk_size_bytes, 0),
 		created_at, updated_at, COALESCE(secret_ref, ''), origin_kind,
-		origin_instance, generation, revision,
+		origin_instance, origin_persistent, generation, revision,
 		(SELECT pem FROM ca_certs WHERE id=bookmarks.tls_ca_id)
 	FROM bookmarks`
 
@@ -425,7 +425,7 @@ func scanRecord(scan func(...any) error) (record, error) {
 		&b.StorageURLOverride, &b.HasCredential,
 		&tlsMode, &b.TLSCAID, &b.PerformanceProfile,
 		&placement, &b.ChunkSizeBytes,
-		&created, &updated, &r.ref, &r.origin.Kind, &r.origin.Instance,
+		&created, &updated, &r.ref, &r.origin.Kind, &r.origin.Instance, &r.origin.Persistent,
 		&r.generation, &r.revision, &r.ca)
 	if err != nil {
 		return record{}, err
