@@ -104,6 +104,9 @@ func (s *BenchmarkService) recommendationFor(bookmarkID string) *TransferSetting
 
 // StartBenchmark validates the typed consent and launches the job.
 func (s *BenchmarkService) StartBenchmark(ctx context.Context, req BenchmarkRequestDTO) (string, error) {
+	if err := refuseIfDeferred("BenchmarkService.StartBenchmark"); err != nil {
+		return "", err
+	}
 	if req.BookmarkID == "" {
 		return "", errors.New("bookmark is required")
 	}

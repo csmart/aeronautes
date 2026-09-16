@@ -89,6 +89,9 @@ func (s *TransferService) setFilePicker(picker FilePicker) {
 // page must not be able to name ~/.ssh/id_rsa). Nil token when
 // cancelled.
 func (s *TransferService) PickUploadFiles(ctx context.Context, scope SelectionScopeDTO) (*PickedFilesDTO, error) {
+	if err := refuseIfDeferred("TransferService.PickUploadFiles"); err != nil {
+		return nil, err
+	}
 	if s.picker == nil {
 		return nil, errors.New("no file picker available (headless shell)")
 	}
@@ -204,6 +207,9 @@ func (s *TransferService) endPick(ctx context.Context, before activeObservation,
 // the page shows destination NAMES. Execution uses uploadPreflight
 // (below), which keeps the paths it needs.
 func (s *TransferService) PreflightUpload(ctx context.Context, req UploadRequestDTO) (*local.UploadPreflight, error) {
+	if err := refuseIfDeferred("TransferService.PreflightUpload"); err != nil {
+		return nil, err
+	}
 	report, err := s.uploadPreflight(ctx, req)
 	if err != nil {
 		return nil, err
@@ -309,6 +315,9 @@ func (b boundLocal) CopyInto(ctx context.Context, src, dst string, anchor *os.Fi
 // StartUpload re-runs the preflight (state may have moved since the UI
 // showed it), rejects on any collision, and launches the job.
 func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO) (string, error) {
+	if err := refuseIfDeferred("TransferService.StartUpload"); err != nil {
+		return "", err
+	}
 	owner, ctx, err := s.runner.admit(ctx)
 	if err != nil {
 		return "", err
