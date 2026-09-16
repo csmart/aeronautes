@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
-import type { SegmentOwnershipDTO, SegmentsDeleteResultDTO, PrefixDetailDTO, Api } from "../../lib/api";
+import type { SegmentOwnershipDTO, SegmentsDeleteResultDTO, Api } from "../../lib/api";
 import { BrowserState } from "../browser/browserState.svelte";
 import { newFakeApi } from "../browser/fakeApi";
 import CreateContainerDialog from "../browser/CreateContainerDialog.svelte";
@@ -220,40 +220,13 @@ describe("container creation lifetime", () => {
 });
 
 describe("marker action ownership", () => {
-  it("admits one creation despite duplicate events", async () => {
+  it("does not offer marker creation or deletion in a v1 build", async () => {
     const f = await setup("implied/");
-    const reply = deferred<PrefixDetailDTO>(); f.api.createMarker = vi.fn(() => reply.promise);
     mounted.add(mount(Inspector, { target: f.root, props: { browser: f.browser } })); flushSync();
-    const create = button(f.root, "Create marker object"); click(create); click(create);
-    expect(f.api.createMarker).toHaveBeenCalledExactlyOnceWith("fixtures", "implied/");
-    reply.resolve({ ...f.browser.prefixDetail!, markerBacked: true }); await settle();
-  });
-
-  it.each(["success", "failure"])("a late %s cannot release a newer marker action's busy state", async (outcome) => {
-    const f = await setup("implied/");
-    const replies = [deferred<PrefixDetailDTO>(), deferred<PrefixDetailDTO>()];
-    f.api.createMarker = vi.fn().mockImplementationOnce(() => replies[0].promise).mockImplementationOnce(() => replies[1].promise);
-    mounted.add(mount(Inspector, { target: f.root, props: { browser: f.browser } })); flushSync();
-    click(button(f.root, "Create marker object"));
-    const oldDetail = f.browser.prefixDetail!;
-    f.browser.select(f.browser.entries.findIndex((row) => row.name === "empty-object")); await settle();
-    f.browser.select(f.browser.entries.findIndex((row) => row.name === "implied/")); await settle();
-    const create = button(f.root, "Create marker object"); click(create);
-    expect(f.api.createMarker).toHaveBeenCalledTimes(2); expect(create.disabled).toBe(true);
-    if (outcome === "success") replies[0].resolve(oldDetail); else replies[0].reject(new Error("obsolete marker failure"));
-    await settle(); expect(create.disabled).toBe(true); expect(f.root.textContent).not.toContain("obsolete marker failure");
-    replies[1].reject(new Error("current marker failure")); await settle();
-    expect(create.disabled).toBe(false); expect(f.root.textContent).toContain("current marker failure");
-  });
-
-  it("does not admit deletion from an old marker after a same-bookmark reconnect", async () => {
-    const f = await setup("implied/"); await f.browser.createMarker("implied/");
-    mounted.add(mount(Inspector, { target: f.root, props: { browser: f.browser } })); flushSync();
-    const remove = button(f.root, "Delete marker object");
-    f.api.connect = vi.fn().mockRejectedValue(new Error("failed reconnect"));
-    f.api.deleteMarker = vi.fn().mockResolvedValue(undefined);
-    await expect(f.browser.connect("source")).rejects.toThrow("failed reconnect");
-    click(remove); await settle(); expect(f.api.deleteMarker).not.toHaveBeenCalled();
+    const labels = () => [...f.root.querySelectorAll("button")].map((b) => b.textContent?.trim());
+    expect(labels()).not.toContain("Create marker object");
+    await f.browser.createMarker("implied/"); await settle();
+    expect(labels()).not.toContain("Delete marker object");
   });
 });
 
@@ -276,15 +249,13 @@ it.each(["external-dlo", "external-slo"])("%s distinguishes unavailable segment 
 });
 
 describe("mutation follow-up ownership", () => {
-  it("an unmounted inspector's marker deletion cannot refresh a replacement inspector", async () => {
+  it("an unmounted inspector does not offer marker deletion in a v1 build", async () => {
     const f = await setup("implied/"); await f.browser.createMarker("implied/");
-    const reply = deferred<void>(); f.api.deleteMarker = vi.fn(() => reply.promise);
     const old = mount(Inspector, { target: f.root, props: { browser: f.browser } }); mounted.add(old); flushSync();
-    click(button(f.root, "Delete marker object")); await unmount(old); mounted.delete(old);
+    expect([...f.root.querySelectorAll("button")].map((b) => b.textContent?.trim())).not.toContain("Delete marker object");
+    await unmount(old); mounted.delete(old);
     mounted.add(mount(Inspector, { target: f.root, props: { browser: f.browser } })); flushSync();
-    const selected = f.browser.detailIdentity;
-    reply.resolve(); await settle();
-    expect(f.browser.detailIdentity).toBe(selected); expect(button(f.root, "Delete marker object")).toBeDefined();
+    expect([...f.root.querySelectorAll("button")].map((b) => b.textContent?.trim())).not.toContain("Delete marker object");
   });
 
   it("a closed creation cannot navigate and close a new dialog in the same view", async () => {

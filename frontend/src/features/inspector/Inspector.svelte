@@ -2,6 +2,7 @@
   import { onDestroy } from "svelte";
   import { formatBytes, formatCount } from "../../lib/format";
   import type { PrefixDetailDTO } from "../../lib/api";
+  import { v1Offers } from "../../lib/v1";
   import type { BrowserState } from "../browser/browserState.svelte";
   import ObjectEditPanel from "./ObjectEditPanel.svelte";
   import ContainerEditPanel from "./ContainerEditPanel.svelte";
@@ -143,7 +144,7 @@
       <ObjectEditPanel {browser} {detail} onDone={() => (editingObject = false)} />
     {/if}
 
-    {#if deleteManifestOpen && detail}
+    {#if v1Offers.manifestDelete && deleteManifestOpen && detail}
       <ManifestDeleteDialog
         {browser}
         {detail}
@@ -192,9 +193,11 @@
         {/if}
         <div class="lo-actions">
           <button class="edit-btn inline" onclick={openBackstage}>Open segments backstage</button>
-          <button class="edit-btn inline danger" onclick={() => (deleteManifestOpen = true)}>
-            Delete manifest…
-          </button>
+          {#if v1Offers.manifestDelete}
+            <button class="edit-btn inline danger" onclick={() => (deleteManifestOpen = true)}>
+              Delete manifest…
+            </button>
+          {/if}
         </div>
       </section>
     {:else if detail && detail.class === "slo"}
@@ -245,9 +248,11 @@
           {#if segmentsAt !== ""}
             <button class="edit-btn inline" onclick={openBackstage}>Open segments backstage</button>
           {/if}
-          <button class="edit-btn inline danger" onclick={() => (deleteManifestOpen = true)}>
-            Delete manifest…
-          </button>
+          {#if v1Offers.manifestDelete}
+            <button class="edit-btn inline danger" onclick={() => (deleteManifestOpen = true)}>
+              Delete manifest…
+            </button>
+          {/if}
         </div>
       </section>
     {/if}
@@ -302,7 +307,7 @@
         </p>
       {/if}
     </section>
-    {#if pd && !browser.detailLoading}
+    {#if v1Offers.markerEdit && pd && !browser.detailLoading}
       <section class="card">
         <h3 class="card-title">Marker</h3>
         {#if !pd.selfObject}

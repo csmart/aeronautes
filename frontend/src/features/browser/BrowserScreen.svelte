@@ -18,6 +18,7 @@
   import DeleteDialog from "../transfer/DeleteDialog.svelte";
   import { BrowserState } from "./browserState.svelte";
   import { activeModal } from "../../lib/trapFocus";
+  import { v1Offers } from "../../lib/v1";
 
   const browser = new BrowserState(liveApi);
 
@@ -120,19 +121,20 @@
   <CreateContainerDialog {browser} onClose={() => (createOpen = false)} />
 {/if}
 
-{#if browser.transferOpen}
+{#if v1Offers.copy && browser.transferOpen}
   <TransferDialog {browser} onClose={() => (browser.transferOpen = false)} />
 {/if}
 
-{#if browser.localTransfer !== null}
+{#if (v1Offers.download && browser.localTransfer === "download")
+  || (v1Offers.upload && browser.localTransfer === "upload")}
   <LocalTransferDialog
     {browser}
-    mode={browser.localTransfer}
+    mode={browser.localTransfer === "upload" ? "upload" : "download"}
     onClose={() => (browser.localTransfer = null)}
   />
 {/if}
 
-{#if browser.deleteOpen}
+{#if v1Offers.bulkDelete && browser.deleteOpen}
   <DeleteDialog {browser} onClose={() => (browser.deleteOpen = false)} />
 {/if}
 
