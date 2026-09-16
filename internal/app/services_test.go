@@ -33,6 +33,7 @@ type harness struct {
 	jobsSvc   *JobService
 	evidence  *evidence.Store
 	db        *db.DB
+	dbPath    string
 	mock      *swifttest.Server
 	authURL   string
 }
@@ -53,7 +54,8 @@ func newHarness(t *testing.T) *harness {
 // capability-gating tests need clusters that advertise less.
 func newHarnessWithInfo(t *testing.T, infoJSON string) *harness {
 	t.Helper()
-	d, err := db.Open(context.Background(), filepath.Join(t.TempDir(), "state.sqlite"))
+	path := filepath.Join(t.TempDir(), "state.sqlite")
+	d, err := db.Open(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,6 +82,7 @@ func newHarnessWithInfo(t *testing.T, infoJSON string) *harness {
 		jobsSvc:   NewJobService(jobStore),
 		evidence:  ev,
 		db:        d,
+		dbPath:    path,
 		mock:      mock,
 		authURL:   srv.URL + "/auth/v1.0",
 	}

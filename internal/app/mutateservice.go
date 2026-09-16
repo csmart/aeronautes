@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -9,6 +11,7 @@ import (
 
 	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/evidence"
+	"github.com/csmart/aeronautes/internal/mutationfacts"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
 
@@ -21,13 +24,20 @@ type MutateService struct {
 	connections *Connections
 	audit       *audit.Store
 	evidence    *evidence.Store
+	facts       *mutationfacts.Store
 	writers     *writerGate
 }
+
+// errMetadataResidue is returned when a store POST succeeded and the
+// outcome transaction did not. Remote metadata is an independent
+// snapshot; the identity is not applied (ADR 0058).
+var errMetadataResidue = errors.New("object metadata write residue: the store POST succeeded and the outcome could not be recorded")
 
 // NewMutateService builds the service.
 func NewMutateService(connections *Connections, auditStore *audit.Store, evidenceStore *evidence.Store) *MutateService {
 	return &MutateService{
 		connections: connections, audit: auditStore, evidence: evidenceStore,
+		facts:   mutationfacts.NewStore(auditStore.Database()),
 		writers: newWriterGate(),
 	}
 }
@@ -67,10 +77,31 @@ func (s *MutateService) UpdateObjectMetadata(ctx context.Context, container, nam
 	}
 
 	resource := container + "/" + name
-	result, err := session.UpdateObjectMetadata(ctx, container, name, baseFingerprint, adapterEdit)
+	identity, err := mutationfacts.NewIdentity()
 	if err != nil {
-		s.record(ctx, "object.metadata.update", resource,
-			"metadata update failed", audit.ResultFailed, nil)
+		return MutationResultDTO{}, err
+	}
+	if err := s.facts.RecordIntent(ctx, mutationfacts.Intent{
+		Identity:   identity,
+		BookmarkID: s.connections.ActiveBookmarkID(),
+		Operation:  "object.metadata.update",
+		Resource:   resource,
+	}); err != nil {
+		return MutationResultDTO{}, err
+	}
+
+	result, err := session.UpdateObjectMetadata(ctx, container, name, baseFingerprint, adapterEdit)
+	outcome, auditRes, summary, transIDs := objectMetadataFact(result, err, edit)
+	if recErr := s.recordObjectOutcome(ctx, identity, resource, outcome, auditRes, summary, transIDs); recErr != nil {
+		if objectMetadataPosted(result) {
+			return MutationResultDTO{}, fmt.Errorf("%w: identity %s: %v", errMetadataResidue, identity, recErr)
+		}
+		return MutationResultDTO{}, recErr
+	}
+	if err != nil {
+		if errors.Is(err, swiftcontrol.ErrUnverifiedWrite) {
+			return MutationResultDTO{}, fmt.Errorf("%w: identity %s", swiftcontrol.ErrUnverifiedWrite, identity)
+		}
 		return MutationResultDTO{}, err
 	}
 
@@ -84,14 +115,6 @@ func (s *MutateService) UpdateObjectMetadata(ctx context.Context, container, nam
 		after := toObjectDetailDTO(result.After)
 		dto.ObjectAfter = &after
 	}
-	// The audit row carries the same qualification as the result: a
-	// completed save must not read, later, as evidence of exclusivity.
-	summary := fmt.Sprintf("set %d metadata keys", len(edit.Meta))
-	if result.Limitation != "" {
-		summary += "; " + result.Limitation
-	}
-	s.record(ctx, "object.metadata.update", resource, summary,
-		auditResult(result.Outcome), result.TransIDs)
 	return dto, nil
 }
 
@@ -140,7 +163,7 @@ func (s *MutateService) UpdateContainer(ctx context.Context, name, baseFingerpri
 
 	result, err := session.UpdateContainer(ctx, name, baseFingerprint, adapterEdit)
 	if err != nil {
-		s.record(ctx, "container.update", name, "container update failed", audit.ResultFailed, nil)
+		_ = s.record(ctx, "container.update", name, "container update failed", audit.ResultFailed, nil)
 		return MutationResultDTO{}, err
 	}
 	dto := MutationResultDTO{
@@ -152,7 +175,7 @@ func (s *MutateService) UpdateContainer(ctx context.Context, name, baseFingerpri
 		after := s.toContainerDetailDTO(ctx, result.After)
 		dto.ContainerAfter = &after
 	}
-	s.record(ctx, "container.update", name,
+	_ = s.record(ctx, "container.update", name,
 		fmt.Sprintf("set %d metadata keys, versioning %s", len(edit.Meta), adapterEdit.Versioning.Mode),
 		auditResult(result.Outcome), result.TransIDs)
 	return dto, nil
@@ -177,10 +200,10 @@ func (s *MutateService) CreateContainer(ctx context.Context, create ContainerCre
 		Name: create.Name, Policy: create.Policy, Meta: create.Meta,
 	})
 	if err != nil {
-		s.record(ctx, "container.create", create.Name, "container create failed", audit.ResultFailed, nil)
+		_ = s.record(ctx, "container.create", create.Name, "container create failed", audit.ResultFailed, nil)
 		return ContainerDetailDTO{}, err
 	}
-	s.record(ctx, "container.create", create.Name,
+	_ = s.record(ctx, "container.create", create.Name,
 		fmt.Sprintf("created with policy %q", detail.StoragePolicy),
 		audit.ResultApplied, []string{detail.TransID})
 	return s.toContainerDetailDTO(ctx, detail), nil
@@ -202,10 +225,10 @@ func (s *MutateService) CreateMarker(ctx context.Context, container, prefix stri
 	resource := container + "/" + prefix
 	detail, err := session.CreateMarker(ctx, container, prefix)
 	if err != nil {
-		s.record(ctx, "marker.create", resource, "marker create failed or refused", audit.ResultFailed, nil)
+		_ = s.record(ctx, "marker.create", resource, "marker create failed or refused", audit.ResultFailed, nil)
 		return PrefixDetailDTO{}, err
 	}
-	s.record(ctx, "marker.create", resource, "created directory marker", audit.ResultApplied, nil)
+	_ = s.record(ctx, "marker.create", resource, "created directory marker", audit.ResultApplied, nil)
 	return toPrefixDetailDTO(detail), nil
 }
 
@@ -225,10 +248,10 @@ func (s *MutateService) DeleteMarker(ctx context.Context, container, prefix stri
 	}
 	resource := container + "/" + prefix
 	if err := session.DeleteMarker(ctx, container, prefix); err != nil {
-		s.record(ctx, "marker.delete", resource, "marker delete failed or refused", audit.ResultFailed, nil)
+		_ = s.record(ctx, "marker.delete", resource, "marker delete failed or refused", audit.ResultFailed, nil)
 		return err
 	}
-	s.record(ctx, "marker.delete", resource, "deleted directory marker (children untouched)", audit.ResultApplied, nil)
+	_ = s.record(ctx, "marker.delete", resource, "deleted directory marker (children untouched)", audit.ResultApplied, nil)
 	return nil
 }
 
@@ -242,9 +265,10 @@ func (s *MutateService) toContainerDetailDTO(ctx context.Context, d *swiftcontro
 	return containerDetailDTO(d, class)
 }
 
-// record appends the audit event; a mutation that cannot be accounted
-// for is loud in the log, but the mutation's own result is preserved.
-func (s *MutateService) record(ctx context.Context, operation, resource, summary string, result audit.Result, transIDs []string) {
+// record appends the audit event and surfaces the error. Create, marker
+// and manifest still ignore it (ADR 0058). Object metadata uses
+// recordObjectOutcome so the fact and audit share one transaction.
+func (s *MutateService) record(ctx context.Context, operation, resource, summary string, result audit.Result, transIDs []string) error {
 	err := s.audit.Append(ctx, audit.Event{
 		BookmarkID: s.connections.ActiveBookmarkID(),
 		Operation:  operation,
@@ -256,6 +280,55 @@ func (s *MutateService) record(ctx context.Context, operation, resource, summary
 	if err != nil {
 		log.Printf("AUDIT WRITE FAILED for %s %s: %v", operation, resource, err)
 	}
+	return err
+}
+
+func (s *MutateService) recordObjectOutcome(ctx context.Context, identity, resource string, outcome mutationfacts.Outcome, result audit.Result, summary string, transIDs []string) error {
+	return s.facts.RecordOutcome(ctx, identity, outcome, summary, transIDs, func(tx *sql.Tx) error {
+		return s.audit.AppendTx(ctx, tx, audit.Event{
+			BookmarkID: s.connections.ActiveBookmarkID(),
+			Operation:  "object.metadata.update",
+			Resource:   resource,
+			Summary:    summary,
+			Result:     result,
+			TransIDs:   transIDs,
+		})
+	})
+}
+
+func objectMetadataPosted(result *swiftcontrol.ObjectUpdateResult) bool {
+	if result == nil {
+		return false
+	}
+	switch result.Outcome {
+	case swiftcontrol.UpdateApplied, swiftcontrol.UpdateVerifyMismatch, swiftcontrol.UpdateUnverified:
+		return true
+	}
+	return result.Limitation != ""
+}
+
+func objectMetadataFact(result *swiftcontrol.ObjectUpdateResult, err error, edit ObjectMetadataEditDTO) (mutationfacts.Outcome, audit.Result, string, []string) {
+	if result == nil {
+		return mutationfacts.OutcomeFailed, audit.ResultFailed, "metadata update failed", nil
+	}
+	summary := fmt.Sprintf("set %d metadata keys", len(edit.Meta))
+	if result.Limitation != "" {
+		summary += "; " + result.Limitation
+	}
+	switch result.Outcome {
+	case swiftcontrol.UpdateApplied:
+		return mutationfacts.OutcomeApplied, audit.ResultApplied, summary, result.TransIDs
+	case swiftcontrol.UpdateConflict:
+		return mutationfacts.OutcomeConflict, audit.ResultConflict, summary, result.TransIDs
+	case swiftcontrol.UpdateVerifyMismatch:
+		return mutationfacts.OutcomeVerifyMismatch, audit.ResultVerifyMismatch, summary, result.TransIDs
+	case swiftcontrol.UpdateUnverified:
+		return mutationfacts.OutcomeUnverified, audit.ResultUnverified, "metadata write unverified; " + summary, result.TransIDs
+	}
+	if objectMetadataPosted(result) || errors.Is(err, swiftcontrol.ErrUnverifiedWrite) {
+		return mutationfacts.OutcomeUnverified, audit.ResultUnverified, "metadata write unverified; " + summary, result.TransIDs
+	}
+	return mutationfacts.OutcomeFailed, audit.ResultFailed, "metadata update failed", result.TransIDs
 }
 
 func auditResult(outcome swiftcontrol.UpdateOutcome) audit.Result {
@@ -266,6 +339,8 @@ func auditResult(outcome swiftcontrol.UpdateOutcome) audit.Result {
 		return audit.ResultConflict
 	case swiftcontrol.UpdateVerifyMismatch:
 		return audit.ResultVerifyMismatch
+	case swiftcontrol.UpdateUnverified:
+		return audit.ResultUnverified
 	}
 	return audit.ResultFailed
 }
@@ -352,14 +427,14 @@ func (s *MutateService) DeleteManifest(ctx context.Context, container, name stri
 	resource := container + "/" + name
 	before, err := session.DeleteManifestObject(ctx, container, name)
 	if err != nil {
-		s.record(ctx, "manifest.delete", resource, "manifest delete failed or refused", audit.ResultFailed, nil)
+		_ = s.record(ctx, "manifest.delete", resource, "manifest delete failed or refused", audit.ResultFailed, nil)
 		return ObjectDetailDTO{}, err
 	}
 	summary := fmt.Sprintf("deleted %s manifest; segments remain", before.Class)
 	if before.Manifest != "" {
 		summary = fmt.Sprintf("deleted %s manifest; segments remain at %s", before.Class, before.Manifest)
 	}
-	s.record(ctx, "manifest.delete", resource, summary, audit.ResultApplied, []string{before.TransID})
+	_ = s.record(ctx, "manifest.delete", resource, summary, audit.ResultApplied, []string{before.TransID})
 	return toObjectDetailDTO(before), nil
 }
 

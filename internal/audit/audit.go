@@ -29,7 +29,18 @@ const (
 	// different outcome than intended — surfaced, never hidden.
 	ResultVerifyMismatch Result = "verify_mismatch"
 	ResultFailed         Result = "failed"
+	// ResultUnverified: the write left the process and the verify read
+	// did not complete, so the effect is unknown rather than failed
+	// (ADR 0058). Distinct from ResultVerifyMismatch, which observed a
+	// different post-state (ADR 0046 still qualifies a completed POST).
+	ResultUnverified Result = "unverified"
 )
+
+// Database is the shared handle for ledgers that must not use compacted
+// audit_events (ADR 0058).
+func (s *Store) Database() *db.DB {
+	return s.db
+}
 
 // Event is one audit-trail entry.
 type Event struct {

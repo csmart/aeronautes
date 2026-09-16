@@ -25,6 +25,7 @@ func TestOpenAppliesMigrations(t *testing.T) {
 
 	want := []string{
 		"audit_events",
+		"mutation_facts",
 		"bookmarks",
 		"capability_snapshots",
 		"jobs",
