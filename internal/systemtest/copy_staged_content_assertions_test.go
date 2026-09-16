@@ -232,7 +232,7 @@ func assertStagedContentRecovery(t *testing.T, h *Harness, f stagedContentFixtur
 
 func assertStagedContentPublic(t *testing.T, h *Harness, id string, saved copyCompletionState) {
 	t.Helper()
-	get, err := h.Jobs.Get(t.Context(), id)
+	get, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
 	if err != nil || !reflect.DeepEqual(get, saved.Job) {
 		t.Fatalf("original public Get differs from durable job: %+v %v", get, err)
 	}
@@ -246,7 +246,7 @@ func assertStagedContentPublic(t *testing.T, h *Harness, id string, saved copyCo
 			t.Fatalf("original public History differs: %+v %v", history, err)
 		}
 	}
-	page, err := h.Jobs.Items(t.Context(), id, "", 100)
+	page, err := h.Jobs.Items(t.Context(), h.Primary.BookmarkID, id, "", 100)
 	if err != nil || page.Status != "available" || page.NextCursor != "" || len(page.Items) != len(saved.Items) {
 		t.Fatalf("public staged item page differs: %+v %v", page, err)
 	}
@@ -276,7 +276,7 @@ func assertStagedContentPublic(t *testing.T, h *Harness, id string, saved copyCo
 	counts := saved.ItemTotals
 	wantTotals := app.JobItemTotalsDTO{Status: "available", Items: counts.Items, Planned: counts.Planned, Admitted: counts.Admitted,
 		Failed: counts.Failed, Conflicts: counts.Conflicts, Refused: counts.Refused, Unresolved: counts.Unresolved, Unverified: counts.Unverified, Problems: counts.Problems}
-	if totals, err := h.Jobs.ItemTotals(t.Context(), id); err != nil || totals != wantTotals {
+	if totals, err := h.Jobs.ItemTotals(t.Context(), h.Primary.BookmarkID, id); err != nil || totals != wantTotals {
 		t.Fatalf("public staged item facets differ: %+v %v want=%+v", totals, err, wantTotals)
 	}
 	events, err := h.Audit.Search(t.Context(), app.AuditQueryDTO{OperationPrefix: "transfer.copy.", Limit: 100})
@@ -399,7 +399,7 @@ func assertStagedContentFault(t *testing.T, h *Harness, f stagedContentFixture, 
 
 func assertStagedContentUnavailable(t *testing.T, h *Harness, id string) {
 	t.Helper()
-	if job, err := h.Jobs.Get(t.Context(), id); err == nil || job != nil || !strings.Contains(err.Error(), "unavailable") {
+	if job, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id); err == nil || job != nil || !strings.Contains(err.Error(), "unavailable") {
 		t.Fatalf("record refusal exposed stale public Get: %+v %v", job, err)
 	}
 	if list, err := h.Jobs.List(t.Context(), "", false, 100); err == nil || list != nil {
@@ -408,10 +408,10 @@ func assertStagedContentUnavailable(t *testing.T, h *Harness, id string) {
 	if history, err := h.Jobs.History(t.Context(), "", "", 100); err == nil || history.Jobs != nil || history.NextCursor != "" {
 		t.Fatalf("record refusal exposed stale public History: %+v %v", history, err)
 	}
-	if items, err := h.Jobs.Items(t.Context(), id, "", 100); err == nil || items.Items != nil || items.Status != "" {
+	if items, err := h.Jobs.Items(t.Context(), h.Primary.BookmarkID, id, "", 100); err == nil || items.Items != nil || items.Status != "" {
 		t.Fatalf("record refusal exposed a partial public ledger: %+v %v", items, err)
 	}
-	if totals, err := h.Jobs.ItemTotals(t.Context(), id); err == nil || totals != (app.JobItemTotalsDTO{}) {
+	if totals, err := h.Jobs.ItemTotals(t.Context(), h.Primary.BookmarkID, id); err == nil || totals != (app.JobItemTotalsDTO{}) {
 		t.Fatalf("record refusal invented public totals: %+v %v", totals, err)
 	}
 }

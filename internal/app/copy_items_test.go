@@ -107,7 +107,7 @@ func TestCopyItemDiagnosticsExcludeProviderText(t *testing.T) {
 				page.Items[0].Execution.Diagnostic != want || page.Items[0].Execution.Effect != jobs.EffectUnresolved || page.Items[0].Execution.Result != jobs.ItemFailed {
 				t.Fatalf("actual Copy inferred diagnostics from arbitrary text or lost typed facts: job=%+v rows=%+v %v", job, page, err)
 			}
-			public, err := h.jobsSvc.Items(t.Context(), id, "", 100)
+			public, err := h.jobsSvc.Items(t.Context(), h.bookmarkID(), id, "", 100)
 			if err != nil || len(public.Items) != 1 || !reflect.DeepEqual(public.Items[0], jobItemDTO(page.Items[0])) {
 				t.Fatalf("typed Copy diagnostic changed at the bridge: %+v %v", public, err)
 			}
@@ -249,7 +249,8 @@ func TestCopyItemAdapterPreservesExactIdentities(t *testing.T) {
 	for _, verdict := range []plan.Verdict{plan.VerdictNew, plan.VerdictUnknown, plan.VerdictChanged, plan.VerdictSame, "comparison_only"} {
 		t.Run(string(verdict), func(t *testing.T) {
 			h := newHarness(t)
-			job, err := h.transfer.jobs.Create(t.Context(), jobs.Job{Type: jobs.TypeCopy, ItemRecordsVersion: 1})
+			bm := h.ensureBookmark(t)
+			job, err := h.transfer.jobs.Create(t.Context(), jobs.Job{Type: jobs.TypeCopy, ItemRecordsVersion: 1, SourceBookmarkID: bm, DestBookmarkID: bm})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -270,7 +271,7 @@ func TestCopyItemAdapterPreservesExactIdentities(t *testing.T) {
 			if err != nil || len(page.Items) != len(keys) {
 				t.Fatalf("lost exact identities: %+v %v", page, err)
 			}
-			public, err := h.jobsSvc.Items(t.Context(), job.ID, "", 100)
+			public, err := h.jobsSvc.Items(t.Context(), bm, job.ID, "", 100)
 			if err != nil || len(public.Items) != len(keys) {
 				t.Fatalf("lost public identities: %+v %v", public, err)
 			}

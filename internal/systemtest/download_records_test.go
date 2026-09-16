@@ -213,7 +213,7 @@ func downloadRecordsRun(t *testing.T, h *Harness, count int, native bool) {
 	h.AwaitJob(id)
 	copyCompletionAwaitPins(t, h, h.Primary)
 	saved := uploadRecoveryRead(t, h.database, id)
-	visible, err := h.Jobs.Get(t.Context(), id)
+	visible, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
 	if err != nil || !reflect.DeepEqual(visible, saved.Job) {
 		t.Fatalf("public and durable download differ: %+v %v", visible, err)
 	}

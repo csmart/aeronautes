@@ -2,6 +2,7 @@ package audit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -45,7 +46,7 @@ func TestAppendAndRecent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	events, err := s.Recent(ctx, 10)
+	events, err := s.List(ctx, Query{Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +80,7 @@ func TestRetentionCap(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	events, err := s.Recent(ctx, 100)
+	events, err := s.List(ctx, Query{Limit: 100})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +108,7 @@ func TestRefusesSecretShapedSummaries(t *testing.T) {
 			t.Errorf("summary %q was accepted; must be refused", summary)
 		}
 	}
-	events, _ := s.Recent(ctx, 10)
+	events, _ := s.List(ctx, Query{Limit: 10})
 	if len(events) != 0 {
 		t.Errorf("refused events were still recorded: %d", len(events))
 	}
@@ -117,5 +118,13 @@ func TestRejectsIncompleteEvents(t *testing.T) {
 	s := newStore(t, 0)
 	if err := s.Append(context.Background(), Event{Operation: "op"}); err == nil {
 		t.Error("event without resource/result was accepted")
+	}
+}
+
+func TestRecentRequiresBookmark(t *testing.T) {
+	s := newStore(t, 0)
+	_, err := s.Recent(t.Context(), 10)
+	if !errors.Is(err, ErrBookmarkRequired) {
+		t.Fatalf("unscoped Recent = %v, want ErrBookmarkRequired", err)
 	}
 }

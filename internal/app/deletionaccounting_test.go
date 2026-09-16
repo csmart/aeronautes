@@ -103,7 +103,7 @@ func TestDeleteAccountingStorageLifecycle(t *testing.T) {
 				}
 			}
 			awaitJobBindingsReleased(t, h, []string{bookmark})
-			job, err := h.jobsSvc.Get(t.Context(), id)
+			job, err := h.jobsSvc.Get(t.Context(), h.bookmarkID(), id)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -220,7 +220,7 @@ func TestDeleteAccountingCompletionIsAtomic(t *testing.T) {
 			cache := deletionAccountingCache(t)
 			h, id, barrier := startAccountingDelete(t, true)
 			bookmark := h.transfer.connections.ActiveBookmarkID()
-			before, err := h.jobsSvc.Get(t.Context(), id)
+			before, err := h.jobsSvc.Get(t.Context(), h.bookmarkID(), id)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -258,7 +258,7 @@ func TestDeleteAccountingCompletionIsAtomic(t *testing.T) {
 			if err := barrier.Err(); err != nil {
 				t.Fatal(err)
 			}
-			visible, getErr := h.jobsSvc.Get(t.Context(), id)
+			visible, getErr := h.jobsSvc.Get(t.Context(), h.bookmarkID(), id)
 			list, listErr := h.jobsSvc.List(t.Context(), bookmark, false, 10)
 			history, historyErr := h.jobsSvc.History(t.Context(), bookmark, "", 10)
 			row := reopenedAccountingJob(t, h, id)
@@ -321,7 +321,7 @@ func TestDeleteCancellationRetainsAdmittedOutcomes(t *testing.T) {
 				t.Fatal(err)
 			}
 			awaitJobBindingsReleased(t, h, []string{h.transfer.connections.ActiveBookmarkID()})
-			job, err := h.jobsSvc.Get(t.Context(), id)
+			job, err := h.jobsSvc.Get(t.Context(), h.bookmarkID(), id)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -497,7 +497,7 @@ func TestDeleteAccountingFailureIsPublic(t *testing.T) {
 				if err != nil || len(history.Jobs) != 1 || !reflect.DeepEqual(history.Jobs[0], job) {
 					t.Errorf("Get/History disagree: %+v %v", history, err)
 				}
-				events, err := h.auditSvc.Recent(context.Background(), 10)
+				events, err := h.auditSvc.RecentFor(context.Background(), h.bookmarkID(), 10)
 				if err != nil {
 					t.Fatal(err)
 				}

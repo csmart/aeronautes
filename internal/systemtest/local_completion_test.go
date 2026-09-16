@@ -220,7 +220,7 @@ func localCompletionRun(t *testing.T, h *Harness, direction, fault, class string
 	unavailable := fault == "counters" || fault == "error" || fault == "terminal" || fault == "audit"
 	deadline := time.Now().Add(30 * time.Second)
 	for {
-		visible, err := h.Jobs.Get(t.Context(), id)
+		visible, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
 		if err != nil {
 			if !unavailable || !strings.Contains(err.Error(), "final result could not be saved") {
 				t.Fatalf("unexpected job error: %v", err)

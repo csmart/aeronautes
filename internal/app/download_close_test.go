@@ -12,7 +12,8 @@ import (
 func TestNativeDownloadCleanupKeepsCopiedOutcome(t *testing.T) {
 	h := newHarness(t)
 	base := jobs.Counters{ObjectsPlanned: 1, BytesPlanned: 21}
-	job, err := h.transfer.jobs.Create(t.Context(), jobs.Job{Type: jobs.TypeDownload, Counters: base})
+	bm := h.ensureBookmark(t)
+	job, err := h.transfer.jobs.Create(t.Context(), jobs.Job{Type: jobs.TypeDownload, Counters: base, DestBookmarkID: bm})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -21,7 +22,7 @@ func TestNativeDownloadCleanupKeepsCopiedOutcome(t *testing.T) {
 	h.transfer.runLocal(t.Context(), job.ID, "", 0, base, func(context.Context, func(int64, int64, int64)) (*local.Report, error) {
 		return report, nil
 	})
-	visible, err := h.jobsSvc.Get(t.Context(), job.ID)
+	visible, err := h.jobsSvc.Get(t.Context(), h.bookmarkID(), job.ID)
 	want := base
 	want.ObjectsCopied, want.ObjectsVerified, want.BytesCopied, want.NativeRouted = 1, 1, 21, 1
 	if err != nil || visible.State != "partial" || visible.Counters != want {

@@ -373,12 +373,12 @@ func (h *Harness) JobHistory(ctx context.Context, bookmark, cursor string, limit
 }
 
 func (h *Harness) JobItems(ctx context.Context, job, cursor string, limit int) (app.JobItemPageDTO, *Receipt) {
-	page, err := h.Jobs.Items(ctx, job, cursor, limit)
+	page, err := h.Jobs.Items(ctx, h.Primary.BookmarkID, job, cursor, limit)
 	return page, &Receipt{h: h, action: "JobService.Items", err: err}
 }
 
 func (h *Harness) JobItemTotals(ctx context.Context, job string) (app.JobItemTotalsDTO, *Receipt) {
-	totals, err := h.Jobs.ItemTotals(ctx, job)
+	totals, err := h.Jobs.ItemTotals(ctx, h.Primary.BookmarkID, job)
 	return totals, &Receipt{h: h, action: "JobService.ItemTotals", err: err}
 }
 
@@ -782,11 +782,31 @@ func collateral(before, after *oracle.AccountSnapshot, allowed []string) []strin
 	return stray
 }
 
+func jobAccount(j jobs.Job) string {
+	if j.SourceBookmarkID != "" {
+		return j.SourceBookmarkID
+	}
+	return j.DestBookmarkID
+}
+
+func publicJob(t *testing.T, store *jobs.Store, id string) *app.JobDTO {
+	t.Helper()
+	raw, err := store.Get(t.Context(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := app.NewJobService(store).Get(t.Context(), jobAccount(raw), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return job
+}
+
 func (h *Harness) AwaitJob(jobID string) *app.JobDTO {
 	h.T.Helper()
 	deadline := time.Now().Add(90 * time.Second)
 	for time.Now().Before(deadline) {
-		job, err := h.Jobs.Get(h.ctx, jobID)
+		job, err := h.Jobs.Get(h.ctx, h.Primary.BookmarkID, jobID)
 		if err != nil {
 			h.T.Fatal(err)
 		}

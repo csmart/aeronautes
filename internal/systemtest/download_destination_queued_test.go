@@ -101,7 +101,7 @@ func downloadDestinationQueued(t *testing.T, h *Harness, route, fault string) {
 	if err != nil || id == "" {
 		t.Fatalf("initially valid queued download: %q error=%v", id, err)
 	}
-	queued, err := h.Jobs.Get(t.Context(), id)
+	queued, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
 	if err != nil || queued.State != "queued" || queued.StartedAt != "" {
 		t.Fatalf("fixture changed the destination after execution already began: %+v error=%v", queued, err)
 	}
@@ -121,7 +121,7 @@ func downloadDestinationQueued(t *testing.T, h *Harness, route, fault string) {
 	h.AwaitJob(id)
 	copyCompletionAwaitPins(t, h, h.Primary)
 	saved, firstSaved := uploadRecoveryRead(t, h.database, id), uploadRecoveryRead(t, h.database, first)
-	visible, err := h.Jobs.Get(t.Context(), id)
+	visible, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
 	want := jobs.Counters{ObjectsPlanned: count, BytesPlanned: count * int64(len(body))}
 	if err != nil || !reflect.DeepEqual(visible, saved.Job) || saved.Job.State != "failed" || saved.Job.Counters != want || saved.Job.StartedAt == "" || saved.Job.FinishedAt == "" ||
 		saved.Job.Error == "" || !saved.ItemsCaptured || len(saved.Items) != 0 || saved.ItemTotals != (jobs.ItemTotals{}) || len(saved.Rows) != 0 {

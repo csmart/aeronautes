@@ -164,7 +164,7 @@ func TestRetentionPrunesExactly(t *testing.T) {
 			t.Fatalf("%s job wrongly pruned: %v", name, err)
 		}
 	}
-	events, _ := auditStore.Recent(ctx, 10)
+	events, _ := auditStore.List(ctx, audit.Query{Limit: 10})
 	for _, e := range events {
 		if e.Operation == "x.old" {
 			t.Fatal("old audit event survived")

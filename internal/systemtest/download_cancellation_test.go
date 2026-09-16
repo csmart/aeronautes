@@ -396,7 +396,7 @@ func downloadCancellationQueued(t *testing.T, h *Harness) {
 		t.Fatalf("slot-owning barrier: %+v %v", event, err)
 	}
 	id := downloadCancelStart(t, h, container, "scope/", root)
-	if queued, err := h.Jobs.Get(t.Context(), id); err != nil || queued.State != "queued" || queued.StartedAt != "" {
+	if queued, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id); err != nil || queued.State != "queued" || queued.StartedAt != "" {
 		t.Fatalf("second download was not held after preflight: %+v %v", queued, err)
 	}
 	if err := h.Transfer.CancelJob(t.Context(), id); err != nil {

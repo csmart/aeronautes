@@ -62,7 +62,7 @@ func TestCopyRefusesOverwritesRealSwift(t *testing.T) {
 	if !strings.Contains(job.Error, "210 overwrites refused") || !strings.Contains(job.Error, "concurrent changes cannot be protected") {
 		t.Fatalf("refusal detail missing: %q", job.Error)
 	}
-	events, err := h.Audit.Recent(t.Context(), 20)
+	events, err := h.Audit.RecentFor(t.Context(), h.Primary.BookmarkID, 20)
 	if err != nil {
 		t.Fatal(err)
 	}

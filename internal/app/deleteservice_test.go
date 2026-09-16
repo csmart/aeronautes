@@ -149,7 +149,7 @@ func TestEmptyAndDeleteContainerJobs(t *testing.T) {
 
 	// Audit carries the destructive trail.
 	awaitJobAudit(t, h, jobID, "delete.delete_container.complete")
-	events, err := h.auditSvc.Recent(ctx, 20)
+	events, err := h.auditSvc.RecentFor(ctx, h.bookmarkID(), 20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +241,7 @@ func TestSegmentDeleteDLOOwnership(t *testing.T) {
 	if err != nil || result.Basis != "backstage-forced" || result.SegmentsDeleted != 3 {
 		t.Fatalf("forced = %+v %v", result, err)
 	}
-	events, _ := h.auditSvc.Recent(ctx, 10)
+	events, _ := h.auditSvc.RecentFor(ctx, h.bookmarkID(), 10)
 	var sawForced bool
 	for _, e := range events {
 		if e.Operation == "segments.delete" && strings.Contains(e.Summary, "backstage-forced") {

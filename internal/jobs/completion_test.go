@@ -36,7 +36,7 @@ func TestCompletionAtomicity(t *testing.T) {
 			if err := trail.Append(t.Context(), audit.Event{Operation: "prior", Resource: "sentinel", Result: audit.ResultApplied}); err != nil {
 				t.Fatal(err)
 			}
-			prior, err := trail.Recent(t.Context(), 10)
+			prior, err := trail.List(t.Context(), audit.Query{Limit: 10})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -86,7 +86,7 @@ func TestCompletionAtomicity(t *testing.T) {
 				if got.State != result.State || got.Counters != result.Counters || got.Error != result.Error || got.FinishedAt.IsZero() || got.StartedAt != before.StartedAt || got.RecoveryRecords != 1 {
 					t.Fatalf("final snapshot differs: %+v", got)
 				}
-				events, err := trail.Recent(t.Context(), 10)
+				events, err := trail.List(t.Context(), audit.Query{Limit: 10})
 				if err != nil || len(events) != 1 || events[0].Resource != result.Audit.Resource || events[0].Result != result.Audit.Result {
 					t.Fatalf("audit/retention differs: %+v %v", events, err)
 				}
@@ -120,7 +120,7 @@ func TestCompletionAtomicity(t *testing.T) {
 			if !reflect.DeepEqual(got, before) {
 				t.Fatalf("partial job commit: got=%+v before=%+v", got, before)
 			}
-			events, err := trail.Recent(t.Context(), 10)
+			events, err := trail.List(t.Context(), audit.Query{Limit: 10})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -156,7 +156,7 @@ func TestCompletionTerminalCannotBeReplaced(t *testing.T) {
 	if !reflect.DeepEqual(got, before) {
 		t.Fatal("terminal row changed")
 	}
-	events, err := trail.Recent(t.Context(), 10)
+	events, err := trail.List(t.Context(), audit.Query{Limit: 10})
 	if err != nil || len(events) != 1 {
 		t.Fatalf("duplicate terminal audit: %+v %v", events, err)
 	}

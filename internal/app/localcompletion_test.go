@@ -16,7 +16,8 @@ func TestLocalCompletionAdmission(t *testing.T) {
 	for _, fault := range []string{"planning", "running", "verifying", "counters", "error", "terminal", "audit", "control"} {
 		t.Run(fault, func(t *testing.T) {
 			h := newHarness(t)
-			job, err := h.transfer.jobs.Create(t.Context(), jobs.Job{Type: jobs.TypeUpload})
+			bm := h.ensureBookmark(t)
+			job, err := h.transfer.jobs.Create(t.Context(), jobs.Job{Type: jobs.TypeUpload, DestBookmarkID: bm})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -57,7 +58,7 @@ func TestLocalCompletionAdmission(t *testing.T) {
 			if _, active := h.transfer.runner.cancel(job.ID); active {
 				t.Fatal("finished body remains cancellation-addressable")
 			}
-			visible, err := h.jobsSvc.Get(t.Context(), job.ID)
+			visible, err := h.jobsSvc.Get(t.Context(), h.bookmarkID(), job.ID)
 			unavailable := fault == "counters" || fault == "error" || fault == "terminal" || fault == "audit"
 			if unavailable {
 				if err == nil || visible != nil || !strings.Contains(err.Error(), "final result could not be saved") {
@@ -94,7 +95,8 @@ func TestQueuedJobHonoursPersistenceLatch(t *testing.T) {
 			if !r.acquireSlot(t.Context()) {
 				t.Fatal("test slot unavailable")
 			}
-			job, err := h.transfer.jobs.Create(t.Context(), jobs.Job{Type: jobs.TypeUpload})
+			bm := h.ensureBookmark(t)
+			job, err := h.transfer.jobs.Create(t.Context(), jobs.Job{Type: jobs.TypeUpload, DestBookmarkID: bm})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -134,7 +136,7 @@ func TestQueuedJobHonoursPersistenceLatch(t *testing.T) {
 			if row.State != jobs.StateQueued || !row.StartedAt.IsZero() {
 				t.Fatalf("blocked job changed: %+v", row)
 			}
-			events, err := r.audit.Recent(t.Context(), 10)
+			events, err := r.audit.List(t.Context(), audit.Query{Limit: 10})
 			if err != nil || len(events) != 0 {
 				t.Fatalf("invented queued terminal audit: %+v %v", events, err)
 			}
@@ -159,7 +161,7 @@ func TestLocalQueuedCompletion(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				before, err := h.jobsSvc.Get(t.Context(), id)
+				before, err := h.jobsSvc.Get(t.Context(), h.bookmarkID(), id)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -181,7 +183,7 @@ func TestLocalQueuedCompletion(t *testing.T) {
 				// A successful binding edit acknowledges release of the whole
 				// queued launch, rather than relying on a terminal-row timing gap.
 				awaitJobBindingsReleased(t, h, ids)
-				visible, visibleErr := h.jobsSvc.Get(t.Context(), id)
+				visible, visibleErr := h.jobsSvc.Get(t.Context(), h.bookmarkID(), id)
 				row, err := jobs.NewStore(h.db).Get(t.Context(), id)
 				if err != nil {
 					t.Fatal(err)

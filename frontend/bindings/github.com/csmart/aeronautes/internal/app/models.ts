@@ -77,6 +77,7 @@ export interface AppSettingsDTO {
 export interface AuditEventDTO {
     "id": number;
     "at": string;
+    "bookmarkId": string;
     "operation": string;
     "resource": string;
     "summary": string;
@@ -218,6 +219,11 @@ export interface ContainerDetailDTO {
      * Class is the §24 classification (with this HEAD folded in).
      */
     "class": string;
+
+    /**
+     * Scope is the account that answered (ADR 0059).
+     */
+    "scope": ListingScopeDTO;
 }
 
 /**
@@ -349,6 +355,11 @@ export interface DLOSegmentsDTO {
     "segments": ListingRowDTO[] | null;
     "hasMore": boolean;
     "previewBytes": number;
+
+    /**
+     * Scope is the account that answered (ADR 0059).
+     */
+    "scope": ListingScopeDTO;
 }
 
 /**
@@ -459,6 +470,11 @@ export interface FindStatusDTO {
      * ObjectsPerSecond is the live scan throughput.
      */
     "objectsPerSecond": number;
+
+    /**
+     * Scope is the account the scan was bound to at start (ADR 0059).
+     */
+    "scope"?: ListingScopeDTO | null;
 }
 
 /**
@@ -591,12 +607,11 @@ export interface ListingRowDTO {
 /**
  * ContainerPageDTO is one page of containers; an empty NextMarker means
  * the listing is exhausted.
- * ListingScopeDTO states which account produced a listing page. The
- * protocol names no account in a listing, so without this a caller cannot
- * attribute rows to the account they came from and two accounts' answers
- * to identical arguments are indistinguishable (ADR 0049). Generation is
- * the backend's own reading of the connected bookmark, never a value a
- * caller supplied.
+ * ListingScopeDTO states which account produced a listing page or a live
+ * remaining read (ADR 0049, ADR 0059). The protocol names no account in a
+ * listing or HEAD, so without this a caller cannot attribute a reply to the
+ * account it came from. Generation is the backend's own reading of the
+ * connected bookmark, never a value a caller supplied.
  */
 export interface ListingScopeDTO {
     "bookmarkId": string;
@@ -689,6 +704,11 @@ export interface ObjectDetailDTO {
      * detection: hand it back with the edit.
      */
     "editableFingerprint": string;
+
+    /**
+     * Scope is the account that answered (ADR 0059).
+     */
+    "scope": ListingScopeDTO;
 }
 
 /**
@@ -751,6 +771,11 @@ export interface PrefixDetailDTO {
      * SelfObject is nil for an implied prefix.
      */
     "selfObject": ObjectDetailDTO | null;
+
+    /**
+     * Scope is the account that answered (ADR 0059).
+     */
+    "scope": ListingScopeDTO;
 }
 
 export interface RecoveryStatusDTO {
@@ -763,6 +788,11 @@ export interface RecoveryStatusDTO {
  */
 export interface SLOManifestDTO {
     "entries": SLOSegmentDTO[] | null;
+
+    /**
+     * Scope is the account that answered (ADR 0059).
+     */
+    "scope": ListingScopeDTO;
 }
 
 /**

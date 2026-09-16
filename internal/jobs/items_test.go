@@ -153,7 +153,7 @@ func TestItemRecordsExactFailuresAndPages(t *testing.T) {
 			if err != nil || got.Counters != completion.Counters || got.State != state || got.FinishedAt.IsZero() {
 				t.Fatalf("terminal total came from a sample or caller guess: %+v %v", got, err)
 			}
-			events, err := trail.Recent(t.Context(), 10)
+			events, err := trail.List(t.Context(), audit.Query{Limit: 10})
 			if err != nil || len(events) != 1 || events[0].Resource != completion.Audit.Resource {
 				t.Fatalf("missing terminal audit: %+v %v", events, err)
 			}

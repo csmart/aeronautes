@@ -69,11 +69,9 @@ func uploadRecoveryRows(t *testing.T, database *db.DB) []jobs.RecoveryRecord {
 
 func uploadRecoveryRead(t *testing.T, database *db.DB, jobID string) uploadRecoveryState {
 	t.Helper()
-	service := app.NewJobService(jobs.NewStore(database))
-	job, err := service.Get(t.Context(), jobID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := jobs.NewStore(database)
+	service := app.NewJobService(store)
+	job := publicJob(t, store, jobID)
 	status, err := service.RecoveryStatus(t.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -83,7 +81,6 @@ func uploadRecoveryRead(t *testing.T, database *db.DB, jobID string) uploadRecov
 		t.Fatal(err)
 	}
 	state := uploadRecoveryState{Job: job, Rows: uploadRecoveryRows(t, database), Status: status, Audit: events}
-	store := jobs.NewStore(database)
 	totals, err := store.ReadItemTotals(t.Context(), jobID)
 	if errors.Is(err, jobs.ErrItemRecordsNotCaptured) {
 		return state

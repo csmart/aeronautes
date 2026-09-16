@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/csmart/aeronautes/internal/evidence"
@@ -110,28 +109,7 @@ var ErrAccountScopeChanged = errors.New("the connected account changed; the list
 // see: the endpoint still reports the generation it connected under. The
 // resolution is a local store read rather than a request to the cluster.
 func (s *BrowseService) scopedListing(ctx context.Context, bookmarkID string) (*swiftcontrol.Session, ListingScopeDTO, error) {
-	if bookmarkID == "" {
-		return nil, ListingScopeDTO{}, fmt.Errorf("%w: name the bookmark the listing is for", ErrNotConnected)
-	}
-	activeID, connectedGeneration, connected := s.connections.activeEndpoint()
-	if !connected {
-		return nil, ListingScopeDTO{}, ErrNotConnected
-	}
-	if activeID != bookmarkID {
-		return nil, ListingScopeDTO{}, ErrAccountScopeChanged
-	}
-	entry, err := s.connections.sessionEntryFor(ctx, bookmarkID)
-	if err != nil {
-		return nil, ListingScopeDTO{}, err
-	}
-	if entry.generation != connectedGeneration {
-		return nil, ListingScopeDTO{}, ErrAccountScopeChanged
-	}
-	session, err := s.connections.Session()
-	if err != nil {
-		return nil, ListingScopeDTO{}, err
-	}
-	return session, ListingScopeDTO{BookmarkID: activeID, Generation: connectedGeneration}, nil
+	return s.connections.scopedSession(ctx, bookmarkID)
 }
 
 // Containers returns one page of the account's containers starting after

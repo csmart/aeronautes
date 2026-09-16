@@ -11,6 +11,8 @@ import (
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
 
+func findBM(s *FindService) string { return s.connections.ActiveBookmarkID() }
+
 type findRequestGate struct {
 	entered chan context.Context
 	release chan struct{}
@@ -77,7 +79,7 @@ func findDone(t *testing.T, service *FindService, id string) *FindStatusDTO {
 	tick := time.NewTicker(time.Millisecond)
 	defer tick.Stop()
 	for {
-		status, err := service.FindStatus(t.Context(), id)
+		status, err := service.FindStatus(t.Context(), findBM(service), id)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -95,7 +97,7 @@ func findDone(t *testing.T, service *FindService, id string) *FindStatusDTO {
 func cleanupFind(t *testing.T, service *FindService, ids *[]string, gate *findRequestGate) {
 	t.Helper()
 	for _, id := range *ids {
-		if err := service.CancelFind(context.Background(), id); err != nil {
+		if err := service.CancelFind(context.Background(), findBM(service), id); err != nil {
 			t.Errorf("Find cleanup cancellation: %v", err)
 		}
 	}
@@ -119,14 +121,14 @@ func TestFindWorkerAdmissionBound(t *testing.T) {
 	var ids []string
 	defer cleanupFind(t, service, &ids, g)
 	for range 4 {
-		id, err := service.StartFind(t.Context(), "media", "", "report")
+		id, err := service.StartFind(t.Context(), findBM(service), "media", "", "report")
 		if err != nil {
 			t.Fatal(err)
 		}
 		ids = append(ids, id)
 		awaitConnection(t, g.entered)
 	}
-	id, err := service.StartFind(t.Context(), "media", "", "report")
+	id, err := service.StartFind(t.Context(), findBM(service), "media", "", "report")
 	if id != "" {
 		ids = append(ids, id)
 	}
@@ -144,7 +146,7 @@ func TestFindRetainedRecordBound(t *testing.T) {
 	var ids []string
 	defer cleanupFind(t, service, &ids, nil)
 	for range 17 {
-		id, err := service.StartFind(t.Context(), "find-retained", "", "match")
+		id, err := service.StartFind(t.Context(), findBM(service), "find-retained", "", "match")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -154,11 +156,11 @@ func TestFindRetainedRecordBound(t *testing.T) {
 			t.Fatalf("completed scan = %+v", status)
 		}
 	}
-	if _, err := service.FindStatus(t.Context(), ids[0]); err == nil {
+	if _, err := service.FindStatus(t.Context(), findBM(service), ids[0]); err == nil {
 		t.Error("oldest completed Find record survived the sixteen-record bound")
 	}
 	for _, id := range ids[1:] {
-		if _, err := service.FindStatus(t.Context(), id); err != nil {
+		if _, err := service.FindStatus(t.Context(), findBM(service), id); err != nil {
 			t.Errorf("newer completed scan was evicted: %v", err)
 		}
 	}
@@ -191,7 +193,7 @@ func TestFindIdleExpiryWithoutAnotherCall(t *testing.T) {
 			if running && worker.Err() != context.Canceled {
 				t.Error("idle expiry did not cancel the worker")
 			}
-			if _, err := service.FindStatus(t.Context(), id); err == nil {
+			if _, err := service.FindStatus(t.Context(), findBM(service), id); err == nil {
 				t.Error("expired id still answered")
 			}
 		})
@@ -206,7 +208,7 @@ func TestFindLeaseRenewalAndStaleCallbacks(t *testing.T) {
 	oldCallback := service.scans[id].timer.(*manualFindTimer).callback
 	service.mu.Unlock()
 	for range 3 {
-		if _, err := service.FindStatus(t.Context(), id); err != nil {
+		if _, err := service.FindStatus(t.Context(), findBM(service), id); err != nil {
 			t.Fatal(err)
 		}
 		if clock.count() != 1 {
@@ -214,7 +216,7 @@ func TestFindLeaseRenewalAndStaleCallbacks(t *testing.T) {
 		}
 	}
 	clock.advance(4 * time.Minute)
-	if _, err := service.FindStatus(t.Context(), id); err != nil {
+	if _, err := service.FindStatus(t.Context(), findBM(service), id); err != nil {
 		t.Fatal(err)
 	}
 	clock.advance(time.Minute)
@@ -227,7 +229,7 @@ func TestFindLeaseRenewalAndStaleCallbacks(t *testing.T) {
 	}
 	for range 4 {
 		clock.advance(3 * time.Minute)
-		if _, err := service.FindStatus(t.Context(), id); err != nil {
+		if _, err := service.FindStatus(t.Context(), findBM(service), id); err != nil {
 			t.Fatalf("actively observed scan expired: %v", err)
 		}
 	}
@@ -245,7 +247,7 @@ func TestFindPollCannotReviveExpiredLease(t *testing.T) {
 	if len(callbacks) != 1 {
 		t.Fatal("expiry callback was not queued")
 	}
-	if _, err := service.FindStatus(t.Context(), id); err == nil {
+	if _, err := service.FindStatus(t.Context(), findBM(service), id); err == nil {
 		t.Error("poll revived an expired lease before its queued callback ran")
 	}
 	if worker.Err() != context.Canceled || clock.count() != 0 {
@@ -263,7 +265,7 @@ func TestFindCancelledPollDoesNotRenew(t *testing.T) {
 	clock.advance(4 * time.Minute)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if _, err := service.FindStatus(ctx, id); err != context.Canceled {
+	if _, err := service.FindStatus(ctx, findBM(service), id); err != context.Canceled {
 		t.Errorf("cancelled poll = %v", err)
 	}
 	clock.advance(time.Minute)
@@ -286,7 +288,7 @@ func TestFindCancellationRetainsWorkerSlotsUntilExit(t *testing.T) {
 			switch ending {
 			case "cancel":
 				for _, id := range ids {
-					if err := service.CancelFind(t.Context(), id); err != nil {
+					if err := service.CancelFind(t.Context(), findBM(service), id); err != nil {
 						t.Fatal(err)
 					}
 				}
@@ -302,7 +304,7 @@ func TestFindCancellationRetainsWorkerSlotsUntilExit(t *testing.T) {
 					t.Error("retirement did not request cancellation")
 				}
 			}
-			if id, err := service.StartFind(t.Context(), "find-clock", "", "match"); err == nil || id != "" {
+			if id, err := service.StartFind(t.Context(), findBM(service), "find-clock", "", "match"); err == nil || id != "" {
 				t.Errorf("replacement admitted before old workers exited: %q %v", id, err)
 			}
 			service.mu.Lock()
@@ -333,7 +335,7 @@ func TestFindShutdownReportsAnUndrainedWorker(t *testing.T) {
 	_, service, clock, gate := clockFindFixture(t, true)
 	id := startClockFind(t, service)
 	worker := awaitConnection(t, gate.entered)
-	if err := service.CancelFind(t.Context(), id); err != nil {
+	if err := service.CancelFind(t.Context(), findBM(service), id); err != nil {
 		t.Fatal(err)
 	}
 	result := make(chan error, 1)
@@ -352,7 +354,7 @@ func TestFindShutdownReportsAnUndrainedWorker(t *testing.T) {
 	if active != 1 {
 		t.Errorf("shutdown timeout released the still-running worker: %d", active)
 	}
-	if id, err := service.StartFind(t.Context(), "find-clock", "", "match"); err == nil || id != "" {
+	if id, err := service.StartFind(t.Context(), findBM(service), "find-clock", "", "match"); err == nil || id != "" {
 		t.Error("shutdown timeout reopened admission")
 	}
 }
@@ -374,7 +376,7 @@ func TestFindQueuedCallbackCannotUndoRenewal(t *testing.T) {
 		return now
 	}
 	service.mu.Unlock()
-	if _, err := service.FindStatus(t.Context(), id); err != nil {
+	if _, err := service.FindStatus(t.Context(), findBM(service), id); err != nil {
 		t.Fatal(err)
 	}
 	if len(queued) != 1 {
@@ -396,7 +398,7 @@ func TestFindQueuedCallbackCannotRetireAnotherRecord(t *testing.T) {
 	if len(callbacks) != 1 {
 		t.Fatal("expiry callback was not queued")
 	}
-	if err := service.CancelFind(t.Context(), id); err != nil {
+	if err := service.CancelFind(t.Context(), findBM(service), id); err != nil {
 		t.Fatal(err)
 	}
 	replacement := startClockFind(t, service)
@@ -412,7 +414,7 @@ func TestFindQueuedCallbackCannotRetireAnotherRecord(t *testing.T) {
 	for _, callback := range callbacks {
 		callback()
 	}
-	status, err := service.FindStatus(t.Context(), id)
+	status, err := service.FindStatus(t.Context(), findBM(service), id)
 	if err != nil || !status.Done || status.Scanned != 1 || len(status.Matches) != 1 {
 		t.Errorf("old callback retired the replacement record: %+v %v", status, err)
 	}
@@ -432,18 +434,18 @@ func TestFindRecordLimitIncludesRunningScans(t *testing.T) {
 		running = append(running, startClockFind(t, service))
 		awaitConnection(t, gate.entered)
 	}
-	if _, err := service.FindStatus(t.Context(), complete[0]); err == nil {
+	if _, err := service.FindStatus(t.Context(), findBM(service), complete[0]); err == nil {
 		t.Error("running records were excluded from the retention bound")
 	}
 	for _, id := range append(complete[1:], running...) {
-		if _, err := service.FindStatus(t.Context(), id); err != nil {
+		if _, err := service.FindStatus(t.Context(), findBM(service), id); err != nil {
 			t.Errorf("newer or running record evicted: %v", err)
 		}
 	}
-	if id, err := service.StartFind(t.Context(), "find-clock", "", "match"); id != "" || err == nil {
+	if id, err := service.StartFind(t.Context(), findBM(service), "find-clock", "", "match"); id != "" || err == nil {
 		t.Error("full worker admission succeeded by evicting a completed record")
 	}
-	if _, err := service.FindStatus(t.Context(), complete[1]); err != nil {
+	if _, err := service.FindStatus(t.Context(), findBM(service), complete[1]); err != nil {
 		t.Error("worker overload discarded retained results")
 	}
 }
@@ -463,11 +465,11 @@ func TestFindEvictsByCompletionThenAdmissionOrder(t *testing.T) {
 	gate.unblock()
 	findDone(t, service, slow)
 	findDone(t, service, startClockFind(t, service))
-	if _, err := service.FindStatus(t.Context(), earlier[0]); err == nil {
+	if _, err := service.FindStatus(t.Context(), findBM(service), earlier[0]); err == nil {
 		t.Error("oldest completion was not evicted")
 	}
 	for _, id := range append(earlier[1:], slow) {
-		if _, err := service.FindStatus(t.Context(), id); err != nil {
+		if _, err := service.FindStatus(t.Context(), findBM(service), id); err != nil {
 			t.Errorf("newer completion or tie-break successor was evicted: %v", err)
 		}
 	}
@@ -479,7 +481,7 @@ func TestFindCurrentResultsRemainBoundedAndCopied(t *testing.T) {
 		seedObject(h.mock, "find-clock", fmt.Sprintf(" scope/Match-%04d", i), "data", nil)
 	}
 	seedObject(h.mock, "find-clock", " scope/unrelated", "data", nil)
-	id, err := service.StartFind(t.Context(), "find-clock", " scope/", "mAtCh")
+	id, err := service.StartFind(t.Context(), findBM(service), "find-clock", " scope/", "mAtCh")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -491,14 +493,14 @@ func TestFindCurrentResultsRemainBoundedAndCopied(t *testing.T) {
 		t.Error("matching changed literal prefix, case-insensitive matching or list order")
 	}
 	status.Matches[0].Name = "caller changed snapshot"
-	fresh, err := service.FindStatus(t.Context(), id)
+	fresh, err := service.FindStatus(t.Context(), findBM(service), id)
 	if err != nil || fresh.Matches[0].Name != " scope/Match-0000" {
 		t.Errorf("caller modified retained scan results: %+v %v", fresh, err)
 	}
 	service.mu.Lock()
 	scan := service.scans[id]
 	service.mu.Unlock()
-	if err := service.CancelFind(t.Context(), id); err != nil {
+	if err := service.CancelFind(t.Context(), findBM(service), id); err != nil {
 		t.Fatal(err)
 	}
 	service.mu.Lock()
@@ -520,11 +522,11 @@ func TestFindCurrentErrorAndStoppedThroughput(t *testing.T) {
 		t.Fatalf("completed scan throughput = %+v", status)
 	}
 	clock.advance(time.Minute)
-	status, err := service.FindStatus(t.Context(), id)
+	status, err := service.FindStatus(t.Context(), findBM(service), id)
 	if err != nil || status.ObjectsPerSecond != 0.5 {
 		t.Errorf("completed throughput changed with later polls: %+v %v", status, err)
 	}
-	missing, err := service.StartFind(t.Context(), "not-a-container", "", "match")
+	missing, err := service.StartFind(t.Context(), findBM(service), "not-a-container", "", "match")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -532,7 +534,7 @@ func TestFindCurrentErrorAndStoppedThroughput(t *testing.T) {
 	if failed.Error == "" || failed.Scanned != 0 || len(failed.Matches) != 0 {
 		t.Errorf("current listing error was not reported: %+v", failed)
 	}
-	if err := service.CancelFind(t.Context(), "absent-id"); err != nil {
+	if err := service.CancelFind(t.Context(), findBM(service), "absent-id"); err != nil {
 		t.Errorf("absent cancellation was not idempotent: %v", err)
 	}
 }

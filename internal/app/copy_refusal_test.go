@@ -94,7 +94,7 @@ func TestCopyRefusalJobOutcomes(t *testing.T) {
 				}
 			}
 			awaitJobAudit(t, h, id, "transfer.copy.partial")
-			events, err := h.auditSvc.Recent(t.Context(), 20)
+			events, err := h.auditSvc.RecentFor(t.Context(), h.bookmarkID(), 20)
 			if err != nil {
 				t.Fatal(err)
 			}

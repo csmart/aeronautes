@@ -36,6 +36,7 @@ type harness struct {
 	dbPath    string
 	mock      *swifttest.Server
 	authURL   string
+	connected string
 }
 
 // transferService builds the transfer service with evidence wired the
@@ -88,6 +89,28 @@ func newHarnessWithInfo(t *testing.T, infoJSON string) *harness {
 	}
 }
 
+func (h *harness) bookmarkID() string {
+	if id := h.browse.connections.ActiveBookmarkID(); id != "" {
+		return id
+	}
+	return h.connected
+}
+
+func (h *harness) ensureBookmark(t *testing.T) string {
+	t.Helper()
+	if id := h.bookmarkID(); id != "" {
+		return id
+	}
+	saved, err := h.bookmarks.Save(t.Context(), BookmarkDTO{
+		DisplayName: "Fixture", AuthURL: h.authURL, Username: "test:tester",
+	}, "testing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.connected = saved.ID
+	return saved.ID
+}
+
 func (h *harness) connect(t *testing.T) AccountDTO {
 	t.Helper()
 	ctx := context.Background()
@@ -103,6 +126,7 @@ func (h *harness) connect(t *testing.T) AccountDTO {
 	if err != nil {
 		t.Fatal(err)
 	}
+	h.connected = saved.ID
 	return account
 }
 
@@ -260,7 +284,7 @@ func TestInspectorPrefixDetail(t *testing.T) {
 	h.connect(t)
 	ctx := context.Background()
 
-	marker, err := h.inspector.Prefix(ctx, "fixtures", "folder-marker/")
+	marker, err := h.inspector.Prefix(ctx, h.bookmarkID(), "fixtures", "folder-marker/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +292,7 @@ func TestInspectorPrefixDetail(t *testing.T) {
 		t.Errorf("folder-marker/ = %+v, want marker-backed with self object", marker)
 	}
 
-	implied, err := h.inspector.Prefix(ctx, "fixtures", "implied/")
+	implied, err := h.inspector.Prefix(ctx, h.bookmarkID(), "fixtures", "implied/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -316,7 +340,7 @@ func TestClassificationLearnsFromInspection(t *testing.T) {
 	}
 
 	// Inspecting the DLO confirms its segment store.
-	if _, err := h.inspector.Object(ctx, "fixtures", "external-dlo"); err != nil {
+	if _, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "external-dlo"); err != nil {
 		t.Fatal(err)
 	}
 	if got := classOf("external-dlo-segments"); got != "confirmed" {
@@ -324,7 +348,7 @@ func TestClassificationLearnsFromInspection(t *testing.T) {
 	}
 
 	// Fetching the SLO manifest confirms slo-parts.
-	manifest, err := h.inspector.SLOManifest(ctx, "fixtures", "external-slo")
+	manifest, err := h.inspector.SLOManifest(ctx, h.bookmarkID(), "fixtures", "external-slo")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -346,7 +370,7 @@ func TestInspectorContainerDetail(t *testing.T) {
 	h.connect(t)
 	ctx := context.Background()
 
-	d, err := h.inspector.Container(ctx, "photos_segments")
+	d, err := h.inspector.Container(ctx, h.bookmarkID(), "photos_segments")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -369,7 +393,7 @@ func TestInspectorObjectDetail(t *testing.T) {
 	h.connect(t)
 	ctx := context.Background()
 
-	d, err := h.inspector.Object(ctx, "fixtures", "external-dlo")
+	d, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "external-dlo")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,7 +404,7 @@ func TestInspectorObjectDetail(t *testing.T) {
 		t.Errorf("Meta = %v", d.Meta)
 	}
 
-	if _, err := h.inspector.Object(ctx, "fixtures", "does-not-exist"); err == nil {
+	if _, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "does-not-exist"); err == nil {
 		t.Error("missing object must error")
 	}
 }
@@ -418,7 +442,7 @@ func TestMutateObjectMetadataWithAudit(t *testing.T) {
 	h.connect(t)
 	ctx := context.Background()
 
-	before, err := h.inspector.Object(ctx, "fixtures", "normal/hello.txt")
+	before, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "normal/hello.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -451,7 +475,7 @@ func TestMutateObjectMetadataWithAudit(t *testing.T) {
 		t.Errorf("stale outcome = %q", stale.Outcome)
 	}
 
-	events, err := h.auditSvc.Recent(ctx, 10)
+	events, err := h.auditSvc.RecentFor(ctx, h.bookmarkID(), 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -486,7 +510,7 @@ func TestCreateContainerPolicyGate(t *testing.T) {
 		t.Errorf("policy = %q", detail.StoragePolicy)
 	}
 
-	events, _ := h.auditSvc.Recent(ctx, 5)
+	events, _ := h.auditSvc.RecentFor(ctx, h.bookmarkID(), 5)
 	if len(events) == 0 || events[0].Operation != "container.create" || events[0].Result != "applied" {
 		t.Errorf("audit = %+v", events)
 	}
@@ -553,7 +577,7 @@ func TestMarkerServiceWithAudit(t *testing.T) {
 		t.Fatal("folder-suit delete must refuse")
 	}
 
-	events, _ := h.auditSvc.Recent(ctx, 5)
+	events, _ := h.auditSvc.RecentFor(ctx, h.bookmarkID(), 5)
 	if len(events) != 3 {
 		t.Fatalf("audit events = %d, want 3", len(events))
 	}
@@ -572,7 +596,7 @@ func TestDLOSegmentsService(t *testing.T) {
 	h := newHarness(t)
 	h.connect(t)
 
-	preview, err := h.inspector.DLOSegments(context.Background(), "external-dlo-segments/wedding-video/")
+	preview, err := h.inspector.DLOSegments(context.Background(), h.bookmarkID(), "external-dlo-segments/wedding-video/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -611,7 +635,7 @@ func TestDeleteManifestService(t *testing.T) {
 		t.Errorf("segments after manifest delete = %d, want 3", len(inner.Rows))
 	}
 
-	events, err := h.auditSvc.Recent(ctx, 5)
+	events, err := h.auditSvc.RecentFor(ctx, h.bookmarkID(), 5)
 	if err != nil {
 		t.Fatal(err)
 	}

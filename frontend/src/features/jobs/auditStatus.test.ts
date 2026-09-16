@@ -17,7 +17,7 @@ afterEach(async () => {
 });
 
 function audit(id: number, operation = "copy.object"): AuditEventDTO {
-  return { id, at: "", operation, resource: `object-${id}`, summary: operation,
+  return { id, at: "", bookmarkId: "", operation, resource: `object-${id}`, summary: operation,
     result: "applied", transIds: ["tx-owned"] };
 }
 

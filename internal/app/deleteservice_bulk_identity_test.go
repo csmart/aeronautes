@@ -135,7 +135,7 @@ func terminalAuditFor(t *testing.T, h *harness, jobID, operation, resource, resu
 	deadline := time.Now().Add(10 * time.Second)
 	for found == nil && time.Now().Before(deadline) {
 		var err error
-		events, err = h.auditSvc.Recent(context.Background(), 200)
+		events, err = h.auditSvc.RecentFor(context.Background(), h.bookmarkID(), 200)
 		if err != nil {
 			t.Fatal(err)
 		}

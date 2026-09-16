@@ -63,7 +63,7 @@ func readItemStorage(t *testing.T, store *jobs.Store, request itemStorageRequest
 			t.Fatal(err)
 		}
 		state.Totals[id] = totals
-		job, err := service.Get(t.Context(), id)
+		job, err := service.Get(t.Context(), "source", id)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -136,7 +136,7 @@ func TestTransferItemStorageReopen(t *testing.T) {
 	}
 	request.Legacy = legacy.ID
 	for _, kind := range []jobs.Type{jobs.TypeCopy, jobs.TypeUpload, jobs.TypeDownload} {
-		job, err := store.Create(t.Context(), jobs.Job{Type: kind, ItemRecordsVersion: 1})
+		job, err := store.Create(t.Context(), jobs.Job{Type: kind, ItemRecordsVersion: 1, SourceBookmarkID: "source"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -189,7 +189,7 @@ func TestTransferItemStorageReopen(t *testing.T) {
 			if err := store.FinishFromItems(t.Context(), job.ID, result, audit.NewStore(database)); err != nil {
 				t.Fatal(err)
 			}
-			visible, err := app.NewJobService(store).Get(t.Context(), job.ID)
+			visible, err := app.NewJobService(store).Get(t.Context(), "source", job.ID)
 			if err != nil || visible.Counters.ObjectsFailed != int64(count) {
 				t.Fatalf("existing job service lost exact terminal total: %+v %v", visible, err)
 			}

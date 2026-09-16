@@ -173,7 +173,7 @@ func TestUploadItemDiagnosticsExcludeProviderText(t *testing.T) {
 				page.Items[0].Execution.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectUnresolved, Diagnostic: want}) {
 				t.Fatalf("upload inferred diagnostic text or invented verification: job=%+v page=%+v error=%v", job, page, err)
 			}
-			public, err := h.jobsSvc.Items(t.Context(), id, "", 100)
+			public, err := h.jobsSvc.Items(t.Context(), h.bookmarkID(), id, "", 100)
 			if err != nil || len(public.Items) != 1 || public.Items[0].Source.LocalPath != path || public.Items[0].Verification != nil || public.Items[0].Execution == nil || public.Items[0].Execution.Code != string(want.Code) {
 				t.Fatalf("upload public diagnostic changed: %+v %v", public, err)
 			}

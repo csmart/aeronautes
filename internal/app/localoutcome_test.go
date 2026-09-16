@@ -18,7 +18,8 @@ func TestLocalMissingOutcomeRefusesCompletion(t *testing.T) {
 	}{{jobs.TypeDownload, 0}, {jobs.TypeUpload, 1}} {
 		t.Run(string(test.kind), func(t *testing.T) {
 			h := newHarness(t)
-			job, err := h.transfer.jobs.Create(t.Context(), jobs.Job{Type: test.kind, ItemRecordsVersion: test.version})
+			bm := h.ensureBookmark(t)
+			job, err := h.transfer.jobs.Create(t.Context(), jobs.Job{Type: test.kind, ItemRecordsVersion: test.version, DestBookmarkID: bm})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -28,7 +29,7 @@ func TestLocalMissingOutcomeRefusesCompletion(t *testing.T) {
 			h.transfer.runLocal(ctx, job.ID, "", test.version, job.Counters, func(context.Context, func(int64, int64, int64)) (*local.Report, error) {
 				return nil, nil
 			})
-			got, err := h.jobsSvc.Get(t.Context(), job.ID)
+			got, err := h.jobsSvc.Get(t.Context(), h.bookmarkID(), job.ID)
 			if err != nil || got.State != "failed" || got.Error != "local transfer returned no outcome" || got.Counters != (jobs.Counters{}) {
 				t.Fatalf("missing outcome reported as success: %+v %v", got, err)
 			}
@@ -95,7 +96,7 @@ func TestLocalPostCommitTerminalOutcome(t *testing.T) {
 				}
 				return report, test.runError
 			})
-			got, err := h.jobsSvc.Get(t.Context(), job.ID)
+			got, err := h.jobsSvc.Get(t.Context(), h.bookmarkID(), job.ID)
 			if err != nil {
 				t.Fatal(err)
 			}

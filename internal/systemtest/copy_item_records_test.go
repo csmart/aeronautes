@@ -122,7 +122,7 @@ func copyItemRecordsRun(t *testing.T, h *Harness, count int) {
 	h.AwaitJob(id)
 	copyCompletionAwaitPins(t, h)
 	saved := copyCompletionRead(t, h.database, id)
-	visible, err := h.Jobs.Get(t.Context(), id)
+	visible, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
 	if err != nil || !reflect.DeepEqual(visible, saved.Job) {
 		t.Errorf("identity probe public/durable mismatch: %+v %v %+v", visible, err, saved)
 	}

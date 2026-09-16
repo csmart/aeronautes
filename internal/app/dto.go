@@ -82,6 +82,8 @@ type ContainerDetailDTO struct {
 	EditableFingerprint string `json:"editableFingerprint"`
 	// Class is the §24 classification (with this HEAD folded in).
 	Class string `json:"class"`
+	// Scope is the account that answered (ADR 0059).
+	Scope ListingScopeDTO `json:"scope"`
 }
 
 // SLOSegmentDTO is one row of the inspector's SLO segment table (§23.2):
@@ -102,6 +104,8 @@ type SLOSegmentDTO struct {
 // SLOManifestDTO is the exact manifest, order preserved (§23).
 type SLOManifestDTO struct {
 	Entries []SLOSegmentDTO `json:"entries"`
+	// Scope is the account that answered (ADR 0059).
+	Scope ListingScopeDTO `json:"scope"`
 }
 
 // DLOSegmentsDTO is the bounded §23.1 segment preview: the first rows a
@@ -112,16 +116,17 @@ type DLOSegmentsDTO struct {
 	Segments     []ListingRowDTO `json:"segments"`
 	HasMore      bool            `json:"hasMore"`
 	PreviewBytes int64           `json:"previewBytes"`
+	// Scope is the account that answered (ADR 0059).
+	Scope ListingScopeDTO `json:"scope"`
 }
 
 // ContainerPageDTO is one page of containers; an empty NextMarker means
 // the listing is exhausted.
-// ListingScopeDTO states which account produced a listing page. The
-// protocol names no account in a listing, so without this a caller cannot
-// attribute rows to the account they came from and two accounts' answers
-// to identical arguments are indistinguishable (ADR 0049). Generation is
-// the backend's own reading of the connected bookmark, never a value a
-// caller supplied.
+// ListingScopeDTO states which account produced a listing page or a live
+// remaining read (ADR 0049, ADR 0059). The protocol names no account in a
+// listing or HEAD, so without this a caller cannot attribute a reply to the
+// account it came from. Generation is the backend's own reading of the
+// connected bookmark, never a value a caller supplied.
 type ListingScopeDTO struct {
 	BookmarkID string `json:"bookmarkId"`
 	Generation int64  `json:"generation"`
@@ -229,13 +234,14 @@ type MutationResultDTO struct {
 
 // AuditEventDTO is one §50 audit-trail row.
 type AuditEventDTO struct {
-	ID        int64    `json:"id"`
-	At        string   `json:"at"`
-	Operation string   `json:"operation"`
-	Resource  string   `json:"resource"`
-	Summary   string   `json:"summary"`
-	Result    string   `json:"result"`
-	TransIDs  []string `json:"transIds"`
+	ID         int64    `json:"id"`
+	At         string   `json:"at"`
+	BookmarkID string   `json:"bookmarkId"`
+	Operation  string   `json:"operation"`
+	Resource   string   `json:"resource"`
+	Summary    string   `json:"summary"`
+	Result     string   `json:"result"`
+	TransIDs   []string `json:"transIds"`
 }
 
 // PrefixDetailDTO is the selection-triggered prefix classification
@@ -246,6 +252,8 @@ type PrefixDetailDTO struct {
 	MarkerBacked bool   `json:"markerBacked"`
 	// SelfObject is nil for an implied prefix.
 	SelfObject *ObjectDetailDTO `json:"selfObject"`
+	// Scope is the account that answered (ADR 0059).
+	Scope ListingScopeDTO `json:"scope"`
 }
 
 // ObjectDetailDTO is the authoritative HEAD detail (§53).
@@ -269,4 +277,6 @@ type ObjectDetailDTO struct {
 	// EditableFingerprint is the working-copy base for §18 conflict
 	// detection: hand it back with the edit.
 	EditableFingerprint string `json:"editableFingerprint"`
+	// Scope is the account that answered (ADR 0059).
+	Scope ListingScopeDTO `json:"scope"`
 }

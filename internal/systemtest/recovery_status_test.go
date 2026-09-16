@@ -67,7 +67,7 @@ func TestRecoveryStatusBeyondRecentJobs(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		got, err := h.Jobs.Get(ctx, job.ID)
+		got, err := h.Jobs.Get(ctx, h.Primary.BookmarkID, job.ID)
 		if err != nil || got.State != string(test.state) || got.RecoveryRecords != int64(i+1) {
 			t.Fatalf("per-job status = %+v, %v", got, err)
 		}
@@ -141,7 +141,7 @@ func TestRecoveryStatusRefusesUnavailableDatabase(t *testing.T) {
 	if rows, err := h.Jobs.List(t.Context(), "", false, 50); err == nil || rows != nil {
 		t.Fatalf("unavailable state claimed per-job counts: %+v, %v", rows, err)
 	}
-	if job, err := h.Jobs.Get(t.Context(), "missing"); err == nil || job != nil {
+	if job, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, "missing"); err == nil || job != nil {
 		t.Fatalf("unavailable state returned a job count: %+v, %v", job, err)
 	}
 	read.CreditRefusal()

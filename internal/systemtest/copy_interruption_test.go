@@ -166,7 +166,7 @@ func copyInterruptionRun(t *testing.T, h *Harness, tc copyInterruptionCase) {
 	if err != nil || event.StatusCode != wantHTTP || selected.Load() != 1 {
 		t.Fatalf("Copy listing boundary: %+v %v selected=%d", event, err, selected.Load())
 	}
-	pending, err := h.Jobs.Get(t.Context(), id)
+	pending, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
 	if err != nil || pending.State != "running" {
 		t.Fatalf("Copy did not reach running boundary: %+v %v", pending, err)
 	}
@@ -191,7 +191,7 @@ func copyInterruptionRun(t *testing.T, h *Harness, tc copyInterruptionCase) {
 	}
 	copyCompletionAwaitPins(t, h)
 	saved := copyCompletionRead(t, h.database, id)
-	visible, err := h.Jobs.Get(t.Context(), id)
+	visible, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
 	if err != nil || !reflect.DeepEqual(visible, saved.Job) {
 		t.Errorf("Copy visible and saved result differ: %+v %v %+v", visible, err, saved)
 	}

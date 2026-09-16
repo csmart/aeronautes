@@ -97,7 +97,7 @@ func TestItemCompletionRefusesIncompleteFacts(t *testing.T) {
 			if err != nil || !reflect.DeepEqual(got, before) || !reflect.DeepEqual(readAllItems(t, observer, job.ID, 0), items) {
 				t.Fatalf("contradictory completion changed retained facts: %+v %v", got, err)
 			}
-			if events, err := trail.Recent(t.Context(), 10); err != nil || len(events) != 0 {
+			if events, err := trail.List(t.Context(), audit.Query{Limit: 10}); err != nil || len(events) != 0 {
 				t.Fatalf("contradictory completion left a success audit: %+v %v", events, err)
 			}
 			// The caller can still save an honest result for already admitted work.
@@ -112,7 +112,7 @@ func TestItemCompletionRefusesIncompleteFacts(t *testing.T) {
 			if s.Available() == nil {
 				t.Fatal("later save incorrectly cleared the process diagnostic")
 			}
-			events, err := trail.Recent(t.Context(), 10)
+			events, err := trail.List(t.Context(), audit.Query{Limit: 10})
 			wantSummary := fmt.Sprintf(" · item outcomes: %d failed names, %d conflicts, %d refusals, %d unresolved, %d unverified, %d with problems",
 				want.Failed, want.Conflicts, want.Refused, want.Unresolved, want.Unverified, want.Problems)
 			if err != nil || len(events) != 1 || events[0].Summary != wantSummary {
@@ -146,7 +146,7 @@ func TestItemCompletionTransactionRollback(t *testing.T) {
 			if err := trail.Append(t.Context(), audit.Event{Operation: "prior", Resource: "prior", Result: audit.ResultApplied}); err != nil {
 				t.Fatal(err)
 			}
-			prior, err := trail.Recent(t.Context(), 10)
+			prior, err := trail.List(t.Context(), audit.Query{Limit: 10})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -167,7 +167,7 @@ func TestItemCompletionTransactionRollback(t *testing.T) {
 			if err != nil || !reflect.DeepEqual(got, before) || !reflect.DeepEqual(items, readAllItems(t, observer, job.ID, 0)) {
 				t.Fatalf("partial terminal transaction: %+v %v", got, err)
 			}
-			events, err := trail.Recent(t.Context(), 10)
+			events, err := trail.List(t.Context(), audit.Query{Limit: 10})
 			if err != nil || !reflect.DeepEqual(events, prior) {
 				t.Fatalf("partial audit transaction: %+v %v", events, err)
 			}
@@ -179,7 +179,7 @@ func TestItemCompletionTransactionRollback(t *testing.T) {
 			if err != nil || got.Counters.ObjectsFailed != 1 || got.Counters.ObjectsCopied != 1 {
 				t.Fatalf("terminal snapshot used caller or phase counts: %+v %v", got, err)
 			}
-			events, err = trail.Recent(t.Context(), 10)
+			events, err = trail.List(t.Context(), audit.Query{Limit: 10})
 			if err != nil || len(events) != 1 || events[0].Operation != "transfer.copy.partial" ||
 				events[0].Summary != " · item outcomes: 1 failed names, 0 conflicts, 0 refusals, 0 unresolved, 0 unverified, 1 with problems" {
 				t.Fatalf("audit facets did not commit with the distinct failed counter: %+v %v", events, err)

@@ -42,11 +42,9 @@ type copyCompletionState struct {
 
 func copyCompletionRead(t *testing.T, database *db.DB, id string) copyCompletionState {
 	t.Helper()
-	service := app.NewJobService(jobs.NewStore(database))
-	job, err := service.Get(t.Context(), id)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := jobs.NewStore(database)
+	service := app.NewJobService(store)
+	job := publicJob(t, store, id)
 	status, err := service.RecoveryStatus(t.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -56,7 +54,6 @@ func copyCompletionRead(t *testing.T, database *db.DB, id string) copyCompletion
 		t.Fatal(err)
 	}
 	state := copyCompletionState{Job: job, Status: status}
-	store := jobs.NewStore(database)
 	totals, err := store.ReadItemTotals(t.Context(), id)
 	if err != nil && !errors.Is(err, jobs.ErrItemRecordsNotCaptured) {
 		t.Fatal(err)
@@ -427,7 +424,7 @@ func copyCompletionRun(t *testing.T, h *Harness, fault string) {
 	}
 	copyCompletionAwaitPins(t, h)
 	state := copyCompletionRead(t, h.database, id)
-	visible, visibleErr := h.Jobs.Get(t.Context(), id)
+	visible, visibleErr := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
 	unavailable := fault == "counters" || fault == "error" || fault == "terminal" || fault == "audit" || fault == "retention"
 	if unavailable {
 		if visibleErr == nil || visible != nil || !strings.Contains(visibleErr.Error(), "final result could not be saved") {
@@ -626,7 +623,7 @@ func copyCompletionQueued(t *testing.T, h *Harness, fault string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	queued, err := h.Jobs.Get(t.Context(), id)
+	queued, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
 	if err != nil || queued.State != "queued" || queued.StartedAt != "" {
 		t.Fatalf("copy was not queued: %+v %v", queued, err)
 	}
@@ -669,7 +666,7 @@ func copyCompletionQueued(t *testing.T, h *Harness, fault string) {
 	// acknowledges that cancellation or the admission refusal has returned.
 	copyCompletionAwaitPins(t, h, h.Secondary)
 	state := copyCompletionRead(t, h.database, id)
-	visible, visibleErr := h.Jobs.Get(t.Context(), id)
+	visible, visibleErr := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
 	if fault == "control" {
 		if visibleErr != nil || visible.State != "cancelled" || state.Job.State != "cancelled" || state.Job.FinishedAt == "" || state.Job.Error != "" {
 			t.Errorf("queued Copy result differs: %+v %v %+v", visible, visibleErr, state)
@@ -737,10 +734,10 @@ func copyCompletionQueued(t *testing.T, h *Harness, fault string) {
 	if fault == "control" {
 		assertDownloadItemPages(t, h, first, map[string]jobs.ItemRecord{item.Key: item}, firstState.ItemTotals)
 	} else {
-		if page, err := h.Jobs.Items(t.Context(), first, "", 100); err == nil || page.Items != nil {
+		if page, err := h.Jobs.Items(t.Context(), h.Primary.BookmarkID, first, "", 100); err == nil || page.Items != nil {
 			t.Errorf("shared persistence refusal exposed public download items: %+v %v", page, err)
 		}
-		if totals, err := h.Jobs.ItemTotals(t.Context(), first); err == nil || totals != (app.JobItemTotalsDTO{}) {
+		if totals, err := h.Jobs.ItemTotals(t.Context(), h.Primary.BookmarkID, first); err == nil || totals != (app.JobItemTotalsDTO{}) {
 			t.Errorf("shared persistence refusal exposed public download totals: %+v %v", totals, err)
 		}
 	}

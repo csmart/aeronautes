@@ -133,7 +133,7 @@ func clockFindFixture(t *testing.T, blocked bool) (*harness, *FindService, *manu
 
 func startClockFind(t *testing.T, service *FindService) string {
 	t.Helper()
-	id, err := service.StartFind(t.Context(), "find-clock", "", "match")
+	id, err := service.StartFind(t.Context(), findBM(service), "find-clock", "", "match")
 	if err != nil {
 		t.Fatal(err)
 	}

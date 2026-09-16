@@ -31,7 +31,8 @@ func TestDownloadStageCleanupKeepsEarlierOutcome(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			h := newHarness(t)
 			base := jobs.Counters{ObjectsPlanned: 2, BytesPlanned: 42}
-			job, err := h.transfer.jobs.Create(t.Context(), jobs.Job{Type: jobs.TypeDownload, Counters: base})
+			bm := h.ensureBookmark(t)
+			job, err := h.transfer.jobs.Create(t.Context(), jobs.Job{Type: jobs.TypeDownload, Counters: base, DestBookmarkID: bm})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -47,7 +48,7 @@ func TestDownloadStageCleanupKeepsEarlierOutcome(t *testing.T) {
 			h.transfer.runLocal(t.Context(), job.ID, "", 0, base, func(context.Context, func(int64, int64, int64)) (*local.Report, error) {
 				return report, test.err
 			})
-			visible, err := h.jobsSvc.Get(t.Context(), job.ID)
+			visible, err := h.jobsSvc.Get(t.Context(), h.bookmarkID(), job.ID)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -147,7 +148,8 @@ func TestDownloadStageCleanupNamesOneOfThreeOutcomes(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			h := newHarness(t)
 			base := jobs.Counters{ObjectsPlanned: 1, BytesPlanned: 21}
-			job, err := h.transfer.jobs.Create(t.Context(), jobs.Job{Type: jobs.TypeDownload, Counters: base})
+			bm := h.ensureBookmark(t)
+			job, err := h.transfer.jobs.Create(t.Context(), jobs.Job{Type: jobs.TypeDownload, Counters: base, DestBookmarkID: bm})
 			if err != nil {
 				t.Fatal(err)
 			}

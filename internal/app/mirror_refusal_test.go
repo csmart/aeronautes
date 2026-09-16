@@ -63,7 +63,7 @@ func TestMirrorRefusesBeforeWork(t *testing.T) {
 				t.Fatalf("outside alias fixture is not readable: %+v", alias)
 			}
 			facts := retainedRows(t, h.db)
-			auditBefore, err := h.auditSvc.Recent(t.Context(), 100)
+			auditBefore, err := h.auditSvc.RecentFor(t.Context(), h.bookmarkID(), 100)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -104,7 +104,7 @@ func TestMirrorRefusesBeforeWork(t *testing.T) {
 			if rows := retainedRows(t, h.db); !reflect.DeepEqual(rows, facts) {
 				t.Errorf("refused Mirror changed recovery records: %+v", rows)
 			}
-			if events, err := h.auditSvc.Recent(t.Context(), 100); err != nil || !reflect.DeepEqual(events, auditBefore) {
+			if events, err := h.auditSvc.RecentFor(t.Context(), h.bookmarkID(), 100); err != nil || !reflect.DeepEqual(events, auditBefore) {
 				t.Errorf("refused Mirror changed audit history: %+v, %v", events, err)
 			}
 			if delta := oracle.Diff(srcBefore, mirrorSnapshot(t, srcWitness, "media", "unrelated")); !delta.Empty() {

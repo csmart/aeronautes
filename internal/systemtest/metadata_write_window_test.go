@@ -102,7 +102,7 @@ func TestMetadataSaveStatesItsLimit(t *testing.T) {
 		h.Seed(h.Primary, c, object, []byte("payload"), map[string]string{
 			"Content-Type": "text/plain", "X-Object-Meta-Alpha": "1",
 		})
-		detail, err := h.Inspector.Object(ctx, c, object)
+		detail, err := h.Inspector.Object(ctx, h.Primary.BookmarkID, c, object)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -157,7 +157,7 @@ func TestMetadataSaveStatesItsLimit(t *testing.T) {
 		h.Seed(h.Primary, c, object, []byte("payload"), map[string]string{
 			"Content-Type": "text/plain", "X-Object-Meta-Alpha": "1",
 		})
-		detail, err := h.Inspector.Object(ctx, c, object)
+		detail, err := h.Inspector.Object(ctx, h.Primary.BookmarkID, c, object)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -232,7 +232,7 @@ func TestMetadataSaveLimitReachesTheAuditTrail(t *testing.T) {
 	h.Seed(h.Primary, c, object, []byte("payload"), map[string]string{
 		"Content-Type": "text/plain", "X-Object-Meta-Alpha": "1",
 	})
-	detail, err := h.Inspector.Object(ctx, c, object)
+	detail, err := h.Inspector.Object(ctx, h.Primary.BookmarkID, c, object)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +244,7 @@ func TestMetadataSaveLimitReachesTheAuditTrail(t *testing.T) {
 	if result.Limitation == "" {
 		t.Fatal("no limitation on the result, so the audit row cannot carry one")
 	}
-	events, err := h.Audit.Recent(ctx, 20)
+	events, err := h.Audit.RecentFor(ctx, h.Primary.BookmarkID, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
