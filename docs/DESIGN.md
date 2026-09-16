@@ -5688,6 +5688,15 @@ The correction establishes the mode from the write's own preflight read and refu
 It is a refusal rather than a prevention: a container carries no entity tag, and conditional container writes were measured as ignored, so the window between reading and writing cannot be closed on this protocol and is narrowed rather than removed.
 The legacy transfer, delete and cleanup portions of this item are deferred with those routes, and whether a legacy rewrite destroys stored version history is not established.
 
+P12 and P13 own remaining durable effects for object metadata writes under [ADR 0058](adr/0058-object-metadata-durable-facts.md).
+`UpdateObjectMetadata` occupies the writer gate, POSTs, verifies, then appends an audit row whose error is discarded, and a completed save returns applied with a nil error even when that append fails.
+L08 keeps the database open for that best-effort append; it does not persist an intent before the POST, and compacted `audit_events` are not a ledger.
+A verify-read failure after a successful POST is recorded as failed, which is false of a write that already happened.
+The [object metadata durable-facts record](experiments/2026-09-16-object-metadata-durable-facts.md) states this from the current source.
+The proposed correction persists an identity-keyed intent before the session can POST, persists outcome and audit together after the store attempt, returns residue rather than applied when that transaction fails after a POST, and records a verify-read failure as unverified; it is not yet implemented.
+Create, marker and manifest stay on today's gate plus best-effort audit, container metadata waits for L09, and download terminal writes stay on ADR 0024/0033.
+L04, P12, P13 and the valuable-data hold stay open.
+
 ### 65.12. Proportionate remediation and a fixed finish line
 
 Safe, secure operation on valuable production data remains the first milestone.
