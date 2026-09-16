@@ -10,6 +10,7 @@ package systemtest
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"fmt"
 	"io"
 	"net/http"
@@ -780,6 +781,21 @@ func collateral(before, after *oracle.AccountSnapshot, allowed []string) []strin
 		}
 	}
 	return stray
+}
+
+func insertFixtureBookmark(t *testing.T, database *db.DB, id string) {
+	t.Helper()
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := database.WriteTx(t.Context(), func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(t.Context(), `INSERT INTO bookmarks (
+			id, display_name, protocol_profile, auth_url, username,
+			tls_mode, performance_profile, segment_placement, created_at, updated_at
+		) VALUES (?, ?, 'swiftstack_v1', 'http://example.invalid', 'user',
+			'system', 'inherit', 'rclone_default', ?, ?)`, id, id, now, now)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func jobAccount(j jobs.Job) string {

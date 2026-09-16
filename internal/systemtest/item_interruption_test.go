@@ -84,6 +84,7 @@ func TestInterruptedItemRecordsReopen(t *testing.T) {
 	}
 	defer database.Close()
 	store := jobs.NewStore(database)
+	insertFixtureBookmark(t, database, "source")
 	saved := jobs.Counters{ObjectsPlanned: 503, ObjectsCopied: 37, ObjectsVerified: 29, ObjectsFailed: 400, BytesPlanned: 708, BytesCopied: 91}
 	legacy, err := store.Create(t.Context(), jobs.Job{Type: jobs.TypeCopy, Counters: saved})
 	if err != nil {
@@ -94,7 +95,7 @@ func TestInterruptedItemRecordsReopen(t *testing.T) {
 	// These are acknowledged logical facts, not claims of actual caller opt-in
 	// or remote effects. No connections or native processes exist in this test.
 	for _, count := range []int{1, 201, 401} {
-		job, err := store.Create(t.Context(), jobs.Job{Type: jobs.TypeCopy, ItemRecordsVersion: 1, Counters: saved})
+		job, err := store.Create(t.Context(), jobs.Job{Type: jobs.TypeCopy, ItemRecordsVersion: 1, Counters: saved, SourceBookmarkID: "source"})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -82,7 +82,7 @@ func modernVersionedContainer(t *testing.T, h *Harness, label string) string {
 	t.Helper()
 	name := h.Container(h.Primary, label)
 	h.rawPut(h.Primary, "/"+name, nil, map[string]string{"X-Versions-Enabled": "true"})
-	detail, err := h.Inspector.Container(t.Context(), name)
+	detail, err := h.Inspector.Container(t.Context(), h.Primary.BookmarkID, name)
 	if err != nil {
 		t.Fatalf("read back %s: %v", name, err)
 	}
@@ -129,7 +129,7 @@ func TestVersioningPreflight(t *testing.T) {
 			t.Fatalf("proxy failed %d passed %d, want failed=1 passed=0 (no second HEAD)",
 				atomic.LoadInt32(&p.failed), atomic.LoadInt32(&p.passed))
 		}
-		after, readErr := h.Inspector.Container(t.Context(), name)
+		after, readErr := h.Inspector.Container(t.Context(), h.Primary.BookmarkID, name)
 		if readErr != nil {
 			t.Fatalf("read back: %v", readErr)
 		}
@@ -153,7 +153,7 @@ func TestVersioningPreflight(t *testing.T) {
 			t.Fatalf("proxy failed %d passed %d, want failed=1 passed=0",
 				atomic.LoadInt32(&p.failed), atomic.LoadInt32(&p.passed))
 		}
-		after, readErr := h.Inspector.Container(t.Context(), name)
+		after, readErr := h.Inspector.Container(t.Context(), h.Primary.BookmarkID, name)
 		if readErr != nil {
 			t.Fatalf("read back: %v", readErr)
 		}
