@@ -21,17 +21,6 @@ export interface DownloadItem {
 }
 
 /**
- * DownloadPreflight is the complete pre-write report.
- * Execution iterates Items; the bridge never returns this value (ADR 0056).
- */
-export interface DownloadPreflight {
-    "items": DownloadItem[] | null;
-    "problems": Problem[] | null;
-    "totalBytes": number;
-    "objects": number;
-}
-
-/**
  * DownloadPreflightView is the bridge-facing collision report (ADR 0056).
  * Objects, TotalBytes, ProblemCount and Rejected are complete.
  * ItemSamples and ProblemSamples are bounded; counts are never rebuilt from them.

@@ -336,8 +336,39 @@ it("arms download Start from rejected, not from sampled problems", async () => {
   });
   await settle();
   expect(f.root.textContent).toContain("Rejected");
-  expect(f.root.textContent).toContain("201 problems");
+  expect(f.root.textContent).toContain("201 problems (0 shown)");
   expect(f.startButton()?.disabled ?? true).toBe(true);
+});
+
+it("does not claim a truncated problem list when every sampled row is on screen", async () => {
+  const f = show("download"); f.choose(); await f.resolvePicker();
+  const problemSamples = [
+    ...Array.from({ length: 3 }, (_, i) => ({ name: "r" + i, kind: "collision", detail: "reject", reject: true })),
+    ...Array.from({ length: 7 }, (_, i) => ({ name: "w" + i, kind: "portability", detail: "warn", reject: false })),
+  ];
+  f.downloads[0].resolve({
+    itemSamples: [], problemSamples, totalBytes: 0, objects: 10, problemCount: 10, rejected: true,
+  });
+  await settle();
+  expect(f.root.querySelectorAll(".problem")).toHaveLength(10);
+  expect(f.root.textContent).not.toMatch(/\d+ problems \(\d+ shown\)/);
+  expect(f.startButton()?.disabled ?? true).toBe(true);
+});
+
+it("discloses a truncated warning sample without rebuilding the count from it", async () => {
+  const f = show("download"); f.choose(); await f.resolvePicker();
+  const problemSamples = Array.from({ length: 200 }, (_, i) => (
+    { name: "w" + i, kind: "portability", detail: "warn", reject: false }
+  ));
+  f.downloads[0].resolve({
+    itemSamples: [{ name: "selected/a.txt", relPath: "a.txt", size: 5, route: "rclone", dir: false }],
+    problemSamples, totalBytes: 5, objects: 7000, problemCount: 5000, rejected: false,
+  });
+  await settle();
+  expect(f.root.querySelectorAll(".problem")).toHaveLength(200);
+  expect(f.root.textContent).toContain("7000");
+  expect(f.root.textContent).toContain("5000 problems (200 shown)");
+  expect(f.startButton()?.disabled).toBe(false);
 });
 
 it.each(["upload", "download"] as const)("forwards the complete captured %s request without rebuilding its scope", async (mode) => {
