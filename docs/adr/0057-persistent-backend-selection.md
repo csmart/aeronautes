@@ -14,10 +14,15 @@ The [keychain write record](../experiments/2026-09-06-keychain-writes.md) alread
 The L01 read boundary maps unverified keychain absence to `ErrAuthorityUnreachable`, so the bookmark layer does not currently call that miss erasure.
 It also cannot keep the value readable after the selector moves, and the journal has no collection identity to hold unresolved cleanup against.
 
+`internal/secrets/keychain.go` imports only the top-level `keyring` package and calls `keyring.Get`, `keyring.Set` and `keyring.Delete`.
+It never imports `secret_service` and never holds a `dbus.BusObject`.
+Those three library entry points each call `GetLoginCollection` inside `keyring_unix.go`, so the pin cannot be honoured through the `keyring` API.
+
 The pinned `secret_service` package has no `ReadAlias` and no helper that takes a pinned collection path.
 Its exported methods are `OpenSession`, `CheckCollectionPath`, `GetCollection`, `GetLoginCollection`, `Unlock`, `Close`, `CreateCollection`, `CreateItem`, `SearchItems`, `GetSecret` and `Delete`.
 `CreateItem` and `SearchItems` take a `dbus.BusObject`.
 The string "Alias" appears only as `loginCollectionAlias`.
+`Unlock` skips its "did I unlock the collection I asked for" check when the path is the alias, which is independent evidence that the alias object is not an identity.
 
 ADR 0015 step 5 requires verified persistent-backend selection before absence can prove completed cleanup.
 Physical cleanup is still forbidden until that identity exists.
@@ -25,21 +30,25 @@ Production never calls `SecretStore.Delete` outside tests; this decision does no
 
 ## Decision
 
-Record the original Linux Secret Service collection and use that identity for later selection.
+The Linux adapter stops using `keyring.Get`, `keyring.Set` and `keyring.Delete`.
+It drives `secret_service` directly: open and close a session, search by the existing service and username attributes, create items on a held collection object, map empty search results to `ErrNotFound`, and inherit the helper's prompt path.
+Non-Linux platforms keep the current `keyring` API.
+`internal/secrets` has no build-tagged files today, so that split is new.
 
-The pin is a held `dbus.BusObject` passed into the existing helpers, not a library method that accepts a path.
+The pin is a held `dbus.BusObject` passed into `CreateItem` and `SearchItems`.
+`GetSecret` and `Delete` receive item paths returned by `SearchItems`, which is how the library's unix provider works and is not what the Aeronautes adapter does today.
 `ReadAlias` is a direct D-Bus call on the Secret Service interface, used only when `GetLoginCollection` selected the alias object.
 
 1. At Linux construction, call `GetLoginCollection` once and hold the returned `dbus.BusObject`.
    Never call `GetLoginCollection` again on that store.
-   Later `CreateItem` and `SearchItems` receive the held object.
-   `GetSecret` and `Delete` receive item paths from `SearchItems`, as they already do.
 
 2. If the held object's path is listed in `Collections` and is not `/org/freedesktop/secrets/aliases/default`, that path is `Persistent`.
+   `GetLoginCollection` only returns the login collection path after `CheckCollectionPath` has listed it.
 
 3. If the held object's path is the default alias object, resolve it with a direct D-Bus `ReadAlias("default")` on the service object taken from the library connection (`SecretService` embeds `*dbus.Conn`; the helper has no `ReadAlias`).
    Holding the alias object is not a pin: Secret Service forwards collection methods on that path to whichever collection the alias currently names.
-   If `ReadAlias` returns a collection path that `CheckCollectionPath` accepts and that is not the alias object path, that path is `Persistent` and the held object is replaced by `GetCollection` when the path is under `/org/freedesktop/secrets/collection/`, otherwise by `SecretService.Object("org.freedesktop.secrets", path)`.
+   If `ReadAlias` returns a collection path that `CheckCollectionPath` accepts and that is not the alias object path, that path is `Persistent` and the held object is replaced by `SecretService.Object("org.freedesktop.secrets", path)`.
+   Do not reconstruct through `GetCollection` by stripping and reappending `/org/freedesktop/secrets/collection/`.
 
 4. If `ReadAlias` fails, returns empty, returns the alias path, or `CheckCollectionPath` rejects the result, `Persistent` stays empty.
    Do not persist the alias object path as authority.
@@ -53,7 +62,7 @@ The pin is a held `dbus.BusObject` passed into the existing helpers, not a libra
    Persist `Persistent` as `origin_persistent` on `bookmarks` and `credential_work`.
    Existing empty values stay unverified legacy or non-Linux provenance.
 
-6. After restart, open a new `SecretService`, call `CheckCollectionPath` on the recorded path, and if it is listed reconstruct the `BusObject` as in step 3.
+6. After restart, open a new `SecretService`, call `CheckCollectionPath` on the recorded path, and if it is listed reconstruct the `BusObject` with `Object` as in step 3.
    If it is absent, Get, Put and Delete return `ErrAuthorityUnreachable`, never `ErrNotFound`.
    Do not recover a recorded pin by calling `GetLoginCollection`.
 
@@ -65,8 +74,11 @@ The pin is a held `dbus.BusObject` passed into the existing helpers, not a libra
    Absence may be reported as erasure only under that predicate.
    That is original-store absence for the read path, not cleanup authority.
 
-9. ADR 0012 and the pinned module version stay.
-   ADR 0055 wait bounds stay; this adds no backstop deadline on Get, Put or Delete.
+9. Wrap every new native call in the existing `awaitKeychain` bound from ADR 0055.
+   Those bounds do not survive the move off `keyring.Get/Set/Delete` by themselves; they must be re-established around the `secret_service` calls.
+   This adds no backstop deadline on Get, Put or Delete.
+   The helper's `handlePrompt` remains unbounded except by that wait, which is the same surface the protocol-test abort and ADR 0055 already name.
+   ADR 0012 and the pinned module version stay.
 
 ## Readers of the changed predicate
 
@@ -81,7 +93,7 @@ Readers: `bookmarks.CredentialStatus` and `unverifiedWork`, `app.CredentialStatu
 
 It does not call `SecretStore.Delete` in production, start a collector, retry physical removal or claim original-store erasure for cleanup.
 
-It does not replace ADR 0012, choose the vault in ADR 0006, or establish native keychain behaviour on macOS or Windows; those platforms keep empty `Persistent`.
+It does not replace ADR 0012, choose the vault in ADR 0006, or establish native keychain behaviour on macOS or Windows; those platforms keep empty `Persistent` and the current `keyring` API.
 
 It does not close L01.
 Locked or cancelled access, physical cleanup and retry, native six-target acceptance and the valuable-data hold remain open.
@@ -102,4 +114,5 @@ Required cases:
 - Empty-`Persistent` keychain and legacy origins still cannot prove erasure.
 - Session `VerifiedBy` is unchanged.
 - Failed Put still makes no compensating Delete.
+- A cancelled Get, Put or Delete on the Linux `secret_service` path still returns through `awaitKeychain` as ADR 0055 requires.
 - Returned errors contain no collection path, reference or credential value.

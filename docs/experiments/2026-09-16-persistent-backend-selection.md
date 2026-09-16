@@ -18,10 +18,14 @@ The current tree still has that selector.
 The L01 read boundary already maps unverified keychain absence to `ErrAuthorityUnreachable`.
 The remaining gap is that the adapter can still look in a different collection than the one that accepted the write, so a changed default makes the value unreadable through the adapter while it still exists, and the journal has no collection path to hold unresolved cleanup against.
 
-The pinned `secret_service` package has no `ReadAlias` and no helper that takes a pinned collection path.
+`KeychainStore` calls `keyring.Get`, `keyring.Set` and `keyring.Delete`.
+Those three library entry points each call `GetLoginCollection` inside `keyring_unix.go`, so the pin cannot be honoured through the `keyring` API.
+The Linux path therefore leaves that API and drives `secret_service` directly.
+The pinned helper has no `ReadAlias` and no method that takes a collection path.
 `CreateItem` and `SearchItems` take a `dbus.BusObject`.
-The contract therefore holds that object and, only when `GetLoginCollection` selected `/org/freedesktop/secrets/aliases/default`, resolves it with a direct D-Bus `ReadAlias("default")` on the service object from the library connection.
+The contract holds that object and, only when `GetLoginCollection` selected `/org/freedesktop/secrets/aliases/default`, resolves it with a direct D-Bus `ReadAlias("default")` on the service object from the library connection.
 A failed alias read leaves `Persistent` empty and does not persist the alias path.
+`awaitKeychain` must wrap the new calls; the ADR 0055 bound does not survive the move by itself.
 
 ## Blast radius, counted where the values are read
 
