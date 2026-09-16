@@ -104,6 +104,12 @@ type Server struct {
 	// GET requests answer 500. Used to reproduce a verify-read failure
 	// after a metadata POST (ADR 0058).
 	objectHEADFailRemaining int
+	// dropNextObjectPOST closes the POST connection without a response,
+	// so the caller sees a transport failure after the request left.
+	dropNextObjectPOST bool
+	// objectPOSTStatus, when non-zero, is consumed by the next object
+	// POST as a store refusal without applying the write.
+	objectPOSTStatus int
 	// DisableBulkDelete makes ?bulk-delete answer 404 so the deletion
 	// engine falls to the parallel single-DELETE path.
 	DisableBulkDelete bool
@@ -556,6 +562,26 @@ func (s *Server) putObject(w http.ResponseWriter, r *http.Request, container, na
 // Content-Type is preserved unless supplied; SLO-ness is sysmeta and
 // survives untouched.
 func (s *Server) postObject(w http.ResponseWriter, r *http.Request, container, name string) {
+	s.mu.Lock()
+	drop := s.dropNextObjectPOST
+	s.dropNextObjectPOST = false
+	status := s.objectPOSTStatus
+	s.objectPOSTStatus = 0
+	s.mu.Unlock()
+	if drop {
+		if hj, ok := w.(http.Hijacker); ok {
+			conn, _, err := hj.Hijack()
+			if err == nil {
+				conn.Close()
+				return
+			}
+		}
+		panic("swifttest: cannot drop object POST")
+	}
+	if status != 0 {
+		w.WriteHeader(status)
+		return
+	}
 	if s.metaLimitExceeded(r) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -776,6 +802,20 @@ func (s *Server) writeObjectListing(w http.ResponseWriter, r *http.Request, cont
 func (s *Server) FailNextObjectHEADs(n int) {
 	s.mu.Lock()
 	s.objectHEADFailRemaining = n
+	s.mu.Unlock()
+}
+
+// DropNextObjectPOST closes the next object POST without a response.
+func (s *Server) DropNextObjectPOST() {
+	s.mu.Lock()
+	s.dropNextObjectPOST = true
+	s.mu.Unlock()
+}
+
+// SetObjectPOSTStatus makes the next object POST return status without writing.
+func (s *Server) SetObjectPOSTStatus(status int) {
+	s.mu.Lock()
+	s.objectPOSTStatus = status
 	s.mu.Unlock()
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -214,6 +215,91 @@ func TestObjectMetadataVerifyReadFailureIsUnverified(t *testing.T) {
 	}
 	if events[0].Result == string(audit.ResultFailed) {
 		t.Fatal("verify-read failure must not be failed")
+	}
+}
+
+func TestObjectMetadataTransportFailureIsUnverified(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+	h.mock.DropNextObjectPOST()
+	_, err := h.mutate.UpdateObjectMetadata(context.Background(), "fixtures", "normal/hello.txt", "",
+		objectMetaEdit(t, h))
+	if !errors.Is(err, swiftcontrol.ErrUnverifiedWrite) {
+		t.Fatalf("err = %v, want unverified", err)
+	}
+	all, err := factsOn(t, h).All(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 1 || all[0].Outcome != mutationfacts.OutcomeUnverified {
+		t.Fatalf("facts = %+v", all)
+	}
+	events, err := h.auditSvc.Recent(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].Result != string(audit.ResultUnverified) {
+		t.Fatalf("audit = %+v", events)
+	}
+}
+
+func TestObjectMetadataStoreRefusalIsFailed(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+	h.mock.SetObjectPOSTStatus(http.StatusForbidden)
+	_, err := h.mutate.UpdateObjectMetadata(context.Background(), "fixtures", "normal/hello.txt", "",
+		objectMetaEdit(t, h))
+	if err == nil || errors.Is(err, swiftcontrol.ErrUnverifiedWrite) {
+		t.Fatalf("err = %v, want store refusal", err)
+	}
+	all, err := factsOn(t, h).All(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 1 || all[0].Outcome != mutationfacts.OutcomeFailed {
+		t.Fatalf("facts = %+v", all)
+	}
+	detail, err := h.inspector.Object(context.Background(), "fixtures", "normal/hello.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := detail.Meta["Camera"]; ok {
+		t.Fatal("refused POST must not apply metadata")
+	}
+}
+
+func TestObjectMetadataTransportFailureOutcomeAbortIsResidue(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+	h.mock.DropNextObjectPOST()
+	refuseSQL(t, h, `CREATE TRIGGER refuse_audit BEFORE INSERT ON audit_events
+		BEGIN SELECT RAISE(ABORT,'fixture required audit refusal'); END`)
+	_, err := h.mutate.UpdateObjectMetadata(context.Background(), "fixtures", "normal/hello.txt", "",
+		objectMetaEdit(t, h))
+	if !errors.Is(err, errMetadataResidue) {
+		t.Fatalf("err = %v, want residue", err)
+	}
+	all, err := reopenFacts(t, h).All(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 1 || all[0].Outcome == mutationfacts.OutcomeApplied || all[0].Outcome == mutationfacts.OutcomeFailed {
+		t.Fatalf("reopen = %+v", all)
+	}
+}
+
+func TestObjectMetadataFactClassifiesNilUnverified(t *testing.T) {
+	edit := ObjectMetadataEditDTO{Meta: map[string]string{"Camera": "1"}}
+	outcome, result, _, _ := objectMetadataFact(nil, swiftcontrol.ErrUnverifiedWrite, edit)
+	if outcome != mutationfacts.OutcomeUnverified || result != audit.ResultUnverified {
+		t.Fatalf("nil+unverified = %s %s", outcome, result)
+	}
+	if !objectMetadataPosted(nil, swiftcontrol.ErrUnverifiedWrite) {
+		t.Fatal("unverified error is posted for residue")
+	}
+	failed, failedRes, _, _ := objectMetadataFact(nil, errors.New("head failed"), edit)
+	if failed != mutationfacts.OutcomeFailed || failedRes != audit.ResultFailed {
+		t.Fatalf("nil+other = %s %s", failed, failedRes)
 	}
 }
 
