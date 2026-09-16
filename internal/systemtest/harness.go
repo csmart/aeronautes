@@ -373,13 +373,28 @@ func (h *Harness) JobHistory(ctx context.Context, bookmark, cursor string, limit
 	return page, &Receipt{h: h, action: "JobService.History", err: err}
 }
 
+func (h *Harness) jobBookmark(ctx context.Context, jobID string) string {
+	if h.jobStore != nil {
+		raw, err := h.jobStore.Get(ctx, jobID)
+		if err == nil {
+			if bookmark := jobAccount(raw); bookmark != "" {
+				return bookmark
+			}
+		}
+	}
+	if h.Primary != nil {
+		return h.Primary.BookmarkID
+	}
+	return ""
+}
+
 func (h *Harness) JobItems(ctx context.Context, job, cursor string, limit int) (app.JobItemPageDTO, *Receipt) {
-	page, err := h.Jobs.Items(ctx, h.Primary.BookmarkID, job, cursor, limit)
+	page, err := h.Jobs.Items(ctx, h.jobBookmark(ctx, job), job, cursor, limit)
 	return page, &Receipt{h: h, action: "JobService.Items", err: err}
 }
 
 func (h *Harness) JobItemTotals(ctx context.Context, job string) (app.JobItemTotalsDTO, *Receipt) {
-	totals, err := h.Jobs.ItemTotals(ctx, h.Primary.BookmarkID, job)
+	totals, err := h.Jobs.ItemTotals(ctx, h.jobBookmark(ctx, job), job)
 	return totals, &Receipt{h: h, action: "JobService.ItemTotals", err: err}
 }
 
@@ -822,7 +837,7 @@ func (h *Harness) AwaitJob(jobID string) *app.JobDTO {
 	h.T.Helper()
 	deadline := time.Now().Add(90 * time.Second)
 	for time.Now().Before(deadline) {
-		job, err := h.Jobs.Get(h.ctx, h.Primary.BookmarkID, jobID)
+		job, err := h.Jobs.Get(h.ctx, h.jobBookmark(h.ctx, jobID), jobID)
 		if err != nil {
 			h.T.Fatal(err)
 		}
