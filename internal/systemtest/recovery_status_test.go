@@ -28,7 +28,7 @@ func recoveryStatusHarness(t *testing.T) (*Harness, *jobs.Store, *db.DB) {
 	insertFixtureBookmark(t, database, "fixture")
 	// No connection service is supplied: counting local evidence must
 	// remain available independently of Swift and credential authority.
-	return &Harness{T: t, Jobs: app.NewJobService(store), Primary: &Account{BookmarkID: "fixture"}}, store, database
+	return &Harness{T: t, Jobs: app.NewJobService(store), jobStore: store, Primary: &Account{BookmarkID: "fixture"}}, store, database
 }
 
 func TestRecoveryStatusBeyondRecentJobs(t *testing.T) {
