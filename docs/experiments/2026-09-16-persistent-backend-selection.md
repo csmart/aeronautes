@@ -18,6 +18,11 @@ The current tree still has that selector.
 The L01 read boundary already maps unverified keychain absence to `ErrAuthorityUnreachable`.
 The remaining gap is that the adapter can still look in a different collection than the one that accepted the write, so a changed default makes the value unreadable through the adapter while it still exists, and the journal has no collection path to hold unresolved cleanup against.
 
+The pinned `secret_service` package has no `ReadAlias` and no helper that takes a pinned collection path.
+`CreateItem` and `SearchItems` take a `dbus.BusObject`.
+The contract therefore holds that object and, only when `GetLoginCollection` selected `/org/freedesktop/secrets/aliases/default`, resolves it with a direct D-Bus `ReadAlias("default")` on the service object from the library connection.
+A failed alias read leaves `Persistent` empty and does not persist the alias path.
+
 ## Blast radius, counted where the values are read
 
 `bookmarks.Store.Save` writes through `SecretStore.Put`.
@@ -35,7 +40,7 @@ The dialog already says that a zero unverified count does not mean keys were rem
 `GetLoginCollection` prefers the login collection when that path is listed.
 A test that only retargets the default alias while `/collection/login` remains in `Collections` does not exercise the changed-default miss.
 The existing protocol fixture currently exports only the login collection.
-The implementation extends that fixture with a second collection and alias retargeting, including a case where login is not listed so the default alias is the selector.
+The implementation extends that fixture with a second collection, `ReadAlias`, and alias retargeting, including a case where login is not listed so the default alias is the selector, and a case where `ReadAlias` fails.
 
 ## What this does not claim
 

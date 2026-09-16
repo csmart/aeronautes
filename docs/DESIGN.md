@@ -5713,7 +5713,9 @@ The Linux keychain adapter still selects the login collection or default alias o
 `Origin` records only an adapter lifetime, so a later default change can make Get report `ErrNotFound` while the original collection keeps the value, as the [keychain write record](experiments/2026-09-06-keychain-writes.md) already showed.
 The L01 read boundary does not call that miss erasure, but it cannot keep the credential readable and the journal has no collection path for unresolved cleanup.
 The proposed correction in [ADR 0057](adr/0057-persistent-backend-selection.md) is not yet implemented.
-It resolves and records the original collection object path, persists it beside the adapter instance, and uses that path for later Linux Get, Put and Delete so a changed default or unavailable original store cannot be reported as erasure.
+It calls `GetLoginCollection` once, holds that `dbus.BusObject` for later helper calls, and resolves the default alias with a direct D-Bus `ReadAlias` only when that call selected the alias object, because the pinned helper has no `ReadAlias` and no path-taking pin.
+A failed alias read leaves the identity empty and does not persist the alias path.
+The recorded collection object path is persisted beside the adapter instance so a changed default or unavailable original store cannot be reported as erasure.
 Physical Delete, retry and the collector stay unstarted.
 This establishes nothing about native keychain behaviour on the six targets, and it does not close L01.
 
