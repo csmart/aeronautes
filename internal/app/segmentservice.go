@@ -263,6 +263,9 @@ func (s *DeleteService) ownedRefs(ctx context.Context, bookmarkID string, refs [
 // CheckSegmentOwnership is the read-only status the dialog shows before
 // the operator decides anything.
 func (s *DeleteService) CheckSegmentOwnership(ctx context.Context, req SegmentsDeleteRequestDTO) (*SegmentOwnershipDTO, error) {
+	if err := refuseIfDeferred("DeleteService.CheckSegmentOwnership"); err != nil {
+		return nil, err
+	}
 	if req.BookmarkID == "" || req.Container == "" || req.Name == "" {
 		return nil, errors.New("bookmark, container, and object are required")
 	}
@@ -282,6 +285,9 @@ func (s *DeleteService) CheckSegmentOwnership(ctx context.Context, req SegmentsD
 // execution time matters. The residual HEAD-to-DELETE window and the
 // content-ETag-only recheck are stated honestly below (review W-10).
 func (s *DeleteService) DeleteManifestWithSegments(ctx context.Context, req SegmentsDeleteRequestDTO) (*SegmentsDeleteResultDTO, error) {
+	if err := refuseIfDeferred("DeleteService.DeleteManifestWithSegments"); err != nil {
+		return nil, err
+	}
 	if req.BookmarkID == "" || req.Container == "" || req.Name == "" {
 		return nil, errors.New("bookmark, container, and object are required")
 	}

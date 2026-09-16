@@ -216,6 +216,9 @@ func (s *TransferService) resolve(ctx context.Context, req CopyRequestDTO) (src,
 // PlanCopy runs the §15.2 merge-join for the preview — counts only, no
 // writes, no audit (planning is a read).
 func (s *TransferService) PlanCopy(ctx context.Context, req CopyRequestDTO) (*CopyPlanDTO, error) {
+	if err := refuseIfDeferred("TransferService.PlanCopy"); err != nil {
+		return nil, err
+	}
 	src, dst, versioned, err := s.resolve(ctx, req)
 	if err != nil {
 		return nil, err
@@ -327,6 +330,9 @@ func (s *TransferService) buildEngine(ctx context.Context, req CopyRequestDTO, s
 // StartCopy creates the job and launches execution in the background;
 // the returned job id is the handle for JobService and CancelJob.
 func (s *TransferService) StartCopy(ctx context.Context, req CopyRequestDTO) (string, error) {
+	if err := refuseIfDeferred("TransferService.StartCopy"); err != nil {
+		return "", err
+	}
 	if err := validateCopyRequest(req); err != nil {
 		return "", err
 	}
@@ -777,6 +783,9 @@ func jobDTO(j jobs.Job) JobDTO {
 // RerunJob requires inspectable prior facts before normal fresh planning;
 // a terminal state alone cannot establish that earlier effects are known.
 func (s *TransferService) RerunJob(ctx context.Context, jobID string) (string, error) {
+	if err := refuseIfDeferred("TransferService.RerunJob"); err != nil {
+		return "", err
+	}
 	job, err := s.jobs.Get(ctx, jobID)
 	if err != nil {
 		return "", errRerunRecordsUnavailable

@@ -92,6 +92,9 @@ func (s *DeleteService) validate(req DeleteRequestDTO) error {
 // PreviewDelete counts the scope (a full listing pass — §28.3's honest
 // cost) without writing anything.
 func (s *DeleteService) PreviewDelete(ctx context.Context, req DeleteRequestDTO) (*DeletePreviewDTO, error) {
+	if err := refuseIfDeferred("DeleteService.PreviewDelete"); err != nil {
+		return nil, err
+	}
 	if err := s.validate(req); err != nil {
 		return nil, err
 	}
@@ -120,6 +123,9 @@ func (s *DeleteService) PreviewDelete(ctx context.Context, req DeleteRequestDTO)
 
 // StartDelete validates the typed confirmation and launches the job.
 func (s *DeleteService) StartDelete(ctx context.Context, req DeleteRequestDTO) (string, error) {
+	if err := refuseIfDeferred("DeleteService.StartDelete"); err != nil {
+		return "", err
+	}
 	if err := s.validate(req); err != nil {
 		return "", err
 	}

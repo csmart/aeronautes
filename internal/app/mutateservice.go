@@ -188,6 +188,9 @@ func (s *MutateService) CreateContainer(ctx context.Context, create ContainerCre
 
 // CreateMarker creates the explicit §14.1 marker object at a prefix.
 func (s *MutateService) CreateMarker(ctx context.Context, container, prefix string) (PrefixDetailDTO, error) {
+	if err := refuseIfDeferred("MutateService.CreateMarker"); err != nil {
+		return PrefixDetailDTO{}, err
+	}
 	if err := s.occupy(); err != nil {
 		return PrefixDetailDTO{}, err
 	}
@@ -209,6 +212,9 @@ func (s *MutateService) CreateMarker(ctx context.Context, container, prefix stri
 // DeleteMarker deletes ONLY a verified directory marker (§14.1) — the
 // one Phase 3 delete.
 func (s *MutateService) DeleteMarker(ctx context.Context, container, prefix string) error {
+	if err := refuseIfDeferred("MutateService.DeleteMarker"); err != nil {
+		return err
+	}
 	if err := s.occupy(); err != nil {
 		return err
 	}
@@ -332,6 +338,9 @@ func auditEventDTO(e audit.Event) AuditEventDTO {
 // low-risk delete): segments survive by construction, a plain object
 // refuses, and the outcome is audited either way.
 func (s *MutateService) DeleteManifest(ctx context.Context, container, name string) (ObjectDetailDTO, error) {
+	if err := refuseIfDeferred("MutateService.DeleteManifest"); err != nil {
+		return ObjectDetailDTO{}, err
+	}
 	if err := s.occupy(); err != nil {
 		return ObjectDetailDTO{}, err
 	}
