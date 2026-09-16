@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
+import { v1Offers } from "../../lib/v1";
 import { BrowserState } from "./browserState.svelte";
 import { newFakeApi } from "./fakeApi";
 import FindPanel from "./FindPanel.svelte";
@@ -18,6 +19,7 @@ afterEach(async () => {
   mounted.clear();
   states.clear();
   document.body.innerHTML = "";
+  v1Offers.benchmark = false;
   vi.restoreAllMocks();
 });
 
@@ -255,6 +257,31 @@ describe("audit and benchmark labels", () => {
     expect(labels(f.root)).not.toContain("Benchmark…");
     if (first) expect(labels(first.root)).not.toContain("Benchmark…");
     expect(f.api.startBenchmark).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])("preserves benchmark confirmation before explicit submission (second drawer %s)", async (duplicate) => {
+    v1Offers.benchmark = true;
+    const first = duplicate ? await drawer() : null;
+    const f = await drawer();
+    if (first) click(button(first.root, "Benchmark…"));
+    click(button(f.root, "Benchmark…"));
+    const confirm = inputFor(f.root, "Type the account name to run:");
+    if (first) expect(confirm).not.toBe(inputFor(first.root, "Type the account name to run:"));
+    expect(f.api.startBenchmark).not.toHaveBeenCalled();
+    const submit = button(f.root, "Run benchmark");
+    edit(confirm, "wrong");
+    expect(submit.disabled).toBe(true);
+    click(submit);
+    expect(f.api.startBenchmark).not.toHaveBeenCalled();
+    edit(confirm, f.browser.account!.name);
+    expect(submit.disabled).toBe(false);
+    expect(f.api.startBenchmark).not.toHaveBeenCalled();
+    click(submit);
+    await settle();
+    expect(f.api.startBenchmark).toHaveBeenCalledExactlyOnceWith({
+      bookmarkId: f.bookmark.id, confirm: f.browser.account!.name,
+    });
+    if (first) expect(first.api.startBenchmark).not.toHaveBeenCalled();
   });
 });
 
