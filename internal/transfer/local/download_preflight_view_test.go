@@ -61,4 +61,11 @@ func TestCollisionDetailKeepsTrueCount(t *testing.T) {
 	if !strings.Contains(detail, "Name-199") {
 		t.Fatalf("sample omitted the last quoted name: %s", detail)
 	}
+	form := collisionDetail("name-form", twins)
+	if !strings.HasPrefix(form, "203 names collide on filesystems that ignore case or Unicode normalization form:") {
+		t.Fatalf("name-form detail lost the true count: %s", form)
+	}
+	if strings.Contains(form, "Name-200") || !strings.Contains(form, "Name-199") {
+		t.Fatalf("name-form quoted names were not bounded: %s", form)
+	}
 }

@@ -59,6 +59,7 @@
   const warnings = $derived(problemRows.filter((p) => !p.reject));
   const rejections = $derived(problemRows.filter((p) => p.reject));
   const problemCount = $derived(mode === "download" ? report?.problemCount ?? 0 : problemRows.length);
+  const truncated = $derived(mode === "download" && problemCount > problemRows.length);
 
   function scope(): Scope {
     return {
@@ -179,9 +180,6 @@
       <div class="report num">
         {#if rejected}
           <h3 class="bad">Rejected — nothing was written</h3>
-          {#if problemCount > rejections.length}
-            <p class="summary">{problemCount} problems ({rejections.length} shown)</p>
-          {/if}
           <div class="problems">
             {#each rejections as p (p.kind + p.name)}
               <div class="problem">
@@ -197,6 +195,9 @@
             {mode === "upload" ? "files" : "objects"} · {formatBytes(report.totalBytes)}
             {mode === "download" ? ` → ${destDir}` : ""}
           </p>
+        {/if}
+        {#if truncated}
+          <p class="summary">{problemCount} problems ({problemRows.length} shown)</p>
         {/if}
         {#if warnings.length > 0}
           <div class="problems">
