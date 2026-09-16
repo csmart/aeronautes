@@ -2,6 +2,7 @@ package swiftcontrol
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/textproto"
 	"sort"
@@ -50,7 +51,15 @@ const (
 	// UpdateVerifyMismatch: written, but the re-read differs from the
 	// intended outcome; surfaced, never hidden.
 	UpdateVerifyMismatch UpdateOutcome = "verify_mismatch"
+	// UpdateUnverified: written, but the verify HEAD did not complete.
+	// The POST is unknown/unverified, not failed (ADR 0058). ADR 0046
+	// still applies: a completed POST does not establish exclusivity.
+	UpdateUnverified UpdateOutcome = "unverified"
 )
+
+// ErrUnverifiedWrite is returned with a result when a metadata POST
+// succeeded and the verify read failed.
+var ErrUnverifiedWrite = errors.New("object metadata write unverified")
 
 // ObjectUpdateResult reports an update attempt.
 type ObjectUpdateResult struct {
@@ -115,7 +124,10 @@ func (s *Session) UpdateObjectMetadata(ctx context.Context, container, name, bas
 
 	after, err := s.ObjectDetail(ctx, container, name)
 	if err != nil {
-		return nil, fmt.Errorf("update written (trans %s) but verify read failed: %w", writeTransID, err)
+		// The POST completed; ADR 0046's limitation applies. The verify
+		// HEAD did not, so this is unverified rather than failed (ADR 0058).
+		result.Outcome = UpdateUnverified
+		return result, fmt.Errorf("%w: update written (trans %s) but verify read failed: %v", ErrUnverifiedWrite, writeTransID, err)
 	}
 	result.After = after
 	result.TransIDs = append(result.TransIDs, after.TransID)

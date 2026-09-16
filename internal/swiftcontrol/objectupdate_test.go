@@ -2,6 +2,7 @@ package swiftcontrol
 
 import (
 	"context"
+	"errors"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -198,5 +199,40 @@ func TestVerifyObjectOutcome(t *testing.T) {
 		if !strings.Contains(mismatch, want) {
 			t.Errorf("mismatch %q lacks %q", mismatch, want)
 		}
+	}
+}
+
+func TestUpdateObjectMetadataVerifyReadIsUnverified(t *testing.T) {
+	mock := swifttest.New("test:tester", "testing")
+	srv := httptest.NewServer(mock)
+	t.Cleanup(srv.Close)
+	s, err := New(Config{AuthURL: srv.URL + "/auth/v1.0", Username: "test:tester", APIKey: "testing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn := &swift.Connection{
+		AuthUrl: srv.URL + "/auth/v1.0", UserName: "test:tester",
+		ApiKey: "testing", AuthVersion: 1,
+	}
+	if err := conn.ContainerCreate(context.Background(), "media", nil); err != nil {
+		t.Fatal(err)
+	}
+	putDLO(t, conn)
+	mock.AfterRequest = func(method, path string) {
+		if method == "POST" && strings.Contains(path, "/media/video") {
+			mock.FailNextObjectHEADs(1)
+		}
+	}
+	result, err := s.UpdateObjectMetadata(context.Background(), "media", "video", "", ObjectMetadataEdit{
+		Meta: map[string]string{"Shoot": "wedding", "Location": "sydney", "Camera": "fx6"},
+	})
+	if !errors.Is(err, ErrUnverifiedWrite) {
+		t.Fatalf("err = %v, want unverified", err)
+	}
+	if result == nil || result.Outcome != UpdateUnverified {
+		t.Fatalf("result = %+v", result)
+	}
+	if result.Limitation == "" || len(result.TransIDs) < 2 {
+		t.Fatalf("completed POST must keep limitation and write trans id: %+v", result)
 	}
 }

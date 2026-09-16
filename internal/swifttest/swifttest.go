@@ -100,6 +100,10 @@ type Server struct {
 	// written — the barrier-test hook for planting a concurrent writer
 	// at an exact protocol point.
 	AfterRequest func(method, path string)
+	// objectHEADFailRemaining, when > 0, makes that many object HEAD or
+	// GET requests answer 500. Used to reproduce a verify-read failure
+	// after a metadata POST (ADR 0058).
+	objectHEADFailRemaining int
 	// DisableBulkDelete makes ?bulk-delete answer 404 so the deletion
 	// engine falls to the parallel single-DELETE path.
 	DisableBulkDelete bool
@@ -768,7 +772,47 @@ func (s *Server) writeObjectListing(w http.ResponseWriter, r *http.Request, cont
 	_ = json.NewEncoder(w).Encode(rows)
 }
 
+// FailNextObjectHEADs fails the next n object HEAD/GET requests with 500.
+func (s *Server) FailNextObjectHEADs(n int) {
+	s.mu.Lock()
+	s.objectHEADFailRemaining = n
+	s.mu.Unlock()
+}
+
+// PatchObjectMeta adds or replaces one stored metadata key without a POST.
+func (s *Server) PatchObjectMeta(container, name, key, value string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.containers[container]
+	if !ok {
+		return
+	}
+	o, ok := c.objects[name]
+	if !ok {
+		return
+	}
+	meta := make(map[string]string, len(o.Meta)+1)
+	for k, v := range o.Meta {
+		meta[k] = v
+	}
+	meta[key] = value
+	o.Meta = meta
+	c.objects[name] = o
+}
+
 func (s *Server) handleObject(w http.ResponseWriter, r *http.Request, container, name string) {
+	if r.Method == http.MethodHead || r.Method == http.MethodGet {
+		s.mu.Lock()
+		fail := s.objectHEADFailRemaining > 0
+		if fail {
+			s.objectHEADFailRemaining--
+		}
+		s.mu.Unlock()
+		if fail {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+	}
 	switch r.Method {
 	case http.MethodPut:
 		s.putObject(w, r, container, name)
