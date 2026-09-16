@@ -94,7 +94,7 @@ func downloadEmptyRecords(t *testing.T, h *Harness, markers bool) {
 
 func checkHistoricalDownloadRecordVersion(t *testing.T, h *Harness) {
 	t.Helper()
-	historical, err := h.jobStore.Create(t.Context(), jobs.Job{Type: jobs.TypeDownload, ItemRecordsVersion: 0})
+	historical, err := h.jobStore.Create(t.Context(), jobs.Job{Type: jobs.TypeDownload, ItemRecordsVersion: 0, SourceBookmarkID: h.Primary.BookmarkID})
 	if err != nil {
 		t.Fatal(err)
 	}

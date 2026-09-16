@@ -63,7 +63,11 @@ func readItemStorage(t *testing.T, store *jobs.Store, request itemStorageRequest
 			t.Fatal(err)
 		}
 		state.Totals[id] = totals
-		job, err := service.Get(t.Context(), "source", id)
+		raw, err := store.Get(t.Context(), id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		job, err := service.Get(t.Context(), jobAccount(raw), id)
 		if err != nil {
 			t.Fatal(err)
 		}
