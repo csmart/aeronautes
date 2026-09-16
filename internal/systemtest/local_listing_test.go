@@ -209,11 +209,11 @@ func shortListingDownload(t *testing.T, h *Harness) {
 	}
 	request := app.DownloadRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: source, Prefix: "scope/", DestDirToken: selection.Token}
 	plan, preflight := h.PreflightDownload(t.Context(), request)
-	if preflight.Err() != nil || plan == nil || plan.Rejected() || len(plan.Items) != 4 || plan.Objects != 4 || plan.TotalBytes != 12 {
+	if preflight.Err() != nil || plan == nil || plan.Rejected || plan.Objects != 4 || plan.TotalBytes != 12 {
 		t.Fatalf("short pages truncated download preflight: %+v, %v", plan, preflight.Err())
 	}
 	seen := map[string]bool{}
-	for _, item := range plan.Items {
+	for _, item := range plan.ItemSamples {
 		relative := filepath.ToSlash(item.RelPath)
 		body, found := files[relative]
 		if !found || seen[relative] || item.Name != "scope/"+relative || item.Dir || item.Route != "rclone" || item.Size != int64(len(body)) {

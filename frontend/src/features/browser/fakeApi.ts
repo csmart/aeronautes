@@ -619,15 +619,17 @@ export function newFakeApi(): Api {
       return id;
     },
     preflightDownload: async (req) => ({
-      items: [
+      itemSamples: [
         { name: req.prefix + "a.txt", relPath: "a.txt", size: 512, route: "rclone", dir: false },
       ],
-      problems:
+      problemSamples:
         req.destDirToken === "collides"
           ? [{ name: "a.txt", kind: "local-exists", detail: "already there", reject: true }]
           : [],
       totalBytes: 512,
       objects: 1,
+      problemCount: req.destDirToken === "collides" ? 1 : 0,
+      rejected: req.destDirToken === "collides",
     }),
     startDownload: async (req) => {
       const id = `job-${jobs.length + 1}`;

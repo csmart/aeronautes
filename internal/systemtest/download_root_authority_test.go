@@ -171,7 +171,7 @@ func downloadRootAuthorityService(t *testing.T, h *Harness, c rootAuthorityServi
 	request := app.DownloadRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: source, Prefix: prefix, DestDirToken: picked.Token}
 	beforeLocal := snapshotListingLocal(t, owned)
 	preflight, err := h.Transfer.PreflightDownload(t.Context(), request)
-	if err != nil || preflight == nil || preflight.Rejected() || len(preflight.Items) != len(objects) {
+	if err != nil || preflight == nil || preflight.Rejected || int(preflight.Objects) != len(objects) {
 		t.Fatalf("selection was not admitted before any replacement: %+v %v", preflight, err)
 	}
 	if c.seam == "bridge" {

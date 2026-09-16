@@ -203,16 +203,16 @@ func downloadDestinationService(t *testing.T, h *Harness, route, fault string) {
 		t.Errorf("download changed remote data: %v", trace.traffic.writeSnapshot())
 	}
 	if refused {
-		if preflightErr != nil || preflight == nil || !preflight.Rejected() {
+		if preflightErr != nil || preflight == nil || !preflight.Rejected {
 			t.Errorf("existing %s hazard lacked a preflight refusal: %+v error=%v", fault, preflight, preflightErr)
 		} else if fault == "mixed" {
 			rejections := 0
-			for _, problem := range preflight.Problems {
+			for _, problem := range preflight.ProblemSamples {
 				if problem.Reject {
 					rejections++
 				}
 			}
-			if rejections != 2 || len(preflight.Items) != 1 || !strings.HasPrefix(preflight.Items[0].Name, prefix+"aaa-safe") {
+			if rejections != 2 || int(preflight.Objects) != 1 || !strings.HasPrefix(preflight.ItemSamples[0].Name, prefix+"aaa-safe") {
 				t.Errorf("mixed preflight did not collect both late hazards and the safe first member: %+v", preflight)
 			}
 		}
@@ -229,7 +229,7 @@ func downloadDestinationService(t *testing.T, h *Harness, route, fault string) {
 	if route == "empty" {
 		count = 0
 	}
-	if preflightErr != nil || preflight == nil || preflight.Rejected() || int64(len(preflight.Items)) != count || startErr != nil || id == "" {
+	if preflightErr != nil || preflight == nil || preflight.Rejected || preflight.Objects != count || startErr != nil || id == "" {
 		t.Fatalf("safe control was not admitted: preflight=%+v error=%v start=%q error=%v", preflight, preflightErr, id, startErr)
 	}
 	want := jobs.Counters{ObjectsPlanned: count, BytesPlanned: count * int64(len(body)), ObjectsCopied: count, BytesCopied: count * int64(len(body)), ObjectsVerified: count}
@@ -243,7 +243,7 @@ func downloadDestinationService(t *testing.T, h *Harness, route, fault string) {
 		t.Fatalf("safe control lost exact job, item or audit outcome: %+v", saved)
 	}
 	if count == 1 {
-		planned, item := preflight.Items[0], saved.Items[0]
+		planned, item := preflight.ItemSamples[0], saved.Items[0]
 		rel := filepath.FromSlash(strings.TrimSuffix(relative, "/"))
 		wantRoute := "rclone"
 		if route == "native" {

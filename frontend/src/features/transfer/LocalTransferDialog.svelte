@@ -9,13 +9,17 @@
   import type { DownloadRequestDTO, UploadRequestDTO } from "../../lib/api";
   import { formatBytes } from "../../lib/format";
 
-  // The common §27.5 report shape (upload and download preflights share
-  // problems/items/totalBytes; the union of the generated classes trips
-  // the checker, so the dialog types the surface it reads).
+  // Upload still ships the complete item list; download is a bounded
+  // view with first-class counts (ADR 0056).
+  interface ProblemRow { name: string; kind: string; detail: string; reject: boolean }
   interface PreflightView {
-    items: unknown[] | null;
-    problems: { name: string; kind: string; detail: string; reject: boolean }[] | null;
+    items?: unknown[] | null;
+    problems?: ProblemRow[] | null;
+    problemSamples?: ProblemRow[] | null;
     totalBytes: number;
+    objects?: number;
+    problemCount?: number;
+    rejected?: boolean;
   }
 
   let {
@@ -50,9 +54,11 @@
   const canChoose = $derived(!closed && !checking && !starting && !browser.connecting
     && !!browser.connectedBookmarkId && !!browser.containerName);
 
-  const rejected = $derived(report?.problems?.some((p) => p.reject) ?? false);
-  const warnings = $derived(report?.problems?.filter((p) => !p.reject) ?? []);
-  const rejections = $derived(report?.problems?.filter((p) => p.reject) ?? []);
+  const problemRows = $derived(mode === "download" ? report?.problemSamples ?? [] : report?.problems ?? []);
+  const rejected = $derived(mode === "download" ? report?.rejected ?? false : report?.problems?.some((p) => p.reject) ?? false);
+  const warnings = $derived(problemRows.filter((p) => !p.reject));
+  const rejections = $derived(problemRows.filter((p) => p.reject));
+  const problemCount = $derived(mode === "download" ? report?.problemCount ?? 0 : problemRows.length);
 
   function scope(): Scope {
     return {
@@ -128,7 +134,7 @@
   async function start() {
     const current = prepared;
     if (starting || checking || !current || !isCurrent(current.intent)
-      || current.report.problems?.some((p) => p.reject)) return;
+      || (current.mode === "download" ? current.report.rejected : current.report.problems?.some((p) => p.reject))) return;
     prepared = null;
     starting = true;
     error = null;
@@ -145,7 +151,7 @@
     }
   }
 
-  const itemCount = $derived(report?.items?.length ?? 0);
+  const itemCount = $derived(mode === "download" ? report?.objects ?? 0 : report?.items?.length ?? 0);
 </script>
 
 <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && close()}>
@@ -171,8 +177,11 @@
       </p>
     {:else}
       <div class="report num">
-        {#if rejections.length > 0}
+        {#if rejected}
           <h3 class="bad">Rejected — nothing was written</h3>
+          {#if problemCount > rejections.length}
+            <p class="summary">{problemCount} problems ({rejections.length} shown)</p>
+          {/if}
           <div class="problems">
             {#each rejections as p (p.kind + p.name)}
               <div class="problem">

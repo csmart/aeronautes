@@ -89,11 +89,11 @@ func downloadDirAliases(t *testing.T, h *Harness, c dirAliasServiceCase) {
 	if err != nil || preflight == nil {
 		t.Fatalf("preflight: %+v %v", preflight, err)
 	}
-	encoded, _ := json.Marshal(map[string]any{"case": c.name, "items": len(preflight.Items), "problems": preflight.Problems})
+	encoded, _ := json.Marshal(map[string]any{"case": c.name, "items": int(preflight.Objects), "problems": preflight.ProblemSamples})
 	t.Logf("directory alias observation: %s", encoded)
 	if c.refusedKind != "" {
-		if !preflight.Rejected() || len(preflight.Problems) != 1 || preflight.Problems[0].Kind != c.refusedKind {
-			t.Fatalf("refusal differs: %+v", preflight.Problems)
+		if !preflight.Rejected || int(preflight.ProblemCount) != 1 || preflight.ProblemSamples[0].Kind != c.refusedKind {
+			t.Fatalf("refusal differs: %+v", preflight.ProblemSamples)
 		}
 		if _, err := h.Transfer.StartDownload(t.Context(), request); err == nil {
 			t.Fatal("start accepted a refused selection")
@@ -102,7 +102,7 @@ func downloadDirAliases(t *testing.T, h *Harness, c dirAliasServiceCase) {
 			t.Fatalf("refused selection changed the local tree: %v", after)
 		}
 	} else {
-		if preflight.Rejected() || len(preflight.Items) != len(c.objects) {
+		if preflight.Rejected || int(preflight.Objects) != len(c.objects) {
 			t.Fatalf("selection was not admitted: %+v", preflight)
 		}
 		id, err := h.Transfer.StartDownload(t.Context(), request)

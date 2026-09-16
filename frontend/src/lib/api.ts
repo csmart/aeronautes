@@ -18,7 +18,7 @@ import {
   TransferService,
 } from "../../bindings/github.com/csmart/aeronautes/internal/app";
 import type {
-  DownloadPreflight,
+  DownloadPreflightView,
   UploadPreflight,
 } from "../../bindings/github.com/csmart/aeronautes/internal/transfer/local";
 import type {
@@ -86,7 +86,7 @@ export type {
   PrefixDetailDTO,
   SLOManifestDTO,
 };
-export type { DownloadPreflight, UploadPreflight };
+export type { DownloadPreflightView, UploadPreflight };
 export type {
   DeletePreviewDTO,
   DeleteRequestDTO,
@@ -194,7 +194,7 @@ export interface Api {
   pickDownloadDir(scope: SelectionScopeDTO): Promise<PickedDirDTO | null>;
   preflightUpload(req: UploadRequestDTO): Promise<UploadPreflight>;
   startUpload(req: UploadRequestDTO): Promise<string>;
-  preflightDownload(req: DownloadRequestDTO): Promise<DownloadPreflight>;
+  preflightDownload(req: DownloadRequestDTO): Promise<DownloadPreflightView>;
   startDownload(req: DownloadRequestDTO): Promise<string>;
   previewDelete(req: DeleteRequestDTO): Promise<DeletePreviewDTO>;
   startDelete(req: DeleteRequestDTO): Promise<string>;

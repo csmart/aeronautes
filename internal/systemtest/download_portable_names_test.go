@@ -151,11 +151,11 @@ func downloadPortableNameService(t *testing.T, h *Harness, route, shape string) 
 		t.Errorf("download changed remote data: %v", trace.traffic.writeSnapshot())
 	}
 	if refused != "" {
-		if preflightErr != nil || preflight == nil || !preflight.Rejected() {
+		if preflightErr != nil || preflight == nil || !preflight.Rejected {
 			t.Errorf("unportable component lacked preflight refusal: %+v error=%v", preflight, preflightErr)
-		} else if len(preflight.Problems) != 1 || preflight.Problems[0].Kind != "unportable-name" || preflight.Problems[0].Name != prefix+refused ||
-			!strings.Contains(preflight.Problems[0].Detail, fmt.Sprintf("%q", component)) {
-			t.Errorf("portable diagnostic lost the selected spelling: %+v", preflight.Problems)
+		} else if int(preflight.ProblemCount) != 1 || preflight.ProblemSamples[0].Kind != "unportable-name" || preflight.ProblemSamples[0].Name != prefix+refused ||
+			!strings.Contains(preflight.ProblemSamples[0].Detail, fmt.Sprintf("%q", component)) {
+			t.Errorf("portable diagnostic lost the selected spelling: %+v", preflight.ProblemSamples)
 		}
 		if id != "" || startErr == nil || !strings.Contains(startErr.Error(), "preflight found problems") {
 			t.Errorf("Start admitted an unportable component: id=%q error=%v", id, startErr)
@@ -167,7 +167,7 @@ func downloadPortableNameService(t *testing.T, h *Harness, route, shape string) 
 		return
 	}
 	count := int64(len(names))
-	if preflightErr != nil || preflight == nil || preflight.Rejected() || len(preflight.Items) != len(names) || preflight.Items[0].Name != prefix+first || id == "" || startErr != nil {
+	if preflightErr != nil || preflight == nil || preflight.Rejected || int(preflight.Objects) != len(names) || preflight.ItemSamples[0].Name != prefix+first || id == "" || startErr != nil {
 		t.Fatalf("portable near-miss control was not admitted: preflight=%+v error=%v id=%q error=%v", preflight, preflightErr, id, startErr)
 	}
 	want := jobs.Counters{ObjectsPlanned: count, BytesPlanned: totalBytes, ObjectsCopied: count, BytesCopied: totalBytes, ObjectsVerified: count}

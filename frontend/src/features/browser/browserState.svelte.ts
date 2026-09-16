@@ -13,7 +13,7 @@ import type {
   DeleteRequestDTO,
   SegmentOwnershipDTO,
   SegmentsDeleteRequestDTO,
-  DownloadPreflight,
+  DownloadPreflightView,
   DownloadRequestDTO,
   FindStatusDTO,
   JobDTO,
@@ -958,7 +958,7 @@ export class BrowserState {
     return id;
   }
 
-  async preflightDownload(req: DownloadRequestDTO): Promise<DownloadPreflight> {
+  async preflightDownload(req: DownloadRequestDTO): Promise<DownloadPreflightView> {
     return await this.#api.preflightDownload(req);
   }
 

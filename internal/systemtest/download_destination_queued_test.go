@@ -62,7 +62,7 @@ func downloadDestinationQueued(t *testing.T, h *Harness, route, fault string) {
 	}
 	firstRequest, request := pick(firstRoot, "hold/"), pick(selected, prefix)
 	preflight, err := h.Transfer.PreflightDownload(t.Context(), request)
-	if err != nil || preflight == nil || preflight.Rejected() || int64(len(preflight.Items)) != count {
+	if err != nil || preflight == nil || preflight.Rejected || preflight.Objects != count {
 		t.Fatalf("queued fixture was not initially admissible: %+v error=%v", preflight, err)
 	}
 	reached, release := make(chan string, 1), make(chan struct{})

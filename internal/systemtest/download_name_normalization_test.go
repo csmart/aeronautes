@@ -231,12 +231,12 @@ func downloadNameFormService(t *testing.T, h *Harness, route, shape string) {
 		// An accepted control must prove the download happened. An
 		// executor that admits everything and then reports success
 		// without copying must fail every assertion below.
-		if preflightErr != nil || preflight == nil || preflight.Rejected() || len(preflight.Items) != len(names) || id == "" || startErr != nil {
+		if preflightErr != nil || preflight == nil || preflight.Rejected || int(preflight.Objects) != len(names) || id == "" || startErr != nil {
 			t.Fatalf("accepted control was not admitted: preflight=%+v error=%v id=%q error=%v", preflight, preflightErr, id, startErr)
 		}
 		for _, name := range names {
-			if !slices.ContainsFunc(preflight.Items, func(item local.DownloadItem) bool { return item.Name == prefix+name }) {
-				t.Errorf("accepted control lost the exact selected spelling %q: %+v", name, preflight.Items)
+			if !slices.ContainsFunc(preflight.ItemSamples, func(item local.DownloadItem) bool { return item.Name == prefix+name }) {
+				t.Errorf("accepted control lost the exact selected spelling %q: %+v", name, preflight.ItemSamples)
 			}
 		}
 		count := int64(len(names))
@@ -324,13 +324,13 @@ func downloadNameFormService(t *testing.T, h *Harness, route, shape string) {
 		}
 		return
 	}
-	if preflightErr != nil || preflight == nil || !preflight.Rejected() {
+	if preflightErr != nil || preflight == nil || !preflight.Rejected {
 		t.Fatalf("name-form collision lacked preflight refusal: %+v error=%v", preflight, preflightErr)
 	}
-	if len(preflight.Problems) != 1 {
-		t.Fatalf("name-form collision produced %d problems, want one: %+v", len(preflight.Problems), preflight.Problems)
+	if int(preflight.ProblemCount) != 1 {
+		t.Fatalf("name-form collision produced %d problems, want one: %+v", int(preflight.ProblemCount), preflight.ProblemSamples)
 	}
-	problem := preflight.Problems[0]
+	problem := preflight.ProblemSamples[0]
 	if ancestor != "" {
 		if problem.Kind != "file-vs-prefix" || problem.Name != prefix+ancestor || !strings.Contains(problem.Detail, ancestor) {
 			t.Errorf("name-form ancestor diagnostic lost the selected spelling: %+v", problem)

@@ -142,6 +142,7 @@ type DownloadItem struct {
 }
 
 // DownloadPreflight is the complete pre-write report.
+// Execution iterates Items; the bridge never returns this value (ADR 0056).
 type DownloadPreflight struct {
 	Items      []DownloadItem `json:"items"`
 	Problems   []Problem      `json:"problems"`
@@ -150,6 +151,56 @@ type DownloadPreflight struct {
 }
 
 func (p *DownloadPreflight) Rejected() bool { return rejected(p.Problems) }
+
+// DownloadPreflightView is the bridge-facing collision report (ADR 0056).
+// Objects, TotalBytes, ProblemCount and Rejected are complete.
+// ItemSamples and ProblemSamples are bounded; counts are never rebuilt from them.
+type DownloadPreflightView struct {
+	ItemSamples    []DownloadItem `json:"itemSamples"`
+	ProblemSamples []Problem      `json:"problemSamples"`
+	TotalBytes     int64          `json:"totalBytes"`
+	Objects        int64          `json:"objects"`
+	ProblemCount   int64          `json:"problemCount"`
+	Rejected       bool           `json:"rejected"`
+}
+
+const maxFailures = 200
+
+// View copies complete counts and a bounded sample. The execution report is unchanged.
+func (p *DownloadPreflight) View() DownloadPreflightView {
+	view := DownloadPreflightView{ItemSamples: []DownloadItem{}, ProblemSamples: []Problem{}}
+	if p == nil {
+		return view
+	}
+	view.Objects = p.Objects
+	view.TotalBytes = p.TotalBytes
+	view.ProblemCount = int64(len(p.Problems))
+	view.Rejected = p.Rejected()
+	view.ItemSamples = sampleOf(p.Items)
+	view.ProblemSamples = sampleOf(p.Problems)
+	return view
+}
+
+func sampleOf[T any](in []T) []T {
+	n := len(in)
+	if n > maxFailures {
+		n = maxFailures
+	}
+	return append([]T{}, in[:n]...)
+}
+
+func collisionDetail(kind string, twins []string) string {
+	quoted := twins
+	if len(quoted) > maxFailures {
+		quoted = quoted[:maxFailures]
+	}
+	switch kind {
+	case "name-form":
+		return fmt.Sprintf("%d names collide on filesystems that ignore case or Unicode normalization form: %q", len(twins), quoted)
+	default:
+		return fmt.Sprintf("%d names collide on case-insensitive filesystems: %q", len(twins), quoted)
+	}
+}
 
 const downloadPathRefusal = "the selected destination path cannot be used unchanged; select it again using an absolute UTF-8 path without dot or empty components"
 
@@ -390,10 +441,10 @@ func PreflightDownloadInto(ctx context.Context, src *swiftcontrol.Session, conta
 		})
 	}
 	for _, twins := range byLower {
-		emit(twins, "case-fold", fmt.Sprintf("%d names collide on case-insensitive filesystems: %q", len(twins), twins))
+		emit(twins, "case-fold", collisionDetail("case-fold", twins))
 	}
 	for _, twins := range byCaseless {
-		emit(twins, "name-form", fmt.Sprintf("%d names collide on filesystems that ignore case or Unicode normalization form: %q", len(twins), twins))
+		emit(twins, "name-form", collisionDetail("name-form", twins))
 	}
 	for _, item := range candidates {
 		if refusal := inspectDownloadPath(destination.root, item); refusal != nil {
@@ -564,8 +615,6 @@ type Report struct {
 	// CapturedPrefixes: large uploads segment like any engine write.
 	CapturedPrefixes []rclone.SegmentPrefix
 }
-
-const maxFailures = 200
 
 // createdDirectories records observed ancestor creation. Callers pass
 // what the walk actually made, so a pre-existing or raced directory

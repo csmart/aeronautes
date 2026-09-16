@@ -12,7 +12,7 @@ func (h *Harness) PreflightUpload(ctx context.Context, request app.UploadRequest
 	return plan, &Receipt{h: h, action: "TransferService.PreflightUpload", err: err}
 }
 
-func (h *Harness) PreflightDownload(ctx context.Context, request app.DownloadRequestDTO) (*local.DownloadPreflight, *Receipt) {
+func (h *Harness) PreflightDownload(ctx context.Context, request app.DownloadRequestDTO) (*local.DownloadPreflightView, *Receipt) {
 	plan, err := h.Transfer.PreflightDownload(ctx, request)
 	return plan, &Receipt{h: h, action: "TransferService.PreflightDownload", err: err}
 }

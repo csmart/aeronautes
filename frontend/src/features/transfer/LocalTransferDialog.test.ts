@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
-import type { DownloadPreflight, PickedDirDTO, PickedFilesDTO, UploadPreflight } from "../../lib/api";
+import type { DownloadPreflightView, PickedDirDTO, PickedFilesDTO, UploadPreflight } from "../../lib/api";
 import { BrowserState } from "../browser/browserState.svelte";
 import { newFakeApi } from "../browser/fakeApi";
 import LocalTransferDialog from "./LocalTransferDialog.svelte";
@@ -30,11 +30,11 @@ function show(mode: Mode) {
   const files: ReturnType<typeof deferred<PickedFilesDTO | null>>[] = [];
   const dirs: ReturnType<typeof deferred<PickedDirDTO | null>>[] = [];
   const uploads: ReturnType<typeof deferred<UploadPreflight>>[] = [];
-  const downloads: ReturnType<typeof deferred<DownloadPreflight>>[] = [];
+  const downloads: ReturnType<typeof deferred<DownloadPreflightView>>[] = [];
   api.pickUploadFiles = vi.fn(() => { const p = deferred<PickedFilesDTO | null>(); files.push(p); return p.promise; });
   api.pickDownloadDir = vi.fn(() => { const p = deferred<PickedDirDTO | null>(); dirs.push(p); return p.promise; });
   api.preflightUpload = vi.fn(() => { const p = deferred<UploadPreflight>(); uploads.push(p); return p.promise; });
-  api.preflightDownload = vi.fn(() => { const p = deferred<DownloadPreflight>(); downloads.push(p); return p.promise; });
+  api.preflightDownload = vi.fn(() => { const p = deferred<DownloadPreflightView>(); downloads.push(p); return p.promise; });
   const started = deferred<string>();
   api.startUpload = vi.fn(() => started.promise);
   api.startDownload = vi.fn(() => started.promise);
@@ -64,8 +64,8 @@ function show(mode: Mode) {
       items: [{ path: "", name: "selected/a.txt", size: 5, route: "rclone" }], problems, totalBytes: 5,
     });
     else downloads[index].resolve({
-      items: [{ name: "selected/a.txt", relPath: "a.txt", size: 5, route: "rclone", dir: false }],
-      problems, totalBytes: 5, objects: 1,
+      itemSamples: [{ name: "selected/a.txt", relPath: "a.txt", size: 5, route: "rclone", dir: false }],
+      problemSamples: problems, totalBytes: 5, objects: 1, problemCount: problems.length, rejected: reject,
     });
     await settle();
   };
@@ -317,10 +317,33 @@ it("refuses an empty directory token", async () => {
   expect(f.pickButton().disabled).toBe(false);
 });
 
+it("counts download objects from the first-class field, not the sample", async () => {
+  const f = show("download"); f.choose(); await f.resolvePicker();
+  f.downloads[0].resolve({
+    itemSamples: [{ name: "selected/a.txt", relPath: "a.txt", size: 5, route: "rclone", dir: false }],
+    problemSamples: [], totalBytes: 1025, objects: 205, problemCount: 0, rejected: false,
+  });
+  await settle();
+  expect(f.root.textContent).toContain("205");
+  expect(f.root.textContent).not.toMatch(/\b1 objects\b/);
+  expect(f.startButton()?.disabled).toBe(false);
+});
+
+it("arms download Start from rejected, not from sampled problems", async () => {
+  const f = show("download"); f.choose(); await f.resolvePicker();
+  f.downloads[0].resolve({
+    itemSamples: [], problemSamples: [], totalBytes: 0, objects: 205, problemCount: 201, rejected: true,
+  });
+  await settle();
+  expect(f.root.textContent).toContain("Rejected");
+  expect(f.root.textContent).toContain("201 problems");
+  expect(f.startButton()?.disabled ?? true).toBe(true);
+});
+
 it.each(["upload", "download"] as const)("forwards the complete captured %s request without rebuilding its scope", async (mode) => {
   const api = newFakeApi();
   api.preflightUpload = vi.fn().mockResolvedValue({ items: [], problems: [], totalBytes: 0 });
-  api.preflightDownload = vi.fn().mockResolvedValue({ items: [], problems: [], totalBytes: 0, objects: 0 });
+  api.preflightDownload = vi.fn().mockResolvedValue({ itemSamples: [], problemSamples: [], totalBytes: 0, objects: 0, problemCount: 0, rejected: false });
   api.startUpload = vi.fn().mockResolvedValue("job"); api.startDownload = vi.fn().mockResolvedValue("job");
   const browser = new BrowserState(api);
   browser.connectedBookmarkId = "another"; browser.containerName = "another"; browser.prefix = "another/";

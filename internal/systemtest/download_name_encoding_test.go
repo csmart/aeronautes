@@ -103,11 +103,11 @@ func downloadNameEncoding(t *testing.T, h *Harness, c nameEncodingCase) {
 	}
 	request := app.DownloadRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: source, Prefix: "scope/", DestDirToken: picked.Token}
 	preflight, err := h.Transfer.PreflightDownload(t.Context(), request)
-	if err != nil || preflight == nil || preflight.Rejected() || len(preflight.Items) != len(objects) {
+	if err != nil || preflight == nil || preflight.Rejected || int(preflight.Objects) != len(objects) {
 		t.Fatalf("selection was not admitted: %+v %v", preflight, err)
 	}
 	// The reserved name and only the reserved name leaves the engine route.
-	for _, item := range preflight.Items {
+	for _, item := range preflight.ItemSamples {
 		want := "rclone"
 		if c.reserved && item.Name == "scope/"+c.object {
 			want = "native"
