@@ -66,3 +66,40 @@ func TestRecordOutcomeRequiresIntentRow(t *testing.T) {
 		t.Fatal("expected missing intent to fail")
 	}
 }
+
+func TestRecordOutcomeDoesNotRedecide(t *testing.T) {
+	d, err := db.Open(context.Background(), filepath.Join(t.TempDir(), "state.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { d.Close() })
+	store := NewStore(d)
+	ctx := context.Background()
+	identity, err := NewIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordIntent(ctx, Intent{
+		Identity: identity, BookmarkID: "bm", Operation: "object.metadata.update",
+		Resource: "fixtures/a",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordOutcome(ctx, identity, OutcomeApplied, "applied", nil, func(*sql.Tx) error {
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordOutcome(ctx, identity, OutcomeUnverified, "rewrite", nil, func(*sql.Tx) error {
+		return nil
+	}); err == nil {
+		t.Fatal("decided fact must not be rewritten")
+	}
+	got, err := store.Lookup(ctx, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Outcome != OutcomeApplied {
+		t.Fatalf("redecide left outcome %s", got.Outcome)
+	}
+}

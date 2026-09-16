@@ -115,6 +115,13 @@ func (s *Session) UpdateObjectMetadata(ctx context.Context, container, name, bas
 	headers := buildObjectPostHeaders(before, edit)
 	writeTransID, err := s.post(ctx, container, name, headers)
 	if err != nil {
+		if postUnproven(err) {
+			// The request left and no store status came back, so the
+			// effect is unverified rather than failed (ADR 0058).
+			result.Outcome = UpdateUnverified
+			result.Limitation = ConcurrentEditLimitation
+			return result, fmt.Errorf("%w: %v", ErrUnverifiedWrite, err)
+		}
 		return nil, err
 	}
 	result.TransIDs = append(result.TransIDs, writeTransID)
@@ -139,6 +146,20 @@ func (s *Session) UpdateObjectMetadata(ctx context.Context, container, name, bas
 	}
 	result.Outcome = UpdateApplied
 	return result, nil
+}
+
+// postUnproven reports a POST whose request may have left and whose
+// effect is not proven. A received HTTP status is a store answer, so a
+// 403 or 404 is failed; a transport timeout or reset is unverified.
+func postUnproven(err error) bool {
+	if err == nil {
+		return false
+	}
+	var se *SwiftError
+	if errors.As(err, &se) && se.HTTPStatus != 0 {
+		return false
+	}
+	return true
 }
 
 // buildObjectPostHeaders assembles the COMPLETE replace-all POST: the

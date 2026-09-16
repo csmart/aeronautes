@@ -93,7 +93,7 @@ func (s *MutateService) UpdateObjectMetadata(ctx context.Context, container, nam
 	result, err := session.UpdateObjectMetadata(ctx, container, name, baseFingerprint, adapterEdit)
 	outcome, auditRes, summary, transIDs := objectMetadataFact(result, err, edit)
 	if recErr := s.recordObjectOutcome(ctx, identity, resource, outcome, auditRes, summary, transIDs); recErr != nil {
-		if objectMetadataPosted(result) {
+		if objectMetadataPosted(result, err) {
 			return MutationResultDTO{}, fmt.Errorf("%w: identity %s: %v", errMetadataResidue, identity, recErr)
 		}
 		return MutationResultDTO{}, recErr
@@ -296,7 +296,10 @@ func (s *MutateService) recordObjectOutcome(ctx context.Context, identity, resou
 	})
 }
 
-func objectMetadataPosted(result *swiftcontrol.ObjectUpdateResult) bool {
+func objectMetadataPosted(result *swiftcontrol.ObjectUpdateResult, err error) bool {
+	if errors.Is(err, swiftcontrol.ErrUnverifiedWrite) {
+		return true
+	}
 	if result == nil {
 		return false
 	}
@@ -308,27 +311,32 @@ func objectMetadataPosted(result *swiftcontrol.ObjectUpdateResult) bool {
 }
 
 func objectMetadataFact(result *swiftcontrol.ObjectUpdateResult, err error, edit ObjectMetadataEditDTO) (mutationfacts.Outcome, audit.Result, string, []string) {
+	summary := fmt.Sprintf("set %d metadata keys", len(edit.Meta))
+	var transIDs []string
+	if result != nil {
+		transIDs = result.TransIDs
+		if result.Limitation != "" {
+			summary += "; " + result.Limitation
+		}
+	}
+	if errors.Is(err, swiftcontrol.ErrUnverifiedWrite) || (result != nil && result.Outcome == swiftcontrol.UpdateUnverified) {
+		return mutationfacts.OutcomeUnverified, audit.ResultUnverified, "metadata write unverified; " + summary, transIDs
+	}
 	if result == nil {
 		return mutationfacts.OutcomeFailed, audit.ResultFailed, "metadata update failed", nil
 	}
-	summary := fmt.Sprintf("set %d metadata keys", len(edit.Meta))
-	if result.Limitation != "" {
-		summary += "; " + result.Limitation
-	}
 	switch result.Outcome {
 	case swiftcontrol.UpdateApplied:
-		return mutationfacts.OutcomeApplied, audit.ResultApplied, summary, result.TransIDs
+		return mutationfacts.OutcomeApplied, audit.ResultApplied, summary, transIDs
 	case swiftcontrol.UpdateConflict:
-		return mutationfacts.OutcomeConflict, audit.ResultConflict, summary, result.TransIDs
+		return mutationfacts.OutcomeConflict, audit.ResultConflict, summary, transIDs
 	case swiftcontrol.UpdateVerifyMismatch:
-		return mutationfacts.OutcomeVerifyMismatch, audit.ResultVerifyMismatch, summary, result.TransIDs
-	case swiftcontrol.UpdateUnverified:
-		return mutationfacts.OutcomeUnverified, audit.ResultUnverified, "metadata write unverified; " + summary, result.TransIDs
+		return mutationfacts.OutcomeVerifyMismatch, audit.ResultVerifyMismatch, summary, transIDs
 	}
-	if objectMetadataPosted(result) || errors.Is(err, swiftcontrol.ErrUnverifiedWrite) {
-		return mutationfacts.OutcomeUnverified, audit.ResultUnverified, "metadata write unverified; " + summary, result.TransIDs
+	if objectMetadataPosted(result, err) {
+		return mutationfacts.OutcomeUnverified, audit.ResultUnverified, "metadata write unverified; " + summary, transIDs
 	}
-	return mutationfacts.OutcomeFailed, audit.ResultFailed, "metadata update failed", result.TransIDs
+	return mutationfacts.OutcomeFailed, audit.ResultFailed, "metadata update failed", transIDs
 }
 
 func auditResult(outcome swiftcontrol.UpdateOutcome) audit.Result {

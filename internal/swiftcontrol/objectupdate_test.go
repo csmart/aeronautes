@@ -3,6 +3,7 @@ package swiftcontrol
 import (
 	"context"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -234,5 +235,73 @@ func TestUpdateObjectMetadataVerifyReadIsUnverified(t *testing.T) {
 	}
 	if result.Limitation == "" || len(result.TransIDs) < 2 {
 		t.Fatalf("completed POST must keep limitation and write trans id: %+v", result)
+	}
+}
+
+func TestUpdateObjectMetadataTransportFailureIsUnverified(t *testing.T) {
+	mock := swifttest.New("test:tester", "testing")
+	srv := httptest.NewServer(mock)
+	t.Cleanup(srv.Close)
+	s, err := New(Config{AuthURL: srv.URL + "/auth/v1.0", Username: "test:tester", APIKey: "testing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn := &swift.Connection{
+		AuthUrl: srv.URL + "/auth/v1.0", UserName: "test:tester",
+		ApiKey: "testing", AuthVersion: 1,
+	}
+	if err := conn.ContainerCreate(context.Background(), "media", nil); err != nil {
+		t.Fatal(err)
+	}
+	putDLO(t, conn)
+	mock.DropNextObjectPOST()
+	result, err := s.UpdateObjectMetadata(context.Background(), "media", "video", "", ObjectMetadataEdit{
+		Meta: map[string]string{"Shoot": "wedding"},
+	})
+	if !errors.Is(err, ErrUnverifiedWrite) {
+		t.Fatalf("err = %v, want unverified", err)
+	}
+	if result == nil || result.Outcome != UpdateUnverified {
+		t.Fatalf("result = %+v", result)
+	}
+}
+
+func TestUpdateObjectMetadataStoreRefusalIsFailed(t *testing.T) {
+	mock := swifttest.New("test:tester", "testing")
+	srv := httptest.NewServer(mock)
+	t.Cleanup(srv.Close)
+	s, err := New(Config{AuthURL: srv.URL + "/auth/v1.0", Username: "test:tester", APIKey: "testing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn := &swift.Connection{
+		AuthUrl: srv.URL + "/auth/v1.0", UserName: "test:tester",
+		ApiKey: "testing", AuthVersion: 1,
+	}
+	if err := conn.ContainerCreate(context.Background(), "media", nil); err != nil {
+		t.Fatal(err)
+	}
+	putDLO(t, conn)
+	mock.SetObjectPOSTStatus(http.StatusForbidden)
+	result, err := s.UpdateObjectMetadata(context.Background(), "media", "video", "", ObjectMetadataEdit{
+		Meta: map[string]string{"Shoot": "wedding"},
+	})
+	if err == nil || errors.Is(err, ErrUnverifiedWrite) {
+		t.Fatalf("err = %v, want store refusal", err)
+	}
+	if result != nil {
+		t.Fatalf("store refusal must not keep a write result: %+v", result)
+	}
+}
+
+func TestPostUnproven(t *testing.T) {
+	if postUnproven(nil) {
+		t.Fatal("nil is proven")
+	}
+	if postUnproven(Normalize(swift.Forbidden)) {
+		t.Fatal("HTTP 403 is a store answer")
+	}
+	if !postUnproven(Normalize(context.DeadlineExceeded)) {
+		t.Fatal("deadline with no HTTP status is unproven")
 	}
 }

@@ -49,6 +49,7 @@ SQL abort of that insert issues zero POSTs and commits no fact.
 After the store attempt, persist the outcome and the audit event in one transaction, and surface that error so the call cannot return applied/nil.
 POST succeeded and that transaction failed: named residue error; remote metadata is an independent snapshot; reopen of that identity is not applied.
 Verify-read failure after POST records `unverified`, not `failed`.
+A POST whose request left and whose store status never arrived is also `unverified`; a received 403 or 404 is `failed`.
 ADR 0046 still qualifies a completed POST as not establishing exclusivity; decision 4 only changes the verify-read-failure classification from `failed` to unknown/unverified.
 The ledger is a new `mutation_facts` table that retention cannot drop.
 The existing writer gate stays occupied until after that final transaction.
