@@ -5704,7 +5704,7 @@ Create, marker and manifest stay on today's gate plus best-effort audit, contain
 L04, P12, P13 and the valuable-data hold stay open.
 
 L10's first slice is the download preflight view under [ADR 0056](adr/0056-download-preflight-view.md).
-`TransferService.PreflightDownload` returns the complete collision inventory across the bridge, `StartDownload` executes that same value, and the dialog counts objects from the items array length, so a bound applied in place would drop names from the job and from the displayed count.
+`TransferService.PreflightDownload` returned the complete collision inventory across the bridge, `StartDownload` executed that same value, and the dialog counted objects from the items array length, so a bound applied in place would have dropped names from the job and from the displayed count.
 The [download preflight bounds record](experiments/2026-09-16-download-preflight-bounds.md) searched listing continuation, Find retention, job-item paging and the download inventory for silent truncation first: those paths grow or page with a count beside a sample, and a measured 20 000-object preflight kept items equal to the seeded count.
 The correction splits execution from the bridge the way upload already does and copies ADR 0023's sample-and-count pattern onto a distinct view type.
 It does not bound Go RSS, browser accumulation, queued work or child batches, and L10 does not close with this.
