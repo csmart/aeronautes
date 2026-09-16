@@ -4,7 +4,7 @@
 Finish-line item L04, the portion v1 keeps for object metadata: P12 required facts durable before the effect, and P13 identity-keyed outcome across restart.
 Download terminal-write faults are already under ADR 0024/0033 and are not re-examined.
 Container metadata is owned by L09 on an unmerged branch and is not examined here.
-The correction in [ADR 0058](../adr/0058-object-metadata-durable-facts.md) is not yet implemented.
+The correction in [ADR 0058](../adr/0058-object-metadata-durable-facts.md) is delivered for object metadata writes.
 
 Source: GitHub master `e770f8a98c8ad67bc70e2137f66a598271be8195`, which already carries the L08 writer gate.
 
@@ -42,18 +42,19 @@ A POST can complete with no durable identity at all.
 A failed append still reports success.
 A verify-read failure is stored as `failed` when it is stored at all, and it is stored only best-effort.
 
-## Proposed correction
+## Correction
 
 Persist an intent (identity, bookmark, operation, resource) before the session can POST.
 SQL abort of that insert issues zero POSTs and commits no fact.
 After the store attempt, persist the outcome and the audit event in one transaction, and surface that error so the call cannot return applied/nil.
 POST succeeded and that transaction failed: named residue error; remote metadata is an independent snapshot; reopen of that identity is not applied.
 Verify-read failure after POST records `unverified`, not `failed`.
+ADR 0046 still qualifies a completed POST as not establishing exclusivity; decision 4 only changes the verify-read-failure classification from `failed` to unknown/unverified.
 The ledger is a new `mutation_facts` table that retention cannot drop.
 The existing writer gate stays occupied until after that final transaction.
 Create, marker and manifest stay on today's gate plus best-effort audit.
 
-## Proof the implementation must carry
+## Proofs carried by the implementation
 
 - Abort the intent insert: zero POST in the store log, empty facts.
 - Abort the outcome transaction after POST: residue error, reopen identity not applied.

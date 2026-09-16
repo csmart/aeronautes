@@ -1,6 +1,6 @@
 # ADR 0058: identity-keyed durable facts for object metadata writes
 
-**Status:** Proposed. Contract only; nothing in it is implemented yet.
+**Status:** Accepted for object metadata writes, which are delivered with this decision.
 This does not close L04, L08, P12, P13, P28 or the valuable-data hold.
 
 ## Context
