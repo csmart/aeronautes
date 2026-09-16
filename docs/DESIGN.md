@@ -5709,6 +5709,14 @@ The [download preflight bounds record](experiments/2026-09-16-download-preflight
 The correction splits execution from the bridge the way upload already does and copies ADR 0023's sample-and-count pattern onto a distinct view type.
 It does not bound Go RSS, browser accumulation, queued work or child batches, and L10 does not close with this.
 
+The Linux keychain adapter still selects the login collection or default alias on every call, because the pinned client has no original-store identity.
+`Origin` records only an adapter lifetime, so a later default change can make Get report `ErrNotFound` while the original collection keeps the value, as the [keychain write record](experiments/2026-09-06-keychain-writes.md) already showed.
+The L01 read boundary does not call that miss erasure, but it cannot keep the credential readable and the journal has no collection path for unresolved cleanup.
+The proposed correction in [ADR 0057](adr/0057-persistent-backend-selection.md) is not yet implemented.
+It resolves and records the original collection object path, persists it beside the adapter instance, and uses that path for later Linux Get, Put and Delete so a changed default or unavailable original store cannot be reported as erasure.
+Physical Delete, retry and the collector stay unstarted.
+This establishes nothing about native keychain behaviour on the six targets, and it does not close L01.
+
 ### 65.12. Proportionate remediation and a fixed finish line
 
 Safe, secure operation on valuable production data remains the first milestone.
