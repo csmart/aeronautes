@@ -98,6 +98,11 @@ export function StartDownload(req: $models.DownloadRequestDTO): $CancellableProm
  * StartMirror refuses because a fresh HEAD cannot protect a later
  * deletion from an external writer. ADR 0020 requires refusing the
  * entire operation before any transfer or deletion starts.
+ * This refusal is deliberately NOT routed through the v1 capability gate,
+ * although the gate's table classifies Mirror as deferred (ADR 0052
+ * decision 5). ADR 0020 is the reason Mirror refuses, and it must keep
+ * refusing when the v1 gate is lifted; making the gate the only check
+ * would silently enable Mirror the day somebody narrows that table.
  */
 export function StartMirror(req: $models.MirrorRequestDTO): $CancellablePromise<string> {
     return $Call.ByID(1210013037, req);
