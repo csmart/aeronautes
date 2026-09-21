@@ -16,7 +16,8 @@ This is the explicitly deferred regression gate, not a change to the existing me
 
 Keep a versioned repository baseline containing the complete action/kind/required-scenario snapshot and a separate set of protected action/scenario pairs.
 The first baseline must wait for the final queued protected source and reconciliation of its actual successful CI producer set; this contract selects neither baseline data nor counts.
-Admission requires both main and heavy lanes from one identified workflow run and attempt, the existing successful aggregate join, and every required check successful for that exact protected source.
+Initial admission and routine updates require both main and heavy lanes from one identified workflow run and attempt, the successful aggregate join, and every required check successful for that exact protected source.
+For the first baseline this is the existing join; once the preservation check is installed, routine updates also require that check to pass.
 Retain the source commit, contract hash, Go version, workflow run/attempt, report schema, and digests of the raw reports and producer receipts with a durable evidence reference.
 The baseline must protect every credited pair in that reconciled main report, without choosing a smaller convenient subset.
 Record the full required set even for actions with no credited cell, and retain all gaps and optional skips as such.
@@ -46,10 +47,11 @@ It must retain the same required snapshot and every previously protected pair, a
 Baseline changes must not erase a prior failure, omit an inconvenient cell, turn an optional skip into coverage, or substitute assertions that never emitted an accepted receipt.
 Do not regenerate or shrink the baseline automatically from a failing candidate.
 
-Required-set drift needs a separately reviewed action/scenario contract decision and fresh source-specific producer evidence before a replacement baseline can be admitted.
-That review must name every changed identity and its behaviour oracle, and account explicitly for any previously protected pair.
-This ADR supplies no deletion exception, new-action waiver, N/A policy or automatic admission rule for newly required but uncovered cells.
-Until such a decision is accepted, drift remains a failure; editing baseline data alone does not authorise it.
+Required-set drift is an intentional stop condition for this bounded gate: no replacement baseline for a changed snapshot is admissible under this ADR.
+The implementation must fail all drift until a separately reviewed contract defines an executable evidence and admission route for that change.
+That later contract must name every changed identity and its behaviour oracle, account for previously protected pairs, and specify the evidence-producing revision/run/attempt and the order of review, replacement data, passing gate and protected-source reconciliation.
+This ADR does not supply that route, a candidate-run replacement flow, a temporary bypass, a deletion exception, a new-action waiver or an N/A policy.
+The initial and routine protected-source rules above must not be treated as a usable drift-admission route; editing baseline data alone does not authorise drift.
 The trust boundary remains reviewed repository code and branch protection under ADR 0013, not resistance to a malicious committer who rewrites both the check and its baseline.
 
 ### Refuse inconsistent evidence and retain diagnostics

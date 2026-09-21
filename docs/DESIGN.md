@@ -4289,7 +4289,7 @@ matrix, and hard CI gates (R-06).
 
 [ADR 0069](adr/0069-preserve-covered-scenario-cells.md) proposes the bounded covered-cell preservation gate deferred above.
 An independently reviewed baseline must retain every credited action/scenario pair and the complete required-set snapshot from the final queued protected-source producer reconciliation; no baseline data is admitted by this contract.
-The future aggregate join must refuse lost cell identities, unapproved required-set drift and inconsistent evidence while retaining diagnostics.
+The future aggregate join must refuse lost cell identities, all required-set drift and inconsistent evidence while retaining diagnostics; a drift-admission route requires a later reviewed contract and is not supplied here.
 Valid incomplete reports and the heavy lane's zero-credit contract keep their existing meanings, and preservation success does not establish full P34 release acceptance or settle the required/N/A, native, engine or deployment decisions.
 
 **Grok's fourth war-room review (2026-08-31) exercised the harness and found NEW
