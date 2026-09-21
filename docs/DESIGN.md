@@ -4271,7 +4271,10 @@ step without producing a report.
 
 Standing invariants hold: the contract is validated well-formed (a bad kind, an unknown
 or duplicate scenario, or a missing happy baseline fails `scenariocontract.Validate`,
-with negative unit tests over synthetic contracts); the kind
+with negative unit tests over synthetic contracts).
+[ADR 0068](adr/0068-refused-audit-recent-scenario.md) proposes one exception before implementation: the always-refused `AuditService.Recent` must be `Read` with exactly `refusal`, replacing its impossible happy cell while every other happy baseline remains required.
+The [anchored experiment](experiments/2026-09-21-audit-recent-scenario.md) preserves the catching contract/reporter assertions and public-read controls.
+The kind
 defaults are a conservative FLOOR below DESIGN's literal ≈162 baseline, not a
 completeness claim; passing tests leave Swift exactly as they found it (raw-listing
 checked cleanup + residue sweep, ten repetitions clean); every raw test client refuses
