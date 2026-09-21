@@ -23,18 +23,20 @@ const (
 )
 
 type secretService struct {
-	mu          sync.Mutex
-	conn        *dbus.Conn
-	listed      []dbus.ObjectPath
-	next        int
-	items       map[dbus.ObjectPath]*secretItem
-	aliases     map[string]dbus.ObjectPath
-	failure     string
-	faults      int
-	lastWrite   string
-	deleted     bool
-	deleteCalls []string
-	readGate    *readBarrier
+	mu            sync.Mutex
+	conn          *dbus.Conn
+	listed        []dbus.ObjectPath
+	next          int
+	items         map[dbus.ObjectPath]*secretItem
+	aliases       map[string]dbus.ObjectPath
+	failure       string
+	faults        int
+	lastWrite     string
+	deleted       bool
+	deleteCalls   []string
+	readGate      *readBarrier
+	selectionGate *readBarrier
+	selectionCall string
 }
 
 type readBarrier struct {
@@ -122,6 +124,7 @@ func (s *secretService) Unlock(paths []dbus.ObjectPath) ([]dbus.ObjectPath, dbus
 func (*session) Close() *dbus.Error { return nil }
 
 func (s *secretService) Get(iface, property string) (dbus.Variant, *dbus.Error) {
+	s.waitSelection("Collections")
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if iface == serviceIF && property == "Collections" {
@@ -270,6 +273,7 @@ func (c *collection) targetLocked() dbus.ObjectPath {
 }
 
 func (s *secretService) ReadAlias(name string) (dbus.ObjectPath, *dbus.Error) {
+	s.waitSelection("ReadAlias")
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.failure == "read-alias-error" {
@@ -298,8 +302,31 @@ func (s *secretService) setCollections(paths []dbus.ObjectPath) {
 
 func (s *secretService) restoreDefaults() {
 	s.failWith("")
+	s.mu.Lock()
+	s.selectionGate = nil
+	s.selectionCall = ""
+	s.mu.Unlock()
 	s.setCollections([]dbus.ObjectPath{loginPath})
 	_ = s.SetAlias("default", loginPath)
+}
+
+func (s *secretService) blockSelection(call string) *readBarrier {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.selectionCall = call
+	s.selectionGate = &readBarrier{entered: make(chan struct{}), release: make(chan struct{})}
+	return s.selectionGate
+}
+
+func (s *secretService) waitSelection(call string) {
+	s.mu.Lock()
+	gate := s.selectionGate
+	blocked := s.selectionCall == call
+	s.mu.Unlock()
+	if gate != nil && blocked {
+		gate.once.Do(func() { close(gate.entered) })
+		<-gate.release
+	}
 }
 
 func (s *secretService) valueIn(collection dbus.ObjectPath, name string) (string, bool) {
