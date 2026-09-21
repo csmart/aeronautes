@@ -5655,6 +5655,12 @@ Historical local reads remain available while disconnected or connected elsewher
 Maintained service and mounted regressions catch mapper, filter, lifetime, reply-scope and visible-label omissions with passing controls.
 The slice changes no migration, RecentFor behaviour, recovery aggregate, account portrait or mutation; L11, P28 and the valuable-data hold stay open.
 
+The [later listing record](experiments/2026-09-21-later-listing-generations.md) reproduces four post-connect listing paths accepting generation-two rows beneath a retained generation-one portrait on the approved portrait head `2a91c3ba`.
+[ADR 0067](adr/0067-later-listing-generations.md) proposes matching container refresh/continuation and object navigation/continuation replies to the retained portrait's bookmark and positive generation before publishing rows or cursors.
+Correctly captured older replies remain usable when they still match that portrait; existing request-lifetime rejection of obsolete successes and errors remains.
+A current mismatched page takes its existing failed-read path and cannot advance the cursor.
+This contract is not yet implemented; the six adjacent live-reader checks, historical job/audit contracts, backend snapshot guarantees and L11/P28 and release closure are outside this bounded proposal.
+
 P20 settles what a cancelled download leaves behind, under [ADR 0048](adr/0048-cancelled-stage-removal.md).
 [ADR 0043](adr/0043-cancellation-delta-authority.md) decision 7 left that choice open for the operator, who has answered it: a graceful cancel removes the partial files the job created and says so, a crash or a kill retains them and that is reported accurately, and there is no setting and no prompt.
 The reasoning is that these are the application's own incomplete work product, written under a name it invented into a directory it created, rather than the operator's data, and that with no resume feature a retained fragment cannot be continued but only deleted by hand.
