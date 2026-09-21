@@ -111,7 +111,7 @@ func TestPublicConnectHTTPErrorRefusalMock(t *testing.T) {
 	if len(observed) != 1 || observed[0].method != http.MethodGet || observed[0].path != "/auth/v1.0" || observed[0].protocol != "HTTP/1.1" || !observed[0].keyMatched || observed[0].ioErr != nil {
 		t.Fatalf("owned auth fixture requests/closure = %+v", observed)
 	}
-	afterAccount, err := h.Browse.Account(ctx)
+	afterAccount, err := h.Browse.Account(ctx, h.Primary.BookmarkID)
 	if err != nil || !reflect.DeepEqual(beforeAccount, afterAccount) {
 		t.Fatalf("refused Connect changed active account: before=%+v after=%+v error=%v", beforeAccount, afterAccount, err)
 	}

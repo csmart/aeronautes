@@ -24,15 +24,19 @@ The Go run took 4.67 seconds and the frontend command took 1.66 seconds.
 At the start, load averages were 0.42/0.59/1.18 and no other Go test process was present.
 These are local protocol and browser-contract results, not SAIO or native desktop acceptance.
 
-## Evidence and proposed correction
+## Evidence and correction
 
 The durable private packet is `/home/csmart/code/.aeronautes-work/20260921-l11-portrait/`.
 Its `SHA256SUMS` digest is `46917c39ddad581ff6d48e8bc230d127f1e43e78ce4ab5a31cfead45075044d1`.
 It contains the original probe sources, raw logs, structured command/source/concurrency metadata, the master comparison and caller assessment.
 
-[ADR 0063](../adr/0063-account-portrait-binding.md) proposes caller-named Account and Capabilities reads, a single validated tuple per reply, and browser checks for one bookmark and generation before publication.
+[ADR 0063](../adr/0063-account-portrait-binding.md) now binds Account and Capabilities to the caller's bookmark and one validated tuple per reply, with browser checks for one bookmark and generation before publication.
 The initial listing must match the same scope before publishing rows, including when a re-save and reconnect changes the generation of the same bookmark between replies.
 That mismatch keeps the bound portrait and capabilities while showing the existing listing error with no rows.
-Implementation follows independent contract approval and includes regenerated bindings, fake parity, maintained catching Go and browser regressions and relevant real Swift account controls.
+The service, regenerated bindings, browser and fake implement the independently reviewed contract together.
+Maintained regressions also failed on the contract-only head `fd288321` before the implementation: the Go held-read assertion returned beta's name with alpha's counts, and 14 browser assertions failed while three controls passed.
+Those sources and raw failures are sealed in `/home/csmart/code/.aeronautes-work/20260921-portrait-binding/red/`, whose `SHA256SUMS` digest is `c249428bfee25b5ef471c2ea22e969c649ee00c0b373c5b0fdaf58a87b2a122a`.
+The corrected focused service checks passed under the race detector, including both public mock and real Swift account controls; 163 affected browser tests passed and the type check reported no errors or warnings.
+Coverage includes stored generation changes without service invalidation, a held HEAD across re-save and reconnect, unknown capabilities from unreadable or disabled `/info`, whole-attempt refusal and hiding a newer initial listing with no continuation marker.
 A correctly labelled read may complete after a later connection switch; no later mutation authority follows from its reply.
 The broader live-read race, generation checks on post-connect refreshes, audit search, mutation writers, L11/P28 completion and the valuable-data hold remain outside this correction.

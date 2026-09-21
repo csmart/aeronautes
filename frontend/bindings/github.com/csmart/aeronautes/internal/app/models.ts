@@ -35,6 +35,8 @@ export interface About {
  * AccountDTO is the connected account's portrait (§53).
  */
 export interface AccountDTO {
+    "scope": ListingScopeDTO;
+
     /**
      * Name is the storage-URL account suffix (e.g. AUTH_demo).
      */
@@ -163,6 +165,7 @@ export interface BookmarkDTO {
  * could not be read — and Unknown is never treated as Unsupported.
  */
 export interface CapabilitiesDTO {
+    "scope": ListingScopeDTO;
     "source": string;
     "maxFileSize": number;
     "storagePolicies": StoragePolicyDTO[] | null;
@@ -250,6 +253,10 @@ export interface ContainerEditDTO {
     "ackPublic": boolean;
 }
 
+/**
+ * ContainerPageDTO is one page of containers; an empty NextMarker means
+ * the listing is exhausted.
+ */
 export interface ContainerPageDTO {
     "rows": ContainerRowDTO[] | null;
     "nextMarker": string;
@@ -607,13 +614,10 @@ export interface ListingRowDTO {
 }
 
 /**
- * ContainerPageDTO is one page of containers; an empty NextMarker means
- * the listing is exhausted.
- * ListingScopeDTO states which account produced a listing page or a live
- * remaining read (ADR 0049, ADR 0059). The protocol names no account in a
- * listing or HEAD, so without this a caller cannot attribute a reply to the
- * account it came from. Generation is the backend's own reading of the
- * connected bookmark, never a value a caller supplied.
+ * ListingScopeDTO binds listing, inspector, portrait and capability replies
+ * to the backend's bookmark generation (ADR 0049, ADR 0059, ADR 0063). The
+ * protocol supplies no account binding for listings or HEADs, and a caller
+ * cannot supply the generation it wants the backend to assert.
  */
 export interface ListingScopeDTO {
     "bookmarkId": string;

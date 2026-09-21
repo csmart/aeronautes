@@ -153,9 +153,9 @@ async function heldConnection(stage: Stage) {
   const gate = deferred<void>();
   const account = f.state.account!; const capabilities = f.state.capabilities!;
   const containers = await f.api.containers(f.bookmark.id, '', 1000);
-  f.api.connect = vi.fn(async () => { if (stage === 'connect') await gate.promise; return account; });
-  f.api.capabilities = vi.fn(async () => { if (stage === 'capabilities') await gate.promise; return capabilities; });
-  f.api.containers = vi.fn(async () => { if (stage === 'containers') await gate.promise; return containers; });
+  f.api.connect = vi.fn(async (bookmarkId) => { if (stage === 'connect') await gate.promise; return { ...account, scope: { ...account.scope, bookmarkId } }; });
+  f.api.capabilities = vi.fn(async (bookmarkId) => { if (stage === 'capabilities') await gate.promise; return { ...capabilities, scope: { ...capabilities.scope, bookmarkId } }; });
+  f.api.containers = vi.fn(async (bookmarkId) => { if (stage === 'containers') await gate.promise; return { ...containers, scope: { ...containers.scope, bookmarkId } }; });
   f.api.auditRecent = vi.fn(async () => { if (stage === 'audit') await gate.promise; return []; });
   const pending = f.state.connect(f.bookmark.id).then((value) => value, (error: Error) => error);
   await settle();
@@ -192,12 +192,11 @@ describe.each(['connect', 'capabilities', 'containers', 'audit'] as Stage[])('Co
   it('handles a current failure without inventing a successful optional read', async () => {
     const f = await heldConnection(stage); const failure = new Error('current read failed');
     f.gate.reject(failure);
-    if (stage === 'connect') {
+    if (stage === 'connect' || stage === 'capabilities') {
       expect(await f.pending).toBe(failure); expectDisconnected(f.state);
       expect(f.state.connectError).toBe(failure.message);
     } else {
       expect(await f.pending).toBe(true); expect(f.state.account).toEqual(f.account);
-      if (stage === 'capabilities') expect(f.state.capabilities).toBeNull();
       if (stage === 'containers') { expect(f.state.containers).toEqual([]); expect(f.state.containersError).toBe(failure.message); }
     }
     expect(f.state.connecting).toBe(false);

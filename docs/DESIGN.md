@@ -5635,14 +5635,15 @@ Live Swift inspector reads and `FindService.StartFind` take the bookmark the cal
 Inspector and Find callers now capture their intended bookmark, require it through the frontend API and discard replies whose scope is absent or names another bookmark.
 Manifest and segment follow-ups and Find polls and cancellation keep that same binding.
 Retained-job detail, totals and item pages use a source or destination bookmark from the displayed job row, so they remain readable while disconnected or browsing another account; a detail reply must match both that bookmark and the requested job id.
-`AuditService.Recent` remains in `mutateservice.go` but the store refuses an unscoped trail read, `Search` and the account portrait stay unbound, and L11, P28 and the valuable-data hold remain open.
+`AuditService.Recent` remains in `mutateservice.go` but the store refuses an unscoped trail read, and `Search` remains unbound.
+The account portrait binding below extends that correction; L11, P28 and the valuable-data hold remain open.
 
 The [account portrait record](experiments/2026-09-21-account-portrait-binding.md) reproduces two remaining L11 misattributions on `5f71a163`: alpha's held account HEAD returns alpha's counts with beta's name, and the browser publishes beta's capabilities under alpha despite a refused initial listing.
-[ADR 0063](adr/0063-account-portrait-binding.md) proposes requiring the intended bookmark on Account and Capabilities, capturing one validated session/bookmark/generation/capability tuple per read, and publishing the portrait and capabilities only when their scopes match the requested bookmark and each other.
+[ADR 0063](adr/0063-account-portrait-binding.md) requires the intended bookmark on Account and Capabilities, captures one validated session/bookmark/generation/capability tuple per read, and publishes the portrait and capabilities only when their scopes match the requested bookmark and each other.
 The initial container listing must match that bookmark and generation before its rows are published; a mismatch shows the existing listing error with no rows and keeps the bound portrait and capabilities.
-The implementation sequence is contract review, maintained catching service and browser regressions, the service/DTO/generated-binding/caller/fake change together, then relevant real Swift controls and independent implementation review.
+The service, DTOs, generated bindings, caller and fake implement that contract together, with maintained service and browser regressions and two-account real Swift controls.
 Unavailable `/info` stays a bound unknown result.
-This proposal establishes reply provenance only: a later connection may leave a correctly labelled read in flight, and no later mutation authority follows from that reply.
+This establishes reply provenance only: a later connection may leave a correctly labelled read in flight, and no later mutation authority follows from that reply.
 The shared scoped-session helper, broader live-read atomicity, generation checks on post-connect refreshes, audit search, mutation writers and release holds remain outside this slice.
 
 P20 settles what a cancelled download leaves behind, under [ADR 0048](adr/0048-cancelled-stage-removal.md).

@@ -92,7 +92,7 @@ func TestBookmarkCAReimportKeepsCredentialBinding(t *testing.T) {
 	if after != before {
 		t.Errorf("refused edit published a CA row: before=%d after=%d", before, after)
 	}
-	if _, err := h.browse.Account(ctx); err != nil {
+	if _, err := h.browse.Account(ctx, b.ID); err != nil {
 		t.Fatalf("refused trust edit disconnected the bookmark: %v", err)
 	}
 }
@@ -163,7 +163,7 @@ func TestBookmarkWriteFailureRollsBackNewCA(t *testing.T) {
 	if bundles != 1 {
 		t.Errorf("failed bookmark write left %d CA rows, want only the original", bundles)
 	}
-	if _, err := h.browse.Account(ctx); err != nil {
+	if _, err := h.browse.Account(ctx, b.ID); err != nil {
 		t.Fatalf("failed bookmark write disconnected the old session: %v", err)
 	}
 }

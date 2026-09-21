@@ -92,7 +92,7 @@ A Find scan captures its session at start, so that particular hole does not appl
 It does not authenticate which account the operator approved.
 The connect action remains reachable from the bridge, which is the same L02 limit ADR 0041 records for selections and ADR 0049 records for listings.
 
-It does not bind `BrowseService.Account` or `Capabilities`, which still resolve `Session()` with no bookmark.
+This decision left `BrowseService.Account` and `Capabilities` resolving `Session()` with no bookmark; [ADR 0063](0063-account-portrait-binding.md) subsequently binds those two reads.
 It does not bind `AuditService.Search`, whose empty `bookmarkId` still means every account, because that method lives in `mutateservice.go`.
 It does not bind `MutateService` writes, `JobService.RecoveryStatus`, or any destructive path.
 

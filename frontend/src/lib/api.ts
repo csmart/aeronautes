@@ -162,7 +162,7 @@ export interface Api {
   sloManifest(container: string, name: string, bookmarkId: string): Promise<SLOManifestDTO>;
   dloSegments(manifest: string, bookmarkId: string): Promise<DLOSegmentsDTO>;
   deleteManifest(container: string, name: string): Promise<ObjectDetailDTO>;
-  capabilities(): Promise<CapabilitiesDTO>;
+  capabilities(bookmarkId: string): Promise<CapabilitiesDTO>;
   updateObjectMetadata(
     container: string,
     name: string,
@@ -236,7 +236,7 @@ export const liveApi: Api = {
   sloManifest: (container, name, bookmarkId) => InspectorService.SLOManifest(bookmarkId, container, name),
   dloSegments: (manifest, bookmarkId) => InspectorService.DLOSegments(bookmarkId, manifest),
   deleteManifest: (container, name) => MutateService.DeleteManifest(container, name),
-  capabilities: () => BrowseService.Capabilities(),
+  capabilities: (bookmarkId) => BrowseService.Capabilities(bookmarkId),
   updateObjectMetadata: (container, name, baseFingerprint, edit) =>
     MutateService.UpdateObjectMetadata(container, name, baseFingerprint, edit),
   updateContainer: (name, baseFingerprint, edit) =>

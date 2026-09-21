@@ -45,9 +45,8 @@ const ownership: SegmentOwnershipDTO =
 async function dialog(segmentsAt = LONG_TARGET) {
   const api = newFakeApi();
   const browser = new BrowserState(api);
-  browser.connectedBookmarkId = "source";
-  browser.capabilities = await api.capabilities();
-  await browser.loadContainers(); await browser.openContainer("fixtures");
+  const bookmark = await browser.saveBookmark({ id: "", displayName: "Mock", authUrl: "http://mock/auth/v1.0", username: "test:tester", storageUrlOverride: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "testing");
+  await browser.connect(bookmark.id); await browser.openContainer("fixtures");
   browser.select(browser.entries.findIndex((row) => row.name === "external-dlo"));
   await settle();
   const root = document.createElement("div"); document.body.append(root);
