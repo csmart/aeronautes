@@ -34,14 +34,15 @@ async function fixture(kind: Kind) {
   const pageLoading = () => kind === 'containers' ? state.containersMoreLoading : state.entriesMoreLoading;
   const call = () => kind === 'containers' ? api.containers : api.objects;
   const setMarker = (value: string) => { if (kind === 'containers') state.containersMarker = value; else state.entriesMarker = value; };
-  return { api, state, bookmark, container, object, more, reload, names, marker, pageError, pageLoading, call, setMarker };
+  const scope = { ...state.account!.scope };
+  return { api, state, scope, bookmark, container, object, more, reload, names, marker, pageError, pageLoading, call, setMarker };
 }
 
 describe.each(['containers', 'objects'] as Kind[])('%s pagination ownership', (kind) => {
   it('admits one pending page and appends it once', async () => {
     const f = await fixture(kind); const gate = deferred<void>();
-    f.api.containers = vi.fn(async (bookmarkId) => { await gate.promise; return { rows: [f.container], nextMarker: '', scope: { bookmarkId, generation: 0 } }; });
-    f.api.objects = vi.fn(async (bookmarkId) => { await gate.promise; return { rows: [f.object], nextMarker: '', scope: { bookmarkId, generation: 0 } }; });
+    f.api.containers = vi.fn(async (bookmarkId) => { await gate.promise; return { rows: [f.container], nextMarker: '', scope: { ...f.scope, bookmarkId } }; });
+    f.api.objects = vi.fn(async (bookmarkId) => { await gate.promise; return { rows: [f.object], nextMarker: '', scope: { ...f.scope, bookmarkId } }; });
     const first = f.more(); const second = f.more();
     try { expect(f.call()).toHaveBeenCalledOnce(); expect(f.pageLoading()).toBe(true); }
     finally { gate.resolve(); await Promise.allSettled([first, second]); }
@@ -52,12 +53,12 @@ describe.each(['containers', 'objects'] as Kind[])('%s pagination ownership', (k
   it('retires a page when the same initial list is reloaded with the same marker', async () => {
     const f = await fixture(kind); const gate = deferred<void>();
     f.api.containers = vi.fn(async (bookmarkId, marker) => {
-      if (marker !== '') { await gate.promise; return { rows: [f.container], nextMarker: '', scope: { bookmarkId, generation: 0 } }; }
-      return { rows: [{ ...f.container, name: 'fresh' }], nextMarker: 'page2', scope: { bookmarkId, generation: 0 } };
+      if (marker !== '') { await gate.promise; return { rows: [f.container], nextMarker: '', scope: { ...f.scope, bookmarkId } }; }
+      return { rows: [{ ...f.container, name: 'fresh' }], nextMarker: 'page2', scope: { ...f.scope, bookmarkId } };
     });
     f.api.objects = vi.fn(async (bookmarkId, _container, _prefix, marker) => {
-      if (marker !== '') { await gate.promise; return { rows: [f.object], nextMarker: '', scope: { bookmarkId, generation: 0 } }; }
-      return { rows: [{ ...f.object, name: 'fresh' }], nextMarker: 'page2', scope: { bookmarkId, generation: 0 } };
+      if (marker !== '') { await gate.promise; return { rows: [f.object], nextMarker: '', scope: { ...f.scope, bookmarkId } }; }
+      return { rows: [{ ...f.object, name: 'fresh' }], nextMarker: 'page2', scope: { ...f.scope, bookmarkId } };
     });
     const pending = f.more(); await f.reload(); gate.resolve(); await pending;
     expect(f.names()).toEqual(['fresh']); expect(f.marker()).toBe('page2');
@@ -65,8 +66,8 @@ describe.each(['containers', 'objects'] as Kind[])('%s pagination ownership', (k
 
   it('keeps a current page error separate from usable rows and retries the marker', async () => {
     const f = await fixture(kind); const failure = new Error('page unavailable'); const names = f.names();
-    f.api.containers = vi.fn().mockRejectedValueOnce(failure).mockResolvedValue({ rows: [f.container], nextMarker: '', scope: { bookmarkId: f.state.connectedBookmarkId!, generation: 0 } });
-    f.api.objects = vi.fn().mockRejectedValueOnce(failure).mockResolvedValue({ rows: [f.object], nextMarker: '', scope: { bookmarkId: f.state.connectedBookmarkId!, generation: 0 } });
+    f.api.containers = vi.fn().mockRejectedValueOnce(failure).mockResolvedValue({ rows: [f.container], nextMarker: '', scope: f.scope });
+    f.api.objects = vi.fn().mockRejectedValueOnce(failure).mockResolvedValue({ rows: [f.object], nextMarker: '', scope: f.scope });
     await expect(f.more()).rejects.toBe(failure);
     expect(f.pageError()).toBe(failure.message); expect(f.names()).toEqual(names); expect(f.marker()).toBe('page2');
     expect(f.state.containersError).toBeNull(); expect(f.state.entriesError).toBeNull(); expect(f.pageLoading()).toBe(false);
@@ -76,8 +77,8 @@ describe.each(['containers', 'objects'] as Kind[])('%s pagination ownership', (k
 
   it('rejects a non-advancing page before appending or consuming its marker', async () => {
     const f = await fixture(kind); const names = f.names();
-    f.api.containers = vi.fn().mockResolvedValue({ rows: [f.container], nextMarker: 'page2', scope: { bookmarkId: f.state.connectedBookmarkId!, generation: 0 } });
-    f.api.objects = vi.fn().mockResolvedValue({ rows: [f.object], nextMarker: 'page2', scope: { bookmarkId: f.state.connectedBookmarkId!, generation: 0 } });
+    f.api.containers = vi.fn().mockResolvedValue({ rows: [f.container], nextMarker: 'page2', scope: f.scope });
+    f.api.objects = vi.fn().mockResolvedValue({ rows: [f.object], nextMarker: 'page2', scope: f.scope });
     const outcome = await f.more().catch((error: Error) => error);
     expect(outcome).toBeInstanceOf(Error); expect(f.names()).toEqual(names); expect(f.marker()).toBe('page2');
     expect(f.pageError()).toContain('did not advance');
@@ -88,12 +89,12 @@ describe.each(['containers', 'objects'] as Kind[])('%s pagination ownership', (k
     let pages = 0;
     const page = async () => { await (++pages === 1 ? old.promise : current.promise); return pages; };
     f.api.containers = vi.fn(async (bookmarkId, marker) => {
-      if (marker === '') return { rows: [{ ...f.container, name: 'fresh' }], nextMarker: 'page2', scope: { bookmarkId, generation: 0 } };
-      const number = pages + 1; await page(); return { rows: [{ ...f.container, name: number === 1 ? 'obsolete' : 'current' }], nextMarker: '', scope: { bookmarkId, generation: 0 } };
+      if (marker === '') return { rows: [{ ...f.container, name: 'fresh' }], nextMarker: 'page2', scope: { ...f.scope, bookmarkId } };
+      const number = pages + 1; await page(); return { rows: [{ ...f.container, name: number === 1 ? 'obsolete' : 'current' }], nextMarker: '', scope: { ...f.scope, bookmarkId } };
     });
     f.api.objects = vi.fn(async (bookmarkId, _container, _prefix, marker) => {
-      if (marker === '') return { rows: [{ ...f.object, name: 'fresh' }], nextMarker: 'page2', scope: { bookmarkId, generation: 0 } };
-      const number = pages + 1; await page(); return { rows: [{ ...f.object, name: number === 1 ? 'obsolete' : 'current' }], nextMarker: '', scope: { bookmarkId, generation: 0 } };
+      if (marker === '') return { rows: [{ ...f.object, name: 'fresh' }], nextMarker: 'page2', scope: { ...f.scope, bookmarkId } };
+      const number = pages + 1; await page(); return { rows: [{ ...f.object, name: number === 1 ? 'obsolete' : 'current' }], nextMarker: '', scope: { ...f.scope, bookmarkId } };
     });
     const previous = f.more().then(() => null, (error: Error) => error); await f.reload(); const next = f.more();
     const retire = () => order.startsWith('failure') ? old.reject(new Error('obsolete page')) : old.resolve();
@@ -110,8 +111,8 @@ describe.each(['containers', 'objects'] as Kind[])('%s pagination ownership', (k
 
   it.each(['success', 'failure'])('retires a page whose requested marker is no longer current on %s', async (outcome) => {
     const f = await fixture(kind); const gate = deferred<void>(); const names = f.names();
-    f.api.containers = vi.fn(async (bookmarkId) => { await gate.promise; return { rows: [f.container], nextMarker: '', scope: { bookmarkId, generation: 0 } }; });
-    f.api.objects = vi.fn(async (bookmarkId) => { await gate.promise; return { rows: [f.object], nextMarker: '', scope: { bookmarkId, generation: 0 } }; });
+    f.api.containers = vi.fn(async (bookmarkId) => { await gate.promise; return { rows: [f.container], nextMarker: '', scope: { ...f.scope, bookmarkId } }; });
+    f.api.objects = vi.fn(async (bookmarkId) => { await gate.promise; return { rows: [f.object], nextMarker: '', scope: { ...f.scope, bookmarkId } }; });
     const pending = f.more().then(() => null, (error: Error) => error); f.setMarker('replacement');
     expect(f.pageLoading()).toBe(false);
     if (outcome === 'success') gate.resolve(); else gate.reject(new Error('old marker error'));
@@ -124,11 +125,11 @@ describe.each(['containers', 'objects'] as Kind[])('%s pagination ownership', (k
     const containers = f.api.containers; const objects = f.api.objects;
     f.api.containers = vi.fn(async (bookmarkId, marker, limit) => {
       if (marker === '') return containers(bookmarkId, marker, limit);
-      await gate.promise; return { rows: [f.container], nextMarker: '', scope: { bookmarkId, generation: 0 } };
+      await gate.promise; return { rows: [f.container], nextMarker: '', scope: { ...f.scope, bookmarkId } };
     });
     f.api.objects = vi.fn(async (bookmarkId, container, prefix, marker, limit) => {
       if (marker === '') return objects(bookmarkId, container, prefix, marker, limit);
-      await gate.promise; return { rows: [f.object], nextMarker: '', scope: { bookmarkId, generation: 0 } };
+      await gate.promise; return { rows: [f.object], nextMarker: '', scope: { ...f.scope, bookmarkId } };
     });
     const pending = f.more();
     if (change === 'account return') { f.state.connectedBookmarkId = 'different'; f.state.connectedBookmarkId = f.bookmark.id; }
@@ -143,8 +144,8 @@ describe.each(['containers', 'objects'] as Kind[])('%s pagination ownership', (k
 
   it.each(['pending', 'failed'])('refuses page admission during an initial %s load even with an old marker', async (phase) => {
     const f = await fixture(kind); const gate = deferred<void>();
-    f.api.containers = vi.fn(async (bookmarkId) => { await gate.promise; return { rows: [f.container], nextMarker: '', scope: { bookmarkId, generation: 0 } }; });
-    f.api.objects = vi.fn(async (bookmarkId) => { await gate.promise; return { rows: [f.object], nextMarker: '', scope: { bookmarkId, generation: 0 } }; });
+    f.api.containers = vi.fn(async (bookmarkId) => { await gate.promise; return { rows: [f.container], nextMarker: '', scope: { ...f.scope, bookmarkId } }; });
+    f.api.objects = vi.fn(async (bookmarkId) => { await gate.promise; return { rows: [f.object], nextMarker: '', scope: { ...f.scope, bookmarkId } }; });
     const initial = f.reload(); f.setMarker('page2');
     if (phase === 'failed') { gate.reject(new Error('initial load failed')); await initial; }
     const more = f.more().catch((error: Error) => error);
@@ -165,8 +166,8 @@ describe.each(['containers', 'objects'] as Kind[])('%s pagination ownership', (k
     f.state.select(f.state.entries.findIndex((row) => row.name === 'empty-object')); await settle();
     const selected = f.state.selectedEntry; const detail = f.state.objectDetail; const identity = f.state.detailIdentity;
     const firstContainer = f.state.containers[0]; const firstObject = f.state.entries[0];
-    f.api.containers = vi.fn().mockResolvedValue({ rows: [firstContainer, { ...firstContainer, bytes: -1 }, f.container, f.container], nextMarker: '', scope: { bookmarkId: f.state.connectedBookmarkId!, generation: 0 } });
-    f.api.objects = vi.fn().mockResolvedValue({ rows: [firstObject, { ...firstObject, bytes: -1 }, f.object, f.object], nextMarker: '', scope: { bookmarkId: f.state.connectedBookmarkId!, generation: 0 } });
+    f.api.containers = vi.fn().mockResolvedValue({ rows: [firstContainer, { ...firstContainer, bytes: -1 }, f.container, f.container], nextMarker: '', scope: f.scope });
+    f.api.objects = vi.fn().mockResolvedValue({ rows: [firstObject, { ...firstObject, bytes: -1 }, f.object, f.object], nextMarker: '', scope: f.scope });
     await f.more();
     expect(f.names().filter((name) => name === 'z-next')).toHaveLength(1);
     expect(f.names().filter((name) => name === (kind === 'containers' ? firstContainer : firstObject).name)).toHaveLength(1);
@@ -179,8 +180,8 @@ describe.each(['containers', 'objects'] as Kind[])('%s pagination ownership', (k
     ['\uE000', '\u{10000}', true], ['\u{10000}', '\uE000', false], ['z', '', true],
   ] as const)('checks marker progression from %s to %s using UTF-8 order', async (before, after, accepted) => {
     const f = await fixture(kind); const names = f.names(); f.setMarker(before);
-    f.api.containers = vi.fn().mockResolvedValue({ rows: [f.container], nextMarker: after, scope: { bookmarkId: f.state.connectedBookmarkId!, generation: 0 } });
-    f.api.objects = vi.fn().mockResolvedValue({ rows: [f.object], nextMarker: after, scope: { bookmarkId: f.state.connectedBookmarkId!, generation: 0 } });
+    f.api.containers = vi.fn().mockResolvedValue({ rows: [f.container], nextMarker: after, scope: f.scope });
+    f.api.objects = vi.fn().mockResolvedValue({ rows: [f.object], nextMarker: after, scope: f.scope });
     const result = await f.more().catch((error: Error) => error);
     if (accepted) { expect(result).toBeUndefined(); expect(f.names()).toContain('z-next'); expect(f.marker()).toBe(after); }
     else { expect(result).toBeInstanceOf(Error); expect(f.names()).toEqual(names); expect(f.marker()).toBe(before); }
@@ -188,8 +189,8 @@ describe.each(['containers', 'objects'] as Kind[])('%s pagination ownership', (k
 
   it('keeps the exact marker and namespace in the request', async () => {
     const f = await fixture(kind); f.setMarker('  marker ☃  '); f.state.prefix = '  prefix ☃  ';
-    f.api.containers = vi.fn().mockResolvedValue({ rows: [f.container], nextMarker: '', scope: { bookmarkId: f.state.connectedBookmarkId!, generation: 0 } });
-    f.api.objects = vi.fn().mockResolvedValue({ rows: [f.object], nextMarker: '', scope: { bookmarkId: f.state.connectedBookmarkId!, generation: 0 } });
+    f.api.containers = vi.fn().mockResolvedValue({ rows: [f.container], nextMarker: '', scope: f.scope });
+    f.api.objects = vi.fn().mockResolvedValue({ rows: [f.object], nextMarker: '', scope: f.scope });
     await f.more();
     if (kind === 'containers') expect(f.api.containers).toHaveBeenCalledExactlyOnceWith(f.state.connectedBookmarkId!, '  marker ☃  ', 1000);
     else expect(f.api.objects).toHaveBeenCalledExactlyOnceWith(f.state.connectedBookmarkId!, 'fixtures', '  prefix ☃  ', '  marker ☃  ', 1000);
@@ -197,8 +198,8 @@ describe.each(['containers', 'objects'] as Kind[])('%s pagination ownership', (k
 
   it('renders pending and retry controls without hiding loaded rows', async () => {
     const f = await fixture(kind); const gate = deferred<void>();
-    f.api.containers = vi.fn().mockImplementationOnce(async () => { await gate.promise; return { rows: [f.container], nextMarker: '', scope: { bookmarkId: f.state.connectedBookmarkId!, generation: 0 } }; }).mockResolvedValue({ rows: [f.container], nextMarker: '', scope: { bookmarkId: f.state.connectedBookmarkId!, generation: 0 } });
-    f.api.objects = vi.fn().mockImplementationOnce(async () => { await gate.promise; return { rows: [f.object], nextMarker: '', scope: { bookmarkId: f.state.connectedBookmarkId!, generation: 0 } }; }).mockResolvedValue({ rows: [f.object], nextMarker: '', scope: { bookmarkId: f.state.connectedBookmarkId!, generation: 0 } });
+    f.api.containers = vi.fn().mockImplementationOnce(async () => { await gate.promise; return { rows: [f.container], nextMarker: '', scope: f.scope }; }).mockResolvedValue({ rows: [f.container], nextMarker: '', scope: f.scope });
+    f.api.objects = vi.fn().mockImplementationOnce(async () => { await gate.promise; return { rows: [f.object], nextMarker: '', scope: f.scope }; }).mockResolvedValue({ rows: [f.object], nextMarker: '', scope: f.scope });
     const root = document.createElement('div'); document.body.append(root);
     mounted.add(kind === 'containers'
       ? mount(ContainerColumn, { target: root, props: { browser: f.state, onCreate: vi.fn() } })
@@ -226,14 +227,14 @@ it('does not conflate an object and virtual prefix sharing a name', async () => 
   const object = { ...f.object, name: 'same/', kind: 'object' };
   const prefix = { ...f.object, name: 'same/', kind: 'prefix' };
   f.state.entries = [object];
-  f.api.objects = vi.fn().mockResolvedValue({ rows: [object, prefix, prefix], nextMarker: '', scope: { bookmarkId: f.state.connectedBookmarkId!, generation: 0 } });
+  f.api.objects = vi.fn().mockResolvedValue({ rows: [object, prefix, prefix], nextMarker: '', scope: f.scope });
   await f.more(); expect(f.state.entries.map((row) => [row.kind, row.name])).toEqual([['object', 'same/'], ['prefix', 'same/']]);
 });
 
 it('an obsolete initial container load cannot leave a later scope or load busy', async () => {
   const f = await fixture('containers'); const old = deferred<void>(); const current = deferred<void>();
-  f.api.containers = vi.fn().mockImplementationOnce(async () => { await old.promise; return { rows: [], nextMarker: '', scope: { bookmarkId: f.state.connectedBookmarkId!, generation: 0 } }; })
-    .mockImplementationOnce(async () => { await current.promise; return { rows: [f.container], nextMarker: '', scope: { bookmarkId: f.state.connectedBookmarkId!, generation: 0 } }; });
+  f.api.containers = vi.fn().mockImplementationOnce(async () => { await old.promise; return { rows: [], nextMarker: '', scope: f.scope }; })
+    .mockImplementationOnce(async () => { await current.promise; return { rows: [f.container], nextMarker: '', scope: f.scope }; });
   const previous = f.reload(); expect(f.state.containersLoading).toBe(true);
   f.state.prefix = 'other/'; expect(f.state.containersLoading).toBe(false);
   const next = f.reload(); old.resolve(); await previous; expect(f.state.containersLoading).toBe(true);

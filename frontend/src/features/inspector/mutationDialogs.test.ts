@@ -39,7 +39,8 @@ async function setup(name = "external-dlo") {
   await browser.connect(bookmark.id); await browser.openContainer("fixtures");
   browser.select(browser.entries.findIndex((row) => row.name === name)); await settle();
   const root = document.createElement("div"); document.body.append(root);
-  return { api, browser, root, bookmark };
+  const scope = { ...browser.account!.scope };
+  return { api, browser, scope, root, bookmark };
 }
 const ownership: SegmentOwnershipDTO = { class: "dlo", target: "backing/old/", proven: false, segments: 3, inlineEntries: 0 };
 const deleted: SegmentsDeleteResultDTO = { manifestDeleted: true, segmentsDeleted: 3, segmentsFailed: 0, basis: "backstage-forced" };
@@ -427,7 +428,7 @@ describe("initial list reply ownership", () => {
     const f = await setup();
     const old = deferred<Awaited<ReturnType<Api["containers"]>>>();
     f.api.containers = vi.fn().mockImplementationOnce(() => old.promise)
-      .mockResolvedValueOnce({ rows: [{ name: "current", count: 2, bytes: 3, class: "normal" }], nextMarker: "current", scope: { bookmarkId: f.browser.connectedBookmarkId!, generation: 0 } });
+      .mockResolvedValueOnce({ rows: [{ name: "current", count: 2, bytes: 3, class: "normal" }], nextMarker: "current", scope: f.scope });
     const pending = f.browser.loadContainers(); await f.browser.loadContainers();
     if (outcome === "rows") old.resolve({ rows: [], nextMarker: "obsolete", scope: { bookmarkId: 'bm', generation: 0 } });
     else old.reject(new Error("obsolete containers"));

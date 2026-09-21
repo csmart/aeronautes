@@ -71,9 +71,12 @@ async function fixture() {
   bridge.cancel.mockImplementation(async (account: string) => { requireAccount(account); });
   const api = { ...samples, objectDetail: liveApi.objectDetail, prefixDetail: liveApi.prefixDetail,
     containerDetail: liveApi.containerDetail, sloManifest: liveApi.sloManifest, dloSegments: liveApi.dloSegments,
-    startFind: liveApi.startFind, findStatus: liveApi.findStatus, cancelFind: liveApi.cancelFind };
+    startFind: liveApi.startFind, findStatus: liveApi.findStatus, cancelFind: liveApi.cancelFind,
+    objects: async (...args: Parameters<typeof samples.objects>) => ({ ...await samples.objects(...args), scope }) };
   const state = new BrowserState(api);
   state.connectedBookmarkId = bookmark;
+  state.account = { name: "AUTH_fixture", containers: 1, objects: 4, bytesUsed: 1,
+    quotaBytes: 0, meta: {}, tempUrlKeySlots: [], scope };
   await state.openContainer("fixtures");
   await settle();
   return { state, samples };

@@ -46,8 +46,8 @@ The captured tuple establishes who produced a reply, not which account remains a
 A later `Connect` may leave a correctly labelled alpha read in flight while beta becomes active.
 This does not authenticate the operator's intended account or grant authority for a later mutation.
 The shared `scopedSession` helper, the broader connection/read atomicity race described by ADR 0049/0059, `AuditService.Search` and mutation writers are unchanged.
-Post-connect refreshes and other later scoped replies retain their existing bookmark checks.
-Binding those later reply generations to the connected portrait remains a named L11 follow-up.
+This portrait slice left post-connect refreshes and other later scoped replies with their existing bookmark checks.
+[ADR 0067](0067-later-listing-generations.md) subsequently binds the four later listing paths to the retained portrait generation; the six adjacent live-reader surfaces remain a named L11 follow-up.
 No database schema or operation policy changes.
 L11, P28, native acceptance and the valuable-data hold remain open.
 
