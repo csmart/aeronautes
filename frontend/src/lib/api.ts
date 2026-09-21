@@ -156,11 +156,11 @@ export interface Api {
     marker: string,
     limit: number,
   ): Promise<ObjectPage>;
-  objectDetail(container: string, name: string, bookmarkId?: string): Promise<ObjectDetailDTO>;
-  prefixDetail(container: string, prefix: string, bookmarkId?: string): Promise<PrefixDetailDTO>;
-  containerDetail(name: string, bookmarkId?: string): Promise<ContainerDetailDTO>;
-  sloManifest(container: string, name: string, bookmarkId?: string): Promise<SLOManifestDTO>;
-  dloSegments(manifest: string, bookmarkId?: string): Promise<DLOSegmentsDTO>;
+  objectDetail(container: string, name: string, bookmarkId: string): Promise<ObjectDetailDTO>;
+  prefixDetail(container: string, prefix: string, bookmarkId: string): Promise<PrefixDetailDTO>;
+  containerDetail(name: string, bookmarkId: string): Promise<ContainerDetailDTO>;
+  sloManifest(container: string, name: string, bookmarkId: string): Promise<SLOManifestDTO>;
+  dloSegments(manifest: string, bookmarkId: string): Promise<DLOSegmentsDTO>;
   deleteManifest(container: string, name: string): Promise<ObjectDetailDTO>;
   capabilities(): Promise<CapabilitiesDTO>;
   updateObjectMetadata(
@@ -185,10 +185,10 @@ export interface Api {
   cancelJob(jobId: string): Promise<void>;
   rerunJob(jobId: string): Promise<string>;
   jobs(bookmarkId: string, activeOnly: boolean, limit: number): Promise<JobDTO[]>;
-  job(jobId: string, bookmarkId?: string): Promise<JobDTO | null>;
+  job(jobId: string, bookmarkId: string): Promise<JobDTO | null>;
   jobHistory(bookmarkId: string, cursor: string, limit: number): Promise<JobHistoryDTO>;
-  jobItems(jobId: string, cursor: string, limit: number, bookmarkId?: string): Promise<JobItemPageDTO>;
-  jobItemTotals(jobId: string, bookmarkId?: string): Promise<JobItemTotalsDTO>;
+  jobItems(jobId: string, cursor: string, limit: number, bookmarkId: string): Promise<JobItemPageDTO>;
+  jobItemTotals(jobId: string, bookmarkId: string): Promise<JobItemTotalsDTO>;
   recoveryStatus(): Promise<RecoveryStatusDTO>;
   pickUploadFiles(scope: SelectionScopeDTO): Promise<PickedFilesDTO | null>;
   pickDownloadDir(scope: SelectionScopeDTO): Promise<PickedDirDTO | null>;
@@ -202,9 +202,9 @@ export interface Api {
   latestBenchmark(bookmarkId: string): Promise<BenchmarkResultDTO | null>;
   appSettings(): Promise<AppSettingsDTO>;
   saveAppSettings(settings: AppSettingsDTO): Promise<AppSettingsDTO>;
-  startFind(container: string, prefix: string, query: string, bookmarkId?: string): Promise<string>;
-  findStatus(id: string, bookmarkId?: string): Promise<FindStatusDTO>;
-  cancelFind(id: string, bookmarkId?: string): Promise<void>;
+  startFind(container: string, prefix: string, query: string, bookmarkId: string): Promise<string>;
+  findStatus(id: string, bookmarkId: string): Promise<FindStatusDTO>;
+  cancelFind(id: string, bookmarkId: string): Promise<void>;
   checkSegmentOwnership(req: SegmentsDeleteRequestDTO): Promise<SegmentOwnershipDTO>;
   deleteManifestWithSegments(req: SegmentsDeleteRequestDTO): Promise<SegmentsDeleteResultDTO>;
 }
@@ -230,11 +230,11 @@ export const liveApi: Api = {
     const page = await BrowseService.Objects(bookmarkId, container, prefix, marker, limit);
     return { rows: page.rows ?? [], nextMarker: page.nextMarker, scope: page.scope };
   },
-  objectDetail: (container, name, bookmarkId) => InspectorService.Object(bookmarkId ?? "", container, name),
-  prefixDetail: (container, prefix, bookmarkId) => InspectorService.Prefix(bookmarkId ?? "", container, prefix),
-  containerDetail: (name, bookmarkId) => InspectorService.Container(bookmarkId ?? "", name),
-  sloManifest: (container, name, bookmarkId) => InspectorService.SLOManifest(bookmarkId ?? "", container, name),
-  dloSegments: (manifest, bookmarkId) => InspectorService.DLOSegments(bookmarkId ?? "", manifest),
+  objectDetail: (container, name, bookmarkId) => InspectorService.Object(bookmarkId, container, name),
+  prefixDetail: (container, prefix, bookmarkId) => InspectorService.Prefix(bookmarkId, container, prefix),
+  containerDetail: (name, bookmarkId) => InspectorService.Container(bookmarkId, name),
+  sloManifest: (container, name, bookmarkId) => InspectorService.SLOManifest(bookmarkId, container, name),
+  dloSegments: (manifest, bookmarkId) => InspectorService.DLOSegments(bookmarkId, manifest),
   deleteManifest: (container, name) => MutateService.DeleteManifest(container, name),
   capabilities: () => BrowseService.Capabilities(),
   updateObjectMetadata: (container, name, baseFingerprint, edit) =>
@@ -259,10 +259,10 @@ export const liveApi: Api = {
   jobs: async (bookmarkId, activeOnly, limit) =>
     (await JobService.List(bookmarkId, activeOnly, limit)) ?? [],
   recoveryStatus: () => JobService.RecoveryStatus(),
-  job: (jobId, bookmarkId) => JobService.Get(bookmarkId ?? "", jobId),
+  job: (jobId, bookmarkId) => JobService.Get(bookmarkId, jobId),
   jobHistory: (bookmarkId, cursor, limit) => JobService.History(bookmarkId, cursor, limit),
-  jobItems: (jobId, cursor, limit, bookmarkId) => JobService.Items(bookmarkId ?? "", jobId, cursor, limit),
-  jobItemTotals: (jobId, bookmarkId) => JobService.ItemTotals(bookmarkId ?? "", jobId),
+  jobItems: (jobId, cursor, limit, bookmarkId) => JobService.Items(bookmarkId, jobId, cursor, limit),
+  jobItemTotals: (jobId, bookmarkId) => JobService.ItemTotals(bookmarkId, jobId),
   pickUploadFiles: (scope) => TransferService.PickUploadFiles(scope),
   pickDownloadDir: (scope) => TransferService.PickDownloadDir(scope),
   preflightUpload: async (req) => {
@@ -296,13 +296,13 @@ export const liveApi: Api = {
     return saved;
   },
   startFind: (container, prefix, query, bookmarkId) =>
-    FindService.StartFind(bookmarkId ?? "", container, prefix, query),
+    FindService.StartFind(bookmarkId, container, prefix, query),
   findStatus: async (id, bookmarkId) => {
-    const status = await FindService.FindStatus(bookmarkId ?? "", id);
+    const status = await FindService.FindStatus(bookmarkId, id);
     if (!status) throw new Error("scan vanished");
     return status;
   },
-  cancelFind: (id, bookmarkId) => FindService.CancelFind(bookmarkId ?? "", id),
+  cancelFind: (id, bookmarkId) => FindService.CancelFind(bookmarkId, id),
   checkSegmentOwnership: async (req) => {
     const status = await DeleteService.CheckSegmentOwnership(req);
     if (!status) throw new Error("empty ownership status");

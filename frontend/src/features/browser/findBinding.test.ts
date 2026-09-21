@@ -25,7 +25,7 @@ function deferred<T>() {
   const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
   return { promise, resolve, reject };
 }
-const done = { scanned: 1, matches: [{ name: 'normal/hello.txt', bytes: 12 }], done: true, truncated: false, error: '', objectsPerSecond: 1 };
+const done = { scanned: 1, matches: [{ name: 'normal/hello.txt', bytes: 12 }], done: true, truncated: false, error: '', objectsPerSecond: 1, scope: { bookmarkId: 'bm-1', generation: 1 } };
 async function fixture() {
   const api = newFakeApi(); const state = new BrowserState(api);
   states.add(state);
@@ -63,7 +63,7 @@ describe('Find intent lifetime', () => {
       expect(f.state.findRunning).toBe(false);
     } finally { gate.resolve('retired-scan'); await finding; await settle(); }
     expect(f.api.findStatus).not.toHaveBeenCalled();
-    expect(f.api.cancelFind).toHaveBeenCalledExactlyOnceWith('retired-scan');
+    expect(f.api.cancelFind).toHaveBeenCalledExactlyOnceWith('retired-scan', f.bookmark.id);
     expect(f.state.findStatus).toBeNull();
   });
 
@@ -75,8 +75,8 @@ describe('Find intent lifetime', () => {
     const second = f.state.startFind('new'); await settle();
     try {
       old.resolve('obsolete'); await first;
-      expect(f.api.cancelFind).toHaveBeenCalledWith('obsolete');
-      expect(vi.mocked(f.api.findStatus).mock.calls).toEqual([['current']]);
+      expect(f.api.cancelFind).toHaveBeenCalledWith('obsolete', f.bookmark.id);
+      expect(vi.mocked(f.api.findStatus).mock.calls).toEqual([['current', f.bookmark.id]]);
       expect(f.state.findRunning).toBe(true); expect(f.state.findStatus).toBeNull();
     } finally { current.resolve(done); await second; }
     expect(f.state.findStatus).toEqual(done);
@@ -92,7 +92,7 @@ describe('Find intent lifetime', () => {
     expect(f.state.selectedEntry?.name).toBe('normal/hello.txt'); expect(f.state.selectedEntry?.kind).toBe('object');
     expect(f.state.objectDetail?.name).toBe('normal/hello.txt');
     expect(f.api.objects).toHaveBeenCalledExactlyOnceWith(f.state.connectedBookmarkId!, 'fixtures', 'normal/', '', 1000);
-    expect(f.api.objectDetail).toHaveBeenCalledExactlyOnceWith('fixtures', 'normal/hello.txt');
+    expect(f.api.objectDetail).toHaveBeenCalledExactlyOnceWith('fixtures', 'normal/hello.txt', f.bookmark.id);
     expect(f.api.prefixDetail).not.toHaveBeenCalled();
     expect(f.root.querySelector('[aria-selected="true"]')?.textContent).toContain('hello.txt');
   });
@@ -111,7 +111,7 @@ describe('Find response ownership', () => {
       if (outcome === 'success') cancellation.resolve(); else cancellation.reject(new Error('old cancellation failed'));
       await stopping; oldPoll.resolve(done); await old; await settle();
       expect(f.state.findRunning).toBe(true); expect(f.state.findStatus).toBeNull(); expect(f.state.findNotice).toBeFalsy();
-      await f.state.cancelFind(); expect(f.api.cancelFind).toHaveBeenCalledWith('new');
+      await f.state.cancelFind(); expect(f.api.cancelFind).toHaveBeenCalledWith('new', f.bookmark.id);
     } finally { cancellation.resolve(); oldPoll.resolve(done); newPoll.resolve(done); await Promise.allSettled([old, current, stopping]); }
   });
 
@@ -136,8 +136,8 @@ describe('Find response ownership', () => {
         } else { newPoll.resolve(current); await second; finishOld(); await first; }
         expect(f.state.findStatus).toEqual(current); expect(f.state.findRunning).toBe(false); expect(f.state.findNotice).toBeFalsy();
         if (stage === 'startup reply') {
-          expect(f.api.cancelFind).toHaveBeenCalledExactlyOnceWith('old');
-          expect(vi.mocked(f.api.findStatus).mock.calls).toEqual([['new']]);
+          expect(f.api.cancelFind).toHaveBeenCalledExactlyOnceWith('old', f.bookmark.id);
+          expect(vi.mocked(f.api.findStatus).mock.calls).toEqual([['new', f.bookmark.id]]);
         }
       } finally { oldStart.resolve('old'); oldPoll.resolve(done); newPoll.resolve(current); await Promise.allSettled([first, second]); }
     });
@@ -158,7 +158,7 @@ describe('Find response ownership', () => {
       else f.state.filter = 'hello';
       expect(f.state.findRunning).toBe(survives);
       if (survives) expect(f.api.cancelFind).not.toHaveBeenCalled();
-      else expect(f.api.cancelFind).toHaveBeenCalledExactlyOnceWith('scan');
+      else expect(f.api.cancelFind).toHaveBeenCalledExactlyOnceWith('scan', f.bookmark.id);
     } finally { poll.resolve(done); await finding; }
     expect(f.state.findStatus).toEqual(survives ? done : null);
   });
@@ -172,7 +172,7 @@ describe('Find response ownership', () => {
     const old = f.state.startFind('old'); await settle(); await f.state.cancelFind();
     const current = f.state.startFind('current'); await settle(); firstStart.resolve('old'); await settle();
     try {
-      expect(f.api.cancelFind).toHaveBeenCalledWith('old');
+      expect(f.api.cancelFind).toHaveBeenCalledWith('old', f.bookmark.id);
       if (outcome === 'success') cancellation.resolve(); else cancellation.reject(new Error('old cancellation failed'));
       await old; expect(f.state.findRunning).toBe(true); expect(f.state.findNotice).toBeFalsy(); expect(f.state.findStatus).toBeNull();
     } finally { cancellation.resolve(); currentPoll.resolve(done); await Promise.allSettled([old, current]); }
@@ -282,7 +282,7 @@ describe('Find controls and truthful status', () => {
   it('preserves exact query and namespace strings at admission', async () => {
     const f = await fixture(); f.state.containerName = ' c/😀 '; f.state.prefix = ' \tpréfix/';
     f.api.startFind = vi.fn().mockResolvedValue('exact'); await f.state.startFind('  hé😀 \t');
-    expect(f.api.startFind).toHaveBeenCalledExactlyOnceWith(' c/😀 ', ' \tpréfix/', '  hé😀 \t');
+    expect(f.api.startFind).toHaveBeenCalledExactlyOnceWith(' c/😀 ', ' \tpréfix/', '  hé😀 \t', f.bookmark.id);
   });
 
   it.each(['same turn', 'pending startup'])('refuses a synthetic duplicate form submission during %s', async (timing) => {
@@ -306,7 +306,7 @@ describe('Find panel ownership', () => {
     const before = old.state.startFind('old'); const after = current.state.startFind('new'); await settle();
     try {
       props.set('browser', current.state); await settle();
-      expect(old.api.cancelFind).toHaveBeenCalledExactlyOnceWith('old'); expect(old.state.findRunning).toBe(false);
+      expect(old.api.cancelFind).toHaveBeenCalledExactlyOnceWith('old', old.bookmark.id); expect(old.state.findRunning).toBe(false);
       click(root, 'button[aria-label="Close find"]');
       await unmount(panel); mounted.delete(panel); await settle();
       expect(current.api.cancelFind).not.toHaveBeenCalled(); expect(current.state.findRunning).toBe(true); expect(current.state.findOpen).toBe(true);
@@ -341,14 +341,14 @@ describe('Find panel ownership', () => {
       if (ending === 'panel close') click(f.root, 'button[aria-label="Close find"]');
       else if (ending === 'main toggle') [...f.root.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Find in container')!.click();
       else { await unmount(f.component); mounted.delete(f.component); }
-      await settle(); expect(f.api.cancelFind).toHaveBeenCalledExactlyOnceWith('scan'); expect(f.state.findRunning).toBe(false);
+      await settle(); expect(f.api.cancelFind).toHaveBeenCalledExactlyOnceWith('scan', f.bookmark.id); expect(f.state.findRunning).toBe(false);
     } finally { poll.resolve(done); await finding; }
     expect(f.state.findStatus).toBeNull(); expect(f.state.findOpen).toBe(false);
   });
 });
 
 async function resultFixture(name = 'normal/hello.txt') {
-  const f = await fixture(); const detail = await f.api.objectDetail('fixtures', 'normal/hello.txt');
+  const f = await fixture(); const detail = await f.api.objectDetail('fixtures', 'normal/hello.txt', f.bookmark.id);
   f.api.findStatus = vi.fn().mockResolvedValue({ ...done, matches: [{ name, bytes: 12 }] });
   await f.state.startFind('match');
   const row = { ...f.state.entries.find((item) => item.kind === 'object')!, name: 'earlier' };
@@ -359,16 +359,16 @@ async function resultFixture(name = 'normal/hello.txt') {
 
 describe('Find exact result selection', () => {
   it.each(['external-slo', 'external-dlo'])('uses the existing detail and segment path for %s', async (name) => {
-    const f = await resultFixture(name); const detail = await newFakeApi().objectDetail('fixtures', name);
+    const f = await resultFixture(name); const detail = await newFakeApi().objectDetail('fixtures', name, f.bookmark.id);
     f.api.objectDetail = vi.fn().mockResolvedValue(detail);
     f.api.sloManifest = vi.fn(f.api.sloManifest); f.api.dloSegments = vi.fn(f.api.dloSegments);
     click(f.root, '.match'); await settle();
-    expect(f.state.objectDetail?.class).toBe(detail.class); expect(f.api.objectDetail).toHaveBeenCalledExactlyOnceWith('fixtures', name);
+    expect(f.state.objectDetail?.class).toBe(detail.class); expect(f.api.objectDetail).toHaveBeenCalledExactlyOnceWith('fixtures', name, f.bookmark.id);
     if (detail.class === 'slo') {
-      expect(f.api.sloManifest).toHaveBeenCalledExactlyOnceWith('fixtures', name); expect(f.state.sloManifest?.entries).toHaveLength(3);
+      expect(f.api.sloManifest).toHaveBeenCalledExactlyOnceWith('fixtures', name, f.bookmark.id); expect(f.state.sloManifest?.entries).toHaveLength(3);
       expect(f.api.dloSegments).not.toHaveBeenCalled();
     } else {
-      expect(f.api.dloSegments).toHaveBeenCalledExactlyOnceWith(detail.manifest); expect(f.state.dloSegments).not.toBeNull();
+      expect(f.api.dloSegments).toHaveBeenCalledExactlyOnceWith(detail.manifest, f.bookmark.id); expect(f.state.dloSegments).not.toBeNull();
       expect(f.api.sloManifest).not.toHaveBeenCalled();
     }
   });
@@ -381,7 +381,7 @@ describe('Find exact result selection', () => {
     expect(f.state.prefix).toBe(prefix); expect(f.state.detailIdentity).toEqual({ container: 'fixtures', name });
     expect(f.state.selectedEntry?.kind).toBe('object'); expect(f.state.objectDetail?.name).toBe(name);
     expect(f.api.objects).toHaveBeenCalledExactlyOnceWith(f.state.connectedBookmarkId!, 'fixtures', prefix, '', 1000);
-    expect(f.api.objectDetail).toHaveBeenCalledExactlyOnceWith('fixtures', name); expect(f.api.prefixDetail).not.toHaveBeenCalled();
+    expect(f.api.objectDetail).toHaveBeenCalledExactlyOnceWith('fixtures', name, f.bookmark.id); expect(f.api.prefixDetail).not.toHaveBeenCalled();
   });
 
   it('selects an existing exact object row once without duplicating it', async () => {
@@ -444,7 +444,7 @@ describe('Find result navigation lifetime', () => {
       f.api.objectDetail = vi.fn().mockImplementationOnce(() => head.promise).mockImplementation(async (_container, name) => ({ ...f.detail, name }));
       click(f.root, '.match'); await settle();
       try {
-        expect(f.api.objectDetail).toHaveBeenCalledExactlyOnceWith('fixtures', 'normal/hello.txt');
+        expect(f.api.objectDetail).toHaveBeenCalledExactlyOnceWith('fixtures', 'normal/hello.txt', f.bookmark.id);
         if (ending === 'navigate') await f.state.goTo('next/');
         else if (ending === 'selection') f.state.select(0);
         else if (ending === 'reconnect') { await f.state.connect(f.bookmark.id); await f.state.openContainer('fixtures'); }

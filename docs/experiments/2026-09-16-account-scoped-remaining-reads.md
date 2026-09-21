@@ -49,3 +49,22 @@ It does not claim P28 or L11 closed, and it does not authenticate which account 
 ## Correction
 
 [ADR 0059](../adr/0059-account-scoped-remaining-reads.md) applies ADR 0049's binding to the remaining live Swift reads, binds a Find scan at start, and filters the local audit-recent and job-Get reads by the named bookmark.
+
+## Browser caller integration — 21 September 2026
+
+On `1c3ae5e082e3d2ab`, the Go methods and generated bindings required a bookmark, but the frontend API made that argument optional and supplied an empty string when a caller omitted it.
+Inspector and Find callers and the retained-job drawer omitted it, so those kept v1 paths were refused by the bound backend.
+The original fifteen-case browser regression run produced thirteen assertion failures and two passes through the production bridge adapter with account-checking service stand-ins.
+The shared fake had previously accepted missing bindings, which let those omissions survive frontend verification.
+
+The API now requires the bookmark argument.
+Inspector reads, including SLO manifests and DLO segments, use the bookmark captured for the selection and check the reply scope before publishing the payload.
+Find start, polls and cancellation use the scan request's captured bookmark, including cancellation after a late startup or account change.
+The retained-job drawer uses a source or destination bookmark from the displayed job row for detail, totals and every item page, independently of the live connection.
+Job detail replies must match both the requested job id and its named bookmark.
+Existing navigation, stale-response, error, cancellation and bounded-page assertions remain in place.
+
+`accountReadBinding.test.ts` maintains the bridge-argument and mismatched-reply regressions, including local upload and download history while disconnected or browsing another account.
+The shared fake now refuses empty inspector bindings and enforces Find and job ownership.
+These are frontend contract tests, not a claim that a native desktop or real Swift ran inside the browser test process.
+Account portrait and capabilities, `AuditService.Search`, backend live-read atomicity, L11, P28 and the valuable-data hold remain open.

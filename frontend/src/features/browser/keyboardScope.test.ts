@@ -260,7 +260,7 @@ describe("production modal ownership", () => {
     press(window, "Escape"); await settle();
     expect(document.querySelector('[role="alertdialog"]')).toBeNull();
     f.reopen(); await settle(); const replacement = get('[role="alertdialog"]');
-    if (outcome === "success") reply.resolve(await api.objectDetail("fixtures", "external-dlo"));
+    if (outcome === "success") reply.resolve(await api.objectDetail("fixtures", "external-dlo", "bm-1"));
     else reply.reject(new Error("retired deletion failure"));
     await settle();
     expect(document.contains(replacement)).toBe(true);
@@ -346,7 +346,7 @@ describe("production modal ownership", () => {
     expect(api.createContainer).toHaveBeenCalledExactlyOnceWith({ name: "keyboard-created", policy: "", meta: {} });
     press(window, "Tab"); expect(document.activeElement).toBe(dialog);
     press(window, "Escape"); await settle();
-    reply.resolve(await api.containerDetail("fixtures")); await settle();
+    reply.resolve(await api.containerDetail("fixtures", "bm-1")); await settle();
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(get<HTMLInputElement>('[placeholder="server-side prefix…"]').value).toBe("");
     expect(get(".crumb.root").textContent?.trim()).toBe("fixtures");

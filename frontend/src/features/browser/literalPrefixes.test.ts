@@ -38,7 +38,7 @@ async function fixture(prefix = "") {
   await browser.connect(bookmark.id);
   await browser.openContainer("fixtures");
   const template = browser.entries.find((row) => row.name === "empty-object")!;
-  const detail = await api.objectDetail("fixtures", "empty-object");
+  const detail = await api.objectDetail("fixtures", "empty-object", bookmark.id);
   if (prefix !== "") await browser.goTo(prefix);
   const target = document.createElement("div");
   document.body.append(target);
@@ -92,7 +92,7 @@ describe("literal browser prefixes", () => {
     await settle();
     expect(f.browser.detailIdentity).toEqual({ container: "fixtures", name });
     expect(f.browser.selectedEntry?.name).toBe(name);
-    if (kind === "object") expect(f.api.objectDetail).toHaveBeenCalledExactlyOnceWith("fixtures", name);
+    if (kind === "object") expect(f.api.objectDetail).toHaveBeenCalledExactlyOnceWith("fixtures", name, f.browser.connectedBookmarkId);
   });
 
   it("separates the SLO badge from the exact object label", async () => {
@@ -201,7 +201,7 @@ describe("literal browser prefixes", () => {
     const pending = f.browser.loadMoreEntries();
     expect(f.browser.selectedEntry?.name).toBe(oldName);
     expect(f.browser.detailLoading).toBe(true);
-    expect(f.api.objectDetail).toHaveBeenCalledExactlyOnceWith("fixtures", oldName);
+    expect(f.api.objectDetail).toHaveBeenCalledExactlyOnceWith("fixtures", oldName, f.browser.connectedBookmarkId);
     expect(f.browser.entriesMoreLoading).toBe(true);
     f.browser.filter = "old";
     await f.enter("new");

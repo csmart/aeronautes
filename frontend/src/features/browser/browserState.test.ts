@@ -376,7 +376,7 @@ describe("mutation identity binding (review-wave C-04)", () => {
     });
     expect(result.outcome).toBe("applied");
     // The edited object is the one the detail showed.
-    const detail = await api.objectDetail("fixtures", "empty-object");
+    const detail = await api.objectDetail("fixtures", "empty-object", s.connectedBookmarkId!);
     expect(detail.meta?.["Team"]).toBe("ops");
   });
 });

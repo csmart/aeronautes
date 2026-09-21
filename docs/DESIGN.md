@@ -5632,7 +5632,9 @@ The [remaining-reads record](experiments/2026-09-16-account-scoped-remaining-rea
 The correction in [ADR 0059](adr/0059-account-scoped-remaining-reads.md) is implemented.
 Live Swift inspector reads and `FindService.StartFind` take the bookmark the caller believes they are for, reuse ADR 0049's generation check and `ErrAccountScopeChanged`, and restate that scope on the reply; a Find scan stores the binding at start so a poll cannot be retargeted by a later `Connect`; local `RecentFor` and job Get/item pages filter by the named bookmark and do not require the live connection.
 `loadAudit` names the connecting or connected bookmark, and the drawer states a recent slice as up to 50 for the connected account.
-Inspector, find and job-Get call sites in `browserState.svelte.ts` remain a remainder.
+Inspector and Find callers now capture their intended bookmark, require it through the frontend API and discard replies whose scope is absent or names another bookmark.
+Manifest and segment follow-ups and Find polls and cancellation keep that same binding.
+Retained-job detail, totals and item pages use a source or destination bookmark from the displayed job row, so they remain readable while disconnected or browsing another account; a detail reply must match both that bookmark and the requested job id.
 `AuditService.Recent` remains in `mutateservice.go` but the store refuses an unscoped trail read, `Search` and the account portrait stay unbound, and L11, P28 and the valuable-data hold remain open.
 
 P20 settles what a cancelled download leaves behind, under [ADR 0048](adr/0048-cancelled-stage-removal.md).

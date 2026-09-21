@@ -6,6 +6,8 @@
   let { browser, job }: { browser: BrowserState; job: JobDTO } = $props();
   // A refreshed job object must not discard the selected page or its pending read.
   const jobId = $derived(job.id);
+  // Historical jobs remain readable without a live connection to either endpoint.
+  const bookmarkId = $derived(job.sourceBookmarkId || job.destBookmarkId);
   let page = $state<(JobItemPageDTO & { items: JobItemDTO[] }) | null>(null);
   let totals = $state<JobItemTotalsDTO | null>(null);
   let pageNumber = $state(1);
@@ -23,6 +25,7 @@
   async function load(cursor: string, number: number) {
     const seq = ++request;
     const id = job.id;
+    const account = bookmarkId;
     page = null;
     totals = null;
     error = false;
@@ -30,18 +33,18 @@
     pageNumber = number;
     try {
       const [items, counts] = await Promise.all([
-        browser.jobItems(id, cursor, 100), browser.jobItemTotals(id),
+        browser.jobItems(id, cursor, 100, account), browser.jobItemTotals(id, account),
       ]);
-      if (disposed || seq !== request || id !== job.id) return;
+      if (disposed || seq !== request || id !== job.id || account !== bookmarkId) return;
       if (!items.items || items.status !== counts.status || !["available", "not_captured"].includes(items.status)) {
         throw new Error("inconsistent record availability");
       }
       page = { ...items, items: items.items };
       totals = counts;
     } catch {
-      if (!disposed && seq === request && id === job.id) error = true;
+      if (!disposed && seq === request && id === job.id && account === bookmarkId) error = true;
     } finally {
-      if (!disposed && seq === request && id === job.id) loading = false;
+      if (!disposed && seq === request && id === job.id && account === bookmarkId) loading = false;
     }
   }
 
@@ -49,15 +52,16 @@
   async function pollState() {
     const seq = ++pollRequest;
     const id = job.id;
+    const account = bookmarkId;
     try {
-      const current = await browser.job(id);
-      if (disposed || seq !== pollRequest || id !== job.id) return;
+      const current = await browser.job(id, account);
+      if (disposed || seq !== pollRequest || id !== job.id || account !== bookmarkId) return;
       if (!current) throw new Error("job unavailable");
       polledState = current.state;
       if (pollError) void load("", 1);
       pollError = false;
     } catch {
-      if (disposed || seq !== pollRequest || id !== job.id) return;
+      if (disposed || seq !== pollRequest || id !== job.id || account !== bookmarkId) return;
       ++request;
       page = null;
       totals = null;
@@ -68,6 +72,7 @@
 
   $effect(() => {
     jobId;
+    bookmarkId;
     active;
     untrack(() => void load("", 1));
     return () => { ++request; };
