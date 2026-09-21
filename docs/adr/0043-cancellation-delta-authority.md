@@ -3,7 +3,8 @@
 **Status:** Accepted for the native staging boundary of a cancelled download, which is delivered with this decision.
 The open product choice in decision 7 was answered by the operator on 14 September 2026 and is recorded in [ADR 0048](0048-cancelled-stage-removal.md); engine-route cancellation and the remainder of P20 stay open.
 **Scope:** The native staging boundary of a cancelled download: what it may leave in the directory the operator picked, and what the durable records say about it.
-The engine route keeps its existing cancellation coverage. The open product choice in decision 7 is the operator's and is not decided here.
+The engine route kept its existing cancellation coverage in this native-boundary change.
+Decision 7 preserves the original product choice and recommendation; the later answer and bounded implementation are in ADR 0048.
 
 ## Problem and oracle
 
@@ -61,4 +62,4 @@ A cancelled download still varies in when it stops, and now states which of the 
 No check is removed, so no ordering gains an attempt it does not have today.
 The behaviour change is confined to two records: an item cancelled before its temporary exists is `not_attempted` at `source_read` rather than `failed` and `unresolved` at `staging`, and ancestors created for items that did not copy appear in the terminal message and audit summary.
 Items already attempted keep every record they have, and no existing refusal, verification, placement or stage-cleanup assertion is relaxed.
-Whether the stage survives a graceful cancel is unchanged by this record and remains the operator's to settle.
+This native-boundary change did not alter whether the stage survives a graceful cancel; ADR 0048 subsequently settled and implemented the bounded stage-cleanup policy.
