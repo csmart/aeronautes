@@ -71,6 +71,11 @@ func TestUpdateContainerAppliesDelta(t *testing.T) {
 	if len(result.TransIDs) != 3 {
 		t.Errorf("TransIDs = %v", result.TransIDs)
 	}
+	for _, id := range result.TransIDs {
+		if id == "" {
+			t.Errorf("TransIDs contains an unobserved empty entry: %v", result.TransIDs)
+		}
+	}
 
 	// Second edit: swap versioning mode and clear the quota.
 	result2, err := s.UpdateContainer(ctx, "media", after.EditableFingerprint, ContainerEdit{
