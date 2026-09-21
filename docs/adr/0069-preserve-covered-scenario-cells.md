@@ -1,6 +1,6 @@
 # ADR 0069: preserve covered scenario cells
 
-**Status:** Proposed contract only; no gate implementation or baseline data is delivered.
+**Status:** Accepted contract; comparison component prepared; baseline admission and aggregate activation pending.
 
 ## Context and oracle
 
@@ -105,7 +105,9 @@ Workflow verification must show that comparison failures block the required aggr
 ## Scope and remaining decisions
 
 The intended implementation surface is the existing partition helper and its tests, reviewed baseline data, and the aggregate workflow invocation and diagnostic retention.
-This contract changes none of those files, the Go reporter/parser, scenario receipts, suite selection, process deadlines, fixtures or application behaviour.
+The comparison/report-validation component and its focused controls are prepared in `scripts/saio-partition.py` and `scripts/saio-partition-test.py`; the existing join, CLI and CI do not call it.
+Baseline admission, aggregate wiring and required workflow failure-propagation proof remain pending.
+The Go reporter/parser, scenario receipts, suite selection, process deadlines, fixtures and application behaviour remain unchanged.
 A valid incomplete report can pass preservation; a full producer set is not a complete behavioural matrix.
 This bounded regression gate is not P34 release acceptance and does not make the current release workflow consume exact-source engine, native or deployment evidence.
 The explicit per-action/UI required-versus-N/A contract, deferred/refused capability treatment, supported target scope, required native/engine/deployment evidence and their acceptance decisions remain open.

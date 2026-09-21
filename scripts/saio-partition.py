@@ -167,6 +167,217 @@ def check(root, test_exit, tee_exit):
     write_json(root / "receipt.json", {"sha256": hashes(root)})
 
 
+def _scenario_fields(value, required, optional=()):
+    if (not isinstance(value, dict) or not set(required) <= value.keys()
+            or not value.keys() <= set(required) | set(optional)):
+        raise ValueError("missing or unexpected scenario fields")
+
+
+def _scenario_identity(identity):
+    _scenario_fields(identity, ("commit", "go_version", "run_id", "run_attempt"))
+    patterns = {"commit": r"[0-9a-f]{40}",
+                "go_version": r"go[0-9]+\.[0-9]+(?:\.[0-9]+)?(?:(?:beta|rc)[0-9]+)?",
+                "run_id": r"[1-9][0-9]*", "run_attempt": r"[1-9][0-9]*"}
+    for field, pattern in patterns.items():
+        if not isinstance(identity[field], str) or re.fullmatch(pattern, identity[field]) is None:
+            raise ValueError(f"invalid {field} identity")
+
+
+def _scenario_names(value, nullable=False):
+    if value is None and nullable:
+        return []
+    known = {"happy", "refusal", "conflict", "cancel", "partial", "retry"}
+    if (not isinstance(value, list) or any(not isinstance(item, str) or item not in known for item in value)
+            or len(set(value)) != len(value)):
+        raise ValueError("invalid or duplicate scenario names")
+    return value
+
+
+def _scenario_inventory(rows, coverage=False):
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("nonempty scenario inventory required")
+    inventory = {}
+    for row in rows:
+        fields = ("action", "kind", "required", "covered", "gaps") if coverage else ("action", "kind", "required")
+        _scenario_fields(row, fields)
+        action, kind = row["action"], row["kind"]
+        if (not isinstance(action, str)
+                or re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*\.[A-Za-z][A-Za-z0-9_]*", action) is None):
+            raise ValueError("invalid action identity")
+        if action in inventory:
+            raise ValueError("duplicate action identity")
+        if not isinstance(kind, str) or kind not in {"read", "session", "mutate", "destructive", "job"}:
+            raise ValueError("unknown scenario kind")
+        required = _scenario_names(row["required"])
+        if not required:
+            raise ValueError("empty required scenario set")
+        inventory[action] = {"kind": kind, "required": required}
+    text = "".join(f'{action}|{row["kind"]}|{",".join(row["required"])}\n'
+                   for action, row in sorted(inventory.items()))
+    return inventory, hashlib.sha256(text.encode()).hexdigest()[:16]
+
+
+def _scenario_report(report, identity):
+    _scenario_fields(report, (
+        "schemaVersion", "valid", "processSucceeded", "streamComplete", "contractValid",
+        "coverageComplete", "commitSha", "goVersion", "saioConfigured", "contractHash",
+        "totalActions", "totalRequired", "totalCovered", "actionsWithGaps", "nonJSONLines", "actions",
+    ), ("protocolError", "missingPackages", "failedPackages", "unexpectedPackages",
+        "violations", "violationsTruncated"))
+    if type(report["schemaVersion"]) is not int or report["schemaVersion"] != 3:
+        raise ValueError("unsupported scenario report schema")
+    for field in ("valid", "processSucceeded", "streamComplete", "contractValid"):
+        if report[field] is not True:
+            raise ValueError(f"scenario report {field} is not true")
+    if report["commitSha"] != identity["commit"] or report["goVersion"] != identity["go_version"]:
+        raise ValueError("scenario report source or toolchain differs from producer identity")
+    if type(report["saioConfigured"]) is not bool:
+        raise ValueError("invalid saioConfigured observation")
+    if report.get("protocolError", "") != "":
+        raise ValueError("scenario report has a protocolError")
+    for field in ("missingPackages", "failedPackages", "unexpectedPackages", "violations"):
+        value = report.get(field, [])
+        if value is not None and (not isinstance(value, list) or value):
+            raise ValueError(f"scenario report has invalid {field}")
+    for field in ("nonJSONLines", "violationsTruncated"):
+        value = report.get(field, 0)
+        if type(value) is not int or value != 0:
+            raise ValueError(f"scenario report has invalid {field}")
+    inventory, fingerprint = _scenario_inventory(report["actions"], coverage=True)
+    if report["contractHash"] != fingerprint:
+        raise ValueError("scenario report contract fingerprint differs from its rows")
+    covered, actions_with_gaps = set(), 0
+    for row in report["actions"]:
+        credits = row["covered"]
+        if credits is None:
+            credits = []
+        if not isinstance(credits, list):
+            raise ValueError("invalid covered scenario list")
+        have = set()
+        for credit in credits:
+            _scenario_fields(credit, ("scenario", "tests", "evidence"))
+            scenario = credit["scenario"]
+            if not isinstance(scenario, str) or scenario not in row["required"] or scenario in have:
+                raise ValueError("duplicate or unrequired scenario credit")
+            tests, evidence = credit["tests"], credit["evidence"]
+            if (not isinstance(tests, list) or not tests or any(not isinstance(test, str) for test in tests)
+                    or len(set(tests)) != len(tests)):
+                raise ValueError("missing or duplicate scenario witnesses")
+            if (not isinstance(evidence, list) or len(evidence) != len(tests)
+                    or any(not isinstance(item, str) for item in evidence)):
+                raise ValueError("scenario evidence must match its witnesses")
+            for test in tests:
+                parts = test.split("\t")
+                if (len(parts) != 2 or any(not part or any(char.isspace() for char in part) for part in parts)
+                        or "/" in parts[1]):
+                    raise ValueError("scenario witness must name a package and top-level test")
+            have.add(scenario)
+            covered.add((row["action"], scenario))
+        gaps = _scenario_names(row["gaps"], nullable=True)
+        if set(gaps) != set(row["required"]) - have:
+            raise ValueError("scenario gaps differ from required minus covered")
+        actions_with_gaps += bool(gaps)
+    counts = {"totalActions": len(inventory), "totalRequired": sum(len(row["required"]) for row in inventory.values()),
+              "totalCovered": len(covered), "actionsWithGaps": actions_with_gaps}
+    for field, expected in counts.items():
+        if type(report[field]) is not int or report[field] != expected:
+            raise ValueError(f"scenario report {field} differs from its rows")
+    if type(report["coverageComplete"]) is not bool or report["coverageComplete"] != (actions_with_gaps == 0):
+        raise ValueError("scenario coverageComplete differs from its gaps")
+    return inventory, covered
+
+
+def _scenario_baseline(baseline):
+    _scenario_fields(baseline, ("schemaVersion", "reportSchemaVersion", "identity", "contractHash",
+                                "actions", "protected", "evidence"))
+    for field, expected in (("schemaVersion", 1), ("reportSchemaVersion", 3)):
+        if type(baseline[field]) is not int or baseline[field] != expected:
+            raise ValueError(f"unsupported baseline {field}")
+    _scenario_identity(baseline["identity"])
+    evidence = baseline["evidence"]
+    digests = ("mainReportSHA256", "heavyReportSHA256", "mainReceiptSHA256", "heavyReceiptSHA256")
+    _scenario_fields(evidence, ("reference", *digests))
+    if not isinstance(evidence["reference"], str) or not evidence["reference"].strip():
+        raise ValueError("baseline requires a retained evidence reference")
+    for field in digests:
+        if not isinstance(evidence[field], str) or re.fullmatch(r"[0-9a-f]{64}", evidence[field]) is None:
+            raise ValueError(f"invalid baseline {field}")
+    inventory, fingerprint = _scenario_inventory(baseline["actions"])
+    if baseline["contractHash"] != fingerprint:
+        raise ValueError("baseline contract fingerprint differs from its rows")
+    if not isinstance(baseline["protected"], list) or not baseline["protected"]:
+        raise ValueError("nonempty protected scenario set required")
+    protected = set()
+    for cell in baseline["protected"]:
+        _scenario_fields(cell, ("action", "scenario"))
+        action, scenario = cell["action"], cell["scenario"]
+        if (not isinstance(action, str) or not isinstance(scenario, str) or action not in inventory
+                or scenario not in inventory[action]["required"]):
+            raise ValueError("protected scenario is outside the baseline contract")
+        pair = (action, scenario)
+        if pair in protected:
+            raise ValueError("duplicate protected scenario")
+        protected.add(pair)
+    return inventory, protected
+
+
+def _scenario_json(data):
+    def unique_fields(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise ValueError("duplicate scenario JSON key")
+            value[key] = item
+        return value
+
+    return json.loads(data, object_pairs_hook=unique_fields)
+
+
+def check_scenario_preservation(main_report, heavy_report, baseline_path, identity, output):
+    """Prepare ADR0069 diagnostics; join/CI do not call this component yet.
+
+    The eventual caller must first check producer receipts, exits, selection and
+    run/attempt identity. Baseline evidence admission remains independent review.
+    """
+    inputs = (main_report, heavy_report, baseline_path)
+    if (output.resolve() in {path.resolve() for path in inputs}
+            or any(output.exists() and path.exists() and output.samefile(path) for path in inputs)):
+        raise ValueError("scenario preservation output must not replace a raw input")
+    result = {"schemaVersion": 1, "identity": None, "baselineSHA256": None,
+              "preserved": False, "requiredDrift": None, "missingProtected": None, "errors": []}
+    label = "candidate identity"
+    try:
+        _scenario_identity(identity)
+        result["identity"] = dict(identity)
+        label = "baseline"
+        raw_baseline = baseline_path.read_bytes()
+        result["baselineSHA256"] = hashlib.sha256(raw_baseline).hexdigest()
+        baseline, protected = _scenario_baseline(_scenario_json(raw_baseline))
+        label = "main report"
+        current, covered = _scenario_report(_scenario_json(main_report.read_bytes()), identity)
+        label = "heavy report"
+        heavy, heavy_covered = _scenario_report(_scenario_json(heavy_report.read_bytes()), identity)
+        if heavy_covered:
+            raise ValueError("heavy scenario credits need deliberate combined-report handling")
+        if current != heavy:
+            raise ValueError("producer scenario inventories differ")
+        result["requiredDrift"] = [
+            {"action": action, "baseline": baseline.get(action), "current": current.get(action)}
+            for action in sorted(baseline.keys() | current.keys()) if baseline.get(action) != current.get(action)
+        ]
+        # Drift must not hide a simultaneous loss needed by admission review.
+        result["missingProtected"] = [{"action": action, "scenario": scenario}
+                                      for action, scenario in sorted(protected - covered)]
+        result["preserved"] = not result["requiredDrift"] and not result["missingProtected"]
+    except (OSError, ValueError) as error:
+        result["errors"].append(f"{label}: {error}")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    write_json(output, result)
+    if not result["preserved"]:
+        raise ValueError(f"scenario preservation refused; see {output}")
+    return result
+
+
 def combine_profiles(main_text: str, heavy_text: str) -> str:
     """Validate atomic lane profiles and preserve both bodies for Go's reader."""
     header = 'mode: atomic\n'
