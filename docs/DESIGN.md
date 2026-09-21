@@ -5709,13 +5709,14 @@ The [download preflight bounds record](experiments/2026-09-16-download-preflight
 The correction splits execution from the bridge the way upload already does and copies ADR 0023's sample-and-count pattern onto a distinct view type.
 It does not bound Go RSS, browser accumulation, queued work or child batches, and L10 does not close with this.
 
-The Linux keychain adapter still selects the login collection or default alias on every call, because the pinned client has no original-store identity.
-`Origin` records only an adapter lifetime, so a later default change can make Get report `ErrNotFound` while the original collection keeps the value, as the [keychain write record](experiments/2026-09-06-keychain-writes.md) already showed.
-The L01 read boundary does not call that miss erasure, but it cannot keep the credential readable and the journal has no collection path for unresolved cleanup.
+Before ADR 0057, the Linux keychain adapter selected the login collection or default alias on every call, because the pinned client had no original-store identity.
+`Origin` recorded only an adapter lifetime, so a later default change could make Get report `ErrNotFound` while the original collection kept the value, as the [keychain write record](experiments/2026-09-06-keychain-writes.md) showed.
+The L01 read boundary did not call that miss erasure, but it could not keep the credential readable and the journal had no collection path for unresolved cleanup.
 The correction in [ADR 0057](adr/0057-persistent-backend-selection.md) is implemented on the Linux Secret Service fixture.
-The Linux adapter leaves `keyring.Get`, `keyring.Set` and `keyring.Delete`, which re-resolve the collection on every call, and drives `secret_service` directly with a `dbus.BusObject` held from one `GetLoginCollection`.
+The Linux adapter leaves `keyring.Get`, `keyring.Set` and `keyring.Delete`, which re-resolve the collection on every call, and drives `secret_service` directly with the collection path selected by one `GetLoginCollection`.
 It resolves the default alias with a direct D-Bus `ReadAlias` only when that call selected the alias object, because the pinned helper has no `ReadAlias` and no path-taking pin.
 ADR 0055 wait bounds are re-established around those new calls.
+Collection selection and probe cleanup share the startup deadline, including when a native selector or read-back holds its reply.
 A failed alias read leaves the identity empty and does not persist the alias path.
 The recorded collection object path is persisted beside the adapter instance so a changed default or unavailable original store cannot be reported as erasure.
 Physical Delete, retry and the collector stay unstarted.
