@@ -5747,6 +5747,8 @@ Start captures source identity internally from the listing and from the zero-byt
 Verification of a native file is recorded only after a confirmation that the published name still identifies the verified inode; a substitute is retained, not unlinked.
 A second descriptor, opened and checked while the temporary writer is still open, pins that inode until confirmation and is released on every job exit.
 Descriptor use grows with pending native publications; this does not establish L10 workload bounds, and failure to acquire a pin refuses publication with uncertain residue retained.
+Revalidation found that delaying the only verification write violates ADR 0033's required-record stop boundary.
+[ADR 0061](adr/0061-download-publication-facts.md) proposes restoring per-item verification acknowledgement and adding a separate final-publication fact across the executor, item store and jobs view; that correction is not yet implemented.
 The engine download path stays unbound: no comparison is added without a fixture that fails when that comparison is deleted.
 Copy, native upload and staged upload commit stay the named deferred gap.
 L07 cancellation checks in the same executor are not this slice.

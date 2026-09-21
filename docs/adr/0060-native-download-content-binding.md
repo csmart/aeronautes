@@ -2,6 +2,7 @@
 
 **Status:** Accepted for the native download remainder, which is delivered with this decision.
 This does not close L05, DS-04 or the valuable-data hold.
+The verification timing below conflicts with ADR 0033's required-record stop boundary; [ADR 0061](0061-download-publication-facts.md) proposes the correction, which is not yet implemented.
 
 **Scope:** The remaining L05 cases on the native download route only: missing and reordered segments, and whole-job source and publication substitution.
 The engine download path stays unbound.
@@ -85,6 +86,8 @@ A same-size substitution of that object is not claimed from the listing.
 The ladder versus GET still binds whatever the live HEAD describes.
 
 ### Publication identity is confirmed before verification is recorded
+
+This is the current implementation; ADR 0061 proposes replacing its delayed verification write with a separate final-publication fact while retaining the pinned identity check.
 
 `publishVerified` stays the per-item no-replace link and `os.SameFile` check.
 
