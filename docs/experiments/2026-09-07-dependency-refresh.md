@@ -191,3 +191,26 @@ The complete frontend suite passes on the new runner with the same 37 files and 
 The build tool is pinned separately from the module, so the generator was moved with it: the pins in both workflows and the makefile now name beta.19.
 Regenerating the bindings with the matching generator produces output byte-identical to the committed bindings, so no binding change accompanies this refresh.
 The vendored Swift library keeps its module replacement and is untouched.
+
+## 21 September 2026 refresh
+
+The owner requested the existing Dependabot PR137/138 updates on protected master `d1fbb0fea9da8e86404a8937cca7038b61f768de`.
+PR137 keeps Wails Go, the frontend runtime and all three CLI installation pins together at beta.23; PR138 retains the four frontend tool updates.
+The [matching CLI/module contract](https://v3.wails.io/guides/cli/#update-cli), typed bridge, shutdown ownership and existing application tests remain the oracle.
+The beta.19 and beta.23 runtime archives each contain 59 files, with only their manifest version differing.
+The beta.23 generator produces the same 12 services and 53 methods, including the reserved shutdown-hook exclusion.
+The Wails commit `3c6aa0191430e9bcf7e7f848e9fa5e0f2329394b` passes the full Go race suite, all 1,390 frontend tests, type checking and the Linux production build.
+Independent review reproduced the application and root shutdown tests, both-provider download cases and the bindings gate.
+
+SQLite moves from 1.58.0 to 1.59.0 with exactly its [required libc 1.75.7](https://gitlab.com/cznic/sqlite/-/raw/v1.59.0/go.mod).
+The [upstream changes](https://gitlab.com/cznic/sqlite/-/raw/v1.59.0/CHANGELOG.md) retain SQLite 3.53.4 and change libc routines and callback allocation.
+Application source, migrations, WAL/FULL admission, transaction behaviour and the default locking mode are unchanged.
+No OFD-locking opt-in or new database feature is enabled.
+Focused database, deletion, jobs, audit, bookmark and secret-store checks pass against the new pair, along with module checksum verification.
+
+The private packet is `/home/csmart/code/.aeronautes-work/20260921-dependabot-go-137`.
+Its Wails evidence manifest seals 59 files with SHA256 `9a7d6df9e6887684bd10409043a2852286061e1ad0e148f2ea1c30f94c83659c`.
+The original PR137 CI failure is retained: its staged-upload control saw a second staging PUT twice, where the unchanged assertion requires one.
+Three local trials passed with the updated Wails components; the old failure's cause remains unestablished and no fix for it is claimed.
+The beta.21 change to register Wails' signal handler during `Run` leaves a startup interval that takes the default signal action; project tests do not cover that interval.
+Current combined-head checks and protected delivery remain required, and no six-target native, release-artifact or valuable-data acceptance follows from these local results.
