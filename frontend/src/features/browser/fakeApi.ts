@@ -321,7 +321,7 @@ export function newFakeApi(): Api {
       const full = rows.length === limit;
       // The fake echoes the bookmark it was asked for, as the backend
       // does: a page states the account that answered it (ADR 0049).
-      return { rows, nextMarker: full ? rows[rows.length - 1].name : "", scope: { bookmarkId, generation: 1 } };
+      return { rows, nextMarker: full ? rows[rows.length - 1].name : "", scope: readScope(bookmarkId) };
     },
 
     objectDetail: async (container, name, bookmarkId) => ({

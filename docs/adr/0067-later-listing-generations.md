@@ -1,11 +1,11 @@
 # ADR 0067: later listing generations
 
-**Status:** Proposed.
-This contract precedes its implementation.
+**Status:** Accepted.
+Implemented in the range that carries this record.
 
 ## Context
 
-[ADR 0063](0063-account-portrait-binding.md) binds the initial container page to a portrait's bookmark and positive generation and explicitly leaves later reads for follow-up.
+[ADR 0063](0063-account-portrait-binding.md) binds the initial container page to a portrait's bookmark and positive generation and left later reads for follow-up.
 On its approved head `2a91c3ba984b9b07c672ad4e61e30fe50b4f1186`, the four later listing paths check only the reply bookmark.
 The [frontend assessment](../experiments/2026-09-21-later-listing-generations.md) reproduces newer same-bookmark rows appearing beneath the retained older portrait after a separate caller re-saves and reconnects that bookmark.
 Frozen finish-line L11 requires account-specific results, paging, retries and errors.

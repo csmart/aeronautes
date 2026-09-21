@@ -536,9 +536,18 @@ export class BrowserState {
     return scope != null && scope.bookmarkId === bookmarkId;
   }
 
+  #requireListingScope(scope: ListingScope | null | undefined, bookmarkId: string, portrait: ListingScope | null) {
+    if (portrait === null || portrait.bookmarkId !== bookmarkId ||
+      !Number.isSafeInteger(portrait.generation) || portrait.generation <= 0 ||
+      scope == null || scope.bookmarkId !== portrait.bookmarkId || scope.generation !== portrait.generation) {
+      throw new Error("The listing does not match this connection and was not shown. Reconnect and try again.");
+    }
+  }
+
   async loadContainers() {
     const bookmarkId = this.connectedBookmarkId;
     if (bookmarkId === null) return;
+    const portrait = this.account ? { ...this.account.scope } : null;
     const scope = this.#scopeRevision;
     const seq = ++this.#containersSeq;
     this.#containersLoadingScope = scope;
@@ -548,10 +557,10 @@ export class BrowserState {
     this.containersError = null;
     try {
       const page = await this.#api.containers(bookmarkId, "", pageLimit);
-      if (scope === this.#scopeRevision && seq === this.#containersSeq && this.#answeredBy(page.scope, bookmarkId)) {
-        this.containers = page.rows;
-        this.containersMarker = page.nextMarker;
-      }
+      if (scope !== this.#scopeRevision || seq !== this.#containersSeq) return;
+      this.#requireListingScope(page.scope, bookmarkId, portrait);
+      this.containers = page.rows;
+      this.containersMarker = page.nextMarker;
     } catch (err) {
       if (scope === this.#scopeRevision && seq === this.#containersSeq) this.containersError = messageOf(err);
     } finally {
@@ -566,13 +575,14 @@ export class BrowserState {
     }
     const bookmarkId = this.connectedBookmarkId;
     if (bookmarkId === null) return;
+    const portrait = this.account ? { ...this.account.scope } : null;
     const request = { scope: this.#scopeRevision, seq: this.#containersSeq, marker: this.containersMarker };
     this.#containersPage = request;
     this.#containersPageError = null;
     try {
       const page = await this.#api.containers(bookmarkId, request.marker, pageLimit);
       if (!this.#currentContainersPage(request)) return;
-      if (!this.#answeredBy(page.scope, bookmarkId)) return;
+      this.#requireListingScope(page.scope, bookmarkId, portrait);
       requireAdvancingMarker(request.marker, page.nextMarker);
       const names = new Set(this.containers.map((row) => row.name));
       const rows = page.rows.filter((row) => {
@@ -678,6 +688,7 @@ export class BrowserState {
     this.select(-1);
     const scope = this.#scopeRevision;
     const bookmarkId = this.connectedBookmarkId;
+    const portrait = this.account ? { ...this.account.scope } : null;
     this.entriesLoading = true;
     this.entriesError = null;
     try {
@@ -686,7 +697,7 @@ export class BrowserState {
       if (seq !== this.#listSeq || scope !== this.#scopeRevision) {
         return; // a newer navigation superseded this load
       }
-      if (!this.#answeredBy(page.scope, bookmarkId)) return;
+      this.#requireListingScope(page.scope, bookmarkId, portrait);
       this.entries = page.rows;
       this.entriesMarker = page.nextMarker;
     } catch (err) {
@@ -707,13 +718,14 @@ export class BrowserState {
       return;
     }
     const bookmarkId = this.connectedBookmarkId;
+    const portrait = this.account ? { ...this.account.scope } : null;
     const request = { scope: this.#scopeRevision, seq: this.#listSeq, marker: this.entriesMarker };
     this.#entriesPage = request;
     this.#entriesPageError = null;
     try {
       const page = await this.#api.objects(bookmarkId, this.containerName, this.prefix, request.marker, pageLimit);
       if (!this.#currentEntriesPage(request)) return;
-      if (!this.#answeredBy(page.scope, bookmarkId)) return;
+      this.#requireListingScope(page.scope, bookmarkId, portrait);
       requireAdvancingMarker(request.marker, page.nextMarker);
       const identity = (row: ListingRowDTO) => row.kind + ":" + row.name;
       const names = new Set(this.entries.map(identity));

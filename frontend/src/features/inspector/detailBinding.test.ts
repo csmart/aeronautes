@@ -52,6 +52,8 @@ async function show() {
   api.auditRecent = vi.fn().mockResolvedValue([]);
   const browser = new BrowserState(api);
   browser.connectedBookmarkId = "source";
+  browser.account = { name: "AUTH_source", containers: 1, objects: 2, bytesUsed: 1,
+    quotaBytes: 0, meta: {}, tempUrlKeySlots: [], scope };
   await browser.openContainer("fixtures");
   browser.select(0);
   await settle();
