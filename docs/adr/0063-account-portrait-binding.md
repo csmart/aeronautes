@@ -30,10 +30,14 @@ Frozen finish-line L11 already requires account-specific results, errors and ret
    Missing scope, a different bookmark, a different generation or a refused capability read fails the attempt without publishing an account or capabilities.
    A refusal must not become `null` capabilities; unknown capability support is represented by the bound unknown reply.
    The existing navigation lifetime guard and single pending connection slot remain.
-   Initial listing errors keep their existing separate display behaviour and cannot substitute for successful portrait and capability binding checks.
+   The initial container listing must match the portrait's bookmark and generation before any rows are published.
+   A missing or mismatched listing scope takes the existing listing-error path with no rows while retaining the successfully bound portrait and capabilities.
+   Initial listing errors keep that separate display behaviour and cannot substitute for successful portrait and capability binding checks.
 
 4. The shared fake enforces the required bookmark and produces the same reply scope as the real API.
    Maintained regressions cover matching reads, stale and empty bookmarks, deletion and re-save, a held alpha HEAD while beta connects, capability replacement, missing and mismatched reply scope, and a same-bookmark generation mismatch between replies.
+   Portrait or capability binding failures must fail the whole attempt, leave the connected bookmark unset and publish no containers.
+   A same-bookmark re-save and reconnect between the capabilities reply and the initial listing reply must publish no rows, show the listing error and keep the bound portrait and capabilities.
    The relevant public-service scenarios and real Swift account controls move with the bridge contract.
 
 ## Limits
@@ -42,6 +46,7 @@ The captured tuple establishes who produced a reply, not which account remains a
 A later `Connect` may leave a correctly labelled alpha read in flight while beta becomes active.
 This does not authenticate the operator's intended account or grant authority for a later mutation.
 The shared `scopedSession` helper, the broader connection/read atomicity race described by ADR 0049/0059, `AuditService.Search` and mutation writers are unchanged.
+Post-connect refreshes and other later scoped replies retain their existing bookmark checks; requiring their generation to match the connected portrait is deferred.
 No database schema or operation policy changes.
 L11, P28, native acceptance and the valuable-data hold remain open.
 
