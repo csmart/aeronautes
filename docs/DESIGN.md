@@ -5637,6 +5637,13 @@ Manifest and segment follow-ups and Find polls and cancellation keep that same b
 Retained-job detail, totals and item pages use a source or destination bookmark from the displayed job row, so they remain readable while disconnected or browsing another account; a detail reply must match both that bookmark and the requested job id.
 `AuditService.Recent` remains in `mutateservice.go` but the store refuses an unscoped trail read, `Search` and the account portrait stay unbound, and L11, P28 and the valuable-data hold remain open.
 
+The [account portrait record](experiments/2026-09-21-account-portrait-binding.md) reproduces two remaining L11 misattributions on `5f71a163`: alpha's held account HEAD returns alpha's counts with beta's name, and the browser publishes beta's capabilities under alpha despite a refused initial listing.
+[ADR 0063](adr/0063-account-portrait-binding.md) proposes requiring the intended bookmark on Account and Capabilities, capturing one validated session/bookmark/generation/capability tuple per read, and publishing the portrait and capabilities only when their scopes match the requested bookmark and each other.
+The implementation sequence is contract review, maintained catching service and browser regressions, the service/DTO/generated-binding/caller/fake change together, then relevant real Swift controls and independent implementation review.
+Unavailable `/info` stays a bound unknown result.
+This proposal establishes reply provenance only: a later connection may leave a correctly labelled read in flight, and no later mutation authority follows from that reply.
+The shared scoped-session helper, broader live-read atomicity, audit search, mutation writers and release holds remain outside this slice.
+
 P20 settles what a cancelled download leaves behind, under [ADR 0048](adr/0048-cancelled-stage-removal.md).
 [ADR 0043](adr/0043-cancellation-delta-authority.md) decision 7 left that choice open for the operator, who has answered it: a graceful cancel removes the partial files the job created and says so, a crash or a kill retains them and that is reported accurately, and there is no setting and no prompt.
 The reasoning is that these are the application's own incomplete work product, written under a name it invented into a directory it created, rather than the operator's data, and that with no resume feature a retained fragment cannot be continued but only deleted by hand.
