@@ -31,6 +31,8 @@ Its `SHA256SUMS` digest is `46917c39ddad581ff6d48e8bc230d127f1e43e78ce4ab5a31cfe
 It contains the original probe sources, raw logs, structured command/source/concurrency metadata, the master comparison and caller assessment.
 
 [ADR 0063](../adr/0063-account-portrait-binding.md) proposes caller-named Account and Capabilities reads, a single validated tuple per reply, and browser checks for one bookmark and generation before publication.
+The initial listing must match the same scope before publishing rows, including when a re-save and reconnect changes the generation of the same bookmark between replies.
+That mismatch keeps the bound portrait and capabilities while showing the existing listing error with no rows.
 Implementation follows independent contract approval and includes regenerated bindings, fake parity, maintained catching Go and browser regressions and relevant real Swift account controls.
 A correctly labelled read may complete after a later connection switch; no later mutation authority follows from its reply.
-The broader live-read race, audit search, mutation writers, L11/P28 completion and the valuable-data hold remain outside this correction.
+The broader live-read race, generation checks on post-connect refreshes, audit search, mutation writers, L11/P28 completion and the valuable-data hold remain outside this correction.
