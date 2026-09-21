@@ -32,8 +32,9 @@ func TestDownloadCancelledPlacementRecords(t *testing.T) {
 		executed := map[string]transfercopy.Observation{}
 		verified := map[string]transfercopy.Observation{}
 		recorder := &DownloadRecorder{
-			Admit:   func(DownloadAdmission) error { return nil },
-			Execute: func(item DownloadItem, o transfercopy.Observation) error { executed[item.Name] = o; return nil },
+			Publication: func(DownloadItem, transfercopy.Observation) error { return nil },
+			Admit:       func(DownloadAdmission) error { return nil },
+			Execute:     func(item DownloadItem, o transfercopy.Observation) error { executed[item.Name] = o; return nil },
 			Verify: func(item DownloadItem, o transfercopy.Observation) error {
 				verified[item.Name] = o
 				cancel()

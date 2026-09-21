@@ -243,9 +243,10 @@ func TestDownloadNameFormDirect(t *testing.T) {
 						var recorders []*DownloadRecorder
 						if recorded {
 							recorders = []*DownloadRecorder{{
-								Admit:   func(admission DownloadAdmission) error { admissions = append(admissions, admission); return nil },
-								Execute: func(item DownloadItem, result transfercopy.Observation) error { executed[item] = result; return nil },
-								Verify:  func(item DownloadItem, result transfercopy.Observation) error { verified[item] = result; return nil },
+								Publication: func(DownloadItem, transfercopy.Observation) error { return nil },
+								Admit:       func(admission DownloadAdmission) error { admissions = append(admissions, admission); return nil },
+								Execute:     func(item DownloadItem, result transfercopy.Observation) error { executed[item] = result; return nil },
+								Verify:      func(item DownloadItem, result transfercopy.Observation) error { verified[item] = result; return nil },
 							}}
 						}
 						report, err := Download(t.Context(), source, engine, "remote:media", "media", prefix, root, "fixture",
@@ -263,7 +264,7 @@ func TestDownloadNameFormDirect(t *testing.T) {
 									fileCount++
 								}
 							}
-							want := &Report{Done: int64(len(items)), Bytes: total}
+							want := &Report{Done: int64(len(items)), Verified: int64(len(items)), Bytes: total}
 							wantCalls := 0
 							if route == "native" {
 								want.NativeRouted = fileCount

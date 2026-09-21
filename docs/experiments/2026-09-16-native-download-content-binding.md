@@ -1,9 +1,9 @@
 # Native download remainder of L05 — 16 September 2026
 
 [ADR 0045](../adr/0045-route-content-binding.md) delivered same-size binding on the native download route and left three L05 cases named rather than closed.
-This record is the source-derived remainder for that route.
+The original 16 September sections describe the source-derived remainder for that route at `e770f8a9`.
 It is the evidence for [ADR 0060](../adr/0060-native-download-content-binding.md).
-It does not claim a new Swift run.
+Those original sections do not claim a new Swift run; the later revalidation sections describe subsequent corrections and evidence.
 
 ## What L05 still names on download
 
@@ -46,7 +46,7 @@ L07 cancellation boundaries are not this slice.
 This record closes neither L05 nor DS-04, and the valuable-data hold is unchanged.
 
 The native remainder is now delivered under ADR 0060.
-Package tests against the in-process mock cover a two-run GET permutation, a missing run replaced by a duplicate, a short body at a run boundary, a same-size source replacement after the transfer set is built, and a published name replaced before verification is recorded.
+Package tests against the in-process mock cover a two-run GET permutation, a missing run replaced by a duplicate, a short body at a run boundary, a same-size source replacement after the transfer set is built, and a published name replaced before final confirmation.
 The engine path is unchanged.
 This still closes neither L05 nor DS-04, and the valuable-data hold is unchanged.
 
@@ -64,7 +64,7 @@ The pin does not retain an extra directory entry or change the existing temporar
 It does add one descriptor per pending native publication, and arbitrary-workload resource bounds remain unproven.
 
 At `acda6c3c`, broader mock revalidation also exposed two required-record ordering failures and two source-close fixture failures.
-The required-record ordering failures remain release blockers pending ADR 0061; the complete download suite is not yet claimed to pass.
+Those failures blocked the range until the separate fixture and ADR 0061 corrections below.
 
 ### Source-close fixture correction
 
@@ -75,3 +75,21 @@ Both the in-flight comparison and the independent Swift reader still reject the 
 The existing cases retain their exact served-byte, no-publication, durable item, audit, reopen and no-collateral assertions on the mock and the owned two-account Swift fixture.
 Planned and listed bytes continue to describe the full source, while retained bytes describe the shorter response that was actually served.
 Production source admission and closure handling are unchanged.
+
+### Separate final-publication facts
+
+ADR 0061 restores immediate execution and verification acknowledgement, then records final publication in a separate immutable row.
+The mock and two-account Swift cases witness that the next native GET sees the earlier acknowledged verification, a substituted publication keeps its copied bytes but loses final verification, and later admission refusal or cancellation preserves completed final facts.
+A SQL refusal of the final fact prevents queued engine GETs and staging while allowing read-only confirmation of other already acknowledged native publications.
+Reopen preserves missing required facts, the early observations, exact totals and audit without contacting Swift.
+The original required-record refusal tests retain their exact GET and filesystem delta assertions.
+
+The item flag defaults to false for historical rows.
+Upgrade cases start from each item-ledger migration present before 0013 and check that historical terminal state, counters and observations survive without invented publication evidence.
+Distinct totals cover more than a page, overlap with earlier cleanup problems, and refuse complete when required evidence is absent.
+The local report retains copied counts independently of the verified count, including more failures than its bounded display samples.
+The generated DTO and jobs view show the early and final observations separately, including missing required, not reached and not required states.
+
+The independent close-fault witness, deterministic live-descriptor witness and original remove/recreate sequence remain maintained.
+The descriptor still costs one file handle per pending native item; the final write adds one small transaction per successful native item.
+No workload ceiling, cancellation deadline, cleanup decision or valuable-data release gate changes.

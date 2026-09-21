@@ -45,7 +45,7 @@ func TestLocalCompletionAdmission(t *testing.T) {
 			called := false
 			h.transfer.runLocal(ctx, job.ID, "", job.ItemRecordsVersion, job.Counters, func(context.Context, func(int64, int64, int64)) (*local.Report, error) {
 				called = true
-				report := &local.Report{Done: 1, Bytes: 10}
+				report := &local.Report{Done: 1, Verified: 1, Bytes: 10}
 				if fault == "error" {
 					report.Failures = []local.Failure{{Name: "other", Stage: "verify", Err: "size mismatch"}}
 				}

@@ -63,6 +63,7 @@ func TestDownloadRecordingAcknowledgement(t *testing.T) {
 					}
 				}
 				recorder := &DownloadRecorder{
+					Publication: func(DownloadItem, transfercopy.Observation) error { return nil },
 					Admit: func(a DownloadAdmission) error {
 						phases = append(phases, "admit:"+a.Item.Name)
 						if _, err := os.Lstat(a.StagingPath); !errors.Is(err, os.ErrNotExist) {
@@ -100,8 +101,8 @@ func TestDownloadRecordingAcknowledgement(t *testing.T) {
 						if !acknowledged[item.Name] || o.Result != transfercopy.ResultVerified {
 							t.Fatalf("verification preceded execution acknowledgement: %v %+v", phases, o)
 						}
-						if !native && (len(phases) == 0 || phases[len(phases)-1] != "execute:"+item.Name) {
-							t.Fatalf("engine verification was not next to its execution: %v %+v", phases, o)
+						if len(phases) == 0 || phases[len(phases)-1] != "execute:"+item.Name {
+							t.Fatalf("verification was not next to its execution: %v %+v", phases, o)
 						}
 						phases = append(phases, "verify:"+item.Name)
 						if refusal == "verify" {
@@ -119,9 +120,6 @@ func TestDownloadRecordingAcknowledgement(t *testing.T) {
 					wantDone = 0
 				} else if refusal != "none" {
 					wantDone = 1
-					if native && refusal == "verify" {
-						wantDone = 2
-					}
 				}
 				if report.Done != wantDone || report.Bytes != wantDone*7 || len(report.Failures) != 0 {
 					t.Fatalf("record refusal changed witnessed placement: %+v", report)
@@ -130,10 +128,8 @@ func TestDownloadRecordingAcknowledgement(t *testing.T) {
 					t.Fatal("admission refusal allowed dependent transfer work")
 				}
 				if refusal != "none" {
-					if !(native && refusal == "verify") {
-						if _, err := os.Lstat(filepath.Join(root, "b")); !errors.Is(err, os.ErrNotExist) {
-							t.Fatal("required record refusal allowed a later placement")
-						}
+					if _, err := os.Lstat(filepath.Join(root, "b")); !errors.Is(err, os.ErrNotExist) {
+						t.Fatal("required record refusal allowed a later placement")
 					}
 					if native && mock.Requests() != beforeRequests+int(wantDone) {
 						t.Fatalf("required record refusal allowed another native GET: %d -> %d", beforeRequests, mock.Requests())
@@ -172,6 +168,7 @@ func TestDownloadAdmittedTemporaryCollision(t *testing.T) {
 			var temporary string
 			var observed transfercopy.Observation
 			recorder := &DownloadRecorder{
+				Publication: func(DownloadItem, transfercopy.Observation) error { return nil },
 				Admit: func(a DownloadAdmission) error {
 					temporary = a.StagingPath
 					if filepath.Dir(temporary) != root || !strings.HasPrefix(filepath.Base(temporary), ".aeronautes-part-") {
@@ -260,7 +257,8 @@ func TestDownloadRejectsConstructedIdentity(t *testing.T) {
 				items = append(items, DownloadItem{Name: "scope/selected/child", RelPath: "selected/child", Size: 5})
 			}
 			recorder := &DownloadRecorder{
-				Admit: func(DownloadAdmission) error { t.Fatal("invalid constructed identity reached admission"); return nil },
+				Publication: func(DownloadItem, transfercopy.Observation) error { return nil },
+				Admit:       func(DownloadAdmission) error { t.Fatal("invalid constructed identity reached admission"); return nil },
 				Execute: func(DownloadItem, transfercopy.Observation) error {
 					t.Fatal("invalid constructed identity reached execution")
 					return nil
@@ -290,6 +288,7 @@ func TestDownloadDirectoryRecording(t *testing.T) {
 			var admitted []DownloadItem
 			var executed, verified []transfercopy.Observation
 			recorder := &DownloadRecorder{
+				Publication: func(DownloadItem, transfercopy.Observation) error { return nil },
 				Admit: func(a DownloadAdmission) error {
 					if a.StagingPath != "" {
 						t.Fatal("directory marker invented a temporary identity")
@@ -381,6 +380,7 @@ func TestDownloadProgressCountsPlacedFiles(t *testing.T) {
 			}
 			admitted := 0
 			recorder := &DownloadRecorder{
+				Publication: func(DownloadItem, transfercopy.Observation) error { return nil },
 				Admit: func(a DownloadAdmission) error {
 					admitted++
 					// Existing collisions now refuse the whole plan at entry.
@@ -490,6 +490,7 @@ func TestDownloadEngineCancellationBoundaries(t *testing.T) {
 				}
 			}
 			recorder := &DownloadRecorder{
+				Publication: func(DownloadItem, transfercopy.Observation) error { return nil },
 				Admit: func(DownloadAdmission) error {
 					admitted++
 					if admitted == 2 && boundary == "before_child" {

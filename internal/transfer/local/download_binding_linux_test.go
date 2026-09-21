@@ -72,13 +72,13 @@ func TestNativeDownloadPublicationPinsIdentity(t *testing.T) {
 	if hasOpenDownloadIdentity(t, identity) {
 		t.Error("publication confirmation leaked the inode descriptor")
 	}
-	if run.report.Done != 0 || len(run.report.Failures) != 1 {
+	if run.report.Done != 1 || run.report.Bytes != 5 || run.report.Verified != 0 || len(run.report.Failures) != 1 {
 		t.Fatalf("removed publication stayed verified: %+v", run.report)
 	}
 }
 
 func TestNativeDownloadPublicationPinsCloseOnExit(t *testing.T) {
-	for _, phase := range []string{"control", "admission", "execution", "verification", "cancellation"} {
+	for _, phase := range []string{"control", "admission", "execution", "verification", "publication", "cancellation"} {
 		t.Run(phase, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
@@ -115,6 +115,12 @@ func TestNativeDownloadPublicationPinsCloseOnExit(t *testing.T) {
 				},
 				Verify: func(DownloadItem, transfercopy.Observation) error {
 					if phase == "verification" {
+						return refused
+					}
+					return nil
+				},
+				Publication: func(DownloadItem, transfercopy.Observation) error {
+					if phase == "publication" {
 						return refused
 					}
 					return nil

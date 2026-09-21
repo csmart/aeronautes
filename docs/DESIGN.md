@@ -5744,11 +5744,15 @@ The [remainder record](experiments/2026-09-16-native-download-content-binding.md
 [ADR 0060](adr/0060-native-download-content-binding.md) delivers that remainder on the native route only.
 The GET still digests along the existing ladder, and a segmented native GET that is a same-size permutation, a missing run replaced by a duplicate, or a short body at a run boundary refuses before publishing with the temporary retained.
 Start captures source identity internally from the listing and from the zero-byte HEADs preflight already takes, not on the bridge DTO, and `OpenObject` must match that identity before a temporary is created; a disagreement is unverified with an unresolved effect because the GET was issued.
-Verification of a native file is recorded only after a confirmation that the published name still identifies the verified inode; a substitute is retained, not unlinked.
+Execution and content/placement verification of a native file are acknowledged before the next dependent effect.
+After the native loop, a separate final-publication fact confirms whether the published name still identifies the verified inode; a substitute is retained, not unlinked.
 A second descriptor, opened and checked while the temporary writer is still open, pins that inode until confirmation and is released on every job exit.
 Descriptor use grows with pending native publications; this does not establish L10 workload bounds, and failure to acquire a pin refuses publication with uncertain residue retained.
-Revalidation found that delaying the only verification write violates ADR 0033's required-record stop boundary.
-[ADR 0061](adr/0061-download-publication-facts.md) proposes restoring per-item verification acknowledgement and adding a separate final-publication fact across the executor, item store and jobs view; that correction is not yet implemented.
+Revalidation found that delaying the only verification write violated ADR 0033's required-record stop boundary.
+[ADR 0061](adr/0061-download-publication-facts.md) restores per-item verification acknowledgement and adds a separate final-publication requirement and immutable fact across the executor, item store and jobs view.
+Every exit confirms already acknowledged native publications, including after later admission refusal or cancellation, and a refused final write stops queued engine effects.
+Copied bytes remain witnessed facts when the final name changes; verified counts and exact item facets expose the failed or missing final evidence separately.
+Historical records acquire no new requirement, and a copied item without a required successful final fact cannot complete.
 The engine download path stays unbound: no comparison is added without a fixture that fails when that comparison is deleted.
 Copy, native upload and staged upload commit stay the named deferred gap.
 L07 cancellation checks in the same executor are not this slice.

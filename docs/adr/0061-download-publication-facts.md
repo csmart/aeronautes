@@ -1,6 +1,6 @@
 # ADR 0061 — preserve early verification and final publication facts
 
-**Status:** Proposed; dependent implementation has not started.
+**Status:** Accepted and implemented with the native download recording correction.
 **Scope:** Correct the native-download recording conflict in [ADR 0060](0060-native-download-content-binding.md) while retaining [ADR 0033](0033-download-item-recording.md) required-record stop boundaries.
 Engine content binding and L07 cancellation expansion remain outside this decision.
 
@@ -15,7 +15,7 @@ One immutable verification row cannot truthfully represent both observations at 
 The oracle remains exact selected identities, independently witnessed local and remote effects, ADR 0033 required-record acknowledgements, and ADR 0060 source/content/publication checks.
 The inode descriptor correction remains required throughout the confirmation window.
 
-## Proposed decision
+## Decision
 
 Keep the existing execution and verification observations immutable and restore their per-item acknowledgement order.
 Successful native content, closure and no-replace placement must be recorded before another native GET, directory/temporary creation or engine effect may begin.
@@ -51,7 +51,7 @@ The application DTO and generated frontend type carry both additions, and the jo
 An absent final observation means not required for an unflagged historical/other-route item, not reached for an item that never established copied execution, or missing required evidence for a copied flagged item.
 The UI must not present an earlier verified row as sufficient when final-publication evidence is missing or failed.
 
-Migration 0013 is reserved for an additive item flag and a separate one-row-per-item publication table, preserving the two existing observation phases and their immutable rows.
+Migration 0013 adds the item flag and a separate one-row-per-item publication table, preserving the two existing observation phases and their immutable rows.
 The store accepts publication facts only for an admitted flagged native-download identity with acknowledged copied execution and successful early verification.
 Repeated identical facts are idempotent; a different second fact, a mismatched identity or a terminal-job append is refused.
 
@@ -65,10 +65,10 @@ A refused persistence write does not erase a successfully witnessed check, prese
 
 ## Ordering, cost and evidence
 
-Review this contract before changing its consumers.
-Integrate the separate account-scoped browser caller correction before changing the affected jobs view and its API fixtures.
+This contract was reviewed before its consumers changed.
+The separate account-scoped browser caller correction remains required at integration; the final-publication fields do not change read authority or bookmark arguments.
 The Go executor, store, adapter, DTO, generated bindings and UI must form a complete implementation rather than shipping a partial contract.
-Migration 0012 remains reserved for the independent persistent-backend work.
+Migration 0012 belongs to the independent persistent-backend work.
 
 Keep all existing required-record refusal assertions and their exact GET/local-delta expectations.
 Add maintained service cases on the mock and two-account Swift for early verification followed by publication substitution, a successful control, cancellation/late admission failure preserving completed facts, refused final-publication persistence before queued engine work, and missing final facts after reopen.

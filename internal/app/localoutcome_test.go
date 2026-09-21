@@ -84,7 +84,7 @@ func TestLocalPostCommitTerminalOutcome(t *testing.T) {
 			h.transfer.runner.register(job.ID, cancel)
 			h.transfer.runLocal(ctx, job.ID, bookmark, job.ItemRecordsVersion, base, func(_ context.Context, progress func(int64, int64, int64)) (*local.Report, error) {
 				progress(2, 2, 20)
-				report := &local.Report{Done: test.done, Bytes: 10 * test.done, NativeRouted: 1, PostCommitIssues: test.issues}
+				report := &local.Report{Done: test.done, Verified: test.done, Bytes: 10 * test.done, NativeRouted: 1, PostCommitIssues: test.issues}
 				if test.issues > 0 {
 					report.PostCommitIssueSamples = []local.Failure{{Name: "live/first", Stage: "commit-record", Err: "record refused"}}
 				}

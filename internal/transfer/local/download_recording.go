@@ -13,9 +13,10 @@ import (
 // DownloadRecorder acknowledges exact locations before dependent work.
 // The original item preserves identity without a second selection map.
 type DownloadRecorder struct {
-	Admit   func(DownloadAdmission) error
-	Execute func(DownloadItem, transfercopy.Observation) error
-	Verify  func(DownloadItem, transfercopy.Observation) error
+	Admit       func(DownloadAdmission) error
+	Execute     func(DownloadItem, transfercopy.Observation) error
+	Verify      func(DownloadItem, transfercopy.Observation) error
+	Publication func(DownloadItem, transfercopy.Observation) error
 }
 
 type DownloadAdmission struct {
@@ -39,9 +40,8 @@ type downloadResult struct {
 	// (ADR 0043). It is reported whatever the item's own outcome is,
 	// because the directories exist either way.
 	created []string
-	// deferVerify holds a native publication until the job confirms the
-	// published name still identifies this inode (ADR 0060).
-	deferVerify  bool
+	// Keep the inode alive until the separate final-publication check;
+	// an early verification acknowledgement must not release it.
 	published    *os.File
 	publishedRel string
 }
@@ -96,8 +96,8 @@ func downloadRecorder(recorders []*DownloadRecorder) (*DownloadRecorder, error) 
 	if len(recorders) == 0 {
 		return nil, nil
 	}
-	if len(recorders) != 1 || recorders[0] == nil || recorders[0].Admit == nil || recorders[0].Execute == nil || recorders[0].Verify == nil {
-		return nil, errors.New("recorded download requires admission, execution and verification callbacks")
+	if len(recorders) != 1 || recorders[0] == nil || recorders[0].Admit == nil || recorders[0].Execute == nil || recorders[0].Verify == nil || recorders[0].Publication == nil {
+		return nil, errors.New("recorded download requires admission, execution, verification and publication callbacks")
 	}
 	return recorders[0], nil
 }
@@ -169,6 +169,9 @@ func (d *downloadRun) observe(item DownloadItem, result downloadResult) error {
 	}
 	if result.Result == transfercopy.ResultCopied {
 		d.report.Done++
+		if result.verification != nil && result.verification.Result == transfercopy.ResultVerified {
+			d.report.Verified++
+		}
 		d.report.Bytes += result.CopiedBytes
 		for _, issue := range result.issues {
 			d.report.postCommitIssue(item.Name, issue.label, issue.err)
@@ -188,17 +191,16 @@ func (d *downloadRun) observe(item DownloadItem, result downloadResult) error {
 			return d.stop(err)
 		}
 	}
-	if result.deferVerify && result.Result == transfercopy.ResultCopied {
-		d.pendingNative = append(d.pendingNative, nativePublished{item: item, copied: result})
-		return nil
-	}
-	if d.recorder == nil {
-		return nil
-	}
-	if result.verification != nil {
+	if d.recorder != nil && result.verification != nil {
 		if err := d.recorder.Verify(item, *result.verification); err != nil {
+			if result.published != nil {
+				err = errors.Join(err, result.published.Close())
+			}
 			return d.stop(err)
 		}
+	}
+	if result.published != nil && result.Result == transfercopy.ResultCopied {
+		d.pendingNative = append(d.pendingNative, nativePublished{item: item, copied: result})
 	}
 	return nil
 }

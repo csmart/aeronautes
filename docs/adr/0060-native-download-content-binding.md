@@ -2,7 +2,7 @@
 
 **Status:** Accepted for the native download remainder, which is delivered with this decision.
 This does not close L05, DS-04 or the valuable-data hold.
-The verification timing below conflicts with ADR 0033's required-record stop boundary; [ADR 0061](0061-download-publication-facts.md) proposes the correction, which is not yet implemented.
+[ADR 0061](0061-download-publication-facts.md) corrects the original verification timing by preserving immediate acknowledgement and recording final publication separately.
 
 **Scope:** The remaining L05 cases on the native download route only: missing and reordered segments, and whole-job source and publication substitution.
 The engine download path stays unbound.
@@ -11,11 +11,10 @@ L07 cancellation work in the same executor file is out of scope.
 
 ## Problem
 
-ADR 0045 compares a native GET against the source ladder built at execution, and publishes only the inode it verified.
-That closes same-size corruption on this route.
-It does not close L05.
+At `e770f8a9`, ADR 0045 compared a native GET against the source ladder built at execution, and published only the inode it verified.
+That closed same-size corruption on this route, but did not close L05.
 
-The [remainder record](../experiments/2026-09-16-native-download-content-binding.md) states the three leftover cases from the current source:
+The [remainder record](../experiments/2026-09-16-native-download-content-binding.md) states the three leftover cases at that head:
 
 1. A segmented native GET is untested.
    The digest would refuse a GET whose runs do not match the ladder, but every maintained case is a one-run plain object.
@@ -63,7 +62,7 @@ Capture identity there, internally, for native file items only:
 3. Directory markers have no content identity.
 
 The identity is not a JSON field on `DownloadItem`.
-The generated binding and the bridge view stay as they are.
+Source capture adds no fields to the download item binding or bridge view.
 ADR 0045 already refused putting a digest on that DTO.
 
 At `OpenObject`, before creating a temporary, the live HEAD must match what was captured:
@@ -85,27 +84,28 @@ Limit: an SLO listed with bytes and no `SLOETag` has only size as captured ident
 A same-size substitution of that object is not claimed from the listing.
 The ladder versus GET still binds whatever the live HEAD describes.
 
-### Publication identity is confirmed before verification is recorded
+### Publication identity has a separate final confirmation
 
-This is the current implementation; ADR 0061 proposes replacing its delayed verification write with a separate final-publication fact while retaining the pinned identity check.
+ADR 0061 supersedes the original delayed verification write while retaining the pinned identity check.
 
 `publishVerified` stays the per-item no-replace link and `os.SameFile` check.
 
 `job_item_observations` accepts one verification row.
 A second different verification is a conflict, so a later substitution cannot un-verify a row already written.
 
-Therefore a native file's verification observation is recorded only after a confirmation pass that the published name still identifies the verified inode.
+Execution and verification are acknowledged immediately after each native file finishes, before another dependent effect.
+A separate immutable final-publication fact records whether the published name still identifies the verified inode after the native loop, before queued engine dispatch.
 
-Execution is still recorded when the helper returns, as ADR 0033 already requires before later work.
 Before the writer closes, the helper opens a second descriptor through the held temporary parent and checks that it identifies the verified inode while the writer still holds that inode.
 The descriptor remains open through publication, temporary unlink and the confirmation pass after the native item loop.
 The confirmation compares the published name through the held destination parent with `Stat` on that descriptor.
 Keeping only the earlier `FileInfo` is insufficient: after both names are unlinked, the filesystem can reuse that inode number for another file.
-`SameFile` success records the same verified observation the helper records today.
+`SameFile` success records a verified final-publication observation without changing the earlier verification.
 `SameFile` failure records `unverified` with effect `unresolved`, publishes nothing further for that name, and does not unlink the occupant: an identity we do not hold is not authority to delete, which is the ADR 0045 cleanup rule applied to the published name.
 
-A crash before the confirmation already has the missing-verification facet ADR 0033 named.
-This slice does not invent a second verification row.
+A crash before confirmation leaves required final evidence absent; a copied item remains unverified until that evidence exists.
+The final fact occupies its own table, preserving the two existing observation phases and historical rows.
+Every exit also confirms earlier native publications whose execution and verification were acknowledged, even when a later admission fails or the job is cancelled.
 Every normal return, recording refusal, cancellation and publication failure releases the held descriptors.
 Failure to open or identify the second descriptor refuses publication and retains the uncertain temporary.
 
@@ -124,7 +124,7 @@ Until then the engine download path is unbound by this project's evidence, inclu
 
 Existing same-size native refusals, retained temporaries, and the close-failure identity rule stay.
 No overwrite, Mirror start, source deletion, automatic segment cleanup or credential reclamation is authorised.
-The bridge surface does not widen.
+Source identity stays off the bridge; ADR 0061 separately exposes the final-publication facts in the jobs view.
 L07 cancellation checks are not moved, added or removed.
 `mutateservice.go`, `containerupdate.go` and `browserState.svelte.ts` are not this slice.
 

@@ -44,7 +44,8 @@ func (s *TransferService) downloadItemRecorder(ctx context.Context, jobID string
 				return jobs.ErrInvalidItemRecord
 			}
 			intent := jobs.ItemIntent{ItemIdentity: identity,
-				ListedBytes: admission.Item.Size, Planned: true, Admitted: true}
+				ListedBytes: admission.Item.Size, Planned: true, Admitted: true,
+				PublicationRequired: !admission.Item.Dir && admission.Item.Route == "native"}
 			if admission.StagingPath != "" {
 				intent.Staging = &jobs.ItemLocation{Kind: jobs.ItemLocal, LocalPath: admission.StagingPath}
 			}
@@ -72,6 +73,16 @@ func (s *TransferService) downloadItemRecorder(ctx context.Context, jobID string
 				return err
 			}
 			return s.jobs.RecordComparison(ctx, jobID, identity, copyItemObservation(observation))
+		},
+		Publication: func(item local.DownloadItem, observation transfercopy.Observation) error {
+			identity, err := downloadItemIdentity(req, root, item)
+			if err != nil {
+				return err
+			}
+			if err := identity.Validate(); err != nil {
+				return err
+			}
+			return s.jobs.RecordPublication(ctx, jobID, identity, copyItemObservation(observation))
 		},
 	}
 }

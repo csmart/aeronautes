@@ -105,7 +105,7 @@ func DownloadInto(ctx context.Context, src *swiftcontrol.Session, engine Engine,
 		return nil, err
 	}
 	d := &downloadRun{recorder: recorder, report: &Report{}}
-	defer func() { runErr = errors.Join(runErr, d.closeNativePublications()) }()
+	defer func() { runErr = errors.Join(runErr, d.confirmNativePublications(destination)) }()
 	report = d.report
 	total := int64(len(preflight.Items))
 	progress := func() {
@@ -172,7 +172,7 @@ func DownloadInto(ctx context.Context, src *swiftcontrol.Session, engine Engine,
 		}
 		progress()
 		if err := ctx.Err(); err != nil {
-			return report, errors.Join(err, outcome.err(), d.confirmNativePublications(destination))
+			return report, errors.Join(err, outcome.err())
 		}
 	}
 	if err := d.confirmNativePublications(destination); err != nil {
@@ -560,40 +560,34 @@ func (d *downloadRun) confirmNativePublications(destination *DestinationRoot) (c
 	}
 	defer func() { confirmErr = errors.Join(confirmErr, d.closeNativePublications()) }()
 	for _, published := range d.pendingNative {
+		observation := transfercopy.Observation{Result: transfercopy.ResultVerified, Effect: transfercopy.EffectNotAttempted}
 		current, err := destination.root.Lstat(published.copied.publishedRel)
 		var pinned os.FileInfo
 		if err == nil && published.copied.published != nil {
 			pinned, err = published.copied.published.Stat()
 		}
-		if err == nil && pinned != nil && os.SameFile(current, pinned) {
-			if d.recorder != nil && published.copied.verification != nil {
-				if err := d.recorder.Verify(published.item, *published.copied.verification); err != nil {
-					return d.stop(err)
-				}
+		if err != nil || pinned == nil || !os.SameFile(current, pinned) {
+			reason := errors.New("published file no longer names the verified download")
+			if err != nil {
+				reason = fmt.Errorf("published file no longer names the verified download: %w", err)
 			}
-			continue
+			// Placement happened even when the later name is missing or
+			// replaced. Retain its copied bytes and reduce only verification.
+			d.report.Verified--
+			observation = transfercopy.Observation{Result: transfercopy.ResultFailed, Effect: transfercopy.EffectUnresolved,
+				Diagnostic: transfercopy.ClassifyDiagnostic(transfercopy.StageVerification, transfercopy.CodeUnverified, reason)}
+			if len(d.report.Failures) < maxFailures {
+				d.report.Failures = append(d.report.Failures, Failure{Name: published.item.Name, Stage: "native-get", Err: reason.Error()})
+			}
 		}
-		reason := errors.New("published file no longer names the verified download")
-		if err != nil {
-			reason = fmt.Errorf("published file no longer names the verified download: %w", err)
-		}
-		if d.report.Done > 0 {
-			d.report.Done--
-		}
-		if published.copied.CopiedBytes > 0 && d.report.Bytes >= published.copied.CopiedBytes {
-			d.report.Bytes -= published.copied.CopiedBytes
-		}
-		failed := downloadVerificationFailed(transfercopy.StageVerification, transfercopy.CodeUnverified, "native-get", reason)
-		if len(d.report.Failures) < maxFailures {
-			d.report.Failures = append(d.report.Failures, Failure{Name: published.item.Name, Stage: failed.label, Err: failed.err().Error()})
-		}
-		if d.recorder != nil && failed.verification != nil {
-			if err := d.recorder.Verify(published.item, *failed.verification); err != nil {
-				return d.stop(err)
+		if d.recorder != nil {
+			if err := d.recorder.Publication(published.item, observation); err != nil {
+				d.stop(err)
+				confirmErr = errors.Join(confirmErr, err)
 			}
 		}
 	}
-	return d.stopped
+	return confirmErr
 }
 
 func (d *downloadRun) copy(ctx context.Context, session *swiftcontrol.Session, run func(context.Context) (*rclone.Result, error)) (*rclone.Result, error) {

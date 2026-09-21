@@ -148,7 +148,6 @@ func finishNativeDownload(ctx context.Context, body io.ReadCloser, temp nativeDo
 		return downloadPlacementFailed("native-get", err)
 	}
 	result = downloadVerified(wantSize)
-	result.deferVerify = true
 	result.published = pinned
 	result.publishedRel = publish.targetRel
 	return result

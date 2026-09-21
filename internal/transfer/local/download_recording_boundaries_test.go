@@ -13,14 +13,15 @@ import (
 )
 
 func TestDownloadRequiresCompleteRecorder(t *testing.T) {
-	for _, missing := range []string{"nil", "admit", "execute", "verify", "extra"} {
+	for _, missing := range []string{"nil", "admit", "execute", "verify", "publication", "extra"} {
 		t.Run(missing, func(t *testing.T) {
 			root := t.TempDir()
 			calls := 0
 			recorder := &DownloadRecorder{
-				Admit:   func(DownloadAdmission) error { calls++; return nil },
-				Execute: func(DownloadItem, transfercopy.Observation) error { calls++; return nil },
-				Verify:  func(DownloadItem, transfercopy.Observation) error { calls++; return nil },
+				Publication: func(DownloadItem, transfercopy.Observation) error { calls++; return nil },
+				Admit:       func(DownloadAdmission) error { calls++; return nil },
+				Execute:     func(DownloadItem, transfercopy.Observation) error { calls++; return nil },
+				Verify:      func(DownloadItem, transfercopy.Observation) error { calls++; return nil },
 			}
 			switch missing {
 			case "nil":
@@ -31,6 +32,8 @@ func TestDownloadRequiresCompleteRecorder(t *testing.T) {
 				recorder.Execute = nil
 			case "verify":
 				recorder.Verify = nil
+			case "publication":
+				recorder.Publication = nil
 			}
 			recorders := []*DownloadRecorder{recorder}
 			if missing == "extra" {
@@ -65,7 +68,8 @@ func TestDownloadNativeCancellationBetweenItems(t *testing.T) {
 			defer cancel()
 			admitted, executed, verified := 0, 0, 0
 			recorder := &DownloadRecorder{
-				Admit: func(DownloadAdmission) error { admitted++; return nil },
+				Publication: func(DownloadItem, transfercopy.Observation) error { return nil },
+				Admit:       func(DownloadAdmission) error { admitted++; return nil },
 				Execute: func(item DownloadItem, observation transfercopy.Observation) error {
 					executed++
 					if observation.Result != transfercopy.ResultCopied || observation.CopiedBytes != 7 {
@@ -134,7 +138,8 @@ func TestDownloadRecordsPartialChildEffects(t *testing.T) {
 	}
 	admitted, executed, verified := 0, 0, 0
 	recorder := &DownloadRecorder{
-		Admit: func(DownloadAdmission) error { admitted++; return nil },
+		Publication: func(DownloadItem, transfercopy.Observation) error { return nil },
+		Admit:       func(DownloadAdmission) error { admitted++; return nil },
 		Execute: func(_ DownloadItem, observation transfercopy.Observation) error {
 			executed++
 			if observation.Result != transfercopy.ResultFailed || observation.Effect != transfercopy.EffectUnresolved || observation.CopiedBytes != 0 {

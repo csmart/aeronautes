@@ -16,7 +16,7 @@ import (
 )
 
 func TestDownloadItemAdapterRejectsInvalidIdentityBeforeWrite(t *testing.T) {
-	for _, phase := range []string{"admit", "execute", "verify"} {
+	for _, phase := range []string{"admit", "execute", "verify", "publication"} {
 		for _, fault := range []string{"key", "path", "relative_root", "source", "container", "bookmark", "bytes", "prefix", "relative", "dot", "empty_component", "directory_size", "directory_name", "stage_relative", "stage_cleaned", "stage_other_root", "stage_other_item", "stage_native_name", "stage_native_parent", "stage_directory"} {
 			if phase != "admit" && strings.HasPrefix(fault, "stage_") {
 				continue
@@ -76,7 +76,7 @@ func TestDownloadItemAdapterRejectsInvalidIdentityBeforeWrite(t *testing.T) {
 					admission.Item.Name, admission.Item.Dir, admission.Item.Size = "scope/source/", true, 0
 				}
 				if err := h.db.WriteTx(t.Context(), func(tx *sql.Tx) error {
-					for _, table := range []string{"job_items", "job_item_observations"} {
+					for _, table := range []string{"job_items", "job_item_observations", "job_item_publications"} {
 						if _, err := tx.Exec("CREATE TRIGGER reject_" + table + " BEFORE INSERT ON " + table + " BEGIN SELECT RAISE(ABORT,'fixture must not write'); END"); err != nil {
 							return err
 						}
@@ -93,6 +93,8 @@ func TestDownloadItemAdapterRejectsInvalidIdentityBeforeWrite(t *testing.T) {
 					err = recorder.Execute(admission.Item, transfercopy.Observation{Result: transfercopy.ResultNotAttempted, Effect: transfercopy.EffectNotAttempted})
 				case "verify":
 					err = recorder.Verify(admission.Item, transfercopy.Observation{Result: transfercopy.ResultVerified, Effect: transfercopy.EffectNotAttempted})
+				case "publication":
+					err = recorder.Publication(admission.Item, transfercopy.Observation{Result: transfercopy.ResultVerified, Effect: transfercopy.EffectNotAttempted})
 				}
 				if !errors.Is(err, jobs.ErrInvalidItemRecord) || h.transfer.jobs.Available() != nil {
 					t.Fatalf("invalid download representation reached storage or was accepted: %v latch=%v", err, h.transfer.jobs.Available())
@@ -142,6 +144,11 @@ func TestDownloadItemRecordingCost(t *testing.T) {
 				if err := recorder.Verify(item, transfercopy.Observation{Result: transfercopy.ResultVerified, Effect: transfercopy.EffectNotAttempted}); err != nil {
 					t.Fatal(err)
 				}
+				if native {
+					if err := recorder.Publication(item, transfercopy.Observation{Result: transfercopy.ResultVerified, Effect: transfercopy.EffectNotAttempted}); err != nil {
+						t.Fatal(err)
+					}
+				}
 			}
 			recording := time.Since(started)
 			counters := jobs.Counters{ObjectsPlanned: count, BytesPlanned: count * 5, ObjectsCopied: count, ObjectsVerified: count, BytesCopied: count * 5}
@@ -152,7 +159,11 @@ func TestDownloadItemRecordingCost(t *testing.T) {
 			if finished, err := store.Get(t.Context(), job.ID); err != nil || finished.State != jobs.StateComplete || finished.Counters != counters {
 				t.Fatalf("recording cost control did not finish: %+v %v", finished, err)
 			}
-			encoded, err := json.Marshal(map[string]any{"native": native, "names": count, "acknowledged_writes": count * 3, "recording_ms": float64(recording) / float64(time.Millisecond), "completion_ms": float64(time.Since(started)-recording) / float64(time.Millisecond)})
+			writes := count * 3
+			if native {
+				writes += count
+			}
+			encoded, err := json.Marshal(map[string]any{"native": native, "names": count, "acknowledged_writes": writes, "recording_ms": float64(recording) / float64(time.Millisecond), "completion_ms": float64(time.Since(started)-recording) / float64(time.Millisecond)})
 			if err != nil {
 				t.Fatal(err)
 			}

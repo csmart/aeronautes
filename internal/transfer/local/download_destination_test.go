@@ -116,9 +116,10 @@ func TestDownloadDestinationEntry(t *testing.T) {
 					var recorders []*DownloadRecorder
 					if recorded {
 						recorders = []*DownloadRecorder{{
-							Admit:   func(DownloadAdmission) error { callbacks++; return nil },
-							Execute: func(DownloadItem, transfercopy.Observation) error { callbacks++; return nil },
-							Verify:  func(DownloadItem, transfercopy.Observation) error { callbacks++; return nil },
+							Publication: func(DownloadItem, transfercopy.Observation) error { return nil },
+							Admit:       func(DownloadAdmission) error { callbacks++; return nil },
+							Execute:     func(DownloadItem, transfercopy.Observation) error { callbacks++; return nil },
+							Verify:      func(DownloadItem, transfercopy.Observation) error { callbacks++; return nil },
 						}}
 					}
 					report, err := Download(t.Context(), source, engine, "remote:media", "media", prefix, root, "fixture", plan,
@@ -155,9 +156,10 @@ func TestDownloadDestinationEmptyEntry(t *testing.T) {
 				before := downloadDestinationSnapshot(t, owned)
 				calls := 0
 				recorder := &DownloadRecorder{
-					Admit:   func(DownloadAdmission) error { calls++; return nil },
-					Execute: func(DownloadItem, transfercopy.Observation) error { calls++; return nil },
-					Verify:  func(DownloadItem, transfercopy.Observation) error { calls++; return nil },
+					Publication: func(DownloadItem, transfercopy.Observation) error { return nil },
+					Admit:       func(DownloadAdmission) error { calls++; return nil },
+					Execute:     func(DownloadItem, transfercopy.Observation) error { calls++; return nil },
+					Verify:      func(DownloadItem, transfercopy.Observation) error { calls++; return nil },
 				}
 				report, err := Download(t.Context(), nil, nil, "", "media", "scope/", root, "fixture", plan, nil, recorder)
 				if state != "directory" {

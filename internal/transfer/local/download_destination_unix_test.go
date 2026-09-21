@@ -88,9 +88,10 @@ func TestDownloadDestinationInspectionError(t *testing.T) {
 				requests, calls := mock.Requests(), 0
 				engine := &downloadRecordingEngine{Engine: &fsEngine{session: source}}
 				recorder := &DownloadRecorder{
-					Admit:   func(DownloadAdmission) error { calls++; return nil },
-					Execute: func(DownloadItem, transfercopy.Observation) error { calls++; return nil },
-					Verify:  func(DownloadItem, transfercopy.Observation) error { calls++; return nil },
+					Publication: func(DownloadItem, transfercopy.Observation) error { return nil },
+					Admit:       func(DownloadAdmission) error { calls++; return nil },
+					Execute:     func(DownloadItem, transfercopy.Observation) error { calls++; return nil },
+					Verify:      func(DownloadItem, transfercopy.Observation) error { calls++; return nil },
 				}
 				report, err := Download(t.Context(), source, engine, "remote:media", "media", prefix, root, "fixture", plan, nil, recorder)
 				if err == nil || report != nil || calls != 0 || engine.calls != 0 || mock.Requests() != requests {

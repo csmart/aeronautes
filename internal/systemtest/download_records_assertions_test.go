@@ -95,7 +95,7 @@ func assertDownloadItemPages(t *testing.T, h *Harness, id string, stored map[str
 				row.Source != (app.JobItemLocationDTO{Kind: "swift", BookmarkID: item.Source.BookmarkID, Container: item.Source.Container, Object: item.Source.Object,
 					Display: strconv.Quote(item.Source.BookmarkID) + " / " + strconv.Quote(item.Source.Container) + " / " + strconv.Quote(item.Source.Object)}) ||
 				row.Destination != (app.JobItemLocationDTO{Kind: "local", LocalPath: item.Destination.LocalPath, Display: strconv.Quote(item.Destination.LocalPath)}) ||
-				row.Planned != item.Planned || row.Admitted != item.Admitted || row.ListedBytes != item.ListedBytes {
+				row.Planned != item.Planned || row.Admitted != item.Admitted || row.ListedBytes != item.ListedBytes || row.PublicationRequired != item.PublicationRequired {
 				t.Fatalf("public download identity differs: %+v", row)
 			}
 			if (row.Staging == nil) != (item.Staging == nil) || row.Staging != nil &&
@@ -104,6 +104,7 @@ func assertDownloadItemPages(t *testing.T, h *Harness, id string, stored map[str
 			}
 			assertUploadPublicObservation(t, row.Execution, item.Execution)
 			assertUploadPublicObservation(t, row.Verification, item.Verification)
+			assertUploadPublicObservation(t, row.Publication, item.Publication)
 			seen[row.Key], lastID = true, rowID
 		}
 		encoded, err := json.Marshal(page)
