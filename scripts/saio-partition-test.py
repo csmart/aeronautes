@@ -2,6 +2,7 @@
 """Check that splitting the Swift suite cannot hide missing work."""
 
 import copy
+import hashlib
 import importlib.util
 import json
 import os
@@ -188,6 +189,327 @@ class PartitionTests(unittest.TestCase):
             combined = (root / "joined" / "cover.out").read_text()
             self.assertEqual(combined.count("mode: atomic"), 1)
             self.assertEqual(len(combined.splitlines()), 3)
+
+
+CONTROL_ACTIONS = [
+    {"action": "SyntheticService.Read", "kind": "read", "required": ["happy"]},
+    {"action": "SyntheticService.Write", "kind": "mutate", "required": ["happy", "refusal"]},
+]
+CONTROL_CELL = ("SyntheticService.Read", "happy")
+
+
+def control_fingerprint(actions):
+    text = "".join(f'{row["action"]}|{row["kind"]}|{",".join(row["required"])}\n'
+                   for row in sorted(actions, key=lambda row: row["action"]))
+    return hashlib.sha256(text.encode()).hexdigest()[:16]
+
+
+def control_report(cells=(), actions=None):
+    """Synthetic component controls, never baseline admission evidence."""
+    rows = copy.deepcopy(CONTROL_ACTIONS if actions is None else actions)
+    for row in rows:
+        covered = [scenario for scenario in row["required"] if (row["action"], scenario) in cells]
+        row["covered"] = [{"scenario": scenario, "tests": [SYSTEM + "\tTestSyntheticControl"],
+                           "evidence": ["synthetic control only"]} for scenario in covered] or None
+        row["gaps"] = [scenario for scenario in row["required"] if scenario not in covered] or None
+    gaps = sum(bool(row["gaps"]) for row in rows)
+    return {"schemaVersion": 3, "valid": True, "processSucceeded": True,
+            "streamComplete": True, "contractValid": True, "coverageComplete": gaps == 0,
+            "commitSha": IDENTITY["commit"], "goVersion": IDENTITY["go_version"],
+            "saioConfigured": False, "contractHash": control_fingerprint(rows),
+            "totalActions": len(rows), "totalRequired": sum(len(row["required"]) for row in rows),
+            "totalCovered": sum(len(row["covered"] or []) for row in rows),
+            "actionsWithGaps": gaps, "nonJSONLines": 0, "actions": rows}
+
+
+def control_baseline():
+    return {"schemaVersion": 1, "reportSchemaVersion": 3,
+            "identity": {**IDENTITY, "commit": "b" * 40, "run_id": "100"},
+            "contractHash": control_fingerprint(CONTROL_ACTIONS),
+            "actions": copy.deepcopy(CONTROL_ACTIONS),
+            "protected": [{"action": CONTROL_CELL[0], "scenario": CONTROL_CELL[1]}],
+            "evidence": {"reference": "synthetic control only; not admitted evidence",
+                         "mainReportSHA256": "1" * 64, "heavyReportSHA256": "2" * 64,
+                         "mainReceiptSHA256": "3" * 64, "heavyReceiptSHA256": "4" * 64}}
+
+
+class ScenarioPreservationTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory(prefix="scenario-control-")
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.main = self.root / "main.json"
+        self.heavy = self.root / "heavy.json"
+        self.baseline = self.root / "baseline.control.json"
+        self.result = self.root / "preservation.json"
+        self.reset_controls()
+
+    def reset_controls(self):
+        write_json(self.main, control_report([CONTROL_CELL]))
+        write_json(self.heavy, control_report())
+        write_json(self.baseline, control_baseline())
+
+    def compare(self, identity=IDENTITY):
+        return PARTITION.check_scenario_preservation(
+            self.main, self.heavy, self.baseline, identity, self.result)
+
+    def refused(self):
+        before = {path: path.read_bytes() for path in (self.main, self.heavy, self.baseline)
+                  if path.is_file()}
+        with self.assertRaisesRegex(ValueError, "scenario preservation"):
+            self.compare()
+        result = json.loads(self.result.read_text())
+        self.assertIs(result["preserved"], False)
+        for path, data in before.items():
+            self.assertEqual(path.read_bytes(), data, "comparison changed a raw input")
+        return result
+
+    def test_valid_incomplete_control_accepts_older_baseline_and_null_lists(self):
+        result = self.compare()
+        self.assertIs(result["preserved"], True)
+        self.assertEqual(result["identity"], IDENTITY)
+        self.assertEqual(result["baselineSHA256"], hashlib.sha256(self.baseline.read_bytes()).hexdigest())
+        self.assertEqual(result["requiredDrift"], [])
+        self.assertEqual(result["missingProtected"], [])
+        self.assertEqual(result["errors"], [])
+        self.assertEqual(json.loads(self.result.read_text()), result)
+        self.assertIs(json.loads(self.main.read_text())["coverageComplete"], False)
+
+    def test_lost_cell_fails_despite_unchanged_valid_incomplete_flags(self):
+        write_json(self.main, control_report())
+        result = self.refused()
+        self.assertEqual(result["missingProtected"], [{"action": CONTROL_CELL[0], "scenario": "happy"}])
+        self.assertEqual(result["requiredDrift"], [])
+        self.assertEqual(result["errors"], [])
+        self.assertIs(json.loads(self.main.read_text())["valid"], True)
+
+    def test_equal_coverage_total_cannot_replace_protected_identity(self):
+        write_json(self.main, control_report([("SyntheticService.Write", "happy")]))
+        result = self.refused()
+        self.assertEqual(json.loads(self.main.read_text())["totalCovered"], 1)
+        self.assertEqual(result["missingProtected"], [{"action": CONTROL_CELL[0], "scenario": "happy"}])
+
+    def test_additional_credits_and_changed_witness_do_not_change_baseline(self):
+        report = control_report([CONTROL_CELL, ("SyntheticService.Write", "refusal")])
+        report["actions"][0]["covered"][0].update(tests=[SYSTEM + "\tTestReplacement"], evidence=[""])
+        write_json(self.main, report)
+        before = self.baseline.read_bytes()
+        self.assertIs(self.compare()["preserved"], True)
+        self.assertEqual(self.baseline.read_bytes(), before)
+
+    def test_drift_retains_missing_cells_even_when_required_identity_disappears(self):
+        actions = [CONTROL_ACTIONS[1]]
+        write_json(self.main, control_report(actions=actions))
+        write_json(self.heavy, control_report(actions=actions))
+        result = self.refused()
+        self.assertEqual(result["requiredDrift"], [{"action": CONTROL_CELL[0],
+                                                  "baseline": {"kind": "read", "required": ["happy"]},
+                                                  "current": None}])
+        self.assertEqual(result["missingProtected"], [{"action": CONTROL_CELL[0], "scenario": "happy"}])
+        self.assertEqual(result["errors"], [])
+
+    def test_new_required_cell_and_kind_change_are_drift(self):
+        for change in ("added", "kind", "order"):
+            with self.subTest(change=change):
+                self.reset_controls()
+                actions = copy.deepcopy(CONTROL_ACTIONS)
+                if change == "added":
+                    actions.append({"action": "SyntheticService.New", "kind": "read", "required": ["happy"]})
+                elif change == "kind":
+                    actions[0]["kind"] = "session"
+                else:
+                    actions[1]["required"].reverse()
+                write_json(self.main, control_report([CONTROL_CELL], actions))
+                write_json(self.heavy, control_report(actions=actions))
+                result = self.refused()
+                self.assertEqual(len(result["requiredDrift"]), 1)
+                self.assertEqual(result["missingProtected"], [])
+
+    def test_row_credit_and_witness_order_do_not_change_diagnostics(self):
+        report = control_report([CONTROL_CELL, ("SyntheticService.Write", "happy"),
+                                 ("SyntheticService.Write", "refusal")])
+        report["actions"][0]["covered"][0].update(
+            tests=[SYSTEM + "\tTestSecond", SYSTEM + "\tTestFirst"], evidence=["two", "one"])
+        write_json(self.main, report)
+        self.compare()
+        before = self.result.read_bytes()
+        report["actions"].reverse()
+        report["actions"][0]["covered"].reverse()
+        credit = report["actions"][1]["covered"][0]
+        credit["tests"].reverse()
+        credit["evidence"].reverse()
+        write_json(self.main, report)
+        self.compare()
+        self.assertEqual(self.result.read_bytes(), before)
+
+    def test_schema_flags_counts_and_error_contradictions_are_refused(self):
+        bad = {"schemaVersion": 4, "valid": 1, "processSucceeded": False,
+               "streamComplete": False, "contractValid": False, "coverageComplete": True,
+               "totalActions": 1, "totalRequired": 2, "totalCovered": True,
+               "actionsWithGaps": 0, "nonJSONLines": 1, "saioConfigured": "false",
+               "protocolError": "error", "violations": ["bad"], "violationsTruncated": 1,
+               "missingPackages": [SYSTEM], "failedPackages": [SYSTEM],
+               "unexpectedPackages": [SYSTEM], "unrecognised": 1}
+        for lane in (self.main, self.heavy):
+            for field, value in bad.items():
+                with self.subTest(lane=lane.name, field=field):
+                    self.reset_controls()
+                    report = json.loads(lane.read_text())
+                    report[field] = value
+                    write_json(lane, report)
+                    self.assertTrue(self.refused()["errors"])
+
+    def test_count_fields_reject_boolean_float_negative_and_missing_values(self):
+        for field in ("totalActions", "totalRequired", "totalCovered", "actionsWithGaps", "nonJSONLines"):
+            for value in (False, 0.0, -1, None):
+                with self.subTest(field=field, value=value):
+                    self.reset_controls()
+                    report = control_report([CONTROL_CELL])
+                    if value is None:
+                        report.pop(field)
+                    else:
+                        report[field] = value
+                    write_json(self.main, report)
+                    self.assertTrue(self.refused()["errors"])
+
+    def test_current_source_toolchain_and_fingerprint_must_match(self):
+        for lane in (self.main, self.heavy):
+            for field, value in (("commitSha", "c" * 40), ("goVersion", "go1.26.0"),
+                                 ("contractHash", "0" * 16)):
+                with self.subTest(lane=lane.name, field=field):
+                    self.reset_controls()
+                    report = json.loads(lane.read_text())
+                    report[field] = value
+                    write_json(lane, report)
+                    self.assertTrue(self.refused()["errors"])
+
+    def test_invalid_rows_sets_and_witnesses_are_refused(self):
+        changes = {
+            "empty inventory": lambda report: report.update(actions=[]),
+            "duplicate action": lambda report: report["actions"].append(copy.deepcopy(report["actions"][0])),
+            "unknown kind": lambda report: report["actions"][0].update(kind="transfer"),
+            "bad identity": lambda report: report["actions"][0].update(action="bad name"),
+            "duplicate requirement": lambda report: report["actions"][0].update(required=["happy", "happy"]),
+            "unknown scenario": lambda report: report["actions"][0].update(required=["success"]),
+            "missing gaps": lambda report: report["actions"][1].pop("gaps"),
+            "wrong gaps": lambda report: report["actions"][1].update(gaps=[]),
+            "duplicate credit": lambda report: report["actions"][0]["covered"].append(
+                copy.deepcopy(report["actions"][0]["covered"][0])),
+            "unrequired credit": lambda report: report["actions"][0]["covered"][0].update(scenario="refusal"),
+            "empty witnesses": lambda report: report["actions"][0]["covered"][0].update(tests=[], evidence=[]),
+            "duplicate witness": lambda report: report["actions"][0]["covered"][0].update(
+                tests=[SYSTEM + "\tTestA"] * 2, evidence=["a", "b"]),
+            "subtest witness": lambda report: report["actions"][0]["covered"][0].update(tests=[SYSTEM + "\tTestA/sub"]),
+            "missing evidence": lambda report: report["actions"][0]["covered"][0].update(evidence=[]),
+            "nonstring evidence": lambda report: report["actions"][0]["covered"][0].update(evidence=[False]),
+        }
+        for name, change in changes.items():
+            with self.subTest(case=name):
+                self.reset_controls()
+                report = control_report([CONTROL_CELL])
+                change(report)
+                write_json(self.main, report)
+                self.assertTrue(self.refused()["errors"])
+
+    def test_baseline_metadata_and_protected_set_are_required(self):
+        changes = {
+            "schema": lambda value: value.update(schemaVersion=True),
+            "report schema": lambda value: value.update(reportSchemaVersion=2),
+            "missing provenance": lambda value: value.pop("evidence"),
+            "missing digest": lambda value: value["evidence"].pop("mainReceiptSHA256"),
+            "invalid digest": lambda value: value["evidence"].update(mainReportSHA256="short"),
+            "empty reference": lambda value: value["evidence"].update(reference=""),
+            "source identity": lambda value: value["identity"].update(commit="short"),
+            "missing attempt": lambda value: value["identity"].pop("run_attempt"),
+            "zero run": lambda value: value["identity"].update(run_id="0"),
+            "empty protected": lambda value: value.update(protected=[]),
+            "duplicate protected": lambda value: value["protected"].append(copy.deepcopy(value["protected"][0])),
+            "unknown protected": lambda value: value["protected"][0].update(scenario="refusal"),
+            "false fingerprint": lambda value: value.update(contractHash="0" * 16),
+        }
+        for name, change in changes.items():
+            with self.subTest(case=name):
+                self.reset_controls()
+                baseline = control_baseline()
+                change(baseline)
+                write_json(self.baseline, baseline)
+                self.assertTrue(self.refused()["errors"])
+
+    def test_duplicate_json_keys_truncation_and_missing_input_leave_failure_artifact(self):
+        for path in (self.main, self.heavy, self.baseline):
+            for change in ("duplicate", "nested duplicate", "truncated", "trailing", "null", "missing"):
+                with self.subTest(path=path.name, change=change):
+                    self.reset_controls()
+                    if change == "duplicate":
+                        path.write_text('{"schemaVersion": 3, ' + path.read_text()[1:])
+                    elif change == "nested duplicate":
+                        path.write_text(path.read_text().replace('"kind": "read"',
+                                                                '"kind": "read", "kind": "read"'))
+                    elif change == "truncated":
+                        path.write_text(path.read_text()[:-3])
+                    elif change == "trailing":
+                        path.write_text(path.read_text() + '{}')
+                    elif change == "null":
+                        path.write_text('null')
+                    else:
+                        path.unlink()
+                    result = self.refused()
+                    self.assertTrue(result["errors"])
+                    self.assertIsNone(result["missingProtected"])
+
+    def test_heavy_credits_and_different_lane_contracts_are_refused(self):
+        write_json(self.heavy, control_report([CONTROL_CELL]))
+        self.assertTrue(self.refused()["errors"])
+        changed = copy.deepcopy(CONTROL_ACTIONS)
+        changed[0]["kind"] = "session"
+        write_json(self.heavy, control_report(actions=changed))
+        self.assertTrue(self.refused()["errors"])
+
+    def test_missing_candidate_identity_and_unwritable_result_cannot_succeed(self):
+        for field in IDENTITY:
+            with self.subTest(field=field):
+                identity = dict(IDENTITY)
+                identity.pop(field)
+                with self.assertRaises(ValueError):
+                    self.compare(identity)
+                self.assertIs(json.loads(self.result.read_text())["preserved"], False)
+        self.result.unlink()
+        self.result.mkdir()
+        with self.assertRaises(OSError):
+            self.compare()
+
+    def test_result_cannot_overwrite_any_raw_input_or_its_hardlink(self):
+        for path in (self.main, self.heavy, self.baseline):
+            with self.subTest(path=path.name):
+                before = path.read_bytes()
+                for result in (path, self.root / "input-alias.json"):
+                    if result != path:
+                        os.link(path, result)
+                    with self.assertRaisesRegex(ValueError, "must not replace"):
+                        PARTITION.check_scenario_preservation(
+                            self.main, self.heavy, self.baseline, IDENTITY, result)
+                    self.assertEqual(path.read_bytes(), before)
+                    if result != path:
+                        result.unlink()
+
+    def test_legacy_join_still_accepts_loss_while_uncalled_component_refuses_it(self):
+        fixture = PartitionTests()
+        fixture.complete(self.root / "main", "main")
+        fixture.complete(self.root / "heavy", "heavy")
+        for lane in ("main", "heavy"):
+            write_json(self.root / lane / "scenario-coverage.json", control_report())
+            PARTITION.check(self.root / lane, 0, 0)
+        PARTITION.join(self.root / "main", self.root / "heavy", self.root / "joined", IDENTITY)
+        report = json.loads((self.root / "joined" / "scenario-coverage.json").read_text())
+        self.assertIs(report["valid"], True)
+        self.assertEqual(report["totalCovered"], 0)
+        self.assertIs(report["coverageComplete"], False)
+        with self.assertRaisesRegex(ValueError, "scenario preservation"):
+            PARTITION.check_scenario_preservation(
+                self.root / "main" / "scenario-coverage.json",
+                self.root / "heavy" / "scenario-coverage.json", self.baseline, IDENTITY, self.result)
+        self.assertEqual(json.loads(self.result.read_text())["missingProtected"],
+                         [{"action": CONTROL_CELL[0], "scenario": "happy"}])
 
 
 HEADER = 'mode: atomic\n'
