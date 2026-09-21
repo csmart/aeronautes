@@ -63,5 +63,15 @@ Separate cases check normal completion, admission/execution/verification recordi
 The pin does not retain an extra directory entry or change the existing temporary and directory cleanup rules.
 It does add one descriptor per pending native publication, and arbitrary-workload resource bounds remain unproven.
 
-Broader mock revalidation also exposed two required-record ordering failures and two source-close fixture failures.
-Those remain release blockers pending their separate correction; this inode repair does not claim that the complete download suite passes.
+At `acda6c3c`, broader mock revalidation also exposed two required-record ordering failures and two source-close fixture failures.
+The required-record ordering failures remain release blockers pending ADR 0061; the complete download suite is not yet claimed to pass.
+
+### Source-close fixture correction
+
+The source-close proxy removed GET Content-Length, then returned a post-GET HEAD length one byte larger than the listing.
+ADR 0060 correctly refused that changed identity before creating a temporary, so the fixture stopped exercising streamed-byte retention and source closure.
+The corrected fixture preserves the real source listing, entity tag and HEAD length, and ends only the chunked GET one byte early.
+Both the in-flight comparison and the independent Swift reader still reject the short body, including `ObjectCorrupted` on Close.
+The existing cases retain their exact served-byte, no-publication, durable item, audit, reopen and no-collateral assertions on the mock and the owned two-account Swift fixture.
+Planned and listed bytes continue to describe the full source, while retained bytes describe the shorter response that was actually served.
+Production source admission and closure handling are unchanged.

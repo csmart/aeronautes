@@ -13,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -58,8 +57,12 @@ func downloadCloseRun(t *testing.T, h *Harness, scenario string) {
 	source := h.Container(h.Primary, "download-close-source")
 	other := h.Container(h.Secondary, "download-close-other")
 	prefix, name := "scope\n/", "proof.bin"
-	body := []byte("selected source bytes")
-	h.Seed(h.Primary, source, prefix+name, body, nil)
+	sourceBody := []byte("selected source bytes")
+	body := sourceBody
+	if fault {
+		body = body[:len(body)-1]
+	}
+	h.Seed(h.Primary, source, prefix+name, sourceBody, nil)
 	h.Seed(h.Primary, source, "outside", []byte("unselected source"), nil)
 	h.Seed(h.Secondary, other, "outside", []byte("other account"), nil)
 	beforeA, beforeB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
@@ -88,6 +91,14 @@ func downloadCloseRun(t *testing.T, h *Harness, scenario string) {
 	var gets, lengthHeads atomic.Int32
 	proxy.ModifyResponse = func(response *http.Response) error {
 		if response.Request.Method == http.MethodGet && response.Request.URL.Path == selectedPath && response.StatusCode == http.StatusOK {
+			if fault {
+				// Keep the source identity intact so this fault reaches the
+				// streamed body and Close rather than source admission.
+				response.Body = struct {
+					io.Reader
+					io.Closer
+				}{io.LimitReader(response.Body, int64(len(body))), response.Body}
+			}
 			if gets.Add(1) == 1 && cleanup {
 				response.Body = &downloadCloseEOFReader{ReadCloser: response.Body, arrived: eof, release: release}
 			}
@@ -113,11 +124,6 @@ func downloadCloseRun(t *testing.T, h *Harness, scenario string) {
 				if err := os.WriteFile(filepath.Join(destination, name), []byte("concurrent creator"), 0o600); err != nil {
 					t.Errorf("create target after preflight: %v", err)
 				}
-			}
-			if fault {
-				w.Header().Set("Content-Length", strconv.Itoa(len(body)+1))
-				w.WriteHeader(http.StatusOK)
-				return
 			}
 		}
 		proxy.ServeHTTP(w, r)
@@ -200,8 +206,8 @@ func downloadCloseRun(t *testing.T, h *Harness, scenario string) {
 	}
 	delta := map[string][]byte{}
 	if fault && !cleanup && !collision {
-		// The source advertises more bytes than it serves, so the content
-		// comparison rejects what arrived and its bytes are retained as
+		// The proxy ends the body before the source's advertised length,
+		// so the comparison rejects it and its bytes are retained as
 		// unresolved residue (ADR 0045). This fault previously cleaned the
 		// temporary up; it no longer does, because a rejected download
 		// must not reach a cleanup whose identity check cannot tell our
@@ -220,7 +226,7 @@ func downloadCloseRun(t *testing.T, h *Harness, scenario string) {
 	if cleanup {
 		delta["selected/"+filepath.Base(retained)] = body
 	}
-	want := jobs.Counters{ObjectsPlanned: 1, BytesPlanned: int64(len(body)), NativeRouted: 1}
+	want := jobs.Counters{ObjectsPlanned: 1, BytesPlanned: int64(len(sourceBody)), NativeRouted: 1}
 	state, result := "complete", "applied"
 	if fault || collision || cleanup {
 		want.ObjectsFailed = 1
@@ -264,7 +270,7 @@ func downloadCloseRun(t *testing.T, h *Harness, scenario string) {
 		}
 	}
 	item := saved.Items[0]
-	if saved.ItemTotals != totals || item.Key != prefix+name || !item.Planned || !item.Admitted || item.ListedBytes != int64(len(body)) ||
+	if saved.ItemTotals != totals || item.Key != prefix+name || !item.Planned || !item.Admitted || item.ListedBytes != int64(len(sourceBody)) ||
 		item.Source != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: source, Object: prefix + name}) ||
 		item.Destination != (jobs.ItemLocation{Kind: jobs.ItemLocal, LocalPath: filepath.Join(destination, name)}) ||
 		item.Staging == nil || item.Staging.Kind != jobs.ItemLocal || filepath.Dir(item.Staging.LocalPath) != destination ||
