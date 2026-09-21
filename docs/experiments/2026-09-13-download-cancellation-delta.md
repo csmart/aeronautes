@@ -2,7 +2,7 @@
 
 Finish-line item L07, P20 directory materialisation and stage cleanup under cancellation.
 This record is the reproduction and the contract proposal in [ADR 0043](../adr/0043-cancellation-delta-authority.md).
-No correction is implemented by this record.
+The initial reproduction and proposal are followed below by the delivered correction, controls and verification.
 
 ## What was already covered
 
