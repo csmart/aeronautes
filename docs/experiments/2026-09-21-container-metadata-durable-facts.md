@@ -51,3 +51,26 @@ Its path and digest are recorded with the implementation review.
 This is ordinary database reopen and a local owned Swift fixture, not crash, power-loss or representative-deployment proof.
 The oracle models named container configuration and objects; it does not claim every Swift header family or account configuration.
 The L09 concurrent-writer limitation, separate object attribution path, public-ACL policy and all named finish-line and release holds remain unchanged.
+
+## Conflict scenario receipts
+
+21 September 2026, following protected source `213728269e8d45167379e520b3c9534870a3503b`.
+The original 18-case matrix on each provider is unchanged.
+`TestContainerMetadataConflictReceiptMock` and `TestContainerMetadataConflictReceiptSwift` add top-level witnesses for the existing `MutateService.UpdateContainer/conflict` cell under [ADR 0013](../adr/0013-scenario-coverage-reconciliation.md).
+Each owns its harness, one public-service invocation and its returned receipt in the same top-level test, without subtests.
+
+The stale fingerprint returns conflict with a nil error after one observed target HEAD and zero POSTs on that instrumented primary target route.
+The reply, mutation fact and audit event must preserve the actual non-empty HEAD transaction ID.
+Distinct seeded metadata and object bytes make the primary target, same-named secondary target and primary collateral non-vacuous controls.
+Raw HTTP snapshots require both owned namespaces to remain unchanged, with no allowed delta.
+This does not observe every account request or state outside those namespaces.
+
+The case requires one identity-bearing conflict fact and one audit event with the exact captured bookmark, operation, literal resource and observed IDs.
+It closes the writer handle and reopens the same database, then requires the same fact by identity, unchanged fact cardinality and the complete original audit event, including its ID and timestamp.
+Only after those assertions does the invocation-bound receipt emit its claim.
+Failed or skipped claimants and later cleanup failures cannot earn a valid reconciled credit; the reporter still requires a terminally passing top-level test and expected package.
+A passing parent cannot establish that a skipped child exercised an oracle, so these scenarios do not delegate their assertions or receipt to a child.
+
+The private verification packet retains the focused provider streams, real producer exits, unchanged-matrix comparison and reporter results for the reviewed source.
+No inventory requirement, reporting gate, production behaviour or existing test budget changes.
+These are development receipts and ordinary database reopen evidence; native, representative-deployment, release and valuable-data acceptance remain separate.
