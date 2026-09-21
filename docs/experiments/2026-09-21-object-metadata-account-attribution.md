@@ -1,7 +1,7 @@
 # Object metadata saves can change accounts in the audit trail
 
-This is before evidence and the proposal in [ADR 0065](../adr/0065-object-metadata-account-attribution.md).
-The production correction is not implemented at this proposal head.
+The before evidence below motivated the implemented contract in [ADR 0065](../adr/0065-object-metadata-account-attribution.md).
+The reproduction describes the stated source; the implementation and maintained regressions follow it.
 
 ## Reproduction
 
@@ -16,12 +16,18 @@ The same-account control uses the same barrier and assertions and passes.
 The race-enabled probe compiles and fails at the named audit-account assertion in the connection-switch case.
 This establishes the later audit relabelling; it does not establish a particular scheduling occurrence between session capture and intent.
 
-## Proposed correction and proof
+## Implementation and maintained proof
 
-Capture the validated session and bookmark together at admission, then keep that bookmark through intent and the outcome/audit transaction.
-Keep the existing write and record ordering, uncertainty, writer lifetime and bridge signature.
-Maintain the caught case and control through the service on both owned providers, with independent remote state, reopened records and a compilable broken-attribution control.
-The implementation must preserve the existing failed-intent, failed-outcome, unverified-write, retention and shutdown regressions.
+The service captures the validated session and bookmark together at admission, then keeps that bookmark through intent and the outcome/audit transaction.
+It retains the existing write and record ordering, uncertainty, writer lifetime and bridge signature.
+`TestObjectMetadataAccountMock` and `TestObjectMetadataAccountSwift` each cover the same-account control, a switch after POST, a preflight conflict, a lost POST response and both required outcome/audit record refusals.
+Both accounts have the same resource names; independent remote snapshots verify the first account's intended delta, unchanged content and unchanged collateral on both accounts.
+The intent and reopened outcome must keep the same identity and first bookmark, and the raw audit must agree with that fact.
+The maintained before run catches three account-attribution failures on each provider, with the same-account and two record-refusal controls passing on each.
+The first focused run with the correction passes all twelve leaf cases.
+Restoring the later active bookmark only in the outcome audit produces the same six named failures after a successful test compilation, while all six controls pass.
+The guard producer separately rejects a deliberate syntax error as a build failure and grants it no assertion credit.
+Existing failed-intent, failed-outcome, unverified-write, retention and shutdown regressions remain unchanged.
 
 ## Evidence and limits
 
@@ -29,4 +35,7 @@ Private packet `~/code/.aeronautes-work/20260921-l11-object-attribution/` contai
 Its five-file `SHA256SUMS` has digest `a9a0a968a0e4a76f6d1551092b9c4d4904370c488ff601dbd63a103287641fce`.
 The focused run took 4.97 seconds at load 4.12 initially and 3.87 finally on the shared host; other authors and the reviewer could run concurrently.
 One named control passed and one named case failed; this was not a full suite or real Swift measurement.
-No tracked production edit, new authority, native or release acceptance follows from this probe.
+The initial private probe made no tracked production edit.
+Its packet remains unchanged; `maintained-before/` separately retains the twelve-case before run, source copy and metadata at proposal19a98cae.
+No new authority, native or release acceptance follows from these observations.
+Caller-named mutation binding, deferred create/marker recording and historical connection-generation provenance remain open.

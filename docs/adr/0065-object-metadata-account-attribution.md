@@ -1,6 +1,6 @@
 # ADR 0065: preserve the account of an object metadata write
 
-**Status:** Proposed; independent contract review is required before implementation.
+**Status:** Accepted and implemented for object metadata attribution.
 
 ## Context
 
@@ -43,6 +43,8 @@ Reading the active bookmark again at completion reproduces the defect whenever t
 Blocking all connection changes for a metadata write would add a new lifetime and UI policy that correct attribution does not require.
 Carrying the already validated tuple is the smallest change that keeps the existing operation and its records together.
 
-Audit.Search projection and display, account portraits, named-read snapshot races, container and deferred mutation paths remain separate slices.
+Audit.Search projection and display, account portraits, named-read snapshot races and container mutation attribution remain separate slices.
+The deferred `CreateContainer`, `CreateMarker` and `DeleteMarker` paths still use best-effort recording and can relabel their audit event after a connection switch.
 No schema, frontend mutation binding, public-ACL approval, crash/power-loss, physical recovery or native acceptance is added.
+L11's caller-named mutation binding remains open: this captures the admitted account without proving which account the caller intended.
 L04, L11, P12, P13, P28 and the valuable-data hold remain open.
