@@ -4,7 +4,7 @@
 The [baseline](../../internal/scenariocontract/preservation-baseline.json) retains all 53 actions, 120 required cells and every one of the 48 literal pairs credited by the main producer.
 Heavy contributes zero credits; 72 gaps across 35 actions remain, and `coverageComplete` is false.
 This is a bounded preservation floor, not full behavioural or release acceptance.
-The comparison remains uncalled by join, CLI and CI.
+At first baseline admission, the comparison was still uncalled by join, CLI and CI.
 
 ## Source and producer
 
@@ -62,4 +62,16 @@ Deferred-operation credits remain development evidence and grant no production c
 
 The rclone matrix and OS-keychain round trip were optional skips, never credited cells or native acceptance.
 No required cell is removed, declared N/A or waived, and no main/heavy union is invented.
-Aggregate activation and its failure/diagnostic-retention proof remain separate work; owner, native, security, deployment, release and valuable-data holds remain open.
+Aggregate activation and its failure/diagnostic-retention proof were a separate follow-up to admission, recorded below.
+Owner, native, security, deployment, release and valuable-data holds remain open.
+
+## Aggregate activation proof
+
+The join now compares against the admitted baseline after its existing prerequisites and output writes.
+The workflow records the actual Python join exit, requires zero, and uploads the available combined diagnostics even after failure.
+Source-bound local controls reproduce the former lost-cell success and verify actual CLI, exact workflow-shell and required-gate refusal without changing valid/incomplete report semantics.
+The unchanged reporter's running claim passes preservation; omitted, skipped and paused claims lose the protected cell and fail it.
+Thirteen compiled broken guards fail named assertions; deliberate syntax and setup failures receive no catch credit.
+The durable private activation packet is `/home/csmart/code/.aeronautes-work/20260922-p34-activation`, with retained proof manifest `PROOF-SHA256SUMS` digest `104b626f0f0fd9e3909a2a6b0d562e84577a24774854dc9f28c7c3b63c3f0605`.
+Its raw synthetic inputs, actual process exits and workflow-wiring checks establish composed local failure-path evidence, not an observed hosted failed upload or new admission evidence.
+Exact reviewed-head hosted success-artifact readback and resulting protected-master reconciliation remain required delivery evidence.

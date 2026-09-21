@@ -81,7 +81,7 @@ Missing files, unsupported cgroup files, discarded rotations and truncated outpu
 It reads only the disposable `saio` container and runner resource state, excludes environment/configuration dumps and object bodies, and redacts tempauth tokens and authentication-header lines before saving output.
 The [PR93 investigation](experiments/2026-09-11-swift-ci-failures.md) records why these observations are needed and keeps the earlier failure causes open.
 CI does not commit these generated files or use `BADGE_DEPLOY_KEY` anymore.
-The existing coverage floors are advisory; hard scenario and coverage gates remain audit work package P34.
+The existing coverage floors are advisory; the bounded covered-cell preservation check below is a hard regression gate, while full scenario coverage and release gates remain audit work package P34.
 Green CI is required evidence, and the wider safety and platform release gates still apply.
 
 The real-Swift integration lane gives each Go test package twenty-five minutes and bounds the whole job to thirty-five minutes, including setup and report upload.
@@ -106,8 +106,14 @@ The [fixture partition](experiments/2026-09-12-remaining-test-schedule.md#propos
 The two producers use separate runners and fixtures; `fail-fast: false` lets both retain diagnostics, while newer PR pushes still cancel the superseded workflow run.
 The protected Integration check requires both producers to succeed and validates their inventories, source/toolchain/run identity, actual exits and artifact hashes before combining atomic coverage with Go's normal reader.
 `saio-tests-main` and `saio-tests-heavy` retain each complete producer; `scenario-coverage` retains the combined profile and both independently validated scenario reports, with main's unchanged credits and the heavy report required to have zero credits.
+After all existing checks and output writes, the join requires `--baseline internal/scenariocontract/preservation-baseline.json` and enforces [ADR 0069](adr/0069-preserve-covered-scenario-cells.md) against the independently admitted snapshot.
+Lost protected pairs, required-set drift or inconsistent evidence fail the join without changing report validity, gaps or incomplete-coverage semantics.
+The workflow records the actual Python status in `saio-combined/join-exit.txt`, then requires zero before coverage summarisation; the unchanged required-job gate refuses a failed Integration result.
+The `scenario-coverage` upload runs on failure as well as success, retaining the combined root and `scenario-preservation.json` when comparison was reached.
+An earlier failure retains the available numeric exit and producer artifacts without inventing a preservation result; absent upload inputs remain an error.
+The [baseline record](experiments/2026-09-21-scenario-preservation-baseline.md#aggregate-activation-proof) distinguishes executed local failure-path controls from the hosted success-artifact and resulting-master evidence required for delivery.
 The fixture jobs retain their 35-minute limits; the artifact-only join has a separate ten-minute limit, and the five protected check names remain unchanged.
-Its Integration check will require both producers, complete disjoint execution and compatible combined coverage before success; the contract requires independent review before workflow changes.
+Its Integration check requires both producers, complete disjoint execution and compatible combined coverage before success; the contract requires independent review before workflow changes.
 
 ## September 2026 incident
 

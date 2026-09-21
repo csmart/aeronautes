@@ -312,9 +312,16 @@ jobs:
           path: saio-heavy
       - name: Validate both selections and combine coverage
         run: |
+          set +e
           python3 scripts/saio-partition.py join saio-main saio-heavy saio-combined \
             --commit "$GITHUB_SHA" --go-version "$(go env GOVERSION)" \
-            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --baseline internal/scenariocontract/preservation-baseline.json
+          join_exit=$?
+          set -e
+          mkdir -p saio-combined
+          printf '%s\n' "$join_exit" > saio-combined/join-exit.txt
+          test "$join_exit" = 0
           go tool cover -func=saio-combined/cover.out > saio-combined/coverage-functions.txt
           pct=$(awk '/^total:/ {gsub(/%/,"",$3); print $3}' saio-combined/coverage-functions.txt)
           test -n "$pct"
@@ -322,6 +329,7 @@ jobs:
           echo "$pct" > coverage-pct.txt
       - name: Upload combined coverage and scenario reports
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
         with:
           name: scenario-coverage
           path: saio-combined/
