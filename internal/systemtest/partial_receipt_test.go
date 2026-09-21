@@ -36,7 +36,8 @@ func TestPartialReceiptRejectsFalseCredit(t *testing.T) {
 				}
 			})
 			store := jobs.NewStore(database)
-			job, err := store.Create(t.Context(), jobs.Job{Type: jobs.TypeCopy})
+			insertFixtureBookmark(t, database, "receipt")
+			job, err := store.Create(t.Context(), jobs.Job{Type: jobs.TypeCopy, SourceBookmarkID: "receipt"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -45,7 +46,7 @@ func TestPartialReceiptRejectsFalseCredit(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			r.jobID, r.h.Jobs = job.ID, app.NewJobService(store)
+			r.jobID, r.h.Jobs, r.h.jobStore = job.ID, app.NewJobService(store), store
 		}
 		r.CreditPartial()
 		return
