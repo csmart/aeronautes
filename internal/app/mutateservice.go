@@ -124,7 +124,7 @@ func (s *MutateService) UpdateContainer(ctx context.Context, name, baseFingerpri
 		return MutationResultDTO{}, err
 	}
 	defer s.writers.leave()
-	session, err := s.connections.Session()
+	entry, bookmarkID, caps, err := s.connections.activeSnapshot()
 	if err != nil {
 		return MutationResultDTO{}, err
 	}
@@ -155,15 +155,34 @@ func (s *MutateService) UpdateContainer(ctx context.Context, name, baseFingerpri
 
 	// Capability gate (§10, §21): refuse only what the cluster is KNOWN
 	// to reject.
-	if caps := s.connections.Capabilities(); caps != nil &&
+	if caps != nil &&
 		!caps.AllowsVersioningMode(adapterEdit.Versioning.Mode) {
 		return MutationResultDTO{}, fmt.Errorf(
 			"cluster does not advertise %s in versioned_writes allowed_flags", adapterEdit.Versioning.Mode)
 	}
 
-	result, err := session.UpdateContainer(ctx, name, baseFingerprint, adapterEdit)
+	identity, err := mutationfacts.NewIdentity()
 	if err != nil {
-		_ = s.record(ctx, "container.update", name, "container update failed", audit.ResultFailed, nil)
+		return MutationResultDTO{}, err
+	}
+	if err := s.facts.RecordIntent(ctx, mutationfacts.Intent{
+		Identity: identity, BookmarkID: bookmarkID, Operation: "container.update", Resource: name,
+	}); err != nil {
+		return MutationResultDTO{}, err
+	}
+
+	result, err := entry.session.UpdateContainer(ctx, name, baseFingerprint, adapterEdit)
+	outcome, auditRes, summary, transIDs := containerMetadataFact(result, err, adapterEdit)
+	if recErr := s.recordContainerOutcome(ctx, identity, bookmarkID, name, outcome, auditRes, summary, transIDs); recErr != nil {
+		if outcome == mutationfacts.OutcomeApplied || outcome == mutationfacts.OutcomeVerifyMismatch || outcome == mutationfacts.OutcomeUnverified {
+			return MutationResultDTO{}, fmt.Errorf("%w: identity %s: %w", errContainerMetadataResidue, identity, recErr)
+		}
+		return MutationResultDTO{}, recErr
+	}
+	if err != nil {
+		if errors.Is(err, swiftcontrol.ErrUnverifiedContainerWrite) {
+			return MutationResultDTO{}, fmt.Errorf("%w: identity %s", swiftcontrol.ErrUnverifiedContainerWrite, identity)
+		}
 		return MutationResultDTO{}, err
 	}
 	dto := MutationResultDTO{
@@ -172,12 +191,9 @@ func (s *MutateService) UpdateContainer(ctx context.Context, name, baseFingerpri
 		TransIDs: result.TransIDs,
 	}
 	if result.After != nil {
-		after := s.toContainerDetailDTO(ctx, result.After)
+		after := s.containerDetailForBookmark(ctx, bookmarkID, result.After)
 		dto.ContainerAfter = &after
 	}
-	_ = s.record(ctx, "container.update", name,
-		fmt.Sprintf("set %d metadata keys, versioning %s", len(edit.Meta), adapterEdit.Versioning.Mode),
-		auditResult(result.Outcome), result.TransIDs)
 	return dto, nil
 }
 
@@ -256,18 +272,22 @@ func (s *MutateService) DeleteMarker(ctx context.Context, container, prefix stri
 }
 
 func (s *MutateService) toContainerDetailDTO(ctx context.Context, d *swiftcontrol.ContainerDetail) ContainerDetailDTO {
+	return s.containerDetailForBookmark(ctx, s.connections.ActiveBookmarkID(), d)
+}
+
+func (s *MutateService) containerDetailForBookmark(ctx context.Context, bookmarkID string, d *swiftcontrol.ContainerDetail) ContainerDetailDTO {
 	class := ""
 	// Classification is display context; a failure here must not fail the
 	// mutation result that carries it.
-	if classes, err := s.evidence.ClassifyContainers(ctx, s.connections.ActiveBookmarkID(), []string{d.Name}); err == nil {
+	if classes, err := s.evidence.ClassifyContainers(ctx, bookmarkID, []string{d.Name}); err == nil {
 		class = string(classes[d.Name])
 	}
 	return containerDetailDTO(d, class)
 }
 
 // record appends the audit event and surfaces the error. Create, marker
-// and manifest still ignore it (ADR 0058). Object metadata uses
-// recordObjectOutcome so the fact and audit share one transaction.
+// and manifest still ignore it (ADR 0058). Object and container metadata
+// record their fact and audit in one required transaction.
 func (s *MutateService) record(ctx context.Context, operation, resource, summary string, result audit.Result, transIDs []string) error {
 	err := s.audit.Append(ctx, audit.Event{
 		BookmarkID: s.connections.ActiveBookmarkID(),

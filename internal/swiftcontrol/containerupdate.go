@@ -20,6 +20,10 @@ var ErrVersioningUnestablished = errors.New("versioning mode could not be establ
 // object versioning, which v1 cannot edit safely (ADR 0054).
 var ErrModernVersioning = errors.New("uses modern object versioning, which v1 cannot edit safely")
 
+// ErrUnverifiedContainerWrite means the POST may have changed the store,
+// but its intended outcome could not be verified (ADR 0062).
+var ErrUnverifiedContainerWrite = errors.New("container metadata write unverified")
+
 // Container mutation (§18, §19, §20, §21): the caller states the
 // complete intended editable surface — the same working-copy contract as
 // objects — and the update computes the additive POST delta (sets plus
@@ -60,14 +64,17 @@ func (s *Session) UpdateContainer(ctx context.Context, name, baseFingerprint str
 	if err := validateMetadata(edit.Meta, false); err != nil {
 		return nil, err
 	}
+	result := &ContainerUpdateResult{}
 	before, err := s.ContainerDetail(ctx, name)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", name, errors.Join(ErrVersioningUnestablished, err))
+		result.observeError(err)
+		return result, fmt.Errorf("%s: %w", name, errors.Join(ErrVersioningUnestablished, err))
 	}
+	result.Before = before
+	result.observeTransID(before.TransID)
 	if before.Versioning.Mode == VersioningEnabled && edit.Versioning.Mode != VersioningEnabled {
-		return nil, fmt.Errorf("%s: %w — manage it with swift/CLI", name, ErrModernVersioning)
+		return result, fmt.Errorf("%s: %w — manage it with swift/CLI", name, ErrModernVersioning)
 	}
-	result := &ContainerUpdateResult{Before: before, TransIDs: []string{before.TransID}}
 
 	if baseFingerprint != "" && before.EditableFingerprint != baseFingerprint {
 		result.Outcome = UpdateConflict
@@ -76,17 +83,23 @@ func (s *Session) UpdateContainer(ctx context.Context, name, baseFingerprint str
 
 	headers := buildContainerPostHeaders(before, edit)
 	writeTransID, err := s.post(ctx, name, "", headers)
+	result.observeTransID(writeTransID)
 	if err != nil {
-		return nil, err
+		if postUnproven(err) {
+			result.Outcome = UpdateUnverified
+			return result, fmt.Errorf("%w: %w", ErrUnverifiedContainerWrite, err)
+		}
+		return result, err
 	}
-	result.TransIDs = append(result.TransIDs, writeTransID)
 
 	after, err := s.ContainerDetail(ctx, name)
 	if err != nil {
-		return nil, fmt.Errorf("update written (trans %s) but verify read failed: %w", writeTransID, err)
+		result.observeError(err)
+		result.Outcome = UpdateUnverified
+		return result, fmt.Errorf("%w: verify read failed: %w", ErrUnverifiedContainerWrite, err)
 	}
 	result.After = after
-	result.TransIDs = append(result.TransIDs, after.TransID)
+	result.observeTransID(after.TransID)
 
 	if mismatch := verifyContainerOutcome(edit, after); mismatch != "" {
 		result.Outcome = UpdateVerifyMismatch
@@ -95,6 +108,19 @@ func (s *Session) UpdateContainer(ctx context.Context, name, baseFingerprint str
 	}
 	result.Outcome = UpdateApplied
 	return result, nil
+}
+
+func (r *ContainerUpdateResult) observeTransID(id string) {
+	if id != "" {
+		r.TransIDs = append(r.TransIDs, id)
+	}
+}
+
+func (r *ContainerUpdateResult) observeError(err error) {
+	var se *SwiftError
+	if errors.As(err, &se) {
+		r.observeTransID(se.TransID)
+	}
 }
 
 // buildContainerPostHeaders computes the additive delta from the
@@ -218,9 +244,6 @@ func (s *Session) post(ctx context.Context, container, object string, headers sw
 		NoResponse: true,
 		OnReAuth:   s.auth.storageTarget,
 	})
-	if err != nil {
-		return "", Normalize(err)
-	}
 	if resp != nil && resp.Body != nil {
 		resp.Body.Close()
 	}
@@ -228,5 +251,5 @@ func (s *Session) post(ctx context.Context, container, object string, headers sw
 	if transID == "" {
 		transID = respHeaders["X-Openstack-Request-Id"]
 	}
-	return transID, nil
+	return transID, WithTransID(Normalize(err), respHeaders)
 }

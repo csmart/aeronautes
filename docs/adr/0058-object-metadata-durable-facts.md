@@ -9,7 +9,7 @@ Finish-line item L04 asks for P12/P13 remaining durable effects and complete out
 v1 keeps object and container metadata writes; download terminal-write faults are already under [ADR 0024](0024-local-job-completion.md) and [ADR 0033](0033-download-item-recording.md).
 This slice is object metadata only.
 At the time of this decision, L09 owned `containerupdate.go` on the unmerged `versioning_preflight` branch, so container metadata was deferred until that merge.
-L09 is now merged; [ADR 0062](0062-container-metadata-durable-facts.md) proposes that follow-up.
+L09 is now merged; [ADR 0062](0062-container-metadata-durable-facts.md) implements that follow-up.
 
 `MutateService.UpdateObjectMetadata` occupies the [ADR 0053](0053-synchronous-writer-shutdown-ownership.md) writer gate, obtains a session, calls `Session.UpdateObjectMetadata`, then `audit.Append`.
 The append's error is logged and discarded, and a completed save returns `applied` with a nil error even when that append fails.
@@ -72,6 +72,6 @@ Applied, conflict and verify-mismatch facts survive reopen of the same file.
 The writer gate still delays shutdown through the required record, which L08 already owns.
 
 This does not address crash or kill, fsync or power-loss, window-close, segments, deletion, copy, upload, or marker/create/manifest as v1 capabilities.
-Container metadata remains a follow-up under the proposed ADR 0062.
+Container metadata now records its required facts under ADR 0062.
 Download terminal writes stay on ADR 0024/0033.
 L04, L08, P12, P13 and P28 stay open, and the valuable-data hold is unchanged.

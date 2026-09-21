@@ -1,9 +1,10 @@
-# Container metadata can succeed without its required facts
+# Required facts for container metadata writes
 
 21 September 2026.
 Source: master `930fbe22e5757c195d917964e56c76160ca380ed`, after the L09 container versioning preflight correction.
 This is the container metadata follow-up within frozen finish-line item L04.
-The contract in [ADR 0062](../adr/0062-container-metadata-durable-facts.md) is proposed, not implemented.
+The contract in [ADR 0062](../adr/0062-container-metadata-durable-facts.md) is now implemented.
+The reproduction and diagnosis below describe the stated source; the implementation follows them.
 
 ## Reproduction
 
@@ -28,11 +29,23 @@ The current order is writer admission, session lookup, local admission checks, c
 `audit_events` has retention, so it cannot substitute for the required ledger even when the append succeeds.
 `Session.UpdateContainer` drops its partial result on a failed verification read and returns a bare error after a failed POST.
 The service treats both as failed and discards audit errors.
-This source diagnosis motivates preserving unknown outcomes and observed transaction IDs; those fault cases still require maintained implementation regressions.
+This source diagnosis motivated preserving unknown outcomes and observed transaction IDs.
 
-## Planned correction and limits
+## Implementation and maintained proof
 
-Reuse the existing identity-keyed ledger: intent before the adapter, outcome and audit in one required transaction, explicit residue after an uncertain or completed write whose record cannot commit.
-Capture account attribution once, keep the existing writer gate, and preserve the L09 preflight refusal and concurrent-writer limitation.
-The implementation must carry independent remote snapshots, reopening proofs and focused broken-behaviour controls before delivery.
-No code correction or release clearance is claimed by this record.
+The service reuses the existing identity-keyed ledger: intent before the adapter, outcome and audit in one required transaction, explicit residue after an uncertain or completed write whose record cannot commit.
+It captures the account once for intent, audit and returned classification, and keeps the writer gate through the required record.
+The adapter retains partial results and observed transaction IDs, distinguishes received HTTP refusals from unknown POST outcomes, and returns a container-specific unverified error when verification cannot complete.
+
+`TestContainerMetadataFactsMock` and `TestContainerMetadataFactsSwift` each maintain 17 system-boundary cases.
+Against the proposal's production source, 16 cases fail and the public-ACL refusal control passes on each provider; all 17 pass with the implementation.
+The cases cover intent, outcome and audit refusal; applied, conflict, mismatch, failed and unverified outcomes; lost POST replies, failed verify reads, close/reopen by identity, audit retention, observed transaction IDs and an account switch while the write reply is held.
+Raw HTTP snapshots check the exact intended metadata delta and unchanged modelled collateral, including object bytes and the secondary account.
+The modern-mode case injects a preflight header because the mock does not implement modern versioning; the existing `TestVersioningPreflight` separately passes against actual modern-versioned Swift containers.
+`TestContainerMetadataDrainWaitsForOutcome` holds the database writer after intent and proves shutdown waits for the outcome transaction.
+The private implementation packet retains source, commands, raw results, the initial failed fixture attempts, corrected before/after proof and controls for POST-before-intent, swallowed record errors and unknown-as-failed classification.
+Its path and digest are recorded with the implementation review.
+
+This is ordinary database reopen and a local owned Swift fixture, not crash, power-loss or representative-deployment proof.
+The oracle models named container configuration and objects; it does not claim every Swift header family or account configuration.
+The L09 concurrent-writer limitation, separate object attribution path, public-ACL policy and all named finish-line and release holds remain unchanged.

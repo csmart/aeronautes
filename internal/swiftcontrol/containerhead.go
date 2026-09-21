@@ -70,7 +70,7 @@ type ContainerDetail struct {
 func (s *Session) ContainerDetail(ctx context.Context, name string) (*ContainerDetail, error) {
 	info, headers, err := s.conn.Container(ctx, name)
 	if err != nil {
-		return nil, Normalize(err)
+		return nil, WithTransID(Normalize(err), headers)
 	}
 	d := buildContainerDetail(canonicalHeaders(headers), time.Now().UTC())
 	d.Name = name
