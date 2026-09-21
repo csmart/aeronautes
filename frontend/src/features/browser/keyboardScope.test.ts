@@ -75,8 +75,8 @@ async function manifest() {
   const ownership = deferred<SegmentOwnershipDTO>(); api.checkSegmentOwnership = vi.fn(() => ownership.promise);
   const bookmarks = await api.listBookmarks();
   const browser = new BrowserState(api);
-  browser.connectedBookmarkId = bookmarks[0]!.id;
-  await browser.loadContainers(); await browser.openContainer("fixtures");
+  await browser.connect(bookmarks[0]!.id);
+  await browser.openContainer("fixtures");
   browser.select(browser.entries.findIndex((entry) => entry.name === "external-dlo")); await settle();
   let dialogComponent: ReturnType<typeof mount>;
   const close = () => { const done = unmount(dialogComponent); mounted.delete(dialogComponent); return done; };
