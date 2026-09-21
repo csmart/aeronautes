@@ -427,13 +427,14 @@ func (s *AuditService) Recent(ctx context.Context, limit int) ([]AuditEventDTO, 
 
 func auditEventDTO(e audit.Event) AuditEventDTO {
 	return AuditEventDTO{
-		ID:        e.ID,
-		At:        e.At.UTC().Format(time.RFC3339),
-		Operation: e.Operation,
-		Resource:  e.Resource,
-		Summary:   e.Summary,
-		Result:    string(e.Result),
-		TransIDs:  e.TransIDs,
+		ID:         e.ID,
+		At:         e.At.UTC().Format(time.RFC3339),
+		BookmarkID: e.BookmarkID,
+		Operation:  e.Operation,
+		Resource:   e.Resource,
+		Summary:    e.Summary,
+		Result:     string(e.Result),
+		TransIDs:   e.TransIDs,
 	}
 }
 

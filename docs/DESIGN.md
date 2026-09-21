@@ -5445,7 +5445,8 @@ Its unchanged-source probe uses a legal full 50-row Search before overlapping Mo
    Prove legal paging, late success/failure/finally, independent Recent/query completion, stale zero, safe errors and mutation-follow-up failures through dedicated state and mounted tests, with only three exact Recent-cache assertion updates in the existing mutation tests.
 4. Preserve before/after evidence and independent omitted-guard controls, obtain local review, then renew current-base verification and require all five PR and resulting-master checks before delivery.
 
-All-account query scope remains explicit; the promised bookmark filter and broader UI-09 diagnostics, UI-10 settings/bookmarks, P24 history bounds, native acceptance and the valuable-data hold remain open.
+All-account query scope remains explicit; [ADR 0064](adr/0064-audit-account-attribution.md) adds the promised bookmark filter and visible retained attribution.
+Broader UI-09 diagnostics, UI-10 settings/bookmarks, P24 history bounds, native acceptance and the valuable-data hold remain open.
 
 The audit correction now passes independent local review, 74 dedicated state/component tests and the integrated 1,244-test frontend suite.
 Selected queries and the bounded Recent summary retain separate owners; failed optional reads preserve the existing mutation/connection awaits and outcomes.
@@ -5635,8 +5636,8 @@ Live Swift inspector reads and `FindService.StartFind` take the bookmark the cal
 Inspector and Find callers now capture their intended bookmark, require it through the frontend API and discard replies whose scope is absent or names another bookmark.
 Manifest and segment follow-ups and Find polls and cancellation keep that same binding.
 Retained-job detail, totals and item pages use a source or destination bookmark from the displayed job row, so they remain readable while disconnected or browsing another account; a detail reply must match both that bookmark and the requested job id.
-`AuditService.Recent` remains in `mutateservice.go` but the store refuses an unscoped trail read, and `Search` remains unbound.
-The account portrait binding below extends that correction; L11, P28 and the valuable-data hold remain open.
+`AuditService.Recent` remains in `mutateservice.go` but the store refuses an unscoped trail read.
+ADR 0059 left Search and the account portrait unbound; the portrait and Search corrections follow below, while L11, P28 and the valuable-data hold remain open.
 
 The [account portrait record](experiments/2026-09-21-account-portrait-binding.md) reproduces two remaining L11 misattributions on `5f71a163`: alpha's held account HEAD returns alpha's counts with beta's name, and the browser publishes beta's capabilities under alpha despite a refused initial listing.
 [ADR 0063](adr/0063-account-portrait-binding.md) requires the intended bookmark on Account and Capabilities, captures one validated session/bookmark/generation/capability tuple per read, and publishes the portrait and capabilities only when their scopes match the requested bookmark and each other.
@@ -5647,11 +5648,12 @@ This establishes reply provenance only: a later connection may leave a correctly
 The shared scoped-session helper, broader live-read atomicity, generation checks on post-connect refreshes, audit search, mutation writers and release holds remain outside this slice.
 
 The bounded [audit attribution record](experiments/2026-09-21-audit-account-attribution.md) reproduces Search losing stored bookmark IDs and the drawer hiding attribution even when its input carries them.
-[ADR 0064](adr/0064-audit-account-attribution.md) proposes preserving those IDs, adding section 47's promised bookmark filter while retaining explicit All accounts mode, and showing each row's retained ID with honest current-label and unavailable/accountless fallbacks.
-The selected bookmark will share the existing operation/result query generation, cursor and retry lifetime, and a named query will reject a page containing another or missing bookmark before publishing it.
+[ADR 0064](adr/0064-audit-account-attribution.md) preserves those IDs, adds section 47's promised bookmark filter while retaining explicit All accounts mode, and shows each row's retained ID with honest current-label and unavailable/accountless fallbacks.
+The selected bookmark shares the existing operation/result query generation, cursor and retry lifetime, and a named query rejects a page containing another or missing bookmark before publishing it.
+Such a rejection uses the existing failed-read state, preserves prior attributable rows and leaves the cursor unadvanced.
 Historical local reads remain available while disconnected or connected elsewhere; labels do not establish a historical connection generation or grant mutation authority.
-Review the contract before the backend/browser correction and prove mapper, filter and lifetime omissions through maintained service and mounted regressions.
-No migration, RecentFor, recovery aggregate, account portrait or mutation change is proposed, and L11, P28 and the valuable-data hold stay open.
+Maintained service and mounted regressions catch mapper, filter, lifetime, reply-scope and visible-label omissions with passing controls.
+The slice changes no migration, RecentFor behaviour, recovery aggregate, account portrait or mutation; L11, P28 and the valuable-data hold stay open.
 
 P20 settles what a cancelled download leaves behind, under [ADR 0048](adr/0048-cancelled-stage-removal.md).
 [ADR 0043](adr/0043-cancellation-delta-authority.md) decision 7 left that choice open for the operator, who has answered it: a graceful cancel removes the partial files the job created and says so, a crash or a kill retains them and that is reported accurately, and there is no setting and no prompt.

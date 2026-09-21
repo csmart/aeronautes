@@ -538,6 +538,7 @@ export function newFakeApi(): Api {
     auditSearch: async (q) =>
       [...audit]
         .reverse()
+        .filter((e) => q.bookmarkId === "" || e.bookmarkId === q.bookmarkId)
         .filter((e) => q.operationPrefix === "" || e.operation.startsWith(q.operationPrefix))
         .filter((e) => q.result === "" || e.result === q.result)
         .filter((e) => q.beforeId === 0 || e.id < q.beforeId)

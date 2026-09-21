@@ -1156,6 +1156,12 @@ export class BrowserState {
   }
 
   // §50 viewer filters + paging over the drawer's Changes tab.
+  #auditFilterBookmark = $state("");
+  get auditFilterBookmark(): string { return this.#auditFilterBookmark; }
+  set auditFilterBookmark(value: string) {
+    if (value !== this.#auditFilterBookmark) this.#clearAuditQuery();
+    this.#auditFilterBookmark = value;
+  }
   #auditFilterOp = $state("");
   get auditFilterOp(): string { return this.#auditFilterOp; }
   set auditFilterOp(value: string) {
@@ -1196,10 +1202,13 @@ export class BrowserState {
     this.auditExhausted = false;
   }
 
-  #requireAuditPage(page: AuditEventDTO[], beforeId = 0) {
+  #requireAuditPage(page: AuditEventDTO[], beforeId = 0, bookmarkId = "") {
     if (page.length > 50) throw new Error("audit page exceeds its limit");
     let previous = beforeId || Infinity;
     for (const event of page) {
+      if (bookmarkId !== "" && event.bookmarkId !== bookmarkId) {
+        throw new Error("audit page names another bookmark");
+      }
       if (!Number.isSafeInteger(event.id) || event.id <= 0 || event.id >= previous) {
         throw new Error("audit page IDs do not advance");
       }
@@ -1210,19 +1219,21 @@ export class BrowserState {
   async searchAudit(more = false) {
     if (more && !this.auditCanMore) return;
     const seq = ++this.#auditSeq;
+    const bookmarkId = this.auditFilterBookmark;
     const operationPrefix = this.auditFilterOp;
     const result = this.auditFilterResult;
     const beforeId = more ? this.auditEvents[this.auditEvents.length - 1].id : 0;
     const ownsQuery = () => seq === this.#auditSeq
+      && bookmarkId === this.auditFilterBookmark
       && operationPrefix === this.auditFilterOp && result === this.auditFilterResult;
     this.auditLoading = !more;
     this.auditMoreLoading = more;
     this.auditError = null;
     this.auditMoreError = null;
     try {
-      const page = await this.#api.auditSearch({ operationPrefix, result, bookmarkId: "", beforeId, limit: 50 });
+      const page = await this.#api.auditSearch({ operationPrefix, result, bookmarkId, beforeId, limit: 50 });
       if (!ownsQuery()) return;
-      this.#requireAuditPage(page, beforeId);
+      this.#requireAuditPage(page, beforeId, bookmarkId);
       this.auditEvents = more ? [...this.auditEvents, ...page] : page;
       this.auditLoaded = true;
       this.auditExhausted = page.length < 50;
