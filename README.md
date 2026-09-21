@@ -12,8 +12,9 @@ beauty are features.**
 
 ![Browser and inspector](docs/assets/screenshots/02-inspector-dlo.png)
 
-*The DLO inspector against real Swift: logical vs listed size, the exact manifest, its segment
-table, and the manifest-only delete. More in [`docs/assets/screenshots/`](docs/assets/screenshots/).*
+*The DLO inspector against real Swift: logical vs listed size, the exact manifest and its segment table.
+This historical capture also shows manifest deletion, which v1 defers.
+More in [`docs/assets/screenshots/`](docs/assets/screenshots/).*
 
 ## What it is
 
@@ -21,9 +22,9 @@ table, and the manifest-only delete. More in [`docs/assets/screenshots/`](docs/a
   storage policies, ACLs, versioning, quotas — not a file-manager metaphor. TempURL, CORS, and
   staticweb are modeled read-only today (key slots and presence, never secret values); their
   management surfaces are tracked v1.x work.
-- **Cross-account / cross-cluster** Copy with conditional creation of new objects and explicit refusal of existing changed destinations; Mirror supports comparison preview while execution is unavailable.
-- **Safety-first**: destructive actions explain scope; heuristics never authorize destruction;
-  object-metadata edits never silently drop keys.
+- **v1 scope**: browse, inspect, download, and object and container metadata read and write.
+  Copy, Mirror execution, upload and bulk deletion are deferred and refused in this build under [ADR 0052](docs/adr/0052-v1-capability-gate.md).
+- **Safety-first**: heuristics never authorize destruction; object-metadata edits never silently drop keys.
 - **Cross-platform** desktop app — Linux, macOS, and Windows on both **x86_64 and aarch64** (six
   targets, all required); Linux is the primary/reference platform.
 
@@ -89,19 +90,15 @@ The Makefile is a thin directory over the real build system, the Wails v3 Taskfi
    **Insecure** exists for labs and is flagged loudly.
 4. Browse: containers on the left (with backstage classification), objects in the middle
    (server-side prefix + Find in container), authoritative HEAD detail on the right.
-5. Transfers: open a container and use **Copy to…** (preview first, then start), **Upload…**/
-   **Download…** (complete collision preflight before any write), or the **Mirror** tab
-   (comparison preview only; execution is unavailable while concurrent changes cannot be protected).
-   Copy refuses changed existing destinations and reports a partial job with a separate refused count; versioning does not enable overwrites.
-   Follow everything in the jobs drawer — progress, throughput, cancel, audit trail.
+5. Download: open a container and use **Download…**, with collision preflight before any write.
+   Follow the job in the jobs drawer — progress, throughput, cancel and audit trail.
    Its **Job history** tab pages through older retained jobs; expand a job to inspect every saved item, its exact quoted locations and separate execution and verification observations.
    Missing records, uncaptured history and unavailable reads are shown explicitly; an active job's records are incomplete, and the displayed issue counts can overlap.
-   Existing transfers still report that item records were not captured until their callers are migrated; this read-access view does not lift the valuable-data hold.
-   **Re-run** refuses uncaptured or unreadable records, unresolved effects and unverified reported copies, and explains the refusal in the drawer.
-   Historical unrecorded Copies require inspection before starting an explicit fresh Copy through the normal dialog; interrupted counters are labelled as the last saved progress.
-6. Destructive cleanup: **Delete…** for prefix/empty/delete-container (typed confirmation),
-   and manifest deletion from the inspector — segments die only under recorded ownership
-   proof or an explicit Backstage override.
+   Older jobs without retained item records say so; interrupted counters are labelled as the last saved progress.
+6. Metadata: use the object or container inspector to view and edit metadata.
+
+Copy, Mirror execution, upload, bulk deletion, marker and manifest editing, benchmarks and job re-runs are unavailable in v1.
+Their write controls are hidden and requests to the deferred actions are refused.
 
 ### Before trusting a release against production
 
@@ -112,10 +109,14 @@ The view refreshes after bookmark changes and reports unavailable state explicit
 Deleting a bookmark removes its saved configuration and cached connection; it does not yet prove physical key removal or revoke every previously held session.
 These remaining [credential lifetime and recovery gates](docs/adr/0015-credential-bindings.md) must close before that hold is lifted.
 
-The §57.4 smoke against real SwiftStack infrastructure is a **manual operator step**:
-connect to a real endpoint over TLS, browse a large container, run a small cross-account copy
-into a scratch container, verify counts in the drawer, and check `/info`-gated features match
-the cluster. `scripts/smoke.sh` covers the automated half against a local mock.
+The [representative deployment smoke](docs/DESIGN.md#574-real-swiftstack-release-gate) remains a **manual operator step**.
+Use dedicated test accounts and containers, known fixture contents and a scratch download directory on the actual deployment.
+Connect over TLS, browse a large fixture container and inspect known objects.
+Download a small selection and compare its contents independently, then edit and read back object and container metadata on those fixtures.
+Check that `/info`-gated features match the cluster and that reported results and retained records agree with the observed effects.
+Keep the tested artifact identity, deployment details and results with the release evidence.
+Copy is deferred and cannot serve as the v1 smoke journey.
+`scripts/smoke.sh` exercises a local mock; it does not satisfy this deployment gate or the separate native and platform checks.
 
 To exercise the app or the integration suite against a real local Swift:
 
@@ -130,8 +131,8 @@ WebKitGTK 6 and is served via Flatpak later (§6.6).
 
 ## Who it's for
 
-OpenStack Swift / SwiftStack operators managing large namespaces: browsing, inspecting, safely mutating
-metadata/ACLs, and running cross-account replication and bulk deletes.
+OpenStack Swift / SwiftStack operators managing large namespaces: browsing, inspecting, downloading and editing metadata.
+Cross-account replication, upload and destructive operations remain deferred beyond the current v1 scope.
 
 ## Licence
 
