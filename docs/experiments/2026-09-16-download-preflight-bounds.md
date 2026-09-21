@@ -50,13 +50,13 @@ Peak RSS was not measured, and arithmetic to a million names is not a measuremen
 
 ## Why the download view is the slice
 
-Bounding `Items` on the value `StartDownload` already executes would copy fewer objects than the collision check admitted.
-Bounding `Problems` without a first-class rejected flag would let Start enable when the hidden tail held the refusal.
-Rebuilding the displayed count from sample length would tell the operator the sample size.
+At the inspected head, bounding `Items` on the value `StartDownload` executed would have copied fewer objects than the collision check admitted.
+Bounding `Problems` without a first-class rejected flag would have let Start enable when the hidden tail held the refusal.
+Rebuilding the displayed count from sample length would have told the operator the sample size.
 
 Upload already splits bridge copy from execution.
 ADR 0023 already bounds samples while preserving counts.
-Download has the first pattern's missing split and the second pattern's missing bound, on the v1 transfer set.
+Download lacked the first pattern's split and the second pattern's bound, on the v1 transfer set.
 
 Browser accumulation remains unbounded (`entries` and `containers` append every continued page).
 Queued work still waits rather than refusing, per ADR 0047.
