@@ -1,6 +1,6 @@
 # ADR 0069: preserve covered scenario cells
 
-**Status:** Accepted contract; first baseline retained for admission review; comparison remains uncalled.
+**Status:** Accepted contract; baseline admitted; aggregate comparison implemented.
 
 ## Context and oracle
 
@@ -105,8 +105,9 @@ Workflow verification must show that comparison failures block the required aggr
 ## Scope and remaining decisions
 
 The intended implementation surface is the existing partition helper and its tests, reviewed baseline data, and the aggregate workflow invocation and diagnostic retention.
-The comparison/report-validation component and its focused controls are prepared in `scripts/saio-partition.py` and `scripts/saio-partition-test.py`; the existing join, CLI and CI do not call it.
-Baseline admission, aggregate wiring and required workflow failure-propagation proof remain pending.
+The comparison/report-validation component and its focused controls live in `scripts/saio-partition.py` and `scripts/saio-partition-test.py`; the join calls it after every existing prerequisite and output write.
+The join-only CLI requires the independently admitted baseline, and CI retains the actual join exit and available combined diagnostics on failure before the unchanged required-job gate refuses success.
+Local CLI, exact workflow-shell and required-gate controls establish failure propagation and retention with synthetic inputs; actual hosted success-artifact readback and resulting-master reconciliation remain delivery gates.
 The Go reporter/parser, scenario receipts, suite selection, process deadlines, fixtures and application behaviour remain unchanged.
 A valid incomplete report can pass preservation; a full producer set is not a complete behavioural matrix.
 This bounded regression gate is not P34 release acceptance and does not make the current release workflow consume exact-source engine, native or deployment evidence.

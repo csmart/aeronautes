@@ -334,10 +334,10 @@ def _scenario_json(data):
 
 
 def check_scenario_preservation(main_report, heavy_report, baseline_path, identity, output):
-    """Prepare ADR0069 diagnostics; join/CI do not call this component yet.
+    """Require ADR0069 preservation after the caller validates its producers.
 
-    The eventual caller must first check producer receipts, exits, selection and
-    run/attempt identity. Baseline evidence admission remains independent review.
+    Producer receipts, exits, selection and run/attempt identity must be checked
+    first. Baseline evidence admission remains independent review.
     """
     inputs = (main_report, heavy_report, baseline_path)
     if (output.resolve() in {path.resolve() for path in inputs}
@@ -427,7 +427,7 @@ def combine_profiles(main_text: str, heavy_text: str) -> str:
     return main_text + heavy_text[len(header):]
 
 
-def join(main, heavy, output, identity):
+def join(main, heavy, output, identity, baseline):
     plans, reports, counts = [], [], []
     for lane, root in (("main", main), ("heavy", heavy)):
         if read_json(root / "receipt.json") != {"sha256": hashes(root)}:
@@ -449,6 +449,8 @@ def join(main, heavy, output, identity):
     (output / "scenario-coverage.json").write_bytes((main / "scenario-coverage.json").read_bytes())
     (output / "scenario-coverage-heavy.json").write_bytes((heavy / "scenario-coverage.json").read_bytes())
     write_json(output / "partition.json", {"identity": identity, "outcomes": counts})
+    check_scenario_preservation(main / "scenario-coverage.json", heavy / "scenario-coverage.json",
+                                baseline, identity, output / "scenario-preservation.json")
 
 
 def main():
@@ -465,6 +467,7 @@ def main():
     joining = commands.add_parser("join")
     for name in ("main", "heavy", "output"):
         joining.add_argument(name, type=Path)
+    joining.add_argument("--baseline", type=Path, required=True)
     for command in (planning, joining):
         for name in ("commit", "go-version", "run-id", "run-attempt"):
             command.add_argument("--" + name, required=True)
@@ -491,7 +494,7 @@ def main():
                     source = Path(name.removeprefix("github.com/csmart/aeronautes/"))
                     if not source.is_file():
                         raise ValueError(f"coverage source is absent from checkout: {name}")
-            join(args.main, args.heavy, args.output, identity)
+            join(args.main, args.heavy, args.output, identity, args.baseline)
 
 
 if __name__ == "__main__":

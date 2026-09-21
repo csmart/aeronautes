@@ -4278,18 +4278,18 @@ The kind
 defaults are a conservative FLOOR below DESIGN's literal ≈162 baseline, not a
 completeness claim; passing tests leave Swift exactly as they found it (raw-listing
 checked cleanup + residue sweep, ten repetitions clean); every raw test client refuses
-redirects. It is 8/102 today and visibly incomplete scaffolding — NOT a hard no-gap gate,
-and no policy yet prevents a credited cell from disappearing (a regression gate is later
-work, per ADR 0013). Deferred, as the tranche
+redirects.
+The initial 8/102 scaffolding was visibly incomplete, with neither a hard no-gap gate nor a policy preventing credited-cell loss; ADR 0013 deferred that regression gate.
+Deferred, as the tranche
 the war room grows into: per-cell variant/oracle provenance beyond the test list, an
 explicit per-action required/N/A contract reconciled with the 162 baseline and a
 joined UI matrix (F-04), a semantic oracle over complete account + local + durable
 state (Codex R-05), a deterministic barrier/fault layer, the two-direction Swift
 matrix, and hard CI gates (R-06).
 
-[ADR 0069](adr/0069-preserve-covered-scenario-cells.md) defines the bounded covered-cell preservation gate deferred above; its comparison component is prepared while baseline admission and aggregate activation remain pending.
-An independently reviewed baseline must retain every credited action/scenario pair and the complete required-set snapshot from the final queued protected-source producer reconciliation; no baseline data is admitted by this contract.
-The future aggregate join must refuse lost cell identities, unapproved required-set drift and inconsistent evidence while retaining diagnostics; drift admission requires an accepted behaviour-contract decision, retained candidate producer/drift evidence, a reviewed replacement baseline, fresh green exact-head CI and resulting-master reconciliation under ADR 0069.
+The bounded covered-cell preservation gate defined in [ADR 0069](adr/0069-preserve-covered-scenario-cells.md) runs at the aggregate join after its existing checks and output writes.
+The independently admitted [baseline](experiments/2026-09-21-scenario-preservation-baseline.md) retains every credited action/scenario pair and the complete required-set snapshot from the final queued protected-source producer reconciliation.
+The aggregate join refuses lost cell identities, unapproved required-set drift and inconsistent evidence while retaining diagnostics and its numeric exit; drift admission requires an accepted behaviour-contract decision, retained candidate producer/drift evidence, a reviewed replacement baseline, fresh green exact-head CI and resulting-master reconciliation under ADR 0069.
 Valid incomplete reports and the heavy lane's zero-credit contract keep their existing meanings, and preservation success does not establish full P34 release acceptance or settle the required/N/A, native, engine or deployment decisions.
 
 **Grok's fourth war-room review (2026-08-31) exercised the harness and found NEW
