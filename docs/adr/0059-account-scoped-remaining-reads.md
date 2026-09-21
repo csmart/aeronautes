@@ -77,8 +77,13 @@ A stale belief about which account a remaining read is for is refused rather tha
 Existing callers of the bound methods must name the account, so the generated bindings and `frontend/src/lib/api.ts` move with the signatures.
 
 `loadAudit` names the connecting or connected bookmark, so the recent-changes read is not issued empty.
-Inspector, find and job-Get call sites in `browserState.svelte.ts` remain a named remainder.
+The browser captures the intended bookmark for inspector reads, including manifest and segment follow-ups, and for Find start, polls and cancellation.
+It discards inspector and Find replies whose scope names another bookmark or is absent, while retaining its navigation and request-lifetime guards.
+The API requires the bookmark argument, and the shared fake refuses empty read bindings rather than accepting a call the real bridge rejects.
+Job detail, item pages and totals use a source or destination bookmark captured from the displayed job row, so historical records remain readable while disconnected or browsing another account.
+Job detail replies must still name the requested job and bookmark before updating the displayed state.
 Proof that a bound method refuses a stale belief is a Go service test against the two-account fixture or the local store.
+Browser regressions also exercise the production bridge adapter against service stand-ins that enforce those account checks.
 
 This does not make a live read atomic with the connection.
 The account can still move after the check and before the request reaches the store, which is the limit ADR 0049 already records.

@@ -75,7 +75,29 @@ export function newFakeApi(): Api {
   const containerState: Record<string, ContainerState> = {};
   const audit: AuditEventDTO[] = [];
   const jobs: import("../../lib/api").JobDTO[] = [];
+  const scans = new Map<string, string>();
   let auditId = 1;
+
+  function readScope(bookmarkId: string) {
+    if (!bookmarkId) throw new Error("account scope changed: name the bookmark the read is for");
+    return { bookmarkId, generation: 1 };
+  }
+
+  function scopedJob(id: string, bookmarkId: string) {
+    readScope(bookmarkId);
+    const job = jobs.find((row) => row.id === id);
+    if (!job) throw new Error("job not found");
+    if (job.sourceBookmarkId !== bookmarkId && job.destBookmarkId !== bookmarkId) {
+      throw new Error("account scope changed: job is not for that bookmark");
+    }
+    return job;
+  }
+
+  function scanScope(id: string, bookmarkId: string) {
+    const scope = readScope(bookmarkId);
+    if (scans.get(id) !== bookmarkId) throw new Error("account scope changed: scan is not for that bookmark");
+    return scope;
+  }
 
   function stateOf(name: string): ContainerState {
     containerState[name] ??= {
@@ -287,12 +309,12 @@ export function newFakeApi(): Api {
 
     objectDetail: async (container, name, bookmarkId) => ({
       ...objectDetailOf(container, name),
-      scope: { bookmarkId: bookmarkId ?? "", generation: 1 },
+      scope: readScope(bookmarkId),
     }),
 
     prefixDetail: async (container, prefix, bookmarkId): Promise<PrefixDetailDTO> => {
       const self = findObject(container, prefix);
-      const scope = { bookmarkId: bookmarkId ?? "", generation: 1 };
+      const scope = readScope(bookmarkId);
       if (!self) {
         return { prefix, markerBacked: false, selfObject: null, scope };
       }
@@ -306,7 +328,7 @@ export function newFakeApi(): Api {
 
     containerDetail: async (name, bookmarkId) => ({
       ...containerDetailOf(name),
-      scope: { bookmarkId: bookmarkId ?? "", generation: 1 },
+      scope: readScope(bookmarkId),
     }),
 
     sloManifest: async (_container, name, bookmarkId) => {
@@ -328,7 +350,7 @@ export function newFakeApi(): Api {
             dataSize: 0,
           };
         }),
-        scope: { bookmarkId: bookmarkId ?? "", generation: 1 },
+        scope: readScope(bookmarkId),
       };
     },
 
@@ -475,7 +497,7 @@ export function newFakeApi(): Api {
         segments,
         hasMore: all.length > limit,
         previewBytes: segments.reduce((sum, s) => sum + s.bytes, 0),
-        scope: { bookmarkId: bookmarkId ?? "", generation: 1 },
+        scope: readScope(bookmarkId),
       };
     },
 
@@ -739,7 +761,12 @@ export function newFakeApi(): Api {
     }),
     appSettings: async () => ({ maxActiveJobs: 2, defaultProfile: "auto", auditRetentionDays: 90, jobRetentionDays: 30 }),
     saveAppSettings: async (settings) => settings,
-    startFind: async (container, prefix, query) => "find-1",
+    startFind: async (_container, _prefix, _query, bookmarkId) => {
+      readScope(bookmarkId);
+      const id = `find-${scans.size + 1}`;
+      scans.set(id, bookmarkId);
+      return id;
+    },
     findStatus: async (id, bookmarkId) => ({
       scanned: 1234,
       matches: [
@@ -750,9 +777,9 @@ export function newFakeApi(): Api {
       done: true,
       error: "",
       objectsPerSecond: 5000,
-      scope: bookmarkId ? { bookmarkId, generation: 1 } : undefined,
+      scope: scanScope(id, bookmarkId),
     }),
-    cancelFind: async (id) => {},
+    cancelFind: async (id, bookmarkId) => { scanScope(id, bookmarkId); },
     checkSegmentOwnership: async (req) => ({
       class: "dlo",
       target: "media_segments/owned/",
@@ -768,7 +795,7 @@ export function newFakeApi(): Api {
       return { manifestDeleted: true, segmentsDeleted: 3, segmentsFailed: 0, basis: req.force ? "backstage-forced" : "exclusive-ownership" };
     },
     recoveryStatus: async () => ({ jobs: 0, records: 0 }),
-    job: async (id) => jobs.find((j) => j.id === id) ?? null,
+    job: async (id, bookmarkId) => scopedJob(id, bookmarkId),
     jobHistory: async (bookmarkId, cursor, limit) => {
       const ordered = jobs.filter((j) => !bookmarkId || j.sourceBookmarkId === bookmarkId || j.destBookmarkId === bookmarkId)
         .slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
@@ -777,9 +804,15 @@ export function newFakeApi(): Api {
       const page = ordered.slice(index + 1, index + 1 + limit);
       return { jobs: page, nextCursor: index + 1 + page.length < ordered.length ? page.at(-1)!.id : "" };
     },
-    jobItems: async () => ({ status: "not_captured", items: [], nextCursor: "" }),
-    jobItemTotals: async () => ({ status: "not_captured", items: 0, planned: 0, admitted: 0,
-      failed: 0, conflicts: 0, refused: 0, unresolved: 0, unverified: 0, problems: 0 }),
+    jobItems: async (id, _cursor, _limit, bookmarkId) => {
+      scopedJob(id, bookmarkId);
+      return { status: "not_captured", items: [], nextCursor: "" };
+    },
+    jobItemTotals: async (id, bookmarkId) => {
+      scopedJob(id, bookmarkId);
+      return { status: "not_captured", items: 0, planned: 0, admitted: 0,
+        failed: 0, conflicts: 0, refused: 0, unresolved: 0, unverified: 0, problems: 0 };
+    },
     jobs: async (bookmarkId, activeOnly, limit) =>
       jobs
         .filter(

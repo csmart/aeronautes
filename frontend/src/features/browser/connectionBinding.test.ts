@@ -90,7 +90,7 @@ async function populate(state: BrowserState) {
   state.filter = 'external'; state.prefix = 'old/';
   state.transferOpen = true; state.localTransfer = 'download'; state.deleteOpen = true; state.findOpen = true;
   state.findRunning = true;
-  state.findStatus = { scanned: 1, matches: [{ name: 'old/match', bytes: 1 }], done: false, truncated: false, error: '', objectsPerSecond: 1 };
+  state.findStatus = { scanned: 1, matches: [{ name: 'old/match', bytes: 1 }], done: false, truncated: false, error: '', objectsPerSecond: 1, scope: { bookmarkId: 'bm-1', generation: 1 } };
 }
 
 describe.each(['save', 'delete'] as const)('bookmark %s invalidation', (operation) => {
@@ -217,7 +217,7 @@ describe('reset-crossing reads', () => {
 
   it.each(['containers', 'objects'] as const)('retires %s detail after an active save', async (kind) => {
     const f = await connected(); const gate = deferred<void>();
-    const container = f.state.containerDetail!; const object = await f.api.objectDetail('fixtures', 'external-dlo');
+    const container = f.state.containerDetail!; const object = await f.api.objectDetail('fixtures', 'external-dlo', f.bookmark.id);
     f.api.containerDetail = vi.fn(async () => { await gate.promise; return container; });
     f.api.objectDetail = vi.fn(async () => { await gate.promise; return object; });
     f.api.dloSegments = vi.fn(f.api.dloSegments);
@@ -261,7 +261,7 @@ describe('reset-crossing reads', () => {
   });
 });
 
-const finishedFind = { scanned: 1, matches: [{ name: 'old/match', bytes: 1 }], done: true, truncated: false, error: '', objectsPerSecond: 1 };
+const finishedFind = { scanned: 1, matches: [{ name: 'old/match', bytes: 1 }], done: true, truncated: false, error: '', objectsPerSecond: 1, scope: { bookmarkId: 'bm-1', generation: 1 } };
 
 describe('Find across connection reset', () => {
   it('cancels a late startup id without installing or polling it', async () => {
@@ -269,7 +269,7 @@ describe('Find across connection reset', () => {
     f.api.startFind = vi.fn(() => gate.promise); f.api.findStatus = vi.fn().mockResolvedValue(finishedFind); f.api.cancelFind = vi.fn().mockResolvedValue(undefined);
     const finding = f.state.startFind('old'); await settle(); expect(f.api.startFind).toHaveBeenCalledOnce();
     await f.state.saveBookmark(f.bookmark, 'changed'); gate.resolve('old-scan'); await finding;
-    expect(f.api.findStatus).not.toHaveBeenCalled(); expect(f.api.cancelFind).toHaveBeenCalledExactlyOnceWith('old-scan');
+    expect(f.api.findStatus).not.toHaveBeenCalled(); expect(f.api.cancelFind).toHaveBeenCalledExactlyOnceWith('old-scan', f.bookmark.id);
     expectDisconnected(f.state);
   });
 
@@ -298,11 +298,11 @@ describe('Find across connection reset', () => {
     await settle();
     expect(f.state.findRunning).toBe(true); expect(f.state.findStatus).toBeNull();
     if (stage === 'startup reply') {
-      expect(f.api.cancelFind).toHaveBeenCalledWith('old-scan');
+      expect(f.api.cancelFind).toHaveBeenCalledWith('old-scan', f.bookmark.id);
       expect(vi.mocked(f.api.findStatus).mock.calls.filter(([id]) => id === 'old-scan')).toHaveLength(0);
     }
     cancelled.resolve(); await old; await settle();
-    await f.state.cancelFind(); expect(f.api.cancelFind).toHaveBeenCalledWith('new-scan');
+    await f.state.cancelFind(); expect(f.api.cancelFind).toHaveBeenCalledWith('new-scan', f.bookmark.id);
     newStatus.resolve({ ...finishedFind, matches: [] }); await current;
   });
 

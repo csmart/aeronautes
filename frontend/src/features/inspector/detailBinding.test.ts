@@ -24,7 +24,7 @@ async function settle() {
   for (let i = 0; i < 12; i++) { await Promise.resolve(); flushSync(); }
 }
 
-const scope = { bookmarkId: "", generation: 0 };
+const scope = { bookmarkId: "source", generation: 1 };
 const objectEdit = { meta: { Team: "ops" }, contentType: "", deleteAt: "" };
 const containerEdit: ContainerEditDTO = {
   meta: { Team: "ops" }, readAcl: "", writeAcl: "", versioningMode: "off",
@@ -33,8 +33,8 @@ const containerEdit: ContainerEditDTO = {
 
 async function show() {
   const api = newFakeApi();
-  const object = await api.objectDetail("fixtures", "empty-object");
-  const container = await api.containerDetail("fixtures");
+  const object = await api.objectDetail("fixtures", "empty-object", "source");
+  const container = await api.containerDetail("fixtures", "source");
   // Echo the bookmark the caller named, as the backend does: a page states
   // the account that answered it, and the browser applies only its own.
   api.objects = vi.fn(async (bookmarkId: string, _c: string, _p: string, _m: string, _l: number) => ({ rows: [
@@ -47,7 +47,7 @@ async function show() {
     editableFingerprint: `${at}/${name}`, meta: { Source: `${at}/${name}` } }));
   api.containerDetail = vi.fn(async (name) => ({ ...container, name,
     editableFingerprint: name, meta: { Source: name } }));
-  api.prefixDetail = vi.fn(async (_at, prefix) => ({ prefix, markerBacked: false, selfObject: null, scope: { bookmarkId: "", generation: 0 } }));
+  api.prefixDetail = vi.fn(async (_at, prefix, bookmarkId) => ({ prefix, markerBacked: false, selfObject: null, scope: { bookmarkId, generation: 1 } }));
   api.connect = vi.fn().mockRejectedValue(new Error("reconnect failed"));
   api.auditRecent = vi.fn().mockResolvedValue([]);
   const browser = new BrowserState(api);

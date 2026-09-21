@@ -357,7 +357,7 @@ it.each([
   await vi.advanceTimersByTimeAsync(1500);
   flushSync();
   expect(api.jobs).toHaveBeenCalledOnce();
-  expect(api.job).toHaveBeenCalledExactlyOnceWith("download");
+  expect(api.job).toHaveBeenCalledExactlyOnceWith("download", "a");
   expect(browser.jobs[0].counters.bytesCopied).toBe(fresh ? 17 : 0);
   expect(document.body.textContent).toContain("Item page 2");
   expect(api.jobItems).not.toHaveBeenCalled();
@@ -469,7 +469,7 @@ it.each([false, true])("discards a prior job's late item response (failure=%s)",
   api.jobItemTotals = async () => totals({ items: 1 });
   await show(api, [job("old"), job("new")]);
   expand("old");
-  await vi.waitFor(() => expect(api.jobItems).toHaveBeenCalledWith("old", "", 100));
+  await vi.waitFor(() => expect(api.jobItems).toHaveBeenCalledWith("old", "", 100, "a"));
   expand("new");
   await vi.waitFor(() => expect(document.querySelector("summary code")?.textContent).toBe('"new job"'));
   if (failure) old.reject(new Error("old failure"));
@@ -558,8 +558,8 @@ it("refreshes the first item page when an older active job finishes outside the 
   await vi.advanceTimersByTimeAsync(1500);
   flushSync();
   await vi.waitFor(() => expect(document.querySelectorAll(".item-record")).toHaveLength(100));
-  expect(api.job).toHaveBeenCalledWith("older-active");
-  expect(api.jobItems).toHaveBeenLastCalledWith("older-active", "", 100);
+  expect(api.job).toHaveBeenCalledWith("older-active", "a");
+  expect(api.jobItems).toHaveBeenLastCalledWith("older-active", "", 100, "a");
   expect(document.body.textContent).toContain("Item page 1");
   expect(document.body.textContent).not.toContain("Job still active");
   expect(document.querySelector(".totals dd")?.textContent).toBe("102");

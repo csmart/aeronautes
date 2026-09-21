@@ -99,7 +99,7 @@ describe("Find query label", () => {
     expect(f.api.startFind).not.toHaveBeenCalled();
     click(button(f.root, "Find"));
     await settle();
-    expect(f.api.startFind).toHaveBeenCalledExactlyOnceWith("fixtures", "", "  folder//λ  ");
+    expect(f.api.startFind).toHaveBeenCalledExactlyOnceWith("fixtures", "", "  folder//λ  ", f.bookmark.id);
   });
 
   it("keeps identical labels attached to their own panel", async () => {
@@ -116,7 +116,7 @@ describe("Find query label", () => {
     click(button(second.root, "Find"));
     await settle();
     expect(first.api.startFind).not.toHaveBeenCalled();
-    expect(second.api.startFind).toHaveBeenCalledExactlyOnceWith("fixtures", "", "second");
+    expect(second.api.startFind).toHaveBeenCalledExactlyOnceWith("fixtures", "", "second", second.bookmark.id);
     expect(firstInput.value).toBe("");
   });
 

@@ -517,8 +517,8 @@ export class BrowserState {
    * anything else, because it tracks intent rather than the backend's
    * state. The reply states who answered, so that gap closes here
    * (ADR 0049). */
-  #answeredBy(scope: ListingScope | undefined, bookmarkId: string): boolean {
-    return scope !== undefined && scope.bookmarkId === bookmarkId;
+  #answeredBy(scope: ListingScope | null | undefined, bookmarkId: string): boolean {
+    return scope != null && scope.bookmarkId === bookmarkId;
   }
 
   async loadContainers() {
@@ -738,7 +738,8 @@ export class BrowserState {
     this.dloSegments = null;
     this.detailError = null;
     const container = this.containerName;
-    if (!entry || !container) {
+    const bookmarkId = this.connectedBookmarkId;
+    if (!entry || !container || !bookmarkId || this.connecting) {
       this.detailLoading = false;
       return;
     }
@@ -746,28 +747,32 @@ export class BrowserState {
     const request = { scope: this.#scopeRevision, seq, container, name: entry.name };
     const fetch =
       entry.kind === "object"
-        ? this.#api.objectDetail(container, entry.name).then(async (detail) => {
+        ? this.#api.objectDetail(container, entry.name, bookmarkId).then(async (detail) => {
             if (!this.#currentDetail(request)) {
               return;
             }
+            if (!this.#answeredBy(detail.scope, bookmarkId)) throw new Error("object detail does not match the requested account");
             if (detail.name !== request.name) throw new Error("object detail does not match the selected name");
             this.objectDetail = detail;
             if (detail.class === "slo") {
               // The exact segment table (§23.2) — still one selection.
-              const manifest = await this.#api.sloManifest(container, entry.name);
+              const manifest = await this.#api.sloManifest(container, entry.name, bookmarkId);
               if (this.#currentDetail(request)) {
+                if (!this.#answeredBy(manifest.scope, bookmarkId)) throw new Error("manifest does not match the requested account");
                 this.sloManifest = manifest;
               }
             } else if (detail.class === "dlo" && detail.manifest !== "") {
               // The bounded §23.1 preview.
-              const preview = await this.#api.dloSegments(detail.manifest);
+              const preview = await this.#api.dloSegments(detail.manifest, bookmarkId);
               if (this.#currentDetail(request)) {
+                if (!this.#answeredBy(preview.scope, bookmarkId)) throw new Error("segments do not match the requested account");
                 this.dloSegments = preview;
               }
             }
           })
-        : this.#api.prefixDetail(container, entry.name).then((detail) => {
+        : this.#api.prefixDetail(container, entry.name, bookmarkId).then((detail) => {
             if (this.#currentDetail(request)) {
+              if (!this.#answeredBy(detail.scope, bookmarkId)) throw new Error("prefix detail does not match the requested account");
               if (detail.prefix !== request.name) throw new Error("prefix detail does not match the selected name");
               this.prefixDetail = detail;
             }
@@ -847,16 +852,21 @@ export class BrowserState {
     return this.#api.jobHistory(bookmarkId, cursor, limit);
   }
 
-  job(jobId: string) {
-    return this.#api.job(jobId);
+  async job(jobId: string, bookmarkId: string) {
+    const job = await this.#api.job(jobId, bookmarkId);
+    if (job && (job.id !== jobId || !bookmarkId
+      || (job.sourceBookmarkId !== bookmarkId && job.destBookmarkId !== bookmarkId))) {
+      throw new Error("job does not match the requested account and identity");
+    }
+    return job;
   }
 
-  jobItems(jobId: string, cursor: string, limit: number) {
-    return this.#api.jobItems(jobId, cursor, limit);
+  jobItems(jobId: string, cursor: string, limit: number, bookmarkId: string) {
+    return this.#api.jobItems(jobId, cursor, limit, bookmarkId);
   }
 
-  jobItemTotals(jobId: string) {
-    return this.#api.jobItemTotals(jobId);
+  jobItemTotals(jobId: string, bookmarkId: string) {
+    return this.#api.jobItemTotals(jobId, bookmarkId);
   }
 
   async startBenchmark(confirm: string): Promise<string> {
@@ -986,14 +996,15 @@ export class BrowserState {
       await cancellation;
       if (!this.#currentFind(request)) return;
       request.started = true;
-      request.id = await this.#api.startFind(request.container, request.prefix, query);
+      request.id = await this.#api.startFind(request.container, request.prefix, query, request.bookmark);
       if (!this.#currentFind(request)) {
         await this.#cancelFindRequest(request);
         return;
       }
       while (this.#currentFind(request)) {
-        const status = await this.#api.findStatus(request.id);
+        const status = await this.#api.findStatus(request.id, request.bookmark);
         if (!this.#currentFind(request)) return;
+        if (!this.#answeredBy(status.scope, request.bookmark)) throw new Error("scan does not match the requested account");
         this.findStatus = status;
         if (status.done) {
           break;
@@ -1045,7 +1056,7 @@ export class BrowserState {
   async #cancelFindRequest(request: FindRequest) {
     if (request.id === null) return;
     try {
-      await this.#api.cancelFind(request.id);
+      await this.#api.cancelFind(request.id, request.bookmark);
       if (this.#currentFindResults(request)) this.findNotice = "Cancellation requested.";
     } catch (error) {
       if (this.#currentFindResults(request)) this.findNotice = "Could not confirm that the scan stopped: " + messageOf(error);
@@ -1293,15 +1304,16 @@ export class BrowserState {
 
   async refreshContainerDetail() {
     const name = this.containerName;
-    if (!name) {
+    const bookmarkId = this.connectedBookmarkId;
+    if (!name || !bookmarkId || this.connecting) {
       return;
     }
     const scope = this.#scopeRevision;
     const seq = ++this.#containerDetailSeq;
     const connection = this.#connectionRevision;
-    const detail = await this.#api.containerDetail(name).catch(() => null);
+    const detail = await this.#api.containerDetail(name, bookmarkId).catch(() => null);
     if (this.#currentContainerDetail(scope, seq, name)) {
-      this.containerDetail = detail?.name === name ? detail : null;
+      this.containerDetail = detail?.name === name && this.#answeredBy(detail.scope, bookmarkId) ? detail : null;
       // A prefix change does not change this container's working-copy identity.
       this.#containerDetailConnection = connection;
     }
