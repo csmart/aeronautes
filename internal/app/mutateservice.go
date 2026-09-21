@@ -60,7 +60,7 @@ func (s *MutateService) UpdateObjectMetadata(ctx context.Context, container, nam
 		return MutationResultDTO{}, err
 	}
 	defer s.writers.leave()
-	session, err := s.connections.Session()
+	entry, bookmarkID, _, err := s.connections.activeSnapshot()
 	if err != nil {
 		return MutationResultDTO{}, err
 	}
@@ -83,16 +83,16 @@ func (s *MutateService) UpdateObjectMetadata(ctx context.Context, container, nam
 	}
 	if err := s.facts.RecordIntent(ctx, mutationfacts.Intent{
 		Identity:   identity,
-		BookmarkID: s.connections.ActiveBookmarkID(),
+		BookmarkID: bookmarkID,
 		Operation:  "object.metadata.update",
 		Resource:   resource,
 	}); err != nil {
 		return MutationResultDTO{}, err
 	}
 
-	result, err := session.UpdateObjectMetadata(ctx, container, name, baseFingerprint, adapterEdit)
+	result, err := entry.session.UpdateObjectMetadata(ctx, container, name, baseFingerprint, adapterEdit)
 	outcome, auditRes, summary, transIDs := objectMetadataFact(result, err, edit)
-	if recErr := s.recordObjectOutcome(ctx, identity, resource, outcome, auditRes, summary, transIDs); recErr != nil {
+	if recErr := s.recordObjectOutcome(ctx, identity, bookmarkID, resource, outcome, auditRes, summary, transIDs); recErr != nil {
 		if objectMetadataPosted(result, err) {
 			return MutationResultDTO{}, fmt.Errorf("%w: identity %s: %v", errMetadataResidue, identity, recErr)
 		}
@@ -303,10 +303,10 @@ func (s *MutateService) record(ctx context.Context, operation, resource, summary
 	return err
 }
 
-func (s *MutateService) recordObjectOutcome(ctx context.Context, identity, resource string, outcome mutationfacts.Outcome, result audit.Result, summary string, transIDs []string) error {
+func (s *MutateService) recordObjectOutcome(ctx context.Context, identity, bookmarkID, resource string, outcome mutationfacts.Outcome, result audit.Result, summary string, transIDs []string) error {
 	return s.facts.RecordOutcome(ctx, identity, outcome, summary, transIDs, func(tx *sql.Tx) error {
 		return s.audit.AppendTx(ctx, tx, audit.Event{
-			BookmarkID: s.connections.ActiveBookmarkID(),
+			BookmarkID: bookmarkID,
 			Operation:  "object.metadata.update",
 			Resource:   resource,
 			Summary:    summary,
