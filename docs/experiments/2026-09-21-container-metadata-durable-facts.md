@@ -37,11 +37,13 @@ The service reuses the existing identity-keyed ledger: intent before the adapter
 It captures the account once for intent, audit and returned classification, and keeps the writer gate through the required record.
 The adapter retains partial results and observed transaction IDs, distinguishes received HTTP refusals from unknown POST outcomes, and returns a container-specific unverified error when verification cannot complete.
 
-`TestContainerMetadataFactsMock` and `TestContainerMetadataFactsSwift` each maintain 17 system-boundary cases.
-Against the proposal's production source, 16 cases fail and the public-ACL refusal control passes on each provider; all 17 pass with the implementation.
+`TestContainerMetadataFactsMock` and `TestContainerMetadataFactsSwift` each maintain 18 system-boundary cases.
+Against the proposal's production source, 17 cases fail and the public-ACL refusal control passes on each provider; all 18 pass with the implementation.
 The cases cover intent, outcome and audit refusal; applied, conflict, mismatch, failed and unverified outcomes; lost POST replies, failed verify reads, close/reopen by identity, audit retention, observed transaction IDs and an account switch while the write reply is held.
 Raw HTTP snapshots check the exact intended metadata delta and unchanged modelled collateral, including object bytes and the secondary account.
 The modern-mode case injects a preflight header because the mock does not implement modern versioning; the existing `TestVersioningPreflight` separately passes against actual modern-versioned Swift containers.
+The mock container POST emits a transaction header, and the existing adapter test requires three non-empty observed IDs.
+A separate system case removes both POST transaction headers and requires the returned result, fact and audit to contain only the two observed HEAD IDs.
 `TestContainerMetadataDrainWaitsForOutcome` holds the database writer after intent and proves shutdown waits for the outcome transaction.
 The private implementation packet retains source, commands, raw results, the initial failed fixture attempts, corrected before/after proof and controls for POST-before-intent, swallowed record errors and unknown-as-failed classification.
 Its path and digest are recorded with the implementation review.

@@ -412,6 +412,7 @@ func (s *Server) updateContainer(w http.ResponseWriter, r *http.Request, name st
 		return
 	}
 	applyContainerHeaders(c, r)
+	w.Header().Set("X-Trans-Id", "txswifttest-container-post")
 	w.WriteHeader(http.StatusNoContent)
 }
 

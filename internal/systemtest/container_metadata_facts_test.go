@@ -37,6 +37,7 @@ func testContainerMetadataFacts(t *testing.T, harness func(*testing.T) *Harness)
 		changed, hold, switchAccount, prune     bool
 	}{
 		{name: "applied", outcome: "applied", posts: 1, changed: true},
+		{name: "missing_post_id", fault: "missing_id", outcome: "applied", posts: 1, changed: true},
 		{name: "intent_refused", refuse: "intent", errorText: "refuse intent"},
 		{name: "outcome_refused", refuse: "outcome", outcome: "intent", errorText: "container metadata write residue", posts: 1, changed: true},
 		{name: "audit_refused", refuse: "audit", outcome: "intent", errorText: "container metadata write residue", posts: 1, changed: true},
@@ -146,6 +147,12 @@ func testContainerMetadataFacts(t *testing.T, harness func(*testing.T) *Harness)
 				t.Errorf("pre-POST error claims residue: %v", got.err)
 			}
 			posts, observedIDs := trace.snapshot()
+			if tc.fault == "missing_id" && len(observedIDs) != 2 {
+				t.Errorf("missing POST ID fixture observed %v; want two HEAD IDs", observedIDs)
+			}
+			if got.err == nil && !reflect.DeepEqual(got.dto.TransIDs, observedIDs) {
+				t.Errorf("returned IDs = %v; observed %v", got.dto.TransIDs, observedIDs)
+			}
 			if posts != tc.posts {
 				t.Errorf("POST count = %d, want %d", posts, tc.posts)
 			}
@@ -298,6 +305,10 @@ func installContainerFactProxy(t *testing.T, h *Harness, container, fault string
 	proxy := httputil.NewSingleHostReverseProxy(&target)
 	proxy.Transport = transport
 	proxy.ModifyResponse = func(r *http.Response) error {
+		if fault == "missing_id" && r.Request.URL.Path == path && r.Request.Method == http.MethodPost {
+			r.Header.Del("X-Trans-Id")
+			r.Header.Del("X-Openstack-Request-Id")
+		}
 		// The mock has no modern-versioning implementation. Inject the
 		// preflight observation here; TestVersioningPreflight separately
 		// exercises an actually versioned container on real Swift.
