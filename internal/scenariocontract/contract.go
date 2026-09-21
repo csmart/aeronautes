@@ -128,7 +128,7 @@ var inventory = map[string]Action{
 	"MutateService.DeleteManifest":       {Kind: Destructive},
 	"MutateService.UpdateObjectMetadata": {Kind: Mutate, Scenarios: []string{"happy", "refusal", "conflict"}},
 	// AuditService
-	"AuditService.Recent":    {Kind: Read},
+	"AuditService.Recent":    {Kind: Read, Scenarios: []string{"refusal"}},
 	"AuditService.RecentFor": {Kind: Read},
 	"AuditService.Search":    {Kind: Read},
 	// TransferService
@@ -200,7 +200,7 @@ func Requires(action, scenario string) bool {
 func Validate() error { return validateInventory(inventory) }
 
 // validateInventory is the row-by-row check, split out so its rejection
-// branches (unknown kind, unknown/duplicate scenario, missing happy) have
+// branches (unknown kind, unknown/duplicate scenario, invalid baseline) have
 // negative unit tests against synthetic contracts.
 func validateInventory(inv map[string]Action) error {
 	keys := make([]string, 0, len(inv))
@@ -214,8 +214,7 @@ func validateInventory(inv map[string]Action) error {
 			return fmt.Errorf("%s: unknown kind %q", key, a.Kind)
 		}
 		// An empty Scenarios override falls back to the kind default, so a
-		// known kind always yields a non-empty list; a genuinely empty required
-		// set is caught by the missing-happy check below.
+		// known kind always yields a non-empty list.
 		seen := map[string]bool{}
 		happy := false
 		for _, s := range a.Required() {
@@ -228,7 +227,13 @@ func validateInventory(inv map[string]Action) error {
 			seen[s] = true
 			happy = happy || s == "happy"
 		}
-		if !happy {
+		// ADR 0059 makes this legacy unscoped read always refuse. ADR 0068
+		// keeps every other happy baseline, including deferred operations.
+		if key == "AuditService.Recent" {
+			if a.Kind != Read || len(seen) != 1 || !seen["refusal"] {
+				return fmt.Errorf("%s: requires read kind and only refusal", key)
+			}
+		} else if !happy {
 			return fmt.Errorf("%s: missing the happy baseline", key)
 		}
 	}

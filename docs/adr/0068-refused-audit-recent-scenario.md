@@ -1,6 +1,6 @@
 # ADR 0068: refusal coverage for legacy Recent
 
-**Status:** Proposed; independent contract review precedes implementation.
+**Status:** Accepted and implemented for the legacy Recent scenario floor.
 
 ## Context
 

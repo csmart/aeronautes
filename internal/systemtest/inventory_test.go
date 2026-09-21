@@ -58,7 +58,7 @@ func TestInventoryCoversEveryBoundAction(t *testing.T) {
 
 // TestInventoryIsWellFormed asserts the contract validates: a known kind, a
 // non-empty required set from the known vocabulary with no duplicates, and
-// the happy baseline. The check itself lives in scenariocontract.Validate
+// the per-action baseline. The check itself lives in scenariocontract.Validate
 // (and is unit-tested there); this keeps the systemtest suite red if the
 // shared contract is ever malformed.
 func TestInventoryIsWellFormed(t *testing.T) {
