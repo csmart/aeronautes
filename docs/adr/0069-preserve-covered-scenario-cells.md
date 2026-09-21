@@ -47,11 +47,19 @@ It must retain the same required snapshot and every previously protected pair, a
 Baseline changes must not erase a prior failure, omit an inconvenient cell, turn an optional skip into coverage, or substitute assertions that never emitted an accepted receipt.
 Do not regenerate or shrink the baseline automatically from a failing candidate.
 
-Required-set drift is an intentional stop condition for this bounded gate: no replacement baseline for a changed snapshot is admissible under this ADR.
-The implementation must fail all drift until a separately reviewed contract defines an executable evidence and admission route for that change.
-That later contract must name every changed identity and its behaviour oracle, account for previously protected pairs, and specify the evidence-producing revision/run/attempt and the order of review, replacement data, passing gate and protected-source reconciliation.
-This ADR does not supply that route, a candidate-run replacement flow, a temporary bypass, a deletion exception, a new-action waiver or an N/A policy.
-The initial and routine protected-source rules above must not be treated as a usable drift-admission route; editing baseline data alone does not authorise drift.
+Required-set drift fails the gate until a separately accepted action/scenario contract decision authorises the changed snapshot and the following evidence route is completed.
+That decision must name every changed identity and its behaviour oracle, explicitly account for any previously protected identity it changes, and state the required coverage for the changed action/scenario contract.
+Every other previously protected pair must remain credited; unrelated losses are not admissible.
+This route grants no automatic deletion, N/A, new-action waiver or temporary bypass.
+
+Use the candidate's own identified commit, workflow run and attempt to produce both main and heavy reports with valid receipts and successful pre-existing join checks.
+Retain the preservation comparison's expected required-set-drift failure as a diagnostic; it is not a successful gate or permission to merge.
+Other validation failures or loss of a protected pair not explicitly accounted for by the accepted behaviour decision disqualify that evidence.
+The replacement baseline must include the candidate's complete required snapshot and every credited pair, and land in the same independently reviewed change as the changed contract and its decision record.
+Review the old/new identities and baseline together with those retained producer and drift diagnostics; editing baseline data alone does not authorise drift.
+The next exact-head full CI run must pass every required check, including preservation against the reviewed replacement baseline, before the normal protected merge.
+After merging, reconcile and retain the resulting protected-source producer evidence; any further baseline update follows the routine reviewed-update rules.
+Unlike first and routine admission, this drift route initially uses candidate-source evidence because the unchanged baseline must refuse that candidate's new snapshot.
 The trust boundary remains reviewed repository code and branch protection under ADR 0013, not resistance to a malicious committer who rewrites both the check and its baseline.
 
 ### Refuse inconsistent evidence and retain diagnostics
@@ -83,6 +91,8 @@ Keep existing producer/parser controls and budgets unchanged.
 | One protected pair is replaced by a different pair at the same total | Fail by identity; extra coverage cannot offset the loss. |
 | A redundant witness disappears but another still credits the same cell | Pass preservation without requiring a fixed test name. |
 | Required action, kind or scenario changes, including a new uncovered action | Fail for drift pending the separate contract decision; do not lower the denominator. |
+| Valid identified drift-candidate producers, followed by a reviewed replacement baseline | Retain the first run's drift failure; only a fresh exact-head full CI pass permits merge, followed by protected-source reconciliation. |
+| Replacement evidence has an unrelated protected-cell loss or another validation failure | Refuse admission; the accepted identity change cannot excuse another failure. |
 | Missing/empty baseline, duplicate or unknown entries, inconsistent sets/counts/flags, incompatible schema or contract hash | Fail with the specific cause retained. |
 | Current report metadata disagrees with its plan, or a lane, receipt, producer/tee exit or required fixture is invalid | Fail; an older baseline origin remains a passing control, not an identity mismatch. |
 | Heavy report has zero credits, then an unexpected credit | Preserve the existing zero-credit success and nonzero-credit refusal. |
