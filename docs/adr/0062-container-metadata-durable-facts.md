@@ -1,6 +1,6 @@
 # ADR 0062: durable facts for container metadata writes
 
-**Status:** Proposed for independent review before implementation.
+**Status:** Accepted and implemented for container metadata writes.
 This extends the L04 recording contract to `UpdateContainer`; it does not close L04 or the valuable-data hold.
 
 ## Context
@@ -10,7 +10,7 @@ v1 keeps container metadata edits, including the existing ACL, quota and legacy 
 That correction is now on master.
 At `930fbe22e5757c19`, `MutateService.UpdateContainer` still calls the store before a best-effort audit append and has no durable attempt identity.
 The [container facts reproduction](../experiments/2026-09-21-container-metadata-durable-facts.md) shows a successful DTO after a refused audit append, with no fact after reopening the database.
-The adapter also loses its result after a failed verify HEAD or a POST transport error, so the service records `failed` even when the write may have landed.
+At that source, the adapter also loses its result after a failed verify HEAD or a POST transport error, so the service records `failed` even when the write may have landed.
 
 ## Decision
 

@@ -5709,7 +5709,7 @@ A POST that succeeds when that transaction fails returns residue rather than app
 A verify-read failure after a POST is unverified, not failed; [ADR 0046](adr/0046-metadata-write-window.md) still qualifies a completed POST as not establishing exclusivity.
 The ledger is `mutation_facts`; compacted `audit_events` are not it.
 The [object metadata durable-facts record](experiments/2026-09-16-object-metadata-durable-facts.md) states the prior path and the delivered proofs.
-Create, marker and manifest stay on today's gate plus best-effort audit, container metadata remains a follow-up, and download terminal writes stay on ADR 0024/0033.
+Create, marker and manifest stay on today's gate plus best-effort audit, container metadata is covered by ADR 0062 below, and download terminal writes stay on ADR 0024/0033.
 L04, P12, P13 and the valuable-data hold stay open.
 
 L10's first slice is the download preflight view under [ADR 0056](adr/0056-download-preflight-view.md).
@@ -5731,11 +5731,13 @@ The recorded collection object path is persisted beside the adapter instance so 
 Physical Delete, retry and the collector stay unstarted.
 This establishes nothing about native keychain behaviour on the six targets, and it does not close L01.
 
-The container metadata follow-up is proposed in [ADR 0062](adr/0062-container-metadata-durable-facts.md), now that L09's preflight correction is on master.
-The [container facts reproduction](experiments/2026-09-21-container-metadata-durable-facts.md) shows that an audit refusal still returns applied with no durable attempt after reopen.
-The proposal reuses `mutation_facts`, requires intent before POST and an atomic outcome plus audit, preserves uncertain writes as unverified, and captures the account for attribution throughout the call.
+The container metadata follow-up implements [ADR 0062](adr/0062-container-metadata-durable-facts.md), following L09's preflight correction.
+The [container facts record](experiments/2026-09-21-container-metadata-durable-facts.md) reproduces the prior success after audit refusal and records the maintained before/after proof.
+`UpdateContainer` reuses `mutation_facts`, requires intent before POST and an atomic outcome plus audit, preserves uncertain writes as unverified, and captures the account for attribution throughout the call.
+Record refusal after a possible POST returns a residue error with the attempt identity; reopening that identity still yields intent.
+Observed preflight, POST and verification transaction IDs survive in committed outcomes, including received HTTP refusals.
 It preserves all existing admission, versioning and writer-shutdown rules and does not claim exclusivity or trusted public-ACL approval.
-This extension requires independent contract review before implementation; the named finish-line and release holds remain open.
+The named finish-line and release holds remain open.
 
 ### 65.12. Proportionate remediation and a fixed finish line
 

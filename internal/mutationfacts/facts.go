@@ -1,5 +1,5 @@
-// Package mutationfacts is the identity-keyed ledger for object
-// metadata writes (ADR 0058). Compacted audit_events are not this
+// Package mutationfacts is the identity-keyed ledger for object and
+// container metadata writes (ADR 0058/0062). Compacted audit_events are not this
 // ledger; retention must not drop these rows.
 package mutationfacts
 
