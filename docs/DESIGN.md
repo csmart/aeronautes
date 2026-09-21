@@ -5730,6 +5730,12 @@ The [object metadata durable-facts record](experiments/2026-09-16-object-metadat
 Create, marker and manifest stay on today's gate plus best-effort audit, container metadata is covered by ADR 0062 below, and download terminal writes stay on ADR 0024/0033.
 L04, P12, P13 and the valuable-data hold stay open.
 
+Object metadata account attribution is proposed in [ADR 0065](adr/0065-object-metadata-account-attribution.md), pending independent contract review and implementation.
+At `e4b7730721adc2be`, a connection switch during a save leaves the correct first-account metadata and durable fact but records the second account in the audit event.
+The [attribution record](experiments/2026-09-21-object-metadata-account-attribution.md) preserves the protocol-barrier failure and same-account control.
+The proposal carries one validated session/bookmark tuple through the admitted write's intent and outcome, preserving required recording and writer lifetime.
+It adds no caller approval, historical generation ledger or frontend mutation binding, and leaves the existing release holds open.
+
 L10's first slice is the download preflight view under [ADR 0056](adr/0056-download-preflight-view.md).
 `TransferService.PreflightDownload` returned the complete collision inventory across the bridge, `StartDownload` executed that same value, and the dialog counted objects from the items array length, so a bound applied in place would have dropped names from the job and from the displayed count.
 The [download preflight bounds record](experiments/2026-09-16-download-preflight-bounds.md) searched listing continuation, Find retention, job-item paging and the download inventory for silent truncation first: those paths grow or page with a count beside a sample, and a measured 20 000-object preflight kept items equal to the seeded count.
