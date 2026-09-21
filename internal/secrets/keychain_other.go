@@ -17,7 +17,7 @@ func newKeychainStore(ctx context.Context) (*KeychainStore, error) {
 		return nil, err
 	}
 	if err := setKeychainValue(ctx, probe, "probe"); err != nil {
-		_, _ = awaitKeychain(context.Background(), "delete", func() (string, error) {
+		_, _ = awaitKeychain(ctx, "delete", func() (string, error) {
 			return "", keyring.Delete(service, probe)
 		})
 		return nil, fmt.Errorf("keychain unavailable: %w", err)

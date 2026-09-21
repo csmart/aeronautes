@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/csmart/aeronautes/internal/bookmarks"
 	"github.com/csmart/aeronautes/internal/db"
@@ -212,6 +213,64 @@ func TestCancelledLinuxSecretServiceCallHonoursContext(t *testing.T) {
 	}
 	if err := store.Delete(ctx, "fixture/cancelled"); !errors.Is(err, context.Canceled) || !errors.Is(err, secrets.ErrUnresolved) {
 		t.Fatalf("Delete = %v, want canceled unresolved", err)
+	}
+}
+
+func TestOpenDefaultBoundsCollectionSelection(t *testing.T) {
+	for _, call := range []string{"Collections", "ReadAlias"} {
+		t.Run(call, func(t *testing.T) {
+			f := fixture(t)
+			f.setCollections([]dbus.ObjectPath{extraPath})
+			if err := f.SetAlias("default", extraPath); err != nil {
+				t.Fatal(err)
+			}
+			gate := f.blockSelection(call)
+			t.Cleanup(func() { close(gate.release) })
+			done := make(chan secrets.Backend, 1)
+			go func() {
+				_, backend := secrets.OpenDefault()
+				done <- backend
+			}()
+			select {
+			case <-gate.entered:
+			case <-time.After(2 * time.Second):
+				t.Fatal("backend selection did not reach the held native call")
+			}
+			select {
+			case backend := <-done:
+				if backend != secrets.BackendSession {
+					t.Fatalf("backend = %s, want session while selection is held", backend)
+				}
+			case <-time.After(12 * time.Second):
+				t.Fatal("backend selection exceeded its ten-second deadline")
+			}
+		})
+	}
+}
+
+func TestOpenDefaultDoesNotWaitForExpiredProbeCleanup(t *testing.T) {
+	f := fixture(t)
+	read := f.blockReadBack()
+	t.Cleanup(func() { close(read.release) })
+	done := make(chan secrets.Backend, 1)
+	go func() {
+		_, backend := secrets.OpenDefault()
+		done <- backend
+	}()
+	select {
+	case <-read.entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("probe did not reach the held read-back")
+	}
+	cleanup := f.blockSelection("Collections")
+	t.Cleanup(func() { close(cleanup.release) })
+	select {
+	case backend := <-done:
+		if backend != secrets.BackendSession {
+			t.Fatalf("backend = %s, want session while the probe is held", backend)
+		}
+	case <-time.After(12 * time.Second):
+		t.Fatal("probe cleanup waited after the startup deadline expired")
 	}
 }
 

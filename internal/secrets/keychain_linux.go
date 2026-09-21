@@ -20,24 +20,33 @@ const (
 )
 
 func newKeychainStore(ctx context.Context) (*KeychainStore, error) {
-	svc, err := ss.NewSecretService()
+	store := &KeychainStore{}
+	// Selection can block before the probe. Only publish the worker's store
+	// after it completes, so a deadline cannot expose a partially resolved pin.
+	_, err := awaitKeychain(ctx, "read", func() (string, error) {
+		svc, err := ss.NewSecretService()
+		if err != nil {
+			return "", err
+		}
+		pin, persistent, err := resolveCollection(svc)
+		if err != nil {
+			return "", err
+		}
+		store.origin = newOrigin(BackendKeychain)
+		store.origin.Persistent = persistent
+		store.pin = pin
+		return "", nil
+	})
 	if err != nil {
 		return nil, fmt.Errorf("keychain unavailable: %w", err)
 	}
-	pin, persistent, err := resolveCollection(svc)
-	if err != nil {
-		return nil, fmt.Errorf("keychain unavailable: %w", err)
-	}
-	origin := newOrigin(BackendKeychain)
-	origin.Persistent = persistent
-	store := &KeychainStore{origin: origin, pin: pin}
 
 	probe, err := probeName()
 	if err != nil {
 		return nil, err
 	}
 	if err := store.setValue(ctx, probe, "probe"); err != nil {
-		_, _ = awaitKeychain(context.Background(), "delete", func() (string, error) {
+		_, _ = awaitKeychain(ctx, "delete", func() (string, error) {
 			return "", store.deletePinned(probe)
 		})
 		return nil, fmt.Errorf("keychain unavailable: %w", err)
