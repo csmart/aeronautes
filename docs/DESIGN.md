@@ -5646,6 +5646,13 @@ Unavailable `/info` stays a bound unknown result.
 This establishes reply provenance only: a later connection may leave a correctly labelled read in flight, and no later mutation authority follows from that reply.
 The shared scoped-session helper, broader live-read atomicity, generation checks on post-connect refreshes, audit search, mutation writers and release holds remain outside this slice.
 
+The bounded [audit attribution record](experiments/2026-09-21-audit-account-attribution.md) reproduces Search losing stored bookmark IDs and the drawer hiding attribution even when its input carries them.
+[ADR 0064](adr/0064-audit-account-attribution.md) proposes preserving those IDs, adding section 47's promised bookmark filter while retaining explicit All accounts mode, and showing each row's retained ID with honest current-label and unavailable/accountless fallbacks.
+The selected bookmark will share the existing operation/result query generation, cursor and retry lifetime, and a named query will reject a page containing another or missing bookmark before publishing it.
+Historical local reads remain available while disconnected or connected elsewhere; labels do not establish a historical connection generation or grant mutation authority.
+Review the contract before the backend/browser correction and prove mapper, filter and lifetime omissions through maintained service and mounted regressions.
+No migration, RecentFor, recovery aggregate, account portrait or mutation change is proposed, and L11, P28 and the valuable-data hold stay open.
+
 P20 settles what a cancelled download leaves behind, under [ADR 0048](adr/0048-cancelled-stage-removal.md).
 [ADR 0043](adr/0043-cancellation-delta-authority.md) decision 7 left that choice open for the operator, who has answered it: a graceful cancel removes the partial files the job created and says so, a crash or a kill retains them and that is reported accurately, and there is no setting and no prompt.
 The reasoning is that these are the application's own incomplete work product, written under a name it invented into a directory it created, rather than the operator's data, and that with no resume feature a retained fragment cannot be continued but only deleted by hand.
