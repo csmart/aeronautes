@@ -202,6 +202,21 @@
 
   const bookmarkName = (id: string) =>
     browser.bookmarks.find((b) => b.id === id)?.displayName ?? "…";
+
+  const auditBookmarks = $derived.by(() => {
+    const ids = new Set(browser.bookmarks.map((b) => b.id));
+    for (const event of browser.auditEvents) {
+      if (event.bookmarkId) ids.add(event.bookmarkId);
+    }
+    if (browser.auditFilterBookmark) ids.add(browser.auditFilterBookmark);
+    return [...ids].filter((id) => id !== "");
+  });
+
+  function auditBookmarkLabel(id: string): string {
+    if (id === "") return "No recorded bookmark";
+    const name = browser.bookmarks.find((b) => b.id === id)?.displayName;
+    return `${name || "Unavailable bookmark"} (${id})`;
+  }
 </script>
 
 <div class="drawer num">
@@ -556,6 +571,20 @@
           </button>
         </div>
         <div class="audit-filters num">
+          <label for={`${id}-audit-bookmark`}>Bookmark</label>
+          <select
+            id={`${id}-audit-bookmark`}
+            value={browser.auditFilterBookmark}
+            onchange={(e) => {
+              browser.auditFilterBookmark = e.currentTarget.value;
+              void browser.searchAudit();
+            }}
+          >
+            <option value="">All accounts</option>
+            {#each auditBookmarks as bookmark (bookmark)}
+              <option value={bookmark}>{auditBookmarkLabel(bookmark)}</option>
+            {/each}
+          </select>
           <label for={`${id}-audit-operation`}>Operation prefix</label>
           <input
             id={`${id}-audit-operation`}
@@ -584,9 +613,11 @@
           </select>
         </div>
         <p class="audit-scope">
-          All accounts · Operation prefix:
+          {browser.auditFilterBookmark === "" ? "All accounts" : `Bookmark: ${auditBookmarkLabel(browser.auditFilterBookmark)}`}
+          · Operation prefix:
           <span class="type-mono">{browser.auditFilterOp === "" ? "any" : JSON.stringify(browser.auditFilterOp)}</span>
           · Result: <span class="type-mono">{browser.auditFilterResult === "" ? "any" : JSON.stringify(browser.auditFilterResult)}</span>
+          · Names come from current bookmarks.
         </p>
         <div class="audit-status" role="status">
           {#if browser.auditError}
@@ -618,6 +649,7 @@
                 <span class="resource type-mono">{event.resource}</span>
                 <span class="summary">{event.summary}</span>
                 <span class="when">{timeOf(event.at)}</span>
+                <span class="audit-bookmark">{auditBookmarkLabel(event.bookmarkId)}</span>
               </div>
             {/each}
             {#if browser.auditLoaded && browser.auditEvents.length > 0 && !browser.auditExhausted && !browser.auditError}
@@ -880,6 +912,7 @@
 
   .audit-filters {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--space-2);
     margin-bottom: var(--space-2);
@@ -1014,6 +1047,12 @@
     padding: 2px var(--space-2);
     font-size: var(--text-xs);
     border-radius: var(--radius-control);
+  }
+
+  .audit-bookmark {
+    grid-column: 1 / -1;
+    overflow-wrap: anywhere;
+    color: var(--color-text-secondary);
   }
 
   .badge {

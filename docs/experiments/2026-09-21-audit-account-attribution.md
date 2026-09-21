@@ -1,7 +1,7 @@
 # Audit account attribution
 
 The oracle is DESIGN sections 47 and 50, frozen L11, [ADR 0059](../adr/0059-account-scoped-remaining-reads.md) and the existing [audit query lifetime contract](2026-09-12-audit-query-state.md).
-[ADR 0064](../adr/0064-audit-account-attribution.md) proposes the remaining Search correction; production is unchanged in this proposal.
+[ADR 0064](../adr/0064-audit-account-attribution.md) defines the implemented Search correction.
 
 ## Before
 
@@ -19,15 +19,22 @@ The seven-file before packet is `/home/csmart/code/.aeronautes-work/20260921-l11
 Its `SHA256SUMS` digest is `224ff5261d0a2c075928300e337856a1e9f095bfc1d69278c6c7e877312789f9`.
 The packet records source, command, probe hashes, load, concurrency caveats and raw failures; it remains unchanged.
 
-## Planned correction and proof
+## Correction and proof
 
-Project stored bookmark IDs and preserve intentional All accounts mode and the existing local-store filter.
-Add the promised bookmark selector, show retained IDs with honest current-label and unavailable/accountless fallbacks, and bind query, page and retry state to the captured bookmark with operation, result and cursor.
-Reject an unexpected row bookmark in a named query before publishing its page.
-Maintain local history access while disconnected or connected elsewhere, without making a label into mutation authority or historical-generation proof.
+Search projects stored bookmark IDs and preserves intentional All accounts mode and the existing local-store filter.
+The audit tab has its own bookmark selector and shows retained IDs with current-label and unavailable/accountless fallbacks.
+Query, page and retry state capture the bookmark with operation, result and cursor.
+An unexpected row bookmark in a named query rejects the whole page through the existing failed-read state before publishing any payload or advancing its cursor.
+Historical reads remain available while disconnected or connected elsewhere; labels carry no mutation authority or historical-generation proof.
 
-Promote the catching service and mounted probes into maintained regressions alongside combined-filter, legal continuation, exact retry, unavailable bookmark, accountless and deferred-reply cases.
-Prove mapper, filter and lifetime omissions with passing controls, and retain raw before/after and control streams with a path and digest in the implementation review.
-Run the affected Go packages with the race detector and the existing frontend audit suites, typecheck and build; broader current-base verification and protected delivery remain separate delivery gates.
+The maintained tests were first run with unchanged production at `a1809b1f`, whose only change from the reproduced head is the contract documentation.
+The Go service test compiled and produced eleven failing subcases with four passing controls; the frontend produced nineteen named assertion failures with one passing All accounts control.
+After the correction, all twenty new frontend cases, the existing audit suites and all Go audit cases pass: 96 frontend cases and 21 Go cases including parent cases, with no skips.
+The frontend typecheck reports no errors or warnings.
+Seven independent omission controls catch the mapper, store filter, outgoing query filter, bookmark lifetime, reply scope, shared fake filter and visible row label through named assertion failures with passing controls.
+Deliberate Go test syntax and frontend syntax errors produce build failures with no assertion credit.
+The implementation packet is `/home/csmart/code/.aeronautes-work/evidence/20260921-audit-account-attribution`; its sealed manifest digest and clean-head broader verification are recorded in the implementation review.
+Raw before failures, unchanged test snapshots, controls, commands, source hashes, load and concurrency are retained there.
+Current-base revalidation and protected delivery remain separate gates.
 This local audit slice needs no Swift mutation experiment or schema migration.
 L11, P28, native acceptance and the valuable-data hold remain open.

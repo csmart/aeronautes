@@ -1,7 +1,7 @@
 # ADR 0064: audit account attribution
 
-**Status:** Proposed.
-This record does not implement the correction or close L11, P28 or the valuable-data hold.
+**Status:** Accepted and implemented.
+This correction does not close L11, P28 or the valuable-data hold.
 
 ## Context
 
@@ -36,6 +36,7 @@ The [audit attribution record](../experiments/2026-09-21-audit-account-attributi
 
 4. Before publishing any named-query page, require every row to restate the requested bookmark.
    A foreign, empty or missing bookmark rejects the whole page without exposing its payload or advancing the cursor.
+   Rejection uses the existing fixed failed-read state, preserves prior attributable rows and never claims an empty success.
    All-account pages may contain multiple bookmarks and events with no recorded bookmark.
    This validation is separate from the connected-account `RecentFor` observation and does not alter it.
 
