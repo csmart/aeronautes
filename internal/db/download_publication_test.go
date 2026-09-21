@@ -1,22 +1,22 @@
-package db
+package db_test
 
 import (
 	"database/sql"
+	"embed"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 	"testing"
+
+	"github.com/csmart/aeronautes/internal/db"
+	"github.com/csmart/aeronautes/internal/jobs"
 )
 
+//go:embed migrations/*.sql
+var publicationMigrations embed.FS
+
 func TestDownloadPublicationUpgradePreservesHistory(t *testing.T) {
-	migrations, err := loadMigrations()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, historical := range migrations {
-		boundary := historical.version
-		if boundary < 10 || boundary >= 13 {
-			continue
-		}
+	for _, boundary := range []int{10, 11, 12} {
 		t.Run(fmt.Sprint(boundary), func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "state.sqlite")
 			raw, err := sql.Open("sqlite", "file:"+path)
@@ -28,14 +28,19 @@ func TestDownloadPublicationUpgradePreservesHistory(t *testing.T) {
 				version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)`); err != nil {
 				t.Fatal(err)
 			}
-			for _, migration := range migrations {
-				if migration.version > boundary {
-					continue
+			for version := 1; version <= boundary; version++ {
+				files, err := fs.Glob(publicationMigrations, fmt.Sprintf("migrations/%04d_*.sql", version))
+				if err != nil || len(files) != 1 {
+					t.Fatalf("historical migration %d: files=%v error=%v", version, files, err)
 				}
-				if _, err := raw.ExecContext(t.Context(), migration.sql); err != nil {
+				body, err := publicationMigrations.ReadFile(files[0])
+				if err != nil {
 					t.Fatal(err)
 				}
-				if _, err := raw.ExecContext(t.Context(), `INSERT INTO schema_migrations VALUES (?, ?, 'historical')`, migration.version, migration.name); err != nil {
+				if _, err := raw.ExecContext(t.Context(), string(body)); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := raw.ExecContext(t.Context(), `INSERT INTO schema_migrations VALUES (?, ?, 'historical')`, version, filepath.Base(files[0])); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -61,7 +66,7 @@ func TestDownloadPublicationUpgradePreservesHistory(t *testing.T) {
 				t.Fatal(err)
 			}
 			for range 2 {
-				d, err := Open(t.Context(), path)
+				d, err := db.Open(t.Context(), path)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -81,6 +86,11 @@ func TestDownloadPublicationUpgradePreservesHistory(t *testing.T) {
 				}
 				if required != 0 || publications != 0 || observations != 2 || unchangedObservations != 2 || gotSource != source || gotDestination != destination || gotCounters != counters || state != "complete" || finished != "2026-09-01T00:01:00Z" {
 					t.Errorf("upgrade altered historical facts: required=%d publications=%d observations=%d unchanged=%d counters=%q state=%q finished=%q", required, publications, observations, unchangedObservations, gotCounters, state, finished)
+				}
+				totals, err := jobs.NewStore(d).ReadItemTotals(t.Context(), "historical")
+				want := jobs.ItemTotals{Items: 1, Planned: 1, Admitted: 1}
+				if err != nil || totals != want {
+					t.Errorf("upgrade changed historical totals: got=%+v want=%+v error=%v", totals, want, err)
 				}
 				if err := d.Close(); err != nil {
 					t.Fatal(err)
