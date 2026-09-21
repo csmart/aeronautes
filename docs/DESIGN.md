@@ -5731,6 +5731,12 @@ The recorded collection object path is persisted beside the adapter instance so 
 Physical Delete, retry and the collector stay unstarted.
 This establishes nothing about native keychain behaviour on the six targets, and it does not close L01.
 
+The container metadata follow-up is proposed in [ADR 0062](adr/0062-container-metadata-durable-facts.md), now that L09's preflight correction is on master.
+The [container facts reproduction](experiments/2026-09-21-container-metadata-durable-facts.md) shows that an audit refusal still returns applied with no durable attempt after reopen.
+The proposal reuses `mutation_facts`, requires intent before POST and an atomic outcome plus audit, preserves uncertain writes as unverified, and captures the account for attribution throughout the call.
+It preserves all existing admission, versioning and writer-shutdown rules and does not claim exclusivity or trusted public-ACL approval.
+This extension requires independent contract review before implementation; the named finish-line and release holds remain open.
+
 ### 65.12. Proportionate remediation and a fixed finish line
 
 Safe, secure operation on valuable production data remains the first milestone.
