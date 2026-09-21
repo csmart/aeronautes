@@ -33,7 +33,7 @@ func (t *downloadRecordsTrace) selectedGets() map[string]int {
 	return result
 }
 
-func downloadRecordsProxy(t *testing.T, h *Harness, container, prefix string, names map[string]bool) *downloadRecordsTrace {
+func downloadRecordsProxy(t *testing.T, h *Harness, container, prefix string, names map[string]bool, beforeGet ...func(string)) *downloadRecordsTrace {
 	t.Helper()
 	storage, err := url.Parse(h.Primary.storageURL)
 	if err != nil {
@@ -65,6 +65,9 @@ func downloadRecordsProxy(t *testing.T, h *Harness, container, prefix string, na
 			trace.mu.Lock()
 			trace.gets[name]++
 			trace.mu.Unlock()
+			for _, hook := range beforeGet {
+				hook(name)
+			}
 		}
 		if r.Method == http.MethodGet && selected && names[name] {
 			trace.mu.Lock()

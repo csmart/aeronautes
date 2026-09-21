@@ -91,6 +91,9 @@ func (u *uploadRun) admit(item UploadItem, staging string) error {
 func (u *uploadRun) observe(item UploadItem, result uploadResult) error {
 	if result.Result == transfercopy.ResultCopied {
 		u.report.Done++
+		if result.verification != nil && result.verification.Result == transfercopy.ResultVerified {
+			u.report.Verified++
+		}
 		u.report.Bytes += result.CopiedBytes
 	}
 	if result.failure != nil {

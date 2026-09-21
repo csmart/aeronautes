@@ -3,6 +3,7 @@ package jobs
 import (
 	"errors"
 	"path/filepath"
+	"strings"
 	"time"
 	"unicode/utf8"
 )
@@ -45,10 +46,11 @@ type ItemIdentity struct {
 
 type ItemIntent struct {
 	ItemIdentity
-	Staging     *ItemLocation
-	Planned     bool
-	Admitted    bool
-	ListedBytes int64
+	Staging             *ItemLocation
+	Planned             bool
+	Admitted            bool
+	ListedBytes         int64
+	PublicationRequired bool
 }
 
 type ItemResult string
@@ -130,6 +132,7 @@ type ItemRecord struct {
 	CreatedAt    time.Time
 	Execution    *RecordedObservation
 	Verification *RecordedObservation
+	Publication  *RecordedObservation
 }
 
 type ItemPage struct {
@@ -171,7 +174,21 @@ func (i ItemIdentity) valid() bool {
 }
 
 func (i ItemIntent) valid() bool {
-	return i.ItemIdentity.valid() && i.ListedBytes >= 0 && (i.Staging == nil || i.Staging.valid())
+	if !i.ItemIdentity.valid() || i.ListedBytes < 0 || i.Staging != nil && !i.Staging.valid() {
+		return false
+	}
+	return !i.PublicationRequired || i.Planned && i.Admitted && i.Source.Kind == ItemSwift &&
+		!strings.HasSuffix(i.Source.Object, "/") &&
+		i.Destination.Kind == ItemLocal && i.Staging != nil && i.Staging.Kind == ItemLocal &&
+		i.Staging.LocalPath != i.Destination.LocalPath
+}
+
+func (o ItemObservation) validPublication() bool {
+	if !o.Diagnostic.valid() || o.CopiedBytes != 0 {
+		return false
+	}
+	return o.Result == ItemVerified && o.Effect == EffectNotAttempted && o.Diagnostic == (ItemDiagnostic{}) ||
+		o.Result == ItemFailed && o.Effect == EffectUnresolved && o.Diagnostic.Stage == StageVerification && o.Diagnostic.Code != ""
 }
 
 // Validate permits refusal before a write; invalid writes still latch the store.

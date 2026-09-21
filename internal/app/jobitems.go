@@ -34,18 +34,20 @@ type JobItemObservationDTO struct {
 }
 
 type JobItemDTO struct {
-	ID           string                 `json:"id"`
-	Key          string                 `json:"key"`
-	KeyDisplay   string                 `json:"keyDisplay"`
-	Source       JobItemLocationDTO     `json:"source"`
-	Destination  JobItemLocationDTO     `json:"destination"`
-	Staging      *JobItemLocationDTO    `json:"staging"`
-	Planned      bool                   `json:"planned"`
-	Admitted     bool                   `json:"admitted"`
-	ListedBytes  int64                  `json:"listedBytes"`
-	CreatedAt    string                 `json:"createdAt"`
-	Execution    *JobItemObservationDTO `json:"execution"`
-	Verification *JobItemObservationDTO `json:"verification"`
+	ID                  string                 `json:"id"`
+	Key                 string                 `json:"key"`
+	KeyDisplay          string                 `json:"keyDisplay"`
+	Source              JobItemLocationDTO     `json:"source"`
+	Destination         JobItemLocationDTO     `json:"destination"`
+	Staging             *JobItemLocationDTO    `json:"staging"`
+	Planned             bool                   `json:"planned"`
+	Admitted            bool                   `json:"admitted"`
+	ListedBytes         int64                  `json:"listedBytes"`
+	CreatedAt           string                 `json:"createdAt"`
+	Execution           *JobItemObservationDTO `json:"execution"`
+	Verification        *JobItemObservationDTO `json:"verification"`
+	PublicationRequired bool                   `json:"publicationRequired"`
+	Publication         *JobItemObservationDTO `json:"publication"`
 }
 
 type JobItemPageDTO struct {
@@ -146,7 +148,8 @@ func jobItemDTO(item jobs.ItemRecord) JobItemDTO {
 		Source: jobItemLocationDTO(item.Source), Destination: jobItemLocationDTO(item.Destination),
 		Planned: item.Planned, Admitted: item.Admitted, ListedBytes: item.ListedBytes,
 		CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano),
-		Execution: jobItemObservationDTO(item.Execution), Verification: jobItemObservationDTO(item.Verification)}
+		Execution: jobItemObservationDTO(item.Execution), Verification: jobItemObservationDTO(item.Verification),
+		PublicationRequired: item.PublicationRequired, Publication: jobItemObservationDTO(item.Publication)}
 	if item.Staging != nil {
 		staging := jobItemLocationDTO(*item.Staging)
 		out.Staging = &staging

@@ -84,6 +84,11 @@ func (s *Store) AdmitItems(ctx context.Context, jobID string, items []ItemIntent
 }
 
 func insertItem(ctx context.Context, tx *sql.Tx, jobID string, item ItemIntent) (int64, error) {
+	if item.PublicationRequired {
+		if err := publicationJob(ctx, tx, jobID); err != nil {
+			return 0, err
+		}
+	}
 	source, err := json.Marshal(item.Source)
 	if err != nil {
 		return 0, err
@@ -102,9 +107,9 @@ func insertItem(ctx context.Context, tx *sql.Tx, jobID string, item ItemIntent) 
 	}
 	result, err := tx.ExecContext(ctx, `
 		INSERT INTO job_items (job_id, item_key, source_json, destination_json, staging_json,
-			planned, admitted, listed_bytes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			planned, admitted, listed_bytes, publication_required, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		jobID, item.Key, string(source), string(destination), staging, item.Planned, item.Admitted,
-		item.ListedBytes, time.Now().UTC().Format(time.RFC3339Nano))
+		item.ListedBytes, item.PublicationRequired, time.Now().UTC().Format(time.RFC3339Nano))
 	if err != nil {
 		return 0, err
 	}
@@ -185,14 +190,14 @@ func appendObservation(ctx context.Context, tx *sql.Tx, item ItemRecord, phase s
 }
 
 const selectItem = `SELECT id, job_id, item_key, source_json, destination_json, staging_json,
-	planned, admitted, listed_bytes, created_at FROM job_items`
+	planned, admitted, listed_bytes, publication_required, created_at FROM job_items`
 
 func scanItem(scan func(...any) error) (ItemRecord, error) {
 	var item ItemRecord
 	var source, destination, created string
 	var staging sql.NullString
 	if err := scan(&item.ID, &item.JobID, &item.Key, &source, &destination, &staging,
-		&item.Planned, &item.Admitted, &item.ListedBytes, &created); err != nil {
+		&item.Planned, &item.Admitted, &item.ListedBytes, &item.PublicationRequired, &created); err != nil {
 		return ItemRecord{}, err
 	}
 	if err := decodeLocation(source, &item.Source); err != nil {

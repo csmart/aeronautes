@@ -674,7 +674,7 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 		createdDirectories = report.CreatedDirectories
 		createdSamples = report.CreatedDirectorySamples
 		counters.ObjectsCopied = report.Done
-		counters.ObjectsVerified = report.Done
+		counters.ObjectsVerified = report.Verified
 		counters.BytesCopied = report.Bytes
 		counters.NativeRouted = report.NativeRouted
 		if version == 0 {

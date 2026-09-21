@@ -539,6 +539,8 @@ export interface JobItemDTO {
     "createdAt": string;
     "execution": JobItemObservationDTO | null;
     "verification": JobItemObservationDTO | null;
+    "publicationRequired": boolean;
+    "publication": JobItemObservationDTO | null;
 }
 
 export interface JobItemLocationDTO {

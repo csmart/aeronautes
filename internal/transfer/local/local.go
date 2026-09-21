@@ -600,7 +600,10 @@ type Failure struct {
 
 // Report is the execution outcome.
 type Report struct {
-	Done         int64
+	Done int64
+	// Later publication failures reduce verification without erasing
+	// the copied objects and bytes that were already witnessed.
+	Verified     int64
 	Bytes        int64
 	NativeRouted int64
 	Failures     []Failure

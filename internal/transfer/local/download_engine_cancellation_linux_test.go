@@ -79,7 +79,8 @@ func TestDownloadEngineCancellationClassification(t *testing.T) {
 			admitted := 0
 			executed := map[string]transfercopy.Observation{}
 			recorder := &DownloadRecorder{
-				Admit: func(DownloadAdmission) error { admitted++; return nil },
+				Publication: func(DownloadItem, transfercopy.Observation) error { return nil },
+				Admit:       func(DownloadAdmission) error { admitted++; return nil },
 				Execute: func(item DownloadItem, observation transfercopy.Observation) error {
 					executed[item.Name] = observation
 					return nil

@@ -36,7 +36,7 @@ func TestDownloadStageCleanupKeepsEarlierOutcome(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			report := &local.Report{Done: test.done, Bytes: test.done * 21,
+			report := &local.Report{Done: test.done, Verified: test.done, Bytes: test.done * 21,
 				StageCleanup: &local.StageCleanupResult{Issues: 3, FirstError: "owned directory retained", Attempted: true}}
 			if test.failure {
 				report.Failures = []local.Failure{{Name: "selected", Err: "selected placement refused"}}
@@ -153,7 +153,7 @@ func TestDownloadStageCleanupNamesOneOfThreeOutcomes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			report := &local.Report{Done: 1, Bytes: 21, StageCleanup: test.cleanup}
+			report := &local.Report{Done: 1, Verified: 1, Bytes: 21, StageCleanup: test.cleanup}
 			h.transfer.runLocal(t.Context(), job.ID, "", 0, base, func(context.Context, func(int64, int64, int64)) (*local.Report, error) {
 				return report, nil
 			})

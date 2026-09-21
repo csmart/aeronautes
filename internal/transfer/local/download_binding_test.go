@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -149,7 +150,7 @@ func TestNativeDownloadRefusesASubstitutedPublication(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Done != 1 || len(report.Failures) != 1 {
+	if report.Done != 2 || report.Bytes != 14 || report.Verified != 1 || len(report.Failures) != 1 {
 		t.Fatalf("publication substitution was not isolated: %+v", report)
 	}
 	if report.Failures[0].Name != "scope\n/a" {
@@ -161,5 +162,31 @@ func TestNativeDownloadRefusesASubstitutedPublication(t *testing.T) {
 	}
 	if data, err := os.ReadFile(filepath.Join(root, "b")); err != nil || string(data) != "bytes b" {
 		t.Fatalf("later item was lost: %q %v", data, err)
+	}
+}
+
+func TestNativeDownloadPublicationCountsBeyondSamples(t *testing.T) {
+	s, mock := session(t)
+	const count = maxFailures + 1
+	for i := range count {
+		seed(mock, "media", fmt.Sprintf("scope\n/file-%03d", i), "bytes")
+	}
+	root := t.TempDir()
+	plan, err := PreflightDownload(t.Context(), s, "media", "scope\n/", root)
+	if err != nil || plan.Rejected() || len(plan.Items) != count {
+		t.Fatalf("preflight: %+v %v", plan, err)
+	}
+	report, err := Download(t.Context(), s, nil, "", "media", "scope\n/", root, "fixture", plan,
+		func(done, _, _ int64) {
+			if err := os.Remove(filepath.Join(root, plan.Items[done-1].RelPath)); err != nil {
+				t.Fatal(err)
+			}
+		})
+	if err != nil || report.Done != count || report.Bytes != 5*count || report.Verified != 0 || len(report.Failures) != maxFailures {
+		t.Fatalf("final verification was limited to failure samples: %+v %v", report, err)
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("confirmation recreated files or retained temporaries: %+v %v", entries, err)
 	}
 }
