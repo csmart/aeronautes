@@ -42,7 +42,7 @@ type downloadResult struct {
 	// deferVerify holds a native publication until the job confirms the
 	// published name still identifies this inode (ADR 0060).
 	deferVerify  bool
-	published    os.FileInfo
+	published    *os.File
 	publishedRel string
 }
 
@@ -182,6 +182,9 @@ func (d *downloadRun) observe(item DownloadItem, result downloadResult) error {
 	}
 	if d.recorder != nil {
 		if err := d.recorder.Execute(item, result.Observation); err != nil {
+			if result.published != nil {
+				err = errors.Join(err, result.published.Close())
+			}
 			return d.stop(err)
 		}
 	}

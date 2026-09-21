@@ -5745,6 +5745,8 @@ The [remainder record](experiments/2026-09-16-native-download-content-binding.md
 The GET still digests along the existing ladder, and a segmented native GET that is a same-size permutation, a missing run replaced by a duplicate, or a short body at a run boundary refuses before publishing with the temporary retained.
 Start captures source identity internally from the listing and from the zero-byte HEADs preflight already takes, not on the bridge DTO, and `OpenObject` must match that identity before a temporary is created; a disagreement is unverified with an unresolved effect because the GET was issued.
 Verification of a native file is recorded only after a confirmation that the published name still identifies the verified inode; a substitute is retained, not unlinked.
+A second descriptor, opened and checked while the temporary writer is still open, pins that inode until confirmation and is released on every job exit.
+Descriptor use grows with pending native publications; this does not establish L10 workload bounds, and failure to acquire a pin refuses publication with uncertain residue retained.
 The engine download path stays unbound: no comparison is added without a fixture that fails when that comparison is deleted.
 Copy, native upload and staged upload commit stay the named deferred gap.
 L07 cancellation checks in the same executor are not this slice.

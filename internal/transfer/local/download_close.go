@@ -23,6 +23,14 @@ type nativeDownloadFile interface {
 // file.
 func finishNativeDownload(ctx context.Context, body io.ReadCloser, temp nativeDownloadFile, parent *os.Root, publish publication, wantSize int64, ladder transfercopy.Ladder) (result downloadResult) {
 	var verified os.FileInfo
+	var pinned *os.File
+	defer func() {
+		if pinned != nil && result.published != pinned {
+			if err := pinned.Close(); err != nil {
+				result.addIssue(transfercopy.StageCleanup, "publication-pin-close", err)
+			}
+		}
+	}()
 	cancelled := false
 	// A comparison failure retains its rejected bytes (ADR 0045), and it
 	// does so whatever else went wrong afterwards. That is not only about
@@ -95,6 +103,23 @@ func finishNativeDownload(ctx context.Context, body io.ReadCloser, temp nativeDo
 			err = errors.Join(err, fmt.Errorf("downloaded content does not match the source: %w", contentErr))
 		}
 	}
+	if err == nil {
+		// The writer still pins this inode while the second handle is
+		// opened and checked. Keeping only FileInfo would permit reuse
+		// after the published name and temporary are both unlinked.
+		pinned, err = openNativePublicationPin(parent, publish.stagedBase)
+		if err == nil {
+			var identity os.FileInfo
+			identity, err = pinned.Stat()
+			if err == nil && !os.SameFile(identity, verified) {
+				err = errors.New("download temporary changed before its identity could be pinned")
+			}
+		}
+		if err != nil {
+			identityFailed = true
+			err = fmt.Errorf("cannot pin the verified download identity: %w", err)
+		}
+	}
 	// Swift can report corruption only on Close after a successful read.
 	// Both handles must close successfully before the final name appears.
 	closeErr := errors.Join(temp.Close(), body.Close())
@@ -124,7 +149,7 @@ func finishNativeDownload(ctx context.Context, body io.ReadCloser, temp nativeDo
 	}
 	result = downloadVerified(wantSize)
 	result.deferVerify = true
-	result.published = verified
+	result.published = pinned
 	result.publishedRel = publish.targetRel
 	return result
 }

@@ -94,12 +94,17 @@ A second different verification is a conflict, so a later substitution cannot un
 Therefore a native file's verification observation is recorded only after a confirmation pass that the published name still identifies the verified inode.
 
 Execution is still recorded when the helper returns, as ADR 0033 already requires before later work.
-The confirmation runs after the native item loop, through the held destination parent, using the `FileInfo` taken while the writer handle was open.
+Before the writer closes, the helper opens a second descriptor through the held temporary parent and checks that it identifies the verified inode while the writer still holds that inode.
+The descriptor remains open through publication, temporary unlink and the confirmation pass after the native item loop.
+The confirmation compares the published name through the held destination parent with `Stat` on that descriptor.
+Keeping only the earlier `FileInfo` is insufficient: after both names are unlinked, the filesystem can reuse that inode number for another file.
 `SameFile` success records the same verified observation the helper records today.
 `SameFile` failure records `unverified` with effect `unresolved`, publishes nothing further for that name, and does not unlink the occupant: an identity we do not hold is not authority to delete, which is the ADR 0045 cleanup rule applied to the published name.
 
 A crash before the confirmation already has the missing-verification facet ADR 0033 named.
 This slice does not invent a second verification row.
+Every normal return, recording refusal, cancellation and publication failure releases the held descriptors.
+Failure to open or identify the second descriptor refuses publication and retains the uncertain temporary.
 
 Engine placement keeps its current execute-and-verify timing, because this decision does not bind that path.
 
@@ -124,7 +129,10 @@ L07 cancellation checks are not moved, added or removed.
 
 Segmented native GETs add no object bytes: the digest already rides the body.
 Source identity uses the Start listing and the HEADs preflight already takes for zero-byte rows, plus the execution `OpenObject` HEAD the helper already has.
-Publication confirmation is one `Lstat` per published native name after the native loop.
+Publication confirmation is one `Lstat` per published native name and one `Stat` on its held descriptor after the native loop.
+There is one additional open descriptor per successful native item until confirmation or job exit, so descriptor use grows with the number of pending publications.
+An operating-system descriptor limit can refuse a later pin; that refusal retains the uncertain temporary and does not verify or publish it.
+This decision adds no workload ceiling and does not close L10 or establish that an arbitrary native object count fits the process descriptor limit.
 
 Rejected alternatives: HEADing every file at Start, which is the listing rule this project does not break; putting entity tags on `DownloadItem`, which widens the bridge ADR 0045 kept closed; treating a listing recombination as content evidence, which ADR 0042 disproved; rewriting a verified observation after substitution, which the item store refuses; and adding an unproven engine comparison.
 

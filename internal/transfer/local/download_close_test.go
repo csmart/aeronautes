@@ -33,6 +33,17 @@ func (f downloadCloseFile) Sync() error                { return f.sync() }
 func (f downloadCloseFile) Stat() (os.FileInfo, error) { return f.stat() }
 func (f downloadCloseFile) Close() error               { return f.close() }
 
+func closeDownloadPublication(t *testing.T, result downloadResult) {
+	t.Helper()
+	if result.published != nil {
+		t.Cleanup(func() {
+			if err := result.published.Close(); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+}
+
 // nativePublication describes publishing the temporary beside its target
 // under the held directory, both names relative to dir.
 func nativePublication(t *testing.T, destination *DestinationRoot, stagedDir, temporary, targetDir, target string) publication {
@@ -120,6 +131,7 @@ func TestNativeDownloadClosure(t *testing.T) {
 			}
 			destination := testDestination(t, dir)
 			outcome := finishNativeDownload(ctx, body, file, testDirectory(t, destination, "."), nativePublication(t, destination, ".", filepath.Base(temp.Name()), ".", "final"), wantSize, ladderFor(t, []byte("complete bytes")))
+			closeDownloadPublication(t, outcome)
 			placed, err := outcome.Result == transfercopy.ResultCopied, outcome.err()
 			if placed != (fault == "control") || (err == nil) != (fault == "control") {
 				t.Fatalf("placement outcome: placed=%v error=%v", placed, err)
@@ -210,6 +222,11 @@ func TestNativeDownloadCleanupRefusal(t *testing.T) {
 			}
 			report := &Report{}
 			run := downloadRun{report: report}
+			t.Cleanup(func() {
+				if err := run.closeNativePublications(); err != nil {
+					t.Error(err)
+				}
+			})
 			if err := run.observe(DownloadItem{Name: "selected", Size: int64(len("complete bytes"))}, outcome); err != nil {
 				t.Fatal(err)
 			}

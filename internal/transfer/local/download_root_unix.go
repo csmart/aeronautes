@@ -9,6 +9,11 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+func openNativePublicationPin(parent *os.Root, base string) (*os.File, error) {
+	// A substitute must not redirect this read or block it as a FIFO.
+	return parent.OpenFile(base, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+}
+
 // sameDevice reports whether both entries live on the filesystem of
 // the held root. A bind mount of the same filesystem shares the device
 // number; Linux additionally refuses mount roots by attribute.
