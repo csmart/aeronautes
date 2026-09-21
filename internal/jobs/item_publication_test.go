@@ -130,7 +130,7 @@ func TestDownloadPublicationFactsAndCompletion(t *testing.T) {
 				got.Counters.ObjectsCopied != completion.Counters.ObjectsCopied || got.Counters.BytesCopied != completion.Counters.BytesCopied || got.Counters.ObjectsVerified != completion.Counters.ObjectsVerified {
 				t.Fatalf("completion erased witnessed counters: %+v %v", got, err)
 			}
-			events, err := trail.Recent(t.Context(), 2)
+			events, err := trail.List(t.Context(), audit.Query{Limit: 2})
 			wantSummary := fmt.Sprintf(" · item outcomes: %d failed names, 0 conflicts, 0 refusals, %d unresolved, %d unverified, %d with problems", want.Failed, want.Unresolved, want.Unverified, want.Problems)
 			if err != nil || len(events) != 1 || events[0].Summary != wantSummary {
 				t.Fatalf("audit disagrees with final facts: %+v %v", events, err)
