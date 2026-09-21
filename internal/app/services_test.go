@@ -413,7 +413,7 @@ func TestCapabilitiesAtConnect(t *testing.T) {
 	h := newHarness(t)
 	h.connect(t)
 
-	caps, err := h.browse.Capabilities(context.Background())
+	caps, err := h.browse.Capabilities(context.Background(), h.bookmarkID())
 	if err != nil {
 		t.Fatal(err)
 	}

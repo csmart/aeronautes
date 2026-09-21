@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/csmart/aeronautes/internal/evidence"
@@ -29,12 +31,12 @@ func (s *BrowseService) Connect(ctx context.Context, bookmarkID string) (Account
 	if err := s.connections.Connect(ctx, bookmarkID); err != nil {
 		return AccountDTO{}, err
 	}
-	return s.Account(ctx)
+	return s.Account(ctx, bookmarkID)
 }
 
-// Account returns the active connection's account portrait.
-func (s *BrowseService) Account(ctx context.Context) (AccountDTO, error) {
-	session, err := s.connections.Session()
+// Account binds the portrait to the bookmark the caller intended to read.
+func (s *BrowseService) Account(ctx context.Context, bookmarkID string) (AccountDTO, error) {
+	session, scope, _, err := s.scopedSnapshot(bookmarkID)
 	if err != nil {
 		return AccountDTO{}, err
 	}
@@ -42,8 +44,10 @@ func (s *BrowseService) Account(ctx context.Context) (AccountDTO, error) {
 	if err != nil {
 		return AccountDTO{}, err
 	}
+	storageURL := session.StorageURL()
 	return AccountDTO{
-		Name:            s.connections.AccountName(),
+		Scope:           scope,
+		Name:            storageURL[strings.LastIndex(storageURL, "/")+1:],
 		Containers:      p.Containers,
 		Objects:         p.Objects,
 		BytesUsed:       p.BytesUsed,
@@ -56,15 +60,16 @@ func (s *BrowseService) Account(ctx context.Context) (AccountDTO, error) {
 // Capabilities returns the connect-time capability snapshot (§10) the
 // UI gates on: storage policies for the create picker, versioning flags
 // for the configuration editor.
-func (s *BrowseService) Capabilities(ctx context.Context) (CapabilitiesDTO, error) {
-	if _, err := s.connections.Session(); err != nil {
+func (s *BrowseService) Capabilities(ctx context.Context, bookmarkID string) (CapabilitiesDTO, error) {
+	_, scope, caps, err := s.scopedSnapshot(bookmarkID)
+	if err != nil {
 		return CapabilitiesDTO{}, err
 	}
-	caps := s.connections.Capabilities()
 	if caps == nil {
-		return CapabilitiesDTO{Source: "unknown"}, nil
+		return CapabilitiesDTO{Source: "unknown", Scope: scope}, nil
 	}
 	dto := CapabilitiesDTO{
+		Scope:           scope,
 		Source:          string(caps.Source),
 		MaxFileSize:     caps.MaxFileSize(),
 		VersioningFlags: caps.VersioningAllowedFlags(),
@@ -77,6 +82,23 @@ func (s *BrowseService) Capabilities(ctx context.Context) (CapabilitiesDTO, erro
 		})
 	}
 	return dto, nil
+}
+
+// A later Connect may replace the active account during the HEAD. Keep
+// identity and capabilities with the validated session instead of resolving
+// the active connection again after remote I/O (ADR 0063).
+func (s *BrowseService) scopedSnapshot(bookmarkID string) (*swiftcontrol.Session, ListingScopeDTO, *swiftcontrol.Capabilities, error) {
+	if bookmarkID == "" {
+		return nil, ListingScopeDTO{}, nil, fmt.Errorf("%w: name the bookmark the read is for", ErrNotConnected)
+	}
+	entry, id, caps, err := s.connections.activeSnapshot()
+	if err != nil {
+		return nil, ListingScopeDTO{}, nil, err
+	}
+	if id != bookmarkID {
+		return nil, ListingScopeDTO{}, nil, ErrAccountScopeChanged
+	}
+	return entry.session, ListingScopeDTO{BookmarkID: id, Generation: entry.generation}, caps, nil
 }
 
 // maxPageRows caps a single bridge page regardless of what the frontend

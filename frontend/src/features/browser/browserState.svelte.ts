@@ -483,15 +483,30 @@ export class BrowserState {
     this.#connectingBookmarkId = bookmarkId;
     this.connecting = true;
     try {
+      if (bookmarkId === "") throw new Error("Choose a bookmark before connecting.");
       const account = await this.#api.connect(bookmarkId);
       if (!current()) return false;
-      const capabilities = await this.#api.capabilities().catch(() => null);
+      if (!this.#answeredBy(account.scope, bookmarkId) ||
+        !Number.isSafeInteger(account.scope.generation) || account.scope.generation <= 0) {
+        throw new Error("The account portrait does not match this connection. Reconnect and try again.");
+      }
+      const generation = account.scope.generation;
+      const capabilities = await this.#api.capabilities(bookmarkId);
       if (!current()) return false;
+      if (!this.#answeredBy(capabilities.scope, bookmarkId) || capabilities.scope.generation !== generation) {
+        throw new Error("The capabilities do not match this connection. Reconnect and try again.");
+      }
       let containersError: string | null = null;
-      const containers = await this.#api.containers(bookmarkId, "", pageLimit).catch((err) => {
-        containersError = messageOf(err);
-        return { rows: [], nextMarker: "", scope: { bookmarkId, generation: 0 } };
-      });
+      const containers = await this.#api.containers(bookmarkId, "", pageLimit)
+        .then((page) => {
+          if (!this.#answeredBy(page.scope, bookmarkId) || page.scope.generation !== generation) {
+            throw new Error("The container listing does not match this connection and was not shown. Reconnect and try again.");
+          }
+          return page;
+        }).catch((err) => {
+          containersError = messageOf(err);
+          return { rows: [], nextMarker: "", scope: { bookmarkId, generation } };
+        });
       if (!current()) return false;
       await this.loadAudit();
       if (!current()) return false;

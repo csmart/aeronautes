@@ -37,6 +37,7 @@ type CredentialStatusDTO struct {
 
 // AccountDTO is the connected account's portrait (§53).
 type AccountDTO struct {
+	Scope ListingScopeDTO `json:"scope"`
 	// Name is the storage-URL account suffix (e.g. AUTH_demo).
 	Name            string            `json:"name"`
 	Containers      int64             `json:"containers"`
@@ -120,18 +121,17 @@ type DLOSegmentsDTO struct {
 	Scope ListingScopeDTO `json:"scope"`
 }
 
-// ContainerPageDTO is one page of containers; an empty NextMarker means
-// the listing is exhausted.
-// ListingScopeDTO states which account produced a listing page or a live
-// remaining read (ADR 0049, ADR 0059). The protocol names no account in a
-// listing or HEAD, so without this a caller cannot attribute a reply to the
-// account it came from. Generation is the backend's own reading of the
-// connected bookmark, never a value a caller supplied.
+// ListingScopeDTO binds listing, inspector, portrait and capability replies
+// to the backend's bookmark generation (ADR 0049, ADR 0059, ADR 0063). The
+// protocol supplies no account binding for listings or HEADs, and a caller
+// cannot supply the generation it wants the backend to assert.
 type ListingScopeDTO struct {
 	BookmarkID string `json:"bookmarkId"`
 	Generation int64  `json:"generation"`
 }
 
+// ContainerPageDTO is one page of containers; an empty NextMarker means
+// the listing is exhausted.
 type ContainerPageDTO struct {
 	Rows       []ContainerRowDTO `json:"rows"`
 	NextMarker string            `json:"nextMarker"`
@@ -172,6 +172,7 @@ type StoragePolicyDTO struct {
 // gates on. Source "advertised" means /info answered; "unknown" means it
 // could not be read — and Unknown is never treated as Unsupported.
 type CapabilitiesDTO struct {
+	Scope           ListingScopeDTO    `json:"scope"`
 	Source          string             `json:"source"`
 	MaxFileSize     int64              `json:"maxFileSize"`
 	StoragePolicies []StoragePolicyDTO `json:"storagePolicies"`

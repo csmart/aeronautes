@@ -35,12 +35,11 @@ function input(element: HTMLInputElement, value: string) {
 async function setup(name = "external-dlo") {
   const api = newFakeApi();
   const browser = new BrowserState(api);
-  browser.connectedBookmarkId = "source";
-  browser.capabilities = await api.capabilities();
-  await browser.loadContainers(); await browser.openContainer("fixtures");
+  const bookmark = await browser.saveBookmark({ id: "", displayName: "Mock", authUrl: "http://mock/auth/v1.0", username: "test:tester", storageUrlOverride: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "testing");
+  await browser.connect(bookmark.id); await browser.openContainer("fixtures");
   browser.select(browser.entries.findIndex((row) => row.name === name)); await settle();
   const root = document.createElement("div"); document.body.append(root);
-  return { api, browser, root };
+  return { api, browser, root, bookmark };
 }
 const ownership: SegmentOwnershipDTO = { class: "dlo", target: "backing/old/", proven: false, segments: 3, inlineEntries: 0 };
 const deleted: SegmentsDeleteResultDTO = { manifestDeleted: true, segmentsDeleted: 3, segmentsFailed: 0, basis: "backstage-forced" };
@@ -53,7 +52,7 @@ async function manifest() {
   const component = mount(ManifestDeleteDialog, { target: f.root,
     props: { browser: f.browser, detail: f.browser.objectDetail!, segmentsAt: "backing/old/", onClose: done } });
   mounted.add(component); flushSync(); await settle();
-  const request = { bookmarkId: "source", container: "fixtures", name: "external-dlo", force: false, confirm: "" };
+  const request = { bookmarkId: f.bookmark.id, container: "fixtures", name: "external-dlo", force: false, confirm: "" };
   return { ...f, check, done, component, request };
 }
 async function arm(f: Awaited<ReturnType<typeof manifest>>) {
@@ -68,7 +67,7 @@ async function changeView(browser: BrowserState, change: string) {
     browser.select(browser.entries.findIndex((row) => row.name === "external-dlo"));
   } else if (change === "container") await browser.openContainer("photos_segments");
   else if (change === "prefix") browser.prefix = "other/";
-  else if (change === "bookmark return") { browser.connectedBookmarkId = "other"; browser.connectedBookmarkId = "source"; }
+  else if (change === "bookmark return") { const bookmark = browser.connectedBookmarkId; browser.connectedBookmarkId = "other"; browser.connectedBookmarkId = bookmark; }
   else browser.connectedBookmarkId = "other";
   await settle();
 }
@@ -266,7 +265,7 @@ describe("marker action ownership", () => {
       const remove = button(f.root, "Delete marker object");
       f.api.connect = vi.fn().mockRejectedValue(new Error("failed reconnect"));
       f.api.deleteMarker = vi.fn().mockResolvedValue(undefined);
-      await expect(f.browser.connect("source")).rejects.toThrow("failed reconnect");
+      await expect(f.browser.connect(f.bookmark.id)).rejects.toThrow("failed reconnect");
       click(remove); await settle(); expect(f.api.deleteMarker).not.toHaveBeenCalled();
     });
   });
@@ -350,7 +349,7 @@ describe("mutation follow-up ownership", () => {
     f.api.auditRecent = vi.fn(f.api.auditRecent);
     const pending = kind === "create" ? f.browser.createContainer({ name: "created", policy: "", meta: {} })
       : kind === "manifest" ? f.browser.deleteManifest("fixtures", "external-dlo")
-      : kind === "segments" ? f.browser.deleteManifestWithSegments({ bookmarkId: "source", container: "fixtures", name: "external-dlo", force: true, confirm: "external-dlo" })
+      : kind === "segments" ? f.browser.deleteManifestWithSegments({ bookmarkId: f.bookmark.id, container: "fixtures", name: "external-dlo", force: true, confirm: "external-dlo" })
       : f.browser.deleteMarker("implied/");
     await changeView(f.browser, "selection");
     const selected = f.browser.detailIdentity;
@@ -372,7 +371,7 @@ describe("mutation follow-up ownership", () => {
     f.api.containers = vi.fn(f.api.containers); f.api.objects = vi.fn(f.api.objects);
     const pending = kind === "create" ? f.browser.createContainer({ name: "created", policy: "", meta: {} })
       : kind === "manifest" ? f.browser.deleteManifest("fixtures", "external-dlo")
-      : kind === "segments" ? f.browser.deleteManifestWithSegments({ bookmarkId: "source", container: "fixtures", name: "external-dlo", force: true, confirm: "external-dlo" })
+      : kind === "segments" ? f.browser.deleteManifestWithSegments({ bookmarkId: f.bookmark.id, container: "fixtures", name: "external-dlo", force: true, confirm: "external-dlo" })
       : f.browser.deleteMarker("implied/");
     await settle(); expect(f.api.auditRecent).toHaveBeenCalledOnce();
     await changeView(f.browser, "bookmark return");
@@ -412,7 +411,7 @@ describe("mutation follow-up ownership", () => {
   it("segment deletion refreshes the current captured prefix only when the manifest was deleted", async () => {
     const f = await setup();
     f.api.objects = vi.fn(f.api.objects);
-    const req = { bookmarkId: "source", container: "fixtures", name: "external-dlo", force: true, confirm: "external-dlo" };
+    const req = { bookmarkId: f.bookmark.id, container: "fixtures", name: "external-dlo", force: true, confirm: "external-dlo" };
     const partial = { ...deleted, manifestDeleted: false, segmentsFailed: 1 };
     f.api.deleteManifestWithSegments = vi.fn().mockResolvedValueOnce(partial).mockResolvedValueOnce(deleted);
     expect(await f.browser.deleteManifestWithSegments(req)).toEqual(partial);

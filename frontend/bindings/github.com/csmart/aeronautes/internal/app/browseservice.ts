@@ -18,10 +18,10 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as $models from "./models.js";
 
 /**
- * Account returns the active connection's account portrait.
+ * Account binds the portrait to the bookmark the caller intended to read.
  */
-export function Account(): $CancellablePromise<$models.AccountDTO> {
-    return $Call.ByID(1205417410);
+export function Account(bookmarkID: string): $CancellablePromise<$models.AccountDTO> {
+    return $Call.ByID(1205417410, bookmarkID);
 }
 
 /**
@@ -29,8 +29,8 @@ export function Account(): $CancellablePromise<$models.AccountDTO> {
  * UI gates on: storage policies for the create picker, versioning flags
  * for the configuration editor.
  */
-export function Capabilities(): $CancellablePromise<$models.CapabilitiesDTO> {
-    return $Call.ByID(3780974669);
+export function Capabilities(bookmarkID: string): $CancellablePromise<$models.CapabilitiesDTO> {
+    return $Call.ByID(3780974669, bookmarkID);
 }
 
 /**

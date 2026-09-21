@@ -1,14 +1,14 @@
 # ADR 0063: account portrait binding
 
-**Status:** Proposed.
-This record requires independent contract review before implementation.
+**Status:** Accepted.
+Implemented in the range that carries this record.
 
 ## Context
 
-[ADR 0059](0059-account-scoped-remaining-reads.md) explicitly leaves `BrowseService.Account` and `Capabilities` unbound.
+[ADR 0059](0059-account-scoped-remaining-reads.md) left `BrowseService.Account` and `Capabilities` unbound.
 On `5f71a163`, an account HEAD captures one session, but its display name is read from the active session after the HEAD completes.
 The [portrait record](../experiments/2026-09-21-account-portrait-binding.md) reproduces alpha's counts with beta's name, and a browser publishing beta's capabilities under alpha even after the initial bound listing refuses the changed account.
-The same methods and caller are unchanged from master `74cfc728`.
+Those methods and caller were unchanged from master `74cfc728`.
 Frozen finish-line L11 already requires account-specific results, errors and retries; this extends the existing binding contract to these two reads.
 
 ## Decision
@@ -46,7 +46,8 @@ The captured tuple establishes who produced a reply, not which account remains a
 A later `Connect` may leave a correctly labelled alpha read in flight while beta becomes active.
 This does not authenticate the operator's intended account or grant authority for a later mutation.
 The shared `scopedSession` helper, the broader connection/read atomicity race described by ADR 0049/0059, `AuditService.Search` and mutation writers are unchanged.
-Post-connect refreshes and other later scoped replies retain their existing bookmark checks; requiring their generation to match the connected portrait is deferred.
+Post-connect refreshes and other later scoped replies retain their existing bookmark checks.
+Binding those later reply generations to the connected portrait remains a named L11 follow-up.
 No database schema or operation policy changes.
 L11, P28, native acceptance and the valuable-data hold remain open.
 

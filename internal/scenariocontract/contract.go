@@ -110,8 +110,8 @@ var inventory = map[string]Action{
 	"BookmarkService.CredentialStatus": {Kind: Read, Scenarios: []string{"happy", "refusal"}},
 	// BrowseService
 	"BrowseService.Connect":      {Kind: Session, Scenarios: []string{"happy", "refusal"}},
-	"BrowseService.Account":      {Kind: Read},
-	"BrowseService.Capabilities": {Kind: Read},
+	"BrowseService.Account":      {Kind: Read, Scenarios: []string{"happy", "refusal"}},
+	"BrowseService.Capabilities": {Kind: Read, Scenarios: []string{"happy", "refusal"}},
 	"BrowseService.Containers":   {Kind: Read, Scenarios: []string{"happy", "refusal"}},
 	"BrowseService.Objects":      {Kind: Read, Scenarios: []string{"happy", "refusal"}},
 	// InspectorService

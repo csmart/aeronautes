@@ -11,6 +11,7 @@ import type {
   CapabilitiesDTO,
   ContainerDetailDTO,
   ListingRowDTO,
+  ListingScope,
   MutationResultDTO,
   ObjectDetailDTO,
   PrefixDetailDTO,
@@ -34,7 +35,7 @@ interface ContainerState {
   quotaCount: number;
 }
 
-const capabilities: CapabilitiesDTO = {
+const capabilities: Omit<CapabilitiesDTO, "scope"> = {
   source: "advertised",
   maxFileSize: 5368709122,
   storagePolicies: [
@@ -61,6 +62,8 @@ function cleanMap(
 export function newFakeApi(): Api {
   let nextId = 1;
   const bookmarks: BookmarkDTO[] = [];
+  const generations = new Map<string, number>();
+  let connectedScope: ListingScope | null = null;
 
   // Instance copies: mutations must not leak into the shared fixtures.
   const containers = containersFixture.map((c) => ({ ...c }));
@@ -80,7 +83,7 @@ export function newFakeApi(): Api {
 
   function readScope(bookmarkId: string) {
     if (!bookmarkId) throw new Error("account scope changed: name the bookmark the read is for");
-    return { bookmarkId, generation: 1 };
+    return { bookmarkId, generation: generations.get(bookmarkId) ?? 1 };
   }
 
   function scopedJob(id: string, bookmarkId: string) {
@@ -215,13 +218,19 @@ export function newFakeApi(): Api {
       if (saved.id === "") {
         saved.id = `bm-${nextId++}`;
         bookmarks.push(saved);
+        generations.set(saved.id, 1);
       } else {
         const at = bookmarks.findIndex((b) => b.id === saved.id);
         if (at === -1) {
           throw new Error("bookmark not found");
         }
-        saved.hasCredential = bookmarks[at].hasCredential;
+        const previous = bookmarks[at];
+        const bindingChanged = (["authUrl", "username", "storageUrlOverride", "tlsMode", "caPem"] as const)
+          .some((key) => saved[key] !== previous[key]);
+        if (bindingChanged || secret !== "") generations.set(saved.id, (generations.get(saved.id) ?? 1) + 1);
+        saved.hasCredential = previous.hasCredential;
         bookmarks[at] = saved;
+        if (connectedScope?.bookmarkId === saved.id) connectedScope = null;
       }
       if (secret !== "") {
         saved.hasCredential = true;
@@ -235,6 +244,8 @@ export function newFakeApi(): Api {
         throw new Error("bookmark not found");
       }
       bookmarks.splice(at, 1);
+      generations.delete(id);
+      if (connectedScope?.bookmarkId === id) connectedScope = null;
     },
 
     connect: async (bookmarkId) => {
@@ -245,7 +256,9 @@ export function newFakeApi(): Api {
       if (!bookmark.hasCredential) {
         throw new Error("no credential on record");
       }
+      connectedScope = readScope(bookmarkId);
       return {
+        scope: { ...connectedScope },
         name: accountFixture.name,
         containers: containers.length,
         objects: accountFixture.objects,
@@ -256,7 +269,11 @@ export function newFakeApi(): Api {
       };
     },
 
-    capabilities: async () => ({ ...capabilities }),
+    capabilities: async (bookmarkId) => {
+      if (!bookmarkId || connectedScope === null) throw new Error("not connected");
+      if (connectedScope.bookmarkId !== bookmarkId) throw new Error("the connected account changed");
+      return { ...capabilities, scope: { ...connectedScope } };
+    },
 
     containers: async (bookmarkId, marker, limit) => {
       const rows = containers
@@ -272,7 +289,7 @@ export function newFakeApi(): Api {
       const full = rows.length === limit;
       // The fake echoes the bookmark it was asked for, as the backend
       // does: a page states the account that answered it (ADR 0049).
-      return { rows, nextMarker: full ? rows[rows.length - 1].name : "", scope: { bookmarkId, generation: 1 } };
+      return { rows, nextMarker: full ? rows[rows.length - 1].name : "", scope: readScope(bookmarkId) };
     },
 
     objects: async (bookmarkId, container, prefix, marker, limit) => {
