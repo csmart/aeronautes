@@ -105,6 +105,7 @@ func DownloadInto(ctx context.Context, src *swiftcontrol.Session, engine Engine,
 		return nil, err
 	}
 	d := &downloadRun{recorder: recorder, report: &Report{}}
+	defer func() { runErr = errors.Join(runErr, d.closeNativePublications()) }()
 	report = d.report
 	total := int64(len(preflight.Items))
 	progress := func() {
@@ -542,15 +543,29 @@ func nativeDownloadBody(ctx context.Context, body io.ReadCloser, item DownloadIt
 	return finishNativeDownload(ctx, body, temp, parent, publish, item.Size, ladder)
 }
 
-func (d *downloadRun) confirmNativePublications(destination *DestinationRoot) error {
+func (d *downloadRun) closeNativePublications() error {
+	var closeErr error
+	for _, published := range d.pendingNative {
+		if published.copied.published != nil {
+			closeErr = errors.Join(closeErr, published.copied.published.Close())
+		}
+	}
+	d.pendingNative = nil
+	return closeErr
+}
+
+func (d *downloadRun) confirmNativePublications(destination *DestinationRoot) (confirmErr error) {
 	if d == nil || destination == nil {
 		return nil
 	}
-	pending := d.pendingNative
-	d.pendingNative = nil
-	for _, published := range pending {
+	defer func() { confirmErr = errors.Join(confirmErr, d.closeNativePublications()) }()
+	for _, published := range d.pendingNative {
 		current, err := destination.root.Lstat(published.copied.publishedRel)
-		if err == nil && published.copied.published != nil && os.SameFile(current, published.copied.published) {
+		var pinned os.FileInfo
+		if err == nil && published.copied.published != nil {
+			pinned, err = published.copied.published.Stat()
+		}
+		if err == nil && pinned != nil && os.SameFile(current, pinned) {
 			if d.recorder != nil && published.copied.verification != nil {
 				if err := d.recorder.Verify(published.item, *published.copied.verification); err != nil {
 					return d.stop(err)

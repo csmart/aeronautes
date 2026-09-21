@@ -52,6 +52,7 @@ func TestNativeDownloadRefusesReorderedAndMissingRuns(t *testing.T) {
 				testDirectory(t, destination, "temporary"),
 				nativePublication(t, destination, "temporary", filepath.Base(temp.Name()), ".", "final"),
 				int64(len(assembled)), ladder)
+			closeDownloadPublication(t, outcome)
 			placed, placeErr := os.ReadFile(filepath.Join(dir, "final"))
 			if c.name == "control" {
 				if outcome.Result != transfercopy.ResultCopied || placeErr != nil || !bytes.Equal(placed, assembled) {

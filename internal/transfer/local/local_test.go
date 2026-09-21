@@ -318,8 +318,10 @@ func TestNativeDownloadNeverLeavesPartials(t *testing.T) {
 		t.Fatal("short download left a file at the final name")
 	}
 	// Clean copy lands with exact bytes.
-	if outcome := nativeDownload(context.Background(), session, "media",
-		DownloadItem{Name: "ok.bin", RelPath: "ok.bin", Size: int64(len("complete-content"))}, destination, filepath.Join(dest, ".aeronautes-part-ok"), downloadSourceIdentity{}); outcome.Result != transfercopy.ResultCopied || outcome.err() != nil {
+	outcome = nativeDownload(context.Background(), session, "media",
+		DownloadItem{Name: "ok.bin", RelPath: "ok.bin", Size: int64(len("complete-content"))}, destination, filepath.Join(dest, ".aeronautes-part-ok"), downloadSourceIdentity{})
+	closeDownloadPublication(t, outcome)
+	if outcome.Result != transfercopy.ResultCopied || outcome.err() != nil {
 		t.Fatal(outcome.err())
 	}
 	data, err := os.ReadFile(filepath.Join(dest, "ok.bin"))

@@ -49,3 +49,19 @@ The native remainder is now delivered under ADR 0060.
 Package tests against the in-process mock cover a two-run GET permutation, a missing run replaced by a duplicate, a short body at a run boundary, a same-size source replacement after the transfer set is built, and a published name replaced before verification is recorded.
 The engine path is unchanged.
 This still closes neither L05 nor DS-04, and the valuable-data hold is unchanged.
+
+## 21 September revalidation
+
+Revalidation of `bf4a91ed` found that the published-name comparison used a saved `FileInfo` after the writer closed and the temporary was unlinked.
+An unlink and recreate at the published name could reuse the freed inode number and be falsely recorded as verified.
+A probe with a filesystem flush and a 50 ms pause between unlink and recreate reproduced that failure on XFS.
+The immediate remove-and-recreate regression remains useful, but a passing run of that case alone does not establish that the original inode is still held.
+
+The correction holds a second descriptor from before writer closure through publication confirmation, comparing the published name against the live descriptor.
+The deterministic Linux regression observes that an open descriptor still references the original inode after both names have been removed, then proves that confirmation releases it.
+Separate cases check normal completion, admission/execution/verification recording refusals, cancellation, close and publication failures, and a substitute encountered while acquiring the pin.
+The pin does not retain an extra directory entry or change the existing temporary and directory cleanup rules.
+It does add one descriptor per pending native publication, and arbitrary-workload resource bounds remain unproven.
+
+Broader mock revalidation also exposed two required-record ordering failures and two source-close fixture failures.
+Those remain release blockers pending their separate correction; this inode repair does not claim that the complete download suite passes.

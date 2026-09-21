@@ -6,6 +6,12 @@ import (
 	"os"
 )
 
+func openNativePublicationPin(parent *os.Root, base string) (*os.File, error) {
+	// Root.Open shares deletion, so retaining identity does not prevent
+	// the existing temporary unlink after publication.
+	return parent.Open(base)
+}
+
 // Volume mount points and junctions are reparse points, which the
 // ordinary-directory inspection already refuses, so no device
 // comparison is needed here.
