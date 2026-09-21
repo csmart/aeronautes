@@ -1,0 +1,652 @@
+{
+  "schemaVersion": 1,
+  "reportSchemaVersion": 3,
+  "identity": {
+    "commit": "65d8c5f53dfc57472efcde067b958f34deeaa94a",
+    "go_version": "go1.27.1",
+    "run_attempt": "1",
+    "run_id": "35625767556"
+  },
+  "contractHash": "9f0e99b3cf8bd327",
+  "actions": [
+    {
+      "action": "AppService.About",
+      "kind": "read",
+      "required": [
+        "happy"
+      ]
+    },
+    {
+      "action": "AppService.Info",
+      "kind": "read",
+      "required": [
+        "happy"
+      ]
+    },
+    {
+      "action": "AuditService.Recent",
+      "kind": "read",
+      "required": [
+        "refusal"
+      ]
+    },
+    {
+      "action": "AuditService.RecentFor",
+      "kind": "read",
+      "required": [
+        "happy"
+      ]
+    },
+    {
+      "action": "AuditService.Search",
+      "kind": "read",
+      "required": [
+        "happy"
+      ]
+    },
+    {
+      "action": "BenchmarkService.Latest",
+      "kind": "read",
+      "required": [
+        "happy"
+      ]
+    },
+    {
+      "action": "BenchmarkService.StartBenchmark",
+      "kind": "job",
+      "required": [
+        "happy",
+        "refusal",
+        "conflict",
+        "cancel",
+        "partial",
+        "retry"
+      ]
+    },
+    {
+      "action": "BookmarkService.CredentialStatus",
+      "kind": "read",
+      "required": [
+        "happy",
+        "refusal"
+      ]
+    },
+    {
+      "action": "BookmarkService.Delete",
+      "kind": "destructive",
+      "required": [
+        "happy",
+        "refusal",
+        "conflict"
+      ]
+    },
+    {
+      "action": "BookmarkService.List",
+      "kind": "read",
+      "required": [
+        "happy"
+      ]
+    },
+    {
+      "action": "BookmarkService.Save",
+      "kind": "mutate",
+      "required": [
+        "happy",
+        "refusal"
+      ]
+    },
+    {
+      "action": "BrowseService.Account",
+      "kind": "read",
+      "required": [
+        "happy",
+        "refusal"
+      ]
+    },
+    {
+      "action": "BrowseService.Capabilities",
+      "kind": "read",
+      "required": [
+        "happy",
+        "refusal"
+      ]
+    },
+    {
+      "action": "BrowseService.Connect",
+      "kind": "session",
+      "required": [
+        "happy",
+        "refusal"
+      ]
+    },
+    {
+      "action": "BrowseService.Containers",
+      "kind": "read",
+      "required": [
+        "happy",
+        "refusal"
+      ]
+    },
+    {
+      "action": "BrowseService.Objects",
+      "kind": "read",
+      "required": [
+        "happy",
+        "refusal"
+      ]
+    },
+    {
+      "action": "DeleteService.CheckSegmentOwnership",
+      "kind": "read",
+      "required": [
+        "happy"
+      ]
+    },
+    {
+      "action": "DeleteService.DeleteManifestWithSegments",
+      "kind": "destructive",
+      "required": [
+        "happy",
+        "refusal",
+        "conflict",
+        "partial",
+        "retry",
+        "cancel"
+      ]
+    },
+    {
+      "action": "DeleteService.PreviewDelete",
+      "kind": "read",
+      "required": [
+        "happy"
+      ]
+    },
+    {
+      "action": "DeleteService.StartDelete",
+      "kind": "job",
+      "required": [
+        "happy",
+        "refusal",
+        "conflict",
+        "cancel",
+        "partial",
+        "retry"
+      ]
+    },
+    {
+      "action": "FindService.CancelFind",
+      "kind": "session",
+      "required": [
+        "happy"
+      ]
+    },
+    {
+      "action": "FindService.FindStatus",
+      "kind": "read",
+      "required": [
+        "happy",
+        "refusal"
+      ]
+    },
+    {
+      "action": "FindService.StartFind",
+      "kind": "read",
+      "required": [
+        "happy",
+        "cancel",
+        "refusal"
+      ]
+    },
+    {
+      "action": "InspectorService.Container",
+      "kind": "read",
+      "required": [
+        "happy"
+      ]
+    },
+    {
+      "action": "InspectorService.DLOSegments",
+      "kind": "read",
+      "required": [
+        "happy"
+      ]
+    },
+    {
+      "action": "InspectorService.Object",
+      "kind": "read",
+      "required": [
+        "happy"
+      ]
+    },
+    {
+      "action": "InspectorService.Prefix",
+      "kind": "read",
+      "required": [
+        "happy"
+      ]
+    },
+    {
+      "action": "InspectorService.SLOManifest",
+      "kind": "read",
+      "required": [
+        "happy"
+      ]
+    },
+    {
+      "action": "JobService.Get",
+      "kind": "read",
+      "required": [
+        "happy"
+      ]
+    },
+    {
+      "action": "JobService.History",
+      "kind": "read",
+      "required": [
+        "happy",
+        "refusal"
+      ]
+    },
+    {
+      "action": "JobService.ItemTotals",
+      "kind": "read",
+      "required": [
+        "happy",
+        "refusal"
+      ]
+    },
+    {
+      "action": "JobService.Items",
+      "kind": "read",
+      "required": [
+        "happy",
+        "refusal"
+      ]
+    },
+    {
+      "action": "JobService.List",
+      "kind": "read",
+      "required": [
+        "happy"
+      ]
+    },
+    {
+      "action": "JobService.RecoveryStatus",
+      "kind": "read",
+      "required": [
+        "happy",
+        "refusal"
+      ]
+    },
+    {
+      "action": "MutateService.CreateContainer",
+      "kind": "mutate",
+      "required": [
+        "happy",
+        "refusal"
+      ]
+    },
+    {
+      "action": "MutateService.CreateMarker",
+      "kind": "mutate",
+      "required": [
+        "happy",
+        "refusal"
+      ]
+    },
+    {
+      "action": "MutateService.DeleteManifest",
+      "kind": "destructive",
+      "required": [
+        "happy",
+        "refusal",
+        "conflict"
+      ]
+    },
+    {
+      "action": "MutateService.DeleteMarker",
+      "kind": "destructive",
+      "required": [
+        "happy",
+        "refusal",
+        "conflict"
+      ]
+    },
+    {
+      "action": "MutateService.UpdateContainer",
+      "kind": "mutate",
+      "required": [
+        "happy",
+        "refusal",
+        "conflict"
+      ]
+    },
+    {
+      "action": "MutateService.UpdateObjectMetadata",
+      "kind": "mutate",
+      "required": [
+        "happy",
+        "refusal",
+        "conflict"
+      ]
+    },
+    {
+      "action": "SettingsService.Get",
+      "kind": "read",
+      "required": [
+        "happy"
+      ]
+    },
+    {
+      "action": "SettingsService.Set",
+      "kind": "mutate",
+      "required": [
+        "happy",
+        "refusal"
+      ]
+    },
+    {
+      "action": "TransferService.CancelJob",
+      "kind": "session",
+      "required": [
+        "happy"
+      ]
+    },
+    {
+      "action": "TransferService.PickDownloadDir",
+      "kind": "session",
+      "required": [
+        "happy"
+      ]
+    },
+    {
+      "action": "TransferService.PickUploadFiles",
+      "kind": "session",
+      "required": [
+        "happy"
+      ]
+    },
+    {
+      "action": "TransferService.PlanCopy",
+      "kind": "read",
+      "required": [
+        "happy"
+      ]
+    },
+    {
+      "action": "TransferService.PreflightDownload",
+      "kind": "read",
+      "required": [
+        "happy"
+      ]
+    },
+    {
+      "action": "TransferService.PreflightUpload",
+      "kind": "read",
+      "required": [
+        "happy"
+      ]
+    },
+    {
+      "action": "TransferService.RerunJob",
+      "kind": "job",
+      "required": [
+        "happy",
+        "refusal",
+        "conflict",
+        "cancel",
+        "partial",
+        "retry"
+      ]
+    },
+    {
+      "action": "TransferService.StartCopy",
+      "kind": "job",
+      "required": [
+        "happy",
+        "refusal",
+        "conflict",
+        "cancel",
+        "partial",
+        "retry"
+      ]
+    },
+    {
+      "action": "TransferService.StartDownload",
+      "kind": "job",
+      "required": [
+        "happy",
+        "refusal",
+        "conflict",
+        "cancel",
+        "partial",
+        "retry"
+      ]
+    },
+    {
+      "action": "TransferService.StartMirror",
+      "kind": "job",
+      "required": [
+        "happy",
+        "refusal",
+        "conflict",
+        "cancel",
+        "partial",
+        "retry"
+      ]
+    },
+    {
+      "action": "TransferService.StartUpload",
+      "kind": "job",
+      "required": [
+        "happy",
+        "refusal",
+        "conflict",
+        "cancel",
+        "partial",
+        "retry"
+      ]
+    }
+  ],
+  "protected": [
+    {
+      "action": "AuditService.Recent",
+      "scenario": "refusal"
+    },
+    {
+      "action": "BookmarkService.CredentialStatus",
+      "scenario": "happy"
+    },
+    {
+      "action": "BookmarkService.CredentialStatus",
+      "scenario": "refusal"
+    },
+    {
+      "action": "BrowseService.Account",
+      "scenario": "happy"
+    },
+    {
+      "action": "BrowseService.Account",
+      "scenario": "refusal"
+    },
+    {
+      "action": "BrowseService.Capabilities",
+      "scenario": "happy"
+    },
+    {
+      "action": "BrowseService.Capabilities",
+      "scenario": "refusal"
+    },
+    {
+      "action": "BrowseService.Connect",
+      "scenario": "refusal"
+    },
+    {
+      "action": "BrowseService.Containers",
+      "scenario": "happy"
+    },
+    {
+      "action": "BrowseService.Containers",
+      "scenario": "refusal"
+    },
+    {
+      "action": "BrowseService.Objects",
+      "scenario": "happy"
+    },
+    {
+      "action": "BrowseService.Objects",
+      "scenario": "refusal"
+    },
+    {
+      "action": "DeleteService.DeleteManifestWithSegments",
+      "scenario": "refusal"
+    },
+    {
+      "action": "DeleteService.StartDelete",
+      "scenario": "happy"
+    },
+    {
+      "action": "DeleteService.StartDelete",
+      "scenario": "partial"
+    },
+    {
+      "action": "DeleteService.StartDelete",
+      "scenario": "refusal"
+    },
+    {
+      "action": "FindService.CancelFind",
+      "scenario": "happy"
+    },
+    {
+      "action": "FindService.FindStatus",
+      "scenario": "happy"
+    },
+    {
+      "action": "FindService.FindStatus",
+      "scenario": "refusal"
+    },
+    {
+      "action": "FindService.StartFind",
+      "scenario": "cancel"
+    },
+    {
+      "action": "FindService.StartFind",
+      "scenario": "happy"
+    },
+    {
+      "action": "FindService.StartFind",
+      "scenario": "refusal"
+    },
+    {
+      "action": "JobService.History",
+      "scenario": "happy"
+    },
+    {
+      "action": "JobService.History",
+      "scenario": "refusal"
+    },
+    {
+      "action": "JobService.ItemTotals",
+      "scenario": "happy"
+    },
+    {
+      "action": "JobService.ItemTotals",
+      "scenario": "refusal"
+    },
+    {
+      "action": "JobService.Items",
+      "scenario": "happy"
+    },
+    {
+      "action": "JobService.Items",
+      "scenario": "refusal"
+    },
+    {
+      "action": "JobService.RecoveryStatus",
+      "scenario": "happy"
+    },
+    {
+      "action": "JobService.RecoveryStatus",
+      "scenario": "refusal"
+    },
+    {
+      "action": "MutateService.CreateContainer",
+      "scenario": "refusal"
+    },
+    {
+      "action": "MutateService.UpdateContainer",
+      "scenario": "conflict"
+    },
+    {
+      "action": "MutateService.UpdateContainer",
+      "scenario": "happy"
+    },
+    {
+      "action": "MutateService.UpdateContainer",
+      "scenario": "refusal"
+    },
+    {
+      "action": "MutateService.UpdateObjectMetadata",
+      "scenario": "conflict"
+    },
+    {
+      "action": "MutateService.UpdateObjectMetadata",
+      "scenario": "happy"
+    },
+    {
+      "action": "MutateService.UpdateObjectMetadata",
+      "scenario": "refusal"
+    },
+    {
+      "action": "TransferService.PlanCopy",
+      "scenario": "happy"
+    },
+    {
+      "action": "TransferService.PreflightDownload",
+      "scenario": "happy"
+    },
+    {
+      "action": "TransferService.PreflightUpload",
+      "scenario": "happy"
+    },
+    {
+      "action": "TransferService.RerunJob",
+      "scenario": "happy"
+    },
+    {
+      "action": "TransferService.RerunJob",
+      "scenario": "refusal"
+    },
+    {
+      "action": "TransferService.StartCopy",
+      "scenario": "happy"
+    },
+    {
+      "action": "TransferService.StartCopy",
+      "scenario": "partial"
+    },
+    {
+      "action": "TransferService.StartCopy",
+      "scenario": "refusal"
+    },
+    {
+      "action": "TransferService.StartDownload",
+      "scenario": "happy"
+    },
+    {
+      "action": "TransferService.StartMirror",
+      "scenario": "refusal"
+    },
+    {
+      "action": "TransferService.StartUpload",
+      "scenario": "happy"
+    }
+  ],
+  "evidence": {
+    "reference": "docs/experiments/2026-09-21-scenario-preservation-baseline.md",
+    "mainReportSHA256": "0a6564782b4ca232fb06764479b6b9de7634a7001f723ac00932600b838c2b83",
+    "mainReceiptSHA256": "19a6bdf78e8452f07f35179bc681435515fcbfbce3c149736d084008b5201dc5",
+    "heavyReportSHA256": "1aff19ee3e9f5980c96e06c517da334f3e635daf64455a793d029ee432bae629",
+    "heavyReceiptSHA256": "9ac5dee76e99612c49c72ac55d5fef07d92f8273f07d6b6ed826fd793f351cf0"
+  }
+}

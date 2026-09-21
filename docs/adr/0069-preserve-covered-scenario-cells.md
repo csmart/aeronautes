@@ -1,6 +1,6 @@
 # ADR 0069: preserve covered scenario cells
 
-**Status:** Accepted contract; comparison component prepared; baseline admission and aggregate activation pending.
+**Status:** Accepted contract; first baseline retained for admission review; comparison remains uncalled.
 
 ## Context and oracle
 
