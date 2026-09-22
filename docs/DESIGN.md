@@ -5799,6 +5799,10 @@ Copied bytes remain witnessed facts when the final name changes; verified counts
 Historical records acquire no new requirement, and a copied item without a required successful final fact cannot complete.
 The engine download path stays unbound: no comparison is added without a fixture that fails when that comparison is deleted.
 Copy, native upload and staged upload commit stay the named deferred gap.
+
+The resumed engine assessment supplied that fixture on 22 September 2026: the [engine-binding record](experiments/2026-09-22-engine-download-binding.md) reruns the retained probe on current master and shows the engine route reporting verified after same-size corruption, run permutation, missing-with-duplicate substitution, staged replacement, source replacement and published replacement, for plain, large and symlinked objects on both fixtures, with only a short body refused.
+[ADR 0070](adr/0070-engine-download-content-binding.md) proposes the correction: verify each staged entry against the captured source identity along the existing ladder before placement, retain refused bytes exempt from stage cleanup, link from the digested descriptor and confirm the published inode as the native route does, with a final-publication fact for engine placements.
+It is a proposal awaiting independent contract review; it changes no code and closes neither L05 nor the valuable-data hold.
 L07 cancellation checks in the same executor are not this slice.
 This does not close L05 or DS-04, and the valuable-data release hold remains.
 
