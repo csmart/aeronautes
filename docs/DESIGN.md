@@ -5673,6 +5673,7 @@ The browser, shared fake and maintained regressions implement this bounded contr
 The [named-read record](experiments/2026-09-21-named-read-session-snapshot.md) schedules an ordinary Connect between `scopedSession` validating a named entry and resolving the active session again, producing secondary payloads labelled as primary through all eight callers.
 The proposed correction retains the validated session and its matching scope for each read, with existing request-time generation admission unchanged.
 Its deterministic regression uses test-only source instrumentation; it does not claim an uninstrumented application reproduction or close L11, P28 or the valuable-data hold.
+The correction is delivered on 22 September 2026: `scopedSession` returns the validated entry's session and scope, and the record's implementation section holds the maintained controls, the instrumented scheduled cases on both fixtures and the caught mutants.
 
 P20 settles what a cancelled download leaves behind, under [ADR 0048](adr/0048-cancelled-stage-removal.md).
 [ADR 0043](adr/0043-cancellation-delta-authority.md) decision 7 left that choice open for the operator, who has answered it: a graceful cancel removes the partial files the job created and says so, a crash or a kill retains them and that is reported accurately, and there is no setting and no prompt.

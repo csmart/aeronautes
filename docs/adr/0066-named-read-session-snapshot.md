@@ -1,7 +1,6 @@
 # ADR 0066: preserve the validated named-read session
 
-**Status:** Proposed.
-Implementation waits for independent contract review.
+**Status:** Accepted; implemented on 22 September 2026 after the independent contract review, with the maintained proof described in the [named-read record](../experiments/2026-09-21-named-read-session-snapshot.md).
 This is the narrow session-capture follow-up that [ADR 0049](0049-account-scoped-reads.md) and [ADR 0059](0059-account-scoped-remaining-reads.md) explicitly deferred.
 
 ## Context

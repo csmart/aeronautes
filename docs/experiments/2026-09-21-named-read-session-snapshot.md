@@ -35,3 +35,23 @@ Keep uninstrumented controls, independent namespace witnesses and caught behavio
 
 The overlay makes the interleaving deterministic; it does not establish spontaneous race frequency or reproduce an uninstrumented desktop session.
 This slice does not close L11, P28, native acceptance or the valuable-data hold, and it grants no mutation authority.
+
+## Implementation — 22 September 2026
+
+`scopedSession` now returns the validated entry's own session with the scope built from that entry's bookmark and generation; the second `Session()` lookup is gone, and the empty-bookmark, disconnected, other-bookmark and generation-mismatch refusals are unchanged.
+The eight callers, their signatures, DTOs, continuation checks and request-time generation admission are untouched.
+
+The maintained proof is `internal/systemtest/named_read_snapshot_test.go` with `named_read_overlay_test.go`.
+The controls run in the ordinary test binary: eight named reads from each account with account-distinct payloads under colliding names, against mock HTTP and the owned two-account Swift fixture, with independent namespace snapshots before and after.
+The scheduled cases run in an instrumented child: the ordinary entry point copies `internal/app/connections.go`, inserts one `namedReadCheckpoint(ctx)` call after the generation comparison of `scopedSession`, adds a package-app file defining that call as a pause taken from the read's context, and runs `go test -race` for the same test name with a Go build overlay and a child marker in the environment, then reports the child's terminal result and output.
+A missing or duplicated insertion anchor, a build failure, a missing result or an unreached barrier fails the parent; a child skip skips it.
+The child pauses each of the eight reads after validation, then completes a same-bookmark reconnect, an other-bookmark Connect or a key re-entry on the read's own bookmark before releasing it, beside a no-switch control.
+The switch schedule asserts the primary payload under the primary scope; the edit schedule asserts the read is refused by request-time admission ("bookmark changed during the operation") rather than served through the captured session.
+
+On the fixed source all four tests pass on both fixtures, 34 leaves, race on.
+Against the retained mutants the scheduled mock test fails as follows: the committed pre-fix source and a restored second `Session()` lookup misattribute all eight switch-account reads; returning the connection active at return time as the reply scope loses the requested scope on seven reads; a no-op request-time admission serves all eight edited-bookmark reads through the stale session.
+Removing the generation comparison is refused by the instrumentation rather than caught behaviourally, and no public path distinguishes it from the fixed source: `guardCache` already refuses a cached entry whose generation the store has moved past, and `forgetObsolete` then drops both that entry and the active connection, so a validated entry cannot differ in generation from the active connection; the comparison stays as a defensive check.
+The runs, the mutant sources and their streams are retained privately in `.aeronautes-work/20260922-named-read-implementation/` with `SHA256SUMS`.
+
+The child build adds one overlay compile of `internal/app` and the system-test binary per scheduled test; locally that cost about five seconds per test with a warm cache.
+No finding closes: L11 and P28 keep their remaining named-read and mutation items, and the valuable-data hold stays on.
