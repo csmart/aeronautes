@@ -270,7 +270,7 @@ func TestDownloadRootAuthority(t *testing.T) {
 				act()
 			}
 			before := rootAuthorityTree(t, f.owned)
-			plan := &DownloadPreflight{Items: c.items, Objects: objects, TotalBytes: total}
+			plan := plannedWithIdentities(t, s, "media", &DownloadPreflight{Items: c.items, Objects: objects, TotalBytes: total})
 			report, err := DownloadInto(t.Context(), s, engine, "aeronautes_src:media", "media", "scope/", destination, rootAuthorityStage, plan, progress)
 			after := rootAuthorityTree(t, f.owned)
 

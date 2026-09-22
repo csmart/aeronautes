@@ -83,7 +83,7 @@ func TestDownloadStageRemovesOnlyPlannedFiles(t *testing.T) {
 			t.Cleanup(func() { _ = held.Close() })
 			c.occupy(t, root, stage)
 
-			result := cleanupDownloadStage(destination, held, "stage", planned)
+			result := cleanupDownloadStage(destination, held, "stage", planned, nil)
 
 			if result.Issues != c.issues || (result.FirstError != "") != (c.issues > 0) {
 				t.Errorf("cleanup issues %+v, want %d", result, c.issues)
@@ -129,7 +129,7 @@ func TestDownloadStageRetainedIsNotTheIssueCount(t *testing.T) {
 	// An item whose name cannot resolve beneath the stage is refused and
 	// counted, but it leaves nothing behind, so the stage still goes.
 	outside := map[string]DownloadItem{"escape": {RelPath: filepath.Join("..", "escape")}}
-	result := cleanupDownloadStage(destination, held, "stage", outside)
+	result := cleanupDownloadStage(destination, held, "stage", outside, nil)
 
 	if result.Issues == 0 {
 		t.Fatalf("an out-of-scope planned name was not refused: %+v", result)
@@ -163,7 +163,7 @@ func TestDownloadStageRefusesAnEscapingNameItself(t *testing.T) {
 	// filepath.Dir("..") is ".", which is in scope, so only the check on
 	// the name itself can refuse this one.
 	result := cleanupDownloadStage(destination, held, "stage",
-		map[string]DownloadItem{"escape": {RelPath: ".."}})
+		map[string]DownloadItem{"escape": {RelPath: ".."}}, nil)
 
 	if result.Issues != 1 {
 		t.Fatalf("escaping planned name was not refused exactly once: %+v", result)
@@ -216,7 +216,7 @@ func movedStageCase(t *testing.T, staged bool) {
 	}
 
 	result := cleanupDownloadStage(destination, held, "stage",
-		map[string]DownloadItem{"proof": {RelPath: filepath.Join("nested", "proof")}})
+		map[string]DownloadItem{"proof": {RelPath: filepath.Join("nested", "proof")}}, nil)
 
 	if !result.Retained || result.Issues == 0 {
 		t.Errorf("a moved stage was not retained and reported: %+v", result)

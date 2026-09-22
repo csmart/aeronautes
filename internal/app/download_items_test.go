@@ -144,10 +144,9 @@ func TestDownloadItemRecordingCost(t *testing.T) {
 				if err := recorder.Verify(item, transfercopy.Observation{Result: transfercopy.ResultVerified, Effect: transfercopy.EffectNotAttempted}); err != nil {
 					t.Fatal(err)
 				}
-				if native {
-					if err := recorder.Publication(item, transfercopy.Observation{Result: transfercopy.ResultVerified, Effect: transfercopy.EffectNotAttempted}); err != nil {
-						t.Fatal(err)
-					}
+				// Both routes owe the final-publication fact (ADR 0061, ADR 0070).
+				if err := recorder.Publication(item, transfercopy.Observation{Result: transfercopy.ResultVerified, Effect: transfercopy.EffectNotAttempted}); err != nil {
+					t.Fatal(err)
 				}
 			}
 			recording := time.Since(started)
@@ -159,10 +158,7 @@ func TestDownloadItemRecordingCost(t *testing.T) {
 			if finished, err := store.Get(t.Context(), job.ID); err != nil || finished.State != jobs.StateComplete || finished.Counters != counters {
 				t.Fatalf("recording cost control did not finish: %+v %v", finished, err)
 			}
-			writes := count * 3
-			if native {
-				writes += count
-			}
+			writes := count * 4
 			encoded, err := json.Marshal(map[string]any{"native": native, "names": count, "acknowledged_writes": writes, "recording_ms": float64(recording) / float64(time.Millisecond), "completion_ms": float64(time.Since(started)-recording) / float64(time.Millisecond)})
 			if err != nil {
 				t.Fatal(err)

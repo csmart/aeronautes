@@ -24,6 +24,10 @@ type StageCleanupResult struct {
 	// so one flag cannot carry both without a reader having to know which
 	// era it was written in (ADR 0048).
 	Retained bool
+	// Refused counts the planned entries cleanup left on purpose because
+	// their bytes did not match the source they were planned from; they
+	// stay for the operator to inspect (ADR 0070).
+	Refused int64
 }
 
 func (r *StageCleanupResult) failed(err error) {
@@ -42,14 +46,29 @@ func (r *StageCleanupResult) failed(err error) {
 // the stage, so a name this job did not plan is never a candidate. Every
 // removal is issued through the held stage handle rather than through a
 // pathname, so a rename of the stage cannot redirect one.
-func cleanupDownloadStage(destination, stage *DestinationRoot, stageName string, items map[string]DownloadItem) *StageCleanupResult {
+//
+// An entry whose bytes were refused is not a candidate either: it is
+// retained for the operator, and so is every directory above it, since
+// none of them can be empty while it stays (ADR 0070).
+func cleanupDownloadStage(destination, stage *DestinationRoot, stageName string, items map[string]DownloadItem, retained map[string]bool) *StageCleanupResult {
 	result := &StageCleanupResult{Attempted: true}
 	dirs := map[string]bool{".": true}
+	kept := map[string]bool{}
 	planned := make([]string, 0, len(items))
 	for _, item := range items {
 		dir := filepath.Dir(item.RelPath)
 		if outsideStageScope(item.RelPath) || outsideStageScope(dir) {
 			result.failed(fmt.Errorf("selected stage directory is outside the relative cleanup scope"))
+			continue
+		}
+		if retained[item.RelPath] {
+			result.Refused++
+			result.Retained = true
+			kept["."] = true
+			for dir != "." {
+				kept[dir] = true
+				dir = filepath.Dir(dir)
+			}
 			continue
 		}
 		planned = append(planned, item.RelPath)
@@ -100,6 +119,9 @@ func cleanupDownloadStage(destination, stage *DestinationRoot, stageName string,
 	})
 	rootRemoved := false
 	for _, dir := range ordered {
+		if kept[dir] {
+			continue
+		}
 		if err := removeEmptyStageDirectory(destination, stage, stageName, dir); err != nil {
 			result.failed(err)
 			continue
@@ -112,7 +134,7 @@ func cleanupDownloadStage(destination, stage *DestinationRoot, stageName string,
 	// stage root is gone only when nothing under it survived removal
 	// (ADR 0048). It was previously left false while a stage holding
 	// staged bytes was retained by a failed rmdir.
-	result.Retained = !rootRemoved
+	result.Retained = result.Retained || !rootRemoved
 	return result
 }
 

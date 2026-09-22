@@ -597,8 +597,16 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 			case !stageCleanup.Attempted:
 				auditSummary = "download stage retained after required item recording failed; cleanup was not attempted"
 				message += auditSummary
+			case stageCleanup.Retained && stageCleanup.Issues == 0 && stageCleanup.Refused > 0:
+				// Cleanup ran cleanly and kept only the entries whose bytes
+				// were refused verification, for the operator (ADR 0070).
+				auditSummary = fmt.Sprintf("download stage retained: %d entries refused verification and kept for inspection", stageCleanup.Refused)
+				message += auditSummary
 			case stageCleanup.Retained:
 				auditSummary = fmt.Sprintf("download stage retained after cleanup: %d issues", stageCleanup.Issues)
+				if stageCleanup.Refused > 0 {
+					auditSummary += fmt.Sprintf(", %d entries refused verification", stageCleanup.Refused)
+				}
 				message += fmt.Sprintf("%s (first: %s)", auditSummary, stageCleanup.FirstError)
 			default:
 				auditSummary = fmt.Sprintf("download stage cleanup: %d issues", stageCleanup.Issues)

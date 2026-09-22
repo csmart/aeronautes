@@ -235,6 +235,7 @@ func TestDownloadNameFormDirect(t *testing.T) {
 							slices.Reverse(items)
 						}
 						before := downloadDestinationSnapshot(t, owned)
+						plan := plannedWithIdentities(t, source, "media", &DownloadPreflight{Items: items})
 						requests := mock.Requests()
 						engine := &downloadRecordingEngine{Engine: &fsEngine{session: source}}
 						var admissions []DownloadAdmission
@@ -250,7 +251,7 @@ func TestDownloadNameFormDirect(t *testing.T) {
 							}}
 						}
 						report, err := Download(t.Context(), source, engine, "remote:media", "media", prefix, root, "fixture",
-							&DownloadPreflight{Items: items}, func(int64, int64, int64) { progressCalls++ }, recorders...)
+							plan, func(int64, int64, int64) { progressCalls++ }, recorders...)
 						after := downloadDestinationSnapshot(t, owned)
 						if !fixture.refused() {
 							// An accepted control must prove the download

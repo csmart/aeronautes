@@ -45,7 +45,9 @@ func (s *TransferService) downloadItemRecorder(ctx context.Context, jobID string
 			}
 			intent := jobs.ItemIntent{ItemIdentity: identity,
 				ListedBytes: admission.Item.Size, Planned: true, Admitted: true,
-				PublicationRequired: !admission.Item.Dir && admission.Item.Route == "native"}
+				// Every placed file carries a final-publication fact, on the
+				// native route (ADR 0061) and the engine route (ADR 0070).
+				PublicationRequired: !admission.Item.Dir}
 			if admission.StagingPath != "" {
 				intent.Staging = &jobs.ItemLocation{Kind: jobs.ItemLocal, LocalPath: admission.StagingPath}
 			}

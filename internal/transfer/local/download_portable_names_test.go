@@ -146,6 +146,7 @@ func TestDownloadPortableNamesDirect(t *testing.T) {
 							slices.Reverse(items)
 						}
 						before := downloadDestinationSnapshot(t, owned)
+						plan := plannedWithIdentities(t, source, "media", &DownloadPreflight{Items: items})
 						requests := mock.Requests()
 						engine := &downloadRecordingEngine{Engine: &fsEngine{session: source}}
 						var admissions []DownloadAdmission
@@ -160,7 +161,7 @@ func TestDownloadPortableNamesDirect(t *testing.T) {
 								Verify:      func(item DownloadItem, result transfercopy.Observation) error { verified[item] = result; return nil },
 							}}
 						}
-						report, err := Download(t.Context(), source, engine, "remote:media", "media", prefix, root, "fixture", &DownloadPreflight{Items: items},
+						report, err := Download(t.Context(), source, engine, "remote:media", "media", prefix, root, "fixture", plan,
 							func(int64, int64, int64) { progressCalls++ }, recorders...)
 						after := downloadDestinationSnapshot(t, owned)
 						if fixture.refused != "" {

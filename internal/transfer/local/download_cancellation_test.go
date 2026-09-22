@@ -95,7 +95,7 @@ func TestDownloadCancelledPlacementRecords(t *testing.T) {
 		item := DownloadItem{Name: "scope/b", RelPath: "b", Size: 7, Route: "rclone"}
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
-		outcome := placeDownloaded(ctx, destination, stage, stageName, item)
+		outcome := placeDownloaded(ctx, nil, "", destination, stage, stageName, item, downloadSourceIdentity{})
 		if outcome.Observation != unplacedAfterCancel || outcome.label != "place" || !errors.Is(outcome.failure, context.Canceled) {
 			t.Fatalf("placement cancel record differs from the loop record: %+v", outcome)
 		}

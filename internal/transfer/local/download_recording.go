@@ -44,6 +44,9 @@ type downloadResult struct {
 	// an early verification acknowledgement must not release it.
 	published    *os.File
 	publishedRel string
+	// retainStaged marks an engine entry whose bytes were refused and
+	// stay in the stage for the operator, exempt from cleanup (ADR 0070).
+	retainStaged bool
 }
 
 func downloadFailed(effect transfercopy.Effect, stage transfercopy.Stage, code transfercopy.Code, label string, err error) downloadResult {
@@ -142,6 +145,9 @@ type downloadRun struct {
 	report        *Report
 	stopped       error
 	pendingNative []nativePublished
+	// retained names the staged entries, by relative path, whose bytes
+	// were refused and must survive the stage cleanup (ADR 0070).
+	retained map[string]bool
 }
 
 func (d *downloadRun) stop(err error) error {
