@@ -22,6 +22,23 @@ Whether the deferred capabilities are disabled, hidden or left enabled in a v1 b
 One boundary is not settled by the four capability names and needs the operator's answer before the affected slices are scoped.
 `MutateService` holds both the object and container metadata edits that v1 keeps and, alongside them, container creation, prefix-marker creation and marker and manifest deletion.
 Container creation and marker creation are neither metadata editing nor browsing, and marker and manifest deletion are destructive; the narrowing cuts through that service rather than around it.
+The operator resolved container creation into v1 and both deletions out of it on 22 September 2026; whether prefix-marker creation follows container creation is still an open question, as the operator decisions section below records.
+
+## Operator decisions — 22 September 2026
+
+The operator settled the questions this record left open on 22 September 2026, under the sign-off rule above.
+
+1. v1 supports Linux only.
+   The release pipeline still builds all six targets and K-PLAT-003 remains the product requirement, but the four macOS and Windows artifact groups are development builds without acceptance until their own native, installation and provider runs are done; for v1, "Supported artifacts" means the Linux packages.
+2. Public-read container ACL saves stay in v1 behind the existing explicit acknowledgement (§19.1): `MutateService` refuses a world-readable read ACL unless `ContainerEditDTO.AckPublic` is set, and the container editor collects that acknowledgement.
+   The operator additionally requires something visual while browsing that shows world-readable and similar container settings, naming web listing, versioning and the like as examples; that is new v1 scope, and its design is a separate reviewed slice.
+3. Container creation is a v1 capability; marker deletion and manifest deletion stay deferred and refused under [ADR 0052](../../adr/0052-v1-capability-gate.md).
+   The operator's words were that creation is a v1 feature and deletes are blocked; whether prefix-marker creation is included is the author's reading, recorded as an open question to the operator, and marker creation stays deferred in the gate until the operator confirms.
+4. Very large namespaces are v1 scope.
+   The download inventory keeps a complete list today, measured in the [peak-memory record](../../experiments/2026-09-22-download-inventory-peak-memory.md); the operator directs that the approach follow how established object-storage clients handle containers with hundreds of millions of objects, researched and proposed before any implementation, rather than a bare count ceiling.
+5. The stopped named-read session capture (ADR 0066), engine download binding assessment and P31 advisory mapping tasks are resumed.
+
+None of these decisions closes a finding, changes a production gate or lifts the valuable-data hold.
 
 ## Six production gates
 
@@ -45,6 +62,7 @@ Durable recovery keeps P20 and P28 whole and keeps the P12 and P13 obligations t
 Containment is unchanged: placement inside the selected root, namespace refusals and writer lifetime all serve download and shutdown, which v1 keeps.
 Operating limits is unchanged, because its bounds serve browse and download.
 Supported artifacts narrows to the claimed targets rather than to fewer checks: a Linux-first v1 still owes dependency, installation and representative-deployment evidence for Linux, and the six-target native acceptance is deferred with the targets rather than satisfied.
+On 22 September 2026 the operator chose Linux only for v1, so the claimed targets are the Linux packages (see the operator decisions above).
 
 Several of these still cannot close on this workstation at all, and deferring capabilities does not change that.
 Native keychain, picker and filesystem journeys, actual window shutdown, descendant lifetime and accessibility on the six targets, physical durability evidence, installation, upgrade and rollback, backup and restore, exact artifact identity and representative deployed Swift remain external acceptance work.

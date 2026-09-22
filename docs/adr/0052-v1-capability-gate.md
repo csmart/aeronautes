@@ -62,10 +62,14 @@ inventory, with the two derivations agreeing.
    Neither is named for a deferred capability, and a classification by name would have
    shipped both.
 
-7. **Lead's reading, awaiting the operator.** Container creation is kept, being
-   non-destructive and leaving metadata management thin without it.
-   Marker creation, marker deletion and manifest deletion are deferred with the
-   destructive work.
+7. **Operator decision, 22 September 2026.** Container creation is kept: it is
+   non-destructive, and a Swift workbench that cannot create a container is close to
+   useless.
+   Marker deletion and manifest deletion are deferred with the destructive work.
+   Marker creation stays deferred in the gate table until the operator confirms whether
+   it follows container creation; the lead's reading of 20 September deferred it, and
+   the author's reading of 22 September would include it, which is why it is an open
+   question rather than a decision.
 
 ## What this does not establish
 

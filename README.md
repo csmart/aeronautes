@@ -22,11 +22,12 @@ More in [`docs/assets/screenshots/`](docs/assets/screenshots/).*
   storage policies, ACLs, versioning, quotas — not a file-manager metaphor. TempURL, CORS, and
   staticweb are modeled read-only today (key slots and presence, never secret values); their
   management surfaces are tracked v1.x work.
-- **v1 scope**: browse, inspect, download, and object and container metadata read and write.
+- **v1 scope**: browse, inspect, download, object and container metadata read and write, and container creation.
   Copy, Mirror execution, upload and bulk deletion are deferred and refused in this build under [ADR 0052](docs/adr/0052-v1-capability-gate.md).
 - **Safety-first**: heuristics never authorize destruction; object-metadata edits never silently drop keys.
 - **Cross-platform** desktop app — Linux, macOS, and Windows on both **x86_64 and aarch64** (six
-  targets, all required); Linux is the primary/reference platform.
+  build targets); v1 supports Linux only, and the macOS and Windows builds are development
+  builds until their own acceptance runs are done.
 
 ## What it is not
 
