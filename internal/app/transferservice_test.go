@@ -260,9 +260,17 @@ func seedObject(mock *swifttest.Server, container, name, content string, meta ma
 	})
 }
 
+// terminalWait bounds awaitTerminal. The slowest caller, the 205-object
+// preflight-view download, completes in about four seconds on a healthy
+// hosted runner and eight seconds locally under the race detector; a hosted
+// runner running at less than half speed exceeded the former ten-second
+// bound (22 September 2026). Thirty seconds still fails a stuck job long
+// before the package budget.
+const terminalWait = 30 * time.Second
+
 func awaitTerminal(t *testing.T, h *harness, jobID string) JobDTO {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(terminalWait)
 	for time.Now().Before(deadline) {
 		raw, err := h.jobsSvc.jobs.Get(context.Background(), jobID)
 		if err != nil {

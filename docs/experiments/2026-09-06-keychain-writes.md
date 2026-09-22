@@ -20,7 +20,8 @@ These are protocol fault-injection observations, not a test of native GNOME Keyr
 
 The permanent [protocol test package](../../internal/secrets/protocoltest/) runs in a separate binary from the existing native keychain tests because godbus caches its session-bus connection process-wide.
 Its TestMain creates a short socket path in a per-run mode-0700 directory, starts a daemon without service activation, sets the address before client use and checks that address at each scenario.
-Startup is limited to five seconds, daemon teardown to three seconds after kill, and the complete fixture run to 45 seconds.
+Startup is limited to five seconds and daemon teardown to three seconds after kill; the complete fixture run was limited to 45 seconds when this record was written.
+That whole-run bound has been three minutes since 22 September 2026, after a hosted runner spent 44 seconds in the package and the watchdog aborted the last of its fourteen tests with the other thirteen passed; the [hosted-runner budget record](2026-09-22-hosted-runner-budget-margins.md) holds the measurements.
 The required Go CI job explicitly installs `dbus` and invokes `make test-secret-service`, which enables the required-fixture flag.
 Missing tooling cannot satisfy that lane by skipping.
 

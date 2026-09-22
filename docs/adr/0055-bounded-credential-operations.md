@@ -10,7 +10,8 @@ Its three methods accept a `context.Context` and discard it: each signature read
 A Secret Service that accepts a call and holds the reply therefore blocks the caller for as long as it likes, and cancelling the caller's context has no effect.
 
 The tree already records the symptom without naming the cause.
-`internal/secrets/protocoltest/main_linux_test.go` guards its own binary with a forty-five second timer and `os.Exit`, commented "the pinned client's prompt wait has no context", so a broken fixture aborts the run rather than hanging the suite.
+`internal/secrets/protocoltest/main_linux_test.go` guards its own binary with a whole-package timer and `os.Exit`, commented "the pinned client's prompt wait has no context", so a broken fixture aborts the run rather than hanging the suite.
+That timer was forty-five seconds when this record was written; it is three minutes since 22 September 2026, sized in the [hosted-runner budget record](../experiments/2026-09-22-hosted-runner-budget-margins.md).
 Production has no equivalent guard.
 
 The reproduction is archived with this record.
@@ -45,7 +46,7 @@ Bound the *wait*, at the adapter, and say plainly that bounding a wait is not ca
 
 5. Backend selection is bounded by a **ten-second** deadline rather than by a caller's context, because `OpenDefault` has no caller context and runs before the shell.
    Ten seconds is an order of magnitude above a healthy Secret Service delete-get-delete round trip, and short enough that a wedged service does not look like a hung launch.
-   It is not the protocol-test binary's forty-five second abort, which exists only to stop a prompt wait from hanging the suite.
+   It is not the protocol-test binary's whole-package abort, which exists only to stop a prompt wait from hanging the suite.
    A probe that does not answer within ten seconds selects the session store, which is the visible fallback §12.1 already requires.
    The probe entry it may have written is not treated as removed.
 

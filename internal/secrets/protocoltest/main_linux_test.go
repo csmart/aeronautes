@@ -19,6 +19,9 @@ var (
 	service        *secretService
 )
 
+// fixtureBudget bounds the whole protocol-test binary; see runTests.
+const fixtureBudget = 3 * time.Minute
+
 // A separate test binary keeps godbus's cached SessionBus away from the real
 // keychain integration tests, whichever order go test chooses for packages.
 func TestMain(m *testing.M) { os.Exit(runTests(m)) }
@@ -46,8 +49,15 @@ func runTests(m *testing.M) (code int) {
 	}()
 	// The pinned client's prompt wait has no context. A broken fixture must
 	// fail this binary and clean up its daemon instead of hanging the suite.
-	deadline := time.AfterFunc(45*time.Second, func() {
-		fmt.Fprintln(os.Stderr, "private Secret Service fixture exceeded 45 seconds")
+	// The bound covers the whole package, which spends thirty seconds in
+	// deliberate ten-second waits and about forty seconds in total on a
+	// healthy runner; a hosted runner running at half speed exceeded the
+	// former forty-five second bound, and the watchdog aborted the last test
+	// after the earlier assertions had passed (22 September 2026). Three
+	// minutes keeps a hung prompt wait short next to the lane budget while
+	// leaving those waits room to run slowly.
+	deadline := time.AfterFunc(fixtureBudget, func() {
+		fmt.Fprintln(os.Stderr, "private Secret Service fixture exceeded", fixtureBudget)
 		_ = stop()
 		os.Exit(1)
 	})
