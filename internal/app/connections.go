@@ -372,11 +372,10 @@ func (c *Connections) scopedSession(ctx context.Context, bookmarkID string) (*sw
 	if entry.generation != connectedGeneration {
 		return nil, ListingScopeDTO{}, ErrAccountScopeChanged
 	}
-	session, err := c.Session()
-	if err != nil {
-		return nil, ListingScopeDTO{}, err
-	}
-	return session, ListingScopeDTO{BookmarkID: activeID, Generation: connectedGeneration}, nil
+	// The validated entry is this read's session (ADR 0066). Resolving the
+	// active session again here could return a connection that replaced
+	// this one after the checks above, under this reply's earlier scope.
+	return entry.session, ListingScopeDTO{BookmarkID: bookmarkID, Generation: entry.generation}, nil
 }
 
 // ActiveBookmarkID returns the connected bookmark's id, "" when none —
