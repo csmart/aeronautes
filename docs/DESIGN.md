@@ -949,6 +949,8 @@ A short nonempty page continues to another marker request; only a complete empty
 
 This is intentionally independent of rclone's own listing implementation.
 
+Very large namespaces: [ADR 0072](adr/0072-large-namespace-handling.md) (proposed) records the v1 approach taken from the [tool survey](experiments/2026-09-22-large-namespace-tool-survey.md): one-level lazy browsing with no ceiling, an explicit streaming count, select all meaning the loaded rows, a per-selection download ceiling counted during preflight and refused rather than truncated, and streaming batches beyond the ceiling deferred to their own contract.
+
 Aeronautes should outperform generic tooling where Swift-specific optimisation allows it.
 
 ### 15.2 Comparison at scale is a streaming merge-join
