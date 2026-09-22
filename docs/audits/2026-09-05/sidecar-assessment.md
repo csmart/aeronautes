@@ -142,6 +142,7 @@ The initial sandbox download/key-import failures and every actual producer resul
 ## Next required work
 
 1. Obtain reviewed enabled-path dispositions from sufficient exact source/binary evidence, retaining the OpenPGP and any other unknowns.
+   The [call-graph scan of 22 September](../../experiments/2026-09-22-sidecar-call-graph-scan.md) re-proposes the thirty non-rclone rows from the static graph and a direct call-site inventory of the sidecar's own build; none of its rows is accepted by that record.
 2. Review any proposed pin/design change, then pass the real-engine redirect, TLS, name, staging/placement, retry, cancellation and large-object compatibility gate on every supported target.
 3. Preserve checksum and version refusal; a mismatch escape hatch cannot substitute for candidate acceptance.
 4. Complete the application/native-library/npm scopes and the Linux installation/upgrade policy, with exact artifact identity and required native evidence.
