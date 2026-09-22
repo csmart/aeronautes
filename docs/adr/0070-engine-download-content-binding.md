@@ -1,7 +1,7 @@
 # ADR 0070: bind engine downloads to the source they were planned from
 
-**Status:** Proposed.
-Implementation waits for independent contract review.
+**Status:** Accepted; implemented on 23 September 2026.
+The contract was reviewed independently before implementation; the [engine-binding record](../experiments/2026-09-22-engine-download-binding.md) carries the maintained proof and the mutants.
 This closes the engine-route gap that [ADR 0045](0045-route-content-binding.md) recorded and [ADR 0060](0060-native-download-content-binding.md) left unbound.
 
 ## Context
@@ -53,7 +53,7 @@ The read is bounded by the staged size the child already wrote.
 An engine download can no longer report a file verified whose bytes differ from the object that was planned, whether the difference arose at the source after planning, in the stage, or at publication.
 A refused item keeps its staged bytes where the operator can inspect them, which changes what a completed job with refusals leaves in the stage.
 
-The mock Swift fixture lists a static large object's manifest bytes rather than its logical size, so its SLO control fails at planning; the maintained proof corrects that listing so the fixture describes what a deployed Swift reports.
+The mock Swift fixture listed a static large object's manifest bytes rather than its logical size, so the probe's SLO control failed at planning; the implementation corrects the fixture's manifest PUT so its listing, HEAD, GET and manifest read describe what a deployed Swift reports.
 
 ## Maintained proof
 

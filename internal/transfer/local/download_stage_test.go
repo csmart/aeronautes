@@ -186,7 +186,7 @@ func TestDownloadStageCleanupPreservesOtherEntries(t *testing.T) {
 					delete(want, "stage")
 				}
 			}
-			result := cleanupDownloadStage(destination, held, "stage", map[string]DownloadItem{"proof": {RelPath: "nested/leaf/proof"}})
+			result := cleanupDownloadStage(destination, held, "stage", map[string]DownloadItem{"proof": {RelPath: "nested/leaf/proof"}}, nil)
 			if result.Issues != issues || (result.FirstError != "") != (issues > 0) {
 				t.Errorf("cleanup outcome differs: %+v; want %d issues", result, issues)
 			}

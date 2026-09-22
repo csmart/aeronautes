@@ -129,7 +129,9 @@ func downloadPublicationCase(t *testing.T, h *Harness, scenario string) {
 			if item.Staging.LocalPath != filepath.Join(destination, ".aeronautes-stage-"+id, names[index]) {
 				t.Fatalf("queued engine staging identity changed: %+v", item)
 			}
-			if item.PublicationRequired || item.Publication != nil || item.Verification != nil || item.Execution == nil || item.Execution.Result != jobs.ItemNotAttempted || item.Execution.Effect != jobs.EffectNotAttempted {
+			// An engine file requires the final fact too (ADR 0070); one
+			// never attempted must have none.
+			if !item.PublicationRequired || item.Publication != nil || item.Verification != nil || item.Execution == nil || item.Execution.Result != jobs.ItemNotAttempted || item.Execution.Effect != jobs.EffectNotAttempted {
 				t.Fatalf("refused publication allowed engine work or invented final evidence: %+v", item)
 			}
 			continue

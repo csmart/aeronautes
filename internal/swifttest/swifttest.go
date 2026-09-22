@@ -533,6 +533,22 @@ func (s *Server) putObject(w http.ResponseWriter, r *http.Request, container, na
 			return
 		}
 	}
+	if r.URL.Query().Get("multipart-manifest") == "put" {
+		// A static large object is stored the way a deployed Swift
+		// reports it afterwards: the listing and HEAD carry the logical
+		// size and the manifest's entity tag, GET assembles the segments,
+		// and ?multipart-manifest=get returns the manifest itself. The
+		// manifest's own bytes are never the object's size (ADR 0070).
+		o, status := s.staticLargeObject(r, body)
+		if status != http.StatusCreated {
+			w.WriteHeader(status)
+			return
+		}
+		c.objects[name] = o
+		w.Header().Set("Etag", o.ETag)
+		w.WriteHeader(http.StatusCreated)
+		return
+	}
 	o := Object{
 		Bytes:                int64(len(body)),
 		ETag:                 hex.EncodeToString(sum[:]),
@@ -554,6 +570,84 @@ func (s *Server) putObject(w http.ResponseWriter, r *http.Request, container, na
 	c.objects[name] = o
 	w.Header().Set("Etag", o.ETag)
 	w.WriteHeader(http.StatusCreated)
+}
+
+// staticLargeObject validates an SLO manifest PUT against the segments
+// this mock holds and returns the stored object, or the 400 a deployed
+// Swift answers with for a manifest that names a missing segment or
+// misstates its size or entity tag. The caller holds s.mu.
+func (s *Server) staticLargeObject(r *http.Request, manifest []byte) (Object, int) {
+	var entries []struct {
+		Path      string `json:"path"`
+		ETag      string `json:"etag"`
+		SizeBytes int64  `json:"size_bytes"`
+	}
+	if err := json.Unmarshal(manifest, &entries); err != nil || len(entries) == 0 {
+		return Object{}, http.StatusBadRequest
+	}
+	var data []byte
+	var total int64
+	var etags strings.Builder
+	// A deployed Swift answers ?multipart-manifest=get with the stored
+	// entries in listing form (name, hash, bytes, content_type,
+	// last_modified), not with the path/etag/size_bytes form they were
+	// PUT in; the oracle and the client both read that form.
+	type storedEntry struct {
+		Name         string `json:"name"`
+		Hash         string `json:"hash"`
+		Bytes        int64  `json:"bytes"`
+		ContentType  string `json:"content_type"`
+		LastModified string `json:"last_modified"`
+	}
+	stored := make([]storedEntry, 0, len(entries))
+	for _, entry := range entries {
+		path := strings.TrimPrefix(entry.Path, "/")
+		slash := strings.Index(path, "/")
+		if slash <= 0 || slash == len(path)-1 {
+			return Object{}, http.StatusBadRequest
+		}
+		container, ok := s.containers[path[:slash]]
+		if !ok {
+			return Object{}, http.StatusBadRequest
+		}
+		segment, ok := container.objects[path[slash+1:]]
+		if !ok || segment.SLO || segment.Manifest != "" {
+			return Object{}, http.StatusBadRequest
+		}
+		if entry.ETag != "" && strings.Trim(entry.ETag, `"`) != segment.ETag {
+			return Object{}, http.StatusBadRequest
+		}
+		if entry.SizeBytes != 0 && entry.SizeBytes != segment.Bytes {
+			return Object{}, http.StatusBadRequest
+		}
+		data = append(data, segment.Data...)
+		total += segment.Bytes
+		etags.WriteString(segment.ETag)
+		stored = append(stored, storedEntry{Name: "/" + path, Hash: segment.ETag, Bytes: segment.Bytes, ContentType: segment.ContentType, LastModified: "2026-08-28T10:00:00.000000"})
+	}
+	manifestJSON, err := json.Marshal(stored)
+	if err != nil {
+		return Object{}, http.StatusBadRequest
+	}
+	// Observed on the deployed service: a static large object's entity
+	// tag is the quoted MD5 of its segments' concatenated entity tags,
+	// and the listing repeats it as slo_etag.
+	sum := md5.Sum([]byte(etags.String()))
+	etag := hex.EncodeToString(sum[:])
+	o := Object{
+		Bytes:           total,
+		ETag:            `"` + etag + `"`,
+		SLOEtag:         etag,
+		SLO:             true,
+		SLOManifestJSON: string(manifestJSON),
+		ContentType:     r.Header.Get("Content-Type"),
+		Meta:            objectMetaFromHeaders(r),
+		Data:            data,
+	}
+	if o.ContentType == "" {
+		o.ContentType = "application/octet-stream"
+	}
+	return o, http.StatusCreated
 }
 
 // postObject implements fast-POST metadata update with real Swift's

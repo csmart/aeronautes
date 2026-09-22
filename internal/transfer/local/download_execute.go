@@ -104,7 +104,7 @@ func DownloadInto(ctx context.Context, src *swiftcontrol.Session, engine Engine,
 	if err := checkDownloadDestination(destination.root, preflight.Items); err != nil {
 		return nil, err
 	}
-	d := &downloadRun{recorder: recorder, report: &Report{}}
+	d := &downloadRun{recorder: recorder, report: &Report{}, retained: map[string]bool{}}
 	defer func() { runErr = errors.Join(runErr, d.confirmNativePublications(destination)) }()
 	report = d.report
 	total := int64(len(preflight.Items))
@@ -229,7 +229,7 @@ func DownloadInto(ctx context.Context, src *swiftcontrol.Session, engine Engine,
 			report.StageCleanup = &StageCleanupResult{Attempted: false, Retained: true}
 			return
 		}
-		report.StageCleanup = cleanupDownloadStage(destination, stage, stageName, engineItems)
+		report.StageCleanup = cleanupDownloadStage(destination, stage, stageName, engineItems, d.retained)
 	}()
 	source := srcSpec + "/" + strings.TrimSuffix(prefix, "/")
 	result, err := d.copy(ctx, src, func(copyCtx context.Context) (*rclone.Result, error) {
@@ -286,7 +286,10 @@ func DownloadInto(ctx context.Context, src *swiftcontrol.Session, engine Engine,
 			return report, err
 		}
 		item := engineItems[rel]
-		outcome := placeDownloaded(ctx, destination, stage, stageName, item)
+		outcome := placeDownloaded(ctx, src, container, destination, stage, stageName, item, preflight.nativeSource[item.Name])
+		if outcome.retainStaged {
+			d.retained[item.RelPath] = true
+		}
 		if err := d.observe(item, outcome); err != nil {
 			return report, err
 		}
@@ -411,7 +414,15 @@ func observeDownloadDirectory(parent *os.Root, base string) downloadResult {
 	return downloadVerified(0)
 }
 
-func placeDownloaded(ctx context.Context, destination, stage *DestinationRoot, stageName string, item DownloadItem) (result downloadResult) {
+// placeDownloaded verifies one engine-downloaded entry against the source
+// identity the preflight captured and publishes exactly the inode it
+// verified (ADR 0070). The staged entry is opened through the held stage
+// and kept open from the size check to the link, so the bytes digested
+// are the bytes published whatever the staged name denotes by then. A
+// mismatch, a substituted source or an expectation that cannot be built
+// publishes nothing and retains the staged entry for the operator, exempt
+// from the stage cleanup (ADR 0048).
+func placeDownloaded(ctx context.Context, src *swiftcontrol.Session, container string, destination, stage *DestinationRoot, stageName string, item DownloadItem, source downloadSourceIdentity) (result downloadResult) {
 	stagedDisplay := filepath.Join(stage.Path(), item.RelPath)
 	targetDisplay := filepath.Join(destination.Path(), item.RelPath)
 	stagedParent, _, err := stage.openDirectory(filepath.Dir(item.RelPath), false)
@@ -427,8 +438,48 @@ func placeDownloaded(ctx context.Context, destination, stage *DestinationRoot, s
 	if !info.Mode().IsRegular() {
 		return downloadVerificationFailed(transfercopy.StageVerification, transfercopy.CodeUnverified, "place", fmt.Errorf("staged entry %q is not a regular file", item.RelPath))
 	}
+	// The size check stays the first comparison; a refused entry keeps
+	// its bytes in the stage like every other refusal below.
 	if info.Size() != item.Size {
-		return downloadVerificationFailed(transfercopy.StageVerification, transfercopy.CodeUnverified, "place", fmt.Errorf("size %d != object %d", info.Size(), item.Size))
+		return downloadRetained(transfercopy.CodeUnverified, fmt.Errorf("size %d != object %d", info.Size(), item.Size))
+	}
+	if err := ctx.Err(); err != nil {
+		return downloadUnplacedAfterCancel(err)
+	}
+	staged, err := openNativePublicationPin(stagedParent, base)
+	if err != nil {
+		return stagedFileUnavailable(atPath(err, "open", stagedDisplay))
+	}
+	defer func() {
+		if result.published != staged {
+			if closeErr := staged.Close(); closeErr != nil {
+				result.addIssue(transfercopy.StageCleanup, "staged-pin-close", closeErr)
+			}
+		}
+	}()
+	verified, err := staged.Stat()
+	if err != nil {
+		return downloadVerificationFailed(transfercopy.StageVerification, transfercopy.CodeUnverified, "place", fmt.Errorf("staged entry %q cannot be identified: %w", item.RelPath, err))
+	}
+	if !verified.Mode().IsRegular() || verified.Size() != item.Size || !os.SameFile(info, verified) {
+		return downloadRetained(transfercopy.CodeUnverified, fmt.Errorf("staged entry %q changed between inspection and verification", item.RelPath))
+	}
+	ladder, code, err := engineExpectation(ctx, src, container, item, source)
+	if err != nil {
+		return downloadRetained(code, err)
+	}
+	// The comparison is the native route's: the same ladder, the same
+	// digester, over the descriptor that will be published (ADR 0045).
+	digest := transfercopy.NewLadderDigest(ladder)
+	read, err := io.Copy(digest, staged)
+	if err != nil {
+		return downloadRetained(transfercopy.CodeUnverified, fmt.Errorf("staged bytes cannot be read: %w", err))
+	}
+	if read != item.Size {
+		return downloadRetained(transfercopy.CodeUnverified, fmt.Errorf("read %d bytes, object says %d", read, item.Size))
+	}
+	if _, contentErr := digest.Result(); contentErr != nil {
+		return downloadRetained(transfercopy.CodeUnverified, fmt.Errorf("staged content does not match the source: %w", contentErr))
 	}
 	if err := ctx.Err(); err != nil {
 		return downloadUnplacedAfterCancel(err)
@@ -442,15 +493,75 @@ func placeDownloaded(ctx context.Context, destination, stage *DestinationRoot, s
 	if err := ctx.Err(); err != nil {
 		return downloadUnplacedAfterCancel(err)
 	}
-	publish := publication{root: destination,
-		stagedRoot: stagedParent, stagedBase: base, stagedRel: filepath.Join(stageName, item.RelPath), stagedDisplay: stagedDisplay,
-		targetRoot: targetParent, targetBase: base, targetRel: item.RelPath, targetDisplay: targetDisplay}
-	if err := publish.publishVerified(info); err != nil {
+	// A concurrent creator keeps its target; the link never replaces.
+	if err := linkDescriptorAt(staged, targetParent, base, stagedDisplay, targetDisplay); err != nil {
 		return downloadPlacementFailed("place", err)
 	}
-	placed := downloadVerified(item.Size)
-	placed.addIssue(transfercopy.StageCleanup, "staging-cleanup", unlinkFileAt(stagedParent, base, stagedDisplay))
-	return placed
+	placed, err := targetParent.Lstat(base)
+	if err != nil {
+		return downloadRetained(transfercopy.CodeUnverified, fmt.Errorf("published file cannot be inspected after linking: %w", err))
+	}
+	if !os.SameFile(placed, verified) {
+		// The occupant is not this executor's link, so it is not unlinked
+		// (ADR 0045); the verified bytes stay in the stage.
+		return downloadRetained(transfercopy.CodeUnverified, fmt.Errorf("target %q does not name the verified file after publication; the entry was left in place", targetDisplay))
+	}
+	outcome := downloadVerified(item.Size)
+	outcome.label = "place"
+	// The descriptor keeps the inode alive until the final-publication
+	// check confirms the name still denotes it (ADR 0061).
+	outcome.published = staged
+	outcome.publishedRel = item.RelPath
+	outcome.addIssue(transfercopy.StageCleanup, "staging-cleanup", unlinkFileAt(stagedParent, base, stagedDisplay))
+	return outcome
+}
+
+// engineExpectation builds the content expectation for an engine item
+// from the identity captured at preflight: a plain object's captured
+// length and entity tag, or a large object's live segment listing or
+// manifest after a HEAD that must still match the capture (ADR 0070
+// decision 2). The code says whether the item is unverified (a
+// substituted source) or incomplete (no usable expectation).
+func engineExpectation(ctx context.Context, src *swiftcontrol.Session, container string, item DownloadItem, source downloadSourceIdentity) (transfercopy.Ladder, transfercopy.Code, error) {
+	if !source.captured {
+		return transfercopy.Ladder{}, transfercopy.CodeIncomplete, errors.New("the plan captured no source identity for this item")
+	}
+	var ladder transfercopy.Ladder
+	if source.class == swiftcontrol.ClassDLO || source.class == swiftcontrol.ClassSLO {
+		if src == nil {
+			return transfercopy.Ladder{}, transfercopy.CodeIncomplete, errors.New("no source session to read the large object's expectation")
+		}
+		detail, err := src.ObjectDetail(ctx, container, item.Name)
+		if err != nil {
+			return transfercopy.Ladder{}, transfercopy.CodeIncomplete, fmt.Errorf("source HEAD failed: %w", err)
+		}
+		if matchErr := source.match(detail); matchErr != nil {
+			return transfercopy.Ladder{}, transfercopy.CodeUnverified, fmt.Errorf("source was substituted: %w", matchErr)
+		}
+		ladder, err = transfercopy.SourceLadder(ctx, src, container, detail)
+		if err != nil {
+			return transfercopy.Ladder{}, transfercopy.CodeIncomplete, fmt.Errorf("source states no usable content expectation: %w", err)
+		}
+	} else {
+		var err error
+		ladder, err = transfercopy.PlainLadder(source.length, source.etag)
+		if err != nil {
+			return transfercopy.Ladder{}, transfercopy.CodeIncomplete, fmt.Errorf("source states no usable content expectation: %w", err)
+		}
+	}
+	if ladder.Bytes() != item.Size {
+		return transfercopy.Ladder{}, transfercopy.CodeIncomplete, fmt.Errorf("source content expectation covers %d bytes, the plan says %d", ladder.Bytes(), item.Size)
+	}
+	return ladder, "", nil
+}
+
+// downloadRetained is the refusal that keeps the staged entry: nothing is
+// published, the item is unverified with effect unresolved, and the stage
+// cleanup leaves the entry for the operator (ADR 0070 decision 3).
+func downloadRetained(code transfercopy.Code, err error) downloadResult {
+	result := downloadVerificationFailed(transfercopy.StageVerification, code, "place", err)
+	result.retainStaged = true
+	return result
 }
 
 // stagedFileUnavailable keeps the silent-drop diagnosis for an absent
@@ -576,8 +687,12 @@ func (d *downloadRun) confirmNativePublications(destination *DestinationRoot) (c
 			d.report.Verified--
 			observation = transfercopy.Observation{Result: transfercopy.ResultFailed, Effect: transfercopy.EffectUnresolved,
 				Diagnostic: transfercopy.ClassifyDiagnostic(transfercopy.StageVerification, transfercopy.CodeUnverified, reason)}
+			stage := published.copied.label
+			if stage == "" {
+				stage = "native-get"
+			}
 			if len(d.report.Failures) < maxFailures {
-				d.report.Failures = append(d.report.Failures, Failure{Name: published.item.Name, Stage: "native-get", Err: reason.Error()})
+				d.report.Failures = append(d.report.Failures, Failure{Name: published.item.Name, Stage: stage, Err: reason.Error()})
 			}
 		}
 		if d.recorder != nil {

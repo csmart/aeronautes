@@ -139,6 +139,18 @@ func TestDownloadStageCleanupNamesOneOfThreeOutcomes(t *testing.T) {
 			absent:  []string{"item recording failed", "cleanup was not attempted"},
 		},
 		{
+			name:    "cleanup ran and kept refused entries",
+			cleanup: &local.StageCleanupResult{Attempted: true, Retained: true, Refused: 1},
+			want:    "download stage retained: 1 entries refused verification and kept for inspection",
+			absent:  []string{"after cleanup", "item recording failed", "download stage cleanup:"},
+		},
+		{
+			name:    "cleanup ran, kept refused entries and hit an issue",
+			cleanup: &local.StageCleanupResult{Attempted: true, Retained: true, Refused: 1, Issues: 1, FirstError: "a link at a planned name"},
+			want:    "download stage retained after cleanup: 1 issues, 1 entries refused verification",
+			absent:  []string{"item recording failed", "kept for inspection"},
+		},
+		{
 			name:    "cleanup ran and left nothing",
 			cleanup: &local.StageCleanupResult{Attempted: true, Issues: 1, FirstError: "a name outside the cleanup scope"},
 			want:    "download stage cleanup: 1 issues",

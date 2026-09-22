@@ -5797,12 +5797,12 @@ Revalidation found that delaying the only verification write violated ADR 0033's
 Every exit confirms already acknowledged native publications, including after later admission refusal or cancellation, and a refused final write stops queued engine effects.
 Copied bytes remain witnessed facts when the final name changes; verified counts and exact item facets expose the failed or missing final evidence separately.
 Historical records acquire no new requirement, and a copied item without a required successful final fact cannot complete.
-The engine download path stays unbound: no comparison is added without a fixture that fails when that comparison is deleted.
+The engine download path was left unbound until a fixture existed that fails when a comparison is deleted; that fixture arrived on 22 September 2026 and the binding below followed it.
 Copy, native upload and staged upload commit stay the named deferred gap.
 
-The resumed engine assessment supplied that fixture on 22 September 2026: the [engine-binding record](experiments/2026-09-22-engine-download-binding.md) reruns the retained probe on current master and shows the engine route reporting verified after same-size corruption, run permutation, missing-with-duplicate substitution, staged replacement, source replacement and published replacement, for plain, large and symlinked objects on both fixtures, with only a short body refused.
-[ADR 0070](adr/0070-engine-download-content-binding.md) proposes the correction: verify each staged entry against the captured source identity along the existing ladder before placement, retain refused bytes exempt from stage cleanup, link from the digested descriptor and confirm the published inode as the native route does, with a final-publication fact for engine placements.
-It is a proposal awaiting independent contract review; it changes no code and closes neither L05 nor the valuable-data hold.
+The resumed engine assessment supplied that fixture on 22 September 2026: the [engine-binding record](experiments/2026-09-22-engine-download-binding.md) reran the retained probe on the master of that day and showed the engine route reporting verified after same-size corruption, run permutation, missing-with-duplicate substitution, staged replacement, source replacement and published replacement, for plain, large and symlinked objects on both fixtures, with only a short body refused, before the correction below existed.
+[ADR 0070](adr/0070-engine-download-content-binding.md), accepted and implemented on 23 September 2026, is the correction: each staged entry is verified against the captured source identity along the existing ladder before placement, refused bytes are retained exempt from stage cleanup, the link is made from the digested descriptor and the published inode is confirmed as the native route does, and engine placements carry a final-publication fact.
+Its contract was reviewed independently before the implementation; the implementation binds the engine download route and leaves L05 open for the deferred routes, with the valuable-data hold in place.
 L07 cancellation checks in the same executor are not this slice.
 This does not close L05 or DS-04, and the valuable-data release hold remains.
 

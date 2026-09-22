@@ -53,6 +53,28 @@ func seed(mock *swifttest.Server, container, name, content string) {
 }
 
 // fsEngine is the test engine: local↔mock-swift over the sessions.
+// plannedWithIdentities gives a hand-built plan the source identities the
+// preflight captures for every planned file, so the engine route can
+// verify what the test engine stages against the source (ADR 0070).
+func plannedWithIdentities(t *testing.T, session *swiftcontrol.Session, container string, plan *DownloadPreflight) *DownloadPreflight {
+	t.Helper()
+	if session == nil {
+		return plan
+	}
+	plan.nativeSource = map[string]downloadSourceIdentity{}
+	for _, item := range plan.Items {
+		if item.Dir {
+			continue
+		}
+		detail, err := session.ObjectDetail(t.Context(), container, item.Name)
+		if err != nil {
+			t.Fatalf("capture identity of %q: %v", item.Name, err)
+		}
+		plan.nativeSource[item.Name] = headSourceIdentity(detail)
+	}
+	return plan
+}
+
 type fsEngine struct {
 	session *swiftcontrol.Session
 }
