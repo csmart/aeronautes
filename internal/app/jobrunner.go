@@ -238,8 +238,13 @@ func (r *jobRunner) launchWithQueuedOutcome(ctx context.Context, jobID, bookmark
 // acquireSlot blocks until the active count is under the ceiling or the
 // context dies; false means cancelled-while-queued.
 func (r *jobRunner) acquireSlot(ctx context.Context) bool {
-	// A context watcher pokes the cond so a queued cancellation wakes.
-	stop := context.AfterFunc(ctx, func() { r.slotFreed.Broadcast() })
+	// Cancellation can follow the predicate check but precede Wait. Sharing
+	// the condition mutex keeps that wake from passing an unregistered waiter.
+	stop := context.AfterFunc(ctx, func() {
+		r.slotFreed.L.Lock()
+		defer r.slotFreed.L.Unlock()
+		r.slotFreed.Broadcast()
+	})
 	defer stop()
 	r.mu.Lock()
 	defer r.mu.Unlock()
