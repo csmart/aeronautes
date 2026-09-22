@@ -1,9 +1,7 @@
 # One active transfer job — 14 September 2026
 
 Follow-up to [ADR 0047](../adr/0047-single-active-job.md).
-This record holds the reproduction of the shipped behaviour and the contract for changing
-it.
-No correction is delivered by this record.
+This record retains the original budget observations at `c9c8a38145b0501a`, the implemented ADR 0047 correction and the later queue follow-up below.
 
 ## What the shipped budget does
 
@@ -114,3 +112,24 @@ No finding, gate, scenario credit or release acceptance moves.
 
 Durable private packet `~/code/.aeronautes-work/20260914-claude/onejob/`, digests in
 `SHA256SUMS` beside the files.
+
+## Queued cancellation wake — 22 September 2026
+
+L10/P24 requires cancellation to release ownership, and the existing scheduler and credential-generation regressions require a queued cancellation to finish before the active slot frees.
+At protected `378a4fde6ebf7b4bf79d54f20f96f3aa6f7c9614`, the cancellation callback could broadcast after the context check but before `Cond.Wait` registered its waiter.
+The new maintained `TestQueuedCancelWake` schedules that exact interval through the real runner, public `CancelJob`, SQLite completion and credential pin.
+Before the correction, the job remained queued with its owner and cancellation registration retained, and an actual credential replacement was refused while the active slot stayed occupied.
+Already-waiting cancellation and noncancelled queue controls passed.
+
+The callback now holds the existing condition mutex around its broadcast.
+The three unchanged race-tested cases pass, and removing only that mutex guard compiles and reproduces the named failure while both controls still pass.
+The test wrappers schedule real context observations and mutex acquisition; they do not simulate a successful wake, and no production test hook is added.
+Sixty-one focused queue, pin, shutdown, persistence and capacity cases pass, as does the unchanged mock system queued-download control with collateral and reopen assertions.
+The first system attempt failed at setup because the accepted rclone binary was absent from PATH; that failure is retained separately from the successful run using the unchanged pin.
+A deliberate syntax error is recorded as a build failure, with no behavioural catch credit.
+
+The durable private packet is `~/code/.aeronautes-work/20260922-queued-cancel-wake/`.
+Its precommit proof manifest `PROOF-SHA256SUMS` has SHA256 `0d606949555020ca9c16deaddedc4e95013c8f2420da9704bda1df801fde9f26` and binds the exact source snapshots, test bytes, actual process exits, raw streams, load and overlapping checks.
+The deterministic runner/service test is separate from the existing end-to-end download compatibility case; no new public-start race hook is claimed.
+The single-active-job ceiling, admission semantics and cancellation outcomes are unchanged.
+Queue length, browser retention, child batches, aggregate resource bounds and release acceptance remain open.
