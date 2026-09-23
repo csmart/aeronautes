@@ -18,7 +18,8 @@ const mounted = new Set<ReturnType<typeof mount>>();
 afterEach(async () => {
   for (const component of mounted) await unmount(component);
   mounted.clear(); document.body.innerHTML = "";
-  v1Offers.markerEdit = false;
+  v1Offers.markerCreate = true;
+  v1Offers.markerDelete = false;
 });
 async function settle() {
   for (let i = 0; i < 12; i++) { await Promise.resolve(); flushSync(); }
@@ -222,17 +223,25 @@ describe("container creation lifetime", () => {
 });
 
 describe("marker action ownership", () => {
-  it("does not offer marker creation or deletion in a v1 build", async () => {
+  it("offers marker creation but not deletion in a v1 build", async () => {
     const f = await setup("implied/");
     mounted.add(mount(Inspector, { target: f.root, props: { browser: f.browser } })); flushSync();
     const labels = () => [...f.root.querySelectorAll("button")].map((b) => b.textContent?.trim());
-    expect(labels()).not.toContain("Create marker object");
+    expect(labels()).toContain("Create marker object");
     await f.browser.createMarker("implied/"); await settle();
     expect(labels()).not.toContain("Delete marker object");
   });
 
-  describe("when the capability is returned", () => {
-    beforeEach(() => { v1Offers.markerEdit = true; });
+  it("withholds marker creation when that affordance is not offered", async () => {
+    v1Offers.markerCreate = false;
+    const f = await setup("implied/");
+    mounted.add(mount(Inspector, { target: f.root, props: { browser: f.browser } })); flushSync();
+    const labels = () => [...f.root.querySelectorAll("button")].map((b) => b.textContent?.trim());
+    expect(labels()).not.toContain("Create marker object");
+  });
+
+  describe("when deletion is returned", () => {
+    beforeEach(() => { v1Offers.markerDelete = true; });
 
     it("admits one creation despite duplicate events", async () => {
       const f = await setup("implied/");
@@ -301,7 +310,7 @@ describe("mutation follow-up ownership", () => {
   });
 
   it("an unmounted inspector's marker deletion cannot refresh a replacement inspector", async () => {
-    v1Offers.markerEdit = true;
+    v1Offers.markerDelete = true;
     const f = await setup("implied/"); await f.browser.createMarker("implied/");
     const reply = deferred<void>(); f.api.deleteMarker = vi.fn(() => reply.promise);
     const old = mount(Inspector, { target: f.root, props: { browser: f.browser } }); mounted.add(old); flushSync();
