@@ -208,25 +208,29 @@ func (s *MutateService) CreateContainer(ctx context.Context, create ContainerCre
 		return ContainerDetailDTO{}, err
 	}
 	defer s.writers.leave()
-	session, err := s.connections.Session()
+	// The admitted account is captured once, as the metadata writes do
+	// (ADR 0065): the record and the detail name the account that created
+	// the container, not whichever connection is active when they are
+	// written.
+	entry, bookmarkID, caps, err := s.connections.activeSnapshot()
 	if err != nil {
 		return ContainerDetailDTO{}, err
 	}
-	if caps := s.connections.Capabilities(); caps != nil && !caps.AllowsStoragePolicy(create.Policy) {
+	if caps != nil && !caps.AllowsStoragePolicy(create.Policy) {
 		return ContainerDetailDTO{}, fmt.Errorf("cluster does not advertise storage policy %q", create.Policy)
 	}
 
-	detail, err := session.CreateContainer(ctx, swiftcontrol.ContainerCreateRequest{
+	detail, err := entry.session.CreateContainer(ctx, swiftcontrol.ContainerCreateRequest{
 		Name: create.Name, Policy: create.Policy, Meta: create.Meta,
 	})
 	if err != nil {
-		_ = s.record(ctx, "container.create", create.Name, "container create failed", audit.ResultFailed, nil)
+		_ = s.recordFor(ctx, bookmarkID, "container.create", create.Name, "container create failed", audit.ResultFailed, nil)
 		return ContainerDetailDTO{}, err
 	}
-	_ = s.record(ctx, "container.create", create.Name,
+	_ = s.recordFor(ctx, bookmarkID, "container.create", create.Name,
 		fmt.Sprintf("created with policy %q", detail.StoragePolicy),
 		audit.ResultApplied, []string{detail.TransID})
-	return s.toContainerDetailDTO(ctx, detail), nil
+	return s.containerDetailForBookmark(ctx, bookmarkID, detail), nil
 }
 
 // CreateMarker creates the explicit §14.1 marker object at a prefix.
@@ -238,17 +242,18 @@ func (s *MutateService) CreateMarker(ctx context.Context, container, prefix stri
 		return PrefixDetailDTO{}, err
 	}
 	defer s.writers.leave()
-	session, err := s.connections.Session()
+	// Captured once, as for container creation (ADR 0065).
+	entry, bookmarkID, _, err := s.connections.activeSnapshot()
 	if err != nil {
 		return PrefixDetailDTO{}, err
 	}
 	resource := container + "/" + prefix
-	detail, err := session.CreateMarker(ctx, container, prefix)
+	detail, err := entry.session.CreateMarker(ctx, container, prefix)
 	if err != nil {
-		_ = s.record(ctx, "marker.create", resource, "marker create failed or refused", audit.ResultFailed, nil)
+		_ = s.recordFor(ctx, bookmarkID, "marker.create", resource, "marker create failed or refused", audit.ResultFailed, nil)
 		return PrefixDetailDTO{}, err
 	}
-	_ = s.record(ctx, "marker.create", resource, "created directory marker", audit.ResultApplied, nil)
+	_ = s.recordFor(ctx, bookmarkID, "marker.create", resource, "created directory marker", audit.ResultApplied, nil)
 	return toPrefixDetailDTO(detail), nil
 }
 
@@ -275,10 +280,6 @@ func (s *MutateService) DeleteMarker(ctx context.Context, container, prefix stri
 	return nil
 }
 
-func (s *MutateService) toContainerDetailDTO(ctx context.Context, d *swiftcontrol.ContainerDetail) ContainerDetailDTO {
-	return s.containerDetailForBookmark(ctx, s.connections.ActiveBookmarkID(), d)
-}
-
 func (s *MutateService) containerDetailForBookmark(ctx context.Context, bookmarkID string, d *swiftcontrol.ContainerDetail) ContainerDetailDTO {
 	class := ""
 	// Classification is display context; a failure here must not fail the
@@ -289,12 +290,21 @@ func (s *MutateService) containerDetailForBookmark(ctx context.Context, bookmark
 	return containerDetailDTO(d, class)
 }
 
-// record appends the audit event and surfaces the error. Create, marker
-// and manifest still ignore it (ADR 0058). Object and container metadata
-// record their fact and audit in one required transaction.
+// record appends the audit event under whichever connection is active
+// when it is written and surfaces the error. The deletions still use it
+// and ignore the error (ADR 0058); container and marker creation record
+// under the account they captured, through recordFor. Object and
+// container metadata record their fact and audit in one required
+// transaction.
 func (s *MutateService) record(ctx context.Context, operation, resource, summary string, result audit.Result, transIDs []string) error {
+	return s.recordFor(ctx, s.connections.ActiveBookmarkID(), operation, resource, summary, result, transIDs)
+}
+
+// recordFor appends the audit event attributed to the account the caller
+// captured when it admitted the operation.
+func (s *MutateService) recordFor(ctx context.Context, bookmarkID, operation, resource, summary string, result audit.Result, transIDs []string) error {
 	err := s.audit.Append(ctx, audit.Event{
-		BookmarkID: s.connections.ActiveBookmarkID(),
+		BookmarkID: bookmarkID,
 		Operation:  operation,
 		Resource:   resource,
 		Summary:    summary,
