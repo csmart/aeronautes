@@ -49,8 +49,14 @@ The operator answered two of the questions the 22 September proposals left open,
 7. Huge containers: "sounds good, ideally it should be configurable".
    [ADR 0072](../../adr/0072-large-namespace-handling.md) is accepted for implementation as proposed, with the download selection ceiling a setting the operator can change rather than a fixed constant; the author reads the recommended 250,000 objects as its default, the streaming count as v1 and the streaming batches beyond the ceiling as later work, and records those readings here rather than as decisions.
 
-Prefix-marker creation remains an open question; marker creation stays deferred in the gate until the operator answers.
-Acceptance of the thirty re-proposed P31 rows remains open.
+8. Sidecar advisories: "we don't block on rclone vulnerabilities for now, at least for v1".
+   The operator's words followed the author's explanation that the pinned rclone's advisories live in Go modules compiled into that binary, so only a rebuilt or newer rclone changes them, and that the application accepts an external rclone from the directory beside its executable or from PATH but refuses any version other than the v1.74.3 pin by its version string.
+   The author reads the words as: the thirty re-proposed rows in the [call-graph scan record](../../experiments/2026-09-22-sidecar-call-graph-scan.md) stay as evidence without an acceptance step for v1, and the [pin decision](sidecar-assessment.md) (v1.75.1 and the compatibility gate) is not a v1 gate; SEC-11 keeps its wording and the release notes must say the sidecar's advisories are recorded and not dispositioned as accepted.
+9. Prefix-marker creation: the operator asked whether it should be included "in v2 then, just so that we don't lose it later", and whether creation works.
+   The author's reading: marker creation stays deferred from v1 and is listed for the next release so it is not lost; the code path (`MutateService.CreateMarker` and its tests) exists and works today behind the gate, and the saved patch that returns it to the build is retained in the root packet.
+   This is a reading until the operator confirms it.
+
+Acceptance of the thirty re-proposed P31 rows is no longer a v1 gate under decision 8.
 
 ## Six production gates
 
