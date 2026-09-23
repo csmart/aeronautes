@@ -45,6 +45,17 @@
 
 <section class="pane">
   <header class="pane-head">
+    {#if browser.openContainerSettings?.publicRead}
+      <div class="public-banner" role="alert">
+        <strong>Public:</strong> anyone with the URL can read objects in
+        <span class="type-mono">{browser.containerName}</span>
+        (read ACL <span class="type-mono">{browser.openContainerSettings.readAcl}</span>){browser.openContainerSettings.publicListing ? ", and can list its object names" : ""}.
+      </div>
+    {:else if browser.containerName && browser.containerDetailError}
+      <div class="settings-notice" role="status">
+        Settings of <span class="type-mono">{browser.containerName}</span> could not be checked: {browser.containerDetailError}
+      </div>
+    {/if}
     {#if browser.backstageFrom}
       <div class="backstage-banner">
         <strong>Backstage:</strong> segments of
@@ -264,6 +275,25 @@
 
   .pane-head {
     padding: var(--space-3) var(--space-3) 0;
+  }
+
+  .public-banner {
+    margin: 0 0 var(--space-2);
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--text-sm);
+    color: var(--color-danger);
+    background: var(--color-danger-soft);
+    border: 1px solid var(--color-danger);
+    border-radius: var(--radius-control);
+  }
+
+  .settings-notice {
+    margin: 0 0 var(--space-2);
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--text-sm);
+    color: var(--color-text-faint);
+    border: 1px dashed var(--color-border-strong);
+    border-radius: var(--radius-control);
   }
 
   .backstage-banner {

@@ -1,7 +1,7 @@
 # ADR 0071: show container access and feature settings while browsing
 
-**Status:** Accepted for implementation on 23 September 2026.
-The contract was reviewed independently on 22 September and the operator confirmed the proposal on 23 September (finish line, operator decision 6); the implementation is a separate reviewed slice.
+**Status:** Accepted; implemented on 23 September 2026.
+The contract was reviewed independently on 22 September, the operator confirmed the proposal on 23 September (finish line, operator decision 6), and the implementation followed in the same day's reviewed slice: `containerSettings` in `internal/app/container_settings.go` is the one derivation, `Connections.settings` holds the facts per connection generation, the container row, detail and edit replies carry them, and the browser's column, working list and inspector show them.
 This records the design the operator asked for on 22 September 2026 (decision 2 in the [finish line](../audits/2026-09-05/linux-finish-line.md) operator decisions): something visual while browsing that shows a world-readable container and similar settings, with web listing and versioning named as examples.
 
 ## Context
@@ -78,8 +78,7 @@ Facts are as fresh as the HEAD that produced them; a container made public by so
 
 ## Open points for the operator
 
-- The badge set above extends the operator's examples (world read, web listing, versioning) with referrer grants, shared write, quota and CORS; that extension is the author's proposal.
-- Whether the on-request check over loaded rows is wanted in v1, or the selection-time facts alone suffice.
+The badge set above extended the operator's examples (world read, web listing, versioning) with referrer grants, shared write, quota and CORS, and the on-request check was proposed beside it; the operator answered "sounds good" on 23 September 2026 (finish line, decision 6) and both are implemented as the author's reading of that answer.
 
 ## Limits
 

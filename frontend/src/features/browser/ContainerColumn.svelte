@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { BrowserState, ContainerMode } from "./browserState.svelte";
-  import type { ContainerRowDTO } from "../../lib/api";
+  import type { ContainerRowDTO, ContainerSettingsDTO } from "../../lib/api";
   import { formatBytes, formatCount } from "../../lib/format";
 
   let { browser, onCreate }: { browser: BrowserState; onCreate: () => void } = $props();
@@ -42,6 +42,37 @@
   }
 </script>
 
+{#snippet badge(label: string, tone: string, detail: string)}
+  <span class="setting-badge {tone}" title={detail}>{label}</span>
+{/snippet}
+
+{#snippet settingsBadges(settings: ContainerSettingsDTO)}
+  <!-- Every badge is a positive fact one HEAD reported (ADR 0071); the
+       tooltip carries the exact header value and when it was observed. -->
+  {@const observed = `observed ${settings.observedAt}`}
+  {#if settings.publicRead}
+    {@render badge(settings.publicListing ? "public + listing" : "public", "danger", `read ACL ${settings.readAcl} · ${observed}`)}
+  {/if}
+  {#if (settings.referrerGrants?.length ?? 0) > 0}
+    {@render badge("referrer", "warning", `read ACL ${settings.readAcl} · ${observed}`)}
+  {/if}
+  {#if settings.sharedWrite}
+    {@render badge("shared write", "warning", `write ACL ${settings.writeAcl} · ${observed}`)}
+  {/if}
+  {#if settings.staticWeb}
+    {@render badge("web", "neutral", `static web configured · ${observed}`)}
+  {/if}
+  {#if settings.versioningMode !== "off" && settings.versioningMode !== ""}
+    {@render badge("versioned", "neutral", `versioning ${settings.versioningMode}${settings.versioningArchive ? ` → ${settings.versioningArchive}` : ""} · ${observed}`)}
+  {/if}
+  {#if settings.quota}
+    {@render badge("quota", "neutral", `quota set · ${observed}`)}
+  {/if}
+  {#if settings.cors}
+    {@render badge("cors", "neutral", `CORS configured · ${observed}`)}
+  {/if}
+{/snippet}
+
 {#snippet containerRow(container: ContainerRowDTO)}
   <button
     class="container-row"
@@ -52,6 +83,11 @@
       {container.name}
       {#if browser.mode === "backstage" && container.class !== "normal"}
         <span class="class-chip">{container.class}</span>
+      {/if}
+      {#if container.settings}
+        {@render settingsBadges(container.settings)}
+      {:else if browser.settingsErrors[container.name]}
+        <span class="setting-badge muted" title={`settings could not be checked: ${browser.settingsErrors[container.name]}`}>unchecked</span>
       {/if}
     </span>
     <span class="container-detail num">
@@ -66,8 +102,31 @@
       <h2 class="pane-title">Containers</h2>
       {#if browser.account}
         <button class="create" title="Create container" onclick={onCreate}>+</button>
+        {#if browser.settingsCheck?.running}
+          <button
+            class="check"
+            title="Stop checking settings"
+            onclick={() => browser.stopSettingsCheck()}
+          >
+            Stop
+          </button>
+        {:else}
+          <button
+            class="check"
+            title="HEAD every loaded container once to show its access and feature settings"
+            disabled={browser.account === null || browser.containers.length === 0}
+            onclick={() => browser.checkSettings()}
+          >
+            Check settings
+          </button>
+        {/if}
       {/if}
     </div>
+    {#if browser.settingsCheck}
+      <p class="check-status" role="status">
+        checked {browser.settingsCheck.checked} of {browser.settingsCheck.total}{browser.settingsCheck.running ? "…" : browser.settingsCheck.stopped ? " (stopped)" : ""}
+      </p>
+    {/if}
     <div class="modes" role="tablist" aria-label="Container mode">
       {#each modes as mode, index (mode.id)}
         <button
@@ -274,6 +333,58 @@
     background: var(--color-accent-soft);
     border: 1px solid var(--color-accent-border);
     border-radius: var(--radius-pill);
+  }
+
+  .setting-badge {
+    margin-left: var(--space-1);
+    padding: 0 var(--space-1);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-semibold);
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--color-border-strong);
+    color: var(--color-text-faint);
+    background: none;
+    white-space: nowrap;
+  }
+
+  .setting-badge.danger {
+    color: var(--color-danger);
+    background: var(--color-danger-soft);
+    border-color: var(--color-danger);
+  }
+
+  .setting-badge.warning {
+    color: var(--color-warning);
+    background: var(--color-warning-soft);
+    border-color: var(--color-warning);
+  }
+
+  .setting-badge.muted {
+    font-weight: normal;
+    border-style: dashed;
+  }
+
+  .check {
+    margin-left: var(--space-1);
+    padding: 0 var(--space-2);
+    font: inherit;
+    font-size: var(--text-xs);
+    color: var(--color-accent-strong);
+    background: none;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-control);
+    cursor: pointer;
+  }
+
+  .check:disabled {
+    cursor: default;
+    opacity: 0.5;
+  }
+
+  .check-status {
+    margin: 0 0 var(--space-1);
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
   }
 
   .group-label {

@@ -56,6 +56,11 @@ type ContainerRowDTO struct {
 	Count int64  `json:"count"`
 	Bytes int64  `json:"bytes"`
 	Class string `json:"class"`
+	// Settings carries the facts a HEAD of this container reported under
+	// the page's listing scope, folded in from what the inspector, an
+	// edit or the operator's check already observed; nil means unchecked.
+	// Listing never HEADs a row to fill it (DESIGN 14.2, ADR 0071).
+	Settings *ContainerSettingsDTO `json:"settings"`
 }
 
 // ContainerDetailDTO is the container inspector's §53 section.
@@ -85,6 +90,9 @@ type ContainerDetailDTO struct {
 	Class string `json:"class"`
 	// Scope is the account that answered (ADR 0059).
 	Scope ListingScopeDTO `json:"scope"`
+	// Settings is the one derivation of the access and feature facts this
+	// HEAD reported (ADR 0071).
+	Settings ContainerSettingsDTO `json:"settings"`
 }
 
 // SLOSegmentDTO is one row of the inspector's SLO segment table (§23.2):

@@ -352,6 +352,11 @@
       {#if cd}
         {@render kv("Storage policy", cd.storagePolicy || "—")}
         {@render kv("Read ACL", cd.readAcl || "—", cd.readAcl !== "")}
+        {#if browser.openContainerSettings?.publicRead}
+          <p class="teach public-teach">
+            Anyone with the URL can read objects in this container (read ACL <span class="type-mono">.r:*</span>){browser.openContainerSettings.publicListing ? ", and can list its object names" : ""}.
+          </p>
+        {/if}
         {@render kv("Write ACL", cd.writeAcl || "—", cd.writeAcl !== "")}
         {#if cd.versioningMode === "off"}
           {@render kv("Versioning", "off")}

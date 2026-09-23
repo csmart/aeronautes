@@ -34,6 +34,9 @@ type Connections struct {
 	sessions     map[string]cachedSession
 	caDir        string
 	caMu         sync.Mutex
+	// settings holds the container settings facts observed under each
+	// bookmark's current connection generation (ADR 0071).
+	settings settingsFacts
 }
 
 type cachedSession struct {

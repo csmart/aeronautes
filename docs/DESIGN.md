@@ -2646,6 +2646,9 @@ Choose the SQLite driver with the six-target build matrix (§61.0) in mind: a pu
 
 ## 52. UI detail: container modes
 
+In every mode a row also carries the settings badges of [ADR 0071](adr/0071-container-settings-indicators.md) once its container has been selected, checked or edited: `public` (with `+ listing`), `referrer`, `shared write`, `web`, `versioned`, `quota`, `cors`, each a fact one HEAD reported, with the exact header and the observation time in the tooltip; a row without a badge is unchecked, not private, and listing never HEADs a row to fill one (§14.2).
+The column's "Check settings" control HEADs every loaded row once, four in flight, with a running count and a stop.
+
 ### Logical — default
 
 Shows operator-facing logical storage.
@@ -2691,7 +2694,7 @@ Inspector sections are capability/resource driven.
 - object count;
 - bytes;
 - storage policy;
-- read ACL;
+- read ACL, with the ADR 0071 sentence when it grants world read (and the working list shows the same as a banner over the open container);
 - write ACL;
 - metadata;
 - versioning;

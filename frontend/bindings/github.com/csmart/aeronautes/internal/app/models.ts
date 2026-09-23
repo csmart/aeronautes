@@ -227,6 +227,12 @@ export interface ContainerDetailDTO {
      * Scope is the account that answered (ADR 0059).
      */
     "scope": ListingScopeDTO;
+
+    /**
+     * Settings is the one derivation of the access and feature facts this
+     * HEAD reported (ADR 0071).
+     */
+    "settings": ContainerSettingsDTO;
 }
 
 /**
@@ -277,6 +283,66 @@ export interface ContainerRowDTO {
     "count": number;
     "bytes": number;
     "class": string;
+
+    /**
+     * Settings carries the facts a HEAD of this container reported under
+     * the page's listing scope, folded in from what the inspector, an
+     * edit or the operator's check already observed; nil means unchecked.
+     * Listing never HEADs a row to fill it (DESIGN 14.2, ADR 0071).
+     */
+    "settings": ContainerSettingsDTO | null;
+}
+
+/**
+ * ContainerSettingsDTO is the set of access and feature facts one
+ * container HEAD reported, derived once here and shown wherever the
+ * container appears: as row badges, as the banner over a world-readable
+ * open container and beside the inspector's read ACL (ADR 0071). A fact is
+ * a positive observation made under one listing scope; a row without one
+ * is unchecked, never private.
+ */
+export interface ContainerSettingsDTO {
+    /**
+     * PublicRead is the acknowledgement gate's own predicate: an exact
+     * `.r:*` grant in any comma position of the read ACL.
+     */
+    "publicRead": boolean;
+
+    /**
+     * PublicListing is `.rlistings` beside a world-read grant: object names
+     * are listable by anyone, not only readable by URL.
+     */
+    "publicListing": boolean;
+
+    /**
+     * ReferrerGrants are the `.r:` entries that grant to a referrer host
+     * rather than to the world; a `.r:-` entry is a denial and grants
+     * nothing, so it is never listed here.
+     */
+    "referrerGrants": string[] | null;
+
+    /**
+     * SharedWrite is a non-empty write ACL.
+     */
+    "sharedWrite": boolean;
+    "staticWeb": boolean;
+    "versioningMode": string;
+    "versioningArchive": string;
+    "quota": boolean;
+    "cors": boolean;
+
+    /**
+     * ReadACL and WriteACL are the exact header values, for the tooltip.
+     */
+    "readAcl": string;
+    "writeAcl": string;
+
+    /**
+     * ObservedAt is when the HEAD that produced these facts was answered
+     * (RFC 3339); Generation is the listing scope it was answered under.
+     */
+    "observedAt": string;
+    "generation": number;
 }
 
 /**
