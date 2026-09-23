@@ -55,3 +55,9 @@ The runs, the mutant sources and their streams are retained privately in `.aeron
 
 The child build adds one overlay compile of `internal/app` and the system-test binary per scheduled test; locally that cost about five seconds per test with a warm cache.
 No finding closes: L11 and P28 keep their remaining named-read and mutation items, and the valuable-data hold stays on.
+
+## Follow-up, 23 September 2026: the sequential rekey
+
+`internal/systemtest/reader_generation_test.go` (`TestReaderGenerationMock`, `TestReaderGenerationRealSwift`) now maintains the sequential case the schedules above do not: after the connected bookmark is re-keyed, every one of the eight named reads refuses as not connected until the bookmark reconnects, and each then answers the same account under a higher generation.
+`TestInspectorReadsAreAccountScoped` in `internal/app` gains the SLO manifest and DLO segment readers for the other-account refusal and the scope the reply states.
+This proves the backend half of the six adjacent readers' acceptance basis; the frontend generation acceptance ADR 0067 left source-inspected is still open.
