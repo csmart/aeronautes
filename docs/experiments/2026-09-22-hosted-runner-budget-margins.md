@@ -75,3 +75,27 @@ The overlays and raw event streams are retained in the private packet `.aeronaut
 
 The measurements are two hosted runs and one local host; they establish that the budgets were within ordinary runner variance, not a runner-speed guarantee.
 No finding, gate, scenario credit or release acceptance moves.
+
+## Follow-up, 23 September 2026: the child-lifetime waits
+
+A third budget of the same kind failed on 22 September.
+PR 157 attempt 1 (source `6326405a`, base `d683aeee`, a docs-only change) failed `TestChildLifetimeRealSwift/complete` in `internal/systemtest` with "timed out waiting for stage bytes" after 17.56 s, while the other four modes passed in the same lane and the identical code had passed on master eight minutes earlier (6.47 s for that mode); an unchanged whole-run repeat passed.
+The analysis is retained privately in `.aeronautes-work/20260921-v1-root/pr157-attempt1-analysis.md`.
+
+`lifetimeAwait` bounded every wait for the parent or its child to reach a state at fifteen seconds: the helper's start, the harness's held GET body, the child's first 64 KiB in the stage, the terminal records and the stopped state.
+The stage-bytes wait depends on when the engine child flushes its first block, which the test does not control, so a loaded runner can exceed a bound that is only twice the healthy whole-mode time.
+
+| Mode | PR 157 attempt 1 lane (s) | Local (24-core host, race, 23 September) (s) |
+| --- | --- | --- |
+| complete | 17.56, failed at the stage-bytes wait | 4.49 |
+| cancel | 7.68 | 4.50 |
+| escalate | 15.72 | 14.54 |
+| parent_kill | 4.75 | 3.42 |
+| stopped_child_parent_kill | 4.35 | 3.63 |
+
+The local column is the retained run `.aeronautes-work/20260921-v1-root/lifetime-waits-local-run.log` (SHA-256 `1c5a23a8c4882c45350495369477d0792ce9144cc41cef9c936870560951438d`, source and time in the `.meta` file beside it): all five modes pass in 30.57 s against the owned SAIO with the pinned engine.
+
+One `lifetimeWait` of sixty seconds now bounds all of those waits, sized as the terminal wait and the fixture watchdog above were: far above the healthy times, far inside the package's twenty-five minute budget, and still failing a stuck fixture.
+With the stage-bytes condition made never satisfiable (the private mutant `lifetime-waits-mutant.patch` beside the analysis, SHA-256 `5a744d227123d8f9be2c99bd8061ec8afea4a6d29e4b31229803abd1d3374fb6`, not committed), the complete mode failed after 1 m 0.001 s with "timed out waiting for stage bytes" and the new diagnostic line "stage bytes: waited 1m0.001s, last observed map[file.bin.fc025207.partial:65536]", which names the sizes last seen in the stage; that run is retained as `lifetime-waits-mutant-run.log` (SHA-256 `7f09094e017b0524913daf957f13320daa9a9aa90428bda93e3a3fec672e89a0`), and the digests of all three files are in `lifetime-waits-evidence.sha256`.
+The other bounds in that test (the two-second exits after SIGKILL, the five-second cleanup reap, the twenty-second parent finish and the ten-second restart) bound this package's own processes after a terminal state and are unchanged; escalate's ten-second minimum is a product assertion, not a budget.
+No product code, assertion, scenario requirement or CI budget changes.
