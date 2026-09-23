@@ -39,3 +39,9 @@ The initial private probe made no tracked production edit.
 Its packet remains unchanged; `maintained-before/` separately retains the twelve-case before run, source copy and metadata at proposal19a98cae.
 No new authority, native or release acceptance follows from these observations.
 Caller-named mutation binding, deferred create/marker recording and historical connection-generation provenance remain open.
+
+## Follow-up, 23 September 2026: the creation paths
+
+Container and marker creation, which the 22 and 23 September decisions returned to v1, now capture the admitted account once as the metadata writes do: they write under the captured session and record under the captured bookmark (`MutateService.recordFor`), so the relabel window this record named for the create paths is closed for them; the deferred deletions still record under the active connection.
+`internal/systemtest/creation_account_test.go` (`TestCreationAccountMock`, `TestCreationAccountSwift`) holds the creating reply (the container PUT, or the marker's verify read, because the marker PUT carries an Expect header the barrier cannot hold), connects to the other account meanwhile, and requires the audit event to name the creating account with nothing changed in the other account.
+Caller-named mutation binding, which needs the caller to name the account on the bridge, remains open.
