@@ -36,7 +36,10 @@ export function FindStatus(bookmarkID: string, id: string): $CancellablePromise<
 /**
  * StartFind begins one scan over the container (optionally under a
  * prefix), matching a case-insensitive substring. Returns the scan id.
+ * A count-only scan (ADR 0072 decision 2) lists the same way, keeps no
+ * match and needs no query: Scanned is the answer, streamed page by page,
+ * stoppable through CancelFind.
  */
-export function StartFind(bookmarkID: string, container: string, prefix: string, query: string): $CancellablePromise<string> {
-    return $Call.ByID(3651149465, bookmarkID, container, prefix, query);
+export function StartFind(bookmarkID: string, container: string, prefix: string, query: string, countOnly: boolean): $CancellablePromise<string> {
+    return $Call.ByID(3651149465, bookmarkID, container, prefix, query, countOnly);
 }

@@ -121,14 +121,14 @@ func TestFindWorkerAdmissionBound(t *testing.T) {
 	var ids []string
 	defer cleanupFind(t, service, &ids, g)
 	for range 4 {
-		id, err := service.StartFind(t.Context(), findBM(service), "media", "", "report")
+		id, err := service.StartFind(t.Context(), findBM(service), "media", "", "report", false)
 		if err != nil {
 			t.Fatal(err)
 		}
 		ids = append(ids, id)
 		awaitConnection(t, g.entered)
 	}
-	id, err := service.StartFind(t.Context(), findBM(service), "media", "", "report")
+	id, err := service.StartFind(t.Context(), findBM(service), "media", "", "report", false)
 	if id != "" {
 		ids = append(ids, id)
 	}
@@ -146,7 +146,7 @@ func TestFindRetainedRecordBound(t *testing.T) {
 	var ids []string
 	defer cleanupFind(t, service, &ids, nil)
 	for range 17 {
-		id, err := service.StartFind(t.Context(), findBM(service), "find-retained", "", "match")
+		id, err := service.StartFind(t.Context(), findBM(service), "find-retained", "", "match", false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -304,7 +304,7 @@ func TestFindCancellationRetainsWorkerSlotsUntilExit(t *testing.T) {
 					t.Error("retirement did not request cancellation")
 				}
 			}
-			if id, err := service.StartFind(t.Context(), findBM(service), "find-clock", "", "match"); err == nil || id != "" {
+			if id, err := service.StartFind(t.Context(), findBM(service), "find-clock", "", "match", false); err == nil || id != "" {
 				t.Errorf("replacement admitted before old workers exited: %q %v", id, err)
 			}
 			service.mu.Lock()
@@ -354,7 +354,7 @@ func TestFindShutdownReportsAnUndrainedWorker(t *testing.T) {
 	if active != 1 {
 		t.Errorf("shutdown timeout released the still-running worker: %d", active)
 	}
-	if id, err := service.StartFind(t.Context(), findBM(service), "find-clock", "", "match"); err == nil || id != "" {
+	if id, err := service.StartFind(t.Context(), findBM(service), "find-clock", "", "match", false); err == nil || id != "" {
 		t.Error("shutdown timeout reopened admission")
 	}
 }
@@ -442,7 +442,7 @@ func TestFindRecordLimitIncludesRunningScans(t *testing.T) {
 			t.Errorf("newer or running record evicted: %v", err)
 		}
 	}
-	if id, err := service.StartFind(t.Context(), findBM(service), "find-clock", "", "match"); id != "" || err == nil {
+	if id, err := service.StartFind(t.Context(), findBM(service), "find-clock", "", "match", false); id != "" || err == nil {
 		t.Error("full worker admission succeeded by evicting a completed record")
 	}
 	if _, err := service.FindStatus(t.Context(), findBM(service), complete[1]); err != nil {
@@ -481,7 +481,7 @@ func TestFindCurrentResultsRemainBoundedAndCopied(t *testing.T) {
 		seedObject(h.mock, "find-clock", fmt.Sprintf(" scope/Match-%04d", i), "data", nil)
 	}
 	seedObject(h.mock, "find-clock", " scope/unrelated", "data", nil)
-	id, err := service.StartFind(t.Context(), findBM(service), "find-clock", " scope/", "mAtCh")
+	id, err := service.StartFind(t.Context(), findBM(service), "find-clock", " scope/", "mAtCh", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -526,7 +526,7 @@ func TestFindCurrentErrorAndStoppedThroughput(t *testing.T) {
 	if err != nil || status.ObjectsPerSecond != 0.5 {
 		t.Errorf("completed throughput changed with later polls: %+v %v", status, err)
 	}
-	missing, err := service.StartFind(t.Context(), findBM(service), "not-a-container", "", "match")
+	missing, err := service.StartFind(t.Context(), findBM(service), "not-a-container", "", "match", false)
 	if err != nil {
 		t.Fatal(err)
 	}

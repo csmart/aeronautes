@@ -97,6 +97,7 @@ func runDesktop(identity app.BuildIdentity, shutdown *shellShutdown,
 	app.WireEvidenceStore(transferService, evidenceStore)
 	app.WireFilePicker(transferService, wailsPicker{})
 	settingsService := app.NewSettingsService(database, jobRunner)
+	app.WireSettings(transferService, settingsService)
 	app.RunStartupRetention(context.Background(), settingsService, jobStore, auditStore)
 	benchmarkService := app.NewBenchmarkService(connections, jobStore, jobRunner, database)
 	app.WireBenchmarkRecommendations(transferService, benchmarkService)

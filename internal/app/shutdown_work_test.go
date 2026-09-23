@@ -20,7 +20,7 @@ func TestShutdownWorkKeepsBothAdmissionsClosed(t *testing.T) {
 			find := NewFindService(h.transfer.connections)
 			var ids []string
 			defer cleanupFind(t, find, &ids, gate)
-			id, err := find.StartFind(t.Context(), findBM(find), "media", "", "report")
+			id, err := find.StartFind(t.Context(), findBM(find), "media", "", "report", false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -47,7 +47,7 @@ func TestShutdownWorkKeepsBothAdmissionsClosed(t *testing.T) {
 			if !errors.Is(findContext.Err(), context.Canceled) || !errors.Is(startContext.Err(), context.Canceled) {
 				t.Fatalf("work was not cancelled: find=%v start=%v", findContext.Err(), startContext.Err())
 			}
-			if late, err := find.StartFind(t.Context(), findBM(find), "media", "", "report"); late != "" || err == nil {
+			if late, err := find.StartFind(t.Context(), findBM(find), "media", "", "report", false); late != "" || err == nil {
 				t.Fatalf("Find admission reopened: id=%q err=%v", late, err)
 			}
 			if late, _, err := runner.admit(t.Context()); late != nil || !errors.Is(err, errJobRunnerStopped) {
@@ -96,7 +96,7 @@ func TestShutdownWorkWaitErrors(t *testing.T) {
 					finish = owner.finishStart
 				} else {
 					gate = gateFindRequests(t, h, true)
-					id, err := find.StartFind(t.Context(), findBM(find), "media", "", "report")
+					id, err := find.StartFind(t.Context(), findBM(find), "media", "", "report", false)
 					if err != nil {
 						t.Fatal(err)
 					}

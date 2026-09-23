@@ -58,7 +58,7 @@ func TestRemainingReadsAreAccountScoped(t *testing.T) {
 
 	t.Run("a find poll under a later connection refuses", func(t *testing.T) {
 		connect(t, h.Primary.BookmarkID, "primary")
-		id, err := h.Find.StartFind(ctx, h.Primary.BookmarkID, shared, "", "only-in-primary")
+		id, err := h.Find.StartFind(ctx, h.Primary.BookmarkID, shared, "", "only-in-primary", false)
 		if err != nil {
 			t.Fatalf("StartFind: %v", err)
 		}

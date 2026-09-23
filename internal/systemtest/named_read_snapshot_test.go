@@ -117,7 +117,7 @@ func namedReads(t *testing.T, h *Harness, mock bool) []namedRead {
 			return namedReadReply{preview.Scope, ownerFromNames(names, "parts/"), err}
 		}},
 		{"find-start", func(ctx context.Context, account *Account) namedReadReply {
-			id, err := h.Find.StartFind(ctx, account.BookmarkID, shared, "only-", "only-")
+			id, err := h.Find.StartFind(ctx, account.BookmarkID, shared, "only-", "only-", false)
 			if err != nil {
 				return namedReadReply{err: err}
 			}

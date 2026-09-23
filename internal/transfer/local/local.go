@@ -217,6 +217,15 @@ func validDownloadRoot(path string) bool {
 // destination before any write. Its portable namespace policy refuses
 // case-folded conflicts even on hosts that could materialize both paths.
 func PreflightDownload(ctx context.Context, src *swiftcontrol.Session, container, prefix, destDir string) (report *DownloadPreflight, err error) {
+	return PreflightDownloadBounded(ctx, src, container, prefix, destDir, 0)
+}
+
+// PreflightDownloadBounded is PreflightDownload with a selection ceiling:
+// once the scope's object count passes objectCeiling the selection is
+// refused, naming the count reached and the ceiling, and no further
+// listing page is requested; the plan is never truncated (ADR 0072
+// decision 4). A ceiling of zero means unbounded.
+func PreflightDownloadBounded(ctx context.Context, src *swiftcontrol.Session, container, prefix, destDir string, objectCeiling int64) (report *DownloadPreflight, err error) {
 	report = &DownloadPreflight{}
 	if !validDownloadRoot(destDir) {
 		report.Problems = []Problem{{Name: "destination", Kind: "destination-path", Detail: downloadPathRefusal, Reject: true}}
@@ -231,14 +240,23 @@ func PreflightDownload(ctx context.Context, src *swiftcontrol.Session, container
 		return report, nil
 	}
 	defer func() { err = errors.Join(err, destination.Close()) }()
-	return PreflightDownloadInto(ctx, src, container, prefix, destination)
+	return PreflightDownloadIntoBounded(ctx, src, container, prefix, destination, objectCeiling)
 }
 
 // PreflightDownloadInto runs the same complete report through a held
 // destination handle, so the directory inspected is the directory the
 // job writes into whatever its pathname names later.
 func PreflightDownloadInto(ctx context.Context, src *swiftcontrol.Session, container, prefix string, destination *DestinationRoot) (report *DownloadPreflight, err error) {
+	return PreflightDownloadIntoBounded(ctx, src, container, prefix, destination, 0)
+}
+
+// PreflightDownloadIntoBounded is PreflightDownloadInto with the selection
+// ceiling of PreflightDownloadBounded.
+func PreflightDownloadIntoBounded(ctx context.Context, src *swiftcontrol.Session, container, prefix string, destination *DestinationRoot, objectCeiling int64) (report *DownloadPreflight, err error) {
 	report = &DownloadPreflight{}
+	if objectCeiling < 0 {
+		return nil, fmt.Errorf("object ceiling %d is negative", objectCeiling)
+	}
 	if prefix != "" && !strings.HasSuffix(prefix, "/") {
 		return nil, fmt.Errorf("prefix %q must be empty or end with '/'", prefix)
 	}
@@ -259,6 +277,7 @@ func PreflightDownloadInto(ctx context.Context, src *swiftcontrol.Session, conta
 	byLower := map[string][]string{}
 	byCaseless := map[string][]string{}
 
+	var counted int64
 	for entry, err := range src.Objects(ctx, container, swiftcontrol.ObjectListOptions{Deep: true, Prefix: prefix}) {
 		if err != nil {
 			return nil, err
@@ -266,6 +285,18 @@ func PreflightDownloadInto(ctx context.Context, src *swiftcontrol.Session, conta
 		object, ok := entry.(swiftcontrol.ObjectEntry)
 		if !ok {
 			continue
+		}
+		counted++
+		if objectCeiling > 0 && counted > objectCeiling {
+			// The selection is wider than the ceiling: refuse it with the
+			// numbers, keep no plan, and stop listing here; the page that
+			// crossed the ceiling is the last one requested.
+			report.Items = nil
+			report.Objects = 0
+			report.TotalBytes = 0
+			report.Problems = append(report.Problems, Problem{Name: prefix, Kind: "selection-ceiling", Reject: true,
+				Detail: fmt.Sprintf("the selection holds more than %d objects, the download ceiling set in Settings (%d counted before stopping); narrow the prefix, or raise the ceiling", objectCeiling, counted)})
+			return report, nil
 		}
 		rel := object.Name[len(prefix):]
 		names = append(names, rel)

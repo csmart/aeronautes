@@ -64,6 +64,9 @@ type TransferService struct {
 	jobs        *jobs.Store
 	runner      *jobRunner
 	evidence    *evidence.Store
+	// settings supplies the download selection ceiling (ADR 0072); nil
+	// means the default ceiling.
+	settings *SettingsService
 
 	// engineFactory builds the byte-moving engine for a job; nil uses
 	// the pinned rclone. Tests inject fakes here. The source yields
