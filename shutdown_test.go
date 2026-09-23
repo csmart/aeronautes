@@ -197,7 +197,7 @@ func TestDesktopStartupFailureCleansAcquiredLock(t *testing.T) {
 
 func assertDesktopRefusesStarts(t *testing.T, find *app.FindService, deletion *app.DeleteService) {
 	t.Helper()
-	if id, err := find.StartFind(t.Context(), "fixture-bookmark", "fixture", "", "match"); id != "" || err == nil || !strings.Contains(err.Error(), "shutting down") {
+	if id, err := find.StartFind(t.Context(), "fixture-bookmark", "fixture", "", "match", false); id != "" || err == nil || !strings.Contains(err.Error(), "shutting down") {
 		t.Fatalf("actual Find remained open: id=%q err=%v", id, err)
 	}
 	if id, err := deletion.StartDelete(t.Context(), app.DeleteRequestDTO{

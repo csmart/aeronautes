@@ -1,7 +1,7 @@
 # ADR 0072: bounded handling of very large namespaces
 
-**Status:** Accepted for implementation on 23 September 2026.
-The contract was reviewed independently on 22 September and the operator confirmed the proposal on 23 September with the ceiling to be configurable (finish line, operator decision 7); the implementation is a separate reviewed slice.
+**Status:** Accepted; implemented on 23 September 2026.
+The contract was reviewed independently on 22 September, the operator confirmed the proposal on 23 September with the ceiling to be configurable (finish line, operator decision 7), and the implementation followed the same day: `PreflightDownloadBounded` in `internal/transfer/local` refuses a selection past the ceiling and stops listing, the ceiling is `downloadObjectCeiling` in the application settings (default 250,000, range 1,000 to 5,000,000), the count is a count-only Find scan, and the browser carries the count control, the ceiling in the download dialog and the setting in the jobs drawer; the [implementation record](../experiments/2026-09-23-large-namespace-implementation.md) holds the evidence.
 This records the v1 approach the operator asked for on 22 September 2026 (decision 4 in the [finish line](../audits/2026-09-05/linux-finish-line.md) operator decisions): follow how established object-storage clients handle containers with hundreds of millions of objects, researched before anything is implemented.
 
 ## Context

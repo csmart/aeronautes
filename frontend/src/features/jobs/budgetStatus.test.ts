@@ -6,7 +6,7 @@ import { newFakeApi } from "../browser/fakeApi";
 import JobsDrawer from "./JobsDrawer.svelte";
 
 const original: AppSettingsDTO = {
-  maxActiveJobs: 2, defaultProfile: "balanced", auditRetentionDays: 17, jobRetentionDays: 11,
+  maxActiveJobs: 2, defaultProfile: "balanced", auditRetentionDays: 17, jobRetentionDays: 11, downloadObjectCeiling: 250_000,
 };
 let drawer: ReturnType<typeof mount> | null = null;
 const releasePending: (() => void)[] = [];

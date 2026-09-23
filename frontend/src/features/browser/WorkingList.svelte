@@ -1,7 +1,7 @@
 <script lang="ts">
   import VirtualList from "../../components/VirtualList.svelte";
   import { breadcrumbs } from "../../lib/listing";
-  import { formatBytes } from "../../lib/format";
+  import { formatBytes, formatCount } from "../../lib/format";
   import type { ListingRowDTO } from "../../lib/api";
   import { v1Offers } from "../../lib/v1";
   import type { BrowserState } from "./browserState.svelte";
@@ -102,6 +102,14 @@
       >
         Find in container
       </button>
+      <button
+        class="find"
+        title="Count the objects under this prefix: streams the listing page by page and keeps no names"
+        disabled={browser.containerName === null}
+        onclick={() => (browser.countRunning ? void browser.cancelCount() : void browser.startCount())}
+      >
+        {browser.countRunning ? "Stop counting" : "Count objects"}
+      </button>
       {#if v1Offers.copy}
         <button
           class="find"
@@ -144,6 +152,19 @@
       {/if}
     </div>
 
+    {#if browser.prefixCount}
+      {@const count = browser.prefixCount}
+      <p class="count-status num" role="status">
+        {formatCount(count.scanned)} objects under <span class="type-mono">{browser.containerName}/{browser.prefix}</span>
+        {#if count.error}
+          · count failed: {count.error}
+        {:else if !count.done}
+          so far · {formatCount(Math.round(count.objectsPerSecond))}/s…
+        {:else if browser.countedAt}
+          · counted {browser.countedAt.replace("T", " ").replace(/\.\d+Z$/, "Z")}
+        {/if}
+      </p>
+    {/if}
     {#if browser.findOpen}
       <FindPanel {browser} onClose={() => (browser.findOpen = false)} />
     {/if}
@@ -275,6 +296,12 @@
 
   .pane-head {
     padding: var(--space-3) var(--space-3) 0;
+  }
+
+  .count-status {
+    margin: 0 0 var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
   }
 
   .public-banner {

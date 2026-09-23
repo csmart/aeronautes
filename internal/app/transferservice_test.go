@@ -708,7 +708,7 @@ func TestFindInContainer(t *testing.T) {
 	seedObject(h.mock, "media", "docs/Report-Final.pdf", "pdf", nil)
 	seedObject(h.mock, "media", "docs/report-draft.pdf", "pdf", nil)
 
-	id, err := find.StartFind(ctx, findBM(find), "media", "", "REPORT")
+	id, err := find.StartFind(ctx, findBM(find), "media", "", "REPORT", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -731,7 +731,7 @@ func TestFindInContainer(t *testing.T) {
 	if len(status.Matches) != 2 || status.Scanned != 42 {
 		t.Fatalf("matches = %+v scanned = %d", status.Matches, status.Scanned)
 	}
-	if _, err := find.StartFind(ctx, findBM(find), "media", "", "   "); err == nil {
+	if _, err := find.StartFind(ctx, findBM(find), "media", "", "   ", false); err == nil {
 		t.Error("blank query accepted")
 	}
 	if err := find.CancelFind(ctx, findBM(find), id); err != nil {

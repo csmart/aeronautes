@@ -195,6 +195,14 @@ export class BrowserState {
   }
   findStatus: FindStatusDTO | null = $state(null);
   findRunning = $state(false);
+  /** The count of objects under the open prefix (ADR 0072 decision 2): a
+   * count-only scan's status while it streams, then its final count with
+   * the time it was taken. It belongs to the scope it was started in. */
+  countStatus: FindStatusDTO | null = $state(null);
+  countRunning = $state(false);
+  countedAt: string | null = $state(null);
+  #countSeq = 0;
+  #countRequest: FindRequest | null = null;
   findNotice: string | null = $state(null);
   /** What the last COMPLETED metadata save did not establish. It outlives
    * the editor, which closes itself on success, so the qualification does
@@ -1082,6 +1090,68 @@ export class BrowserState {
     this.findNotice = !request.started ? "Scan start cancelled."
       : request.id === null ? "Stop requested; waiting for scan startup." : "Requesting cancellation…";
     await this.#cancelFindRequest(request);
+  }
+
+  /** The count shown for the open prefix, or null when none was taken in
+   * this scope; a navigation leaves an old count behind rather than
+   * showing it against another prefix. */
+  get prefixCount(): FindStatusDTO | null {
+    // Read the reactive status first: a getter that returns before touching
+    // any state registers no dependency, and the view would never learn
+    // that a count arrived.
+    const status = this.countStatus;
+    const request = this.#countRequest;
+    return status !== null && request !== null && this.#currentFindScope(request) ? status : null;
+  }
+
+  /** Count the objects under the open prefix: a count-only scan that
+   * streams the listing, keeps no name, and can be stopped (ADR 0072). */
+  async startCount() {
+    if (this.containerName === null || this.connecting || !this.connectedBookmarkId) return;
+    await this.cancelCount();
+    const request: FindRequest = {
+      scope: this.#scopeRevision, seq: ++this.#countSeq, bookmark: this.connectedBookmarkId,
+      container: this.containerName, prefix: this.prefix, started: false, id: null,
+    };
+    this.#countRequest = request;
+    this.countStatus = null;
+    this.countedAt = null;
+    this.countRunning = true;
+    const current = () => request === this.#countRequest && request.seq === this.#countSeq && this.#currentFindScope(request);
+    try {
+      request.started = true;
+      request.id = await this.#api.startFind(request.container, request.prefix, "", request.bookmark, true);
+      if (!current()) {
+        await this.#api.cancelFind(request.id, request.bookmark).catch(() => undefined);
+        return;
+      }
+      while (current()) {
+        const status = await this.#api.findStatus(request.id, request.bookmark);
+        if (!current()) return;
+        if (!this.#answeredBy(status.scope, request.bookmark)) throw new Error("count does not match the requested account");
+        this.countStatus = status;
+        if (status.done) {
+          this.countedAt = new Date().toISOString();
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 400));
+      }
+    } catch (error) {
+      if (current()) {
+        this.countStatus = { scanned: this.countStatus?.scanned ?? 0, matches: [], truncated: false, done: true,
+          error: messageOf(error), objectsPerSecond: 0, scope: this.countStatus?.scope ?? null };
+      }
+    } finally {
+      if (current()) this.countRunning = false;
+    }
+  }
+
+  async cancelCount() {
+    this.#countSeq++;
+    this.countRunning = false;
+    const request = this.#countRequest;
+    if (request === null || request.id === null) return;
+    await this.#api.cancelFind(request.id, request.bookmark).catch(() => undefined);
   }
 
   #currentFindScope(request: FindRequest): boolean {

@@ -71,6 +71,15 @@ export interface AppSettingsDTO {
      */
     "auditRetentionDays": number;
     "jobRetentionDays": number;
+
+    /**
+     * DownloadObjectCeiling is the most objects one download selection may
+     * hold; the preflight refuses a wider prefix once its count passes it,
+     * naming the count and the ceiling, rather than truncating the plan
+     * (ADR 0072 decision 4). The operator sets it; the default is the
+     * peak-memory record's recommendation.
+     */
+    "downloadObjectCeiling": number;
 }
 
 /**

@@ -71,12 +71,32 @@ type AppSettingsDTO struct {
 	// (audit events; terminal jobs). 0 disables that prune.
 	AuditRetentionDays int `json:"auditRetentionDays"`
 	JobRetentionDays   int `json:"jobRetentionDays"`
+	// DownloadObjectCeiling is the most objects one download selection may
+	// hold; the preflight refuses a wider prefix once its count passes it,
+	// naming the count and the ceiling, rather than truncating the plan
+	// (ADR 0072 decision 4). The operator sets it; the default is the
+	// peak-memory record's recommendation.
+	DownloadObjectCeiling int `json:"downloadObjectCeiling"`
 }
+
+// defaultDownloadObjectCeiling is 250,000 objects: about 352 MiB of peak
+// resident memory for the inventory on the measured host (the 22
+// September 2026 peak-memory record).
+const defaultDownloadObjectCeiling = 250_000
+
+// The ceiling's range: below a thousand objects the refusal would fire on
+// ordinary prefixes; above five million the measured inventory cost passes
+// six gibibytes, which no setting should quietly permit.
+const (
+	minDownloadObjectCeiling = 1_000
+	maxDownloadObjectCeiling = 5_000_000
+)
 
 func defaults() AppSettingsDTO {
 	return AppSettingsDTO{
 		MaxActiveJobs: defaultMaxActiveJobs, DefaultProfile: string(ProfileAuto),
 		AuditRetentionDays: 90, JobRetentionDays: 30,
+		DownloadObjectCeiling: defaultDownloadObjectCeiling,
 	}
 }
 
@@ -108,6 +128,10 @@ func (s *SettingsService) Get(ctx context.Context) (AppSettingsDTO, error) {
 			if n, err := strconv.Atoi(value); err == nil {
 				settings.JobRetentionDays = n
 			}
+		case "download_object_ceiling":
+			if n, err := strconv.Atoi(value); err == nil {
+				settings.DownloadObjectCeiling = n
+			}
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -119,6 +143,11 @@ func (s *SettingsService) Get(ctx context.Context) (AppSettingsDTO, error) {
 	// later revert restores the operator's earlier intent (ADR 0047).
 	if settings.MaxActiveJobs > maxActiveJobsCeiling {
 		settings.MaxActiveJobs = maxActiveJobsCeiling
+	}
+	// A stored ceiling outside the range (or none) reads back as the
+	// default the preflight will actually apply.
+	if settings.DownloadObjectCeiling < minDownloadObjectCeiling || settings.DownloadObjectCeiling > maxDownloadObjectCeiling {
+		settings.DownloadObjectCeiling = defaultDownloadObjectCeiling
 	}
 	return settings, nil
 }
@@ -142,12 +171,21 @@ func (s *SettingsService) Set(ctx context.Context, settings AppSettingsDTO) (App
 		settings.JobRetentionDays < 0 || settings.JobRetentionDays > 3650 {
 		return AppSettingsDTO{}, fmt.Errorf("retention days out of range 0..3650")
 	}
+	// A document without the ceiling (an older client, or a test that
+	// names only what it changes) keeps the default rather than refusing.
+	if settings.DownloadObjectCeiling == 0 {
+		settings.DownloadObjectCeiling = defaultDownloadObjectCeiling
+	}
+	if settings.DownloadObjectCeiling < minDownloadObjectCeiling || settings.DownloadObjectCeiling > maxDownloadObjectCeiling {
+		return AppSettingsDTO{}, fmt.Errorf("download object ceiling %d out of range %d..%d", settings.DownloadObjectCeiling, minDownloadObjectCeiling, maxDownloadObjectCeiling)
+	}
 	err := s.db.WriteTx(ctx, func(tx *sql.Tx) error {
 		for key, value := range map[string]string{
-			"max_active_jobs":      strconv.Itoa(settings.MaxActiveJobs),
-			"default_profile":      settings.DefaultProfile,
-			"audit_retention_days": strconv.Itoa(settings.AuditRetentionDays),
-			"job_retention_days":   strconv.Itoa(settings.JobRetentionDays),
+			"max_active_jobs":         strconv.Itoa(settings.MaxActiveJobs),
+			"default_profile":         settings.DefaultProfile,
+			"audit_retention_days":    strconv.Itoa(settings.AuditRetentionDays),
+			"job_retention_days":      strconv.Itoa(settings.JobRetentionDays),
+			"download_object_ceiling": strconv.Itoa(settings.DownloadObjectCeiling),
 		} {
 			if _, err := tx.ExecContext(ctx,
 				`INSERT INTO app_settings (key, value) VALUES (?, ?)

@@ -4,7 +4,7 @@ import { BrowserState } from "./browserState.svelte";
 import { newFakeApi } from "./fakeApi";
 
 const original: AppSettingsDTO = {
-  maxActiveJobs: 2, defaultProfile: "balanced", auditRetentionDays: 17, jobRetentionDays: 11,
+  maxActiveJobs: 2, defaultProfile: "balanced", auditRetentionDays: 17, jobRetentionDays: 11, downloadObjectCeiling: 250_000,
 };
 const releasePending: (() => void)[] = [];
 
