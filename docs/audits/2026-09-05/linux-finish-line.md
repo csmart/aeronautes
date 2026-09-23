@@ -22,7 +22,7 @@ Whether the deferred capabilities are disabled, hidden or left enabled in a v1 b
 One boundary is not settled by the four capability names and needs the operator's answer before the affected slices are scoped.
 `MutateService` holds both the object and container metadata edits that v1 keeps and, alongside them, container creation, prefix-marker creation and marker and manifest deletion.
 Container creation and marker creation are neither metadata editing nor browsing, and marker and manifest deletion are destructive; the narrowing cuts through that service rather than around it.
-The operator resolved container creation into v1 and both deletions out of it on 22 September 2026; whether prefix-marker creation follows container creation is still an open question, as the operator decisions section below records.
+The operator resolved container creation into v1 and both deletions out of it on 22 September 2026, and prefix-marker creation into v1 on 23 September 2026, as the operator decisions section below records.
 
 ## Operator decisions — 22 September 2026
 
@@ -33,7 +33,7 @@ The operator settled the questions this record left open on 22 September 2026, u
 2. Public-read container ACL saves stay in v1 behind the existing explicit acknowledgement (§19.1): `MutateService` refuses a world-readable read ACL unless `ContainerEditDTO.AckPublic` is set, and the container editor collects that acknowledgement.
    The operator additionally requires something visual while browsing that shows world-readable and similar container settings, naming web listing, versioning and the like as examples; that is new v1 scope, and its design is a separate reviewed slice.
 3. Container creation is a v1 capability; marker deletion and manifest deletion stay deferred and refused under [ADR 0052](../../adr/0052-v1-capability-gate.md).
-   The operator's words were that creation is a v1 feature and deletes are blocked; whether prefix-marker creation is included is the author's reading, recorded as an open question to the operator, and marker creation stays deferred in the gate until the operator confirms.
+   The operator's words were that creation is a v1 feature and deletes are blocked; whether prefix-marker creation was included was the author's reading, recorded as an open question to the operator and answered under decision 10 on 23 September 2026.
 4. Very large namespaces are v1 scope.
    The download inventory kept a complete list on 22 September 2026, measured in the [peak-memory record](../../experiments/2026-09-22-download-inventory-peak-memory.md); the operator directs that the approach follow how established object-storage clients handle containers with hundreds of millions of objects, researched and proposed before any implementation, rather than a bare count ceiling. [ADR 0072](../../adr/0072-large-namespace-handling.md) is the proposal that followed, accepted under decision 7 below.
 5. The stopped named-read session capture (ADR 0066), engine download binding assessment and P31 advisory mapping tasks are resumed.
@@ -42,7 +42,7 @@ None of these decisions closes a finding, changes a production gate or lifts the
 
 ## Operator decisions — 23 September 2026
 
-The operator answered two of the questions the 22 September proposals left open, in these words:
+The operator answered the questions the 22 September proposals left open, in these words:
 
 6. Container badges: "sounds good".
    [ADR 0071](../../adr/0071-container-settings-indicators.md) is accepted for implementation as proposed; the author reads the words as covering the proposed badge set and the operator-started check over loaded rows, and records that reading here rather than as a decision.
@@ -54,7 +54,9 @@ The operator answered two of the questions the 22 September proposals left open,
    The author reads the words as: the thirty re-proposed rows in the [call-graph scan record](../../experiments/2026-09-22-sidecar-call-graph-scan.md) stay as evidence without an acceptance step for v1, and the [pin decision](sidecar-assessment.md) (v1.75.1 and the compatibility gate) is not a v1 gate; SEC-11 keeps its wording and the release notes must say the sidecar's advisories are recorded and not dispositioned as accepted.
 9. Prefix-marker creation: the operator asked whether it should be included "in v2 then, just so that we don't lose it later", and whether creation works.
    The author's reading: marker creation stays deferred from v1 and is listed for the next release so it is not lost; the code path (`MutateService.CreateMarker` and its tests) exists and works today behind the gate, and the saved patch that returns it to the build is retained in the root packet.
-   This is a reading until the operator confirms it.
+   This reading was superseded by decision 10 the same day.
+10. Prefix-marker creation: "include it in v1 then", after the author reported that the code path, its tests and the retained patch existed behind the gate and that the work was small.
+    Marker creation leaves the deferred table under [ADR 0052](../../adr/0052-v1-capability-gate.md) decision 8; marker deletion and manifest deletion stay deferred and refused.
 
 Acceptance of the thirty re-proposed P31 rows is no longer a v1 gate under decision 8.
 

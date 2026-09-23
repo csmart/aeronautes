@@ -22,7 +22,7 @@ More in [`docs/assets/screenshots/`](docs/assets/screenshots/).*
   storage policies, ACLs, versioning, quotas — not a file-manager metaphor. TempURL, CORS, and
   staticweb are modeled read-only today (key slots and presence, never secret values); their
   management surfaces are tracked v1.x work.
-- **v1 scope**: browse, inspect, download, object and container metadata read and write, and container creation.
+- **v1 scope**: browse, inspect, download, object and container metadata read and write, container creation and prefix-marker creation.
   Copy, Mirror execution, upload and bulk deletion are deferred and refused in this build under [ADR 0052](docs/adr/0052-v1-capability-gate.md).
 - **Safety-first**: heuristics never authorize destruction; object-metadata edits never silently drop keys.
 - **Cross-platform** desktop app — Linux, macOS, and Windows on both **x86_64 and aarch64** (six
@@ -98,7 +98,7 @@ The Makefile is a thin directory over the real build system, the Wails v3 Taskfi
    Older jobs without retained item records say so; interrupted counters are labelled as the last saved progress.
 6. Metadata: use the object or container inspector to view and edit metadata.
 
-Copy, Mirror execution, upload, bulk deletion, marker and manifest editing, benchmarks and job re-runs are unavailable in v1.
+Copy, Mirror execution, upload, bulk deletion, marker and manifest deletion, benchmarks and job re-runs are unavailable in v1.
 Their write controls are hidden and requests to the deferred actions are refused.
 
 ### Before trusting a release against production
