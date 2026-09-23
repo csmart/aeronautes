@@ -66,10 +66,17 @@ inventory, with the two derivations agreeing.
    non-destructive, and a Swift workbench that cannot create a container is close to
    useless.
    Marker deletion and manifest deletion are deferred with the destructive work.
-   Marker creation stays deferred in the gate table until the operator confirms whether
+   Marker creation stayed deferred in the gate table until the operator confirmed whether
    it follows container creation; the lead's reading of 20 September deferred it, and
-   the author's reading of 22 September would include it, which is why it is an open
-   question rather than a decision.
+   the author's reading of 22 September would have included it, which is why it was an
+   open question rather than a decision.
+
+8. **Operator decision, 23 September 2026.** Marker creation is a v1 capability: the
+   operator's words were "include it in v1 then", after the author reported that the code
+   path, its tests and a retained patch existed behind the gate and that the work was
+   small.
+   `MutateService.CreateMarker` leaves the deferred table and joins the kept set; marker
+   deletion and manifest deletion stay deferred with the destructive work.
 
 ## What this does not establish
 
