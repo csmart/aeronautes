@@ -119,7 +119,8 @@ describe("container settings badges", () => {
     click(row("fixtures")); await settle();
     expect(badges("fixtures")).toEqual([]);
     expect(document.querySelector(".public-banner")).toBeNull();
-    expect(get(".settings-notice").textContent).toContain("belongs to another connection generation");
+    // ADR 0075: the detail body is refused with the fact, not shown beside it.
+    expect(get(".settings-notice").textContent).toContain("does not match this connection");
     click(get('[title="HEAD every loaded container once to show its access and feature settings"]'));
     await settle();
     // The only mark is the muted "unchecked" with the reason; no fact badge.
