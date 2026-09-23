@@ -122,6 +122,53 @@ func TestFindReadsAreAccountScoped(t *testing.T) {
 			t.Fatalf("cancel naming another account = %v", err)
 		}
 	})
+
+	t.Run("a scan from an earlier generation refuses after a rekey and reconnect", func(t *testing.T) {
+		id, err := service.StartFind(ctx, h.bookmarkID(), "fixtures", "", "hello", false)
+		if err != nil {
+			t.Fatalf("StartFind: %v", err)
+		}
+		bookmarks, err := h.bookmarks.List(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var mine BookmarkDTO
+		for _, bookmark := range bookmarks {
+			if bookmark.ID == h.bookmarkID() {
+				mine = bookmark
+			}
+		}
+		if mine.ID == "" {
+			t.Fatal("the connected bookmark is missing from the list")
+		}
+		// Re-entering the key raises the generation and retires the
+		// connection; the scan keeps the session it captured, and its
+		// bookmark's generation has moved on before any reconnect.
+		if _, err := h.bookmarks.Save(ctx, mine, "testing"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := service.FindStatus(ctx, h.bookmarkID(), id); !errors.Is(err, ErrAccountScopeChanged) {
+			t.Fatalf("poll after the rekey with no connection = %v, want ErrAccountScopeChanged", err)
+		}
+		if _, err := h.browse.Connect(ctx, h.bookmarkID()); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := service.FindStatus(ctx, h.bookmarkID(), id); !errors.Is(err, ErrAccountScopeChanged) {
+			t.Fatalf("poll after reconnecting = %v, want ErrAccountScopeChanged", err)
+		}
+		if err := service.CancelFind(ctx, h.bookmarkID(), id); !errors.Is(err, ErrAccountScopeChanged) {
+			t.Fatalf("cancel after reconnecting = %v, want ErrAccountScopeChanged", err)
+		}
+		fresh, err := service.StartFind(ctx, h.bookmarkID(), "fixtures", "", "hello", false)
+		if err != nil {
+			t.Fatalf("StartFind after reconnecting: %v", err)
+		}
+		t.Cleanup(func() { _ = service.CancelFind(ctx, h.bookmarkID(), fresh) })
+		status, err := service.FindStatus(ctx, h.bookmarkID(), fresh)
+		if err != nil || status.Scope == nil || status.Scope.Generation <= 1 {
+			t.Fatalf("a scan under the new generation = %+v %v, want generation above 1", status, err)
+		}
+	})
 }
 
 func TestAuditRecentForIsAccountScoped(t *testing.T) {

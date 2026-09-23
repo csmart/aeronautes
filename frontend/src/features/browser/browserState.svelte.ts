@@ -74,6 +74,9 @@ interface FindRequest {
   readonly scope: number;
   readonly seq: number;
   readonly bookmark: string;
+  /** The portrait held when the scan started; every status must name its
+   * bookmark and generation (ADR 0075). */
+  readonly portrait: ListingScope | null;
   readonly container: string;
   readonly prefix: string;
   started: boolean;
@@ -567,6 +570,30 @@ export class BrowserState {
     }
   }
 
+  /** The portrait a live read captures when it starts: a copy of this
+   * account's scope, or null when nothing is connected. */
+  #portrait(): ListingScope | null {
+    const scope = this.account?.scope;
+    return scope ? { ...scope } : null;
+  }
+
+  /** The six live readers (object, prefix and container detail, manifest,
+   * segments, Find status) accept a reply only under the bookmark and
+   * generation of the portrait captured when the read started (ADR 0075
+   * decision 1). #answeredBy stays bookmark-only for the callers that keep
+   * it (ADR 0067 decision 4). */
+  #readerScopeMatches(scope: ListingScope | null | undefined, bookmarkId: string, portrait: ListingScope | null): boolean {
+    return portrait !== null && portrait.bookmarkId === bookmarkId &&
+      Number.isSafeInteger(portrait.generation) && portrait.generation > 0 &&
+      scope != null && scope.bookmarkId === portrait.bookmarkId && scope.generation === portrait.generation;
+  }
+
+  #requireReaderScope(scope: ListingScope | null | undefined, bookmarkId: string, portrait: ListingScope | null, what: string) {
+    if (!this.#readerScopeMatches(scope, bookmarkId, portrait)) {
+      throw new Error(`The ${what} does not match this connection and was not shown. Reconnect and try again.`);
+    }
+  }
+
   async loadContainers() {
     const bookmarkId = this.connectedBookmarkId;
     if (bookmarkId === null) return;
@@ -791,6 +818,7 @@ export class BrowserState {
     this.detailError = null;
     const container = this.containerName;
     const bookmarkId = this.connectedBookmarkId;
+    const portrait = this.#portrait();
     if (!entry || !container || !bookmarkId || this.connecting) {
       this.detailLoading = false;
       return;
@@ -803,28 +831,28 @@ export class BrowserState {
             if (!this.#currentDetail(request)) {
               return;
             }
-            if (!this.#answeredBy(detail.scope, bookmarkId)) throw new Error("object detail does not match the requested account");
+            this.#requireReaderScope(detail.scope, bookmarkId, portrait, "object detail");
             if (detail.name !== request.name) throw new Error("object detail does not match the selected name");
             this.objectDetail = detail;
             if (detail.class === "slo") {
               // The exact segment table (§23.2) — still one selection.
               const manifest = await this.#api.sloManifest(container, entry.name, bookmarkId);
               if (this.#currentDetail(request)) {
-                if (!this.#answeredBy(manifest.scope, bookmarkId)) throw new Error("manifest does not match the requested account");
+                this.#requireReaderScope(manifest.scope, bookmarkId, portrait, "manifest");
                 this.sloManifest = manifest;
               }
             } else if (detail.class === "dlo" && detail.manifest !== "") {
               // The bounded §23.1 preview.
               const preview = await this.#api.dloSegments(detail.manifest, bookmarkId);
               if (this.#currentDetail(request)) {
-                if (!this.#answeredBy(preview.scope, bookmarkId)) throw new Error("segments do not match the requested account");
+                this.#requireReaderScope(preview.scope, bookmarkId, portrait, "segment preview");
                 this.dloSegments = preview;
               }
             }
           })
         : this.#api.prefixDetail(container, entry.name, bookmarkId).then((detail) => {
             if (this.#currentDetail(request)) {
-              if (!this.#answeredBy(detail.scope, bookmarkId)) throw new Error("prefix detail does not match the requested account");
+              this.#requireReaderScope(detail.scope, bookmarkId, portrait, "prefix detail");
               if (detail.prefix !== request.name) throw new Error("prefix detail does not match the selected name");
               this.prefixDetail = detail;
             }
@@ -1036,7 +1064,7 @@ export class BrowserState {
     }
     const cancellation = this.cancelFind();
     const request: FindRequest = {
-      scope: this.#scopeRevision, seq: ++this.#findSeq, bookmark: this.connectedBookmarkId,
+      scope: this.#scopeRevision, seq: ++this.#findSeq, bookmark: this.connectedBookmarkId, portrait: this.#portrait(),
       container: this.containerName, prefix: this.prefix, started: false, id: null,
     };
     this.#findRequest = request;
@@ -1056,7 +1084,7 @@ export class BrowserState {
       while (this.#currentFind(request)) {
         const status = await this.#api.findStatus(request.id, request.bookmark);
         if (!this.#currentFind(request)) return;
-        if (!this.#answeredBy(status.scope, request.bookmark)) throw new Error("scan does not match the requested account");
+        this.#requireReaderScope(status.scope, request.bookmark, request.portrait, "scan");
         this.findStatus = status;
         if (status.done) {
           break;
@@ -1110,7 +1138,7 @@ export class BrowserState {
     if (this.containerName === null || this.connecting || !this.connectedBookmarkId) return;
     await this.cancelCount();
     const request: FindRequest = {
-      scope: this.#scopeRevision, seq: ++this.#countSeq, bookmark: this.connectedBookmarkId,
+      scope: this.#scopeRevision, seq: ++this.#countSeq, bookmark: this.connectedBookmarkId, portrait: this.#portrait(),
       container: this.containerName, prefix: this.prefix, started: false, id: null,
     };
     this.#countRequest = request;
@@ -1128,7 +1156,7 @@ export class BrowserState {
       while (current()) {
         const status = await this.#api.findStatus(request.id, request.bookmark);
         if (!current()) return;
-        if (!this.#answeredBy(status.scope, request.bookmark)) throw new Error("count does not match the requested account");
+        this.#requireReaderScope(status.scope, request.bookmark, request.portrait, "count");
         this.countStatus = status;
         if (status.done) {
           this.countedAt = new Date().toISOString();
@@ -1437,15 +1465,16 @@ export class BrowserState {
     const scope = this.#scopeRevision;
     const seq = ++this.#containerDetailSeq;
     const connection = this.#connectionRevision;
+    const portrait = this.#portrait();
     let failure: string | null = null;
     const detail = await this.#api.containerDetail(name, bookmarkId).catch((err) => {
       failure = messageOf(err);
       return null;
     });
     if (this.#currentContainerDetail(scope, seq, name)) {
-      const accepted = detail?.name === name && this.#answeredBy(detail.scope, bookmarkId) ? detail : null;
+      const accepted = detail?.name === name && this.#readerScopeMatches(detail.scope, bookmarkId, portrait) ? detail : null;
       this.containerDetail = accepted;
-      this.containerDetailError = accepted ? null : (failure ?? "the reply did not match this container and connection");
+      this.containerDetailError = accepted ? null : (failure ?? "the container detail does not match this connection and was not shown; reconnect and try again");
       // The banner and the badge take only a fact of this connection's
       // generation; a detail answered under another one is shown as the
       // inspector's numbers but not as a settings fact.

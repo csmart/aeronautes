@@ -228,6 +228,9 @@ func (s *FindService) FindStatus(ctx context.Context, bookmarkID, id string) (*F
 	if scan.scope.BookmarkID != bookmarkID {
 		return nil, ErrAccountScopeChanged
 	}
+	if err := s.scanCurrent(ctx, scan); err != nil {
+		return nil, err
+	}
 	s.renewFind(scan)
 	end := scan.finished
 	if end.IsZero() {
@@ -261,7 +264,23 @@ func (s *FindService) CancelFind(ctx context.Context, bookmarkID, id string) err
 	if scan.scope.BookmarkID != bookmarkID {
 		return ErrAccountScopeChanged
 	}
+	if err := s.scanCurrent(ctx, scan); err != nil {
+		return err
+	}
 	s.retireFind(scan)
+	return nil
+}
+
+// scanCurrent refuses a retained scan once its bookmark's generation has
+// moved on, whether or not that bookmark is still the active connection
+// (ADR 0075 decision 3): a rekey, with or without a reconnect, retires
+// every read of the scan. A scan whose bookmark is unchanged stays
+// pollable by naming that bookmark while another account is active, as
+// ADR 0066 keeps the session it captured; the idle lease retires it.
+func (s *FindService) scanCurrent(ctx context.Context, scan *findScan) error {
+	if err := s.connections.store.WithCurrentGeneration(ctx, scan.scope.BookmarkID, scan.scope.Generation, nil); err != nil {
+		return ErrAccountScopeChanged
+	}
 	return nil
 }
 

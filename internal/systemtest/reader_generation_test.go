@@ -29,6 +29,16 @@ func readerGenerationCases(t *testing.T, h *Harness, mock bool) {
 		}
 		first[read.name] = reply.scope.Generation
 	}
+	// A scan started now keeps the session it captured; its polls must
+	// refuse once that connection is gone (ADR 0075 decision 3).
+	page, err := h.Browse.Containers(ctx, h.Primary.BookmarkID, "", 1)
+	if err != nil || len(page.Rows) == 0 {
+		t.Fatalf("a container to scan: %+v %v", page, err)
+	}
+	stale, err := h.Find.StartFind(ctx, h.Primary.BookmarkID, page.Rows[0].Name, "", "only-", false)
+	if err != nil {
+		t.Fatalf("StartFind before the rekey: %v", err)
+	}
 	// Re-entering the key raises the bookmark's generation without moving
 	// the account, and saving the connected bookmark retires its
 	// connection. Until the bookmark reconnects, every reader must refuse
@@ -40,8 +50,17 @@ func readerGenerationCases(t *testing.T, h *Harness, mock bool) {
 			t.Fatalf("%s after the rekey = %+v, want ErrNotConnected", read.name, reply)
 		}
 	}
+	if _, err := h.Find.FindStatus(ctx, h.Primary.BookmarkID, stale); !errors.Is(err, app.ErrAccountScopeChanged) {
+		t.Fatalf("polling the earlier scan after the rekey = %v, want ErrAccountScopeChanged", err)
+	}
 	if _, err := h.Browse.Connect(ctx, h.Primary.BookmarkID); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := h.Find.FindStatus(ctx, h.Primary.BookmarkID, stale); !errors.Is(err, app.ErrAccountScopeChanged) {
+		t.Fatalf("polling the earlier scan after reconnecting = %v, want ErrAccountScopeChanged", err)
+	}
+	if err := h.Find.CancelFind(ctx, h.Primary.BookmarkID, stale); !errors.Is(err, app.ErrAccountScopeChanged) {
+		t.Fatalf("cancelling the earlier scan after reconnecting = %v, want ErrAccountScopeChanged", err)
 	}
 	for _, read := range reads {
 		reply := read.read(ctx, h.Primary)

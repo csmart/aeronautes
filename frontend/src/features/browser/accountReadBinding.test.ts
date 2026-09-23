@@ -161,7 +161,7 @@ describe("Find reads through the live bridge", () => {
     bridge.status.mockResolvedValue({ ...done, scope: replyScope });
     await state.startFind("query");
     expect(state.findStatus?.matches).toEqual([]);
-    expect(state.findStatus?.error).toMatch(/account/i);
+    expect(state.findStatus?.error).toMatch(/scan does not match this connection/);
     expect(state.findRunning).toBe(false);
   });
 });
