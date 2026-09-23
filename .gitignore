@@ -45,3 +45,6 @@ node_modules/
 *.swp
 smoke-artifacts/
 matrix-report.txt
+
+# Python tool caches (scripts/ helpers)
+__pycache__/
