@@ -44,7 +44,8 @@ Blocking all connection changes for a metadata write would add a new lifetime an
 Carrying the already validated tuple is the smallest change that keeps the existing operation and its records together.
 
 Audit.Search projection and display, account portraits, named-read snapshot races and container mutation attribution remain separate slices.
-The deferred `CreateContainer`, `CreateMarker` and `DeleteMarker` paths still use best-effort recording and can relabel their audit event after a connection switch.
+The deferred `CreateContainer`, `CreateMarker` and `DeleteMarker` paths still use best-effort recording; until 23 September 2026 the two creation paths could relabel their audit event after a connection switch, and `DeleteMarker` still can.
+   Container and marker creation, returned to v1, capture the admitted account since 23 September 2026 (the [attribution record](../experiments/2026-09-21-object-metadata-account-attribution.md) follow-up); the deletions still record under the active connection.
 No schema, frontend mutation binding, public-ACL approval, crash/power-loss, physical recovery or native acceptance is added.
 L11's caller-named mutation binding remains open: this captures the admitted account without proving which account the caller intended.
 L04, L11, P12, P13, P28 and the valuable-data hold remain open.

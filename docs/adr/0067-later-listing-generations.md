@@ -37,7 +37,8 @@ This is a bounded continuation of that requirement, based on the portrait branch
 4. Use a listing-specific validation helper rather than changing `#answeredBy` for all readers.
    Its full reader inventory on the basis is: three connection-time checks, these four later listing checks, and six other live-reader checks (object detail, SLO manifest, DLO segments, prefix detail, Find start status and container detail).
    The three connection-time checks retain ADR 0063's contract.
-   The adjacent six checks were source-inspected only and are unproved and outside this slice.
+   The adjacent six checks were source-inspected only, unproved until 23 September 2026, and outside this slice.
+   [ADR 0075](0075-live-reader-generation-acceptance.md) bound those six readers to the captured portrait's generation on 23 September 2026.
    Historical local job and audit reads have separate retained-record contracts and are not bound to a live portrait generation.
 
 5. Maintain ordinary Vitest regressions around the real `BrowserState` with deferred frontend API replies and explicit generation-bearing fixtures.
@@ -52,7 +53,7 @@ This is a bounded continuation of that requirement, based on the portrait branch
 No service, DTO, generated binding, mutation authority, credential policy, database or shared-session helper changes.
 Ordinary browser stand-ins prove frontend acceptance behaviour; they do not reproduce a backend scheduling race or native desktop acceptance.
 Correct attribution is not authorisation to mutate, proof of a current session or proof that a listing is authoritative.
-The six adjacent readers, broader live-read atomicity, L11/P28 completion, native acceptance and the valuable-data hold remain open.
+The six adjacent readers were bound later under [ADR 0075](0075-live-reader-generation-acceptance.md); broader live-read atomicity, L11/P28 completion, native acceptance and the valuable-data hold remain open.
 
 ## Alternatives considered
 
