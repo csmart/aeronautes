@@ -43,9 +43,10 @@ K-CON-001 makes a HEAD authoritative at the moment it was made and says nothing 
 
 5. Checking the loaded rows on request.
    The container column offers "Check settings".
-   The frontend sends the loaded rows' names in listing order in batches of at most 50 to one new read action, `ContainerSettings(bookmarkID, names)`, which HEADs them under the scoped session with at most 4 requests in flight and returns the derived facts under that scope's generation.
+   The frontend walks the loaded rows in listing order and asks for each one through the existing `InspectorService.Container` read, the same HEAD selection makes, with at most 4 requests in flight; each reply carries the derived facts under its scope's generation.
+   No bridge action is added: a new action is required-set drift under [ADR 0069](0069-preserve-covered-scenario-cells.md) and would need that decision's admission route, which this indicator does not justify when the existing read already returns everything the derivation needs (amended 23 September 2026; the 22 September contract named a batched `ContainerSettings` action).
    The header shows "checked n of m" while it runs; the operator can stop it, and it stops itself when the scope changes.
-   A HEAD that fails marks that row unchecked with the error in its tooltip and does not stop the batch.
+   A HEAD that fails marks that row unchecked with the error in its tooltip and does not stop the sweep.
    The bound is the rows the operator has loaded, at most 5,000 per page, and nothing is checked that was not listed.
 
 6. Freshness.
@@ -55,12 +56,12 @@ K-CON-001 makes a HEAD authoritative at the moment it was made and says nothing 
 
 7. Capability gate.
    Every request here is a read.
-   [ADR 0052](0052-v1-capability-gate.md) is unchanged; the new action is classified as kept in `TestEveryBridgeActionIsClassified`.
+   [ADR 0052](0052-v1-capability-gate.md) is unchanged, and so is the bridge action inventory: the facts travel in fields added to the existing container row and detail replies.
 
 ### Cost
 
 No request is added to listing or to selection.
-The check costs one HEAD per loaded row, only when the operator asks, with a visible count and a stop.
+The check costs one HEAD per loaded row, one bridge call each, only when the operator asks, with a visible count and a stop.
 
 ## Consequences
 
