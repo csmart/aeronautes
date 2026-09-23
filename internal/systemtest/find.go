@@ -17,7 +17,7 @@ func (h *Harness) CloseFind() {
 }
 
 func (h *Harness) StartFind(ctx context.Context, container, prefix, query string) (string, *Receipt) {
-	id, err := h.Find.StartFind(ctx, h.Primary.BookmarkID, container, prefix, query)
+	id, err := h.Find.StartFind(ctx, h.Primary.BookmarkID, container, prefix, query, false)
 	return id, &Receipt{h: h, action: "FindService.StartFind", scanID: id, err: err}
 }
 

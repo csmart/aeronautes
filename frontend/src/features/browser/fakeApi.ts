@@ -88,6 +88,8 @@ export function newFakeApi(): Api {
   const audit: AuditEventDTO[] = [];
   const jobs: import("../../lib/api").JobDTO[] = [];
   const scans = new Map<string, string>();
+  // A count-only scan answers the number of fixture objects under its prefix.
+  const countScans = new Map<string, { container: string; prefix: string }>();
   let auditId = 1;
 
   function readScope(bookmarkId: string) {
@@ -827,26 +829,38 @@ export function newFakeApi(): Api {
       license: "Apache-2.0 (this application)",
       licenses: [{ name: "example", license: "MIT", url: "https://example.com" }],
     }),
-    appSettings: async () => ({ maxActiveJobs: 2, defaultProfile: "auto", auditRetentionDays: 90, jobRetentionDays: 30 }),
+    appSettings: async () => ({ maxActiveJobs: 2, defaultProfile: "auto", auditRetentionDays: 90, jobRetentionDays: 30, downloadObjectCeiling: 250_000 }),
     saveAppSettings: async (settings) => settings,
-    startFind: async (_container, _prefix, _query, bookmarkId) => {
+    startFind: async (container, prefix, query, bookmarkId, countOnly = false) => {
       readScope(bookmarkId);
+      if (!countOnly && query.trim() === "") throw new Error("container and a non-empty query are required");
       const id = `find-${scans.size + 1}`;
       scans.set(id, bookmarkId);
+      if (countOnly) countScans.set(id, { container, prefix });
       return id;
     },
-    findStatus: async (id, bookmarkId) => ({
-      scanned: 1234,
-      matches: [
-        { name: "photos/report.jpg", bytes: 100 },
-        { name: "docs/report.pdf", bytes: 2048 },
-      ],
-      truncated: false,
-      done: true,
-      error: "",
-      objectsPerSecond: 5000,
-      scope: scanScope(id, bookmarkId),
-    }),
+    findStatus: async (id, bookmarkId) => {
+      const count = countScans.get(id);
+      if (count) {
+        return {
+          scanned: (objects[count.container] ?? []).filter((o) => o.name.startsWith(count.prefix)).length,
+          matches: [], truncated: false, done: true, error: "", objectsPerSecond: 5000,
+          scope: scanScope(id, bookmarkId),
+        };
+      }
+      return {
+        scanned: 1234,
+        matches: [
+          { name: "photos/report.jpg", bytes: 100 },
+          { name: "docs/report.pdf", bytes: 2048 },
+        ],
+        truncated: false,
+        done: true,
+        error: "",
+        objectsPerSecond: 5000,
+        scope: scanScope(id, bookmarkId),
+      };
+    },
     cancelFind: async (id, bookmarkId) => { scanScope(id, bookmarkId); },
     checkSegmentOwnership: async (req) => ({
       class: "dlo",

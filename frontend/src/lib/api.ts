@@ -204,7 +204,8 @@ export interface Api {
   latestBenchmark(bookmarkId: string): Promise<BenchmarkResultDTO | null>;
   appSettings(): Promise<AppSettingsDTO>;
   saveAppSettings(settings: AppSettingsDTO): Promise<AppSettingsDTO>;
-  startFind(container: string, prefix: string, query: string, bookmarkId: string): Promise<string>;
+  /** countOnly lists the scope and counts it without keeping matches (ADR 0072). */
+  startFind(container: string, prefix: string, query: string, bookmarkId: string, countOnly?: boolean): Promise<string>;
   findStatus(id: string, bookmarkId: string): Promise<FindStatusDTO>;
   cancelFind(id: string, bookmarkId: string): Promise<void>;
   checkSegmentOwnership(req: SegmentsDeleteRequestDTO): Promise<SegmentOwnershipDTO>;
@@ -297,8 +298,8 @@ export const liveApi: Api = {
     if (!saved) throw new Error("empty settings");
     return saved;
   },
-  startFind: (container, prefix, query, bookmarkId) =>
-    FindService.StartFind(bookmarkId, container, prefix, query),
+  startFind: (container, prefix, query, bookmarkId, countOnly = false) =>
+    FindService.StartFind(bookmarkId, container, prefix, query, countOnly),
   findStatus: async (id, bookmarkId) => {
     const status = await FindService.FindStatus(bookmarkId, id);
     if (!status) throw new Error("scan vanished");

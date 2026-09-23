@@ -268,13 +268,34 @@ func (s *TransferService) downloadPreflight(ctx context.Context, req DownloadReq
 	if err != nil {
 		return nil, err
 	}
+	ceiling := s.downloadObjectCeiling(ctx)
 	if destination == nil {
 		// The pick could not be held; the complete report says why,
 		// without any effect.
-		return local.PreflightDownload(ctx, session, req.Container, req.Prefix, destDir)
+		return local.PreflightDownloadBounded(ctx, session, req.Container, req.Prefix, destDir, ceiling)
 	}
-	report, err := local.PreflightDownloadInto(ctx, session, req.Container, req.Prefix, destination)
+	report, err := local.PreflightDownloadIntoBounded(ctx, session, req.Container, req.Prefix, destination, ceiling)
 	return report, errors.Join(err, destination.Close())
+}
+
+// downloadObjectCeiling is the operator's download selection ceiling from
+// the application settings, or the default when settings are not wired or
+// cannot be read (ADR 0072 decision 4).
+func (s *TransferService) downloadObjectCeiling(ctx context.Context) int64 {
+	if s.settings == nil {
+		return defaultDownloadObjectCeiling
+	}
+	settings, err := s.settings.Get(ctx)
+	if err != nil {
+		return defaultDownloadObjectCeiling
+	}
+	return int64(settings.DownloadObjectCeiling)
+}
+
+// WireSettings gives the transfer service the application settings it
+// reads at preflight time.
+func WireSettings(t *TransferService, settings *SettingsService) {
+	t.settings = settings
 }
 
 // localEngine builds the single-remote engine for the bookmark's end;

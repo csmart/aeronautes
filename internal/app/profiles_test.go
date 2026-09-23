@@ -69,8 +69,25 @@ func TestSettingsServicePersistsAndApplies(t *testing.T) {
 	ctx := context.Background()
 
 	settings, err := service.Get(ctx)
-	if err != nil || settings.MaxActiveJobs != defaultMaxActiveJobs || settings.DefaultProfile != "auto" {
+	if err != nil || settings.MaxActiveJobs != defaultMaxActiveJobs || settings.DefaultProfile != "auto" || settings.DownloadObjectCeiling != defaultDownloadObjectCeiling {
 		t.Fatalf("defaults = %+v %v", settings, err)
+	}
+	// The download selection ceiling (ADR 0072) is refused outside its
+	// range, kept at the default when a document omits it, and read back
+	// as saved inside the range.
+	for _, ceiling := range []int{-1, 1, 999, 5_000_001} {
+		if _, err := service.Set(ctx, AppSettingsDTO{MaxActiveJobs: 1, DefaultProfile: "auto", DownloadObjectCeiling: ceiling}); err == nil {
+			t.Fatalf("ceiling %d accepted", ceiling)
+		}
+	}
+	if saved, err := service.Set(ctx, AppSettingsDTO{MaxActiveJobs: 1, DefaultProfile: "auto", DownloadObjectCeiling: 12_345}); err != nil || saved.DownloadObjectCeiling != 12_345 {
+		t.Fatalf("ceiling save = %+v %v", saved, err)
+	}
+	if read, err := service.Get(ctx); err != nil || read.DownloadObjectCeiling != 12_345 {
+		t.Fatalf("ceiling read = %+v %v", read, err)
+	}
+	if saved, err := service.Set(ctx, AppSettingsDTO{MaxActiveJobs: 1, DefaultProfile: "auto"}); err != nil || saved.DownloadObjectCeiling != defaultDownloadObjectCeiling {
+		t.Fatalf("omitted ceiling = %+v %v", saved, err)
 	}
 	if _, err := service.Set(ctx, AppSettingsDTO{MaxActiveJobs: 99, DefaultProfile: "auto"}); err == nil {
 		t.Fatal("out-of-range budget accepted")

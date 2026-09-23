@@ -7,7 +7,7 @@
   import { trapFocus } from "../../lib/trapFocus";
   import type { BrowserState } from "../browser/browserState.svelte";
   import type { DownloadRequestDTO, UploadRequestDTO } from "../../lib/api";
-  import { formatBytes } from "../../lib/format";
+  import { formatBytes, formatCount } from "../../lib/format";
 
   // Upload still ships the complete item list; download is a bounded
   // view with first-class counts (ADR 0056).
@@ -27,6 +27,11 @@
     mode,
     onClose,
   }: { browser: BrowserState; mode: "upload" | "download"; onClose: () => void } = $props();
+  // The ceiling sentence needs the settings document; a dialog opened
+  // before the drawer ever loaded it asks once (ADR 0072 decision 4).
+  untrack(() => {
+    if (mode === "download" && !browser.appSettings) void browser.loadAppSettings();
+  });
 
   let checking = $state(false);
   let starting = $state(false);
@@ -176,6 +181,14 @@
           ? "Choose files; every collision is reported before anything is written."
           : "Choose a destination directory; the whole scope is checked for collisions first."}
       </p>
+      {#if mode === "download" && browser.appSettings}
+        <p class="hint ceiling">
+          Selections above {browser.appSettings.downloadObjectCeiling.toLocaleString("en-US")} objects are refused rather than cut short; the ceiling is set in the jobs drawer.
+          {#if browser.prefixCount?.done && !browser.prefixCount.error}
+            This prefix counted {formatCount(browser.prefixCount.scanned)} objects.
+          {/if}
+        </p>
+      {/if}
     {:else}
       <div class="report num">
         {#if rejected}

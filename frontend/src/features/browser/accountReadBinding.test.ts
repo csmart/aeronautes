@@ -134,7 +134,7 @@ describe("Find reads through the live bridge", () => {
     const { state } = await fixture();
     await state.startFind("literal query");
     expect(state.findStatus).toEqual(done);
-    expect(bridge.start).toHaveBeenCalledWith(bookmark, "fixtures", "", "literal query");
+    expect(bridge.start).toHaveBeenCalledWith(bookmark, "fixtures", "", "literal query", false);
     expect(bridge.status).toHaveBeenCalledWith(bookmark, "scan");
     await state.cancelFind();
     expect(bridge.cancel).toHaveBeenCalledWith(bookmark, "scan");

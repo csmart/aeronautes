@@ -104,8 +104,11 @@ const (
 
 // StartFind begins one scan over the container (optionally under a
 // prefix), matching a case-insensitive substring. Returns the scan id.
-func (s *FindService) StartFind(ctx context.Context, bookmarkID, container, prefix, query string) (string, error) {
-	if container == "" || strings.TrimSpace(query) == "" {
+// A count-only scan (ADR 0072 decision 2) lists the same way, keeps no
+// match and needs no query: Scanned is the answer, streamed page by page,
+// stoppable through CancelFind.
+func (s *FindService) StartFind(ctx context.Context, bookmarkID, container, prefix, query string, countOnly bool) (string, error) {
+	if container == "" || (!countOnly && strings.TrimSpace(query) == "") {
 		return "", errors.New("container and a non-empty query are required")
 	}
 	if err := ctx.Err(); err != nil {
@@ -191,7 +194,7 @@ func (s *FindService) StartFind(ctx context.Context, bookmarkID, container, pref
 				return
 			}
 			scan.scanned++
-			if strings.Contains(strings.ToLower(object.Name), needle) {
+			if !countOnly && strings.Contains(strings.ToLower(object.Name), needle) {
 				if len(scan.matches) < maxFindMatches {
 					scan.matches = append(scan.matches, FindMatchDTO{Name: object.Name, Bytes: object.Bytes})
 				} else {

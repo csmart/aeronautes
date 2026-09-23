@@ -73,14 +73,14 @@ func TestFindReadsAreAccountScoped(t *testing.T) {
 	t.Cleanup(func() { _ = service.ServiceShutdown() })
 
 	t.Run("start naming the other account refuses", func(t *testing.T) {
-		id, err := service.StartFind(ctx, other.ID, "fixtures", "", "hello")
+		id, err := service.StartFind(ctx, other.ID, "fixtures", "", "hello", false)
 		if id != "" || !errors.Is(err, ErrAccountScopeChanged) {
 			t.Fatalf("StartFind naming the unconnected account = (%q, %v)", id, err)
 		}
 	})
 
 	t.Run("a poll under a different bookmark refuses", func(t *testing.T) {
-		id, err := service.StartFind(ctx, h.bookmarkID(), "fixtures", "", "hello")
+		id, err := service.StartFind(ctx, h.bookmarkID(), "fixtures", "", "hello", false)
 		if err != nil {
 			t.Fatalf("StartFind: %v", err)
 		}

@@ -189,6 +189,21 @@
     }
   }
 
+  // The download selection ceiling (ADR 0072): refused by the backend
+  // outside 1,000..5,000,000 rather than clamped, so the control shows the
+  // last observed value until a save is acknowledged.
+  const ceilingValue = $derived(String(browser.appSettings?.downloadObjectCeiling ?? ""));
+  let ceilingError: string | null = $state(null);
+  async function saveCeiling(value: number) {
+    if (disposed || !browser.canSaveAppSettings || !browser.appSettings) return;
+    ceilingError = null;
+    try {
+      await browser.saveAppSettings({ ...browser.appSettings, downloadObjectCeiling: value });
+    } catch (err) {
+      ceilingError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
   function settingsRows(job: JobDTO): [string, string][] {
     try {
       const parsed = JSON.parse(job.settings);
@@ -337,6 +352,27 @@
                 {/each}
               </select>
             </label>
+            <label class="filter" title="the most objects one download selection may hold; a wider prefix is refused rather than cut short (1,000 to 5,000,000)">
+              <span>Download ceiling</span>
+              <input
+                class="ceiling num"
+                type="number"
+                min="1000"
+                max="5000000"
+                step="1000"
+                value={ceilingValue}
+                disabled={!browser.canSaveAppSettings}
+                aria-describedby={`${id}-ceiling-status`}
+                onchange={(e) => {
+                  const value = Number(e.currentTarget.value);
+                  e.currentTarget.value = ceilingValue;
+                  void saveCeiling(value);
+                }}
+              />
+            </label>
+            <span class="ceiling-status" id={`${id}-ceiling-status`} role="status">
+              {#if ceilingError}{ceilingError}{:else if browser.appSettings}ceiling {browser.appSettings.downloadObjectCeiling.toLocaleString("en-US")} objects{/if}
+            </span>
           {/if}
           {#if v1Offers.benchmark}
             <button
@@ -691,6 +727,15 @@
 
   .body {
     padding: 0 var(--space-4) var(--space-2);
+  }
+
+  .ceiling {
+    width: 9em;
+  }
+
+  .ceiling-status {
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
   }
 
   .budget-status {
