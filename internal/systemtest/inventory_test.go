@@ -2,6 +2,7 @@ package systemtest
 
 import (
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -85,4 +86,33 @@ func TestInventoryLogsRequiredScenarios(t *testing.T) {
 	t.Logf("ACTION CONTRACT (%d actions: %d read, %d session, %d mutate, %d destructive, %d job; %d required scenarios; hash %s)\n%s",
 		len(contract), kinds[scenariocontract.Read], kinds[scenariocontract.Session], kinds[scenariocontract.Mutate],
 		kinds[scenariocontract.Destructive], kinds[scenariocontract.Job], total, scenariocontract.Hash(), strings.Join(rows, "\n"))
+}
+
+// TestNoBoundActionOwnsProcessLifetime is a deny rule over the bound
+// surface, beside the two-way inventory check above. That check passes
+// whenever a method is exported together with its contract row, so it
+// cannot say that draining writers or shutting the shell down must never
+// become a bridge action. ADR 0053 keeps MutateService.shutdownWriters
+// unexported and reached only from the shell's drain; this test fails
+// the day a bound service exports, or the contract names, a method whose
+// name says shutdown, drain, close, quit or terminate. Wails' reserved
+// FindService.ServiceShutdown hook is the one carve-out, as above.
+func TestNoBoundActionOwnsProcessLifetime(t *testing.T) {
+	denied := regexp.MustCompile(`(?i)shutdown|drain|close|quit|terminate`)
+	const reserved = "FindService.ServiceShutdown"
+	for svcName, svc := range boundServices() {
+		typ := reflect.TypeOf(svc)
+		for i := 0; i < typ.NumMethod(); i++ {
+			key := svcName + "." + typ.Method(i).Name
+			if key != reserved && denied.MatchString(typ.Method(i).Name) {
+				t.Errorf("bound bridge method %s names a process-lifetime operation; the shell owns lifetime (ADR 0053), the webview must not", key)
+			}
+		}
+	}
+	for key := range scenariocontract.All() {
+		name := key[strings.LastIndex(key, ".")+1:]
+		if key != reserved && denied.MatchString(name) {
+			t.Errorf("contract row %s would admit a process-lifetime operation to the bridge", key)
+		}
+	}
 }
