@@ -307,29 +307,37 @@
         </p>
       {/if}
     </section>
-    {#if v1Offers.markerEdit && pd && !browser.detailLoading}
+    {#if (v1Offers.markerCreate || v1Offers.markerDelete) && pd && !browser.detailLoading}
       <section class="card">
         <h3 class="card-title">Marker</h3>
         {#if !pd.selfObject}
-          <button
-            class="edit-btn inline"
-            disabled={markerBusy}
-            onclick={() => markerAction(pd, () => browser.createMarker(pd.prefix))}
-          >
-            Create marker object
-          </button>
-          <p class="teach">
-            An explicit marker keeps this prefix visible even with no children.
-          </p>
+          {#if v1Offers.markerCreate}
+            <button
+              class="edit-btn inline"
+              disabled={markerBusy}
+              onclick={() => markerAction(pd, () => browser.createMarker(pd.prefix))}
+            >
+              Create marker object
+            </button>
+            <p class="teach">
+              An explicit marker keeps this prefix visible even with no children.
+            </p>
+          {:else}
+            <p class="teach">Marker creation is not offered in this build.</p>
+          {/if}
         {:else if pd.markerBacked}
-          <button
-            class="edit-btn inline danger"
-            disabled={markerBusy}
-            onclick={() => markerAction(pd, (ownsView) => browser.deleteMarker(pd.prefix, ownsView))}
-          >
-            Delete marker object
-          </button>
-          <p class="teach">Removes only the zero-byte marker; children are untouched.</p>
+          {#if v1Offers.markerDelete}
+            <button
+              class="edit-btn inline danger"
+              disabled={markerBusy}
+              onclick={() => markerAction(pd, (ownsView) => browser.deleteMarker(pd.prefix, ownsView))}
+            >
+              Delete marker object
+            </button>
+            <p class="teach">Removes only the zero-byte marker; children are untouched.</p>
+          {:else}
+            <p class="teach">Marker deletion is not offered in this build; the marker and its children are untouched.</p>
+          {/if}
         {:else}
           <p class="teach">No marker action: a real object occupies this name.</p>
         {/if}

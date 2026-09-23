@@ -59,7 +59,7 @@ it("opens download and does not offer upload from that dialog", async () => {
   expect(dialog?.textContent).not.toContain("Choose files");
 });
 
-it("does not offer manifest deletion or marker editing", async () => {
+it("offers marker creation and withholds manifest and marker deletion", async () => {
   await connectedScreen();
   const dlo = [...document.querySelectorAll<HTMLElement>('[role="option"]')]
     .find((el) => el.querySelector(".name")?.textContent?.trim() === "external-dlo")!;
@@ -68,6 +68,9 @@ it("does not offer manifest deletion or marker editing", async () => {
   const prefix = [...document.querySelectorAll<HTMLElement>('[role="option"]')]
     .find((el) => el.querySelector(".name")?.textContent?.trim() === "implied/")!;
   prefix.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); flushSync(); await settle();
-  expect(labels()).not.toContain("Create marker object");
+  // ADR 0052 decision 8: creation is offered on an implied prefix; the
+  // deletion half stays withheld (mutationDialogs.test.ts covers the
+  // marker-backed prefix, where the withheld button is named in place).
+  expect(labels()).toContain("Create marker object");
   expect(labels()).not.toContain("Delete marker object");
 });

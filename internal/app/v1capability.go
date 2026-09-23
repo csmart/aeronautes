@@ -43,10 +43,8 @@ var v1DeferredActions = map[string]string{
 	"DeleteService.CheckSegmentOwnership":      "Bulk delete",
 	"DeleteService.DeleteManifestWithSegments": "Bulk delete",
 	// destructive halves of the mutation service (ADR 0052 decision 7,
-	// the lead author's reading pending the operator). Container creation
-	// is kept: it is non-destructive and metadata management is thin
-	// without it.
-	"MutateService.CreateMarker":   "Marker and manifest editing",
+	// the operator's decisions of 22 and 23 September 2026). Container
+	// creation and marker creation are kept: both are non-destructive.
 	"MutateService.DeleteMarker":   "Marker and manifest editing",
 	"MutateService.DeleteManifest": "Marker and manifest editing",
 	// a benchmark writes real objects and bulk-deletes them

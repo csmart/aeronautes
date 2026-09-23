@@ -69,7 +69,8 @@ func TestEveryBridgeActionIsClassified(t *testing.T) {
 		"JobService.Get":               true, "JobService.History": true,
 		"JobService.Items": true, "JobService.ItemTotals": true,
 		"JobService.List": true, "JobService.RecoveryStatus": true,
-		"MutateService.CreateContainer": true, "MutateService.UpdateContainer": true,
+		"MutateService.CreateContainer": true, "MutateService.CreateMarker": true,
+		"MutateService.UpdateContainer":      true,
 		"MutateService.UpdateObjectMetadata": true,
 		"SettingsService.Get":                true, "SettingsService.Set": true,
 		"TransferService.CancelJob": true, "TransferService.PickDownloadDir": true,
@@ -194,10 +195,6 @@ func TestV1GateRefusesDeferredEntryPoints(t *testing.T) {
 		}},
 		{"DeleteService.DeleteManifestWithSegments", "Bulk delete", func() error {
 			_, err := (&DeleteService{}).DeleteManifestWithSegments(ctx, SegmentsDeleteRequestDTO{})
-			return err
-		}},
-		{"MutateService.CreateMarker", "Marker and manifest editing", func() error {
-			_, err := (&MutateService{}).CreateMarker(ctx, "c", "p/")
 			return err
 		}},
 		{"MutateService.DeleteMarker", "Marker and manifest editing", func() error {
