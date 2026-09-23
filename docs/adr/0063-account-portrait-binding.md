@@ -47,7 +47,7 @@ A later `Connect` may leave a correctly labelled alpha read in flight while beta
 This does not authenticate the operator's intended account or grant authority for a later mutation.
 The shared `scopedSession` helper, the broader connection/read atomicity race described by ADR 0049/0059, `AuditService.Search` and mutation writers are unchanged.
 This portrait slice left post-connect refreshes and other later scoped replies with their existing bookmark checks.
-[ADR 0067](0067-later-listing-generations.md) subsequently binds the four later listing paths to the retained portrait generation; the six adjacent live-reader surfaces remain a named L11 follow-up.
+[ADR 0067](0067-later-listing-generations.md) subsequently binds the four later listing paths to the retained portrait generation; the six adjacent live-reader surfaces remained a named L11 follow-up until [ADR 0075](0075-live-reader-generation-acceptance.md) bound them on 23 September 2026.
 No database schema or operation policy changes.
 L11, P28, native acceptance and the valuable-data hold remain open.
 

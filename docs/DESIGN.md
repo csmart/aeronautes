@@ -5811,6 +5811,11 @@ Its contract was reviewed independently before the implementation; the implement
 L07 cancellation checks in the same executor are not this slice.
 This does not close L05 or DS-04, and the valuable-data release hold remains.
 
+[ADR 0075](adr/0075-live-reader-generation-acceptance.md), accepted and implemented on 23 September 2026, binds the six live readers ADR 0067 left on the bookmark-only check (object, prefix and container detail, the SLO manifest, the DLO segment preview and Find status) to the captured portrait's bookmark and generation, and makes Find status and cancel refuse a scan whose bookmark's generation has moved on; a mismatched reply takes the existing failed-read path and shows nothing.
+The backend half was proved first, in the named-read record's follow-up, across a sequential rekey.
+Container and marker creation, returned to v1 on 23 September, now record under the account they captured, closing the relabel window ADR 0065 named for the creation paths.
+L11 stays open for the caller-named mutation binding and broader live-read atomicity, and the valuable-data hold remains.
+
 ### 65.12. Proportionate remediation and a fixed finish line
 
 Safe, secure operation on valuable production data remains the first milestone.

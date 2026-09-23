@@ -1,6 +1,6 @@
 # ADR 0075: generation acceptance for the six live readers
 
-**Status:** Proposed on 23 September 2026 as a contract for review before its implementation; nothing here is implemented.
+**Status:** Accepted; implemented on 23 September 2026 after the independent contract review, with the maintained proofs named below.
 **Scope:** The frontend acceptance of six live readers (object detail, prefix detail, container detail, SLO manifest, DLO segments and Find status) against the captured account portrait's generation, and the backend's generation check on a retained Find scan. Finish-line item L11. No bridge signature or generated binding changes.
 
 ## Problem
