@@ -1,7 +1,7 @@
 # ADR 0072: bounded handling of very large namespaces
 
-**Status:** Proposed.
-Implementation waits for independent contract review and the operator's ceiling decision.
+**Status:** Accepted for implementation on 23 September 2026.
+The contract was reviewed independently on 22 September and the operator confirmed the proposal on 23 September with the ceiling to be configurable (finish line, operator decision 7); the implementation is a separate reviewed slice.
 This records the v1 approach the operator asked for on 22 September 2026 (decision 4 in the [finish line](../audits/2026-09-05/linux-finish-line.md) operator decisions): follow how established object-storage clients handle containers with hundreds of millions of objects, researched before anything is implemented.
 
 ## Context
@@ -39,6 +39,7 @@ So browsing and finding are bounded already, and the one unbounded path a contai
    The listing arrives in pages and the refusal fires when the count passes the ceiling, which can be part-way through the page that crossed it, so an oversize selection costs the ceiling plus at most one page of listing before it is refused, and no page is requested after the one that crossed.
    The download dialog states the ceiling before Start, and shows the scope's counted size when a count has been taken.
    The ceiling's value is the operator's decision under L10; the peak-memory record's candidates are 100,000 objects at 110 MiB, 250,000 at 352 MiB and 500,000 at 635 MiB, and its recommendation, kept here, is 250,000 objects per selection.
+   On 23 September 2026 the operator asked for the ceiling to be configurable: it becomes a setting the operator can change, shown with its current value wherever the ceiling is stated, with 250,000 as the default the author proposes.
 
 5. Streaming batches beyond the ceiling are the follow-on, not v1.
    The direction recorded for it: the preflight becomes a streaming pass that spills the inventory and its indexes to a temporary on-disk index, the engine receives consecutive batches of at most the ceiling, verification and publication complete per batch, the job shows planned and transferred counts as it runs, and cancellation lands at batch boundaries.
