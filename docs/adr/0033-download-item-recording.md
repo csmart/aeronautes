@@ -1,6 +1,6 @@
 # ADR 0033 — checked download item records
 
-**Status:** Contract and initial implementation independently approved on 9 September 2026; integrated-range review and protected delivery pending.
+**Status:** Accepted and delivered: the contract and initial implementation were independently approved on 9 September 2026, and the records reached master on 10 September 2026 as `9871a939` and `4feaaeac`, with the `0010_transfer_items` migration; [ADR 0061](0061-download-publication-facts.md) later corrected the publication facts.
 **Scope:** The separate download caller migration required by [ADR 0032](0032-download-placement-prerequisites.md) step seven.
 The [implementation evidence](../experiments/2026-09-09-checked-download-records.md) separates maintained tests from the remaining delivery gates.
 
