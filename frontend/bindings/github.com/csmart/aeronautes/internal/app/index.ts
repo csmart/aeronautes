@@ -48,6 +48,7 @@ export type {
     ContainerEditDTO,
     ContainerPageDTO,
     ContainerRowDTO,
+    ContainerSettingsDTO,
     CopyPlanDTO,
     CopyRequestDTO,
     CredentialStatusDTO,

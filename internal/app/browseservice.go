@@ -164,8 +164,12 @@ func (s *BrowseService) Containers(ctx context.Context, bookmarkID, marker strin
 	if err != nil {
 		return ContainerPageDTO{}, err
 	}
+	known := s.connections.settings.known(scope.BookmarkID, scope.Generation, names)
 	for i := range page.Rows {
 		page.Rows[i].Class = string(classes[page.Rows[i].Name])
+		if fact, ok := known[page.Rows[i].Name]; ok {
+			page.Rows[i].Settings = &fact
+		}
 	}
 	return page, nil
 }

@@ -60,12 +60,14 @@ func findMockHarness(t *testing.T) *Harness {
 	t.Cleanup(server.Close)
 	// Each mock owns its configuration so parallel fixtures cannot redirect
 	// one another's authentication or change the real-Swift environment.
-	return newHarness(t, harnessConfig{
+	h := newHarness(t, harnessConfig{
 		authURL: server.URL + "/auth/v1.0",
 		user:    "test:tester", key: "testing",
 		user2: "test2:tester2", key2: "testing2",
 		requireTwoAccounts: true,
 	})
+	h.MockPrimary = primary
+	return h
 }
 
 func awaitFindStatus(t *testing.T, h *Harness, id string) (*app.FindStatusDTO, *Receipt) {

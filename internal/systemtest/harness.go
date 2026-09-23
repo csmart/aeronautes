@@ -29,6 +29,7 @@ import (
 	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/scenariocontract"
 	"github.com/csmart/aeronautes/internal/secrets"
+	"github.com/csmart/aeronautes/internal/swifttest"
 	"github.com/csmart/aeronautes/internal/systemtest/oracle"
 )
 
@@ -64,6 +65,10 @@ type Harness struct {
 	Audit     *app.AuditService
 	Find      *app.FindService
 	Settings  *app.SettingsService
+	// MockPrimary is the primary account's in-process mock when the
+	// harness runs against swifttest, so a test can count its requests;
+	// nil against the owned Swift fixture.
+	MockPrimary *swifttest.Server
 	// Evidence lets a fixture record the ownership proofs the segment
 	// dialog reads, so a test can state what the operator was shown.
 	Evidence *evidence.Store

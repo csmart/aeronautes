@@ -75,6 +75,8 @@ func (s *InspectorService) Container(ctx context.Context, bookmarkID, name strin
 	}
 	dto := containerDetailDTO(d, string(classes[name]))
 	dto.Scope = scope
+	dto.Settings = containerSettings(d, scope.Generation, time.Now())
+	s.connections.settings.remember(scope.BookmarkID, scope.Generation, name, dto.Settings)
 	return dto, nil
 }
 

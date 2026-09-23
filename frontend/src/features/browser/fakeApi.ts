@@ -10,6 +10,7 @@ import type {
   BookmarkDTO,
   CapabilitiesDTO,
   ContainerDetailDTO,
+  ContainerSettingsDTO,
   ListingRowDTO,
   ListingScope,
   MutationResultDTO,
@@ -59,6 +60,14 @@ function cleanMap(
   return out;
 }
 
+/** Container names whose HEAD the fake refuses, so a test can show what an
+ * unchecked open container looks like; cleared by each test that sets it. */
+export const fakeContainerDetailFailures = new Set<string>();
+
+/** ACLs a fixture container starts with, as if set by another client: seeded
+ * state, not observed facts, so the rows start unchecked. */
+export const fakeContainerSeeds = new Map<string, { readAcl?: string; writeAcl?: string }>();
+
 export function newFakeApi(): Api {
   let nextId = 1;
   const bookmarks: BookmarkDTO[] = [];
@@ -105,8 +114,8 @@ export function newFakeApi(): Api {
   function stateOf(name: string): ContainerState {
     containerState[name] ??= {
       meta: {},
-      readAcl: "",
-      writeAcl: "",
+      readAcl: fakeContainerSeeds.get(name)?.readAcl ?? "",
+      writeAcl: fakeContainerSeeds.get(name)?.writeAcl ?? "",
       versioningMode: "off",
       versioningArchive: "",
       quotaBytes: 0,
@@ -171,6 +180,38 @@ export function newFakeApi(): Api {
     };
   }
 
+  // The backend derives settings facts once from a container HEAD and
+  // holds them per connection generation (ADR 0071); the fake mirrors both
+  // so the badges, the banner and the check can be exercised against it.
+  const settingsKnown = new Map<string, ContainerSettingsDTO>();
+  const failingContainerDetail = fakeContainerDetailFailures;
+  function deriveSettings(name: string, generation: number): ContainerSettingsDTO {
+    const s = stateOf(name);
+    const entries = s.readAcl.split(",").map((e) => e.trim());
+    const publicRead = entries.includes(".r:*");
+    return {
+      publicRead,
+      publicListing: publicRead && entries.includes(".rlistings"),
+      referrerGrants: entries.filter((e) => e.startsWith(".r:") && e !== ".r:*" && e !== ".r:" && !e.startsWith(".r:-")).map((e) => e.slice(3)),
+      sharedWrite: s.writeAcl.trim() !== "",
+      staticWeb: false,
+      versioningMode: s.versioningMode,
+      versioningArchive: s.versioningArchive,
+      quota: s.quotaBytes > 0 || s.quotaCount > 0,
+      cors: false,
+      readAcl: s.readAcl,
+      writeAcl: s.writeAcl,
+      observedAt: "2026-09-23T07:00:00Z",
+      generation,
+    };
+  }
+  function rememberSettings(name: string, bookmarkId: string): ContainerSettingsDTO {
+    const scope = readScope(bookmarkId);
+    const settings = deriveSettings(name, scope.generation);
+    settingsKnown.set(`${scope.bookmarkId}:${scope.generation}:${name}`, settings);
+    return settings;
+  }
+
   function containerDetailOf(name: string): ContainerDetailDTO {
     const c = containers.find((x) => x.name === name);
     if (!c) {
@@ -197,6 +238,7 @@ export function newFakeApi(): Api {
       editableFingerprint: containerFingerprint(name),
       class: c.segmentRole,
       scope: { bookmarkId: "", generation: 0 },
+      settings: deriveSettings(name, 0),
     };
   }
 
@@ -276,12 +318,14 @@ export function newFakeApi(): Api {
     },
 
     containers: async (bookmarkId, marker, limit) => {
+      const scope = readScope(bookmarkId);
       const rows = containers
         .map((c) => ({
           name: c.name,
           count: c.objectCount,
           bytes: c.bytes,
           class: c.segmentRole,
+          settings: settingsKnown.get(`${scope.bookmarkId}:${scope.generation}:${c.name}`) ?? null,
         }))
         .sort((a, b) => (a.name < b.name ? -1 : 1))
         .filter((c) => c.name > marker)
@@ -343,10 +387,11 @@ export function newFakeApi(): Api {
       };
     },
 
-    containerDetail: async (name, bookmarkId) => ({
-      ...containerDetailOf(name),
-      scope: readScope(bookmarkId),
-    }),
+    containerDetail: async (name, bookmarkId) => {
+      const detail = containerDetailOf(name);
+      if (failingContainerDetail.has(name)) throw new Error(`HEAD of ${name} refused by the fixture`);
+      return { ...detail, scope: readScope(bookmarkId), settings: rememberSettings(name, bookmarkId) };
+    },
 
     sloManifest: async (_container, name, bookmarkId) => {
       const large = largeObjectDetail[name];
@@ -431,7 +476,12 @@ export function newFakeApi(): Api {
         limitation: "",
         transIds: ["txfake", "txfake", "txfake"],
         objectAfter: null,
-        containerAfter: containerDetailOf(name),
+        // The verified post-write state is a fresh observation under the
+        // connected scope, as the backend records it (ADR 0071).
+        containerAfter: {
+          ...containerDetailOf(name),
+          settings: connectedScope ? rememberSettings(name, connectedScope.bookmarkId) : deriveSettings(name, 0),
+        },
       };
     },
 

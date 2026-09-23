@@ -192,6 +192,10 @@ func (s *MutateService) UpdateContainer(ctx context.Context, name, baseFingerpri
 	}
 	if result.After != nil {
 		after := s.containerDetailForBookmark(ctx, bookmarkID, result.After)
+		// The verified post-write state is a fresh observation of the
+		// container's settings under this connection (ADR 0071).
+		after.Settings = containerSettings(result.After, entry.generation, time.Now())
+		s.connections.settings.remember(bookmarkID, entry.generation, name, after.Settings)
 		dto.ContainerAfter = &after
 	}
 	return dto, nil

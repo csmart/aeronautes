@@ -34,7 +34,7 @@ async function connected() {
   // own scope mapper, which has a separate regression below.
   api.containers = async (id) => {
     expect(id).toBe(servedScope.bookmarkId);
-    return { rows: [{ name: "fixtures", count: servedScope.generation, bytes: 11, class: "normal" }],
+    return { rows: [{ name: "fixtures", count: servedScope.generation, bytes: 11, class: "normal", settings: null }],
       nextMarker: "fixtures", scope: { ...servedScope } };
   };
   api.objects = async (id) => {
@@ -78,7 +78,7 @@ function heldRead(f: Fixture, method: Read) {
       // A malformed transport reply must be rejected at runtime, despite the
       // static API type promising a scope.
       const replyScope = scope as ListingScope;
-      if (containers) containerReply.resolve({ rows: [{ name, count: 1, bytes: 11, class: "normal" }],
+      if (containers) containerReply.resolve({ rows: [{ name, count: 1, bytes: 11, class: "normal", settings: null }],
         nextMarker, scope: replyScope });
       else objectReply.resolve({ rows: [{ ...f.object, name }], nextMarker, scope: replyScope });
     },

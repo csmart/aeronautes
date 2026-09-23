@@ -27,6 +27,7 @@ import type {
   CapabilitiesDTO,
   ContainerCreateDTO,
   ContainerDetailDTO,
+  ContainerSettingsDTO,
   ContainerEditDTO,
   ContainerRowDTO,
   DLOSegmentsDTO,
@@ -236,6 +237,16 @@ export class BrowserState {
   }
   /** The open container's §53 HEAD detail; null while loading/closed. */
   containerDetail: ContainerDetailDTO | null = $state(null);
+  /** Why the open container's HEAD failed, so the absence of a settings
+   * banner is never silent (ADR 0071 decision 6); null when it succeeded
+   * or has not been asked. */
+  containerDetailError: string | null = $state(null);
+  /** The operator-started settings check over the loaded rows (ADR 0071
+   * decision 5): progress, and whether it is running or was stopped. */
+  settingsCheck: { running: boolean; checked: number; total: number; stopped: boolean } | null = $state(null);
+  #settingsCheckSeq = 0;
+  /** Rows whose HEAD failed during a check, by name, with the reason. */
+  settingsErrors: Record<string, string> = $state({});
   /** Set while viewing a manifest's segment location (§23.1 backstage
    * jump): the label of where we came from; null in normal browsing. */
   backstageFrom: string | null = $state(null);
@@ -364,11 +375,15 @@ export class BrowserState {
     this.#containersPage = null;
     this.#containersPageError = null;
     this.containers = [];
+    this.settingsErrors = {};
+    this.settingsCheck = null;
+    this.containerDetailError = null;
     this.containersMarker = "";
     this.containersError = null;
     this.#containerDetailSeq++;
     this.containerName = null;
     this.containerDetail = null;
+    this.containerDetailError = null;
     this.#containerDetailConnection = -1;
     this.backstageFrom = null;
     this.prefix = "";
@@ -635,6 +650,7 @@ export class BrowserState {
     if (this.connecting || !this.connectedBookmarkId) return;
     this.containerName = name;
     this.containerDetail = null;
+    this.containerDetailError = null;
     this.backstageFrom = null;
     // Prefix reset belongs to this navigation, before its HEAD captures scope.
     this.prefix = "";
@@ -666,6 +682,7 @@ export class BrowserState {
     if (this.prefix === "") {
       this.containerName = null;
       this.containerDetail = null;
+      this.containerDetailError = null;
       this.entries = [];
       this.filter = "";
       this.select(-1);
@@ -1335,6 +1352,7 @@ export class BrowserState {
     if (this.#currentContainerDetail(scope, seq, name) && result.outcome === "applied" && result.containerAfter
       && result.containerAfter.name === name) {
       this.containerDetail = result.containerAfter;
+      if (this.#factCurrent(result.containerAfter)) this.#applySettings(name, result.containerAfter.settings);
     }
     await this.loadAudit();
     return result;
@@ -1349,11 +1367,105 @@ export class BrowserState {
     const scope = this.#scopeRevision;
     const seq = ++this.#containerDetailSeq;
     const connection = this.#connectionRevision;
-    const detail = await this.#api.containerDetail(name, bookmarkId).catch(() => null);
+    let failure: string | null = null;
+    const detail = await this.#api.containerDetail(name, bookmarkId).catch((err) => {
+      failure = messageOf(err);
+      return null;
+    });
     if (this.#currentContainerDetail(scope, seq, name)) {
-      this.containerDetail = detail?.name === name && this.#answeredBy(detail.scope, bookmarkId) ? detail : null;
+      const accepted = detail?.name === name && this.#answeredBy(detail.scope, bookmarkId) ? detail : null;
+      this.containerDetail = accepted;
+      this.containerDetailError = accepted ? null : (failure ?? "the reply did not match this container and connection");
+      // The banner and the badge take only a fact of this connection's
+      // generation; a detail answered under another one is shown as the
+      // inspector's numbers but not as a settings fact.
+      if (accepted && this.#factCurrent(accepted)) this.#applySettings(name, accepted.settings);
+      else if (accepted) this.containerDetailError = "the settings fact belongs to another connection generation and was not shown";
       // A prefix change does not change this container's working-copy identity.
       this.#containerDetailConnection = connection;
+    }
+  }
+
+  /** The open container's settings fact, only when it belongs to this
+   * connection generation; the banner and the inspector sentence read this,
+   * never the detail's settings directly. */
+  get openContainerSettings(): ContainerSettingsDTO | null {
+    const detail = this.containerDetail;
+    return detail && this.#factCurrent(detail) ? detail.settings : null;
+  }
+
+  /** A settings fact is shown only under the connection generation it was
+   * observed in, as the backend store already keeps it (ADR 0071 decision
+   * 3): the reply's scope must be this account's current generation and the
+   * fact must carry that same generation. */
+  #factCurrent(detail: ContainerDetailDTO): boolean {
+    const generation = this.account?.scope.generation;
+    return generation !== undefined && detail.scope.generation === generation && detail.settings.generation === generation;
+  }
+
+  /** Fold one HEAD's facts into the loaded row for that container, so a
+   * badge appears the moment the container has been selected, checked or
+   * edited (ADR 0071 decision 2). */
+  #applySettings(name: string, settings: ContainerSettingsDTO) {
+    const index = this.containers.findIndex((row) => row.name === name);
+    if (index >= 0) {
+      this.containers[index] = { ...this.containers[index], settings };
+    }
+    if (name in this.settingsErrors) {
+      const { [name]: _dropped, ...rest } = this.settingsErrors;
+      this.settingsErrors = rest;
+    }
+  }
+
+  /** HEAD every loaded container once, in listing order with at most four
+   * in flight, through the same read selection makes; stops on request
+   * or when the scope changes (ADR 0071 decision 5). */
+  async checkSettings() {
+    const bookmarkId = this.connectedBookmarkId;
+    if (!bookmarkId || this.connecting || this.settingsCheck?.running) return;
+    const names = this.containers.map((row) => row.name);
+    const scope = this.#scopeRevision;
+    const connection = this.#connectionRevision;
+    const seq = ++this.#settingsCheckSeq;
+    const check = { running: true, checked: 0, total: names.length, stopped: false };
+    this.settingsCheck = { ...check };
+    // Identity is the sequence number, never the reactive object: a stop or a
+    // newer check bumps it, and so does nothing else.
+    const live = () => seq === this.#settingsCheckSeq
+      && connection === this.#connectionRevision && this.connectedBookmarkId === bookmarkId;
+    let next = 0;
+    const worker = async () => {
+      while (live() && next < names.length) {
+        const name = names[next++];
+        try {
+          const detail = await this.#api.containerDetail(name, bookmarkId);
+          if (!live()) return;
+          if (detail.name === name && this.#answeredBy(detail.scope, bookmarkId) && this.#factCurrent(detail)) {
+            this.#applySettings(name, detail.settings);
+          } else {
+            this.settingsErrors = { ...this.settingsErrors, [name]: "the reply did not match this container and connection generation" };
+          }
+        } catch (err) {
+          if (!live()) return;
+          this.settingsErrors = { ...this.settingsErrors, [name]: messageOf(err) };
+        }
+        check.checked++;
+        this.settingsCheck = { ...check };
+      }
+    };
+    await Promise.all([worker(), worker(), worker(), worker()]);
+    if (seq === this.#settingsCheckSeq) {
+      check.running = false;
+      if (scope !== this.#scopeRevision && check.checked < check.total) check.stopped = true;
+      this.settingsCheck = { ...check };
+    }
+  }
+
+  stopSettingsCheck() {
+    const check = this.settingsCheck;
+    if (check?.running) {
+      this.settingsCheck = { ...check, running: false, stopped: true };
+      this.#settingsCheckSeq++;
     }
   }
 
