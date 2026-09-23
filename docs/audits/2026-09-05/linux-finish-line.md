@@ -40,6 +40,18 @@ The operator settled the questions this record left open on 22 September 2026, u
 
 None of these decisions closes a finding, changes a production gate or lifts the valuable-data hold.
 
+## Operator decisions — 23 September 2026
+
+The operator answered two of the questions the 22 September proposals left open, in these words:
+
+6. Container badges: "sounds good".
+   [ADR 0071](../../adr/0071-container-settings-indicators.md) is accepted for implementation as proposed; the author reads the words as covering the proposed badge set and the operator-started check over loaded rows, and records that reading here rather than as a decision.
+7. Huge containers: "sounds good, ideally it should be configurable".
+   [ADR 0072](../../adr/0072-large-namespace-handling.md) is accepted for implementation as proposed, with the download selection ceiling a setting the operator can change rather than a fixed constant; the author reads the recommended 250,000 objects as its default, the streaming count as v1 and the streaming batches beyond the ceiling as later work, and records those readings here rather than as decisions.
+
+Prefix-marker creation remains an open question; marker creation stays deferred in the gate until the operator answers.
+Acceptance of the thirty re-proposed P31 rows remains open.
+
 ## Six production gates
 
 | Gate | Existing packages | Completion condition |

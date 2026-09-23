@@ -1,7 +1,7 @@
 # ADR 0071: show container access and feature settings while browsing
 
-**Status:** Proposed.
-Implementation waits for independent contract review and the operator's confirmation of the badge set.
+**Status:** Accepted for implementation on 23 September 2026.
+The contract was reviewed independently on 22 September and the operator confirmed the proposal on 23 September (finish line, operator decision 6); the implementation is a separate reviewed slice.
 This records the design the operator asked for on 22 September 2026 (decision 2 in the [finish line](../audits/2026-09-05/linux-finish-line.md) operator decisions): something visual while browsing that shows a world-readable container and similar settings, with web listing and versioning named as examples.
 
 ## Context
