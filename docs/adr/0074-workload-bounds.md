@@ -1,0 +1,32 @@
+# ADR 0074: bounds for browser retention, queued work, child batches and aggregate resources
+
+**Status:** Proposed on 23 September 2026 for the operator's decisions on the values; nothing here is accepted or implemented.
+**Scope:** The areas finish-line item L10 still names for the capabilities v1 keeps: browse, inspect, download, metadata editing and creation. The download inventory ceiling is delivered under [ADR 0072](0072-large-namespace-handling.md) and is not changed here.
+
+## What exists, at master `df96e1ad`
+
+- Listing: the browser asks 1,000 rows a page (`frontend/src/features/browser/browserState.svelte.ts:50`); the bridge clamps any ask above 5,000 silently rather than refusing it (`internal/app/browseservice.go:106`); Swift's default page is 10,000 (`internal/swiftcontrol/containers.go:14`). Container and object rows accumulate with no cap until navigation resets them (`browserState.svelte.ts:616`, `:763`).
+- Queued work: one active job under [ADR 0047](0047-single-active-job.md) (`internal/app/transferservice.go:93`); a job admitted over capacity parks in the runner with no bound on how many may wait (`internal/app/jobrunner.go:251-256`); a queued job cancels cleanly before it starts.
+- Child batches: the download route hands one engine child the whole engine-routed name list of a job (`internal/transfer/local/download_execute.go`, `copyIntoStage`), bounded only by the ADR 0072 ceiling, while the copy executor batches 500 names or 64 GiB per child (`internal/transfer/copy/executor.go:150`); `--buffer-size` is never emitted (`internal/transfer/rclone/runner.go:415-428`), so the engine's own per-transfer default applies unmanaged; the gateway bounds child connections to a capacity between 64 and 1,024 (`internal/transfer/rclone/runner.go:398-399`, `gatewayCapacity`) and bulk bodies to 4 MiB (`internal/transfer/rclone/gateway_scope.go:13`).
+- Aggregate: the native Swift client has no concurrency or rate bound of its own (`internal/swiftcontrol/tls.go:42` wraps the default transport); Find keeps 1,000 matches with an honest truncation flag, refuses a fifth concurrent scan and retains sixteen records (`internal/app/findservice.go:98-102`); audit history keeps 10,000 rows (`internal/audit/audit.go:79`) and the settings default to a 90-day audit window (`internal/app/settingsservice.go:98`); one session is cached per bookmark with no expiry (`internal/app/connections.go:34`).
+
+## Decision, proposed
+
+1. **Browser retention ceiling.** A column stops loading further pages once it holds N rows (proposed 100,000), keeps every row already shown, and says so in place of the next page: "100,000 rows loaded; narrow the prefix, use Find, or count the prefix". Nothing shown is dropped, so correctness is not truncated, and the ADR 0072 count gives the exact total. The bridge's silent clamp becomes visible: the page reply carries the effective limit, so the browser never believes it asked for more rows than it was given.
+2. **Queue depth.** The runner refuses a new job when N jobs already wait behind the active slot (proposed 16): "the job queue is full: 16 jobs are waiting; wait for one to finish or cancel one". Cancelling a queued job keeps releasing its claim as today.
+3. **Child batches on the download route.** The engine-routed names of a job go to the child in bounded batches (proposed 500 names or 64 GiB of planned bytes, the copy executor's values); each batch is staged, verified and published under the existing recorder semantics before the next child starts, so an interrupted job leaves at most one batch's stage behind. `--buffer-size` is emitted explicitly from the profile (proposed 16 MiB, the engine's default, so nothing changes until the operator changes it), and the effective settings show transfers × buffer as the child memory the operator can reason about.
+4. **Aggregate resources.** The native client gets a per-host connection cap (proposed 16) so a burst of inspector reads and Find scans cannot open unbounded connections to one endpoint. Find's match truncation stays as it is: the scanned count is exact and the flag is shown, which this record proposes to accept rather than change.
+5. **Control plane.** A maintained test shows that while a download runs and Find is at its worker limit, a listing page and a settings read still answer within a bound (proposed five seconds against the mock).
+
+The values in parentheses are the author's proposals; each is the operator's decision.
+Decision 7 of 23 September made the download ceiling a setting; the retention ceiling and the queue depth could take the same settings shape if the operator wants them configurable.
+
+## Consequences
+
+Items 1, 2, 4 and 5 are tier 2 under DESIGN §65.12; item 3 is tier 1, because staged effects and their records now span batches.
+Three delivery slices would follow acceptance: retention and queue depth (browser and runner, with their tests), download batching (executor and recorder, proved on the mock and the owned Swift), and the client cap with the responsiveness test.
+
+## What this does not establish
+
+Per-endpoint budgets (DESIGN §38.2), adaptive concurrency (§38.4), the SQLite size cap and segment-evidence retention (§51) stay open beyond v1.
+L10 completes for v1 only when the operator accepts these bounds and the slices land; nothing here changes a gate or the valuable-data release hold.
