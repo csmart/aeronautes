@@ -208,9 +208,23 @@ func lifetimeStopParent(t *testing.T, p *lifetimeProcess) {
 	}
 }
 
+// lifetimeWait bounds every wait for the parent or its child to reach a
+// state: the helper's start, the harness's held GET body, the child's
+// first staged bytes, the terminal records and the stopped state. Each
+// exists to fail a stuck fixture, not to measure anything. On a healthy
+// hosted runner the five modes take between four and eight seconds each,
+// escalate about sixteen with its ten-second grace, and the stage-bytes
+// wait alone once exceeded the former fifteen-second bound on a loaded
+// runner (PR 157 attempt 1, 22 September 2026, a docs-only change) while
+// the identical code had passed on master minutes earlier; that wait
+// depends on when the engine child flushes its first 64 KiB, which the
+// test does not control. Sixty seconds still fails a stuck fixture far
+// inside the package's twenty-five minute budget.
+const lifetimeWait = 60 * time.Second
+
 func lifetimeAwait(t *testing.T, what string, condition func() bool) {
 	t.Helper()
-	deadline := time.NewTimer(15 * time.Second)
+	deadline := time.NewTimer(lifetimeWait)
 	defer deadline.Stop()
 	tick := time.NewTicker(10 * time.Millisecond)
 	defer tick.Stop()
@@ -396,11 +410,20 @@ func childLifetime(t *testing.T, h *Harness, mode string) {
 	lifetimeReadJSON(t, request.Output, &id)
 	select {
 	case <-hold.reached:
-	case <-time.After(15 * time.Second):
+	case <-time.After(lifetimeWait):
 		t.Fatal("GET body barrier not reached")
 	}
 	stage := filepath.Join(root, ".aeronautes-stage-"+id)
 	var writing string
+	// A timeout here says only "stage bytes"; the sizes last seen in the
+	// stage say whether the child never wrote, wrote slowly or wrote
+	// something else, so log them when the test fails.
+	observed, waited := map[string]int{}, time.Now()
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Logf("stage bytes: waited %s, last observed %v", time.Since(waited).Round(time.Millisecond), observed)
+		}
+	})
 	lifetimeAwait(t, "stage bytes", func() bool {
 		paths, err := filepath.Glob(filepath.Join(stage, "*"))
 		if err != nil {
@@ -408,7 +431,11 @@ func childLifetime(t *testing.T, h *Harness, mode string) {
 		}
 		for _, path := range paths {
 			data, err := os.ReadFile(path)
-			if err == nil && len(data) >= 64*1024 && bytes.Equal(data[:64*1024], body[:64*1024]) {
+			if err != nil {
+				continue
+			}
+			observed[filepath.Base(path)] = len(data)
+			if len(data) >= 64*1024 && bytes.Equal(data[:64*1024], body[:64*1024]) {
 				writing = path
 				return true
 			}
