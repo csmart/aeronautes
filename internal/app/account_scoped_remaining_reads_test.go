@@ -34,6 +34,20 @@ func TestInspectorReadsAreAccountScoped(t *testing.T) {
 		if c.Scope.BookmarkID != h.bookmarkID() {
 			t.Errorf("container scope = %+v", c.Scope)
 		}
+		m, err := h.inspector.SLOManifest(ctx, h.bookmarkID(), "fixtures", "external-slo")
+		if err != nil {
+			t.Fatalf("manifest: %v", err)
+		}
+		if m.Scope.BookmarkID != h.bookmarkID() || m.Scope.Generation != d.Scope.Generation {
+			t.Errorf("manifest scope = %+v, want %+v", m.Scope, d.Scope)
+		}
+		seg, err := h.inspector.DLOSegments(ctx, h.bookmarkID(), "external-dlo-segments/wedding-video/")
+		if err != nil {
+			t.Fatalf("segments: %v", err)
+		}
+		if seg.Scope.BookmarkID != h.bookmarkID() || seg.Scope.Generation != d.Scope.Generation {
+			t.Errorf("segments scope = %+v, want %+v", seg.Scope, d.Scope)
+		}
 	})
 
 	t.Run("naming the other account refuses rather than answering", func(t *testing.T) {
@@ -48,6 +62,14 @@ func TestInspectorReadsAreAccountScoped(t *testing.T) {
 		_, err = h.inspector.Container(ctx, other.ID, "fixtures")
 		if !errors.Is(err, ErrAccountScopeChanged) {
 			t.Fatalf("container naming the unconnected account = %v", err)
+		}
+		_, err = h.inspector.SLOManifest(ctx, other.ID, "fixtures", "external-slo")
+		if !errors.Is(err, ErrAccountScopeChanged) {
+			t.Fatalf("manifest naming the unconnected account = %v", err)
+		}
+		_, err = h.inspector.DLOSegments(ctx, other.ID, "external-dlo-segments/wedding-video/")
+		if !errors.Is(err, ErrAccountScopeChanged) {
+			t.Fatalf("segments naming the unconnected account = %v", err)
 		}
 	})
 
