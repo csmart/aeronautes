@@ -63,9 +63,15 @@ func (f *downloadStageFixture) choose(t *testing.T) {
 // needs its own selection, because a selection authorises the one scope
 // it was made for (ADR 0041).
 func (f *downloadStageFixture) selectionFor(t *testing.T, prefix string) app.DownloadRequestDTO {
+	return f.selectionInto(t, "selected", prefix)
+}
+
+// selectionInto picks a directory under the fixture root for one prefix.
+// A second active download needs its own directory (ADR 0078).
+func (f *downloadStageFixture) selectionInto(t *testing.T, dir, prefix string) app.DownloadRequestDTO {
 	t.Helper()
 	h := f.h
-	app.WireFilePicker(h.Transfer, listingFilePicker{dir: filepath.Join(f.root, "selected")})
+	app.WireFilePicker(h.Transfer, listingFilePicker{dir: filepath.Join(f.root, dir)})
 	picked, err := h.Transfer.PickDownloadDir(t.Context(), app.SelectionScopeDTO{
 		BookmarkID: h.Primary.BookmarkID, Container: f.source, Prefix: prefix,
 	})
@@ -355,7 +361,11 @@ func downloadStageExisting(t *testing.T, h *Harness, kind string) {
 	f.choose(t)
 	var calls atomic.Int32
 	app.WireDownloadStageBoundary(h.Transfer, func(context.Context, string) error { calls.Add(1); return nil })
-	firstRequest := f.selectionFor(t, "hold/")
+	// The holding job has its own directory: the selected one is the
+	// queued job's, and one directory serves one active download (ADR 0078).
+	seedListingLocal(t, f.root, "held/keep", []byte("held local sentinel"))
+	f.beforeLocal = snapshotListingLocal(t, f.root)
+	firstRequest := f.selectionInto(t, "held", "hold/")
 	first, err := h.Transfer.StartDownload(t.Context(), firstRequest)
 	if err != nil {
 		t.Fatal(err)
@@ -415,7 +425,7 @@ func downloadStageExisting(t *testing.T, h *Harness, kind string) {
 	}
 	counters := jobs.Counters{ObjectsPlanned: 1, BytesPlanned: int64(len(f.body))}
 	f.check(t, id, "failed", "file exists", 0, counters, trace, func() {
-		assertListingLocalDelta(t, f.beforeLocal, snapshotListingLocal(t, f.root), map[string][]byte{"selected/first.bin": []byte("hold bytes")})
+		assertListingLocalDelta(t, f.beforeLocal, snapshotListingLocal(t, f.root), map[string][]byte{"held/first.bin": []byte("hold bytes")})
 		if calls.Load() != 1 {
 			t.Errorf("existing stage dispatched another child: %d completed calls", calls.Load())
 		}

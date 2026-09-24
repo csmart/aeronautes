@@ -68,6 +68,12 @@ func bindDestinationRoot(root *os.Root, path string, entry os.FileInfo) (*Destin
 // Path is the exact picker spelling, for display and records.
 func (r *DestinationRoot) Path() string { return r.path }
 
+// SameDirectory reports whether both held roots name one directory,
+// whatever spelling each pick used (ADR 0078).
+func (r *DestinationRoot) SameDirectory(other *DestinationRoot) bool {
+	return r != nil && other != nil && os.SameFile(r.identity, other.identity)
+}
+
 // Close releases the handle. Effects through a closed root fail.
 func (r *DestinationRoot) Close() error { return r.root.Close() }
 

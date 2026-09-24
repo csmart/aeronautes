@@ -22,12 +22,13 @@ func TestQueueDepthRefusesAtTheBoundary(t *testing.T) {
 	h.installEngine(nil)
 	h.mock.AddContainer("media", "standard")
 	seedObject(h.mock, "media", "scope/o-1.bin", "x", nil)
-	h.transfer.setFilePicker(fakePicker{dir: t.TempDir()})
 	bookmark := h.transfer.connections.ActiveBookmarkID()
 	// A picked destination is consumed by the start that uses it, so each
-	// admitted start picks afresh.
+	// admitted start picks afresh, and into its own directory, since one
+	// directory serves one active download (ADR 0078).
 	pick := func() DownloadRequestDTO {
 		t.Helper()
+		h.transfer.setFilePicker(fakePicker{dir: t.TempDir()})
 		picked, err := h.transfer.PickDownloadDir(ctx, SelectionScopeDTO{BookmarkID: bookmark, Container: "media", Prefix: "scope/"})
 		if err != nil || picked == nil {
 			t.Fatalf("pick: %+v %v", picked, err)
