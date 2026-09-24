@@ -6,7 +6,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import type { BrowserState } from "../browser/browserState.svelte";
-  import type { JobDTO } from "../../lib/api";
+  import type { AppSettingsDTO, JobDTO } from "../../lib/api";
   import { formatBytes } from "../../lib/format";
   import { v1Offers } from "../../lib/v1";
   import JobHistory from "./JobHistory.svelte";
@@ -204,6 +204,23 @@
     }
   }
 
+  // The browser retention ceiling and the queue depth (ADR 0074 decisions
+  // 1 and 2) take the ceiling's treatment: the backend refuses a value
+  // outside the range rather than clamping it.
+  const retentionValue = $derived(String(browser.appSettings?.browserRetentionCeiling ?? ""));
+  let retentionError: string | null = $state(null);
+  const queueDepthValue = $derived(String(browser.appSettings?.maxQueuedJobs ?? ""));
+  let queueDepthError: string | null = $state(null);
+  async function saveBound(patch: Partial<AppSettingsDTO>, report: (message: string | null) => void) {
+    if (disposed || !browser.canSaveAppSettings || !browser.appSettings) return;
+    report(null);
+    try {
+      await browser.saveAppSettings({ ...browser.appSettings, ...patch });
+    } catch (err) {
+      report(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   function settingsRows(job: JobDTO): [string, string][] {
     try {
       const parsed = JSON.parse(job.settings);
@@ -372,6 +389,48 @@
             </label>
             <span class="ceiling-status" id={`${id}-ceiling-status`} role="status">
               {#if ceilingError}{ceilingError}{:else if browser.appSettings}ceiling {browser.appSettings.downloadObjectCeiling.toLocaleString("en-US")} objects{/if}
+            </span>
+            <label class="filter" title="the most rows a browser column keeps loaded; at the ceiling the column keeps what it shows and loads no further page (1,000 to 5,000,000)">
+              <span>Browser retention</span>
+              <input
+                class="ceiling retention num"
+                type="number"
+                min="1000"
+                max="5000000"
+                step="1000"
+                value={retentionValue}
+                disabled={!browser.canSaveAppSettings}
+                aria-describedby={`${id}-retention-status`}
+                onchange={(e) => {
+                  const value = Number(e.currentTarget.value);
+                  e.currentTarget.value = retentionValue;
+                  void saveBound({ browserRetentionCeiling: value }, (message) => (retentionError = message));
+                }}
+              />
+            </label>
+            <span class="ceiling-status" id={`${id}-retention-status`} role="status">
+              {#if retentionError}{retentionError}{:else if browser.appSettings}keeps {browser.appSettings.browserRetentionCeiling.toLocaleString("en-US")} rows{/if}
+            </span>
+            <label class="filter" title="the most jobs that may wait behind the active slots; a further start is refused with the count named (1 to 1,000)">
+              <span>Queue depth</span>
+              <input
+                class="ceiling queue-depth num"
+                type="number"
+                min="1"
+                max="1000"
+                step="1"
+                value={queueDepthValue}
+                disabled={!browser.canSaveAppSettings}
+                aria-describedby={`${id}-queue-depth-status`}
+                onchange={(e) => {
+                  const value = Number(e.currentTarget.value);
+                  e.currentTarget.value = queueDepthValue;
+                  void saveBound({ maxQueuedJobs: value }, (message) => (queueDepthError = message));
+                }}
+              />
+            </label>
+            <span class="ceiling-status" id={`${id}-queue-depth-status`} role="status">
+              {#if queueDepthError}{queueDepthError}{:else if browser.appSettings}{browser.appSettings.maxQueuedJobs.toLocaleString("en-US")} waiting at most{/if}
             </span>
           {/if}
           {#if v1Offers.benchmark}

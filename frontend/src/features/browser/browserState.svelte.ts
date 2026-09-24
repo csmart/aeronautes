@@ -48,6 +48,10 @@ export type ContainerMode = "logical" | "all" | "backstage";
 
 /** Bridge page size for both listing levels. */
 const pageLimit = 1000;
+/** The rows a column keeps before it stops loading pages, until the
+ * operator's setting is read (ADR 0074 decision 1); mirrors
+ * defaultBrowserRetentionCeiling in internal/app/settingsservice.go. */
+const defaultBrowserRetentionCeiling = 100_000;
 
 export interface ContainerGroups {
   main: ContainerRowDTO[];
@@ -531,7 +535,7 @@ export class BrowserState {
           return page;
         }).catch((err) => {
           containersError = messageOf(err);
-          return { rows: [], nextMarker: "", scope: { bookmarkId, generation } };
+          return { rows: [], nextMarker: "", effectiveLimit: pageLimit, scope: { bookmarkId, generation } };
         });
       if (!current()) return false;
       await this.loadAudit();
@@ -618,9 +622,32 @@ export class BrowserState {
     }
   }
 
+  /** The retention ceiling in force (ADR 0074 decision 1): the operator's
+   * setting once read, otherwise its default. A column at the ceiling
+   * keeps every row it holds and loads no further page. */
+  get retentionCeiling(): number {
+    return this.appSettings?.browserRetentionCeiling ?? defaultBrowserRetentionCeiling;
+  }
+
+  get containersAtCeiling(): boolean {
+    return this.containersMarker !== "" && this.containers.length >= this.retentionCeiling;
+  }
+
+  get entriesAtCeiling(): boolean {
+    return this.entriesMarker !== "" && this.entries.length >= this.retentionCeiling;
+  }
+
+  /** A column that reaches the default ceiling before the settings were
+   * shown reads them, so the stop reflects the operator's ceiling rather
+   * than the default. */
+  #readCeilingWhenReached(rows: number) {
+    if (this.appSettings === null && rows >= this.retentionCeiling) void this.loadAppSettings();
+  }
+
   async loadMoreContainers() {
     if (this.containersMarker === "" || this.connecting || !this.connectedBookmarkId
-      || this.containersLoading || this.containersError || this.containersMoreLoading) {
+      || this.containersLoading || this.containersError || this.containersMoreLoading
+      || this.containersAtCeiling) {
       return;
     }
     const bookmarkId = this.connectedBookmarkId;
@@ -642,6 +669,7 @@ export class BrowserState {
       });
       this.containers = [...this.containers, ...rows];
       this.containersMarker = page.nextMarker;
+      this.#readCeilingWhenReached(this.containers.length);
     } catch (err) {
       if (!this.#currentContainersPage(request)) return;
       this.#containersPageError = { ...request, message: messageOf(err) };
@@ -766,7 +794,8 @@ export class BrowserState {
 
   async loadMoreEntries() {
     if (this.entriesMarker === "" || !this.containerName || this.connecting || !this.connectedBookmarkId
-      || this.entriesLoading || this.entriesError || this.entriesMoreLoading) {
+      || this.entriesLoading || this.entriesError || this.entriesMoreLoading
+      || this.entriesAtCeiling) {
       return;
     }
     const bookmarkId = this.connectedBookmarkId;
@@ -789,6 +818,7 @@ export class BrowserState {
       });
       this.entries = [...this.entries, ...rows];
       this.entriesMarker = page.nextMarker;
+      this.#readCeilingWhenReached(this.entries.length);
     } catch (err) {
       if (!this.#currentEntriesPage(request)) return;
       this.#entriesPageError = { ...request, message: messageOf(err) };

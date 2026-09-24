@@ -42,7 +42,7 @@ async function show() {
     { kind: "object", name: "other", bytes: 1, etag: "two", lastModified: "", contentType: "text/plain", sloListed: false },
     { kind: "prefix", name: "implied/", bytes: 0, etag: "", lastModified: "", contentType: "", sloListed: false },
     { kind: "prefix", name: "other/", bytes: 0, etag: "", lastModified: "", contentType: "", sloListed: false },
-  ], nextMarker: "", scope: { bookmarkId, generation: 1 } }));
+  ], nextMarker: "", effectiveLimit: 1000, scope: { bookmarkId, generation: 1 } }));
   api.objectDetail = vi.fn(async (at, name) => ({ ...object, name,
     editableFingerprint: `${at}/${name}`, meta: { Source: `${at}/${name}` } }));
   api.containerDetail = vi.fn(async (name) => ({ ...container, name,

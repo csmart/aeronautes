@@ -146,6 +146,9 @@ type ListingScopeDTO struct {
 type ContainerPageDTO struct {
 	Rows       []ContainerRowDTO `json:"rows"`
 	NextMarker string            `json:"nextMarker"`
+	// EffectiveLimit is the page size the service actually used, so a
+	// caller that asked for more knows its ask was clamped (ADR 0074).
+	EffectiveLimit int `json:"effectiveLimit"`
 	// Scope is the account that answered (ADR 0049).
 	Scope ListingScopeDTO `json:"scope"`
 }
@@ -167,8 +170,10 @@ type ListingRowDTO struct {
 // ObjectPageDTO is one page of the working list; an empty NextMarker
 // means the listing is exhausted.
 type ObjectPageDTO struct {
-	Rows       []ListingRowDTO `json:"rows"`
-	NextMarker string          `json:"nextMarker"`
+	Rows []ListingRowDTO `json:"rows"`
+	// EffectiveLimit is the page size the service actually used (ADR 0074).
+	EffectiveLimit int    `json:"effectiveLimit"`
+	NextMarker     string `json:"nextMarker"`
 	// Scope is the account that answered (ADR 0049).
 	Scope ListingScopeDTO `json:"scope"`
 }

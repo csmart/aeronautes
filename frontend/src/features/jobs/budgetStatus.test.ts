@@ -7,6 +7,7 @@ import JobsDrawer from "./JobsDrawer.svelte";
 
 const original: AppSettingsDTO = {
   maxActiveJobs: 2, defaultProfile: "balanced", auditRetentionDays: 17, jobRetentionDays: 11, downloadObjectCeiling: 250_000,
+  browserRetentionCeiling: 100_000, maxQueuedJobs: 16,
 };
 let drawer: ReturnType<typeof mount> | null = null;
 const releasePending: (() => void)[] = [];
