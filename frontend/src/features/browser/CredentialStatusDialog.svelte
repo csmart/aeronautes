@@ -39,6 +39,12 @@
         </dl>
         {#if status.retired + status.unfinished > 0}
           <p>Recorded key changes await cleanup.</p>
+          {#if status.retired > 0 && status.cleanupReason}
+            <p class="cleanup-reason">
+              The last cleanup pass stopped: {status.cleanupReason}. It runs again after the
+              next bookmark delete or key change.
+            </p>
+          {/if}
         {:else}
           <p>No pending credential cleanup is recorded.</p>
         {/if}

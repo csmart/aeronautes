@@ -46,21 +46,24 @@ func TestCredentialCleanupStatusAfterDeletedBookmark(t *testing.T) {
 		t.Fatal(err)
 	}
 	status, read := h.CredentialStatus(t.Context())
-	// The session store that recorded this work is still the active one.
-	if read.Err() != nil || status != (app.CredentialStatusDTO{Retired: 2}) {
-		t.Fatalf("deleted bookmark's retained work = %+v, %v", status, read.Err())
+	// The session store that recorded this work is still the active one, so
+	// the pass after each save and after the delete removed both retired
+	// keys and their journal rows (ADR 0076); the status shows the cleaned
+	// state and carries no stop reason.
+	if read.Err() != nil || status != (app.CredentialStatusDTO{}) {
+		t.Fatalf("deleted bookmark's status after cleanup = %+v, %v", status, read.Err())
 	}
 	encoded, err := json.Marshal(status)
-	if err != nil || string(encoded) != `{"retired":2,"unfinished":0,"saving":0,"unverified":0}` {
-		t.Fatalf("status bridge must expose only counts: %s, %v", encoded, err)
+	if err != nil || string(encoded) != `{"retired":0,"unfinished":0,"saving":0,"unverified":0,"cleanupReason":""}` {
+		t.Fatalf("status bridge must expose only counts and the cleanup reason: %s, %v", encoded, err)
 	}
 	list, err := h.Bookmarks.List(t.Context())
 	if err != nil || len(list) != 0 {
 		t.Fatalf("status restored the deleted bookmark: %+v, %v", list, err)
 	}
 	var retained int
-	if err := d.Reader().QueryRow(`SELECT COUNT(*) FROM credential_work`).Scan(&retained); err != nil || retained != 2 {
-		t.Fatalf("reading status removed journal evidence: %d, %v", retained, err)
+	if err := d.Reader().QueryRow(`SELECT COUNT(*) FROM credential_work`).Scan(&retained); err != nil || retained != 0 {
+		t.Fatalf("cleanup left journal rows for confirmed removals: %d, %v", retained, err)
 	}
 	read.CreditRead()
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/csmart/aeronautes/internal/bookmarks"
 	"github.com/csmart/aeronautes/internal/jobs"
@@ -46,7 +47,7 @@ func (s *BookmarkService) CredentialStatus(ctx context.Context) (CredentialStatu
 	}
 	return CredentialStatusDTO{
 		Retired: status.Retired, Unfinished: status.Unfinished, Saving: status.Saving,
-		Unverified: status.Unverified,
+		Unverified: status.Unverified, CleanupReason: status.CleanupReason,
 	}, nil
 }
 
@@ -96,6 +97,7 @@ func (s *BookmarkService) Save(ctx context.Context, dto BookmarkDTO, secret stri
 		// first fix for this anchored on the wrong line and no-oped).
 		s.connections.Invalidate(dto.ID)
 	}
+	s.cleanupCredentials(ctx)
 	return toBookmarkDTO(saved), nil
 }
 
@@ -122,7 +124,19 @@ func (s *BookmarkService) Delete(ctx context.Context, id string) error {
 	if s.connections != nil {
 		s.connections.Invalidate(id)
 	}
+	s.cleanupCredentials(ctx)
 	return nil
+}
+
+// cleanupCredentials runs one physical cleanup pass after a delete or a
+// key change (ADR 0076). The logical operation has already succeeded and
+// is reported as such; the pass reports through the credential status,
+// and it is not abandoned when the request that started it is cancelled,
+// because an abandoned native delete is unresolved rather than undone.
+func (s *BookmarkService) cleanupCredentials(ctx context.Context) {
+	if _, err := s.store.Cleanup(context.WithoutCancel(ctx), ""); err != nil {
+		log.Printf("credential cleanup: %v", err)
+	}
 }
 
 func toBookmarkDTO(b bookmarks.Bookmark) BookmarkDTO {

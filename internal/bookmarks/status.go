@@ -23,6 +23,9 @@ type CredentialStatus struct {
 	// about the excluded active saves or about credentials generally, and
 	// never means the work is finished or that a native key is reachable.
 	Unverified int64
+	// CleanupReason says why the last physical cleanup pass left a retired
+	// row in place (ADR 0076); empty when it left none.
+	CleanupReason string
 }
 
 func (st *Store) CredentialStatus(ctx context.Context) (CredentialStatus, error) {
@@ -47,6 +50,7 @@ func (st *Store) CredentialStatus(ctx context.Context) (CredentialStatus, error)
 		return CredentialStatus{}, errors.New("credential cleanup status is unavailable")
 	}
 	status.Unverified = unverified
+	status.CleanupReason = st.lastCleanup.Reason
 	return status, nil
 }
 

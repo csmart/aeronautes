@@ -6,7 +6,9 @@ package app
 // erased when that has not been established.
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
@@ -23,7 +25,7 @@ import (
 // test keeps, so it can act both as that authority and as another one.
 type authorityFixture struct {
 	d        *db.DB
-	recorded *secrets.SessionStore
+	recorded *authorityBackend
 	service  *BookmarkService
 	id       string
 	ref      string
@@ -41,7 +43,7 @@ func newAuthorityFixture(t *testing.T) *authorityFixture {
 	srv := httptest.NewServer(mock)
 	t.Cleanup(srv.Close)
 
-	recorded := secrets.NewSessionStore()
+	recorded := &authorityBackend{SecretStore: secrets.NewSessionStore()}
 	store := bookmarks.NewStore(d, recorded)
 	service := NewBookmarkService(store, NewConnections(store), jobs.NewStore(d))
 	saved, err := service.Save(ctx, BookmarkDTO{
@@ -111,6 +113,9 @@ func TestConnectionGuidanceSeparatesUnreachableFromErasure(t *testing.T) {
 func TestCredentialStatusDTOReportsUnverifiedWork(t *testing.T) {
 	f := newAuthorityFixture(t)
 	ctx := t.Context()
+	// The pass after the delete must leave the row for this test to have
+	// work to report: the fixture answers the removal as unresolved.
+	f.recorded.deleteErr = fmt.Errorf("%w: the fixture held the key", secrets.ErrUnresolved)
 	if err := f.service.Delete(ctx, f.id); err != nil {
 		t.Fatal(err)
 	}
@@ -121,6 +126,9 @@ func TestCredentialStatusDTOReportsUnverifiedWork(t *testing.T) {
 	}
 	if own.Retired != 1 || own.Unverified != 0 {
 		t.Fatalf("the recording authority reported its own work as unconfirmed: %+v", own)
+	}
+	if !strings.Contains(own.CleanupReason, "the fixture held the key") {
+		t.Fatalf("the status does not say why cleanup left the row: %+v", own)
 	}
 
 	other := NewBookmarkService(f.otherAuthority(), nil, nil)
@@ -134,4 +142,19 @@ func TestCredentialStatusDTOReportsUnverifiedWork(t *testing.T) {
 	if changed.Unverified > changed.Retired+changed.Unfinished {
 		t.Fatalf("the facet is not a subset of retired and unfinished work: %+v", changed)
 	}
+}
+
+// authorityBackend records like the session store and answers a delete
+// as the test directs, so a status test can keep a retired row that the
+// ADR 0076 pass would otherwise remove at once.
+type authorityBackend struct {
+	secrets.SecretStore
+	deleteErr error
+}
+
+func (b *authorityBackend) Delete(ctx context.Context, name string) error {
+	if b.deleteErr != nil {
+		return b.deleteErr
+	}
+	return b.SecretStore.Delete(ctx, name)
 }

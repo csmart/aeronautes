@@ -79,6 +79,10 @@ type Store struct {
 	leases     map[string]int
 	jobPins    map[string]int
 	unresolved map[string]bool
+	// claimed holds references a cleanup pass is removing (ADR 0076); no
+	// new reader may acquire one.
+	claimed     map[string]bool
+	lastCleanup CleanupResult
 }
 
 type stateDB interface {
@@ -89,7 +93,7 @@ type stateDB interface {
 // NewStore builds a Store over the state database and the active secret
 // backend.
 func NewStore(d *db.DB, s secrets.SecretStore) *Store {
-	return &Store{db: d, secrets: s, preparing: map[string]bool{}, leases: map[string]int{}, jobPins: map[string]int{}, unresolved: map[string]bool{}}
+	return &Store{db: d, secrets: s, preparing: map[string]bool{}, leases: map[string]int{}, jobPins: map[string]int{}, unresolved: map[string]bool{}, claimed: map[string]bool{}}
 }
 
 // Save inserts (empty ID) or updates a bookmark. Every replacement key

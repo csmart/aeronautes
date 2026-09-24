@@ -169,6 +169,11 @@ func (st *Store) ConnectionConfig(ctx context.Context, id string) (swiftcontrol.
 		st.mu.Unlock()
 		return swiftcontrol.Config{}, 0, secrets.ErrAuthorityUnreachable
 	}
+	if st.claimed[r.ref] {
+		// A cleanup pass is removing this key (ADR 0076); no new user.
+		st.mu.Unlock()
+		return swiftcontrol.Config{}, 0, ErrChanged
+	}
 	if r.TLSMode == swiftcontrol.TLSModeCustomCA && !r.ca.Valid {
 		st.mu.Unlock()
 		return swiftcontrol.Config{}, 0, errors.New("custom CA bundle is unavailable")
