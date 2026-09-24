@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	"log"
 	"strconv"
 	"time"
@@ -87,6 +88,10 @@ type AppSettingsDTO struct {
 	// slots; a further start is refused with the count named rather than
 	// queued without bound (ADR 0074 decision 2). The operator sets it.
 	MaxQueuedJobs int `json:"maxQueuedJobs"`
+	// MaxConnsPerHost caps the connections a native session opens to one
+	// host, applied when the session is opened (ADR 0074 decision 4).
+	// The operator sets it.
+	MaxConnsPerHost int `json:"maxConnsPerHost"`
 }
 
 // defaultDownloadObjectCeiling is 250,000 objects: about 352 MiB of peak
@@ -120,6 +125,15 @@ const (
 	maxMaxQueuedJobs     = 1_000
 )
 
+// The native client's per-host connection cap: the session package's
+// default (ADR 0074 decision 4); one is a serial client and 256 is more
+// than any endpoint budget here would grant one session.
+const (
+	defaultMaxConnsPerHost = swiftcontrol.DefaultMaxConnsPerHost
+	minMaxConnsPerHost     = 1
+	maxMaxConnsPerHost     = 256
+)
+
 func defaults() AppSettingsDTO {
 	return AppSettingsDTO{
 		MaxActiveJobs: defaultMaxActiveJobs, DefaultProfile: string(ProfileAuto),
@@ -127,6 +141,7 @@ func defaults() AppSettingsDTO {
 		DownloadObjectCeiling:   defaultDownloadObjectCeiling,
 		BrowserRetentionCeiling: defaultBrowserRetentionCeiling,
 		MaxQueuedJobs:           defaultMaxQueuedJobs,
+		MaxConnsPerHost:         defaultMaxConnsPerHost,
 	}
 }
 
@@ -170,6 +185,10 @@ func (s *SettingsService) Get(ctx context.Context) (AppSettingsDTO, error) {
 			if n, err := strconv.Atoi(value); err == nil {
 				settings.MaxQueuedJobs = n
 			}
+		case "max_conns_per_host":
+			if n, err := strconv.Atoi(value); err == nil {
+				settings.MaxConnsPerHost = n
+			}
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -192,6 +211,9 @@ func (s *SettingsService) Get(ctx context.Context) (AppSettingsDTO, error) {
 	}
 	if settings.MaxQueuedJobs < minMaxQueuedJobs || settings.MaxQueuedJobs > maxMaxQueuedJobs {
 		settings.MaxQueuedJobs = defaultMaxQueuedJobs
+	}
+	if settings.MaxConnsPerHost < minMaxConnsPerHost || settings.MaxConnsPerHost > maxMaxConnsPerHost {
+		settings.MaxConnsPerHost = defaultMaxConnsPerHost
 	}
 	return settings, nil
 }
@@ -235,6 +257,12 @@ func (s *SettingsService) Set(ctx context.Context, settings AppSettingsDTO) (App
 	if settings.MaxQueuedJobs < minMaxQueuedJobs || settings.MaxQueuedJobs > maxMaxQueuedJobs {
 		return AppSettingsDTO{}, fmt.Errorf("max queued jobs %d out of range %d..%d", settings.MaxQueuedJobs, minMaxQueuedJobs, maxMaxQueuedJobs)
 	}
+	if settings.MaxConnsPerHost == 0 {
+		settings.MaxConnsPerHost = defaultMaxConnsPerHost
+	}
+	if settings.MaxConnsPerHost < minMaxConnsPerHost || settings.MaxConnsPerHost > maxMaxConnsPerHost {
+		return AppSettingsDTO{}, fmt.Errorf("max connections per host %d out of range %d..%d", settings.MaxConnsPerHost, minMaxConnsPerHost, maxMaxConnsPerHost)
+	}
 	err := s.db.WriteTx(ctx, func(tx *sql.Tx) error {
 		for key, value := range map[string]string{
 			"max_active_jobs":           strconv.Itoa(settings.MaxActiveJobs),
@@ -244,6 +272,7 @@ func (s *SettingsService) Set(ctx context.Context, settings AppSettingsDTO) (App
 			"download_object_ceiling":   strconv.Itoa(settings.DownloadObjectCeiling),
 			"browser_retention_ceiling": strconv.Itoa(settings.BrowserRetentionCeiling),
 			"max_queued_jobs":           strconv.Itoa(settings.MaxQueuedJobs),
+			"max_conns_per_host":        strconv.Itoa(settings.MaxConnsPerHost),
 		} {
 			if _, err := tx.ExecContext(ctx,
 				`INSERT INTO app_settings (key, value) VALUES (?, ?)

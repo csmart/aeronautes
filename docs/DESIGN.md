@@ -2132,6 +2132,8 @@ Each Swift endpoint may override:
 
 Two jobs hitting the same endpoint compete inside the endpoint's budget.
 
+Since 24 September 2026 the native client caps the connections one session opens to a host at the operator's `maxConnsPerHost` setting (default 16), applied when the session is opened, so a burst of inspector reads and Find scans cannot open connections without bound ([ADR 0074](adr/0074-workload-bounds.md) decision 4); the per-endpoint budgets above remain open.
+
 A source→destination job consumes relevant budget at both endpoints.
 
 ### 38.3 Per-job overrides

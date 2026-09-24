@@ -831,7 +831,7 @@ export function newFakeApi(): Api {
     }),
     appSettings: async () => ({
       maxActiveJobs: 2, defaultProfile: "auto", auditRetentionDays: 90, jobRetentionDays: 30, downloadObjectCeiling: 250_000,
-      browserRetentionCeiling: 100_000, maxQueuedJobs: 16,
+      browserRetentionCeiling: 100_000, maxQueuedJobs: 16, maxConnsPerHost: 16,
     }),
     saveAppSettings: async (settings) => settings,
     startFind: async (container, prefix, query, bookmarkId, countOnly = false) => {

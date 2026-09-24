@@ -95,6 +95,13 @@ export interface AppSettingsDTO {
      * queued without bound (ADR 0074 decision 2). The operator sets it.
      */
     "maxQueuedJobs": number;
+
+    /**
+     * MaxConnsPerHost caps the connections a native session opens to one
+     * host, applied when the session is opened (ADR 0074 decision 4).
+     * The operator sets it.
+     */
+    "maxConnsPerHost": number;
 }
 
 /**
