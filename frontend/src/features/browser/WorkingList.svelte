@@ -264,7 +264,11 @@
         {browser.visibleEntries.length} rows{browser.entriesMarker !== "" ? " (more on server)" : ""}
         · {browser.selectedIndex >= 0 ? "1 selected" : "none selected"}
       </span>
-      {#if browser.entriesMarker !== ""}
+      {#if browser.entriesAtCeiling}
+        <span class="retention-notice" role="status">
+          {browser.entries.length.toLocaleString("en-US")} rows loaded, the retention ceiling; narrow the prefix, use Find, or count the prefix. The ceiling is set in the jobs drawer.
+        </span>
+      {:else if browser.entriesMarker !== ""}
         <div class="paging">
           {#if browser.entriesMoreError}
             <span class="page-error" role="alert">Could not load more objects: {browser.entriesMoreError}</span>
@@ -311,6 +315,13 @@
     color: var(--color-danger);
     background: var(--color-danger-soft);
     border: 1px solid var(--color-danger);
+    border-radius: var(--radius-control);
+  }
+
+  .retention-notice {
+    padding: var(--space-1) var(--space-2);
+    color: var(--color-text-faint);
+    border: 1px dashed var(--color-border-strong);
     border-radius: var(--radius-control);
   }
 

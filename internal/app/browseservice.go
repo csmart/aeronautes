@@ -143,7 +143,7 @@ func (s *BrowseService) Containers(ctx context.Context, bookmarkID, marker strin
 	}
 	limit = clampLimit(limit)
 
-	page := ContainerPageDTO{Rows: []ContainerRowDTO{}, Scope: scope}
+	page := ContainerPageDTO{Rows: []ContainerRowDTO{}, Scope: scope, EffectiveLimit: limit}
 	for entry, err := range session.Containers(ctx, swiftcontrol.ListOptions{Marker: marker, PageSize: limit}) {
 		if err != nil {
 			return ContainerPageDTO{}, err
@@ -183,7 +183,7 @@ func (s *BrowseService) Objects(ctx context.Context, bookmarkID, container, pref
 	}
 	limit = clampLimit(limit)
 
-	page := ObjectPageDTO{Rows: []ListingRowDTO{}, Scope: scope}
+	page := ObjectPageDTO{Rows: []ListingRowDTO{}, Scope: scope, EffectiveLimit: limit}
 	opts := swiftcontrol.ObjectListOptions{Prefix: prefix, Marker: marker, PageSize: limit}
 	for entry, err := range session.Objects(ctx, container, opts) {
 		if err != nil {

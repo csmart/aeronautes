@@ -5,6 +5,7 @@ import { newFakeApi } from "./fakeApi";
 
 const original: AppSettingsDTO = {
   maxActiveJobs: 2, defaultProfile: "balanced", auditRetentionDays: 17, jobRetentionDays: 11, downloadObjectCeiling: 250_000,
+  browserRetentionCeiling: 100_000, maxQueuedJobs: 16,
 };
 const releasePending: (() => void)[] = [];
 

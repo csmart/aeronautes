@@ -80,6 +80,21 @@ export interface AppSettingsDTO {
      * peak-memory record's recommendation.
      */
     "downloadObjectCeiling": number;
+
+    /**
+     * BrowserRetentionCeiling is the most rows a listing column keeps
+     * loaded; past it the browser stops loading further pages, keeps every
+     * row shown and says so in place of the next page (ADR 0074
+     * decision 1). The operator sets it.
+     */
+    "browserRetentionCeiling": number;
+
+    /**
+     * MaxQueuedJobs is the most jobs that may wait behind the active
+     * slots; a further start is refused with the count named rather than
+     * queued without bound (ADR 0074 decision 2). The operator sets it.
+     */
+    "maxQueuedJobs": number;
 }
 
 /**
@@ -275,6 +290,12 @@ export interface ContainerEditDTO {
 export interface ContainerPageDTO {
     "rows": ContainerRowDTO[] | null;
     "nextMarker": string;
+
+    /**
+     * EffectiveLimit is the page size the service actually used, so a
+     * caller that asked for more knows its ask was clamped (ADR 0074).
+     */
+    "effectiveLimit": number;
 
     /**
      * Scope is the account that answered (ADR 0049).
@@ -819,6 +840,11 @@ export interface ObjectMetadataEditDTO {
  */
 export interface ObjectPageDTO {
     "rows": ListingRowDTO[] | null;
+
+    /**
+     * EffectiveLimit is the page size the service actually used (ADR 0074).
+     */
+    "effectiveLimit": number;
     "nextMarker": string;
 
     /**

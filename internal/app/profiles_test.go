@@ -89,6 +89,49 @@ func TestSettingsServicePersistsAndApplies(t *testing.T) {
 	if saved, err := service.Set(ctx, AppSettingsDTO{MaxActiveJobs: 1, DefaultProfile: "auto"}); err != nil || saved.DownloadObjectCeiling != defaultDownloadObjectCeiling {
 		t.Fatalf("omitted ceiling = %+v %v", saved, err)
 	}
+	// The browser retention ceiling and the queue depth (ADR 0074
+	// decisions 1 and 2) take the same treatment, and the depth reaches
+	// the runner on every save.
+	if settings.BrowserRetentionCeiling != defaultBrowserRetentionCeiling || settings.MaxQueuedJobs != defaultMaxQueuedJobs {
+		t.Fatalf("workload defaults = %+v", settings)
+	}
+	for _, retention := range []int{-1, 1, 999, 5_000_001} {
+		if _, err := service.Set(ctx, AppSettingsDTO{MaxActiveJobs: 1, DefaultProfile: "auto", BrowserRetentionCeiling: retention}); err == nil {
+			t.Fatalf("retention ceiling %d accepted", retention)
+		}
+	}
+	for _, depth := range []int{-1, 1_001} {
+		if _, err := service.Set(ctx, AppSettingsDTO{MaxActiveJobs: 1, DefaultProfile: "auto", MaxQueuedJobs: depth}); err == nil {
+			t.Fatalf("queue depth %d accepted", depth)
+		}
+	}
+	if saved, err := service.Set(ctx, AppSettingsDTO{MaxActiveJobs: 1, DefaultProfile: "auto", BrowserRetentionCeiling: 2_000, MaxQueuedJobs: 3}); err != nil ||
+		saved.BrowserRetentionCeiling != 2_000 || saved.MaxQueuedJobs != 3 {
+		t.Fatalf("workload save = %+v %v", saved, err)
+	}
+	if read, err := service.Get(ctx); err != nil || read.BrowserRetentionCeiling != 2_000 || read.MaxQueuedJobs != 3 {
+		t.Fatalf("workload read = %+v %v", read, err)
+	}
+	if depth := runner.queueDepth(); depth != 3 {
+		t.Fatalf("runner queue depth after save = %d", depth)
+	}
+	if saved, err := service.Set(ctx, AppSettingsDTO{MaxActiveJobs: 1, DefaultProfile: "auto"}); err != nil ||
+		saved.BrowserRetentionCeiling != defaultBrowserRetentionCeiling || saved.MaxQueuedJobs != defaultMaxQueuedJobs {
+		t.Fatalf("omitted workload bounds = %+v %v", saved, err)
+	}
+	if depth := runner.queueDepth(); depth != defaultMaxQueuedJobs {
+		t.Fatalf("runner queue depth after an omitted save = %d", depth)
+	}
+	// A runner built for a store that already holds a depth starts with it.
+	if depth := NewSettingsService(d, newJobRunner(nil, nil)).runner.queueDepth(); depth != defaultMaxQueuedJobs {
+		t.Fatalf("fresh runner queue depth = %d", depth)
+	}
+	if _, err := service.Set(ctx, AppSettingsDTO{MaxActiveJobs: 1, DefaultProfile: "auto", MaxQueuedJobs: 5}); err != nil {
+		t.Fatal(err)
+	}
+	if depth := NewSettingsService(d, newJobRunner(nil, nil)).runner.queueDepth(); depth != 5 {
+		t.Fatalf("runner queue depth at construction = %d", depth)
+	}
 	if _, err := service.Set(ctx, AppSettingsDTO{MaxActiveJobs: 99, DefaultProfile: "auto"}); err == nil {
 		t.Fatal("out-of-range budget accepted")
 	}
