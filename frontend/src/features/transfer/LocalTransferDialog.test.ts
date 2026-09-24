@@ -155,7 +155,7 @@ describe.each(["upload", "download"] as const)("%s preflight binding", (mode) =>
     start.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     flushSync();
     const expected = { bookmarkId: "source", container: "media", prefix: "selected/",
-      settings: { chunkSize: "", transfers: 0, checkers: 0, tpsLimit: 0, bwLimit: "" },
+      settings: { chunkSize: "", transfers: 0, checkers: 0, tpsLimit: 0, bwLimit: "" , bufferSize: ""},
       ...(mode === "upload" ? { selectionToken: "files-0" } : { destDirToken: "dir-0" }),
     };
     expect(mode === "upload" ? f.api.preflightUpload : f.api.preflightDownload).toHaveBeenCalledExactlyOnceWith(expected);
@@ -379,7 +379,7 @@ it.each(["upload", "download"] as const)("forwards the complete captured %s requ
   const browser = new BrowserState(api);
   browser.connectedBookmarkId = "another"; browser.containerName = "another"; browser.prefix = "another/";
   const scope = { bookmarkId: "captured", container: "media", prefix: "  exact/%\n",
-    settings: { chunkSize: "2Mi", transfers: 3, checkers: 4, tpsLimit: 5, bwLimit: "6M" },
+    settings: { chunkSize: "2Mi", transfers: 3, checkers: 4, tpsLimit: 5, bwLimit: "6M" , bufferSize: ""},
   };
   if (mode === "upload") {
     const req = { ...scope, selectionToken: "files" };

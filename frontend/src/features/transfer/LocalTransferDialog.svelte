@@ -71,7 +71,7 @@
       bookmarkId: browser.connectedBookmarkId ?? "",
       container: browser.containerName ?? "",
       prefix: browser.prefix,
-      settings: { chunkSize: "", transfers: 0, checkers: 0, tpsLimit: 0, bwLimit: "" },
+      settings: { chunkSize: "", transfers: 0, checkers: 0, tpsLimit: 0, bwLimit: "", bufferSize: "" },
     };
   }
 

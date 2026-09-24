@@ -228,9 +228,15 @@
   function settingsRows(job: JobDTO): [string, string][] {
     try {
       const parsed = JSON.parse(job.settings);
-      return Object.entries(parsed)
+      const rows: [string, string][] = Object.entries(parsed)
         .filter(([, v]) => v !== "" && v !== 0)
         .map(([k, v]) => [k, String(v)]);
+      // The child's per-transfer buffers are the memory to reason about
+      // (ADR 0074 decision 3): transfers × buffer size, when both are known.
+      if (typeof parsed.transfers === "number" && parsed.transfers > 0 && typeof parsed.bufferSize === "string" && parsed.bufferSize !== "") {
+        rows.push(["child buffers", `${parsed.transfers} × ${parsed.bufferSize}`]);
+      }
+      return rows;
     } catch {
       return [];
     }

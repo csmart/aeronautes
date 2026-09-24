@@ -142,6 +142,9 @@ type Options struct {
 	Checkers  int
 	TPSLimit  float64
 	BWLimit   string
+	// BufferSize drives --buffer-size, the child's per-transfer read
+	// buffer (ADR 0074 decision 3); "" leaves rclone's default in place.
+	BufferSize string
 	// Retries/LowLevelRetries bound the failure budget (§26.2); zero
 	// means the measured-fast defaults 1/2.
 	Retries         int
@@ -426,6 +429,9 @@ func (r *Runner) pacingArgs() []string {
 	}
 	if o.BWLimit != "" {
 		args = append(args, "--bwlimit", o.BWLimit)
+	}
+	if o.BufferSize != "" {
+		args = append(args, "--buffer-size", o.BufferSize)
 	}
 	return args
 }

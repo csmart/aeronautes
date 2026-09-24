@@ -28,7 +28,7 @@ done
 `)
 				runner, err := NewRunner(Options{
 					Binary: bin, NoGzipEncoding: enabled, ChunkSize: "1Mi",
-					Transfers: 7, Checkers: 9, TPSLimit: 11, BWLimit: "10M",
+					Transfers: 7, Checkers: 9, TPSLimit: 11, BWLimit: "10M", BufferSize: "16Mi",
 				})
 				if err != nil {
 					t.Fatal(err)
@@ -79,7 +79,7 @@ done
 					t.Errorf("copyto gained a files list: %v", err)
 				}
 				want = append(want, "--config", "<private>", "--retries", "1", "--low-level-retries", "2",
-					"--swift-chunk-size", "1Mi", "--transfers", "7", "--checkers", "9", "--tpslimit", "11", "--bwlimit", "10M")
+					"--swift-chunk-size", "1Mi", "--transfers", "7", "--checkers", "9", "--tpslimit", "11", "--bwlimit", "10M", "--buffer-size", "16Mi")
 				if enabled {
 					want = append(want, "--no-gzip-encoding")
 				}

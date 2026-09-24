@@ -232,70 +232,121 @@ func DownloadInto(ctx context.Context, src *swiftcontrol.Session, engine Engine,
 		report.StageCleanup = cleanupDownloadStage(destination, stage, stageName, engineItems, d.retained)
 	}()
 	source := srcSpec + "/" + strings.TrimSuffix(prefix, "/")
-	result, err := d.copy(ctx, src, func(copyCtx context.Context) (*rclone.Result, error) {
-		return copyIntoStage(copyCtx, engine, source, stage, engineNames)
-	})
-	cancelled := err == nil && downloadEngineCancelled(ctx, result)
-	if err == nil {
-		err = transfercopy.ResultFailure(result)
-	}
-	if err != nil {
-		code := transfercopy.CodeUnknown
-		if cancelled {
-			code = transfercopy.CodeCancelled
-			err = ctx.Err()
-		}
-		for _, rel := range engineNames {
-			outcome := downloadFailed(transfercopy.EffectUnresolved, transfercopy.StageEngine, code, "engine", err)
-			if observeErr := d.observe(engineItems[rel], outcome); observeErr != nil {
-				return report, errors.Join(err, observeErr)
+	// The engine-routed names go to the child in bounded batches; each
+	// batch is staged, verified and placed before the next child starts,
+	// so what an interrupted job leaves in the stage is at most one
+	// batch's files (ADR 0074 decision 3). A batch that fails or cannot
+	// be verified ends the run: the batches after it were never given
+	// to a child, and their records say so.
+	batches := downloadBatches(engineNames, engineItems)
+	notAttempted := func(from int, cause error) error {
+		for _, batch := range batches[from:] {
+			for _, rel := range batch {
+				observation := downloadNotAttempted(transfercopy.StageEngine, cause)
+				if err := recorder.Execute(engineItems[rel], observation.Observation); err != nil {
+					return d.stop(err)
+				}
 			}
 		}
-		progress()
-		if cancelled {
-			return report, err
-		}
-		return report, nil
+		return nil
 	}
-	// The engine was given the stage by name. Bytes that reached a
-	// stage the name no longer denotes are not placed from anywhere.
-	displaced, err := stage.displacedAt(destination.root, stageName)
-	if err == nil && displaced {
-		err = fmt.Errorf("stage directory %q was replaced under the selected directory while the engine ran; staged bytes were not placed", stageName)
-	}
-	if err != nil {
-		for _, rel := range engineNames {
-			outcome := downloadVerificationFailed(transfercopy.StageVerification, transfercopy.CodeUnverified, "place", err)
-			if observeErr := d.observe(engineItems[rel], outcome); observeErr != nil {
-				return report, errors.Join(err, observeErr)
-			}
-		}
-		progress()
-		return report, nil
-	}
-	for index, rel := range engineNames {
+	for index, batch := range batches {
 		if err := ctx.Err(); err != nil {
-			// The staged bytes of every item not yet placed stay in the
-			// stage; each such item gets the same record a cancel seen
-			// inside placement gives, so timing never changes the ledger.
-			for _, remaining := range engineNames[index:] {
-				if observeErr := d.observe(engineItems[remaining], downloadUnplacedAfterCancel(err)); observeErr != nil {
+			return report, errors.Join(err, notAttempted(index, err))
+		}
+		result, err := d.copy(ctx, src, func(copyCtx context.Context) (*rclone.Result, error) {
+			return copyIntoStage(copyCtx, engine, source, stage, batch)
+		})
+		cancelled := err == nil && downloadEngineCancelled(ctx, result)
+		if err == nil {
+			err = transfercopy.ResultFailure(result)
+		}
+		if err != nil {
+			code := transfercopy.CodeUnknown
+			if cancelled {
+				code = transfercopy.CodeCancelled
+				err = ctx.Err()
+			}
+			for _, rel := range batch {
+				outcome := downloadFailed(transfercopy.EffectUnresolved, transfercopy.StageEngine, code, "engine", err)
+				if observeErr := d.observe(engineItems[rel], outcome); observeErr != nil {
 					return report, errors.Join(err, observeErr)
 				}
 			}
-			return report, err
+			progress()
+			if recordErr := notAttempted(index+1, err); recordErr != nil {
+				return report, errors.Join(err, recordErr)
+			}
+			if cancelled {
+				return report, err
+			}
+			return report, nil
 		}
-		item := engineItems[rel]
-		outcome := placeDownloaded(ctx, src, container, destination, stage, stageName, item, preflight.nativeSource[item.Name])
-		if outcome.retainStaged {
-			d.retained[item.RelPath] = true
+		// The engine was given the stage by name. Bytes that reached a
+		// stage the name no longer denotes are not placed from anywhere,
+		// and no further batch is given to a child.
+		displaced, err := stage.displacedAt(destination.root, stageName)
+		if err == nil && displaced {
+			err = fmt.Errorf("stage directory %q was replaced under the selected directory while the engine ran; staged bytes were not placed", stageName)
 		}
-		if err := d.observe(item, outcome); err != nil {
-			return report, err
+		if err != nil {
+			for _, rel := range batch {
+				outcome := downloadVerificationFailed(transfercopy.StageVerification, transfercopy.CodeUnverified, "place", err)
+				if observeErr := d.observe(engineItems[rel], outcome); observeErr != nil {
+					return report, errors.Join(err, observeErr)
+				}
+			}
+			progress()
+			return report, notAttempted(index+1, err)
 		}
-		progress()
+		for position, rel := range batch {
+			if err := ctx.Err(); err != nil {
+				// The staged bytes of every item of this batch not yet
+				// placed stay in the stage; each such item gets the same
+				// record a cancel seen inside placement gives, so timing
+				// never changes the ledger. Later batches were never
+				// given to a child.
+				for _, remaining := range batch[position:] {
+					if observeErr := d.observe(engineItems[remaining], downloadUnplacedAfterCancel(err)); observeErr != nil {
+						return report, errors.Join(err, observeErr)
+					}
+				}
+				return report, errors.Join(err, notAttempted(index+1, err))
+			}
+			item := engineItems[rel]
+			outcome := placeDownloaded(ctx, src, container, destination, stage, stageName, item, preflight.nativeSource[item.Name])
+			if outcome.retainStaged {
+				d.retained[item.RelPath] = true
+			}
+			if err := d.observe(item, outcome); err != nil {
+				return report, err
+			}
+			progress()
+		}
 	}
 	return report, ctx.Err()
+}
+
+// downloadBatches splits the engine-routed names, in plan order, into
+// batches of at most DefaultBatchNames names or DefaultBatchBytes of
+// planned bytes, the copy executor's bounds; a batch closes on the item
+// that reaches either bound, so no single item is refused for its size.
+func downloadBatches(names []string, items map[string]DownloadItem) [][]string {
+	var batches [][]string
+	var batch []string
+	var bytes int64
+	for _, rel := range names {
+		batch = append(batch, rel)
+		bytes += items[rel].Size
+		if len(batch) >= transfercopy.DefaultBatchNames || bytes >= transfercopy.DefaultBatchBytes {
+			batches = append(batches, batch)
+			batch, bytes = nil, 0
+		}
+	}
+	if len(batch) > 0 {
+		batches = append(batches, batch)
+	}
+	return batches
 }
 
 func downloadEngineCancelled(ctx context.Context, result *rclone.Result) bool {

@@ -437,6 +437,7 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 	if err != nil {
 		return "", err
 	}
+	settings = settings.withDefaults()
 	engine, err := s.localEngine(ctx, session, "aeronautes_dst", settings)
 	if err != nil {
 		return "", fmt.Errorf("transfer engine: %w", err)
@@ -541,7 +542,8 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 		release()
 		_ = destination.Close()
 	}
-	engine, err := s.localEngine(ctx, session, "aeronautes_src", req.Settings)
+	settings := req.Settings.withDefaults()
+	engine, err := s.localEngine(ctx, session, "aeronautes_src", settings)
 	if err != nil {
 		return "", fmt.Errorf("transfer engine: %w", err)
 	}
@@ -551,7 +553,7 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 	job, err := s.jobs.Create(ctx, jobs.Job{
 		Type:               jobs.TypeDownload,
 		ItemRecordsVersion: 1,
-		Settings:           req.Settings.effectiveJSON(),
+		Settings:           settings.effectiveJSON(),
 		Source:             req.Container + "/" + req.Prefix,
 		Destination:        "local directory (picker-selected)",
 		SourceBookmarkID:   req.BookmarkID,

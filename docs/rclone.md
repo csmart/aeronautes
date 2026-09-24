@@ -108,6 +108,7 @@ Names containing any rune of the pinned set (U+201B, U+2400–U+241F, U+2421, U+
 | `--use-json-log -vv` | progress + **generated segment prefix capture** (`Uploading segment file "<obj>/<ts>-<random>/<seq>" into "<container>_segments"`) feeding §26.4 ownership evidence | ✓ prefix captured in real time |
 | `--retries N --low-level-retries N` | bounded failure budget (§26.2: control must return quickly) | ✓ 401 returns in ~2.6 s default, ~50 ms at 1/1 |
 | `--transfers`, `--checkers`, `--tpslimit`, `--bwlimit` | performance profile (§40–41) | ✓ bwlimit throttling exercised |
+| `--buffer-size` | the child's per-transfer read buffer, emitted explicitly for every job since 24 September 2026 (16Mi, the engine's own default, unless the job overrides it; [ADR 0074](adr/0074-workload-bounds.md) decision 3) so the record names it and transfers × buffer is the child memory to reason about | maintained argv test (`TestCopyRepresentationOptionArgs`) |
 | `--stats-one-line` / stats via JSON log | drawer progress (§47) | ✓ |
 | `--no-gzip-encoding` | fixed Copy-only transport policy under [ADR 0038](adr/0038-copy-representations.md); local runners retain the false default | [Locally reviewed representation tests](experiments/2026-09-12-copy-representations.md) cover both builders, both constructor paths, actual-Swift stored bytes and deliberately broken scope controls; combined delivery remains required |
 
