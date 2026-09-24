@@ -60,8 +60,17 @@ The [fixture evidence and platform limits](experiments/2026-09-09-release-identi
 
 ## Release steps
 
+The first release is 0.1.0 (the operator's decision of 24 September 2026,
+finish line decision 19). It is cut only after every outstanding finish-line
+item is delivered and the operator has run the
+[0.1.0 test plan](audits/2026-09-24/0.1.0-test-plan.md) against the release
+candidate and recorded its results.
+
 1. `make test` and `make test-integration` (SAIO running) are green.
 2. `scripts/smoke.sh` passes headless — CI runs it on every push/PR too.
-3. Tag `vX.Y.Z` and push; CI produces the six unsigned artifacts.
-4. The §57.4 smoke against real SwiftStack infrastructure is a manual
-   owner step before announcing anything.
+3. The operator runs the 0.1.0 test plan against the candidate build and
+   records the results; a failed step blocks the tag.
+4. Tag `vX.Y.Z` and push; CI produces the six unsigned artifacts.
+5. The §57.4 smoke against real SwiftStack infrastructure is a manual
+   owner step before announcing anything; for 0.1.0 it is step 6 of the
+   test plan.
