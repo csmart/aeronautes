@@ -15,7 +15,7 @@ afterEach(async () => {
 it("shows unavailable status, refreshes counts, and discloses retained keys", async () => {
   const api = newFakeApi();
   api.credentialStatus = vi.fn().mockRejectedValueOnce(new Error("private details"))
-    .mockResolvedValueOnce({ retired: 2, unfinished: 1, saving: 1, unverified: 0 });
+    .mockResolvedValueOnce({ retired: 2, unfinished: 1, saving: 1, unverified: 0, cleanupReason: "" });
   const browser = new BrowserState(api);
   const onClose = vi.fn();
   dialog = mount(CredentialStatusDialog, { target: document.body, props: { browser, onClose } });
@@ -36,8 +36,8 @@ it("shows unavailable status, refreshes counts, and discloses retained keys", as
 
 it("refreshes when reopened instead of displaying the previous counts", async () => {
   const api = newFakeApi();
-  api.credentialStatus = vi.fn().mockResolvedValueOnce({ retired: 2, unfinished: 0, saving: 0, unverified: 0 })
-    .mockResolvedValueOnce({ retired: 3, unfinished: 1, saving: 0, unverified: 0 });
+  api.credentialStatus = vi.fn().mockResolvedValueOnce({ retired: 2, unfinished: 0, saving: 0, unverified: 0, cleanupReason: "" })
+    .mockResolvedValueOnce({ retired: 3, unfinished: 1, saving: 0, unverified: 0, cleanupReason: "" });
   const browser = new BrowserState(api);
   const props = { browser, onClose: () => {} };
   dialog = mount(CredentialStatusDialog, { target: document.body, props });
@@ -56,7 +56,7 @@ it("separates work in an unconfirmed store from work this session recorded", asy
   const api = newFakeApi();
   api.credentialStatus = vi.fn()
     .mockResolvedValueOnce({ retired: 3, unfinished: 1, saving: 1, unverified: 3 })
-    .mockResolvedValueOnce({ retired: 3, unfinished: 1, saving: 1, unverified: 0 });
+    .mockResolvedValueOnce({ retired: 3, unfinished: 1, saving: 1, unverified: 0, cleanupReason: "" });
   const browser = new BrowserState(api);
   const props = { browser, onClose: () => {} };
   dialog = mount(CredentialStatusDialog, { target: document.body, props });

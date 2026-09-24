@@ -137,7 +137,7 @@ func TestConnectCannotMixConfigurationAndReplacementKey(t *testing.T) {
 	}
 }
 
-func TestBookmarkDeletionRetainsKeyWithoutLiveCache(t *testing.T) {
+func TestBookmarkDeletionRemovesTheRetiredKey(t *testing.T) {
 	h := newHarness(t)
 	h.connect(t)
 	list, err := h.bookmarks.List(t.Context())
@@ -153,9 +153,15 @@ func TestBookmarkDeletionRetainsKeyWithoutLiveCache(t *testing.T) {
 	if _, err := h.transfer.connections.SessionFor(t.Context(), list[0].ID); !errors.Is(err, bookmarks.ErrNotFound) {
 		t.Fatalf("logical deletion allowed new session acquisition: %v", err)
 	}
+	// The session store is the authority that recorded the key, so the
+	// pass after the delete removes it and its journal row (ADR 0076).
 	var pending int
 	if err := h.db.Reader().QueryRow(`SELECT COUNT(*) FROM credential_work WHERE bookmark_id=? AND state='retired'`,
-		list[0].ID).Scan(&pending); err != nil || pending != 1 {
-		t.Fatalf("logical deletion lost pending physical cleanup: %d, %v", pending, err)
+		list[0].ID).Scan(&pending); err != nil || pending != 0 {
+		t.Fatalf("physical cleanup did not follow the logical deletion: %d, %v", pending, err)
+	}
+	status, err := h.bookmarks.CredentialStatus(t.Context())
+	if err != nil || status.Retired != 0 || status.CleanupReason != "" {
+		t.Fatalf("credential status after deletion = %+v, %v", status, err)
 	}
 }

@@ -33,6 +33,9 @@ type CredentialStatusDTO struct {
 	// Unverified is the subset of the retired and unfinished counts whose
 	// recorded authority this session cannot confirm it can reach.
 	Unverified int64 `json:"unverified"`
+	// CleanupReason says why the last physical cleanup pass left a retired
+	// key in place (ADR 0076); empty when it left none.
+	CleanupReason string `json:"cleanupReason"`
 }
 
 // AccountDTO is the connected account's portrait (§53).

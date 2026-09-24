@@ -255,7 +255,7 @@ export function newFakeApi(): Api {
     }),
 
     listBookmarks: async () => [...bookmarks],
-    credentialStatus: async () => ({ retired: 0, unfinished: 0, saving: 0, unverified: 0 }),
+    credentialStatus: async () => ({ retired: 0, unfinished: 0, saving: 0, unverified: 0, cleanupReason: "" }),
 
     saveBookmark: async (bookmark, secret) => {
       const saved = { ...bookmark };

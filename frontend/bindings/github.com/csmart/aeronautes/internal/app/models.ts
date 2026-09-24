@@ -425,6 +425,12 @@ export interface CredentialStatusDTO {
      * recorded authority this session cannot confirm it can reach.
      */
     "unverified": number;
+
+    /**
+     * CleanupReason says why the last physical cleanup pass left a retired
+     * key in place (ADR 0076); empty when it left none.
+     */
+    "cleanupReason": string;
 }
 
 /**
