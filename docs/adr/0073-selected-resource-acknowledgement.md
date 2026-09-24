@@ -1,6 +1,6 @@
 # ADR 0073: the selected-resource acknowledgement completes as an accepted refusal
 
-**Status:** Proposed on 23 September 2026 for the operator's decision; nothing here is accepted or implemented.
+**Status:** Option B accepted on 24 September 2026 (the operator's words: "do B now"); implementation pending, and the option A refusal stands until the operator's native journey is recorded.
 **Scope:** The selected-local-resource half of finish-line item L02 and the public-ACL acknowledgement it is required with, for the capabilities v1 keeps. The forged-force half stays deferred with the destructive paths.
 
 ## Problem

@@ -1,6 +1,6 @@
 # ADR 0074: bounds for browser retention, queued work, child batches and aggregate resources
 
-**Status:** Proposed on 23 September 2026 for the operator's decisions on the values; nothing here is accepted or implemented.
+**Status:** Accepted on 24 September 2026 with the proposed values as defaults (the operator's words: "yes make them sane defaults with option to override, unless that creates a test nightmare"); implementation pending.
 **Scope:** The areas finish-line item L10 still names for the capabilities v1 keeps: browse, inspect, download, metadata editing and creation. The download inventory ceiling is delivered under [ADR 0072](0072-large-namespace-handling.md) and is not changed here.
 
 ## What exists, at master `df96e1ad`

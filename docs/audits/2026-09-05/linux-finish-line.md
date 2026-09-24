@@ -60,6 +60,22 @@ The operator answered the questions the 22 September proposals left open, in the
 
 Acceptance of the thirty re-proposed P31 rows is no longer a v1 gate under decision 8.
 
+## Operator decisions — 24 September 2026
+
+The operator answered the four questions the overnight proposals left open, in these words:
+
+11. Physical credential cleanup: "OK good, do it, we should remove the item".
+    [ADR 0076](../../adr/0076-physical-credential-cleanup.md) is accepted for implementation as proposed: a retired keyring item is removed after a delete or a key change, one claimed reference at a time, with the journal row kept on any unresolved result and no background collector.
+12. Selected-resource acknowledgement: "do B now".
+    [ADR 0073](../../adr/0073-selected-resource-acknowledgement.md) option B is accepted for v1: the backend titles the native directory chooser with the account, container and prefix it will bind, and a public ACL save requires a native confirmation; the operator validates both by a native journey on Linux, and the option A refusal stands until that journey is recorded.
+13. Workload bounds: "yes make them sane defaults with option to override, unless that creates a test nightmare".
+    [ADR 0074](../../adr/0074-workload-bounds.md) is accepted with its proposed values as defaults; the author reads "option to override" as settings for the retention ceiling and the queue depth beside the existing download ceiling, with the batch, buffer and connection values fixed unless a setting proves cheap to test, and records that reading here rather than as a decision.
+14. Creation durability: "not best effort, creation gets durable facts".
+    Container and marker creation join the durable-fact contract of [ADR 0058](../../adr/0058-object-metadata-durable-facts.md) and [ADR 0062](../../adr/0062-container-metadata-durable-facts.md); the contract record for the creation paths follows as its own reviewed decision before its code.
+
+The operator also asked two questions on 24 September that are not yet decisions: whether downloads from different accounts should run at once rather than queue behind the single active job of [ADR 0047](../../adr/0047-single-active-job.md), and whether a download can be paused and resumed rather than only cancelled.
+The author owes the trade-offs before either becomes a decision.
+
 ## Six production gates
 
 | Gate | Existing packages | Completion condition |

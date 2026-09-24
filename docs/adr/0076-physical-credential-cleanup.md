@@ -1,6 +1,6 @@
 # ADR 0076: physical credential cleanup on Linux
 
-**Status:** Proposed on 23 September 2026 for the operator's decision; nothing here is implemented, and no key is removed from any store by this record.
+**Status:** Accepted on 24 September 2026 (the operator's words: "OK good, do it, we should remove the item"); implementation pending. No key is removed by this record.
 **Scope:** The physical removal of retired credential references on the Linux Secret Service backend, which finish-line item L01 requires and which [ADR 0015](0015-credential-bindings.md), [ADR 0017](0017-keychain-write-verification.md), [ADR 0055](0055-bounded-credential-operations.md) and [ADR 0057](0057-persistent-backend-selection.md) each left unstarted. Retry, the six-target native acceptance and the vault question of ADR 0006 are outside it.
 
 ## Problem
