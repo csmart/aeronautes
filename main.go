@@ -99,6 +99,7 @@ func runDesktop(identity app.BuildIdentity, shutdown *shellShutdown,
 	app.WireConfirmer(mutateService, wailsConfirmer{})
 	settingsService := app.NewSettingsService(database, jobRunner)
 	app.WireSettings(transferService, settingsService)
+	app.WireConnectionCap(connections, settingsService)
 	app.RunStartupRetention(context.Background(), settingsService, jobStore, auditStore)
 	benchmarkService := app.NewBenchmarkService(connections, jobStore, jobRunner, database)
 	app.WireBenchmarkRecommendations(transferService, benchmarkService)

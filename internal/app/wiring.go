@@ -67,3 +67,16 @@ func WireRecommendationSource(s *TransferService, f func(bookmarkID string) *Tra
 func WireBenchmarkRecommendations(ts *TransferService, bench *BenchmarkService) {
 	ts.setRecommendationSource(bench.recommendationFor)
 }
+
+// WireConnectionCap gives sessions the operator's per-host connection
+// cap (ADR 0074 decision 4), read when a session is opened; a settings
+// read that fails leaves the session package's default in force.
+func WireConnectionCap(c *Connections, s *SettingsService) {
+	c.connectionCap = func(ctx context.Context) int {
+		settings, err := s.Get(ctx)
+		if err != nil {
+			return 0
+		}
+		return settings.MaxConnsPerHost
+	}
+}

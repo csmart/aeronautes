@@ -211,6 +211,10 @@
   let retentionError: string | null = $state(null);
   const queueDepthValue = $derived(String(browser.appSettings?.maxQueuedJobs ?? ""));
   let queueDepthError: string | null = $state(null);
+  // The native client's per-host connection cap (ADR 0074 decision 4)
+  // applies to sessions opened after the save.
+  const connectionCapValue = $derived(String(browser.appSettings?.maxConnsPerHost ?? ""));
+  let connectionCapError: string | null = $state(null);
   async function saveBound(patch: Partial<AppSettingsDTO>, report: (message: string | null) => void) {
     if (disposed || !browser.canSaveAppSettings || !browser.appSettings) return;
     report(null);
@@ -431,6 +435,27 @@
             </label>
             <span class="ceiling-status" id={`${id}-queue-depth-status`} role="status">
               {#if queueDepthError}{queueDepthError}{:else if browser.appSettings}{browser.appSettings.maxQueuedJobs.toLocaleString("en-US")} waiting at most{/if}
+            </span>
+            <label class="filter" title="the most connections one session opens to a host; a burst of reads waits for a connection rather than opening one without bound; applies to sessions opened after the save (1 to 256)">
+              <span>Connection cap</span>
+              <input
+                class="ceiling connection-cap num"
+                type="number"
+                min="1"
+                max="256"
+                step="1"
+                value={connectionCapValue}
+                disabled={!browser.canSaveAppSettings}
+                aria-describedby={`${id}-connection-cap-status`}
+                onchange={(e) => {
+                  const value = Number(e.currentTarget.value);
+                  e.currentTarget.value = connectionCapValue;
+                  void saveBound({ maxConnsPerHost: value }, (message) => (connectionCapError = message));
+                }}
+              />
+            </label>
+            <span class="ceiling-status" id={`${id}-connection-cap-status`} role="status">
+              {#if connectionCapError}{connectionCapError}{:else if browser.appSettings}{browser.appSettings.maxConnsPerHost.toLocaleString("en-US")} connections per host on the next connect{/if}
             </span>
           {/if}
           {#if v1Offers.benchmark}
