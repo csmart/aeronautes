@@ -77,7 +77,7 @@ func newHarnessWithInfo(t *testing.T, infoJSON string) *harness {
 		bookmarks: NewBookmarkService(store, connections, jobStore),
 		browse:    NewBrowseService(connections, ev),
 		inspector: NewInspectorService(connections, ev),
-		mutate:    NewMutateService(connections, auditStore, ev),
+		mutate:    confirmedMutateService(connections, auditStore, ev),
 		auditSvc:  NewAuditService(auditStore),
 		transfer:  transferService(connections, jobStore, auditStore, ev),
 		jobsSvc:   NewJobService(jobStore),
@@ -842,4 +842,20 @@ func TestPublicAclRequiresAcknowledgement(t *testing.T) {
 	if _, err := h.mutate.UpdateContainer(ctx, "private", "", ContainerEditDTO{ReadACL: ".r:example.com"}); err != nil {
 		t.Fatalf("non-public ACL refused: %v", err)
 	}
+}
+
+// confirmerFunc answers the native public-read confirmation in tests.
+type confirmerFunc func(ctx context.Context, container, account string) (bool, error)
+
+func (f confirmerFunc) ConfirmPublicRead(ctx context.Context, container, account string) (bool, error) {
+	return f(ctx, container, account)
+}
+
+// confirmedMutateService wires a confirmer that always says yes, as the
+// shell's native dialog would once the operator answers; the refusal
+// paths have their own tests.
+func confirmedMutateService(connections *Connections, auditStore *audit.Store, ev *evidence.Store) *MutateService {
+	s := NewMutateService(connections, auditStore, ev)
+	s.setConfirmer(confirmerFunc(func(context.Context, string, string) (bool, error) { return true, nil }))
+	return s
 }

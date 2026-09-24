@@ -122,7 +122,11 @@ func (s *TransferService) PickDownloadDir(ctx context.Context, scope SelectionSc
 	if err != nil {
 		return nil, err
 	}
-	dir, err := s.picker.PickDirectory("Choose a destination directory")
+	// The chooser's title is the backend's own statement of what the
+	// selection will bind to (ADR 0073 option B): the account and the
+	// container and prefix it resolved, drawn by the native dialog where
+	// the page cannot draw over it.
+	dir, err := s.picker.PickDirectory(s.pickTitle(ctx, bound))
 	if err != nil || dir == "" {
 		return nil, err
 	}
@@ -177,6 +181,50 @@ func (s *TransferService) beginPick(ctx context.Context, scope SelectionScopeDTO
 		container:  scope.Container,
 		prefix:     scope.Prefix,
 	}, nil
+}
+
+// pickTitle composes the native chooser's title from the bookmark and
+// session the backend resolved for the pick, never from the caller's
+// words: the display name and account suffix come from the store and the
+// held session, the container and prefix from the bound scope. Control
+// characters are replaced and a long prefix is cut, so a hostile name
+// cannot garble the one surface this feature claims is trustworthy.
+func (s *TransferService) pickTitle(ctx context.Context, bound selectionScope) string {
+	account := ""
+	if entry, err := s.connections.sessionEntryFor(ctx, bound.bookmarkID); err == nil && entry.session != nil {
+		account = accountSuffix(entry.session.StorageURL())
+	}
+	display := s.connections.displayName(ctx, bound.bookmarkID)
+	target := bound.container
+	if bound.prefix != "" {
+		target += "/" + bound.prefix
+	}
+	from := display
+	switch {
+	case from == "" && account == "":
+		from = "the connected account"
+	case from == "":
+		from = account
+	case account != "":
+		from += " (" + account + ")"
+	}
+	return "Download from " + titleText(from, 80) + ", " + titleText(target, 120) + " into…"
+}
+
+// titleText keeps a title legible: control characters become "?" and text
+// past limit runes ends in an ellipsis.
+func titleText(text string, limit int) string {
+	var out []rune
+	for _, r := range text {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r < 0xa0) || r == '\u2028' || r == '\u2029' {
+			r = '?'
+		}
+		out = append(out, r)
+		if len(out) == limit {
+			return string(out) + "…"
+		}
+	}
+	return string(out)
 }
 
 // stillPicking re-reads the registry when the native dialog returns.
