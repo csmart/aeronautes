@@ -65,7 +65,7 @@ it("keeps a cancelled fixture copy partial after an overwrite refusal", async ()
   const id = await api.startCopy({
     sourceBookmarkId: "a", sourceContainer: "src", sourcePrefix: "",
     destBookmarkId: "b", destContainer: "dst", destPrefix: "", profile: "",
-    settings: { chunkSize: "", transfers: 0, checkers: 0, tpsLimit: 0, bwLimit: "" },
+    settings: { chunkSize: "", transfers: 0, checkers: 0, tpsLimit: 0, bwLimit: "" , bufferSize: ""},
   });
   await api.cancelJob(id);
   const [job] = await api.jobs("", false, 50);
@@ -123,7 +123,7 @@ it("makes the fixture API refuse Mirror without manufacturing a job", async () =
   await expect(api.startMirror({
     sourceBookmarkId: "a", sourceContainer: "src", sourcePrefix: "",
     destBookmarkId: "b", destContainer: "dst", destPrefix: "", confirm: "dst", profile: "",
-    settings: { chunkSize: "", transfers: 0, checkers: 0, tpsLimit: 0, bwLimit: "" },
+    settings: { chunkSize: "", transfers: 0, checkers: 0, tpsLimit: 0, bwLimit: "" , bufferSize: ""},
   })).rejects.toThrow("Mirror is unavailable");
   expect(await api.jobs("", false, 50)).toEqual(before);
 });

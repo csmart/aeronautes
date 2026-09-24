@@ -25,6 +25,24 @@ type TransferSettingsDTO struct {
 	TPSLimit float64 `json:"tpsLimit"`
 	// BWLimit drives --bwlimit (e.g. "10M").
 	BWLimit string `json:"bwLimit"`
+	// BufferSize drives --buffer-size, the child's per-transfer read
+	// buffer (e.g. "16Mi"); every job runs with an explicit value, the
+	// engine's own default unless overridden, so transfers × buffer is
+	// the child memory the record shows (ADR 0074 decision 3).
+	BufferSize string `json:"bufferSize"`
+}
+
+// DefaultBufferSize is the engine's own per-transfer buffer, emitted
+// explicitly so the record names it (ADR 0074 decision 3).
+const DefaultBufferSize = "16Mi"
+
+// withDefaults fills the values every job runs with when the caller
+// left them unset; the record then shows what the child was given.
+func (s TransferSettingsDTO) withDefaults() TransferSettingsDTO {
+	if s.BufferSize == "" {
+		s.BufferSize = DefaultBufferSize
+	}
+	return s
 }
 
 // sizePattern is rclone's SizeSuffix grammar, conservatively: digits
@@ -38,6 +56,15 @@ func (s TransferSettingsDTO) Validate() error {
 	}
 	if s.BWLimit != "" && !sizePattern.MatchString(s.BWLimit) {
 		return fmt.Errorf("bandwidth limit %q is not a size (like 10M)", s.BWLimit)
+	}
+	if s.BufferSize != "" {
+		bytes, err := ParseSize(s.BufferSize)
+		if err != nil {
+			return fmt.Errorf("buffer size %q is not a size (like 16Mi)", s.BufferSize)
+		}
+		if bytes < 1<<20 || bytes > 1<<30 {
+			return fmt.Errorf("buffer size %s out of range 1Mi..1Gi", s.BufferSize)
+		}
 	}
 	if s.Transfers < 0 || s.Transfers > 256 {
 		return fmt.Errorf("transfers %d out of range 0..256", s.Transfers)
@@ -54,11 +81,12 @@ func (s TransferSettingsDTO) Validate() error {
 // options maps the DTO onto the runner's typed option set.
 func (s TransferSettingsDTO) options() rclone.Options {
 	return rclone.Options{
-		ChunkSize: s.ChunkSize,
-		Transfers: s.Transfers,
-		Checkers:  s.Checkers,
-		TPSLimit:  s.TPSLimit,
-		BWLimit:   s.BWLimit,
+		ChunkSize:  s.ChunkSize,
+		Transfers:  s.Transfers,
+		Checkers:   s.Checkers,
+		TPSLimit:   s.TPSLimit,
+		BWLimit:    s.BWLimit,
+		BufferSize: s.BufferSize,
 	}
 }
 

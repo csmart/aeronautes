@@ -23,6 +23,7 @@
   let chunkSize = $state("");
   let transfers = $state("");
   let bwLimit = $state("");
+  let bufferSize = $state("");
   let previewing = $state(false);
   let starting = $state(false);
   let error: string | null = $state(null);
@@ -57,6 +58,7 @@
         checkers: 0,
         tpsLimit: 0,
         bwLimit: bwLimit.trim(),
+        bufferSize: bufferSize.trim(),
       },
     };
   }
@@ -274,6 +276,10 @@
         <label>
           <span>Bandwidth</span>
           <input class="type-mono" placeholder="unlimited" bind:value={bwLimit} oninput={invalidate} />
+        </label>
+        <label>
+          <span>Buffer size</span>
+          <input class="type-mono" placeholder="16Mi (default)" bind:value={bufferSize} oninput={invalidate} />
         </label>
       </div>
     </details>

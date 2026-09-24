@@ -45,7 +45,7 @@ func ResolveSettings(p Profile, overrides TransferSettingsDTO, recommendation *T
 		return TransferSettingsDTO{}, err
 	}
 	if p == ProfileCustom {
-		return overrides, nil
+		return overrides.withDefaults(), nil
 	}
 	base, err := profileBase(p)
 	if err != nil {
@@ -69,7 +69,10 @@ func ResolveSettings(p Profile, overrides TransferSettingsDTO, recommendation *T
 	if overrides.BWLimit != "" {
 		base.BWLimit = overrides.BWLimit
 	}
-	return base, nil
+	if overrides.BufferSize != "" {
+		base.BufferSize = overrides.BufferSize
+	}
+	return base.withDefaults(), nil
 }
 
 var _ = rclone.Options{} // the settings map onto the runner's options

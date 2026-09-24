@@ -79,7 +79,9 @@ func TestDestinationChunkSettings(t *testing.T) {
 							if err := json.Unmarshal([]byte(job.Settings), &recorded); err != nil {
 								t.Fatal(err)
 							}
-							want := rclone.Options{ChunkSize: tc.want, Transfers: 7, Checkers: 9, TPSLimit: 11, BWLimit: "10M"}
+							// Every job runs with an explicit buffer size, the engine's own
+							// default unless overridden, and the record shows it (ADR 0074).
+							want := rclone.Options{ChunkSize: tc.want, Transfers: 7, Checkers: 9, TPSLimit: 11, BWLimit: "10M", BufferSize: DefaultBufferSize}
 							wantEngine := want
 							wantEngine.NoGzipEncoding = operation == "copy"
 							if job.State != "complete" || len(*seen) != 1 || (*seen)[0] != wantEngine || recorded.options() != want {

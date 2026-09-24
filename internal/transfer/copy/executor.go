@@ -245,10 +245,10 @@ func New(cfg Config) (*Executor, error) {
 		}
 	}
 	if cfg.BatchSize <= 0 {
-		cfg.BatchSize = 500
+		cfg.BatchSize = DefaultBatchNames
 	}
 	if cfg.BatchBytes <= 0 {
-		cfg.BatchBytes = 64 << 30
+		cfg.BatchBytes = DefaultBatchBytes
 	}
 	return &Executor{
 		cfg:     cfg,
@@ -408,6 +408,14 @@ func skippableEqual(src, dst *swiftcontrol.ObjectDetail) bool {
 		return true
 	}
 }
+
+// DefaultBatchNames and DefaultBatchBytes bound one engine child's
+// batch: 500 names or 64 GiB of planned bytes, whichever comes first.
+// The download route batches by the same values (ADR 0074 decision 3).
+const (
+	DefaultBatchNames = 500
+	DefaultBatchBytes = int64(64 << 30)
+)
 
 // runNew copies a name with no live destination: engine-routed names
 // batch toward the staging namespace; native-routed names stream

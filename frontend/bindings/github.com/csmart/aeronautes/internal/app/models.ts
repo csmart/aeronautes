@@ -1059,6 +1059,14 @@ export interface TransferSettingsDTO {
      * BWLimit drives --bwlimit (e.g. "10M").
      */
     "bwLimit": string;
+
+    /**
+     * BufferSize drives --buffer-size, the child's per-transfer read
+     * buffer (e.g. "16Mi"); every job runs with an explicit value, the
+     * engine's own default unless overridden, so transfers × buffer is
+     * the child memory the record shows (ADR 0074 decision 3).
+     */
+    "bufferSize": string;
 }
 
 /**

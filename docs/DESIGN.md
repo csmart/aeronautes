@@ -1449,6 +1449,7 @@ This matches the "authenticate once" model, keeps the durable secret out of the 
 **Token expiry does not refresh inside a running rclone child**, so plan for it two ways.
 *Preferred — bounded batches:* stock one-shot rclone has **no drain** (`--max-duration HARD` kills active transfers; `SOFT` only stops *starting* new transfers after the deadline, so an in-flight large object can still run past expiry; signalling the child is a cancel, not a drain).
 So for long jobs Aeronautes splits work into bounded file batches and starts a **fresh child per batch** with a fresh token, and/or requires the remaining token lifetime to exceed the time to move the batch's largest object at a conservative throughput floor.
+Since 24 September 2026 the download route batches its engine-routed names the way the copy executor does, 500 names or 64 GiB of planned bytes per child, and places each batch before the next child starts ([ADR 0074](adr/0074-workload-bounds.md) decision 3).
 Token lifetime is established in priority order: **(1)** a server-provided expiry — stock TempAuth returns `X-Auth-Token-Expires` as delta-seconds remaining (observed against upstream SAIO 2.38; the adapter's own v1 authenticator captures it, tolerating absolute-epoch variants), but the target SwiftStack cluster's auth may not (confirming *that* remains seam-spike item 1, §60); **(2)** a conservative per-bookmark configured lifetime; **(3)** a bounded maximum child duration plus the failure-driven reauth→reconcile fallback below.
 One consequence must be surfaced honestly: a **single object too large to move within the assumed lifetime at the floor rate** (multi-TiB over a slow link) is outside the supported envelope — the planner MUST fail such a job at preflight with a clear explanation (object size × measured link speed vs token lifetime), never mid-flight.
 *Fallback — failure-driven:* if a token does expire in flight, the child's requests fail with an auth error and, after a **small** bounded retry budget (so control returns quickly rather than looping), the child exits; Aeronautes then re-authenticates with the durable key it still holds, reconciles partial destination state, and spawns a new rclone process.
@@ -2391,7 +2392,7 @@ A developer/debug build may have deeper tooling, but it is not a normal product 
 ### 44.1 Enumerate the depended-upon rclone flag surface
 
 "No arbitrary args" only works if every behaviour Aeronautes needs is reachable through a specific, supported rclone flag.
-Before Phase 5, produce and maintain (in `docs/rclone.md`) the **exact list of rclone flags Aeronautes sets**, mapped to the product setting that drives each one, covering at minimum: v1 auth via pre-authenticated **named-remote environment** config (`RCLONE_CONFIG_AERONAUTES_SRC_*` / `RCLONE_CONFIG_AERONAUTES_DST_*`; **never** `--swift-storage-url`/`--swift-auth-token`, which would put the token in argv — §26.2), the large-object chunk size (`--swift-chunk-size`), destination segment placement (segment container / in-container behaviour), storage policy, **per-remote** TLS in the parent gateway (no child TLS overrides; the same-trust pairing restriction remains — §12.3, ADR 0014), and concurrency/pacing (`--transfers`, `--checkers`, `--tpslimit`, `--bwlimit`).
+Before Phase 5, produce and maintain (in `docs/rclone.md`) the **exact list of rclone flags Aeronautes sets**, mapped to the product setting that drives each one, covering at minimum: v1 auth via pre-authenticated **named-remote environment** config (`RCLONE_CONFIG_AERONAUTES_SRC_*` / `RCLONE_CONFIG_AERONAUTES_DST_*`; **never** `--swift-storage-url`/`--swift-auth-token`, which would put the token in argv — §26.2), the large-object chunk size (`--swift-chunk-size`), destination segment placement (segment container / in-container behaviour), storage policy, **per-remote** TLS in the parent gateway (no child TLS overrides; the same-trust pairing restriction remains — §12.3, ADR 0014), and concurrency/pacing (`--transfers`, `--checkers`, `--tpslimit`, `--bwlimit`, and since 24 September 2026 `--buffer-size`, emitted explicitly for every job so the record names the child's per-transfer buffer).
 If a required behaviour (e.g. a specific segment-placement mode) has **no** supported flag, that is a concrete gap to resolve deliberately — narrow adapter, upstream contribution, or an explicit compatibility decision — not a reason to open a free-form argument box.
 
 A **narrow, typed, per-bookmark compatibility allowlist** for known provider quirks (pagination style, non-standard behaviours) is permitted where it is enumerated, documented, audited in the job's effective configuration, and shown in "Show sanitized command". The hard rule remains: no free-form arbitrary-argument textbox that can silently change semantics or invalidate the UI's claims. (Consider ADR `0007-rclone-flag-surface`.)
@@ -2412,7 +2413,8 @@ rclone:
   transfers               24
   checkers                64
   max connections         calculated
-  buffer size (--buffer-size)  256 MiB   # per-transfer; NOT the app memory budget
+  buffer size (--buffer-size)  16 MiB    # per-transfer; NOT the app memory budget
+  child buffers             24 × 16 MiB  # transfers × buffer size, the child memory to reason about
 
 Swift source:
   listing page size       10,000
@@ -5687,6 +5689,7 @@ P20 settles what a cancelled download leaves behind, under [ADR 0048](adr/0048-c
 The reasoning is that these are the application's own incomplete work product, written under a name it invented into a directory it created, rather than the operator's data, and that with no resume feature a retained fragment cannot be continued but only deleted by hand.
 The answer is the opposite of the recommendation ADR 0043 offered, because that recommendation rested on the staged bytes being the operator's, and where the bytes sit was established rather than assumed.
 The [cancelled stage record](experiments/2026-09-14-cancelled-stage-removal.md) reproduces both routes: a cancel on the engine route leaves every unplaced item's staged file inside `.aeronautes-stage-<job>` in the picked directory and reports a directory-not-empty cleanup issue, while `StageCleanupResult.Retained` reads false; a cancel on the native route removes its `.aeronautes-part-<random>` temporary under an identity check and leaves nothing.
+Since 24 September 2026 the engine route gives its names to the child in batches and places each batch before the next child starts, so the unplaced staged files a cancel leaves are at most one batch's, and the items of the batches never given to a child are recorded as not attempted ([ADR 0074](adr/0074-workload-bounds.md) decision 3).
 So the stage is retained by failure rather than by decision, and the field naming that condition denies it.
 The correction removes the files a job planned into its own stage, then its planned directories, then the stage.
 Its bound is unconditional: removal is limited to names this job planned and is issued through the held stage directory handle, never by listing the stage and never through a pathname.
@@ -5768,6 +5771,7 @@ L10's first slice is the download preflight view under [ADR 0056](adr/0056-downl
 The [download preflight bounds record](experiments/2026-09-16-download-preflight-bounds.md) searched listing continuation, Find retention, job-item paging and the download inventory for silent truncation first: those paths grow or page with a count beside a sample, and a measured 20 000-object preflight kept items equal to the seeded count.
 The correction splits execution from the bridge the way upload already does and copies ADR 0023's sample-and-count pattern onto a distinct view type.
 It does not bound Go RSS, browser accumulation, queued work or child batches, and L10 does not close with this.
+Since 24 September 2026 [ADR 0074](adr/0074-workload-bounds.md) bounds browser accumulation, queued work, child batches and the native client's connections per host; Go RSS stays unbounded by design, and L10 closes only when the operator accepts the bounds.
 
 Before ADR 0057, the Linux keychain adapter selected the login collection or default alias on every call, because the pinned client had no original-store identity.
 `Origin` recorded only an adapter lifetime, so a later default change could make Get report `ErrNotFound` while the original collection kept the value, as the [keychain write record](experiments/2026-09-06-keychain-writes.md) showed.
