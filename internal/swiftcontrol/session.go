@@ -35,7 +35,15 @@ type Config struct {
 	// AdmitRequest binds held sessions to the captured bookmark generation.
 	// Standalone sessions may omit it; bookmark sessions must supply it.
 	AdmitRequest func(context.Context) error `json:"-"`
+	// MaxConnsPerHost caps the connections this session opens to one
+	// host, so a burst of reads and scans cannot open them without bound
+	// (ADR 0074 decision 4); zero means DefaultMaxConnsPerHost.
+	MaxConnsPerHost int
 }
+
+// DefaultMaxConnsPerHost is the per-host connection cap a session gets
+// when its config names none (ADR 0074 decision 4).
+const DefaultMaxConnsPerHost = 16
 
 // Session is an authenticated (or authenticatable) connection to one Swift
 // account. It is safe for concurrent use after Authenticate.
@@ -51,6 +59,8 @@ type Session struct {
 	// it pointed), and a ceiling instead of an unbounded hang.
 	raw          *http.Client
 	admitRequest func(context.Context) error
+	// connectionCap is the per-host cap the session was opened with.
+	connectionCap int
 
 	// refreshMu single-flights explicit refreshes; authedAt is the last
 	// EXPLICIT authentication (the wire library's own 401-driven re-auth
@@ -73,7 +83,10 @@ func New(cfg Config) (*Session, error) {
 			return nil, err
 		}
 	}
-	transport, err := cfg.TLS.transport()
+	if cfg.MaxConnsPerHost <= 0 {
+		cfg.MaxConnsPerHost = DefaultMaxConnsPerHost
+	}
+	transport, err := cfg.TLS.transport(cfg.MaxConnsPerHost)
 	if err != nil {
 		return nil, err
 	}
@@ -90,9 +103,10 @@ func New(cfg Config) (*Session, error) {
 		override:  cfg.StorageURLOverride,
 	}
 	return &Session{
-		auth:         auth,
-		tls:          cfg.TLS,
-		admitRequest: cfg.AdmitRequest,
+		auth:          auth,
+		tls:           cfg.TLS,
+		admitRequest:  cfg.AdmitRequest,
+		connectionCap: cfg.MaxConnsPerHost,
 		raw: &http.Client{
 			Transport: transport,
 			Timeout:   10 * time.Minute,
@@ -225,3 +239,7 @@ func (s *Session) ForceReauth() {
 	s.conn.UnAuthenticate()
 	s.authedAt = time.Time{}
 }
+
+// ConnectionCap reports the per-host connection cap the session was
+// opened with (ADR 0074 decision 4).
+func (s *Session) ConnectionCap() int { return s.connectionCap }

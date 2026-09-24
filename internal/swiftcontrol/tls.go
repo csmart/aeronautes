@@ -34,15 +34,29 @@ type TLSConfig struct {
 // and Go does not hop-restrict X-Auth-Key/X-Auth-Token, so a 302 from
 // an auth or storage endpoint would resend the credentials wherever it
 // pointed (review G22). Swift never legitimately redirects these calls.
-func (t TLSConfig) transport() (http.RoundTripper, error) {
+// Every mode also caps the connections to one host at maxConnsPerHost
+// (ADR 0074 decision 4): system trust rides a copy of the default
+// transport rather than the shared one, so the cap is this session's;
+// the custom-CA and insecure transports keep their own settings. A
+// process whose default transport is not the standard one (tests
+// substitute a round tripper to observe requests) keeps using it as it
+// is, uncapped, since only the standard transport carries the cap.
+func (t TLSConfig) transport(maxConnsPerHost int) (http.RoundTripper, error) {
 	config, err := t.ClientConfig()
 	if err != nil {
 		return nil, err
 	}
-	var inner http.RoundTripper = http.DefaultTransport
-	if config != nil {
+	var inner *http.Transport
+	if config == nil {
+		standard, ok := http.DefaultTransport.(*http.Transport)
+		if !ok {
+			return redirectRefusingTransport{inner: http.DefaultTransport}, nil
+		}
+		inner = standard.Clone()
+	} else {
 		inner = &http.Transport{TLSClientConfig: config}
 	}
+	inner.MaxConnsPerHost = maxConnsPerHost
 	return redirectRefusingTransport{inner: inner}, nil
 }
 

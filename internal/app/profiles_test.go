@@ -122,6 +122,25 @@ func TestSettingsServicePersistsAndApplies(t *testing.T) {
 	if depth := runner.queueDepth(); depth != defaultMaxQueuedJobs {
 		t.Fatalf("runner queue depth after an omitted save = %d", depth)
 	}
+	// The native client's per-host connection cap (ADR 0074 decision 4)
+	// takes the same treatment.
+	if settings.MaxConnsPerHost != defaultMaxConnsPerHost {
+		t.Fatalf("connection cap default = %+v", settings)
+	}
+	for _, cap := range []int{-1, 257} {
+		if _, err := service.Set(ctx, AppSettingsDTO{MaxActiveJobs: 1, DefaultProfile: "auto", MaxConnsPerHost: cap}); err == nil {
+			t.Fatalf("connection cap %d accepted", cap)
+		}
+	}
+	if saved, err := service.Set(ctx, AppSettingsDTO{MaxActiveJobs: 1, DefaultProfile: "auto", MaxConnsPerHost: 3}); err != nil || saved.MaxConnsPerHost != 3 {
+		t.Fatalf("connection cap save = %+v %v", saved, err)
+	}
+	if read, err := service.Get(ctx); err != nil || read.MaxConnsPerHost != 3 {
+		t.Fatalf("connection cap read = %+v %v", read, err)
+	}
+	if saved, err := service.Set(ctx, AppSettingsDTO{MaxActiveJobs: 1, DefaultProfile: "auto"}); err != nil || saved.MaxConnsPerHost != defaultMaxConnsPerHost {
+		t.Fatalf("omitted connection cap = %+v %v", saved, err)
+	}
 	// A runner built for a store that already holds a depth starts with it.
 	if depth := NewSettingsService(d, newJobRunner(nil, nil)).runner.queueDepth(); depth != defaultMaxQueuedJobs {
 		t.Fatalf("fresh runner queue depth = %d", depth)

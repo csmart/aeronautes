@@ -37,6 +37,9 @@ type Connections struct {
 	// settings holds the container settings facts observed under each
 	// bookmark's current connection generation (ADR 0071).
 	settings settingsFacts
+	// connectionCap supplies the per-host connection cap a session is
+	// opened with (ADR 0074 decision 4); nil means the session default.
+	connectionCap func(context.Context) int
 }
 
 type cachedSession struct {
@@ -65,6 +68,9 @@ func (c *Connections) open(ctx context.Context, bookmarkID string) (cachedSessio
 	}
 	config.AdmitRequest = func(ctx context.Context) error {
 		return c.store.WithCurrentGeneration(ctx, bookmarkID, generation, nil)
+	}
+	if c.connectionCap != nil {
+		config.MaxConnsPerHost = c.connectionCap(ctx)
 	}
 	session, err := swiftcontrol.New(config)
 	if err != nil {
