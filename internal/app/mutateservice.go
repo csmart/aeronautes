@@ -247,16 +247,34 @@ func (s *MutateService) CreateContainer(ctx context.Context, create ContainerCre
 		return ContainerDetailDTO{}, fmt.Errorf("cluster does not advertise storage policy %q", create.Policy)
 	}
 
+	// The attempt is a durable fact before the PUT and after it (ADR
+	// 0077): an intent that fails issues no PUT, and a PUT that may have
+	// landed is never reported without its recorded outcome.
+	identity, err := mutationfacts.NewIdentity()
+	if err != nil {
+		return ContainerDetailDTO{}, err
+	}
+	if err := s.facts.RecordIntent(ctx, mutationfacts.Intent{
+		Identity: identity, BookmarkID: bookmarkID, Operation: "container.create", Resource: create.Name,
+	}); err != nil {
+		return ContainerDetailDTO{}, err
+	}
 	detail, err := entry.session.CreateContainer(ctx, swiftcontrol.ContainerCreateRequest{
 		Name: create.Name, Policy: create.Policy, Meta: create.Meta,
 	})
+	outcome, auditRes, summary, transIDs := containerCreateFact(detail, err)
+	if recErr := s.recordMutationOutcome(ctx, identity, bookmarkID, "container.create", create.Name, outcome, auditRes, summary, transIDs); recErr != nil {
+		if outcome == mutationfacts.OutcomeApplied || outcome == mutationfacts.OutcomeUnverified {
+			return ContainerDetailDTO{}, fmt.Errorf("%w: identity %s: %w", errContainerCreateResidue, identity, recErr)
+		}
+		return ContainerDetailDTO{}, recErr
+	}
 	if err != nil {
-		_ = s.recordFor(ctx, bookmarkID, "container.create", create.Name, "container create failed", audit.ResultFailed, nil)
+		if outcome == mutationfacts.OutcomeUnverified {
+			return ContainerDetailDTO{}, fmt.Errorf("%w: identity %s", err, identity)
+		}
 		return ContainerDetailDTO{}, err
 	}
-	_ = s.recordFor(ctx, bookmarkID, "container.create", create.Name,
-		fmt.Sprintf("created with policy %q", detail.StoragePolicy),
-		audit.ResultApplied, []string{detail.TransID})
 	return s.containerDetailForBookmark(ctx, bookmarkID, detail), nil
 }
 
@@ -275,12 +293,30 @@ func (s *MutateService) CreateMarker(ctx context.Context, container, prefix stri
 		return PrefixDetailDTO{}, err
 	}
 	resource := container + "/" + prefix
-	detail, err := entry.session.CreateMarker(ctx, container, prefix)
+	// Durable facts around the PUT, as for container creation (ADR 0077).
+	identity, err := mutationfacts.NewIdentity()
 	if err != nil {
-		_ = s.recordFor(ctx, bookmarkID, "marker.create", resource, "marker create failed or refused", audit.ResultFailed, nil)
 		return PrefixDetailDTO{}, err
 	}
-	_ = s.recordFor(ctx, bookmarkID, "marker.create", resource, "created directory marker", audit.ResultApplied, nil)
+	if err := s.facts.RecordIntent(ctx, mutationfacts.Intent{
+		Identity: identity, BookmarkID: bookmarkID, Operation: "marker.create", Resource: resource,
+	}); err != nil {
+		return PrefixDetailDTO{}, err
+	}
+	detail, err := entry.session.CreateMarker(ctx, container, prefix)
+	outcome, auditRes, summary := markerCreateFact(err)
+	if recErr := s.recordMutationOutcome(ctx, identity, bookmarkID, "marker.create", resource, outcome, auditRes, summary, nil); recErr != nil {
+		if outcome == mutationfacts.OutcomeApplied || outcome == mutationfacts.OutcomeUnverified {
+			return PrefixDetailDTO{}, fmt.Errorf("%w: identity %s: %w", errMarkerCreateResidue, identity, recErr)
+		}
+		return PrefixDetailDTO{}, recErr
+	}
+	if err != nil {
+		if outcome == mutationfacts.OutcomeUnverified {
+			return PrefixDetailDTO{}, fmt.Errorf("%w: identity %s", err, identity)
+		}
+		return PrefixDetailDTO{}, err
+	}
 	return toPrefixDetailDTO(detail), nil
 }
 
@@ -319,10 +355,8 @@ func (s *MutateService) containerDetailForBookmark(ctx context.Context, bookmark
 
 // record appends the audit event under whichever connection is active
 // when it is written and surfaces the error. The deletions still use it
-// and ignore the error (ADR 0058); container and marker creation record
-// under the account they captured, through recordFor. Object and
-// container metadata record their fact and audit in one required
-// transaction.
+// and ignore the error (ADR 0058); the creations and the metadata writes
+// record their fact and audit in one required transaction.
 func (s *MutateService) record(ctx context.Context, operation, resource, summary string, result audit.Result, transIDs []string) error {
 	return s.recordFor(ctx, s.connections.ActiveBookmarkID(), operation, resource, summary, result, transIDs)
 }
