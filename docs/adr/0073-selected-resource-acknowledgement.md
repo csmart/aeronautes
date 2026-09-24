@@ -1,6 +1,6 @@
 # ADR 0073: the selected-resource acknowledgement completes as an accepted refusal
 
-**Status:** Option B accepted on 24 September 2026 (the operator's words: "do B now"); implementation pending, and the option A refusal stands until the operator's native journey is recorded.
+**Status:** Option B accepted on 24 September 2026 (the operator's words: "do B now") and implemented the same day: the backend titles the native directory chooser with the account, container and prefix it resolved, and a world-readable read ACL is written only after a native confirmation the backend raises. The option A refusal stands until the operator's native journey on Linux is recorded.
 **Scope:** The selected-local-resource half of finish-line item L02 and the public-ACL acknowledgement it is required with, for the capabilities v1 keeps. The forged-force half stays deferred with the destructive paths.
 
 ## Problem
