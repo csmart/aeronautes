@@ -1,6 +1,6 @@
 # ADR 0077: durable facts for container and marker creation
 
-**Status:** Proposed on 24 September 2026 as the contract for the operator's decision of the same day ("not best effort, creation gets durable facts"); reviewed before its implementation, which follows as its own commit.
+**Status:** Proposed on 24 September 2026 as the contract for the operator's decision of the same day ("not best effort, creation gets durable facts"), reviewed before its implementation, and implemented the same day: both creation paths record an intent in the mutation ledger before the PUT and the outcome with its audit event in one required transaction after it, an intent that fails issues no PUT, a record that fails after a PUT that may have landed is a named residue error carrying the attempt identity, and a creation whose confirming read fails is refused as unverified rather than reported.
 **Scope:** `MutateService.CreateContainer` and `MutateService.CreateMarker`, the two creation paths v1 keeps under decisions 3 and 10 of the finish line. This extends the L04 recording contract of [ADR 0058](0058-object-metadata-durable-facts.md) and [ADR 0062](0062-container-metadata-durable-facts.md) to creation; it does not close L04 or the valuable-data hold.
 
 ## Context
