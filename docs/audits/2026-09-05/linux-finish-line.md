@@ -80,7 +80,7 @@ Later on 24 September, with every decision above delivered to master, the operat
 
 15. Workload bounds: "accepted".
     The values [ADR 0074](../../adr/0074-workload-bounds.md) delivered are the v1 bounds, and L10 closes with this decision.
-16. Concurrent downloads across accounts: "b", choosing the author's option of a record that adds a preflight refusal for a download whose destination directory overlaps another active download's, so that raising the active-job budget is safe by construction; the contract record is [ADR 0078](../../adr/0078-overlapping-download-destinations.md).
+16. Concurrent downloads across accounts: "b", choosing the author's option of a record that adds a preflight refusal for a download whose destination directory overlaps another active download's, so that raising the active-job budget is safe by construction; the contract record is [ADR 0078](../../adr/0078-overlapping-download-destinations.md), implemented on 24 September 2026.
 17. Pause and resume: "v1.x".
     Not a v1 requirement; it gets a contract of its own later. The author's reading, recorded as a reading and not as part of the decision: batching under ADR 0074 makes it feasible, with a pause finishing the current batch and a resume continuing from the recovery records.
 18. Caller-named mutation binding: "do it".

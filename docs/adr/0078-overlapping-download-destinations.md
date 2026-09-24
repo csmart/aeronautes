@@ -1,6 +1,6 @@
 # ADR 0078: refuse overlapping download destinations
 
-**Status:** Proposed on 24 September 2026 as the contract for the operator's decision 16 of the same day in the [Linux finish line](../audits/2026-09-05/linux-finish-line.md) ("b": a record adding a preflight refusal for a download whose destination directory overlaps another active download's); reviewed before its implementation, which follows as its own commit.
+**Status:** Proposed on 24 September 2026 as the contract for the operator's decision 16 of the same day in the [Linux finish line](../audits/2026-09-05/linux-finish-line.md) ("b": a record adding a preflight refusal for a download whose destination directory overlaps another active download's); reviewed before its implementation, and implemented the same day: the transfer service holds a `destinationRegistry` of active download destinations, `PreflightDownload` reports the problem kind `destination-overlap` naming the job, `StartDownload` reserves the directory in the same critical section as the check before the job row exists and refuses with `errDestinationOverlap`, and the reservation leaves with the job's pins. The tests are `TestDownloadRefusesOverlappingDestinations` in `internal/app` and `TestDownloadDestinationOverlapMock` and `RealSwift` in `internal/systemtest`.
 **Scope:** `TransferService.PreflightDownload` and `TransferService.StartDownload`, the download route v1 keeps. Uploads and copies are deferred routes and are not changed.
 
 ## Context

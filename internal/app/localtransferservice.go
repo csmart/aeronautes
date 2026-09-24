@@ -323,6 +323,16 @@ func (s *TransferService) downloadPreflight(ctx context.Context, req DownloadReq
 		return local.PreflightDownloadBounded(ctx, session, req.Container, req.Prefix, destDir, ceiling)
 	}
 	report, err := local.PreflightDownloadIntoBounded(ctx, session, req.Container, req.Prefix, destination, ceiling)
+	if err == nil && report != nil {
+		// A directory another active download is using is refused before
+		// any effect, naming that job (ADR 0078).
+		if id, dir, ok := s.destinations.overlap(destination, destination.Path()); ok {
+			report.Problems = append(report.Problems, local.Problem{
+				Name: destination.Path(), Kind: destinationOverlapKind, Reject: true,
+				Detail: fmt.Sprintf("download job %s is using %s; cancel it or pick another directory", id, dir),
+			})
+		}
+	}
 	return report, errors.Join(err, destination.Close())
 }
 
@@ -517,10 +527,20 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 		return "", err
 	}
 	if preflight.Rejected() {
+		for _, problem := range preflight.Problems {
+			if problem.Kind == destinationOverlapKind {
+				return "", fmt.Errorf("%w: %s", errDestinationOverlap, problem.Detail)
+			}
+		}
 		return "", errors.New("preflight found problems; resolve them and retry (nothing was written)")
 	}
 	if err := req.Settings.Validate(); err != nil {
 		return "", err
+	}
+	if boundary := s.downloadStartBoundary; boundary != nil {
+		if err := boundary(ctx); err != nil {
+			return "", err
+		}
 	}
 	// The start consumes the selection, so a confirmed pick cannot be
 	// replayed into further jobs; two concurrent starts cannot both win.
@@ -535,11 +555,22 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 	if destination == nil {
 		return "", errors.New("the selected directory cannot be held for the job; pick it again")
 	}
+	// The destination is reserved before the job row exists, in the same
+	// critical section as the overlap check, so two starts into
+	// overlapping directories cannot both win and a refused start leaves
+	// nothing behind (ADR 0078). The reservation moves to the job id
+	// once the row exists and leaves with the pins.
+	reservation := req.DestDirToken
+	if err := s.destinations.reserve(reservation, destination, destination.Path()); err != nil {
+		_ = destination.Close()
+		return "", err
+	}
 	// The job owns this handle. It closes with the pins after the whole
 	// body has returned, on every path, and on any refusal below.
 	release := releasePins
 	releasePins = func() {
 		release()
+		s.destinations.release(reservation)
 		_ = destination.Close()
 	}
 	settings := req.Settings.withDefaults()
@@ -565,6 +596,8 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 	if err != nil {
 		return "", err
 	}
+	s.destinations.rekey(reservation, job.ID)
+	reservation = job.ID
 	s.runner.register(job.ID, owner.cancel)
 	if err := s.startLocalAudit(ctx, job, req.BookmarkID, "transfer.download.start"); err != nil {
 		owner.cancel()

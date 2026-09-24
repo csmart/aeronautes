@@ -84,6 +84,12 @@ type TransferService struct {
 	picker FilePicker
 	// selections holds picker-issued path selections behind tokens.
 	selections selectionStore
+	// destinations holds every active download's destination (ADR 0078).
+	destinations destinationRegistry
+	// downloadStartBoundary, when set by a test, runs between a start's
+	// preflight and its reservation, the window a concurrent start can
+	// fill; production leaves it nil.
+	downloadStartBoundary func(ctx context.Context) error
 }
 
 // maxActiveJobsCeiling is the §38 v1 limit, not a default: one transfer
