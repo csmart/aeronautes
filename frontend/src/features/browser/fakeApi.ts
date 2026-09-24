@@ -97,6 +97,15 @@ export function newFakeApi(): Api {
     return { bookmarkId, generation: generations.get(bookmarkId) ?? 1 };
   }
 
+  // A write names the scope its view was built under; the backend refuses
+  // one that no longer names the active connection (ADR 0079).
+  function requireWriteScope(scope: ListingScope) {
+    if (!connectedScope || !scope || scope.bookmarkId !== connectedScope.bookmarkId
+      || scope.generation !== (generations.get(scope.bookmarkId) ?? 1)) {
+      throw new Error("the connected account changed; nothing was written");
+    }
+  }
+
   function scopedJob(id: string, bookmarkId: string) {
     readScope(bookmarkId);
     const job = jobs.find((row) => row.id === id);
@@ -418,7 +427,8 @@ export function newFakeApi(): Api {
       };
     },
 
-    updateObjectMetadata: async (container, name, baseFingerprint, edit): Promise<MutationResultDTO> => {
+    updateObjectMetadata: async (scope, container, name, baseFingerprint, edit): Promise<MutationResultDTO> => {
+      requireWriteScope(scope);
       const stored = findObject(container, name);
       if (!stored) {
         throw new Error("object not found");
@@ -446,7 +456,8 @@ export function newFakeApi(): Api {
       };
     },
 
-    updateContainer: async (name, baseFingerprint, edit): Promise<MutationResultDTO> => {
+    updateContainer: async (scope, name, baseFingerprint, edit): Promise<MutationResultDTO> => {
+      requireWriteScope(scope);
       if (!containers.some((c) => c.name === name)) {
         throw new Error("container not found");
       }
@@ -487,7 +498,8 @@ export function newFakeApi(): Api {
       };
     },
 
-    createContainer: async (create) => {
+    createContainer: async (scope, create) => {
+      requireWriteScope(scope);
       if (create.policy !== "" && !capabilities.storagePolicies?.some((p) => p.name === create.policy)) {
         throw new Error(`cluster does not advertise storage policy "${create.policy}"`);
       }
@@ -510,7 +522,8 @@ export function newFakeApi(): Api {
       return containerDetailOf(create.name);
     },
 
-    createMarker: async (container, prefix) => {
+    createMarker: async (scope, container, prefix) => {
+      requireWriteScope(scope);
       const existing = findObject(container, prefix);
       if (existing) {
         throw new Error("already exists or occupied");

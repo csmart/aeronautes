@@ -108,7 +108,7 @@ func TestPublicReadACLNeedsNativeConfirmation(t *testing.T) {
 	// The page's acknowledgement is still the first gate; the native
 	// dialog is never reached without it.
 	h.mutate.setConfirmer(answer(true, nil))
-	if _, err := h.mutate.UpdateContainer(ctx, "private", "", ContainerEditDTO{ReadACL: ".r:*"}); err == nil || !strings.Contains(err.Error(), "set ackPublic") {
+	if _, err := h.mutate.UpdateContainer(ctx, h.portrait(), "private", "", ContainerEditDTO{ReadACL: ".r:*"}); err == nil || !strings.Contains(err.Error(), "set ackPublic") {
 		t.Fatalf("missing page acknowledgement = %v", err)
 	}
 	if len(calls) != 0 {
@@ -117,14 +117,14 @@ func TestPublicReadACLNeedsNativeConfirmation(t *testing.T) {
 
 	// No shell dialog: refused, nothing written.
 	h.mutate.setConfirmer(nil)
-	_, err := h.mutate.UpdateContainer(ctx, "private", "", ContainerEditDTO{ReadACL: ".r:*", AckPublic: true})
+	_, err := h.mutate.UpdateContainer(ctx, h.portrait(), "private", "", ContainerEditDTO{ReadACL: ".r:*", AckPublic: true})
 	if err == nil || !strings.Contains(err.Error(), "native confirmation this shell cannot show") || readACL() == ".r:*" {
 		t.Fatalf("no confirmer = %v, acl %q", err, readACL())
 	}
 
 	// The operator kept it private: refused, nothing written.
 	h.mutate.setConfirmer(answer(false, nil))
-	_, err = h.mutate.UpdateContainer(ctx, "private", "", ContainerEditDTO{ReadACL: ".r:*", AckPublic: true})
+	_, err = h.mutate.UpdateContainer(ctx, h.portrait(), "private", "", ContainerEditDTO{ReadACL: ".r:*", AckPublic: true})
 	if err == nil || !strings.Contains(err.Error(), "was not confirmed") || readACL() == ".r:*" {
 		t.Fatalf("declined confirmation = %v, acl %q", err, readACL())
 	}
@@ -134,21 +134,21 @@ func TestPublicReadACLNeedsNativeConfirmation(t *testing.T) {
 
 	// The dialog did not complete (closed, cancelled context): refused.
 	h.mutate.setConfirmer(answer(false, errors.New("dialog closed")))
-	_, err = h.mutate.UpdateContainer(ctx, "private", "", ContainerEditDTO{ReadACL: ".r:*", AckPublic: true})
+	_, err = h.mutate.UpdateContainer(ctx, h.portrait(), "private", "", ContainerEditDTO{ReadACL: ".r:*", AckPublic: true})
 	if err == nil || !strings.Contains(err.Error(), "did not complete") || readACL() == ".r:*" {
 		t.Fatalf("failed confirmation = %v, acl %q", err, readACL())
 	}
 
 	// Confirmed: written.
 	h.mutate.setConfirmer(answer(true, nil))
-	result, err := h.mutate.UpdateContainer(ctx, "private", "", ContainerEditDTO{ReadACL: ".r:*", AckPublic: true})
+	result, err := h.mutate.UpdateContainer(ctx, h.portrait(), "private", "", ContainerEditDTO{ReadACL: ".r:*", AckPublic: true})
 	if err != nil || result.Outcome != "applied" || readACL() != ".r:*" {
 		t.Fatalf("confirmed public ACL = %+v, %v, acl %q", result, err, readACL())
 	}
 	asks := len(calls)
 
 	// Already public: a further edit keeping the ACL asks nothing new.
-	if _, err := h.mutate.UpdateContainer(ctx, "private", "", ContainerEditDTO{ReadACL: ".r:*", AckPublic: true, Meta: map[string]string{"Owner": "ops"}}); err != nil {
+	if _, err := h.mutate.UpdateContainer(ctx, h.portrait(), "private", "", ContainerEditDTO{ReadACL: ".r:*", AckPublic: true, Meta: map[string]string{"Owner": "ops"}}); err != nil {
 		t.Fatalf("edit of an already public container = %v", err)
 	}
 	if len(calls) != asks {
@@ -157,7 +157,7 @@ func TestPublicReadACLNeedsNativeConfirmation(t *testing.T) {
 
 	// A private ACL never asks.
 	h.mutate.setConfirmer(answer(false, nil))
-	if _, err := h.mutate.UpdateContainer(ctx, "private", "", ContainerEditDTO{ReadACL: ".r:example.com"}); err != nil {
+	if _, err := h.mutate.UpdateContainer(ctx, h.portrait(), "private", "", ContainerEditDTO{ReadACL: ".r:example.com"}); err != nil {
 		t.Fatalf("non-public ACL refused: %v", err)
 	}
 	if len(calls) != asks {

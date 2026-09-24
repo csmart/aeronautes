@@ -28,7 +28,7 @@ func TestShutdownWorkWaitsForHeldMetadataWrite(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() {
-		_, err := h.mutate.UpdateObjectMetadata(context.Background(), "fixtures", "normal/hello.txt", "",
+		_, err := h.mutate.UpdateObjectMetadata(context.Background(), h.portrait(), "fixtures", "normal/hello.txt", "",
 			ObjectMetadataEditDTO{Meta: map[string]string{"Held": "1"}})
 		done <- err
 	}()
@@ -93,21 +93,21 @@ func TestShutdownWorkRefusesWritesAfterDrain(t *testing.T) {
 func TestShutdownWorkWaitsForEveryMutateStoreWrite(t *testing.T) {
 	for _, c := range []struct {
 		name, method, path string
-		run                func(*MutateService) error
+		run                func(*harness) error
 	}{
-		{"CreateContainer", "PUT", "/after-hold-create", func(m *MutateService) error {
-			_, err := m.CreateContainer(context.Background(), ContainerCreateDTO{Name: "after-hold-create"})
+		{"CreateContainer", "PUT", "/after-hold-create", func(h *harness) error {
+			_, err := h.mutate.CreateContainer(context.Background(), h.portrait(), ContainerCreateDTO{Name: "after-hold-create"})
 			return err
 		}},
-		{"CreateMarker", "PUT", "held-marker/", func(m *MutateService) error {
-			_, err := m.CreateMarker(context.Background(), "fixtures", "held-marker/")
+		{"CreateMarker", "PUT", "held-marker/", func(h *harness) error {
+			_, err := h.mutate.CreateMarker(context.Background(), h.portrait(), "fixtures", "held-marker/")
 			return err
 		}},
-		{"DeleteMarker", "DELETE", "folder-marker/", func(m *MutateService) error {
-			return m.DeleteMarker(context.Background(), "fixtures", "folder-marker/")
+		{"DeleteMarker", "DELETE", "folder-marker/", func(h *harness) error {
+			return h.mutate.DeleteMarker(context.Background(), "fixtures", "folder-marker/")
 		}},
-		{"DeleteManifest", "DELETE", "external-dlo", func(m *MutateService) error {
-			_, err := m.DeleteManifest(context.Background(), "fixtures", "external-dlo")
+		{"DeleteManifest", "DELETE", "external-dlo", func(h *harness) error {
+			_, err := h.mutate.DeleteManifest(context.Background(), "fixtures", "external-dlo")
 			return err
 		}},
 	} {
@@ -125,20 +125,20 @@ type mutateWrite struct {
 func mutateStoreWrites(h *harness) []mutateWrite {
 	return []mutateWrite{
 		{"UpdateObjectMetadata", func() error {
-			_, err := h.mutate.UpdateObjectMetadata(context.Background(), "fixtures", "normal/hello.txt", "",
+			_, err := h.mutate.UpdateObjectMetadata(context.Background(), h.portrait(), "fixtures", "normal/hello.txt", "",
 				ObjectMetadataEditDTO{Meta: map[string]string{"After": "drain"}})
 			return err
 		}},
 		{"UpdateContainer", func() error {
-			_, err := h.mutate.UpdateContainer(context.Background(), "fixtures", "", ContainerEditDTO{})
+			_, err := h.mutate.UpdateContainer(context.Background(), h.portrait(), "fixtures", "", ContainerEditDTO{})
 			return err
 		}},
 		{"CreateContainer", func() error {
-			_, err := h.mutate.CreateContainer(context.Background(), ContainerCreateDTO{Name: "after-drain"})
+			_, err := h.mutate.CreateContainer(context.Background(), h.portrait(), ContainerCreateDTO{Name: "after-drain"})
 			return err
 		}},
 		{"CreateMarker", func() error {
-			_, err := h.mutate.CreateMarker(context.Background(), "fixtures", "after-drain-marker/")
+			_, err := h.mutate.CreateMarker(context.Background(), h.portrait(), "fixtures", "after-drain-marker/")
 			return err
 		}},
 		{"DeleteMarker", func() error {
@@ -151,7 +151,7 @@ func mutateStoreWrites(h *harness) []mutateWrite {
 	}
 }
 
-func assertDrainWaitsForStoreWrite(t *testing.T, method, pathPart string, run func(*MutateService) error) {
+func assertDrainWaitsForStoreWrite(t *testing.T, method, pathPart string, run func(*harness) error) {
 	t.Helper()
 	h := newHarness(t)
 	h.connect(t)
@@ -170,7 +170,7 @@ func assertDrainWaitsForStoreWrite(t *testing.T, method, pathPart string, run fu
 		})
 	}
 	done := make(chan error, 1)
-	go func() { done <- run(h.mutate) }()
+	go func() { done <- run(h) }()
 	select {
 	case <-held:
 	case <-time.After(2 * time.Second):

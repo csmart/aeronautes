@@ -1446,7 +1446,9 @@ export class BrowserState {
     this.detailError = null;
     const base = force ? "" : detail.editableFingerprint;
     this.mutationNotice = null;
-    const result = await this.#api.updateObjectMetadata(identity.container, identity.name, base, edit);
+    // The write names the scope the detail was read under (ADR 0079): a
+    // connection that moved since is refused before anything is written.
+    const result = await this.#api.updateObjectMetadata(detail.scope, identity.container, identity.name, base, edit);
     if (this.#currentDetail(request) && result.outcome === "applied" && result.objectAfter
       && result.objectAfter.name === identity.name) {
       this.objectDetail = result.objectAfter;
@@ -1476,7 +1478,7 @@ export class BrowserState {
     const scope = this.#scopeRevision;
     const seq = ++this.#containerDetailSeq;
     const base = force ? "" : detail.editableFingerprint;
-    const result = await this.#api.updateContainer(name, base, edit);
+    const result = await this.#api.updateContainer(detail.scope, name, base, edit);
     if (this.#currentContainerDetail(scope, seq, name) && result.outcome === "applied" && result.containerAfter
       && result.containerAfter.name === name) {
       this.containerDetail = result.containerAfter;
@@ -1598,11 +1600,19 @@ export class BrowserState {
     }
   }
 
-  /** Create a container and open it. */
-  async createContainer(create: ContainerCreateDTO, ownsView = () => true) {
+  /** The portrait the connected view was built under, for a write that
+   * names its scope (ADR 0079); null when nothing is connected. */
+  get portrait(): ListingScope | null {
+    return this.#portrait();
+  }
+
+  /** Create a container and open it. The portrait is the one captured
+   * when the dialog opened (ADR 0079). */
+  async createContainer(create: ContainerCreateDTO, portrait: ListingScope | null, ownsView = () => true) {
     const scope = this.#scopeRevision;
     const selection = this.detailIdentity;
-    await this.#api.createContainer(create);
+    if (!portrait) throw new Error("The connection changed since the dialog opened. Reconnect and try again.");
+    await this.#api.createContainer(portrait, create);
     await this.loadAudit();
     if (!ownsView() || !this.#currentView(scope, selection)) return;
     await this.loadContainers();
@@ -1622,7 +1632,7 @@ export class BrowserState {
     const request = { scope: this.#scopeRevision, seq: ++this.#detailSeq, container, name: prefix };
     this.detailLoading = false;
     this.detailError = null;
-    const detail = await this.#api.createMarker(container, prefix);
+    const detail = await this.#api.createMarker(this.prefixDetail.scope, container, prefix);
     if (this.#currentDetail(request) && detail.prefix === prefix) this.prefixDetail = detail;
     await this.loadAudit();
   }

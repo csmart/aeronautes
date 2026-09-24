@@ -22,15 +22,15 @@ import * as $models from "./models.js";
  * CreateContainer creates a container (§20), gating the policy on the
  * advertised list when it is known.
  */
-export function CreateContainer(create: $models.ContainerCreateDTO): $CancellablePromise<$models.ContainerDetailDTO> {
-    return $Call.ByID(2421495998, create);
+export function CreateContainer(scope: $models.ListingScopeDTO, create: $models.ContainerCreateDTO): $CancellablePromise<$models.ContainerDetailDTO> {
+    return $Call.ByID(2421495998, scope, create);
 }
 
 /**
  * CreateMarker creates the explicit §14.1 marker object at a prefix.
  */
-export function CreateMarker(container: string, prefix: string): $CancellablePromise<$models.PrefixDetailDTO> {
-    return $Call.ByID(1848210993, container, prefix);
+export function CreateMarker(scope: $models.ListingScopeDTO, container: string, prefix: string): $CancellablePromise<$models.PrefixDetailDTO> {
+    return $Call.ByID(1848210993, scope, container, prefix);
 }
 
 /**
@@ -53,14 +53,14 @@ export function DeleteMarker(container: string, prefix: string): $CancellablePro
 /**
  * UpdateContainer applies a complete container edit (§18, §19, §21).
  */
-export function UpdateContainer(name: string, baseFingerprint: string, edit: $models.ContainerEditDTO): $CancellablePromise<$models.MutationResultDTO> {
-    return $Call.ByID(3578252257, name, baseFingerprint, edit);
+export function UpdateContainer(scope: $models.ListingScopeDTO, name: string, baseFingerprint: string, edit: $models.ContainerEditDTO): $CancellablePromise<$models.MutationResultDTO> {
+    return $Call.ByID(3578252257, scope, name, baseFingerprint, edit);
 }
 
 /**
  * UpdateObjectMetadata applies a complete metadata working copy to one
  * object (§17, §18).
  */
-export function UpdateObjectMetadata(container: string, name: string, baseFingerprint: string, edit: $models.ObjectMetadataEditDTO): $CancellablePromise<$models.MutationResultDTO> {
-    return $Call.ByID(3652920316, container, name, baseFingerprint, edit);
+export function UpdateObjectMetadata(scope: $models.ListingScopeDTO, container: string, name: string, baseFingerprint: string, edit: $models.ObjectMetadataEditDTO): $CancellablePromise<$models.MutationResultDTO> {
+    return $Call.ByID(3652920316, scope, container, name, baseFingerprint, edit);
 }

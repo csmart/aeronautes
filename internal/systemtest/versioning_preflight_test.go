@@ -96,7 +96,7 @@ func TestVersioningPreflight(t *testing.T) {
 	t.Run("modern_container_refuses", func(t *testing.T) {
 		h := New(t)
 		name := modernVersionedContainer(t, h, "vp-control")
-		_, err := h.Mutate.UpdateContainer(t.Context(), name, "", app.ContainerEditDTO{
+		_, err := h.Mutate.UpdateContainer(t.Context(), h.ActiveScope(t.Context()), name, "", app.ContainerEditDTO{
 			Meta: map[string]string{"Note": "edited"}, VersioningMode: "off",
 		})
 		if !errors.Is(err, swiftcontrol.ErrModernVersioning) {
@@ -107,7 +107,7 @@ func TestVersioningPreflight(t *testing.T) {
 	t.Run("plain_container_applies", func(t *testing.T) {
 		h := New(t)
 		name := h.Container(h.Primary, "vp-plain")
-		result, err := h.Mutate.UpdateContainer(t.Context(), name, "", app.ContainerEditDTO{
+		result, err := h.Mutate.UpdateContainer(t.Context(), h.ActiveScope(t.Context()), name, "", app.ContainerEditDTO{
 			Meta: map[string]string{"Note": "edited"}, VersioningMode: "off",
 		})
 		if err != nil || result.Outcome != "applied" {
@@ -119,7 +119,7 @@ func TestVersioningPreflight(t *testing.T) {
 		h := New(t)
 		name := modernVersionedContainer(t, h, "vp-unknown")
 		p := installHeadFailProxy(t, h, h.Primary, 1)
-		_, err := h.Mutate.UpdateContainer(t.Context(), name, "", app.ContainerEditDTO{
+		_, err := h.Mutate.UpdateContainer(t.Context(), h.ActiveScope(t.Context()), name, "", app.ContainerEditDTO{
 			Meta: map[string]string{"Note": "edited"}, VersioningMode: "off",
 		})
 		if !errors.Is(err, swiftcontrol.ErrVersioningUnestablished) {
@@ -143,7 +143,7 @@ func TestVersioningPreflight(t *testing.T) {
 		archive := h.Container(h.Primary, "vp-archive")
 		name := modernVersionedContainer(t, h, "vp-rewrite")
 		p := installHeadFailProxy(t, h, h.Primary, 1)
-		_, err := h.Mutate.UpdateContainer(t.Context(), name, "", app.ContainerEditDTO{
+		_, err := h.Mutate.UpdateContainer(t.Context(), h.ActiveScope(t.Context()), name, "", app.ContainerEditDTO{
 			VersioningMode: "history_location", VersioningArchive: archive,
 		})
 		if !errors.Is(err, swiftcontrol.ErrVersioningUnestablished) {

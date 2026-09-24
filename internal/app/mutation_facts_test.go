@@ -71,7 +71,7 @@ func TestObjectMetadataIntentAbortIssuesZeroPOST(t *testing.T) {
 		WHEN NEW.outcome='intent'
 		BEGIN SELECT RAISE(ABORT,'fixture required intent refusal'); END`)
 	before := h.mock.RequestLog()
-	_, err := h.mutate.UpdateObjectMetadata(context.Background(), "fixtures", "normal/hello.txt", "",
+	_, err := h.mutate.UpdateObjectMetadata(context.Background(), h.portrait(), "fixtures", "normal/hello.txt", "",
 		objectMetaEdit(t, h))
 	if err == nil {
 		t.Fatal("intent abort must fail the call")
@@ -103,7 +103,7 @@ func TestObjectMetadataOutcomeAbortAfterPOSTIsResidue(t *testing.T) {
 			h.connect(t)
 			refuseSQL(t, h, tc.query)
 			before := h.mock.RequestLog()
-			_, err := h.mutate.UpdateObjectMetadata(context.Background(), "fixtures", "normal/hello.txt", "",
+			_, err := h.mutate.UpdateObjectMetadata(context.Background(), h.portrait(), "fixtures", "normal/hello.txt", "",
 				objectMetaEdit(t, h))
 			if !errors.Is(err, errMetadataResidue) {
 				t.Fatalf("err = %v, want residue", err)
@@ -141,12 +141,12 @@ func TestObjectMetadataOutcomesSurviveReopen(t *testing.T) {
 	ctx := context.Background()
 	edit := objectMetaEdit(t, h)
 
-	applied, err := h.mutate.UpdateObjectMetadata(ctx, "fixtures", "normal/hello.txt", "", edit)
+	applied, err := h.mutate.UpdateObjectMetadata(ctx, h.portrait(), "fixtures", "normal/hello.txt", "", edit)
 	if err != nil || applied.Outcome != "applied" {
 		t.Fatalf("applied = %+v err=%v", applied, err)
 	}
 
-	conflict, err := h.mutate.UpdateObjectMetadata(ctx, "fixtures", "normal/hello.txt", "not-the-fingerprint", edit)
+	conflict, err := h.mutate.UpdateObjectMetadata(ctx, h.portrait(), "fixtures", "normal/hello.txt", "not-the-fingerprint", edit)
 	if err != nil || conflict.Outcome != "conflict" {
 		t.Fatalf("conflict = %+v err=%v", conflict, err)
 	}
@@ -159,7 +159,7 @@ func TestObjectMetadataOutcomesSurviveReopen(t *testing.T) {
 		mismatchOnce = true
 		h.mock.PatchObjectMeta("fixtures", "normal/hello.txt", "Stray", "1")
 	}
-	mismatch, err := h.mutate.UpdateObjectMetadata(ctx, "fixtures", "normal/hello.txt", "", edit)
+	mismatch, err := h.mutate.UpdateObjectMetadata(ctx, h.portrait(), "fixtures", "normal/hello.txt", "", edit)
 	if err != nil || mismatch.Outcome != "verify_mismatch" {
 		t.Fatalf("mismatch = %+v err=%v", mismatch, err)
 	}
@@ -191,7 +191,7 @@ func TestObjectMetadataVerifyReadFailureIsUnverified(t *testing.T) {
 			h.mock.FailNextObjectHEADs(1)
 		}
 	}
-	_, err := h.mutate.UpdateObjectMetadata(context.Background(), "fixtures", "normal/hello.txt", "",
+	_, err := h.mutate.UpdateObjectMetadata(context.Background(), h.portrait(), "fixtures", "normal/hello.txt", "",
 		objectMetaEdit(t, h))
 	if !errors.Is(err, swiftcontrol.ErrUnverifiedWrite) {
 		t.Fatalf("err = %v, want unverified", err)
@@ -222,7 +222,7 @@ func TestObjectMetadataTransportFailureIsUnverified(t *testing.T) {
 	h := newHarness(t)
 	h.connect(t)
 	h.mock.DropNextObjectPOST()
-	_, err := h.mutate.UpdateObjectMetadata(context.Background(), "fixtures", "normal/hello.txt", "",
+	_, err := h.mutate.UpdateObjectMetadata(context.Background(), h.portrait(), "fixtures", "normal/hello.txt", "",
 		objectMetaEdit(t, h))
 	if !errors.Is(err, swiftcontrol.ErrUnverifiedWrite) {
 		t.Fatalf("err = %v, want unverified", err)
@@ -247,7 +247,7 @@ func TestObjectMetadataStoreRefusalIsFailed(t *testing.T) {
 	h := newHarness(t)
 	h.connect(t)
 	h.mock.SetObjectPOSTStatus(http.StatusForbidden)
-	_, err := h.mutate.UpdateObjectMetadata(context.Background(), "fixtures", "normal/hello.txt", "",
+	_, err := h.mutate.UpdateObjectMetadata(context.Background(), h.portrait(), "fixtures", "normal/hello.txt", "",
 		objectMetaEdit(t, h))
 	if err == nil || errors.Is(err, swiftcontrol.ErrUnverifiedWrite) {
 		t.Fatalf("err = %v, want store refusal", err)
@@ -274,7 +274,7 @@ func TestObjectMetadataTransportFailureOutcomeAbortIsResidue(t *testing.T) {
 	h.mock.DropNextObjectPOST()
 	refuseSQL(t, h, `CREATE TRIGGER refuse_audit BEFORE INSERT ON audit_events
 		BEGIN SELECT RAISE(ABORT,'fixture required audit refusal'); END`)
-	_, err := h.mutate.UpdateObjectMetadata(context.Background(), "fixtures", "normal/hello.txt", "",
+	_, err := h.mutate.UpdateObjectMetadata(context.Background(), h.portrait(), "fixtures", "normal/hello.txt", "",
 		objectMetaEdit(t, h))
 	if !errors.Is(err, errMetadataResidue) {
 		t.Fatalf("err = %v, want residue", err)
@@ -306,7 +306,7 @@ func TestObjectMetadataFactClassifiesNilUnverified(t *testing.T) {
 func TestObjectMetadataFactsSurviveAuditRetention(t *testing.T) {
 	h := newHarness(t)
 	h.connect(t)
-	if _, err := h.mutate.UpdateObjectMetadata(context.Background(), "fixtures", "normal/hello.txt", "",
+	if _, err := h.mutate.UpdateObjectMetadata(context.Background(), h.portrait(), "fixtures", "normal/hello.txt", "",
 		objectMetaEdit(t, h)); err != nil {
 		t.Fatal(err)
 	}

@@ -11,7 +11,8 @@
 
   // Container creation belongs to the account and view that opened this dialog.
   // svelte-ignore state_referenced_locally
-  const target = { browser, scope: browser.scopeRevision, selection: browser.detailIdentity };
+  // The portrait captured here names the write's scope (ADR 0079).
+  const target = { browser, scope: browser.scopeRevision, selection: browser.detailIdentity, portrait: browser.portrait };
   let closed = $state(false);
   function isCurrent() {
     return !closed && browser === target.browser && !browser.connecting && !!browser.connectedBookmarkId
@@ -38,7 +39,7 @@
     saving = true;
     error = null;
     try {
-      await browser.createContainer({ name, policy, meta: {} }, isCurrent);
+      await browser.createContainer({ name, policy, meta: {} }, target.portrait, isCurrent);
       if (isCurrent()) close();
     } catch (err) {
       if (isCurrent()) error = err instanceof Error ? err.message : String(err);

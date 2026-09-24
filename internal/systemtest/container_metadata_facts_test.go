@@ -103,7 +103,7 @@ func testContainerMetadataFacts(t *testing.T, harness func(*testing.T) *Harness)
 			}
 			done := make(chan reply, 1)
 			go func() {
-				dto, err := h.Mutate.UpdateContainer(t.Context(), container, fingerprint, edit)
+				dto, err := h.Mutate.UpdateContainer(t.Context(), h.ActiveScope(t.Context()), container, fingerprint, edit)
 				done <- reply{dto, err}
 			}()
 			if barrier != nil {

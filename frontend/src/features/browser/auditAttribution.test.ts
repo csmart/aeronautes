@@ -185,7 +185,10 @@ describe("audit bookmark queries through the live bridge", () => {
 
   it("keeps the shared fake's bookmark filter consistent with the local store", async () => {
     const api = newFakeApi();
-    await api.createMarker("fixtures", "audit-owned/");
+    // A write names the scope of a connected view (ADR 0079).
+    const owner = await api.saveBookmark({ id: "", displayName: "Owner", authUrl: "http://mock/auth/v1.0", username: "test:tester", storageUrlOverride: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "testing");
+    await api.connect(owner.id);
+    await api.createMarker({ bookmarkId: owner.id, generation: 1 }, "fixtures", "audit-owned/");
     const query = { bookmarkId: "", operationPrefix: "", result: "", beforeId: 0, limit: 50 };
     const all = await api.auditSearch(query);
     expect(all).toHaveLength(1);

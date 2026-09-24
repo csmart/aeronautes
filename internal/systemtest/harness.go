@@ -47,13 +47,16 @@ type Account struct {
 
 // Harness wires the service layer and both accounts for one test.
 type Harness struct {
-	T         *testing.T
-	ctx       context.Context
-	ns        string
-	counter   int64
-	database  *db.DB
-	jobStore  *jobs.Store
-	statePath string
+	// connections is the registry the services share; tests read the
+	// active bookmark from it to name a write's scope (ADR 0079).
+	connections *app.Connections
+	T           *testing.T
+	ctx         context.Context
+	ns          string
+	counter     int64
+	database    *db.DB
+	jobStore    *jobs.Store
+	statePath   string
 
 	Bookmarks *app.BookmarkService
 	Browse    *app.BrowseService
@@ -121,7 +124,7 @@ func newHarness(t *testing.T, cfg harnessConfig) *Harness {
 	app.WireEvidenceStore(transfer, ev)
 
 	h := &Harness{
-		T: t, ctx: ctx,
+		T: t, ctx: ctx, connections: connections,
 		database: database, jobStore: jobStore, statePath: statePath,
 		// Parallel fixtures cannot rely on clock resolution for namespace isolation.
 		ns:        "st" + rand.Text(),
@@ -444,7 +447,7 @@ func (h *Harness) DeleteManifestWithSegments(ctx context.Context, req app.Segmen
 }
 
 func (h *Harness) UpdateObjectMetadata(ctx context.Context, container, name, baseFingerprint string, edit app.ObjectMetadataEditDTO) *Receipt {
-	result, err := h.Mutate.UpdateObjectMetadata(ctx, container, name, baseFingerprint, edit)
+	result, err := h.Mutate.UpdateObjectMetadata(ctx, h.ActiveScope(ctx), container, name, baseFingerprint, edit)
 	return &Receipt{h: h, action: "MutateService.UpdateObjectMetadata", outcome: result.Outcome, err: err}
 }
 

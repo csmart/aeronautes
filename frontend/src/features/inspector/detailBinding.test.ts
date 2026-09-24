@@ -162,9 +162,9 @@ describe.each(["object", "container", "marker"] as const)("%s mutation result ow
     const pending = mutation(f, kind, "accepted");
     pending.resolve(); await pending.task;
     expect(JSON.stringify(portrait(f, kind))).toContain("accepted");
-    if (kind === "object") expect(f.api.updateObjectMetadata).toHaveBeenCalledExactlyOnceWith("fixtures", "empty-object", "fixtures/empty-object", objectEdit);
-    if (kind === "container") expect(f.api.updateContainer).toHaveBeenCalledExactlyOnceWith("fixtures", "fixtures", containerEdit);
-    if (kind === "marker") expect(f.api.createMarker).toHaveBeenCalledExactlyOnceWith("fixtures", "implied/");
+    if (kind === "object") expect(f.api.updateObjectMetadata).toHaveBeenCalledExactlyOnceWith(expect.anything(), "fixtures", "empty-object", "fixtures/empty-object", objectEdit);
+    if (kind === "container") expect(f.api.updateContainer).toHaveBeenCalledExactlyOnceWith(expect.anything(), "fixtures", "fixtures", containerEdit);
+    if (kind === "marker") expect(f.api.createMarker).toHaveBeenCalledExactlyOnceWith(expect.anything(), "fixtures", "implied/");
   });
 
   it("returns a current failure without inventing a successful portrait", async () => {
@@ -284,7 +284,7 @@ it("keeps the selected object's complete working copy for a later save", async (
   });
   const edit = { meta: { ...f.browser.objectDetail!.meta, Team: "new" }, contentType: "", deleteAt: "" };
   await f.browser.saveObjectMetadata(edit);
-  expect(f.api.updateObjectMetadata).toHaveBeenCalledExactlyOnceWith("fixtures", "other", "fixtures/other", edit);
+  expect(f.api.updateObjectMetadata).toHaveBeenCalledExactlyOnceWith(expect.anything(), "fixtures", "other", "fixtures/other", edit);
 });
 
 it.each(["object", "container"] as const)("preserves current %s conflict and mismatch outcomes", async (kind) => {

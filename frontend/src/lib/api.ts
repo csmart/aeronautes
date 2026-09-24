@@ -170,18 +170,20 @@ export interface Api {
   deleteManifest(container: string, name: string): Promise<ObjectDetailDTO>;
   capabilities(bookmarkId: string): Promise<CapabilitiesDTO>;
   updateObjectMetadata(
+    scope: ListingScope,
     container: string,
     name: string,
     baseFingerprint: string,
     edit: ObjectMetadataEditDTO,
   ): Promise<MutationResultDTO>;
   updateContainer(
+    scope: ListingScope,
     name: string,
     baseFingerprint: string,
     edit: ContainerEditDTO,
   ): Promise<MutationResultDTO>;
-  createContainer(create: ContainerCreateDTO): Promise<ContainerDetailDTO>;
-  createMarker(container: string, prefix: string): Promise<PrefixDetailDTO>;
+  createContainer(scope: ListingScope, create: ContainerCreateDTO): Promise<ContainerDetailDTO>;
+  createMarker(scope: ListingScope, container: string, prefix: string): Promise<PrefixDetailDTO>;
   deleteMarker(container: string, prefix: string): Promise<void>;
   auditRecent(limit: number, bookmarkId: string): Promise<AuditEventDTO[]>;
   auditSearch(q: AuditQueryDTO): Promise<AuditEventDTO[]>;
@@ -244,12 +246,12 @@ export const liveApi: Api = {
   dloSegments: (manifest, bookmarkId) => InspectorService.DLOSegments(bookmarkId, manifest),
   deleteManifest: (container, name) => MutateService.DeleteManifest(container, name),
   capabilities: (bookmarkId) => BrowseService.Capabilities(bookmarkId),
-  updateObjectMetadata: (container, name, baseFingerprint, edit) =>
-    MutateService.UpdateObjectMetadata(container, name, baseFingerprint, edit),
-  updateContainer: (name, baseFingerprint, edit) =>
-    MutateService.UpdateContainer(name, baseFingerprint, edit),
-  createContainer: (create) => MutateService.CreateContainer(create),
-  createMarker: (container, prefix) => MutateService.CreateMarker(container, prefix),
+  updateObjectMetadata: (scope, container, name, baseFingerprint, edit) =>
+    MutateService.UpdateObjectMetadata(scope, container, name, baseFingerprint, edit),
+  updateContainer: (scope, name, baseFingerprint, edit) =>
+    MutateService.UpdateContainer(scope, name, baseFingerprint, edit),
+  createContainer: (scope, create) => MutateService.CreateContainer(scope, create),
+  createMarker: (scope, container, prefix) => MutateService.CreateMarker(scope, container, prefix),
   deleteMarker: (container, prefix) => MutateService.DeleteMarker(container, prefix),
   auditRecent: async (limit, bookmarkId) =>
     (await AuditService.RecentFor(bookmarkId, limit)) ?? [],

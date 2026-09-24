@@ -156,6 +156,7 @@ describe("ACL input labels", () => {
     await settle();
     expect(f.api.updateContainer).toHaveBeenCalledOnce();
     expect(vi.mocked(f.api.updateContainer).mock.calls[0]).toEqual([
+      expect.anything(),
       "fixtures", detail.editableFingerprint, expect.objectContaining({
         readAcl: "tenant:reader", writeAcl: "tenant:writer", ackPublic: false,
       }),
@@ -203,7 +204,7 @@ describe("ACL input labels", () => {
     click(button(f.root, "Save"));
     await settle();
     expect(f.api.updateContainer).toHaveBeenCalledOnce();
-    expect(vi.mocked(f.api.updateContainer).mock.calls[0][2]).toMatchObject({ readAcl: ".r:*", ackPublic: true });
+    expect(vi.mocked(f.api.updateContainer).mock.calls[0][3]).toMatchObject({ readAcl: ".r:*", ackPublic: true });
   });
 });
 

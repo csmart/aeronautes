@@ -72,12 +72,12 @@ func (s *MutateService) occupy() error {
 
 // UpdateObjectMetadata applies a complete metadata working copy to one
 // object (§17, §18).
-func (s *MutateService) UpdateObjectMetadata(ctx context.Context, container, name, baseFingerprint string, edit ObjectMetadataEditDTO) (MutationResultDTO, error) {
+func (s *MutateService) UpdateObjectMetadata(ctx context.Context, scope ListingScopeDTO, container, name, baseFingerprint string, edit ObjectMetadataEditDTO) (MutationResultDTO, error) {
 	if err := s.occupy(); err != nil {
 		return MutationResultDTO{}, err
 	}
 	defer s.writers.leave()
-	entry, bookmarkID, _, err := s.connections.activeSnapshot()
+	entry, bookmarkID, _, err := s.boundSnapshot(ctx, scope)
 	if err != nil {
 		return MutationResultDTO{}, err
 	}
@@ -135,13 +135,39 @@ func (s *MutateService) UpdateObjectMetadata(ctx context.Context, container, nam
 	return dto, nil
 }
 
+// ErrMutationScopeChanged refuses a write whose caller's view was built
+// under a connection that is no longer the active one (ADR 0079): the
+// bookmark differs, the generation moved, or no scope was named. Nothing
+// is recorded and nothing is sent.
+var ErrMutationScopeChanged = errors.New("the connected account changed; nothing was written")
+
+// boundSnapshot is activeSnapshot bound to the caller's scope: the active
+// connection must be the named bookmark at the named generation, and the
+// store must still hold that generation, before any intent is recorded.
+func (s *MutateService) boundSnapshot(ctx context.Context, scope ListingScopeDTO) (cachedSession, string, *swiftcontrol.Capabilities, error) {
+	if scope.BookmarkID == "" || scope.Generation <= 0 {
+		return cachedSession{}, "", nil, fmt.Errorf("%w: name the bookmark and generation the view was built under", ErrMutationScopeChanged)
+	}
+	entry, bookmarkID, caps, err := s.connections.activeSnapshot()
+	if err != nil {
+		return cachedSession{}, "", nil, err
+	}
+	if bookmarkID != scope.BookmarkID || entry.generation != scope.Generation {
+		return cachedSession{}, "", nil, ErrMutationScopeChanged
+	}
+	if err := s.connections.store.WithCurrentGeneration(ctx, bookmarkID, scope.Generation, nil); err != nil {
+		return cachedSession{}, "", nil, fmt.Errorf("%w: %v", ErrMutationScopeChanged, err)
+	}
+	return entry, bookmarkID, caps, nil
+}
+
 // UpdateContainer applies a complete container edit (§18, §19, §21).
-func (s *MutateService) UpdateContainer(ctx context.Context, name, baseFingerprint string, edit ContainerEditDTO) (MutationResultDTO, error) {
+func (s *MutateService) UpdateContainer(ctx context.Context, scope ListingScopeDTO, name, baseFingerprint string, edit ContainerEditDTO) (MutationResultDTO, error) {
 	if err := s.occupy(); err != nil {
 		return MutationResultDTO{}, err
 	}
 	defer s.writers.leave()
-	entry, bookmarkID, caps, err := s.connections.activeSnapshot()
+	entry, bookmarkID, caps, err := s.boundSnapshot(ctx, scope)
 	if err != nil {
 		return MutationResultDTO{}, err
 	}
@@ -230,7 +256,7 @@ func (s *MutateService) UpdateContainer(ctx context.Context, name, baseFingerpri
 
 // CreateContainer creates a container (§20), gating the policy on the
 // advertised list when it is known.
-func (s *MutateService) CreateContainer(ctx context.Context, create ContainerCreateDTO) (ContainerDetailDTO, error) {
+func (s *MutateService) CreateContainer(ctx context.Context, scope ListingScopeDTO, create ContainerCreateDTO) (ContainerDetailDTO, error) {
 	if err := s.occupy(); err != nil {
 		return ContainerDetailDTO{}, err
 	}
@@ -239,7 +265,7 @@ func (s *MutateService) CreateContainer(ctx context.Context, create ContainerCre
 	// (ADR 0065): the record and the detail name the account that created
 	// the container, not whichever connection is active when they are
 	// written.
-	entry, bookmarkID, caps, err := s.connections.activeSnapshot()
+	entry, bookmarkID, caps, err := s.boundSnapshot(ctx, scope)
 	if err != nil {
 		return ContainerDetailDTO{}, err
 	}
@@ -279,7 +305,7 @@ func (s *MutateService) CreateContainer(ctx context.Context, create ContainerCre
 }
 
 // CreateMarker creates the explicit §14.1 marker object at a prefix.
-func (s *MutateService) CreateMarker(ctx context.Context, container, prefix string) (PrefixDetailDTO, error) {
+func (s *MutateService) CreateMarker(ctx context.Context, scope ListingScopeDTO, container, prefix string) (PrefixDetailDTO, error) {
 	if err := refuseIfDeferred("MutateService.CreateMarker"); err != nil {
 		return PrefixDetailDTO{}, err
 	}
@@ -288,7 +314,7 @@ func (s *MutateService) CreateMarker(ctx context.Context, container, prefix stri
 	}
 	defer s.writers.leave()
 	// Captured once, as for container creation (ADR 0065).
-	entry, bookmarkID, _, err := s.connections.activeSnapshot()
+	entry, bookmarkID, _, err := s.boundSnapshot(ctx, scope)
 	if err != nil {
 		return PrefixDetailDTO{}, err
 	}

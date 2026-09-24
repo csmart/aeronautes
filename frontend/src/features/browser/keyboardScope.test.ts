@@ -343,7 +343,7 @@ describe("production modal ownership", () => {
     name.value = "keyboard-created"; name.dispatchEvent(new Event("input", { bubbles: true })); flushSync();
     const reply = deferred<Awaited<ReturnType<Api["createContainer"]>>>(); api.createContainer = vi.fn(() => reply.promise);
     const form = get<HTMLFormElement>("form", dialog); form.requestSubmit(); form.requestSubmit(); await settle();
-    expect(api.createContainer).toHaveBeenCalledExactlyOnceWith({ name: "keyboard-created", policy: "", meta: {} });
+    expect(api.createContainer).toHaveBeenCalledExactlyOnceWith(expect.anything(), { name: "keyboard-created", policy: "", meta: {} });
     press(window, "Tab"); expect(document.activeElement).toBe(dialog);
     press(window, "Escape"); await settle();
     reply.resolve(await api.containerDetail("fixtures", "bm-1")); await settle();
