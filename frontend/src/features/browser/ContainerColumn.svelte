@@ -167,7 +167,11 @@
         {/each}
       {/if}
 
-      {#if browser.containersMarker !== ""}
+      {#if browser.containersAtCeiling}
+        <p class="retention-notice" role="status">
+          {browser.containers.length.toLocaleString("en-US")} containers loaded, the retention ceiling; further containers are not loaded. The ceiling is set in the jobs drawer.
+        </p>
+      {:else if browser.containersMarker !== ""}
         {#if browser.containersMoreError}
           <p class="error" role="alert">Could not load more containers: {browser.containersMoreError}</p>
         {/if}
@@ -412,6 +416,15 @@
   .load-more:disabled {
     cursor: wait;
     opacity: 0.6;
+  }
+
+  .retention-notice {
+    margin: var(--space-2) 0 0;
+    padding: var(--space-1);
+    font-size: var(--text-sm);
+    color: var(--color-text-faint);
+    border: 1px dashed var(--color-border-strong);
+    border-radius: var(--radius-control);
   }
 
   .pane-foot {

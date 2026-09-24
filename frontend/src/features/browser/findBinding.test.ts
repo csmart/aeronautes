@@ -86,7 +86,7 @@ describe('Find intent lifetime', () => {
   it('selects the exact clicked object beyond the first listing page', async () => {
     const f = await fixture(); await f.state.startFind('hello');
     const row = { ...f.state.entries.find((item) => item.kind === 'object')!, name: 'normal/earlier.txt' };
-    f.api.objects = vi.fn().mockResolvedValue({ rows: [row], nextMarker: 'normal/earlier.txt', scope: f.scope });
+    f.api.objects = vi.fn().mockResolvedValue({ rows: [row], nextMarker: 'normal/earlier.txt', effectiveLimit: 1000, scope: f.scope });
     f.api.objectDetail = vi.fn(f.api.objectDetail); f.api.prefixDetail = vi.fn(f.api.prefixDetail);
     click(f.root, '.match'); await settle();
     expect(f.state.containerName).toBe('fixtures'); expect(f.state.prefix).toBe('normal/');
@@ -353,7 +353,7 @@ async function resultFixture(name = 'normal/hello.txt') {
   f.api.findStatus = vi.fn().mockResolvedValue({ ...done, matches: [{ name, bytes: 12 }] });
   await f.state.startFind('match');
   const row = { ...f.state.entries.find((item) => item.kind === 'object')!, name: 'earlier' };
-  f.api.objects = vi.fn().mockResolvedValue({ rows: [row], nextMarker: 'earlier', scope: f.scope });
+  f.api.objects = vi.fn().mockResolvedValue({ rows: [row], nextMarker: 'earlier', effectiveLimit: 1000, scope: f.scope });
   f.api.objectDetail = vi.fn().mockResolvedValue({ ...detail, name }); f.api.prefixDetail = vi.fn(f.api.prefixDetail);
   return { ...f, detail, row };
 }
@@ -387,7 +387,7 @@ describe('Find exact result selection', () => {
 
   it('selects an existing exact object row once without duplicating it', async () => {
     const f = await resultFixture(); const target = { ...f.row, name: 'normal/hello.txt' };
-    f.api.objects = vi.fn().mockResolvedValue({ rows: [target, f.row], nextMarker: 'later', scope: f.scope });
+    f.api.objects = vi.fn().mockResolvedValue({ rows: [target, f.row], nextMarker: 'later', effectiveLimit: 1000, scope: f.scope });
     click(f.root, '.match'); await settle();
     expect(f.state.selectedIndex).toBe(0); expect(f.state.entries.filter((r) => r.name === target.name)).toHaveLength(1);
     expect(f.api.objectDetail).toHaveBeenCalledOnce(); expect(f.state.entriesMarker).toBe('later');
@@ -395,7 +395,7 @@ describe('Find exact result selection', () => {
 
   it('keeps a same-name object and virtual prefix distinct through filtering', async () => {
     const f = await resultFixture('marker/'); const prefix = { ...f.row, kind: 'prefix', name: 'marker/' };
-    f.api.objects = vi.fn().mockResolvedValue({ rows: [f.row, prefix], nextMarker: '', scope: f.scope });
+    f.api.objects = vi.fn().mockResolvedValue({ rows: [f.row, prefix], nextMarker: '', effectiveLimit: 1000, scope: f.scope });
     click(f.root, '.match'); await settle();
     expect(f.state.entries.filter((row) => row.name === 'marker/').map((row) => row.kind)).toEqual(['prefix', 'object']);
     const identity = f.state.detailIdentity; f.state.filter = 'marker';
@@ -406,7 +406,7 @@ describe('Find exact result selection', () => {
 
   it('makes a selected result beyond a full page visible without walking earlier pages', async () => {
     const f = await resultFixture(); const rows = Array.from({ length: 1000 }, (_, i) => ({ ...f.row, name: 'normal/a-' + String(i).padStart(4, '0') }));
-    f.api.objects = vi.fn().mockResolvedValue({ rows, nextMarker: rows[999].name, scope: f.scope });
+    f.api.objects = vi.fn().mockResolvedValue({ rows, nextMarker: rows[999].name, effectiveLimit: 1000, scope: f.scope });
     click(f.root, '.match'); await settle();
     expect(f.state.selectedIndex).toBe(1000); expect(f.state.entries).toHaveLength(1001);
     expect(f.root.querySelector('[aria-selected="true"]')?.textContent).toContain('hello.txt');
@@ -489,9 +489,9 @@ describe('Find result navigation lifetime', () => {
   });
 
   it.each(['Stop', 'close', 'unmount', 'prefix return', 'container return', 'identical reload', 'replacement', 'selection', 'reconnect', 'active save'])('%s retires selection waiting for the parent listing', async (ending) => {
-    const f = await resultFixture(); const listing = deferred<{ rows: typeof f.row[]; nextMarker: string }>();
+    const f = await resultFixture(); const listing = deferred<{ rows: typeof f.row[]; nextMarker: string; effectiveLimit: number }>();
     const next = { ...f.row, name: 'fresh' };
-    f.api.objects = vi.fn().mockImplementationOnce(() => listing.promise).mockResolvedValue({ rows: [next], nextMarker: '', scope: f.scope });
+    f.api.objects = vi.fn().mockImplementationOnce(() => listing.promise).mockResolvedValue({ rows: [next], nextMarker: '', effectiveLimit: 1000, scope: f.scope });
     f.api.objectDetail = vi.fn(async (_container, name) => ({ ...f.detail, name }));
     click(f.root, '.match'); await settle();
     try {
@@ -506,7 +506,7 @@ describe('Find result navigation lifetime', () => {
       else if (ending === 'selection') f.state.select(f.state.entries.findIndex((row) => row.kind === 'object'));
       else if (ending === 'reconnect') { await f.state.connect(f.bookmark.id); await f.state.openContainer('fixtures'); }
       else await f.state.saveBookmark(f.bookmark, 'changed');
-    } finally { listing.resolve({ rows: [f.row], nextMarker: '' }); await settle(); }
+    } finally { listing.resolve({ rows: [f.row], nextMarker: '', effectiveLimit: 1000 }); await settle(); }
     expect(f.state.selectedEntry?.name).not.toBe('normal/hello.txt');
     expect(vi.mocked(f.api.objectDetail).mock.calls.some((args) => args[1] === 'normal/hello.txt')).toBe(false);
   });

@@ -133,12 +133,16 @@ export interface ListingScope {
 export interface ContainerPage {
   rows: ContainerRowDTO[];
   nextMarker: string;
+  /** The page size the bridge applied, which is less than the ask when
+   * the ask exceeded its clamp (ADR 0074 decision 1). */
+  effectiveLimit: number;
   scope: ListingScope;
 }
 
 export interface ObjectPage {
   rows: ListingRowDTO[];
   nextMarker: string;
+  effectiveLimit: number;
   scope: ListingScope;
 }
 
@@ -227,11 +231,11 @@ export const liveApi: Api = {
   connect: (bookmarkId) => BrowseService.Connect(bookmarkId),
   containers: async (bookmarkId, marker, limit) => {
     const page = await BrowseService.Containers(bookmarkId, marker, limit);
-    return { rows: page.rows ?? [], nextMarker: page.nextMarker, scope: page.scope };
+    return { rows: page.rows ?? [], nextMarker: page.nextMarker, effectiveLimit: page.effectiveLimit, scope: page.scope };
   },
   objects: async (bookmarkId, container, prefix, marker, limit) => {
     const page = await BrowseService.Objects(bookmarkId, container, prefix, marker, limit);
-    return { rows: page.rows ?? [], nextMarker: page.nextMarker, scope: page.scope };
+    return { rows: page.rows ?? [], nextMarker: page.nextMarker, effectiveLimit: page.effectiveLimit, scope: page.scope };
   },
   objectDetail: (container, name, bookmarkId) => InspectorService.Object(bookmarkId, container, name),
   prefixDetail: (container, prefix, bookmarkId) => InspectorService.Prefix(bookmarkId, container, prefix),

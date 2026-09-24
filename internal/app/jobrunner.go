@@ -26,15 +26,26 @@ type jobRunner struct {
 	// maxActiveJobsCeiling (ADR 0047). It is a runner value rather than
 	// the constant itself so TestJobCeilingSurvivesResize can still raise
 	// a runner and exercise the resize machinery; see setMaxActiveJobs.
-	ceiling   int
-	slotFreed *sync.Cond
-	cancels   map[string]context.CancelFunc
-	stopped   bool
-	owners    map[*jobOwner]struct{}
-	drained   chan struct{}
+	ceiling int
+	// queueCapacity bounds the jobs that may wait behind the active
+	// slots (ADR 0074 decision 2): admit refuses a start when as many
+	// owners are already waiting for a slot. queued counts them: owners
+	// inside acquireSlot's wait, not owners still in their start phase,
+	// so a burst of concurrent starts is admitted as before.
+	queueCapacity int
+	queued        int
+	slotFreed     *sync.Cond
+	cancels       map[string]context.CancelFunc
+	stopped       bool
+	owners        map[*jobOwner]struct{}
+	drained       chan struct{}
 }
 
 var errJobRunnerStopped = errors.New("job shutdown has begun; new jobs are unavailable")
+
+// errJobQueueFull wraps the refusal of a start when the queue is full; the
+// message names the count so the operator knows what to wait for.
+var errJobQueueFull = errors.New("the job queue is full")
 
 type jobOwner struct {
 	runner      *jobRunner
@@ -51,13 +62,14 @@ func NewJobRunner(jobStore *jobs.Store, auditStore *audit.Store) *jobRunner {
 
 func newJobRunner(jobStore *jobs.Store, auditStore *audit.Store) *jobRunner {
 	r := &jobRunner{
-		jobs:     jobStore,
-		audit:    auditStore,
-		capacity: defaultMaxActiveJobs,
-		ceiling:  maxActiveJobsCeiling,
-		cancels:  map[string]context.CancelFunc{},
-		owners:   map[*jobOwner]struct{}{},
-		drained:  make(chan struct{}),
+		jobs:          jobStore,
+		audit:         auditStore,
+		capacity:      defaultMaxActiveJobs,
+		ceiling:       maxActiveJobsCeiling,
+		queueCapacity: defaultMaxQueuedJobs,
+		cancels:       map[string]context.CancelFunc{},
+		owners:        map[*jobOwner]struct{}{},
+		drained:       make(chan struct{}),
 	}
 	r.slotFreed = sync.NewCond(&r.mu)
 	return r
@@ -73,6 +85,16 @@ func (r *jobRunner) admit(ctx context.Context) (*jobOwner, context.Context, erro
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, nil, fmt.Errorf("start job: %w", err)
+	}
+	// Once as many jobs wait for a slot as the queue depth allows, a new
+	// start is refused rather than queued without bound (ADR 0074
+	// decision 2).
+	if r.queued >= r.queueCapacity {
+		noun := "jobs are"
+		if r.queued == 1 {
+			noun = "job is"
+		}
+		return nil, nil, fmt.Errorf("%w: %d %s waiting; wait for one to finish or cancel one", errJobQueueFull, r.queued, noun)
 	}
 	startCtx, cancelStart := context.WithCancel(ctx)
 	jobCtx, cancelJob := context.WithCancel(context.WithoutCancel(ctx))
@@ -177,6 +199,25 @@ func (r *jobRunner) setMaxActiveJobs(n int) {
 	r.slotFreed.Broadcast()
 }
 
+// setMaxQueuedJobs resizes the queue depth (ADR 0074 decision 2). A
+// lowered depth refuses new starts until enough waiters have left; jobs
+// already waiting keep their place.
+func (r *jobRunner) setMaxQueuedJobs(n int) {
+	if n <= 0 {
+		n = defaultMaxQueuedJobs
+	}
+	r.mu.Lock()
+	r.queueCapacity = n
+	r.mu.Unlock()
+}
+
+// queueDepth reports the depth in force.
+func (r *jobRunner) queueDepth() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.queueCapacity
+}
+
 func (r *jobRunner) register(jobID string, cancel context.CancelFunc) {
 	r.mu.Lock()
 	r.cancels[jobID] = cancel
@@ -248,6 +289,12 @@ func (r *jobRunner) acquireSlot(ctx context.Context) bool {
 	defer stop()
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.active >= r.capacity {
+		// Waiting for a slot is what the queue depth counts; the count
+		// drops when this owner leaves the wait, with or without a slot.
+		r.queued++
+		defer func() { r.queued-- }()
+	}
 	for r.active >= r.capacity {
 		if ctx.Err() != nil {
 			return false

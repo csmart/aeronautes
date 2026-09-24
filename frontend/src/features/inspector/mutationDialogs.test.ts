@@ -399,7 +399,7 @@ describe("mutation follow-up ownership", () => {
     await settle(); expect(f.api.containers).toHaveBeenCalledOnce();
     await f.browser.openContainer("photos_segments");
     const containers = f.browser.containers;
-    gate.resolve({ rows: [], nextMarker: "obsolete", scope: { bookmarkId: 'bm', generation: 0 } }); await pending;
+    gate.resolve({ rows: [], nextMarker: "obsolete", effectiveLimit: 1000, scope: { bookmarkId: 'bm', generation: 0 } }); await pending;
     expect(f.browser.containerName).toBe("photos_segments"); expect(f.browser.containers).toEqual(containers);
     expect(f.browser.containersMarker).not.toBe("obsolete");
   });
@@ -437,9 +437,9 @@ describe("initial list reply ownership", () => {
     const f = await setup();
     const old = deferred<Awaited<ReturnType<Api["containers"]>>>();
     f.api.containers = vi.fn().mockImplementationOnce(() => old.promise)
-      .mockResolvedValueOnce({ rows: [{ name: "current", count: 2, bytes: 3, class: "normal" }], nextMarker: "current", scope: f.scope });
+      .mockResolvedValueOnce({ rows: [{ name: "current", count: 2, bytes: 3, class: "normal" }], nextMarker: "current", effectiveLimit: 1000, scope: f.scope });
     const pending = f.browser.loadContainers(); await f.browser.loadContainers();
-    if (outcome === "rows") old.resolve({ rows: [], nextMarker: "obsolete", scope: { bookmarkId: 'bm', generation: 0 } });
+    if (outcome === "rows") old.resolve({ rows: [], nextMarker: "obsolete", effectiveLimit: 1000, scope: { bookmarkId: 'bm', generation: 0 } });
     else old.reject(new Error("obsolete containers"));
     await pending;
     expect(f.browser.containers[0]?.name).toBe("current"); expect(f.browser.containersMarker).toBe("current");
@@ -450,7 +450,7 @@ describe("initial list reply ownership", () => {
     const f = await setup(); const rows = f.browser.containers;
     const old = deferred<Awaited<ReturnType<Api["containers"]>>>(); f.api.containers = vi.fn(() => old.promise);
     const pending = f.browser.loadContainers(); await changeView(f.browser, "bookmark return");
-    if (outcome === "rows") old.resolve({ rows: [], nextMarker: "obsolete", scope: { bookmarkId: 'bm', generation: 0 } });
+    if (outcome === "rows") old.resolve({ rows: [], nextMarker: "obsolete", effectiveLimit: 1000, scope: { bookmarkId: 'bm', generation: 0 } });
     else old.reject(new Error("obsolete containers"));
     await pending;
     expect(f.browser.containers).toEqual(rows); expect(f.browser.containersMarker).not.toBe("obsolete");
@@ -461,7 +461,7 @@ describe("initial list reply ownership", () => {
     const f = await setup(); const rows = f.browser.entries;
     const old = deferred<Awaited<ReturnType<Api["objects"]>>>(); f.api.objects = vi.fn(() => old.promise);
     const pending = f.browser.goTo(""); await changeView(f.browser, "bookmark return");
-    if (outcome === "rows") old.resolve({ rows: [], nextMarker: "obsolete", scope: { bookmarkId: 'bm', generation: 0 } });
+    if (outcome === "rows") old.resolve({ rows: [], nextMarker: "obsolete", effectiveLimit: 1000, scope: { bookmarkId: 'bm', generation: 0 } });
     else old.reject(new Error("obsolete objects"));
     await pending;
     expect(f.browser.entries).toEqual(rows); expect(f.browser.entriesMarker).not.toBe("obsolete");

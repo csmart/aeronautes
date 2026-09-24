@@ -28,6 +28,7 @@ func NewSettingsService(database *db.DB, runner *jobRunner) *SettingsService {
 	s := &SettingsService{db: database, runner: runner}
 	if settings, err := s.Get(context.Background()); err == nil {
 		runner.setMaxActiveJobs(settings.MaxActiveJobs)
+		runner.setMaxQueuedJobs(settings.MaxQueuedJobs)
 	}
 	return s
 }
@@ -77,6 +78,15 @@ type AppSettingsDTO struct {
 	// (ADR 0072 decision 4). The operator sets it; the default is the
 	// peak-memory record's recommendation.
 	DownloadObjectCeiling int `json:"downloadObjectCeiling"`
+	// BrowserRetentionCeiling is the most rows a listing column keeps
+	// loaded; past it the browser stops loading further pages, keeps every
+	// row shown and says so in place of the next page (ADR 0074
+	// decision 1). The operator sets it.
+	BrowserRetentionCeiling int `json:"browserRetentionCeiling"`
+	// MaxQueuedJobs is the most jobs that may wait behind the active
+	// slots; a further start is refused with the count named rather than
+	// queued without bound (ADR 0074 decision 2). The operator sets it.
+	MaxQueuedJobs int `json:"maxQueuedJobs"`
 }
 
 // defaultDownloadObjectCeiling is 250,000 objects: about 352 MiB of peak
@@ -92,11 +102,31 @@ const (
 	maxDownloadObjectCeiling = 5_000_000
 )
 
+// The browser retention ceiling: 100,000 rows by default, the value ADR
+// 0074 proposed and the operator accepted; the range follows the download
+// ceiling's, since both bound what one selection or column holds.
+const (
+	defaultBrowserRetentionCeiling = 100_000
+	minBrowserRetentionCeiling     = 1_000
+	maxBrowserRetentionCeiling     = 5_000_000
+)
+
+// The queue depth: sixteen waiting jobs by default (ADR 0074 decision 2);
+// one is the least a queue can hold and a thousand more than any
+// interactive use queues.
+const (
+	defaultMaxQueuedJobs = 16
+	minMaxQueuedJobs     = 1
+	maxMaxQueuedJobs     = 1_000
+)
+
 func defaults() AppSettingsDTO {
 	return AppSettingsDTO{
 		MaxActiveJobs: defaultMaxActiveJobs, DefaultProfile: string(ProfileAuto),
 		AuditRetentionDays: 90, JobRetentionDays: 30,
-		DownloadObjectCeiling: defaultDownloadObjectCeiling,
+		DownloadObjectCeiling:   defaultDownloadObjectCeiling,
+		BrowserRetentionCeiling: defaultBrowserRetentionCeiling,
+		MaxQueuedJobs:           defaultMaxQueuedJobs,
 	}
 }
 
@@ -132,6 +162,14 @@ func (s *SettingsService) Get(ctx context.Context) (AppSettingsDTO, error) {
 			if n, err := strconv.Atoi(value); err == nil {
 				settings.DownloadObjectCeiling = n
 			}
+		case "browser_retention_ceiling":
+			if n, err := strconv.Atoi(value); err == nil {
+				settings.BrowserRetentionCeiling = n
+			}
+		case "max_queued_jobs":
+			if n, err := strconv.Atoi(value); err == nil {
+				settings.MaxQueuedJobs = n
+			}
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -148,6 +186,12 @@ func (s *SettingsService) Get(ctx context.Context) (AppSettingsDTO, error) {
 	// default the preflight will actually apply.
 	if settings.DownloadObjectCeiling < minDownloadObjectCeiling || settings.DownloadObjectCeiling > maxDownloadObjectCeiling {
 		settings.DownloadObjectCeiling = defaultDownloadObjectCeiling
+	}
+	if settings.BrowserRetentionCeiling < minBrowserRetentionCeiling || settings.BrowserRetentionCeiling > maxBrowserRetentionCeiling {
+		settings.BrowserRetentionCeiling = defaultBrowserRetentionCeiling
+	}
+	if settings.MaxQueuedJobs < minMaxQueuedJobs || settings.MaxQueuedJobs > maxMaxQueuedJobs {
+		settings.MaxQueuedJobs = defaultMaxQueuedJobs
 	}
 	return settings, nil
 }
@@ -179,13 +223,27 @@ func (s *SettingsService) Set(ctx context.Context, settings AppSettingsDTO) (App
 	if settings.DownloadObjectCeiling < minDownloadObjectCeiling || settings.DownloadObjectCeiling > maxDownloadObjectCeiling {
 		return AppSettingsDTO{}, fmt.Errorf("download object ceiling %d out of range %d..%d", settings.DownloadObjectCeiling, minDownloadObjectCeiling, maxDownloadObjectCeiling)
 	}
+	if settings.BrowserRetentionCeiling == 0 {
+		settings.BrowserRetentionCeiling = defaultBrowserRetentionCeiling
+	}
+	if settings.BrowserRetentionCeiling < minBrowserRetentionCeiling || settings.BrowserRetentionCeiling > maxBrowserRetentionCeiling {
+		return AppSettingsDTO{}, fmt.Errorf("browser retention ceiling %d out of range %d..%d", settings.BrowserRetentionCeiling, minBrowserRetentionCeiling, maxBrowserRetentionCeiling)
+	}
+	if settings.MaxQueuedJobs == 0 {
+		settings.MaxQueuedJobs = defaultMaxQueuedJobs
+	}
+	if settings.MaxQueuedJobs < minMaxQueuedJobs || settings.MaxQueuedJobs > maxMaxQueuedJobs {
+		return AppSettingsDTO{}, fmt.Errorf("max queued jobs %d out of range %d..%d", settings.MaxQueuedJobs, minMaxQueuedJobs, maxMaxQueuedJobs)
+	}
 	err := s.db.WriteTx(ctx, func(tx *sql.Tx) error {
 		for key, value := range map[string]string{
-			"max_active_jobs":         strconv.Itoa(settings.MaxActiveJobs),
-			"default_profile":         settings.DefaultProfile,
-			"audit_retention_days":    strconv.Itoa(settings.AuditRetentionDays),
-			"job_retention_days":      strconv.Itoa(settings.JobRetentionDays),
-			"download_object_ceiling": strconv.Itoa(settings.DownloadObjectCeiling),
+			"max_active_jobs":           strconv.Itoa(settings.MaxActiveJobs),
+			"default_profile":           settings.DefaultProfile,
+			"audit_retention_days":      strconv.Itoa(settings.AuditRetentionDays),
+			"job_retention_days":        strconv.Itoa(settings.JobRetentionDays),
+			"download_object_ceiling":   strconv.Itoa(settings.DownloadObjectCeiling),
+			"browser_retention_ceiling": strconv.Itoa(settings.BrowserRetentionCeiling),
+			"max_queued_jobs":           strconv.Itoa(settings.MaxQueuedJobs),
 		} {
 			if _, err := tx.ExecContext(ctx,
 				`INSERT INTO app_settings (key, value) VALUES (?, ?)
@@ -199,5 +257,6 @@ func (s *SettingsService) Set(ctx context.Context, settings AppSettingsDTO) (App
 		return AppSettingsDTO{}, err
 	}
 	s.runner.setMaxActiveJobs(settings.MaxActiveJobs)
+	s.runner.setMaxQueuedJobs(settings.MaxQueuedJobs)
 	return settings, nil
 }

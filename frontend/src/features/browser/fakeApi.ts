@@ -335,7 +335,7 @@ export function newFakeApi(): Api {
       const full = rows.length === limit;
       // The fake echoes the bookmark it was asked for, as the backend
       // does: a page states the account that answered it (ADR 0049).
-      return { rows, nextMarker: full ? rows[rows.length - 1].name : "", scope: readScope(bookmarkId) };
+      return { rows, nextMarker: full ? rows[rows.length - 1].name : "", effectiveLimit: limit, scope: readScope(bookmarkId) };
     },
 
     objects: async (bookmarkId, container, prefix, marker, limit) => {
@@ -367,7 +367,7 @@ export function newFakeApi(): Api {
       const full = rows.length === limit;
       // The fake echoes the bookmark it was asked for, as the backend
       // does: a page states the account that answered it (ADR 0049).
-      return { rows, nextMarker: full ? rows[rows.length - 1].name : "", scope: readScope(bookmarkId) };
+      return { rows, nextMarker: full ? rows[rows.length - 1].name : "", effectiveLimit: limit, scope: readScope(bookmarkId) };
     },
 
     objectDetail: async (container, name, bookmarkId) => ({
@@ -829,7 +829,10 @@ export function newFakeApi(): Api {
       license: "Apache-2.0 (this application)",
       licenses: [{ name: "example", license: "MIT", url: "https://example.com" }],
     }),
-    appSettings: async () => ({ maxActiveJobs: 2, defaultProfile: "auto", auditRetentionDays: 90, jobRetentionDays: 30, downloadObjectCeiling: 250_000 }),
+    appSettings: async () => ({
+      maxActiveJobs: 2, defaultProfile: "auto", auditRetentionDays: 90, jobRetentionDays: 30, downloadObjectCeiling: 250_000,
+      browserRetentionCeiling: 100_000, maxQueuedJobs: 16,
+    }),
     saveAppSettings: async (settings) => settings,
     startFind: async (container, prefix, query, bookmarkId, countOnly = false) => {
       readScope(bookmarkId);

@@ -27,7 +27,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   bridge.connect.mockResolvedValue(portrait());
   bridge.capabilities.mockResolvedValue(capabilities());
-  bridge.containers.mockResolvedValue({ rows, nextMarker: "more-alpha", scope: alpha });
+  bridge.containers.mockResolvedValue({ rows, nextMarker: "more-alpha", effectiveLimit: 1000, scope: alpha });
   bridge.recent.mockResolvedValue([]);
 });
 
@@ -115,7 +115,7 @@ it.each([
   { name: "another bookmark", scope: beta },
   { name: "another generation of the same bookmark", scope: replaced },
 ])("hides initial rows with $name scope while retaining the accepted pair", async ({ scope }) => {
-  bridge.containers.mockResolvedValue({ rows: [{ ...rows[0], name: "wrong-account" }], nextMarker: "wrong-marker", scope });
+  bridge.containers.mockResolvedValue({ rows: [{ ...rows[0], name: "wrong-account" }], nextMarker: "wrong-marker", effectiveLimit: 1000, scope });
   const state = new BrowserState(liveApi);
   expect(await state.connect("alpha")).toBe(true);
   expect(state.account).toEqual(portrait());
