@@ -11,15 +11,59 @@ import (
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
 
-var errContainerMetadataResidue = errors.New("container metadata write residue: the store may have changed and the outcome could not be recorded")
+var (
+	errContainerMetadataResidue = errors.New("container metadata write residue: the store may have changed and the outcome could not be recorded")
+	errContainerCreateResidue   = errors.New("container creation residue: the container may exist and the outcome could not be recorded")
+	errMarkerCreateResidue      = errors.New("marker creation residue: the marker may exist and the outcome could not be recorded")
+)
 
 func (s *MutateService) recordContainerOutcome(ctx context.Context, identity, bookmarkID, resource string, outcome mutationfacts.Outcome, result audit.Result, summary string, transIDs []string) error {
+	return s.recordMutationOutcome(ctx, identity, bookmarkID, "container.update", resource, outcome, result, summary, transIDs)
+}
+
+// recordMutationOutcome commits the attempt's outcome and its audit event
+// in one transaction, the required record of ADR 0058, 0062 and 0077.
+func (s *MutateService) recordMutationOutcome(ctx context.Context, identity, bookmarkID, operation, resource string, outcome mutationfacts.Outcome, result audit.Result, summary string, transIDs []string) error {
 	return s.facts.RecordOutcome(ctx, identity, outcome, summary, transIDs, func(tx *sql.Tx) error {
 		return s.audit.AppendTx(ctx, tx, audit.Event{
-			BookmarkID: bookmarkID, Operation: "container.update", Resource: resource,
+			BookmarkID: bookmarkID, Operation: operation, Resource: resource,
 			Summary: summary, Result: result, TransIDs: transIDs,
 		})
 	})
+}
+
+// containerCreateFact classifies a creation attempt (ADR 0077): a received
+// status followed by a confirming read is applied, also when the read
+// shows a policy the race did not honour, because the container exists;
+// an unverified sentinel is unverified; anything else refused or failed
+// before or at the PUT is failed.
+func containerCreateFact(detail *swiftcontrol.ContainerDetail, err error) (mutationfacts.Outcome, audit.Result, string, []string) {
+	var transIDs []string
+	if detail != nil && detail.TransID != "" {
+		transIDs = []string{detail.TransID}
+	}
+	if errors.Is(err, swiftcontrol.ErrUnverifiedContainerCreate) {
+		return mutationfacts.OutcomeUnverified, audit.ResultUnverified, "container creation unverified", transIDs
+	}
+	if detail != nil {
+		summary := fmt.Sprintf("created with policy %q", detail.StoragePolicy)
+		if err != nil {
+			summary = "created; " + err.Error()
+		}
+		return mutationfacts.OutcomeApplied, audit.ResultApplied, summary, transIDs
+	}
+	return mutationfacts.OutcomeFailed, audit.ResultFailed, "container create failed or refused", nil
+}
+
+// markerCreateFact classifies a marker creation attempt (ADR 0077).
+func markerCreateFact(err error) (mutationfacts.Outcome, audit.Result, string) {
+	switch {
+	case err == nil:
+		return mutationfacts.OutcomeApplied, audit.ResultApplied, "created directory marker"
+	case errors.Is(err, swiftcontrol.ErrUnverifiedMarkerCreate):
+		return mutationfacts.OutcomeUnverified, audit.ResultUnverified, "marker creation unverified"
+	}
+	return mutationfacts.OutcomeFailed, audit.ResultFailed, "marker create failed or refused"
 }
 
 func containerMetadataFact(result *swiftcontrol.ContainerUpdateResult, err error, edit swiftcontrol.ContainerEdit) (mutationfacts.Outcome, audit.Result, string, []string) {

@@ -50,12 +50,16 @@ func (s *Session) CreateContainer(ctx context.Context, create ContainerCreateReq
 		headers[containerMetaPrefix+key] = value
 	}
 	if err := s.conn.ContainerCreate(ctx, create.Name, headers); err != nil {
-		return nil, Normalize(err)
+		err = Normalize(err)
+		if postUnproven(err) {
+			return nil, fmt.Errorf("%w: %w", ErrUnverifiedContainerCreate, err)
+		}
+		return nil, err
 	}
 
 	detail, err := s.ContainerDetail(ctx, create.Name)
 	if err != nil {
-		return nil, fmt.Errorf("container created but verify read failed: %w", err)
+		return nil, fmt.Errorf("%w: verify read failed: %w", ErrUnverifiedContainerCreate, err)
 	}
 	// Policy is create-time-only (§20): a race that created the container
 	// first means our policy silently did not apply — surface it.
@@ -87,17 +91,29 @@ func (s *Session) CreateMarker(ctx context.Context, container, prefix string) (*
 
 	if _, err := s.conn.ObjectPut(ctx, container, prefix, strings.NewReader(""), true, "",
 		"application/directory", nil); err != nil {
-		return nil, Normalize(err)
+		err = Normalize(err)
+		if postUnproven(err) {
+			return nil, fmt.Errorf("%w: %w", ErrUnverifiedMarkerCreate, err)
+		}
+		return nil, err
 	}
 	detail, err := s.PrefixDetail(ctx, container, prefix)
 	if err != nil {
-		return nil, fmt.Errorf("marker created but verify read failed: %w", err)
+		return nil, fmt.Errorf("%w: verify read failed: %w", ErrUnverifiedMarkerCreate, err)
 	}
 	if !detail.MarkerBacked {
-		return detail, fmt.Errorf("marker created but verify does not show a marker-backed prefix")
+		return detail, fmt.Errorf("%w: the verify read does not show a marker-backed prefix", ErrUnverifiedMarkerCreate)
 	}
 	return detail, nil
 }
+
+// ErrUnverifiedContainerCreate and ErrUnverifiedMarkerCreate report a
+// creation whose PUT may have landed without a received store status, or
+// whose confirming read failed: the resource may exist (ADR 0077).
+var (
+	ErrUnverifiedContainerCreate = errors.New("container creation unverified")
+	ErrUnverifiedMarkerCreate    = errors.New("marker creation unverified")
+)
 
 // DeleteMarker removes ONLY an explicit marker object: the one delete
 // that is Phase-3-safe, because a marker is a plain zero-byte object and
