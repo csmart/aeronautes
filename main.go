@@ -96,6 +96,7 @@ func runDesktop(identity app.BuildIdentity, shutdown *shellShutdown,
 	transferService := app.NewTransferServiceWithRunner(connections, jobStore, jobRunner)
 	app.WireEvidenceStore(transferService, evidenceStore)
 	app.WireFilePicker(transferService, wailsPicker{})
+	app.WireConfirmer(mutateService, wailsConfirmer{})
 	settingsService := app.NewSettingsService(database, jobRunner)
 	app.WireSettings(transferService, settingsService)
 	app.RunStartupRetention(context.Background(), settingsService, jobStore, auditStore)
@@ -154,6 +155,35 @@ func launchDesktop(options application.Options) error {
 	})
 
 	return a.Run()
+}
+
+// wailsConfirmer implements app.PublicACLConfirmer over the Wails question
+// dialog: the backend asks on a native, modal surface the page cannot
+// draw (ADR 0073 option B). On Linux Show returns before the answer, so
+// the buttons feed a channel; a closed or dismissed dialog is a refusal,
+// which is why the cancel button is set and the wait is bounded by ctx.
+type wailsConfirmer struct{}
+
+func (wailsConfirmer) ConfirmPublicRead(ctx context.Context, container, account string) (bool, error) {
+	shell := application.Get()
+	if shell == nil {
+		return false, fmt.Errorf("application shell not running")
+	}
+	answer := make(chan bool, 2)
+	dialog := shell.Dialog.Question().
+		SetTitle("Make this container public?").
+		SetMessage(fmt.Sprintf("Anyone on the internet will be able to read every object in %s (%s).\nThis question comes from the application, not from the page.", container, account))
+	keep := dialog.AddButton("Keep it private")
+	keep.OnClick(func() { answer <- false }).SetAsCancel()
+	dialog.AddButton("Make it public").OnClick(func() { answer <- true })
+	dialog.SetDefaultButton(keep)
+	dialog.Show()
+	select {
+	case confirmed := <-answer:
+		return confirmed, nil
+	case <-ctx.Done():
+		return false, ctx.Err()
+	}
 }
 
 // wailsPicker implements app.FilePicker over the Wails dialog manager —

@@ -25,6 +25,12 @@ func WireFilePicker(s *TransferService, picker FilePicker) {
 	s.setFilePicker(picker)
 }
 
+// WireConfirmer attaches the shell's native confirmation for public
+// read ACLs (ADR 0073 option B).
+func WireConfirmer(s *MutateService, confirmer PublicACLConfirmer) {
+	s.setConfirmer(confirmer)
+}
+
 // Configure before starting jobs. Each download captures this boundary
 // so an owned fixture can acknowledge engine exit before placement;
 // keeping it off the service methods excludes it from the bridge.

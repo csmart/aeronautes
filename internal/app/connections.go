@@ -388,6 +388,17 @@ func (c *Connections) ActiveBookmarkID() string {
 	return id
 }
 
+// displayName is the stored display name of a bookmark, or empty when the
+// bookmark cannot be read; it is display text for a native surface, never
+// authority.
+func (c *Connections) displayName(ctx context.Context, bookmarkID string) string {
+	b, err := c.store.Get(ctx, bookmarkID)
+	if err != nil {
+		return ""
+	}
+	return b.DisplayName
+}
+
 // AccountName derives the display account name from the active session's
 // storage URL suffix (…/v1/AUTH_demo → AUTH_demo).
 func (c *Connections) AccountName() string {

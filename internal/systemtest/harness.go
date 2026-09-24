@@ -192,7 +192,17 @@ func newHarness(t *testing.T, cfg harnessConfig) *Harness {
 	// — so a leak fails the test and blocks credit.
 	t.Cleanup(h.assertNoResidue)
 	t.Cleanup(h.CloseFind)
+	// The shell's native public-read confirmation answers yes here, as an
+	// operator would; refusals are proved at the app level (ADR 0073 B).
+	app.WireConfirmer(h.Mutate, confirmPublicRead{})
 	return h
+}
+
+// confirmPublicRead answers the native confirmation for tests.
+type confirmPublicRead struct{}
+
+func (confirmPublicRead) ConfirmPublicRead(context.Context, string, string) (bool, error) {
+	return true, nil
 }
 
 // assertNoResidue fails the test if it left any ns-prefixed container

@@ -26,6 +26,23 @@ type MutateService struct {
 	evidence    *evidence.Store
 	facts       *mutationfacts.Store
 	writers     *writerGate
+	// confirmer asks the operator outside the webview before a container
+	// becomes world-readable (ADR 0073 option B); nil refuses.
+	confirmer PublicACLConfirmer
+}
+
+// PublicACLConfirmer asks the operator, on a surface the page cannot draw,
+// whether a container may become readable by anyone (ADR 0073 option B).
+// It is an injected seam like FilePicker so internal/app stays plain Go
+// (ADR 0011): main.go supplies the shell's native dialog, tests supply
+// answers, and a service with none refuses rather than assumes.
+type PublicACLConfirmer interface {
+	ConfirmPublicRead(ctx context.Context, container, account string) (bool, error)
+}
+
+// setConfirmer wires the shell's native confirmation.
+func (s *MutateService) setConfirmer(confirmer PublicACLConfirmer) {
+	s.confirmer = confirmer
 }
 
 // errMetadataResidue is returned when a store POST succeeded and the
@@ -159,6 +176,16 @@ func (s *MutateService) UpdateContainer(ctx context.Context, name, baseFingerpri
 		!caps.AllowsVersioningMode(adapterEdit.Versioning.Mode) {
 		return MutationResultDTO{}, fmt.Errorf(
 			"cluster does not advertise %s in versioned_writes allowed_flags", adapterEdit.Versioning.Mode)
+	}
+
+	// A world-readable ACL is confirmed outside the webview's control
+	// (ADR 0073 option B): the backend raises the shell's native dialog
+	// and writes nothing unless it answers yes. A container that already
+	// grants public read exposes nothing new and is not asked again.
+	if grantsPublicRead(edit.ReadACL) {
+		if err := s.confirmPublicRead(ctx, entry, name); err != nil {
+			return MutationResultDTO{}, err
+		}
 	}
 
 	identity, err := mutationfacts.NewIdentity()
@@ -479,6 +506,28 @@ func (s *MutateService) DeleteManifest(ctx context.Context, container, name stri
 	}
 	_ = s.record(ctx, "manifest.delete", resource, summary, audit.ResultApplied, []string{before.TransID})
 	return toObjectDetailDTO(before), nil
+}
+
+// confirmPublicRead refuses unless the operator confirmed, on the shell's
+// native dialog, that name may become readable by anyone. The current ACL
+// is read first: one that already grants public read needs no new
+// consent. A shell without the dialog refuses, so a headless build never
+// makes a container public on the page's word alone.
+func (s *MutateService) confirmPublicRead(ctx context.Context, entry cachedSession, name string) error {
+	if current, err := entry.session.ContainerDetail(ctx, name); err == nil && grantsPublicRead(current.ReadACL) {
+		return nil
+	}
+	if s.confirmer == nil {
+		return fmt.Errorf("making %s publicly readable needs a native confirmation this shell cannot show; nothing was written", name)
+	}
+	confirmed, err := s.confirmer.ConfirmPublicRead(ctx, name, accountSuffix(entry.session.StorageURL()))
+	if err != nil {
+		return fmt.Errorf("the native confirmation for making %s public did not complete: %w; nothing was written", name, err)
+	}
+	if !confirmed {
+		return fmt.Errorf("making %s publicly readable was not confirmed; nothing was written", name)
+	}
+	return nil
 }
 
 // grantsPublicRead reports whether a read ACL opens the container to
