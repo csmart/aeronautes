@@ -66,7 +66,7 @@ async function show(kind: Kind, meta: Record<string, string> = { Keep: "untouche
   flushSync();
   const save = kind === "object" ? objectSave : containerSave;
   const payload = () => {
-    const request = kind === "object" ? objectSave.mock.calls[0]?.[3] : containerSave.mock.calls[0]?.[2];
+    const request = kind === "object" ? objectSave.mock.calls[0]?.[4] : containerSave.mock.calls[0]?.[3];
     if (!request) throw new Error("No metadata save request");
     return request.meta;
   };

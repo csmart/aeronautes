@@ -92,7 +92,7 @@ func objectMetadataAccountCases(t *testing.T, makeHarness func(*testing.T) *Harn
 			}
 			done := make(chan saved, 1)
 			go func() {
-				result, err := h.Mutate.UpdateObjectMetadata(ctx, container, object, fingerprint,
+				result, err := h.Mutate.UpdateObjectMetadata(ctx, h.ActiveScope(ctx), container, object, fingerprint,
 					app.ObjectMetadataEditDTO{Meta: map[string]string{"Value": "after"}, ContentType: "text/plain"})
 				done <- saved{result, err}
 			}()

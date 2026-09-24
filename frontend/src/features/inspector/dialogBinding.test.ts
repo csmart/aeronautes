@@ -130,7 +130,7 @@ describe.each(["object", "container"] as const)("%s edit lifetime", (kind) => {
     force.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     force.dispatchEvent(new MouseEvent("click", { bubbles: true })); flushSync();
     expect(f.mutate).toHaveBeenCalledTimes(2);
-    expect(f.mutate.mock.calls[1][kind === "object" ? 2 : 1]).toBe("");
+    expect(f.mutate.mock.calls[1][kind === "object" ? 3 : 2]).toBe("");
     f.replies[1].resolve(f.result("applied")); await settle();
     expect(f.done).toHaveBeenCalledOnce();
   });

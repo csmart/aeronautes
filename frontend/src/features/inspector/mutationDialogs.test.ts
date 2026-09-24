@@ -181,9 +181,9 @@ describe("container creation lifetime", () => {
     const reply = deferred<Awaited<ReturnType<Api["createContainer"]>>>();
     f.api.createContainer = vi.fn(() => reply.promise);
     f.submit(); f.submit();
-    expect(f.api.createContainer).toHaveBeenCalledExactlyOnceWith({ name: "created", policy: "", meta: {} });
+    expect(f.api.createContainer).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ bookmarkId: f.bookmark.id }), { name: "created", policy: "", meta: {} });
     expect(f.root.querySelector<HTMLInputElement>("input")?.disabled).toBe(true);
-    reply.resolve(await create({ name: "created", policy: "", meta: {} })); await settle();
+    reply.resolve(await create(f.browser.portrait!, { name: "created", policy: "", meta: {} })); await settle();
     expect(f.browser.containerName).toBe("created"); expect(f.done).toHaveBeenCalledOnce();
   });
 
@@ -248,7 +248,7 @@ describe("marker action ownership", () => {
       const reply = deferred<PrefixDetailDTO>(); f.api.createMarker = vi.fn(() => reply.promise);
       mounted.add(mount(Inspector, { target: f.root, props: { browser: f.browser } })); flushSync();
       const create = button(f.root, "Create marker object"); click(create); click(create);
-      expect(f.api.createMarker).toHaveBeenCalledExactlyOnceWith("fixtures", "implied/");
+      expect(f.api.createMarker).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ bookmarkId: f.bookmark.id }), "fixtures", "implied/");
       reply.resolve({ ...f.browser.prefixDetail!, markerBacked: true }); await settle();
     });
 
@@ -357,7 +357,7 @@ describe("mutation follow-up ownership", () => {
     f.api.deleteMarker = vi.fn(() => gate.promise);
     f.api.containers = vi.fn(f.api.containers); f.api.objects = vi.fn(f.api.objects);
     f.api.auditRecent = vi.fn(f.api.auditRecent);
-    const pending = kind === "create" ? f.browser.createContainer({ name: "created", policy: "", meta: {} })
+    const pending = kind === "create" ? f.browser.createContainer({ name: "created", policy: "", meta: {} }, f.browser.portrait)
       : kind === "manifest" ? f.browser.deleteManifest("fixtures", "external-dlo")
       : kind === "segments" ? f.browser.deleteManifestWithSegments({ bookmarkId: f.bookmark.id, container: "fixtures", name: "external-dlo", force: true, confirm: "external-dlo" })
       : f.browser.deleteMarker("implied/");
@@ -379,7 +379,7 @@ describe("mutation follow-up ownership", () => {
     f.api.deleteManifestWithSegments = vi.fn().mockResolvedValue(deleted);
     f.api.deleteMarker = vi.fn().mockResolvedValue(undefined);
     f.api.containers = vi.fn(f.api.containers); f.api.objects = vi.fn(f.api.objects);
-    const pending = kind === "create" ? f.browser.createContainer({ name: "created", policy: "", meta: {} })
+    const pending = kind === "create" ? f.browser.createContainer({ name: "created", policy: "", meta: {} }, f.browser.portrait)
       : kind === "manifest" ? f.browser.deleteManifest("fixtures", "external-dlo")
       : kind === "segments" ? f.browser.deleteManifestWithSegments({ bookmarkId: f.bookmark.id, container: "fixtures", name: "external-dlo", force: true, confirm: "external-dlo" })
       : f.browser.deleteMarker("implied/");
@@ -395,7 +395,7 @@ describe("mutation follow-up ownership", () => {
     f.api.createContainer = vi.fn().mockResolvedValue(f.browser.containerDetail!);
     const gate = deferred<Awaited<ReturnType<Api["containers"]>>>();
     f.api.containers = vi.fn(() => gate.promise);
-    const pending = f.browser.createContainer({ name: "created", policy: "", meta: {} });
+    const pending = f.browser.createContainer({ name: "created", policy: "", meta: {} }, f.browser.portrait);
     await settle(); expect(f.api.containers).toHaveBeenCalledOnce();
     await f.browser.openContainer("photos_segments");
     const containers = f.browser.containers;

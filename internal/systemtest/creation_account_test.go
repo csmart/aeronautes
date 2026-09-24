@@ -76,11 +76,11 @@ func creationAccountCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 			done := make(chan error, 1)
 			go func() {
 				if tc.marker {
-					_, err := h.Mutate.CreateMarker(ctx, container, "folder/")
+					_, err := h.Mutate.CreateMarker(ctx, h.ActiveScope(ctx), container, "folder/")
 					done <- err
 					return
 				}
-				detail, err := h.Mutate.CreateContainer(ctx, app.ContainerCreateDTO{Name: container})
+				detail, err := h.Mutate.CreateContainer(ctx, h.ActiveScope(ctx), app.ContainerCreateDTO{Name: container})
 				if err == nil && detail.Name != container {
 					err = fmt.Errorf("created detail names %q", detail.Name)
 				}

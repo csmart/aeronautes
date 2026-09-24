@@ -102,7 +102,7 @@ func containerSettingsCases(t *testing.T, h *Harness) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := h.Mutate.UpdateContainer(ctx, private, detail.EditableFingerprint, app.ContainerEditDTO{
+	result, err := h.Mutate.UpdateContainer(ctx, h.ActiveScope(ctx), private, detail.EditableFingerprint, app.ContainerEditDTO{
 		Meta: map[string]string{}, ReadACL: ".r:*", VersioningMode: "off", AckPublic: true,
 	})
 	if err != nil || result.Outcome != "applied" || result.ContainerAfter == nil || !result.ContainerAfter.Settings.PublicRead || result.ContainerAfter.Settings.Generation != generation {

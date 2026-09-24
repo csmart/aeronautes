@@ -105,7 +105,7 @@ func TestEmptyAndDeleteContainerJobs(t *testing.T) {
 	session := h.transfer.connections.sessions[bookmark].session
 	// Container config that must survive Empty (§33): empty base
 	// fingerprint = unconditional apply in the mutate flow.
-	if _, err := h.mutate.UpdateContainer(ctx, "media", "", ContainerEditDTO{
+	if _, err := h.mutate.UpdateContainer(ctx, h.portrait(), "media", "", ContainerEditDTO{
 		Meta:      map[string]string{"Team": "ops"},
 		ReadACL:   ".r:*",
 		AckPublic: true,

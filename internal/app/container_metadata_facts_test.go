@@ -25,7 +25,7 @@ func TestContainerMetadataDrainWaitsForOutcome(t *testing.T) {
 	}
 	written := make(chan error, 1)
 	go func() {
-		_, err := h.mutate.UpdateContainer(t.Context(), "fixtures", "", ContainerEditDTO{Meta: map[string]string{"Held": "yes"}})
+		_, err := h.mutate.UpdateContainer(t.Context(), h.portrait(), "fixtures", "", ContainerEditDTO{Meta: map[string]string{"Held": "yes"}})
 		written <- err
 	}()
 	select {

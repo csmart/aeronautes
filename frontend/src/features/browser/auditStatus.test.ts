@@ -472,7 +472,7 @@ const mutationCases = [
   {
     method: "createContainer", operation: "container.create", returnsResult: false,
     prefix: "", selected: "",
-    run: (browser: BrowserState) => browser.createContainer({ name: "audit-owned", policy: "gold", meta: {} }),
+    run: (browser: BrowserState) => browser.createContainer({ name: "audit-owned", policy: "gold", meta: {} }, browser.portrait),
   },
   {
     method: "createMarker", operation: "marker.create", returnsResult: false,

@@ -39,6 +39,16 @@ type harness struct {
 	connected string
 }
 
+// portrait is the active connection's bookmark and generation, the scope
+// a caller names on a write (ADR 0079).
+func (h *harness) portrait() ListingScopeDTO {
+	id, generation, ok := h.transfer.connections.activeEndpoint()
+	if !ok {
+		return ListingScopeDTO{}
+	}
+	return ListingScopeDTO{BookmarkID: id, Generation: generation}
+}
+
 // transferService builds the transfer service with evidence wired the
 // way main.go does.
 func transferService(connections *Connections, jobStore *jobs.Store, auditStore *audit.Store, ev *evidence.Store) *TransferService {
@@ -452,7 +462,7 @@ func TestMutateObjectMetadataWithAudit(t *testing.T) {
 	}
 	edit.Meta["Camera"] = "sony-fx6"
 
-	result, err := h.mutate.UpdateObjectMetadata(ctx, "fixtures", "normal/hello.txt", "", edit)
+	result, err := h.mutate.UpdateObjectMetadata(ctx, h.portrait(), "fixtures", "normal/hello.txt", "", edit)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -467,7 +477,7 @@ func TestMutateObjectMetadataWithAudit(t *testing.T) {
 	}
 
 	// A stale-fingerprint attempt records a conflict.
-	stale, err := h.mutate.UpdateObjectMetadata(ctx, "fixtures", "normal/hello.txt", "not-the-fingerprint", edit)
+	stale, err := h.mutate.UpdateObjectMetadata(ctx, h.portrait(), "fixtures", "normal/hello.txt", "not-the-fingerprint", edit)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -498,11 +508,11 @@ func TestCreateContainerPolicyGate(t *testing.T) {
 	h.connect(t)
 	ctx := context.Background()
 
-	if _, err := h.mutate.CreateContainer(ctx, ContainerCreateDTO{Name: "gated", Policy: "nope"}); err == nil {
+	if _, err := h.mutate.CreateContainer(ctx, h.portrait(), ContainerCreateDTO{Name: "gated", Policy: "nope"}); err == nil {
 		t.Fatal("unadvertised policy must be refused before touching the cluster")
 	}
 
-	detail, err := h.mutate.CreateContainer(ctx, ContainerCreateDTO{Name: "gated", Policy: "gold"})
+	detail, err := h.mutate.CreateContainer(ctx, h.portrait(), ContainerCreateDTO{Name: "gated", Policy: "gold"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -533,7 +543,7 @@ func TestVersioningGate(t *testing.T) {
 	restricted.connect(t)
 	ctx := context.Background()
 
-	_, err := restricted.mutate.UpdateContainer(ctx, "fixtures", "", ContainerEditDTO{
+	_, err := restricted.mutate.UpdateContainer(ctx, restricted.portrait(), "fixtures", "", ContainerEditDTO{
 		VersioningMode: "history_location", VersioningArchive: "arch",
 	})
 	if err == nil {
@@ -543,10 +553,10 @@ func TestVersioningGate(t *testing.T) {
 	// The default mock advertises both flags: allowed.
 	h := newHarness(t)
 	h.connect(t)
-	if _, err := h.mutate.CreateContainer(ctx, ContainerCreateDTO{Name: "arch"}); err != nil {
+	if _, err := h.mutate.CreateContainer(ctx, h.portrait(), ContainerCreateDTO{Name: "arch"}); err != nil {
 		t.Fatal(err)
 	}
-	result, err := h.mutate.UpdateContainer(ctx, "fixtures", "", ContainerEditDTO{
+	result, err := h.mutate.UpdateContainer(ctx, h.portrait(), "fixtures", "", ContainerEditDTO{
 		VersioningMode: "history_location", VersioningArchive: "arch",
 	})
 	if err != nil {
@@ -562,7 +572,7 @@ func TestMarkerServiceWithAudit(t *testing.T) {
 	h.connect(t)
 	ctx := context.Background()
 
-	created, err := h.mutate.CreateMarker(ctx, "fixtures", "newdir/")
+	created, err := h.mutate.CreateMarker(ctx, h.portrait(), "fixtures", "newdir/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -802,7 +812,7 @@ func TestSymlinkMetadataEditRefused(t *testing.T) {
 	h.mock.PutObject("media", "real.txt", swifttest.Object{Bytes: 12, ETag: "aa", ContentType: "text/plain", Data: []byte("target bytes")})
 	h.mock.PutObject("media", "link.txt", swifttest.Object{ContentType: "text/plain", SymlinkTarget: "media/real.txt"})
 
-	_, err := h.mutate.UpdateObjectMetadata(ctx, "media", "link.txt", "", ObjectMetadataEditDTO{
+	_, err := h.mutate.UpdateObjectMetadata(ctx, h.portrait(), "media", "link.txt", "", ObjectMetadataEditDTO{
 		Meta: map[string]string{"Team": "ops"},
 	})
 	if err == nil || !strings.Contains(err.Error(), "symlink") {
@@ -831,15 +841,15 @@ func TestPublicAclRequiresAcknowledgement(t *testing.T) {
 	ctx := context.Background()
 	h.mock.AddContainer("private", "standard")
 
-	_, err := h.mutate.UpdateContainer(ctx, "private", "", ContainerEditDTO{ReadACL: ".r:*"})
+	_, err := h.mutate.UpdateContainer(ctx, h.portrait(), "private", "", ContainerEditDTO{ReadACL: ".r:*"})
 	if err == nil || !strings.Contains(err.Error(), "publicly readable") {
 		t.Fatalf("public ACL without ack = %v, want refusal", err)
 	}
 	// With the acknowledgement it proceeds (a private ACL never needs it).
-	if _, err := h.mutate.UpdateContainer(ctx, "private", "", ContainerEditDTO{ReadACL: ".r:*", AckPublic: true}); err != nil {
+	if _, err := h.mutate.UpdateContainer(ctx, h.portrait(), "private", "", ContainerEditDTO{ReadACL: ".r:*", AckPublic: true}); err != nil {
 		t.Fatalf("acknowledged public ACL refused: %v", err)
 	}
-	if _, err := h.mutate.UpdateContainer(ctx, "private", "", ContainerEditDTO{ReadACL: ".r:example.com"}); err != nil {
+	if _, err := h.mutate.UpdateContainer(ctx, h.portrait(), "private", "", ContainerEditDTO{ReadACL: ".r:example.com"}); err != nil {
 		t.Fatalf("non-public ACL refused: %v", err)
 	}
 }

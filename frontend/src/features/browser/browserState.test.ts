@@ -209,10 +209,10 @@ describe("mutations (§65.2)", () => {
   it("creates a container gated by advertised policies and opens it", async () => {
     const s = await connected();
     await expect(
-      s.createContainer({ name: "newbox", policy: "nope", meta: {} }),
+      s.createContainer({ name: "newbox", policy: "nope", meta: {} }, s.portrait),
     ).rejects.toThrow(/policy/);
 
-    await s.createContainer({ name: "newbox", policy: "gold", meta: {} });
+    await s.createContainer({ name: "newbox", policy: "gold", meta: {} }, s.portrait);
     expect(s.containerName).toBe("newbox");
     expect(s.containers.some((c) => c.name === "newbox")).toBe(true);
     expect(s.containerDetail?.storagePolicy).toBe("gold");

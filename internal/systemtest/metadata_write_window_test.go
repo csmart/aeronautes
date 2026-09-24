@@ -106,7 +106,7 @@ func TestMetadataSaveStatesItsLimit(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		result, err := h.Mutate.UpdateObjectMetadata(ctx, c, object, detail.EditableFingerprint,
+		result, err := h.Mutate.UpdateObjectMetadata(ctx, h.ActiveScope(ctx), c, object, detail.EditableFingerprint,
 			app.ObjectMetadataEditDTO{Meta: map[string]string{"Alpha": "1", "Beta": "2"}, ContentType: "text/plain"})
 		if err != nil {
 			t.Fatal(err)
@@ -131,7 +131,7 @@ func TestMetadataSaveStatesItsLimit(t *testing.T) {
 		h.Seed(h.Primary, c, object, []byte("payload"), map[string]string{
 			"Content-Type": "text/plain", "X-Object-Meta-Alpha": "1",
 		})
-		result, err := h.Mutate.UpdateObjectMetadata(ctx, c, object, "a-fingerprint-that-cannot-match",
+		result, err := h.Mutate.UpdateObjectMetadata(ctx, h.ActiveScope(ctx), c, object, "a-fingerprint-that-cannot-match",
 			app.ObjectMetadataEditDTO{Meta: map[string]string{"Alpha": "9"}, ContentType: "text/plain"})
 		if err != nil {
 			t.Fatal(err)
@@ -182,7 +182,7 @@ func TestMetadataSaveStatesItsLimit(t *testing.T) {
 		}
 		done := make(chan saved, 1)
 		go func() {
-			result, err := h.Mutate.UpdateObjectMetadata(ctx, c, object, detail.EditableFingerprint,
+			result, err := h.Mutate.UpdateObjectMetadata(ctx, h.ActiveScope(ctx), c, object, detail.EditableFingerprint,
 				app.ObjectMetadataEditDTO{Meta: map[string]string{"Alpha": "1", "Beta": "2"}, ContentType: "text/plain"})
 			done <- saved{result, err}
 		}()
@@ -236,7 +236,7 @@ func TestMetadataSaveLimitReachesTheAuditTrail(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := h.Mutate.UpdateObjectMetadata(ctx, c, object, detail.EditableFingerprint,
+	result, err := h.Mutate.UpdateObjectMetadata(ctx, h.ActiveScope(ctx), c, object, detail.EditableFingerprint,
 		app.ObjectMetadataEditDTO{Meta: map[string]string{"Alpha": "2"}, ContentType: "text/plain"})
 	if err != nil {
 		t.Fatal(err)
