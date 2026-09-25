@@ -151,6 +151,18 @@ func WithTransID(err error, headers swift.Headers) error {
 	return err
 }
 
+// IsDeclaredDigestRefused reports a 422 — the store's verdict that the
+// body did not match the entity tag the request declared, measured to
+// leave no object at that name and to leave a prior object untouched
+// (ADR 0080).
+func IsDeclaredDigestRefused(err error) bool {
+	var swiftErr *SwiftError
+	if errors.As(err, &swiftErr) {
+		return swiftErr.HTTPStatus == 422
+	}
+	return false
+}
+
 // IsPreconditionFailed reports a 412 — the conditional-create verdict
 // (If-None-Match: * met an existing object).
 func IsPreconditionFailed(err error) bool {

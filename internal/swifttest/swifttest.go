@@ -533,6 +533,13 @@ func (s *Server) putObject(w http.ResponseWriter, r *http.Request, container, na
 			return
 		}
 	}
+	if declared := strings.Trim(r.Header.Get("ETag"), `"`); declared != "" && !strings.EqualFold(declared, hex.EncodeToString(sum[:])) {
+		// A declared entity tag the body does not match, as measured on
+		// real Swift: 422, nothing stored at that name, and a prior
+		// object at that name left as it was (ADR 0080).
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		return
+	}
 	if r.URL.Query().Get("multipart-manifest") == "put" {
 		// A static large object is stored the way a deployed Swift
 		// reports it afterwards: the listing and HEAD carry the logical
