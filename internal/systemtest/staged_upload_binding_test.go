@@ -65,7 +65,12 @@ type stagedFault struct {
 	appReads int
 	livePuts int
 	change   func(f *stagedFault) error
-	account  *Account
+	// onRead fires the change at the application's own GET of the staged
+	// object rather than at its HEAD, which puts it AFTER the comparison
+	// instead of before it. What refuses the publication then is the entity
+	// tag the commit declared on the live PUT, not the comparison.
+	onRead  bool
+	account *Account
 	// mock is the fixture's own store when the harness is the mock one and
 	// nil against the owned Swift. Only the stale-row case needs it.
 	mock *swifttest.Server
@@ -91,8 +96,13 @@ func (f *stagedFault) observe(req *http.Request, path string) {
 	}
 	// The commit's first HEAD of the staged object: the application's own
 	// request, after the engine has finished writing, so any change made
-	// here is complete before the commit examines anything.
-	if f.fired || !fromApp || req.Method != http.MethodHead || !onStaging {
+	// here is complete before the commit examines anything. With onRead the
+	// trigger moves to the commit's own GET, which is after the comparison.
+	wanted := http.MethodHead
+	if f.onRead {
+		wanted = http.MethodGet
+	}
+	if f.fired || !fromApp || req.Method != wanted || !onStaging {
 		return
 	}
 	f.fired = true
@@ -123,9 +133,16 @@ func stagedUploadContentBinding(t *testing.T, makeHarness func(*testing.T) *Harn
 		large    bool
 		// stage is the boundary the refusal must name; empty means the
 		// case must publish.
-		stage  jobs.ItemStage
-		code   jobs.ItemCode
-		change func(f *stagedFault) error
+		stage jobs.ItemStage
+		code  jobs.ItemCode
+		// livePuts is how many times the route is expected to have asked
+		// the store to publish. A fault caught by the comparison asks
+		// nothing, because the comparison runs first; a fault caught by
+		// the entity tag the commit declares is caught BY the store, so
+		// the request is made and refused. Either way nothing is kept.
+		livePuts int
+		onRead   bool
+		change   func(f *stagedFault) error
 	}{
 		{name: "a segment replaced at its own length, with its listing row unchanged", large: true,
 			stage: jobs.StageStaging, code: jobs.CodeUnverified, change: stagedSegmentReplaced},
@@ -141,6 +158,13 @@ func stagedUploadContentBinding(t *testing.T, makeHarness func(*testing.T) *Harn
 			stage: jobs.StageStaging, code: jobs.CodeUnverified, change: stagedForeignRun},
 		{name: "a staged plain object altered to the same length before the commit", large: false,
 			stage: jobs.StageStaging, code: jobs.CodeUnverified, change: stagedPlainAltered},
+		// The publication-timing case: the comparison passed on what it
+		// saw, and the entity tag the commit declared on the live PUT is
+		// what refuses the bytes that replaced them. codex rebuilt this as
+		// its own probe for db:738 after I replaced it with the case above;
+		// it is restored here as maintained coverage.
+		{name: "a staged plain object replaced as it is published", large: false,
+			stage: jobs.StageCommit, code: jobs.CodeUnverified, livePuts: 1, onRead: true, change: stagedPlainAltered},
 		{name: "an unaltered staged large upload", large: true},
 		{name: "an unaltered staged plain upload", large: false},
 	} {
@@ -169,7 +193,8 @@ func stagedUploadContentBinding(t *testing.T, makeHarness func(*testing.T) *Harn
 				t.Fatal(err)
 			}
 
-			fault := &stagedFault{base: base, change: tc.change, account: h.Primary, mock: h.MockPrimary}
+			fault := &stagedFault{base: base, change: tc.change, onRead: tc.onRead,
+				account: h.Primary, mock: h.MockPrimary}
 			installUploadProxyHooked(t, h, h.Primary, "", nil, fault.observe)
 			if _, err := h.Browse.Connect(t.Context(), h.Primary.BookmarkID); err != nil {
 				t.Fatal(err)
@@ -236,8 +261,8 @@ func stagedUploadContentBinding(t *testing.T, makeHarness func(*testing.T) *Harn
 			if faultErr != nil {
 				t.Fatalf("the fixture's change failed: %v", faultErr)
 			}
-			if livePuts != 0 {
-				t.Fatalf("a staged object that is not the source was published: %d live writes", livePuts)
+			if livePuts != tc.livePuts {
+				t.Fatalf("the route asked the store to publish %d times, expected %d", livePuts, tc.livePuts)
 			}
 			if job.State == "complete" || job.Counters.ObjectsCopied != 0 {
 				t.Fatalf("a staged object that is not the source was published: state=%s counters=%+v", job.State, job.Counters)
