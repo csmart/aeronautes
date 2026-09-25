@@ -3,7 +3,7 @@
   import { breadcrumbs } from "../../lib/listing";
   import { formatBytes, formatCount } from "../../lib/format";
   import type { ListingRowDTO } from "../../lib/api";
-  import { v1Offers } from "../../lib/v1";
+  import { v1Offers } from "../../lib/v1.svelte";
   import type { BrowserState } from "./browserState.svelte";
   import FindPanel from "./FindPanel.svelte";
 

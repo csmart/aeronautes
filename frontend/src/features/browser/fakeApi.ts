@@ -261,6 +261,8 @@ export function newFakeApi(): Api {
       sourceDirty: "unknown",
       wails: "test",
       secretBackend: "session",
+      enabledCapabilities: [],
+      unrecognisedCapabilities: [],
     }),
 
     listBookmarks: async () => [...bookmarks],
@@ -838,6 +840,8 @@ export function newFakeApi(): Api {
       sourceDirty: "unknown",
       wails: "v3",
       secretBackend: "session",
+      enabledCapabilities: [],
+      unrecognisedCapabilities: [],
       rclonePin: "v1.74.3",
       license: "Apache-2.0 (this application)",
       licenses: [{ name: "example", license: "MIT", url: "https://example.com" }],

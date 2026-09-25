@@ -2,10 +2,15 @@ import { afterEach, expect, it, vi } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
 import type { Api } from "../../lib/api";
 import { newFakeApi } from "./fakeApi";
+import { v1Offers } from "../../lib/v1.svelte";
 import BrowserScreen from "./BrowserScreen.svelte";
 
 const api = vi.hoisted(() => ({} as Api));
 vi.mock("../../lib/api", () => ({ liveApi: api }));
+
+// The affordance flags are module state (ADR 0082 feeds them from what the
+// process reports), so each case is restored to what the release ships.
+const shipped = { ...v1Offers };
 
 let component: ReturnType<typeof mount> | null = null;
 afterEach(async () => {
@@ -13,6 +18,7 @@ afterEach(async () => {
   component = null;
   document.body.innerHTML = "";
   vi.restoreAllMocks();
+  Object.assign(v1Offers, shipped);
 });
 
 async function settle() {
@@ -22,8 +28,12 @@ function labels(): string[] {
   return [...document.querySelectorAll("button")].map((b) => b.textContent?.trim() ?? "");
 }
 
-async function connectedScreen() {
+async function connectedScreen(enabled: string[] = [], unrecognised: string[] = []) {
   Object.assign(api, newFakeApi());
+  if (enabled.length > 0 || unrecognised.length > 0) {
+    const info = api.info;
+    api.info = async () => ({ ...(await info()), enabledCapabilities: enabled, unrecognisedCapabilities: unrecognised });
+  }
   await api.saveBookmark({ id: "", displayName: "V1 fixture", authUrl: "https://example.test/auth",
     username: "fixture:user", storageUrlOverride: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "test-only");
   const root = document.createElement("div"); document.body.append(root);
@@ -73,4 +83,34 @@ it("offers marker creation and withholds manifest and marker deletion", async ()
   // marker-backed prefix, where the withheld button is named in place).
   expect(labels()).toContain("Create marker object");
   expect(labels()).not.toContain("Delete marker object");
+});
+
+// ADR 0082: a capability the operator switched on for this process is
+// offered and named as unproven; nothing else is offered with it.
+it("offers a switched-on capability and says it is unproven", async () => {
+  await connectedScreen(["Upload"]);
+  const banner = document.querySelector('[role="alert"].unproven-banner');
+  expect(banner?.textContent).toContain("Unproven:");
+  expect(banner?.textContent).toContain("Upload");
+  expect(banner?.textContent).toContain("not finished");
+  const shown = labels();
+  expect(shown).toContain("Upload…");
+  expect(shown).toContain("Download…");
+  expect(shown).not.toContain("Copy to…");
+  expect(shown).not.toContain("Delete scope…");
+});
+
+// A token that names no capability is reported and offers nothing.
+it("names an unrecognised token and offers nothing for it", async () => {
+  await connectedScreen([], ["uplaod"]);
+  const banner = document.querySelector('[role="alert"].unproven-banner');
+  expect(banner?.textContent).toContain("Ignored, not a capability: uplaod");
+  expect(banner?.textContent).not.toContain("Unproven:");
+  expect(labels()).not.toContain("Upload…");
+});
+
+// With nothing switched on there is no banner at all.
+it("shows no banner in an ordinary run", async () => {
+  await connectedScreen();
+  expect(document.querySelector(".unproven-banner")).toBeNull();
 });

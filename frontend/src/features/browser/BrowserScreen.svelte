@@ -18,7 +18,7 @@
   import DeleteDialog from "../transfer/DeleteDialog.svelte";
   import { BrowserState } from "./browserState.svelte";
   import { activeModal } from "../../lib/trapFocus";
-  import { v1Offers } from "../../lib/v1";
+  import { applyEnabledCapabilities, v1Offers } from "../../lib/v1.svelte";
 
   const browser = new BrowserState(liveApi);
 
@@ -27,6 +27,8 @@
   let editorExisting = $state<BookmarkDTO | null>(null);
   let createOpen = $state(false);
   let shellInfo = $state("connecting…");
+  let enabledCapabilities: string[] = $state([]);
+  let unrecognisedCapabilities: string[] = $state([]);
   let aboutOpen = $state(false);
   let credentialStatusOpen = $state(false);
 
@@ -45,6 +47,11 @@
       const info = await liveApi.info();
       shellInfo = `shell ${info.version} · Wails ${info.wails} · secrets: ${info.secretBackend}`;
       browser.secretBackend = info.secretBackend;
+      // A capability the operator switched on out of band is offered here
+      // and named in the banner: it is enabled, not proven (ADR 0082).
+      enabledCapabilities = info.enabledCapabilities ?? [];
+      unrecognisedCapabilities = info.unrecognisedCapabilities ?? [];
+      applyEnabledCapabilities(enabledCapabilities);
     } catch {
       shellInfo = "service bridge unavailable";
     }
@@ -81,6 +88,21 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
+<div class="shell">
+{#if enabledCapabilities.length > 0 || unrecognisedCapabilities.length > 0}
+  <div class="unproven-banner" role="alert">
+    {#if enabledCapabilities.length > 0}
+      <strong>Unproven:</strong>
+      this run offers {enabledCapabilities.join(", ")} because it was switched on for this
+      process. The safety work for it is not finished, so treat anything it writes as at risk.
+    {/if}
+    {#if unrecognisedCapabilities.length > 0}
+      <span class="unproven-ignored">
+        Ignored, not a capability: {unrecognisedCapabilities.join(", ")}.
+      </span>
+    {/if}
+  </div>
+{/if}
 <div class="screen">
   <BookmarkRail
     {browser}
@@ -112,6 +134,7 @@
     <button class="about-link" onclick={() => (credentialStatusOpen = true)}>{cleanupLabel}</button>
     <button class="about-link" onclick={() => (aboutOpen = true)}>{shellInfo}</button>
   </footer>
+</div>
 </div>
 
 {#if editorOpen}
@@ -147,8 +170,28 @@
 {/if}
 
 <style>
-  .screen {
+  .shell {
     height: 100%;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .unproven-banner {
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--text-sm);
+    color: var(--color-warning);
+    background: var(--color-warning-soft);
+    border-bottom: 1px solid var(--color-warning);
+  }
+
+  .unproven-ignored {
+    color: var(--color-text-faint);
+  }
+
+  .screen {
+    flex: 1;
+    min-height: 0;
     display: grid;
     grid-template-columns: 5.4rem 17rem minmax(24rem, 1fr) minmax(19rem, 22rem);
     grid-template-rows: minmax(0, 1fr) auto auto;

@@ -52,6 +52,21 @@
     confirmText = "";
     onClose();
   }
+  // The ownership check is classified with bulk delete, so a build that
+  // offers manifest editing alone cannot call it. The inline-data
+  // disclosure this dialog owes the operator must not depend on it: a
+  // DLO manifest cannot hold inline data at all, an SLO's inline
+  // entries are counted from the manifest the inspector already read,
+  // which is an admitted read, and when neither answers, the count is
+  // UNKNOWN rather than zero (db:736 finding 2).
+  const inlineWithoutTheCheck = $derived(
+    target.detail.class !== "slo"
+      ? 0
+      : (browser.sloManifest?.entries ?? null)
+        ?.filter((entry) => entry.kind === "data").length ?? null,
+  );
+  const inlineEntries = $derived(ownership?.inlineEntries ?? inlineWithoutTheCheck);
+
   onDestroy(() => { closed = true; });
   $effect(() => { if (!isCurrent()) untrack(close); });
 
@@ -106,15 +121,23 @@
       </p>
       {#if !withSegments}
         <p class="keeps">
-          <strong>{(ownership?.inlineEntries ?? 0) > 0
-            ? "Referenced segment objects survive; inline data does not."
-            : "Every referenced segment object survives."}</strong> The data remains at
+          <strong>{inlineEntries === null
+            ? "Referenced segment objects survive."
+            : inlineEntries > 0
+              ? "Referenced segment objects survive; inline data does not."
+              : "Every referenced segment object survives."}</strong> The data remains at
           <span class="type-mono">{target.segmentsAt}</span> and becomes orphaned unless another manifest
           references it.
         </p>
-        {#if (ownership?.inlineEntries ?? 0) > 0}
+        {#if inlineEntries === null}
           <p class="keeps warn">
-            <strong>{ownership?.inlineEntries} inline data entr{(ownership?.inlineEntries ?? 0) === 1 ? "y" : "ies"}
+            <strong>Whether this manifest holds inline data is unknown here:</strong> the checks
+            that would answer it are not available in this build. Inline data lives only inside
+            the manifest itself, so any of it this manifest holds is destroyed with it.
+          </p>
+        {:else if inlineEntries > 0}
+          <p class="keeps warn">
+            <strong>{inlineEntries} inline data entr{inlineEntries === 1 ? "y" : "ies"}
             will be destroyed:</strong> inline data lives only inside the manifest itself and
             cannot survive its deletion.
           </p>

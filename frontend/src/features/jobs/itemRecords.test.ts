@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
 import type { Api, JobDTO, JobHistoryDTO, JobItemDTO, JobItemPageDTO, JobItemTotalsDTO } from "../../lib/api";
-import { v1Offers } from "../../lib/v1";
+import { v1Offers } from "../../lib/v1.svelte";
 import { BrowserState } from "../browser/browserState.svelte";
 import { newFakeApi } from "../browser/fakeApi";
 import JobsDrawer from "./JobsDrawer.svelte";

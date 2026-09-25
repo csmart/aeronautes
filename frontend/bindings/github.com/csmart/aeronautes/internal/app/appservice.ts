@@ -23,7 +23,8 @@ export function About(): $CancellablePromise<$models.About> {
 }
 
 /**
- * Info returns the shell identity.
+ * Info returns the shell identity, with the capability switch's current
+ * reading so the interface can say what this process offers (ADR 0082).
  */
 export function Info(): $CancellablePromise<$models.Info> {
     return $Call.ByID(1303547794);

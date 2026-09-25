@@ -2,7 +2,7 @@
   import { onDestroy } from "svelte";
   import { formatBytes, formatCount } from "../../lib/format";
   import type { PrefixDetailDTO } from "../../lib/api";
-  import { v1Offers } from "../../lib/v1";
+  import { v1Offers } from "../../lib/v1.svelte";
   import type { BrowserState } from "../browser/browserState.svelte";
   import ObjectEditPanel from "./ObjectEditPanel.svelte";
   import ContainerEditPanel from "./ContainerEditPanel.svelte";
