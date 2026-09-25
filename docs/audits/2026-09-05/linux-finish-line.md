@@ -90,6 +90,17 @@ Later on 24 September, with every decision above delivered to master, the operat
 20. Native journey, host install test, the live window-close check and external acceptance: "make a note to do a test plan before 0.1.0 release", "accept it but add the test plan from 6-7", "add to test plen".
     The L08 shutdown ownership is accepted for v1 on its mock-transport evidence; the native journey of decision 12, the host install test, the live window-close check and the real-cluster acceptance session are the operator's steps in that test plan rather than work owed by the author.
 
+## Operator decisions — 25 September 2026
+
+The first two decide the release after v1 and are recorded here so the trail stays in one place; the third changes what a v1 build can be made to do, so it belongs to this checkpoint.
+
+21. The next release is upload, Linux only: "let's just get started on the next release as per your plan".
+    The sequence, what each release claims and what stays unscheduled are in the [next release plan](../2026-09-25/next-release-plan.md).
+22. Upload must be able to replace an existing object: "we have to support overwrites, that's legitimate use of object storage systems, and if there is verison turned on (I assume we support that in the UI, with a UI icon flag to show it), it will replace and increment the version. am i missing something?"
+    The requirement is the decision. The question at the end is not yet answered by the operator's own acceptance, and the author owes that answer before any of it is built: the [protocol measurements](../../experiments/2026-09-25-upload-protocol-measurements.md) establish that a replacement cannot be made conditional on the object the operator looked at, because the precondition is ignored; that a container without a versioning mode keeps nothing; that a versioned container was observed to record an archive entry, whose bytes nothing has read; and that replacing a large object's manifest leaves its segments listed and referenced by nothing. [ADR 0081](../../adr/0081-upload-overwrite-acknowledgement.md) carries those limits and states plainly which residual exposure is still awaiting the operator's acceptance.
+23. A capability must be able to be built and checked while staying disabled by default: "can we improve all of those behind a build option or something that toggles uploads support on or off or something? would be good to build all the data safety in, check it, but still have it disabled by default until we are ready".
+    Off by default is the decision, and a build option is named as one possibility. The author's reading, recorded as a reading and not as part of the decision, is [ADR 0082](../../adr/0082-operator-enabled-unproven-capabilities.md): a switch read from the process environment at startup rather than a build tag, so the binary under test is the binary that ships. It does not change which capabilities v1 defers, what a release offers, or the refusals of [ADR 0020](../../adr/0020-recovery-containment.md), and a process with nothing enabled behaves exactly as this checkpoint describes.
+
 ## Six production gates
 
 | Gate | Existing packages | Completion condition |
