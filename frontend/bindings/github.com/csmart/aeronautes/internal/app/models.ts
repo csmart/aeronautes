@@ -26,6 +26,20 @@ export interface About {
      * visibly when credentials are session-only.
      */
     "secretBackend": string;
+
+    /**
+     * EnabledCapabilities names the deferred capabilities this process
+     * offers anyway, because the operator asked for them out of band
+     * (ADR 0082). Empty in an ordinary run, and the interface says so
+     * when it is not, because an enabled capability is not a proven one.
+     */
+    "enabledCapabilities": string[] | null;
+
+    /**
+     * UnrecognisedCapabilities names tokens the operator asked for that
+     * name no capability, so a typo is visible rather than silent.
+     */
+    "unrecognisedCapabilities": string[] | null;
     "rclonePin": string;
     "license": string;
     "licenses": LicenseEntry[] | null;
@@ -610,6 +624,20 @@ export interface Info {
      * visibly when credentials are session-only.
      */
     "secretBackend": string;
+
+    /**
+     * EnabledCapabilities names the deferred capabilities this process
+     * offers anyway, because the operator asked for them out of band
+     * (ADR 0082). Empty in an ordinary run, and the interface says so
+     * when it is not, because an enabled capability is not a proven one.
+     */
+    "enabledCapabilities": string[] | null;
+
+    /**
+     * UnrecognisedCapabilities names tokens the operator asked for that
+     * name no capability, so a typo is visible rather than silent.
+     */
+    "unrecognisedCapabilities": string[] | null;
 }
 
 /**

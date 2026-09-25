@@ -2,6 +2,9 @@ package app
 
 import (
 	"fmt"
+	"os"
+	"sort"
+	"strings"
 	"sync/atomic"
 	"testing"
 )
@@ -51,6 +54,90 @@ var v1DeferredActions = map[string]string{
 	"BenchmarkService.StartBenchmark": "Benchmark",
 }
 
+// EnableEnvVar is the operator's out-of-band switch (ADR 0082). It is
+// read from the process environment at startup and nowhere else: never a
+// bridge action, never a stored setting, so nothing the webview can reach
+// and nothing a page can persuade the application to store changes what
+// this process offers.
+const EnableEnvVar = "AERONAUTES_ENABLE"
+
+// v1CapabilityTokens maps an operator-facing token to the capability name
+// v1DeferredActions uses. A token names a WHOLE capability, so no
+// half-capability can be assembled from outside (ADR 0082 decision 3).
+//
+// Mirror deliberately has no token. ADR 0020 refuses it independently of
+// this gate and is checked first, and ADR 0052 decision 5 says that
+// refusal must never become a scoping decision, so no value of the
+// variable can admit it.
+var v1CapabilityTokens = map[string]string{
+	"upload":                 "Upload",
+	"copy":                   "Copy",
+	"bulk-delete":            "Bulk delete",
+	"marker-manifest-delete": "Marker and manifest editing",
+	"benchmark":              "Benchmark",
+}
+
+// enabledCapabilities is one reading of the switch: which deferred
+// capabilities this process offers anyway, and which tokens the operator
+// asked for that name no capability.
+type enabledCapabilities struct {
+	offered      map[string]bool
+	names        []string
+	unrecognised []string
+}
+
+// v1Enabled holds that reading. Admission reads this value, never the
+// environment, so the switch cannot change under a running process.
+var v1Enabled atomic.Pointer[enabledCapabilities]
+
+// EnableCapabilities parses the switch's value and records it for every
+// later admission. Tokens are trimmed and matched without regard to case;
+// an empty token is skipped; a token that names no capability is ignored
+// and returned so the operator is told rather than left wondering why the
+// affordance never appeared (ADR 0082 decision 5).
+func EnableCapabilities(spec string) (names, unrecognised []string) {
+	reading := &enabledCapabilities{offered: map[string]bool{}}
+	seenName, seenBad := map[string]bool{}, map[string]bool{}
+	for _, raw := range strings.Split(spec, ",") {
+		token := strings.TrimSpace(raw)
+		if token == "" {
+			continue
+		}
+		capability, known := v1CapabilityTokens[strings.ToLower(token)]
+		if !known {
+			if !seenBad[token] {
+				seenBad[token] = true
+				reading.unrecognised = append(reading.unrecognised, token)
+			}
+			continue
+		}
+		reading.offered[capability] = true
+		if !seenName[capability] {
+			seenName[capability] = true
+			reading.names = append(reading.names, capability)
+		}
+	}
+	sort.Strings(reading.names)
+	v1Enabled.Store(reading)
+	return reading.names, reading.unrecognised
+}
+
+// ReadEnabledCapabilities takes the switch from the process environment.
+// The startup path calls it once; nothing else reads the variable.
+func ReadEnabledCapabilities() (names, unrecognised []string) {
+	return EnableCapabilities(os.Getenv(EnableEnvVar))
+}
+
+// EnabledCapabilitySnapshot reports the current reading for the Info
+// document, so the operator can see what this process is running with.
+func EnabledCapabilitySnapshot() (names, unrecognised []string) {
+	reading := v1Enabled.Load()
+	if reading == nil {
+		return nil, nil
+	}
+	return append([]string(nil), reading.names...), append([]string(nil), reading.unrecognised...)
+}
+
 // v1GateForced makes refuseIfDeferred consult the table inside a test
 // binary. The default test-binary path lifts the gate so existing tests
 // of deferred routes still exercise them (ADR 0052 decision 4). A
@@ -70,6 +157,12 @@ func refuseIfDeferred(action string) error {
 	}
 	capability, deferred := v1DeferredActions[action]
 	if !deferred {
+		return nil
+	}
+	// The operator may offer a deferred capability deliberately, out of
+	// band (ADR 0082). The reading is taken at startup; this admission
+	// never consults the environment.
+	if reading := v1Enabled.Load(); reading != nil && reading.offered[capability] {
 		return nil
 	}
 	return fmt.Errorf("%s is not available in this release: it is deferred until its safety is proven, and this build does not offer it", capability)

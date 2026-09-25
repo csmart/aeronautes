@@ -8,7 +8,7 @@
   import type { BrowserState } from "../browser/browserState.svelte";
   import type { AppSettingsDTO, JobDTO } from "../../lib/api";
   import { formatBytes } from "../../lib/format";
-  import { v1Offers } from "../../lib/v1";
+  import { v1Offers } from "../../lib/v1.svelte";
   import JobHistory from "./JobHistory.svelte";
   import JobItems from "./JobItems.svelte";
 

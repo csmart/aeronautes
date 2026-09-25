@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
-import { v1Offers } from "../../lib/v1";
+import { v1Offers } from "../../lib/v1.svelte";
 import { BrowserState } from "./browserState.svelte";
 import { newFakeApi } from "./fakeApi";
 import FindPanel from "./FindPanel.svelte";

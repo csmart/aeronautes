@@ -111,6 +111,7 @@ const softSurfaces: [file: string, selector: string, foreground?: string][] = [
   ["BookmarkEditor.svelte", ".warning"],
   ["BookmarkRail.svelte", ".badge"],
   ["ContainerColumn.svelte", ".modes", ".mode"],
+  ["BrowserScreen.svelte", ".unproven-banner"],
   ["ContainerColumn.svelte", ".class-chip"],
   ["CreateContainerDialog.svelte", ".error"],
   ["WorkingList.svelte", ".backstage-banner"],

@@ -20,6 +20,14 @@ type Info struct {
 	// SecretBackend is "keychain" or "session" (§12.1): the UI must say
 	// visibly when credentials are session-only.
 	SecretBackend string `json:"secretBackend"`
+	// EnabledCapabilities names the deferred capabilities this process
+	// offers anyway, because the operator asked for them out of band
+	// (ADR 0082). Empty in an ordinary run, and the interface says so
+	// when it is not, because an enabled capability is not a proven one.
+	EnabledCapabilities []string `json:"enabledCapabilities"`
+	// UnrecognisedCapabilities names tokens the operator asked for that
+	// name no capability, so a typo is visible rather than silent.
+	UnrecognisedCapabilities []string `json:"unrecognisedCapabilities"`
 }
 
 // BuildIdentity includes unknown source state for binaries built without VCS
@@ -46,9 +54,12 @@ func NewAppService(identity BuildIdentity, secretBackend string) *AppService {
 	}}
 }
 
-// Info returns the shell identity.
+// Info returns the shell identity, with the capability switch's current
+// reading so the interface can say what this process offers (ADR 0082).
 func (s *AppService) Info() Info {
-	return s.info
+	info := s.info
+	info.EnabledCapabilities, info.UnrecognisedCapabilities = EnabledCapabilitySnapshot()
+	return info
 }
 
 // wailsVersion reads the linked wails module version from the binary's
@@ -89,7 +100,7 @@ type About struct {
 // About returns the About document.
 func (s *AppService) About() About {
 	return About{
-		Info:      s.info,
+		Info:      s.Info(),
 		RclonePin: rclone.PinnedVersion,
 		License:   "Apache-2.0 (this application)",
 		Licenses: []LicenseEntry{
