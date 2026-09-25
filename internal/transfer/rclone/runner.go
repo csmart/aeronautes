@@ -402,6 +402,13 @@ func (r *Runner) gatewayCapacity() int {
 	return min(1024, max(64, 2*(max(0, r.opts.Transfers)+max(0, r.opts.Checkers))+16))
 }
 
+// DefaultLowLevelRetries is the per-request retry budget pacingArgs hands
+// the engine when the caller sets none. A low-level retry re-sends one
+// request, so this is the number of times the engine may repeat a single
+// write of its own accord, and a test that counts the engine's writes
+// bounds them by this rather than by a number of its own.
+const DefaultLowLevelRetries = 2
+
 func (r *Runner) pacingArgs() []string {
 	o := r.opts
 	retries, lowLevel := o.Retries, o.LowLevelRetries
@@ -409,7 +416,7 @@ func (r *Runner) pacingArgs() []string {
 		retries = 1
 	}
 	if lowLevel <= 0 {
-		lowLevel = 2
+		lowLevel = DefaultLowLevelRetries
 	}
 	args := []string{
 		"--retries", fmt.Sprint(retries),

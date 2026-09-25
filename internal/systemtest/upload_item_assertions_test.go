@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/csmart/aeronautes/internal/transfer/rclone"
+
 	"github.com/csmart/aeronautes/internal/app"
 	"github.com/csmart/aeronautes/internal/jobs"
 )
@@ -20,23 +22,66 @@ func assertUploadItemWrites(t *testing.T, trace *copyItemRecordsTrace, storageUR
 	if err != nil {
 		t.Fatal(err)
 	}
-	prefix := storage.Path + "/" + container + "/"
-	want := map[string]int{}
-	for _, path := range paths {
-		name := filepath.Base(path)
-		want["PUT "+prefix+"scope/"+name] = 1
-		if !native || name == "z-engine.bin" {
-			want["PUT "+prefix+".aeronautes/stage/"+id+"/batch/"+name] = 1
-		}
-	}
-	want["DELETE "+prefix+".aeronautes/stage/"+id+"/batch/z-engine.bin"] = 1
 	got := map[string]int{}
 	for _, write := range trace.traffic.writeSnapshot() {
 		got[write]++
 	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("upload mutation identities or attempt counts differ: got=%v want=%v", got, want)
+	if problems := uploadWriteProblems(got, storage.Path+"/"+container+"/", id, native, paths); len(problems) > 0 {
+		t.Fatalf("upload mutations differ:\n  %s", strings.Join(problems, "\n  "))
 	}
+}
+
+// uploadWriteProblems is the pure core of assertUploadItemWrites, testable
+// without a fixture: it returns every way the observed mutations depart
+// from what an upload of these paths is allowed to make.
+//
+// This application's own mutations are exactly once, because it issues
+// them: each item's live publication, and the delete of the one staged
+// object. The ENGINE's staging writes are not, and asserting that they
+// were claimed something the engine's own flags contradict. pacingArgs
+// hands it a low-level retry budget, and a low-level retry re-sends one
+// request, so a transient refusal of one staged upload out of hundreds is
+// re-sent by design. PR 182's first attempt failed on exactly that, one
+// staged PUT of 402 issued twice. The identities stay exact in both
+// directions and the engine's repeats stay bounded by the budget it was
+// given, so nothing here is unchecked.
+func uploadWriteProblems(got map[string]int, prefix, id string, native bool, paths []string) []string {
+	maxEngineAttempts := 1 + rclone.DefaultLowLevelRetries
+	ours := map[string]int{}
+	staged := map[string]bool{}
+	for _, path := range paths {
+		name := filepath.Base(path)
+		ours["PUT "+prefix+"scope/"+name] = 1
+		if !native || name == "z-engine.bin" {
+			staged["PUT "+prefix+".aeronautes/stage/"+id+"/batch/"+name] = true
+		}
+	}
+	ours["DELETE "+prefix+".aeronautes/stage/"+id+"/batch/z-engine.bin"] = 1
+
+	var problems []string
+	mine := map[string]int{}
+	for write, attempts := range got {
+		if staged[write] {
+			continue
+		}
+		mine[write] = attempts
+	}
+	if !reflect.DeepEqual(mine, ours) {
+		problems = append(problems, fmt.Sprintf("this application's own mutations differ: got=%v want=%v", mine, ours))
+	}
+	for write := range staged {
+		attempts := got[write]
+		if attempts < 1 {
+			problems = append(problems, "the engine never wrote a staged object it was asked for: "+write)
+			continue
+		}
+		if attempts > maxEngineAttempts {
+			problems = append(problems, fmt.Sprintf(
+				"a staged upload was written %d times, outside the engine's budget of 1 to %d: %s",
+				attempts, maxEngineAttempts, write))
+		}
+	}
+	return problems
 }
 
 func assertUploadItemRecords(t *testing.T, h *Harness, id, dst string, failed, bytes int, native bool, paths []string, saved uploadRecoveryState) {
