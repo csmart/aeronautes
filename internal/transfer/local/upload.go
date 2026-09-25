@@ -2,6 +2,8 @@ package local
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -195,11 +197,86 @@ func verifyUpload(ctx context.Context, dst *swiftcontrol.Session, container stri
 		verification: &transfercopy.Observation{Result: transfercopy.ResultVerified, Effect: transfercopy.EffectNotAttempted}}
 }
 
-func nativeUpload(ctx context.Context, dst *swiftcontrol.Session, container string, item UploadItem, file io.ReadCloser) (result uploadResult) {
+// matchesStagedContent reads the staged object once and folds its bytes
+// through the source's expectation. Listing evidence is deliberately not
+// accepted in its place: a same-size segment replacement can leave the
+// container row at its previous length and entity tag while the stored
+// bytes differ, which ADR 0042 rejected and keeps as a regression
+// (ADR 0080 decisions 3 and 4).
+//
+// It drives the project's one comparison lifecycle rather than a read of
+// its own. OpenObjectContent admits only a complete response, so a
+// partial body cannot be read as the whole staged object, and
+// CompareContent consumes the stream to EOF and joins the close and
+// cancellation failures into its verdict, so a reader that reports its
+// corruption only on Close cannot be accepted as a match.
+func matchesStagedContent(ctx context.Context, dst *swiftcontrol.Session, container, stagedName string,
+	ladder transfercopy.Ladder) (transfercopy.Code, error) {
+	body, err := dst.OpenObjectContent(ctx, container, stagedName)
+	if err != nil {
+		return transfercopy.CodeIncomplete, fmt.Errorf("open complete staged content: %w", err)
+	}
+	return transfercopy.CompareContent(ctx, body, ladder)
+}
+
+// localSource is the held local file an upload sends. The native route
+// takes its digest and its body from this one descriptor, so a pathname
+// replaced under a running job changes neither (ADR 0080 decision 2).
+type localSource interface {
+	io.ReadSeekCloser
+}
+
+// heldDigest is the MD5 of the held file, read for that purpose and then
+// rewound for the body. The header must precede the body, so the
+// descriptor is read twice; taking the digest from the bytes already
+// sent would be no declaration at all (ADR 0080 decisions 1 and 2).
+func heldDigest(file io.ReadSeeker) (string, error) {
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return "", err
+	}
+	sum := md5.New()
+	if _, err := io.Copy(sum, file); err != nil {
+		return "", err
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(sum.Sum(nil)), nil
+}
+
+// localDigest is the MD5 of the file at path. The engine route holds no
+// descriptor of its own, so its staged comparison can only ask what the
+// pathname holds now; ADR 0080's consequences state what that costs.
+func localDigest(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	sum := md5.New()
+	if _, err := io.Copy(sum, file); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(sum.Sum(nil)), nil
+}
+
+func nativeUpload(ctx context.Context, dst *swiftcontrol.Session, container string, item UploadItem, file localSource) (result uploadResult) {
 	defer func() { result.addIssue(transfercopy.StageSourceRead, "native-close", file.Close()) }()
-	if _, err := dst.PutObject(ctx, container, item.Name, file, "application/octet-stream", map[string]string{"If-None-Match": "*"}); err != nil {
+	declared, err := heldDigest(file)
+	if err != nil {
+		return uploadFailed(transfercopy.EffectNotAttempted, transfercopy.StageSourceRead, transfercopy.CodeIO, "native-digest", err)
+	}
+	headers := map[string]string{"If-None-Match": "*", "ETag": declared}
+	if _, err := dst.PutObject(ctx, container, item.Name, file, "application/octet-stream", headers); err != nil {
 		if swiftcontrol.IsPreconditionFailed(err) {
 			return uploadConflict("native-put", err)
+		}
+		if swiftcontrol.IsDeclaredDigestRefused(err) {
+			// A PUT was invoked, so the effect this contract records is
+			// unresolved: what the store did with the request is its
+			// answer to report, not ours to assume (ADR 0080 decision 7).
+			return uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageCommit, transfercopy.CodeUnverified, "native-put",
+				fmt.Errorf("the file changed under the upload or its bytes did not survive the network: the store refused them against the declared digest %s: %w", declared, err))
 		}
 		return uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageCommit, transfercopy.CodeIO, "native-put", err)
 	}
@@ -212,13 +289,40 @@ func commitStagedUpload(ctx context.Context, dst *swiftcontrol.Session, containe
 	if err != nil {
 		return uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageStaging, transfercopy.CodeMissing, "stage-verify", fmt.Errorf("staged object missing: %w", err))
 	}
-	if staged.ContentLength != item.Size {
-		return uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageStaging, transfercopy.CodeUnverified, "stage-verify", fmt.Errorf("staged size %d != local %d", staged.ContentLength, item.Size))
-	}
 	if _, err := dst.ObjectDetail(ctx, container, item.Name); err == nil {
 		return uploadConflict("commit-conflict", errors.New("destination appeared since preflight"))
 	} else if !swiftcontrol.IsNotFound(err) {
 		return uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageCommit, transfercopy.CodeUnknown, "commit-rehead", err)
+	}
+	// What the engine staged is compared with the file this job planned
+	// to send, before any of it is published. A large object's assembled
+	// bytes are read once and folded through that expectation; a plain
+	// staged object is compared by its own object HEAD's entity tag,
+	// which ADR 0042 names as the one pair it does not read. A
+	// disagreement publishes nothing, and the staged bytes stay where
+	// they are under ADR 0020 (ADR 0080 decisions 3, 4, 5, 7 and 8).
+	//
+	// The read is for every class that is not plain, not for the dynamic
+	// manifest alone: a static large object's entity tag is the digest of
+	// its segments' entity tags, so it can never equal the file's own
+	// digest, and comparing the two would refuse content that matches.
+	declared, err := localDigest(item.Path)
+	if err != nil {
+		return uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageStaging, transfercopy.CodeIncomplete, "stage-expectation", err)
+	}
+	ladder, err := transfercopy.PlainLadder(item.Size, declared)
+	if err != nil {
+		return uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageStaging, transfercopy.CodeIncomplete, "stage-expectation", err)
+	}
+	if staged.Class != swiftcontrol.ClassPlain {
+		if code, contentErr := matchesStagedContent(ctx, dst, container, stagedName, ladder); contentErr != nil {
+			return uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageStaging, code, "stage-content",
+				fmt.Errorf("the staged content does not match the file this job planned to send: %w", contentErr))
+		}
+	} else if stagedTag := strings.Trim(staged.ETag, `"`); staged.ContentLength != item.Size || !strings.EqualFold(stagedTag, declared) {
+		return uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageStaging, transfercopy.CodeUnverified, "stage-content",
+			fmt.Errorf("the staged content does not match the file this job planned to send: the staged object states %d bytes with entity tag %s, the file is %d bytes with %s",
+				staged.ContentLength, stagedTag, item.Size, declared))
 	}
 	var recordErr, closeErr error
 	if staged.Class == swiftcontrol.ClassDLO {
@@ -230,6 +334,9 @@ func commitStagedUpload(ctx context.Context, dst *swiftcontrol.Session, containe
 				return uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageRecording, transfercopy.CodeIO, "commit-intent", err)
 			}
 		}
+		// The manifest body is empty, so it declares no digest of its own:
+		// what binds this publication is the comparison above, over the
+		// segments this manifest names (ADR 0080 decision 3).
 		headers := map[string]string{"X-Object-Manifest": staged.Manifest, "If-None-Match": "*"}
 		if _, err := dst.PutObject(ctx, container, item.Name, strings.NewReader(""), staged.ContentType, headers); err != nil {
 			if swiftcontrol.IsPreconditionFailed(err) {
@@ -245,12 +352,25 @@ func commitStagedUpload(ctx context.Context, dst *swiftcontrol.Session, containe
 		if err != nil {
 			return uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageStaging, transfercopy.CodeIO, "commit-open-staged", err)
 		}
-		_, putErr := dst.PutObject(ctx, container, item.Name, body, staged.ContentType, map[string]string{"If-None-Match": "*"})
+		// The staged object's entity tag was just compared with the local
+		// file, so declaring it here binds the publication to those same
+		// bytes as they stream through (ADR 0080 decision 4).
+		_, putErr := dst.PutObject(ctx, container, item.Name, body, staged.ContentType,
+			map[string]string{"If-None-Match": "*", "ETag": declared})
 		closeErr = body.Close()
 		if putErr != nil {
 			result := uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageCommit, transfercopy.CodeIO, "commit-copy", putErr)
 			if swiftcontrol.IsPreconditionFailed(putErr) {
 				result = uploadConflict("commit-conflict", putErr)
+			} else if swiftcontrol.IsDeclaredDigestRefused(putErr) {
+				// The store refused the body against the entity tag this
+				// commit declared, which means the staged bytes changed
+				// between the comparison and this read. That is a commit
+				// it could not verify, not a transport failure, and the
+				// native route already records it that way (ADR 0080
+				// decision 7).
+				result = uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageCommit, transfercopy.CodeUnverified, "commit-copy",
+					fmt.Errorf("the staged object changed between the comparison and the publication: the store refused it against the declared digest %s: %w", declared, putErr))
 			}
 			result.addIssue(transfercopy.StageStaging, "staged-close", closeErr)
 			return result
