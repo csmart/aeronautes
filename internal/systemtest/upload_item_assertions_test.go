@@ -45,8 +45,25 @@ func assertUploadItemWrites(t *testing.T, trace *copyItemRecordsTrace, storageUR
 // staged PUT of 402 issued twice. The identities stay exact in both
 // directions and the engine's repeats stay bounded by the budget it was
 // given, so nothing here is unchecked.
+// maxEngineWritesPerIdentity is how many times ONE staged object can be
+// written across a whole upload job, which is the two retry layers of its
+// lifecycle multiplied, not either of them alone.
+//
+// The engine's own budget bounds total attempts at one request, so it is
+// used as it stands rather than with one added; the measurement is in
+// rclone.DefaultLowLevelRetries' own comment. On top of that,
+// uploadRun.copy in internal/transfer/local/upload.go runs the engine a
+// second time when the first run fails an authentication-shaped failure,
+// once and only once, which
+// TestUploadAuthenticationRestartIsBoundedToOneFreshChild pins, so one
+// identity can be written by two separate child runs.
+func maxEngineWritesPerIdentity() int {
+	const maxChildRuns = 2 // uploadRun.copy's single authentication restart
+	return rclone.DefaultLowLevelRetries * maxChildRuns
+}
+
 func uploadWriteProblems(got map[string]int, prefix, id string, native bool, paths []string) []string {
-	maxEngineAttempts := 1 + rclone.DefaultLowLevelRetries
+	maxEngineAttempts := maxEngineWritesPerIdentity()
 	ours := map[string]int{}
 	staged := map[string]bool{}
 	for _, path := range paths {

@@ -16,6 +16,19 @@ import (
 // retry budget contradicts. These cases fix what it now demands: exactly
 // once for the mutations this application issues, and between one and the
 // engine's budget for the ones the engine issues.
+// The bound itself, pinned against the measurement rather than against the
+// expression that computes it: if either retry layer's number changes, this
+// says so instead of the cases quietly moving with it.
+func TestUploadWriteOracleBoundMatchesTheMeasuredLifecycle(t *testing.T) {
+	if rclone.DefaultLowLevelRetries != 2 {
+		t.Fatalf("the engine's measured budget at one request is 2 total attempts, the runner passes %d; re-measure before changing this",
+			rclone.DefaultLowLevelRetries)
+	}
+	if got := maxEngineWritesPerIdentity(); got != 4 {
+		t.Fatalf("one staged object can be written at most 4 times across a job, 2 attempts in each of 2 child runs; the oracle allows %d", got)
+	}
+}
+
 func TestUploadWriteOracle(t *testing.T) {
 	const prefix = "/v1/AUTH_test/media/"
 	const id = "jobid"
@@ -39,10 +52,21 @@ func TestUploadWriteOracle(t *testing.T) {
 		wantFor string
 	}{
 		{"one attempt at everything is sound", func(map[string]int) {}, ""},
-		// The condition PR 182 hit: the engine re-sent one staged upload.
-		{"the engine retrying one staged upload is sound", func(m map[string]int) { m[staged] = 1 + rclone.DefaultLowLevelRetries }, ""},
-		{"the engine exceeding its retry budget is not",
-			func(m map[string]int) { m[staged] = 2 + rclone.DefaultLowLevelRetries }, "outside the engine's budget"},
+		// These counts are the MEASURED ones, written as literals on
+		// purpose. Deriving them from the implementation's own formula
+		// would make them agree with a wrong bound, which is how the
+		// first version of this oracle allowed an attempt the engine
+		// never makes. Two is the engine's whole budget at one request,
+		// measured against rclone v1.74.3; four is that budget twice
+		// over, because uploadRun.copy runs the engine again after an
+		// authentication-shaped failure; five is past both.
+		{"the engine retrying one staged upload is sound", func(m map[string]int) { m[staged] = 2 }, ""},
+		{"one staged upload written once in each of two child runs is sound",
+			func(m map[string]int) { m[staged] = 3 }, ""},
+		{"both retry layers together at their limit is sound",
+			func(m map[string]int) { m[staged] = 4 }, ""},
+		{"one write past both retry layers is not",
+			func(m map[string]int) { m[staged] = 5 }, "outside the engine's budget"},
 		{"the engine skipping a staged upload is not",
 			func(m map[string]int) { delete(m, staged) }, "never wrote a staged object"},
 		// The half that must stay exact: this application publishes each
