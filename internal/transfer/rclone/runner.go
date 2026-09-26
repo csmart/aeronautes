@@ -402,11 +402,17 @@ func (r *Runner) gatewayCapacity() int {
 	return min(1024, max(64, 2*(max(0, r.opts.Transfers)+max(0, r.opts.Checkers))+16))
 }
 
-// DefaultLowLevelRetries is the per-request retry budget pacingArgs hands
-// the engine when the caller sets none. A low-level retry re-sends one
-// request, so this is the number of times the engine may repeat a single
-// write of its own accord, and a test that counts the engine's writes
-// bounds them by this rather than by a number of its own.
+// DefaultLowLevelRetries is the value pacingArgs passes to
+// --low-level-retries when the caller sets none.
+//
+// It bounds the TOTAL attempts the engine makes at one request, not
+// retries on top of a first try, which the flag's name suggests and the
+// pinned engine does not do. Measured against rclone v1.74.3: with 2, one
+// injected refusal produced two PUTs and two or three injected refusals
+// still produced only two; with 1, one injected refusal produced a single
+// PUT and the copy failed. So 2 means one try and at most one retry, and 1
+// means one try and none. A test that counts the engine's writes bounds
+// them by this number itself rather than by one more than it.
 const DefaultLowLevelRetries = 2
 
 func (r *Runner) pacingArgs() []string {

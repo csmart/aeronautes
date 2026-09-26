@@ -104,3 +104,42 @@ func TestUploadCapturedRefusalStopsAuthenticationRetry(t *testing.T) {
 		})
 	}
 }
+
+// The authentication restart is bounded to exactly one fresh child, which
+// is the second of the two retry layers an upload's staged writes pass
+// through. The first is the engine's own budget at one request, measured
+// against the pinned binary; this is the one above it, and the product of
+// the two is what bounds how many times a single staged object can be
+// written across a whole job.
+//
+// An engine that fails authentication-shaped every time must therefore be
+// invoked twice and not a third time, however many times it fails.
+func TestUploadAuthenticationRestartIsBoundedToOneFreshChild(t *testing.T) {
+	s, mock := session(t)
+	seed(mock, "outside", "keep", "outside sentinel")
+	witness := uploadWitness(t, mock)
+	before := uploadSnapshot(t, witness)
+	root := t.TempDir()
+	path := writeFile(t, root, "item", "owned bytes")
+	preflight, err := PreflightUpload(t.Context(), s, "media", "live/", []string{path})
+	if err != nil || preflight.Rejected() {
+		t.Fatalf("preflight: %+v %v", preflight, err)
+	}
+	engine := &uploadRecordingEngine{}
+	engine.run = func(context.Context, string, string, []string, func(rclone.Event)) (*rclone.Result, error) {
+		return &rclone.Result{ExitCode: 1, Errors: []string{"401 unauthorized"}}, nil
+	}
+	report, runErr := Upload(t.Context(), s, engine, "aeronautes_dst:media", "media", "live/", "retry-bound", preflight, nil, nil)
+	if engine.calls != 2 {
+		t.Fatalf("an engine that always fails authentication ran %d times, and the restart is bounded to one fresh child", engine.calls)
+	}
+	if report == nil || report.Done != 0 || len(report.Failures) != 1 {
+		t.Fatalf("an exhausted authentication restart did not record its failure: %+v %v", report, runErr)
+	}
+	if delta := oracle.Diff(before, uploadSnapshot(t, witness)); !delta.Empty() {
+		t.Fatalf("an exhausted authentication restart changed the account: %s", delta)
+	}
+	if body, err := os.ReadFile(path); err != nil || string(body) != "owned bytes" {
+		t.Fatalf("an exhausted authentication restart changed its source: %q %v", body, err)
+	}
+}
