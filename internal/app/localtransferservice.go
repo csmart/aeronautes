@@ -425,18 +425,11 @@ func (s *TransferService) confirmOverwrite(ctx context.Context, req UploadReques
 	}
 	before := s.observeConnection()
 	label, account, _ := s.pickBinding(ctx, scope)
-	if account == "" {
-		// The question's whole purpose is to name which account is about to
-		// be written over. A session whose account could not be resolved
-		// cannot be named, so it is refused rather than asked about under a
-		// label that may belong to either of two accounts.
-		return errors.New("the destination account could not be identified, so an overwrite is refused")
+	question, err := overwriteQuestion(label, account, req.Container, req.Prefix, versioning, names)
+	if err != nil {
+		return err
 	}
-	yes, err := s.overwrites.ConfirmOverwrite(ctx, OverwriteConfirmation{
-		Bookmark: titleText(label, 80), Account: titleText(account, 80),
-		Container: req.Container, Prefix: req.Prefix,
-		Names: names, Versioning: versioning,
-	})
+	yes, err := s.overwrites.ConfirmOverwrite(ctx, question)
 	if err != nil {
 		return err
 	}
@@ -456,13 +449,32 @@ func (s *TransferService) confirmOverwrite(ctx context.Context, req UploadReques
 	return nil
 }
 
-// observedVersioning is what the container said about keeping versions,
-// worded as an observation rather than a promise (ADR 0081 decision 8).
-// A container that keeps versions may retain the bytes being replaced;
-// this says the mode and its archive container and stops there, because
-// nothing in this route has read a version back. A HEAD that fails says
-// so rather than reporting "off", since not knowing and knowing there is
-// none are different answers and only one of them is reassuring.
+// overwriteQuestion is the statement the operator is asked to authorise.
+//
+// It is composed here rather than assembled at the call site so that the
+// rule which makes it answerable can be checked on its own: a question
+// that cannot name the account it is about is refused instead of asked.
+// That is the part ADR 0073's counterexample turns on, because a label may
+// belong to either of two accounts and the operator has nothing else to
+// tell them apart with. A question missing any other part of the plan it
+// would authorise is refused for the same reason.
+func overwriteQuestion(label, account, container, prefix, versioning string, names []string) (OverwriteConfirmation, error) {
+	switch {
+	case account == "":
+		return OverwriteConfirmation{}, errors.New("the destination account could not be identified, so an overwrite is refused")
+	case container == "":
+		return OverwriteConfirmation{}, errors.New("the destination container could not be identified, so an overwrite is refused")
+	case versioning == "":
+		return OverwriteConfirmation{}, errors.New("the destination container's versioning could not be stated, so an overwrite is refused")
+	case len(names) == 0:
+		return OverwriteConfirmation{}, errors.New("there is nothing live to ask about, so no overwrite is authorised")
+	}
+	return OverwriteConfirmation{
+		Bookmark: titleText(label, 80), Account: titleText(account, 80),
+		Container: container, Prefix: prefix, Names: names, Versioning: versioning,
+	}, nil
+}
+
 // observedVersioning is what the container said about keeping versions,
 // worded as an observation rather than a promise (ADR 0081 decision 8),
 // and an error when the mode does not admit an overwrite at all.

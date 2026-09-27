@@ -528,3 +528,60 @@ func reopenedJobStore(t *testing.T, h *harness) *jobs.Store {
 	t.Cleanup(func() { _ = reopened.Close() })
 	return jobs.NewStore(reopened)
 }
+
+// ADR 0081 decision 3: a question that cannot name the account it is about
+// is not answerable, because a label may belong to either of two accounts.
+// The rule is checked where it lives, because the wiring that reaches the
+// confirmation has already resolved a session by then and cannot produce
+// the case: an unanswerable question must still be refused rather than
+// asked, and this is what keeps that true if the ordering ever changes.
+func TestOverwriteQuestionRefusesWhatItCannotName(t *testing.T) {
+	const (
+		label      = "primary"
+		account    = "AUTH_test"
+		container  = "replaceable"
+		versioning = "none observed"
+	)
+	names := []string{"live/taken"}
+	for _, tc := range []struct {
+		name                                  string
+		label, account, container, versioning string
+		names                                 []string
+		refusal                               string
+	}{
+		{name: "no account", label: label, container: container, versioning: versioning, names: names,
+			refusal: "account could not be identified"},
+		{name: "no container", label: label, account: account, versioning: versioning, names: names,
+			refusal: "container could not be identified"},
+		{name: "no versioning", label: label, account: account, container: container, names: names,
+			refusal: "versioning could not be stated"},
+		{name: "nothing live", label: label, account: account, container: container, versioning: versioning,
+			refusal: "nothing live to ask about"},
+		{name: "no label", account: account, container: container, versioning: versioning, names: names},
+		{name: "everything named", label: label, account: account, container: container,
+			versioning: versioning, names: names},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			question, err := overwriteQuestion(tc.label, tc.account, tc.container, "live/", tc.versioning, tc.names)
+			if tc.refusal != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.refusal) {
+					t.Fatalf("the question was asked anyway: %+v %v", question, err)
+				}
+				if !reflect.DeepEqual(question, OverwriteConfirmation{}) {
+					t.Errorf("a refused question carries a statement: %+v", question)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("a complete question was refused: %v", err)
+			}
+			// A missing label is not a refusal: the account is what has to be
+			// named, and a bookmark with no display name is ordinary.
+			if question.Account != tc.account || question.Bookmark != tc.label ||
+				question.Container != tc.container || question.Prefix != "live/" ||
+				question.Versioning != tc.versioning || len(question.Names) != 1 {
+				t.Fatalf("the question does not state the plan it authorises: %+v", question)
+			}
+		})
+	}
+}
