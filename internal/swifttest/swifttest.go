@@ -62,7 +62,12 @@ type Container struct {
 	// headers (at most one is meaningful on a real server).
 	VersionsLocation string
 	HistoryLocation  string
-	objects          map[string]Object
+	// VersionsEnabled is modern object versioning (X-Versions-Enabled),
+	// where versions live in the same container. This mock stores no such
+	// versions; it can present the mode so a caller that must refuse it
+	// can be shown refusing it.
+	VersionsEnabled bool
+	objects         map[string]Object
 }
 
 // defaultInfoJSON mirrors upstream master's shape: policies for the §20
@@ -146,6 +151,16 @@ func (s *Server) AddContainer(name, policy string) {
 }
 
 // PutObject stores an object, creating its container if needed.
+// EnableModernVersioning presents a container as using modern object
+// versioning, which is a mode some callers must refuse rather than act on.
+func (s *Server) EnableModernVersioning(container string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if c, ok := s.containers[container]; ok {
+		c.VersionsEnabled = true
+	}
+}
+
 func (s *Server) PutObject(container, name string, o Object) {
 	if o.ContentType == "" {
 		o.ContentType = "application/octet-stream"
@@ -364,6 +379,9 @@ func (s *Server) handleContainer(w http.ResponseWriter, r *http.Request, name st
 	}
 	if snapshot.VersionsLocation != "" {
 		h.Set("X-Versions-Location", snapshot.VersionsLocation)
+	}
+	if snapshot.VersionsEnabled {
+		h.Set("X-Versions-Enabled", "true")
 	}
 	if snapshot.HistoryLocation != "" {
 		h.Set("X-History-Location", snapshot.HistoryLocation)

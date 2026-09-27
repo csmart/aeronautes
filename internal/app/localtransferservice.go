@@ -382,9 +382,15 @@ func (s *TransferService) confirmOverwrite(ctx context.Context, req UploadReques
 	if s.overwrites == nil {
 		return errors.New("replacing an existing object needs the shell's confirmation, and this build has none")
 	}
+	// The mode is read before the question is asked, so a container this
+	// build cannot reason about is refused without the operator being
+	// asked to authorise something it cannot describe.
+	versioning, err := s.observedVersioning(ctx, req.BookmarkID, req.Container)
+	if err != nil {
+		return err
+	}
 	before := s.observeConnection()
 	from, _ := s.pickBinding(ctx, scope)
-	versioning := s.observedVersioning(ctx, req.BookmarkID, req.Container)
 	yes, err := s.overwrites.ConfirmOverwrite(ctx, OverwriteConfirmation{
 		Account: titleText(from, 80), Container: req.Container, Prefix: req.Prefix,
 		Names: names, Versioning: versioning,
@@ -415,25 +421,37 @@ func (s *TransferService) confirmOverwrite(ctx context.Context, req UploadReques
 // nothing in this route has read a version back. A HEAD that fails says
 // so rather than reporting "off", since not knowing and knowing there is
 // none are different answers and only one of them is reassuring.
-func (s *TransferService) observedVersioning(ctx context.Context, bookmarkID, container string) string {
+// observedVersioning is what the container said about keeping versions,
+// worded as an observation rather than a promise (ADR 0081 decision 8),
+// and an error when the mode does not admit an overwrite at all.
+//
+// A mode this build cannot reason about is refused rather than described:
+// modern object versioning, which ADR 0054 already refuses to edit, and a
+// container whose mode could not be read. Not knowing and knowing there is
+// none are different answers, and only one of them may carry a write.
+func (s *TransferService) observedVersioning(ctx context.Context, bookmarkID, container string) (string, error) {
+	unreadable := errors.New("the destination container's versioning could not be read, so an overwrite is refused")
 	session, err := s.connections.SessionFor(ctx, bookmarkID)
 	if err != nil {
-		return "unknown: the container could not be read"
+		return "", unreadable
 	}
 	detail, err := session.ContainerDetail(ctx, container)
 	if err != nil || detail == nil {
-		return "unknown: the container could not be read"
+		return "", unreadable
 	}
 	switch detail.Versioning.Mode {
 	case swiftcontrol.VersioningOff, "":
-		return "none: what is replaced is not kept"
-	default:
+		return "none: what is replaced is not kept", nil
+	case swiftcontrol.VersioningVersionsLocation, swiftcontrol.VersioningHistoryLocation:
 		archive := detail.Versioning.Archive
 		if archive == "" {
 			archive = "an archive it did not name"
 		}
 		return "the container reports " + string(detail.Versioning.Mode) + ", archiving into " + archive +
-			"; this has not been read back"
+			"; no archived version has been read back by anything here", nil
+	default:
+		return "", fmt.Errorf("the destination container %s, so an overwrite is refused: %w",
+			detail.Versioning.Mode, swiftcontrol.ErrModernVersioning)
 	}
 }
 
