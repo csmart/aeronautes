@@ -2,6 +2,7 @@ package local
 
 import (
 	"errors"
+	"io"
 	"net/http/httptest"
 	"os"
 	"strings"
@@ -257,5 +258,78 @@ func TestReplacingRefusesWithNowhereToRecord(t *testing.T) {
 				t.Fatalf("a recordable replacement was refused: %v %v", err, run.stopped)
 			}
 		})
+	}
+}
+
+// ADR 0081 decision 5, and the reason it retains rather than reclaims: an
+// outside manifest can reference the very segments a replaced predecessor
+// named, because the prefix is published in the manifest's own header. Both
+// outside objects must still assemble their own bytes after the
+// replacement, and every segment must still be there.
+func TestReplacingALargeObjectPreservesOutsideReferences(t *testing.T) {
+	s, mock := session(t)
+	mock.AddContainer("media_segments", "standard")
+	seed(mock, "media_segments", "subject/run/0001", "01234567")
+	seed(mock, "media_segments", "subject/run/0002", "89abcdef")
+	// The predecessor: a dynamic manifest over that prefix.
+	mock.PutObject("media", "docs/object", swifttest.Object{Manifest: "media_segments/subject/run/"})
+	// Two outside objects nobody in this job selected, over the same
+	// segments. A reader of the predecessor could have made either.
+	mock.PutObject("media", "outside/dlo", swifttest.Object{Manifest: "media_segments/subject/run/"})
+	stageStatic(t, mock, "media", "outside/slo", "01234567", "89abcdef")
+
+	witness := uploadWitness(t, mock)
+	before := uploadSnapshot(t, witness)
+	path := writeFile(t, t.TempDir(), "object", "the bytes this job planned to send")
+	preflight, err := PreflightUploadReplacing(t.Context(), s, "media", "docs/", []string{path})
+	if err != nil || preflight.Rejected() || len(preflight.Items) != 1 || !preflight.Items[0].Replaces {
+		t.Fatalf("the replacing preflight did not admit the live manifest: %+v %v", preflight, err)
+	}
+	item := preflight.Items[0]
+	item.Route = "native"
+
+	var recorded []ObservedPredecessor
+	run := &uploadRun{report: &Report{}, recorder: &UploadRecorder{
+		Replacing: func(_ UploadItem, observed ObservedPredecessor) error {
+			recorded = append(recorded, observed)
+			return nil
+		}}}
+	if err := run.observePredecessor(t.Context(), s, "media", item); err != nil {
+		t.Fatalf("observing the predecessor: %v", err)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result := nativeUpload(t.Context(), s, "media", item, file); result.Result != transfercopy.ResultCopied {
+		t.Fatalf("the replacement was refused: %+v", result.Observation)
+	}
+
+	// The inventory was taken, and it names the prefix rather than
+	// claiming to be the whole of it.
+	if len(recorded) != 1 || len(recorded[0].Fragments.Names) != 2 ||
+		recorded[0].Fragments.Prefix != "media_segments/subject/run/" || recorded[0].Fragments.Complete {
+		t.Fatalf("the fragment inventory is wrong: %+v", recorded)
+	}
+
+	// Nothing was removed. Both outside objects still assemble their own
+	// bytes, which is the property that makes retention the safe answer.
+	for _, name := range []string{"outside/dlo", "outside/slo"} {
+		body, _, err := s.OpenObject(t.Context(), "media", name)
+		if err != nil {
+			t.Fatalf("an outside object stopped being readable: %s: %v", name, err)
+		}
+		bytes, readErr := io.ReadAll(body)
+		_ = body.Close()
+		if readErr != nil || string(bytes) != "0123456789abcdef" {
+			t.Fatalf("an outside object lost its backing data: %s: %q %v", name, bytes, readErr)
+		}
+	}
+	after := uploadSnapshot(t, witness)
+	// The replaced name is the only thing that changed.
+	delete(after.Containers["media"].Objects, "docs/object")
+	delete(before.Containers["media"].Objects, "docs/object")
+	if diff := oracle.Diff(before, after); !diff.Empty() {
+		t.Fatalf("replacing a manifest disturbed something else: %s", diff)
 	}
 }

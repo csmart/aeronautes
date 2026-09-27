@@ -33,6 +33,36 @@ type ObservedPredecessor struct {
 	// Class is the live object's shape, so a replaced manifest is
 	// distinguishable in the ledger from a replaced plain object.
 	Class string
+	// Fragments is the inventory of what the predecessor's manifest named,
+	// read before the replacement because afterwards it cannot be
+	// recovered (ADR 0081 decision 5). Nothing deletes any of it: the
+	// inventory exists so the space is visible to the operator, and
+	// clearing it stays the explicit, force-gated cleanup's work.
+	Fragments FragmentInventory
+}
+
+// FragmentInventory is what a replaced manifest named, with the reasons it
+// is not a complete account of what backs the object. A top-level list is
+// not a backing-object graph: an inline entry has no remote part at all, a
+// ranged entry references a containing object rather than a private one,
+// and a nested manifest names a manifest rather than its descendants. A
+// dynamic manifest names only a prefix, so its members have to be listed
+// and a listing on an eventually consistent store may be short.
+type FragmentInventory struct {
+	// Prefix is the dynamic manifest's container and prefix, empty for a
+	// static manifest or a plain object.
+	Prefix string
+	// Names are the segment objects the inventory found, as
+	// "container/name", in the order they were read.
+	Names []string
+	// Inline, Ranged and Nested count the static entries that are not
+	// simple whole-object remote parts.
+	Inline, Ranged, Nested int
+	// Complete says the inventory is the exact set the manifest named. A
+	// static manifest's list is exact; a listed prefix is a lower bound.
+	Complete bool
+	// Unread is why the inventory could not be taken, empty when it was.
+	Unread string
 }
 
 type UploadAdmission struct {

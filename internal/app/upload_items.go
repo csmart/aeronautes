@@ -31,8 +31,42 @@ func observedPredecessorSummary(observed local.ObservedPredecessor) string {
 	}
 	return fmt.Sprintf(
 		"observed a %s of %d bytes, entity tag %s, last modified %s, immediately before publishing over this name; "+
-			"a racing writer means the object replaced may not be that one",
-		class, observed.Length, observed.ETag, observed.LastModified.UTC().Format(time.RFC3339))
+			"a racing writer means the object replaced may not be that one%s",
+		class, observed.Length, observed.ETag, observed.LastModified.UTC().Format(time.RFC3339),
+		fragmentSummary(observed.Fragments))
+}
+
+// fragmentSummary states what a replaced manifest named and what the
+// inventory cannot account for, so the space is visible to the operator and
+// its limits are visible with it. Nothing here was deleted: clearing it
+// stays the explicit, force-gated cleanup's work (ADR 0081 decision 5).
+func fragmentSummary(inventory local.FragmentInventory) string {
+	if inventory.Unread != "" {
+		return "; its fragments were not inventoried because " + inventory.Unread + ", and none was removed"
+	}
+	if len(inventory.Names) == 0 && inventory.Inline == 0 {
+		return ""
+	}
+	out := fmt.Sprintf("; it named %d segment", len(inventory.Names))
+	if len(inventory.Names) != 1 {
+		out += "s"
+	}
+	if inventory.Prefix != "" {
+		out += " listed under " + inventory.Prefix + ", which a listing may undercount"
+	} else if !inventory.Complete {
+		out += ", and an entry shape this build does not recognise means the list is not the whole of it"
+	}
+	// A fixed order, because a map's iteration is not one and this text is
+	// durable.
+	for _, kind := range []struct {
+		count int
+		what  string
+	}{{inventory.Inline, "inline"}, {inventory.Ranged, "ranged"}, {inventory.Nested, "nested"}} {
+		if kind.count > 0 {
+			out += fmt.Sprintf(", %d %s", kind.count, kind.what)
+		}
+	}
+	return out + "; every one of them was retained and none was removed"
 }
 
 func (s *TransferService) uploadItemRecorder(ctx context.Context, jobID string, req UploadRequestDTO) *local.UploadRecorder {

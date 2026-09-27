@@ -291,7 +291,75 @@ func (u *uploadRun) observePredecessor(ctx context.Context, dst *swiftcontrol.Se
 	return u.replacing(item, ObservedPredecessor{
 		ETag: strings.Trim(detail.ETag, `"`), Length: detail.ContentLength,
 		LastModified: detail.LastModified, Class: string(detail.Class),
+		Fragments: fragmentInventory(ctx, dst, container, item.Name, detail),
 	})
+}
+
+// fragmentInventory reads what a replaced manifest named, before the
+// replacement, because once the manifest is gone the set cannot be
+// recovered (ADR 0081 decision 5). It deletes nothing and authorises
+// nothing: creation provenance is not authority over other references, so
+// the inventory exists to make the space visible and no more.
+//
+// A failure to read it does not stop the replacement. The operator
+// acknowledged replacing the object, and refusing over an inventory would
+// trade the thing they asked for against a record; the record says it
+// could not be taken instead.
+func fragmentInventory(ctx context.Context, dst *swiftcontrol.Session, container, name string,
+	detail *swiftcontrol.ObjectDetail) FragmentInventory {
+	switch detail.Class {
+	case swiftcontrol.ClassSLO:
+		manifest, err := dst.SLOManifest(ctx, container, name)
+		if err != nil || manifest == nil {
+			return FragmentInventory{Unread: "the static manifest could not be read"}
+		}
+		// A static manifest lists its members exactly, so this set is the
+		// set. What it is not is a graph: the counts say which entries
+		// name something other than a whole remote object.
+		inventory := FragmentInventory{Complete: true}
+		for _, entry := range manifest.Entries {
+			switch segment := entry.(type) {
+			case swiftcontrol.ObjectSegment:
+				inventory.Names = append(inventory.Names, segment.Path.Container+"/"+segment.Path.Object)
+				if segment.Range != nil {
+					inventory.Ranged++
+				}
+				if segment.NestedSLO {
+					inventory.Nested++
+				}
+			case swiftcontrol.InlineDataSegment:
+				inventory.Inline++
+			default:
+				// An entry shape this build does not recognise cannot be
+				// counted as a part it might not be.
+				inventory.Complete = false
+			}
+		}
+		return inventory
+	case swiftcontrol.ClassDLO:
+		segmentContainer, prefix, ok := strings.Cut(detail.Manifest, "/")
+		if !ok || segmentContainer == "" {
+			return FragmentInventory{Unread: "the dynamic manifest names no segment prefix"}
+		}
+		// Listed rather than named, so it is a lower bound: a listing on an
+		// eventually consistent store may omit a segment that exists.
+		inventory := FragmentInventory{Prefix: detail.Manifest}
+		for entry, err := range dst.Objects(ctx, segmentContainer, swiftcontrol.ObjectListOptions{Prefix: prefix}) {
+			if err != nil {
+				inventory.Unread = "the segment prefix could not be listed in full"
+				break
+			}
+			object, ok := entry.(swiftcontrol.ObjectEntry)
+			if !ok {
+				// A pseudo-directory row names no object.
+				continue
+			}
+			inventory.Names = append(inventory.Names, segmentContainer+"/"+object.Name)
+		}
+		return inventory
+	default:
+		return FragmentInventory{Complete: true}
+	}
 }
 
 // publishHeaders are the conditions a publication carries. A create keeps
