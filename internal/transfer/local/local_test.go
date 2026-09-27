@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/hex"
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -432,4 +433,88 @@ type recordingLocalEngine struct {
 func (r *recordingLocalEngine) Copy(ctx context.Context, src, dst string, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
 	r.dsts = append(r.dsts, dst)
 	return r.inner.Copy(ctx, src, dst, names, onEvent)
+}
+
+// The preflight used to HEAD every selected file's destination name, so a
+// selection of N files cost N requests before a byte was written, and a
+// large one cost more than the transfer it preceded (K-PERF-001). It now
+// resolves the whole selection with whichever pattern costs fewer requests,
+// and this pins the count so the choice cannot quietly regress.
+func TestPreflightUploadDoesNotHeadEveryFile(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// alreadyThere is how many objects the destination holds, which is
+		// what makes one pattern cheaper than the other.
+		alreadyThere int
+		files        int
+		// wantHeads is how many object HEADs the preflight may issue.
+		wantHeads int
+	}{
+		{name: "many files into a small destination", alreadyThere: 3, files: 40, wantHeads: 0},
+		{name: "one file into a small destination", alreadyThere: 3, files: 1, wantHeads: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, mock := session(t)
+			for i := range tc.alreadyThere {
+				seed(mock, "media", fmt.Sprintf("docs/there-%03d", i), "already here")
+			}
+			dir := t.TempDir()
+			var paths []string
+			for i := range tc.files {
+				paths = append(paths, writeFile(t, dir, fmt.Sprintf("send-%03d", i), "bytes"))
+			}
+			before := len(mock.RequestLog())
+			report, err := PreflightUpload(t.Context(), s, "media", "docs/", paths)
+			if err != nil || report == nil || report.Rejected() || len(report.Items) != tc.files {
+				t.Fatalf("preflight: %+v %v", report, err)
+			}
+			var heads, listings int
+			for _, request := range mock.RequestLog()[before:] {
+				switch {
+				case strings.HasPrefix(request, "HEAD /v1/AUTH_test/media/"):
+					heads++
+				case strings.HasPrefix(request, "GET /v1/AUTH_test/media?"):
+					listings++
+				}
+			}
+			if heads != tc.wantHeads {
+				t.Errorf("the preflight issued %d object HEADs for %d files, want %d", heads, tc.files, tc.wantHeads)
+			}
+			if tc.wantHeads == 0 && listings == 0 {
+				t.Error("no listing either, so nothing resolved the collisions")
+			}
+		})
+	}
+}
+
+// The collisions themselves must still be found, whichever pattern is used,
+// and the weaker of the two must never report a free name as live.
+func TestPreflightUploadFindsCollisionsEitherWay(t *testing.T) {
+	for _, files := range []int{1, 40} {
+		t.Run(fmt.Sprint(files, " files"), func(t *testing.T) {
+			s, mock := session(t)
+			dir := t.TempDir()
+			var paths []string
+			for i := range files {
+				name := fmt.Sprintf("send-%03d", i)
+				paths = append(paths, writeFile(t, dir, name, "bytes"))
+				if i%2 == 0 {
+					seed(mock, "media", "docs/"+name, "already here")
+				}
+			}
+			report, err := PreflightUpload(t.Context(), s, "media", "docs/", paths)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var collisions int
+			for _, problem := range report.Problems {
+				if problem.Kind == "exists" {
+					collisions++
+				}
+			}
+			if want := (files + 1) / 2; collisions != want {
+				t.Fatalf("found %d collisions, want %d: %+v", collisions, want, report.Problems)
+			}
+		})
+	}
 }

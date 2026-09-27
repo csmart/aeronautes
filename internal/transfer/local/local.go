@@ -99,12 +99,94 @@ func PreflightUploadReplacing(ctx context.Context, dst *swiftcontrol.Session, co
 	return preflightUpload(ctx, dst, container, prefix, paths, true)
 }
 
+// listingPageSize is the page size this route asks the store for, kept
+// here so the choice below can count requests rather than guess them.
+const listingPageSize = 10000
+
+// destinationLiveness says which of the names this selection would publish
+// are already live, taking whichever of two request patterns is cheaper.
+//
+// One HEAD per file costs one request per selected file, which is what this
+// route used to do: a selection of a thousand files was a thousand requests
+// before a byte was written, and a large one is worse than the transfer it
+// precedes (K-PERF-001). One deep listing of the destination prefix costs
+// one request per page of objects ALREADY THERE, whatever the selection's
+// size. Neither is cheaper in general, so the container's own object count —
+// one HEAD, and an upper bound on what lives under the prefix — decides:
+// list when the listing would take fewer requests than the heads would.
+//
+// A listing is a WEAKER oracle than a head, and deliberately so. On an
+// eventually consistent store a listing can omit an object a head would
+// find, so this can miss a live name. Missing one is safe in both
+// directions: an unacknowledged publication still carries its conditional
+// and the store refuses it, and an acknowledged one that was not marked as
+// replacing also still carries its conditional. A miss therefore becomes a
+// conflict, never an unasked-for replacement. The opposite error — claiming
+// a name is live when it is not — cannot happen from a listing at all.
+func destinationLiveness(ctx context.Context, dst *swiftcontrol.Session, container, prefix string,
+	paths []string) (map[string]bool, error) {
+	wanted := make(map[string]bool, len(paths))
+	for _, path := range paths {
+		if validUploadPath(path) {
+			wanted[prefix+filepath.Base(path)] = false
+		}
+	}
+	if len(wanted) == 0 {
+		return wanted, nil
+	}
+	// The count is an upper bound on the prefix's own population, so a
+	// container this route cannot measure falls back to heads rather than
+	// guessing that a listing is cheap.
+	heads := len(wanted)
+	pages := heads + 1
+	if detail, err := dst.ContainerDetail(ctx, container); err == nil && detail != nil {
+		pages = int(detail.ObjectCount/listingPageSize) + 1
+	}
+	if pages >= heads {
+		for name := range wanted {
+			switch _, err := dst.ObjectDetail(ctx, container, name); {
+			case err == nil:
+				wanted[name] = true
+			case !swiftcontrol.IsNotFound(err):
+				// Not knowing is not the same as free. This refusal is the
+				// one the per-file loop used to carry.
+				return nil, err
+			}
+		}
+		return wanted, nil
+	}
+	for entry, err := range dst.Objects(ctx, container, swiftcontrol.ObjectListOptions{
+		Prefix: prefix, PageSize: listingPageSize, Deep: true}) {
+		if err != nil {
+			// A listing that stopped says nothing about the names it never
+			// reached, and treating those as free would admit a replacement
+			// the operator was never shown. Refuse the preflight instead.
+			return nil, fmt.Errorf("the destination could not be listed, so a collision cannot be ruled out: %w", err)
+		}
+		object, ok := entry.(swiftcontrol.ObjectEntry)
+		if !ok {
+			continue
+		}
+		if _, candidate := wanted[object.Name]; candidate {
+			wanted[object.Name] = true
+		}
+	}
+	return wanted, nil
+}
+
 func preflightUpload(ctx context.Context, dst *swiftcontrol.Session, container, prefix string, paths []string,
 	replacing bool) (*UploadPreflight, error) {
 	if prefix != "" && !strings.HasSuffix(prefix, "/") {
 		return nil, fmt.Errorf("prefix %q must be empty or end with '/'", prefix)
 	}
 	report := &UploadPreflight{}
+	// Which destination names are live is resolved for the whole selection
+	// at once rather than one HEAD per file: a thousand files were a
+	// thousand requests before anything was written (K-PERF-001).
+	liveNames, err := destinationLiveness(ctx, dst, container, prefix, paths)
+	if err != nil {
+		return nil, err
+	}
 	seen := map[string]string{}
 	for index, path := range paths {
 		if !validUploadPath(path) {
@@ -135,7 +217,7 @@ func preflightUpload(ctx context.Context, dst *swiftcontrol.Session, container, 
 		seen[name] = path
 
 		live := false
-		if _, err := dst.ObjectDetail(ctx, container, name); err == nil {
+		if liveNames[name] {
 			if !replacing {
 				report.Problems = append(report.Problems, Problem{
 					Name: name, Kind: "exists",
@@ -151,8 +233,6 @@ func preflightUpload(ctx context.Context, dst *swiftcontrol.Session, container, 
 				Name: name, Kind: "exists",
 				Detail: "already live at the destination; this upload will replace it",
 			})
-		} else if !swiftcontrol.IsNotFound(err) {
-			return nil, err
 		}
 
 		route := "rclone"
