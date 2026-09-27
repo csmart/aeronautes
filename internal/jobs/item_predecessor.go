@@ -13,11 +13,12 @@ import (
 //
 // The cap exists because a dynamic manifest's prefix can hold an arbitrary
 // number of objects and recording one replacement must not size its memory
-// or its storage to a remote prefix (K-PERF-001). It truncates only the
-// case that stays recoverable: a dynamic manifest's prefix is recorded and
-// remains listable afterwards, while a static manifest's list is the one
-// that cannot be read again and is itself bounded by the manifest object
-// the inventory already read whole.
+// or its storage to a remote prefix (K-PERF-001). A record whose Counted
+// exceeds its Named is what the cap produces, and it says so rather than
+// reporting the names it holds as the whole of the set. The measured
+// store's own per-manifest limit is below this cap, so a static list does
+// not reach it there; a listed prefix can, and its record keeps the prefix
+// it can be listed from again.
 const MaxRecordedFragments = 2048
 
 // ItemPredecessor is what was live at an item's destination immediately
