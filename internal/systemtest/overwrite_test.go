@@ -2,14 +2,19 @@ package systemtest
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/csmart/aeronautes/internal/app"
 	"github.com/csmart/aeronautes/internal/audit"
+	"github.com/csmart/aeronautes/internal/db"
+	"github.com/csmart/aeronautes/internal/jobs"
 )
 
 // Maintained regressions for ADR 0081 through the public service, on both
@@ -183,10 +188,17 @@ func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 		h.Seed(h.Primary, segments, "subject/run/0002", []byte("89abcdef"), nil)
 		h.Seed(h.Primary, container, "live/taken", nil,
 			map[string]string{"X-Object-Manifest": segments + "/subject/run/"})
-		// An outside object over the same segments, which anything that can
-		// read the predecessor could have made.
+		// Two outside objects over EXACTLY those segments, which anything
+		// that can read the predecessor could have made, because the prefix
+		// is published in the predecessor's own header. The static one names
+		// the segment identities one by one, so it shares them rather than
+		// holding private copies: an alias over its own copies would survive
+		// the deletion of every part it was supposed to be sharing.
 		h.Seed(h.Primary, container, "outside/alias", nil,
 			map[string]string{"X-Object-Manifest": segments + "/subject/run/"})
+		h.SeedSLO(h.Primary, container, "outside/slo", `[`+
+			`{"path":"`+segments+`/subject/run/0001","etag":"`+md5of("01234567")+`","size_bytes":8},`+
+			`{"path":"`+segments+`/subject/run/0002","etag":"`+md5of("89abcdef")+`","size_bytes":8}]`)
 
 		confirmer := &serviceConfirmer{yes: true}
 		app.WireOverwriteConfirmer(h.Transfer, confirmer)
@@ -221,11 +233,53 @@ func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 				t.Errorf("the record does not say %q: %q", want, record.Summary)
 			}
 		}
-		// The outside object still assembles its own bytes, which is why
-		// this contract retains rather than reclaims.
-		body, err := rawGet(h.Primary, "/"+container+"/outside/alias", "")
-		if err != nil || string(body) != "0123456789abcdef" {
-			t.Fatalf("an outside reference lost its backing data: %q %v", body, err)
+		// Both outside objects still assemble their own bytes from those
+		// same segments, which is why this contract retains rather than
+		// reclaims. This store assembles a large object on read, so the
+		// bytes are evidence here in a way a cached copy would not be.
+		for _, name := range []string{"outside/alias", "outside/slo"} {
+			body, err := rawGet(h.Primary, "/"+container+"/"+name, "")
+			if err != nil || string(body) != "0123456789abcdef" {
+				t.Errorf("an outside reference lost its backing data: %s: %q %v", name, body, err)
+			}
+		}
+		// And the static alias still names the same two leaf objects, read
+		// from its own manifest rather than from anything this route says.
+		manifest, err := rawGet(h.Primary, "/"+container+"/outside/slo", "multipart-manifest=get")
+		if err != nil {
+			t.Fatalf("the outside manifest could not be read: %v", err)
+		}
+		for _, name := range []string{"subject/run/0001", "subject/run/0002"} {
+			if !strings.Contains(string(manifest), segments+"/"+name) {
+				t.Errorf("the outside manifest no longer names %s: %s", name, manifest)
+			}
+		}
+
+		// The durable record names those segments, which is what an explicit
+		// cleanup would have to read: after the job is terminal, and again
+		// through a store opened on the same file that never saw them
+		// written.
+		want := []jobs.ItemFragment{
+			{Container: segments, Object: "subject/run/0001"},
+			{Container: segments, Object: "subject/run/0002"},
+		}
+		for _, source := range []struct {
+			name  string
+			store *jobs.Store
+		}{
+			{"the running store", h.jobStore},
+			{"a reopened store", reopenedJobs(t, h)},
+		} {
+			read, ok, err := source.store.ReadPredecessor(t.Context(), id, "live/taken")
+			if err != nil || !ok {
+				t.Fatalf("%s: read back: ok=%v %v", source.name, ok, err)
+			}
+			if !reflect.DeepEqual(read.Fragments, want) {
+				t.Errorf("%s names %+v, not the segments the manifest named %+v", source.name, read.Fragments, want)
+			}
+			if read.Prefix != segments+"/subject/run/" || read.Exact || read.Counted != 2 {
+				t.Errorf("%s does not describe a listed prefix: %+v", source.name, read)
+			}
 		}
 	})
 
@@ -357,4 +411,23 @@ func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 			})
 		}
 	})
+}
+
+// md5of is an expectation computed here rather than read from the code
+// under test.
+func md5of(content string) string {
+	sum := md5.Sum([]byte(content))
+	return hex.EncodeToString(sum[:])
+}
+
+// reopenedJobs opens the harness's database file again, so a durable record
+// is read through a store that never saw it written.
+func reopenedJobs(t *testing.T, h *Harness) *jobs.Store {
+	t.Helper()
+	reopened, err := db.Open(t.Context(), h.statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+	return jobs.NewStore(reopened)
 }

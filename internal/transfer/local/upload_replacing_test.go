@@ -275,10 +275,16 @@ func TestReplacingALargeObjectPreservesOutsideReferences(t *testing.T) {
 	seed(mock, "media_segments", "subject/run/0002", "89abcdef")
 	// The predecessor: a dynamic manifest over that prefix.
 	mock.PutObject("media", "docs/object", swifttest.Object{Manifest: "media_segments/subject/run/"})
-	// Two outside objects nobody in this job selected, over the same
-	// segments. A reader of the predecessor could have made either.
+	// Two outside objects nobody in this job selected, over exactly the
+	// segments the predecessor named. A reader of the predecessor could
+	// have made either, because the prefix is published in the
+	// predecessor's own header; an alias over its own private copies would
+	// survive the deletion of every one of the predecessor's parts and
+	// prove nothing.
 	mock.PutObject("media", "outside/dlo", swifttest.Object{Manifest: "media_segments/subject/run/"})
-	stageStatic(t, mock, "media", "outside/slo", "01234567", "89abcdef")
+	aliasStatic(t, mock, "media", "outside/slo",
+		segmentRef{"media_segments", "subject/run/0001", "01234567"},
+		segmentRef{"media_segments", "subject/run/0002", "89abcdef"})
 
 	witness := uploadWitness(t, mock)
 	before := uploadSnapshot(t, witness)
@@ -316,16 +322,35 @@ func TestReplacingALargeObjectPreservesOutsideReferences(t *testing.T) {
 
 	// Nothing was removed. Both outside objects still assemble their own
 	// bytes, which is the property that makes retention the safe answer.
+	// Reported rather than fatal, so one deletion shows every promise it
+	// broke instead of only the first.
 	for _, name := range []string{"outside/dlo", "outside/slo"} {
 		body, _, err := s.OpenObject(t.Context(), "media", name)
 		if err != nil {
-			t.Fatalf("an outside object stopped being readable: %s: %v", name, err)
+			t.Errorf("an outside object stopped being readable: %s: %v", name, err)
+			continue
 		}
 		bytes, readErr := io.ReadAll(body)
 		_ = body.Close()
 		if readErr != nil || string(bytes) != "0123456789abcdef" {
-			t.Fatalf("an outside object lost its backing data: %s: %q %v", name, bytes, readErr)
+			t.Errorf("an outside object lost its backing data: %s: %q %v", name, bytes, readErr)
 		}
+	}
+	// And every leaf the predecessor named is still its own object. This
+	// mock assembles a static manifest's bytes when the manifest is written
+	// and serves them from that copy, so on this fixture the byte check
+	// above cannot see a deleted segment behind the static alias; the
+	// leaves are what can, and on real Swift the bytes are too.
+	if len(recorded[0].Fragments.Names) != 2 {
+		t.Fatalf("the inventory did not name the segments to check: %+v", recorded[0].Fragments)
+	}
+	for _, fragment := range recorded[0].Fragments.Names {
+		leaf, _, err := s.OpenObject(t.Context(), fragment.Container, fragment.Name)
+		if err != nil {
+			t.Errorf("a named segment stopped being an object: %s/%s: %v", fragment.Container, fragment.Name, err)
+			continue
+		}
+		_ = leaf.Close()
 	}
 	after := uploadSnapshot(t, witness)
 	// The replaced name is the only thing that changed.
@@ -516,4 +541,34 @@ func TestReplacingADynamicManifestBoundsItsInventory(t *testing.T) {
 	if inventory.Prefix != "media_segments/subject/run/" {
 		t.Errorf("a truncated record must keep the prefix it can be listed from: %q", inventory.Prefix)
 	}
+}
+
+// segmentRef is one existing segment object an alias manifest names.
+type segmentRef struct{ container, name, content string }
+
+// aliasStatic writes a static manifest over segments that ALREADY exist,
+// so the alias shares the identities it names rather than private copies of
+// their bytes. stageStatic seeds its own parts, which is right for staging
+// and wrong for an alias: an alias over its own parts survives the deletion
+// of everything it was supposed to be sharing.
+func aliasStatic(t *testing.T, mock *swifttest.Server, container, name string, segments ...segmentRef) {
+	t.Helper()
+	var data []byte
+	var etags, manifest strings.Builder
+	manifest.WriteString("[")
+	for i, segment := range segments {
+		if i > 0 {
+			manifest.WriteString(",")
+		}
+		data = append(data, segment.content...)
+		etags.WriteString(md5hex(segment.content))
+		fmt.Fprintf(&manifest, `{"name":"/%s/%s","hash":%q,"bytes":%d}`,
+			segment.container, segment.name, md5hex(segment.content), len(segment.content))
+	}
+	manifest.WriteString("]")
+	tag := md5hex(etags.String())
+	mock.PutObject(container, name, swifttest.Object{
+		Bytes: int64(len(data)), Data: data, SLO: true, ETag: `"` + tag + `"`,
+		SLOEtag: tag, SLOManifestJSON: manifest.String(), ContentType: "application/octet-stream",
+	})
 }
