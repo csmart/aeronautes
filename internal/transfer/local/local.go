@@ -41,6 +41,11 @@ type UploadItem struct {
 	Name  string `json:"name"`
 	Size  int64  `json:"size"`
 	Route string `json:"route"` // "rclone" | "native"
+	// Replaces marks a name the preflight found live and admitted anyway,
+	// because the caller had the operator's acknowledgement for it
+	// (ADR 0081 decision 1). Only PreflightUploadReplacing sets it, and
+	// only the publication of such a name may drop its conditional create.
+	Replaces bool `json:"replaces,omitempty"`
 }
 
 // UploadPreflight is the complete pre-write report.
@@ -73,10 +78,29 @@ func validUploadPath(path string) bool {
 // PreflightUpload maps the selected files onto container/prefix and
 // reports every problem before anything is written: unreadable or
 // non-regular paths, duplicate basenames in the selection, and names
-// already live at the destination (v1 refuses upload-overwrites). The
-// engine writes only into the job staging namespace and each name
-// commits natively with a conditional create (§28.6, Upload).
+// already live at the destination, which it refuses. The engine writes
+// only into the job staging namespace and each name commits natively with
+// a conditional create (§28.6, Upload).
 func PreflightUpload(ctx context.Context, dst *swiftcontrol.Session, container, prefix string, paths []string) (*UploadPreflight, error) {
+	return preflightUpload(ctx, dst, container, prefix, paths, false)
+}
+
+// PreflightUploadReplacing is the same report for a caller that holds the
+// operator's acknowledgement of an overwrite (ADR 0081 decision 1): a name
+// already live becomes an item to replace rather than a rejecting problem,
+// and is still reported so the operator sees what will be replaced.
+//
+// It is a separate entry point rather than a parameter on purpose. Every
+// other caller keeps the behaviour it had, and none of them can reach the
+// replacing behaviour by passing a value: reaching it means naming it, and
+// the only caller that names it is the admission that raised the
+// confirmation.
+func PreflightUploadReplacing(ctx context.Context, dst *swiftcontrol.Session, container, prefix string, paths []string) (*UploadPreflight, error) {
+	return preflightUpload(ctx, dst, container, prefix, paths, true)
+}
+
+func preflightUpload(ctx context.Context, dst *swiftcontrol.Session, container, prefix string, paths []string,
+	replacing bool) (*UploadPreflight, error) {
 	if prefix != "" && !strings.HasSuffix(prefix, "/") {
 		return nil, fmt.Errorf("prefix %q must be empty or end with '/'", prefix)
 	}
@@ -110,12 +134,23 @@ func PreflightUpload(ctx context.Context, dst *swiftcontrol.Session, container, 
 		}
 		seen[name] = path
 
+		live := false
 		if _, err := dst.ObjectDetail(ctx, container, name); err == nil {
+			if !replacing {
+				report.Problems = append(report.Problems, Problem{
+					Name: name, Kind: "exists",
+					Detail: "already live at the destination; v1 upload never overwrites", Reject: true,
+				})
+				continue
+			}
+			// Admitted, and still reported: the operator acknowledged
+			// replacing what is there, so the collision is what they asked
+			// about rather than a reason to stop (ADR 0081 decision 1).
+			live = true
 			report.Problems = append(report.Problems, Problem{
 				Name: name, Kind: "exists",
-				Detail: "already live at the destination; v1 upload never overwrites", Reject: true,
+				Detail: "already live at the destination; this upload will replace it",
 			})
-			continue
 		} else if !swiftcontrol.IsNotFound(err) {
 			return nil, err
 		}
@@ -124,7 +159,8 @@ func PreflightUpload(ctx context.Context, dst *swiftcontrol.Session, container, 
 		if plan.RcloneUnsafe(name) {
 			route = "native"
 		}
-		report.Items = append(report.Items, UploadItem{Path: path, Name: name, Size: info.Size(), Route: route})
+		report.Items = append(report.Items, UploadItem{
+			Path: path, Name: name, Size: info.Size(), Route: route, Replaces: live})
 		report.TotalBytes += info.Size()
 	}
 	return report, nil
