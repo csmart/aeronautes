@@ -333,3 +333,87 @@ func TestReplacingALargeObjectPreservesOutsideReferences(t *testing.T) {
 		t.Fatalf("replacing a manifest disturbed something else: %s", diff)
 	}
 }
+
+// ADR 0081 decision 5: a static manifest's entries are exact, and the
+// record says which of them name something other than a whole remote
+// object. A top-level list is not a backing-object graph.
+func TestReplacingAStaticManifestInventoriesItsShapes(t *testing.T) {
+	s, mock := session(t)
+	mock.AddContainer("media_segments", "standard")
+	seed(mock, "media_segments", "parts/0001", "01234567")
+	seed(mock, "media_segments", "parts/0002", "89abcdef")
+	// A manifest naming a whole object, an inline entry, a ranged entry and
+	// a nested manifest: four entries, only one of which is a whole remote
+	// part this inventory can name.
+	mock.PutObject("media", "docs/object", swifttest.Object{
+		SLO: true, Bytes: 16, ETag: `"` + md5hex(md5hex("01234567")+md5hex("89abcdef")) + `"`,
+		Data: []byte("0123456789abcdef"),
+		SLOManifestJSON: `[` +
+			`{"name":"/media_segments/parts/0001","hash":"` + md5hex("01234567") + `","bytes":8},` +
+			`{"data":"aGVsbG8="},` +
+			`{"name":"/media_segments/parts/0002","hash":"` + md5hex("89abcdef") + `","bytes":8,"range":"0-3"},` +
+			`{"name":"/media_segments/parts/0002","hash":"` + md5hex("89abcdef") + `","bytes":8,"sub_slo":true}]`,
+	})
+	detail, err := s.ObjectDetail(t.Context(), "media", "docs/object")
+	if err != nil {
+		t.Fatal(err)
+	}
+	inventory := fragmentInventory(t.Context(), s, "media", "docs/object", detail)
+	if inventory.Unread != "" {
+		t.Fatalf("the static manifest was not inventoried: %q", inventory.Unread)
+	}
+	if !inventory.Complete {
+		t.Error("a static manifest's own list is exact and should say so")
+	}
+	if inventory.Prefix != "" {
+		t.Errorf("a static manifest has no prefix to list: %q", inventory.Prefix)
+	}
+	// Three object entries, one of them ranged and one nested, plus one
+	// inline entry that names no remote object at all.
+	if len(inventory.Names) != 3 || inventory.Inline != 1 || inventory.Ranged != 1 || inventory.Nested != 1 {
+		t.Fatalf("the inventory does not distinguish the entry shapes: %+v", inventory)
+	}
+}
+
+// ADR 0081 decision 7's narrower promise: an unchanged predecessor is
+// promised only where the replacement was not attempted or is proven
+// refused. Where it landed, or where its outcome is unknown, the record
+// reports that and claims no rollback.
+func TestReplacementOutcomesAreNotRollbackClaims(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		result uploadResult
+		// unresolved says the outcome is one the route must not describe as
+		// leaving the predecessor whole.
+		unresolved bool
+	}{
+		{"a publication that was never attempted", uploadFailed(transfercopy.EffectNotAttempted,
+			transfercopy.StageSourceRead, transfercopy.CodeIO, "native-open", errors.New("the source could not be opened")), false},
+		{"a publication proven refused by its digest", uploadFailed(transfercopy.EffectUnresolved,
+			transfercopy.StageCommit, transfercopy.CodeUnverified, "native-put", errors.New("the store refused it")), true},
+		{"a publication whose response was lost", uploadFailed(transfercopy.EffectUnresolved,
+			transfercopy.StageCommit, transfercopy.CodeIO, "native-put", errors.New("the response was lost")), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// The contract's distinction is carried by the effect, which is
+			// what the item record states: not_attempted means nothing
+			// left this process, and unresolved means the outcome is not
+			// known and must not be reported as a rollback.
+			if tc.unresolved && tc.result.Effect != transfercopy.EffectUnresolved {
+				t.Fatalf("an outcome that may have landed is not unresolved: %+v", tc.result.Observation)
+			}
+			if !tc.unresolved && tc.result.Effect != transfercopy.EffectNotAttempted {
+				t.Fatalf("an outcome that never left is not not_attempted: %+v", tc.result.Observation)
+			}
+			run := &uploadRun{report: &Report{}}
+			if err := run.observe(UploadItem{Name: "docs/object", Replaces: true}, tc.result); err != nil {
+				t.Fatalf("observing: %v", err)
+			}
+			// Either way nothing is counted as a replacement, because none
+			// was witnessed.
+			if run.report.Replaced != 0 {
+				t.Fatalf("an unwitnessed publication was counted as a replacement: %+v", run.report)
+			}
+		})
+	}
+}
