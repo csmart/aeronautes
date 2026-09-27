@@ -25,6 +25,13 @@ func WireFilePicker(s *TransferService, picker FilePicker) {
 	s.setFilePicker(picker)
 }
 
+// WireOverwriteConfirmer attaches the shell's native confirmation for an
+// upload that would replace existing objects (ADR 0081 decision 2). A
+// service without one refuses to replace anything.
+func WireOverwriteConfirmer(s *TransferService, confirmer OverwriteConfirmer) {
+	s.setOverwriteConfirmer(confirmer)
+}
+
 // WireConfirmer attaches the shell's native confirmation for public
 // read ACLs (ADR 0073 option B).
 func WireConfirmer(s *MutateService, confirmer PublicACLConfirmer) {
