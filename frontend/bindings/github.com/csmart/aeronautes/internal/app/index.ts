@@ -65,6 +65,7 @@ export type {
     JobItemLocationDTO,
     JobItemObservationDTO,
     JobItemPageDTO,
+    JobItemPredecessorDTO,
     JobItemTotalsDTO,
     LicenseEntry,
     ListingRowDTO,

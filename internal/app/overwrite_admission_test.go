@@ -2,14 +2,22 @@ package app
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/csmart/aeronautes/internal/audit"
+	"github.com/csmart/aeronautes/internal/db"
+	"github.com/csmart/aeronautes/internal/jobs"
+	"github.com/csmart/aeronautes/internal/swifttest"
 )
 
 // sentTagForFixture is the entity tag of the bytes the fixture's files
@@ -350,4 +358,173 @@ func TestAcknowledgedUploadRecordsWhatItSawBeforeReplacing(t *testing.T) {
 	if strings.Contains(found.Summary, sentTagForFixture) {
 		t.Errorf("the record names the bytes that replaced rather than the ones replaced: %q", found.Summary)
 	}
+}
+
+// seedStaticLargeObject puts a static manifest at name over two segments,
+// with one inline entry so the record can be shown distinguishing an entry
+// that has a remote part from one that does not.
+func seedStaticLargeObject(t *testing.T, h *harness, container, name string) []jobs.ItemFragment {
+	t.Helper()
+	h.mock.AddContainer(container+"_segments", "standard")
+	var parts []jobs.ItemFragment
+	var digests string
+	for i, content := range []string{"01234567", "89abcdef"} {
+		part := fmt.Sprintf("%s/%07d", name, i+1)
+		seedObject(h.mock, container+"_segments", part, content, nil)
+		parts = append(parts, jobs.ItemFragment{Container: container + "_segments", Object: part})
+		digests += md5of(content)
+	}
+	h.mock.PutObject(container, name, swifttest.Object{
+		SLO: true, Bytes: 16, ETag: `"` + md5of(digests) + `"`, Data: []byte("0123456789abcdef"),
+		SLOManifestJSON: `[` +
+			`{"name":"/` + parts[0].Container + `/` + parts[0].Object + `","hash":"` + md5of("01234567") + `","bytes":8},` +
+			`{"data":"aGVsbG8="},` +
+			`{"name":"/` + parts[1].Container + `/` + parts[1].Object + `","hash":"` + md5of("89abcdef") + `","bytes":8}]`,
+	})
+	return parts
+}
+
+func md5of(content string) string {
+	sum := md5.Sum([]byte(content))
+	return hex.EncodeToString(sum[:])
+}
+
+// ADR 0081 decision 5: a replaced manifest's segment NAMES are durable, and
+// durable before the replacement, because afterwards the manifest that held
+// them is gone and a count cannot tell the explicit, force-gated cleanup
+// which objects it would be clearing.
+func TestReplacingALargeObjectRecordsItsSegmentNamesDurably(t *testing.T) {
+	f := newOverwriteFixture(t)
+	parts := seedStaticLargeObject(t, f.h, "replaceable", "live/taken")
+	f.tag = f.liveTag(t)
+	// Read at the moment the replacing publication lands: the record has to
+	// be there already, because after it the manifest cannot be read again.
+	var recordedBeforePublication atomic.Int64
+	f.h.mock.AfterRequest = func(method, path string) {
+		if method != "PUT" || !strings.HasSuffix(path, "/replaceable/live/taken") {
+			return
+		}
+		var rows int64
+		if err := f.h.db.Reader().QueryRowContext(context.Background(),
+			`SELECT COUNT(*) FROM job_item_predecessor_fragments`).Scan(&rows); err != nil {
+			t.Errorf("reading the record during the publication: %v", err)
+			return
+		}
+		recordedBeforePublication.Store(rows)
+	}
+	f.h.transfer.setOverwriteConfirmer(&recordingOverwriteConfirmer{yes: true})
+	id, err := f.h.transfer.StartUpload(t.Context(), f.request(true))
+	if err != nil || id == "" {
+		t.Fatalf("start: %q %v", id, err)
+	}
+	job := awaitTerminal(t, f.h, id)
+	if job.State != "complete" {
+		t.Fatalf("the replacing job did not complete: %+v", job)
+	}
+	if got := f.liveTag(t); got != sentTagForFixture {
+		t.Fatalf("the manifest was not replaced: %q, was %q", got, f.tag)
+	}
+	if got := recordedBeforePublication.Load(); got != int64(len(parts)) {
+		t.Fatalf("%d segment names were recorded when the publication landed, not %d", got, len(parts))
+	}
+
+	// The names, read back after the job reached a terminal state, and then
+	// through a store that never saw them written, on the same file opened
+	// again: what a cleanup would read is on disk.
+	for _, source := range []struct {
+		name  string
+		store *jobs.Store
+	}{
+		{"the running store", f.h.transfer.jobs},
+		{"a reopened store", reopenedJobStore(t, f.h)},
+	} {
+		t.Run(source.name, func(t *testing.T) {
+			read, ok, err := source.store.ReadPredecessor(t.Context(), id, "live/taken")
+			if err != nil || !ok {
+				t.Fatalf("read back: ok=%v %v", ok, err)
+			}
+			if !reflect.DeepEqual(read.Fragments, parts) {
+				t.Fatalf("the record names %+v, not the segments the manifest named %+v", read.Fragments, parts)
+			}
+			if read.Class != "slo" || !read.Exact || read.Counted != len(parts) || read.Named != len(parts) {
+				t.Fatalf("the record does not describe the manifest it read: %+v", read)
+			}
+			// The inline entry is counted as a shape and never named, because
+			// it lived inside the manifest that was replaced.
+			if read.Inline != 1 {
+				t.Errorf("the inline entry was not recorded as one: %+v", read)
+			}
+			if read.ETag != strings.Trim(f.tag, `"`) {
+				t.Errorf("the record names entity tag %q, not the predecessor's %q", read.ETag, f.tag)
+			}
+			// An item that replaced nothing has no such record.
+			if _, ok, err := source.store.ReadPredecessor(t.Context(), id, "live/free"); ok || err != nil {
+				t.Errorf("an item that replaced nothing carries a predecessor: ok=%v %v", ok, err)
+			}
+		})
+	}
+
+	// And the public item page states the same record without carrying the
+	// names, so a page stays bounded by its item limit.
+	page, err := f.h.jobsSvc.Items(t.Context(), f.bookmark, id, "", 10)
+	if err != nil || page.Status != "available" {
+		t.Fatalf("items: %+v %v", page, err)
+	}
+	var replaced, plain int
+	for _, item := range page.Items {
+		if item.Key == "live/taken" {
+			replaced++
+			if item.Predecessor == nil || item.Predecessor.Named != len(parts) ||
+				item.Predecessor.Counted != len(parts) || item.Predecessor.Inline != 1 ||
+				!item.Predecessor.Present || !item.Predecessor.Exact || item.Predecessor.Class != "slo" {
+				t.Fatalf("the public item does not state what was replaced: %+v", item.Predecessor)
+			}
+			continue
+		}
+		plain++
+		if item.Predecessor != nil {
+			t.Errorf("an item that replaced nothing states a predecessor: %+v", item.Predecessor)
+		}
+	}
+	if replaced != 1 || plain != 1 {
+		t.Fatalf("the page does not hold both items: replaced=%d plain=%d", replaced, plain)
+	}
+
+	// The trail says the same thing in one sentence, and does not claim the
+	// inline entry survived: it had no remote part to retain.
+	events, err := f.h.auditSvc.audit.List(t.Context(), audit.Query{Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var summary string
+	for _, event := range events {
+		if event.Operation == "object.upload.replace" {
+			summary = event.Summary
+		}
+	}
+	if summary == "" {
+		t.Fatal("the trail does not record the replacement at all")
+	}
+	for _, want := range []string{"it named 2 segments", "1 inline",
+		"every segment it named was retained and none was removed",
+		"its inline data went with the manifest because it had no remote part"} {
+		if !strings.Contains(summary, want) {
+			t.Errorf("the summary lacks %q: %s", want, summary)
+		}
+	}
+	if strings.Contains(summary, "every one of them was retained") {
+		t.Errorf("the summary claims every counted entry survived: %s", summary)
+	}
+}
+
+// reopenedJobStore opens the harness's database file again, so a record can
+// be read through a store that never saw it written.
+func reopenedJobStore(t *testing.T, h *harness) *jobs.Store {
+	t.Helper()
+	reopened, err := db.Open(t.Context(), h.dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+	return jobs.NewStore(reopened)
 }

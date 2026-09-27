@@ -2,9 +2,11 @@ package local
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -415,5 +417,103 @@ func TestReplacementOutcomesAreNotRollbackClaims(t *testing.T) {
 				t.Fatalf("an unwitnessed publication was counted as a replacement: %+v", run.report)
 			}
 		})
+	}
+}
+
+// Finding: a dynamic manifest's segments may sit below child paths, and the
+// default delimiter view groups everything under a child prefix into one
+// pseudo-directory row that names no object. Listed that way, a manifest
+// whose parts are nested is inventoried as holding nothing at all, which
+// would report space as accounted for that nothing had accounted for.
+func TestReplacingADynamicManifestInventoriesNestedParts(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		parts []string
+	}{
+		{name: "flat", parts: []string{"subject/run/0001", "subject/run/0002"}},
+		{name: "nested", parts: []string{"subject/run/a/0001", "subject/run/b/0002"}},
+		{name: "mixed", parts: []string{"subject/run/0001", "subject/run/a/0002", "subject/run/a/b/0003"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, mock := session(t)
+			mock.AddContainer("media_segments", "standard")
+			for _, part := range tc.parts {
+				seed(mock, "media_segments", part, "01234567")
+			}
+			mock.PutObject("media", "docs/object", swifttest.Object{Manifest: "media_segments/subject/run/"})
+			detail, err := s.ObjectDetail(t.Context(), "media", "docs/object")
+			if err != nil {
+				t.Fatal(err)
+			}
+			inventory := fragmentInventory(t.Context(), s, "media", "docs/object", detail)
+			if inventory.Unread != "" {
+				t.Fatalf("the prefix was not listed: %q", inventory.Unread)
+			}
+			var named []string
+			for _, fragment := range inventory.Names {
+				if fragment.Container != "media_segments" {
+					t.Errorf("a segment was named in the wrong container: %+v", fragment)
+				}
+				named = append(named, fragment.Name)
+			}
+			slices.Sort(named)
+			want := slices.Clone(tc.parts)
+			slices.Sort(want)
+			if !slices.Equal(named, want) {
+				t.Fatalf("the inventory named %v, not %v", named, want)
+			}
+			if inventory.Counted != len(tc.parts) || inventory.Truncated() {
+				t.Errorf("the count does not match the names: %+v", inventory)
+			}
+			// A listing is a lower bound whatever shape it has: an
+			// eventually consistent store may omit a segment that exists.
+			if inventory.Complete {
+				t.Error("a listed prefix was reported as the exact set")
+			}
+			if inventory.Prefix != "media_segments/subject/run/" {
+				t.Errorf("the record lost the prefix that stays listable: %q", inventory.Prefix)
+			}
+		})
+	}
+}
+
+// K-PERF-001: one replacement must not size its memory to a remote prefix.
+// Past the cap the entries are counted and not named, and the record says
+// so rather than reporting the shorter list as the whole of it. The prefix
+// is what keeps the truncated case recoverable: it is still listable after
+// the replacement, which is why this is the only case the cap can truncate.
+func TestReplacingADynamicManifestBoundsItsInventory(t *testing.T) {
+	s, mock := session(t)
+	mock.AddContainer("media_segments", "standard")
+	// More parts than the cap, and more than one server page, so the bound
+	// is proven against a listing that pages rather than one that fits.
+	parts := MaxNamedFragments + 37
+	for i := range parts {
+		mock.PutObject("media_segments", fmt.Sprintf("subject/run/%06d", i), swifttest.Object{Bytes: 0})
+	}
+	mock.PutObject("media", "docs/object", swifttest.Object{Manifest: "media_segments/subject/run/"})
+	detail, err := s.ObjectDetail(t.Context(), "media", "docs/object")
+	if err != nil {
+		t.Fatal(err)
+	}
+	inventory := fragmentInventory(t.Context(), s, "media", "docs/object", detail)
+	if inventory.Unread != "" {
+		t.Fatalf("the prefix was not listed: %q", inventory.Unread)
+	}
+	if len(inventory.Names) != MaxNamedFragments {
+		t.Fatalf("the inventory held %d names, not the cap of %d", len(inventory.Names), MaxNamedFragments)
+	}
+	if inventory.Counted != parts || !inventory.Truncated() {
+		t.Fatalf("the count is not the whole of what was read: counted=%d of %d", inventory.Counted, parts)
+	}
+	// The names it does hold are the first ones it read, in order, so the
+	// record is a prefix of the listing and not an arbitrary sample.
+	for i, fragment := range inventory.Names {
+		if want := fmt.Sprintf("subject/run/%06d", i); fragment.Name != want {
+			t.Fatalf("name %d is %q, not %q", i, fragment.Name, want)
+		}
+	}
+	if inventory.Prefix != "media_segments/subject/run/" {
+		t.Errorf("a truncated record must keep the prefix it can be listed from: %q", inventory.Prefix)
 	}
 }

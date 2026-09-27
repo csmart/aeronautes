@@ -27,6 +27,11 @@ type UploadRecorder struct {
 // admits, the object actually replaced may not be this one, so it is named
 // as what was seen and never as what was replaced (ADR 0081 decision 7).
 type ObservedPredecessor struct {
+	// Present says something was read at the name. It is false when the
+	// name held nothing at that moment although the preflight found it
+	// live, which is what the race this contract admits looks like from
+	// here, and it is stated rather than inferred from empty facts.
+	Present      bool
 	ETag         string
 	Length       int64
 	LastModified time.Time
@@ -41,6 +46,17 @@ type ObservedPredecessor struct {
 	Fragments FragmentInventory
 }
 
+// MaxNamedFragments is how many segment names one inventory holds.
+//
+// A dynamic manifest's prefix can hold an arbitrary number of objects, and
+// recording one replacement must not size its memory to a remote prefix
+// (K-PERF-001), so entries past the cap are counted and not named. The cap
+// truncates only the case that stays recoverable: a dynamic manifest's
+// prefix is recorded and can be listed again afterwards, while a static
+// manifest's list is the one that cannot be read again and is itself
+// bounded by the manifest object the inventory already read whole.
+const MaxNamedFragments = 2048
+
 // FragmentInventory is what a replaced manifest named, with the reasons it
 // is not a complete account of what backs the object. A top-level list is
 // not a backing-object graph: an inline entry has no remote part at all, a
@@ -52,18 +68,42 @@ type FragmentInventory struct {
 	// Prefix is the dynamic manifest's container and prefix, empty for a
 	// static manifest or a plain object.
 	Prefix string
-	// Names are the segment objects the inventory found, as
-	// "container/name", in the order they were read.
-	Names []string
+	// Names are the segment objects the inventory holds, in the order they
+	// were read, at most MaxNamedFragments of them.
+	Names []Fragment
+	// Counted is how many segment entries were read, which exceeds
+	// len(Names) when the cap stopped naming them.
+	Counted int
 	// Inline, Ranged and Nested count the static entries that are not
 	// simple whole-object remote parts.
 	Inline, Ranged, Nested int
 	// Complete says the inventory is the exact set the manifest named. A
-	// static manifest's list is exact; a listed prefix is a lower bound.
+	// static manifest's list is exact; a listed prefix is a lower bound;
+	// and a cap that truncated the names does not make the count wrong,
+	// which is why the two are separate.
 	Complete bool
 	// Unread is why the inventory could not be taken, empty when it was.
 	Unread string
 }
+
+// Fragment is one segment object a replaced manifest named, kept as its two
+// parts because a container and an object name concatenated cannot be split
+// back apart when the object name contains a slash.
+type Fragment struct {
+	Container string
+	Name      string
+}
+
+// add names a segment while the cap allows it and counts it either way.
+func (i *FragmentInventory) add(container, name string) {
+	i.Counted++
+	if len(i.Names) < MaxNamedFragments {
+		i.Names = append(i.Names, Fragment{Container: container, Name: name})
+	}
+}
+
+// Truncated says entries were read that the inventory does not name.
+func (i FragmentInventory) Truncated() bool { return i.Counted > len(i.Names) }
 
 type UploadAdmission struct {
 	Item          UploadItem
