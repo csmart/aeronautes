@@ -82,6 +82,10 @@ type TransferService struct {
 	recommendations func(bookmarkID string) *TransferSettingsDTO
 	// picker is the injected native-dialog seam (nil when headless).
 	picker FilePicker
+	// overwrites asks the operator, on a surface the page cannot draw,
+	// whether an upload may replace what is already at the names it
+	// names (ADR 0081 decision 2); nil refuses.
+	overwrites OverwriteConfirmer
 	// selections holds picker-issued path selections behind tokens.
 	selections selectionStore
 	// destinations holds every active download's destination (ADR 0078).

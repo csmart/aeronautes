@@ -32,6 +32,15 @@ type UploadRequestDTO struct {
 	SelectionToken string `json:"selectionToken"`
 	// Settings are the per-job §44.1 overrides.
 	Settings TransferSettingsDTO `json:"settings"`
+	// AcknowledgeOverwrite says the operator asked for an upload that may
+	// replace what is already at these names (ADR 0081 decision 1).
+	// Without it this route behaves exactly as it did: the preflight
+	// refuses a live name and a collision at commit is a conflict.
+	//
+	// It guards against an accident, not against a hostile page, which
+	// can set it itself. What guards against that is decision 2's native
+	// confirmation, which the backend raises and the page cannot answer.
+	AcknowledgeOverwrite bool `json:"acknowledgeOverwrite"`
 }
 
 // DownloadRequestDTO scopes a prefix download; DestDirToken is the
@@ -82,6 +91,42 @@ type FilePicker interface {
 // setFilePicker wires the shell's dialog implementation.
 func (s *TransferService) setFilePicker(picker FilePicker) {
 	s.picker = picker
+}
+
+// OverwriteConfirmation is what the backend asks about, stated in its own
+// terms rather than the caller's: the bookmark and account suffix it
+// resolved, the container and prefix it resolved, the names it found live,
+// and what it observed about the container keeping versions. Names is the
+// whole set, so the question cannot be asked about fewer names than the
+// job will replace.
+type OverwriteConfirmation struct {
+	// Account is the display name and account suffix the backend resolved,
+	// in the shape the chooser titles already use.
+	Account   string
+	Container string
+	Prefix    string
+	// Names are the live object names this job would replace, in the
+	// order the preflight reported them.
+	Names []string
+	// Versioning is what the container said about keeping versions, as an
+	// observation and not a promise of recovery (ADR 0081 decision 8).
+	Versioning string
+}
+
+// OverwriteConfirmer asks the operator, on a surface the page cannot draw,
+// whether an upload may replace the objects already at those names
+// (ADR 0081 decision 2). It is an injected seam like FilePicker so
+// internal/app stays plain Go (ADR 0011): main.go supplies the shell's
+// native dialog, tests supply answers, and a service with none refuses
+// rather than assumes. It is never reachable as a bridge action, so a page
+// cannot answer its own question.
+type OverwriteConfirmer interface {
+	ConfirmOverwrite(ctx context.Context, about OverwriteConfirmation) (bool, error)
+}
+
+// setOverwriteConfirmer wires the shell's native confirmation.
+func (s *TransferService) setOverwriteConfirmer(confirmer OverwriteConfirmer) {
+	s.overwrites = confirmer
 }
 
 // PickUploadFiles opens the OS multi-file picker and returns a token
@@ -306,7 +351,90 @@ func (s *TransferService) uploadPreflight(ctx context.Context, req UploadRequest
 	if _, err := req.Settings.forDestination(ctx, session); err != nil {
 		return nil, err
 	}
+	if req.AcknowledgeOverwrite {
+		return local.PreflightUploadReplacing(ctx, session, req.Container, req.Prefix, paths)
+	}
 	return local.PreflightUpload(ctx, session, req.Container, req.Prefix, paths)
+}
+
+// confirmOverwrite raises the one native confirmation that authorises
+// replacing what is live, and refuses unless it is answered yes about
+// exactly this plan (ADR 0081 decisions 2, 3 and 4).
+//
+// It is raised after the preflight, so the names it states are the ones
+// this start will replace rather than an earlier guess. The connection is
+// observed either side of the dialog for the same reason the pick is: an
+// answer given about one account must not authorise a write to another.
+func (s *TransferService) confirmOverwrite(ctx context.Context, req UploadRequestDTO,
+	scope selectionScope, preflight *local.UploadPreflight) error {
+	var names []string
+	for _, item := range preflight.Items {
+		if item.Replaces {
+			names = append(names, item.Name)
+		}
+	}
+	if len(names) == 0 {
+		// Acknowledged, but nothing is there to replace. Every name
+		// publishes conditionally, so there is nothing to ask about and
+		// nothing this answer could authorise.
+		return nil
+	}
+	if s.overwrites == nil {
+		return errors.New("replacing an existing object needs the shell's confirmation, and this build has none")
+	}
+	before := s.observeConnection()
+	from, _ := s.pickBinding(ctx, scope)
+	versioning := s.observedVersioning(ctx, req.BookmarkID, req.Container)
+	yes, err := s.overwrites.ConfirmOverwrite(ctx, OverwriteConfirmation{
+		Account: titleText(from, 80), Container: req.Container, Prefix: req.Prefix,
+		Names: names, Versioning: versioning,
+	})
+	if err != nil {
+		return err
+	}
+	if !yes {
+		return errors.New("the replacement was not confirmed; nothing was written")
+	}
+	if after := s.observeConnection(); after != before {
+		return errors.New("the connected account changed while you were answering; start again")
+	}
+	entry, err := s.connections.sessionEntryFor(ctx, scope.bookmarkID)
+	if err != nil {
+		return err
+	}
+	if entry.generation != scope.generation {
+		return errors.New("the account's credentials changed while you were answering; start again")
+	}
+	return nil
+}
+
+// observedVersioning is what the container said about keeping versions,
+// worded as an observation rather than a promise (ADR 0081 decision 8).
+// A container that keeps versions may retain the bytes being replaced;
+// this says the mode and its archive container and stops there, because
+// nothing in this route has read a version back. A HEAD that fails says
+// so rather than reporting "off", since not knowing and knowing there is
+// none are different answers and only one of them is reassuring.
+func (s *TransferService) observedVersioning(ctx context.Context, bookmarkID, container string) string {
+	session, err := s.connections.SessionFor(ctx, bookmarkID)
+	if err != nil {
+		return "unknown: the container could not be read"
+	}
+	detail, err := session.ContainerDetail(ctx, container)
+	if err != nil || detail == nil {
+		return "unknown: the container could not be read"
+	}
+	switch detail.Versioning.Mode {
+	case swiftcontrol.VersioningOff, "":
+		return "none: what is replaced is not kept"
+	default:
+		archive := detail.Versioning.Archive
+		if archive == "" {
+			archive = "an archive it did not name"
+		}
+		return "the container reports " + string(detail.Versioning.Mode) + ", archiving into " + archive +
+			"; this has not been read back"
+	}
 }
 
 // PreflightDownload is the BRIDGE-facing collision report (ADR 0056):
@@ -460,6 +588,11 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 	}
 	if _, err := s.selections.takeFiles(req.SelectionToken, scope); err != nil {
 		return "", err
+	}
+	if req.AcknowledgeOverwrite {
+		if err := s.confirmOverwrite(ctx, req, scope, preflight); err != nil {
+			return "", err
+		}
 	}
 	settings, err := req.Settings.forDestination(ctx, session)
 	if err != nil {
