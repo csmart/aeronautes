@@ -155,6 +155,9 @@ func TestAcknowledgedUploadNeedsAYes(t *testing.T) {
 // replace. Decision 8: it states what the container said about keeping
 // versions, as an observation.
 func TestAcknowledgedUploadAsksAboutTheResolvedPlan(t *testing.T) {
+	// The entity tag of the bytes the fixture's files hold, so the
+	// read-back distinguishes "replaced" from "replaced with anything".
+	const sentTag = "97cbc70467cd15e9c5a28636d2dc962d"
 	f := newOverwriteFixture(t)
 	confirmer := &recordingOverwriteConfirmer{yes: true}
 	f.h.transfer.setOverwriteConfirmer(confirmer)
@@ -162,16 +165,18 @@ func TestAcknowledgedUploadAsksAboutTheResolvedPlan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a confirmed start was refused: %v", err)
 	}
-	// The admission is what this slice adds. The publication still carries
-	// its conditional create, so the confirmed name is refused as a
-	// conflict and the live object is untouched; a later slice is what
-	// makes it replace. Waiting for the job says so rather than leaving it
-	// running under a closing database.
-	if job := awaitTerminal(t, f.h, id); job.State == "complete" {
-		t.Fatalf("the replacement published before its slice: %+v", job.Counters)
+	// A confirmed replacement publishes: both names are copied and
+	// verified, and the one that was live now holds the bytes this job
+	// sent rather than the bytes it replaced.
+	job := awaitTerminal(t, f.h, id)
+	if job.State != "complete" || job.Counters.ObjectsCopied != 2 || job.Counters.ObjectsVerified != 2 ||
+		job.Counters.ObjectsFailed != 0 {
+		t.Fatalf("a confirmed replacement did not publish: %s %+v", job.State, job.Counters)
 	}
-	if got := f.liveTag(t); got != f.tag {
-		t.Fatalf("the live object changed before anything replaced it: %q, was %q", got, f.tag)
+	if got := f.liveTag(t); got == f.tag {
+		t.Fatalf("the live object was not replaced: still %q", got)
+	} else if got != sentTag {
+		t.Fatalf("the live object holds neither what it had nor what was sent: %q", got)
 	}
 	asked := confirmer.questions()
 	if len(asked) != 1 {

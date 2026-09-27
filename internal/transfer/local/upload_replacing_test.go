@@ -1,9 +1,14 @@
 package local
 
 import (
+	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 
+	"github.com/csmart/aeronautes/internal/swifttest"
 	"github.com/csmart/aeronautes/internal/systemtest/oracle"
+	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
 )
 
 // ADR 0081 decision 1: an overwrite happens only when the caller asked for
@@ -67,5 +72,110 @@ func TestPreflightUploadReplacingAdmitsALiveNameOnlyWhenNamed(t *testing.T) {
 	// Neither report writes anything: a preflight is a read.
 	if diff := oracle.Diff(before, uploadSnapshot(t, witness)); !diff.Empty() {
 		t.Fatalf("a preflight changed the account: %s", diff)
+	}
+}
+
+// ADR 0081 decision 6: a replacement drops the conditional that makes a
+// create race-free, because the name existing is the point, and keeps the
+// declared entity tag, so bytes that did not survive the wire are refused
+// by the store with the prior object intact. That is the whole of what an
+// acknowledged overwrite changes about the write.
+func TestNativeReplacementKeepsItsContentBinding(t *testing.T) {
+	const prior = "the bytes already there"
+	for _, tc := range []struct {
+		name    string
+		altered bool
+	}{
+		{"refuses an altered replacement and leaves the prior object", true},
+		{"publishes an unaltered replacement", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := swifttest.New("test:tester", "testing")
+			mock.AddContainer("media", "standard")
+			seed(mock, "media", "docs/object", prior)
+			// The local package's proxy always alters, so the unaltered
+			// control speaks to the store directly.
+			var server *httptest.Server
+			if tc.altered {
+				server = alteringProxy(t, mock, "/v1/AUTH_test/media/docs/object")
+			} else {
+				server = httptest.NewServer(mock)
+				t.Cleanup(server.Close)
+			}
+			session := bindingSession(t, server)
+			path := writeFile(t, t.TempDir(), "object", "the bytes this job planned to send")
+			// The replacing entry point is what admits a live name, and
+			// what marks the item, since this test is the route rather
+			// than the service.
+			preflight, err := PreflightUploadReplacing(t.Context(), session, "media", "docs/", []string{path})
+			if err != nil || preflight.Rejected() || len(preflight.Items) != 1 {
+				t.Fatalf("the replacing preflight did not admit the live name: %+v %v", preflight, err)
+			}
+			item := preflight.Items[0]
+			item.Route = "native"
+			if !item.Replaces {
+				t.Fatal("the replacing preflight did not mark the item")
+			}
+
+			file, err := os.Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result := nativeUpload(t.Context(), session, "media", item, file)
+
+			live, err := session.ObjectDetail(t.Context(), "media", "docs/object")
+			if err != nil {
+				t.Fatalf("the name is gone after a replacement attempt: %v", err)
+			}
+			if tc.altered {
+				if result.Result != transfercopy.ResultFailed || result.Effect != transfercopy.EffectUnresolved ||
+					result.Diagnostic.Stage != transfercopy.StageCommit || result.Diagnostic.Code != transfercopy.CodeUnverified {
+					t.Fatalf("an altered replacement was not refused as an unverified commit: %+v", result.Observation)
+				}
+				if !strings.EqualFold(strings.Trim(live.ETag, `"`), md5hex(prior)) {
+					t.Fatalf("the prior object did not survive a refused replacement: %+v", live)
+				}
+				return
+			}
+			if result.Result != transfercopy.ResultCopied {
+				t.Fatalf("an unaltered replacement was refused: %+v", result.Observation)
+			}
+			if !strings.EqualFold(strings.Trim(live.ETag, `"`), md5hex("the bytes this job planned to send")) {
+				t.Fatalf("the replacement did not take: %+v", live)
+			}
+		})
+	}
+}
+
+// The other half of decision 6, kept honest: an item the admission did NOT
+// mark still carries the conditional, so a create onto a name that became
+// live is a conflict rather than a silent replacement.
+func TestNativeCreateStillRefusesALiveName(t *testing.T) {
+	mock := swifttest.New("test:tester", "testing")
+	mock.AddContainer("media", "standard")
+	seed(mock, "media", "docs/object", "the bytes already there")
+	server := httptest.NewServer(mock)
+	t.Cleanup(server.Close)
+	session := bindingSession(t, server)
+	path := writeFile(t, t.TempDir(), "object", "the bytes this job planned to send")
+	// An item as the ordinary preflight would never produce it for a live
+	// name: unmarked, so the publication keeps its conditional.
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := UploadItem{Path: path, Name: "docs/object", Size: info.Size(), Route: "native"}
+
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := nativeUpload(t.Context(), session, "media", item, file)
+	if result.Result != transfercopy.ResultConflict {
+		t.Fatalf("a create onto a live name was not a conflict: %+v", result.Observation)
+	}
+	live, err := session.ObjectDetail(t.Context(), "media", "docs/object")
+	if err != nil || !strings.EqualFold(strings.Trim(live.ETag, `"`), md5hex("the bytes already there")) {
+		t.Fatalf("a refused create changed the live object: %+v %v", live, err)
 	}
 }

@@ -260,13 +260,33 @@ func localDigest(path string) (string, error) {
 	return hex.EncodeToString(sum.Sum(nil)), nil
 }
 
+// publishHeaders are the conditions a publication carries. A create keeps
+// the conditional that makes it race-free: the store refuses when the name
+// exists and the first writer wins. A replacement drops it, because the
+// name existing is the point, and that is the whole of what an
+// acknowledged overwrite changes about the write (ADR 0081 decision 6).
+//
+// The declared entity tag is kept either way, wherever the route declares
+// one, so a replacement whose bytes did not survive the wire is refused by
+// the store with the prior object intact, as measured.
+func publishHeaders(item UploadItem, declared string) map[string]string {
+	headers := map[string]string{}
+	if declared != "" {
+		headers["ETag"] = declared
+	}
+	if !item.Replaces {
+		headers["If-None-Match"] = "*"
+	}
+	return headers
+}
+
 func nativeUpload(ctx context.Context, dst *swiftcontrol.Session, container string, item UploadItem, file localSource) (result uploadResult) {
 	defer func() { result.addIssue(transfercopy.StageSourceRead, "native-close", file.Close()) }()
 	declared, err := heldDigest(file)
 	if err != nil {
 		return uploadFailed(transfercopy.EffectNotAttempted, transfercopy.StageSourceRead, transfercopy.CodeIO, "native-digest", err)
 	}
-	headers := map[string]string{"If-None-Match": "*", "ETag": declared}
+	headers := publishHeaders(item, declared)
 	if _, err := dst.PutObject(ctx, container, item.Name, file, "application/octet-stream", headers); err != nil {
 		if swiftcontrol.IsPreconditionFailed(err) {
 			return uploadConflict("native-put", err)
@@ -290,7 +310,11 @@ func commitStagedUpload(ctx context.Context, dst *swiftcontrol.Session, containe
 		return uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageStaging, transfercopy.CodeMissing, "stage-verify", fmt.Errorf("staged object missing: %w", err))
 	}
 	if _, err := dst.ObjectDetail(ctx, container, item.Name); err == nil {
-		return uploadConflict("commit-conflict", errors.New("destination appeared since preflight"))
+		// A name that is live is a conflict for a create and the expected
+		// state for a replacement the operator acknowledged.
+		if !item.Replaces {
+			return uploadConflict("commit-conflict", errors.New("destination appeared since preflight"))
+		}
 	} else if !swiftcontrol.IsNotFound(err) {
 		return uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageCommit, transfercopy.CodeUnknown, "commit-rehead", err)
 	}
@@ -337,7 +361,8 @@ func commitStagedUpload(ctx context.Context, dst *swiftcontrol.Session, containe
 		// The manifest body is empty, so it declares no digest of its own:
 		// what binds this publication is the comparison above, over the
 		// segments this manifest names (ADR 0080 decision 3).
-		headers := map[string]string{"X-Object-Manifest": staged.Manifest, "If-None-Match": "*"}
+		headers := publishHeaders(item, "")
+		headers["X-Object-Manifest"] = staged.Manifest
 		if _, err := dst.PutObject(ctx, container, item.Name, strings.NewReader(""), staged.ContentType, headers); err != nil {
 			if swiftcontrol.IsPreconditionFailed(err) {
 				return uploadConflict("commit-conflict", err)
@@ -356,7 +381,7 @@ func commitStagedUpload(ctx context.Context, dst *swiftcontrol.Session, containe
 		// file, so declaring it here binds the publication to those same
 		// bytes as they stream through (ADR 0080 decision 4).
 		_, putErr := dst.PutObject(ctx, container, item.Name, body, staged.ContentType,
-			map[string]string{"If-None-Match": "*", "ETag": declared})
+			publishHeaders(item, declared))
 		closeErr = body.Close()
 		if putErr != nil {
 			result := uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageCommit, transfercopy.CodeIO, "commit-copy", putErr)
