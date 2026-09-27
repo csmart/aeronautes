@@ -262,3 +262,25 @@ func TestAcknowledgedUploadAsksNothingWhenNothingIsLive(t *testing.T) {
 		t.Fatalf("a confirmation was raised with nothing to replace: %+v", asked)
 	}
 }
+
+// ADR 0081 decision 8: a container whose versioning mode this build cannot
+// reason about is refused for overwrite, as ADR 0054 refuses editing it,
+// and the refusal comes before the operator is asked to authorise
+// something the question could not describe.
+func TestAcknowledgedUploadRefusesAVersioningModeItCannotDescribe(t *testing.T) {
+	f := newOverwriteFixture(t)
+	confirmer := &recordingOverwriteConfirmer{yes: true}
+	f.h.transfer.setOverwriteConfirmer(confirmer)
+	// Modern object versioning, which ADR 0054 refuses to edit.
+	f.h.mock.EnableModernVersioning("replaceable")
+	_, err := f.h.transfer.StartUpload(t.Context(), f.request(true))
+	if err == nil || !strings.Contains(err.Error(), "overwrite is refused") {
+		t.Fatalf("an overwrite onto a mode this build cannot describe was admitted: %v", err)
+	}
+	if asked := confirmer.questions(); len(asked) != 0 {
+		t.Fatalf("the operator was asked to authorise a mode the question could not describe: %+v", asked)
+	}
+	if got := f.liveTag(t); got != f.tag {
+		t.Fatalf("the live object changed: %q, was %q", got, f.tag)
+	}
+}
