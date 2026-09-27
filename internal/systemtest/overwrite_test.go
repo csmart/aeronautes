@@ -521,6 +521,89 @@ func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 		}
 	})
 
+	// ADR 0081 decision 8 and its required proof: on a container carrying a
+	// legacy versioning mode the confirmation names that mode and the
+	// archive container, an archived entry exists afterwards, and the
+	// record does not offer the container's versioning state as evidence
+	// about anything.
+	t.Run("names a legacy versioning mode and its archive", func(t *testing.T) {
+		h := makeHarness(t)
+		archive := h.Container(h.Primary, "overwrite-archive")
+		container := h.Container(h.Primary, "overwrite-versioned")
+		h.rawPut(h.Primary, "/"+container, nil, map[string]string{"X-Versions-Location": archive})
+		// A DELETE on a versioned container RESTORES the previous version
+		// rather than removing the object, so the purge the container
+		// helper registered would leave the restored object behind and
+		// then fail on the container itself. Cleanups run in reverse
+		// order of registration, so taking the mode off here happens
+		// first.
+		t.Cleanup(func() {
+			h.rawPut(h.Primary, "/"+container, nil, map[string]string{"X-Remove-Versions-Location": "yes"})
+		})
+		h.Seed(h.Primary, container, "live/taken", []byte("the bytes already there"), nil)
+		priorTag := liveETag(t, h, container, "live/taken")
+
+		confirmer := &serviceConfirmer{yes: true}
+		app.WireOverwriteConfirmer(h.Transfer, confirmer)
+		if _, err := h.Browse.Connect(t.Context(), h.Primary.BookmarkID); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(t.TempDir(), "taken")
+		if err := os.WriteFile(path, []byte("the bytes this job sent"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		id, err := overwriteStart(t, h, container, "live/", []string{path}, true)
+		if err != nil {
+			t.Fatalf("a confirmed replacement on a versioned container was refused: %v", err)
+		}
+		h.AwaitJob(id)
+		job, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if job.State != "complete" {
+			t.Fatalf("the replacement did not publish: %s %+v", job.State, job.Counters)
+		}
+		asked := confirmer.questions()
+		if len(asked) != 1 {
+			t.Fatalf("the confirmation was asked %d times", len(asked))
+		}
+		// The mode as the container reports it, the archive container by
+		// name, and no promise that anything can be recovered from it.
+		for _, want := range []string{"versions_location", archive, "no archived version has been read back"} {
+			if !strings.Contains(asked[0].Versioning, want) {
+				t.Errorf("the question does not state %q: %q", want, asked[0].Versioning)
+			}
+		}
+		if now := liveETag(t, h, container, "live/taken"); now == priorTag {
+			t.Fatal("the object was not replaced")
+		}
+		// The store's own archive, listed raw. The mock does not implement
+		// versioned writes, so this half is the owned fixture's.
+		if h.MockPrimary != nil {
+			t.Log("this store does not archive a replaced object; the archived entry is the owned fixture's half")
+			return
+		}
+		listing, err := rawGet(h.Primary, "/"+archive, "")
+		if err != nil {
+			t.Fatalf("the archive container could not be listed: %v", err)
+		}
+		if !strings.Contains(string(listing), "live/taken") {
+			t.Fatalf("the replaced object was not archived: %q", listing)
+		}
+		// And the record still says only what it observed: the versioning
+		// state is not offered as evidence about references.
+		record := replacementRecord(t, h, container+"/live/taken")
+		if !strings.Contains(record.Summary, priorTag) || !strings.Contains(record.Summary, "may not be that one") {
+			t.Errorf("the record does not name what was seen: %q", record.Summary)
+		}
+		for _, forbidden := range []string{"version", "archive", "recover"} {
+			if strings.Contains(strings.ToLower(record.Summary), forbidden) {
+				t.Errorf("the record offers the container's versioning as evidence: %q", record.Summary)
+			}
+		}
+	})
+
 	t.Run("refuses without an acknowledgement and without a yes", func(t *testing.T) {
 		for _, tc := range []struct {
 			name        string
