@@ -1003,6 +1003,14 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 		// The operator asked for this on 27 September: a job that replaced
 		// objects reports how many, rather than leaving a field named
 		// overwrites reading zero for whoever wires it to a screen later.
+		//
+		// What it counts is narrower than it sounds, and the difference
+		// matters to whoever renders it: verified publications to names the
+		// preflight found live. It is not a count of proven displaced
+		// objects. A racing writer means the object a publication landed on
+		// may not be the one the preflight saw, and a publication that
+		// landed but could not be verified is not counted at all, because
+		// its outcome is unknown rather than witnessed (ADR 0081 decision 7).
 		counters.Overwrites = report.Replaced
 		if version == 0 {
 			counters.ObjectsFailed = int64(len(report.Failures))
