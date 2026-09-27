@@ -197,9 +197,39 @@ func (b *budgetReader) Read(p []byte) (int, error) {
 // and a nested manifest records an aggregate rather than content, so
 // neither can be read this way.
 func (s *Session) SLOManifestDigests(ctx context.Context, container, name string, maxEntries int, maxBytes int64) (digests []SLOSegmentDigest, err error) {
+	return readSLOManifest(ctx, s, container, name, func(body io.Reader, where string) ([]SLOSegmentDigest, error) {
+		return parseSLOManifestDigests(body, maxEntries, maxBytes, where)
+	})
+}
+
+// SLOManifestEntries is the same strictly-read, bounded manifest as
+// SLOManifestDigests, kept as its ORDERED ENTRIES rather than reduced to
+// digests, for a caller that has to record which entry was which.
+//
+// It exists because SLOManifest is a display read: it decodes one array
+// without checking the status, the absence of a Content-Range, a clean
+// end, or any byte bound, so a partial or trailing-garbage response parses
+// as a manifest. That is tolerable for something a person is looking at
+// and not for a durable record of what an operation is about to replace,
+// where a short read would be credited as the exact list (ADR 0081
+// decision 5). A response this build will not read whole is an error here
+// rather than a shorter answer.
+func (s *Session) SLOManifestEntries(ctx context.Context, container, name string, maxEntries int, maxBytes int64) (entries []SLOEntry, err error) {
+	return readSLOManifest(ctx, s, container, name, func(body io.Reader, where string) ([]SLOEntry, error) {
+		return parseSLOManifestEntries(body, maxEntries, maxBytes, where)
+	})
+}
+
+// readSLOManifest performs the manifest GET and the response checks both
+// strict readers share: HTTP 200, no Content-Range, and the body closed
+// with its error joined, because a read that could not be completed
+// cleanly is not evidence.
+func readSLOManifest[T any](ctx context.Context, s *Session, container, name string,
+	parse func(io.Reader, string) (T, error)) (result T, err error) {
+	var zero T
 	credentials, err := s.Credentials(ctx, 0)
 	if err != nil {
-		return nil, err
+		return zero, err
 	}
 	resp, headers, err := s.conn.Call(ctx, credentials.StorageURL, swift.RequestOpts{
 		Container:  container,
@@ -212,7 +242,7 @@ func (s *Session) SLOManifestDigests(ctx context.Context, container, name string
 		if resp != nil && resp.Body != nil {
 			err = errors.Join(err, resp.Body.Close())
 		}
-		return nil, WithTransID(Normalize(err), headers)
+		return zero, WithTransID(Normalize(err), headers)
 	}
 	defer func() { err = errors.Join(err, resp.Body.Close()) }()
 
@@ -224,10 +254,67 @@ func (s *Session) SLOManifestDigests(ctx context.Context, container, name string
 		}
 	}
 	if !complete {
-		return nil, fmt.Errorf("SLO manifest for %s/%s requires HTTP 200 without Content-Range (received HTTP %d)",
+		return zero, fmt.Errorf("SLO manifest for %s/%s requires HTTP 200 without Content-Range (received HTTP %d)",
 			container, name, resp.StatusCode)
 	}
-	return parseSLOManifestDigests(resp.Body, maxEntries, maxBytes, container+"/"+name)
+	return parse(resp.Body, container+"/"+name)
+}
+
+// parseSLOManifestEntries is the bounded, complete-list parse that keeps
+// every entry in its own position, including an unrecognised one: a record
+// of what a manifest named cannot silently drop an entry it did not
+// understand.
+func parseSLOManifestEntries(body io.Reader, maxEntries int, maxBytes int64, where string) ([]SLOEntry, error) {
+	var entries []SLOEntry
+	bounded := &budgetReader{inner: body, budget: maxBytes}
+	fail := func(format string, args ...any) ([]SLOEntry, error) {
+		return nil, fmt.Errorf(format, args...)
+	}
+	budgeted := func(err error, format string, args ...any) ([]SLOEntry, error) {
+		if errors.Is(err, errManifestBudget) {
+			return fail("SLO manifest for %s exceeds %d bytes", where, maxBytes)
+		}
+		return fail(format, args...)
+	}
+	decoder := json.NewDecoder(bounded)
+	decoder.UseNumber()
+	opening, err := decoder.Token()
+	if err != nil {
+		return budgeted(err, "read SLO manifest for %s: %w", where, err)
+	}
+	if opening != json.Delim('[') {
+		return fail("SLO manifest for %s is not an entry list", where)
+	}
+	for decoder.More() {
+		if len(entries) == maxEntries {
+			return fail("SLO manifest for %s lists more than %d entries", where, maxEntries)
+		}
+		var fields map[string]any
+		if err := decoder.Decode(&fields); err != nil {
+			return budgeted(err, "parse SLO manifest entry %d of %s: %w", len(entries), where, err)
+		}
+		entry, err := parseSLOEntry(fields)
+		if err != nil {
+			return fail("SLO manifest entry %d of %s: %w", len(entries), where, err)
+		}
+		entries = append(entries, entry)
+	}
+	if closing, err := decoder.Token(); err != nil || closing != json.Delim(']') {
+		return budgeted(err, "SLO manifest for %s is not a complete entry list", where)
+	}
+	// A clean end, not merely an end: errors.Is would also accept an EOF
+	// joined with a read failure, which is a body that did not finish.
+	if _, err := decoder.Token(); err != io.EOF {
+		switch {
+		case errors.Is(err, errManifestBudget):
+			return fail("SLO manifest for %s exceeds %d bytes", where, maxBytes)
+		case err == nil:
+			return fail("SLO manifest for %s carries trailing content", where)
+		default:
+			return fail("SLO manifest for %s did not end cleanly: %w", where, err)
+		}
+	}
+	return entries, nil
 }
 
 // parseSLOManifestDigests is the bounded parse, separated from the

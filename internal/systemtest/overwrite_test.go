@@ -228,7 +228,7 @@ func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 			}
 		}
 		record := replacementRecord(t, h, container+"/live/taken")
-		for _, want := range []string{"2 segments", "listing may undercount", "none was removed"} {
+		for _, want := range []string{"2 segments", "listing may undercount", "nothing here removes any of them"} {
 			if !strings.Contains(record.Summary, want) {
 				t.Errorf("the record does not say %q: %q", want, record.Summary)
 			}
@@ -259,9 +259,11 @@ func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 		// cleanup would have to read: after the job is terminal, and again
 		// through a store opened on the same file that never saw them
 		// written.
+		// A listing names objects and nothing about how the manifest
+		// referenced them, so each listed member is recorded as a whole one.
 		want := []jobs.ItemFragment{
-			{Container: segments, Object: "subject/run/0001"},
-			{Container: segments, Object: "subject/run/0002"},
+			{Container: segments, Object: "subject/run/0001", Shape: jobs.FragmentWhole},
+			{Container: segments, Object: "subject/run/0002", Shape: jobs.FragmentWhole},
 		}
 		for _, source := range []struct {
 			name  string

@@ -41,9 +41,18 @@ CREATE TABLE job_item_predecessor_fragments (
     -- position is the order the inventory read them in, so the record is
     -- the manifest's own order and not a set.
     position  INTEGER NOT NULL CHECK (position >= 0),
-    container TEXT NOT NULL CHECK (container != ''),
-    object    TEXT NOT NULL CHECK (object != ''),
-    PRIMARY KEY (item_id, position)
+    -- shape is what the entry referenced. It is per entry and not only a
+    -- total, because after the replacement this record is the only thing
+    -- that can say which name was a containing object, which was a
+    -- manifest of its own, and where data carried inside the manifest sat.
+    shape     TEXT NOT NULL CHECK (shape IN ('whole', 'ranged', 'nested', 'ranged_nested', 'inline', 'unknown')),
+    -- An inline or unrecognised entry names no remote object, so it holds
+    -- its position with no name; every other shape names one.
+    container TEXT NOT NULL,
+    object    TEXT NOT NULL,
+    PRIMARY KEY (item_id, position),
+    CHECK ((shape IN ('inline', 'unknown') AND container = '' AND object = '') OR
+           (shape NOT IN ('inline', 'unknown') AND container != '' AND object != ''))
 );
 
 -- An observation of what was there cannot be revised: a second reading

@@ -310,32 +310,38 @@ func fragmentInventory(ctx context.Context, dst *swiftcontrol.Session, container
 	detail *swiftcontrol.ObjectDetail) FragmentInventory {
 	switch detail.Class {
 	case swiftcontrol.ClassSLO:
-		manifest, err := dst.SLOManifest(ctx, container, name)
-		if err != nil || manifest == nil {
-			return FragmentInventory{Unread: "the static manifest could not be read"}
+		// Read strictly and within this build's own bounds. The display
+		// reader accepts a partial response, a ranged one and one with
+		// trailing garbage, any of which would be credited here as the
+		// exact list of what is about to be replaced. A manifest this build
+		// will not read whole is reported as one it could not inventory,
+		// which is the honest answer, because a static list cannot be read
+		// again once the manifest is gone (ADR 0081 decision 5).
+		entries, err := dst.SLOManifestEntries(ctx, container, name, MaxManifestEntries, MaxManifestBytes)
+		if err != nil {
+			return FragmentInventory{Unread: "the static manifest could not be read whole within this build's bounds"}
 		}
 		// A static manifest lists its members exactly, so this set is the
-		// set. What it is not is a graph: the counts say which entries
-		// name something other than a whole remote object.
+		// set, and every entry is recorded in its own position. What it is
+		// not is a graph: each entry says whether it named something other
+		// than a whole remote object.
 		inventory := FragmentInventory{Complete: true}
-		for _, entry := range manifest.Entries {
+		for _, entry := range entries {
 			switch segment := entry.(type) {
 			case swiftcontrol.ObjectSegment:
-				inventory.add(segment.Path.Container, segment.Path.Object)
-				if segment.Range != nil {
-					inventory.Ranged++
-				}
-				if segment.NestedSLO {
-					inventory.Nested++
-				}
+				inventory.record(Fragment{Container: segment.Path.Container, Name: segment.Path.Object,
+					Shape: segmentShape(segment)})
 			case swiftcontrol.InlineDataSegment:
 				// Inline data lives inside the manifest being replaced. It
-				// has no remote part, so it is counted as an entry shape and
-				// never named as something that outlived the manifest.
-				inventory.Inline++
+				// has no remote object at all, so it is recorded as the
+				// shape it is, in its position, and never as a name that
+				// could outlive the manifest.
+				inventory.record(Fragment{Shape: FragmentInline})
 			default:
 				// An entry shape this build does not recognise cannot be
-				// counted as a part it might not be.
+				// counted as a part it might not be, and cannot be dropped
+				// either: its position is part of what the manifest named.
+				inventory.record(Fragment{Shape: FragmentUnknown})
 				inventory.Complete = false
 			}
 		}
@@ -364,12 +370,28 @@ func fragmentInventory(ctx context.Context, dst *swiftcontrol.Session, container
 			if !ok {
 				continue
 			}
-			inventory.add(segmentContainer, object.Name)
+			// A listing names objects and nothing about how the manifest
+			// referenced them, so every listed member is a whole object as
+			// far as this record can say.
+			inventory.recordListed(Fragment{Container: segmentContainer, Name: object.Name, Shape: FragmentWhole})
 		}
 		return inventory
 	default:
 		return FragmentInventory{Complete: true}
 	}
+}
+
+// segmentShape is what one static object entry referenced.
+func segmentShape(segment swiftcontrol.ObjectSegment) FragmentShape {
+	switch {
+	case segment.Range != nil && segment.NestedSLO:
+		return FragmentRangedNested
+	case segment.Range != nil:
+		return FragmentRanged
+	case segment.NestedSLO:
+		return FragmentNested
+	}
+	return FragmentWhole
 }
 
 // publishHeaders are the conditions a publication carries. A create keeps

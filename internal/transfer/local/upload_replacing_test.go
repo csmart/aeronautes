@@ -396,10 +396,146 @@ func TestReplacingAStaticManifestInventoriesItsShapes(t *testing.T) {
 	if inventory.Prefix != "" {
 		t.Errorf("a static manifest has no prefix to list: %q", inventory.Prefix)
 	}
-	// Three object entries, one of them ranged and one nested, plus one
-	// inline entry that names no remote object at all.
-	if len(inventory.Names) != 3 || inventory.Inline != 1 || inventory.Ranged != 1 || inventory.Nested != 1 {
-		t.Fatalf("the inventory does not distinguish the entry shapes: %+v", inventory)
+	// Every entry in its own position, with what it referenced, because
+	// after the replacement this record is the only thing that can say
+	// which name was a containing object and which was a manifest.
+	want := []Fragment{
+		{Container: "media_segments", Name: "parts/0001", Shape: FragmentWhole},
+		{Shape: FragmentInline},
+		{Container: "media_segments", Name: "parts/0002", Shape: FragmentRanged},
+		{Container: "media_segments", Name: "parts/0002", Shape: FragmentNested},
+	}
+	if !slices.Equal(inventory.Names, want) {
+		t.Fatalf("the inventory does not record the entries it read: %+v, want %+v", inventory.Names, want)
+	}
+	if inventory.Counted != 4 || inventory.Inline != 1 || inventory.Ranged != 1 || inventory.Nested != 1 {
+		t.Fatalf("the inventory's totals do not match its entries: %+v", inventory)
+	}
+}
+
+// Finding F4 of db:746: two manifests that name the same objects and produce
+// the same totals, differing only in WHICH entry was ranged, which was
+// nested, and where the inline entry sat. A record of totals cannot tell
+// them apart, and after the replacement nothing else can either.
+func TestReplacingAStaticManifestRecordsWhichEntryWasWhich(t *testing.T) {
+	inventories := map[string]FragmentInventory{}
+	for _, tc := range []struct {
+		name     string
+		manifest string
+		want     []Fragment
+	}{
+		{name: "a ranged first and the inline second", want: []Fragment{
+			{Container: "media_segments", Name: "parts/a", Shape: FragmentRanged},
+			{Shape: FragmentInline},
+			{Container: "media_segments", Name: "parts/b", Shape: FragmentNested},
+		}, manifest: `[` +
+			`{"name":"/media_segments/parts/a","hash":"HA","bytes":8,"range":"0-3"},` +
+			`{"data":"aGVsbG8="},` +
+			`{"name":"/media_segments/parts/b","hash":"HB","bytes":8,"sub_slo":true}]`},
+		{name: "a nested first and the inline last", want: []Fragment{
+			{Container: "media_segments", Name: "parts/a", Shape: FragmentNested},
+			{Container: "media_segments", Name: "parts/b", Shape: FragmentRanged},
+			{Shape: FragmentInline},
+		}, manifest: `[` +
+			`{"name":"/media_segments/parts/a","hash":"HA","bytes":8,"sub_slo":true},` +
+			`{"name":"/media_segments/parts/b","hash":"HB","bytes":8,"range":"0-3"},` +
+			`{"data":"aGVsbG8="}]`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, mock := session(t)
+			mock.AddContainer("media_segments", "standard")
+			seed(mock, "media_segments", "parts/a", "01234567")
+			seed(mock, "media_segments", "parts/b", "89abcdef")
+			manifest := strings.ReplaceAll(tc.manifest, "HA", md5hex("01234567"))
+			manifest = strings.ReplaceAll(manifest, "HB", md5hex("89abcdef"))
+			mock.PutObject("media", "docs/object", swifttest.Object{
+				SLO: true, Bytes: 16, ETag: `"` + md5hex(md5hex("01234567")+md5hex("89abcdef")) + `"`,
+				Data: []byte("0123456789abcdef"), SLOManifestJSON: manifest,
+			})
+			detail, err := s.ObjectDetail(t.Context(), "media", "docs/object")
+			if err != nil {
+				t.Fatal(err)
+			}
+			inventory := fragmentInventory(t.Context(), s, "media", "docs/object", detail)
+			if inventory.Unread != "" {
+				t.Fatalf("the manifest was not inventoried: %q", inventory.Unread)
+			}
+			if !slices.Equal(inventory.Names, tc.want) {
+				t.Fatalf("the record does not say which entry was which: %+v, want %+v", inventory.Names, tc.want)
+			}
+			inventories[tc.name] = inventory
+		})
+	}
+	// The pair is the point: same names, same totals, different records.
+	if len(inventories) != 2 {
+		t.Fatal("both manifests are needed to make the comparison")
+	}
+	var each []FragmentInventory
+	for _, inventory := range inventories {
+		each = append(each, inventory)
+	}
+	first, second := each[0], each[1]
+	if first.Counted != second.Counted || first.Inline != second.Inline ||
+		first.Ranged != second.Ranged || first.Nested != second.Nested {
+		t.Fatalf("the fixture did not produce the same totals: %+v and %+v", first, second)
+	}
+	if slices.Equal(first.Names, second.Names) {
+		t.Fatalf("two different manifests produced the same record: %+v", first.Names)
+	}
+}
+
+// Finding F1 of db:746: a static list is recorded whole or not at all. The
+// cap that a listed prefix needs must never truncate a list that cannot be
+// read again, so a manifest past this build's bound is reported as one it
+// could not inventory rather than as a shorter exact list.
+func TestReplacingAStaticManifestIsWholeOrUnread(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		entries int
+		unread  bool
+	}{
+		{name: "at the bound", entries: MaxManifestEntries},
+		{name: "one past the bound", entries: MaxManifestEntries + 1, unread: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, mock := session(t)
+			mock.AddContainer("media_segments", "standard")
+			seed(mock, "media_segments", "part", "01234567")
+			digest := md5hex("01234567")
+			var manifest strings.Builder
+			manifest.WriteString("[")
+			for i := range tc.entries {
+				if i > 0 {
+					manifest.WriteString(",")
+				}
+				fmt.Fprintf(&manifest, `{"name":"/media_segments/part","hash":%q,"bytes":8}`, digest)
+			}
+			manifest.WriteString("]")
+			mock.PutObject("media", "docs/object", swifttest.Object{
+				SLO: true, Bytes: 8, ETag: `"` + md5hex(digest) + `"`,
+				Data: []byte("01234567"), SLOManifestJSON: manifest.String(),
+			})
+			detail, err := s.ObjectDetail(t.Context(), "media", "docs/object")
+			if err != nil {
+				t.Fatal(err)
+			}
+			inventory := fragmentInventory(t.Context(), s, "media", "docs/object", detail)
+			if tc.unread {
+				if inventory.Unread == "" || inventory.Complete || len(inventory.Names) != 0 || inventory.Counted != 0 {
+					t.Fatalf("a manifest past the bound was credited as an inventory: %+v", inventory)
+				}
+				return
+			}
+			if inventory.Unread != "" {
+				t.Fatalf("a manifest at the bound was not read: %q", inventory.Unread)
+			}
+			// Whole: every entry held, and the count agreeing with them.
+			if len(inventory.Names) != tc.entries || inventory.Counted != tc.entries ||
+				inventory.Truncated() || !inventory.Complete {
+				t.Fatalf("the list was not recorded whole: named=%d counted=%d truncated=%v complete=%v",
+					len(inventory.Names), inventory.Counted, inventory.Truncated(), inventory.Complete)
+			}
+		})
 	}
 }
 
@@ -560,7 +696,7 @@ func TestReplacingADynamicManifestBoundsItsInventory(t *testing.T) {
 	mock.AddContainer("media_segments", "standard")
 	// More parts than the cap, and more than one server page, so the bound
 	// is proven against a listing that pages rather than one that fits.
-	parts := MaxNamedFragments + 37
+	parts := MaxListedFragments + 37
 	for i := range parts {
 		mock.PutObject("media_segments", fmt.Sprintf("subject/run/%06d", i), swifttest.Object{Bytes: 0})
 	}
@@ -573,8 +709,8 @@ func TestReplacingADynamicManifestBoundsItsInventory(t *testing.T) {
 	if inventory.Unread != "" {
 		t.Fatalf("the prefix was not listed: %q", inventory.Unread)
 	}
-	if len(inventory.Names) != MaxNamedFragments {
-		t.Fatalf("the inventory held %d names, not the cap of %d", len(inventory.Names), MaxNamedFragments)
+	if len(inventory.Names) != MaxListedFragments {
+		t.Fatalf("the inventory held %d names, not the cap of %d", len(inventory.Names), MaxListedFragments)
 	}
 	if inventory.Counted != parts || !inventory.Truncated() {
 		t.Fatalf("the count is not the whole of what was read: counted=%d of %d", inventory.Counted, parts)
@@ -665,5 +801,47 @@ func TestReplacementRecordsThePredecessorBeforePublishing(t *testing.T) {
 	}
 	if len(order) != 2 || order[0] != "recorded" || order[1] != "published" {
 		t.Fatalf("the predecessor was not recorded before the publication: %v", order)
+	}
+}
+
+// Finding F2 of db:746: the display manifest reader decodes one array
+// without checking the status, the absence of a Content-Range, a clean end
+// or any byte bound, so a partial or malformed response parses as a
+// manifest. Credited here it would become the durable, exact inventory of
+// something this operation then replaces. Every spoiled shape must be
+// reported as an inventory that could not be taken.
+func TestReplacingAStaticManifestRefusesAnIncompleteResponse(t *testing.T) {
+	for _, fault := range []string{"", "partial", "ranged", "trailing", "truncated"} {
+		name := fault
+		if name == "" {
+			name = "a complete response"
+		}
+		t.Run(name, func(t *testing.T) {
+			s, mock := session(t)
+			mock.AddContainer("media_segments", "standard")
+			seed(mock, "media_segments", "parts/0001", "01234567")
+			digest := md5hex("01234567")
+			mock.PutObject("media", "docs/object", swifttest.Object{
+				SLO: true, Bytes: 8, ETag: `"` + md5hex(digest) + `"`, Data: []byte("01234567"),
+				SLOManifestJSON: `[{"name":"/media_segments/parts/0001","hash":"` + digest + `","bytes":8}]`,
+			})
+			if fault != "" {
+				mock.ManifestReadFault = map[string]string{"media/docs/object": fault}
+			}
+			detail, err := s.ObjectDetail(t.Context(), "media", "docs/object")
+			if err != nil {
+				t.Fatal(err)
+			}
+			inventory := fragmentInventory(t.Context(), s, "media", "docs/object", detail)
+			if fault == "" {
+				if inventory.Unread != "" || !inventory.Complete || len(inventory.Names) != 1 {
+					t.Fatalf("a complete response was not read: %+v", inventory)
+				}
+				return
+			}
+			if inventory.Unread == "" || inventory.Complete || len(inventory.Names) != 0 || inventory.Counted != 0 {
+				t.Fatalf("a %s response was credited as an inventory: %+v", fault, inventory)
+			}
+		})
 	}
 }

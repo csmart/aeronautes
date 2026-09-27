@@ -687,7 +687,9 @@ export interface JobItemDTO {
     "publication": JobItemObservationDTO | null;
 
     /**
-     * Predecessor is set only on an item that published over a live name.
+     * Predecessor is set on an item that was ABOUT to publish over a live
+     * name, read before the attempt. It says nothing about whether the
+     * attempt happened: Execution and Verification do.
      */
     "predecessor": JobItemPredecessorDTO | null;
 }
@@ -718,16 +720,18 @@ export interface JobItemPageDTO {
 }
 
 /**
- * JobItemPredecessorDTO is what was live at an item's destination
- * immediately before the item was published over it (ADR 0081 decision 7).
- * It is an observation and never an outcome: this contract admits a racing
- * writer, so the object actually replaced may not be the one described.
- * 
- * The segment names are deliberately not here. A page is bounded by its
- * item limit and one item can name thousands of segments, so the page
- * states how many were read and how many are held by name, and the names
- * themselves stay in the durable record an explicit cleanup would read
- * (K-PERF-001).
+ * JobItemPredecessorDTO is what was live at an item's destination when this
+ * item was about to be published over it (ADR 0081 decision 7).
+ * It is an observation and never an outcome, in two ways. It is read before
+ * the publication, so a record exists for items whose publication was then
+ * refused, failed or never attempted, and the item's own outcome is the only
+ * thing that says which happened. And where a publication did land, this
+ * contract admits a racing writer, so the object replaced may not be the one
+ * described.
+ * The entries themselves are deliberately not here. A page is bounded by its
+ * item limit and one item can hold thousands of entries, so the page states
+ * how many were read and how many are held, and the entries stay in the
+ * durable record an explicit cleanup would read (K-PERF-001).
  */
 export interface JobItemPredecessorDTO {
     /**
@@ -747,17 +751,19 @@ export interface JobItemPredecessorDTO {
     "prefix": string;
 
     /**
-     * Counted is how many segment entries were read; Named is how many of
-     * them the record holds by name, which is fewer when the per-item cap
-     * truncated them.
+     * Counted is how many entries were read; Named is how many of them the
+     * record holds, which is fewer only for a listed prefix, where the
+     * per-item cap stopped naming them.
      */
     "counted": number;
     "named": number;
 
     /**
-     * Inline, Ranged and Nested count the static entries that are not
-     * simple whole-object remote parts. Inline data had no remote part at
-     * all and went with the replaced manifest.
+     * Inline, Ranged and Nested total the entries that are not simple
+     * whole-object remote parts. Which entry had which shape is in the
+     * record itself, not here: inline data has no remote object at all, a
+     * ranged entry references a containing object, and a nested entry names
+     * another manifest.
      */
     "inline": number;
     "ranged": number;
@@ -1186,7 +1192,6 @@ export interface UploadRequestDTO {
      * replace what is already at these names (ADR 0081 decision 1).
      * Without it this route behaves exactly as it did: the preflight
      * refuses a live name and a collision at commit is a conflict.
-     * 
      * It guards against an accident, not against a hostile page, which
      * can set it itself. What guards against that is decision 2's native
      * confirmation, which the backend raises and the page cannot answer.
