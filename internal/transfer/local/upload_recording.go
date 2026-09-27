@@ -2,6 +2,7 @@ package local
 
 import (
 	"errors"
+	"time"
 
 	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
 )
@@ -12,6 +13,26 @@ type UploadRecorder struct {
 	Admit   func(UploadAdmission) error
 	Execute func(UploadItem, transfercopy.Observation) error
 	Verify  func(UploadItem, transfercopy.Observation) error
+	// Replacing reports what the commit saw at a name immediately before
+	// publishing over it (ADR 0081 decision 7). It is optional because
+	// only an acknowledged overwrite reaches it, and every caller that
+	// never replaces would otherwise have to supply a hook it cannot
+	// reach. A replacing item with no hook is refused rather than
+	// published unrecorded, which uploadRun.replacing enforces.
+	Replacing func(UploadItem, ObservedPredecessor) error
+}
+
+// ObservedPredecessor is what was at a name just before a replacement was
+// published over it, as the commit read it. In the race this contract
+// admits, the object actually replaced may not be this one, so it is named
+// as what was seen and never as what was replaced (ADR 0081 decision 7).
+type ObservedPredecessor struct {
+	ETag         string
+	Length       int64
+	LastModified time.Time
+	// Class is the live object's shape, so a replaced manifest is
+	// distinguishable in the ledger from a replaced plain object.
+	Class string
 }
 
 type UploadAdmission struct {
@@ -86,6 +107,20 @@ func (u *uploadRun) admit(item UploadItem, staging string) error {
 		return nil
 	}
 	return u.stop(u.recorder.Admit(UploadAdmission{Item: item, StagingObject: staging}))
+}
+
+// replacing records the predecessor before its name is published over, and
+// refuses when a replacing item has nowhere to record it: publishing over
+// an object without saying what was there is the one outcome this decision
+// exists to prevent.
+func (u *uploadRun) replacing(item UploadItem, observed ObservedPredecessor) error {
+	if !item.Replaces {
+		return nil
+	}
+	if u.recorder == nil || u.recorder.Replacing == nil {
+		return u.stop(errors.New("replacing " + item.Name + " has nowhere to record what was there; nothing was published"))
+	}
+	return u.stop(u.recorder.Replacing(item, observed))
 }
 
 func (u *uploadRun) observe(item UploadItem, result uploadResult) error {
