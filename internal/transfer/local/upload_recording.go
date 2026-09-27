@@ -95,6 +95,12 @@ func (u *uploadRun) observe(item UploadItem, result uploadResult) error {
 			u.report.Verified++
 		}
 		u.report.Bytes += result.CopiedBytes
+		if item.Replaces {
+			// Counted where the publication is witnessed rather than where
+			// it was planned, so a replacement that never landed is not
+			// reported as one.
+			u.report.Replaced++
+		}
 	}
 	if result.failure != nil {
 		u.failed++

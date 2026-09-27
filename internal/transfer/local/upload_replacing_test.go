@@ -1,6 +1,7 @@
 package local
 
 import (
+	"errors"
 	"net/http/httptest"
 	"os"
 	"strings"
@@ -177,5 +178,42 @@ func TestNativeCreateStillRefusesALiveName(t *testing.T) {
 	live, err := session.ObjectDetail(t.Context(), "media", "docs/object")
 	if err != nil || !strings.EqualFold(strings.Trim(live.ETag, `"`), md5hex("the bytes already there")) {
 		t.Fatalf("a refused create changed the live object: %+v %v", live, err)
+	}
+}
+
+// A replacement is counted where its publication is witnessed, not where
+// it was planned: a marked item whose publication failed has replaced
+// nothing, and a job reporting it as a replacement would be claiming an
+// effect that did not happen.
+func TestReplacementsAreCountedOnlyWhenWitnessed(t *testing.T) {
+	marked := UploadItem{Path: "/local/object", Name: "docs/object", Size: 5, Route: "native", Replaces: true}
+	free := UploadItem{Path: "/local/other", Name: "docs/other", Size: 5, Route: "native"}
+	copied := uploadResult{Observation: transfercopy.Observation{
+		Result: transfercopy.ResultCopied, Effect: transfercopy.EffectReportedApplied, CopiedBytes: 5}}
+	for _, tc := range []struct {
+		name     string
+		item     UploadItem
+		result   uploadResult
+		replaced int64
+		done     int64
+	}{
+		{"a marked item that published", marked, copied, 1, 1},
+		{"a marked item whose publication failed", marked,
+			uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageCommit, transfercopy.CodeUnverified, "native-put",
+				errors.New("the store refused it")), 0, 0},
+		{"a marked item refused as a conflict", marked,
+			uploadConflict("native-put", errors.New("the name appeared")), 0, 0},
+		{"an unmarked item that published", free, copied, 0, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			run := &uploadRun{report: &Report{}}
+			if err := run.observe(tc.item, tc.result); err != nil {
+				t.Fatalf("observing: %v", err)
+			}
+			if run.report.Replaced != tc.replaced || run.report.Done != tc.done {
+				t.Fatalf("replaced=%d done=%d, wanted %d and %d",
+					run.report.Replaced, run.report.Done, tc.replaced, tc.done)
+			}
+		})
 	}
 }

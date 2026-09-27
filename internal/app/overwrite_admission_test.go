@@ -173,6 +173,12 @@ func TestAcknowledgedUploadAsksAboutTheResolvedPlan(t *testing.T) {
 		job.Counters.ObjectsFailed != 0 {
 		t.Fatalf("a confirmed replacement did not publish: %s %+v", job.State, job.Counters)
 	}
+	// One of the two names was live, so exactly one was replaced. A job
+	// that replaced objects and reported none of them would be a counter
+	// that lies by omission.
+	if job.Counters.Overwrites != 1 {
+		t.Fatalf("the job reports %d replacements of 1: %+v", job.Counters.Overwrites, job.Counters)
+	}
 	if got := f.liveTag(t); got == f.tag {
 		t.Fatalf("the live object was not replaced: still %q", got)
 	} else if got != sentTag {
@@ -260,8 +266,13 @@ func TestAcknowledgedUploadAsksNothingWhenNothingIsLive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("an acknowledged start with nothing live was refused: %v", err)
 	}
-	if job := awaitTerminal(t, h, id); job.State != "complete" {
+	job := awaitTerminal(t, h, id)
+	if job.State != "complete" {
 		t.Fatalf("an acknowledged upload of a free name did not publish: %s %+v", job.State, job.Counters)
+	}
+	// Acknowledged, but nothing was replaced, so nothing is counted as one.
+	if job.Counters.Overwrites != 0 {
+		t.Fatalf("an upload that replaced nothing reports %d replacements", job.Counters.Overwrites)
 	}
 	if asked := confirmer.questions(); len(asked) != 0 {
 		t.Fatalf("a confirmation was raised with nothing to replace: %+v", asked)
