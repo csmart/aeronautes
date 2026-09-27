@@ -620,3 +620,50 @@ func aliasStatic(t *testing.T, mock *swifttest.Server, container, name string, s
 		SLOEtag: tag, SLOManifestJSON: manifest.String(), ContentType: "application/octet-stream",
 	})
 }
+
+// ADR 0081 decision 5 and its retained mutant: the predecessor is read and
+// recorded BEFORE the name is published over, because afterwards there is
+// nothing left to read. The order is observed at the store rather than
+// inferred from the code, so moving the reading after the publication fails
+// here whatever the reading then returns.
+func TestReplacementRecordsThePredecessorBeforePublishing(t *testing.T) {
+	s, mock := session(t)
+	mock.AddContainer("media_segments", "standard")
+	seed(mock, "media_segments", "subject/run/0001", "01234567")
+	mock.PutObject("media", "docs/object", swifttest.Object{Manifest: "media_segments/subject/run/"})
+	var order []string
+	mock.AfterRequest = func(method, path string) {
+		if method == "PUT" && strings.HasSuffix(path, "/media/docs/object") {
+			order = append(order, "published")
+		}
+	}
+	path := writeFile(t, t.TempDir(), "object", "the bytes this job sent")
+	preflight, err := PreflightUploadReplacing(t.Context(), s, "media", "docs/", []string{path})
+	if err != nil || preflight.Rejected() || len(preflight.Items) != 1 || !preflight.Items[0].Replaces {
+		t.Fatalf("the replacing preflight did not admit the live manifest: %+v %v", preflight, err)
+	}
+	// The native route, so the publication is this process's own PUT and
+	// the order is the one this contract fixes.
+	preflight.Items[0].Route = "native"
+	recorder := &UploadRecorder{
+		Admit:   func(UploadAdmission) error { return nil },
+		Execute: func(UploadItem, transfercopy.Observation) error { return nil },
+		Verify:  func(UploadItem, transfercopy.Observation) error { return nil },
+		Replacing: func(_ UploadItem, observed ObservedPredecessor) error {
+			// Recorded with the names it could still read, which is the
+			// whole reason the order matters.
+			if len(observed.Fragments.Names) != 1 {
+				t.Errorf("the record was taken with nothing left to read: %+v", observed.Fragments)
+			}
+			order = append(order, "recorded")
+			return nil
+		},
+	}
+	report, err := Upload(t.Context(), s, nil, "aeronautes_dst:media", "media", "docs/", "ordering", preflight, nil, nil, recorder)
+	if err != nil || report == nil || report.Done != 1 {
+		t.Fatalf("the replacement did not publish: %+v %v", report, err)
+	}
+	if len(order) != 2 || order[0] != "recorded" || order[1] != "published" {
+		t.Fatalf("the predecessor was not recorded before the publication: %v", order)
+	}
+}
