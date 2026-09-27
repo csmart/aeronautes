@@ -518,3 +518,39 @@ func TestPreflightUploadFindsCollisionsEitherWay(t *testing.T) {
 		})
 	}
 }
+
+// Not knowing whether a name is live is not the same as knowing it is free.
+// The per-file loop used to refuse the whole preflight when its HEAD failed
+// for any reason other than not-found, and that refusal had to move to
+// wherever the request is now made. Both patterns are shown refusing,
+// because a selection that could not be resolved must not be published as
+// though the destination were empty.
+func TestPreflightUploadRefusesWhatItCouldNotResolve(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// files is chosen so the resolver takes the pattern under test.
+		files int
+		arm   func(mock *swifttest.Server)
+	}{
+		{name: "a head that failed", files: 1, arm: func(mock *swifttest.Server) { mock.FailNextObjectHEADs(1) }},
+		{name: "a listing that stopped", files: 40, arm: func(mock *swifttest.Server) { mock.FailNextListings(1) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, mock := session(t)
+			seed(mock, "media", "docs/send-000", "already here")
+			dir := t.TempDir()
+			var paths []string
+			for i := range tc.files {
+				paths = append(paths, writeFile(t, dir, fmt.Sprintf("send-%03d", i), "bytes"))
+			}
+			tc.arm(mock)
+			report, err := PreflightUpload(t.Context(), s, "media", "docs/", paths)
+			if err == nil {
+				t.Fatalf("an unresolved destination was admitted: %+v", report)
+			}
+			if report != nil {
+				t.Errorf("a refused preflight returned a report: %+v", report)
+			}
+		})
+	}
+}

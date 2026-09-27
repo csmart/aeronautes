@@ -155,6 +155,13 @@ func destinationLiveness(ctx context.Context, dst *swiftcontrol.Session, contain
 		}
 		return wanted, nil
 	}
+	// Deep, which is the stream jobs consume. It is not load-bearing for
+	// matching today, because every candidate name is the prefix plus one
+	// path base and so has no further slash, which the delimiter view would
+	// return as a direct child anyway. It is the right default all the same:
+	// a selection that ever preserves directory structure would produce
+	// names the delimiter view groups into rows that name no object, and
+	// this would then silently find no collisions.
 	for entry, err := range dst.Objects(ctx, container, swiftcontrol.ObjectListOptions{
 		Prefix: prefix, PageSize: listingPageSize, Deep: true}) {
 		if err != nil {
