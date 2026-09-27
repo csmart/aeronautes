@@ -203,7 +203,10 @@ func (u *uploadRun) observe(item UploadItem, result uploadResult) error {
 		if item.Replaces {
 			// Counted where the publication is witnessed rather than where
 			// it was planned, so a replacement that never landed is not
-			// reported as one.
+			// reported as one. This is inside the copied branch on purpose:
+			// a publication whose answer was lost, or one that landed and
+			// could not then be verified, is not counted, because what it
+			// displaced is not known.
 			u.report.Replaced++
 		}
 	}

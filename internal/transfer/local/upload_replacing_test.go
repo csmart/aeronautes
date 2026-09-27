@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	"github.com/csmart/aeronautes/internal/swifttest"
 	"github.com/csmart/aeronautes/internal/systemtest/oracle"
 	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
@@ -406,43 +407,90 @@ func TestReplacingAStaticManifestInventoriesItsShapes(t *testing.T) {
 // promised only where the replacement was not attempted or is proven
 // refused. Where it landed, or where its outcome is unknown, the record
 // reports that and claims no rollback.
+//
+// Driven through the native route rather than asserted about constructed
+// values: a store that takes the write and then never answers is the shape
+// an unresolved publication actually has. The staged route's half of the
+// same promise runs through the public service (TestOverwrite*).
 func TestReplacementOutcomesAreNotRollbackClaims(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
-		result uploadResult
-		// unresolved says the outcome is one the route must not describe as
-		// leaving the predecessor whole.
-		unresolved bool
+		name string
+		// arm produces the failure and says what the route must report.
+		arm    func(t *testing.T, mock *swifttest.Server, file *os.File)
+		effect transfercopy.Effect
+		stage  transfercopy.Stage
+		// landed says the store really holds the new bytes afterwards.
+		landed bool
 	}{
-		{"a publication that was never attempted", uploadFailed(transfercopy.EffectNotAttempted,
-			transfercopy.StageSourceRead, transfercopy.CodeIO, "native-open", errors.New("the source could not be opened")), false},
-		{"a publication proven refused by its digest", uploadFailed(transfercopy.EffectUnresolved,
-			transfercopy.StageCommit, transfercopy.CodeUnverified, "native-put", errors.New("the store refused it")), true},
-		{"a publication whose response was lost", uploadFailed(transfercopy.EffectUnresolved,
-			transfercopy.StageCommit, transfercopy.CodeIO, "native-put", errors.New("the response was lost")), true},
+		{name: "a publication whose answer was lost", effect: transfercopy.EffectUnresolved,
+			stage: transfercopy.StageCommit, landed: true,
+			arm: func(_ *testing.T, mock *swifttest.Server, _ *os.File) {
+				mock.DropNextObjectPUTResponse("media", "docs/object")
+			}},
+		{name: "a publication that never left", effect: transfercopy.EffectNotAttempted,
+			stage: transfercopy.StageSourceRead, landed: false,
+			arm: func(t *testing.T, _ *swifttest.Server, file *os.File) {
+				// A source that cannot be read is the one case where nothing
+				// reaches the store, so the predecessor is genuinely untouched
+				// and saying so is the only time that claim is earned.
+				if err := file.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			// The contract's distinction is carried by the effect, which is
-			// what the item record states: not_attempted means nothing
-			// left this process, and unresolved means the outcome is not
-			// known and must not be reported as a rollback.
-			if tc.unresolved && tc.result.Effect != transfercopy.EffectUnresolved {
-				t.Fatalf("an outcome that may have landed is not unresolved: %+v", tc.result.Observation)
+			s, mock := session(t)
+			seed(mock, "media", "docs/object", "the bytes already there")
+			priorTag := objectTag(t, s, "media", "docs/object")
+			path := writeFile(t, t.TempDir(), "object", "the bytes this job sent")
+			preflight, err := PreflightUploadReplacing(t.Context(), s, "media", "docs/", []string{path})
+			if err != nil || preflight.Rejected() || len(preflight.Items) != 1 || !preflight.Items[0].Replaces {
+				t.Fatalf("the replacing preflight did not admit the live name: %+v %v", preflight, err)
 			}
-			if !tc.unresolved && tc.result.Effect != transfercopy.EffectNotAttempted {
-				t.Fatalf("an outcome that never left is not not_attempted: %+v", tc.result.Observation)
+			item := preflight.Items[0]
+			item.Route = "native"
+			file, err := os.Open(path)
+			if err != nil {
+				t.Fatal(err)
 			}
-			run := &uploadRun{report: &Report{}}
-			if err := run.observe(UploadItem{Name: "docs/object", Replaces: true}, tc.result); err != nil {
-				t.Fatalf("observing: %v", err)
+			tc.arm(t, mock, file)
+			result := nativeUpload(t.Context(), s, "media", item, file)
+			if result.Result == transfercopy.ResultCopied {
+				t.Fatalf("the fixture did not produce a failure: %+v", result.Observation)
+			}
+			if result.Effect != tc.effect {
+				t.Errorf("the outcome is %q, not %q: %+v", result.Effect, tc.effect, result.Observation)
+			}
+			if result.Diagnostic.Stage != tc.stage {
+				t.Errorf("the outcome became unknown at %q, not %q", result.Diagnostic.Stage, tc.stage)
+			}
+			// What the store holds, read back rather than assumed. An
+			// unresolved outcome means exactly that nothing may claim the
+			// predecessor survived: here it did not.
+			if landed := objectTag(t, s, "media", "docs/object") != priorTag; landed != tc.landed {
+				t.Errorf("the store holds a changed object = %v, want %v", landed, tc.landed)
 			}
 			// Either way nothing is counted as a replacement, because none
 			// was witnessed.
+			run := &uploadRun{report: &Report{}}
+			if err := run.observe(item, result); err != nil {
+				t.Fatalf("observing: %v", err)
+			}
 			if run.report.Replaced != 0 {
 				t.Fatalf("an unwitnessed publication was counted as a replacement: %+v", run.report)
 			}
 		})
 	}
+}
+
+// objectTag is what identifies the object at a name now.
+func objectTag(t *testing.T, s *swiftcontrol.Session, container, name string) string {
+	t.Helper()
+	detail, err := s.ObjectDetail(t.Context(), container, name)
+	if err != nil {
+		t.Fatalf("reading %s/%s: %v", container, name, err)
+	}
+	return strings.Trim(detail.ETag, `"`)
 }
 
 // Finding: a dynamic manifest's segments may sit below child paths, and the

@@ -112,6 +112,12 @@ type Server struct {
 	// dropNextObjectPOST closes the POST connection without a response,
 	// so the caller sees a transport failure after the request left.
 	dropNextObjectPOST bool
+	// dropPUTResponseFor is "container/name". The next PUT to that object
+	// is APPLIED and then its connection is closed without a response, so
+	// the caller cannot know what the store did with a write that landed.
+	// This is the shape an unresolved publication actually has, and it is
+	// the one thing a store cannot be asked to do on purpose.
+	dropPUTResponseFor string
 	// objectPOSTStatus, when non-zero, is consumed by the next object
 	// POST as a store refusal without applying the write.
 	objectPOSTStatus int
@@ -570,6 +576,9 @@ func (s *Server) putObject(w http.ResponseWriter, r *http.Request, container, na
 			return
 		}
 		c.objects[name] = o
+		if s.dropPUTResponse(w, container, name) {
+			return
+		}
 		w.Header().Set("Etag", o.ETag)
 		w.WriteHeader(http.StatusCreated)
 		return
@@ -593,8 +602,30 @@ func (s *Server) putObject(w http.ResponseWriter, r *http.Request, container, na
 		}
 	}
 	c.objects[name] = o
+	if s.dropPUTResponse(w, container, name) {
+		return
+	}
 	w.Header().Set("Etag", o.ETag)
 	w.WriteHeader(http.StatusCreated)
+}
+
+// dropPUTResponse closes the connection after the write has been applied,
+// when this object was armed for it. The caller holds s.mu.
+func (s *Server) dropPUTResponse(w http.ResponseWriter, container, name string) bool {
+	if s.dropPUTResponseFor != container+"/"+name {
+		return false
+	}
+	s.dropPUTResponseFor = ""
+	hj, ok := w.(http.Hijacker)
+	if !ok {
+		panic("swifttest: cannot drop object PUT response")
+	}
+	conn, _, err := hj.Hijack()
+	if err != nil {
+		panic("swifttest: cannot drop object PUT response: " + err.Error())
+	}
+	conn.Close()
+	return true
 }
 
 // staticLargeObject validates an SLO manifest PUT against the segments
@@ -922,6 +953,16 @@ func (s *Server) writeObjectListing(w http.ResponseWriter, r *http.Request, cont
 func (s *Server) FailNextObjectHEADs(n int) {
 	s.mu.Lock()
 	s.objectHEADFailRemaining = n
+	s.mu.Unlock()
+}
+
+// DropNextObjectPUTResponse makes the next PUT to that object apply its
+// write and then close the connection without answering, so the caller
+// learns nothing about a write that landed. Nothing about the request is
+// refused: the point is an outcome that is unknown rather than failed.
+func (s *Server) DropNextObjectPUTResponse(container, name string) {
+	s.mu.Lock()
+	s.dropPUTResponseFor = container + "/" + name
 	s.mu.Unlock()
 }
 
