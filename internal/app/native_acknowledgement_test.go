@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -13,6 +15,7 @@ import (
 type recordingPicker struct {
 	mu     sync.Mutex
 	dir    string
+	files  []string
 	titles []string
 }
 
@@ -20,7 +23,7 @@ func (p *recordingPicker) PickFiles(title string) ([]string, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.titles = append(p.titles, title)
-	return nil, nil
+	return append([]string(nil), p.files...), nil
 }
 
 func (p *recordingPicker) PickDirectory(title string) (string, error) {
@@ -162,5 +165,65 @@ func TestPublicReadACLNeedsNativeConfirmation(t *testing.T) {
 	}
 	if len(calls) != asks {
 		t.Fatalf("a private ACL asked the dialog: %+v", calls)
+	}
+}
+
+// ADR 0081 decision 3: the UPLOAD chooser names the same binding. It did
+// not, and the gap is the one ADR 0073's counterexample describes: a page
+// can connect account B while displaying account A, so a dialog that says
+// only "Choose files to upload" leaves the operator nothing to tell them
+// apart with. The gate lifts for this test because PickUploadFiles is a
+// deferred action in a v1 build.
+func TestPickUploadFilesTitlesTheChooserFromTheBackend(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+	ctx := context.Background()
+	picker := &recordingPicker{files: []string{filepath.Join(t.TempDir(), "subject.bin")}}
+	if err := os.WriteFile(picker.files[0], []byte("bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.transfer.setFilePicker(picker)
+	picked, err := h.transfer.PickUploadFiles(ctx, SelectionScopeDTO{
+		BookmarkID: h.bookmarkID(), Container: "fixtures", Prefix: "inbox/2026\x01\n/"})
+	if err != nil || picked == nil {
+		t.Fatalf("pick = %+v, %v", picked, err)
+	}
+	if len(picker.titles) != 1 {
+		t.Fatalf("titles handed to the chooser = %v", picker.titles)
+	}
+	title := picker.titles[0]
+	account := h.browse.connections.AccountName()
+	list, err := h.bookmarks.List(ctx)
+	if err != nil || len(list) != 1 || account == "" {
+		t.Fatalf("fixture: bookmarks=%+v account=%q %v", list, account, err)
+	}
+	// The same three things the download chooser states, and the account
+	// among them, because that is what the counterexample turns on.
+	into := "Upload into " + list[0].DisplayName + " (" + account + ")"
+	for _, want := range []string{into, "fixtures/inbox/2026??/"} {
+		if !strings.Contains(title, want) {
+			t.Errorf("title %q lacks %q", title, want)
+		}
+	}
+	if strings.Contains(title, "Choose files to upload") {
+		t.Errorf("the chooser still carries the title that names nothing: %q", title)
+	}
+	for _, r := range title {
+		if r < 0x20 || r == 0x7f {
+			t.Fatalf("title carries a control character: %q", title)
+		}
+	}
+
+	long := strings.Repeat("a", 300) + "/"
+	if _, err := h.transfer.PickUploadFiles(ctx, SelectionScopeDTO{
+		BookmarkID: h.bookmarkID(), Container: "fixtures", Prefix: long}); err != nil {
+		t.Fatal(err)
+	}
+	cut := picker.titles[1]
+	if !strings.Contains(cut, "…") || utf8.RuneCountInString(cut) > 240 {
+		t.Fatalf("a long prefix was not cut: %d runes, %q", utf8.RuneCountInString(cut), cut)
+	}
+	if !strings.HasPrefix(cut, into+", fixtures/aaaa") {
+		t.Fatalf("the cut title lost the backend-resolved scope: %q", cut)
 	}
 }
