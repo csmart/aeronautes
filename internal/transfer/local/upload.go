@@ -99,6 +99,9 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 				return report, errors.Join(err, u.observe(item, result))
 			}
 			report.NativeRouted++
+			if err := u.observePredecessor(ctx, dst, container, item); err != nil {
+				return report, err
+			}
 			file, err := os.Open(item.Path)
 			var result uploadResult
 			if err != nil {
@@ -152,6 +155,9 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 		}
 		for _, item := range items {
 			if err := ctx.Err(); err != nil {
+				return report, err
+			}
+			if err := u.observePredecessor(ctx, dst, container, item); err != nil {
 				return report, err
 			}
 			outcome := commitStagedUpload(ctx, dst, container, stagePrefix+filepath.Base(item.Path), item, recovery)
@@ -258,6 +264,34 @@ func localDigest(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(sum.Sum(nil)), nil
+}
+
+// observePredecessor reads what is at a name and records it, immediately
+// before that name is published over. Both routes call it at the same
+// point, so a replacement cannot publish without the ledger saying what
+// was there (ADR 0081 decision 7).
+//
+// A name that is not being replaced reads nothing: the create's own
+// conditional is what protects it, and a HEAD here would be a request
+// made for nothing. A name that has gone between the preflight and now is
+// recorded as absent rather than refused, because publishing over nothing
+// is what a create does and the operator acknowledged the stronger act.
+func (u *uploadRun) observePredecessor(ctx context.Context, dst *swiftcontrol.Session,
+	container string, item UploadItem) error {
+	if !item.Replaces {
+		return nil
+	}
+	detail, err := dst.ObjectDetail(ctx, container, item.Name)
+	switch {
+	case swiftcontrol.IsNotFound(err):
+		return u.replacing(item, ObservedPredecessor{})
+	case err != nil:
+		return u.stop(fmt.Errorf("reading what is at %s before replacing it: %w", item.Name, err))
+	}
+	return u.replacing(item, ObservedPredecessor{
+		ETag: strings.Trim(detail.ETag, `"`), Length: detail.ContentLength,
+		LastModified: detail.LastModified, Class: string(detail.Class),
+	})
 }
 
 // publishHeaders are the conditions a publication carries. A create keeps

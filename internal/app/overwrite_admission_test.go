@@ -8,7 +8,14 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/csmart/aeronautes/internal/audit"
 )
+
+// sentTagForFixture is the entity tag of the bytes the fixture's files
+// hold, so a record can be shown naming what was replaced rather than what
+// replaced it.
+const sentTagForFixture = "97cbc70467cd15e9c5a28636d2dc962d"
 
 // recordingOverwriteConfirmer answers, and keeps what it was asked.
 type recordingOverwriteConfirmer struct {
@@ -155,9 +162,6 @@ func TestAcknowledgedUploadNeedsAYes(t *testing.T) {
 // replace. Decision 8: it states what the container said about keeping
 // versions, as an observation.
 func TestAcknowledgedUploadAsksAboutTheResolvedPlan(t *testing.T) {
-	// The entity tag of the bytes the fixture's files hold, so the
-	// read-back distinguishes "replaced" from "replaced with anything".
-	const sentTag = "97cbc70467cd15e9c5a28636d2dc962d"
 	f := newOverwriteFixture(t)
 	confirmer := &recordingOverwriteConfirmer{yes: true}
 	f.h.transfer.setOverwriteConfirmer(confirmer)
@@ -181,7 +185,7 @@ func TestAcknowledgedUploadAsksAboutTheResolvedPlan(t *testing.T) {
 	}
 	if got := f.liveTag(t); got == f.tag {
 		t.Fatalf("the live object was not replaced: still %q", got)
-	} else if got != sentTag {
+	} else if got != sentTagForFixture {
 		t.Fatalf("the live object holds neither what it had nor what was sent: %q", got)
 	}
 	asked := confirmer.questions()
@@ -298,5 +302,52 @@ func TestAcknowledgedUploadRefusesAVersioningModeItCannotDescribe(t *testing.T) 
 	}
 	if got := f.liveTag(t); got != f.tag {
 		t.Fatalf("the live object changed: %q, was %q", got, f.tag)
+	}
+}
+
+// ADR 0081 decision 7: the durable trail names what the commit saw at the
+// name a moment before publishing over it, and names it as what was seen
+// rather than as what was replaced, because this contract admits a racing
+// writer.
+func TestAcknowledgedUploadRecordsWhatItSawBeforeReplacing(t *testing.T) {
+	f := newOverwriteFixture(t)
+	f.h.transfer.setOverwriteConfirmer(&recordingOverwriteConfirmer{yes: true})
+	id, err := f.h.transfer.StartUpload(t.Context(), f.request(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job := awaitTerminal(t, f.h, id); job.State != "complete" {
+		t.Fatalf("the replacement did not publish: %s %+v", job.State, job.Counters)
+	}
+	events, err := f.h.auditSvc.audit.List(t.Context(), audit.Query{Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found *audit.Event
+	for i, event := range events {
+		if event.Operation == "object.upload.replace" {
+			if found != nil {
+				t.Fatalf("one replacement produced more than one record: %+v", events)
+			}
+			found = &events[i]
+		}
+	}
+	if found == nil {
+		t.Fatalf("a replacement left no record of what it replaced: %+v", events)
+	}
+	if found.Resource != "replaceable/live/taken" {
+		t.Errorf("the record names the wrong resource: %q", found.Resource)
+	}
+	if found.Result != audit.ResultObserved {
+		t.Errorf("the record claims a write outcome rather than an observation: %q", found.Result)
+	}
+	// The entity tag of what was there, not of what replaced it.
+	for _, want := range []string{f.tag, "observed", "may not be that one"} {
+		if !strings.Contains(found.Summary, want) {
+			t.Errorf("the record does not say %q: %q", want, found.Summary)
+		}
+	}
+	if strings.Contains(found.Summary, sentTagForFixture) {
+		t.Errorf("the record names the bytes that replaced rather than the ones replaced: %q", found.Summary)
 	}
 }

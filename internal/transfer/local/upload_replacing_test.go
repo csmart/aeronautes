@@ -217,3 +217,45 @@ func TestReplacementsAreCountedOnlyWhenWitnessed(t *testing.T) {
 		})
 	}
 }
+
+// Publishing over an object without saying what was there is the outcome
+// decision 7 exists to prevent, so a replacing item with nowhere to record
+// it is refused rather than published unrecorded. A recorder that never
+// replaces needs no such hook, which is why it is optional rather than
+// required of every caller.
+func TestReplacingRefusesWithNowhereToRecord(t *testing.T) {
+	marked := UploadItem{Path: "/local/object", Name: "docs/object", Size: 5, Route: "native", Replaces: true}
+	free := UploadItem{Path: "/local/other", Name: "docs/other", Size: 5, Route: "native"}
+	observed := ObservedPredecessor{ETag: md5hex("gone"), Length: 4, Class: "plain"}
+
+	for _, tc := range []struct {
+		name     string
+		item     UploadItem
+		recorder *UploadRecorder
+		refuses  bool
+	}{
+		{"a replacing item with no recorder at all", marked, nil, true},
+		{"a replacing item with a recorder that cannot take it", marked,
+			&UploadRecorder{Admit: func(UploadAdmission) error { return nil }}, true},
+		{"a replacing item with somewhere to record", marked,
+			&UploadRecorder{Replacing: func(UploadItem, ObservedPredecessor) error { return nil }}, false},
+		{"an item that replaces nothing, with no recorder", free, nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			run := &uploadRun{report: &Report{}, recorder: tc.recorder}
+			err := run.replacing(tc.item, observed)
+			if tc.refuses {
+				if err == nil || !strings.Contains(err.Error(), "nowhere to record") {
+					t.Fatalf("a replacement with nowhere to record was admitted: %v", err)
+				}
+				if run.stopped == nil {
+					t.Fatal("the run was not stopped")
+				}
+				return
+			}
+			if err != nil || run.stopped != nil {
+				t.Fatalf("a recordable replacement was refused: %v %v", err, run.stopped)
+			}
+		})
+	}
+}

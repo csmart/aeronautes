@@ -35,6 +35,12 @@ const (
 	// (ADR 0058). Distinct from ResultVerifyMismatch, which observed a
 	// different post-state (ADR 0046 still qualifies a completed POST).
 	ResultUnverified Result = "unverified"
+	// ResultObserved records something READ rather than something written:
+	// the state a mutation was about to act on, entered before the write
+	// so it survives a write whose own outcome is never learned. It is the
+	// only value here that is not a write's outcome, and it never stands
+	// in for one (ADR 0081 decision 7).
+	ResultObserved Result = "observed"
 )
 
 // Database is the shared handle for ledgers that must not use compacted
