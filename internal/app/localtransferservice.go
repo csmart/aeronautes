@@ -99,7 +99,7 @@ func (s *TransferService) PickUploadFiles(ctx context.Context, scope SelectionSc
 	if err != nil {
 		return nil, err
 	}
-	paths, err := s.picker.PickFiles("Choose files to upload")
+	paths, err := s.picker.PickFiles(s.uploadPickTitle(ctx, bound))
 	if err != nil || len(paths) == 0 {
 		return nil, err
 	}
@@ -190,16 +190,34 @@ func (s *TransferService) beginPick(ctx context.Context, scope SelectionScopeDTO
 // characters are replaced and a long prefix is cut, so a hostile name
 // cannot garble the one surface this feature claims is trustworthy.
 func (s *TransferService) pickTitle(ctx context.Context, bound selectionScope) string {
+	from, target := s.pickBinding(ctx, bound)
+	return "Download from " + titleText(from, 80) + ", " + titleText(target, 120) + " into…"
+}
+
+// uploadPickTitle is the same statement for the other direction. The
+// upload chooser was titled "Choose files to upload", which names neither
+// the account nor the container, so a page could connect one account
+// while displaying another and the dialog would not tell the operator
+// apart (ADR 0081 decision 3, ADR 0073's counterexample).
+func (s *TransferService) uploadPickTitle(ctx context.Context, bound selectionScope) string {
+	from, target := s.pickBinding(ctx, bound)
+	return "Upload into " + titleText(from, 80) + ", " + titleText(target, 120) + " — choose files…"
+}
+
+// pickBinding is what the backend resolved, as the account it is
+// connected to and the remote target within it, shared by both chooser
+// titles so the two cannot drift into describing the binding differently.
+func (s *TransferService) pickBinding(ctx context.Context, bound selectionScope) (from, target string) {
 	account := ""
 	if entry, err := s.connections.sessionEntryFor(ctx, bound.bookmarkID); err == nil && entry.session != nil {
 		account = accountSuffix(entry.session.StorageURL())
 	}
 	display := s.connections.displayName(ctx, bound.bookmarkID)
-	target := bound.container
+	target = bound.container
 	if bound.prefix != "" {
 		target += "/" + bound.prefix
 	}
-	from := display
+	from = display
 	switch {
 	case from == "" && account == "":
 		from = "the connected account"
@@ -208,7 +226,7 @@ func (s *TransferService) pickTitle(ctx context.Context, bound selectionScope) s
 	case account != "":
 		from += " (" + account + ")"
 	}
-	return "Download from " + titleText(from, 80) + ", " + titleText(target, 120) + " into…"
+	return from, target
 }
 
 // titleText keeps a title legible: control characters become "?" and text
