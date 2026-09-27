@@ -106,6 +106,12 @@ type Server struct {
 	// written — the barrier-test hook for planting a concurrent writer
 	// at an exact protocol point.
 	AfterRequest func(method, path string)
+	// listingFailRemaining, when > 0, makes that many container GET
+	// listings answer 500, so a caller that depends on a complete listing
+	// can be shown what it does with an incomplete one. A container HEAD is
+	// left alone: it is a different question and a caller may legitimately
+	// ask it first.
+	listingFailRemaining int
 	// objectHEADFailRemaining, when > 0, makes that many object HEAD or
 	// GET requests answer 500. Used to reproduce a verify-read failure
 	// after a metadata POST (ADR 0058).
@@ -362,6 +368,12 @@ func (s *Server) handleContainer(w http.ResponseWriter, r *http.Request, name st
 	}
 
 	s.mu.Lock()
+	if r.Method == http.MethodGet && s.listingFailRemaining > 0 {
+		s.listingFailRemaining--
+		s.mu.Unlock()
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 	c, ok := s.containers[name]
 	if !ok {
 		s.mu.Unlock()
@@ -956,6 +968,13 @@ func (s *Server) writeObjectListing(w http.ResponseWriter, r *http.Request, cont
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(rows)
+}
+
+// FailNextListings makes the next n container listings answer 500.
+func (s *Server) FailNextListings(n int) {
+	s.mu.Lock()
+	s.listingFailRemaining = n
+	s.mu.Unlock()
 }
 
 // FailNextObjectHEADs fails the next n object HEAD/GET requests with 500.
