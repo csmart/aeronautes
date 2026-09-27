@@ -201,6 +201,66 @@ func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 		}
 	})
 
+	// ADR 0081 decision 3, which exists because of ADR 0073's
+	// counterexample: a page can connect account B while displaying
+	// account A, every backend check legitimately binds B, and a
+	// same-named container with the same number of collisions produces an
+	// identical question. So the question has to name the account the
+	// backend resolved, or the operator has nothing to tell them apart
+	// with.
+	t.Run("names the account it resolved, not just the count", func(t *testing.T) {
+		h := makeHarness(t)
+		// The same container name in both accounts, holding the same one
+		// collision, which Container cannot do because it counts.
+		name := h.ns + "-overwrite-ambiguous"
+		for _, account := range []*Account{h.Primary, h.Secondary} {
+			h.rawPut(account, "/"+name, nil, nil)
+			acc := account
+			t.Cleanup(func() { h.purge(acc, name) })
+			h.Seed(account, name, "live/taken", []byte("the bytes already there"), nil)
+		}
+		path := filepath.Join(t.TempDir(), "taken")
+		if err := os.WriteFile(path, []byte("the bytes this job sent"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		asked := map[string]app.OverwriteConfirmation{}
+		for _, account := range []*Account{h.Primary, h.Secondary} {
+			confirmer := &serviceConfirmer{yes: false}
+			app.WireOverwriteConfirmer(h.Transfer, confirmer)
+			if _, err := h.Browse.Connect(t.Context(), account.BookmarkID); err != nil {
+				t.Fatal(err)
+			}
+			app.WireFilePicker(h.Transfer, listingFilePicker{files: []string{path}, dir: filepath.Dir(path)})
+			picked, err := h.Transfer.PickUploadFiles(t.Context(), app.SelectionScopeDTO{
+				BookmarkID: account.BookmarkID, Container: name, Prefix: "live/"})
+			if err != nil || picked == nil {
+				t.Fatalf("pick: %+v %v", picked, err)
+			}
+			if _, err := h.Transfer.StartUpload(t.Context(), app.UploadRequestDTO{
+				BookmarkID: account.BookmarkID, Container: name, Prefix: "live/",
+				SelectionToken: picked.Token, AcknowledgeOverwrite: true}); err == nil {
+				t.Fatal("an unanswered confirmation admitted the start")
+			}
+			questions := confirmer.questions()
+			if len(questions) != 1 {
+				t.Fatalf("the confirmation was asked %d times for %s", len(questions), account.BookmarkID)
+			}
+			asked[account.BookmarkID] = questions[0]
+		}
+
+		first, second := asked[h.Primary.BookmarkID], asked[h.Secondary.BookmarkID]
+		// Identical in every way the count-only question would have been.
+		if first.Container != second.Container || len(first.Names) != len(second.Names) ||
+			first.Prefix != second.Prefix {
+			t.Fatalf("the fixture did not produce the ambiguous pair: %+v and %+v", first, second)
+		}
+		// And distinguishable only because the account is named.
+		if first.Account == "" || second.Account == "" || first.Account == second.Account {
+			t.Fatalf("the two questions are indistinguishable: %q and %q", first.Account, second.Account)
+		}
+	})
+
 	t.Run("refuses without an acknowledgement and without a yes", func(t *testing.T) {
 		for _, tc := range []struct {
 			name        string
