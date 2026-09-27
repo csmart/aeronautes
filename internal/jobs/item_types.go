@@ -133,6 +133,11 @@ type ItemRecord struct {
 	Execution    *RecordedObservation
 	Verification *RecordedObservation
 	Publication  *RecordedObservation
+	// Predecessor is what was live at the destination immediately before
+	// this item was published over it, read without its segment names
+	// (ADR 0081 decision 7). Nil when nothing was recorded, which is every
+	// item that did not replace anything.
+	Predecessor *ItemPredecessor
 }
 
 type ItemPage struct {

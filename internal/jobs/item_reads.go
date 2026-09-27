@@ -81,7 +81,10 @@ func (s *Store) ReadItems(ctx context.Context, jobID string, cursor int64, limit
 		if err := readObservations(ctx, tx, jobID, cursor, page.Items); err != nil {
 			return err
 		}
-		return readPublications(ctx, tx, jobID, cursor, page.Items)
+		if err := readPublications(ctx, tx, jobID, cursor, page.Items); err != nil {
+			return err
+		}
+		return readPredecessors(ctx, tx, jobID, cursor, page.Items)
 	})
 	if err != nil {
 		return ItemPage{}, err

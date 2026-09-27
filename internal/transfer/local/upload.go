@@ -289,7 +289,8 @@ func (u *uploadRun) observePredecessor(ctx context.Context, dst *swiftcontrol.Se
 		return u.stop(fmt.Errorf("reading what is at %s before replacing it: %w", item.Name, err))
 	}
 	return u.replacing(item, ObservedPredecessor{
-		ETag: strings.Trim(detail.ETag, `"`), Length: detail.ContentLength,
+		Present: true,
+		ETag:    strings.Trim(detail.ETag, `"`), Length: detail.ContentLength,
 		LastModified: detail.LastModified, Class: string(detail.Class),
 		Fragments: fragmentInventory(ctx, dst, container, item.Name, detail),
 	})
@@ -320,7 +321,7 @@ func fragmentInventory(ctx context.Context, dst *swiftcontrol.Session, container
 		for _, entry := range manifest.Entries {
 			switch segment := entry.(type) {
 			case swiftcontrol.ObjectSegment:
-				inventory.Names = append(inventory.Names, segment.Path.Container+"/"+segment.Path.Object)
+				inventory.add(segment.Path.Container, segment.Path.Object)
 				if segment.Range != nil {
 					inventory.Ranged++
 				}
@@ -328,6 +329,9 @@ func fragmentInventory(ctx context.Context, dst *swiftcontrol.Session, container
 					inventory.Nested++
 				}
 			case swiftcontrol.InlineDataSegment:
+				// Inline data lives inside the manifest being replaced. It
+				// has no remote part, so it is counted as an entry shape and
+				// never named as something that outlived the manifest.
 				inventory.Inline++
 			default:
 				// An entry shape this build does not recognise cannot be
@@ -343,18 +347,24 @@ func fragmentInventory(ctx context.Context, dst *swiftcontrol.Session, container
 		}
 		// Listed rather than named, so it is a lower bound: a listing on an
 		// eventually consistent store may omit a segment that exists.
+		//
+		// Deep, because a segment name may contain a slash and the default
+		// delimiter view would group everything below it into one
+		// pseudo-directory row that names no object. A manifest whose
+		// segments sit below child paths would otherwise be inventoried as
+		// holding nothing at all.
 		inventory := FragmentInventory{Prefix: detail.Manifest}
-		for entry, err := range dst.Objects(ctx, segmentContainer, swiftcontrol.ObjectListOptions{Prefix: prefix}) {
+		for entry, err := range dst.Objects(ctx, segmentContainer,
+			swiftcontrol.ObjectListOptions{Prefix: prefix, Deep: true}) {
 			if err != nil {
 				inventory.Unread = "the segment prefix could not be listed in full"
 				break
 			}
 			object, ok := entry.(swiftcontrol.ObjectEntry)
 			if !ok {
-				// A pseudo-directory row names no object.
 				continue
 			}
-			inventory.Names = append(inventory.Names, segmentContainer+"/"+object.Name)
+			inventory.add(segmentContainer, object.Name)
 		}
 		return inventory
 	default:

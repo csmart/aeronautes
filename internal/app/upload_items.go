@@ -22,7 +22,7 @@ func uploadItemIdentity(req UploadRequestDTO, item local.UploadItem) jobs.ItemId
 // that nothing was, which is what a name that went away between the
 // preflight and the publication looks like.
 func observedPredecessorSummary(observed local.ObservedPredecessor) string {
-	if observed.ETag == "" && observed.Length == 0 && observed.LastModified.IsZero() {
+	if !observed.Present {
 		return "observed nothing at this name immediately before publishing; it was live at preflight"
 	}
 	class := observed.Class
@@ -44,17 +44,20 @@ func fragmentSummary(inventory local.FragmentInventory) string {
 	if inventory.Unread != "" {
 		return "; its fragments were not inventoried because " + inventory.Unread + ", and none was removed"
 	}
-	if len(inventory.Names) == 0 && inventory.Inline == 0 {
+	if inventory.Counted == 0 && inventory.Inline == 0 {
 		return ""
 	}
-	out := fmt.Sprintf("; it named %d segment", len(inventory.Names))
-	if len(inventory.Names) != 1 {
+	out := fmt.Sprintf("; it named %d segment", inventory.Counted)
+	if inventory.Counted != 1 {
 		out += "s"
 	}
 	if inventory.Prefix != "" {
 		out += " listed under " + inventory.Prefix + ", which a listing may undercount"
 	} else if !inventory.Complete {
 		out += ", and an entry shape this build does not recognise means the list is not the whole of it"
+	}
+	if inventory.Truncated() {
+		out += fmt.Sprintf(", of which %d are recorded by name and the rest by count alone", len(inventory.Names))
 	}
 	// A fixed order, because a map's iteration is not one and this text is
 	// durable.
@@ -66,7 +69,36 @@ func fragmentSummary(inventory local.FragmentInventory) string {
 			out += fmt.Sprintf(", %d %s", kind.count, kind.what)
 		}
 	}
-	return out + "; every one of them was retained and none was removed"
+	// Retention is claimed only for the remote segments. Inline data lives
+	// inside the manifest that was replaced, so it has no remote part to
+	// retain and went with the manifest; saying otherwise would report
+	// bytes as surviving that did not.
+	out += "; every segment it named was retained and none was removed"
+	if inventory.Inline > 0 {
+		out += ", and its inline data went with the manifest because it had no remote part"
+	}
+	return out
+}
+
+// itemPredecessor is the durable form of one observation. The segment names
+// go with it, because once the manifest is replaced they cannot be read
+// again and a count cannot tell an explicit cleanup which objects it would
+// be clearing (ADR 0081 decision 5).
+func itemPredecessor(observed local.ObservedPredecessor) jobs.ItemPredecessor {
+	if !observed.Present {
+		return jobs.ItemPredecessor{}
+	}
+	record := jobs.ItemPredecessor{Present: true, ETag: observed.ETag, Length: observed.Length,
+		LastModified: observed.LastModified, Class: observed.Class,
+		Prefix: observed.Fragments.Prefix, Counted: observed.Fragments.Counted,
+		Inline: observed.Fragments.Inline, Ranged: observed.Fragments.Ranged,
+		Nested: observed.Fragments.Nested, Exact: observed.Fragments.Complete,
+		Unread: observed.Fragments.Unread}
+	for _, fragment := range observed.Fragments.Names {
+		record.Fragments = append(record.Fragments, jobs.ItemFragment{
+			Container: fragment.Container, Object: fragment.Name})
+	}
+	return record
 }
 
 func (s *TransferService) uploadItemRecorder(ctx context.Context, jobID string, req UploadRequestDTO) *local.UploadRecorder {
@@ -90,11 +122,28 @@ func (s *TransferService) uploadItemRecorder(ctx context.Context, jobID string, 
 			return s.jobs.RecordExecution(ctx, jobID, item.Name, copyItemObservation(observation))
 		},
 		Replacing: func(item local.UploadItem, observed local.ObservedPredecessor) error {
-			// The durable trail names what the commit saw at the name a
-			// moment before publishing over it. It says "observed" rather
-			// than "replaced" on purpose: this contract admits a racing
-			// writer, so the object actually replaced may not be this one
-			// (ADR 0081 decision 7).
+			// The record is durable before the publication it precedes, and
+			// it names the segments: once the manifest is replaced they
+			// cannot be read again. A record that cannot be saved stops the
+			// replacement rather than letting it land unrecorded.
+			identity := uploadItemIdentity(req, item)
+			record := itemPredecessor(observed)
+			// Validated first, so a record this store would refuse is refused
+			// here rather than latching the store on the way to the same
+			// answer, and the replacement stops either way.
+			if err := identity.Validate(); err != nil {
+				return err
+			}
+			if err := record.Validate(); err != nil {
+				return err
+			}
+			if err := s.jobs.RecordPredecessor(ctx, jobID, identity, record); err != nil {
+				return err
+			}
+			// The trail then says the same thing in one sentence. It says
+			// "observed" rather than "replaced" on purpose: this contract
+			// admits a racing writer, so the object actually replaced may
+			// not be this one (ADR 0081 decision 7).
 			return s.runner.audit.Append(ctx, audit.Event{
 				BookmarkID: req.BookmarkID,
 				Operation:  "object.upload.replace",

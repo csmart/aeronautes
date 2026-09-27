@@ -33,6 +33,46 @@ type JobItemObservationDTO struct {
 	CreatedAt   string `json:"createdAt"`
 }
 
+// JobItemPredecessorDTO is what was live at an item's destination
+// immediately before the item was published over it (ADR 0081 decision 7).
+// It is an observation and never an outcome: this contract admits a racing
+// writer, so the object actually replaced may not be the one described.
+//
+// The segment names are deliberately not here. A page is bounded by its
+// item limit and one item can name thousands of segments, so the page
+// states how many were read and how many are held by name, and the names
+// themselves stay in the durable record an explicit cleanup would read
+// (K-PERF-001).
+type JobItemPredecessorDTO struct {
+	// Present is false when the name held nothing at that moment although
+	// the preflight found it live.
+	Present      bool   `json:"present"`
+	ETag         string `json:"etag"`
+	Length       int64  `json:"length"`
+	LastModified string `json:"lastModified"`
+	Class        string `json:"class"`
+	// Prefix is the replaced dynamic manifest's container and prefix, which
+	// stays listable afterwards, empty for anything else.
+	Prefix string `json:"prefix"`
+	// Counted is how many segment entries were read; Named is how many of
+	// them the record holds by name, which is fewer when the per-item cap
+	// truncated them.
+	Counted int `json:"counted"`
+	Named   int `json:"named"`
+	// Inline, Ranged and Nested count the static entries that are not
+	// simple whole-object remote parts. Inline data had no remote part at
+	// all and went with the replaced manifest.
+	Inline int `json:"inline"`
+	Ranged int `json:"ranged"`
+	Nested int `json:"nested"`
+	// Exact is true only when the entries read are the whole set the
+	// manifest named. A listed prefix is a lower bound.
+	Exact bool `json:"exact"`
+	// Unread is why no inventory could be taken, empty when one was.
+	Unread    string `json:"unread"`
+	CreatedAt string `json:"createdAt"`
+}
+
 type JobItemDTO struct {
 	ID                  string                 `json:"id"`
 	Key                 string                 `json:"key"`
@@ -48,6 +88,8 @@ type JobItemDTO struct {
 	Verification        *JobItemObservationDTO `json:"verification"`
 	PublicationRequired bool                   `json:"publicationRequired"`
 	Publication         *JobItemObservationDTO `json:"publication"`
+	// Predecessor is set only on an item that published over a live name.
+	Predecessor *JobItemPredecessorDTO `json:"predecessor"`
 }
 
 type JobItemPageDTO struct {
@@ -153,6 +195,21 @@ func jobItemDTO(item jobs.ItemRecord) JobItemDTO {
 	if item.Staging != nil {
 		staging := jobItemLocationDTO(*item.Staging)
 		out.Staging = &staging
+	}
+	out.Predecessor = jobItemPredecessorDTO(item.Predecessor)
+	return out
+}
+
+func jobItemPredecessorDTO(observed *jobs.ItemPredecessor) *JobItemPredecessorDTO {
+	if observed == nil {
+		return nil
+	}
+	out := &JobItemPredecessorDTO{Present: observed.Present, ETag: observed.ETag, Length: observed.Length,
+		Class: observed.Class, Prefix: observed.Prefix, Counted: observed.Counted, Named: observed.Named,
+		Inline: observed.Inline, Ranged: observed.Ranged, Nested: observed.Nested, Exact: observed.Exact,
+		Unread: observed.Unread, CreatedAt: observed.CreatedAt.UTC().Format(time.RFC3339Nano)}
+	if !observed.LastModified.IsZero() {
+		out.LastModified = observed.LastModified.UTC().Format(time.RFC3339Nano)
 	}
 	return out
 }

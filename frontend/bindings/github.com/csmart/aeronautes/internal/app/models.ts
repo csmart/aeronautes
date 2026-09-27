@@ -685,6 +685,11 @@ export interface JobItemDTO {
     "verification": JobItemObservationDTO | null;
     "publicationRequired": boolean;
     "publication": JobItemObservationDTO | null;
+
+    /**
+     * Predecessor is set only on an item that published over a live name.
+     */
+    "predecessor": JobItemPredecessorDTO | null;
 }
 
 export interface JobItemLocationDTO {
@@ -710,6 +715,65 @@ export interface JobItemPageDTO {
     "status": string;
     "items": JobItemDTO[] | null;
     "nextCursor": string;
+}
+
+/**
+ * JobItemPredecessorDTO is what was live at an item's destination
+ * immediately before the item was published over it (ADR 0081 decision 7).
+ * It is an observation and never an outcome: this contract admits a racing
+ * writer, so the object actually replaced may not be the one described.
+ * 
+ * The segment names are deliberately not here. A page is bounded by its
+ * item limit and one item can name thousands of segments, so the page
+ * states how many were read and how many are held by name, and the names
+ * themselves stay in the durable record an explicit cleanup would read
+ * (K-PERF-001).
+ */
+export interface JobItemPredecessorDTO {
+    /**
+     * Present is false when the name held nothing at that moment although
+     * the preflight found it live.
+     */
+    "present": boolean;
+    "etag": string;
+    "length": number;
+    "lastModified": string;
+    "class": string;
+
+    /**
+     * Prefix is the replaced dynamic manifest's container and prefix, which
+     * stays listable afterwards, empty for anything else.
+     */
+    "prefix": string;
+
+    /**
+     * Counted is how many segment entries were read; Named is how many of
+     * them the record holds by name, which is fewer when the per-item cap
+     * truncated them.
+     */
+    "counted": number;
+    "named": number;
+
+    /**
+     * Inline, Ranged and Nested count the static entries that are not
+     * simple whole-object remote parts. Inline data had no remote part at
+     * all and went with the replaced manifest.
+     */
+    "inline": number;
+    "ranged": number;
+    "nested": number;
+
+    /**
+     * Exact is true only when the entries read are the whole set the
+     * manifest named. A listed prefix is a lower bound.
+     */
+    "exact": boolean;
+
+    /**
+     * Unread is why no inventory could be taken, empty when one was.
+     */
+    "unread": string;
+    "createdAt": string;
 }
 
 export interface JobItemTotalsDTO {
