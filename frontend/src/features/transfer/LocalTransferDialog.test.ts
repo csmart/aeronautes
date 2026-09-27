@@ -156,7 +156,11 @@ describe.each(["upload", "download"] as const)("%s preflight binding", (mode) =>
     flushSync();
     const expected = { bookmarkId: "source", container: "media", prefix: "selected/",
       settings: { chunkSize: "", transfers: 0, checkers: 0, tpsLimit: 0, bwLimit: "" , bufferSize: ""},
-      ...(mode === "upload" ? { selectionToken: "files-0" } : { destDirToken: "dir-0" }),
+      // The dialog never acknowledges an overwrite, and the exact-forwarding
+      // assertion is where that stays visible (ADR 0081 decision 1).
+      ...(mode === "upload"
+        ? { selectionToken: "files-0", acknowledgeOverwrite: false }
+        : { destDirToken: "dir-0" }),
     };
     expect(mode === "upload" ? f.api.preflightUpload : f.api.preflightDownload).toHaveBeenCalledExactlyOnceWith(expected);
     expect(mode === "upload" ? f.api.startUpload : f.api.startDownload).toHaveBeenCalledExactlyOnceWith(expected);
@@ -382,7 +386,7 @@ it.each(["upload", "download"] as const)("forwards the complete captured %s requ
     settings: { chunkSize: "2Mi", transfers: 3, checkers: 4, tpsLimit: 5, bwLimit: "6M" , bufferSize: ""},
   };
   if (mode === "upload") {
-    const req = { ...scope, selectionToken: "files" };
+    const req = { ...scope, selectionToken: "files", acknowledgeOverwrite: false };
     await browser.preflightUpload(req); await browser.startUpload(req);
     expect(api.preflightUpload).toHaveBeenCalledExactlyOnceWith(req);
     expect(api.startUpload).toHaveBeenCalledExactlyOnceWith(req);

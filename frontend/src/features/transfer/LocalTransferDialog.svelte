@@ -39,7 +39,11 @@
   let startedJobId: string | null = $state(null);
   let closed = $state(false);
   let generation = 0;
-  type Scope = Omit<UploadRequestDTO, "selectionToken">;
+  // The scope is what navigation binds: the fields both requests share.
+  // Overwrite acknowledgement is not one of them — it is an upload-only
+  // answer this dialog never gives, so it is set at the upload request
+  // and kept out of the identity a late navigation is compared against.
+  type Scope = Omit<UploadRequestDTO, "selectionToken" | "acknowledgeOverwrite">;
   interface Intent {
     generation: number;
     browser: BrowserState;
@@ -119,7 +123,7 @@
         const picked = await browser.pickUploadFiles(
           { bookmarkId: capturedScope.bookmarkId, container: capturedScope.container, prefix: capturedScope.prefix });
         if (!isCurrent(intent) || !picked?.token || !picked.files?.length) return;
-        const req = Object.freeze({ ...capturedScope, selectionToken: picked.token });
+        const req = Object.freeze({ ...capturedScope, selectionToken: picked.token, acknowledgeOverwrite: false });
         const result = await browser.preflightUpload(req);
         if (isCurrent(intent)) prepared = { intent, mode: "upload", request: req, report: result, destination: "" };
       } else {
