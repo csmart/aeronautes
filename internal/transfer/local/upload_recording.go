@@ -50,11 +50,18 @@ type ObservedPredecessor struct {
 //
 // A dynamic manifest's prefix can hold an arbitrary number of objects, and
 // recording one replacement must not size its memory to a remote prefix
-// (K-PERF-001), so entries past the cap are counted and not named. The cap
-// truncates only the case that stays recoverable: a dynamic manifest's
-// prefix is recorded and can be listed again afterwards, while a static
-// manifest's list is the one that cannot be read again and is itself
-// bounded by the manifest object the inventory already read whole.
+// (K-PERF-001), so entries past the cap are counted and not named.
+//
+// Which case the cap can actually truncate is worth stating exactly, since
+// a truncated static list is the one that cannot be read again. The store
+// caps a static manifest's entries itself: the cluster this was measured
+// against advertises slo.max_manifest_segments of 1000 and
+// slo.max_manifest_size of 8 MiB, so a static list cannot reach this cap
+// there. A listed prefix has no such limit, and its record keeps the
+// prefix, which stays listable after the replacement. A cluster configured
+// to allow more segments per manifest than this cap would truncate a
+// static record, and the record says that rather than reporting the names
+// it holds as the whole of it.
 const MaxNamedFragments = 2048
 
 // FragmentInventory is what a replaced manifest named, with the reasons it
