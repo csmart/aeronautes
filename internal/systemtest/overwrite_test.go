@@ -22,6 +22,34 @@ import (
 // object can reference those segments. The preservation case is what holds
 // that answer in place.
 
+// relabel renames a bookmark through the public service, the way the
+// operator would, so a confirmation is exercised against a label the
+// store actually holds. The binding is unchanged, so the stored key is
+// retained and the account can still be connected afterwards.
+func (h *Harness) relabel(a *Account, label string) {
+	h.T.Helper()
+	if _, err := h.Bookmarks.Save(h.ctx, app.BookmarkDTO{ID: a.BookmarkID,
+		DisplayName: label, AuthURL: a.authURL, Username: a.user}, ""); err != nil {
+		h.T.Fatalf("relabelling %s: %v", a.BookmarkID, err)
+	}
+}
+
+// accountName is the account this fixture's own auth response named, taken
+// from the harness's raw client so the expectation does not come from the
+// code being tested.
+func (h *Harness) accountName(bookmarkID string) string {
+	for _, a := range []*Account{h.Primary, h.Secondary} {
+		if a == nil || a.BookmarkID != bookmarkID {
+			continue
+		}
+		if i := strings.LastIndex(a.storageURL, "/"); i >= 0 {
+			return a.storageURL[i+1:]
+		}
+		return a.storageURL
+	}
+	return ""
+}
+
 type serviceConfirmer struct {
 	mu    sync.Mutex
 	asked []app.OverwriteConfirmation
@@ -208,56 +236,89 @@ func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 	// identical question. So the question has to name the account the
 	// backend resolved, or the operator has nothing to tell them apart
 	// with.
+	//
+	// The statement also has to survive being shortened for display. A
+	// label long enough to fill the whole display allowance on its own
+	// used to consume it and leave the resolved account out, which
+	// recreates the very ambiguity the account was added to resolve. The
+	// long label is given to BOTH accounts, so in that shape nothing but
+	// the resolved account can tell the two questions apart.
 	t.Run("names the account it resolved, not just the count", func(t *testing.T) {
-		h := makeHarness(t)
-		// The same container name in both accounts, holding the same one
-		// collision, which Container cannot do because it counts.
-		name := h.ns + "-overwrite-ambiguous"
-		for _, account := range []*Account{h.Primary, h.Secondary} {
-			h.rawPut(account, "/"+name, nil, nil)
-			acc := account
-			t.Cleanup(func() { h.purge(acc, name) })
-			h.Seed(account, name, "live/taken", []byte("the bytes already there"), nil)
-		}
-		path := filepath.Join(t.TempDir(), "taken")
-		if err := os.WriteFile(path, []byte("the bytes this job sent"), 0o600); err != nil {
-			t.Fatal(err)
-		}
+		for _, shape := range []struct {
+			name, label string
+			sameLabel   bool
+		}{
+			{name: "as the accounts are labelled"},
+			{name: "under one long label on both", label: strings.Repeat("long-bookmark-label-", 12), sameLabel: true},
+		} {
+			t.Run(shape.name, func(t *testing.T) {
+				h := makeHarness(t)
+				// The same container name in both accounts, holding the same one
+				// collision, which Container cannot do because it counts.
+				name := h.ns + "-overwrite-ambiguous"
+				for _, account := range []*Account{h.Primary, h.Secondary} {
+					h.rawPut(account, "/"+name, nil, nil)
+					acc := account
+					t.Cleanup(func() { h.purge(acc, name) })
+					h.Seed(account, name, "live/taken", []byte("the bytes already there"), nil)
+					if shape.label != "" {
+						h.relabel(account, shape.label)
+					}
+				}
+				path := filepath.Join(t.TempDir(), "taken")
+				if err := os.WriteFile(path, []byte("the bytes this job sent"), 0o600); err != nil {
+					t.Fatal(err)
+				}
 
-		asked := map[string]app.OverwriteConfirmation{}
-		for _, account := range []*Account{h.Primary, h.Secondary} {
-			confirmer := &serviceConfirmer{yes: false}
-			app.WireOverwriteConfirmer(h.Transfer, confirmer)
-			if _, err := h.Browse.Connect(t.Context(), account.BookmarkID); err != nil {
-				t.Fatal(err)
-			}
-			app.WireFilePicker(h.Transfer, listingFilePicker{files: []string{path}, dir: filepath.Dir(path)})
-			picked, err := h.Transfer.PickUploadFiles(t.Context(), app.SelectionScopeDTO{
-				BookmarkID: account.BookmarkID, Container: name, Prefix: "live/"})
-			if err != nil || picked == nil {
-				t.Fatalf("pick: %+v %v", picked, err)
-			}
-			if _, err := h.Transfer.StartUpload(t.Context(), app.UploadRequestDTO{
-				BookmarkID: account.BookmarkID, Container: name, Prefix: "live/",
-				SelectionToken: picked.Token, AcknowledgeOverwrite: true}); err == nil {
-				t.Fatal("an unanswered confirmation admitted the start")
-			}
-			questions := confirmer.questions()
-			if len(questions) != 1 {
-				t.Fatalf("the confirmation was asked %d times for %s", len(questions), account.BookmarkID)
-			}
-			asked[account.BookmarkID] = questions[0]
-		}
+				asked := map[string]app.OverwriteConfirmation{}
+				for _, account := range []*Account{h.Primary, h.Secondary} {
+					confirmer := &serviceConfirmer{yes: false}
+					app.WireOverwriteConfirmer(h.Transfer, confirmer)
+					if _, err := h.Browse.Connect(t.Context(), account.BookmarkID); err != nil {
+						t.Fatal(err)
+					}
+					app.WireFilePicker(h.Transfer, listingFilePicker{files: []string{path}, dir: filepath.Dir(path)})
+					picked, err := h.Transfer.PickUploadFiles(t.Context(), app.SelectionScopeDTO{
+						BookmarkID: account.BookmarkID, Container: name, Prefix: "live/"})
+					if err != nil || picked == nil {
+						t.Fatalf("pick: %+v %v", picked, err)
+					}
+					if _, err := h.Transfer.StartUpload(t.Context(), app.UploadRequestDTO{
+						BookmarkID: account.BookmarkID, Container: name, Prefix: "live/",
+						SelectionToken: picked.Token, AcknowledgeOverwrite: true}); err == nil {
+						t.Fatal("an unanswered confirmation admitted the start")
+					}
+					questions := confirmer.questions()
+					if len(questions) != 1 {
+						t.Fatalf("the confirmation was asked %d times for %s", len(questions), account.BookmarkID)
+					}
+					asked[account.BookmarkID] = questions[0]
+				}
 
-		first, second := asked[h.Primary.BookmarkID], asked[h.Secondary.BookmarkID]
-		// Identical in every way the count-only question would have been.
-		if first.Container != second.Container || len(first.Names) != len(second.Names) ||
-			first.Prefix != second.Prefix {
-			t.Fatalf("the fixture did not produce the ambiguous pair: %+v and %+v", first, second)
-		}
-		// And distinguishable only because the account is named.
-		if first.Account == "" || second.Account == "" || first.Account == second.Account {
-			t.Fatalf("the two questions are indistinguishable: %q and %q", first.Account, second.Account)
+				first, second := asked[h.Primary.BookmarkID], asked[h.Secondary.BookmarkID]
+				// Identical in every way the count-only question would have been.
+				if first.Container != second.Container || len(first.Names) != len(second.Names) ||
+					first.Prefix != second.Prefix {
+					t.Fatalf("the fixture did not produce the ambiguous pair: %+v and %+v", first, second)
+				}
+				// And, in the long shape, identical in the label as well, so
+				// the fixture is the whole counterexample and not half of it.
+				if shape.sameLabel && (first.Bookmark != second.Bookmark || first.Bookmark == "") {
+					t.Fatalf("the long-label fixture did not produce one label: %q and %q", first.Bookmark, second.Bookmark)
+				}
+				// And distinguishable only because the account is named.
+				if first.Account == "" || second.Account == "" || first.Account == second.Account {
+					t.Fatalf("the two questions are indistinguishable: %q and %q", first.Account, second.Account)
+				}
+				// The account survives in full: a shortened statement that
+				// merely differs is not the same as one that still names the
+				// account the backend resolved.
+				for id, about := range asked {
+					if want := h.accountName(id); want == "" || about.Account != want {
+						t.Errorf("the question for %s names %q, not the resolved account %q", id, about.Account, want)
+					}
+				}
+			})
 		}
 	})
 

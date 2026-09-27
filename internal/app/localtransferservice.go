@@ -100,8 +100,12 @@ func (s *TransferService) setFilePicker(picker FilePicker) {
 // whole set, so the question cannot be asked about fewer names than the
 // job will replace.
 type OverwriteConfirmation struct {
-	// Account is the display name and account suffix the backend resolved,
-	// in the shape the chooser titles already use.
+	// Bookmark is the display name the backend resolved, shortened for
+	// display. Account is the account the backend is connected to, in its
+	// own field so that shortening a long label can never remove the one
+	// part of the statement that tells two accounts apart (ADR 0073's
+	// counterexample). A caller rendering one line should state both.
+	Bookmark  string
 	Account   string
 	Container string
 	Prefix    string
@@ -235,8 +239,8 @@ func (s *TransferService) beginPick(ctx context.Context, scope SelectionScopeDTO
 // characters are replaced and a long prefix is cut, so a hostile name
 // cannot garble the one surface this feature claims is trustworthy.
 func (s *TransferService) pickTitle(ctx context.Context, bound selectionScope) string {
-	from, target := s.pickBinding(ctx, bound)
-	return "Download from " + titleText(from, 80) + ", " + titleText(target, 120) + " into…"
+	label, account, target := s.pickBinding(ctx, bound)
+	return "Download from " + bindingText(label, account, 80) + ", " + titleText(target, 120) + " into…"
 }
 
 // uploadPickTitle is the same statement for the other direction. The
@@ -245,49 +249,79 @@ func (s *TransferService) pickTitle(ctx context.Context, bound selectionScope) s
 // while displaying another and the dialog would not tell the operator
 // apart (ADR 0081 decision 3, ADR 0073's counterexample).
 func (s *TransferService) uploadPickTitle(ctx context.Context, bound selectionScope) string {
-	from, target := s.pickBinding(ctx, bound)
-	return "Upload into " + titleText(from, 80) + ", " + titleText(target, 120) + " — choose files…"
+	label, account, target := s.pickBinding(ctx, bound)
+	return "Upload into " + bindingText(label, account, 80) + ", " + titleText(target, 120) + " — choose files…"
 }
 
-// pickBinding is what the backend resolved, as the account it is
-// connected to and the remote target within it, shared by both chooser
-// titles so the two cannot drift into describing the binding differently.
-func (s *TransferService) pickBinding(ctx context.Context, bound selectionScope) (from, target string) {
-	account := ""
+// pickBinding is what the backend resolved, as the label and the account
+// it is connected to and the remote target within it, kept apart so a
+// caller can state the account in its own right and shared by both
+// chooser titles so the two cannot drift into describing the binding
+// differently.
+func (s *TransferService) pickBinding(ctx context.Context, bound selectionScope) (label, account, target string) {
 	if entry, err := s.connections.sessionEntryFor(ctx, bound.bookmarkID); err == nil && entry.session != nil {
 		account = accountSuffix(entry.session.StorageURL())
 	}
-	display := s.connections.displayName(ctx, bound.bookmarkID)
+	label = s.connections.displayName(ctx, bound.bookmarkID)
 	target = bound.container
 	if bound.prefix != "" {
 		target += "/" + bound.prefix
 	}
-	from = display
+	return label, account, target
+}
+
+// bindingText states a resolved binding on one line within limit runes.
+//
+// The account is what tells two bookmarks that read alike apart, so its
+// space is reserved before the label is measured and the label is what
+// gives way: a label long enough to fill the whole allowance is cut, and
+// the account still appears. Its own share is capped in turn, so an
+// endpoint that answers with an enormous account name cannot push the
+// label out instead.
+func bindingText(label, account string, limit int) string {
+	label, account = titleSafe(label), titleSafe(account)
 	switch {
-	case from == "" && account == "":
-		from = "the connected account"
-	case from == "":
-		from = account
-	case account != "":
-		from += " (" + account + ")"
+	case label == "" && account == "":
+		return "the connected account"
+	case label == "":
+		return shortenText(account, limit)
+	case account == "":
+		return shortenText(label, limit)
 	}
-	return from, target
+	account = shortenText(account, limit/2)
+	room := limit - len([]rune(account)) - len(" ()")
+	if room < 1 {
+		return "(" + account + ")"
+	}
+	return shortenText(label, room) + " (" + account + ")"
 }
 
 // titleText keeps a title legible: control characters become "?" and text
 // past limit runes ends in an ellipsis.
 func titleText(text string, limit int) string {
+	return shortenText(titleSafe(text), limit)
+}
+
+// titleSafe replaces the control characters that would let a stored name
+// garble the one surface this feature claims is trustworthy.
+func titleSafe(text string) string {
 	var out []rune
 	for _, r := range text {
 		if r < 0x20 || r == 0x7f || (r >= 0x80 && r < 0xa0) || r == '\u2028' || r == '\u2029' {
 			r = '?'
 		}
 		out = append(out, r)
-		if len(out) == limit {
-			return string(out) + "…"
-		}
 	}
 	return string(out)
+}
+
+// shortenText cuts text past limit runes and ends it in an ellipsis.
+func shortenText(text string, limit int) string {
+	out := []rune(text)
+	if len(out) <= limit {
+		return text
+	}
+	return string(out[:limit]) + "…"
 }
 
 // stillPicking re-reads the registry when the native dialog returns.
@@ -390,9 +424,17 @@ func (s *TransferService) confirmOverwrite(ctx context.Context, req UploadReques
 		return err
 	}
 	before := s.observeConnection()
-	from, _ := s.pickBinding(ctx, scope)
+	label, account, _ := s.pickBinding(ctx, scope)
+	if account == "" {
+		// The question's whole purpose is to name which account is about to
+		// be written over. A session whose account could not be resolved
+		// cannot be named, so it is refused rather than asked about under a
+		// label that may belong to either of two accounts.
+		return errors.New("the destination account could not be identified, so an overwrite is refused")
+	}
 	yes, err := s.overwrites.ConfirmOverwrite(ctx, OverwriteConfirmation{
-		Account: titleText(from, 80), Container: req.Container, Prefix: req.Prefix,
+		Bookmark: titleText(label, 80), Account: titleText(account, 80),
+		Container: req.Container, Prefix: req.Prefix,
 		Names: names, Versioning: versioning,
 	})
 	if err != nil {

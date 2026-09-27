@@ -226,4 +226,27 @@ func TestPickUploadFilesTitlesTheChooserFromTheBackend(t *testing.T) {
 	if !strings.HasPrefix(cut, into+", fixtures/aaaa") {
 		t.Fatalf("the cut title lost the backend-resolved scope: %q", cut)
 	}
+
+	// A label long enough to consume the whole display allowance on its own
+	// must not push the account out of the statement. The account is the
+	// part the counterexample turns on, so its space is reserved and the
+	// label is what gives way.
+	if _, err := h.bookmarks.Save(ctx, BookmarkDTO{ID: list[0].ID, DisplayName: strings.Repeat("b", 300),
+		AuthURL: list[0].AuthURL, Username: list[0].Username}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.browse.Connect(ctx, list[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.transfer.PickUploadFiles(ctx, SelectionScopeDTO{
+		BookmarkID: list[0].ID, Container: "fixtures"}); err != nil {
+		t.Fatal(err)
+	}
+	labelled := picker.titles[2]
+	if !strings.Contains(labelled, "("+account+")") {
+		t.Errorf("a long label pushed the resolved account out of the title: %q", labelled)
+	}
+	if !strings.Contains(labelled, "…") || utf8.RuneCountInString(labelled) > 240 {
+		t.Errorf("a long label was not cut: %d runes, %q", utf8.RuneCountInString(labelled), labelled)
+	}
 }
