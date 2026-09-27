@@ -319,7 +319,7 @@ func fragmentInventory(ctx context.Context, dst *swiftcontrol.Session, container
 		// again once the manifest is gone (ADR 0081 decision 5).
 		entries, err := dst.SLOManifestEntries(ctx, container, name, MaxManifestEntries, MaxManifestBytes)
 		if err != nil {
-			return FragmentInventory{Unread: "the static manifest could not be read whole within this build's bounds"}
+			return FragmentInventory{Unread: "the static manifest could not be read whole within the bounds this build sets"}
 		}
 		// A static manifest lists its members exactly, so this set is the
 		// set, and every entry is recorded in its own position. What it is
