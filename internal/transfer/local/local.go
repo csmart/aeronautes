@@ -673,7 +673,12 @@ type Report struct {
 	Verified     int64
 	Bytes        int64
 	NativeRouted int64
-	Failures     []Failure
+	// Replaced counts the objects this run published over a name that was
+	// already live, which only an acknowledged overwrite admits. A job
+	// that replaced objects reporting none of them would be a counter
+	// that lies by omission (ADR 0081 decision 5).
+	Replaced int64
+	Failures []Failure
 	// A verified copy still counts when bookkeeping or cleanup fails.
 	// Bound the examples without truncating the issue count (ADR 0023).
 	PostCommitIssues       int64

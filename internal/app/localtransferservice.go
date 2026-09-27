@@ -958,6 +958,10 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 		counters.ObjectsVerified = report.Verified
 		counters.BytesCopied = report.Bytes
 		counters.NativeRouted = report.NativeRouted
+		// The operator asked for this on 27 September: a job that replaced
+		// objects reports how many, rather than leaving a field named
+		// overwrites reading zero for whoever wires it to a screen later.
+		counters.Overwrites = report.Replaced
 		if version == 0 {
 			counters.ObjectsFailed = int64(len(report.Failures))
 		}
