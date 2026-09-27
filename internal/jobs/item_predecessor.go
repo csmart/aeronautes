@@ -9,17 +9,18 @@ import (
 	"unicode/utf8"
 )
 
-// MaxRecordedFragments is how many segment names one item's record names.
+// MaxRecordedFragments is how many entries one item's record holds.
 //
-// The cap exists because a dynamic manifest's prefix can hold an arbitrary
-// number of objects and recording one replacement must not size its memory
-// or its storage to a remote prefix (K-PERF-001). A record whose Counted
-// exceeds its Named is what the cap produces, and it says so rather than
-// reporting the names it holds as the whole of the set. The measured
-// store's own per-manifest limit is below this cap, so a static list does
-// not reach it there; a listed prefix can, and its record keeps the prefix
-// it can be listed from again.
-const MaxRecordedFragments = 2048
+// A dynamic manifest's prefix can hold an arbitrary number of objects and
+// recording one replacement must not size its memory or its storage to a
+// remote prefix (K-PERF-001), so a record whose Counted exceeds its Named
+// is admitted and says so rather than reporting the names it holds as the
+// whole of the set. That case is a LISTED prefix, which stays listable
+// after the replacement; the bound is above what a static manifest this
+// build will read can contain, so a static list is recorded whole or its
+// inventory reports itself unread. Nothing here truncates a set that
+// cannot be read again.
+const MaxRecordedFragments = 10000
 
 // ItemPredecessor is what was live at an item's destination immediately
 // before the item was published over it, as the commit read it, with the
@@ -60,18 +61,59 @@ type ItemPredecessor struct {
 	CreatedAt time.Time
 }
 
-// ItemFragment is one segment object a replaced manifest named.
+// ItemFragment is one entry a replaced manifest named, in its own position.
+// An inline or unrecognised entry names no remote object and holds its
+// position with no name, because where it sat is part of what the manifest
+// named.
 type ItemFragment struct {
 	Container string
 	Object    string
+	Shape     FragmentShape
+}
+
+// FragmentShape is what a manifest entry referenced. The values are the
+// durable ones; internal/transfer/local names the same set.
+type FragmentShape string
+
+const (
+	FragmentWhole        FragmentShape = "whole"
+	FragmentRanged       FragmentShape = "ranged"
+	FragmentNested       FragmentShape = "nested"
+	FragmentRangedNested FragmentShape = "ranged_nested"
+	FragmentInline       FragmentShape = "inline"
+	FragmentUnknown      FragmentShape = "unknown"
+)
+
+// named says the shape references a remote object.
+func (s FragmentShape) named() bool {
+	switch s {
+	case FragmentWhole, FragmentRanged, FragmentNested, FragmentRangedNested:
+		return true
+	case FragmentInline, FragmentUnknown:
+		return false
+	}
+	return false
+}
+
+func (s FragmentShape) valid() bool {
+	switch s {
+	case FragmentWhole, FragmentRanged, FragmentNested, FragmentRangedNested, FragmentInline, FragmentUnknown:
+		return true
+	}
+	return false
 }
 
 // Truncated says the record names fewer segments than were read.
 func (p ItemPredecessor) Truncated() bool { return p.Counted > p.Named }
 
 func (f ItemFragment) valid() bool {
-	return f.Container != "" && f.Object != "" && utf8.ValidString(f.Container) && utf8.ValidString(f.Object) &&
-		!strings.ContainsRune(f.Container, '/')
+	if !f.Shape.valid() || !utf8.ValidString(f.Container) || !utf8.ValidString(f.Object) {
+		return false
+	}
+	if !f.Shape.named() {
+		return f.Container == "" && f.Object == ""
+	}
+	return f.Container != "" && f.Object != "" && !strings.ContainsRune(f.Container, '/')
 }
 
 func (p ItemPredecessor) valid() bool {
@@ -145,6 +187,12 @@ func (s *Store) RecordPredecessor(ctx context.Context, jobID string, identity It
 		}
 		prior, err := readPredecessor(ctx, tx, item.ID)
 		if err == nil {
+			// The entries too, because a second reading that named other
+			// objects is another observation and not this one again.
+			prior.Fragments, err = readFragments(ctx, tx, item.ID)
+			if err != nil {
+				return err
+			}
 			if prior.sameAs(observed) {
 				return nil
 			}
@@ -165,8 +213,8 @@ func (s *Store) RecordPredecessor(ctx context.Context, jobID string, identity It
 		}
 		for position, fragment := range observed.Fragments {
 			if _, err := tx.ExecContext(ctx, `INSERT INTO job_item_predecessor_fragments
-				(item_id, position, container, object) VALUES (?, ?, ?, ?)`,
-				item.ID, position, fragment.Container, fragment.Object); err != nil {
+				(item_id, position, shape, container, object) VALUES (?, ?, ?, ?, ?)`,
+				item.ID, position, string(fragment.Shape), fragment.Container, fragment.Object); err != nil {
 				return err
 			}
 		}
@@ -198,20 +246,8 @@ func (s *Store) ReadPredecessor(ctx context.Context, jobID, key string) (ItemPre
 		if err != nil {
 			return err
 		}
-		rows, err := tx.QueryContext(ctx, `SELECT container, object FROM job_item_predecessor_fragments
-			WHERE item_id=? ORDER BY position`, id)
+		observed.Fragments, err = readFragments(ctx, tx, id)
 		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var fragment ItemFragment
-			if err := rows.Scan(&fragment.Container, &fragment.Object); err != nil {
-				return err
-			}
-			observed.Fragments = append(observed.Fragments, fragment)
-		}
-		if err := rows.Err(); err != nil {
 			return err
 		}
 		// The header states how many names it holds, so a record whose rows
@@ -269,14 +305,50 @@ func (p *ItemPredecessor) parseTimes(modified, created string) error {
 	return nil
 }
 
+// readFragments is one item's recorded entries in their own order.
+func readFragments(ctx context.Context, tx *sql.Tx, itemID int64) ([]ItemFragment, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT shape, container, object FROM job_item_predecessor_fragments
+		WHERE item_id=? ORDER BY position`, itemID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var fragments []ItemFragment
+	for rows.Next() {
+		var fragment ItemFragment
+		if err := rows.Scan(&fragment.Shape, &fragment.Container, &fragment.Object); err != nil {
+			return nil, err
+		}
+		fragments = append(fragments, fragment)
+	}
+	return fragments, rows.Err()
+}
+
 // sameAs compares two readings by their own facts, ignoring when each was
 // written, so a repeated write of the identical observation is idempotent
 // and a different one is a conflict.
+//
+// The entries are part of the comparison, in order. A header comparison
+// alone accepted a second reading that named different objects, or the same
+// objects in another order, and reported it as the same fact while the
+// store still held the first names — which is the one thing the refusal of
+// a revised observation exists to prevent.
 func (p ItemPredecessor) sameAs(other ItemPredecessor) bool {
-	return p.Present == other.Present && p.ETag == other.ETag && p.Length == other.Length &&
-		p.LastModified.Equal(other.LastModified) && p.Class == other.Class && p.Prefix == other.Prefix &&
-		p.Counted == other.Counted && p.Named == other.Named && p.Inline == other.Inline &&
-		p.Ranged == other.Ranged && p.Nested == other.Nested && p.Exact == other.Exact && p.Unread == other.Unread
+	if p.Present != other.Present || p.ETag != other.ETag || p.Length != other.Length ||
+		!p.LastModified.Equal(other.LastModified) || p.Class != other.Class || p.Prefix != other.Prefix ||
+		p.Counted != other.Counted || p.Named != other.Named || p.Inline != other.Inline ||
+		p.Ranged != other.Ranged || p.Nested != other.Nested || p.Exact != other.Exact || p.Unread != other.Unread {
+		return false
+	}
+	if len(p.Fragments) != len(other.Fragments) {
+		return false
+	}
+	for i := range p.Fragments {
+		if p.Fragments[i] != other.Fragments[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func formatPredecessorTime(at time.Time) string {

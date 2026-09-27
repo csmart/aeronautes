@@ -64,9 +64,9 @@ func TestPredecessorNamesAreDurableAndReadBack(t *testing.T) {
 	// The order is the manifest's order, and a segment name with a slash in
 	// it is why a fragment keeps its container and object apart.
 	observed := replacedManifest(
-		ItemFragment{Container: "destination_segments", Object: "live/taken/0000002"},
-		ItemFragment{Container: "destination_segments", Object: "live/taken/0000001"},
-		ItemFragment{Container: "elsewhere", Object: "shared/part"})
+		ItemFragment{Container: "destination_segments", Object: "live/taken/0000002", Shape: FragmentWhole},
+		ItemFragment{Container: "destination_segments", Object: "live/taken/0000001", Shape: FragmentRanged},
+		ItemFragment{Container: "elsewhere", Object: "shared/part", Shape: FragmentNested})
 	if err := s.RecordPredecessor(t.Context(), job.ID, intent.ItemIdentity, observed); err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestPredecessorRecordIsWrittenOnce(t *testing.T) {
 	if err := s.AdmitItems(t.Context(), job.ID, []ItemIntent{intent}); err != nil {
 		t.Fatal(err)
 	}
-	observed := replacedManifest(ItemFragment{Container: "segments", Object: "part"})
+	observed := replacedManifest(ItemFragment{Container: "segments", Object: "part", Shape: FragmentWhole})
 	if err := s.RecordPredecessor(t.Context(), job.ID, intent.ItemIdentity, observed); err != nil {
 		t.Fatal(err)
 	}
@@ -132,17 +132,73 @@ func TestPredecessorRecordIsWrittenOnce(t *testing.T) {
 	}
 	// A different reading is a conflict: an observation of what was there
 	// cannot be revised, because a later reading would be of something else.
-	// It latches the store like any other refused item write, so what the
-	// row still holds is read directly afterwards.
-	different := observed
-	different.ETag = "0000"
-	if err := s.RecordPredecessor(t.Context(), job.ID, intent.ItemIdentity, different); !errors.Is(err, ErrItemRecordConflict) {
-		t.Fatalf("a revised observation was accepted: %v", err)
-	}
-	var etag string
-	if err := s.db.Reader().QueryRowContext(t.Context(),
-		`SELECT etag FROM job_item_predecessors`).Scan(&etag); err != nil || etag != "ffff" {
-		t.Fatalf("the first reading did not stand: %q %v", etag, err)
+	// It latches the store like any other refused item write, so each shape
+	// of difference gets its own store and the row is read directly.
+	for _, tc := range []struct {
+		name  string
+		amend func(ItemPredecessor) ItemPredecessor
+	}{
+		{name: "a different entity tag", amend: func(p ItemPredecessor) ItemPredecessor {
+			p.ETag = "0000"
+			return p
+		}},
+		{name: "a different name", amend: func(p ItemPredecessor) ItemPredecessor {
+			p.Fragments = []ItemFragment{{Container: "segments", Object: "other", Shape: FragmentWhole}}
+			return p
+		}},
+		{name: "a different shape for the same name", amend: func(p ItemPredecessor) ItemPredecessor {
+			p.Fragments = []ItemFragment{{Container: "segments", Object: "part", Shape: FragmentNested}}
+			return p
+		}},
+		{name: "the same names in another order", amend: func(p ItemPredecessor) ItemPredecessor {
+			p.Fragments = []ItemFragment{
+				{Container: "segments", Object: "second", Shape: FragmentWhole},
+				{Container: "segments", Object: "first", Shape: FragmentWhole}}
+			p.Counted = 2
+			return p
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, bookmark, _ := newStoreAt(t)
+			job := recordedJob(t, s, TypeUpload)
+			intent := uploadIntent(bookmark, "live/taken")
+			if err := s.AdmitItems(t.Context(), job.ID, []ItemIntent{intent}); err != nil {
+				t.Fatal(err)
+			}
+			first := observed
+			if tc.name == "the same names in another order" {
+				first = replacedManifest(
+					ItemFragment{Container: "segments", Object: "first", Shape: FragmentWhole},
+					ItemFragment{Container: "segments", Object: "second", Shape: FragmentWhole})
+			}
+			if err := s.RecordPredecessor(t.Context(), job.ID, intent.ItemIdentity, first); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.RecordPredecessor(t.Context(), job.ID, intent.ItemIdentity, tc.amend(first)); !errors.Is(err, ErrItemRecordConflict) {
+				t.Fatalf("a revised observation was accepted: %v", err)
+			}
+			// The first reading stands, entries and all.
+			rows, err := s.db.Reader().QueryContext(t.Context(),
+				`SELECT shape, container, object FROM job_item_predecessor_fragments ORDER BY position`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer rows.Close()
+			var held []ItemFragment
+			for rows.Next() {
+				var fragment ItemFragment
+				if err := rows.Scan(&fragment.Shape, &fragment.Container, &fragment.Object); err != nil {
+					t.Fatal(err)
+				}
+				held = append(held, fragment)
+			}
+			if err := rows.Err(); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(held, first.Fragments) {
+				t.Fatalf("the refused reading changed the record: %+v, wrote %+v", held, first.Fragments)
+			}
+		})
 	}
 	// And the row itself cannot be edited underneath the store.
 	err = s.db.WriteTx(t.Context(), func(tx *sql.Tx) error {
@@ -172,21 +228,27 @@ func TestPredecessorRecordRefusals(t *testing.T) {
 		{name: "more names than the cap", admit: true, want: ErrInvalidItemRecord, observed: func() ItemPredecessor {
 			names := make([]ItemFragment, MaxRecordedFragments+1)
 			for i := range names {
-				names[i] = ItemFragment{Container: "segments", Object: fmt.Sprintf("part/%06d", i)}
+				names[i] = ItemFragment{Container: "segments", Object: fmt.Sprintf("part/%06d", i), Shape: FragmentWhole}
 			}
 			return replacedManifest(names...)
 		}},
 		{name: "a name with no container", admit: true, want: ErrInvalidItemRecord, observed: func() ItemPredecessor {
-			return replacedManifest(ItemFragment{Object: "part"})
+			return replacedManifest(ItemFragment{Object: "part", Shape: FragmentWhole})
+		}},
+		{name: "an entry with no shape", admit: true, want: ErrInvalidItemRecord, observed: func() ItemPredecessor {
+			return replacedManifest(ItemFragment{Container: "segments", Object: "part"})
+		}},
+		{name: "an inline entry that names an object", admit: true, want: ErrInvalidItemRecord, observed: func() ItemPredecessor {
+			return replacedManifest(ItemFragment{Container: "segments", Object: "part", Shape: FragmentInline})
 		}},
 		{name: "a container that is really a path", admit: true, want: ErrInvalidItemRecord, observed: func() ItemPredecessor {
-			return replacedManifest(ItemFragment{Container: "segments/nested", Object: "part"})
+			return replacedManifest(ItemFragment{Container: "segments/nested", Object: "part", Shape: FragmentWhole})
 		}},
 		{name: "nothing observed, described anyway", admit: true, want: ErrInvalidItemRecord, observed: func() ItemPredecessor {
 			return ItemPredecessor{Present: false, ETag: "ffff"}
 		}},
 		{name: "fewer counted than named", admit: true, want: ErrInvalidItemRecord, observed: func() ItemPredecessor {
-			observed := replacedManifest(ItemFragment{Container: "segments", Object: "part"})
+			observed := replacedManifest(ItemFragment{Container: "segments", Object: "part", Shape: FragmentWhole})
 			observed.Counted = 0
 			return observed
 		}},
@@ -232,7 +294,7 @@ func TestPredecessorRecordCarriesACountBeyondItsNames(t *testing.T) {
 	}
 	names := make([]ItemFragment, MaxRecordedFragments)
 	for i := range names {
-		names[i] = ItemFragment{Container: "segments", Object: fmt.Sprintf("part/%06d", i)}
+		names[i] = ItemFragment{Container: "segments", Object: fmt.Sprintf("part/%06d", i), Shape: FragmentWhole}
 	}
 	observed := replacedManifest(names...)
 	observed.Counted = MaxRecordedFragments + 4096

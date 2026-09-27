@@ -69,13 +69,11 @@ func fragmentSummary(inventory local.FragmentInventory) string {
 			out += fmt.Sprintf(", %d %s", kind.count, kind.what)
 		}
 	}
-	// Retention is claimed only for the remote segments. Inline data lives
-	// inside the manifest that was replaced, so it has no remote part to
-	// retain and went with the manifest; saying otherwise would report
-	// bytes as surviving that did not.
-	out += "; every segment it named was retained and none was removed"
+	// Stated as what this route does, not as an outcome. Nothing here
+	// removes a segment, whatever the publication then does or fails to do.
+	out += "; nothing here removes any of them"
 	if inventory.Inline > 0 {
-		out += ", and its inline data went with the manifest because it had no remote part"
+		out += ", and its inline data has no remote part, so a replacement would take that with the manifest"
 	}
 	return out
 }
@@ -96,7 +94,8 @@ func itemPredecessor(observed local.ObservedPredecessor) jobs.ItemPredecessor {
 		Unread: observed.Fragments.Unread}
 	for _, fragment := range observed.Fragments.Names {
 		record.Fragments = append(record.Fragments, jobs.ItemFragment{
-			Container: fragment.Container, Object: fragment.Name})
+			Container: fragment.Container, Object: fragment.Name,
+			Shape: jobs.FragmentShape(fragment.Shape)})
 	}
 	return record
 }

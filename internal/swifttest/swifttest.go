@@ -14,6 +14,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -109,6 +110,14 @@ type Server struct {
 	// GET requests answer 500. Used to reproduce a verify-read failure
 	// after a metadata POST (ADR 0058).
 	objectHEADFailRemaining int
+	// ManifestReadFault, when set, spoils the next ?multipart-manifest=get
+	// response for that object ("container/name"): "partial" answers a
+	// valid entry list with HTTP 206, "ranged" answers HTTP 200 with a
+	// Content-Range, "trailing" answers a valid list followed by other
+	// bytes, and "truncated" answers a list that stops mid-array. Each is a
+	// response a lenient reader parses as a manifest, which is why a record
+	// of what an operation is about to replace must not use one.
+	ManifestReadFault map[string]string
 	// dropNextObjectPOST closes the POST connection without a response,
 	// so the caller sees a transport failure after the request left.
 	dropNextObjectPOST bool
@@ -1116,7 +1125,25 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request, container,
 
 	if r.URL.Query().Get("multipart-manifest") == "get" && o.SLOManifestJSON != "" {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(o.SLOManifestJSON))
+		body, status := o.SLOManifestJSON, http.StatusOK
+		s.mu.Lock()
+		fault := s.ManifestReadFault[container+"/"+name]
+		delete(s.ManifestReadFault, container+"/"+name)
+		s.mu.Unlock()
+		switch fault {
+		case "partial":
+			status = http.StatusPartialContent
+		case "ranged":
+			w.Header().Set("Content-Range", fmt.Sprintf("bytes 0-%d/%d", len(body)-1, len(body)))
+		case "trailing":
+			body += "\n[{\"name\":\"/elsewhere/extra\"}]"
+		case "truncated":
+			if cut := strings.LastIndex(body, "}"); cut > 0 {
+				body = body[:cut]
+			}
+		}
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
 		return
 	}
 

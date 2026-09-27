@@ -36,7 +36,6 @@ type UploadRequestDTO struct {
 	// replace what is already at these names (ADR 0081 decision 1).
 	// Without it this route behaves exactly as it did: the preflight
 	// refuses a live name and a collision at commit is a conflict.
-	//
 	// It guards against an accident, not against a hostile page, which
 	// can set it itself. What guards against that is decision 2's native
 	// confirmation, which the backend raises and the page cannot answer.

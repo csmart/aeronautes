@@ -46,23 +46,31 @@ type ObservedPredecessor struct {
 	Fragments FragmentInventory
 }
 
-// MaxNamedFragments is how many segment names one inventory holds.
+// MaxManifestEntries and MaxManifestBytes bound the static manifest this
+// route will read for a record. They are this build's own limits, not a
+// cluster's: the store's per-manifest limit is a deployment setting and a
+// record must not depend on one. A manifest past either bound is reported
+// as one that could not be inventoried, because the alternative is
+// crediting part of a list as the whole of it (ADR 0081 decision 5).
+const (
+	MaxManifestEntries = 10000
+	MaxManifestBytes   = 8 << 20
+)
+
+// MaxListedFragments is how many members of a LISTED prefix one inventory
+// holds.
 //
-// A dynamic manifest's prefix can hold an arbitrary number of objects, and
-// recording one replacement must not size its memory to a remote prefix
-// (K-PERF-001), so entries past the cap are counted and not named.
+// A dynamic manifest names only a prefix, which can hold an arbitrary
+// number of objects, and recording one replacement must not size its memory
+// to a remote prefix (K-PERF-001), so members past the cap are counted and
+// not named. That is sound only because a prefix stays listable after the
+// replacement: the record keeps it, so what the cap left out can be found
+// again.
 //
-// Which case the cap can actually truncate is worth stating exactly, since
-// a truncated static list is the one that cannot be read again. The store
-// caps a static manifest's entries itself: the cluster this was measured
-// against advertises slo.max_manifest_segments of 1000 and
-// slo.max_manifest_size of 8 MiB, so a static list cannot reach this cap
-// there. A listed prefix has no such limit, and its record keeps the
-// prefix, which stays listable after the replacement. A cluster configured
-// to allow more segments per manifest than this cap would truncate a
-// static record, and the record says that rather than reporting the names
-// it holds as the whole of it.
-const MaxNamedFragments = 2048
+// A static manifest is not capped here at all. Its list cannot be read
+// again once the manifest is gone, so it is recorded whole or the inventory
+// reports itself unread; MaxManifestEntries is where that bound lives.
+const MaxListedFragments = 2048
 
 // FragmentInventory is what a replaced manifest named, with the reasons it
 // is not a complete account of what backs the object. A top-level list is
@@ -75,8 +83,9 @@ type FragmentInventory struct {
 	// Prefix is the dynamic manifest's container and prefix, empty for a
 	// static manifest or a plain object.
 	Prefix string
-	// Names are the segment objects the inventory holds, in the order they
-	// were read, at most MaxNamedFragments of them.
+	// Names are the entries the inventory holds, in the order they were
+	// read. A static manifest's list is whole or the inventory is unread; a
+	// listed prefix holds at most MaxListedFragments of its members.
 	Names []Fragment
 	// Counted is how many segment entries were read, which exceeds
 	// len(Names) when the cap stopped naming them.
@@ -93,19 +102,70 @@ type FragmentInventory struct {
 	Unread string
 }
 
-// Fragment is one segment object a replaced manifest named, kept as its two
-// parts because a container and an object name concatenated cannot be split
-// back apart when the object name contains a slash.
+// Fragment is one entry a replaced manifest named, in its own position.
+//
+// The container and object stay apart because concatenated they cannot be
+// split back when the object name contains a slash. The shape stays with
+// the entry rather than only in a total, because after the replacement the
+// record is the only thing that can say which name was a containing object
+// and which was a manifest of its own (ADR 0081 decision 5).
 type Fragment struct {
 	Container string
 	Name      string
+	Shape     FragmentShape
 }
 
-// add names a segment while the cap allows it and counts it either way.
-func (i *FragmentInventory) add(container, name string) {
+// FragmentShape is what a manifest entry referenced.
+type FragmentShape string
+
+const (
+	// FragmentWhole is a whole remote object, the only shape whose bytes
+	// this entry alone accounts for.
+	FragmentWhole FragmentShape = "whole"
+	// FragmentRanged references part of a containing object, so the object
+	// named holds more than this entry used.
+	FragmentRanged FragmentShape = "ranged"
+	// FragmentNested names another manifest rather than its descendants.
+	FragmentNested FragmentShape = "nested"
+	// FragmentRangedNested is both, which a manifest may state.
+	FragmentRangedNested FragmentShape = "ranged_nested"
+	// FragmentInline is data carried inside the manifest itself, with no
+	// remote object at all, kept in place so the position is recorded.
+	FragmentInline FragmentShape = "inline"
+	// FragmentUnknown is an entry shape this build does not recognise,
+	// which cannot be counted as a part it might not be.
+	FragmentUnknown FragmentShape = "unknown"
+)
+
+// record keeps one entry of a manifest's own list, which is never
+// truncated: it cannot be read again once the manifest is replaced.
+func (i *FragmentInventory) record(fragment Fragment) {
+	i.count(fragment)
+	i.Names = append(i.Names, fragment)
+}
+
+// recordListed keeps one member of a listed prefix while the cap allows it,
+// and counts it either way. The prefix is in the record, so a member the
+// cap left out can still be found.
+func (i *FragmentInventory) recordListed(fragment Fragment) {
+	i.count(fragment)
+	if len(i.Names) < MaxListedFragments {
+		i.Names = append(i.Names, fragment)
+	}
+}
+
+func (i *FragmentInventory) count(fragment Fragment) {
 	i.Counted++
-	if len(i.Names) < MaxNamedFragments {
-		i.Names = append(i.Names, Fragment{Container: container, Name: name})
+	switch fragment.Shape {
+	case FragmentRanged:
+		i.Ranged++
+	case FragmentNested:
+		i.Nested++
+	case FragmentRangedNested:
+		i.Ranged++
+		i.Nested++
+	case FragmentInline:
+		i.Inline++
 	}
 }
 

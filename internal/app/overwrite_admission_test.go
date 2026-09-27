@@ -58,6 +58,8 @@ type overwriteFixture struct {
 	h        *harness
 	bookmark string
 	token    string
+	// dir holds the selected files, so a case can take one away.
+	dir string
 	// tag is the live object's entity tag before anything ran.
 	tag string
 }
@@ -85,7 +87,7 @@ func newOverwriteFixture(t *testing.T) *overwriteFixture {
 	if err != nil || picked == nil {
 		t.Fatalf("pick: %+v %v", picked, err)
 	}
-	f := &overwriteFixture{h: h, bookmark: bookmark, token: picked.Token}
+	f := &overwriteFixture{h: h, bookmark: bookmark, token: picked.Token, dir: dir}
 	f.tag = f.liveTag(t)
 	return f
 }
@@ -361,19 +363,22 @@ func TestAcknowledgedUploadRecordsWhatItSawBeforeReplacing(t *testing.T) {
 }
 
 // seedStaticLargeObject puts a static manifest at name over two segments,
-// with one inline entry so the record can be shown distinguishing an entry
-// that has a remote part from one that does not.
-func seedStaticLargeObject(t *testing.T, h *harness, container, name string) []jobs.ItemFragment {
+// with one inline entry between them so the record can be shown keeping
+// each entry's own shape and position. It returns the remote parts, and the
+// entries the record should hold, which include the inline one in place.
+func seedStaticLargeObject(t *testing.T, h *harness, container, name string) (parts, entries []jobs.ItemFragment) {
 	t.Helper()
 	h.mock.AddContainer(container+"_segments", "standard")
-	var parts []jobs.ItemFragment
 	var digests string
 	for i, content := range []string{"01234567", "89abcdef"} {
 		part := fmt.Sprintf("%s/%07d", name, i+1)
 		seedObject(h.mock, container+"_segments", part, content, nil)
-		parts = append(parts, jobs.ItemFragment{Container: container + "_segments", Object: part})
+		parts = append(parts, jobs.ItemFragment{Container: container + "_segments", Object: part,
+			Shape: jobs.FragmentWhole})
 		digests += md5of(content)
 	}
+	// The manifest's own order: a part, the inline data, the other part.
+	entries = []jobs.ItemFragment{parts[0], {Shape: jobs.FragmentInline}, parts[1]}
 	h.mock.PutObject(container, name, swifttest.Object{
 		SLO: true, Bytes: 16, ETag: `"` + md5of(digests) + `"`, Data: []byte("0123456789abcdef"),
 		SLOManifestJSON: `[` +
@@ -381,7 +386,7 @@ func seedStaticLargeObject(t *testing.T, h *harness, container, name string) []j
 			`{"data":"aGVsbG8="},` +
 			`{"name":"/` + parts[1].Container + `/` + parts[1].Object + `","hash":"` + md5of("89abcdef") + `","bytes":8}]`,
 	})
-	return parts
+	return parts, entries
 }
 
 func md5of(content string) string {
@@ -395,7 +400,7 @@ func md5of(content string) string {
 // which objects it would be clearing.
 func TestReplacingALargeObjectRecordsItsSegmentNamesDurably(t *testing.T) {
 	f := newOverwriteFixture(t)
-	parts := seedStaticLargeObject(t, f.h, "replaceable", "live/taken")
+	_, entries := seedStaticLargeObject(t, f.h, "replaceable", "live/taken")
 	f.tag = f.liveTag(t)
 	// Read at the moment the replacing publication lands: the record has to
 	// be there already, because after it the manifest cannot be read again.
@@ -424,8 +429,8 @@ func TestReplacingALargeObjectRecordsItsSegmentNamesDurably(t *testing.T) {
 	if got := f.liveTag(t); got != sentTagForFixture {
 		t.Fatalf("the manifest was not replaced: %q, was %q", got, f.tag)
 	}
-	if got := recordedBeforePublication.Load(); got != int64(len(parts)) {
-		t.Fatalf("%d segment names were recorded when the publication landed, not %d", got, len(parts))
+	if got := recordedBeforePublication.Load(); got != int64(len(entries)) {
+		t.Fatalf("%d entries were recorded when the publication landed, not %d", got, len(entries))
 	}
 
 	// The names, read back after the job reached a terminal state, and then
@@ -443,10 +448,10 @@ func TestReplacingALargeObjectRecordsItsSegmentNamesDurably(t *testing.T) {
 			if err != nil || !ok {
 				t.Fatalf("read back: ok=%v %v", ok, err)
 			}
-			if !reflect.DeepEqual(read.Fragments, parts) {
-				t.Fatalf("the record names %+v, not the segments the manifest named %+v", read.Fragments, parts)
+			if !reflect.DeepEqual(read.Fragments, entries) {
+				t.Fatalf("the record holds %+v, not the entries the manifest named %+v", read.Fragments, entries)
 			}
-			if read.Class != "slo" || !read.Exact || read.Counted != len(parts) || read.Named != len(parts) {
+			if read.Class != "slo" || !read.Exact || read.Counted != len(entries) || read.Named != len(entries) {
 				t.Fatalf("the record does not describe the manifest it read: %+v", read)
 			}
 			// The inline entry is counted as a shape and never named, because
@@ -474,8 +479,8 @@ func TestReplacingALargeObjectRecordsItsSegmentNamesDurably(t *testing.T) {
 	for _, item := range page.Items {
 		if item.Key == "live/taken" {
 			replaced++
-			if item.Predecessor == nil || item.Predecessor.Named != len(parts) ||
-				item.Predecessor.Counted != len(parts) || item.Predecessor.Inline != 1 ||
+			if item.Predecessor == nil || item.Predecessor.Named != len(entries) ||
+				item.Predecessor.Counted != len(entries) || item.Predecessor.Inline != 1 ||
 				!item.Predecessor.Present || !item.Predecessor.Exact || item.Predecessor.Class != "slo" {
 				t.Fatalf("the public item does not state what was replaced: %+v", item.Predecessor)
 			}
@@ -505,15 +510,17 @@ func TestReplacingALargeObjectRecordsItsSegmentNamesDurably(t *testing.T) {
 	if summary == "" {
 		t.Fatal("the trail does not record the replacement at all")
 	}
-	for _, want := range []string{"it named 2 segments", "1 inline",
-		"every segment it named was retained and none was removed",
-		"its inline data went with the manifest because it had no remote part"} {
+	for _, want := range []string{"it named 3 segments", "1 inline",
+		"nothing here removes any of them",
+		"its inline data has no remote part, so a replacement would take that with the manifest"} {
 		if !strings.Contains(summary, want) {
 			t.Errorf("the summary lacks %q: %s", want, summary)
 		}
 	}
-	if strings.Contains(summary, "every one of them was retained") {
-		t.Errorf("the summary claims every counted entry survived: %s", summary)
+	for _, forbidden := range []string{"every one of them was retained", "was retained", "went with the manifest"} {
+		if strings.Contains(summary, forbidden) {
+			t.Errorf("the summary claims %q before anything was published: %s", forbidden, summary)
+		}
 	}
 }
 
@@ -583,5 +590,80 @@ func TestOverwriteQuestionRefusesWhatItCannotName(t *testing.T) {
 				t.Fatalf("the question does not state the plan it authorises: %+v", question)
 			}
 		})
+	}
+}
+
+// Finding F5 of db:746: the predecessor's record is written BEFORE the
+// publication, so it cannot say what the publication did. An earlier wording
+// announced that the inline data had gone with the manifest, and a job that
+// then never published left that standing over an untouched object.
+func TestReplacementRecordMakesNoClaimAboutAnUnattemptedPublication(t *testing.T) {
+	f := newOverwriteFixture(t)
+	parts, entries := seedStaticLargeObject(t, f.h, "replaceable", "live/taken")
+	f.tag = f.liveTag(t)
+	// The source goes away once the predecessor's record is durable and
+	// before anything is published. Keyed off the record itself rather than
+	// off a request count, so it cannot land on the preflight's own read.
+	var removed atomic.Bool
+	f.h.mock.AfterRequest = func(string, string) {
+		if removed.Load() {
+			return
+		}
+		var rows int
+		if err := f.h.db.Reader().QueryRowContext(context.Background(),
+			`SELECT COUNT(*) FROM job_item_predecessors`).Scan(&rows); err != nil || rows == 0 {
+			return
+		}
+		if err := os.Remove(filepath.Join(f.dir, "taken")); err != nil {
+			t.Errorf("removing the source: %v", err)
+		}
+		removed.Store(true)
+	}
+	f.h.transfer.setOverwriteConfirmer(&recordingOverwriteConfirmer{yes: true})
+	id, err := f.h.transfer.StartUpload(t.Context(), f.request(true))
+	if err != nil || id == "" {
+		t.Fatalf("start: %q %v", id, err)
+	}
+	job := awaitTerminal(t, f.h, id)
+	if job.State == "complete" || job.Counters.Overwrites != 0 {
+		t.Fatalf("a job that published nothing was reported as one that did: %s %+v", job.State, job.Counters)
+	}
+	if !removed.Load() {
+		t.Fatal("the fixture never removed the source, so nothing was prevented")
+	}
+	// The manifest is exactly as it was, read back independently.
+	if got := f.liveTag(t); got != f.tag {
+		t.Fatalf("the manifest changed: %q, was %q", got, f.tag)
+	}
+	for _, part := range parts {
+		if _, err := f.h.inspector.Object(t.Context(), f.bookmark, part.Container, part.Object); err != nil {
+			t.Errorf("a segment of the untouched manifest is gone: %s: %v", part.Object, err)
+		}
+	}
+	// The record of what was there stands, and says nothing about an outcome.
+	read, ok, err := f.h.transfer.jobs.ReadPredecessor(t.Context(), id, "live/taken")
+	if err != nil || !ok || read.Named != len(entries) {
+		t.Fatalf("the record of what was there is missing: %+v ok=%v %v", read, ok, err)
+	}
+	events, err := f.h.auditSvc.audit.List(t.Context(), audit.Query{Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var summary string
+	for _, event := range events {
+		if event.Operation == "object.upload.replace" {
+			summary = event.Summary
+		}
+	}
+	if summary == "" {
+		t.Fatal("the trail does not record what was seen")
+	}
+	if !strings.Contains(summary, "nothing here removes any of them") {
+		t.Errorf("the record does not say what this route will not do: %q", summary)
+	}
+	for _, forbidden := range []string{"was retained", "were retained", "went with the manifest"} {
+		if strings.Contains(summary, forbidden) {
+			t.Errorf("the record claims %q about a publication that never happened: %q", forbidden, summary)
+		}
 	}
 }
