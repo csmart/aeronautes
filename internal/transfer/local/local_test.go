@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
@@ -734,13 +735,21 @@ func TestPreflightUploadTreatsAStaleListingRowConservatively(t *testing.T) {
 // the scan from OUTSIDE, through the public entry points, so the production
 // code needs no seam: if the loop stops when told, it asks exactly passes+1
 // times, and if it carries on it asks more.
+//
+// A context is asked by whatever holds it, which for the uncancelled control
+// includes the listing iterator's own goroutine and the client underneath it,
+// so the counter is guarded. The first version was not, and the race detector
+// said so: a racy observation is not an observation.
 type countingCancel struct {
 	context.Context
+	mu     sync.Mutex
 	passes int
 	asked  int
 }
 
 func (c *countingCancel) Err() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.asked++
 	if c.asked <= c.passes {
 		return nil
@@ -749,12 +758,21 @@ func (c *countingCancel) Err() error {
 }
 
 func (c *countingCancel) Done() <-chan struct{} {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.asked <= c.passes {
 		return nil
 	}
 	closed := make(chan struct{})
 	close(closed)
 	return closed
+}
+
+// questions is how many times the context has been asked.
+func (c *countingCancel) questions() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.asked
 }
 
 // Deciding everything local before touching the destination removed the
@@ -812,8 +830,8 @@ func TestPreflightUploadStopsScanningWhenCancelled(t *testing.T) {
 					}
 					// It stopped where it was told: one question per candidate
 					// reached, and no more.
-					if ctx.asked != tc.wantAsked {
-						t.Errorf("the scan asked %d times, want %d, so it did not stop between candidates", ctx.asked, tc.wantAsked)
+					if asked := ctx.questions(); asked != tc.wantAsked {
+						t.Errorf("the scan asked %d times, want %d, so it did not stop between candidates", asked, tc.wantAsked)
 					}
 					if got := len(mock.RequestLog()) - before; got != 0 {
 						t.Errorf("a cancelled scan made %d destination requests", got)
@@ -830,8 +848,8 @@ func TestPreflightUploadStopsScanningWhenCancelled(t *testing.T) {
 				// The scan asked at least once per candidate. It is not an
 				// exact count here, because the destination requests this
 				// control does reach consult the context as well.
-				if ctx.asked < tc.wantAsked {
-					t.Errorf("the scan asked %d times, fewer than one per candidate (%d)", ctx.asked, tc.wantAsked)
+				if asked := ctx.questions(); asked < tc.wantAsked {
+					t.Errorf("the scan asked %d times, fewer than one per candidate (%d)", asked, tc.wantAsked)
 				}
 			})
 		}
