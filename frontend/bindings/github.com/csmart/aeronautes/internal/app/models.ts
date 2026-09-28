@@ -116,6 +116,19 @@ export interface AppSettingsDTO {
      * The operator sets it.
      */
     "maxConnsPerHost": number;
+
+    /**
+     * ReclaimReplacedFragments says an acknowledged overwrite of a large
+     * object reclaims the predecessor's own recorded segments once the
+     * replacement is verified (ADR 0081 decision 5). It defaults to
+     * reclaiming, which is what the operator asked for.
+     * It is an ordinary stored setting although it qualifies a deletion,
+     * because the only direction a page can move it unattended is towards
+     * reclaiming LESS: the operation it qualifies is already gated by
+     * decision 2's native confirmation, which no page can answer, and that
+     * confirmation states what will be removed.
+     */
+    "reclaimReplacedFragments": boolean;
 }
 
 /**

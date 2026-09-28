@@ -114,6 +114,12 @@ type OverwriteConfirmation struct {
 	// Versioning is what the container said about keeping versions, as an
 	// observation and not a promise of recovery (ADR 0081 decision 8).
 	Versioning string
+	// Fragments says what this start would do to the segments backing what
+	// is being replaced: how many will be removed once the replacement is
+	// verified, or why they will be kept. An answer of yes has to cover the
+	// whole effect, and deleting objects the operator was never shown is
+	// what this sentence exists to put in front of them (decision 5).
+	Fragments string
 }
 
 // OverwriteConfirmer asks the operator, on a surface the page cannot draw,
@@ -424,7 +430,8 @@ func (s *TransferService) confirmOverwrite(ctx context.Context, req UploadReques
 	}
 	before := s.observeConnection()
 	label, account, _ := s.pickBinding(ctx, scope)
-	question, err := overwriteQuestion(label, account, req.Container, req.Prefix, versioning, names)
+	question, err := overwriteQuestion(label, account, req.Container, req.Prefix, versioning, names,
+		s.fragmentPlanFor(ctx, req, preflight, versioning))
 	if err != nil {
 		return err
 	}
@@ -457,7 +464,8 @@ func (s *TransferService) confirmOverwrite(ctx context.Context, req UploadReques
 // belong to either of two accounts and the operator has nothing else to
 // tell them apart with. A question missing any other part of the plan it
 // would authorise is refused for the same reason.
-func overwriteQuestion(label, account, container, prefix, versioning string, names []string) (OverwriteConfirmation, error) {
+func overwriteQuestion(label, account, container, prefix, versioning string, names []string,
+	fragments fragmentPlan) (OverwriteConfirmation, error) {
 	switch {
 	case account == "":
 		return OverwriteConfirmation{}, errors.New("the destination account could not be identified, so an overwrite is refused")
@@ -471,7 +479,92 @@ func overwriteQuestion(label, account, container, prefix, versioning string, nam
 	return OverwriteConfirmation{
 		Bookmark: titleText(label, 80), Account: titleText(account, 80),
 		Container: container, Prefix: prefix, Names: names, Versioning: versioning,
+		Fragments: fragments.sentence(),
 	}, nil
+}
+
+// fragmentPlanFor counts what this start would remove, and says why it would
+// not, so the confirmation can state it (ADR 0081 decision 5).
+//
+// The versioning mode is the one the question is already stating, so the two
+// halves of the sentence cannot disagree. Reclamation reads the mode again at
+// the time it would run, because what matters then is what is true then.
+func (s *TransferService) fragmentPlanFor(ctx context.Context, req UploadRequestDTO,
+	preflight *local.UploadPreflight, versioning string) fragmentPlan {
+	plan := fragmentPlan{Reclaiming: s.reclaimsReplacedFragments(ctx)}
+	if keepsVersions(versioning) {
+		plan.Skipped = "the container keeps versions, and those segments belong to a retained version"
+	}
+	var names []string
+	for _, item := range preflight.Items {
+		if item.Replaces {
+			names = append(names, item.Name)
+		}
+	}
+	session, err := s.connections.SessionFor(ctx, req.BookmarkID)
+	if err != nil || session == nil {
+		// The question still has to say something true. Nothing was counted,
+		// so nothing is claimed about a count.
+		return plan
+	}
+	plan.Whole, plan.Kept = local.FragmentPlan(ctx, session, req.Container, names)
+	return plan
+}
+
+// keepsVersions reads the versioning sentence the question states. The modes
+// this build admits are named by observedVersioning, and only the legacy ones
+// carry an archive, which is what makes reclamation the wrong thing to do.
+func keepsVersions(versioning string) bool {
+	return strings.Contains(versioning, string(swiftcontrol.VersioningVersionsLocation)) ||
+		strings.Contains(versioning, string(swiftcontrol.VersioningHistoryLocation))
+}
+
+// fragmentPlan is what the question has to say about the predecessor's
+// segments: how many this start would remove and why it would not.
+//
+// An answer of yes has to cover the whole effect, so a question that names
+// only the object being replaced does not authorise deleting objects the
+// operator was never shown (ADR 0081 decision 5). The count is of whole
+// remote parts only, because those are the only shapes reclamation touches.
+type fragmentPlan struct {
+	// Reclaiming is the operator's setting.
+	Reclaiming bool
+	// Whole is how many whole remote segments the replaced manifests named,
+	// summed over every name this start would replace.
+	Whole int
+	// Kept is how many entries reclamation will not touch whatever the
+	// setting says: ranged, nested, inline and unrecognised shapes.
+	Kept int
+	// Skipped is why reclamation will not run at all, empty when it will.
+	Skipped string
+}
+
+func (p fragmentPlan) sentence() string {
+	if p.Whole == 0 && p.Kept == 0 {
+		return "no large object is being replaced, so there are no segments to remove"
+	}
+	shapes := ""
+	if p.Kept > 0 {
+		shapes = fmt.Sprintf(", and %d entr%s of a shape this build never removes stay whatever the setting says",
+			p.Kept, plural(p.Kept, "y", "ies"))
+	}
+	switch {
+	case p.Skipped != "":
+		return fmt.Sprintf("%d segment object%s backed what is being replaced and none will be removed, because %s%s",
+			p.Whole, plural(p.Whole, "", "s"), p.Skipped, shapes)
+	case !p.Reclaiming:
+		return fmt.Sprintf("%d segment object%s backed what is being replaced and will be KEPT, because reclaiming is turned off%s",
+			p.Whole, plural(p.Whole, "", "s"), shapes)
+	}
+	return fmt.Sprintf("%d segment object%s backed what is being replaced and will be REMOVED once the replacement is verified%s",
+		p.Whole, plural(p.Whole, "", "s"), shapes)
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 // observedVersioning is what the container said about keeping versions,
@@ -565,6 +658,23 @@ func (s *TransferService) downloadObjectCeiling(ctx context.Context) int64 {
 		return defaultDownloadObjectCeiling
 	}
 	return int64(settings.DownloadObjectCeiling)
+}
+
+// reclaimsReplacedFragments is the operator's reclamation setting, or the
+// default when settings are not wired or cannot be read (ADR 0081
+// decision 5). The default is to reclaim, so an unreadable setting behaves
+// as the operator asked rather than quietly retaining; what stops a
+// reclamation the operator did not authorise is decision 2's confirmation,
+// which states what will be removed and which no page can answer.
+func (s *TransferService) reclaimsReplacedFragments(ctx context.Context) bool {
+	if s.settings == nil {
+		return true
+	}
+	settings, err := s.settings.Get(ctx)
+	if err != nil {
+		return true
+	}
+	return settings.ReclaimReplacedFragments
 }
 
 // WireSettings gives the transfer service the application settings it

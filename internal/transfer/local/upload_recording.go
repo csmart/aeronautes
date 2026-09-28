@@ -1,9 +1,11 @@
 package local
 
 import (
+	"context"
 	"errors"
 	"time"
 
+	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
 )
 
@@ -299,4 +301,50 @@ func (u *uploadRun) observe(item UploadItem, result uploadResult) error {
 		}
 	}
 	return nil
+}
+
+// FragmentPlan counts what reclaiming these replaced names would remove, so
+// the operator's confirmation can state it before anything is written (ADR
+// 0081 decision 5).
+//
+// It is a count of WHOLE remote segments, because those are the only shapes
+// reclamation touches, and a separate count of the entries it will never
+// touch: ranged, nested, inline and unrecognised. A name that is not a large
+// object contributes nothing.
+//
+// This reading is not the one reclamation acts on. The record it acts on is
+// taken immediately before each publication, because that is the only moment
+// a predecessor can still be read (decision 7), so the two can differ if the
+// object changes in between. The question therefore states what was there
+// when the operator was asked, and the record states what was removed. Saying
+// a number at all is the point: a question that names only the object being
+// replaced does not authorise deleting objects nobody was shown.
+func FragmentPlan(ctx context.Context, dst *swiftcontrol.Session, container string, names []string) (whole, kept int) {
+	for _, name := range names {
+		detail, err := dst.ObjectDetail(ctx, container, name)
+		if err != nil || detail == nil {
+			// Unreadable here says nothing about what the commit will find,
+			// and a question cannot count what it could not read.
+			continue
+		}
+		if detail.Class == swiftcontrol.ClassPlain {
+			continue
+		}
+		inventory := fragmentInventory(ctx, dst, container, name, detail)
+		for _, fragment := range inventory.Names {
+			if fragment.Shape == FragmentWhole {
+				whole++
+				continue
+			}
+			kept++
+		}
+		// Entries the cap counted but did not name are whole parts as far as
+		// this count can say, and a listed prefix may hold more than it
+		// showed; both are why the sentence says what was there rather than
+		// promising an exact total.
+		if extra := inventory.Counted - len(inventory.Names); extra > 0 {
+			whole += extra
+		}
+	}
+	return whole, kept
 }

@@ -92,6 +92,16 @@ type AppSettingsDTO struct {
 	// host, applied when the session is opened (ADR 0074 decision 4).
 	// The operator sets it.
 	MaxConnsPerHost int `json:"maxConnsPerHost"`
+	// ReclaimReplacedFragments says an acknowledged overwrite of a large
+	// object reclaims the predecessor's own recorded segments once the
+	// replacement is verified (ADR 0081 decision 5). It defaults to
+	// reclaiming, which is what the operator asked for.
+	// It is an ordinary stored setting although it qualifies a deletion,
+	// because the only direction a page can move it unattended is towards
+	// reclaiming LESS: the operation it qualifies is already gated by
+	// decision 2's native confirmation, which no page can answer, and that
+	// confirmation states what will be removed.
+	ReclaimReplacedFragments bool `json:"reclaimReplacedFragments"`
 }
 
 // defaultDownloadObjectCeiling is 250,000 objects: about 352 MiB of peak
@@ -142,6 +152,11 @@ func defaults() AppSettingsDTO {
 		BrowserRetentionCeiling: defaultBrowserRetentionCeiling,
 		MaxQueuedJobs:           defaultMaxQueuedJobs,
 		MaxConnsPerHost:         defaultMaxConnsPerHost,
+		// Defaulting to true is safe against a missing row, because Get
+		// starts from these defaults and overrides only keys the table
+		// actually holds; an absent setting is the default rather than the
+		// zero value.
+		ReclaimReplacedFragments: true,
 	}
 }
 
@@ -188,6 +203,10 @@ func (s *SettingsService) Get(ctx context.Context) (AppSettingsDTO, error) {
 		case "max_conns_per_host":
 			if n, err := strconv.Atoi(value); err == nil {
 				settings.MaxConnsPerHost = n
+			}
+		case "reclaim_replaced_fragments":
+			if on, err := strconv.ParseBool(value); err == nil {
+				settings.ReclaimReplacedFragments = on
 			}
 		}
 	}
@@ -273,6 +292,10 @@ func (s *SettingsService) Set(ctx context.Context, settings AppSettingsDTO) (App
 			"browser_retention_ceiling": strconv.Itoa(settings.BrowserRetentionCeiling),
 			"max_queued_jobs":           strconv.Itoa(settings.MaxQueuedJobs),
 			"max_conns_per_host":        strconv.Itoa(settings.MaxConnsPerHost),
+			// Written explicitly either way, so an operator who turns
+			// reclaiming off has a row saying so rather than relying on the
+			// absence of one.
+			"reclaim_replaced_fragments": strconv.FormatBool(settings.ReclaimReplacedFragments),
 		} {
 			if _, err := tx.ExecContext(ctx,
 				`INSERT INTO app_settings (key, value) VALUES (?, ?)
