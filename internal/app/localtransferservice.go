@@ -545,8 +545,8 @@ func (p fragmentPlan) sentence() string {
 	}
 	shapes := ""
 	if p.Kept > 0 {
-		shapes = fmt.Sprintf(", and %d entr%s of a shape this build never removes stay whatever the setting says",
-			p.Kept, plural(p.Kept, "y", "ies"))
+		shapes = fmt.Sprintf(", and %d entr%s of a shape this build never removes stay%s whatever the setting says",
+			p.Kept, plural(p.Kept, "y", "ies"), plural(p.Kept, "s", ""))
 	}
 	switch {
 	case p.Skipped != "":
@@ -660,21 +660,34 @@ func (s *TransferService) downloadObjectCeiling(ctx context.Context) int64 {
 	return int64(settings.DownloadObjectCeiling)
 }
 
-// reclaimsReplacedFragments is the operator's reclamation setting, or the
-// default when settings are not wired or cannot be read (ADR 0081
-// decision 5). The default is to reclaim, so an unreadable setting behaves
-// as the operator asked rather than quietly retaining; what stops a
-// reclamation the operator did not authorise is decision 2's confirmation,
-// which states what will be removed and which no page can answer.
+// reclaimsReplacedFragments is the operator's reclamation setting for the
+// SENTENCE the question states, or the default when settings are not wired
+// or cannot be read (ADR 0081 decision 5). The default is to reclaim, so a
+// question asked without a readable setting describes what the default
+// would do rather than quietly promising retention; what stops a reclamation
+// the operator did not authorise is decision 2's confirmation itself, which
+// states what will be removed and which no page can answer.
 func (s *TransferService) reclaimsReplacedFragments(ctx context.Context) bool {
+	reclaiming, err := s.reclamationSetting(ctx)
+	return err != nil || reclaiming
+}
+
+// reclamationSetting is the same option read where it authorises a DELETION,
+// and here an unreadable store is not the default: the operator answered a
+// question computed from a reading that worked, and removing objects after
+// being told they would be kept is the outcome that sentence exists to
+// prevent. So the caller declines rather than guessing, and says which.
+// A service with no settings wired has no store to disagree with and takes
+// the same default the question used.
+func (s *TransferService) reclamationSetting(ctx context.Context) (bool, error) {
 	if s.settings == nil {
-		return true
+		return true, nil
 	}
 	settings, err := s.settings.Get(ctx)
 	if err != nil {
-		return true
+		return false, err
 	}
-	return settings.ReclaimReplacedFragments
+	return settings.ReclaimReplacedFragments, nil
 }
 
 // WireSettings gives the transfer service the application settings it

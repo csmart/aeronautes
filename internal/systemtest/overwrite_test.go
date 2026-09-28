@@ -22,10 +22,11 @@ import (
 // it records about what was there, and what it leaves alone.
 //
 // The contract's answer is that a replaced large object's fragments are
-// recorded and RETAINED, never removed, because the segment prefix is
-// published in the manifest's own header and anything that can read the
-// object can reference those segments. The preservation case is what holds
-// that answer in place.
+// recorded before the replacement and then reclaimed once it verifies,
+// which is what rclone's own replacement does, with an option for the
+// operator who cannot accept the consequence. That consequence — an outside
+// reference over the predecessor's published prefix loses its backing data —
+// is a case here rather than a sentence, in both directions of the option.
 
 // relabel renames a bookmark through the public service, the way the
 // operator would, so a confirmation is exercised against a label the
@@ -120,6 +121,43 @@ func replacementRecord(t *testing.T, h *Harness, resource string) audit.Event {
 	return found[0]
 }
 
+// reclamationRecord is the one audit row a reclamation leaves for a name,
+// or nothing when the run reclaimed nothing for it.
+func reclamationRecord(t *testing.T, h *Harness, resource string) *audit.Event {
+	t.Helper()
+	events, err := audit.NewStore(h.database).List(t.Context(), audit.Query{Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found []audit.Event
+	for _, event := range events {
+		if event.Operation == "object.upload.reclaim" && event.Resource == resource {
+			found = append(found, event)
+		}
+	}
+	if len(found) > 1 {
+		t.Fatalf("a replacement of %s left %d reclamation records: %+v", resource, len(found), found)
+	}
+	if len(found) == 0 {
+		return nil
+	}
+	return &found[0]
+}
+
+// setReclamation moves the operator's option the way the settings page
+// does, through the service the shell wires.
+func setReclamation(t *testing.T, h *Harness, on bool) {
+	t.Helper()
+	current, err := h.Settings.Get(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	current.ReclaimReplacedFragments = on
+	if _, err := h.Settings.Set(t.Context(), current); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestOverwriteMock(t *testing.T)      { overwriteCases(t, findMockHarness) }
 func TestOverwriteRealSwift(t *testing.T) { overwriteCases(t, New) }
 
@@ -178,9 +216,193 @@ func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 		h.AssertNoCollateral(beforeB, h.SnapshotNamespace(h.Secondary))
 	})
 
-	t.Run("retains a replaced manifest's fragments and outside references", func(t *testing.T) {
+	// ADR 0081 decision 5, in both directions of the operator's option. The
+	// fixture is the exposure itself: two outside objects over EXACTLY the
+	// segments the predecessor published in its own header, which anything
+	// that could read the predecessor could have made. Reclaiming takes
+	// their backing data with it, and that is the accepted consequence
+	// rather than a surprise; turning the option off is what preserves them.
+	for _, mode := range []struct {
+		name     string
+		reclaims bool
+	}{
+		{name: "reclaims a replaced manifest's fragments", reclaims: true},
+		{name: "retains a replaced manifest's fragments when the option is off"},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
+			h := makeHarness(t)
+			container := h.Container(h.Primary, "overwrite-manifest")
+			segments := container + "_segments"
+			h.rawPut(h.Primary, "/"+segments, nil, nil)
+			t.Cleanup(func() { h.purge(h.Primary, segments) })
+			h.Seed(h.Primary, segments, "subject/run/0001", []byte("01234567"), nil)
+			h.Seed(h.Primary, segments, "subject/run/0002", []byte("89abcdef"), nil)
+			h.Seed(h.Primary, container, "live/taken", nil,
+				map[string]string{"X-Object-Manifest": segments + "/subject/run/"})
+			// The static alias names the segment identities one by one, so it
+			// shares them rather than holding private copies: an alias over
+			// its own copies would survive the deletion of every part it was
+			// supposed to be sharing and would prove nothing either way.
+			h.Seed(h.Primary, container, "outside/alias", nil,
+				map[string]string{"X-Object-Manifest": segments + "/subject/run/"})
+			h.SeedSLO(h.Primary, container, "outside/slo", `[`+
+				`{"path":"`+segments+`/subject/run/0001","etag":"`+md5of("01234567")+`","size_bytes":8},`+
+				`{"path":"`+segments+`/subject/run/0002","etag":"`+md5of("89abcdef")+`","size_bytes":8}]`)
+			setReclamation(t, h, mode.reclaims)
+
+			confirmer := &serviceConfirmer{yes: true}
+			app.WireOverwriteConfirmer(h.Transfer, confirmer)
+			if _, err := h.Browse.Connect(t.Context(), h.Primary.BookmarkID); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(t.TempDir(), "taken")
+			if err := os.WriteFile(path, []byte("the bytes this job sent"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			id, err := overwriteStart(t, h, container, "live/", []string{path}, true)
+			if err != nil {
+				t.Fatalf("a confirmed replacement of a manifest was refused: %v", err)
+			}
+			h.AwaitJob(id)
+			job, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if job.State != "complete" || job.Counters.Overwrites != 1 {
+				t.Fatalf("the manifest replacement did not publish: %s %+v", job.State, job.Counters)
+			}
+			// The operator was told which way it would go before answering.
+			asked := confirmer.questions()
+			wantSaid := "will be REMOVED once the replacement is verified"
+			if !mode.reclaims {
+				wantSaid = "will be KEPT, because reclaiming is turned off"
+			}
+			if len(asked) != 1 || !strings.Contains(asked[0].Fragments, wantSaid) {
+				t.Fatalf("the question did not say %q: %+v", wantSaid, asked)
+			}
+
+			// What the store holds now, by identity rather than by listing:
+			// a container listing lags a delete either way (DESIGN §15.3).
+			for _, name := range []string{"subject/run/0001", "subject/run/0002"} {
+				_, err := h.Inspector.Object(t.Context(), h.Primary.BookmarkID, segments, name)
+				switch {
+				case mode.reclaims && err == nil:
+					t.Errorf("a reclaimed segment is still an object: %s", name)
+				case !mode.reclaims && err != nil:
+					t.Errorf("a retained segment was removed: %s: %v", name, err)
+				}
+			}
+			record := replacementRecord(t, h, container+"/live/taken")
+			for _, want := range []string{"2 segments", "listing may undercount", "recording them removes none of them"} {
+				if !strings.Contains(record.Summary, want) {
+					t.Errorf("the record does not say %q: %q", want, record.Summary)
+				}
+			}
+			// And the reclamation's own record, which is where the outcome
+			// lives because the observation above cannot know it.
+			reclaimed := reclamationRecord(t, h, container+"/live/taken")
+			if reclaimed == nil {
+				t.Fatal("the replacement left no record of what it did with the segments")
+			}
+			if mode.reclaims {
+				if reclaimed.Result != audit.ResultApplied ||
+					!strings.Contains(reclaimed.Summary, "reported 2 segment objects the replaced manifest named as gone") {
+					t.Errorf("the reclamation is not recorded as a complete removal of both: %+v", reclaimed)
+				}
+			} else {
+				if reclaimed.Result != audit.ResultObserved ||
+					!strings.Contains(reclaimed.Summary, "turned off") {
+					t.Errorf("the record does not say the option stopped it: %+v", reclaimed)
+				}
+			}
+
+			// The outside references, read as bytes from this store, which
+			// assembles a large object on read: the consequence is visible
+			// here in a way a cached copy would not be.
+			for _, name := range []string{"outside/alias", "outside/slo"} {
+				body, err := rawGet(h.Primary, "/"+container+"/"+name, "")
+				assembled := err == nil && string(body) == "0123456789abcdef"
+				// The in-process store assembles a STATIC manifest's bytes
+				// when the manifest is written and serves them from that
+				// copy, so on that fixture a deleted segment is invisible
+				// behind the static alias. The dynamic alias is assembled per
+				// read on both, and the owned fixture assembles both.
+				if name == "outside/slo" && h.MockPrimary != nil {
+					continue
+				}
+				if mode.reclaims && assembled {
+					t.Errorf("the segments were reported removed but %s still assembles them", name)
+				}
+				if !mode.reclaims && !assembled {
+					t.Errorf("an outside reference lost its backing data: %s: %q %v", name, body, err)
+				}
+			}
+			// Either way nothing removed the outside manifests themselves,
+			// and the static one still names the segment identities it was
+			// written with: only what was recorded for THIS name can go.
+			for _, name := range []string{"outside/alias", "outside/slo"} {
+				if _, err := h.Inspector.Object(t.Context(), h.Primary.BookmarkID, container, name); err != nil {
+					t.Errorf("an outside manifest was removed: %s: %v", name, err)
+				}
+			}
+			manifest, err := rawGet(h.Primary, "/"+container+"/outside/slo", "multipart-manifest=get")
+			if err != nil {
+				t.Fatalf("the outside manifest could not be read: %v", err)
+			}
+			for _, name := range []string{"subject/run/0001", "subject/run/0002"} {
+				if !strings.Contains(string(manifest), segments+"/"+name) {
+					t.Errorf("the outside manifest no longer names %s: %s", name, manifest)
+				}
+			}
+
+			// The durable record names those segments, after the job is
+			// terminal and again through a store opened on the same file that
+			// never saw them written. A listing names objects and nothing
+			// about how the manifest referenced them, so each listed member
+			// is recorded as a whole one.
+			want := []jobs.ItemFragment{
+				{Container: segments, Object: "subject/run/0001", Shape: jobs.FragmentWhole},
+				{Container: segments, Object: "subject/run/0002", Shape: jobs.FragmentWhole},
+			}
+			for _, source := range []struct {
+				name  string
+				store *jobs.Store
+			}{
+				{"the running store", h.jobStore},
+				{"a reopened store", reopenedJobs(t, h)},
+			} {
+				read, ok, err := source.store.ReadPredecessor(t.Context(), id, "live/taken")
+				if err != nil || !ok {
+					t.Fatalf("%s: read back: ok=%v %v", source.name, ok, err)
+				}
+				if !reflect.DeepEqual(read.Fragments, want) {
+					t.Errorf("%s names %+v, not the segments the manifest named %+v", source.name, read.Fragments, want)
+				}
+				if read.Prefix != segments+"/subject/run/" || read.Exact || read.Counted != 2 {
+					t.Errorf("%s does not describe a listed prefix: %+v", source.name, read)
+				}
+			}
+		})
+	}
+
+	// ADR 0081 decision 5 rule 2: a container that keeps versions keeps the
+	// replaced object, and a replaced manifest's segments are that retained
+	// version's. Reclaiming them would empty a version the store is holding
+	// on the operator's behalf, so the mode wins over the option, and the
+	// mode is read at reclamation time rather than taken from the sentence
+	// the operator was shown.
+	t.Run("skips reclamation where the container keeps versions", func(t *testing.T) {
 		h := makeHarness(t)
-		container := h.Container(h.Primary, "overwrite-manifest")
+		archive := h.Container(h.Primary, "reclaim-archive")
+		container := h.Container(h.Primary, "reclaim-versioned")
+		h.rawPut(h.Primary, "/"+container, nil, map[string]string{"X-Versions-Location": archive})
+		// A DELETE on a versioned container RESTORES the previous version
+		// rather than removing the object, so the mode comes off before the
+		// purge the container helper registered runs. Cleanups run in
+		// reverse order of registration.
+		t.Cleanup(func() {
+			h.rawPut(h.Primary, "/"+container, nil, map[string]string{"X-Remove-Versions-Location": "yes"})
+		})
 		segments := container + "_segments"
 		h.rawPut(h.Primary, "/"+segments, nil, nil)
 		t.Cleanup(func() { h.purge(h.Primary, segments) })
@@ -188,17 +410,8 @@ func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 		h.Seed(h.Primary, segments, "subject/run/0002", []byte("89abcdef"), nil)
 		h.Seed(h.Primary, container, "live/taken", nil,
 			map[string]string{"X-Object-Manifest": segments + "/subject/run/"})
-		// Two outside objects over EXACTLY those segments, which anything
-		// that can read the predecessor could have made, because the prefix
-		// is published in the predecessor's own header. The static one names
-		// the segment identities one by one, so it shares them rather than
-		// holding private copies: an alias over its own copies would survive
-		// the deletion of every part it was supposed to be sharing.
-		h.Seed(h.Primary, container, "outside/alias", nil,
-			map[string]string{"X-Object-Manifest": segments + "/subject/run/"})
-		h.SeedSLO(h.Primary, container, "outside/slo", `[`+
-			`{"path":"`+segments+`/subject/run/0001","etag":"`+md5of("01234567")+`","size_bytes":8},`+
-			`{"path":"`+segments+`/subject/run/0002","etag":"`+md5of("89abcdef")+`","size_bytes":8}]`)
+		// The option is ON, so what stops this is the mode and nothing else.
+		setReclamation(t, h, true)
 
 		confirmer := &serviceConfirmer{yes: true}
 		app.WireOverwriteConfirmer(h.Transfer, confirmer)
@@ -211,7 +424,7 @@ func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 		}
 		id, err := overwriteStart(t, h, container, "live/", []string{path}, true)
 		if err != nil {
-			t.Fatalf("a confirmed replacement of a manifest was refused: %v", err)
+			t.Fatalf("a confirmed replacement on a versioned container was refused: %v", err)
 		}
 		h.AwaitJob(id)
 		job, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
@@ -219,69 +432,24 @@ func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 			t.Fatal(err)
 		}
 		if job.State != "complete" || job.Counters.Overwrites != 1 {
-			t.Fatalf("the manifest replacement did not publish: %s %+v", job.State, job.Counters)
+			t.Fatalf("the replacement did not publish: %s %+v", job.State, job.Counters)
 		}
-		// Every segment is still there, and the record says they were kept.
 		for _, name := range []string{"subject/run/0001", "subject/run/0002"} {
 			if _, err := h.Inspector.Object(t.Context(), h.Primary.BookmarkID, segments, name); err != nil {
-				t.Errorf("a replaced manifest's segment was removed: %s: %v", name, err)
+				t.Errorf("a retained version's segment was reclaimed: %s: %v", name, err)
 			}
 		}
-		record := replacementRecord(t, h, container+"/live/taken")
-		for _, want := range []string{"2 segments", "listing may undercount", "nothing here removes any of them"} {
-			if !strings.Contains(record.Summary, want) {
-				t.Errorf("the record does not say %q: %q", want, record.Summary)
-			}
+		reclaimed := reclamationRecord(t, h, container+"/live/taken")
+		if reclaimed == nil {
+			t.Fatal("the replacement left no record of what it did with the segments")
 		}
-		// Both outside objects still assemble their own bytes from those
-		// same segments, which is why this contract retains rather than
-		// reclaims. This store assembles a large object on read, so the
-		// bytes are evidence here in a way a cached copy would not be.
-		for _, name := range []string{"outside/alias", "outside/slo"} {
-			body, err := rawGet(h.Primary, "/"+container+"/"+name, "")
-			if err != nil || string(body) != "0123456789abcdef" {
-				t.Errorf("an outside reference lost its backing data: %s: %q %v", name, body, err)
-			}
+		if reclaimed.Result != audit.ResultObserved || !strings.Contains(reclaimed.Summary, "keeps versions") {
+			t.Errorf("the record does not say the archive stopped it: %+v", reclaimed)
 		}
-		// And the static alias still names the same two leaf objects, read
-		// from its own manifest rather than from anything this route says.
-		manifest, err := rawGet(h.Primary, "/"+container+"/outside/slo", "multipart-manifest=get")
-		if err != nil {
-			t.Fatalf("the outside manifest could not be read: %v", err)
-		}
-		for _, name := range []string{"subject/run/0001", "subject/run/0002"} {
-			if !strings.Contains(string(manifest), segments+"/"+name) {
-				t.Errorf("the outside manifest no longer names %s: %s", name, manifest)
-			}
-		}
-
-		// The durable record names those segments, which is what an explicit
-		// cleanup would have to read: after the job is terminal, and again
-		// through a store opened on the same file that never saw them
-		// written.
-		// A listing names objects and nothing about how the manifest
-		// referenced them, so each listed member is recorded as a whole one.
-		want := []jobs.ItemFragment{
-			{Container: segments, Object: "subject/run/0001", Shape: jobs.FragmentWhole},
-			{Container: segments, Object: "subject/run/0002", Shape: jobs.FragmentWhole},
-		}
-		for _, source := range []struct {
-			name  string
-			store *jobs.Store
-		}{
-			{"the running store", h.jobStore},
-			{"a reopened store", reopenedJobs(t, h)},
-		} {
-			read, ok, err := source.store.ReadPredecessor(t.Context(), id, "live/taken")
-			if err != nil || !ok {
-				t.Fatalf("%s: read back: ok=%v %v", source.name, ok, err)
-			}
-			if !reflect.DeepEqual(read.Fragments, want) {
-				t.Errorf("%s names %+v, not the segments the manifest named %+v", source.name, read.Fragments, want)
-			}
-			if read.Prefix != segments+"/subject/run/" || read.Exact || read.Counted != 2 {
-				t.Errorf("%s does not describe a listed prefix: %+v", source.name, read)
-			}
+		// And the operator was told the same thing before answering.
+		if asked := confirmer.questions(); len(asked) != 1 ||
+			!strings.Contains(asked[0].Fragments, "none will be removed, because the container keeps versions") {
+			t.Fatalf("the question did not say the segments would be kept: %+v", asked)
 		}
 	})
 

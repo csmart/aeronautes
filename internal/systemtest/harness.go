@@ -122,6 +122,10 @@ func newHarness(t *testing.T, cfg harnessConfig) *Harness {
 	runner := app.NewJobRunner(jobStore, auditStore)
 	transfer := app.NewTransferServiceWithRunner(connections, jobStore, runner)
 	app.WireEvidenceStore(transfer, ev)
+	// The settings main.go gives the transfer service, so a case that turns
+	// an option off exercises the same path the shipped shell takes.
+	settings := app.NewSettingsService(database, runner)
+	app.WireSettings(transfer, settings)
 
 	h := &Harness{
 		T: t, ctx: ctx, connections: connections,
@@ -137,7 +141,7 @@ func newHarness(t *testing.T, cfg harnessConfig) *Harness {
 		Jobs:      app.NewJobService(jobStore),
 		Audit:     app.NewAuditService(auditStore),
 		Find:      app.NewFindService(connections),
-		Settings:  app.NewSettingsService(database, runner),
+		Settings:  settings,
 		Evidence:  ev,
 	}
 

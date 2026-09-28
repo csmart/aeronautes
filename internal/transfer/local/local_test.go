@@ -22,7 +22,15 @@ import (
 
 func session(t *testing.T) (*swiftcontrol.Session, *swifttest.Server) {
 	t.Helper()
+	return sessionWithInfo(t, "")
+}
+
+// sessionWithInfo is session with the cluster's /info document pinned
+// before anything serves it; "" serves the mock's default.
+func sessionWithInfo(t *testing.T, info string) (*swiftcontrol.Session, *swifttest.Server) {
+	t.Helper()
 	mock := swifttest.New("test:tester", "testing")
+	mock.InfoJSON = info
 	srv := httptest.NewServer(mock)
 	t.Cleanup(srv.Close)
 	s, err := swiftcontrol.New(swiftcontrol.Config{

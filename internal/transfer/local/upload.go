@@ -112,6 +112,9 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 			if err := u.observe(item, result); err != nil {
 				return report, err
 			}
+			if err := u.reclaim(ctx, dst, item, result); err != nil {
+				return report, err
+			}
 			progress()
 			continue
 		}
@@ -162,6 +165,9 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 			}
 			outcome := commitStagedUpload(ctx, dst, container, stagePrefix+filepath.Base(item.Path), item, recovery)
 			if err := u.observe(item, outcome); err != nil {
+				return report, err
+			}
+			if err := u.reclaim(ctx, dst, item, outcome); err != nil {
 				return report, err
 			}
 			progress()

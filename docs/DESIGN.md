@@ -1502,6 +1502,8 @@ DO NOT auto-delete
 Reconciliation performs no automatic deletion under ADR 0020.
 It retains uncertain staging and segment data and all recovery records; explicit force cleanup remains a separate action with sharing risk disclosed.
 
+One named exception exists and is not a general licence: [ADR 0081](adr/0081-upload-overwrite-acknowledgement.md) decision 5 lets an **acknowledged local upload** that replaces a large object remove that predecessor's own recorded segments, after the replacement verifies, unless the container keeps versions or the operator's option is off. It removes only identities recorded before the publication, never a prefix listed at the time of deletion, and it rests on the operator's accepted exposure and the reference implementation's precedent, not on an exclusivity proof — which §65.10 still owes. Copy, Mirror and reconciliation are unchanged: the stage-and-commit protocol's step 7 below still reclaims nothing without `ExclusiveOwnershipProof`.
+
 **Learning the generated prefix is a Phase-0 investigation** (§60): determine whether the actual segment prefix is reliably obtainable from rclone structured/JSON output or another supported interface. Do not depend permanently on parsing unstable human-readable log strings unless that behaviour is explicitly tested and pinned. A future upstream rclone enhancement (caller-specified segment prefix, or machine-readable reporting of the generated namespace) would make this materially cleaner.
 
 For a **future Aeronautes-native uploader** (out of v1, §62) Aeronautes would control the segment prefix directly and this ambiguity disappears; note also that rclone-executed large-object uploads are **DLOs** (§25), so an orphan is a DLO segment set.
