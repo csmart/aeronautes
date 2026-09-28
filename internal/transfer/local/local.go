@@ -99,48 +99,61 @@ func PreflightUploadReplacing(ctx context.Context, dst *swiftcontrol.Session, co
 	return preflightUpload(ctx, dst, container, prefix, paths, true)
 }
 
-// listingPageSize is the page size this route asks the store for, kept
-// here so the choice below can count requests rather than guess them.
+// listingPageSize is the page size this route asks the store for, kept here
+// so the estimate below can count requests rather than guess them.
 const listingPageSize = 10000
 
-// destinationLiveness says which of the names this selection would publish
-// are already live, taking whichever of two request patterns is cheaper.
+// destinationLiveness says which of these destination names are already
+// live, taking whichever of two request patterns it ESTIMATES to be cheaper.
 //
-// One HEAD per file costs one request per selected file, which is what this
-// route used to do: a selection of a thousand files was a thousand requests
-// before a byte was written, and a large one is worse than the transfer it
-// precedes (K-PERF-001). One deep listing of the destination prefix costs
-// one request per page of objects ALREADY THERE, whatever the selection's
-// size. Neither is cheaper in general, so the container's own object count —
-// one HEAD, and an upper bound on what lives under the prefix — decides:
-// list when the listing would take fewer requests than the heads would.
+// One head per name costs one request per name, which is what this route
+// used to do: a selection of a thousand files was a thousand requests before
+// a byte was written (K-PERF-001). One deep listing of the destination
+// prefix costs one request per page of what is already there, whatever the
+// selection's size, plus the empty page the iterator needs to know it has
+// finished. The container's own object count — one head, and an upper bound
+// on what lives under the prefix — is what the estimate is built from.
 //
-// A listing is a WEAKER oracle than a head, and deliberately so. On an
-// eventually consistent store a listing can omit an object a head would
-// find, so this can miss a live name. Missing one is safe in both
-// directions: an unacknowledged publication still carries its conditional
-// and the store refuses it, and an acknowledged one that was not marked as
-// replacing also still carries its conditional. A miss therefore becomes a
-// conflict, never an unasked-for replacement. The opposite error — claiming
-// a name is live when it is not — cannot happen from a listing at all.
+// It is an ESTIMATE and not a guarantee, deliberately. The count can be
+// stale, because container counts are updated asynchronously; the server may
+// return pages shorter than the size asked for, which this project's own
+// listing-continuation contract explicitly supports; and the prefix may hold
+// far fewer objects than the container does, in which case a listing of it
+// alone would have been cheaper than the estimate can tell. So the choice
+// can be wrong in either direction by the page schedule. What is bounded
+// whichever way it goes: the heads are bounded by the selection, the listing
+// is bounded by the store's own paging, and neither reads more than one page
+// into memory. The iterator is NOT stopped early to make the estimate true.
+//
+// A listing is also the weaker ORACLE, in both directions, and both are
+// conservative here. It can omit an object a head would find, because
+// container listings lag writes; a miss leaves the publication carrying its
+// conditional, so the store refuses it and the item is a conflict rather
+// than an unasked-for replacement. It can also name an object that has since
+// been deleted, because listings lag deletes too (DESIGN section 15.3); that
+// name is then reported as a collision that no longer exists, which refuses
+// an unacknowledged upload that would have succeeded and marks an
+// acknowledged one as replacing something that is gone. The second case
+// publishes rather than destroys, and the backend still confirms what it
+// replaced, so neither error can turn into an unconfirmed overwrite.
 func destinationLiveness(ctx context.Context, dst *swiftcontrol.Session, container, prefix string,
-	paths []string) (map[string]bool, error) {
-	wanted := make(map[string]bool, len(paths))
-	for _, path := range paths {
-		if validUploadPath(path) {
-			wanted[prefix+filepath.Base(path)] = false
-		}
+	names []string) (map[string]bool, error) {
+	wanted := make(map[string]bool, len(names))
+	for _, name := range names {
+		wanted[name] = false
 	}
 	if len(wanted) == 0 {
 		return wanted, nil
 	}
-	// The count is an upper bound on the prefix's own population, so a
-	// container this route cannot measure falls back to heads rather than
-	// guessing that a listing is cheap.
+	// A container this route cannot measure falls back to heads rather than
+	// assuming a listing is cheap.
 	heads := len(wanted)
 	pages := heads + 1
 	if detail, err := dst.ContainerDetail(ctx, container); err == nil && detail != nil {
-		pages = int(detail.ObjectCount/listingPageSize) + 1
+		// Every page the store returns, rounded up, plus the empty one that
+		// ends the iteration. An earlier version of this rounded DOWN and so
+		// estimated a full page as free, which made a tie look like a saving.
+		pages = int((detail.ObjectCount+listingPageSize-1)/listingPageSize) + 1
 	}
 	if pages >= heads {
 		for name := range wanted {
@@ -181,53 +194,85 @@ func destinationLiveness(ctx context.Context, dst *swiftcontrol.Session, contain
 	return wanted, nil
 }
 
+// uploadCandidate is one selected path after everything decidable WITHOUT
+// the destination has been decided. A path that cannot become an item
+// carries its problem and nothing else, so no destination request is ever
+// made on its behalf and its local finding survives a remote failure.
+type uploadCandidate struct {
+	path    string
+	name    string
+	size    int64
+	problem *Problem
+}
+
 func preflightUpload(ctx context.Context, dst *swiftcontrol.Session, container, prefix string, paths []string,
 	replacing bool) (*UploadPreflight, error) {
 	if prefix != "" && !strings.HasSuffix(prefix, "/") {
 		return nil, fmt.Errorf("prefix %q must be empty or end with '/'", prefix)
 	}
 	report := &UploadPreflight{}
-	// Which destination names are live is resolved for the whole selection
-	// at once rather than one HEAD per file: a thousand files were a
-	// thousand requests before anything was written (K-PERF-001).
-	liveNames, err := destinationLiveness(ctx, dst, container, prefix, paths)
-	if err != nil {
-		return nil, err
-	}
+
+	// Everything local first, in the selection's own order, because a
+	// missing file or a directory is this report's finding and must not be
+	// replaced by a destination failure on a name that could never have
+	// become an item.
+	candidates := make([]uploadCandidate, 0, len(paths))
 	seen := map[string]string{}
 	for index, path := range paths {
 		if !validUploadPath(path) {
-			report.Problems = append(report.Problems, Problem{
+			candidates = append(candidates, uploadCandidate{path: path, problem: &Problem{
 				Name: fmt.Sprintf("selection %d", index+1), Kind: "source-path",
 				Detail: uploadPathRefusal, Reject: true,
-			})
+			}})
 			continue
 		}
-		base := filepath.Base(path)
-		name := prefix + base
+		name := prefix + filepath.Base(path)
 		info, err := os.Stat(path)
 		switch {
 		case err != nil:
-			report.Problems = append(report.Problems, Problem{Name: name, Kind: "unreadable", Detail: err.Error(), Reject: true})
+			candidates = append(candidates, uploadCandidate{path: path, name: name, problem: &Problem{
+				Name: name, Kind: "unreadable", Detail: err.Error(), Reject: true}})
 			continue
 		case !info.Mode().IsRegular():
-			report.Problems = append(report.Problems, Problem{Name: name, Kind: "not-a-file", Detail: path, Reject: true})
+			candidates = append(candidates, uploadCandidate{path: path, name: name, problem: &Problem{
+				Name: name, Kind: "not-a-file", Detail: path, Reject: true}})
 			continue
 		}
 		if firstPath, dup := seen[name]; dup {
-			report.Problems = append(report.Problems, Problem{
+			candidates = append(candidates, uploadCandidate{path: path, name: name, problem: &Problem{
 				Name: name, Kind: "duplicate",
 				Detail: fmt.Sprintf("%s and %s map to the same object name", firstPath, path), Reject: true,
-			})
+			}})
 			continue
 		}
 		seen[name] = path
+		candidates = append(candidates, uploadCandidate{path: path, name: name, size: info.Size()})
+	}
 
+	// Then the destination, once, for the names that could still become
+	// items: a thousand files were a thousand requests before anything was
+	// written (K-PERF-001).
+	wanted := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.problem == nil {
+			wanted = append(wanted, candidate.name)
+		}
+	}
+	liveNames, err := destinationLiveness(ctx, dst, container, prefix, wanted)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, candidate := range candidates {
+		if candidate.problem != nil {
+			report.Problems = append(report.Problems, *candidate.problem)
+			continue
+		}
 		live := false
-		if liveNames[name] {
+		if liveNames[candidate.name] {
 			if !replacing {
 				report.Problems = append(report.Problems, Problem{
-					Name: name, Kind: "exists",
+					Name: candidate.name, Kind: "exists",
 					Detail: "already live at the destination; v1 upload never overwrites", Reject: true,
 				})
 				continue
@@ -237,18 +282,18 @@ func preflightUpload(ctx context.Context, dst *swiftcontrol.Session, container, 
 			// about rather than a reason to stop (ADR 0081 decision 1).
 			live = true
 			report.Problems = append(report.Problems, Problem{
-				Name: name, Kind: "exists",
+				Name: candidate.name, Kind: "exists",
 				Detail: "already live at the destination; this upload will replace it",
 			})
 		}
 
 		route := "rclone"
-		if plan.RcloneUnsafe(name) {
+		if plan.RcloneUnsafe(candidate.name) {
 			route = "native"
 		}
 		report.Items = append(report.Items, UploadItem{
-			Path: path, Name: name, Size: info.Size(), Route: route, Replaces: live})
-		report.TotalBytes += info.Size()
+			Path: candidate.path, Name: candidate.name, Size: candidate.size, Route: route, Replaces: live})
+		report.TotalBytes += candidate.size
 	}
 	return report, nil
 }
