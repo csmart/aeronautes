@@ -468,8 +468,18 @@ func (h *Harness) account(authURL, user, key, name string) (*Account, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Each account owns its transport, as the oracle already does for
+	// itself. Left unset, this client rides http.DefaultTransport, whose
+	// pool is shared with everything else in the test binary: any
+	// CloseIdleConnections anywhere in the process can then break a seed
+	// request that is in flight on a pooled connection, which is how a
+	// download case's teardown once failed an unrelated container PUT with
+	// "transport connection broken: http: CloseIdleConnections called".
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	h.T.Cleanup(transport.CloseIdleConnections)
 	a := &Account{BookmarkID: saved.ID, authURL: authURL, user: user, key: key, rawClient: &http.Client{
-		Timeout: 30 * time.Second,
+		Transport: transport,
+		Timeout:   30 * time.Second,
 		// The raw seed/teardown client refuses redirects too, so a
 		// misrouted setup write cannot silently land elsewhere or resend
 		// the token (match the oracle).

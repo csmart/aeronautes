@@ -67,8 +67,14 @@ func newAuthFixture(t *testing.T, answer func(n int64) int) *authFixture {
 // harness is touched by the retry path.
 func harnessFor(t *testing.T) *Harness { return &Harness{T: t} }
 
-func accountFor(f *authFixture) *Account {
+func accountFor(t *testing.T, f *authFixture) *Account {
+	t.Helper()
+	// Its own transport, for the reason Harness.account gives: a client left
+	// on http.DefaultTransport shares its pool with the whole test binary.
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	t.Cleanup(transport.CloseIdleConnections)
 	return &Account{authURL: f.server.URL + "/auth/v1.0", user: "test:tester", key: "testing", rawClient: &http.Client{
+		Transport:     transport,
 		Timeout:       5 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}}
@@ -92,7 +98,7 @@ func TestFixtureAuthRetriesATransientRefusal(t *testing.T) {
 				}
 				return http.StatusOK
 			})
-			a := accountFor(f)
+			a := accountFor(t, f)
 			attempts, err := harnessFor(t).authenticateWithin("primary", a, 5*time.Second)
 			if err != nil {
 				t.Fatalf("transient %s was not retried to success: %v", tc.name, err)
@@ -123,7 +129,7 @@ func TestFixtureAuthRefusesCredentialsAtOnce(t *testing.T) {
 		t.Run(fmt.Sprintf("http %d", status), func(t *testing.T) {
 			f := newAuthFixture(t, func(int64) int { return status })
 			started := time.Now()
-			_, err := harnessFor(t).authenticateWithin("secondary", accountFor(f), 30*time.Second)
+			_, err := harnessFor(t).authenticateWithin("secondary", accountFor(t, f), 30*time.Second)
 			if err == nil {
 				t.Fatal("a credential refusal was accepted")
 			}
@@ -144,7 +150,7 @@ func TestFixtureAuthRefusesCredentialsAtOnce(t *testing.T) {
 // what was tried rather than only that something failed.
 func TestFixtureAuthReportsWhatItTriedWhenTheDeadlinePasses(t *testing.T) {
 	f := newAuthFixture(t, func(int64) int { return http.StatusServiceUnavailable })
-	_, err := harnessFor(t).authenticateWithin("primary", accountFor(f), 700*time.Millisecond)
+	_, err := harnessFor(t).authenticateWithin("primary", accountFor(t, f), 700*time.Millisecond)
 	if err == nil {
 		t.Fatal("an endpoint that never authenticates was accepted")
 	}
@@ -169,7 +175,7 @@ func TestFixtureAuthReportsHowManyAttemptsItTook(t *testing.T) {
 		}
 		return http.StatusOK
 	})
-	attempts, err := harnessFor(t).authenticateWithin("secondary", accountFor(f), 5*time.Second)
+	attempts, err := harnessFor(t).authenticateWithin("secondary", accountFor(t, f), 5*time.Second)
 	if err != nil {
 		t.Fatalf("retry to success failed: %v", err)
 	}
@@ -183,7 +189,7 @@ func TestFixtureAuthReportsHowManyAttemptsItTook(t *testing.T) {
 // run.
 func TestFixtureAuthReportsOneAttemptWhenItAuthenticatesFirstTime(t *testing.T) {
 	f := newAuthFixture(t, func(int64) int { return http.StatusOK })
-	attempts, err := harnessFor(t).authenticateWithin("primary", accountFor(f), 5*time.Second)
+	attempts, err := harnessFor(t).authenticateWithin("primary", accountFor(t, f), 5*time.Second)
 	if err != nil {
 		t.Fatalf("a healthy fixture was refused: %v", err)
 	}
@@ -193,5 +199,29 @@ func TestFixtureAuthReportsOneAttemptWhenItAuthenticatesFirstTime(t *testing.T) 
 	// One attempt is two requests: the raw auth and the oracle behind it.
 	if got := f.requests.Load(); got != 2 {
 		t.Errorf("server saw %d requests, want 2 for a single attempt", got)
+	}
+}
+
+// A seed client must own its transport. Left on http.DefaultTransport its
+// connection pool is shared with everything else in this binary, and any
+// CloseIdleConnections anywhere in the process can then break a seed request
+// that is in flight on a pooled connection — which is how one download case's
+// teardown failed an unrelated container PUT with "transport connection
+// broken: http: CloseIdleConnections called" on a loaded runner. The property
+// is asserted structurally because the failure it prevents is a race, and a
+// race is a poor guard against a regression that is a missing field.
+func TestFixtureSeedClientsOwnTheirTransport(t *testing.T) {
+	f := newAuthFixture(t, func(int64) int { return http.StatusOK })
+	one, two := accountFor(t, f), accountFor(t, f)
+	for _, a := range []*Account{one, two} {
+		if a.rawClient.Transport == nil {
+			t.Fatal("a seed client has no transport of its own, so it rides the shared default pool")
+		}
+		if a.rawClient.Transport == http.DefaultTransport {
+			t.Fatal("a seed client uses the shared default transport itself")
+		}
+	}
+	if one.rawClient.Transport == two.rawClient.Transport {
+		t.Error("two accounts share one transport, so one account's teardown reaches the other's pool")
 	}
 }
