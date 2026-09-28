@@ -569,14 +569,17 @@ func TestOverwriteQuestionRefusesWhatItCannotName(t *testing.T) {
 			versioning: versioning, names: names},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			question, err := overwriteQuestion(tc.label, tc.account, tc.container, "live/", tc.versioning, tc.names,
-				fragmentPlan{Reclaiming: true})
+			question, authorises, err := overwriteQuestion(tc.label, tc.account, tc.container, "live/", tc.versioning, tc.names,
+				fragmentPlan{Reclaiming: true, Whole: 2})
 			if tc.refusal != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.refusal) {
 					t.Fatalf("the question was asked anyway: %+v %v", question, err)
 				}
 				if !reflect.DeepEqual(question, OverwriteConfirmation{}) {
 					t.Errorf("a refused question carries a statement: %+v", question)
+				}
+				if authorises {
+					t.Error("a refused question authorised a removal")
 				}
 				return
 			}
@@ -589,6 +592,11 @@ func TestOverwriteQuestionRefusesWhatItCannotName(t *testing.T) {
 				question.Container != tc.container || question.Prefix != "live/" ||
 				question.Versioning != tc.versioning || len(question.Names) != 1 {
 				t.Fatalf("the question does not state the plan it authorises: %+v", question)
+			}
+			// A question stating a removal authorises exactly that removal,
+			// and a refused question authorises nothing at all.
+			if !authorises || !strings.Contains(question.Fragments, "will be REMOVED") {
+				t.Errorf("the statement and what it authorises disagree: %v %q", authorises, question.Fragments)
 			}
 		})
 	}

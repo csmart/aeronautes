@@ -388,50 +388,82 @@ func (u *uploadRun) observe(item UploadItem, result uploadResult) error {
 	return nil
 }
 
-// FragmentPlan counts what reclaiming these replaced names would remove, so
+// FragmentReading is what one question could learn about the segments
+// backing the names it is about, kept as separate facts because a question
+// that cannot tell "nothing is there" from "this could not be read" states
+// a falsehood in the case that matters most.
+type FragmentReading struct {
+	// Whole is how many recorded whole segments reclamation would remove.
+	// It counts only entries an inventory could NAME, because those are the
+	// only ones reclamation acts on.
+	Whole int
+	// Kept is the entries reclamation never touches whatever the setting
+	// says: ranged, nested, inline and unrecognised shapes.
+	Kept int
+	// Unnamed is how many members a bounded inventory counted without
+	// naming, or a listed prefix may hold beyond what it showed.
+	// Reclamation leaves them where they are, so they are not in Whole.
+	Unnamed int
+	// Unknown is why a predecessor could not be read at all, empty when
+	// every name was read. A question with this set must not say there is
+	// no large object and must not authorise removing anything.
+	Unknown string
+}
+
+// FragmentPlan reads what reclaiming these replaced names would remove, so
 // the operator's confirmation can state it before anything is written (ADR
 // 0081 decision 5).
-//
-// It is a count of WHOLE remote segments, because those are the only shapes
-// reclamation touches, and a separate count of the entries it will never
-// touch: ranged, nested, inline and unrecognised. A name that is not a large
-// object contributes nothing.
 //
 // This reading is not the one reclamation acts on. The record it acts on is
 // taken immediately before each publication, because that is the only moment
 // a predecessor can still be read (decision 7), so the two can differ if the
 // object changes in between. The question therefore states what was there
-// when the operator was asked, and the record states what was removed. Saying
-// a number at all is the point: a question that names only the object being
-// replaced does not authorise deleting objects nobody was shown.
-func FragmentPlan(ctx context.Context, dst *swiftcontrol.Session, container string, names []string) (whole, kept int) {
+// when the operator was asked, the record states what was removed, and the
+// answer bounds what may be removed at all.
+func FragmentPlan(ctx context.Context, dst *swiftcontrol.Session, container string, names []string) FragmentReading {
+	var reading FragmentReading
 	for _, name := range names {
 		detail, err := dst.ObjectDetail(ctx, container, name)
 		if err != nil || detail == nil {
 			// Unreadable here says nothing about what the commit will find,
-			// and a question cannot count what it could not read.
+			// so it is recorded as not known rather than counted as nothing.
+			reading.note("the object at " + name + " could not be read")
 			continue
 		}
 		if detail.Class == swiftcontrol.ClassPlain {
 			continue
 		}
 		inventory := fragmentInventory(ctx, dst, container, name, detail)
+		if inventory.Unread != "" {
+			reading.note("what backs " + name + " could not be inventoried: " + inventory.Unread)
+			continue
+		}
 		for _, fragment := range inventory.Names {
 			if fragment.Shape == FragmentWhole {
-				whole++
+				reading.Whole++
 				continue
 			}
-			kept++
+			reading.Kept++
 		}
-		// Entries the cap counted but did not name are whole parts as far as
-		// this count can say, and a listed prefix may hold more than it
-		// showed; both are why the sentence says what was there rather than
-		// promising an exact total.
+		// Entries a cap counted without naming, and the members a listed
+		// prefix may hold beyond what it showed. Reclamation works from
+		// recorded identities, so it leaves these, and counting them as
+		// removals would overstate what the answer authorises.
 		if extra := inventory.Counted - len(inventory.Names); extra > 0 {
-			whole += extra
+			reading.Unnamed += extra
 		}
 	}
-	return whole, kept
+	return reading
+}
+
+// note keeps the first reason and counts the rest, so one sentence can say
+// how many names it could not read without growing without bound.
+func (r *FragmentReading) note(reason string) {
+	if r.Unknown == "" {
+		r.Unknown = reason
+		return
+	}
+	r.Unknown += "; " + reason
 }
 
 // reclaim removes what a replaced predecessor's record named, after the

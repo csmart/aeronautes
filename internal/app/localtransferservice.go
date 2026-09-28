@@ -404,8 +404,11 @@ func (s *TransferService) uploadPreflight(ctx context.Context, req UploadRequest
 // this start will replace rather than an earlier guess. The connection is
 // observed either side of the dialog for the same reason the pick is: an
 // answer given about one account must not authorise a write to another.
+// It returns what the answer authorises for the predecessor's segments: a
+// removal only where the question said so, and the sentence it said it with,
+// so a decline can quote the promise it is honouring.
 func (s *TransferService) confirmOverwrite(ctx context.Context, req UploadRequestDTO,
-	scope selectionScope, preflight *local.UploadPreflight) error {
+	scope selectionScope, preflight *local.UploadPreflight) (answeredFragments, error) {
 	var names []string
 	for _, item := range preflight.Items {
 		if item.Replaces {
@@ -416,43 +419,52 @@ func (s *TransferService) confirmOverwrite(ctx context.Context, req UploadReques
 		// Acknowledged, but nothing is there to replace. Every name
 		// publishes conditionally, so there is nothing to ask about and
 		// nothing this answer could authorise.
-		return nil
+		return answeredFragments{}, nil
 	}
 	if s.overwrites == nil {
-		return errors.New("replacing an existing object needs the shell's confirmation, and this build has none")
+		return answeredFragments{}, errors.New("replacing an existing object needs the shell's confirmation, and this build has none")
 	}
 	// The mode is read before the question is asked, so a container this
 	// build cannot reason about is refused without the operator being
 	// asked to authorise something it cannot describe.
 	versioning, err := s.observedVersioning(ctx, req.BookmarkID, req.Container)
 	if err != nil {
-		return err
+		return answeredFragments{}, err
 	}
 	before := s.observeConnection()
 	label, account, _ := s.pickBinding(ctx, scope)
-	question, err := overwriteQuestion(label, account, req.Container, req.Prefix, versioning, names,
+	question, authorises, err := overwriteQuestion(label, account, req.Container, req.Prefix, versioning, names,
 		s.fragmentPlanFor(ctx, req, preflight, versioning))
 	if err != nil {
-		return err
+		return answeredFragments{}, err
 	}
 	yes, err := s.overwrites.ConfirmOverwrite(ctx, question)
 	if err != nil {
-		return err
+		return answeredFragments{}, err
 	}
 	if !yes {
-		return errors.New("the replacement was not confirmed; nothing was written")
+		return answeredFragments{}, errors.New("the replacement was not confirmed; nothing was written")
 	}
 	if after := s.observeConnection(); after != before {
-		return errors.New("the connected account changed while you were answering; start again")
+		return answeredFragments{}, errors.New("the connected account changed while you were answering; start again")
 	}
 	entry, err := s.connections.sessionEntryFor(ctx, scope.bookmarkID)
 	if err != nil {
-		return err
+		return answeredFragments{}, err
 	}
 	if entry.generation != scope.generation {
-		return errors.New("the account's credentials changed while you were answering; start again")
+		return answeredFragments{}, errors.New("the account's credentials changed while you were answering; start again")
 	}
-	return nil
+	return answeredFragments{Removal: authorises, Said: question.Fragments}, nil
+}
+
+// answeredFragments is what one answered confirmation said about the
+// predecessor's segments: whether it authorised removing them, and the
+// sentence the operator read. The sentence travels with the permission so a
+// decline can quote the promise it is keeping rather than paraphrasing it.
+type answeredFragments struct {
+	Removal bool
+	Said    string
 }
 
 // overwriteQuestion is the statement the operator is asked to authorise.
@@ -464,23 +476,27 @@ func (s *TransferService) confirmOverwrite(ctx context.Context, req UploadReques
 // belong to either of two accounts and the operator has nothing else to
 // tell them apart with. A question missing any other part of the plan it
 // would authorise is refused for the same reason.
+// It also returns what answering yes would authorise for the predecessor's
+// segments, taken from the same statement the operator reads, so execution
+// can be held to the promise the question made (db:756 finding 1).
 func overwriteQuestion(label, account, container, prefix, versioning string, names []string,
-	fragments fragmentPlan) (OverwriteConfirmation, error) {
+	fragments fragmentPlan) (OverwriteConfirmation, bool, error) {
 	switch {
 	case account == "":
-		return OverwriteConfirmation{}, errors.New("the destination account could not be identified, so an overwrite is refused")
+		return OverwriteConfirmation{}, false, errors.New("the destination account could not be identified, so an overwrite is refused")
 	case container == "":
-		return OverwriteConfirmation{}, errors.New("the destination container could not be identified, so an overwrite is refused")
+		return OverwriteConfirmation{}, false, errors.New("the destination container could not be identified, so an overwrite is refused")
 	case versioning == "":
-		return OverwriteConfirmation{}, errors.New("the destination container's versioning could not be stated, so an overwrite is refused")
+		return OverwriteConfirmation{}, false, errors.New("the destination container's versioning could not be stated, so an overwrite is refused")
 	case len(names) == 0:
-		return OverwriteConfirmation{}, errors.New("there is nothing live to ask about, so no overwrite is authorised")
+		return OverwriteConfirmation{}, false, errors.New("there is nothing live to ask about, so no overwrite is authorised")
 	}
+	sentence, authorises := fragments.statement()
 	return OverwriteConfirmation{
 		Bookmark: titleText(label, 80), Account: titleText(account, 80),
 		Container: container, Prefix: prefix, Names: names, Versioning: versioning,
-		Fragments: fragments.sentence(),
-	}, nil
+		Fragments: sentence,
+	}, authorises, nil
 }
 
 // fragmentPlanFor counts what this start would remove, and says why it would
@@ -503,11 +519,13 @@ func (s *TransferService) fragmentPlanFor(ctx context.Context, req UploadRequest
 	}
 	session, err := s.connections.SessionFor(ctx, req.BookmarkID)
 	if err != nil || session == nil {
-		// The question still has to say something true. Nothing was counted,
-		// so nothing is claimed about a count.
+		// The question still has to say something true. Nothing was read, so
+		// it says that rather than claiming there is nothing there.
+		plan.Unknown = "the destination could not be read while the question was composed"
 		return plan
 	}
-	plan.Whole, plan.Kept = local.FragmentPlan(ctx, session, req.Container, names)
+	reading := local.FragmentPlan(ctx, session, req.Container, names)
+	plan.Whole, plan.Kept, plan.Unnamed, plan.Unknown = reading.Whole, reading.Kept, reading.Unnamed, reading.Unknown
 	return plan
 }
 
@@ -535,29 +553,52 @@ type fragmentPlan struct {
 	// Kept is how many entries reclamation will not touch whatever the
 	// setting says: ranged, nested, inline and unrecognised shapes.
 	Kept int
+	// Unnamed is how many members an inventory counted without naming, which
+	// reclamation leaves where they are.
+	Unnamed int
+	// Unknown is why this reading could not say what backs a name, empty
+	// when it could. It is not the same as there being nothing there, and a
+	// question carrying it authorises no removal at all.
+	Unknown string
 	// Skipped is why reclamation will not run at all, empty when it will.
 	Skipped string
 }
 
-func (p fragmentPlan) sentence() string {
-	if p.Whole == 0 && p.Kept == 0 {
-		return "no large object is being replaced, so there are no segments to remove"
-	}
+// statement is the sentence the question carries and, from the same switch,
+// whether answering yes authorises removing those segments at all. One
+// switch, because a sentence that promises retention beside an authorisation
+// to remove is the defect this pair exists to prevent (db:756 finding 1).
+func (p fragmentPlan) statement() (string, bool) {
 	shapes := ""
 	if p.Kept > 0 {
 		shapes = fmt.Sprintf(", and %d entr%s of a shape this build never removes stay%s whatever the setting says",
 			p.Kept, plural(p.Kept, "y", "ies"), plural(p.Kept, "s", ""))
 	}
+	if p.Unnamed > 0 {
+		shapes += fmt.Sprintf(", and %d member%s this build counted without naming stay%s as well, because only recorded identities are removed",
+			p.Unnamed, plural(p.Unnamed, "", "s"), plural(p.Unnamed, "s", ""))
+	}
 	switch {
+	case p.Unknown != "":
+		// Not knowing and knowing there is nothing are different answers,
+		// and only one of them may carry a deletion.
+		return "this build could not read what backs what is being replaced, so it cannot say what a replacement would remove and nothing will be removed: " +
+			p.Unknown, false
+	case p.Whole == 0 && p.Kept == 0 && p.Unnamed == 0:
+		return "no large object is being replaced, so there are no segments to remove", false
 	case p.Skipped != "":
 		return fmt.Sprintf("%d segment object%s backed what is being replaced and none will be removed, because %s%s",
-			p.Whole, plural(p.Whole, "", "s"), p.Skipped, shapes)
+			p.Whole, plural(p.Whole, "", "s"), p.Skipped, shapes), false
 	case !p.Reclaiming:
 		return fmt.Sprintf("%d segment object%s backed what is being replaced and will be KEPT, because reclaiming is turned off%s",
-			p.Whole, plural(p.Whole, "", "s"), shapes)
+			p.Whole, plural(p.Whole, "", "s"), shapes), false
+	case p.Whole == 0:
+		// Nothing removable was named, so nothing is authorised, and the
+		// sentence says what is there rather than promising a removal of none.
+		return fmt.Sprintf("nothing that backs what is being replaced can be removed%s", shapes), false
 	}
 	return fmt.Sprintf("%d segment object%s backed what is being replaced and will be REMOVED once the replacement is verified%s",
-		p.Whole, plural(p.Whole, "", "s"), shapes)
+		p.Whole, plural(p.Whole, "", "s"), shapes), true
 }
 
 func plural(n int, one, many string) string {
@@ -783,10 +824,17 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 	if _, err := s.selections.takeFiles(req.SelectionToken, scope); err != nil {
 		return "", err
 	}
+	// What the answered question authorises for the predecessor's segments,
+	// and the sentence it authorised it with. A start that asked nothing
+	// authorises nothing, which is right: without a live name there is no
+	// predecessor to reclaim.
+	var answered answeredFragments
 	if req.AcknowledgeOverwrite {
-		if err := s.confirmOverwrite(ctx, req, scope, preflight); err != nil {
+		promise, err := s.confirmOverwrite(ctx, req, scope, preflight)
+		if err != nil {
 			return "", err
 		}
+		answered = promise
 	}
 	settings, err := req.Settings.forDestination(ctx, session)
 	if err != nil {
@@ -832,7 +880,7 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 		s.runLocal(runCtx, job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, func(innerCtx context.Context, onProgress func(done, total, bytes int64)) (*local.Report, error) {
 			background := context.WithoutCancel(innerCtx)
 			report, err := local.Upload(innerCtx, session, engine, "aeronautes_dst:"+req.Container, req.Container, req.Prefix, job.ID,
-				preflight, onProgress, s.recoveryRecorder(background, job.ID, req.BookmarkID), s.uploadItemRecorder(background, job.ID, req))
+				preflight, onProgress, s.recoveryRecorder(background, job.ID, req.BookmarkID), s.uploadItemRecorder(background, job.ID, req, answered))
 			if report != nil && err == nil && len(report.Failures) == 0 {
 				// Verification does not prove cleanup completed or exclude
 				// outside references, so recovery records stay (ADR 0020).
