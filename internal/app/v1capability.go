@@ -138,6 +138,25 @@ func EnabledCapabilitySnapshot() (names, unrecognised []string) {
 	return append([]string(nil), reading.names...), append([]string(nil), reading.unrecognised...)
 }
 
+// StartupCapabilityLines is what the startup log says about one reading of
+// the switch: that this process offers something unproven, and that a token
+// the operator wrote names nothing (ADR 0082 decision 5). It returns the
+// lines rather than logging them so the sentences can be asserted: a record
+// that promises the operator will be told is worth no more than the wording
+// nobody checked. Empty when the switch said nothing.
+func StartupCapabilityLines(names, unrecognised []string) []string {
+	var lines []string
+	if len(names) > 0 {
+		lines = append(lines, fmt.Sprintf("%s: offering unproven capabilities in this process: %s",
+			EnableEnvVar, strings.Join(names, ", ")))
+	}
+	if len(unrecognised) > 0 {
+		lines = append(lines, fmt.Sprintf("%s: ignored, not a capability: %s",
+			EnableEnvVar, strings.Join(unrecognised, ", ")))
+	}
+	return lines
+}
+
 // v1GateForced makes refuseIfDeferred consult the table inside a test
 // binary. The default test-binary path lifts the gate so existing tests
 // of deferred routes still exercise them (ADR 0052 decision 4). A

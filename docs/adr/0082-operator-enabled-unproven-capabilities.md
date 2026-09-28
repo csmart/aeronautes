@@ -30,10 +30,10 @@ Tier 1 under [DESIGN §65.12](../DESIGN.md). This switch admits entry points tha
 The proof runs at the public entry points, not at the internal admission helper, and it exercises the production path deliberately: an ordinary test binary lifts the gate, so a case that does not force the gate proves nothing about a shipped process.
 
 - With no variable set, every deferred entry point refuses through its own public method, the interface offers none of them, and a spy over the session and the store records no request and no mutation for any of them.
-- With `AERONAUTES_ENABLE=upload`, the upload entry points are admitted and reach their routes, every other deferred entry point still refuses through its public method, and the collateral check shows no effect outside the upload fixture's own namespace.
+- With `AERONAUTES_ENABLE=upload`, the upload entry points are admitted and reach their routes, every other deferred entry point still refuses through its public method, and the collateral check shows no effect outside the upload fixture's own namespace. Reaching the route is asserted positively — the pick, the preflight and the start each return their own result and the job publishes — because the absence of this gate's refusal is also what a deleted route would show. The collateral half is the account's whole contents, walked into every prefix, because an admitted capability is supposed to make requests and what it must not do is change anything outside the prefix it was given.
 - A capability enables all of its actions and no others; two capabilities at once behave as one each.
 - `mirror`, `StartMirror`, an empty token, whitespace and mixed case are each handled as the decision says, and `StartMirror` refuses under ADR 0020 for every one of them, which is checked at its public method rather than at the table.
-- An unrecognised token leaves the set unchanged, appears in `Info` and appears in the startup log.
+- An unrecognised token leaves the set unchanged, appears in `Info` and appears in the startup log. The log's own sentences are built by `app.StartupCapabilityLines` and asserted there, so what the operator is told is checked rather than described; `main.go` prints those lines and holds no wording of its own.
 - The configuration is immutable after startup: changing the variable in the running process changes no admission.
 - The existing exhaustiveness test still passes, so a new bridge action cannot land unclassified.
 

@@ -168,3 +168,48 @@ func TestInfoCarriesTheCapabilitySwitch(t *testing.T) {
 		t.Fatalf("About = %+v", about.Info)
 	}
 }
+
+// ADR 0082 decision 5 promises the operator is TOLD about a token that names
+// no capability, and its proof list says that appears in the startup log.
+// The lines are built here rather than only in main.go so the sentences can
+// be asserted: a promise that the operator will be told is worth no more than
+// the wording nobody checked.
+func TestStartupLinesNameWhatIsOfferedAndWhatWasIgnored(t *testing.T) {
+	restoreSwitch(t)
+	for _, fixture := range []struct {
+		spec string
+		want []string
+		none bool
+	}{
+		{spec: "", none: true},
+		{spec: "upload", want: []string{
+			"AERONAUTES_ENABLE: offering unproven capabilities in this process: Upload"}},
+		{spec: "upload, uplaod", want: []string{
+			"AERONAUTES_ENABLE: offering unproven capabilities in this process: Upload",
+			"AERONAUTES_ENABLE: ignored, not a capability: uplaod"}},
+		{spec: "not-a-capability", want: []string{
+			"AERONAUTES_ENABLE: ignored, not a capability: not-a-capability"}},
+		// Mirror has no token, so asking for it is ignored and said to be
+		// ignored rather than silently dropped.
+		{spec: "mirror", want: []string{
+			"AERONAUTES_ENABLE: ignored, not a capability: mirror"}},
+	} {
+		t.Run(fixture.spec, func(t *testing.T) {
+			lines := StartupCapabilityLines(EnableCapabilities(fixture.spec))
+			if fixture.none {
+				if len(lines) != 0 {
+					t.Fatalf("an unset switch logged %v", lines)
+				}
+				return
+			}
+			if len(lines) != len(fixture.want) {
+				t.Fatalf("lines = %v, want %v", lines, fixture.want)
+			}
+			for i, want := range fixture.want {
+				if lines[i] != want {
+					t.Errorf("line %d = %q, want %q", i, lines[i], want)
+				}
+			}
+		})
+	}
+}

@@ -13,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 
 	"github.com/adrg/xdg"
 	"github.com/csmart/aeronautes/internal/app"
@@ -74,13 +73,8 @@ func runDesktop(identity app.BuildIdentity, shutdown *shellShutdown,
 	// The operator's out-of-band capability switch, read once here and
 	// nowhere else (ADR 0082). A deferred capability it names is offered
 	// by this process although it is not proven; the interface says so.
-	if enabled, unrecognised := app.ReadEnabledCapabilities(); len(enabled) > 0 || len(unrecognised) > 0 {
-		if len(enabled) > 0 {
-			log.Printf("%s: offering unproven capabilities in this process: %s", app.EnableEnvVar, strings.Join(enabled, ", "))
-		}
-		if len(unrecognised) > 0 {
-			log.Printf("%s: ignored, not a capability: %s", app.EnableEnvVar, strings.Join(unrecognised, ", "))
-		}
+	for _, line := range app.StartupCapabilityLines(app.ReadEnabledCapabilities()) {
+		log.Print(line)
 	}
 
 	// OS keychain when reachable; otherwise session-only, surfaced in the
