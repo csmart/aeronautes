@@ -69,16 +69,19 @@ gates can reference stable IDs instead of re-reading ~11k words of prose.
 - **K-XFER-014** — The rclone boundary is absolute: rclone MUST NOT execute any destructive or
   overwriting operation (`sync` delete phase, `purge`, `delete`, or any write to an existing live
   name) on **any** scope. rclone writes only planned-new or uniquely-staged names; all destruction
-  is Aeronautes-native and manifest-only, with HEAD-before-mutate where identity matters (§28.6a). (§28.6, §36, ADR 0004)
+  is Aeronautes-native and manifest-only, with HEAD-before-mutate where identity matters (§28.6a),
+  the single exception to **manifest-only** being K-SEG-005's acknowledged upload reclamation, which is
+  equally Aeronautes-native and leaves the rclone prohibition above untouched. (§28.6, §36, ADR 0004)
 - **K-XFER-015** — `--server-side-across-configs` MUST NEVER be enabled for two independently
   authenticated bookmarks. (§30)
 - **K-SEG-004** — Automatic segment deletion requires `ExclusiveOwnershipProof` over the exact objects through the destructive effect, excluding other references and relevant concurrent writers.
   Generated-prefix records and `Confirmed` evidence MUST NOT be promoted to exclusive authority: they prove creation and a reference respectively.
   Recovery MUST retain uncertain data and records; explicit force cleanup remains a separate action with sharing risk disclosed. (§28.6, §24.1, ADR 0020)
-- **K-SEG-005** — One exception to K-SEG-004 exists and is bounded to it: an **acknowledged local upload** that replaces a large object MAY remove that predecessor's own segment objects, after the replacement is verified, under an operator option that defaults to removing them. (ADR 0081 decision 5)
+- **K-SEG-005** — One narrow exception exists, and this entry is the whole of it: an **acknowledged local upload** that replaces a large object MAY remove that predecessor's own segment objects, after the replacement is verified, under an operator option that defaults to removing them. (ADR 0081 decision 5)
   It removes only identities recorded before that publication, never a prefix listed at the time of deletion, and never an entry that names a containing object or another manifest.
   It is skipped entirely where the container keeps versions, and the answered confirmation bounds it: a question that stated the segments would be kept MUST NOT be followed by their removal.
-  It rests on the operator's accepted exposure and the reference implementation's precedent, NOT on an exclusivity proof, which §65.10 still owes. No other route gains this authority, and rclone still performs no destruction (K-XFER-014 is unchanged: this removal is Aeronautes-native).
+  It rests on the operator's accepted exposure and the reference implementation's precedent, NOT on an exclusivity proof, which §65.10 still owes. No other route gains this authority.
+  It is an exception to K-SEG-004 and to K-XFER-014's **manifest-only** clause, and to nothing else: rclone's prohibition is unchanged, because this removal is Aeronautes-native and rclone still executes no destructive or overwriting operation on any scope.
 
 ## Mirror & comparison
 
