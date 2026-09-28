@@ -144,6 +144,13 @@ type Server struct {
 	// DisableBulkDelete makes ?bulk-delete answer 404 so the deletion
 	// engine falls to the parallel single-DELETE path.
 	DisableBulkDelete bool
+	// ListingPageCap, when > 0, caps every container listing response at
+	// this many rows however large a limit the caller asked for. Real Swift
+	// may answer with fewer rows than the limit and still have more
+	// (ADR 0021), and a caller that reads a short non-empty response as the
+	// end of a container is wrong; this makes that store behaviour a fixture
+	// rather than a hope.
+	ListingPageCap int
 	// BulkDeleteExtraErrorRow, when set, adds an error row for this
 	// "/container/object" path to every bulk-delete reply. No request line
 	// named it, so the reply is not wholly about the request that asked —
@@ -973,6 +980,9 @@ func (s *Server) writeObjectListing(w http.ResponseWriter, r *http.Request, cont
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	if limit <= 0 {
 		limit = 10000
+	}
+	if s.ListingPageCap > 0 && s.ListingPageCap < limit {
+		limit = s.ListingPageCap
 	}
 	marker := q.Get("marker")
 	prefix := q.Get("prefix")

@@ -103,39 +103,63 @@ func PreflightUploadReplacing(ctx context.Context, dst *swiftcontrol.Session, co
 // so the estimate below can count requests rather than guess them.
 const listingPageSize = 10000
 
-// destinationLiveness says which of these destination names are already
-// live, taking whichever of two request patterns it ESTIMATES to be cheaper.
+// livenessListingFloor is the largest selection this resolution settles by
+// name without listing at all. A listing pass costs at least one page and the
+// empty one that ends it, so below this it cannot win.
+const livenessListingFloor = 2
+
+// destinationLiveness reports which of these names the destination already
+// holds, choosing between one HEAD per name and listing the prefix by what
+// each actually COSTS IN REQUESTS.
 //
-// One head per name costs one request per name, which is what this route
-// used to do: a selection of a thousand files was a thousand requests before
-// a byte was written (K-PERF-001). One deep listing of the destination
-// prefix costs one request per page of what is already there, whatever the
-// selection's size, plus the empty page the iterator needs to know it has
-// finished. The container's own object count — one head, and an upper bound
-// on what lives under the prefix — is what the estimate is built from.
+// The container's object count was the old input, and it is only an upper
+// bound for the prefix inside it, so a small prefix in a large container
+// looked expensive to list and the selection paid one HEAD per name
+// (K-PERF-001: a thousand files must not be a thousand requests before a byte
+// is written). Rows are the wrong unit too: the client has already fetched and
+// validated a whole response before it yields the first row, so abandoning
+// part way through one throws away answers already paid for.
 //
-// It is an ESTIMATE and not a guarantee, deliberately. The count can be
-// stale, because container counts are updated asynchronously; the server may
-// return pages shorter than the size asked for, which this project's own
-// listing-continuation contract explicitly supports; and the prefix may hold
-// far fewer objects than the container does, in which case a listing of it
-// alone would have been cheaper than the estimate can tell. So the choice
-// can be wrong in either direction by the page schedule. What is bounded
-// whichever way it goes: the heads are bounded by the selection, the listing
-// is bounded by the store's own paging, and neither reads more than one page
-// into memory. The iterator is NOT stopped early to make the estimate true.
+// So this reads the listing a RESPONSE at a time and decides at page
+// boundaries:
 //
-// A listing is also the weaker ORACLE, in both directions, and both are
-// conservative here. It can omit an object a head would find, because
+//   - A selection at or below livenessListingFloor is settled by name. A pass
+//     costs at least one page and the empty one that ends it, so listing
+//     cannot win.
+//   - Otherwise every row of every page is consumed, because those rows cost
+//     nothing once their response has arrived.
+//   - After each complete page the pass stops when ONE MORE REQUEST would cost
+//     at least as much as asking for the names still open: a HEAD each settles
+//     them for certain, while another page settles them only if they happen to
+//     be in it. That bounds the whole resolution at about twice the selection
+//     even against a server that answers one row at a time, and it costs two
+//     requests whenever the prefix fits in a response or two — which is the
+//     ordinary case.
+//   - Nothing is concluded from the SHAPE of a page. A full one does not prove
+//     another follows and a short one does not prove the listing is finished
+//     (ADR 0021); only the empty page the iterator consumes means exhaustion.
+//     Stopping early is a deliberate choice about cost, never a claim about
+//     what is left.
+//
+// Stopping is never read as exhaustion, nothing is resumed and no second
+// listing is issued, so no row is read twice and none is skipped. Every hit a
+// stopped pass found is kept, and only the names it did not settle are asked
+// for by name.
+//
+// A listing is the weaker ORACLE, in both directions, and both are
+// conservative here. It can omit an object a HEAD would find, because
 // container listings lag writes; a miss leaves the publication carrying its
-// conditional, so the store refuses it and the item is a conflict rather
-// than an unasked-for replacement. It can also name an object that has since
-// been deleted, because listings lag deletes too (DESIGN section 15.3); that
-// name is then reported as a collision that no longer exists, which refuses
-// an unacknowledged upload that would have succeeded and marks an
-// acknowledged one as replacing something that is gone. The second case
-// publishes rather than destroys, and the backend still confirms what it
-// replaced, so neither error can turn into an unconfirmed overwrite.
+// conditional, so the store refuses it and the item is a conflict rather than
+// an unasked-for replacement. It can also name an object that has since been
+// deleted, because listings lag deletes too (DESIGN section 15.3); that name
+// is then reported as a collision that no longer exists, which refuses an
+// unacknowledged upload that would have succeeded and marks an acknowledged
+// one as replacing something that is gone. The second case publishes rather
+// than destroys, and the backend still confirms what it replaced, so neither
+// error can turn into an unconfirmed overwrite.
+//
+// Not knowing is never free: a listing that stops, or a HEAD that fails for
+// any reason other than not-found, refuses the preflight.
 func destinationLiveness(ctx context.Context, dst *swiftcontrol.Session, container, prefix string,
 	names []string) (map[string]bool, error) {
 	wanted := make(map[string]bool, len(names))
@@ -145,50 +169,72 @@ func destinationLiveness(ctx context.Context, dst *swiftcontrol.Session, contain
 	if len(wanted) == 0 {
 		return wanted, nil
 	}
-	// A container this route cannot measure falls back to heads rather than
-	// assuming a listing is cheap.
-	heads := len(wanted)
-	pages := heads + 1
-	if detail, err := dst.ContainerDetail(ctx, container); err == nil && detail != nil {
-		// Every page the store returns, rounded up, plus the empty one that
-		// ends the iteration. An earlier version of this rounded DOWN and so
-		// estimated a full page as free, which made a tie look like a saving.
-		pages = int((detail.ObjectCount+listingPageSize-1)/listingPageSize) + 1
-	}
-	if pages >= heads {
-		for name := range wanted {
-			switch _, err := dst.ObjectDetail(ctx, container, name); {
-			case err == nil:
-				wanted[name] = true
-			case !swiftcontrol.IsNotFound(err):
-				// Not knowing is not the same as free. This refusal is the
-				// one the per-file loop used to carry.
-				return nil, err
+	unsettled := func() int {
+		open := 0
+		for _, live := range wanted {
+			if !live {
+				open++
 			}
 		}
+		return open
+	}
+	exhausted := false
+	if len(wanted) > livenessListingFloor {
+		exhausted = true
+		spent := 0
+		// Deep, which is the stream jobs consume. It is not load-bearing for
+		// matching today, because every candidate name is the prefix plus one
+		// path base and so has no further slash, which the delimiter view
+		// would return as a direct child anyway. It is the right default all
+		// the same: a selection that ever preserved directory structure would
+		// produce names the delimiter view groups into rows that name no
+		// object, and this would then silently find no collisions.
+		for page, err := range dst.ObjectPages(ctx, container, swiftcontrol.ObjectListOptions{
+			Prefix: prefix, PageSize: listingPageSize, Deep: true}) {
+			if err != nil {
+				// A listing that stopped says nothing about the names it never
+				// reached, and treating those as free would admit a
+				// replacement the operator was never shown. Refuse the
+				// preflight instead.
+				return nil, fmt.Errorf("the destination could not be listed, so a collision cannot be ruled out: %w", err)
+			}
+			for _, entry := range page.Entries {
+				object, ok := entry.(swiftcontrol.ObjectEntry)
+				if !ok {
+					continue
+				}
+				if _, candidate := wanted[object.Name]; candidate {
+					wanted[object.Name] = true
+				}
+			}
+			spent++
+			if spent+1 >= unsettled() {
+				// One more request would cost at least what the names still
+				// open cost to ask for directly, and it might settle none of
+				// them. Stop and ask. This is a decision about cost: nothing
+				// is being claimed about how much of the prefix is left.
+				exhausted = false
+				break
+			}
+		}
+	}
+	if exhausted {
+		// The prefix was enumerated whole. Absence here is the listing's
+		// answer, which a create still publishes conditionally, exactly as
+		// before.
 		return wanted, nil
 	}
-	// Deep, which is the stream jobs consume. It is not load-bearing for
-	// matching today, because every candidate name is the prefix plus one
-	// path base and so has no further slash, which the delimiter view would
-	// return as a direct child anyway. It is the right default all the same:
-	// a selection that ever preserves directory structure would produce
-	// names the delimiter view groups into rows that name no object, and
-	// this would then silently find no collisions.
-	for entry, err := range dst.Objects(ctx, container, swiftcontrol.ObjectListOptions{
-		Prefix: prefix, PageSize: listingPageSize, Deep: true}) {
-		if err != nil {
-			// A listing that stopped says nothing about the names it never
-			// reached, and treating those as free would admit a replacement
-			// the operator was never shown. Refuse the preflight instead.
-			return nil, fmt.Errorf("the destination could not be listed, so a collision cannot be ruled out: %w", err)
-		}
-		object, ok := entry.(swiftcontrol.ObjectEntry)
-		if !ok {
+	for name, live := range wanted {
+		if live {
 			continue
 		}
-		if _, candidate := wanted[object.Name]; candidate {
-			wanted[object.Name] = true
+		switch _, err := dst.ObjectDetail(ctx, container, name); {
+		case err == nil:
+			wanted[name] = true
+		case !swiftcontrol.IsNotFound(err):
+			// Not knowing is not the same as free. This refusal is the one the
+			// per-file loop used to carry.
+			return nil, err
 		}
 	}
 	return wanted, nil

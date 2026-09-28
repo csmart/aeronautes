@@ -63,15 +63,33 @@ type ObjectListOptions struct {
 	Deep bool
 }
 
-// Objects streams one container's listing page by page with the same
-// bounded-memory contract as Containers (§15). In the default delimiter
-// view the server groups everything below each child prefix into one
-// subdir row — including any object named exactly at the boundary
-// (verified against real Swift; §14.1) — and an object named exactly at
-// a slash-terminated folder's own prefix is skipped here: it belongs to
-// that folder's PrefixDetail, not to its child rows. Deep mode reports every real
+// ObjectPage is one listing response as this client validated it: the rows
+// it carried, and whether the server filled the page it was asked for.
+//
+// Full is evidence about the CONTAINER, not a continuation signal: a page that
+// is not full does not mean the listing is finished, because the server may
+// answer with fewer rows than the limit and still have more (§15, ADR 0021).
+// Only an empty page ends a listing, and the iterator consumes that itself.
+// What Full supports is a caller deciding whether another REQUEST is worth
+// making, which is a question rows alone cannot answer.
+type ObjectPage struct {
+	Entries []ListingEntry
+	Full    bool
+}
+
+// ObjectPages streams one container's listing one validated response at a
+// time, with the same bounded-memory contract as Containers (§15): at most one
+// page is held. Every name check, marker progress rule and deep/delimiter
+// decision Objects applies is applied here, because Objects is this function
+// with the pages flattened.
+//
+// In the default delimiter view the server groups everything below each child
+// prefix into one subdir row — including any object named exactly at the
+// boundary (verified against real Swift; §14.1) — and an object named exactly
+// at a slash-terminated folder's own prefix is skipped: it belongs to that
+// folder's PrefixDetail, not to its child rows. Deep mode reports every real
 // object verbatim.
-func (s *Session) Objects(ctx context.Context, container string, opts ObjectListOptions) iter.Seq2[ListingEntry, error] {
+func (s *Session) ObjectPages(ctx context.Context, container string, opts ObjectListOptions) iter.Seq2[ObjectPage, error] {
 	pageSize := opts.PageSize
 	if pageSize <= 0 {
 		pageSize = defaultPageSize
@@ -81,11 +99,11 @@ func (s *Session) Objects(ctx context.Context, container string, opts ObjectList
 		delimiter = '/'
 	}
 
-	return func(yield func(ListingEntry, error) bool) {
+	return func(yield func(ObjectPage, error) bool) {
 		marker := opts.Marker
 		for {
 			if err := ctx.Err(); err != nil {
-				yield(nil, Normalize(err))
+				yield(ObjectPage{}, Normalize(err))
 				return
 			}
 			page, err := s.conn.Objects(ctx, container, &swift.ObjectsOpts{
@@ -95,7 +113,7 @@ func (s *Session) Objects(ctx context.Context, container string, opts ObjectList
 				Delimiter: delimiter,
 			})
 			if err != nil {
-				yield(nil, Normalize(err))
+				yield(ObjectPage{}, Normalize(err))
 				return
 			}
 			if len(page) == 0 {
@@ -106,37 +124,54 @@ func (s *Session) Objects(ctx context.Context, container string, opts ObjectList
 			last := marker
 			for _, row := range page {
 				if err := validateListingName(row.Name, opts.Prefix, last); err != nil {
-					yield(nil, Normalize(err))
+					yield(ObjectPage{}, Normalize(err))
 					return
 				}
 				if opts.Deep && row.PseudoDirectory {
-					yield(nil, Normalize(fmt.Errorf("deep listing contains a prefix row %q", row.Name)))
+					yield(ObjectPage{}, Normalize(fmt.Errorf("deep listing contains a prefix row %q", row.Name)))
 					return
 				}
 				last = row.Name
 			}
 
+			entries := make([]ListingEntry, 0, len(page))
 			for _, row := range page {
-				if err := ctx.Err(); err != nil {
-					yield(nil, Normalize(err))
-					return
-				}
 				switch {
 				case row.PseudoDirectory:
-					if !yield(PrefixEntry{Prefix: row.Name}, nil) {
-						return
-					}
+					entries = append(entries, PrefixEntry{Prefix: row.Name})
 				case !opts.Deep && strings.HasSuffix(opts.Prefix, "/") && row.Name == opts.Prefix:
 					// The folder's own object belongs to PrefixDetail.
 					continue
 				default:
-					if !yield(objectEntry(row), nil) {
-						return
-					}
+					entries = append(entries, objectEntry(row))
 				}
 			}
-
+			if !yield(ObjectPage{Entries: entries, Full: len(page) >= pageSize}, nil) {
+				return
+			}
 			marker = last
+		}
+	}
+}
+
+// Objects streams one container's listing row by row: ObjectPages with the
+// pages flattened, which is what almost every caller wants.
+func (s *Session) Objects(ctx context.Context, container string, opts ObjectListOptions) iter.Seq2[ListingEntry, error] {
+	return func(yield func(ListingEntry, error) bool) {
+		for page, err := range s.ObjectPages(ctx, container, opts) {
+			if err != nil {
+				yield(nil, err)
+				return
+			}
+			for _, entry := range page.Entries {
+				if err := ctx.Err(); err != nil {
+					yield(nil, Normalize(err))
+					return
+				}
+				if !yield(entry, nil) {
+					return
+				}
+			}
 		}
 	}
 }

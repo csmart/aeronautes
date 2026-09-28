@@ -461,6 +461,8 @@ func TestPreflightUploadDoesNotHeadEveryFile(t *testing.T) {
 		wantHeads int
 	}{
 		{name: "many files into a small destination", alreadyThere: 3, files: 40, wantHeads: 0},
+		// One name is settled by name: a listing pass costs a page and the
+		// empty one that ends it, so it cannot beat a single HEAD.
 		{name: "one file into a small destination", alreadyThere: 3, files: 1, wantHeads: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -542,6 +544,9 @@ func TestPreflightUploadRefusesWhatItCouldNotResolve(t *testing.T) {
 		files int
 		arm   func(mock *swifttest.Server)
 	}{
+		// A selection of one is settled by name, so its refusal is the HEAD's;
+		// a wider one lists, so its refusal is the listing's. Both paths are
+		// exercised, each by a selection that reaches it.
 		{name: "a head that failed", files: 1, arm: func(mock *swifttest.Server) { mock.FailNextObjectHEADs(1) }},
 		{name: "a listing that stopped", files: 40, arm: func(mock *swifttest.Server) { mock.FailNextListings(1) }},
 	} {
@@ -627,10 +632,12 @@ func TestPreflightUploadKeepsLocalFindingsWhenTheDestinationFails(t *testing.T) 
 	}
 }
 
-// The choice between patterns is an estimate built from the container's own
-// count, and the arithmetic has to round the way the store pages. An earlier
-// version rounded down, so it estimated a full page as free and made a tie
-// look like a saving.
+// What decides now is the listing itself rather than the container's count,
+// which is only an upper bound for the prefix and so made a small prefix in a
+// large container look expensive. A selection at or below the floor is settled
+// by name; a wider one lists and is abandoned only if the prefix turns out to
+// hold more rows than there are names to settle. The costs of each are
+// asserted in TestDestinationLivenessChoosesAndBudgets.
 func TestPreflightUploadChoosesTheCheaperEstimate(t *testing.T) {
 	for _, tc := range []struct {
 		name         string
@@ -640,9 +647,9 @@ func TestPreflightUploadChoosesTheCheaperEstimate(t *testing.T) {
 		// when the listing is estimated cheaper, one per file otherwise.
 		wantHeads int
 	}{
-		{name: "a tie goes to the heads", alreadyThere: 3, files: 2, wantHeads: 2},
-		{name: "one more file tips it to the listing", alreadyThere: 3, files: 3, wantHeads: 0},
-		{name: "a single file never lists", alreadyThere: 3, files: 1, wantHeads: 1},
+		{name: "two files stay at the floor", alreadyThere: 3, files: 2, wantHeads: 2},
+		{name: "three files list", alreadyThere: 3, files: 3, wantHeads: 0},
+		{name: "a single file", alreadyThere: 3, files: 1, wantHeads: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, mock := session(t)
@@ -862,4 +869,290 @@ func TestPreflightUploadStopsScanningWhenCancelled(t *testing.T) {
 			})
 		}
 	}
+}
+
+// The same budget through the PUBLIC routes, both of them, because db:766's
+// regression was reachable there: a hundred selected names against a prefix of
+// two hundred rows the server returns in one response must cost that response
+// and the empty page after it, not a HEAD per name. The replacing route is
+// included because it admits live names rather than refusing them, so its
+// resolution runs over a destination where the selected names ARE there.
+func TestPreflightUploadBudgetsOneResponse(t *testing.T) {
+	for _, mode := range []struct {
+		name string
+		run  func(t *testing.T, s *swiftcontrol.Session, paths []string) error
+	}{
+		{name: "creating", run: func(t *testing.T, s *swiftcontrol.Session, paths []string) error {
+			report, err := PreflightUpload(t.Context(), s, "media", "docs/", paths)
+			if err != nil || report == nil {
+				return fmt.Errorf("preflight: %+v %w", report, err)
+			}
+			return nil
+		}},
+		{name: "replacing", run: func(t *testing.T, s *swiftcontrol.Session, paths []string) error {
+			report, err := PreflightUploadReplacing(t.Context(), s, "media", "docs/", paths)
+			if err != nil || report == nil {
+				return fmt.Errorf("replacing preflight: %+v %w", report, err)
+			}
+			return nil
+		}},
+	} {
+		for _, fixture := range []struct {
+			name string
+			live bool
+		}{{name: "none of the selection is there"}, {name: "half of it is, at the end", live: true}} {
+			t.Run(mode.name+"/"+fixture.name, func(t *testing.T) {
+				s, mock := session(t)
+				for i := range 150 {
+					seed(mock, "media", fmt.Sprintf("docs/there-%04d", i), "already here")
+				}
+				dir := t.TempDir()
+				var paths []string
+				for i := range 100 {
+					paths = append(paths, writeFile(t, dir, fmt.Sprintf("send-%04d", i), "bytes"))
+				}
+				if fixture.live {
+					for i := 50; i < 100; i++ {
+						seed(mock, "media", fmt.Sprintf("docs/send-%04d", i), "already here")
+					}
+				}
+				before := len(mock.RequestLog())
+				if err := mode.run(t, s, paths); err != nil {
+					t.Fatal(err)
+				}
+				var heads, listings int
+				for _, request := range mock.RequestLog()[before:] {
+					switch {
+					case strings.HasPrefix(request, "HEAD /v1/AUTH_test/media/"):
+						heads++
+					case strings.HasPrefix(request, "GET /v1/AUTH_test/media?"):
+						listings++
+					}
+				}
+				if heads != 0 || listings != 2 {
+					t.Errorf("cost %d object HEADs and %d listings, want 0 and 2", heads, listings)
+				}
+			})
+		}
+	}
+}
+
+// The resolution's own decision, in REQUESTS. db:766 showed the cost that
+// matters is responses, not rows: the client fetches and validates a whole
+// response before it yields the first row, so a pass that stops part way
+// through one throws away answers already paid for and then pays a HEAD for
+// each of them. Every case here asserts a request budget.
+func TestDestinationLivenessChoosesAndBudgets(t *testing.T) {
+	names := func(n int) []string {
+		var out []string
+		for i := range n {
+			out = append(out, fmt.Sprintf("docs/send-%04d", i))
+		}
+		return out
+	}
+	count := func(log []string) (heads, listings int) {
+		for _, request := range log {
+			switch {
+			case strings.HasPrefix(request, "HEAD /v1/AUTH_test/media/"):
+				heads++
+			case strings.HasPrefix(request, "GET /v1/AUTH_test/media?"):
+				listings++
+			}
+		}
+		return heads, listings
+	}
+	seedRows := func(mock *swifttest.Server, n int) {
+		for i := range n {
+			seed(mock, "media", fmt.Sprintf("docs/there-%04d", i), "already here")
+		}
+	}
+	t.Run("one response that answers everything costs one more", func(t *testing.T) {
+		// db:766's own case: a hundred selected names, none of them there, and
+		// a prefix of two hundred rows the server returns in ONE response. The
+		// rows are already paid for, so they are all read, and the only further
+		// request is the empty page that ends the listing.
+		s, mock := session(t)
+		seedRows(mock, 200)
+		before := len(mock.RequestLog())
+		live, err := destinationLiveness(t.Context(), s, "media", "docs/", names(100))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range names(100) {
+			if live[name] {
+				t.Fatalf("%s is not there and was reported live", name)
+			}
+		}
+		heads, listings := count(mock.RequestLog()[before:])
+		if heads != 0 || listings != 2 {
+			t.Errorf("cost %d HEADs and %d listings, want 0 and 2", heads, listings)
+		}
+	})
+	t.Run("names that appear late in that response are still found", func(t *testing.T) {
+		// The same shape with fifty of the selected names live at the END of
+		// the listing: a pass that stopped early would miss them and then have
+		// to ask for each by name.
+		s, mock := session(t)
+		seedRows(mock, 150)
+		for _, name := range names(100)[50:] {
+			seed(mock, "media", name, "already here")
+		}
+		before := len(mock.RequestLog())
+		live, err := destinationLiveness(t.Context(), s, "media", "docs/", names(100))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range names(100)[50:] {
+			if !live[name] {
+				t.Errorf("%s is live at the end of the listing and was not found", name)
+			}
+		}
+		heads, listings := count(mock.RequestLog()[before:])
+		if heads != 0 || listings != 2 {
+			t.Errorf("cost %d HEADs and %d listings, want 0 and 2", heads, listings)
+		}
+	})
+	t.Run("a page exactly at the limit does not change the cost", func(t *testing.T) {
+		// db:769: the shape of a page decided this, and a prefix of exactly one
+		// full page swung the cost from two requests to a hundred and one. Ten
+		// thousand rows and one fewer must cost the same, because neither says
+		// anything about what follows.
+		for _, rows := range []int{listingPageSize - 1, listingPageSize} {
+			t.Run(fmt.Sprint(rows), func(t *testing.T) {
+				s, mock := session(t)
+				seedRows(mock, rows)
+				before := len(mock.RequestLog())
+				live, err := destinationLiveness(t.Context(), s, "media", "docs/", names(100))
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, name := range names(100) {
+					if live[name] {
+						t.Fatalf("%s is not there and was reported live", name)
+					}
+				}
+				heads, listings := count(mock.RequestLog()[before:])
+				if heads != 0 || listings != 2 {
+					t.Errorf("%d rows cost %d HEADs and %d listings, want 0 and 2", rows, heads, listings)
+				}
+			})
+		}
+	})
+	t.Run("a capped server is bounded by the selection", func(t *testing.T) {
+		// One row per response, which ADR 0021 permits, and a prefix far larger
+		// than the selection. The pass must stop on its own budget rather than
+		// reading the prefix out one row at a time.
+		s, mock := session(t)
+		mock.ListingPageCap = 1
+		seedRows(mock, 500)
+		before := len(mock.RequestLog())
+		live, err := destinationLiveness(t.Context(), s, "media", "docs/",
+			append(names(2), "docs/absent"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if live["docs/send-0000"] || live["docs/absent"] {
+			t.Fatalf("nothing selected is there: %+v", live)
+		}
+		heads, listings := count(mock.RequestLog()[before:])
+		if listings != 2 || heads != 3 {
+			t.Errorf("a capped server cost %d listings and %d HEADs, want 2 and 3", listings, heads)
+		}
+	})
+	t.Run("the whole resolution stays bounded by the selection", func(t *testing.T) {
+		// The general promise: however the server pages, the resolution costs
+		// about twice the selection at worst, never the prefix.
+		s, mock := session(t)
+		mock.ListingPageCap = 1
+		seedRows(mock, 5000)
+		before := len(mock.RequestLog())
+		if _, err := destinationLiveness(t.Context(), s, "media", "docs/", names(10)); err != nil {
+			t.Fatal(err)
+		}
+		heads, listings := count(mock.RequestLog()[before:])
+		if total, bound := heads+listings, 2*10; total > bound {
+			t.Errorf("ten names cost %d requests (%d listings, %d HEADs), want at most %d",
+				total, listings, heads, bound)
+		}
+	})
+	t.Run("a selection at the floor never lists", func(t *testing.T) {
+		s, mock := session(t)
+		seedRows(mock, 4)
+		seed(mock, "media", "docs/send-0000", "already here")
+		before := len(mock.RequestLog())
+		live, err := destinationLiveness(t.Context(), s, "media", "docs/", names(2))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !live["docs/send-0000"] || live["docs/send-0001"] {
+			t.Fatalf("liveness is wrong: %+v", live)
+		}
+		heads, listings := count(mock.RequestLog()[before:])
+		if listings != 0 || heads != 2 {
+			t.Errorf("a two-name selection cost %d listings and %d HEADs, want 0 and 2", listings, heads)
+		}
+	})
+	t.Run("a short non-empty page is not exhaustion", func(t *testing.T) {
+		// The store answers with fewer rows than the limit and still has more,
+		// which ADR 0021 permits. A short page must never be read as the end
+		// of the prefix: the selection here is wide enough that the budget
+		// never stops the pass, so it runs to the empty page and settles
+		// everything from the listing.
+		s, mock := session(t)
+		mock.ListingPageCap = 1
+		seedRows(mock, 3)
+		seed(mock, "media", "docs/send-0005", "already here")
+		before := len(mock.RequestLog())
+		live, err := destinationLiveness(t.Context(), s, "media", "docs/", names(12))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !live["docs/send-0005"] {
+			t.Error("a live name in the last row before the empty page was missed")
+		}
+		heads, listings := count(mock.RequestLog()[before:])
+		// Four rows one at a time and then the empty page, with no HEAD: the
+		// pass was never stopped, so no short page ended anything.
+		if heads != 0 || listings != 5 {
+			t.Errorf("cost %d HEADs and %d listings, want 0 and 5", heads, listings)
+		}
+	})
+	t.Run("no listing request is issued twice", func(t *testing.T) {
+		s, mock := session(t)
+		mock.ListingPageCap = 2
+		seedRows(mock, 8)
+		before := len(mock.RequestLog())
+		if _, err := destinationLiveness(t.Context(), s, "media", "docs/", names(4)); err != nil {
+			t.Fatal(err)
+		}
+		seen := map[string]int{}
+		for _, request := range mock.RequestLog()[before:] {
+			if strings.HasPrefix(request, "GET /v1/AUTH_test/media?") {
+				seen[request]++
+			}
+		}
+		for request, times := range seen {
+			if times > 1 {
+				t.Errorf("the same listing request was issued %d times: %s", times, request)
+			}
+		}
+	})
+	t.Run("a head that failed refuses", func(t *testing.T) {
+		s, mock := session(t)
+		mock.ListingPageCap = 1
+		seedRows(mock, 500)
+		mock.FailNextObjectHEADs(1)
+		if live, err := destinationLiveness(t.Context(), s, "media", "docs/",
+			append(names(2), "docs/absent")); err == nil {
+			t.Fatalf("a failed HEAD was read as free: %+v", live)
+		}
+	})
+	t.Run("a listing that stopped refuses", func(t *testing.T) {
+		s, mock := session(t)
+		seedRows(mock, 6)
+		mock.FailNextListings(1)
+		if live, err := destinationLiveness(t.Context(), s, "media", "docs/", names(6)); err == nil {
+			t.Fatalf("a failed listing was read as an empty prefix: %+v", live)
+		}
+	})
 }
