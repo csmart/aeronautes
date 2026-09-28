@@ -202,14 +202,19 @@ func TestFixtureAuthReportsOneAttemptWhenItAuthenticatesFirstTime(t *testing.T) 
 	}
 }
 
-// A seed client must own its transport. Left on http.DefaultTransport its
-// connection pool is shared with everything else in this binary, and any
-// CloseIdleConnections anywhere in the process can then break a seed request
-// that is in flight on a pooled connection — which is how one download case's
-// teardown failed an unrelated container PUT with "transport connection
-// broken: http: CloseIdleConnections called" on a loaded runner. The property
-// is asserted structurally because the failure it prevents is a race, and a
-// race is a poor guard against a regression that is a missing field.
+// A seed client must own its transport, because httptest.Server.Close closes
+// idle connections on the shared http.DefaultTransport and a client with no
+// transport of its own draws from that pool. A private pool is isolated from
+// other fixtures' cleanup.
+//
+// One CI attempt failed on a harness seed PUT with "transport connection
+// broken: http: CloseIdleConnections called", which is what prompted this.
+// What produced it was never established — neither which cleanup ran at that
+// moment nor how it interleaved — and nothing here claims a mechanism for it.
+// The property below does not depend on that question being answered.
+//
+// It is asserted structurally rather than by racing a close, because a race
+// makes a poor guard against a regression that is a missing field.
 func TestFixtureSeedClientsOwnTheirTransport(t *testing.T) {
 	f := newAuthFixture(t, func(int64) int { return http.StatusOK })
 	one, two := accountFor(t, f), accountFor(t, f)

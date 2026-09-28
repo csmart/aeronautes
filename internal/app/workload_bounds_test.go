@@ -109,11 +109,16 @@ func TestQueueDepthRefusesAtTheBoundary(t *testing.T) {
 	waitForOwners(2)
 	// The depth counts owners waiting for a slot, so a refusal needs the
 	// queued job INSIDE that wait, not merely launched or merely holding a
-	// queued row. Waiting on the row instead is what made this case
-	// intermittent on a loaded runner: the third start below was admitted in
-	// the window between the row and the wait, and then failed on the
-	// selection token that start had already consumed, reporting "unknown
-	// selection" where the queue bound was the thing under test.
+	// queued row. A row exists before the owner reaches the wait, so a
+	// refusal asserted on the row alone can be asked while the runner still
+	// counts nothing queued; the third start below would then be admitted
+	// and fail on the selection token it had already consumed, reporting
+	// "unknown selection" where the queue bound was the thing under test.
+	//
+	// This case did fail master once with exactly that message. That
+	// ordering is consistent with the failure and is the reason to wait
+	// here, but it was not observed directly and is not offered as the
+	// established cause.
 	waitForQueued := func(n int) {
 		t.Helper()
 		deadline := time.Now().Add(10 * time.Second)
