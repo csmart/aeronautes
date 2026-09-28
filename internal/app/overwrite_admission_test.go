@@ -511,7 +511,7 @@ func TestReplacingALargeObjectRecordsItsSegmentNamesDurably(t *testing.T) {
 		t.Fatal("the trail does not record the replacement at all")
 	}
 	for _, want := range []string{"it named 3 segments", "1 inline",
-		"nothing here removes any of them",
+		"recording them removes none of them",
 		"its inline data has no remote part, so a replacement would take that with the manifest"} {
 		if !strings.Contains(summary, want) {
 			t.Errorf("the summary lacks %q: %s", want, summary)
@@ -659,8 +659,8 @@ func TestReplacementRecordMakesNoClaimAboutAnUnattemptedPublication(t *testing.T
 	if summary == "" {
 		t.Fatal("the trail does not record what was seen")
 	}
-	if !strings.Contains(summary, "nothing here removes any of them") {
-		t.Errorf("the record does not say what this route will not do: %q", summary)
+	if !strings.Contains(summary, "recording them removes none of them") {
+		t.Errorf("the record does not say what it is rather than what happened: %q", summary)
 	}
 	for _, forbidden := range []string{"was retained", "were retained", "went with the manifest"} {
 		if strings.Contains(summary, forbidden) {

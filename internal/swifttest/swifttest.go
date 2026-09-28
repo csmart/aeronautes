@@ -144,7 +144,12 @@ type Server struct {
 	// DisableBulkDelete makes ?bulk-delete answer 404 so the deletion
 	// engine falls to the parallel single-DELETE path.
 	DisableBulkDelete bool
-	requestLog        []string
+	// BulkDeleteExtraErrorRow, when set, adds an error row for this
+	// "/container/object" path to every bulk-delete reply. No request line
+	// named it, so the reply is not wholly about the request that asked —
+	// the shape a caller must not read as a disposition for its own names.
+	BulkDeleteExtraErrorRow string
+	requestLog              []string
 
 	user  string
 	key   string
@@ -177,6 +182,37 @@ func (s *Server) AddContainer(name, policy string) {
 }
 
 // PutObject stores an object, creating its container if needed.
+// SetManifestReadFault arms ManifestReadFault for one object while the
+// server is running, under the same lock the handler reads it with, so a
+// case can spoil a read that happens LATER in a run rather than the first
+// one of the run.
+func (s *Server) SetManifestReadFault(container, name, fault string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.ManifestReadFault == nil {
+		s.ManifestReadFault = map[string]string{}
+	}
+	s.ManifestReadFault[container+"/"+name] = fault
+}
+
+// EnableVersionArchive presents a container as using one of the legacy
+// versioning modes, naming the archive that keeps what is replaced. That
+// archive is what makes removing a replaced object's segments the wrong
+// thing to do, so a caller that reclaims has to be shown this mode.
+func (s *Server) EnableVersionArchive(container, archive string, history bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.containers[container]
+	if !ok {
+		return
+	}
+	if history {
+		c.HistoryLocation, c.VersionsLocation = archive, ""
+		return
+	}
+	c.VersionsLocation, c.HistoryLocation = archive, ""
+}
+
 // EnableModernVersioning presents a container as using modern object
 // versioning, which is a mode some callers must refuse rather than act on.
 func (s *Server) EnableModernVersioning(container string) {
@@ -833,6 +869,9 @@ func (s *Server) handleBulkDelete(w http.ResponseWriter, r *http.Request) {
 	var deleted, notFound int64
 	errorsList := [][2]string{}
 	s.mu.Lock()
+	if s.BulkDeleteExtraErrorRow != "" {
+		errorsList = append(errorsList, [2]string{s.BulkDeleteExtraErrorRow, "500 Internal Server Error"})
+	}
 	for _, line := range strings.Split(string(body), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
