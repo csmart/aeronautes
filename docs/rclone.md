@@ -129,6 +129,32 @@ Keep the flag before `--` and preserve the existing gateway, credentials, TLS, r
 | `--max-duration` | HARD kills mid-transfer, SOFT still overruns — bounded batches instead (§26.2) |
 | `sync`, `purge`, `delete`, `--swift-no-large-objects` toggling mid-job | the absolute destruction boundary (ADR 0004) and §25's single chunk knob |
 
+## Defaults this application depends on without setting them
+
+Every row is a DATA outcome, not a speed one, and every default is the pinned
+binary's own (`rclone help flags`, v1.74.3). Written down so a version bump has
+something to be checked against; the enumeration and the reasoning are in
+[docs/experiments/2026-09-29-engine-data-options.md](experiments/2026-09-29-engine-data-options.md).
+
+| Default relied on | Pinned value | What breaks if it moves |
+|---|---|---|
+| `--swift-no-chunk` off | streaming uploads chunk | the chunk size this application sets stops governing what the store holds |
+| `--swift-use-segments-container` unset | `<container>_segments` sidecar | every ownership and recovery record names segments that are somewhere else |
+| `--swift-encoding` | `Slash,InvalidUtf8` | the names written change, and the native routing rules for unsafe names were measured under this value |
+| `--swift-fetch-until-empty-page` off, `--swift-partial-page-fetch-threshold` 0 | pagination as measured | listing completeness — mostly moot, because `--no-traverse --files-from-raw` means the engine does not list our sources |
+| `--inplace` off | temp name, then rename | a destination file would hold a partial body under its final name; download staging, verification and residue all assume the atomic shape |
+| `--partial-suffix` | `.partial` | the temporary name a crash leaves for reconciliation and the operator to find |
+| `--local-no-check-updated` off | the check happens | a source file changing during an upload stops being detected |
+| `--local-no-sparse`, `--local-no-preallocate`, `--local-no-set-modtime` off | sparse, preallocated, modtime set | the on-disk shape of a partial download, and downloaded timestamps |
+| `--local-encoding` | `Slash,Dot` | local names written; the dot-segment behaviour measured 2026-08-29 follows from it |
+| `--multi-thread-cutoff` 256Mi, `--multi-thread-streams` 4, `--multi-thread-chunk-size` 64Mi | multi-stream above the cutoff | how many streams write one destination file at once, and its write granularity |
+| `--max-transfer` off, `--cutoff-mode` HARD | no policy truncation | a transfer would stop part way; HARD kills mid-transfer, the same objection that keeps `--max-duration` off the never-set list |
+| `--ignore-existing`, `--no-check-dest`, `--size-only`, `--no-update-modtime`, `--immutable` all off | comparison policy | little, because `--ignore-times` forces the transfer — stated so it is a decision rather than an inference |
+
+None of these is passed on the command line. Two more that would belong here
+are instead in the never-set table above, because setting them either way is
+forbidden rather than merely unnecessary.
+
 ## Observed 1.74.3 behaviours the planner depends on
 
 - Segment prefix: `<object>/<date>-<time>-<22-char-random>/<seq>` in the auto-created
