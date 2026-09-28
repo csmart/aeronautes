@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http/httptest"
 	"os"
@@ -725,5 +726,114 @@ func TestPreflightUploadTreatsAStaleListingRowConservatively(t *testing.T) {
 				t.Errorf("the creating path did not refuse it: items=%d replaces=%d", len(report.Items), replaces)
 			}
 		})
+	}
+}
+
+// countingCancel is a context that answers Err nil for the first `passes`
+// questions and cancelled thereafter, counting every question. It observes
+// the scan from OUTSIDE, through the public entry points, so the production
+// code needs no seam: if the loop stops when told, it asks exactly passes+1
+// times, and if it carries on it asks more.
+type countingCancel struct {
+	context.Context
+	passes int
+	asked  int
+}
+
+func (c *countingCancel) Err() error {
+	c.asked++
+	if c.asked <= c.passes {
+		return nil
+	}
+	return context.Canceled
+}
+
+func (c *countingCancel) Done() <-chan struct{} {
+	if c.asked <= c.passes {
+		return nil
+	}
+	closed := make(chan struct{})
+	close(closed)
+	return closed
+}
+
+// Deciding everything local before touching the destination removed the
+// context-aware request that used to end the selection loop early. A
+// cancelled start must still stop between candidates rather than stat every
+// remaining path, which is what the large selections this change supports
+// would otherwise do on a slow mount.
+func TestPreflightUploadStopsScanningWhenCancelled(t *testing.T) {
+	for _, entry := range []struct {
+		name      string
+		preflight func(ctx context.Context, s *swiftcontrol.Session, paths []string) (*UploadPreflight, error)
+		// wantItems is how many of the three the ordinary report admits: the
+		// creating path refuses the collision, the replacing path marks it.
+		wantItems int
+	}{
+		{name: "creating", wantItems: 2, preflight: func(ctx context.Context, s *swiftcontrol.Session, paths []string) (*UploadPreflight, error) {
+			return PreflightUpload(ctx, s, "media", "docs/", paths)
+		}},
+		{name: "replacing", wantItems: 3, preflight: func(ctx context.Context, s *swiftcontrol.Session, paths []string) (*UploadPreflight, error) {
+			return PreflightUploadReplacing(ctx, s, "media", "docs/", paths)
+		}},
+	} {
+		for _, tc := range []struct {
+			name string
+			// passes is how many candidates the scan is allowed before the
+			// context reports cancelled; wantAsked is how many times the scan
+			// may ask, which is one per candidate reached. It is only exact
+			// while the scan is the only thing running: once the destination
+			// is reached the transport consults the context too, which is why
+			// the uncancelled control does not count.
+			passes, wantAsked int
+			cancelled         bool
+		}{
+			{name: "cancelled at entry", passes: 0, wantAsked: 1, cancelled: true},
+			{name: "cancelled after the first candidate", passes: 1, wantAsked: 2, cancelled: true},
+			{name: "not cancelled at all", passes: 99, wantAsked: 3},
+		} {
+			t.Run(entry.name+", "+tc.name, func(t *testing.T) {
+				s, mock := session(t)
+				seed(mock, "media", "docs/send-001", "already here")
+				dir := t.TempDir()
+				var paths []string
+				for i := range 3 {
+					paths = append(paths, writeFile(t, dir, fmt.Sprintf("send-%03d", i), "bytes"))
+				}
+				ctx := &countingCancel{Context: t.Context(), passes: tc.passes}
+				before := len(mock.RequestLog())
+				report, err := entry.preflight(ctx, s, paths)
+				if tc.cancelled {
+					if !errors.Is(err, context.Canceled) {
+						t.Fatalf("a cancelled scan did not report it: %+v %v", report, err)
+					}
+					if report != nil {
+						t.Errorf("a cancelled scan returned a report: %+v", report)
+					}
+					// It stopped where it was told: one question per candidate
+					// reached, and no more.
+					if ctx.asked != tc.wantAsked {
+						t.Errorf("the scan asked %d times, want %d, so it did not stop between candidates", ctx.asked, tc.wantAsked)
+					}
+					if got := len(mock.RequestLog()) - before; got != 0 {
+						t.Errorf("a cancelled scan made %d destination requests", got)
+					}
+					return
+				}
+				// The control: the ordinary report, unchanged.
+				if err != nil || report == nil || len(report.Items) != entry.wantItems || len(report.Problems) != 1 {
+					t.Fatalf("the uncancelled report changed: %+v %v", report, err)
+				}
+				if report.Problems[0].Kind != "exists" || report.Problems[0].Name != "docs/send-001" {
+					t.Errorf("the control lost its collision: %+v", report.Problems)
+				}
+				// The scan asked at least once per candidate. It is not an
+				// exact count here, because the destination requests this
+				// control does reach consult the context as well.
+				if ctx.asked < tc.wantAsked {
+					t.Errorf("the scan asked %d times, fewer than one per candidate (%d)", ctx.asked, tc.wantAsked)
+				}
+			})
+		}
 	}
 }

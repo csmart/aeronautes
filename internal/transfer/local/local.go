@@ -219,6 +219,15 @@ func preflightUpload(ctx context.Context, dst *swiftcontrol.Session, container, 
 	candidates := make([]uploadCandidate, 0, len(paths))
 	seen := map[string]string{}
 	for index, path := range paths {
+		// Between candidates, before any further filesystem call. Deciding
+		// everything local first removed the context-aware request that used
+		// to end this loop early, so a cancelled start would otherwise go on
+		// stating every remaining path — and a large selection on a slow
+		// mount is exactly what this change exists to support. The job
+		// runner's shutdown cancels this context and waits for its owner.
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if !validUploadPath(path) {
 			candidates = append(candidates, uploadCandidate{path: path, problem: &Problem{
 				Name: fmt.Sprintf("selection %d", index+1), Kind: "source-path",
