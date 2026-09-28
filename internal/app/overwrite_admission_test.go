@@ -569,7 +569,8 @@ func TestOverwriteQuestionRefusesWhatItCannotName(t *testing.T) {
 			versioning: versioning, names: names},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			question, err := overwriteQuestion(tc.label, tc.account, tc.container, "live/", tc.versioning, tc.names)
+			question, err := overwriteQuestion(tc.label, tc.account, tc.container, "live/", tc.versioning, tc.names,
+				fragmentPlan{Reclaiming: true})
 			if tc.refusal != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.refusal) {
 					t.Fatalf("the question was asked anyway: %+v %v", question, err)
