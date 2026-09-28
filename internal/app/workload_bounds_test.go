@@ -107,21 +107,30 @@ func TestQueueDepthRefusesAtTheBoundary(t *testing.T) {
 		}
 	}
 	waitForOwners(2)
-	// The depth counts owners waiting for a slot, so the refusal needs the
-	// queued job inside that wait, not merely launched.
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		runner.mu.Lock()
-		queued := runner.queued
-		runner.mu.Unlock()
-		if queued == 1 {
-			break
+	// The depth counts owners waiting for a slot, so a refusal needs the
+	// queued job INSIDE that wait, not merely launched or merely holding a
+	// queued row. Waiting on the row instead is what made this case
+	// intermittent on a loaded runner: the third start below was admitted in
+	// the window between the row and the wait, and then failed on the
+	// selection token that start had already consumed, reporting "unknown
+	// selection" where the queue bound was the thing under test.
+	waitForQueued := func(n int) {
+		t.Helper()
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			runner.mu.Lock()
+			queued := runner.queued
+			runner.mu.Unlock()
+			if queued == n {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("runner counts %d queued jobs, want %d", queued, n)
+			}
+			time.Sleep(10 * time.Millisecond)
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("runner counts %d queued jobs, want 1", queued)
-		}
-		time.Sleep(10 * time.Millisecond)
 	}
+	waitForQueued(1)
 	rows := func() int {
 		t.Helper()
 		list, err := h.transfer.jobs.List(ctx, jobs.Filter{})
@@ -144,6 +153,18 @@ func TestQueueDepthRefusesAtTheBoundary(t *testing.T) {
 	if n := rows(); n != 2 {
 		t.Fatalf("the refused start left %d job rows, want 2", n)
 	}
+	// A capacity refusal leaves the operator's selection usable: the runner
+	// admits before anything consumes the token, so being turned away for a
+	// full queue does not cost a re-pick. The rest of this case relies on
+	// that, and a refactor that moved the admission after the selection was
+	// taken would break it silently, so it is asserted rather than assumed.
+	store := &h.transfer.selections
+	store.mu.Lock()
+	_, held := store.entries[req.DestDirToken]
+	store.mu.Unlock()
+	if !held {
+		t.Fatal("a queue refusal consumed the selection, so the operator would have to pick again")
+	}
 
 	// Cancelling the queued job releases its place; the same start is
 	// then admitted and waits behind the running job.
@@ -161,6 +182,9 @@ func TestQueueDepthRefusesAtTheBoundary(t *testing.T) {
 	if got, err := h.transfer.jobs.Get(ctx, admitted); err != nil || got.State != jobs.StateQueued {
 		t.Fatalf("admitted job = %+v %v", got, err)
 	}
+	// The same wait as above, for the same reason: the depth is about owners
+	// in the wait, so the next refusal needs this job inside it.
+	waitForQueued(1)
 	if _, err := h.transfer.StartDownload(ctx, req); !errors.Is(err, errJobQueueFull) {
 		t.Fatalf("the depth did not apply again: %v", err)
 	}
