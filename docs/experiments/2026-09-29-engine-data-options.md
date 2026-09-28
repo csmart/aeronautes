@@ -26,8 +26,12 @@ has not, the row says what the option claims and treats that as a claim. A
 row that matters enough to depend on, and is not yet measured, is named as
 owed rather than quietly credited.
 
-`--swift-storage-policy` is out of scope: this application creates containers
-natively and the engine never creates one for it.
+`--swift-storage-policy` is largely out of scope, with one qualification: user
+containers are created natively, so the engine's policy flag does not choose
+theirs — but the engine MAY create a permitted segments container of its own
+during a large upload, and the policy that container gets is bound by the
+gateway rather than by this flag. It is listed here so the exclusion is not read
+as "the engine never creates a container".
 
 ## The options that change data, and what we do about them
 
@@ -37,7 +41,7 @@ natively and the engine never creates one for it.
 |---|---|---|---|
 | `--swift-leave-parts-on-error` | off (abort cleans up) | **Never set** (`docs/rclone.md`), relying on the default | The engine's own failed large upload leaves its parts behind, as residue nothing in this application recorded. **Measured** 2026-09-27 (`.aeronautes-work/20260927-overwrite-mechanism/`): with it true the parts stay. |
 | `--swift-no-large-objects` | off (SLO/DLO supported) | Never toggled mid-job (`docs/rclone.md`) | An upload past the chunk size fails, and an existing manifest is not recognised as one — a replacement could then treat a manifest as ordinary bytes. Claim, unmeasured. |
-| `--swift-no-chunk` | off (streaming uploads chunk) | **Unrecorded reliance** | A streaming upload is sent whole instead of chunked, so the chunk size this application sets stops governing what the store holds. Claim, unmeasured. |
+| `--swift-no-chunk` | off | **Unrecorded reliance, and narrower than it looks** | The pinned help scopes it to uploads of UNKNOWN length: a streaming upload is sent whole rather than chunked. The runner uses `copy` and `copyto` on known-size sources, which still chunk above the configured size, so this is not a chunk-size dependency of our normal copies. Recorded because an unknown-length path would acquire one. Help text, unmeasured. |
 | `--swift-use-segments-container` | unset | **Unrecorded reliance.** `docs/rclone.md` records the observed `<container>_segments` placement but not the option that moves it | Segments land somewhere other than where every ownership and recovery record this application writes expects them. Placement **measured** 2026-08-29 and again 2026-09-27; the option's effect is a claim. |
 | `--swift-chunk-size` | 5Gi | **Set explicitly** per job | — |
 | `--swift-encoding` | `Slash,InvalidUtf8` | **Unrecorded reliance.** The name-form section of `docs/rclone.md` measures behaviour that follows from it | The NAMES written change, which is an identity change, and the native routing rules for unsafe names were measured under this default. Claim, unmeasured. |
@@ -52,7 +56,7 @@ what a download leaves on disk.
 
 | Option | Pinned default | What we do | Data effect if it moved |
 |---|---|---|---|
-| `--inplace` | off (temp name, then rename) | **Unrecorded reliance** | A destination file would hold a partial body under its FINAL name. The download route's staging, verification and residue story all assume the atomic shape. Claim, unmeasured. |
+| `--inplace` | off (temp name, then rename) | **Unrecorded reliance, inside the stage only** | The name it affects is one inside this application's private download stage, so what changes is the shape of stage RESIDUE after an interrupted child. It is not what keeps a partial body out of the final path: publication is gated by the child's outcome, the stage's identity and the native held-file size and digest verification in `copyIntoStage` and `placeDownloaded`. Help text, unmeasured. |
 | `--partial-suffix` | `.partial` | Unrecorded reliance | The temporary name a crash leaves behind, which reconciliation and the operator both see. |
 | `--local-no-check-updated` | off (the check happens) | Unrecorded reliance | A source file changing during an upload would stop being detected. |
 | `--local-no-sparse` | off (sparse files used for multi-thread downloads) | Unrecorded reliance | A cancelled large download's file shape on disk. |
@@ -68,7 +72,8 @@ what a download leaves on disk.
 | `--multi-thread-streams` | 4 | Unrecorded reliance | How many streams write that file at once. |
 | `--multi-thread-chunk-size` | 64Mi | Unrecorded reliance | The write granularity of the above. |
 | `--max-transfer` / `--cutoff-mode` | off / HARD | Unrecorded reliance | A transfer would stop part way by policy; HARD kills mid-transfer, which is the same objection that keeps `--max-duration` off the list already. |
-| `--ignore-existing`, `--no-check-dest`, `--size-only`, `--no-update-modtime`, `--immutable` | all off | Not set, and `--ignore-times` is set | Comparison and refusal policy. With `--ignore-times` forcing the transfer these change little for our copies, which is the reason they are safe to leave and worth stating rather than leaving to inference. |
+| `--ignore-existing` | off | **Never set, and a guard forbids it** (`internal/transfer/rclone/runner_test.go`) | `--ignore-times` does NOT neutralise it: the public `NeedTransfer` checks `ignore-existing` first and skips the name outright, so a planned object would silently not be transferred. It belongs with the never-set flags, not with the harmless defaults. |
+| `--no-check-dest`, `--size-only`, `--no-update-modtime`, `--immutable` | all off | Not set | Comparison and refusal policy. `--ignore-times` forces the transfer, so these change little for our copies; stated so it is a decision rather than an inference. |
 | `--error-on-no-transfer` | off | Not set; completeness is verified by listing diff, never by exit code (`docs/rclone.md`) | — |
 
 ## What this changes
