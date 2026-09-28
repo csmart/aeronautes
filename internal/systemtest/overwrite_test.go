@@ -385,6 +385,100 @@ func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 		})
 	}
 
+	// ADR 0081 decision 5's proof list wants BOTH large-object shapes on the
+	// owned store, and a static manifest is the one whose entries are exact:
+	// its inventory is the manifest's own list rather than a prefix listing,
+	// so what is reclaimed is what the record named and nothing is inferred
+	// from a prefix. db:756 finding 7 asked for this route by name.
+	for _, mode := range []struct {
+		name     string
+		reclaims bool
+	}{
+		{name: "reclaims a replaced static manifest's segments", reclaims: true},
+		{name: "retains a replaced static manifest's segments when the option is off"},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
+			h := makeHarness(t)
+			container := h.Container(h.Primary, "overwrite-static")
+			segments := container + "_segments"
+			h.rawPut(h.Primary, "/"+segments, nil, nil)
+			t.Cleanup(func() { h.purge(h.Primary, segments) })
+			h.Seed(h.Primary, segments, "parts/0001", []byte("01234567"), nil)
+			h.Seed(h.Primary, segments, "parts/0002", []byte("89abcdef"), nil)
+			// The predecessor is the static manifest itself, not an alias
+			// over somebody else's segments.
+			h.SeedSLO(h.Primary, container, "live/taken", `[`+
+				`{"path":"`+segments+`/parts/0001","etag":"`+md5of("01234567")+`","size_bytes":8},`+
+				`{"path":"`+segments+`/parts/0002","etag":"`+md5of("89abcdef")+`","size_bytes":8}]`)
+			setReclamation(t, h, mode.reclaims)
+
+			confirmer := &serviceConfirmer{yes: true}
+			app.WireOverwriteConfirmer(h.Transfer, confirmer)
+			if _, err := h.Browse.Connect(t.Context(), h.Primary.BookmarkID); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(t.TempDir(), "taken")
+			if err := os.WriteFile(path, []byte("the bytes this job sent"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			id, err := overwriteStart(t, h, container, "live/", []string{path}, true)
+			if err != nil {
+				t.Fatalf("a confirmed replacement of a static manifest was refused: %v", err)
+			}
+			h.AwaitJob(id)
+			job, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if job.State != "complete" || job.Counters.Overwrites != 1 {
+				t.Fatalf("the static replacement did not publish: %s %+v", job.State, job.Counters)
+			}
+			// The manifest's own entries are exact, and the record says so.
+			read, ok, err := h.jobStore.ReadPredecessor(t.Context(), id, "live/taken")
+			if err != nil || !ok {
+				t.Fatalf("read back: ok=%v %v", ok, err)
+			}
+			want := []jobs.ItemFragment{
+				{Container: segments, Object: "parts/0001", Shape: jobs.FragmentWhole},
+				{Container: segments, Object: "parts/0002", Shape: jobs.FragmentWhole},
+			}
+			if !reflect.DeepEqual(read.Fragments, want) {
+				t.Fatalf("the record names %+v, not the manifest's entries %+v", read.Fragments, want)
+			}
+			if !read.Exact || read.Prefix != "" || read.Counted != 2 {
+				t.Errorf("a static manifest's record does not describe an exact list: %+v", read)
+			}
+			for _, name := range []string{"parts/0001", "parts/0002"} {
+				_, err := h.Inspector.Object(t.Context(), h.Primary.BookmarkID, segments, name)
+				switch {
+				case mode.reclaims && err == nil:
+					t.Errorf("a reclaimed segment is still an object: %s", name)
+				case !mode.reclaims && err != nil:
+					t.Errorf("a retained segment was removed: %s: %v", name, err)
+				}
+			}
+			reclaimed := reclamationRecord(t, h, container+"/live/taken")
+			if reclaimed == nil {
+				t.Fatal("the replacement left no record of what it did with the segments")
+			}
+			if mode.reclaims {
+				if reclaimed.Result != audit.ResultApplied ||
+					!strings.Contains(reclaimed.Summary, "reported 2 segment objects") {
+					t.Errorf("the reclamation is not recorded as a complete removal of both: %+v", reclaimed)
+				}
+			} else if reclaimed.Result != audit.ResultObserved ||
+				!strings.Contains(reclaimed.Summary, "turned off") {
+				t.Errorf("the record does not say the option stopped it: %+v", reclaimed)
+			}
+			// The new object is readable either way: reclaiming the
+			// predecessor's parts does not touch what replaced it.
+			body, err := rawGet(h.Primary, "/"+container+"/live/taken", "")
+			if err != nil || string(body) != "the bytes this job sent" {
+				t.Errorf("the replacement is not readable: %q %v", body, err)
+			}
+		})
+	}
+
 	// ADR 0081 decision 5 rule 2: a container that keeps versions keeps the
 	// replaced object, and a replaced manifest's segments are that retained
 	// version's. Reclaiming them would empty a version the store is holding
