@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
 
 // accountContents is every object this account holds, by container and name,
@@ -14,34 +16,44 @@ import (
 // capability: the refusal cases can count requests and rows because nothing
 // should happen at all, but a capability that runs has to be shown touching
 // its own namespace and nothing else.
+//
+// It reads the DEEP listing through the session rather than walking the browse
+// view. The browse view is the delimiter one, and it deliberately hides a real
+// object whose name is exactly the slash-terminated prefix being listed
+// (swiftcontrol/objects.go: "The folder's own object belongs to PrefixDetail"),
+// so an oracle built from it misses every slash-named object — db:765 proved
+// exactly that by changing one and watching this snapshot report nothing. The
+// deep listing is the stream jobs consume: every real object, no prefix rows,
+// and its own paging, so no continuation marker is left unfollowed.
 func accountContents(t *testing.T, h *harness) map[string]string {
 	t.Helper()
-	contents := map[string]string{}
-	containers, err := h.browse.Containers(t.Context(), h.bookmarkID(), "", 100)
-	if err != nil {
-		t.Fatal(err)
+	session, err := h.transfer.connections.SessionFor(t.Context(), h.bookmarkID())
+	if err != nil || session == nil {
+		t.Fatalf("no session for the collateral oracle: %v", err)
 	}
-	for _, container := range containers.Rows {
-		// The browse listing is the delimiter view, so a prefix arrives as
-		// one row standing for everything under it. Walking into those rows
-		// is what makes this a whole-account oracle rather than a top-level
-		// one, and an object hidden under a prefix is exactly what a
-		// collateral check must not miss.
-		prefixes := []string{""}
-		for len(prefixes) > 0 {
-			prefix := prefixes[0]
-			prefixes = prefixes[1:]
-			page, err := h.browse.Objects(t.Context(), h.bookmarkID(), container.Name, prefix, "", 1000)
+	contents := map[string]string{}
+	var containers []string
+	// Both iterators page themselves to their own end, so no continuation
+	// marker is left unfollowed by this oracle.
+	for entry, err := range session.Containers(t.Context(), swiftcontrol.ListOptions{PageSize: 1000}) {
+		if err != nil {
+			t.Fatalf("listing containers: %v", err)
+		}
+		containers = append(containers, entry.Name)
+	}
+	for _, container := range containers {
+		for entry, err := range session.Objects(t.Context(), container,
+			swiftcontrol.ObjectListOptions{PageSize: 1000, Deep: true}) {
 			if err != nil {
-				t.Fatalf("listing %s/%s: %v", container.Name, prefix, err)
+				t.Fatalf("listing %s: %v", container, err)
 			}
-			for _, row := range page.Rows {
-				if row.Kind == "object" {
-					contents[container.Name+"/"+row.Name] = strings.Trim(row.ETag, `"`)
-					continue
-				}
-				prefixes = append(prefixes, row.Name)
+			object, ok := entry.(swiftcontrol.ObjectEntry)
+			if !ok {
+				// A deep listing yields no prefix rows; anything else here
+				// would mean the oracle is reading the wrong view.
+				t.Fatalf("deep listing of %s yielded %T", container, entry)
 			}
+			contents[container+"/"+object.Name] = strings.Trim(object.ETag, `"`)
 		}
 	}
 	return contents
@@ -98,6 +110,10 @@ func TestSwitchedOnUploadReachesItsRouteAndStaysInItsNamespace(t *testing.T) {
 	seedObject(h.mock, "admitted", "target/keep", "untouched", nil)
 	h.mock.AddContainer("other", "standard")
 	seedObject(h.mock, "other", "keep", "untouched", nil)
+	// A real object whose name ENDS in a slash. The delimiter view hides this
+	// one behind the prefix row it looks like, so an oracle built from that
+	// view misses it entirely (db:765 finding 1); the deep listing sees it.
+	seedObject(h.mock, "admitted", "elsewhere/nested/", "slash named", nil)
 
 	dir := t.TempDir()
 	var paths []string
@@ -141,5 +157,16 @@ func TestSwitchedOnUploadReachesItsRouteAndStaysInItsNamespace(t *testing.T) {
 	// And nowhere else. The prefix it was given is the whole of its licence.
 	if changed := outside(before, after, "admitted/target/"); len(changed) != 0 {
 		t.Errorf("an admitted capability changed %v outside its own namespace", changed)
+	}
+	// The oracle itself is checked: it must see the slash-named object, and it
+	// must report a change to it. Without this the whole collateral assertion
+	// above could be passing because it cannot see anything at all.
+	if _, seen := after["admitted/elsewhere/nested/"]; !seen {
+		t.Fatal("the collateral oracle does not see a real object whose name ends in a slash")
+	}
+	seedObject(h.mock, "admitted", "elsewhere/nested/", "changed behind the oracle's back", nil)
+	if changed := outside(before, accountContents(t, h), "admitted/target/"); len(changed) != 1 ||
+		changed[0] != "changed admitted/elsewhere/nested/" {
+		t.Errorf("the oracle missed a change to a slash-named object: %v", changed)
 	}
 }
