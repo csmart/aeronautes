@@ -15,6 +15,13 @@ import (
 func TestStagedUploadPreservesFinalHeadRacer(t *testing.T) {
 	for _, kind := range []string{"plain", "dlo"} {
 		t.Run(kind, func(t *testing.T) {
+			// The SECOND HEAD of this name is the commit's own final read
+			// before its conditional PUT, which is the boundary under test.
+			// The first is the preflight's: this selection is one file, which
+			// the destination resolution settles by name rather than by
+			// listing. That dependence is stated because an occurrence which
+			// no longer matches leaves this barrier holding the wrong
+			// response until the deadline, rather than failing loudly.
 			selector := swifttest.HTTPResponseSelector{Operation: t.Name(), Method: http.MethodHead, EscapedPath: "/v1/AUTH_test/media/docs/object", Occurrence: 2}
 			barrier, err := swifttest.NewHTTPResponseBarrier(selector, false, 5*time.Second)
 			if err != nil {
