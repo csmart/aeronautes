@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/csmart/aeronautes/internal/audit"
@@ -106,11 +107,36 @@ func itemPredecessor(observed local.ObservedPredecessor) jobs.ItemPredecessor {
 	return record
 }
 
+// retainedShapes says which recorded entries reclamation will never touch and
+// why, so leaving them alone is an outcome in the record rather than an
+// absence (ADR 0081 decision 5; db:756 finding 4). Empty when every entry is
+// a private whole object.
+func retainedShapes(record jobs.ItemPredecessor) string {
+	var parts []string
+	for _, kind := range []struct {
+		count int
+		what  string
+	}{{record.Inline, "inline"}, {record.Ranged, "ranged"}, {record.Nested, "nested"}} {
+		if kind.count > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", kind.count, kind.what))
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, ", ") +
+		" of the entries it named are shapes this operation never removes, so they were left alone"
+}
+
 // reclaimSummary states what was removed and what was not, naming the
 // reason in either case. A partial success is reported as exactly that.
 func reclaimSummary(outcome local.ReclaimOutcome) string {
 	if outcome.Declined != "" {
-		return "removed none of the replaced object's segments: " + outcome.Declined
+		out := "removed none of the replaced object's segments: " + outcome.Declined
+		if outcome.Retained != "" {
+			out += "; " + outcome.Retained
+		}
+		return out
 	}
 	// A removal that could not name everything is not a complete one, so
 	// the count is stated with what was left rather than on its own.
@@ -120,14 +146,36 @@ func reclaimSummary(outcome local.ReclaimOutcome) string {
 	// not say it did.
 	out := fmt.Sprintf("the store reported %d segment object%s the replaced manifest named as gone or already absent",
 		len(outcome.Removed), plural(len(outcome.Removed), "", "s"))
-	if len(outcome.Failed) > 0 {
-		out += fmt.Sprintf("; %d were not removed", len(outcome.Failed))
-		for _, failure := range outcome.Failed {
+	// A name the store refused is a known non-removal. A name in a reply
+	// that could not be read is neither removed nor known to be kept, and
+	// saying "not removed" about it would claim knowledge nobody has
+	// (db:756 finding 3).
+	var refused, unknown []local.ReclaimFailure
+	for _, failure := range outcome.Failed {
+		if failure.Resolved {
+			refused = append(refused, failure)
+			continue
+		}
+		unknown = append(unknown, failure)
+	}
+	if len(refused) > 0 {
+		out += fmt.Sprintf("; the store refused %d and kept %s", len(refused), plural(len(refused), "it", "them"))
+		for _, failure := range refused {
 			out += fmt.Sprintf(", %s/%s (%s)", failure.Fragment.Container, failure.Fragment.Name, failure.Detail)
 		}
 	}
+	if len(unknown) > 0 {
+		out += fmt.Sprintf("; what the store did with %d further name%s is unknown",
+			len(unknown), plural(len(unknown), "", "s"))
+		for _, failure := range unknown {
+			out += fmt.Sprintf(", %s/%s", failure.Fragment.Container, failure.Fragment.Name)
+		}
+	}
 	if outcome.Untrusted != "" {
-		out += "; the store's reply could not be trusted, so what it did with these names is unknown: " + outcome.Untrusted
+		out += "; the store's reply could not be read as a disposition: " + outcome.Untrusted
+	}
+	if outcome.Retained != "" {
+		out += "; " + outcome.Retained
 	}
 	if outcome.LeftBehind != "" {
 		out += "; " + outcome.LeftBehind
@@ -143,16 +191,25 @@ func reclaimSummary(outcome local.ReclaimOutcome) string {
 // coarse verify_mismatch value, which those ADRs already say proves
 // neither a mismatch nor a successful write.
 func reclaimResult(outcome local.ReclaimOutcome) audit.Result {
+	unresolved := outcome.Untrusted != ""
+	refused := false
+	for _, failure := range outcome.Failed {
+		if failure.Resolved {
+			refused = true
+			continue
+		}
+		unresolved = true
+	}
 	switch {
 	case outcome.Declined != "":
 		// Nothing was asked of the store: this event records what was
 		// read and the decision taken, which is what observed means.
 		return audit.ResultObserved
-	case outcome.Untrusted != "":
+	case unresolved:
 		// The request left the process and its reply could not be read,
 		// so the effect is unknown rather than failed (ADR 0058).
 		return audit.ResultUnverified
-	case len(outcome.Failed) > 0, outcome.LeftBehind != "":
+	case refused, outcome.LeftBehind != "":
 		return audit.ResultVerifyMismatch
 	}
 	return audit.ResultApplied
@@ -262,6 +319,7 @@ func (s *TransferService) uploadItemRecorder(ctx context.Context, jobID string, 
 				return local.ReclaimPlan{Declined: "the predecessor's fragments were never inventoried, so nothing was removed"}, nil
 			}
 			var plan local.ReclaimPlan
+			plan.Retained = retainedShapes(record)
 			// A listed prefix's inventory holds a prefix of what it read
 			// (local.MaxListedFragments), so what it does not name is left
 			// behind and the trail has to say so rather than reporting a
@@ -280,6 +338,11 @@ func (s *TransferService) uploadItemRecorder(ctx context.Context, jobID string, 
 				}
 				plan.Fragments = append(plan.Fragments, local.Fragment{
 					Container: fragment.Container, Name: fragment.Object, Shape: local.FragmentWhole})
+			}
+			if len(plan.Fragments) == 0 {
+				// Nothing this operation may remove, which is a decision
+				// taken and not a removal of none (db:756 finding 4).
+				plan.Declined = "nothing the predecessor's record named is a private whole object"
 			}
 			return plan, nil
 		},

@@ -52,6 +52,10 @@ type ReclaimPlan struct {
 	// what a dynamic manifest listed, so reclaiming what it holds is a
 	// partial removal and has to be recorded as one.
 	LeftBehind string
+	// Retained is what the plan deliberately excluded and why, empty when it
+	// excluded nothing. Leaving a shape alone is an outcome of this
+	// operation and belongs in its record (db:756 finding 4).
+	Retained string
 }
 
 // ReclaimOutcome is what happened, per name, so a partial success is
@@ -73,12 +77,19 @@ type ReclaimOutcome struct {
 	// LeftBehind is the plan's own statement of what it could not name,
 	// carried through so the record of a partial removal says it was one.
 	LeftBehind string
+	// Retained is the plan's own statement of what it excluded on purpose.
+	Retained string
 }
 
-// ReclaimFailure is one fragment the store did not remove, and its reason.
+// ReclaimFailure is one fragment this operation did not remove, and what was
+// said about it. Resolved separates the two cases a single list used to blur:
+// a store that REFUSED this name, which is a known non-removal, and a reply
+// that could not be read, where the effect on this name is unknown and must
+// not be reported as either (db:756 finding 3).
 type ReclaimFailure struct {
 	Fragment Fragment
 	Detail   string
+	Resolved bool
 }
 
 // ObservedPredecessor is what was at a name just before a replacement was
@@ -422,6 +433,10 @@ type FragmentReading struct {
 // answer bounds what may be removed at all.
 func FragmentPlan(ctx context.Context, dst *swiftcontrol.Session, container string, names []string) FragmentReading {
 	var reading FragmentReading
+	// One identity is one object to remove however many positions name it,
+	// so the count the question states is of distinct identities across every
+	// name this start would replace (db:756 finding 5).
+	counted := map[[2]string]bool{}
 	for _, name := range names {
 		detail, err := dst.ObjectDetail(ctx, container, name)
 		if err != nil || detail == nil {
@@ -439,11 +454,16 @@ func FragmentPlan(ctx context.Context, dst *swiftcontrol.Session, container stri
 			continue
 		}
 		for _, fragment := range inventory.Names {
-			if fragment.Shape == FragmentWhole {
-				reading.Whole++
+			if fragment.Shape != FragmentWhole {
+				reading.Kept++
 				continue
 			}
-			reading.Kept++
+			identity := [2]string{fragment.Container, fragment.Name}
+			if counted[identity] {
+				continue
+			}
+			counted[identity] = true
+			reading.Whole++
 		}
 		// Entries a cap counted without naming, and the members a listed
 		// prefix may hold beyond what it showed. Reclamation works from
@@ -506,7 +526,7 @@ func (u *uploadRun) reclaim(ctx context.Context, dst *swiftcontrol.Session, item
 	if plan.Declined == "" && len(plan.Fragments) > 0 {
 		outcome = reclaimFragments(ctx, dst, plan.Fragments, u.reclaimBatch(ctx, dst))
 	}
-	outcome.LeftBehind = plan.LeftBehind
+	outcome.LeftBehind, outcome.Retained = plan.LeftBehind, plan.Retained
 	return u.stop(u.recorder.Reclaimed(item, outcome))
 }
 
@@ -527,7 +547,17 @@ func reclaimFragments(ctx context.Context, dst *swiftcontrol.Session, fragments 
 	var outcome ReclaimOutcome
 	byContainer := map[string][]Fragment{}
 	var order []string
+	// A valid manifest may name the same object in more than one position,
+	// and a record keeps every position. One identity is still one object to
+	// remove and one result to report, so the deletion set is by identity
+	// (db:756 finding 5).
+	seenIdentity := map[[2]string]bool{}
 	for _, fragment := range fragments {
+		identity := [2]string{fragment.Container, fragment.Name}
+		if seenIdentity[identity] {
+			continue
+		}
+		seenIdentity[identity] = true
 		if _, seen := byContainer[fragment.Container]; !seen {
 			order = append(order, fragment.Container)
 		}
@@ -590,7 +620,9 @@ func (outcome *ReclaimOutcome) reclaimGroup(ctx context.Context, dst *swiftcontr
 	}
 	for _, fragment := range group {
 		if detail, bad := failed[fragment.Name]; bad {
-			outcome.Failed = append(outcome.Failed, ReclaimFailure{Fragment: fragment, Detail: detail})
+			// A validated reply that names this failure IS a disposition: the
+			// store kept the object and said why.
+			outcome.Failed = append(outcome.Failed, ReclaimFailure{Fragment: fragment, Detail: detail, Resolved: true})
 			continue
 		}
 		// Reported gone, or reported already absent: either way the space is
