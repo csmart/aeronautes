@@ -778,3 +778,70 @@ func TestReclamationRecordsAnUnreadableReplyAsUnknown(t *testing.T) {
 		t.Errorf("the record credits a removal from a reply it could not read: %q", event.Summary)
 	}
 }
+
+// The restricting direction, which the answered ceiling allows and which the
+// two cases above no longer reach now that a question stating retention
+// declines before these guards run: the question authorised the removal, and
+// what is true at reclamation time is what stops it.
+func TestReclamationObeysWhatIsTrueWhenItRuns(t *testing.T) {
+	for _, fixture := range []struct {
+		name   string
+		change func(*overwriteFixture, *SettingsService)
+		reason string
+	}{
+		{name: "the container starts keeping versions",
+			change: func(f *overwriteFixture, _ *SettingsService) {
+				f.h.mock.AddContainer("replaceable_archive", "standard")
+				f.h.mock.EnableVersionArchive("replaceable", "replaceable_archive", false)
+			},
+			reason: "the container keeps versions"},
+		{name: "the option is turned off",
+			change: func(f *overwriteFixture, settings *SettingsService) {
+				current, err := settings.Get(context.Background())
+				if err != nil {
+					t.Errorf("reading the setting inside the dialog: %v", err)
+					return
+				}
+				current.ReclaimReplacedFragments = false
+				if _, err := settings.Set(context.Background(), current); err != nil {
+					t.Errorf("moving the setting inside the dialog: %v", err)
+				}
+			},
+			reason: "reclaiming replaced fragments is turned off"},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			f := newOverwriteFixture(t)
+			parts, _ := seedStaticLargeObject(t, f.h, "replaceable", "live/taken")
+			f.tag = f.liveTag(t)
+			settings := wireReclamation(t, f.h, true)
+			// The question is composed first, with nothing yet in the way, so
+			// it states that the segments WILL be removed and the answer
+			// authorises exactly that. The change lands inside the dialog.
+			confirmer := &recordingOverwriteConfirmer{yes: true}
+			confirmer.before = func() { fixture.change(f, settings) }
+			f.h.transfer.setOverwriteConfirmer(confirmer)
+
+			id, err := f.h.transfer.StartUpload(t.Context(), f.request(true))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if job := awaitTerminal(t, f.h, id); job.State != "complete" {
+				t.Fatalf("the replacement did not publish: %s %+v", job.State, job.Counters)
+			}
+			asked := confirmer.questions()
+			if len(asked) != 1 || !strings.Contains(asked[0].Fragments, "will be REMOVED") {
+				t.Fatalf("the fixture did not capture a removing question: %+v", asked)
+			}
+			if left := survivors(t, f.h, f.bookmark, "replaceable_segments", partNames(parts)); left != len(parts) {
+				t.Fatalf("%d of %d segments went although %s at the time it ran", len(parts)-left, len(parts), fixture.reason)
+			}
+			event := reclaimEvent(t, f.h)
+			if event == nil || !strings.Contains(event.Summary, fixture.reason) {
+				t.Fatalf("the record does not say %q stopped it: %+v", fixture.reason, event)
+			}
+			if event.Result != audit.ResultObserved {
+				t.Errorf("a reclamation that wrote nothing is recorded as %q", event.Result)
+			}
+		})
+	}
+}
