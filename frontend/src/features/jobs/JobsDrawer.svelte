@@ -215,6 +215,13 @@
   // applies to sessions opened after the save.
   const connectionCapValue = $derived(String(browser.appSettings?.maxConnsPerHost ?? ""));
   let connectionCapError: string | null = $state(null);
+  // Whether an acknowledged overwrite of a large object removes the segment
+  // objects its manifest named once the replacement verifies (ADR 0081
+  // decision 5). Defaults to removing them, which is what rclone's own
+  // replacement does; the control is for the operator who shares segments
+  // between manifests and cannot accept it.
+  const reclaimChecked = $derived(browser.appSettings?.reclaimReplacedFragments ?? true);
+  let reclaimError: string | null = $state(null);
   async function saveBound(patch: Partial<AppSettingsDTO>, report: (message: string | null) => void) {
     if (disposed || !browser.canSaveAppSettings || !browser.appSettings) return;
     report(null);
@@ -462,6 +469,24 @@
             </label>
             <span class="ceiling-status" id={`${id}-connection-cap-status`} role="status">
               {#if connectionCapError}{connectionCapError}{:else if browser.appSettings}{browser.appSettings.maxConnsPerHost.toLocaleString("en-US")} connections per host on the next connect{/if}
+            </span>
+            <label class="filter" title="when an acknowledged overwrite replaces a large object, remove the segment objects its manifest named once the replacement verifies; off keeps them, and a container that keeps versions keeps them either way">
+              <span>Reclaim replaced segments</span>
+              <input
+                class="reclaim-fragments"
+                type="checkbox"
+                checked={reclaimChecked}
+                disabled={!browser.canSaveAppSettings}
+                aria-describedby={`${id}-reclaim-status`}
+                onchange={(e) => {
+                  const value = e.currentTarget.checked;
+                  e.currentTarget.checked = reclaimChecked;
+                  void saveBound({ reclaimReplacedFragments: value }, (message) => (reclaimError = message));
+                }}
+              />
+            </label>
+            <span class="ceiling-status" id={`${id}-reclaim-status`} role="status">
+              {#if reclaimError}{reclaimError}{:else if browser.appSettings}{browser.appSettings.reclaimReplacedFragments ? "a replaced large object's segments are removed once the replacement verifies" : "a replaced large object's segments are kept"}{/if}
             </span>
           {/if}
           {#if v1Offers.benchmark}

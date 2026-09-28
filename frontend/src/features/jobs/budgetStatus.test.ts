@@ -8,6 +8,7 @@ import JobsDrawer from "./JobsDrawer.svelte";
 const original: AppSettingsDTO = {
   maxActiveJobs: 2, defaultProfile: "balanced", auditRetentionDays: 17, jobRetentionDays: 11, downloadObjectCeiling: 250_000,
   browserRetentionCeiling: 100_000, maxQueuedJobs: 16, maxConnsPerHost: 16,
+  reclaimReplacedFragments: true,
 };
 let drawer: ReturnType<typeof mount> | null = null;
 const releasePending: (() => void)[] = [];
@@ -255,4 +256,48 @@ it("blocks writes and duplicate refresh clicks while a cached Get is pending", a
   reply.resolve({ ...original, maxActiveJobs: 4 });
   await vi.waitFor(() => expect(select()?.disabled).toBe(false));
   expect(select()?.value).toBe("4");
+});
+
+// ADR 0081 decision 5's option, as the operator reaches it: the control
+// states which way a replacement will go, saves the other way, and shows
+// the last observed value until the save is acknowledged.
+function reclaimBox(): HTMLInputElement | null {
+  return document.querySelector<HTMLInputElement>("input.reclaim-fragments");
+}
+
+function reclaimFeedback(): string {
+  return [...document.querySelectorAll(".ceiling-status")]
+    .map((node) => node.textContent ?? "").join(" ");
+}
+
+it("offers the replaced-segment option and says which way it is set", async () => {
+  const { api, browser } = fixture();
+  await show(browser);
+  await vi.waitFor(() => expect(reclaimBox()).not.toBeNull());
+  expect(reclaimBox()!.checked, "RECLAIM-DEFAULT").toBe(true);
+  expect(reclaimFeedback()).toContain("removed once the replacement verifies");
+
+  // Turning it off saves false and nothing else.
+  reclaimBox()!.checked = false;
+  reclaimBox()!.dispatchEvent(new Event("change", { bubbles: true }));
+  await vi.waitFor(() => expect(api.saveAppSettings).toHaveBeenCalledTimes(1));
+  expect(api.saveAppSettings).toHaveBeenCalledWith({ ...original, reclaimReplacedFragments: false });
+  await vi.waitFor(() => expect(reclaimBox()!.checked).toBe(false));
+  expect(reclaimFeedback()).toContain("are kept");
+});
+
+it("keeps showing the last observed setting until a save is acknowledged", async () => {
+  const { api, browser } = fixture();
+  await show(browser);
+  await vi.waitFor(() => expect(reclaimBox()).not.toBeNull());
+  const reply = deferred();
+  api.saveAppSettings = vi.fn(() => reply.promise);
+  reclaimBox()!.checked = false;
+  reclaimBox()!.dispatchEvent(new Event("change", { bubbles: true }));
+  flushSync();
+  // The click is not the state: until the backend answers, the control
+  // still shows what was read.
+  expect(reclaimBox()!.checked, "RECLAIM-PENDING").toBe(true);
+  reply.resolve({ ...original, reclaimReplacedFragments: false });
+  await vi.waitFor(() => expect(reclaimBox()!.checked).toBe(false));
 });
