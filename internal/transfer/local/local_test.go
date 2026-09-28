@@ -554,3 +554,176 @@ func TestPreflightUploadRefusesWhatItCouldNotResolve(t *testing.T) {
 		})
 	}
 }
+
+// A path that can never become an item is this report's own finding, and it
+// must survive a destination that cannot be resolved. Hoisting the liveness
+// lookup above os.Stat made a missing file's "unreadable" finding disappear
+// into a remote error, and turned the report into nothing at all.
+func TestPreflightUploadKeepsLocalFindingsWhenTheDestinationFails(t *testing.T) {
+	for _, entry := range []struct {
+		name      string
+		preflight func(ctx context.Context, s *swiftcontrol.Session, paths []string) (*UploadPreflight, error)
+	}{
+		{name: "creating", preflight: func(ctx context.Context, s *swiftcontrol.Session, paths []string) (*UploadPreflight, error) {
+			return PreflightUpload(ctx, s, "media", "docs/", paths)
+		}},
+		{name: "replacing", preflight: func(ctx context.Context, s *swiftcontrol.Session, paths []string) (*UploadPreflight, error) {
+			return PreflightUploadReplacing(ctx, s, "media", "docs/", paths)
+		}},
+	} {
+		for _, tc := range []struct {
+			name, kind string
+			// make returns the one selected path and how many others join it.
+			make func(t *testing.T, dir string) string
+		}{
+			{name: "a missing file", kind: "unreadable", make: func(t *testing.T, dir string) string {
+				return filepath.Join(dir, "missing.txt")
+			}},
+			{name: "a directory", kind: "not-a-file", make: func(t *testing.T, dir string) string {
+				path := filepath.Join(dir, "adir")
+				if err := os.Mkdir(path, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				return path
+			}},
+		} {
+			t.Run(entry.name+", "+tc.name, func(t *testing.T) {
+				s, mock := session(t)
+				dir := t.TempDir()
+				paths := []string{tc.make(t, dir)}
+				// Every remaining request fails, so a report that depends on
+				// one cannot be produced at all.
+				mock.FailNextObjectHEADs(50)
+				mock.FailNextListings(50)
+				before := len(mock.RequestLog())
+				report, err := entry.preflight(t.Context(), s, paths)
+				if err != nil || report == nil {
+					t.Fatalf("a local finding was replaced by a remote failure: %+v %v", report, err)
+				}
+				if len(report.Problems) != 1 || report.Problems[0].Kind != tc.kind || !report.Problems[0].Reject {
+					t.Fatalf("the report does not carry the local finding: %+v", report.Problems)
+				}
+				if len(report.Items) != 0 {
+					t.Errorf("a path that cannot be read became an item: %+v", report.Items)
+				}
+				// And nothing was asked of the destination on its behalf.
+				for _, request := range mock.RequestLog()[before:] {
+					if strings.Contains(request, "/media") {
+						t.Errorf("an ineligible path cost a destination request: %s", request)
+					}
+				}
+			})
+		}
+	}
+}
+
+// The choice between patterns is an estimate built from the container's own
+// count, and the arithmetic has to round the way the store pages. An earlier
+// version rounded down, so it estimated a full page as free and made a tie
+// look like a saving.
+func TestPreflightUploadChoosesTheCheaperEstimate(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		alreadyThere int
+		files        int
+		// wantHeads is how many object HEADs the preflight may issue: zero
+		// when the listing is estimated cheaper, one per file otherwise.
+		wantHeads int
+	}{
+		{name: "a tie goes to the heads", alreadyThere: 3, files: 2, wantHeads: 2},
+		{name: "one more file tips it to the listing", alreadyThere: 3, files: 3, wantHeads: 0},
+		{name: "a single file never lists", alreadyThere: 3, files: 1, wantHeads: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, mock := session(t)
+			for i := range tc.alreadyThere {
+				seed(mock, "media", fmt.Sprintf("docs/there-%03d", i), "already here")
+			}
+			dir := t.TempDir()
+			var paths []string
+			for i := range tc.files {
+				paths = append(paths, writeFile(t, dir, fmt.Sprintf("send-%03d", i), "bytes"))
+			}
+			before := len(mock.RequestLog())
+			if _, err := PreflightUpload(t.Context(), s, "media", "docs/", paths); err != nil {
+				t.Fatal(err)
+			}
+			var heads int
+			for _, request := range mock.RequestLog()[before:] {
+				if strings.HasPrefix(request, "HEAD /v1/AUTH_test/media/") {
+					heads++
+				}
+			}
+			if heads != tc.wantHeads {
+				t.Errorf("issued %d object HEADs for %d files over %d objects, want %d",
+					heads, tc.files, tc.alreadyThere, tc.wantHeads)
+			}
+		})
+	}
+}
+
+// Container listings lag deletes as well as writes (DESIGN section 15.3), so
+// a listing can name an object that is gone. Both outcomes are conservative
+// and neither can become an unconfirmed overwrite, which is why this is
+// documented and covered rather than defended against.
+func TestPreflightUploadTreatsAStaleListingRowConservatively(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		replacing bool
+	}{
+		{name: "creating refuses a collision that has gone"},
+		{name: "replacing marks it as one it would replace", replacing: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, mock := session(t)
+			// Enough rows that the listing is the cheaper estimate, and one
+			// row naming an object the store does not hold.
+			for i := range 3 {
+				seed(mock, "media", fmt.Sprintf("docs/there-%03d", i), "already here")
+			}
+			mock.StaleListingRows = map[string][]string{"media": {"docs/send-000"}}
+			dir := t.TempDir()
+			var paths []string
+			for i := range 3 {
+				paths = append(paths, writeFile(t, dir, fmt.Sprintf("send-%03d", i), "bytes"))
+			}
+			// The name really is absent, whatever the listing says.
+			if _, err := s.ObjectDetail(t.Context(), "media", "docs/send-000"); !swiftcontrol.IsNotFound(err) {
+				t.Fatalf("the fixture's stale row names a live object: %v", err)
+			}
+			report, err := preflightUpload(t.Context(), s, "media", "docs/", paths, tc.replacing)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var exists int
+			for _, problem := range report.Problems {
+				if problem.Kind == "exists" {
+					exists++
+					if problem.Name != "docs/send-000" {
+						t.Errorf("the wrong name was called a collision: %+v", problem)
+					}
+					if problem.Reject != !tc.replacing {
+						t.Errorf("a stale collision rejects = %v on the replacing = %v path", problem.Reject, tc.replacing)
+					}
+				}
+			}
+			if exists != 1 {
+				t.Fatalf("the stale row produced %d collisions: %+v", exists, report.Problems)
+			}
+			var replaces int
+			for _, item := range report.Items {
+				if item.Replaces {
+					replaces++
+				}
+			}
+			// Creating refuses it, so it is not an item at all; replacing
+			// admits it marked, which publishes rather than destroys.
+			if tc.replacing && (len(report.Items) != 3 || replaces != 1) {
+				t.Errorf("the replacing path did not admit it marked: items=%d replaces=%d", len(report.Items), replaces)
+			}
+			if !tc.replacing && (len(report.Items) != 2 || replaces != 0) {
+				t.Errorf("the creating path did not refuse it: items=%d replaces=%d", len(report.Items), replaces)
+			}
+		})
+	}
+}

@@ -106,6 +106,11 @@ type Server struct {
 	// written — the barrier-test hook for planting a concurrent writer
 	// at an exact protocol point.
 	AfterRequest func(method, path string)
+	// StaleListingRows names objects a container listing reports although
+	// the store does not hold them, keyed by container. Container listings
+	// lag deletes, so a row for an object that is gone is a thing a real
+	// store does and a caller that trusts a listing has to be shown it.
+	StaleListingRows map[string][]string
 	// listingFailRemaining, when > 0, makes that many container GET
 	// listings answer 500, so a caller that depends on a complete listing
 	// can be shown what it does with an incomplete one. A container HEAD is
@@ -418,6 +423,12 @@ func (s *Server) handleContainer(w http.ResponseWriter, r *http.Request, name st
 	if r.Method == http.MethodHead {
 		w.WriteHeader(http.StatusNoContent)
 		return
+	}
+	// A listing may report an object the store no longer holds, because
+	// container updates lag deletes; a fixture asks for that by name.
+	if stale := s.StaleListingRows[name]; len(stale) > 0 {
+		objectNames = append(append([]string(nil), objectNames...), stale...)
+		sort.Strings(objectNames)
 	}
 	s.writeObjectListing(w, r, name, objectNames)
 }
