@@ -468,13 +468,13 @@ func (h *Harness) account(authURL, user, key, name string) (*Account, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Each account owns its transport, as the oracle already does for
-	// itself. Left unset, this client rides http.DefaultTransport, whose
-	// pool is shared with everything else in the test binary: any
-	// CloseIdleConnections anywhere in the process can then break a seed
-	// request that is in flight on a pooled connection, which is how a
-	// download case's teardown once failed an unrelated container PUT with
-	// "transport connection broken: http: CloseIdleConnections called".
+	// Each account owns a private transport because httptest.Server.Close
+	// closes idle connections on the shared http.DefaultTransport
+	// (net/http/httptest/server.go: "help them out and close any idle
+	// connections for them"), and a client left with no transport of its own
+	// draws from exactly that pool. The clone isolates this account's pool
+	// from other fixtures' cleanup, as the oracle package already does for
+	// itself.
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	h.T.Cleanup(transport.CloseIdleConnections)
 	a := &Account{BookmarkID: saved.ID, authURL: authURL, user: user, key: key, rawClient: &http.Client{
