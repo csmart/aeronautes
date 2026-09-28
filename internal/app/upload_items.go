@@ -158,7 +158,14 @@ func reclaimResult(outcome local.ReclaimOutcome) audit.Result {
 	return audit.ResultApplied
 }
 
-func (s *TransferService) uploadItemRecorder(ctx context.Context, jobID string, req UploadRequestDTO) *local.UploadRecorder {
+// uploadItemRecorder is the durable record of one upload run.
+//
+// answered is what the answered confirmation said would happen to a replaced
+// large object's segments. It is a CEILING: the policy below may still
+// decline for a reason that appears later, but nothing may turn a question
+// that promised retention into a removal (db:756 finding 1).
+func (s *TransferService) uploadItemRecorder(ctx context.Context, jobID string, req UploadRequestDTO,
+	answered answeredFragments) *local.UploadRecorder {
 	return &local.UploadRecorder{
 		Admit: func(admission local.UploadAdmission) error {
 			intent := jobs.ItemIntent{ItemIdentity: uploadItemIdentity(req, admission.Item),
@@ -214,6 +221,15 @@ func (s *TransferService) uploadItemRecorder(ctx context.Context, jobID string, 
 			// because it depends on the operator's setting, on what the
 			// container says about versions AT THIS MOMENT, and on the
 			// record taken before the publication (ADR 0081 decision 5).
+			// The answer first, because it is the only input that cannot be
+			// re-read: the operator is not here to be asked again.
+			if !answered.Removal {
+				declined := "the confirmation that was answered did not say these segments would be removed"
+				if answered.Said != "" {
+					declined += "; it said: " + answered.Said
+				}
+				return local.ReclaimPlan{Declined: declined}, nil
+			}
 			reclaiming, err := s.reclamationSetting(ctx)
 			if err != nil {
 				return local.ReclaimPlan{Declined: "the reclamation setting could not be read, so nothing was removed"}, nil

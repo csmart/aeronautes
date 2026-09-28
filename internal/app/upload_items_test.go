@@ -32,7 +32,7 @@ func TestUploadItemRecordingCost(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	recorder := h.transfer.uploadItemRecorder(t.Context(), job.ID, UploadRequestDTO{BookmarkID: "captured", Container: "media"})
+	recorder := h.transfer.uploadItemRecorder(t.Context(), job.ID, UploadRequestDTO{BookmarkID: "captured", Container: "media"}, answeredFragments{})
 	const count = 201
 	root := t.TempDir()
 	started := time.Now()
@@ -107,7 +107,7 @@ func TestUploadItemAdapterRejectsInvalidIdentityBeforeWrite(t *testing.T) {
 				}); err != nil {
 					t.Fatal(err)
 				}
-				recorder := h.transfer.uploadItemRecorder(t.Context(), job.ID, req)
+				recorder := h.transfer.uploadItemRecorder(t.Context(), job.ID, req, answeredFragments{})
 				switch phase {
 				case "admit":
 					err = recorder.Admit(admission)

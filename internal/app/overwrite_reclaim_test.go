@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -145,8 +147,12 @@ func TestReclamationLeavesThemWhenTheOptionIsOff(t *testing.T) {
 	if event.Result != audit.ResultObserved {
 		t.Errorf("a reclamation that removed nothing claims a write outcome: %q", event.Result)
 	}
-	if !strings.Contains(event.Summary, "turned off") || !strings.Contains(event.Summary, "removed none") {
-		t.Errorf("the record does not say why nothing went: %q", event.Summary)
+	// The record quotes the promise it kept, and that sentence is the one
+	// the operator read, so the reason travels with it.
+	for _, want := range []string{"removed none", "did not say these segments would be removed", "turned off"} {
+		if !strings.Contains(event.Summary, want) {
+			t.Errorf("the record does not say %q: %q", want, event.Summary)
+		}
 	}
 }
 
@@ -182,6 +188,9 @@ func TestReclamationSkipsAContainerThatKeepsVersions(t *testing.T) {
 			event := reclaimEvent(t, f.h)
 			if event == nil || !strings.Contains(event.Summary, "keeps versions") {
 				t.Fatalf("the record does not say the archive stopped it: %+v", event)
+			}
+			if !strings.Contains(event.Summary, "did not say these segments would be removed") {
+				t.Errorf("the record does not name the answer it kept: %q", event.Summary)
 			}
 			// And the operator was told the same thing before answering.
 			asked := confirmer.questions()
@@ -374,10 +383,11 @@ func TestReclamationDeclinesWhenTheSettingCannotBeRead(t *testing.T) {
 	f := newOverwriteFixture(t)
 	parts, _ := seedStaticLargeObject(t, f.h, "replaceable", "live/taken")
 	f.tag = f.liveTag(t)
-	settings := wireReclamation(t, f.h, false)
-	// The question is asked first and states what the readable setting says.
-	// Then the store stops answering, which is not the same thing as saying
-	// the operator asked to reclaim.
+	settings := wireReclamation(t, f.h, true)
+	// The question is asked with the option ON, so it states that the
+	// segments WILL be removed and the answer authorises exactly that. Then
+	// the store stops answering: an unreadable setting is not permission,
+	// even where the answer would have allowed the removal.
 	f.h.transfer.setOverwriteConfirmer(&recordingOverwriteConfirmer{yes: true, before: func() {
 		err := f.h.db.WriteTx(context.Background(), func(tx *sql.Tx) error {
 			_, execErr := tx.ExecContext(context.Background(),
@@ -411,5 +421,126 @@ func TestReclamationDeclinesWhenTheSettingCannotBeRead(t *testing.T) {
 	}
 	if event.Result != audit.ResultObserved {
 		t.Errorf("a declined reclamation claims a write outcome: %q", event.Result)
+	}
+}
+
+// nativeReplacementFixture is one acknowledged native replacement of a static
+// large object, ready to start. The name carries a fullwidth solidus, which
+// the engine cannot be trusted with, so the preflight routes it natively and
+// this package owns the publication; the predecessor is a manifest with two
+// whole segments and one inline entry (db:756's probe fixture).
+func nativeReplacementFixture(t *testing.T, reclaim bool) (*harness, UploadRequestDTO, []jobs.ItemFragment, *SettingsService) {
+	t.Helper()
+	h := newHarness(t)
+	h.connect(t)
+	h.installEngine(nil)
+	h.mock.AddContainer("replaceable", "standard")
+	base := "taken／"
+	parts, _ := seedStaticLargeObject(t, h, "replaceable", "live/"+base)
+	path := filepath.Join(t.TempDir(), base)
+	if err := os.WriteFile(path, []byte("the bytes this job would send"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.transfer.setFilePicker(fakePicker{files: []string{path}})
+	bookmark := h.transfer.connections.ActiveBookmarkID()
+	picked, err := h.transfer.PickUploadFiles(t.Context(), SelectionScopeDTO{
+		BookmarkID: bookmark, Container: "replaceable", Prefix: "live/"})
+	if err != nil || picked == nil {
+		t.Fatalf("pick: %+v %v", picked, err)
+	}
+	req := UploadRequestDTO{BookmarkID: bookmark, Container: "replaceable", Prefix: "live/",
+		SelectionToken: picked.Token, AcknowledgeOverwrite: true}
+	preflight, err := h.transfer.PreflightUpload(t.Context(), req)
+	if err != nil || preflight == nil || len(preflight.Items) != 1 ||
+		preflight.Items[0].Route != "native" || !preflight.Items[0].Replaces {
+		t.Fatalf("the fixture did not admit exactly one native replacement: %+v %v", preflight, err)
+	}
+	return h, req, parts, wireReclamation(t, h, reclaim)
+}
+
+// awaitNativeReplacement runs the job to its end and returns how many of the
+// predecessor's segments the store still holds.
+func awaitNativeReplacement(t *testing.T, h *harness, req UploadRequestDTO, id string, parts []jobs.ItemFragment) int {
+	t.Helper()
+	job := awaitTerminal(t, h, id)
+	if job.State != "complete" || job.Counters.NativeRouted != 1 ||
+		job.Counters.ObjectsVerified != 1 || job.Counters.Overwrites != 1 {
+		t.Fatalf("the native replacement did not complete and verify: %+v", job.Counters)
+	}
+	detail, err := h.inspector.Object(t.Context(), req.BookmarkID, req.Container, "live/taken／")
+	if err != nil || strings.Trim(detail.ETag, `"`) != sentTagForFixture {
+		t.Fatalf("the replacement is not the bytes this job sent: %+v %v", detail, err)
+	}
+	return survivors(t, h, req.BookmarkID, "replaceable_segments", partNames(parts))
+}
+
+// db:756 finding 1: the answer is a CEILING. A question that promised the
+// segments would be kept cannot be turned into a removal by a setting that
+// moves after it was answered — the operator is not there to be asked again.
+func TestReclamationCannotExpandBeyondTheAnsweredQuestion(t *testing.T) {
+	h, req, parts, settings := nativeReplacementFixture(t, false)
+	confirmer := &recordingOverwriteConfirmer{yes: true, before: func() {
+		current, err := settings.Get(context.Background())
+		if err != nil {
+			t.Errorf("reading the setting inside the dialog: %v", err)
+			return
+		}
+		current.ReclaimReplacedFragments = true
+		if _, err := settings.Set(context.Background(), current); err != nil {
+			t.Errorf("moving the setting inside the dialog: %v", err)
+		}
+	}}
+	h.transfer.setOverwriteConfirmer(confirmer)
+	id, err := h.transfer.StartUpload(t.Context(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	asked := confirmer.questions()
+	if len(asked) != 1 || !strings.Contains(asked[0].Fragments, "will be KEPT") {
+		t.Fatalf("the fixture did not capture a retaining question: %+v", asked)
+	}
+	if left := awaitNativeReplacement(t, h, req, id, parts); left != len(parts) {
+		t.Fatalf("the question promised retention and %d of %d segments went", len(parts)-left, len(parts))
+	}
+	event := reclaimEvent(t, h)
+	if event == nil || !strings.Contains(event.Summary, "did not say these segments would be removed") {
+		t.Fatalf("the record does not say the answer is what kept them: %+v", event)
+	}
+	if event.Result != audit.ResultObserved {
+		t.Errorf("a reclamation that wrote nothing claims a write outcome: %q", event.Result)
+	}
+}
+
+// db:756 finding 2: an inventory this build could not read is not an object
+// with no segments. The question has to say which of the two it is, and an
+// answer given to a question that could say nothing authorises no removal.
+func TestAnUnreadInventoryIsNotNoLargeObject(t *testing.T) {
+	h, req, parts, _ := nativeReplacementFixture(t, true)
+	// Spoiled while the question is composed, sound again by the time the
+	// record is taken: a transient read, not an outside writer.
+	h.mock.SetManifestReadFault(req.Container, "live/taken／", "partial")
+	confirmer := &recordingOverwriteConfirmer{yes: true, before: func() {
+		h.mock.SetManifestReadFault(req.Container, "live/taken／", "")
+	}}
+	h.transfer.setOverwriteConfirmer(confirmer)
+	id, err := h.transfer.StartUpload(t.Context(), req)
+	if err != nil {
+		if left := survivors(t, h, req.BookmarkID, "replaceable_segments", partNames(parts)); left != len(parts) {
+			t.Fatalf("a refused start removed %d of %d segments: %v", len(parts)-left, len(parts), err)
+		}
+		return
+	}
+	asked := confirmer.questions()
+	if len(asked) != 1 {
+		t.Fatalf("the operator was asked %d times", len(asked))
+	}
+	if strings.Contains(asked[0].Fragments, "no large object is being replaced") {
+		t.Errorf("an unread inventory was described as no large object: %q", asked[0].Fragments)
+	}
+	if !strings.Contains(asked[0].Fragments, "could not read what backs") {
+		t.Errorf("the question does not say it could not read the inventory: %q", asked[0].Fragments)
+	}
+	if left := awaitNativeReplacement(t, h, req, id, parts); left != len(parts) {
+		t.Fatalf("a question that announced no removal was followed by %d of %d going", len(parts)-left, len(parts))
 	}
 }
