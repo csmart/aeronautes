@@ -288,6 +288,11 @@ func TestReclaimingReportsWhatTheStoreRefused(t *testing.T) {
 				if failure.Detail == "" {
 					t.Errorf("a failure does not say what the store said: %+v", failure)
 				}
+				// A validated reply that names this failure IS knowledge:
+				// the store kept the object and said so.
+				if !failure.Resolved {
+					t.Errorf("a named refusal was recorded as an unknown effect: %+v", failure)
+				}
 			}
 			if !slices.Equal(removed, fixture.wantRemoved) || !slices.Equal(failed, fixture.wantFailed) {
 				t.Fatalf("the outcome misreports the reply: removed %v failed %v", removed, failed)
@@ -330,8 +335,8 @@ func TestReclaimingDoesNotTrustAnUnvalidatedReply(t *testing.T) {
 	if len(outcome.Removed) != 0 || len(outcome.Failed) != 1 {
 		t.Fatalf("an unvalidated reply was read as a disposition: %+v", outcome)
 	}
-	if !strings.Contains(outcome.Failed[0].Detail, "unknown") {
-		t.Errorf("the record does not say the effect is unknown: %+v", outcome.Failed[0])
+	if !strings.Contains(outcome.Failed[0].Detail, "unknown") || outcome.Failed[0].Resolved {
+		t.Errorf("an unreadable reply was recorded as a disposition for this name: %+v", outcome.Failed[0])
 	}
 	// The store's spelling of the unmatched path is preserved in the
 	// reason, so the evidence of the bad reply survives the boundary.
@@ -650,5 +655,38 @@ func TestReclaimingTreatsAnAbsentFragmentAsReclaimed(t *testing.T) {
 	}
 	if left := liveNames(t, s, "media_segments", "parts/"); len(left) != 0 {
 		t.Fatalf("the live fragment survived: %v", left)
+	}
+}
+
+// db:756 finding 5: a valid manifest may name the same object in more than
+// one position, and the record keeps every position. One identity is still
+// one object to delete and one result to report, so the request carries it
+// once and the outcome counts it once.
+func TestReclaimingCountsOneIdentityOnce(t *testing.T) {
+	s, mock := session(t)
+	mock.AddContainer("media_segments", "standard")
+	seed(mock, "media_segments", "parts/0001", "01234567")
+	mock.PutObject("media", "docs/object", swifttest.Object{Manifest: "media_segments/parts/"})
+
+	path := writeFile(t, t.TempDir(), "object", "the replacement bytes")
+	item := replacingItem(t, s, path)
+	// The same identity in two positions, as a two-entry manifest over one
+	// segment would record it.
+	repeated := Fragment{Container: "media_segments", Name: "parts/0001", Shape: FragmentWhole}
+	keeper := &reclaimRecorder{plan: ReclaimPlan{Fragments: []Fragment{repeated, repeated}}}
+	run := &uploadRun{report: &Report{}, recorder: keeper.recorder()}
+	before := len(mock.RequestLog())
+	if err := publishReplacement(t, s, run, item, path); err != nil {
+		t.Fatalf("the replacement did not complete: %v", err)
+	}
+	outcome := keeper.outcomes[0]
+	if len(outcome.Removed) != 1 || len(outcome.Failed) != 0 {
+		t.Fatalf("one object was reported as %d: %+v", len(outcome.Removed), outcome)
+	}
+	if got := bulkDeletes(mock.RequestLog()[before:]); got != 1 {
+		t.Fatalf("one identity took %d requests", got)
+	}
+	if left := liveNames(t, s, "media_segments", "parts/"); len(left) != 0 {
+		t.Fatalf("the object was not removed: %v", left)
 	}
 }

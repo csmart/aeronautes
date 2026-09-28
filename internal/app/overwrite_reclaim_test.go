@@ -237,8 +237,16 @@ func TestReclamationLeavesRangedAndNestedEntriesAlone(t *testing.T) {
 	if stillThere(t, f.h, f.bookmark, "replaceable_segments", "live/taken/whole") {
 		t.Error("the whole part beside them was not reclaimed")
 	}
-	if event := reclaimEvent(t, f.h); event == nil || !strings.Contains(event.Summary, "reported 1 segment object the replaced manifest named as gone") {
+	event := reclaimEvent(t, f.h)
+	if event == nil || !strings.Contains(event.Summary, "reported 1 segment object the replaced manifest named as gone") {
 		t.Fatalf("the record does not say only the whole part went: %+v", event)
+	}
+	// And it says what it left alone, because leaving a shape is an outcome
+	// of this operation rather than an absence (db:756 finding 4).
+	for _, want := range []string{"1 ranged, 1 nested", "never removes", "left alone"} {
+		if !strings.Contains(event.Summary, want) {
+			t.Errorf("the record does not say %q: %q", want, event.Summary)
+		}
 	}
 }
 
@@ -542,5 +550,231 @@ func TestAnUnreadInventoryIsNotNoLargeObject(t *testing.T) {
 	}
 	if left := awaitNativeReplacement(t, h, req, id, parts); left != len(parts) {
 		t.Fatalf("a question that announced no removal was followed by %d of %d going", len(parts)-left, len(parts))
+	}
+}
+
+// db:756 finding 3: one list held both a store's refusal and a name in a
+// reply that could not be read, and the summary called all of them "not
+// removed". A refusal is knowledge; an unreadable reply is not. The sentence
+// and the audit result have to tell them apart, including in one mixed
+// outcome, so this reads the sentence builder directly with each shape.
+func TestReclaimReportingSeparatesRefusalsFromUnknowns(t *testing.T) {
+	one := local.Fragment{Container: "seg", Name: "a", Shape: local.FragmentWhole}
+	two := local.Fragment{Container: "seg", Name: "b", Shape: local.FragmentWhole}
+	for _, fixture := range []struct {
+		name    string
+		outcome local.ReclaimOutcome
+		want    []string
+		absent  []string
+		result  audit.Result
+	}{
+		{name: "all gone",
+			outcome: local.ReclaimOutcome{Removed: []local.Fragment{one, two}},
+			want:    []string{"reported 2 segment objects"},
+			absent:  []string{"refused", "unknown"},
+			result:  audit.ResultApplied},
+		{name: "one refused",
+			outcome: local.ReclaimOutcome{Removed: []local.Fragment{one},
+				Failed: []local.ReclaimFailure{{Fragment: two, Detail: "500 Internal Server Error", Resolved: true}}},
+			want:   []string{"reported 1 segment object", "the store refused 1 and kept it", "seg/b (500 Internal Server Error)"},
+			absent: []string{"is unknown"},
+			result: audit.ResultVerifyMismatch},
+		{name: "one unknown",
+			outcome: local.ReclaimOutcome{
+				Failed:    []local.ReclaimFailure{{Fragment: one, Detail: "the reply could not be trusted"}},
+				Untrusted: "a row names something this request did not send"},
+			want:   []string{"what the store did with 1 further name is unknown", "seg/a", "could not be read as a disposition"},
+			absent: []string{"the store refused"},
+			result: audit.ResultUnverified},
+		{name: "mixed",
+			outcome: local.ReclaimOutcome{Removed: []local.Fragment{one},
+				Failed: []local.ReclaimFailure{
+					{Fragment: two, Detail: "409 Conflict", Resolved: true},
+					{Fragment: local.Fragment{Container: "other", Name: "c"}, Detail: "unreadable"}},
+				Untrusted: "the store's answer could not be read"},
+			want: []string{"reported 1 segment object", "the store refused 1 and kept it", "seg/b (409 Conflict)",
+				"what the store did with 1 further name is unknown", "other/c"},
+			// An unknown effect anywhere in the request makes the whole
+			// event unverified rather than a partial write.
+			result: audit.ResultUnverified},
+		{name: "retained shapes",
+			outcome: local.ReclaimOutcome{Removed: []local.Fragment{one},
+				Retained: "1 ranged of the entries it named are shapes this operation never removes, so they were left alone"},
+			want:   []string{"reported 1 segment object", "1 ranged"},
+			result: audit.ResultApplied},
+		{name: "declined states what it kept",
+			outcome: local.ReclaimOutcome{Declined: "reclaiming replaced fragments is turned off",
+				Retained: "1 nested of the entries it named are shapes this operation never removes, so they were left alone"},
+			want:   []string{"removed none", "turned off", "1 nested"},
+			result: audit.ResultObserved},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			summary := reclaimSummary(fixture.outcome)
+			for _, want := range fixture.want {
+				if !strings.Contains(summary, want) {
+					t.Errorf("the summary does not say %q: %q", want, summary)
+				}
+			}
+			for _, absent := range fixture.absent {
+				if strings.Contains(summary, absent) {
+					t.Errorf("the summary claims %q: %q", absent, summary)
+				}
+			}
+			if got := reclaimResult(fixture.outcome); got != fixture.result {
+				t.Errorf("result = %q, want %q for %q", got, fixture.result, summary)
+			}
+		})
+	}
+}
+
+// db:756 finding 4: an inventory whose every entry is a shape this operation
+// never removes is not a removal of none. No request is sent, the record says
+// which shapes it left, and the event is an observation rather than a write.
+func TestReclamationDeclinesWhenNothingRecordedIsAWholeObject(t *testing.T) {
+	f := newOverwriteFixture(t)
+	f.h.mock.AddContainer("replaceable_segments", "standard")
+	seedObject(f.h.mock, "replaceable_segments", "live/taken/container", "89abcdef", nil)
+	seedObject(f.h.mock, "replaceable_segments", "live/taken/nested", "0123456789abcdef", nil)
+	// A ranged entry, a nested manifest and inline data: three entries, no
+	// private whole object among them.
+	f.h.mock.PutObject("replaceable", "live/taken", swifttest.Object{
+		SLO: true, Bytes: 16, ETag: `"` + md5of(md5of("01234567")+md5of("89abcdef")) + `"`,
+		Data: []byte("0123456789abcdef"),
+		SLOManifestJSON: `[` +
+			`{"name":"/replaceable_segments/live/taken/container","hash":"` + md5of("89abcdef") + `","bytes":8,"range":"0-3"},` +
+			`{"data":"aGVsbG8="},` +
+			`{"name":"/replaceable_segments/live/taken/nested","hash":"` + md5of("0123456789abcdef") + `","bytes":16,"sub_slo":true}]`,
+	})
+	f.tag = f.liveTag(t)
+	wireReclamation(t, f.h, true)
+	f.h.transfer.setOverwriteConfirmer(&recordingOverwriteConfirmer{yes: true})
+
+	id, err := f.h.transfer.StartUpload(t.Context(), f.request(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job := awaitTerminal(t, f.h, id); job.State != "complete" {
+		t.Fatalf("the replacement did not publish: %s %+v", job.State, job.Counters)
+	}
+	for _, name := range []string{"live/taken/container", "live/taken/nested"} {
+		if !stillThere(t, f.h, f.bookmark, "replaceable_segments", name) {
+			t.Errorf("%s was removed although no entry naming it is this operation's to remove", name)
+		}
+	}
+	event := reclaimEvent(t, f.h)
+	if event == nil {
+		t.Fatal("an all-excluded inventory left no record")
+	}
+	if event.Result != audit.ResultApplied {
+		// Stated as the expectation rather than inverted, so the message
+		// names what it wanted.
+		if event.Result != audit.ResultObserved {
+			t.Errorf("result = %q, want observed", event.Result)
+		}
+	} else {
+		t.Errorf("a reclamation that wrote nothing is recorded as applied: %q", event.Summary)
+	}
+	// The question itself could authorise nothing, so the record quotes that
+	// sentence, and that sentence states the shapes it will not touch.
+	for _, want := range []string{"removed none", "did not say these segments would be removed",
+		"nothing that backs what is being replaced can be removed", "never removes"} {
+		if !strings.Contains(event.Summary, want) {
+			t.Errorf("the record does not say %q: %q", want, event.Summary)
+		}
+	}
+}
+
+// The other half of finding 4: the question counted removable segments, and
+// by the time the record was taken the live object named only shapes this
+// operation never removes. The answer authorised a removal, so the ceiling
+// does not stop it; the record does, and it says so rather than reporting a
+// removal of none as applied.
+func TestReclamationDeclinesWhenTheRecordNamesNoWholeObject(t *testing.T) {
+	f := newOverwriteFixture(t)
+	parts, _ := seedStaticLargeObject(t, f.h, "replaceable", "live/taken")
+	f.tag = f.liveTag(t)
+	wireReclamation(t, f.h, true)
+	// Inside the dialog the live object becomes a manifest of one ranged
+	// entry over a segment that stays where it is: the racing writer this
+	// contract admits, arriving between the question and the record.
+	confirmer := &recordingOverwriteConfirmer{yes: true, before: func() {
+		f.h.mock.PutObject("replaceable", "live/taken", swifttest.Object{
+			SLO: true, Bytes: 8, ETag: `"` + md5of(md5of("89abcdef")) + `"`,
+			Data: []byte("89abcdef"),
+			SLOManifestJSON: `[{"name":"/replaceable_segments/` + parts[0].Object +
+				`","hash":"` + md5of("01234567") + `","bytes":8,"range":"0-3"}]`,
+		})
+	}}
+	f.h.transfer.setOverwriteConfirmer(confirmer)
+
+	id, err := f.h.transfer.StartUpload(t.Context(), f.request(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job := awaitTerminal(t, f.h, id); job.State != "complete" {
+		t.Fatalf("the replacement did not publish: %s %+v", job.State, job.Counters)
+	}
+	if asked := confirmer.questions(); len(asked) != 1 || !strings.Contains(asked[0].Fragments, "will be REMOVED") {
+		t.Fatalf("the fixture did not capture a removing question: %+v", asked)
+	}
+	if left := survivors(t, f.h, f.bookmark, "replaceable_segments", partNames(parts)); left != len(parts) {
+		t.Fatalf("a record naming no whole object still lost %d of %d segments", len(parts)-left, len(parts))
+	}
+	event := reclaimEvent(t, f.h)
+	if event == nil {
+		t.Fatal("the run left no reclamation record")
+	}
+	if !strings.Contains(event.Summary, "nothing the predecessor's record named is a private whole object") {
+		t.Errorf("the record does not say why it removed nothing: %q", event.Summary)
+	}
+	if !strings.Contains(event.Summary, "1 ranged") || !strings.Contains(event.Summary, "left alone") {
+		t.Errorf("the record does not name the shape it left: %q", event.Summary)
+	}
+	if event.Result != audit.ResultObserved {
+		t.Errorf("a reclamation that wrote nothing is recorded as %q", event.Result)
+	}
+}
+
+// Finding 3 at the public boundary: the store's reply names a path this
+// request never sent, so it cannot be read as a disposition for anything in
+// it. The objects may well be gone — this fixture's store did remove them —
+// and the record must say the effect is unknown rather than claiming either.
+func TestReclamationRecordsAnUnreadableReplyAsUnknown(t *testing.T) {
+	f := newOverwriteFixture(t)
+	parts, _ := seedStaticLargeObject(t, f.h, "replaceable", "live/taken")
+	f.tag = f.liveTag(t)
+	f.h.mock.BulkDeleteExtraErrorRow = "/replaceable_segments/somebody/elses"
+	wireReclamation(t, f.h, true)
+	f.h.transfer.setOverwriteConfirmer(&recordingOverwriteConfirmer{yes: true})
+
+	id, err := f.h.transfer.StartUpload(t.Context(), f.request(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job := awaitTerminal(t, f.h, id); job.State != "complete" {
+		t.Fatalf("an unreadable reply failed the replacement: %s %+v", job.State, job.Counters)
+	}
+	event := reclaimEvent(t, f.h)
+	if event == nil {
+		t.Fatal("the run left no reclamation record")
+	}
+	if event.Result != audit.ResultUnverified {
+		t.Errorf("an unreadable reply is recorded as %q, not unverified", event.Result)
+	}
+	for _, want := range []string{
+		fmt.Sprintf("what the store did with %d further names is unknown", len(parts)),
+		"could not be read as a disposition", "somebody/elses"} {
+		if !strings.Contains(event.Summary, want) {
+			t.Errorf("the record does not say %q: %q", want, event.Summary)
+		}
+	}
+	// And it claims neither outcome for those names.
+	for _, forbidden := range []string{"the store refused", "as gone or already absent; the store refused"} {
+		if strings.Contains(event.Summary, forbidden) {
+			t.Errorf("the record claims %q about names nobody settled: %q", forbidden, event.Summary)
+		}
+	}
+	if !strings.Contains(event.Summary, "reported 0 segment objects") {
+		t.Errorf("the record credits a removal from a reply it could not read: %q", event.Summary)
 	}
 }
