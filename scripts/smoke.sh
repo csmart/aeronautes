@@ -8,6 +8,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# shellcheck source=scripts/app-process.sh
+. scripts/app-process.sh
+
 ART="smoke-artifacts"
 rm -rf "$ART" && mkdir -p "$ART"
 say() { printf '\nsmoke: %s\n' "$*"; }
@@ -18,20 +21,30 @@ for tool in Xvfb xdotool import curl python3; do
 done
 [ -x bin/aeronautes ] || fail "bin/aeronautes missing — run 'make build' first"
 
+# Before anything is launched: this driver's process handling is what makes
+# every later "it started" and "it is gone" mean something.
+say "checking the driver's own process handling"
+./scripts/app-process-selfcheck.sh >"$ART/app-process-selfcheck.log" 2>&1 \
+  || { cat "$ART/app-process-selfcheck.log" >&2; fail "the driver's process handling is broken"; }
+
 say "building mockswift"
 export PATH="$HOME/go/bin:$PATH"
 go build -o "$ART/mockswift" ./cmd/mockswift
 
-say "starting mock cluster"
-"$ART/mockswift" -addr 127.0.0.1:8899 -fixtures=false >"$ART/mockswift.log" 2>&1 &
-MOCK_PID=$!
 STATE_DIR=$(mktemp -d)
-cleanup() {
-  [ -n "${APP_PID:-}" ] && kill "$APP_PID" >/dev/null 2>&1 || true
-  kill "$MOCK_PID" "${XVFB_PID:-}" >/dev/null 2>&1 || true
-  rm -rf "$STATE_DIR"
-}
-trap cleanup EXIT
+cleanup() { rm -rf "$STATE_DIR"; }
+# Installed before the first launch: every process this driver starts is a group
+# the library owns, and the trap stops all of them however this driver ends —
+# including when it is interrupted, since bash runs an EXIT trap even when a
+# signal kills the shell.
+app_install_traps cleanup
+
+# The cluster and the display are launched and stopped exactly like the app.
+# They are single processes today, but owning them the same way is what makes a
+# leftover impossible to miss: a surviving mock holds port 8899 and a surviving
+# Xvfb holds display :98, so the next run would fail for the wrong reason.
+say "starting mock cluster"
+app_start "$ART/mockswift.log" "$ART/mockswift" -addr 127.0.0.1:8899 -fixtures=false
 sleep 1
 
 TOK=$(curl -si http://127.0.0.1:8899/auth/v1.0 -H "X-Auth-User: test:tester" -H "X-Auth-Key: testing" \
@@ -44,12 +57,134 @@ for name in alpha.txt bravo.txt charlie.txt; do
   curl -sf -X PUT "$U/smoke-src/$name" -H "X-Auth-Token: $TOK" --data-binary "payload-$name" -o /dev/null
 done
 
-say "starting Xvfb + app"
-Xvfb :98 -screen 0 1280x800x24 >"$ART/xvfb.log" 2>&1 &
-XVFB_PID=$!
+say "starting Xvfb"
+app_start "$ART/xvfb.log" Xvfb :98 -screen 0 1280x800x24
 sleep 1
-AERONAUTES_STATE_DIR="$STATE_DIR" DISPLAY=:98 WAYLAND_DISPLAY= ./bin/aeronautes >"$ART/app.log" 2>&1 &
-APP_PID=$!
+
+# Some containers have no session bus, so the webview aborts before any window
+# exists; SMOKE_APP_WRAPPER="dbus-run-session --" gives such a host a private
+# one. WebKit's own sandbox is turned off by exporting
+# WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1, which this script does NOT set:
+# the caller does, and CI already does exactly that because its runner denies
+# the user namespaces bubblewrap needs. The artifact records the effective value
+# either way, because that variable weakens the webview's confinement and a
+# reader of these artifacts should not have to guess whether it was on.
+read -r -a APP_WRAPPER <<<"${SMOKE_APP_WRAPPER:-}"
+APP_ENV=(AERONAUTES_STATE_DIR="$STATE_DIR" DISPLAY=:98 WAYLAND_DISPLAY=)
+printf 'wrapper=%s WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=%s\n' \
+  "${SMOKE_APP_WRAPPER:-<none>}" "${WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS:-<unset>}" \
+  >"$ART/launch-environment.txt"
+
+# start_app <log> [extra env assignments...] — the real binary, as shipped, in
+# its own owned group. Sets APP_LAST_GROUP; never call it in a subshell.
+start_app() {
+  local log="$1"; shift
+  app_start "$log" env "${APP_ENV[@]}" "$@" "${APP_WRAPPER[@]}" ./bin/aeronautes
+}
+
+# log_saw <file> <pattern> <seconds>: wait for a line to appear in a log. The
+# app's own log is the truth for a startup assertion, and waiting on the line
+# is also the synchronisation: several writers share that file, so a line's
+# position in it proves nothing about what has been written yet.
+log_saw() {
+  for _ in $(seq 1 "$3"); do
+    grep -qF "$2" "$1" 2>/dev/null && return 0
+    sleep 1
+  done
+  return 1
+}
+
+# file_saw <path> <seconds>: the app's own state database appearing under the
+# case's state directory proves a real process started AND used that directory.
+file_saw() {
+  for _ in $(seq 1 "$2"); do
+    [ -e "$1" ] && return 0
+    sleep 1
+  done
+  return 1
+}
+
+# wait_window <seconds>: a visible window means startup ran all the way past
+# the point where the switch is read, which is what makes a NEGATIVE assertion
+# about the log sound. Nothing in a shipped build's log says "started".
+wait_window() {
+  for _ in $(seq 1 "$1"); do
+    DISPLAY=:98 xdotool search --onlyvisible --name "Aeronautes" >/dev/null 2>&1 && return 0
+    sleep 1
+  done
+  return 1
+}
+
+# wait_no_window <seconds>: X keeps a killed app's window listed for a moment,
+# and a stale id fails SetInputFocus with BadWindow. The journey must start
+# from a display with no Aeronautes window at all.
+wait_no_window() {
+  for _ in $(seq 1 "$1"); do
+    DISPLAY=:98 xdotool search --onlyvisible --name "Aeronautes" >/dev/null 2>&1 || return 0
+    sleep 1
+  done
+  return 1
+}
+
+# ADR 0082's product-level proof: the switch is read from the environment at
+# startup by a REAL process, and what the operator is told about it is the
+# startup log. A test binary lifts the capability gate, so only a launched
+# binary can show this. Each case launches, proves startup from that process's
+# own state database and window, asserts the lines it expects, and is confirmed
+# stopped before the next case starts.
+say "capability switch at startup"
+switch_case() {
+  local label="$1" spec="$2"; shift 2
+  local log="$ART/switch-$label.log" state
+  # One Aeronautes window on the display at a time, so the window this case
+  # waits for is its own.
+  wait_no_window 30 || fail "a window from an earlier case never went away"
+  state=$(mktemp -d "$PWD/$ART/state-$label.XXXXXX")
+  start_app "$log" AERONAUTES_ENABLE="$spec" AERONAUTES_STATE_DIR="$state"
+  local group="$APP_LAST_GROUP"
+  printf 'case=%s spec=%q state=%s group=%s\n' "$label" "$spec" "$state" "$group" \
+    >>"$ART/switch-launches.txt"
+  local failure=""
+  file_saw "$state/state.sqlite" 60 \
+    || failure="the app never opened a state database under $state"
+  if [ -z "$failure" ]; then
+    wait_window 60 || failure="the app never showed a window"
+  fi
+  if [ -z "$failure" ]; then
+    local want
+    for want in "$@"; do
+      log_saw "$log" "$want" 20 || failure="no log line: $want"
+    done
+  fi
+  # Confirmed gone before the next case: it holds a window, a state lock and a
+  # log this harness is about to read again.
+  app_stop "$group" 20 || fail "the app with AERONAUTES_ENABLE=$spec could not be stopped"
+  if [ -n "$failure" ]; then
+    printf '\n--- %s (%s bytes) ---\n' "$log" "$(wc -c <"$log")" >&2
+    cat "$log" >&2
+    fail "AERONAUTES_ENABLE=$spec: $failure (see $log)"
+  fi
+}
+switch_case unset ""
+if grep -q "AERONAUTES_ENABLE" "$ART/switch-unset.log"; then
+  fail "an unset switch logged something about capabilities (see $ART/switch-unset.log)"
+fi
+switch_case upload "upload" \
+  "AERONAUTES_ENABLE: offering unproven capabilities in this process: Upload"
+switch_case unrecognised "upload, not-a-capability" \
+  "AERONAUTES_ENABLE: offering unproven capabilities in this process: Upload" \
+  "AERONAUTES_ENABLE: ignored, not a capability: not-a-capability"
+# Mirror has no token deliberately (ADR 0052 decision 5, ADR 0082 decision 3),
+# so asking for it is ignored and SAID to be ignored.
+switch_case mirror "mirror" \
+  "AERONAUTES_ENABLE: ignored, not a capability: mirror"
+
+say "starting the app for the journey"
+wait_no_window 30 || fail "a window from the switch cases never went away"
+start_app "$ART/app.log"
+APP_GROUP="$APP_LAST_GROUP"
+printf 'case=journey state=%s group=%s\n' "$STATE_DIR" "$APP_GROUP" \
+  >>"$ART/switch-launches.txt"
 
 X() { DISPLAY=:98 xdotool "$@"; }
 shot() { DISPLAY=:98 import -window root "$ART/$1.png"; }
@@ -69,7 +204,7 @@ WIN=$(timeout 30 env DISPLAY=:98 xdotool search --sync --onlyvisible --name "Aer
 # so keystrokes can miss the app entirely. Pin it explicitly.
 X windowactivate --sync "$WIN" 2>/dev/null || X windowfocus --sync "$WIN"
 sleep 2
-kill -0 "$APP_PID" || fail "app exited at launch (see $ART/app.log)"
+app_group_alive "$APP_GROUP" || fail "app exited at launch (see $ART/app.log)"
 
 say "bookmark + connect"
 connected=""
