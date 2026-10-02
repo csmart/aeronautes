@@ -14,7 +14,7 @@ refuse() {
 for index in 0 1 2 3; do
   for result in failure cancelled skipped ''; do
     results=(success success success success)
-    results[$index]="$result"
+    results[index]="$result"
     refuse "${results[@]}"
   done
 done
