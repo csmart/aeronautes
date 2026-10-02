@@ -140,10 +140,10 @@ something to be checked against; the enumeration and the reasoning are in
 | Default relied on | Pinned value | What breaks if it moves |
 |---|---|---|
 | `--swift-no-chunk` off | uploads of unknown length chunk | nothing for `copy`/`copyto` on known-size sources, which chunk above the configured size regardless; an unknown-length path would depend on it |
-| `--swift-use-segments-container` unset | `<container>_segments` sidecar | every ownership and recovery record names segments that are somewhere else |
+| `--swift-use-segments-container` unset | `<container>_segments` sidecar; `=false` puts them in the DATA container under `.file-segments/` (measured 2026-10-02) | the transfer itself: the scoped gateway admits segment writes only to `<container>_segments` under the staged prefix and its manifest check requires that container by name, so the dotted placement is refused. The capture is not what breaks — it reads the container out of the child's own notice rather than assuming one |
 | `--swift-encoding` | `Slash,InvalidUtf8` | the names written change, and the native routing rules for unsafe names were measured under this value |
 | `--swift-fetch-until-empty-page` off, `--swift-partial-page-fetch-threshold` 0 | pagination as measured | listing completeness — mostly moot, because `--no-traverse --files-from-raw` means the engine does not list our sources |
-| `--inplace` off | temp name, then rename inside the private stage | the shape of stage residue after an interrupted child. NOT what keeps a partial body out of the final path: that is the child outcome, the stage identity and the native size/digest verification in `copyIntoStage`/`placeDownloaded` |
+| `--inplace` off | temp name, then rename inside the private stage, and the temp is removed when the child is signalled — a cancelled download leaves nothing, where the flag leaves a truncated body under the final name (measured 2026-10-02) | stage residue after an interrupted child. NOT what keeps a partial body out of the final path: that is the child outcome, the stage identity and the native size/digest verification in `copyIntoStage`/`placeDownloaded` |
 | `--partial-suffix` | `.partial` | the temporary name a crash leaves for reconciliation and the operator to find |
 | `--local-no-check-updated` off | the check happens | a source file changing during an upload stops being detected |
 | `--local-no-sparse`, `--local-no-preallocate`, `--local-no-set-modtime` off | sparse, preallocated, modtime set | the on-disk shape of a partial download, and downloaded timestamps |

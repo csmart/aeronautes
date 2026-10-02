@@ -40,9 +40,9 @@ as "the engine never creates a container".
 | Option | Pinned default | What we do | Data effect if it moved |
 |---|---|---|---|
 | `--swift-leave-parts-on-error` | off (abort cleans up) | **Never set** (`docs/rclone.md`), relying on the default | The engine's own failed large upload leaves its parts behind, as residue nothing in this application recorded. **Measured** 2026-09-27 (`.aeronautes-work/20260927-overwrite-mechanism/`): with it true the parts stay. |
-| `--swift-no-large-objects` | off (SLO/DLO supported) | Never toggled mid-job (`docs/rclone.md`) | An upload past the chunk size fails, and an existing manifest is not recognised as one — a replacement could then treat a manifest as ordinary bytes. Claim, unmeasured. |
+| `--swift-no-large-objects` | off (SLO/DLO supported) | Never toggled mid-job (`docs/rclone.md`) | **Measured 2026-10-02** (`2026-10-02-engine-claims-measured.md`): an upload past the chunk size does NOT fail, it is sent as one object; an existing manifest is not recognised (a listing reports size 0) and a read of it FAILS the digest check rather than returning the wrong bytes; and a replacement orphans the old segments, which the engine deletes when the flag is absent. |
 | `--swift-no-chunk` | off | **Unrecorded reliance, and narrower than it looks** | The pinned help scopes it to uploads of UNKNOWN length: a streaming upload is sent whole rather than chunked. The runner uses `copy` and `copyto` on known-size sources, which still chunk above the configured size, so this is not a chunk-size dependency of our normal copies. Recorded because an unknown-length path would acquire one. Help text, unmeasured. |
-| `--swift-use-segments-container` | unset | **Unrecorded reliance.** `docs/rclone.md` records the observed `<container>_segments` placement but not the option that moves it | Segments land somewhere other than where every ownership and recovery record this application writes expects them. Placement **measured** 2026-08-29 and again 2026-09-27; the option's effect is a claim. |
+| `--swift-use-segments-container` | unset (the child logs `Auto set use_segments_container to true`) | **Recorded** in `docs/rclone.md` with the option that moves it | **Measured 2026-10-02**: `=false` puts segments inside the DATA container under `.file-segments/`, not in the sidecar. The capture would still record the right container, because it reads the container out of the child's own notice — but our own scoped gateway admits segment writes only to `<container>_segments` under the staged prefix, and its manifest check requires that container by name, so a changed placement **fails the transfer** rather than moving segments quietly. |
 | `--swift-chunk-size` | 5Gi | **Set explicitly** per job | — |
 | `--swift-encoding` | `Slash,InvalidUtf8` | **Unrecorded reliance.** The name-form section of `docs/rclone.md` measures behaviour that follows from it | The NAMES written change, which is an identity change, and the native routing rules for unsafe names were measured under this default. Claim, unmeasured. |
 | `--swift-fetch-until-empty-page` | off | **Unrecorded reliance**, and mostly moot: `--no-traverse --files-from-raw` means the engine does not list the source for our copies | Listing completeness during pagination. Where the engine does not list, it cannot bite. |
@@ -56,7 +56,7 @@ what a download leaves on disk.
 
 | Option | Pinned default | What we do | Data effect if it moved |
 |---|---|---|---|
-| `--inplace` | off (temp name, then rename) | **Unrecorded reliance, inside the stage only** | The name it affects is one inside this application's private download stage, so what changes is the shape of stage RESIDUE after an interrupted child. It is not what keeps a partial body out of the final path: publication is gated by the child's outcome, the stage's identity and the native held-file size and digest verification in `copyIntoStage` and `placeDownloaded`. Help text, unmeasured. |
+| `--inplace` | off (temp name, then rename) | **Unrecorded reliance, inside the stage only** | The name it affects is one inside this application's private download stage, so what changes is stage RESIDUE after an interrupted child. It is not what keeps a partial body out of the final path: publication is gated by the child's outcome, the stage's identity and the native held-file size and digest verification in `copyIntoStage` and `placeDownloaded`. **Measured 2026-10-02**: a cancelled download leaves a truncated body under the FINAL name with the flag, and leaves nothing at all without it — the engine removes its own temporary file when the child is signalled. |
 | `--partial-suffix` | `.partial` | Unrecorded reliance | The temporary name a crash leaves behind, which reconciliation and the operator both see. |
 | `--local-no-check-updated` | off (the check happens) | Unrecorded reliance | A source file changing during an upload would stop being detected. |
 | `--local-no-sparse` | off (sparse files used for multi-thread downloads) | Unrecorded reliance | A cancelled large download's file shape on disk. |
@@ -120,10 +120,17 @@ reason each:
 
 ## Owed after this
 
-- The claims marked unmeasured above are claims. The three worth measuring, in
-  order of what they would cost us if wrong: `--swift-no-large-objects` against
-  an existing manifest, `--inplace` against a cancelled download, and
-  `--swift-use-segments-container` against the recovery records.
+- **Done 2026-10-02**: the three worth measuring were measured against SAIO with
+  the pinned binary, and the rows above carry the results —
+  `2026-10-02-engine-claims-measured.md` holds the method, the raw evidence and
+  the three places where the measurement disagreed with this record. The claims
+  still marked as claims above are the ones nothing has measured yet.
+- Unmeasured and worth knowing: the pinned engine wrote a DLO in every case, so
+  the SLO path is untouched, and no case reached the store's own maximum for a
+  single object, which is what actually bounds a `--swift-no-large-objects`
+  upload. The measurement also ran the engine STRAIGHT at the store, so it says
+  nothing about the scoped gateway, the staged destination or the native
+  publication and reclamation that the application's own routes use.
 - Nothing here examined the engine's **remote-control** interface or its
   config-file options, only command-line flags and the environment this
   application already whitelists.

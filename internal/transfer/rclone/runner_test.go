@@ -278,6 +278,56 @@ exit 3`
 	}
 }
 
+// The capture reads the container out of the child's own notice, so what it
+// records depends on a line shape only the engine decides. These three lines are
+// REAL, captured from the pinned binary against SAIO on 2026-10-02 and retained
+// in docs/experiments/2026-10-02-engine-claims-measured.md: once with the
+// segments sidecar the engine chooses by itself, once with it demanded, and once
+// with it refused — which is the case worth having, because then the segments
+// live inside the DATA container under a dotted prefix and the container the
+// notice names is the data container itself.
+func TestPrefixFromEventOnThePinnedEnginesOwnLines(t *testing.T) {
+	for _, c := range []struct {
+		name      string
+		msg       string
+		container string
+		prefix    string
+	}{
+		{
+			name:      "sidecar chosen by the engine",
+			msg:       `Uploading segment file "seg-unset.bin/2026-10-02-224341-wzs9Le7-p-pgnmOAv9WNNQ/00000000" into "engine-claims-p3_segments"`,
+			container: "engine-claims-p3_segments",
+			prefix:    "seg-unset.bin/2026-10-02-224341-wzs9Le7-p-pgnmOAv9WNNQ/",
+		},
+		{
+			name:      "sidecar demanded",
+			msg:       `Uploading segment file "seg-true.bin/2026-10-02-224341-gcY5WjeBBSuYaCw5a5BguA/00000000" into "engine-claims-p3_segments"`,
+			container: "engine-claims-p3_segments",
+			prefix:    "seg-true.bin/2026-10-02-224341-gcY5WjeBBSuYaCw5a5BguA/",
+		},
+		{
+			name:      "sidecar refused, so the segments are in the data container",
+			msg:       `Uploading segment file ".file-segments/seg-false.bin/2026-10-02-224341-ypxbwtHMdDyq1ljLQhYWzQ/00000000" into "engine-claims-p3"`,
+			container: "engine-claims-p3",
+			prefix:    ".file-segments/seg-false.bin/2026-10-02-224341-ypxbwtHMdDyq1ljLQhYWzQ/",
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got, ok := PrefixFromEvent(Event{Msg: c.msg})
+			if !ok {
+				t.Fatalf("the engine's own notice was not recognised: %s", c.msg)
+			}
+			want := SegmentPrefix{Container: c.container, Prefix: c.prefix}
+			if got != want {
+				t.Errorf("captured %+v, want %+v", got, want)
+			}
+			if got.Canonical() != want {
+				t.Errorf("canonical form %+v differs from the captured one", got.Canonical())
+			}
+		})
+	}
+}
+
 func TestCancelEscalation(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "got-int")
 	body := fmt.Sprintf(`trap 'touch %q; exit 130' INT
