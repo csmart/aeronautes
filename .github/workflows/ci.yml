@@ -46,6 +46,18 @@ jobs:
         run: |
           diff=$(gofmt -l .)
           if [ -n "$diff" ]; then echo "gofmt needed on:"; echo "$diff"; exit 1; fi
+      # The shell in scripts/ carries evidence, not convenience: the smoke
+      # proves ADR 0082's capability switch from the shipped binary, and
+      # scripts/app-process.sh decides whether a launched app is actually
+      # stopped. A break there weakens a gate without failing anything, so it
+      # is linted here. -x follows the sourced library instead of skipping it.
+      # The version is printed because it is not pinned: this step's first run
+      # failed on a finding the author's own shellcheck does not report, so a
+      # future disagreement should name its tool rather than be guessed at.
+      - name: shellcheck (scripts/*.sh, following sourced files)
+        run: |
+          shellcheck --version
+          shellcheck -x scripts/*.sh
       - name: Verify patched Swift source and checker refusals
         run: make verify-swift-source
       - name: Test Swift diagnostic collection

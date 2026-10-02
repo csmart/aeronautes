@@ -37,7 +37,7 @@ Xvfb "$XVFB_DISPLAY" -screen 0 1280x800x24 &
 XVFB_PID=$!
 APP_LOG=$(mktemp -t aeronautes-spike.XXXXXX)
 cleanup() {
-	[ -n "${APP_PID:-}" ] && kill "$APP_PID" 2>/dev/null || true
+	if [ -n "${APP_PID:-}" ]; then kill "$APP_PID" 2>/dev/null || true; fi
 	# dbus-run-session's TERM handling can orphan the app; sweep it.
 	pkill -f "$PWD/bin/aeronautes" 2>/dev/null || true
 	kill "$XVFB_PID" 2>/dev/null || true
