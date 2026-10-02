@@ -102,7 +102,11 @@ Placement, read back from the store:
 
 With the option unset the child says so itself: `Auto set use_segments_container
 to true`. All three modes produced DLOs; `X-Static-Large-Object` was absent
-throughout, so the pinned engine's SLO path stays unmeasured.
+throughout. That is K-XFER-007 measured rather than asserted — rclone-executed
+large-object uploads are DLOs, not SLOs — and it also means the pinned engine's
+behaviour toward an SLO someone else wrote stays unmeasured here, which is a
+different question from how this application reads one (`SLOManifest`, and the
+real-Swift SLO cases in the integration suite, cover that).
 
 What this application records is not a convention it assumes. `PrefixFromEvent`
 reads the container out of the child's own notice —
@@ -137,10 +141,19 @@ test case in `internal/transfer/rclone/runner_test.go`, including the one where
 the sidecar is refused. It supplies those retained strings to the parser; it does
 not start the engine. So it catches a PARSER regression against the formats
 recorded here — three mutants of the parser each fail it by name, and the
-sidecar-only one fails only on the refused case — and it would NOT notice a
-future engine emitting a different line shape while the parser and these strings
-stay as they are. That gap wants a live-engine case, which this slice does not
-add.
+sidecar-only one fails only on the refused case — and it would not, by itself,
+notice a future engine emitting a different line shape.
+
+That last gap is NOT open, and an earlier version of this paragraph implied it
+was. `TestRcloneRunnerRealSwift` in the env-gated SAIO suite starts the pinned
+engine through `Runner.copy`, and so through the scoped gateway, on a source
+larger than the chunk size; it requires exactly one captured prefix, requires its
+container to be the destination's `_segments` sidecar, and then lists the store
+under the captured prefix and requires the three segments to be there. That is
+the engine's own current output, parsed and checked against the store, and CI
+runs it in the integration job. What the fixture cases add beside it is the one
+layout a live run through this application cannot produce: the refused sidecar,
+which the gateway rejects by design.
 
 ## What this still does not measure
 

@@ -127,7 +127,7 @@ Keep the flag before `--` and preserve the existing gateway, credentials, TLS, r
 | `--swift-leave-parts-on-error` | rclone's default cleanup on abort is required (§26.4) — and even so, cancel cleanup is best-effort (a residual segment was observed), so reconciliation always follows |
 | global `--ca-cert` / `--no-check-certificate` | process-global trust (§12.3, K-SEC-008) |
 | `--max-duration` | HARD kills mid-transfer, SOFT still overruns — bounded batches instead (§26.2) |
-| `sync`, `purge`, `delete`, `--swift-no-large-objects` toggling mid-job | the absolute destruction boundary (ADR 0004) and §25's single chunk knob |
+| `sync`, `purge`, `delete`, `--swift-no-large-objects` toggling mid-job | the absolute destruction boundary (ADR 0004) and §25's single chunk knob. What that flag costs is measured in [the 2026-10-02 record](experiments/2026-10-02-engine-claims-measured.md): a replacement leaves the replaced object's segments behind, where the engine deletes them without it, and a read of an existing manifest fails the digest check |
 | `--ignore-existing` | the public `NeedTransfer` checks it before `--ignore-times` can matter, so a planned object would be skipped silently rather than transferred; a guard in `internal/transfer/rclone/runner_test.go` keeps it out of argv |
 
 ## Defaults this application depends on without setting them
