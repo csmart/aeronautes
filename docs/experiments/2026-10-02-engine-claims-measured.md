@@ -150,8 +150,14 @@ engine through `Runner.copy`, and so through the scoped gateway, on a source
 larger than the chunk size; it requires exactly one captured prefix, requires its
 container to be the destination's `_segments` sidecar, and then lists the store
 under the captured prefix and requires the three segments to be there. That is
-the engine's own current output, parsed and checked against the store, and CI
-runs it in the integration job. What the fixture cases add beside it is the one
+the engine's own current output, parsed and checked against the store. CI runs
+it, and it is worth naming where: the two `Swift tests` lanes are what execute
+the gated suite against a containerized SAIO, with `scripts/saio-partition.py`
+deciding which lane a given case lands in, while
+`Integration — containerized Swift (SAIO)` requires both lanes to have succeeded
+and then validates and joins their evidence. An earlier sentence here said "the
+integration job", which named the job that checks the result rather than the one
+that runs the case. What the fixture cases add beside it is the one
 layout a live run through this application cannot produce: the refused sidecar,
 which the gateway rejects by design.
 
