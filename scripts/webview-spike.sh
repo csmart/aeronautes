@@ -13,6 +13,8 @@
 # Re-run this on the shipped binary as part of Phase 7 release checks.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# shellcheck source=scripts/app-process.sh
+. scripts/app-process.sh
 
 command -v wails3 >/dev/null || {
 	echo "FAIL: wails3 CLI not on PATH (go install github.com/wailsapp/wails/v3/cmd/wails3@<pinned>)"
@@ -32,25 +34,37 @@ command -v Xvfb >/dev/null || {
 	exit 0
 }
 
+# A host whose container cannot run WebKit's own sandbox — a device set bwrap
+# cannot bind-mount, for instance — must export
+# WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1 before running this, or the webview
+# aborts within a second of launch and this script reports that as a failed
+# shell. This script does NOT set it: disabling that sandbox weakens the
+# webview's confinement, so it stays the caller's decision, exactly as in
+# scripts/smoke.sh. What is being checked here is unaffected either way — the
+# binary's own listening sockets, which the sandbox does not change.
+
 XVFB_DISPLAY=":97"
-Xvfb "$XVFB_DISPLAY" -screen 0 1280x800x24 &
-XVFB_PID=$!
 APP_LOG=$(mktemp -t aeronautes-spike.XXXXXX)
-cleanup() {
-	if [ -n "${APP_PID:-}" ]; then kill "$APP_PID" 2>/dev/null || true; fi
-	# dbus-run-session's TERM handling can orphan the app; sweep it.
-	pkill -f "$PWD/bin/aeronautes" 2>/dev/null || true
-	kill "$XVFB_PID" 2>/dev/null || true
-	rm -f "$APP_LOG"
-}
-trap cleanup EXIT
+XVFB_LOG=$(mktemp -t aeronautes-spike-xvfb.XXXXXX)
+remove_logs() { rm -f "$APP_LOG" "$XVFB_LOG"; }
+# Everything this script starts is a process group the library owns, and the
+# trap stops all of them however this script ends — installed before the first
+# launch. This replaces a kill by pid plus a pkill over a command-line pattern:
+# the pattern was there because dbus-run-session does not pass a signal to its
+# child, which is precisely what signalling the GROUP does cover, and a pattern
+# matches any command line holding that path, including a caller's own.
+app_install_traps remove_logs
+
+app_start "$XVFB_LOG" Xvfb "$XVFB_DISPLAY" -screen 0 1280x800x24
+XVFB_GROUP="$APP_LAST_GROUP"
 
 # Wait for the display socket instead of hoping — a stale lock or slow
 # start otherwise turns into a misleading "Failed to open display".
 for _ in $(seq 1 50); do
 	[ -S "/tmp/.X11-unix/X${XVFB_DISPLAY#:}" ] && break
-	kill -0 "$XVFB_PID" 2>/dev/null || {
+	app_leader_running "$XVFB_GROUP" || {
 		echo "FAIL: Xvfb did not start (stale /tmp/.X${XVFB_DISPLAY#:}-lock?)"
+		cat "$XVFB_LOG"
 		exit 1
 	}
 	sleep 0.2
@@ -70,20 +84,29 @@ command -v dbus-run-session >/dev/null || {
 # The app's stdio goes to a scratch log, never to this script's pipeline:
 # any straggling child inheriting our stdout would otherwise hold a
 # caller's pipe open long after the spike is done.
-env DISPLAY="$XVFB_DISPLAY" WAYLAND_DISPLAY="" dbus-run-session -- "$PWD/$BIN" \
-	>"$APP_LOG" 2>&1 &
-APP_PID=$!
+app_start "$APP_LOG" env DISPLAY="$XVFB_DISPLAY" WAYLAND_DISPLAY="" \
+	dbus-run-session -- "$PWD/$BIN"
+APP_GROUP="$APP_LAST_GROUP"
 sleep 5
 
-kill -0 "$APP_PID" 2>/dev/null || {
+# The LEADER, not the group: the leader of this group is the bus wrapper, which
+# exits when the application exits, so its lifetime is the application's. Asking
+# the group instead would accept any surviving member — a quiet helper left
+# behind by an application that has already died — and this assertion would then
+# pass for a dead shell, with no listening socket to contradict it. That
+# regression was found in review (db:780) and is held by a case below the script.
+app_leader_running "$APP_GROUP" || {
 	echo "FAIL: shell exited within 5s of launch; last app output:"
 	tail -5 "$APP_LOG"
 	exit 1
 }
 
-# Collect the shell process plus WebKit helper processes and look for any
-# listening socket owned by them.
-PIDS=$(pgrep -f "bin/aeronautes|WebKitWebProcess|WebKitNetworkProcess" | paste -sd'|' -)
+# Collect this launch's own processes — the shell, the bus wrapper and the
+# WebKit helpers are all in the group it owns — and look for any listening
+# socket belonging to them. The group is more precise than a name pattern: it
+# cannot pick up another run's processes, and it cannot miss a helper whose name
+# changes.
+PIDS=$(pgrep -g "$APP_GROUP" | paste -sd'|' -)
 LISTENERS=$(ss -tulnp 2>/dev/null | grep -E "pid=(${PIDS})," || true)
 if [ -n "$LISTENERS" ]; then
 	echo "FAIL: production shell exposes listening sockets (§55):"
