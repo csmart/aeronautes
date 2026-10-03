@@ -16,6 +16,12 @@ cd "$(dirname "$0")/.."
 # shellcheck source=scripts/app-process.sh
 . scripts/app-process.sh
 
+# go install puts wails3 in GOBIN, which defaults to ~/go/bin, and that is the
+# layout the refusal below tells the reader to create — so look there, as the
+# Makefile and the smoke both do. Without this the script refuses the very
+# installation it recommends.
+export PATH="$HOME/go/bin:$PATH"
+
 command -v wails3 >/dev/null || {
 	echo "FAIL: wails3 CLI not on PATH (go install github.com/wailsapp/wails/v3/cmd/wails3@<pinned>)"
 	exit 1
