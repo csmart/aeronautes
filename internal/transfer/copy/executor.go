@@ -7,9 +7,13 @@
 package copy
 
 import (
+	"bytes"
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -30,6 +34,54 @@ type Engine interface {
 // refuses anything larger (a large object with an engine-unsafe name is
 // an honest v1 failure, not a silent skip).
 const maxSinglePut = 5 * 1024 * 1024 * 1024
+
+// heldManifestBound is how much of a manifest source this route will hold in
+// memory to digest it before publishing (ADR 0084 decision 3). It is the value
+// this application already names for a per-transfer buffer, so an operator holds
+// one number rather than two, and the executor runs its items one at a time, so
+// the peak this adds is one bound rather than one per item.
+const heldManifestBound = 16 * 1024 * 1024
+
+// cappedHold accumulates what a comparison streams through it and refuses past
+// its limit, so a source that serves more than its expectation stated fails the
+// comparison instead of being held.
+type cappedHold struct {
+	bytes []byte
+	limit int64
+}
+
+func (h *cappedHold) Write(p []byte) (int, error) {
+	if int64(len(h.bytes))+int64(len(p)) > h.limit {
+		return 0, fmt.Errorf("the source served more than the %d-byte hold this route allows", h.limit)
+	}
+	h.bytes = append(h.bytes, p...)
+	return len(p), nil
+}
+
+// readCloser joins a reader to a closer so a comparison can read through a tee
+// while still closing the body it came from.
+type readCloser struct {
+	io.Reader
+	io.Closer
+}
+
+// closeOnce makes a body's Close happen once however many holders call it, so a
+// comparison that must close the body itself and a defer that must close it when
+// no comparison ran can both hold the same body.
+func closeOnce(body io.ReadCloser) io.Closer {
+	closed := false
+	return closerFunc(func() error {
+		if closed {
+			return nil
+		}
+		closed = true
+		return body.Close()
+	})
+}
+
+type closerFunc func() error
+
+func (f closerFunc) Close() error { return f() }
 
 // fingerprintMetaKey is the §28.4 destination verification fingerprint,
 // stored as X-Object-Meta-Aeronautes-Fingerprint. Format v1: logical
@@ -226,6 +278,10 @@ type Executor struct {
 	stopped        error
 	// budget caches the destination's advertised metadata allowance.
 	budget metaBudget
+	// evidence is what this job's native route observed about the names it
+	// decided, written to a private sorted spool rather than held per name
+	// (ADR 0045 for why it exists at all, K-PERF-001 for why it is not a map).
+	evidence evidenceLog
 }
 
 // New validates the config and builds an executor.
@@ -577,6 +633,16 @@ func verifyCopied(src, dst *swiftcontrol.ObjectDetail) error {
 	return nil
 }
 
+// contentFailure records that this job observed a name's content disagree, so
+// the verification pass can keep it out of a verified count, a Same verdict and
+// a skip (ADR 0045, independently of any stamp). A spool write that fails is
+// attached to the item rather than dropped: the pass refuses to run on evidence
+// it could not store, and the item says why.
+func (e *Executor) contentFailure(name string, result executionResult) executionResult {
+	result.addProblem(StageRecording, e.evidence.contentFailure(name))
+	return result
+}
+
 // metadataHeaders builds the §27.4 preserved writable set from a source
 // HEAD, as headers under the given meta prefix: user metadata (minus
 // Aeronautes' own fingerprint — re-stamped fresh), content headers, and
@@ -614,7 +680,13 @@ func (e *Executor) nativeCopy(ctx context.Context, item plan.Item) (result execu
 	if err != nil {
 		return failed(EffectNotAttempted, StageSourceRead, CodeUnknown, "native-get", err)
 	}
-	defer func() { result.addProblem(StageSourceRead, body.Close()) }()
+	// The source body is closed exactly once, by whichever of this defer and the
+	// content comparison below reaches it first. The comparison has to close it
+	// itself, because that is where a close failure still prevents a publication;
+	// without the guard this defer would then close it a second time and report
+	// the same failure twice.
+	closeSource := closeOnce(body)
+	defer func() { result.addProblem(StageSourceRead, closeSource.Close()) }()
 	if src.FollowedSymlink {
 		return e.copySymlink(ctx, srcName, dstName, EffectNotAttempted)
 	}
@@ -622,12 +694,82 @@ func (e *Executor) nativeCopy(ctx context.Context, item plan.Item) (result execu
 		return failed(EffectNotAttempted, StageSourceRead, CodeUnsupported, "native-size", fmt.Errorf(
 			"logical size %d exceeds the single-PUT limit and the name cannot ride the engine (v1 limitation)", src.ContentLength))
 	}
+	// ADR 0083 decision 1 declares a plain source's own entity tag, which for a
+	// plain object IS the MD5 of its content, so the store refuses a body that
+	// does not hash to it.
+	//
+	// A manifest source has no header describing its assembled bytes, so ADR 0084
+	// compares the held content against the source's own LADDER first and declares
+	// the digest of those verified bytes. Hashing whatever the GET delivered and
+	// declaring that would bind the transport only: same-length bytes other than
+	// the ones the manifest describes would hash to their own digest and be
+	// accepted. The ladder is the independent expectation — a prefix listing for a
+	// dynamic large object, the recorded manifest for a static one — and
+	// CompareContent is the same driver the staged route uses, which also closes
+	// the body and joins a close failure, so the close happens BEFORE anything is
+	// published rather than after.
+	declared := strings.Trim(src.ETag, `"`)
+	if src.Class == swiftcontrol.ClassPlain {
+		// Only a complete MD5 can be declared. Swift states one for every plain
+		// object, so this is the shape of a source that is not what it says it
+		// is; without the check the route would send the value anyway and the
+		// store would refuse the PUT, reporting a commit failure for a source
+		// that was never usable.
+		if _, ok := runDigest(declared); !ok {
+			return failed(EffectNotAttempted, StageSourceRead, CodeUnsupported, "native-etag", fmt.Errorf(
+				"plain source states %q rather than a complete MD5, so its copy cannot be bound", src.ETag))
+		}
+	} else {
+		ladder, err := e.sourceLadder(ctx, src)
+		if err != nil {
+			return failed(EffectNotAttempted, StageSourceRead, CodeUnsupported, "native-ladder", fmt.Errorf(
+				"a %s source supplies no usable content expectation, so its copy cannot be bound (ADR 0084): %w", src.Class, err))
+		}
+		// The bound is checked against the EXPECTATION's total, not a header the
+		// same stream could misreport.
+		if ladder.bytes() > heldManifestBound {
+			return failed(EffectNotAttempted, StageSourceRead, CodeUnsupported, "native-class", fmt.Errorf(
+				"a %s source of %d logical bytes cannot be bound by this route: holding it to compare it would exceed the %d-byte bound (ADR 0084)",
+				src.Class, ladder.bytes(), heldManifestBound))
+		}
+		held := &cappedHold{limit: heldManifestBound}
+		code, err := CompareContent(ctx, readCloser{Reader: io.TeeReader(body, held), Closer: closeSource},
+			Ladder{runs: ladder})
+		if err != nil {
+			return e.contentFailure(item.Name, failed(EffectNotAttempted, StageSourceRead, code, "native-hold", fmt.Errorf(
+				"a %s source's content did not match its manifest, so nothing was published: %w", src.Class, err)))
+		}
+		sum := md5.Sum(held.bytes)
+		declared = hex.EncodeToString(sum[:])
+		body = io.NopCloser(bytes.NewReader(held.bytes))
+	}
+	// No fingerprint. The stamp asserts that the destination holds the source's
+	// content, and this route publishes at the live name in ONE request, so a
+	// stamp in that request is written before anything has been checked. ADR 0045
+	// decided this route therefore publishes unstamped and does not add the stamp
+	// afterwards either, because the only available metadata update is a
+	// HEAD-preflighted replace-all POST that cannot be bound atomically to the
+	// object just checked. Before this change the stamp made a DETECTED content
+	// failure usable as success evidence: the fingerprint survived at the live
+	// name, so the same job's verification pass credited it and a later job
+	// skipped it as equal.
 	headers := metadataHeaders(src, "X-Object-Meta-")
-	headers["X-Object-Meta-"+fingerprintMetaKey] = fingerprint(src.ContentLength, src.ETag)
+	headers["ETag"] = declared
 	headers["If-None-Match"] = "*"
 	if _, err := e.cfg.Dest.PutObject(ctx, e.cfg.DstContainer, dstName, body, src.ContentType, headers); err != nil {
 		if swiftcontrol.IsPreconditionFailed(err) {
 			return conflict(EffectUnresolved, err, "destination appeared at commit time")
+		}
+		if swiftcontrol.IsDeclaredDigestRefused(err) {
+			// The store's own verdict that the body did not hash to what this
+			// route declared. That is a content disagreement about this name,
+			// stated by the only party that saw both, so ADR 0045's same-job
+			// exclusion applies to it exactly as it does to the disagreements
+			// this route detects for itself. Without the record a later equal
+			// pair of listing rows would verify a name whose publication the
+			// store refused. The result itself is unchanged: how a 422 is
+			// classified is a separate question from whether it is remembered.
+			return e.contentFailure(item.Name, failed(EffectUnresolved, StageCommit, CodeUnknown, "native-put", err))
 		}
 		return failed(EffectUnresolved, StageCommit, CodeUnknown, "native-put", err)
 	}
@@ -635,10 +777,43 @@ func (e *Executor) nativeCopy(ctx context.Context, item plan.Item) (result execu
 	if err != nil {
 		return failed(EffectUnresolved, StageVerification, CodeUnknown, "native-verify", err)
 	}
-	if err := verifyCopied(src, dst); err != nil {
-		return failed(EffectUnresolved, StageVerification, CodeUnverified, "native-verify", err)
+	// The declaration again, this time against what the store reports. It is the
+	// weaker of the two checks — the bytes are already at the live name by now —
+	// but it is the one that still works when something between this process and
+	// the store removes the declared tag, which leaves the store nothing to
+	// enforce. It also reaches a case verifyCopied cannot: this route always
+	// creates a PLAIN destination, whose reported tag is the MD5 of what landed,
+	// while a manifest source's own tag is an aggregate over its segments, so a
+	// class-to-class comparison falls back to logical length alone and a
+	// same-length difference passes it.
+	if dst.Class == swiftcontrol.ClassPlain && strings.Trim(dst.ETag, `"`) != declared {
+		return e.contentFailure(item.Name, failed(EffectUnresolved, StageVerification, CodeUnverified, "native-verify", fmt.Errorf(
+			"destination hashes to %s, the copy declared %s", strings.Trim(dst.ETag, `"`), declared)))
 	}
-	return copied(src.ContentLength, "native")
+	if err := verifyCopied(src, dst); err != nil {
+		return e.contentFailure(item.Name, failed(EffectUnresolved, StageVerification, CodeUnverified, "native-verify", err))
+	}
+	// Recorded only here, past every check. The source identity is kept beside
+	// the destination digest because the identity is half the claim: the
+	// verification pass reads the source again, and evidence that this content
+	// was copied says nothing about a source that has changed since.
+	result = copied(src.ContentLength, "native")
+	if src.Class != swiftcontrol.ClassPlain {
+		// Recorded only for the case that needs it. A plain source's destination
+		// is a plain object with the same entity tag, which the verification
+		// pass settles from the two HEADs on its own, in this job and in any
+		// later one. A manifest source's destination is a plain object whose tag
+		// is not comparable to the source's aggregate, so without a stamp that
+		// pass has nothing but what this job compared — which keeps the spool
+		// proportional to manifest copies rather than to the namespace.
+		//
+		// The source identity is kept beside the destination digest because the
+		// identity is half the claim: the pass reads the source again, and
+		// evidence that this content was copied says nothing about a source that
+		// has become different content of the same length since.
+		result.addProblem(StageRecording, e.evidence.copied(item.Name, fingerprint(src.ContentLength, src.ETag), declared))
+	}
+	return result
 }
 
 // Refusal is an execution decision, separate from copied-object errors.
@@ -654,7 +829,7 @@ func (e *Executor) refuseOverwrite(item plan.Item) error {
 // Close removes only this executor's private local refusal record.
 // It must run after verification, including on cancellation and failures.
 func (e *Executor) Close() error {
-	return e.refusals.close()
+	return errors.Join(e.refusals.close(), e.evidence.close())
 }
 
 // Staged bytes must verify before becoming visible at a new live name.

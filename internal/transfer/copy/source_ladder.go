@@ -76,7 +76,8 @@ func runDigest(etag string) ([md5.Size]byte, bool) {
 //
 // A static large object reports the entity tag its manifest recorded
 // rather than one derived from the segments that are there now, so no
-// listing can be bound to it the same way and it has no ladder here.
+// listing can be bound to it the same way. Its own recorded manifest can
+// be, and is: see staticSourceLadder.
 func (e *Executor) sourceLadder(ctx context.Context, src *swiftcontrol.ObjectDetail) (contentLadder, error) {
 	if src.ContentLength < 0 {
 		return nil, fmt.Errorf("source reports a negative logical length of %d bytes", src.ContentLength)

@@ -5,9 +5,12 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -156,6 +159,42 @@ func (f *fakeEngine) one(ctx context.Context, srcC, srcName, dstC, dstName strin
 	_, err = f.w.dst.PutObject(ctx, dstC, dstName, &data, "text/plain",
 		map[string]string{"X-Object-Meta-Mtime": mtime["Mtime"]})
 	return err
+}
+
+// newWorldWrappingDest puts a handler of the caller's choosing in front of the
+// DESTINATION mock, so a case can act between the requests this executor makes
+// without reaching inside it. It is deliberately separate from the barrier
+// variant above rather than folded into it: that variant's cleanup order is part
+// of how a held reply is released, and this does not need it.
+func newWorldWrappingDest(t *testing.T, wrap func(http.Handler) http.Handler) *world {
+	t.Helper()
+	w := &world{}
+	w.srcMock = swifttest.New("test:tester", "testing")
+	w.dstMock = swifttest.New("test:tester", "testing")
+	srcSrv := httptest.NewServer(w.srcMock)
+	t.Cleanup(srcSrv.Close)
+	dstSrv := httptest.NewServer(wrap(w.dstMock))
+	t.Cleanup(dstSrv.Close)
+	w.src = authenticateMock(t, srcSrv)
+	w.dst = authenticateMock(t, dstSrv)
+	w.srcMock.AddContainer("media", "standard")
+	w.dstMock.AddContainer("backup", "standard")
+	return w
+}
+
+// authenticateMock opens an adapter session against one mock server.
+func authenticateMock(t *testing.T, srv *httptest.Server) *swiftcontrol.Session {
+	t.Helper()
+	session, err := swiftcontrol.New(swiftcontrol.Config{
+		AuthURL: srv.URL + "/auth/v1.0", Username: "test:tester", APIKey: "testing",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Authenticate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	return session
 }
 
 func newExecutor(t *testing.T, w *world, engine Engine) *Executor {
@@ -371,7 +410,13 @@ func TestUnknownResolution(t *testing.T) {
 func TestNativeUnsafeNames(t *testing.T) {
 	w := newWorld(t)
 	ctx := context.Background()
+	// Run takes strictly name-ordered items, as its own contract says and as
+	// plan.Copy produces, because this executor's private spools are written in
+	// that order and read forward. This list was hand-written out of order, which
+	// no planner produces; sorting it keeps the case about hostile NAMES rather
+	// than about an input the contract excludes.
 	hostile := []string{"/lead", "trail/", "a//b", "line\nbreak"}
+	slices.Sort(hostile)
 	for _, name := range hostile {
 		seed(w.srcMock, "media", name, []byte("payload-"+name), map[string]string{"Origin": "suite"})
 	}
@@ -396,6 +441,50 @@ func TestNativeUnsafeNames(t *testing.T) {
 		if d.ETag != hex.EncodeToString(sum[:]) || d.Meta["Origin"] != "suite" {
 			t.Errorf("%q arrived wrong: etag %s meta %v", name, d.ETag, d.Meta)
 		}
+		// ADR 0045: this route publishes unstamped. The stamp asserts that the
+		// destination holds the source's content, and a one-request publication
+		// offers no moment at which that is already established.
+		if d.Meta[fingerprintMetaKey] != "" {
+			t.Errorf("%q was stamped %q", name, d.Meta[fingerprintMetaKey])
+		}
+	}
+}
+
+// A manifest source this route cannot hold is not attempted: ADR 0084 binds a
+// manifest by digesting the bytes it holds, so above the bound there is nothing
+// to declare and the alternative would be publishing bytes nobody compared.
+func TestNativeManifestPastTheHoldBoundIsNotAttempted(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	w.srcMock.AddContainer("media_segments", "standard")
+	// Two segments whose assembled length is one mebibyte past the bound.
+	half := heldManifestBound/2 + 512*1024
+	for i := 0; i < 2; i++ {
+		chunk := bytes.Repeat([]byte{byte('a' + i)}, int(half))
+		sum := md5.Sum(chunk)
+		w.srcMock.PutObject("media_segments", fmt.Sprintf("weird//big/%d", i), swifttest.Object{
+			Bytes: int64(len(chunk)), ETag: hex.EncodeToString(sum[:]), Data: chunk,
+		})
+	}
+	w.srcMock.PutObject("media", "weird//big", swifttest.Object{
+		Manifest: "media_segments/weird//big/", ContentType: "video/mp4",
+	})
+
+	report, err := newExecutor(t, w, nil).Run(ctx, []plan.Item{{
+		Name: "weird//big", Verdict: plan.VerdictNew, Route: plan.RouteNative, Reason: plan.ReasonPossibleManifest,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Copied != 0 || len(report.Failures) != 1 {
+		t.Fatalf("report = %+v", report)
+	}
+	if got := report.Failures[0]; got.Stage != "native-class" || !strings.Contains(got.Err, "bound") {
+		t.Errorf("failure = %+v, want the hold bound named at the native-class stage", got)
+	}
+	// Nothing was published, so there is no residue to retain.
+	if _, err := w.dst.ObjectDetail(ctx, "backup", "weird//big"); err == nil {
+		t.Error("a source past the bound published something")
 	}
 }
 
@@ -882,4 +971,642 @@ func (l *liveRacingEngine) Copy(ctx context.Context, src, dst string, names []st
 	result, err := l.fakeEngine.Copy(ctx, src, dst, names, onEvent)
 	seed(l.w.dstMock, "backup", "raced.txt", []byte("theirs, first"), nil)
 	return result, err
+}
+
+// placeSLO stores a static large object whose recorded manifest states the
+// given parts and whose body serves exactly servedBytes.
+//
+// Swift reports the aggregate a static manifest RECORDED rather than one
+// derived from the segments present now, so a manifest and a body can
+// disagree while every header stays self-consistent. That is the condition
+// ADR 0084's comparison exists to catch, and the one a digest of delivered
+// bytes cannot see: the delivered bytes always hash to their own digest.
+func placeSLO(t *testing.T, mock *swifttest.Server, container, name string, parts [][]byte, servedBytes []byte) {
+	t.Helper()
+	var entries []string
+	var total int64
+	aggregate := md5.New()
+	for i, part := range parts {
+		sum := md5.Sum(part)
+		hash := hex.EncodeToString(sum[:])
+		segment := fmt.Sprintf("%s/%d", name, i)
+		mock.PutObject("media_segments", segment, swifttest.Object{
+			Bytes: int64(len(part)), ETag: hash, Data: part,
+		})
+		entries = append(entries, fmt.Sprintf(
+			`{"name": "/media_segments/%s", "hash": "%s", "bytes": %d, "content_type": "application/octet-stream"}`,
+			segment, hash, len(part)))
+		total += int64(len(part))
+		if _, err := aggregate.Write([]byte(hash)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	etag := hex.EncodeToString(aggregate.Sum(nil))
+	mock.PutObject(container, name, swifttest.Object{
+		Bytes: total, ETag: `"` + etag + `"`, SLOEtag: etag, SLO: true,
+		SLOManifestJSON: "[" + strings.Join(entries, ",") + "]",
+		ContentType:     "video/mp4", Data: servedBytes,
+	})
+}
+
+// A manifest source's copy is bound to the source's OWN manifest, not to
+// whatever the GET delivered (ADR 0084).
+//
+// The drifted rows are the regression guard for the shape this route was
+// first written in: hold the delivered bytes, hash THEM, declare that
+// digest. Under that shape the destination's PUT always satisfies its own
+// declaration, so same-length content that is not what the manifest
+// describes publishes cleanly and verifies cleanly — the binding proves
+// only that the transport did not corrupt what it was handed. Comparing
+// against the ladder the manifest itself supplies is what makes the
+// declaration mean the source's content.
+func TestNativeManifestBindsAgainstItsManifest(t *testing.T) {
+	parts := [][]byte{[]byte("part-one|"), []byte("part-two")}
+	whole := append(append([]byte{}, parts[0]...), parts[1]...)
+	// Same length, different bytes: the only substitution a length check
+	// and a self-consistent digest both miss.
+	drifted := append(append([]byte{}, parts[0]...), []byte("EVIL-two")...)
+
+	for _, tc := range []struct {
+		name     string
+		static   bool
+		drift    bool
+		copied   int64
+		errorHas string
+	}{
+		{name: "slo_matches_its_manifest", static: true, copied: 1},
+		{name: "slo_content_drifted", static: true, drift: true, errorHas: "did not match its manifest"},
+		{name: "dlo_matches_its_segments", copied: 1},
+		{name: "dlo_content_drifted", drift: true, errorHas: "did not match its manifest"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newWorld(t)
+			ctx := context.Background()
+			w.srcMock.AddContainer("media_segments", "standard")
+			const name = "weird//manifest"
+			if tc.static {
+				served := whole
+				if tc.drift {
+					served = drifted
+				}
+				placeSLO(t, w.srcMock, "media", name, parts, served)
+			} else {
+				for i, part := range parts {
+					sum := md5.Sum(part)
+					w.srcMock.PutObject("media_segments", fmt.Sprintf("%s/%d", name, i), swifttest.Object{
+						Bytes: int64(len(part)), ETag: hex.EncodeToString(sum[:]), Data: part,
+					})
+				}
+				w.srcMock.PutObject("media", name, swifttest.Object{
+					Manifest: "media_segments/" + name + "/", ContentType: "video/mp4",
+				})
+				if tc.drift {
+					// The segment's recorded entity tag stays as it was, so
+					// the listing still recombines to the aggregate the HEAD
+					// reports and the ladder still builds: only the bytes the
+					// store serves for that run have changed.
+					sum := md5.Sum(parts[1])
+					w.srcMock.PutObject("media_segments", fmt.Sprintf("%s/1", name), swifttest.Object{
+						Bytes: int64(len(parts[1])), ETag: hex.EncodeToString(sum[:]), Data: []byte("EVIL-two"),
+					})
+				}
+			}
+			before, err := w.src.ObjectDetail(ctx, "media", name)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			report, err := newExecutor(t, w, nil).Run(ctx, []plan.Item{{
+				Name: name, Verdict: plan.VerdictNew, Route: plan.RouteNative, Reason: plan.ReasonPossibleManifest,
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if report.Copied != tc.copied {
+				t.Fatalf("report = %+v, want %d copied", report, tc.copied)
+			}
+			if tc.errorHas == "" {
+				if len(report.Failures) != 0 {
+					t.Fatalf("report = %+v", report)
+				}
+				// The declaration the store enforced is the digest of the
+				// bytes that matched, so the destination carries it.
+				sum := md5.Sum(whole)
+				d := headDst(t, w, name)
+				if d.Class != swiftcontrol.ClassPlain || d.ETag != hex.EncodeToString(sum[:]) || d.ContentLength != int64(len(whole)) {
+					t.Errorf("materialized = %+v, want a plain %d-byte object with the verified digest", d, len(whole))
+				}
+			} else {
+				if len(report.Failures) != 1 {
+					t.Fatalf("report = %+v, want one failure", report)
+				}
+				if got := report.Failures[0]; got.Stage != "native-hold" || !strings.Contains(got.Err, tc.errorHas) {
+					t.Errorf("failure = %+v, want %q at the native-hold stage", got, tc.errorHas)
+				}
+				// Refused BEFORE the destination PUT: nothing was placed, so
+				// there is no residue and no overwrite decision to make.
+				if _, err := w.dst.ObjectDetail(ctx, "backup", name); err == nil {
+					t.Error("a source whose content did not match its manifest published something")
+				}
+			}
+			// A read never writes: the source is as it was either way.
+			after, err := w.src.ObjectDetail(ctx, "media", name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if after.ETag != before.ETag || after.ContentLength != before.ContentLength {
+				t.Errorf("source changed: %+v, was %+v", after, before)
+			}
+		})
+	}
+}
+
+// The hold's two wrappers, at the boundaries the route depends on: the cap
+// refuses rather than growing, and the body is closed once even though the
+// comparison and this route's own deferred close both close it.
+func TestHeldManifestWrappers(t *testing.T) {
+	hold := &cappedHold{limit: 4}
+	if n, err := hold.Write([]byte("DATA")); n != 4 || err != nil {
+		t.Fatalf("write at the limit = %d, %v", n, err)
+	}
+	if _, err := hold.Write([]byte("X")); err == nil || !strings.Contains(err.Error(), "4-byte hold") {
+		t.Errorf("write past the limit = %v, want the limit named", err)
+	}
+	if string(hold.bytes) != "DATA" {
+		t.Errorf("held = %q, want the refused write excluded", hold.bytes)
+	}
+
+	failure := errors.New("source body close failed")
+	closes := 0
+	once := closeOnce(readCloser{Reader: strings.NewReader(""), Closer: closerFunc(func() error {
+		closes++
+		return failure
+	})})
+	if err := once.Close(); !errors.Is(err, failure) {
+		t.Errorf("first close = %v, want the body's own failure", err)
+	}
+	if err := once.Close(); err != nil {
+		t.Errorf("second close = %v, want nil", err)
+	}
+	if closes != 1 {
+		t.Errorf("delegated closes = %d, want one", closes)
+	}
+}
+
+// A plain source that does not state a complete MD5 states nothing this route
+// can declare, so it is not attempted. Swift states one for every plain object;
+// this is the shape of a source that is not what it says it is, and the point of
+// naming it here is that the alternative is a PUT the store refuses, reported as
+// a commit failure for a source that was never usable.
+func TestNativePlainSourceWithoutAnMD5IsNotAttempted(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	w.srcMock.PutObject("media", "weird//short", swifttest.Object{
+		Bytes: 5, ETag: "short", Data: []byte("alpha"), ContentType: "text/plain",
+	})
+
+	report, err := newExecutor(t, w, nil).Run(ctx, []plan.Item{{
+		Name: "weird//short", Verdict: plan.VerdictNew, Route: plan.RouteNative, Reason: plan.ReasonUnsafeName,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Copied != 0 || len(report.Failures) != 1 {
+		t.Fatalf("report = %+v", report)
+	}
+	if got := report.Failures[0]; got.Stage != "native-etag" || !strings.Contains(got.Err, "complete MD5") {
+		t.Errorf("failure = %+v, want the missing MD5 named at the native-etag stage", got)
+	}
+	if _, err := w.dst.ObjectDetail(ctx, "backup", "weird//short"); err == nil {
+		t.Error("a source with no declarable digest published something")
+	}
+}
+
+// Out-of-order items stop the job rather than quietly losing a name's evidence.
+// The spool carrying a native copy's proof is read forward, so a name written out
+// of order would be skipped by that read and a good copy would lose its verified
+// credit with nothing saying why. Run's contract already requires ascending names
+// and plan.Copy produces them; this is what happens when a caller breaks it. The
+// publication has already happened by then, which is why the run stops and
+// reports rather than pretending otherwise. The sources here are manifests
+// because those are the copies whose proof the spool carries.
+func TestNativeOutOfOrderItemsStopTheJob(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	w.srcMock.AddContainer("media_segments", "standard")
+	for _, name := range []string{"b//dlo", "a//dlo"} {
+		chunk := []byte("payload-" + name)
+		sum := md5.Sum(chunk)
+		w.srcMock.PutObject("media_segments", name+"/0", swifttest.Object{
+			Bytes: int64(len(chunk)), ETag: hex.EncodeToString(sum[:]), Data: chunk,
+		})
+		w.srcMock.PutObject("media", name, swifttest.Object{
+			Manifest: "media_segments/" + name + "/", ContentType: "video/mp4",
+		})
+	}
+	_, err := newExecutor(t, w, nil).Run(ctx, []plan.Item{
+		{Name: "b//dlo", Verdict: plan.VerdictNew, Route: plan.RouteNative, Reason: plan.ReasonPossibleManifest},
+		{Name: "a//dlo", Verdict: plan.VerdictNew, Route: plan.RouteNative, Reason: plan.ReasonPossibleManifest},
+	})
+	if err == nil || !strings.Contains(err.Error(), "strictly ordered") {
+		t.Fatalf("Run = %v, want the spool's ordering requirement named", err)
+	}
+	// Both names were published before the second one's evidence could not be
+	// stored, and nothing deletes them: the stop is about evidence, not residue.
+	for _, name := range []string{"b//dlo", "a//dlo"} {
+		if _, err := w.dst.ObjectDetail(ctx, "backup", name); err != nil {
+			t.Errorf("%q: %v", name, err)
+		}
+	}
+}
+
+// A copy's own evidence is about a SOURCE as well as a destination. The native
+// route publishes unstamped, so what a successful copy proved is kept in the job
+// rather than on the object — and a destination still holding exactly the verified
+// bytes says nothing once the source has become different content of the same
+// length. The copy was true when it was made; the two sides no longer agree, and
+// a fresh pass that credited it would turn a stale proof into a current one.
+func TestNativeEvidenceRejectsAChangedSource(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		change   bool
+		verified int64
+		failures int
+	}{
+		{name: "source_unchanged_is_verified", verified: 1},
+		{name: "source_changed_after_the_copy_is_not", change: true, failures: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newWorld(t)
+			ctx := context.Background()
+			w.srcMock.AddContainer("media_segments", "standard")
+			for i, chunk := range []string{"part-one|", "part-two"} {
+				sum := md5.Sum([]byte(chunk))
+				w.srcMock.PutObject("media_segments", fmt.Sprintf("weird//dlo/%d", i), swifttest.Object{
+					Bytes: int64(len(chunk)), ETag: hex.EncodeToString(sum[:]), Data: []byte(chunk),
+				})
+			}
+			w.srcMock.PutObject("media", "weird//dlo", swifttest.Object{
+				Manifest: "media_segments/weird//dlo/", ContentType: "video/mp4",
+			})
+
+			executor := newExecutor(t, w, nil)
+			report, err := executor.Run(ctx, []plan.Item{{
+				Name: "weird//dlo", Verdict: plan.VerdictNew, Route: plan.RouteNative, Reason: plan.ReasonPossibleManifest,
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if report.Copied != 1 || len(report.Failures) != 0 {
+				t.Fatalf("report = %+v", report)
+			}
+			if tc.change {
+				// An honest source change: the segment's recorded entity tag
+				// moves with its bytes, so the manifest's aggregate moves too and
+				// the source now describes different content of the same length.
+				chunk := []byte("EVIL-two")
+				sum := md5.Sum(chunk)
+				w.srcMock.PutObject("media_segments", "weird//dlo/1", swifttest.Object{
+					Bytes: int64(len(chunk)), ETag: hex.EncodeToString(sum[:]), Data: chunk,
+				})
+			}
+
+			verify, err := executor.Verify(ctx,
+				w.src.Objects(ctx, "media", swiftcontrol.ObjectListOptions{Deep: true}),
+				w.dst.Objects(ctx, "backup", swiftcontrol.ObjectListOptions{Deep: true}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if verify.Verified != tc.verified || len(verify.Failures) != tc.failures {
+				t.Fatalf("verify = %+v, want %d verified and %d failures", verify, tc.verified, tc.failures)
+			}
+			// The destination is untouched either way: this is about what may be
+			// claimed, not about repairing anything (ADR 0020).
+			if d := headDst(t, w, "weird//dlo"); d.ContentLength != 17 {
+				t.Errorf("destination changed: %+v", d)
+			}
+		})
+	}
+}
+
+// A name this job recorded as a content failure takes no verified credit, no
+// Same verdict and no skip in the same job, independently of any stamp (ADR
+// 0045). The fresh listing-grade pass is where that bites: a destination replaced
+// with equal bytes after the failure makes two listing rows agree, and that
+// agreement is about the rows, not about the copy this job already found wrong.
+func TestRecordedContentFailureTakesNoLaterCredit(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		sabotage bool
+		copied   int64
+		verified int64
+		failures int
+	}{
+		{name: "healthy_copy_is_verified", copied: 1, verified: 1},
+		{name: "recorded_failure_is_not_verified_when_the_rows_later_agree", sabotage: true, failures: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			const name = "weird//plain"
+			body := []byte("alpha")
+			var w *world
+			// The destination is replaced between this route's PUT and the HEAD
+			// that checks it, which is what the post-PUT comparison exists to
+			// catch. The replacement is same-length, so nothing but the digest
+			// says it happened.
+			w = newWorldWrappingDest(t, func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+					next.ServeHTTP(rw, r)
+					if !tc.sabotage || r.Method != http.MethodPut || !strings.HasSuffix(r.URL.Path, "/"+name) {
+						return
+					}
+					sum := md5.Sum([]byte("EVILS"))
+					w.dstMock.PutObject("backup", name, swifttest.Object{
+						Bytes: 5, ETag: hex.EncodeToString(sum[:]), Data: []byte("EVILS"), ContentType: "text/plain",
+					})
+				})
+			})
+			seed(w.srcMock, "media", name, body, nil)
+
+			executor := newExecutor(t, w, nil)
+			report, err := executor.Run(ctx, []plan.Item{{
+				Name: name, Verdict: plan.VerdictNew, Route: plan.RouteNative, Reason: plan.ReasonUnsafeName,
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if report.Copied != tc.copied {
+				t.Fatalf("report = %+v, want %d copied", report, tc.copied)
+			}
+			if tc.sabotage {
+				if len(report.Failures) != 1 || !strings.Contains(report.Failures[0].Err, "declared") {
+					t.Fatalf("report = %+v, want the declaration named", report)
+				}
+				// Equal bytes restored before verification: the rows now agree.
+				sum := md5.Sum(body)
+				w.dstMock.PutObject("backup", name, swifttest.Object{
+					Bytes: int64(len(body)), ETag: hex.EncodeToString(sum[:]), Data: body, ContentType: "text/plain",
+				})
+				d := headDst(t, w, name)
+				if d.ETag != hex.EncodeToString(sum[:]) {
+					t.Fatalf("the fixture did not restore equal bytes: %+v", d)
+				}
+			}
+
+			verify, err := executor.Verify(ctx,
+				w.src.Objects(ctx, "media", swiftcontrol.ObjectListOptions{Deep: true}),
+				w.dst.Objects(ctx, "backup", swiftcontrol.ObjectListOptions{Deep: true}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if verify.Verified != tc.verified || len(verify.Failures) != tc.failures {
+				t.Fatalf("verify = %+v, want %d verified and %d failures", verify, tc.verified, tc.failures)
+			}
+			if tc.sabotage && !strings.Contains(verify.Failures[0].Err, "recorded a content failure") {
+				t.Errorf("verify failure = %+v, want the recorded failure named", verify.Failures[0])
+			}
+		})
+	}
+}
+
+// The spool itself: ordering, framing, forward lookup and a latched write
+// failure. These are the properties the verification pass trusts without being
+// able to see them, and the reason the evidence is bounded by construction — one
+// record resident at a time, whatever the namespace size.
+func TestCopyEvidenceSpool(t *testing.T) {
+	var broken evidenceLog
+	t.Cleanup(func() {
+		if err := broken.close(); err != nil {
+			t.Error(err)
+		}
+	})
+	if err := broken.copied("a", "v1:3:aaa", "dddd"); err != nil {
+		t.Fatal(err)
+	}
+	if err := broken.contentFailure("a"); err == nil {
+		t.Error("a repeated name was accepted")
+	}
+	// That refusal latched, and every later use has to report it rather than
+	// hand back partial evidence.
+	if err := broken.contentFailure("z"); err == nil {
+		t.Error("the spool kept writing after a refusal")
+	}
+	if _, err := broken.reader(); err == nil {
+		t.Error("the verification pass was given a broken spool")
+	}
+
+	var log evidenceLog
+	t.Cleanup(func() {
+		if err := log.close(); err != nil {
+			t.Error(err)
+		}
+	})
+	for _, name := range []string{"a", "c", "e"} {
+		if err := log.copied(name, "v1:1:"+name, "digest-"+name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := log.contentFailure("g"); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := log.reader()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Forward only, including names the spool does not hold and names that fall
+	// between two it does.
+	for _, tc := range []struct {
+		name, payload string
+		kind          evidenceKind
+	}{
+		{name: "a", kind: evidenceCopied, payload: "v1:1:a\x00digest-a"},
+		{name: "b", kind: evidenceNone},
+		{name: "c", kind: evidenceCopied, payload: "v1:1:c\x00digest-c"},
+		{name: "d", kind: evidenceNone},
+		{name: "e", kind: evidenceCopied, payload: "v1:1:e\x00digest-e"},
+		{name: "g", kind: evidenceContentFailure},
+	} {
+		kind, payload, err := reader.at(tc.name)
+		if err != nil {
+			t.Fatalf("at %q: %v", tc.name, err)
+		}
+		if kind != tc.kind || payload != tc.payload {
+			t.Errorf("at %q = %d %q, want %d %q", tc.name, kind, payload, tc.kind, tc.payload)
+		}
+	}
+	if err := reader.finish(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The store's own refusal is a content disagreement too. A PUT whose body does
+// not hash to what this route declared comes back 422 with nothing stored, and
+// that verdict is about this name's content, so ADR 0045's same-job exclusion
+// covers it. Without the record a later equal pair of listing rows verifies a
+// name whose publication the store refused.
+func TestDeclaredDigestRefusalTakesNoLaterCredit(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		alter    bool
+		copied   int64
+		verified int64
+		failures int
+	}{
+		{name: "healthy_copy_is_verified", copied: 1, verified: 1},
+		{name: "refused_then_equal_is_not_verified", alter: true, failures: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			const name = "weird//refused"
+			body := []byte("alpha")
+			// The body is altered on its way to the store while the declared tag
+			// and the conditional header travel untouched, so what answers is the
+			// store's real verdict rather than a fixture's.
+			w := newWorldWrappingDest(t, func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+					if tc.alter && r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/"+name) {
+						r.Body = io.NopCloser(strings.NewReader("EVILS"))
+						r.ContentLength = 5
+					}
+					next.ServeHTTP(rw, r)
+				})
+			})
+			seed(w.srcMock, "media", name, body, nil)
+
+			executor := newExecutor(t, w, nil)
+			report, err := executor.Run(ctx, []plan.Item{{
+				Name: name, Verdict: plan.VerdictNew, Route: plan.RouteNative, Reason: plan.ReasonUnsafeName,
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if report.Copied != tc.copied {
+				t.Fatalf("report = %+v, want %d copied", report, tc.copied)
+			}
+			if tc.alter {
+				if len(report.Failures) != 1 {
+					t.Fatalf("report = %+v, want the refusal reported", report)
+				}
+				// Refused means nothing was stored, which is what makes the next
+				// step a fixture's placement rather than a repair.
+				if _, err := w.dst.ObjectDetail(ctx, "backup", name); err == nil {
+					t.Fatal("a refused publication left an object behind")
+				}
+				sum := md5.Sum(body)
+				w.dstMock.PutObject("backup", name, swifttest.Object{
+					Bytes: int64(len(body)), ETag: hex.EncodeToString(sum[:]), Data: body, ContentType: "text/plain",
+				})
+			}
+
+			verify, err := executor.Verify(ctx,
+				w.src.Objects(ctx, "media", swiftcontrol.ObjectListOptions{Deep: true}),
+				w.dst.Objects(ctx, "backup", swiftcontrol.ObjectListOptions{Deep: true}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if verify.Verified != tc.verified || len(verify.Failures) != tc.failures {
+				t.Fatalf("verify = %+v, want %d verified and %d failures", verify, tc.verified, tc.failures)
+			}
+			if tc.alter && !strings.Contains(verify.Failures[0].Err, "recorded a content failure") {
+				t.Errorf("verify failure = %+v, want the recorded failure named", verify.Failures[0])
+			}
+		})
+	}
+}
+
+// A spool that is not the one this job wrote releases nothing. The forward read
+// answers absence from the records it has passed, so a substituted record of the
+// same length would look like a name the spool never held, and absence is what
+// lets a name reach the pass's success paths. Validating the whole file before
+// the pass begins means no credit can be counted or SAVED against evidence that
+// is later contradicted — zeroing a returned count afterwards would not undo a
+// persisted observation.
+func TestCorruptEvidenceSpoolWithholdsCreditAndSavesNone(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		corrupt  bool
+		verified int64
+	}{
+		{name: "intact_spool_withholds_the_failed_name", verified: 0},
+		{name: "corrupt_spool_credits_nothing_at_all", corrupt: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			const name = "a//bad"
+			body := []byte("alpha")
+			var w *world
+			w = newWorldWrappingDest(t, func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+					next.ServeHTTP(rw, r)
+					if r.Method != http.MethodPut || !strings.HasSuffix(r.URL.Path, "/"+name) {
+						return
+					}
+					sum := md5.Sum([]byte("EVILS"))
+					w.dstMock.PutObject("backup", name, swifttest.Object{
+						Bytes: 5, ETag: hex.EncodeToString(sum[:]), Data: []byte("EVILS"), ContentType: "text/plain",
+					})
+				})
+			})
+			seed(w.srcMock, "media", name, body, nil)
+
+			var saved []string
+			recorder := &Recorder{
+				Admit:   func(Admission) error { return nil },
+				Execute: func(string, Observation) error { return nil },
+				Verify: func(itemName string, o Observation) error {
+					saved = append(saved, itemName+"="+string(o.Result))
+					return nil
+				},
+			}
+			executor := recordingExecutor(t, w, nil, recorder)
+			report, err := executor.Run(ctx, []plan.Item{{
+				Name: name, Verdict: plan.VerdictNew, Route: plan.RouteNative, Reason: plan.ReasonUnsafeName,
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if report.Copied != 0 || len(report.Failures) != 1 {
+				t.Fatalf("report = %+v, want the post-PUT comparison to fail it", report)
+			}
+			// Equal bytes restored, so the fresh listing rows agree and only the
+			// recorded failure stands between this name and verified credit.
+			sum := md5.Sum(body)
+			w.dstMock.PutObject("backup", name, swifttest.Object{
+				Bytes: int64(len(body)), ETag: hex.EncodeToString(sum[:]), Data: body, ContentType: "text/plain",
+			})
+			if tc.corrupt {
+				// One name swapped for another of the same length: the file's
+				// size and record count are untouched, and only its digest
+				// disagrees.
+				if _, err := executor.evidence.file.WriteAt([]byte("b//bad"), 4); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			verify, err := executor.Verify(ctx,
+				w.src.Objects(ctx, "media", swiftcontrol.ObjectListOptions{Deep: true}),
+				w.dst.Objects(ctx, "backup", swiftcontrol.ObjectListOptions{Deep: true}))
+			if tc.corrupt {
+				if err == nil || !strings.Contains(err.Error(), "incomplete or corrupt") {
+					t.Fatalf("Verify = %v, want the spool's integrity reported", err)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			if verify.Verified != tc.verified {
+				t.Errorf("verified = %d, want %d", verify.Verified, tc.verified)
+			}
+			// Neither case may leave a verified observation saved beside the
+			// failed execution. The intact spool withholds it by excluding the
+			// name; the corrupt one withholds it by not deciding at all.
+			for _, entry := range saved {
+				if strings.HasSuffix(entry, "=verified") {
+					t.Errorf("a verified observation was saved: %q (all: %q)", entry, saved)
+				}
+			}
+			if tc.corrupt && len(saved) != 0 {
+				t.Errorf("a corrupt spool still produced saved observations: %q", saved)
+			}
+		})
+	}
 }
