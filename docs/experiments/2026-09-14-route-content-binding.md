@@ -233,3 +233,113 @@ check of the same property, rather than treating an unreliable control as the be
 
 The correction to the product removes the dependency rather than making it more likely to
 hold: a rejected download no longer reaches the identity check at all.
+
+## What this probe reproduces now, measured 6 October 2026
+
+The tables above are what the probe measured on 14 September 2026 and are left as they
+were. This section records what the same probe, byte for byte, does at later heads. It is
+rerun rather than edited: each rerun checks the archived file's SHA-256 against the digest
+cited above before placing it, places it only for the run, removes it afterwards, and
+re-measures the source clean.
+
+| Case | 14 September 2026 | Now | Closed at |
+| --- | --- | --- | --- |
+| Native copy of a dynamic large object source | reproduced: 1 copied over different bytes | stopped reproducing | `10a98f6a`, [ADR 0083](../adr/0083-native-copy-content-binding.md) decision 1, [ADR 0084](../adr/0084-held-manifest-copy.md) and ADR 0045's native-copy obligations |
+| Native upload | reproduced: 1 copied and 1 verified | stopped reproducing | `27434353`, ADR 0045's native-upload obligation |
+| Staged upload commit | reproduced: 1 verified | stopped reproducing | `27434353`, ADR 0045's plain-commit obligation |
+| Native download | reproduced: 1 verified over different bytes | cannot reproduce | `c9c8a381`, [ADR 0045](../adr/0045-route-content-binding.md)'s download delivery |
+
+Each of the three that stopped reproducing did so with its own precondition still holding,
+which is what distinguishes a closed gap from a broken fixture. The probe deletes the
+declared entity tag on the way to the store, so the store has nothing to enforce and the
+altered bytes are published: the destination holds different bytes of the same length in
+every one of the three, and the probe says so in its own output before deciding. What
+changed is that the route now asks afterwards and reports, so no intended-failure assertion
+is reached. The three healthy controls pass in the same runs, so the fixture still carries
+bytes.
+
+The download case is different in kind, and what the rerun establishes about it is narrower
+than the other three. It stops at its own prerequisite — "nothing was placed, so the probe
+cannot speak to placement" — and that `ReadFile` failure is a `t.Fatalf`, so the case never
+reaches its verified-counter assertion and never inspects a diagnostic or a retained
+temporary. What the rerun shows is therefore only this: **the case no longer reaches its
+intended placement assertion.** It shows neither an open content defect nor, by itself, why
+nothing was placed.
+
+That the native download route compares before publishing and refuses with its temporary
+retained is established by separate evidence, not by this rerun: `finishNativeDownload` sets
+`contentMismatch` and skips cleanup before returning its failure, and the maintained cases in
+`internal/transfer/local/download_binding_test.go` assert the failed and unverified result
+with the bytes retained. A reader who takes the rerun's failure line as an open gap has it
+backwards, but the reason to say so is that source and those tests, not the absent file.
+
+A probe case that can no longer reach its own subject should be retired on its next revision.
+The archived file is deliberately not edited here, because it is cited by digest and a rerun
+of an edited probe would prove nothing.
+
+So the probe's exit stays non-zero while that one case remains in it. The exit code is not
+the result; each case's own output is.
+
+## What L05 stands at, 6 October 2026
+
+Same-size corruption, which is what this probe reproduces, is now reported or refused on the
+three writing routes it covers, and the reruns are the evidence for those three. That is the
+whole of what they establish. It is narrower than L05, and L05 is not closed by it.
+
+What this probe never reproduced is not the same as what remains unverified, and an earlier
+draft of this section ran the two together. The probe covers same-size corruption only. The
+cases below are outside its scope, and where coverage exists it is named rather than assumed:
+
+- **Missing and reordered segments** are refused on the native download route by
+  `TestNativeDownloadRefusesReorderedAndMissingRuns`, and on the copy routes by construction,
+  because a dynamic source's ladder is recombined against the aggregate its HEAD reports and
+  a stale, truncated, extended or reordered listing does not reproduce it. This probe does not
+  exercise either, so it is not the evidence for them.
+- **Source and publication substitution** is refused on the native download route by
+  `TestNativeDownloadRefusesASubstitutedSource` and
+  `TestNativeDownloadRefusesASubstitutedPublication`. Whole-job substitution — a source
+  container swapped under a running job — is named by L05 and is not covered anywhere; it
+  remains open.
+- **The engine download path is bound**, which an earlier draft of this section got wrong by
+  restating this record's September sentence under an October date.
+  [ADR 0070](../adr/0070-engine-download-content-binding.md) was accepted and implemented on
+  23 September 2026 and says in its own status line that it closes the gap ADR 0045 recorded
+  and ADR 0060 left unbound: `engineExpectation` requires the captured source identity,
+  matches it, and builds the ladder the held staged bytes are compared against before
+  publication, with the maintained proof and mutants in the
+  [engine-binding record](2026-09-22-engine-download-binding.md).
+- **A path that lies consistently to both the write and the read it is checked by.** Nothing
+  local can catch that, and no route here claims to. Still open, permanently.
+- **A source that changed before it was observed.** This limit belongs to the upload routes,
+  whose items carry no prior content identity, so a fresh observation has nothing to disagree
+  with. It does NOT describe the download routes, and an earlier draft of this bullet drew
+  their boundary in the wrong place — one step too early, which understated what they refuse.
+
+  A download captures a source identity for every planned item in the transfer-set walk at
+  Start, which is a later and firmer thing than the preview the interface showed before it.
+  A replacement arriving between that capture and the later check **is refused**: the native
+  route matches the opened object's own detail against the capture before it creates a
+  temporary and reports substitution with nothing published, which
+  [ADR 0060](../adr/0060-native-download-content-binding.md) requires and
+  `TestNativeDownloadRefusesASubstitutedSource` holds by replacing the source with
+  same-length bytes after preflight and requiring both the refusal and the absent file.
+  `engineExpectation` covers the same interval on the engine route and refuses an item whose
+  identity was never captured.
+
+  What is genuinely not covered is stated by ADR 0060 in its own words: the decision does not
+  freeze the source after `OpenObject`, and does not freeze the published name after the
+  confirmation pass. So the window is after the execution-time observation, not after Start.
+
+  The static-large-object caveat is narrower than that draft implied too. A listing row
+  carrying no SLO entity tag costs the one comparison that would detect a **same-size**
+  substitution from that listing; the captured length still has to agree, and the content is
+  still compared against the source's ladder as it streams.
+
+Two routes also differ in what their check can do, and the difference matters more than the
+checks having the same shape. A download compares before it publishes, so its check is a
+gate: nothing reaches the live name. A native copy, a native upload and a plain staged
+commit publish at the live name in one request, so theirs is a report: the bytes are already
+there, the item is failed and unverified, and the residue is retained under
+[ADR 0020](../adr/0020-recovery-containment.md). The declared entity tag on the PUT is the
+only thing that prevents those three, and it is defeated by any path that removes the
+header — which is precisely the path this probe models.
