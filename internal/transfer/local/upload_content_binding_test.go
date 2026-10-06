@@ -550,3 +550,179 @@ func TestStagedCommitRefusesACancelledStagedRead(t *testing.T) {
 		t.Errorf("a cancelled staged commit changed the account: %s", diff)
 	}
 }
+
+// strippingProxy alters the body of one object PUT to different bytes of the same
+// length AND deletes the declaration that would have let the store refuse it.
+// That is a middlebox, not a store: with the header gone the store has nothing to
+// enforce and keeps whatever it was handed, so the publication happens and only a
+// question asked afterwards can report it. alteringProxy above is the other half
+// of the pair — it keeps the header, so the store refuses and nothing is
+// published.
+func strippingProxy(t *testing.T, mock http.Handler, escapedPath string) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut && r.URL.EscapedPath() == escapedPath {
+			body, err := io.ReadAll(r.Body)
+			if err == nil && len(body) > 0 {
+				altered := append([]byte(nil), body...)
+				altered[0] ^= 0xff
+				r.Body = io.NopCloser(bytes.NewReader(altered))
+				r.ContentLength = int64(len(altered))
+				r.Header.Del("ETag")
+				r.Header.Del("Content-Md5")
+			}
+		}
+		mock.ServeHTTP(w, r)
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+// ADR 0045: a plain upload's live HEAD must report a plain object whose length
+// AND entity tag equal the local file's length and digest. Length alone was all
+// this asked before, so a path that removed the declared tag left the altered
+// bytes at the live name reported as copied and verified — the publication was
+// not prevented and nothing afterwards disagreed with it.
+//
+// Both routes are held, because both publish a plain object from the same file:
+// the native PUT, and the plain staged commit, which ADR 0045 says in terms no
+// staged comparison substitutes for.
+func TestPlainUploadReportsAStrippedDeclaration(t *testing.T) {
+	const body = "the bytes this job planned to send"
+	for _, tc := range []struct {
+		name   string
+		staged bool
+	}{
+		{name: "native"},
+		{name: "staged_plain_commit", staged: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := swifttest.New("test:tester", "testing")
+			mock.AddContainer("media", "standard")
+			server := strippingProxy(t, mock, "/v1/AUTH_test/media/docs/object")
+			session := bindingSession(t, server)
+			path := writeFile(t, t.TempDir(), "object", body)
+			_, item := uploadOne(t, session, "media", "docs/", path)
+
+			var result uploadResult
+			if tc.staged {
+				stagedName := ".aeronautes/stage/binding/batch/object"
+				seed(mock, "media", stagedName, body)
+				result = commitStagedUpload(t.Context(), session, "media", stagedName, item, nil)
+			} else {
+				item.Route = "native"
+				file, err := os.Open(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				result = nativeUpload(t.Context(), session, "media", item, file)
+			}
+
+			if result.Result != transfercopy.ResultFailed || result.Effect != transfercopy.EffectUnresolved {
+				t.Fatalf("a stripped declaration was not reported: %+v", result.Observation)
+			}
+			if result.Diagnostic.Code != transfercopy.CodeUnverified {
+				t.Errorf("code = %v, want the content verdict", result.Diagnostic.Code)
+			}
+			if result.verification == nil || result.verification.Result == transfercopy.ResultVerified {
+				t.Errorf("verification = %+v, want anything but verified", result.verification)
+			}
+			// The bytes ARE at the live name: nothing prevented this, and the
+			// effect is unresolved residue rather than a clean refusal. Saying so
+			// is the whole of what this check buys.
+			live, err := session.ObjectDetail(t.Context(), "media", "docs/object")
+			if err != nil {
+				t.Fatalf("the fixture published nothing, so the case proves nothing: %v", err)
+			}
+			if live.ContentLength != int64(len(body)) {
+				t.Errorf("live = %+v, want the altered body at the same length", live)
+			}
+			if strings.Trim(live.ETag, `"`) == md5hex(body) {
+				t.Error("the fixture did not alter the published bytes")
+			}
+		})
+	}
+}
+
+// The control for the pair above: with nothing stripped and nothing altered, both
+// routes still publish and verify. A check that refused everything would pass the
+// cases above and fail these.
+func TestPlainUploadVerifiesWhatItPublished(t *testing.T) {
+	const body = "the bytes this job planned to send"
+	for _, tc := range []struct {
+		name   string
+		staged bool
+	}{
+		{name: "native"},
+		{name: "staged_plain_commit", staged: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := swifttest.New("test:tester", "testing")
+			mock.AddContainer("media", "standard")
+			server := httptest.NewServer(mock)
+			t.Cleanup(server.Close)
+			session := bindingSession(t, server)
+			path := writeFile(t, t.TempDir(), "object", body)
+			_, item := uploadOne(t, session, "media", "docs/", path)
+
+			var result uploadResult
+			if tc.staged {
+				stagedName := ".aeronautes/stage/binding/batch/object"
+				seed(mock, "media", stagedName, body)
+				result = commitStagedUpload(t.Context(), session, "media", stagedName, item, nil)
+			} else {
+				item.Route = "native"
+				file, err := os.Open(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				result = nativeUpload(t.Context(), session, "media", item, file)
+			}
+			if result.Result != transfercopy.ResultCopied || result.Effect != transfercopy.EffectReportedApplied {
+				t.Fatalf("an unaltered upload did not publish: %+v", result.Observation)
+			}
+			if result.verification == nil || result.verification.Result != transfercopy.ResultVerified {
+				t.Errorf("verification = %+v, want verified", result.verification)
+			}
+			live, err := session.ObjectDetail(t.Context(), "media", "docs/object")
+			if err != nil || strings.Trim(live.ETag, `"`) != md5hex(body) {
+				t.Fatalf("published object = %+v %v", live, err)
+			}
+		})
+	}
+}
+
+// A manifest commit is NOT asked for the file's digest. Its live entity tag is an
+// aggregate over segment tags, which can never equal the content's own MD5, so a
+// pass that compared them would refuse content that matches. What binds that
+// publication is the staged content comparison, which runs before the committing
+// fact and the manifest PUT.
+func TestManifestCommitIsNotAskedForTheFileDigest(t *testing.T) {
+	const body = "0123456789abcdef"
+	mock := swifttest.New("test:tester", "testing")
+	mock.AddContainer("media", "standard")
+	mock.AddContainer("media_segments", "standard")
+	server := httptest.NewServer(mock)
+	t.Cleanup(server.Close)
+	session := bindingSession(t, server)
+	path := writeFile(t, t.TempDir(), "object", body)
+	_, item := uploadOne(t, session, "media", "docs/", path)
+
+	stagedName := ".aeronautes/stage/binding/batch/object"
+	seed(mock, "media_segments", "upload/0001", "01234567")
+	seed(mock, "media_segments", "upload/0002", "89abcdef")
+	mock.PutObject("media", stagedName, swifttest.Object{Manifest: "media_segments/upload/"})
+
+	result := commitStagedUpload(t.Context(), session, "media", stagedName, item, nil)
+	if result.Result != transfercopy.ResultCopied || result.verification == nil ||
+		result.verification.Result != transfercopy.ResultVerified {
+		t.Fatalf("a manifest commit of the source's own content did not verify: %+v %+v", result.Observation, result.verification)
+	}
+	live, err := session.ObjectDetail(t.Context(), "media", "docs/object")
+	if err != nil || live.Class != swiftcontrol.ClassDLO {
+		t.Fatalf("published object = %+v %v", live, err)
+	}
+	if strings.Trim(live.ETag, `"`) == md5hex(body) {
+		t.Error("this fixture no longer distinguishes an aggregate tag from a content digest")
+	}
+}

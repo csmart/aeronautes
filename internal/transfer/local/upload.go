@@ -194,10 +194,37 @@ func (u *uploadRun) copy(ctx context.Context, session *swiftcontrol.Session, eng
 	}
 }
 
-func verifyUpload(ctx context.Context, dst *swiftcontrol.Session, container string, item UploadItem) uploadResult {
+// verifyUpload asks the live name what it holds, after the publication exists.
+//
+// livePlainDigest is the file's own MD5 when this route published a plain object,
+// and empty when it published a manifest whose binding is the staged content
+// comparison that ran before the commit. For a plain publication ADR 0045 requires
+// the live HEAD to report a plain object whose length AND entity tag equal the
+// local file's length and digest: a plain Swift object's entity tag IS the MD5 of
+// its content, so that is the one question this pass can ask that distinguishes
+// the file's bytes from other bytes of the same length.
+//
+// Length alone was all this checked before, which is what ADR 0045 named as the
+// defect. A declared entity tag on the PUT makes the store refuse a body that
+// does not hash to it, but a path between this process and the store can remove
+// that header, and then nothing had asked. The store is the only party that can
+// PREVENT such a publication; this is the party that can report it.
+func verifyUpload(ctx context.Context, dst *swiftcontrol.Session, container string, item UploadItem,
+	livePlainDigest string) uploadResult {
 	live, err := dst.ObjectDetail(ctx, container, item.Name)
 	if err == nil && live.ContentLength != item.Size {
 		err = fmt.Errorf("size %d != local %d", live.ContentLength, item.Size)
+	}
+	if err == nil && livePlainDigest != "" {
+		// The class is asked first and separately. A manifest at a name this
+		// route published as a plain object reports an aggregate over segments
+		// rather than a content digest, so comparing the two values would refuse
+		// for the wrong reason and say the wrong thing about what is live.
+		if live.Class != swiftcontrol.ClassPlain {
+			err = fmt.Errorf("live object is %s, this upload published a plain object", live.Class)
+		} else if tag := strings.Trim(live.ETag, `"`); !strings.EqualFold(tag, livePlainDigest) {
+			err = fmt.Errorf("entity tag %s != local %s", tag, livePlainDigest)
+		}
 	}
 	if err != nil {
 		result := uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageVerification, transfercopy.CodeUnverified, "verify", err)
@@ -440,7 +467,9 @@ func nativeUpload(ctx context.Context, dst *swiftcontrol.Session, container stri
 		}
 		return uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageCommit, transfercopy.CodeIO, "native-put", err)
 	}
-	return verifyUpload(ctx, dst, container, item)
+	// The digest this route declared is also what the live name must report:
+	// this publication is a plain object and nothing else was sent.
+	return verifyUpload(ctx, dst, container, item, declared)
 }
 
 func commitStagedUpload(ctx context.Context, dst *swiftcontrol.Session, container, stagedName string,
@@ -541,7 +570,17 @@ func commitStagedUpload(ctx context.Context, dst *swiftcontrol.Session, containe
 			return result
 		}
 	}
-	result := verifyUpload(ctx, dst, container, item)
+	// A plain commit published the staged bytes themselves, which were compared
+	// with the file before being read, so the live name must report the file's
+	// own digest. A manifest commit published an empty body whose live entity tag
+	// is an aggregate over segments, and what binds it is the staged content
+	// comparison above, which ADR 0042's ordering already put before the
+	// committing fact and the manifest PUT.
+	livePlainDigest := declared
+	if staged.Class == swiftcontrol.ClassDLO {
+		livePlainDigest = ""
+	}
+	result := verifyUpload(ctx, dst, container, item, livePlainDigest)
 	result.addIssue(transfercopy.StageRecording, "commit-record", recordErr)
 	result.addIssue(transfercopy.StageStaging, "staged-close", closeErr)
 	if result.Result == transfercopy.ResultCopied && recordErr == nil {
