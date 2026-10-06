@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"iter"
+	"strings"
 
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	"github.com/csmart/aeronautes/internal/transfer/plan"
@@ -36,6 +37,12 @@ func (e *Executor) Verify(ctx context.Context, source, dest listingStream) (*Ver
 	if err != nil {
 		return report, err
 	}
+	// Opened once and read forward beside the refusal spool, in the same
+	// ascending name order execution wrote both.
+	evidence, err := e.evidence.reader()
+	if err != nil {
+		return report, err
+	}
 	_, err = plan.Copy(ctx, source, dest, e.cfg.SrcPrefix, e.cfg.DstPrefix, func(item plan.Item) error {
 		excluded, err := refused.contains(item.Name)
 		if err != nil {
@@ -44,7 +51,11 @@ func (e *Executor) Verify(ctx context.Context, source, dest listingStream) (*Ver
 		if excluded || item.Verdict == plan.VerdictDestOnly {
 			return nil
 		}
-		observation, failure := e.verifyItem(ctx, item)
+		kind, payload, err := evidence.at(item.Name)
+		if err != nil {
+			return err
+		}
+		observation, failure := e.verifyItem(ctx, item, kind, payload)
 		if failure == nil {
 			report.Verified++
 		} else {
@@ -55,12 +66,24 @@ func (e *Executor) Verify(ctx context.Context, source, dest listingStream) (*Ver
 		}
 		return nil
 	})
-	return report, errors.Join(err, refused.finish())
+	return report, errors.Join(err, refused.finish(), evidence.finish())
 }
 
-func (e *Executor) verifyItem(ctx context.Context, item plan.Item) (Observation, error) {
+func (e *Executor) verifyItem(ctx context.Context, item plan.Item, kind evidenceKind, payload string) (Observation, error) {
 	var err error
 	code := CodeUnverified
+	// Before any success path, including the listing-grade Same verdict and the
+	// HEAD-grade provenEqual below. ADR 0045: a name this executor recorded as a
+	// content failure is not eligible for a verified count, a Same verdict or a
+	// skip in the same job, independently of the stamp. A fresh listing can say
+	// Same about a name whose publication this job already found wrong — a
+	// destination replaced with equal bytes after the fact is enough — and that
+	// agreement is about two listing rows, not about the copy that failed.
+	if kind == evidenceContentFailure {
+		err = errors.New("this job recorded a content failure for this name, so no later agreement verifies it")
+		return Observation{Result: ResultFailed, Effect: EffectNotAttempted,
+			Diagnostic: ClassifyDiagnostic(StageVerification, code, err)}, err
+	}
 	switch item.Verdict {
 	case plan.VerdictSame:
 		return Observation{Result: ResultVerified, Effect: EffectNotAttempted}, nil
@@ -72,7 +95,7 @@ func (e *Executor) verifyItem(ctx context.Context, item plan.Item) (Observation,
 		}
 		if err != nil {
 			code = CodeUnknown
-		} else if provenEqual(src, dst) {
+		} else if provenEqual(src, dst) || nativeCopyHolds(kind, payload, src, dst) {
 			return Observation{Result: ResultVerified, Effect: EffectNotAttempted}, nil
 		} else {
 			err = errors.New("equality unprovable after copy")
@@ -87,6 +110,41 @@ func (e *Executor) verifyItem(ctx context.Context, item plan.Item) (Observation,
 	}
 	return Observation{Result: ResultFailed, Effect: EffectNotAttempted,
 		Diagnostic: ClassifyDiagnostic(StageVerification, code, err)}, err
+}
+
+// nativeCopyHolds answers whether this job's own native route published this
+// name, compared the published object against the source's content, and whether
+// BOTH ends still look the way they did: the live destination still reports the
+// digest that comparison settled on, and the source still presents the identity
+// the comparison was made against.
+//
+// Both halves are needed, and the source half is the one a first version of this
+// left out. A destination can still hold exactly the verified bytes while the
+// source has since been changed to different content of the same length, in which
+// case the copy was true when it was made and the two sides no longer agree. The
+// fresh pass is what notices that, and crediting it would turn a stale proof into
+// a current one. The identity compared is the same value the fingerprint used to
+// assert remotely, so the check is as strong as the stamp was, kept in this job
+// instead of written onto the object.
+//
+// This exists because ADR 0045 stops the native route stamping: the stamp would
+// have to be written in the publishing request, before anything is checked, which
+// is what made a detected failure usable as proof. Without a stamp, provenEqual
+// cannot settle a manifest source whose destination is a plain object, so the
+// successful comparison is retained for this job and nothing else. It is
+// deliberately weaker than a stamp in the one way that matters: a later run holds
+// none of it, so a later equality or skip decision stays conservative.
+func nativeCopyHolds(kind evidenceKind, payload string, src, dst *swiftcontrol.ObjectDetail) bool {
+	if kind != evidenceCopied {
+		return false
+	}
+	identity, digest, ok := sourceIdentityAndDigest(payload)
+	if !ok || identity == "" || digest == "" {
+		return false
+	}
+	return identity == fingerprint(src.ContentLength, src.ETag) &&
+		dst.Class == swiftcontrol.ClassPlain &&
+		strings.Trim(dst.ETag, `"`) == digest
 }
 
 func (r *VerifyReport) fail(name, stage string, err error) {

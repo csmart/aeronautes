@@ -381,7 +381,7 @@ func TestCheckedVerificationVerdicts(t *testing.T) {
 		{"new", plan.VerdictNew, CodeUnverified, 0}, {"changed", plan.VerdictChanged, CodeUnverified, 0},
 	} {
 		t.Run(tc.name+"/"+string(tc.verdict), func(t *testing.T) {
-			o, err := e.verifyItem(t.Context(), plan.Item{Name: tc.name, Verdict: tc.verdict})
+			o, err := e.verifyItem(t.Context(), plan.Item{Name: tc.name, Verdict: tc.verdict}, evidenceNone, "")
 			want := Observation{Result: ResultVerified, Effect: EffectNotAttempted}
 			if tc.code != "" {
 				want.Result = ResultFailed
