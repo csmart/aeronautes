@@ -186,17 +186,60 @@ func shutdownChild(t *testing.T, h *Harness, mode string) {
 	}
 	stage := filepath.Join(root, ".aeronautes-stage-"+id)
 	var writing string
-	lifetimeAwait(t, "real child partial bytes", func() bool {
+	// What the stage held on the last look, reported if the wait runs out.
+	//
+	// The body barrier establishes progress at the fixture proxy and nothing
+	// further: between that proxy and these bytes reaching disk sit this job's
+	// own scoped gateway, which copies the upstream response to the child under a
+	// write deadline, and then the child itself. So the wait can run out without
+	// the child ever having been handed what the barrier released.
+	//
+	// This records the last filesystem observation rather than a cause. "Timed
+	// out" alone cannot tell a reader whether nothing matched, something short
+	// matched, or something long enough matched that does not begin where the
+	// object does, and those point at different places to look next. None of them
+	// identifies the initiating failure.
+	var seen []string
+	lifetimeAwaitReporting(t, "real child partial bytes", func() []string { return seen }, func() bool {
 		paths, err := filepath.Glob(filepath.Join(stage, "*"))
 		if err != nil {
 			t.Fatal(err)
 		}
+		seen = seen[:0]
 		for _, path := range paths {
 			data, err := os.ReadFile(path)
-			if err == nil && len(data) >= 64*1024 && bytes.Equal(data[:64*1024], body[:64*1024]) {
-				writing = path
-				return true
+			switch {
+			case err != nil:
+				seen = append(seen, fmt.Sprintf("%s: %v", filepath.Base(path), err))
+				continue
+			case len(data) < 64*1024:
+				seen = append(seen, fmt.Sprintf("%s: %d bytes, want at least %d",
+					filepath.Base(path), len(data), 64*1024))
+				continue
+			case !bytes.Equal(data[:64*1024], body[:64*1024]):
+				seen = append(seen, fmt.Sprintf("%s: %d bytes whose first %d do not match the object",
+					filepath.Base(path), len(data), 64*1024))
+				continue
 			}
+			writing = path
+			return true
+		}
+		if len(paths) == 0 {
+			// filepath.Glob reports no matches for a missing directory, an
+			// unreadable one and a path that is not a directory, as well as for
+			// an empty one, so the glob alone cannot say which. The directory is
+			// asked separately rather than assumed.
+			state := "no stage paths matched"
+			if info, statErr := os.Lstat(stage); statErr != nil {
+				state += fmt.Sprintf("; stage: %v", statErr)
+			} else if !info.IsDir() {
+				state += fmt.Sprintf("; stage is not a directory: mode %s", info.Mode())
+			} else if entries, readErr := os.ReadDir(stage); readErr != nil {
+				state += fmt.Sprintf("; stage unreadable: %v", readErr)
+			} else {
+				state += fmt.Sprintf("; stage holds %d entries", len(entries))
+			}
+			seen = append(seen, state)
 		}
 		return false
 	})
