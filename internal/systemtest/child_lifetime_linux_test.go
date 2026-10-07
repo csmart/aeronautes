@@ -222,6 +222,26 @@ func lifetimeStopParent(t *testing.T, p *lifetimeProcess) {
 // inside the package's twenty-five minute budget.
 const lifetimeWait = 60 * time.Second
 
+// lifetimeAwaitReporting is lifetimeAwait with a witness: on timeout it reports
+// what the condition last observed, so a wait that runs out on a hosted runner is
+// diagnosable from its own failure rather than only reproducible.
+func lifetimeAwaitReporting(t *testing.T, what string, witness func() []string, condition func() bool) {
+	t.Helper()
+	deadline := time.NewTimer(lifetimeWait)
+	defer deadline.Stop()
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for !condition() {
+		select {
+		case <-tick.C:
+		case <-deadline.C:
+			t.Fatalf("timed out waiting for %s; last seen: %s", what, strings.Join(witness(), "; "))
+		case <-t.Context().Done():
+			t.Fatal(t.Context().Err())
+		}
+	}
+}
+
 func lifetimeAwait(t *testing.T, what string, condition func() bool) {
 	t.Helper()
 	deadline := time.NewTimer(lifetimeWait)
