@@ -50,6 +50,13 @@ func (s *MutateService) setConfirmer(confirmer PublicACLConfirmer) {
 // snapshot; the identity is not applied (ADR 0058).
 var errMetadataResidue = errors.New("object metadata write residue: the store POST succeeded and the outcome could not be recorded")
 
+var errManifestDeleteResidue = errors.New("manifest delete residue: the manifest was deleted and the outcome could not be recorded")
+
+// errManifestDeleteUnrecorded is the honest answer where errManifestDeleteResidue
+// would be a claim: the outcome could not be recorded, and this error does not
+// settle whether anything was destroyed.
+var errManifestDeleteUnrecorded = errors.New("manifest delete unrecorded: the outcome could not be recorded and is not settled by this error")
+
 // NewMutateService builds the service.
 func NewMutateService(connections *Connections, auditStore *audit.Store, evidenceStore *evidence.Store) *MutateService {
 	return &MutateService{
@@ -542,7 +549,10 @@ func auditEventDTO(e audit.Event) AuditEventDTO {
 // DeleteManifest removes ONLY a DLO/SLO manifest object (§60 Phase 4's
 // low-risk delete): segments survive by construction, a plain object
 // refuses, and the outcome is audited either way.
-func (s *MutateService) DeleteManifest(ctx context.Context, container, name string) (ObjectDetailDTO, error) {
+// baseContent is the ContentFingerprint the caller was shown for this object,
+// handed back the way the metadata editor hands back its EditableFingerprint
+// (ADR 0085). The delete is refused when the name no longer holds it.
+func (s *MutateService) DeleteManifest(ctx context.Context, container, name, baseContent string) (ObjectDetailDTO, error) {
 	if err := refuseIfDeferred("MutateService.DeleteManifest"); err != nil {
 		return ObjectDetailDTO{}, err
 	}
@@ -555,16 +565,64 @@ func (s *MutateService) DeleteManifest(ctx context.Context, container, name stri
 		return ObjectDetailDTO{}, err
 	}
 	resource := container + "/" + name
-	before, err := session.DeleteManifestObject(ctx, container, name)
+	before, err := session.DeleteManifestObject(ctx, container, name, baseContent)
 	if err != nil {
-		_ = s.record(ctx, "manifest.delete", resource, "manifest delete failed or refused", audit.ResultFailed, nil)
+		// An identity conflict is recorded as what it is, with both identities
+		// and the transaction that observed them, so the retained record can be
+		// told apart from a transport failure or a class refusal (ADR 0085).
+		summary := "manifest delete failed or refused"
+		var transIDs []string
+		var conflict *swiftcontrol.IdentityConflictError
+		if errors.As(err, &conflict) {
+			// The name is deliberately absent from this prose. It is already
+			// in the event's own Resource field, which the summary filter does
+			// not inspect, and repeating it here would let a valid object name
+			// — password-manifest, say — make the whole refusal unrecordable.
+			// Everything that remains is ours: two hex identities, a class, a
+			// byte count and an entity tag.
+			summary = fmt.Sprintf("manifest delete refused: the name no longer holds what was shown; expected identity %s, found %s on a %s of %d bytes with entity tag %s",
+				conflict.Expected, conflict.Found, conflict.FoundClass, conflict.FoundLength, conflict.FoundETag)
+			if before != nil && before.TransID != "" {
+				transIDs = []string{before.TransID}
+			}
+		}
+		if recErr := s.record(ctx, "manifest.delete", resource, summary, audit.ResultFailed, transIDs); recErr != nil {
+			// What an unrecorded outcome may be called depends on which error
+			// arrived, and only the identity conflict is known to have
+			// destroyed nothing. DeleteManifestObject also returns here when
+			// the DELETE itself failed, when the verify read failed after it,
+			// and when the object was still present afterwards — outcomes
+			// where something may well have been destroyed. So everything
+			// else is reported as unsettled. That is pessimistic for the three
+			// other pre-DELETE outcomes beside it, which also destroy nothing
+			// — an absent identity, a failed HEAD and the class refusal, two
+			// refusals and a failure — and it is never wrong.
+			if conflict != nil {
+				return ObjectDetailDTO{}, errors.Join(err, fmt.Errorf("%s: the refusal could not be recorded: %w", resource, recErr))
+			}
+			return ObjectDetailDTO{}, errors.Join(err, fmt.Errorf("%w: %s: %w", errManifestDeleteUnrecorded, resource, recErr))
+		}
 		return ObjectDetailDTO{}, err
 	}
 	summary := fmt.Sprintf("deleted %s manifest; segments remain", before.Class)
 	if before.Manifest != "" {
-		summary = fmt.Sprintf("deleted %s manifest; segments remain at %s", before.Class, before.Manifest)
+		// Where the segments are is the one thing here worth keeping, and it
+		// is the DLO's own X-Object-Manifest value, so it is a name this code
+		// does not control. Ask before composing: a prefix the filter would
+		// refuse costs the prose, not the event.
+		withPrefix := summary + " at " + before.Manifest
+		if audit.SummaryRefusal(withPrefix) == "" {
+			summary = withPrefix
+		} else {
+			summary += " at a prefix this record withholds; the object name is in the event's resource"
+		}
 	}
-	_ = s.record(ctx, "manifest.delete", resource, summary, audit.ResultApplied, []string{before.TransID})
+	if recErr := s.record(ctx, "manifest.delete", resource, summary, audit.ResultApplied, []string{before.TransID}); recErr != nil {
+		// The manifest is gone and the record is not, which is residue in the
+		// sense the siblings in this file use: the store changed and the
+		// outcome could not be accounted for.
+		return ObjectDetailDTO{}, fmt.Errorf("%w: %s: %w", errManifestDeleteResidue, resource, recErr)
+	}
 	return toObjectDetailDTO(before), nil
 }
 

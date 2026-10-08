@@ -255,7 +255,13 @@ describe("production modal ownership", () => {
     const f = await manifest(); const before = selected();
     const reply = deferred<Awaited<ReturnType<Api["deleteManifest"]>>>(); api.deleteManifest = vi.fn(() => reply.promise);
     click(button("Delete manifest only", f.dialog)); await settle();
-    expect(api.deleteManifest).toHaveBeenCalledExactlyOnceWith("fixtures", "external-dlo");
+    // The third argument is what the dialog was SHOWN, so it is compared with
+    // the detail the fake served for this object rather than with a literal: a
+    // dialog passing any constant would satisfy a literal and defeat ADR 0085.
+    const shownDetail = await api.objectDetail("fixtures", "external-dlo", "bm-1");
+    expect(shownDetail.contentFingerprint).toBeTruthy();
+    expect(api.deleteManifest).toHaveBeenCalledExactlyOnceWith(
+      "fixtures", "external-dlo", shownDetail.contentFingerprint);
     press(window, "Tab"); expect(document.activeElement).toBe(f.dialog);
     press(window, "Escape"); await settle();
     expect(document.querySelector('[role="alertdialog"]')).toBeNull();

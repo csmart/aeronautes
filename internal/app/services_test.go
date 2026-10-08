@@ -18,6 +18,7 @@ import (
 	"github.com/csmart/aeronautes/internal/evidence"
 	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/secrets"
+	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	"github.com/csmart/aeronautes/internal/swifttest"
 )
 
@@ -623,12 +624,21 @@ func TestDeleteManifestService(t *testing.T) {
 	h.connect(t)
 	ctx := context.Background()
 
-	// A plain object refuses and audits as failed.
-	if _, err := h.mutate.DeleteManifest(ctx, "fixtures", "empty-object"); err == nil {
+	// A plain object refuses and audits as failed. Its own identity is
+	// supplied, so the refusal is the class guard rather than a mismatch.
+	plain, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "empty-object")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.mutate.DeleteManifest(ctx, "fixtures", "empty-object", plain.ContentFingerprint); err == nil {
 		t.Fatal("plain object accepted")
 	}
 
-	deleted, err := h.mutate.DeleteManifest(ctx, "fixtures", "external-dlo")
+	shownDLO, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "external-dlo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := h.mutate.DeleteManifest(ctx, "fixtures", "external-dlo", shownDLO.ContentFingerprint)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -868,4 +878,261 @@ func confirmedMutateService(connections *Connections, auditStore *audit.Store, e
 	s := NewMutateService(connections, auditStore, ev)
 	s.setConfirmer(confirmerFunc(func(context.Context, string, string) (bool, error) { return true, nil }))
 	return s
+}
+
+// ADR 0085: a delete refused because the name no longer holds what the caller
+// was shown is recorded as that, with both identities, so the retained record
+// can be told apart from a transport failure or a class refusal. An operator
+// told only "refused" learns nothing; one shown the object is now a different
+// size with a different digest learns something else is writing to the account.
+// A destructive outcome nobody can read afterwards is the failure this whole
+// slice exists to prevent, so the three paths where the record itself fails each
+// have to say the right thing. What they must never do is describe a completed or
+// unsettled destruction as a refusal: the generic branch also receives a failed
+// DELETE, a failed verify read after a successful one, and an object still
+// present afterwards.
+const refuseAuditInserts = `CREATE TRIGGER refuse_audit BEFORE INSERT ON audit_events
+	BEGIN SELECT RAISE(ABORT,'fixture required audit refusal'); END`
+
+func TestDeleteManifestSaysWhatAnUnrecordedOutcomeIs(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("a completed delete that could not be recorded is residue", func(t *testing.T) {
+		h := newHarness(t)
+		h.connect(t)
+		shown, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "external-dlo")
+		if err != nil {
+			t.Fatal(err)
+		}
+		refuseSQL(t, h, refuseAuditInserts)
+
+		_, err = h.mutate.DeleteManifest(ctx, "fixtures", "external-dlo", shown.ContentFingerprint)
+		if !errors.Is(err, errManifestDeleteResidue) {
+			t.Fatalf("err = %v, want residue", err)
+		}
+		// Residue is a claim about the store, so the store has to agree.
+		if _, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "external-dlo"); err == nil {
+			t.Error("residue was reported but the manifest is still there")
+		}
+	})
+
+	t.Run("a refusal that could not be recorded stays a refusal", func(t *testing.T) {
+		h := newHarness(t)
+		h.connect(t)
+		other, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "external-slo")
+		if err != nil {
+			t.Fatal(err)
+		}
+		refuseSQL(t, h, refuseAuditInserts)
+
+		_, err = h.mutate.DeleteManifest(ctx, "fixtures", "external-dlo", other.ContentFingerprint)
+		var conflict *swiftcontrol.IdentityConflictError
+		if !errors.As(err, &conflict) {
+			t.Fatalf("err = %T %v, want the identity conflict to survive the join", err, err)
+		}
+		if !strings.Contains(err.Error(), "the refusal could not be recorded") {
+			t.Errorf("err = %v, want it to say the refusal went unrecorded", err)
+		}
+		if errors.Is(err, errManifestDeleteResidue) || errors.Is(err, errManifestDeleteUnrecorded) {
+			t.Errorf("a refusal destroyed nothing, so it is neither residue nor unsettled: %v", err)
+		}
+		if _, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "external-dlo"); err != nil {
+			t.Errorf("a refused delete removed the object anyway: %v", err)
+		}
+	})
+
+	t.Run("any other unrecorded failure is not called a refusal", func(t *testing.T) {
+		h := newHarness(t)
+		h.connect(t)
+		plain, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "empty-object")
+		if err != nil {
+			t.Fatal(err)
+		}
+		refuseSQL(t, h, refuseAuditInserts)
+
+		// The class refusal stands in for the whole generic branch, which also
+		// carries the outcomes where something may have been destroyed.
+		_, err = h.mutate.DeleteManifest(ctx, "fixtures", "empty-object", plain.ContentFingerprint)
+		if !errors.Is(err, errManifestDeleteUnrecorded) {
+			t.Fatalf("err = %v, want the unsettled sentinel", err)
+		}
+		if strings.Contains(err.Error(), "the refusal could not be recorded") {
+			t.Errorf("an error that settles nothing was reported as a refusal: %v", err)
+		}
+		if errors.Is(err, errManifestDeleteResidue) {
+			t.Errorf("nothing proves this one was deleted, so it is not residue: %v", err)
+		}
+	})
+}
+
+// A name is not a secret because it contains a word that often guards one. The
+// audit filter refuses a secret-bearing SUMMARY outright, and a refused summary
+// means no event at all — so a summary built out of an object's own name hands a
+// perfectly valid object the power to erase its own destructive record. These are
+// the two summaries this path composes.
+func TestDeleteManifestRecordsNamesTheFilterWouldReject(t *testing.T) {
+	ctx := context.Background()
+
+	// The literal the filter refuses, named once so these cases cannot drift
+	// apart from internal/audit's list.
+	const refused = "password"
+	if audit.SummaryRefusal(refused) == "" {
+		t.Fatalf("this test needs a substring the audit filter refuses; %q is not one", refused)
+	}
+
+	t.Run("a refusal for an object whose own name the filter would reject", func(t *testing.T) {
+		h := newHarness(t)
+		h.mock.PutObject("fixtures", refused+"-manifest", swifttest.Object{
+			Bytes: 4_000_000, ETag: "b1946ac92492d2347c6235b4d2611184", Manifest: "plain-segments/v",
+		})
+		h.connect(t)
+
+		shown, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", refused+"-manifest")
+		if err != nil {
+			t.Fatal(err)
+		}
+		other, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "external-slo")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		_, err = h.mutate.DeleteManifest(ctx, "fixtures", refused+"-manifest", other.ContentFingerprint)
+		var conflict *swiftcontrol.IdentityConflictError
+		if !errors.As(err, &conflict) {
+			t.Fatalf("refusal = %T %v, want an identity conflict", err, err)
+		}
+
+		e := soleManifestDeleteEvent(t, h, ctx)
+		if string(e.Result) != "failed" {
+			t.Errorf("recorded result = %q, want failed", e.Result)
+		}
+		for _, want := range []string{other.ContentFingerprint, shown.ContentFingerprint} {
+			if !strings.Contains(e.Summary, want) {
+				t.Errorf("the record omits an identity: %q lacks %s", e.Summary, want)
+			}
+		}
+		// The name is retained, in the field that is not filtered.
+		if !strings.Contains(e.Resource, refused+"-manifest") {
+			t.Errorf("the record does not name the object: resource = %q", e.Resource)
+		}
+		if _, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", refused+"-manifest"); err != nil {
+			t.Errorf("a refused delete removed the object anyway: %v", err)
+		}
+	})
+
+	t.Run("a completed delete whose segment prefix the filter would reject", func(t *testing.T) {
+		h := newHarness(t)
+		// The prefix is the DLO's own X-Object-Manifest value, so it is a name
+		// this code does not control either.
+		h.mock.PutObject("fixtures", "ordinary-manifest", swifttest.Object{
+			Bytes: 4_000_000, ETag: "b1946ac92492d2347c6235b4d2611184", Manifest: refused + "-segments/v",
+		})
+		h.connect(t)
+
+		shown, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "ordinary-manifest")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := h.mutate.DeleteManifest(ctx, "fixtures", "ordinary-manifest", shown.ContentFingerprint); err != nil {
+			t.Fatalf("a matching identity was refused: %v", err)
+		}
+
+		e := soleManifestDeleteEvent(t, h, ctx)
+		if string(e.Result) != "applied" {
+			t.Errorf("recorded result = %q, want applied", e.Result)
+		}
+		// The prose loses the prefix; the event does not lose the delete.
+		if strings.Contains(e.Summary, refused) {
+			t.Errorf("the summary carries the refused prefix, so this record only exists by luck: %q", e.Summary)
+		}
+		if !strings.Contains(e.Summary, "withholds") {
+			t.Errorf("the record does not say the prefix was withheld: %q", e.Summary)
+		}
+		if !strings.Contains(e.Resource, "ordinary-manifest") {
+			t.Errorf("the record does not name the object: resource = %q", e.Resource)
+		}
+	})
+}
+
+// soleManifestDeleteEvent returns the one manifest.delete event, failing when
+// there is none — which is the whole point of these cases, since the defect
+// they guard retains nothing at all.
+func soleManifestDeleteEvent(t *testing.T, h *harness, ctx context.Context) AuditEventDTO {
+	t.Helper()
+	events, err := h.auditSvc.RecentFor(ctx, h.bookmarkID(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found []AuditEventDTO
+	for _, e := range events {
+		if e.Operation == "manifest.delete" {
+			found = append(found, e)
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("manifest.delete events = %d, want exactly 1: %+v", len(found), events)
+	}
+	return found[0]
+}
+
+func TestDeleteManifestRefusalRecordsBothIdentities(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+	ctx := context.Background()
+
+	shown, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "external-dlo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An identity from a different object: what a replacement between the
+	// display and the request would leave behind.
+	other, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "external-slo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if other.ContentFingerprint == shown.ContentFingerprint {
+		t.Fatal("the fixture no longer distinguishes these two objects")
+	}
+
+	_, err = h.mutate.DeleteManifest(ctx, "fixtures", "external-dlo", other.ContentFingerprint)
+	if err == nil {
+		t.Fatal("a delete was accepted for an identity the name does not hold")
+	}
+	var conflict *swiftcontrol.IdentityConflictError
+	if !errors.As(err, &conflict) {
+		t.Fatalf("refusal = %T %v, want an identity conflict a caller can recognise", err, err)
+	}
+	if conflict.Expected != other.ContentFingerprint || conflict.Found != shown.ContentFingerprint {
+		t.Errorf("conflict carried expected %s found %s, want %s and %s",
+			conflict.Expected, conflict.Found, other.ContentFingerprint, shown.ContentFingerprint)
+	}
+
+	// Nothing was deleted.
+	if _, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "external-dlo"); err != nil {
+		t.Errorf("a refused delete removed the object anyway: %v", err)
+	}
+
+	events, err := h.auditSvc.RecentFor(ctx, h.bookmarkID(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, e := range events {
+		if e.Operation != "manifest.delete" {
+			continue
+		}
+		found = true
+		if string(e.Result) != "failed" {
+			t.Errorf("recorded result = %q, want failed", e.Result)
+		}
+		for _, want := range []string{other.ContentFingerprint, shown.ContentFingerprint} {
+			if !strings.Contains(e.Summary, want) {
+				t.Errorf("the record omits an identity: %q lacks %s", e.Summary, want)
+			}
+		}
+		break
+	}
+	if !found {
+		t.Fatalf("no manifest.delete was recorded: %+v", events)
+	}
 }

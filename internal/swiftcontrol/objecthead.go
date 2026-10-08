@@ -2,6 +2,9 @@ package swiftcontrol
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -61,6 +64,32 @@ type ObjectDetail struct {
 	// (user meta, Content-Type, X-Delete-At) for §18 stale-write checks.
 	EditableFingerprint string
 	FetchedAt           time.Time
+}
+
+// ContentFingerprint identifies WHAT this name holds — its class, its logical
+// length and its entity tag — so a caller that was shown an object can hand it
+// back and have a destructive request refused when the name no longer holds it
+// (ADR 0085).
+//
+// It is a method rather than a stored field, and that is the whole point. As a
+// field it was computed inside buildObjectDetail, which runs BEFORE the callers
+// that assign ContentLength and ETag from the HEAD's own object record — so it
+// hashed a zero length and an empty tag, was identical for every object of a
+// class, and let a same-class replacement of different length or content pass
+// the comparison it exists to fail. Deriving it on demand makes that ordering
+// impossible rather than something a test has to keep catching.
+//
+// Like EditableFingerprint it is detection input and never a concurrency
+// guarantee: this store honours no conditional delete, so a match says the name
+// had not changed as of the HEAD it came from, and nothing about the instant a
+// DELETE arrives.
+func (d *ObjectDetail) ContentFingerprint() string {
+	h := sha256.New()
+	// Length-prefixed so no combination of values can be spelled two ways.
+	for _, field := range []string{string(d.Class), strconv.FormatInt(d.ContentLength, 10), etagValue(d.ETag)} {
+		fmt.Fprintf(h, "%d:%s", len(field), field)
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // ObjectDetail HEADs one object and builds its inspector model.

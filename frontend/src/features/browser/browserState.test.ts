@@ -264,7 +264,7 @@ describe("large-object read semantics (§65.3)", () => {
     s.select(s.entries.findIndex((e) => e.name === "external-dlo"));
     await vi.waitFor(() => expect(s.objectDetail).not.toBeNull());
 
-    await s.deleteManifest("fixtures", "external-dlo");
+    await s.deleteManifest("fixtures", "external-dlo", "shown");
     expect(s.entries.some((e) => e.name === "external-dlo")).toBe(false);
     expect(s.recentAuditEvents[0]?.operation).toBe("manifest.delete");
 
@@ -278,7 +278,7 @@ describe("large-object read semantics (§65.3)", () => {
     await s.openContainer("fixtures");
     s.select(s.entries.findIndex((e) => e.name === "empty-object"));
     await vi.waitFor(() => expect(s.objectDetail).not.toBeNull());
-    await expect(s.deleteManifest("fixtures", "empty-object")).rejects.toThrow(/plain/);
+    await expect(s.deleteManifest("fixtures", "empty-object", "shown")).rejects.toThrow(/plain/);
     expect(s.entries.some((e) => e.name === "empty-object")).toBe(true);
   });
 });

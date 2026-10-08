@@ -201,7 +201,7 @@ func TestV1GateRefusesDeferredEntryPoints(t *testing.T) {
 			return (&MutateService{}).DeleteMarker(ctx, "c", "p/")
 		}},
 		{"MutateService.DeleteManifest", "Marker and manifest editing", func() error {
-			_, err := (&MutateService{}).DeleteManifest(ctx, "c", "n")
+			_, err := (&MutateService{}).DeleteManifest(ctx, "c", "n", "any")
 			return err
 		}},
 		{"BenchmarkService.StartBenchmark", "Benchmark", func() error {

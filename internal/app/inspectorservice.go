@@ -184,6 +184,7 @@ func toObjectDetailDTO(d *swiftcontrol.ObjectDetail) ObjectDetailDTO {
 		RawHeaders:          d.RawHeaders,
 		TransID:             d.TransID,
 		EditableFingerprint: d.EditableFingerprint,
+		ContentFingerprint:  d.ContentFingerprint(),
 	}
 	if !d.DeleteAt.IsZero() {
 		dto.DeleteAt = d.DeleteAt.UTC().Format(time.RFC3339)

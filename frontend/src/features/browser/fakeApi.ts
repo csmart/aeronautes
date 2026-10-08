@@ -178,6 +178,10 @@ export function newFakeApi(): Api {
       contentLength: large?.logicalBytes ?? stored.bytes,
       contentType: stored.contentType,
       etag: stored.etag,
+      // The real service derives this from class, length and entity tag; the
+      // fake only has to be stable and to differ between objects, which is
+      // what a caller handing it back is relying on.
+      contentFingerprint: `${large?.kind ?? "plain"}:${large?.logicalBytes ?? stored.bytes}:${stored.etag}`,
       lastModified: stored.lastModified,
       manifest: large?.kind === "dlo" ? large.manifest : "",
       followedSymlink: false,

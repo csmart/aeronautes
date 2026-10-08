@@ -9,6 +9,14 @@ import (
 )
 
 func newFixtureSession(t *testing.T) *Session {
+	s, _ := newFixtureSessionWithMock(t)
+	return s
+}
+
+// newFixtureSessionWithMock also returns the mock, so a case can replace what a
+// name holds between one read and the next — which is the whole subject of the
+// identity comparison in deletemanifest.go.
+func newFixtureSessionWithMock(t *testing.T) (*Session, *swifttest.Server) {
 	t.Helper()
 	mock := swifttest.New("test:tester", "testing")
 	mock.LoadCanonicalFixtures()
@@ -18,7 +26,7 @@ func newFixtureSession(t *testing.T) *Session {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return s
+	return s, mock
 }
 
 func TestDLOSegmentPreview(t *testing.T) {
