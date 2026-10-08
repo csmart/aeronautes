@@ -97,7 +97,11 @@
         // always what the operator typed.
         await browser.deleteManifestWithSegments({ ...target.request, force: true, confirm: confirmText }, isCurrent);
       } else {
-        await browser.deleteManifest(target.request.container, target.request.name, isCurrent);
+        // target.detail is the frozen detail this dialog was opened for, so its
+        // content fingerprint is what the operator was actually shown. The
+        // service refuses the delete if the name no longer holds it (ADR 0085).
+        await browser.deleteManifest(target.request.container, target.request.name,
+          target.detail.contentFingerprint, isCurrent);
       }
       if (isCurrent()) close();
     } catch (err) {

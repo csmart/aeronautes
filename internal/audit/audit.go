@@ -72,6 +72,26 @@ type Event struct {
 // carrying credential-shaped content into the durable trail.
 var forbiddenSummarySubstrings = []string{"password", "passphrase", "x-auth-key", "auth_key", "api_key"}
 
+// SummaryRefusal reports the forbidden substring a summary carries, or "" when
+// the summary is recordable. AppendTx is the enforcement; this is the same
+// decision asked in advance.
+//
+// It exists because a refused summary means no event at all, and a caller that
+// builds a summary out of a name it does not control cannot know that in
+// advance. A container named for a credential is a perfectly valid container,
+// and on a destructive path "no record" is a worse outcome than "a record
+// without the name in its prose" — the name is in Event.Resource either way,
+// which this filter does not touch.
+func SummaryRefusal(summary string) string {
+	lower := strings.ToLower(summary)
+	for _, forbidden := range forbiddenSummarySubstrings {
+		if strings.Contains(lower, forbidden) {
+			return forbidden
+		}
+	}
+	return ""
+}
+
 // Store persists audit events.
 type Store struct {
 	db *db.DB
@@ -113,11 +133,8 @@ func (s *Store) AppendTx(ctx context.Context, tx *sql.Tx, e Event) error {
 	if e.Operation == "" || e.Resource == "" || e.Result == "" {
 		return fmt.Errorf("audit event needs operation, resource, and result: %+v", e)
 	}
-	lower := strings.ToLower(e.Summary)
-	for _, forbidden := range forbiddenSummarySubstrings {
-		if strings.Contains(lower, forbidden) {
-			return fmt.Errorf("audit summary looks secret-bearing (%q); refuse to record it", forbidden)
-		}
+	if forbidden := SummaryRefusal(e.Summary); forbidden != "" {
+		return fmt.Errorf("audit summary looks secret-bearing (%q); refuse to record it", forbidden)
 	}
 	at := e.At
 	if at.IsZero() {

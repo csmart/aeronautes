@@ -167,7 +167,9 @@ export interface Api {
   containerDetail(name: string, bookmarkId: string): Promise<ContainerDetailDTO>;
   sloManifest(container: string, name: string, bookmarkId: string): Promise<SLOManifestDTO>;
   dloSegments(manifest: string, bookmarkId: string): Promise<DLOSegmentsDTO>;
-  deleteManifest(container: string, name: string): Promise<ObjectDetailDTO>;
+  /** baseContent is the ContentFingerprint the caller displayed for this
+   * object; the delete is refused when the name no longer holds it (ADR 0085). */
+  deleteManifest(container: string, name: string, baseContent: string): Promise<ObjectDetailDTO>;
   capabilities(bookmarkId: string): Promise<CapabilitiesDTO>;
   updateObjectMetadata(
     scope: ListingScope,
@@ -244,7 +246,7 @@ export const liveApi: Api = {
   containerDetail: (name, bookmarkId) => InspectorService.Container(bookmarkId, name),
   sloManifest: (container, name, bookmarkId) => InspectorService.SLOManifest(bookmarkId, container, name),
   dloSegments: (manifest, bookmarkId) => InspectorService.DLOSegments(bookmarkId, manifest),
-  deleteManifest: (container, name) => MutateService.DeleteManifest(container, name),
+  deleteManifest: (container, name, baseContent) => MutateService.DeleteManifest(container, name, baseContent),
   capabilities: (bookmarkId) => BrowseService.Capabilities(bookmarkId),
   updateObjectMetadata: (scope, container, name, baseFingerprint, edit) =>
     MutateService.UpdateObjectMetadata(scope, container, name, baseFingerprint, edit),

@@ -294,6 +294,10 @@ type ObjectDetailDTO struct {
 	// EditableFingerprint is the working-copy base for §18 conflict
 	// detection: hand it back with the edit.
 	EditableFingerprint string `json:"editableFingerprint"`
+	// ContentFingerprint identifies what this name holds — class, logical
+	// length and entity tag. Hand it back with a destructive request and it
+	// is refused when the name no longer holds it (ADR 0085).
+	ContentFingerprint string `json:"contentFingerprint"`
 	// Scope is the account that answered (ADR 0059).
 	Scope ListingScopeDTO `json:"scope"`
 }

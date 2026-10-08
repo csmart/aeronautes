@@ -610,7 +610,11 @@ func TestManifestOnlyDeleteRealSwift(t *testing.T) {
 		t.Fatal(err)
 	}
 	dloSegments := countSegments(segStore)
-	if _, err := h.Session.DeleteManifestObject(ctx, fixtures, "del-dlo"); err != nil {
+	shownDLO, err := h.Session.ObjectDetail(ctx, fixtures, "del-dlo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Session.DeleteManifestObject(ctx, fixtures, "del-dlo", shownDLO.ContentFingerprint()); err != nil {
 		t.Fatal(err)
 	}
 	if got := countSegments(segStore); got != dloSegments {
@@ -624,7 +628,11 @@ func TestManifestOnlyDeleteRealSwift(t *testing.T) {
 		t.Fatal(err)
 	}
 	sloSegments := countSegments(sloParts)
-	if _, err := h.Session.DeleteManifestObject(ctx, fixtures, "del-slo"); err != nil {
+	shownSLO, err := h.Session.ObjectDetail(ctx, fixtures, "del-slo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Session.DeleteManifestObject(ctx, fixtures, "del-slo", shownSLO.ContentFingerprint()); err != nil {
 		t.Fatal(err)
 	}
 	if got := countSegments(sloParts); got != sloSegments {
@@ -632,7 +640,11 @@ func TestManifestOnlyDeleteRealSwift(t *testing.T) {
 	}
 
 	// A plain object refuses and survives.
-	if _, err := h.Session.DeleteManifestObject(ctx, fixtures, "tagged.txt"); err == nil {
+	shownPlain, err := h.Session.ObjectDetail(ctx, fixtures, "tagged.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Session.DeleteManifestObject(ctx, fixtures, "tagged.txt", shownPlain.ContentFingerprint()); err == nil {
 		t.Fatal("plain object accepted by manifest-only delete")
 	}
 	if _, err := h.Session.ObjectDetail(ctx, fixtures, "tagged.txt"); err != nil {

@@ -358,7 +358,7 @@ describe("mutation follow-up ownership", () => {
     f.api.containers = vi.fn(f.api.containers); f.api.objects = vi.fn(f.api.objects);
     f.api.auditRecent = vi.fn(f.api.auditRecent);
     const pending = kind === "create" ? f.browser.createContainer({ name: "created", policy: "", meta: {} }, f.browser.portrait)
-      : kind === "manifest" ? f.browser.deleteManifest("fixtures", "external-dlo")
+      : kind === "manifest" ? f.browser.deleteManifest("fixtures", "external-dlo", "shown")
       : kind === "segments" ? f.browser.deleteManifestWithSegments({ bookmarkId: f.bookmark.id, container: "fixtures", name: "external-dlo", force: true, confirm: "external-dlo" })
       : f.browser.deleteMarker("implied/");
     await changeView(f.browser, "selection");
@@ -380,7 +380,7 @@ describe("mutation follow-up ownership", () => {
     f.api.deleteMarker = vi.fn().mockResolvedValue(undefined);
     f.api.containers = vi.fn(f.api.containers); f.api.objects = vi.fn(f.api.objects);
     const pending = kind === "create" ? f.browser.createContainer({ name: "created", policy: "", meta: {} }, f.browser.portrait)
-      : kind === "manifest" ? f.browser.deleteManifest("fixtures", "external-dlo")
+      : kind === "manifest" ? f.browser.deleteManifest("fixtures", "external-dlo", "shown")
       : kind === "segments" ? f.browser.deleteManifestWithSegments({ bookmarkId: f.bookmark.id, container: "fixtures", name: "external-dlo", force: true, confirm: "external-dlo" })
       : f.browser.deleteMarker("implied/");
     await settle(); expect(f.api.auditRecent).toHaveBeenCalledOnce();
@@ -410,7 +410,7 @@ describe("mutation follow-up ownership", () => {
     f.api.deleteManifestWithSegments = vi.fn().mockResolvedValue(deleted);
     f.api.objects = vi.fn(f.api.objects);
     const req = { bookmarkId: "other", container: "different", name: "foreign", force: true, confirm: "foreign" };
-    if (kind === "manifest") await f.browser.deleteManifest(req.container, req.name);
+    if (kind === "manifest") await f.browser.deleteManifest(req.container, req.name, "shown");
     else {
       expect(await f.browser.deleteManifestWithSegments(req)).toEqual(deleted);
       expect(f.api.deleteManifestWithSegments).toHaveBeenCalledExactlyOnceWith(req);

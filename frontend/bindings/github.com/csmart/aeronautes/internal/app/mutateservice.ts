@@ -37,9 +37,12 @@ export function CreateMarker(scope: $models.ListingScopeDTO, container: string, 
  * DeleteManifest removes ONLY a DLO/SLO manifest object (§60 Phase 4's
  * low-risk delete): segments survive by construction, a plain object
  * refuses, and the outcome is audited either way.
+ * baseContent is the ContentFingerprint the caller was shown for this object,
+ * handed back the way the metadata editor hands back its EditableFingerprint
+ * (ADR 0085). The delete is refused when the name no longer holds it.
  */
-export function DeleteManifest(container: string, name: string): $CancellablePromise<$models.ObjectDetailDTO> {
-    return $Call.ByID(4014894181, container, name);
+export function DeleteManifest(container: string, name: string, baseContent: string): $CancellablePromise<$models.ObjectDetailDTO> {
+    return $Call.ByID(4014894181, container, name, baseContent);
 }
 
 /**

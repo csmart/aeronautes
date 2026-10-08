@@ -932,6 +932,13 @@ export interface ObjectDetailDTO {
     "editableFingerprint": string;
 
     /**
+     * ContentFingerprint identifies what this name holds — class, logical
+     * length and entity tag. Hand it back with a destructive request and it
+     * is refused when the name no longer holds it (ADR 0085).
+     */
+    "contentFingerprint": string;
+
+    /**
      * Scope is the account that answered (ADR 0059).
      */
     "scope": ListingScopeDTO;

@@ -487,7 +487,7 @@ const mutationCases = [
   {
     method: "deleteManifest", operation: "manifest.delete", returnsResult: false,
     prefix: "", selected: "external-dlo",
-    run: (browser: BrowserState) => browser.deleteManifest("fixtures", "external-dlo"),
+    run: (browser: BrowserState) => browser.deleteManifest("fixtures", "external-dlo", "shown"),
   },
   {
     method: "deleteManifestWithSegments", operation: "segments.delete", returnsResult: true,

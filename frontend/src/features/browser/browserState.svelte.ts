@@ -1657,16 +1657,26 @@ export class BrowserState {
 
   /** Delete ONLY the named manifest object (§60 Phase 4's low-risk
    * delete): segments survive; the working list refreshes. The dialog
-   * passes the exact identity it displayed — never the live index. */
-  async deleteManifest(container: string, name: string, ownsView = () => true): Promise<void> {
+   * passes the exact identity it displayed — never the live index.
+   *
+   * baseContent extends that principle from the name to what the name held:
+   * it is the ContentFingerprint of the detail this view showed, and the
+   * service refuses the delete when the object no longer matches it
+   * (ADR 0085). It narrows the window between being shown an object and
+   * destroying it; it does not close it, and nothing here may be presented as
+   * proof that no one else is writing. */
+  async deleteManifest(container: string, name: string, baseContent: string, ownsView = () => true): Promise<void> {
     if (!container || !name) {
       throw new Error("no object identity");
+    }
+    if (!baseContent) {
+      throw new Error("no content identity for the object being deleted");
     }
     const scope = this.#scopeRevision;
     const selection = this.detailIdentity;
     const prefix = this.prefix;
     const displayed = container === selection?.container && name === selection.name;
-    await this.#api.deleteManifest(container, name);
+    await this.#api.deleteManifest(container, name, baseContent);
     await this.loadAudit();
     if (displayed && ownsView() && this.#currentView(scope, selection)) await this.goTo(prefix);
   }
