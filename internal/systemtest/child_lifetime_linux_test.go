@@ -300,6 +300,64 @@ type lifetimeFile struct {
 	Mode fs.FileMode
 }
 
+// lifetimeTail is the last of a helper's own log, for a failure that needs to
+// say what the other process was doing rather than only what the filesystem
+// held.
+func lifetimeTail(path string, limit int) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "unreadable: " + err.Error()
+	}
+	if len(data) > limit {
+		data = data[len(data)-limit:]
+	}
+	if len(data) == 0 {
+		return "empty"
+	}
+	return strings.ReplaceAll(string(data), "\n", " | ")
+}
+
+// lifetimeRetained compares a terminal snapshot with the one taken before the
+// shutdown, for the modes whose contract is that what was written is kept.
+//
+// Everything is required to be byte-identical except the partial itself, which
+// may have GROWN. The barrier releases a fixed number of bytes and then holds
+// the body open, and between the earlier snapshot and the moment the child
+// actually stops, bytes already released can still reach the disk. A plain
+// equality on the whole snapshot therefore fails on a schedule that is
+// perfectly correct, which is a flake rather than a finding — db:825 named this
+// interleaving from the source, and the focused cases beside this function
+// exercise it.
+//
+// What the partial still has to satisfy: it never shrinks, it never exceeds what
+// the barrier released, it stays a true prefix of the object, and its mode does
+// not change.
+func lifetimeRetained(before, after map[string]lifetimeFile, partialKey string, body []byte, released int64) error {
+	if len(before) != len(after) {
+		return fmt.Errorf("entry count changed: %d then %d", len(before), len(after))
+	}
+	for name, was := range before {
+		now, ok := after[name]
+		switch {
+		case !ok:
+			return fmt.Errorf("%s is gone", name)
+		case name != partialKey:
+			if was != now {
+				return fmt.Errorf("%s changed: %+v then %+v", name, was, now)
+			}
+		case now.Mode != was.Mode:
+			return fmt.Errorf("%s changed mode: %s then %s", name, was.Mode, now.Mode)
+		case now.Size < was.Size:
+			return fmt.Errorf("%s shrank: %d then %d bytes", name, was.Size, now.Size)
+		case now.Size > released:
+			return fmt.Errorf("%s is %d bytes, more than the %d the barrier released", name, now.Size, released)
+		case now.Hash != fmt.Sprintf("%x", sha256.Sum256(body[:now.Size])):
+			return fmt.Errorf("%s of %d bytes is not the object's first %d", name, now.Size, now.Size)
+		}
+	}
+	return nil
+}
+
 func lifetimeSnapshot(t *testing.T, root string) map[string]lifetimeFile {
 	t.Helper()
 	result := map[string]lifetimeFile{}
@@ -455,7 +513,11 @@ func childLifetime(t *testing.T, h *Harness, mode string) {
 				continue
 			}
 			observed[filepath.Base(path)] = len(data)
-			if len(data) >= 64*1024 && bytes.Equal(data[:64*1024], body[:64*1024]) {
+			// A non-empty prefix, for the reason the sibling shutdown test
+			// records: the barrier holds the body open after releasing 64 KiB,
+			// so how much of it has been flushed at this instant is not this
+			// test's to control.
+			if len(data) > 0 && len(data) <= 64*1024 && bytes.Equal(data, body[:len(data)]) {
 				writing = path
 				return true
 			}
@@ -487,10 +549,18 @@ func childLifetime(t *testing.T, h *Harness, mode string) {
 		unlock()
 		t.Fatal("active parent did not exclude second instance")
 	}
+	if released := hold.released(); released != 64*1024 {
+		t.Fatalf("the body barrier released %d bytes, want exactly %d", released, 64*1024)
+	}
 	before := lifetimeSnapshot(t, root)
 	partial, ok := before[strings.TrimPrefix(writing, root+string(os.PathSeparator))]
-	if !ok || partial.Size != 64*1024 || partial.Hash != fmt.Sprintf("%x", sha256.Sum256(body[:64*1024])) || len(before) != 3 {
-		t.Fatalf("barrier did not capture exactly one partial and sentinel: %+v", before)
+	switch {
+	case !ok || len(before) != 3:
+		t.Fatalf("barrier did not capture one partial and the sentinel: %+v", before)
+	case partial.Size <= 0 || partial.Size > 64*1024:
+		t.Fatalf("retained partial is %d bytes, want between 1 and the %d released: %+v", partial.Size, 64*1024, before)
+	case partial.Hash != fmt.Sprintf("%x", sha256.Sum256(body[:partial.Size])):
+		t.Fatalf("retained partial of %d bytes is not the object's first %d: %+v", partial.Size, partial.Size, before)
 	}
 	t.Logf("barrier mode=%s parent=%d child=%d writing=%s files=%+v", mode, parent.cmd.Process.Pid, pid, filepath.Base(writing), before)
 	start := time.Now()
@@ -587,15 +657,22 @@ func childLifetime(t *testing.T, h *Harness, mode string) {
 		}
 	}
 	after := lifetimeSnapshot(t, root)
-	wantFiles := map[string]lifetimeFile{"sentinel": before["sentinel"]}
 	switch mode {
-	case "complete":
-		wantFiles["file.bin"] = lifetimeFile{Mode: partial.Mode, Size: int64(len(body)), Hash: fmt.Sprintf("%x", sha256.Sum256(body))}
 	case "escalate", "parent_kill", "stopped_child_parent_kill":
-		wantFiles = before
-	}
-	if !reflect.DeepEqual(after, wantFiles) {
-		t.Fatalf("unexpected terminal filesystem: got=%+v want=%+v", after, wantFiles)
+		// Retention, with the partial allowed to have grown: see
+		// lifetimeRetained for why equality on the whole snapshot flakes.
+		if err := lifetimeRetained(before, after, strings.TrimPrefix(writing, root+string(os.PathSeparator)),
+			body, hold.released()); err != nil {
+			t.Fatalf("unexpected terminal filesystem: %v; got=%+v before=%+v", err, after, before)
+		}
+	default:
+		wantFiles := map[string]lifetimeFile{"sentinel": before["sentinel"]}
+		if mode == "complete" {
+			wantFiles["file.bin"] = lifetimeFile{Mode: partial.Mode, Size: int64(len(body)), Hash: fmt.Sprintf("%x", sha256.Sum256(body))}
+		}
+		if !reflect.DeepEqual(after, wantFiles) {
+			t.Fatalf("unexpected terminal filesystem: got=%+v want=%+v", after, wantFiles)
+		}
 	}
 	select {
 	case <-hold.release:
