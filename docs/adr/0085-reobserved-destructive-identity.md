@@ -164,6 +164,62 @@ generated binding, so the captured identity belongs in ADR 0081 decision 7's rep
 keyed by job and name. An acknowledgement that captured no identity cannot overwrite under this
 protocol, and an acknowledgement taken before this change captured none, so it must be re-taken.
 
+**What that identity is, and what it costs, this decision left open and now settles.** Liveness is
+not always established by a HEAD. `destinationLiveness` chooses between one HEAD per name and one
+listing of the prefix by what each costs in requests, and above a two-name selection it takes the
+listing: measured on the owned fixture, a replacing preflight of three and of five names admitted
+every one of them for replacement after a single listing, with no HEAD of any name
+([the evidence](../experiments/2026-10-10-overwrite-baseline-evidence.md)). So for most selections
+the acknowledgement today holds nothing that could be compared against anything.
+
+A listing row cannot supply the baseline. `ObjectClass`'s own definition in this tree says listings
+only ever hint and an authoritative HEAD is the truth, and a dynamic manifest's row is zero-byte
+carrying the manifest object's hash rather than its content's — so a row can neither establish the
+class nor identify what a manifest holds. **The acknowledged baseline is therefore HEAD-grade: the
+class, the logical length and the entity tag from an authoritative HEAD of that name, which is the
+same shape the manifest-deletion path already compares.** A name admitted for replacement whose
+liveness came from a listing is HEADed at acknowledgement to obtain it.
+
+**The baseline is a retention problem rather than a cost one, and an earlier version of this
+paragraph had that wrong.** It said the baseline adds a HEAD per replaced name above the listing
+floor. It does not, because the preflight is not the whole of the acknowledgement: before the
+operator is asked, `fragmentPlanFor` calls `FragmentPlan`, which takes an authoritative HEAD of every
+name admitted for replacement so the question can state what backs them — and it does so whether or
+not reclamation is enabled and whether or not the container keeps versions. Those details are read
+and then discarded apart from counting fragments. So the acknowledged baseline costs no additional
+request on that path; what it needs is for reads already made to be kept.
+
+Two cases obtain no baseline even so, and the rule above already covers them: an acknowledgement
+composed without a readable destination, which states that it could not read rather than claiming
+nothing is there, and an individual name `FragmentPlan` could not read, which it notes and passes
+over. Neither captured an identity, so neither may overwrite until the acknowledgement is re-taken.
+
+The comparison's own request at the fixed point is unaffected: it remains one HEAD per replaced name
+on the native route, as the accounting above states.
+
+**Both records survive, and neither of them is the other side of the comparison.** ADR 0081
+decision 7's ledger holds one predecessor record per item today, written by `observePredecessor`.
+The acknowledged baseline is a second, distinct record rather than a rewrite of that one, because a
+reader of the trail needs the object the operator acknowledged as well as the one the route recorded
+before publishing.
+
+The comparison itself is between the acknowledged baseline and **the fresh observation taken at the
+fixed point** — not between the two stored records, which an earlier version of this paragraph
+implied and which would defeat the purpose. `observePredecessor` runs before the preparation this
+decision refuses to leave inside the window, as the paragraphs above say in terms; so if the
+acknowledgement and that early read both saw one object and another arrives during the hashing or
+the staged read, the two stored records still agree and the replacement this comparison exists to
+refuse goes through. The stored records are the trail. The fixed-point HEAD is the other operand.
+
+Storing the three observed facts rather than a digest of them keeps the records readable and lets
+the comparison derive its own identity from them. A refusal records the expected and found
+identities under the rule this decision already states, which is where the result belongs; nothing
+here asks for a third stored record.
+
+Nothing here lifts a refusal, admits a capability or widens a route. It decides what the amendment
+above compares against, so an implementation does not have to choose, and it is written for review
+before that implementation, as the rest of this decision was.
+
 ### A destination that disappeared must regain its create conditional
 
 ADR 0081's route records an absent predecessor and continues, because publishing over nothing is what
