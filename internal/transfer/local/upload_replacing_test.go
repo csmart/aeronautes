@@ -126,7 +126,7 @@ func TestNativeReplacementKeepsItsContentBinding(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			result := nativeUpload(t.Context(), session, "media", item, file)
+			result := nativeUpload(t.Context(), session, "media", item, file, item.Replaces)
 
 			live, err := session.ObjectDetail(t.Context(), "media", "docs/object")
 			if err != nil {
@@ -175,7 +175,7 @@ func TestNativeCreateStillRefusesALiveName(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result := nativeUpload(t.Context(), session, "media", item, file)
+	result := nativeUpload(t.Context(), session, "media", item, file, item.Replaces)
 	if result.Result != transfercopy.ResultConflict {
 		t.Fatalf("a create onto a live name was not a conflict: %+v", result.Observation)
 	}
@@ -303,14 +303,15 @@ func TestReplacingALargeObjectPreservesOutsideReferences(t *testing.T) {
 			recorded = append(recorded, observed)
 			return nil
 		}}}
-	if err := run.observePredecessor(t.Context(), s, "media", item); err != nil {
+	present, err := run.observePredecessor(t.Context(), s, "media", item)
+	if err != nil {
 		t.Fatalf("observing the predecessor: %v", err)
 	}
 	file, err := os.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result := nativeUpload(t.Context(), s, "media", item, file); result.Result != transfercopy.ResultCopied {
+	if result := nativeUpload(t.Context(), s, "media", item, file, present); result.Result != transfercopy.ResultCopied {
 		t.Fatalf("the replacement was refused: %+v", result.Observation)
 	}
 
@@ -590,7 +591,7 @@ func TestReplacementOutcomesAreNotRollbackClaims(t *testing.T) {
 				t.Fatal(err)
 			}
 			tc.arm(t, mock, file)
-			result := nativeUpload(t.Context(), s, "media", item, file)
+			result := nativeUpload(t.Context(), s, "media", item, file, item.Replaces)
 			if result.Result == transfercopy.ResultCopied {
 				t.Fatalf("the fixture did not produce a failure: %+v", result.Observation)
 			}

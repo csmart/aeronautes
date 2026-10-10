@@ -30,7 +30,8 @@ func replacingItem(t *testing.T, s *swiftcontrol.Session, path string) UploadIte
 // case can assert on the error the route would have propagated.
 func publishReplacement(t *testing.T, s *swiftcontrol.Session, run *uploadRun, item UploadItem, path string) error {
 	t.Helper()
-	if err := run.observePredecessor(t.Context(), s, "media", item); err != nil {
+	present, err := run.observePredecessor(t.Context(), s, "media", item)
+	if err != nil {
 		t.Fatalf("observing the predecessor: %v", err)
 	}
 	file, err := os.Open(path)
@@ -38,7 +39,7 @@ func publishReplacement(t *testing.T, s *swiftcontrol.Session, run *uploadRun, i
 		t.Fatal(err)
 	}
 	defer func() { _ = file.Close() }()
-	result := nativeUpload(t.Context(), s, "media", item, file)
+	result := nativeUpload(t.Context(), s, "media", item, file, present)
 	return run.reclaim(t.Context(), s, item, result)
 }
 
@@ -166,7 +167,8 @@ func TestReclaimingWaitsForAVerifiedReplacement(t *testing.T) {
 	keeper := &reclaimRecorder{plan: ReclaimPlan{Fragments: []Fragment{
 		{Container: "media_segments", Name: "parts/0001", Shape: FragmentWhole}}}}
 	run := &uploadRun{report: &Report{}, recorder: keeper.recorder()}
-	if err := run.observePredecessor(t.Context(), s, "media", item); err != nil {
+	present, err := run.observePredecessor(t.Context(), s, "media", item)
+	if err != nil {
 		t.Fatalf("observing the predecessor: %v", err)
 	}
 	file, err := os.Open(path)
@@ -178,7 +180,7 @@ func TestReclaimingWaitsForAVerifiedReplacement(t *testing.T) {
 	// outcome is unresolved, which is exactly when reclaiming would be a
 	// guess about which bytes survive.
 	mock.FailNextObjectHEADs(1)
-	result := nativeUpload(t.Context(), s, "media", item, file)
+	result := nativeUpload(t.Context(), s, "media", item, file, present)
 	if result.Result == transfercopy.ResultCopied {
 		t.Fatalf("the fixture did not fail the verification: %+v", result.Observation)
 	}
@@ -432,7 +434,7 @@ func TestReclaimingSkipsAnItemThatReplacedNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = file.Close() }()
-	result := nativeUpload(t.Context(), s, "media", item, file)
+	result := nativeUpload(t.Context(), s, "media", item, file, item.Replaces)
 	if result.Result != transfercopy.ResultCopied {
 		t.Fatalf("the creation was refused: %+v", result.Observation)
 	}
