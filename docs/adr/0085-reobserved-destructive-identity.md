@@ -173,9 +173,25 @@ no conditional and no acknowledgement of that object. An earlier draft of this d
 create's own conditional already protected this case. It does not.
 
 This decision proposes the explicit change: when the predecessor is observed absent, every
-publication route restores the conditional create for that name, so a recreated name conflicts
-instead of being overwritten. No maintained test covers that transition today, and one is owed with
-the implementation.
+publication route restores the conditional create for that name, so a name the store finds live when
+it evaluates that conditional is refused instead of overwritten. No maintained test covered that
+transition when this was written; the implementation supplies one.
+
+**That sentence originally said a recreated name conflicts instead of being overwritten, without
+qualification, and the measurement refutes it.**
+[The evaluation point](../experiments/2026-10-10-conditional-evaluation-point.md) was measured after
+the implementation shipped: a name created while the conditional PUT's body was still arriving was
+never refused, twelve observations of twelve across both HTTP framings, with each of the two controls
+holding twelve of twelve. So the conditional is evaluated before the body completes. What this
+change removes is the dependence on the age of the route's own observation; the interval after the
+store has evaluated the conditional stays exposed, and on the native route, which streams the whole
+local file afterwards, that interval is the length of the upload. This transition narrows like every
+other one in this decision — it does not close.
+
+The same measurement found that in eleven of those twelve the conditional creator was answered 201
+while the other writer's object remained at the name. A 201 is therefore not evidence that a
+publication's bytes are live at its name, and nothing in this decision may be read as making it one;
+the route's own live read after the publication is what reports that case.
 
 ### A difference refuses the name and never prompts
 
