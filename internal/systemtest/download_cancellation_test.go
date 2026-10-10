@@ -28,6 +28,19 @@ type downloadCancelHold struct {
 	reached chan struct{}
 	release chan struct{}
 	once    sync.Once
+	// mu guards sent, which the reader records and a test reads. The barrier
+	// is the only party that knows how much it released, and a test that wants
+	// to assert the release was exact has to ask here rather than infer it from
+	// bytes on a disk it does not control the flushing of.
+	mu   sync.Mutex
+	sent int64
+}
+
+// released is how many body bytes the barrier has handed downstream.
+func (h *downloadCancelHold) released() int64 {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.sent
 }
 
 type downloadCancelReader struct {
@@ -51,6 +64,9 @@ func (r *downloadCancelReader) Read(p []byte) (int, error) {
 	}
 	n, err := r.ReadCloser.Read(p)
 	r.sent += int64(n)
+	r.hold.mu.Lock()
+	r.hold.sent = r.sent
+	r.hold.mu.Unlock()
 	return n, err
 }
 

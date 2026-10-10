@@ -199,8 +199,40 @@ func shutdownChild(t *testing.T, h *Harness, mode string) {
 	// matched, or something long enough matched that does not begin where the
 	// object does, and those point at different places to look next. None of them
 	// identifies the initiating failure.
+	//
+	// What is waited FOR is a non-empty prefix of the object, not the whole of
+	// what the barrier released. This wait used to require all 64 KiB on disk,
+	// and that is a property of flushing rather than of this system: the barrier
+	// hands 64 KiB downstream and then holds the body OPEN, so whether the child
+	// has flushed all of it, half of it, or none of it at this instant depends on
+	// buffers between the proxy and the file which nothing here controls and
+	// nothing forces out while the body never ends. That reasoning is about the
+	// pipeline's shape and does not rest on any particular run.
+	//
+	// A hosted run did record a short file here — 32768 bytes where 65536 were
+	// wanted — and that is all it establishes. It does not establish those bytes
+	// were a prefix of anything: the old wait's switch matched the short-file arm
+	// and continued before reaching its content comparison, so an incorrect file
+	// of that size would have logged the same line. Nor does it establish that
+	// nothing grew across the deadline, since the witness below is replaced on
+	// every poll (docs/experiments/2026-10-10-shutdown-barrier-flush.md).
 	var seen []string
-	lifetimeAwaitReporting(t, "real child partial bytes", func() []string { return seen }, func() bool {
+	// The witness also carries the helper's own log and the deadline facts,
+	// because the helper that must satisfy this wait is capped at forty seconds
+	// by its own -test.timeout and forty-five by its context, while this wait
+	// runs for sixty. A timeout here can therefore mean the producer was already
+	// gone, and the previous failing path said nothing about that: it reported a
+	// filesystem observation and left the reader to wonder. What is added is the
+	// log tail and the CONFIGURED deadlines, which is a prompt for the reader
+	// rather than a determination — the helper's actual exit is not recorded
+	// here, because the channel carrying it is consumed by this test's own
+	// cleanup. Reconciling the deadlines is owed separately; prompting is not.
+	witness := func() []string {
+		return append(append([]string{}, seen...),
+			fmt.Sprintf("wait=%s but the helper is capped at 40s by -test.timeout and 45s by its context", lifetimeWait),
+			"helper log: "+lifetimeTail(parent.log, 2048))
+	}
+	lifetimeAwaitReporting(t, "real child partial bytes", witness, func() bool {
 		paths, err := filepath.Glob(filepath.Join(stage, "*"))
 		if err != nil {
 			t.Fatal(err)
@@ -212,13 +244,16 @@ func shutdownChild(t *testing.T, h *Harness, mode string) {
 			case err != nil:
 				seen = append(seen, fmt.Sprintf("%s: %v", filepath.Base(path), err))
 				continue
-			case len(data) < 64*1024:
-				seen = append(seen, fmt.Sprintf("%s: %d bytes, want at least %d",
+			case len(data) == 0:
+				seen = append(seen, fmt.Sprintf("%s: empty", filepath.Base(path)))
+				continue
+			case len(data) > 64*1024:
+				seen = append(seen, fmt.Sprintf("%s: %d bytes, more than the barrier released (%d)",
 					filepath.Base(path), len(data), 64*1024))
 				continue
-			case !bytes.Equal(data[:64*1024], body[:64*1024]):
-				seen = append(seen, fmt.Sprintf("%s: %d bytes whose first %d do not match the object",
-					filepath.Base(path), len(data), 64*1024))
+			case !bytes.Equal(data, body[:len(data)]):
+				seen = append(seen, fmt.Sprintf("%s: %d bytes which are not the object's first %d",
+					filepath.Base(path), len(data), len(data)))
 				continue
 			}
 			writing = path
@@ -261,10 +296,24 @@ func shutdownChild(t *testing.T, h *Harness, mode string) {
 		}
 	})
 	lifetimeCheckChild(t, pid, parent.cmd.Process.Pid, pidfd)
+	// Each half of "the barrier was exact" is asserted where it is actually
+	// decided. The release is exact at the barrier, which is the only party that
+	// knows it; what reached the disk is a true prefix of the object, which is
+	// all this pipeline guarantees while the body is still open. The previous
+	// single check demanded that the disk hold exactly what the barrier released,
+	// which conflated the two and is what made this test flake.
+	if released := hold.released(); released != 64*1024 {
+		t.Fatalf("the body barrier released %d bytes, want exactly %d", released, 64*1024)
+	}
 	before := lifetimeSnapshot(t, root)
 	partial, ok := before[strings.TrimPrefix(writing, root+string(os.PathSeparator))]
-	if !ok || partial.Size != 64*1024 || partial.Hash != fmt.Sprintf("%x", sha256.Sum256(body[:64*1024])) || len(before) != 3 {
-		t.Fatalf("write barrier was not exact: %+v", before)
+	switch {
+	case !ok || len(before) != 3:
+		t.Fatalf("write barrier did not capture one partial and the sentinel: %+v", before)
+	case partial.Size <= 0 || partial.Size > 64*1024:
+		t.Fatalf("retained partial is %d bytes, want between 1 and the %d released: %+v", partial.Size, 64*1024, before)
+	case partial.Hash != fmt.Sprintf("%x", sha256.Sum256(body[:partial.Size])):
+		t.Fatalf("retained partial of %d bytes is not the object's first %d: %+v", partial.Size, partial.Size, before)
 	}
 	if release, err := app.AcquireInstanceLock(state); err == nil {
 		release()
@@ -301,11 +350,15 @@ func shutdownChild(t *testing.T, h *Harness, mode string) {
 	}
 	shutdownWaitParent(t, parent)
 	after := lifetimeSnapshot(t, root)
-	want := map[string]lifetimeFile{"sentinel": before["sentinel"]}
+	partialKey := strings.TrimPrefix(writing, root+string(os.PathSeparator))
 	if mode == "escalate" {
-		want = before
-	}
-	if !reflect.DeepEqual(after, want) {
+		// The partial may have grown between the earlier snapshot and the
+		// moment the child actually stopped, which is correct rather than a
+		// change to retained state.
+		if err := lifetimeRetained(before, after, partialKey, body, hold.released()); err != nil {
+			t.Fatalf("consumer altered retained state: %v; got=%+v before=%+v", err, after, before)
+		}
+	} else if want := (map[string]lifetimeFile{"sentinel": before["sentinel"]}); !reflect.DeepEqual(after, want) {
 		t.Fatalf("consumer altered retained state: got=%+v want=%+v", after, want)
 	}
 	close(hold.release)
