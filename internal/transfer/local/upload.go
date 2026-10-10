@@ -455,12 +455,20 @@ func segmentShape(segment swiftcontrol.ObjectSegment) FragmentShape {
 // detected here, however old our own observation is.
 //
 // That is not a claim that the window is closed, and an earlier version of this
-// comment said it was. Where the store evaluates the conditional relative to a
-// streaming body is not measured, here or in the decision, so a create landing
-// after that evaluation is not covered — and on the native route, which streams
-// the whole local file, that is a long time. What this transition removes is the
-// dependence on our observation's age, not the exposure after the store has
-// decided. Measuring where that point actually falls is owed.
+// comment said it was. The evaluation point has since been measured
+// (docs/experiments/2026-10-10-conditional-evaluation-point.md): a name created
+// while the body was still arriving was never refused, twelve observations of
+// twelve, so the conditional is evaluated before the body completes and a create
+// landing after it is not covered — on the native route, which streams the whole
+// local file, that interval is the length of the upload. What this transition
+// removes is the dependence on our observation's age, not the exposure after the
+// store has decided.
+//
+// The same measurement found something worth knowing here: in eleven of those
+// twelve the conditional creator was answered 201 while the OTHER writer's object
+// remained at the name. A 201 is not evidence that these bytes are at this name,
+// which is why verifyUpload asks the live name afterwards instead of trusting the
+// status.
 //
 // The declared entity tag is kept either way, wherever the route declares
 // one, so a replacement whose bytes did not survive the wire is refused by
