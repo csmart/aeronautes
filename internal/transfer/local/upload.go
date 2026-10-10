@@ -99,7 +99,8 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 				return report, errors.Join(err, u.observe(item, result))
 			}
 			report.NativeRouted++
-			if err := u.observePredecessor(ctx, dst, container, item); err != nil {
+			present, err := u.observePredecessor(ctx, dst, container, item)
+			if err != nil {
 				return report, err
 			}
 			file, err := os.Open(item.Path)
@@ -107,7 +108,7 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 			if err != nil {
 				result = uploadFailed(transfercopy.EffectNotAttempted, transfercopy.StageSourceRead, transfercopy.CodeIO, "native-open", err)
 			} else {
-				result = nativeUpload(ctx, dst, container, item, file)
+				result = nativeUpload(ctx, dst, container, item, file, present)
 			}
 			if err := u.observe(item, result); err != nil {
 				return report, err
@@ -160,10 +161,11 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 			if err := ctx.Err(); err != nil {
 				return report, err
 			}
-			if err := u.observePredecessor(ctx, dst, container, item); err != nil {
+			present, err := u.observePredecessor(ctx, dst, container, item)
+			if err != nil {
 				return report, err
 			}
-			outcome := commitStagedUpload(ctx, dst, container, stagePrefix+filepath.Base(item.Path), item, recovery)
+			outcome := commitStagedUpload(ctx, dst, container, stagePrefix+filepath.Base(item.Path), item, present, recovery)
 			if err := u.observe(item, outcome); err != nil {
 				return report, err
 			}
@@ -309,19 +311,26 @@ func localDigest(path string) (string, error) {
 // made for nothing. A name that has gone between the preflight and now is
 // recorded as absent rather than refused, because publishing over nothing
 // is what a create does and the operator acknowledged the stronger act.
+//
+// It reports whether a predecessor was there, because the publication has to
+// agree with what was recorded. A run that recorded an absent predecessor
+// published nothing over anything, so its request must be a create, and
+// ADR 0085 says so: a name recreated after this read would otherwise be
+// overwritten with no conditional and no acknowledgement of THAT object,
+// while the ledger said there had been nothing to replace.
 func (u *uploadRun) observePredecessor(ctx context.Context, dst *swiftcontrol.Session,
-	container string, item UploadItem) error {
+	container string, item UploadItem) (present bool, err error) {
 	if !item.Replaces {
-		return nil
+		return false, nil
 	}
 	detail, err := dst.ObjectDetail(ctx, container, item.Name)
 	switch {
 	case swiftcontrol.IsNotFound(err):
-		return u.replacing(item, ObservedPredecessor{})
+		return false, u.replacing(item, ObservedPredecessor{})
 	case err != nil:
-		return u.stop(fmt.Errorf("reading what is at %s before replacing it: %w", item.Name, err))
+		return false, u.stop(fmt.Errorf("reading what is at %s before replacing it: %w", item.Name, err))
 	}
-	return u.replacing(item, ObservedPredecessor{
+	return true, u.replacing(item, ObservedPredecessor{
 		Present: true,
 		ETag:    strings.Trim(detail.ETag, `"`), Length: detail.ContentLength,
 		LastModified: detail.LastModified, Class: string(detail.Class),
@@ -433,27 +442,48 @@ func segmentShape(segment swiftcontrol.ObjectSegment) FragmentShape {
 // name existing is the point, and that is the whole of what an
 // acknowledged overwrite changes about the write (ADR 0081 decision 6).
 //
+// replacing is whether THIS publication is going over a predecessor the run
+// observed, which is not the same question as item.Replaces — that one says
+// the preflight found the name live and the operator acknowledged it. When
+// the two disagree the name went away in between, the run recorded that it
+// did, and the publication is a create (ADR 0085).
+//
+// This is the one place in the protocol where the refusal does not depend on
+// when we looked. Every other precondition this store was measured against is
+// ignored, but If-None-Match: * is honoured, and the STORE is what evaluates
+// it — so a name present at that evaluation is refused there rather than
+// detected here, however old our own observation is.
+//
+// That is not a claim that the window is closed, and an earlier version of this
+// comment said it was. Where the store evaluates the conditional relative to a
+// streaming body is not measured, here or in the decision, so a create landing
+// after that evaluation is not covered — and on the native route, which streams
+// the whole local file, that is a long time. What this transition removes is the
+// dependence on our observation's age, not the exposure after the store has
+// decided. Measuring where that point actually falls is owed.
+//
 // The declared entity tag is kept either way, wherever the route declares
 // one, so a replacement whose bytes did not survive the wire is refused by
 // the store with the prior object intact, as measured.
-func publishHeaders(item UploadItem, declared string) map[string]string {
+func publishHeaders(replacing bool, declared string) map[string]string {
 	headers := map[string]string{}
 	if declared != "" {
 		headers["ETag"] = declared
 	}
-	if !item.Replaces {
+	if !replacing {
 		headers["If-None-Match"] = "*"
 	}
 	return headers
 }
 
-func nativeUpload(ctx context.Context, dst *swiftcontrol.Session, container string, item UploadItem, file localSource) (result uploadResult) {
+func nativeUpload(ctx context.Context, dst *swiftcontrol.Session, container string, item UploadItem,
+	file localSource, replacing bool) (result uploadResult) {
 	defer func() { result.addIssue(transfercopy.StageSourceRead, "native-close", file.Close()) }()
 	declared, err := heldDigest(file)
 	if err != nil {
 		return uploadFailed(transfercopy.EffectNotAttempted, transfercopy.StageSourceRead, transfercopy.CodeIO, "native-digest", err)
 	}
-	headers := publishHeaders(item, declared)
+	headers := publishHeaders(replacing, declared)
 	if _, err := dst.PutObject(ctx, container, item.Name, file, "application/octet-stream", headers); err != nil {
 		if swiftcontrol.IsPreconditionFailed(err) {
 			return uploadConflict("native-put", err)
@@ -473,15 +503,18 @@ func nativeUpload(ctx context.Context, dst *swiftcontrol.Session, container stri
 }
 
 func commitStagedUpload(ctx context.Context, dst *swiftcontrol.Session, container, stagedName string,
-	item UploadItem, recovery func(kind, container, prefix, object string) error) uploadResult {
+	item UploadItem, replacing bool, recovery func(kind, container, prefix, object string) error) uploadResult {
 	staged, err := dst.ObjectDetail(ctx, container, stagedName)
 	if err != nil {
 		return uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageStaging, transfercopy.CodeMissing, "stage-verify", fmt.Errorf("staged object missing: %w", err))
 	}
 	if _, err := dst.ObjectDetail(ctx, container, item.Name); err == nil {
 		// A name that is live is a conflict for a create and the expected
-		// state for a replacement the operator acknowledged.
-		if !item.Replaces {
+		// state for a replacement the operator acknowledged. A run whose
+		// predecessor was recorded absent is publishing a create, so this
+		// refuses it here rather than reading and streaming a whole staged
+		// object the conditional below would have had the store refuse.
+		if !replacing {
 			return uploadConflict("commit-conflict", errors.New("destination appeared since preflight"))
 		}
 	} else if !swiftcontrol.IsNotFound(err) {
@@ -530,7 +563,7 @@ func commitStagedUpload(ctx context.Context, dst *swiftcontrol.Session, containe
 		// The manifest body is empty, so it declares no digest of its own:
 		// what binds this publication is the comparison above, over the
 		// segments this manifest names (ADR 0080 decision 3).
-		headers := publishHeaders(item, "")
+		headers := publishHeaders(replacing, "")
 		headers["X-Object-Manifest"] = staged.Manifest
 		if _, err := dst.PutObject(ctx, container, item.Name, strings.NewReader(""), staged.ContentType, headers); err != nil {
 			if swiftcontrol.IsPreconditionFailed(err) {
@@ -550,7 +583,7 @@ func commitStagedUpload(ctx context.Context, dst *swiftcontrol.Session, containe
 		// file, so declaring it here binds the publication to those same
 		// bytes as they stream through (ADR 0080 decision 4).
 		_, putErr := dst.PutObject(ctx, container, item.Name, body, staged.ContentType,
-			publishHeaders(item, declared))
+			publishHeaders(replacing, declared))
 		closeErr = body.Close()
 		if putErr != nil {
 			result := uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageCommit, transfercopy.CodeIO, "commit-copy", putErr)

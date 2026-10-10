@@ -81,7 +81,7 @@ func TestNativeUploadRefusesAlteredBytes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result := nativeUpload(t.Context(), session, "media", item, file)
+	result := nativeUpload(t.Context(), session, "media", item, file, item.Replaces)
 
 	if result.Result != transfercopy.ResultFailed || result.Effect != transfercopy.EffectUnresolved {
 		t.Fatalf("altered native upload was not refused: %+v", result.Observation)
@@ -113,7 +113,7 @@ func TestNativeUploadPublishesUnalteredBytes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result := nativeUpload(t.Context(), session, "media", item, file)
+	result := nativeUpload(t.Context(), session, "media", item, file, item.Replaces)
 	if result.Result != transfercopy.ResultCopied || result.Effect != transfercopy.EffectReportedApplied {
 		t.Fatalf("unaltered native upload did not publish: %+v", result.Observation)
 	}
@@ -216,7 +216,7 @@ func TestStagedCommitRefusesStagedContentThatIsNotTheSource(t *testing.T) {
 			witness := uploadWitness(t, mock)
 			before := uploadSnapshot(t, witness)
 
-			result := commitStagedUpload(t.Context(), session, "media", stagedName, item, nil)
+			result := commitStagedUpload(t.Context(), session, "media", stagedName, item, item.Replaces, nil)
 			if result.Result != transfercopy.ResultFailed || result.Effect != transfercopy.EffectUnresolved {
 				t.Fatalf("a staged commit of content that is not the source was not refused: %+v", result.Observation)
 			}
@@ -274,7 +274,7 @@ func TestStagedCommitPublishesStagedContentThatIsTheSource(t *testing.T) {
 
 			stagedName := ".aeronautes/stage/binding/batch/object"
 			tc.stage(t, mock, stagedName)
-			result := commitStagedUpload(t.Context(), session, "media", stagedName, item, nil)
+			result := commitStagedUpload(t.Context(), session, "media", stagedName, item, item.Replaces, nil)
 			if result.Result != transfercopy.ResultCopied || result.Effect != transfercopy.EffectReportedApplied {
 				t.Fatalf("a staged commit of the source's own content did not publish: %+v", result.Observation)
 			}
@@ -340,7 +340,7 @@ func TestNativeUploadRefusesAHeldFileThatChangesInPlace(t *testing.T) {
 	item.Route = "native"
 
 	held := &mutatingSource{passes: [][]byte{[]byte(first), []byte(strings.ToUpper(first))}}
-	result := nativeUpload(t.Context(), session, "media", item, held)
+	result := nativeUpload(t.Context(), session, "media", item, held, item.Replaces)
 	if result.Result != transfercopy.ResultFailed || result.Effect != transfercopy.EffectUnresolved {
 		t.Fatalf("a held file that changed in place was not refused: %+v", result.Observation)
 	}
@@ -379,7 +379,7 @@ func TestNativeUploadSendsTheHeldFileWhenItsPathnameIsReplaced(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result := nativeUpload(t.Context(), session, "media", item, file)
+	result := nativeUpload(t.Context(), session, "media", item, file, item.Replaces)
 	if result.Result != transfercopy.ResultCopied || result.Effect != transfercopy.EffectReportedApplied {
 		t.Fatalf("a replaced pathname refused the held file: %+v", result.Observation)
 	}
@@ -436,7 +436,7 @@ func TestStagedCommitRefusesAPartialStagedRead(t *testing.T) {
 	before := uploadSnapshot(t, witness)
 	item := UploadItem{Path: writeFile(t, t.TempDir(), "object", "GOOD"), Name: "docs/object", Size: 4}
 
-	result := commitStagedUpload(t.Context(), session, "media", stagedName, item, nil)
+	result := commitStagedUpload(t.Context(), session, "media", stagedName, item, item.Replaces, nil)
 	if partialReads.Load() != 1 {
 		t.Fatalf("the partial-response fault was never exercised: %d", partialReads.Load())
 	}
@@ -493,7 +493,7 @@ func TestStagedCommitRefusesAnUnterminatedStagedRead(t *testing.T) {
 	before := uploadSnapshot(t, witness)
 	item := UploadItem{Path: writeFile(t, t.TempDir(), "object", "bytes"), Name: "docs/object", Size: 5}
 
-	result := commitStagedUpload(t.Context(), session, "media", stagedName, item, nil)
+	result := commitStagedUpload(t.Context(), session, "media", stagedName, item, item.Replaces, nil)
 	if aborted.Load() != 1 {
 		t.Fatalf("the unterminated-stream fault was never exercised: %d", aborted.Load())
 	}
@@ -539,7 +539,7 @@ func TestStagedCommitRefusesACancelledStagedRead(t *testing.T) {
 	before := uploadSnapshot(t, witness)
 	item := UploadItem{Path: writeFile(t, t.TempDir(), "object", "bytes"), Name: "docs/object", Size: 5}
 
-	result := commitStagedUpload(ctx, session, "media", stagedName, item, nil)
+	result := commitStagedUpload(ctx, session, "media", stagedName, item, item.Replaces, nil)
 	if livePuts.Load() != 0 {
 		t.Fatalf("a cancelled staged read authorised a publication: %d live writes", livePuts.Load())
 	}
@@ -608,14 +608,14 @@ func TestPlainUploadReportsAStrippedDeclaration(t *testing.T) {
 			if tc.staged {
 				stagedName := ".aeronautes/stage/binding/batch/object"
 				seed(mock, "media", stagedName, body)
-				result = commitStagedUpload(t.Context(), session, "media", stagedName, item, nil)
+				result = commitStagedUpload(t.Context(), session, "media", stagedName, item, item.Replaces, nil)
 			} else {
 				item.Route = "native"
 				file, err := os.Open(path)
 				if err != nil {
 					t.Fatal(err)
 				}
-				result = nativeUpload(t.Context(), session, "media", item, file)
+				result = nativeUpload(t.Context(), session, "media", item, file, item.Replaces)
 			}
 
 			if result.Result != transfercopy.ResultFailed || result.Effect != transfercopy.EffectUnresolved {
@@ -669,14 +669,14 @@ func TestPlainUploadVerifiesWhatItPublished(t *testing.T) {
 			if tc.staged {
 				stagedName := ".aeronautes/stage/binding/batch/object"
 				seed(mock, "media", stagedName, body)
-				result = commitStagedUpload(t.Context(), session, "media", stagedName, item, nil)
+				result = commitStagedUpload(t.Context(), session, "media", stagedName, item, item.Replaces, nil)
 			} else {
 				item.Route = "native"
 				file, err := os.Open(path)
 				if err != nil {
 					t.Fatal(err)
 				}
-				result = nativeUpload(t.Context(), session, "media", item, file)
+				result = nativeUpload(t.Context(), session, "media", item, file, item.Replaces)
 			}
 			if result.Result != transfercopy.ResultCopied || result.Effect != transfercopy.EffectReportedApplied {
 				t.Fatalf("an unaltered upload did not publish: %+v", result.Observation)
@@ -713,7 +713,7 @@ func TestManifestCommitIsNotAskedForTheFileDigest(t *testing.T) {
 	seed(mock, "media_segments", "upload/0002", "89abcdef")
 	mock.PutObject("media", stagedName, swifttest.Object{Manifest: "media_segments/upload/"})
 
-	result := commitStagedUpload(t.Context(), session, "media", stagedName, item, nil)
+	result := commitStagedUpload(t.Context(), session, "media", stagedName, item, item.Replaces, nil)
 	if result.Result != transfercopy.ResultCopied || result.verification == nil ||
 		result.verification.Result != transfercopy.ResultVerified {
 		t.Fatalf("a manifest commit of the source's own content did not verify: %+v %+v", result.Observation, result.verification)
