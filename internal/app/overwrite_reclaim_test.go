@@ -694,13 +694,22 @@ func TestReclamationDeclinesWhenTheRecordNamesNoWholeObject(t *testing.T) {
 	parts, _ := seedStaticLargeObject(t, f.h, "replaceable", "live/taken")
 	f.tag = f.liveTag(t)
 	wireReclamation(t, f.h, true)
-	// Inside the dialog the live object becomes a manifest of one ranged
-	// entry over a segment that stays where it is: the racing writer this
-	// contract admits, arriving between the question and the record.
+	// Inside the dialog the live object's ENTRIES become one ranged entry over
+	// a segment that stays where it is, while its class, length and entity tag
+	// stay exactly what the question was composed from. So the question
+	// authorises removal, the record taken before publishing names no whole
+	// object, and reclamation has to decline — which is this case's subject.
+	//
+	// The identity is deliberately left unchanged. ADR 0085's comparison now
+	// refuses a replacement whose name no longer holds what was acknowledged,
+	// and a fixture that changed the identity here would be refused before
+	// reclamation was reached, testing that decision instead of this one. The
+	// refusal has its own case,
+	// TestAcknowledgedUploadRefusesAWriterThatArrivedDuringTheDialog.
 	confirmer := &recordingOverwriteConfirmer{yes: true, before: func() {
 		f.h.mock.PutObject("replaceable", "live/taken", swifttest.Object{
-			SLO: true, Bytes: 8, ETag: `"` + md5of(md5of("89abcdef")) + `"`,
-			Data: []byte("89abcdef"),
+			SLO: true, Bytes: 16, ETag: `"` + f.tag + `"`,
+			Data: []byte("0123456789abcdef"),
 			SLOManifestJSON: `[{"name":"/replaceable_segments/` + parts[0].Object +
 				`","hash":"` + md5of("01234567") + `","bytes":8,"range":"0-3"}]`,
 		})

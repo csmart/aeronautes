@@ -80,7 +80,7 @@ func TestNativeUploadRetainsCopiedFactAfterCloseFailure(t *testing.T) {
 	}
 	refusal := errors.New("fixture source close refused")
 	item := UploadItem{Path: path, Name: "native\n/source", Size: 5, Route: "native"}
-	result := nativeUpload(t.Context(), s, "media", item, uploadCloseRefusal{ReadSeekCloser: file, err: refusal}, item.Replaces)
+	result := nativeUpload(t.Context(), s, "media", item, uploadCloseRefusal{ReadSeekCloser: file, err: refusal}, item.Replaces, nil)
 	want := transfercopy.Observation{Result: transfercopy.ResultCopied, Effect: transfercopy.EffectUnresolved, CopiedBytes: 5,
 		Diagnostic: transfercopy.Diagnostic{Stage: transfercopy.StageSourceRead, Code: transfercopy.CodeIO}}
 	if result.Observation != want || result.failure != nil || len(result.issues) != 1 || !errors.Is(result.issues[0].err, refusal) ||

@@ -291,6 +291,39 @@ func (s *TransferService) uploadItemRecorder(ctx context.Context, jobID string, 
 				Result:     audit.ResultObserved,
 			})
 		},
+		Acknowledged: func(item local.UploadItem) (local.ShownObject, bool, error) {
+			// What the operator was shown when they accepted replacing this
+			// name, for the comparison ADR 0085 makes immediately before the
+			// publication. An item whose acknowledgement captured no identity
+			// reads as absent here, and that decision makes the absence a
+			// refusal to overwrite rather than a licence to proceed — which
+			// the route applies, because only it knows when the fixed point
+			// has been reached.
+			baseline, ok, err := s.jobs.ReadAcknowledgedBaseline(ctx, jobID, item.Name)
+			if err != nil || !ok {
+				return local.ShownObject{}, false, err
+			}
+			return local.ShownObject{Class: baseline.Class, Length: baseline.Length, ETag: baseline.ETag}, true, nil
+		},
+		Refused: func(item local.UploadItem, acknowledged, found local.ShownObject) error {
+			// Both identities, durably, for this one name. An operator told
+			// only that a replacement was refused learns nothing; one shown
+			// that the name now holds a different size with a different digest
+			// learns that something else is writing to their account.
+			//
+			// The name is deliberately absent from the summary and present in
+			// the event's own resource field, which the summary filter does not
+			// inspect: a valid object called password-manifest must not be able
+			// to make its own refusal unrecordable.
+			return s.runner.audit.Append(ctx, audit.Event{
+				BookmarkID: req.BookmarkID,
+				Operation:  "object.upload.refused",
+				Resource:   req.Container + "/" + item.Name,
+				Summary: fmt.Sprintf("replacement refused at the last observation: the name no longer holds what was acknowledged; it was a %s of %d bytes with entity tag %s, and it is now a %s of %d bytes with entity tag %s",
+					acknowledged.Class, acknowledged.Length, acknowledged.ETag, found.Class, found.Length, found.ETag),
+				Result: audit.ResultConflict,
+			})
+		},
 		Reclaiming: func(item local.UploadItem) (local.ReclaimPlan, error) {
 			// What may be reclaimed is decided here, not in the route,
 			// because it depends on the operator's setting, on what the

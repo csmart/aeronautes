@@ -34,6 +34,28 @@ type UploadRecorder struct {
 	// reach. A replacing item with no hook is refused rather than
 	// published unrecorded, which uploadRun.replacing enforces.
 	Replacing func(UploadItem, ObservedPredecessor) error
+	// Acknowledged asks what the operator was shown at a name when they
+	// accepted replacing it, so the publication can be compared against it
+	// at the fixed point (ADR 0085). The second result is false when the
+	// acknowledgement captured no identity, which that decision makes a
+	// refusal to overwrite rather than a licence to proceed.
+	//
+	// It is asked rather than carried on the item because ADR 0045 keeps
+	// identities off UploadItem, and because the answer lives in the job
+	// ledger, which this package does not own. Like Replacing it is
+	// optional, and like Replacing a replacing item with no hook is
+	// refused rather than published against nothing.
+	Acknowledged func(UploadItem) (ShownObject, bool, error)
+	// Refused records a replacement refused at the fixed point because the
+	// name no longer holds what the acknowledgement was shown, with BOTH
+	// identities: the one the operator accepted and the one found there.
+	//
+	// ADR 0085 requires both for every refusal, and the run's own failure
+	// list cannot carry them — it is bounded and in memory, and only the
+	// first failure's message reaches the job record, so a second name
+	// refused in the same run would leave no durable trace of what was
+	// found at it.
+	Refused func(item UploadItem, acknowledged, found ShownObject) error
 }
 
 // ReclaimPlan is what may be reclaimed for one replaced item, answered by
@@ -265,6 +287,20 @@ func uploadFailed(effect transfercopy.Effect, stage transfercopy.Stage, code tra
 	return uploadResult{Observation: transfercopy.Observation{
 		Result: transfercopy.ResultFailed, Effect: effect,
 		Diagnostic: transfercopy.ClassifyDiagnostic(stage, code, err)}, label: label, failure: err}
+}
+
+// uploadRefusedBefore is a conflict detected BEFORE the publishing request, so
+// nothing was attempted.
+//
+// uploadConflict reports an unresolved effect, which is right for a request the
+// store refused after we sent it and wrong for a comparison that stopped us
+// sending one. The result stays a CONFLICT either way, because that is what
+// audit.ResultConflict means — a concurrent change detected, nothing done — and
+// because an operator's conflict total should not be diluted into failures.
+func uploadRefusedBefore(label string, err error) uploadResult {
+	result := uploadFailed(transfercopy.EffectNotAttempted, transfercopy.StageCommit, transfercopy.CodeConflict, label, err)
+	result.Result = transfercopy.ResultConflict
+	return result
 }
 
 func uploadConflict(label string, err error) uploadResult {
