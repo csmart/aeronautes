@@ -403,6 +403,20 @@ func (u *uploadRun) observe(item UploadItem, result uploadResult) error {
 // backing the names it is about, kept as separate facts because a question
 // that cannot tell "nothing is there" from "this could not be read" states
 // a falsehood in the case that matters most.
+// ShownObject is what an authoritative HEAD reported for one name: the three
+// facts ADR 0085 makes the acknowledged baseline, from the read the
+// acknowledgement already takes to say what backs the name.
+//
+// It is HEAD-grade because a listing row cannot establish an object's class and
+// a dynamic manifest's row is zero-byte carrying the manifest object's own hash
+// rather than a digest of what it assembles, so neither can identify what a
+// replacement is about to destroy.
+type ShownObject struct {
+	Class  string
+	Length int64
+	ETag   string
+}
+
 type FragmentReading struct {
 	// Whole is how many recorded whole segments reclamation would remove.
 	// It counts only entries an inventory could NAME, because those are the
@@ -419,6 +433,43 @@ type FragmentReading struct {
 	// every name was read. A question with this set must not say there is
 	// no large object and must not authorise removing anything.
 	Unknown string
+	// Shown is what each name held, by name, for the names this reading could
+	// read authoritatively. It is the acknowledged baseline ADR 0085 compares a
+	// publication against, and it costs nothing: these HEADs are already taken
+	// to say what backs the names, and their details were previously discarded
+	// apart from counting fragments.
+	//
+	// A name absent from this map is one the reading could not identify, which
+	// that decision makes a refusal to overwrite rather than a licence to
+	// proceed. Plain objects are present: this reading skips them for FRAGMENT
+	// purposes only, after it has already read them.
+	Shown map[string]ShownObject
+}
+
+// shownFrom is the identity a HEAD established, and false when it established
+// none.
+//
+// A successful read is not the same as a complete identity, which is what
+// db:830 found here. This adapter accepts a HEAD carrying no entity tag and one
+// carrying no length, and the client then reports a zero length that cannot be
+// told apart from a genuinely empty object. Recording either would break the
+// contract this map is supposed to keep — a name is identified or it is absent —
+// and the empty tag would reach the ledger as an invalid tuple, whose refusal
+// latches the whole item store for the session.
+//
+// So the entity tag must be non-empty and the length must have been STATED. The
+// header's presence is what is checked rather than the parsed value, because an
+// absent header and a stated zero both parse to zero, and a genuinely empty
+// object is a real object whose baseline is valid (ADR 0085).
+func shownFrom(detail *swiftcontrol.ObjectDetail) (ShownObject, bool) {
+	tag := strings.Trim(detail.ETag, `"`)
+	if tag == "" {
+		return ShownObject{}, false
+	}
+	if _, stated := detail.RawHeaders["Content-Length"]; !stated {
+		return ShownObject{}, false
+	}
+	return ShownObject{Class: string(detail.Class), Length: detail.ContentLength, ETag: tag}, true
 }
 
 // FragmentPlan reads what reclaiming these replaced names would remove, so
@@ -444,6 +495,12 @@ func FragmentPlan(ctx context.Context, dst *swiftcontrol.Session, container stri
 			// so it is recorded as not known rather than counted as nothing.
 			reading.note("the object at " + name + " could not be read")
 			continue
+		}
+		if shown, identified := shownFrom(detail); identified {
+			if reading.Shown == nil {
+				reading.Shown = map[string]ShownObject{}
+			}
+			reading.Shown[name] = shown
 		}
 		if detail.Class == swiftcontrol.ClassPlain {
 			continue
