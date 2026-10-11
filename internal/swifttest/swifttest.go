@@ -121,6 +121,13 @@ type Server struct {
 	// GET requests answer 500. Used to reproduce a verify-read failure
 	// after a metadata POST (ADR 0058).
 	objectHEADFailRemaining int
+	// objectHEADFailSkip is how many object HEADs still pass untouched
+	// before objectHEADFailRemaining starts to apply. A fixture that must
+	// let one read through and fail the next cannot say so with a plain
+	// count, and after ADR 0085 added a comparison read immediately before
+	// a replacing publication, "the verify read" is no longer the first
+	// HEAD a route takes.
+	objectHEADFailSkip int
 	// ManifestReadFault, when set, spoils the next ?multipart-manifest=get
 	// response for that object ("container/name"): "partial" answers a
 	// valid entry list with HTTP 206, "ranged" answers HTTP 200 with a
@@ -1039,7 +1046,15 @@ func (s *Server) FailNextListings(n int) {
 
 // FailNextObjectHEADs fails the next n object HEAD/GET requests with 500.
 func (s *Server) FailNextObjectHEADs(n int) {
+	s.FailObjectHEADsAfter(0, n)
+}
+
+// FailObjectHEADsAfter lets the next skip object HEADs pass and then fails the
+// following n, so a fixture can name WHICH read it is failing rather than only
+// how many.
+func (s *Server) FailObjectHEADsAfter(skip, n int) {
 	s.mu.Lock()
+	s.objectHEADFailSkip = skip
 	s.objectHEADFailRemaining = n
 	s.mu.Unlock()
 }
@@ -1092,7 +1107,10 @@ func (s *Server) PatchObjectMeta(container, name, key, value string) {
 func (s *Server) handleObject(w http.ResponseWriter, r *http.Request, container, name string) {
 	if r.Method == http.MethodHead || r.Method == http.MethodGet {
 		s.mu.Lock()
-		fail := s.objectHEADFailRemaining > 0
+		fail := s.objectHEADFailRemaining > 0 && s.objectHEADFailSkip == 0
+		if s.objectHEADFailRemaining > 0 && s.objectHEADFailSkip > 0 {
+			s.objectHEADFailSkip--
+		}
 		if fail {
 			s.objectHEADFailRemaining--
 		}

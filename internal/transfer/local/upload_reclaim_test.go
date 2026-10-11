@@ -39,7 +39,10 @@ func publishReplacement(t *testing.T, s *swiftcontrol.Session, run *uploadRun, i
 		t.Fatal(err)
 	}
 	defer func() { _ = file.Close() }()
-	result := nativeUpload(t.Context(), s, "media", item, file, present)
+	if run.recorder != nil && run.recorder.Acknowledged == nil {
+		run.recorder.Acknowledged = acknowledgedAsLive(t, s, "media")
+	}
+	result := nativeUpload(t.Context(), s, "media", item, file, present, run.confirmUnchanged())
 	return run.reclaim(t.Context(), s, item, result)
 }
 
@@ -52,6 +55,71 @@ type reclaimRecorder struct {
 	outcomes  []ReclaimOutcome
 	observed  []ObservedPredecessor
 	recordErr error
+}
+
+// countPUTs is how many object PUTs the mock has served, so a case can assert
+// that a publication actually happened rather than inferring it from a result.
+func countPUTs(mock *swifttest.Server) int {
+	n := 0
+	for _, line := range mock.RequestLog() {
+		if strings.HasPrefix(line, "PUT ") {
+			n++
+		}
+	}
+	return n
+}
+
+// comparesAgainstLive is ADR 0085's fixed-point comparison with a baseline
+// captured now, for a case whose subject is NOT the comparison. The comparison
+// still runs and still takes its own fresh read; this only supplies the
+// acknowledgement it would otherwise have no way to ask for.
+func comparesAgainstLive(t *testing.T, s *swiftcontrol.Session, container string, item UploadItem) unchangedSince {
+	t.Helper()
+	run := &uploadRun{report: &Report{}, recorder: &UploadRecorder{
+		Acknowledged: acknowledgedNow(t, s, container, item)}}
+	return run.confirmUnchanged()
+}
+
+// acknowledgedNow captures what the destination holds for one item ONCE, now,
+// and answers the baseline hook with it afterwards. A fixture that arms a read
+// failure needs the hook to consume no request of its own, so that the only
+// HEAD between arming and the publication is the comparison's.
+func acknowledgedNow(t *testing.T, s *swiftcontrol.Session, container string, item UploadItem) func(UploadItem) (ShownObject, bool, error) {
+	t.Helper()
+	// Read on first use rather than now. confirmBefore never asks for a
+	// create's baseline, so a case publishing over nothing must not be made
+	// to read a name that is not there merely by being given this hook.
+	var shown ShownObject
+	var taken bool
+	return func(UploadItem) (ShownObject, bool, error) {
+		if !taken {
+			detail, err := s.ObjectDetail(t.Context(), container, item.Name)
+			if err != nil {
+				return ShownObject{}, false, err
+			}
+			shown = ShownObject{Class: string(detail.Class), Length: detail.ContentLength,
+				ETag: strings.Trim(detail.ETag, `"`)}
+			taken = true
+		}
+		return shown, true, nil
+	}
+}
+
+// acknowledgedAsLive answers the baseline hook with what the destination holds
+// at the moment it is asked, which is what an acknowledgement taken then would
+// have captured. It keeps these cases publishing rather than being refused by
+// ADR 0085's fixed-point comparison, without bypassing that comparison: the
+// comparison still runs, takes its own fresh HEAD, and has to agree.
+func acknowledgedAsLive(t *testing.T, s *swiftcontrol.Session, container string) func(UploadItem) (ShownObject, bool, error) {
+	t.Helper()
+	return func(item UploadItem) (ShownObject, bool, error) {
+		detail, err := s.ObjectDetail(t.Context(), container, item.Name)
+		if err != nil {
+			return ShownObject{}, false, err
+		}
+		return ShownObject{Class: string(detail.Class), Length: detail.ContentLength,
+			ETag: strings.Trim(detail.ETag, `"`)}, true, nil
+	}
 }
 
 func (r *reclaimRecorder) recorder() *UploadRecorder {
@@ -179,10 +247,31 @@ func TestReclaimingWaitsForAVerifiedReplacement(t *testing.T) {
 	// The PUT lands and the verify read fails: the publication's own
 	// outcome is unresolved, which is exactly when reclaiming would be a
 	// guess about which bytes survive.
-	mock.FailNextObjectHEADs(1)
-	result := nativeUpload(t.Context(), s, "media", item, file, present)
+	run.recorder.Acknowledged = acknowledgedNow(t, s, "media", item)
+	// PRIMED before the fixture arms. acknowledgedNow reads on first use, so
+	// leaving it unprimed spends the one allowed read on the hook and the
+	// comparison itself then takes the 500 — the publication never happens and
+	// this case passes while testing something else entirely.
+	if _, _, err := run.recorder.Acknowledged(item); err != nil {
+		t.Fatal(err)
+	}
+	// Let the comparison's read through and fail the VERIFY read after it.
+	// Before ADR 0085's comparison the verify read was the first HEAD this
+	// route took, and a plain count said so; it is now the second.
+	puts := countPUTs(mock)
+	mock.FailObjectHEADsAfter(1, 1)
+	result := nativeUpload(t.Context(), s, "media", item, file, present, run.confirmUnchanged())
+	// The publication must have HAPPENED and its verification failed, which is
+	// what makes reclaiming a guess. A refusal before the request would leave
+	// nothing published and would not exercise this rule at all.
+	if countPUTs(mock) != puts+1 {
+		t.Fatalf("the publication never happened, so this case is not about an unverified one: %+v", result.Observation)
+	}
 	if result.Result == transfercopy.ResultCopied {
 		t.Fatalf("the fixture did not fail the verification: %+v", result.Observation)
+	}
+	if result.Result == transfercopy.ResultConflict || result.Effect != transfercopy.EffectUnresolved {
+		t.Fatalf("the publication was refused rather than left unresolved: %+v", result.Observation)
 	}
 	before := len(mock.RequestLog())
 	if err := run.reclaim(t.Context(), s, item, result); err != nil {
@@ -434,7 +523,7 @@ func TestReclaimingSkipsAnItemThatReplacedNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = file.Close() }()
-	result := nativeUpload(t.Context(), s, "media", item, file, item.Replaces)
+	result := nativeUpload(t.Context(), s, "media", item, file, item.Replaces, nil)
 	if result.Result != transfercopy.ResultCopied {
 		t.Fatalf("the creation was refused: %+v", result.Observation)
 	}

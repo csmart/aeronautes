@@ -402,6 +402,145 @@ func TestAcknowledgedUploadKeepsTheBaselineItWasShown(t *testing.T) {
 	}
 }
 
+// ADR 0085's fixed-point comparison, end to end and through the dialog that
+// makes it matter. A writer arrives while the operator is answering: the
+// acknowledgement was taken against one object and the publication would land on
+// another. ADR 0081 admitted that race explicitly; this decision refuses it.
+//
+// The refusal is a CONFLICT that attempted nothing, and the object that arrived
+// is left exactly as the other writer left it.
+func TestAcknowledgedUploadRefusesAWriterThatArrivedDuringTheDialog(t *testing.T) {
+	f := newOverwriteFixture(t)
+	const intruder = "another writer's bytes, which this operator never saw"
+	f.h.transfer.setOverwriteConfirmer(&recordingOverwriteConfirmer{yes: true, before: func() {
+		seedObject(f.h.mock, "replaceable", "live/taken", intruder, nil)
+	}})
+
+	id, err := f.h.transfer.StartUpload(t.Context(), f.request(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, f.h, id)
+	if job.Counters.ObjectsCopied != 1 {
+		t.Errorf("the create beside the refused replacement did not publish: %+v", job.Counters)
+	}
+
+	// The replaced name is refused, and the intruder's bytes are still there.
+	detail, err := f.h.inspector.Object(t.Context(), f.h.bookmarkID(), "replaceable", "live/taken")
+	if err != nil {
+		t.Fatalf("the refused name is gone: %v", err)
+	}
+	if detail.ContentLength != int64(len(intruder)) {
+		t.Errorf("the writer that arrived during the dialog was overwritten: %+v", detail)
+	}
+
+	items, err := f.h.jobsSvc.Items(t.Context(), f.h.bookmarkID(), id, "", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var refused int
+	for _, item := range items.Items {
+		if item.Key != "live/taken" {
+			continue
+		}
+		if item.Execution == nil {
+			t.Fatalf("the replaced item recorded no execution: %+v", item)
+		}
+		if item.Execution.Result != "conflict" {
+			t.Errorf("the refusal is not reported as a conflict: %+v", item.Execution)
+		}
+		if item.Execution.Effect != "not_attempted" {
+			t.Errorf("a refusal before the request claimed an effect: %+v", item.Execution)
+		}
+		refused++
+	}
+	if refused != 1 {
+		t.Fatalf("the replaced name was not reported once: %+v", items.Items)
+	}
+
+	// Both identities, durably, for this name. The run's own failure list is
+	// bounded and in memory and only its first entry's message reaches the job
+	// record, so a second name refused in the same run would otherwise leave no
+	// trace of what was found at it.
+	events, err := f.h.auditSvc.audit.List(t.Context(), audit.Query{Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record *audit.Event
+	for i, event := range events {
+		if event.Operation == "object.upload.refused" {
+			record = &events[i]
+		}
+	}
+	if record == nil {
+		t.Fatalf("a refused replacement left no record of what it found: %+v", events)
+	}
+	if record.Resource != "replaceable/live/taken" {
+		t.Errorf("the record names the wrong resource: %q", record.Resource)
+	}
+	if record.Result != audit.ResultConflict {
+		t.Errorf("the record claims a write outcome rather than a conflict: %q", record.Result)
+	}
+	for _, want := range []string{f.tag, md5of(intruder)} {
+		if !strings.Contains(record.Summary, want) {
+			t.Errorf("the record omits an identity: %q lacks %s", record.Summary, want)
+		}
+	}
+	// The name is in the resource field, not in the filtered prose.
+	if strings.Contains(record.Summary, "live/taken") {
+		t.Errorf("the summary repeats the object name, which a filter could refuse: %q", record.Summary)
+	}
+}
+
+// A refusal that could not be RECORDED must be visible, even when an ordinary
+// refusal happened first.
+//
+// Both identities per refused name are what ADR 0085 requires, and the run's own
+// failure list cannot carry that obligation: it is bounded, in memory, and only
+// its first entry's message reaches the job record. So an earlier name refused
+// ordinarily would mask a later name whose record was lost, and the operator
+// would be told about one conflict while a second name's trail silently went
+// missing. internal/audit says the same thing in its own words: a failing append
+// is an error the caller surfaces.
+func TestARefusalThatCouldNotBeRecordedIsVisibleBehindAnEarlierOne(t *testing.T) {
+	f := newOverwriteFixture(t)
+	// Two live names, so there are two refusals and an order to hide behind.
+	seedObject(f.h.mock, "replaceable", "live/free", "the other bytes already there", nil)
+	const intruder = "another writer's bytes, which this operator never saw"
+	f.h.transfer.setOverwriteConfirmer(&recordingOverwriteConfirmer{yes: true, before: func() {
+		seedObject(f.h.mock, "replaceable", "live/taken", intruder, nil)
+		seedObject(f.h.mock, "replaceable", "live/free", intruder, nil)
+	}})
+	// Only the second name's record fails. The first refusal is ordinary.
+	refuseSQL(t, f.h, `CREATE TRIGGER refuse_second_refusal BEFORE INSERT ON audit_events
+		WHEN NEW.operation='object.upload.refused' AND NEW.resource='replaceable/live/free'
+		BEGIN SELECT RAISE(ABORT,'fixture required refusal-record refusal'); END`)
+
+	id, err := f.h.transfer.StartUpload(t.Context(), f.request(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, f.h, id)
+	if !strings.Contains(job.Error, "could not be recorded") {
+		t.Fatalf("a lost refusal record was not surfaced: state=%s error=%q", job.State, job.Error)
+	}
+	if !strings.Contains(job.Error, "live/free") {
+		t.Errorf("the surfaced error does not name which refusal was lost: %q", job.Error)
+	}
+
+	// Neither competing object was published over, which is the point of
+	// refusing in the first place.
+	for _, name := range []string{"live/taken", "live/free"} {
+		detail, err := f.h.inspector.Object(t.Context(), f.h.bookmarkID(), "replaceable", name)
+		if err != nil {
+			t.Fatalf("%s is gone: %v", name, err)
+		}
+		if detail.ContentLength != int64(len(intruder)) {
+			t.Errorf("%s was published over: %+v", name, detail)
+		}
+	}
+}
+
 // seedStaticLargeObject puts a static manifest at name over two segments,
 // with one inline entry between them so the record can be shown keeping
 // each entry's own shape and position. It returns the remote parts, and the

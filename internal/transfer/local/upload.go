@@ -108,7 +108,7 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 			if err != nil {
 				result = uploadFailed(transfercopy.EffectNotAttempted, transfercopy.StageSourceRead, transfercopy.CodeIO, "native-open", err)
 			} else {
-				result = nativeUpload(ctx, dst, container, item, file, present)
+				result = nativeUpload(ctx, dst, container, item, file, present, u.confirmUnchanged())
 			}
 			if err := u.observe(item, result); err != nil {
 				return report, err
@@ -117,6 +117,9 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 				return report, err
 			}
 			progress()
+			if u.stopped != nil {
+				return report, u.stopped
+			}
 			continue
 		}
 		dir := filepath.Dir(item.Path)
@@ -165,7 +168,7 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 			if err != nil {
 				return report, err
 			}
-			outcome := commitStagedUpload(ctx, dst, container, stagePrefix+filepath.Base(item.Path), item, present, recovery)
+			outcome := commitStagedUpload(ctx, dst, container, stagePrefix+filepath.Base(item.Path), item, present, u.confirmUnchanged(), recovery)
 			if err := u.observe(item, outcome); err != nil {
 				return report, err
 			}
@@ -485,11 +488,16 @@ func publishHeaders(replacing bool, declared string) map[string]string {
 }
 
 func nativeUpload(ctx context.Context, dst *swiftcontrol.Session, container string, item UploadItem,
-	file localSource, replacing bool) (result uploadResult) {
+	file localSource, replacing bool, confirm unchangedSince) (result uploadResult) {
 	defer func() { result.addIssue(transfercopy.StageSourceRead, "native-close", file.Close()) }()
 	declared, err := heldDigest(file)
 	if err != nil {
 		return uploadFailed(transfercopy.EffectNotAttempted, transfercopy.StageSourceRead, transfercopy.CodeIO, "native-digest", err)
+	}
+	// The fixed point: everything this route prepares is done, and the next
+	// thing that happens is the publishing request.
+	if err := confirmBefore(ctx, confirm, dst, container, item, replacing); err != nil {
+		return uploadRefusedBefore("native-reobserve", err)
 	}
 	headers := publishHeaders(replacing, declared)
 	if _, err := dst.PutObject(ctx, container, item.Name, file, "application/octet-stream", headers); err != nil {
@@ -511,7 +519,7 @@ func nativeUpload(ctx context.Context, dst *swiftcontrol.Session, container stri
 }
 
 func commitStagedUpload(ctx context.Context, dst *swiftcontrol.Session, container, stagedName string,
-	item UploadItem, replacing bool, recovery func(kind, container, prefix, object string) error) uploadResult {
+	item UploadItem, replacing bool, confirm unchangedSince, recovery func(kind, container, prefix, object string) error) uploadResult {
 	staged, err := dst.ObjectDetail(ctx, container, stagedName)
 	if err != nil {
 		return uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageStaging, transfercopy.CodeMissing, "stage-verify", fmt.Errorf("staged object missing: %w", err))
@@ -558,8 +566,22 @@ func commitStagedUpload(ctx context.Context, dst *swiftcontrol.Session, containe
 			fmt.Errorf("the staged content does not match the file this job planned to send: the staged object states %d bytes with entity tag %s, the file is %d bytes with %s",
 				staged.ContentLength, stagedTag, item.Size, declared))
 	}
+	// The fixed point for this route is per publication shape, because the two
+	// shapes do not prepare the same things. A dynamic manifest's publication
+	// sends an empty body and its last preparation is the comparison of the
+	// assembled content above, so the comparison comes next and ADR 0042's
+	// ordering then puts the committing fact between it and the request — a
+	// fact recorded for a publication that is then refused is a fact about
+	// nothing. A plain or static materialisation still has to OPEN the staged
+	// object, which is a request of its own and is preparation rather than the
+	// publication, so its comparison comes after that open and immediately
+	// before the PUT. A review found the comparison in front of that open, which
+	// left a writer arriving during it to be overwritten.
 	var recordErr, closeErr error
 	if staged.Class == swiftcontrol.ClassDLO {
+		if err := confirmBefore(ctx, confirm, dst, container, item, replacing); err != nil {
+			return uploadRefusedBefore("commit-reobserve", err)
+		}
 		segmentContainer, segmentPrefix, hasIntent := strings.Cut(staged.Manifest, "/")
 		hasIntent = hasIntent && segmentContainer != "" && recovery != nil
 		intent := rclone.SegmentPrefix{Container: segmentContainer, Prefix: segmentPrefix}.Canonical()
@@ -586,6 +608,13 @@ func commitStagedUpload(ctx context.Context, dst *swiftcontrol.Session, containe
 		body, _, err := dst.OpenObject(ctx, container, stagedName)
 		if err != nil {
 			return uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageStaging, transfercopy.CodeIO, "commit-open-staged", err)
+		}
+		// The fixed point for this shape: the reader is open and the next thing
+		// is the publishing request itself.
+		if err := confirmBefore(ctx, confirm, dst, container, item, replacing); err != nil {
+			refused := uploadRefusedBefore("commit-reobserve", err)
+			refused.addIssue(transfercopy.StageStaging, "staged-close", body.Close())
+			return refused
 		}
 		// The staged object's entity tag was just compared with the local
 		// file, so declaring it here binds the publication to those same
@@ -630,4 +659,114 @@ func commitStagedUpload(ctx context.Context, dst *swiftcontrol.Session, containe
 		}
 	}
 	return result
+}
+
+// unchangedSince is the fixed-point comparison ADR 0085 requires for an
+// acknowledged overwrite: a fresh observation taken after all preparation and
+// immediately before the publishing request, compared with what the operator was
+// shown when they accepted replacing the name.
+//
+// It is a fresh HEAD and not either stored record. observePredecessor runs
+// before the preparation that decision refuses to leave inside the window — the
+// native route hashes the whole local file after it, and the staged route reads
+// an entire assembled stage — so the acknowledged baseline and that record can
+// agree while the replacement lands between them. Comparing the two stored rows
+// would therefore pass exactly the case this exists to fail.
+//
+// What it costs is stated in the decision: one HEAD per replaced name on the
+// native route, whose only execution-time destination read is
+// observePredecessor's, and that one cannot be moved because its result feeds
+// the fragment inventory and the durable predecessor record.
+//
+// What it does NOT do is close the window. The measurement in
+// docs/experiments/2026-10-10-conditional-evaluation-point.md establishes that
+// this store evaluates a create conditional before a body completes and that a
+// 201 is not evidence the sent bytes are at the name, so what remains after this
+// comparison is the publishing request's own transport and application. This
+// narrows; the route's verification afterwards is what reports.
+type unchangedSince func(ctx context.Context, dst *swiftcontrol.Session, container string, item UploadItem) error
+
+// confirmUnchanged builds that comparison for one run, or a comparison that
+// refuses everything when no hook can answer what was acknowledged.
+func (u *uploadRun) confirmUnchanged() unchangedSince {
+	return func(ctx context.Context, dst *swiftcontrol.Session, container string, item UploadItem) error {
+		if !item.Replaces {
+			// Nothing was acknowledged for this name and nothing is being
+			// replaced; the create's own conditional is what protects it.
+			return nil
+		}
+		if u.recorder == nil || u.recorder.Acknowledged == nil {
+			return fmt.Errorf("replacing %s needs the identity its acknowledgement was shown, and this run has no way to ask for it", item.Name)
+		}
+		shown, identified, err := u.recorder.Acknowledged(item)
+		if err != nil {
+			return fmt.Errorf("reading what %s was acknowledged as: %w", item.Name, err)
+		}
+		if !identified {
+			return fmt.Errorf("replacing %s was acknowledged without identifying what was there, so this publication has nothing to compare against", item.Name)
+		}
+		detail, err := dst.ObjectDetail(ctx, container, item.Name)
+		switch {
+		case swiftcontrol.IsNotFound(err):
+			// The name went away during preparation. This publication was
+			// planned as a replacement, so it carries no create conditional
+			// and would overwrite whatever has appeared there since. Refuse
+			// rather than publish blind: restoring the conditional at this
+			// point is a change to ADR 0085's own conditional-create
+			// decision, which reads the earlier observation, and is not this
+			// comparison's to make.
+			return fmt.Errorf("%s no longer holds anything, so the object acknowledged for replacement is gone", item.Name)
+		case err != nil:
+			return fmt.Errorf("reading %s before replacing it: %w", item.Name, err)
+		}
+		// The fresh read is held to the same completeness rule as the capture.
+		// Without it a HEAD stating no length arrives as a zero that compares
+		// equal to a genuine empty object's baseline, and the replacement
+		// proceeds against an identity nobody established.
+		found, identifiable := shownFrom(detail)
+		if !identifiable {
+			return fmt.Errorf("%s could not be identified before replacing it: its HEAD stated no entity tag or no length", item.Name)
+		}
+		if found != shown {
+			refusal := fmt.Errorf("%s no longer holds what was acknowledged: it was a %s of %d bytes with entity tag %s, and it is now a %s of %d bytes with entity tag %s",
+				item.Name, shown.Class, shown.Length, shown.ETag, found.Class, found.Length, found.ETag)
+			// Both identities go somewhere durable, per name. The error above
+			// reaches a bounded in-memory list of which only the first entry's
+			// message is saved, so it is the report and not the record.
+			if u.recorder != nil && u.recorder.Refused != nil {
+				if err := u.recorder.Refused(item, shown, found); err != nil {
+					// The refusal stands either way; what must not be lost is
+					// that it went unrecorded. Joining it into this item's own
+					// error is not enough: only the first failure's message
+					// reaches the job record, so an ordinary conflict on an
+					// earlier name would hide it. Stopping the run is how this
+					// package makes such a loss visible, and it is what
+					// internal/audit asks of a caller.
+					u.stop(fmt.Errorf("replacing %s was refused and the refusal could not be recorded: %w", item.Name, err))
+				}
+			}
+			return refusal
+		}
+		return nil
+	}
+}
+
+// confirmBefore applies the fixed-point comparison, and treats an absent one the
+// way a missing Replacing hook is treated: a replacement with no comparison is
+// refused rather than published uncompared, while a create needs none because
+// its own conditional protects it.
+func confirmBefore(ctx context.Context, confirm unchangedSince, dst *swiftcontrol.Session, container string,
+	item UploadItem, replacing bool) error {
+	// The EFFECTIVE publication mode, not the preflight's flag. When
+	// observePredecessor found the name already absent, replacing is false and
+	// publishHeaders restores If-None-Match: * — ADR 0085 keeps that create
+	// transition expressly, so comparing here would refuse a publication that
+	// decision allows, and the store's conditional is what protects it.
+	if !replacing {
+		return nil
+	}
+	if confirm == nil {
+		return fmt.Errorf("replacing %s needs the comparison ADR 0085 makes immediately before publishing, and this publication was given none", item.Name)
+	}
+	return confirm(ctx, dst, container, item)
 }

@@ -97,7 +97,11 @@ func TestUploadRefusesANameRecreatedAfterItsPredecessorVanished(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		result := nativeUpload(t.Context(), s, "media", item, file, present)
+		// No comparison is needed or made: observePredecessor found the name
+		// already absent, so this publication is a create and ADR 0085 keeps
+		// that transition. What refuses it is the create conditional at the
+		// store, which is this case's subject.
+		result := nativeUpload(t.Context(), s, "media", item, file, present, nil)
 		if result.Result != transfercopy.ResultConflict {
 			t.Fatalf("a name recreated after its predecessor vanished was published over: %+v", result.Observation)
 		}
@@ -117,7 +121,7 @@ func TestUploadRefusesANameRecreatedAfterItsPredecessorVanished(t *testing.T) {
 
 		witness := uploadWitness(t, mock)
 		before := uploadSnapshot(t, witness)
-		result := commitStagedUpload(t.Context(), s, "media", stage, item, present, nil)
+		result := commitStagedUpload(t.Context(), s, "media", stage, item, present, nil, nil)
 		if result.Result != transfercopy.ResultConflict {
 			t.Fatalf("a name recreated after its predecessor vanished was committed over: %+v", result.Observation)
 		}
@@ -143,7 +147,12 @@ func TestUploadRefusesANameRecreatedAfterItsPredecessorVanished(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if result := nativeUpload(t.Context(), s, "media", item, file, present); result.Result != transfercopy.ResultCopied {
+		// The predecessor IS there, so this publication really is a replacement
+		// and the comparison applies. It is given one that agrees, because this
+		// case is the control for the two above rather than a case about the
+		// comparison.
+		if result := nativeUpload(t.Context(), s, "media", item, file, present,
+			comparesAgainstLive(t, s, "media", item)); result.Result != transfercopy.ResultCopied {
 			t.Fatalf("an acknowledged replacement was refused: %+v", result.Observation)
 		}
 		_ = mock

@@ -126,7 +126,7 @@ func TestNativeReplacementKeepsItsContentBinding(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			result := nativeUpload(t.Context(), session, "media", item, file, item.Replaces)
+			result := nativeUpload(t.Context(), session, "media", item, file, item.Replaces, comparesAgainstLive(t, session, "media", item))
 
 			live, err := session.ObjectDetail(t.Context(), "media", "docs/object")
 			if err != nil {
@@ -175,7 +175,7 @@ func TestNativeCreateStillRefusesALiveName(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result := nativeUpload(t.Context(), session, "media", item, file, item.Replaces)
+	result := nativeUpload(t.Context(), session, "media", item, file, item.Replaces, comparesAgainstLive(t, session, "media", item))
 	if result.Result != transfercopy.ResultConflict {
 		t.Fatalf("a create onto a live name was not a conflict: %+v", result.Observation)
 	}
@@ -311,7 +311,7 @@ func TestReplacingALargeObjectPreservesOutsideReferences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result := nativeUpload(t.Context(), s, "media", item, file, present); result.Result != transfercopy.ResultCopied {
+	if result := nativeUpload(t.Context(), s, "media", item, file, present, comparesAgainstLive(t, s, "media", item)); result.Result != transfercopy.ResultCopied {
 		t.Fatalf("the replacement was refused: %+v", result.Observation)
 	}
 
@@ -591,7 +591,7 @@ func TestReplacementOutcomesAreNotRollbackClaims(t *testing.T) {
 				t.Fatal(err)
 			}
 			tc.arm(t, mock, file)
-			result := nativeUpload(t.Context(), s, "media", item, file, item.Replaces)
+			result := nativeUpload(t.Context(), s, "media", item, file, item.Replaces, comparesAgainstLive(t, s, "media", item))
 			if result.Result == transfercopy.ResultCopied {
 				t.Fatalf("the fixture did not produce a failure: %+v", result.Observation)
 			}
@@ -795,6 +795,11 @@ func TestReplacementRecordsThePredecessorBeforePublishing(t *testing.T) {
 			order = append(order, "recorded")
 			return nil
 		},
+		// The run now asks what the acknowledgement was shown, so that
+		// ADR 0085's comparison has something to compare against. This
+		// answers with what is live, which is what an acknowledgement taken
+		// at that moment would have captured.
+		Acknowledged: acknowledgedNow(t, s, "media", preflight.Items[0]),
 	}
 	report, err := Upload(t.Context(), s, nil, "aeronautes_dst:media", "media", "docs/", "ordering", preflight, nil, nil, recorder)
 	if err != nil || report == nil || report.Done != 1 {

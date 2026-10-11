@@ -78,7 +78,7 @@ func TestStagedUploadRetainsCloseAndLaterProblems(t *testing.T) {
 				t.Fatal(err)
 			}
 			item := UploadItem{Path: writeFile(t, t.TempDir(), "source", "bytes"), Name: "live/source", Size: 5}
-			result := commitStagedUpload(t.Context(), session, "media", stage, item, item.Replaces, nil)
+			result := commitStagedUpload(t.Context(), session, "media", stage, item, item.Replaces, nil, nil)
 			want := transfercopy.Observation{Result: transfercopy.ResultCopied, Effect: transfercopy.EffectReportedApplied, CopiedBytes: 5}
 			issues, wantDeletes := int64(0), int32(1)
 			if mode != "control" {
