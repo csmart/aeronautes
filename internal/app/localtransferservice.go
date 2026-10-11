@@ -433,8 +433,10 @@ func (s *TransferService) confirmOverwrite(ctx context.Context, req UploadReques
 	}
 	before := s.observeConnection()
 	label, account, _ := s.pickBinding(ctx, scope)
-	question, authorises, err := overwriteQuestion(label, account, req.Container, req.Prefix, versioning, names,
-		s.fragmentPlanFor(ctx, req, preflight, versioning))
+	// Bound rather than passed inline, because the reading carries the
+	// baseline as well as the counts the question states.
+	plan := s.fragmentPlanFor(ctx, req, preflight, versioning)
+	question, authorises, err := overwriteQuestion(label, account, req.Container, req.Prefix, versioning, names, plan)
 	if err != nil {
 		return answeredFragments{}, err
 	}
@@ -455,7 +457,7 @@ func (s *TransferService) confirmOverwrite(ctx context.Context, req UploadReques
 	if entry.generation != scope.generation {
 		return answeredFragments{}, errors.New("the account's credentials changed while you were answering; start again")
 	}
-	return answeredFragments{Removal: authorises, Said: question.Fragments}, nil
+	return answeredFragments{Removal: authorises, Said: question.Fragments, Shown: plan.Shown}, nil
 }
 
 // answeredFragments is what one answered confirmation said about the
@@ -465,6 +467,13 @@ func (s *TransferService) confirmOverwrite(ctx context.Context, req UploadReques
 type answeredFragments struct {
 	Removal bool
 	Said    string
+	// Shown is what the question's own reading found at each replaced name:
+	// the acknowledged baseline ADR 0085 compares a publication against,
+	// carried from the answer because this is the moment the operator saw it.
+	// A name absent from it was never identified, and that decision makes the
+	// absence a refusal to overwrite rather than a licence — a refusal the
+	// comparison slice applies, not this one.
+	Shown map[string]local.ShownObject
 }
 
 // overwriteQuestion is the statement the operator is asked to authorise.
@@ -526,6 +535,7 @@ func (s *TransferService) fragmentPlanFor(ctx context.Context, req UploadRequest
 	}
 	reading := local.FragmentPlan(ctx, session, req.Container, names)
 	plan.Whole, plan.Kept, plan.Unnamed, plan.Unknown = reading.Whole, reading.Kept, reading.Unnamed, reading.Unknown
+	plan.Shown = reading.Shown
 	return plan
 }
 
@@ -556,6 +566,11 @@ type fragmentPlan struct {
 	// Unnamed is how many members an inventory counted without naming, which
 	// reclamation leaves where they are.
 	Unnamed int
+	// Shown is what each replaced name held, by name, for the names the
+	// reading could read authoritatively: the acknowledged baseline ADR 0085
+	// compares a publication against. A name absent from it was not
+	// identified, which that decision makes a refusal to overwrite.
+	Shown map[string]local.ShownObject
 	// Unknown is why this reading could not say what backs a name, empty
 	// when it could. It is not the same as there being nothing there, and a
 	// question carrying it authorises no removal at all.

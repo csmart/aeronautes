@@ -362,6 +362,46 @@ func TestAcknowledgedUploadRecordsWhatItSawBeforeReplacing(t *testing.T) {
 	}
 }
 
+// ADR 0085: the acknowledged baseline is what the operator was shown at a name
+// when they accepted replacing it, kept so the publication can be compared
+// against it at the fixed point. PR 218 decided it is HEAD-grade and that it
+// costs nothing, because the acknowledgement path already reads each replaced
+// name to say what backs it and then discards the detail.
+//
+// What matters here is WHICH object the baseline describes: the one that was
+// there when the operator answered, never the one that replaced it.
+func TestAcknowledgedUploadKeepsTheBaselineItWasShown(t *testing.T) {
+	f := newOverwriteFixture(t)
+	f.h.transfer.setOverwriteConfirmer(&recordingOverwriteConfirmer{yes: true})
+	id, err := f.h.transfer.StartUpload(t.Context(), f.request(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job := awaitTerminal(t, f.h, id); job.State != "complete" {
+		t.Fatalf("the replacement did not publish: %s %+v", job.State, job.Counters)
+	}
+
+	baseline, ok, err := f.h.transfer.jobs.ReadAcknowledgedBaseline(t.Context(), id, "live/taken")
+	if err != nil || !ok {
+		t.Fatalf("a replacement kept no baseline: %+v ok=%v %v", baseline, ok, err)
+	}
+	want := jobs.ItemBaseline{Class: "plain", Length: int64(len("the bytes already there")), ETag: f.tag}
+	if baseline != want {
+		t.Errorf("the baseline is not what was live when the operator answered: %+v, want %+v", baseline, want)
+	}
+	// The whole point: it describes what was replaced, not what replaced it.
+	if baseline.ETag == sentTagForFixture {
+		t.Errorf("the baseline names the bytes that replaced rather than the ones replaced: %+v", baseline)
+	}
+
+	// The other picked file publishes over nothing, so it is a create and there
+	// is no acknowledgement for it to have been shown. A baseline there would
+	// mean the admission attached one to an item nobody accepted replacing.
+	if baseline, ok, err := f.h.transfer.jobs.ReadAcknowledgedBaseline(t.Context(), id, "live/free"); err != nil || ok {
+		t.Errorf("a create kept a baseline: %+v ok=%v %v", baseline, ok, err)
+	}
+}
+
 // seedStaticLargeObject puts a static manifest at name over two segments,
 // with one inline entry between them so the record can be shown keeping
 // each entry's own shape and position. It returns the remote parts, and the

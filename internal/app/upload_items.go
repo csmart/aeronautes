@@ -234,7 +234,25 @@ func (s *TransferService) uploadItemRecorder(ctx context.Context, jobID string, 
 			if err := intent.Validate(); err != nil {
 				return err
 			}
-			return s.jobs.AdmitItems(ctx, jobID, []jobs.ItemIntent{intent})
+			if err := s.jobs.AdmitItems(ctx, jobID, []jobs.ItemIntent{intent}); err != nil {
+				return err
+			}
+			// What the operator was shown at this name, kept for the comparison
+			// ADR 0085 makes at the fixed point. It is recorded after the item
+			// exists, because the baseline references that row, and a baseline
+			// that cannot be saved stops the item rather than letting it publish
+			// against nothing — the same rule the predecessor record follows.
+			//
+			// Only for a name being replaced, and only when the acknowledgement
+			// identified it. An acknowledgement that identified nothing leaves no
+			// baseline, which that decision makes a refusal to overwrite; this
+			// slice records, and the comparison slice refuses.
+			shown, identified := answered.Shown[admission.Item.Name]
+			if !admission.Item.Replaces || !identified {
+				return nil
+			}
+			return s.jobs.RecordAcknowledgedBaseline(ctx, jobID, uploadItemIdentity(req, admission.Item),
+				jobs.ItemBaseline{Class: shown.Class, Length: shown.Length, ETag: shown.ETag})
 		},
 		Execute: func(item local.UploadItem, observation transfercopy.Observation) error {
 			if err := uploadItemIdentity(req, item).Validate(); err != nil {
