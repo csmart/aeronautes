@@ -22,19 +22,7 @@ func deferredEntryPoints(t *testing.T, h *harness) []deferredEntryPoint {
 	t.Helper()
 	deleteSvc := NewDeleteService(h.transfer.connections, h.transfer.jobs, h.transfer.runner, evidence.NewStore(h.db))
 	bench := NewBenchmarkService(h.transfer.connections, h.transfer.jobs, h.transfer.runner, h.db)
-	return []deferredEntryPoint{
-		{"TransferService.PickUploadFiles", "Upload", func(t *testing.T, h *harness) error {
-			_, err := h.transfer.PickUploadFiles(t.Context(), SelectionScopeDTO{BookmarkID: h.bookmarkID(), Container: "fixtures"})
-			return err
-		}},
-		{"TransferService.PreflightUpload", "Upload", func(t *testing.T, h *harness) error {
-			_, err := h.transfer.PreflightUpload(t.Context(), UploadRequestDTO{BookmarkID: h.bookmarkID(), Container: "fixtures"})
-			return err
-		}},
-		{"TransferService.StartUpload", "Upload", func(t *testing.T, h *harness) error {
-			_, err := h.transfer.StartUpload(t.Context(), UploadRequestDTO{BookmarkID: h.bookmarkID(), Container: "fixtures"})
-			return err
-		}},
+	entries := []deferredEntryPoint{
 		{"TransferService.PlanCopy", "Copy", func(t *testing.T, h *harness) error {
 			_, err := h.transfer.PlanCopy(t.Context(), CopyRequestDTO{SourceBookmarkID: h.bookmarkID(), SourceContainer: "fixtures", DestBookmarkID: h.bookmarkID(), DestContainer: "fixtures"})
 			return err
@@ -77,6 +65,16 @@ func deferredEntryPoints(t *testing.T, h *harness) []deferredEntryPoint {
 			return err
 		}},
 	}
+	// Every deferred action except StartMirror, which refuses on ADR 0020's
+	// terms and has its own case below. Upload's three actions are absent
+	// because the operator returned that capability on 16 October 2026 and
+	// the table no longer defers it. The count is asserted against the table
+	// so a future return cannot quietly shrink this list on its own, and so
+	// a newly deferred action cannot be left unexercised here.
+	if len(entries) != len(v1DeferredActions)-1 {
+		t.Fatalf("entry points = %d, want %d deferred actions minus StartMirror", len(entries), len(v1DeferredActions)-1)
+	}
+	return entries
 }
 
 // collateral is what a refused call must not have changed: nothing sent
@@ -129,7 +127,7 @@ func TestSwitchedOnCapabilityAdmitsOnlyItsOwnEntryPoints(t *testing.T) {
 	h.connect(t)
 	forceV1Gate(t)
 	restoreSwitch(t)
-	if names, _ := EnableCapabilities("upload"); strings.Join(names, "|") != "Upload" {
+	if names, _ := EnableCapabilities("bulk-delete"); strings.Join(names, "|") != "Bulk delete" {
 		t.Fatalf("switch = %v", names)
 	}
 
@@ -137,7 +135,7 @@ func TestSwitchedOnCapabilityAdmitsOnlyItsOwnEntryPoints(t *testing.T) {
 		t.Run(entry.action, func(t *testing.T) {
 			before := takeCollateral(t, h)
 			err := entry.call(t, h)
-			if entry.capability != "Upload" {
+			if entry.capability != "Bulk delete" {
 				assertV1Refusal(t, err, entry.capability)
 				if after := takeCollateral(t, h); after != before {
 					t.Errorf("a refused %s reached something: %+v -> %+v", entry.action, before, after)
@@ -147,7 +145,7 @@ func TestSwitchedOnCapabilityAdmitsOnlyItsOwnEntryPoints(t *testing.T) {
 			// An admitted entry point runs its own route and may fail on
 			// its own terms; what it must not do is refuse for the gate.
 			if err != nil && strings.Contains(err.Error(), "not available in this release") {
-				t.Errorf("%s still refused although Upload is switched on: %v", entry.action, err)
+				t.Errorf("%s still refused although bulk delete is switched on: %v", entry.action, err)
 			}
 		})
 	}
@@ -161,7 +159,7 @@ func TestMirrorRefusesAtItsEntryPointWhateverTheSwitchSays(t *testing.T) {
 	forceV1Gate(t)
 	restoreSwitch(t)
 
-	for _, spec := range []string{"", "mirror", "Mirror", "upload,mirror", "copy", "upload, bulk-delete, benchmark, marker-manifest-delete"} {
+	for _, spec := range []string{"", "mirror", "Mirror", "copy,mirror", "copy", "copy, bulk-delete, benchmark, marker-manifest-delete"} {
 		EnableCapabilities(spec)
 		before := takeCollateral(t, h)
 		_, err := h.transfer.StartMirror(t.Context(), MirrorRequestDTO{

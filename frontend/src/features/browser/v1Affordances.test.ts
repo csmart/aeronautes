@@ -47,26 +47,37 @@ async function connectedScreen(enabled: string[] = [], unrecognised: string[] = 
   return root;
 }
 
-it("keeps download and withholds copy, upload and bulk delete", async () => {
+it("keeps download and upload and withholds copy and bulk delete", async () => {
   await connectedScreen();
   const shown = labels();
   expect(shown).toContain("Download…");
+  expect(shown).toContain("Upload…");
   expect(shown).not.toContain("Copy to…");
-  expect(shown).not.toContain("Upload…");
   expect(shown).not.toContain("Delete scope…");
   document.querySelector<HTMLButtonElement>(".drawer .bar")!.click();
   flushSync();
   expect(labels()).not.toContain("Benchmark…");
 });
 
-it("opens download and does not offer upload from that dialog", async () => {
+// LocalTransferDialog serves both of its modes in the release again, so each
+// control must open its OWN mode: a shared dialog that opened the wrong half
+// would still satisfy a test that only asserted a dialog appeared.
+it("opens each local transfer control in its own mode", async () => {
   await connectedScreen();
   [...document.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Download…")!.click();
   await settle();
-  const dialog = document.querySelector('[role="dialog"]');
+  let dialog = document.querySelector('[role="dialog"]');
   expect(dialog?.getAttribute("aria-label")).toBe("Download");
   expect(dialog?.textContent).toContain("Choose a destination directory");
   expect(dialog?.textContent).not.toContain("Choose files");
+  document.querySelector<HTMLButtonElement>('[role="dialog"] button.close')!.click();
+  await settle();
+  [...document.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Upload…")!.click();
+  await settle();
+  dialog = document.querySelector('[role="dialog"]');
+  expect(dialog?.getAttribute("aria-label")).toBe("Upload");
+  expect(dialog?.textContent).toContain("Choose files");
+  expect(dialog?.textContent).not.toContain("Choose a destination directory");
 });
 
 it("offers marker creation and withholds manifest and marker deletion", async () => {
@@ -88,25 +99,28 @@ it("offers marker creation and withholds manifest and marker deletion", async ()
 // ADR 0082: a capability the operator switched on for this process is
 // offered and named as unproven; nothing else is offered with it.
 it("offers a switched-on capability and says it is unproven", async () => {
-  await connectedScreen(["Upload"]);
+  await connectedScreen(["Bulk delete"]);
   const banner = document.querySelector('[role="alert"].unproven-banner');
   expect(banner?.textContent).toContain("Unproven:");
-  expect(banner?.textContent).toContain("Upload");
+  expect(banner?.textContent).toContain("Bulk delete");
   expect(banner?.textContent).toContain("not finished");
   const shown = labels();
-  expect(shown).toContain("Upload…");
+  expect(shown).toContain("Delete scope…");
   expect(shown).toContain("Download…");
+  // Kept by the release rather than by this switch, and not described as
+  // unproven: the banner names only what the operator turned on.
+  expect(shown).toContain("Upload…");
+  expect(banner?.textContent).not.toContain("Upload");
   expect(shown).not.toContain("Copy to…");
-  expect(shown).not.toContain("Delete scope…");
 });
 
 // A token that names no capability is reported and offers nothing.
 it("names an unrecognised token and offers nothing for it", async () => {
-  await connectedScreen([], ["uplaod"]);
+  await connectedScreen([], ["copz"]);
   const banner = document.querySelector('[role="alert"].unproven-banner');
-  expect(banner?.textContent).toContain("Ignored, not a capability: uplaod");
+  expect(banner?.textContent).toContain("Ignored, not a capability: copz");
   expect(banner?.textContent).not.toContain("Unproven:");
-  expect(labels()).not.toContain("Upload…");
+  expect(labels()).not.toContain("Copy to…");
 });
 
 // With nothing switched on there is no banner at all.

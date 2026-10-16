@@ -70,6 +70,10 @@ func TestEveryBridgeActionIsClassified(t *testing.T) {
 		"JobService.Items": true, "JobService.ItemTotals": true,
 		"JobService.List": true, "JobService.RecoveryStatus": true,
 		"MutateService.CreateContainer": true, "MutateService.CreateMarker": true,
+		// Upload was returned on 16 October 2026, once ADR 0085's comparison
+		// completed its path: its three actions are kept rather than deferred.
+		"TransferService.PickUploadFiles": true, "TransferService.PreflightUpload": true,
+		"TransferService.StartUpload":        true,
 		"MutateService.UpdateContainer":      true,
 		"MutateService.UpdateObjectMetadata": true,
 		"SettingsService.Get":                true, "SettingsService.Set": true,
@@ -113,6 +117,13 @@ func TestKeptActionsAreNotRefused(t *testing.T) {
 		"TransferService.StartDownload",
 		"TransferService.PreflightDownload",
 		"TransferService.PickDownloadDir",
+		// Returned on 16 October 2026 (ADR 0052 decision 9). The
+		// classification test above catches a name put back into the
+		// deferred table; these three are the behavioural half, which is
+		// what an operator would experience if it were.
+		"TransferService.PickUploadFiles",
+		"TransferService.PreflightUpload",
+		"TransferService.StartUpload",
 		"TransferService.CancelJob",
 		"MutateService.UpdateObjectMetadata",
 		"MutateService.UpdateContainer",
@@ -167,18 +178,6 @@ func TestV1GateRefusesDeferredEntryPoints(t *testing.T) {
 		}},
 		{"TransferService.RerunJob", "Copy", func() error {
 			_, err := (&TransferService{}).RerunJob(ctx, "job")
-			return err
-		}},
-		{"TransferService.PickUploadFiles", "Upload", func() error {
-			_, err := (&TransferService{}).PickUploadFiles(ctx, SelectionScopeDTO{})
-			return err
-		}},
-		{"TransferService.PreflightUpload", "Upload", func() error {
-			_, err := (&TransferService{}).PreflightUpload(ctx, UploadRequestDTO{})
-			return err
-		}},
-		{"TransferService.StartUpload", "Upload", func() error {
-			_, err := (&TransferService{}).StartUpload(ctx, UploadRequestDTO{})
 			return err
 		}},
 		{"DeleteService.PreviewDelete", "Bulk delete", func() error {

@@ -86,21 +86,24 @@ func outside(before, after map[string]string, namespace string) []string {
 }
 
 // ADR 0082's second proof bullet, the half that was missing: with the gate
-// FORCED and the switch naming upload, the upload entry points do not merely
-// stop refusing — they reach their routes and the work lands. The existing
-// entry-point case asserts the absence of the gate's refusal, which a route
+// FORCED and NOTHING switched on, the upload entry points do not merely stop
+// refusing — they reach their routes and the work lands. This used to need
+// the switch to name upload; the operator returned that capability on
+// 16 October 2026, so the same assertions now make the stronger statement
+// that a shipped process reaches the route with no token at all. The
+// entry-point cases assert the absence of the gate's refusal, which a route
 // that had been deleted would also satisfy.
 //
 // The collateral half is asserted against the account's own contents rather
 // than a request count, because this capability is supposed to make requests:
 // what it must not do is change anything outside the prefix it was given.
-func TestSwitchedOnUploadReachesItsRouteAndStaysInItsNamespace(t *testing.T) {
+func TestUploadReachesItsRouteAndStaysInItsNamespace(t *testing.T) {
 	h := newHarness(t)
 	h.connect(t)
 	h.installEngine(nil)
 	forceV1Gate(t)
 	restoreSwitch(t)
-	if names, bad := EnableCapabilities("upload"); strings.Join(names, "|") != "Upload" || len(bad) != 0 {
+	if names, bad := EnableCapabilities(""); len(names) != 0 || len(bad) != 0 {
 		t.Fatalf("switch = %v %v", names, bad)
 	}
 	h.mock.AddContainer("admitted", "standard")

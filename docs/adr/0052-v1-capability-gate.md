@@ -78,6 +78,25 @@ inventory, with the two derivations agreeing.
    `MutateService.CreateMarker` leaves the deferred table and joins the kept set; marker
    deletion and manifest deletion stay deferred with the destructive work.
 
+9. **Operator decision, 16 October 2026.** Upload is a v1 capability: the operator's answer
+   was "Yes — enable upload", given on what master carries for it rather than on a promise.
+   That evidence is three records: both publishing paths bound to their source's content
+   under [ADR 0080](0080-upload-content-binding.md), the acknowledged and bounded overwrite of
+   [ADR 0081](0081-upload-overwrite-acknowledgement.md) with its fragment accounting, and the
+   identity comparison at the fixed point before a replacement under
+   [ADR 0085](0085-reobserved-destructive-identity.md).
+   It is not a claim that the route is proven, and the exposure ADR 0081 and ADR 0085 state is
+   accepted rather than removed: no conditional write exists on this store, so a replacement
+   keeps a window its comparison narrows and cannot close.
+   `TransferService.PickUploadFiles`, `PreflightUpload` and `StartUpload` leave the deferred
+   table and join the kept set. The `upload` token leaves
+   [ADR 0082](0082-operator-enabled-unproven-capabilities.md) decision 3's list with them,
+   because it now names nothing the switch can admit; by decision 5 of that record an operator
+   who still has it in their environment is told it was ignored, rather than left to read the
+   silence as confirmation.
+   Copy, bulk delete, marker and manifest deletion, benchmark and job re-run stay deferred, and
+   Mirror stays refused under [ADR 0020](0020-recovery-containment.md).
+
 ## What this does not establish
 
 It bounds what a v1 build offers.
