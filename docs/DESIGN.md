@@ -5829,6 +5829,9 @@ The operator decided it on what master carries rather than on a promise: both pu
 [ADR 0052](adr/0052-v1-capability-gate.md) decision 9 records the return: the three upload entry points leave the deferred table, their affordances are offered by the release rather than by the switch, and the `upload` token leaves ADR 0082's list, so a process still carrying it reports that the token was ignored instead of accepting it silently.
 No conditional write exists on this store, so the comparison narrows the interval before a replacement and cannot close it; that exposure is accepted rather than removed, and nothing here makes the route proven, admits any other capability or lifts an ADR 0020 refusal.
 A shipped-binary upload journey stays outside `scripts/smoke.sh`, which cannot operate a native file picker any more than it can operate download's directory picker, so the route's evidence is package-level and the switch's startup lines remain the product-level half.
+What that return first shipped could do was create and not replace: [ADR 0081](adr/0081-upload-overwrite-acknowledgement.md) decision 2's confirmer existed as a seam in `internal/app`, with its wiring function and its refusal for a service without one, and `main.go` never called it while the interface froze the request's acknowledgement to false.
+Both halves landed in the same release, with the question's wording composed in `internal/app` where it is asserted rather than described, and with the shell's seams now derived from that package's exported interfaces so `main.go` cannot leave one unwired again.
+The native question is a second surface the headless harness cannot operate, so the [0.1.0 test plan](audits/2026-09-24/0.1.0-test-plan.md) carries the operator's checks for both the chooser and the confirmation, including the three refusals and what each one must leave untouched.
 
 ### 65.12. Proportionate remediation and a fixed finish line
 

@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/adrg/xdg"
 	"github.com/csmart/aeronautes/internal/app"
@@ -104,6 +105,7 @@ func runDesktop(identity app.BuildIdentity, shutdown *shellShutdown,
 	app.WireEvidenceStore(transferService, evidenceStore)
 	app.WireFilePicker(transferService, wailsPicker{})
 	app.WireConfirmer(mutateService, wailsConfirmer{})
+	app.WireOverwriteConfirmer(transferService, wailsOverwriteConfirmer{})
 	settingsService := app.NewSettingsService(database, jobRunner)
 	app.WireSettings(transferService, settingsService)
 	app.WireConnectionCap(connections, settingsService)
@@ -165,26 +167,23 @@ func launchDesktop(options application.Options) error {
 	return a.Run()
 }
 
-// wailsConfirmer implements app.PublicACLConfirmer over the Wails question
-// dialog: the backend asks on a native, modal surface the page cannot
-// draw (ADR 0073 option B). On Linux Show returns before the answer, so
-// the buttons feed a channel; a closed or dismissed dialog is a refusal,
-// which is why the cancel button is set and the wait is bounded by ctx.
-type wailsConfirmer struct{}
-
-func (wailsConfirmer) ConfirmPublicRead(ctx context.Context, container, account string) (bool, error) {
+// askNative puts one question on the Wails question dialog: a native, modal
+// surface the page cannot draw (ADR 0073 option B). On Linux Show returns
+// before the answer, so the buttons feed a channel; a closed or dismissed
+// dialog is a REFUSAL, which is why refuse is both the cancel button and the
+// default and the wait is bounded by ctx. Both confirmers go through here so
+// that property is written once rather than once per question.
+func askNative(ctx context.Context, title, message, refuse, accept string) (bool, error) {
 	shell := application.Get()
 	if shell == nil {
 		return false, fmt.Errorf("application shell not running")
 	}
 	answer := make(chan bool, 2)
-	dialog := shell.Dialog.Question().
-		SetTitle("Make this container public?").
-		SetMessage(fmt.Sprintf("Anyone on the internet will be able to read every object in %s (%s).\nThis question comes from the application, not from the page.", container, account))
-	keep := dialog.AddButton("Keep it private")
-	keep.OnClick(func() { answer <- false }).SetAsCancel()
-	dialog.AddButton("Make it public").OnClick(func() { answer <- true })
-	dialog.SetDefaultButton(keep)
+	dialog := shell.Dialog.Question().SetTitle(title).SetMessage(message)
+	no := dialog.AddButton(refuse)
+	no.OnClick(func() { answer <- false }).SetAsCancel()
+	dialog.AddButton(accept).OnClick(func() { answer <- true })
+	dialog.SetDefaultButton(no)
 	dialog.Show()
 	select {
 	case confirmed := <-answer:
@@ -192,6 +191,30 @@ func (wailsConfirmer) ConfirmPublicRead(ctx context.Context, container, account 
 	case <-ctx.Done():
 		return false, ctx.Err()
 	}
+}
+
+// wailsConfirmer implements app.PublicACLConfirmer over that surface.
+type wailsConfirmer struct{}
+
+func (wailsConfirmer) ConfirmPublicRead(ctx context.Context, container, account string) (bool, error) {
+	return askNative(ctx, "Make this container public?",
+		fmt.Sprintf("Anyone on the internet will be able to read every object in %s (%s).\nThis question comes from the application, not from the page.", container, account),
+		"Keep it private", "Make it public")
+}
+
+// wailsOverwriteConfirmer implements app.OverwriteConfirmer over the same
+// surface. ADR 0081 decision 2 requires the acknowledgement that authorises a
+// replacement to be raised by the BACKEND: the field on the request guards
+// against an operator's accident, and a page that sets it still cannot answer
+// its own question, because this is never reachable as a bridge action.
+//
+// The wording is app.OverwriteQuestion's, asserted in that package rather
+// than described here, so this file holds no sentence of its own.
+type wailsOverwriteConfirmer struct{}
+
+func (wailsOverwriteConfirmer) ConfirmOverwrite(ctx context.Context, about app.OverwriteConfirmation) (bool, error) {
+	title, lines := app.OverwriteQuestion(about)
+	return askNative(ctx, title, strings.Join(lines, "\n"), "Keep what is there", "Replace")
 }
 
 // wailsPicker implements app.FilePicker over the Wails dialog manager —
