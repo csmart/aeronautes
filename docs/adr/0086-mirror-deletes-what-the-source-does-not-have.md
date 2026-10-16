@@ -228,11 +228,12 @@ amendment that would rest it on the exposure the operator accepted for upload is
 and until it exists a mirror could create and delete but not override. That is the one of the three
 effects a sync cannot do without, so this record is not implementable in order as it stands.
 
-**ADR 0083's own Status line still reads Proposed although the contract is accepted and merged**, and
-it misled the author of this record into telling the operator the native copy route did not exist.
-ADR 0084 is the authority that it does. Correcting that status line, and L05's wording about it, is
-owed and is not done here: ADR 0084 amended one of ADR 0083's decisions, so the correction is not a
-one-word change and should not be made in passing.
+**ADR 0083's own Status line read Proposed although the contract was accepted and merged**, and it
+misled the author of this record into telling the operator the native copy route did not exist. ADR
+0084 is the authority that it does. That status line, and the finish line's L05 wording that had the
+same error from the day the binding landed, were corrected in the slice that followed this one; this
+note is kept because an operator reading this record is entitled to know it was drafted on a false
+premise, and it is now past tense rather than an owed item.
 
 **This record does not establish that Mirror should be enabled.** It states what a mirror would do
 and what it would not be able to promise, so that decision can be made on something specific. ADR
