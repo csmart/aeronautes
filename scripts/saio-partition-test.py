@@ -556,7 +556,14 @@ class ScenarioPreservationTests(unittest.TestCase):
 REPO = Path(__file__).resolve().parent.parent
 JOIN_STEP = "Validate both selections and combine coverage"
 UPLOAD_STEP = "Upload combined coverage and scenario reports"
-UPLOAD_PIN = "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+# The upload step must pin its action by a full commit SHA with a version
+# comment. The SHA ITSELF is deliberately not asserted: a literal copy of it
+# here is a copy of the value under test, so every legitimate dependency bump
+# would fail this case while the property the line exists for -- that the
+# action is pinned rather than floating on a tag -- still held. The pattern is
+# held to its own standard by test_a_floating_action_tag_is_not_a_pin below.
+UPLOAD_PIN = re.compile(
+    r"^        uses: actions/upload-artifact@[0-9a-f]{40} # v\d+\n", re.MULTILINE)
 
 
 def workflow_job(text, name):
@@ -814,7 +821,8 @@ class WorkflowPreservationTests(unittest.TestCase):
         script = workflow_join_script(text)
         self.assertIn("--baseline internal/scenariocontract/preservation-baseline.json", script)
         upload = workflow_step(job, UPLOAD_STEP)
-        for line in ("        if: always()\n", "        uses: " + UPLOAD_PIN + " # v7\n",
+        self.assertRegex(upload, UPLOAD_PIN)
+        for line in ("        if: always()\n",
                      "          name: scenario-coverage\n", "          path: saio-combined/\n",
                      "          if-no-files-found: error\n"):
             self.assertIn(line, upload)
@@ -825,6 +833,23 @@ class WorkflowPreservationTests(unittest.TestCase):
         self.assertIn("          SAIO_RESULT: ${{ needs.saio.result }}\n", gate)
         self.assertIn('        run: ./scripts/ci-gate.sh "$GO_RESULT" "$FRONTEND_RESULT" "$SAIO_RESULT" "$SMOKE_RESULT"\n', gate)
         self.assertNotIn("continue-on-error", gate)
+
+    # Loosening the pin assertion from a literal to a pattern is only safe if
+    # the pattern still refuses what the literal refused. These are the
+    # spellings a bump or a careless edit could actually introduce.
+    def test_a_floating_action_tag_is_not_a_pin(self):
+        for unpinned in (
+            "        uses: actions/upload-artifact@v7\n",
+            "        uses: actions/upload-artifact@main\n",
+            "        uses: actions/upload-artifact@v7 # pinned\n",
+            "        uses: actions/upload-artifact@043fb46d # v7\n",
+            "        uses: actions/upload-artifact@043FB46D1A93C77AAE656E7C1C64A875D1FC6A0A # v7\n",
+            "        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a\n",
+        ):
+            self.assertNotRegex(unpinned, UPLOAD_PIN)
+        self.assertRegex(
+            "        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7\n",
+            UPLOAD_PIN)
 
 
 HEADER = 'mode: atomic\n'
