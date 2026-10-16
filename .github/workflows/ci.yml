@@ -144,7 +144,7 @@ jobs:
         run: |
           pct=$(cat frontend/coverage-pct.txt 2>/dev/null || echo 0)
           ./scripts/coverage-badge.sh "ui coverage" "$pct" 70 badges/coverage-frontend.svg
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: badge-frontend
           path: badges/
@@ -259,7 +259,7 @@ jobs:
         run: python3 scripts/saio-diagnostics.py saio-diagnostics
       - name: Upload Swift and runner diagnostics
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: saio-diagnostics-${{ matrix.lane }}
           path: saio-diagnostics/
@@ -268,7 +268,7 @@ jobs:
       # Keep each producer intact, including failed or incomplete evidence.
       - name: Upload Swift test evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: saio-tests-${{ matrix.lane }}
           path: saio-results/
@@ -344,7 +344,7 @@ jobs:
           echo "combined Go statement coverage: ${pct}%"
           echo "$pct" > coverage-pct.txt
       - name: Upload combined coverage and scenario reports
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: scenario-coverage
@@ -360,7 +360,7 @@ jobs:
       - name: coverage badge
         run: |
           ./scripts/coverage-badge.sh "go coverage" "$(cat coverage-pct.txt)" 75 badges/coverage-go.svg
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: badge-go
           path: badges/
@@ -400,7 +400,7 @@ jobs:
         env:
           WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: "1"
           GTK_A11Y: none
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: smoke-artifacts

@@ -85,7 +85,7 @@ jobs:
           go run ./build/identity record
       # SIGNING (deliberately absent): rpm --addsign / debsigs would go
       # here once release keys exist. Artifacts are honestly UNSIGNED.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: linux-${{ matrix.arch }}-unsigned
           path: dist/*
@@ -130,7 +130,7 @@ jobs:
       # SIGNING/NOTARISATION (deliberately absent): codesign + notarytool
       # go here once an Apple Developer identity exists. Gatekeeper will
       # warn on these artifacts — that is the honest current state.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: macos-${{ matrix.arch }}-unsigned
           path: dist/*
@@ -194,7 +194,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       # SIGNING (deliberately absent): signtool goes here once a code-
       # signing certificate exists. SmartScreen will warn — honestly.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: windows-${{ matrix.arch }}-unsigned
           path: dist/*
