@@ -562,8 +562,15 @@ UPLOAD_STEP = "Upload combined coverage and scenario reports"
 # would fail this case while the property the line exists for -- that the
 # action is pinned rather than floating on a tag -- still held. The pattern is
 # held to its own standard by test_a_floating_action_tag_is_not_a_pin below.
+# The version comment may be major-only or dotted, because BOTH forms are in
+# these workflows: the upload steps carry "# v7" and the download steps carry
+# "# v8.0.2", and dependabot writes whichever the release it is moving to uses.
+# This pattern accepted major-only alone when it was written, which would have
+# failed the first upload bump that brought a patch-level comment with it --
+# loudly rather than silently, but for a spelling the convention allows.
 UPLOAD_PIN = re.compile(
-    r"^        uses: actions/upload-artifact@[0-9a-f]{40} # v\d+\n", re.MULTILINE)
+    r"^        uses: actions/upload-artifact@[0-9a-f]{40} # v[0-9]+(?:\.[0-9]+)*\n",
+    re.MULTILINE)
 
 
 def workflow_job(text, name):
@@ -838,18 +845,43 @@ class WorkflowPreservationTests(unittest.TestCase):
     # the pattern still refuses what the literal refused. These are the
     # spellings a bump or a careless edit could actually introduce.
     def test_a_floating_action_tag_is_not_a_pin(self):
+        full = "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
         for unpinned in (
             "        uses: actions/upload-artifact@v7\n",
             "        uses: actions/upload-artifact@main\n",
             "        uses: actions/upload-artifact@v7 # pinned\n",
             "        uses: actions/upload-artifact@043fb46d # v7\n",
             "        uses: actions/upload-artifact@043FB46D1A93C77AAE656E7C1C64A875D1FC6A0A # v7\n",
-            "        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a\n",
+            "        uses: actions/upload-artifact@" + full + "\n",
+            # A pinned action whose comment does not say which version it is.
+            # The comment is how a reader checks the pin against a release, so
+            # a pin without one is not what this convention asks for.
+            "        uses: actions/upload-artifact@" + full + " # pinned\n",
+            "        uses: actions/upload-artifact@" + full + " # v\n",
+            # Deliberately refused: this repository writes the bare version and
+            # nothing else, so anything after it is a drift worth failing on.
+            "        uses: actions/upload-artifact@" + full + " # v7 (checked)\n",
+            # Malformed dotted versions, which are what hold the SEPARATOR in
+            # the pattern to being a literal dot. Without these the escape
+            # could be dropped, making it match any character, and both of the
+            # workflow cases would still pass (db:843).
+            "        uses: actions/upload-artifact@" + full + " # v7x0.2\n",
+            "        uses: actions/upload-artifact@" + full + " # v7..2\n",
+            "        uses: actions/upload-artifact@" + full + " # v7.0.\n",
+            "        uses: actions/upload-artifact@" + full + " # v7.0.2.\n",
+            # A reference that is not a pin, WITH a valid version comment, so
+            # the rejection is isolated to the reference. The bare rows above
+            # lack a comment too and so prove less than they appear to.
+            "        uses: actions/upload-artifact@v7 # v7\n",
+            "        uses: actions/upload-artifact@main # v7\n",
+            "        uses: actions/upload-artifact@043fb46d # v7.0.2\n",
         ):
             self.assertNotRegex(unpinned, UPLOAD_PIN)
-        self.assertRegex(
-            "        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7\n",
-            UPLOAD_PIN)
+        # Both spellings the workflows actually use, major-only and dotted.
+        for pinned in ("# v7", "# v8", "# v8.0", "# v8.0.2", "# v10.11.12"):
+            self.assertRegex(
+                "        uses: actions/upload-artifact@" + full + " " + pinned + "\n",
+                UPLOAD_PIN)
 
 
 HEADER = 'mode: atomic\n'
