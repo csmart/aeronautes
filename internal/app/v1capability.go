@@ -14,10 +14,13 @@ import (
 // internal/scenariocontract (ADR 0052).
 //
 // The operator narrowed v1 to browse, inspect, download and metadata
-// reading and writing; copy, mirror, upload and bulk delete are deferred
-// until each is proven. RETURNING A CAPABILITY IS REMOVING ITS NAMES FROM
+// reading and writing; copy, mirror, upload and bulk delete were deferred
+// until each was proven, and upload was RETURNED on 16 October 2026
+// (ADR 0052 decision 9). RETURNING A CAPABILITY IS REMOVING ITS NAMES FROM
 // THIS TABLE — no call site changes, and the code behind it is untouched
-// precisely so that it still works when that happens.
+// precisely so that it still works when that happens. Its token leaves
+// v1CapabilityTokens below at the same time, so the switch reports it as
+// naming nothing rather than accepting it silently.
 //
 // Two entries are here on BEHAVIOUR rather than on name, and a
 // classification by capability name would have shipped both:
@@ -36,10 +39,6 @@ var v1DeferredActions = map[string]string{
 	// mirror — ADR 0020 refuses this independently and first; the gate
 	// must never become the only thing refusing it.
 	"TransferService.StartMirror": "Mirror",
-	// upload
-	"TransferService.PickUploadFiles": "Upload",
-	"TransferService.PreflightUpload": "Upload",
-	"TransferService.StartUpload":     "Upload",
 	// bulk delete, and the read-only actions that exist only to serve it
 	"DeleteService.PreviewDelete":              "Bulk delete",
 	"DeleteService.StartDelete":                "Bulk delete",
@@ -70,7 +69,6 @@ const EnableEnvVar = "AERONAUTES_ENABLE"
 // refusal must never become a scoping decision, so no value of the
 // variable can admit it.
 var v1CapabilityTokens = map[string]string{
-	"upload":                 "Upload",
 	"copy":                   "Copy",
 	"bulk-delete":            "Bulk delete",
 	"marker-manifest-delete": "Marker and manifest editing",

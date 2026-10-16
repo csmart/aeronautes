@@ -5824,6 +5824,12 @@ The backend half was proved first, in the named-read record's follow-up, across 
 Container and marker creation, returned to v1 on 23 September, now record under the account they captured, closing the relabel window ADR 0065 named for the creation paths.
 L11 stays open for the caller-named mutation binding and broader live-read atomicity, and the valuable-data hold remains.
 
+Upload returned to the release on 16 October 2026, the first of the capability returns the 14 September narrowing promised.
+The operator decided it on what master carries rather than on a promise: both publishing paths bound to their source's content under [ADR 0080](adr/0080-upload-content-binding.md), the acknowledged and bounded overwrite of [ADR 0081](adr/0081-upload-overwrite-acknowledgement.md) with its fragment accounting, and the identity comparison at the fixed point before a replacement under [ADR 0085](adr/0085-reobserved-destructive-identity.md), accepted the same day.
+[ADR 0052](adr/0052-v1-capability-gate.md) decision 9 records the return: the three upload entry points leave the deferred table, their affordances are offered by the release rather than by the switch, and the `upload` token leaves ADR 0082's list, so a process still carrying it reports that the token was ignored instead of accepting it silently.
+No conditional write exists on this store, so the comparison narrows the interval before a replacement and cannot close it; that exposure is accepted rather than removed, and nothing here makes the route proven, admits any other capability or lifts an ADR 0020 refusal.
+A shipped-binary upload journey stays outside `scripts/smoke.sh`, which cannot operate a native file picker any more than it can operate download's directory picker, so the route's evidence is package-level and the switch's startup lines remain the product-level half.
+
 ### 65.12. Proportionate remediation and a fixed finish line
 
 Safe, secure operation on valuable production data remains the first milestone.

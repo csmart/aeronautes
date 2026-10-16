@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Release smoke (§65.6 item 8): launch the real binary headless against
 # the in-repo mock cluster and drive bookmark → connect → browse.
-# Copy, mirror and upload are deferred in a v1 build (ADR 0052); download
-# needs a native directory picker this harness cannot operate. Screenshots
+# Copy, mirror and bulk delete are deferred in a v1 build (ADR 0052).
+# Upload returned to the release on 16 October 2026 but, like download, needs
+# a native picker this harness cannot operate, so neither is driven here. Screenshots
 # and logs go to smoke-artifacts/. The §57.4 smoke against real SwiftStack
 # infrastructure remains a manual operator step.
 set -euo pipefail
@@ -169,15 +170,17 @@ switch_case unset ""
 if grep -q "AERONAUTES_ENABLE" "$ART/switch-unset.log"; then
   fail "an unset switch logged something about capabilities (see $ART/switch-unset.log)"
 fi
-switch_case upload "upload" \
-  "AERONAUTES_ENABLE: offering unproven capabilities in this process: Upload"
-switch_case unrecognised "upload, not-a-capability" \
-  "AERONAUTES_ENABLE: offering unproven capabilities in this process: Upload" \
+switch_case copy "copy" \
+  "AERONAUTES_ENABLE: offering unproven capabilities in this process: Copy"
+switch_case unrecognised "copy, not-a-capability" \
+  "AERONAUTES_ENABLE: offering unproven capabilities in this process: Copy" \
   "AERONAUTES_ENABLE: ignored, not a capability: not-a-capability"
 # Mirror has no token deliberately (ADR 0052 decision 5, ADR 0082 decision 3),
-# so asking for it is ignored and SAID to be ignored.
-switch_case mirror "mirror" \
-  "AERONAUTES_ENABLE: ignored, not a capability: mirror"
+# and "upload" stopped naming one when the operator returned that capability
+# to the release (ADR 0052 decision 9), so both are ignored and SAID to be
+# ignored. The two arrive on one line, in sorted order.
+switch_case ignored "mirror, upload" \
+  "AERONAUTES_ENABLE: ignored, not a capability: mirror, upload"
 
 say "starting the app for the journey"
 wait_no_window 30 || fail "a window from the switch cases never went away"

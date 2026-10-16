@@ -1,17 +1,16 @@
 // Affordances a v1 build offers (ADR 0052).
 // Returning a deferred capability is flipping the matching flag here
-// and removing its names from the Go deferred table. Download and marker
-// creation are kept (the operator returned marker creation on
-// 23 September 2026); copy, upload, bulk delete, marker deletion,
-// manifest deletion, benchmark and re-run are not. LocalTransferDialog
-// still serves both modes: only the upload opener is withdrawn.
+// and removing its names from the Go deferred table. Download, marker
+// creation and upload are kept (the operator returned marker creation on
+// 23 September 2026 and upload on 16 October 2026); copy, bulk delete,
+// marker deletion, manifest deletion, benchmark and re-run are not.
+// LocalTransferDialog serves both of its modes again.
 
 /** The capability names the backend reports, mapped onto the affordances
  * each one covers (ADR 0082). A capability turns on all of its
  * affordances or none, so no half-capability can be assembled here. Job
  * re-run is classified with Copy in the backend's table and follows it. */
 const affordancesOf: Record<string, (keyof typeof v1Offers)[]> = {
-  "Upload": ["upload"],
   "Copy": ["copy", "rerun"],
   "Bulk delete": ["bulkDelete"],
   "Marker and manifest editing": ["markerDelete", "manifestDelete"],
@@ -33,7 +32,7 @@ export function applyEnabledCapabilities(names: readonly string[] | undefined) {
 // the first render and the affordances must follow (ADR 0082).
 export const v1Offers = $state({
   copy: false,
-  upload: false,
+  upload: true,
   bulkDelete: false,
   markerCreate: true,
   markerDelete: false,

@@ -1,8 +1,14 @@
 # ADR 0085 — compare a name's identity at the last observation before destroying what it holds
 
-**Status:** Proposed. The operator asked for this protocol on 7 October 2026, in these words: re-HEAD
-just before the delete, and if the hash still matches delete it, otherwise fail. It is written for
-review before any implementation.
+**Status:** Accepted on 16 October 2026. The operator asked for this protocol on 7 October 2026, in
+these words: re-HEAD just before the delete, and if the hash still matches delete it, otherwise fail;
+it was written for review before any implementation, and the operator accepted it as written once the
+first two paths were delivered against it.
+**Delivered:** native manifest deletion (`internal/swiftcontrol/deletemanifest.go`,
+`internal/app/mutateservice.go`) and the upload overwrite, whose comparison point this record fixes
+(`internal/transfer/local/upload.go`, with the acknowledged baseline in `internal/jobs`). **Owed:**
+prefix deletion, which this record also decides and which is still deferred with bulk delete, so its
+2N + Z cost and the loss of `BulkDelete` are decided but not yet paid.
 **Scope:** An identity comparison at the last observation each destructive path already makes, for
 Aeronautes-native manifest deletion, prefix deletion, and the upload overwrite
 [ADR 0081](0081-upload-overwrite-acknowledgement.md) already accepts. It admits no capability, admits

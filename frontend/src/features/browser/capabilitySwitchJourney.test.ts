@@ -69,24 +69,28 @@ async function connect() {
   await settle();
 }
 
-it("keeps deferred controls hidden until Info settles and then opens the offered upload", async () => {
-  const info = await prepare(["Upload"]);
+it("keeps deferred controls hidden until Info settles and then opens the offered copy", async () => {
+  const info = await prepare(["Copy"]);
   let resolve!: (value: Info) => void;
   api.info = () => new Promise<Info>((yes) => { resolve = yes; });
   await render();
-  expect(labels()).not.toContain("Upload…");
+  expect(labels()).not.toContain("Copy to…");
+  // A capability the release KEEPS does not wait for Info: upload was
+  // returned on 16 October 2026, so its control is there before the process
+  // has said anything, which is the difference the return makes.
+  expect(labels()).toContain("Upload…");
   expect(document.querySelector(".unproven-banner")).toBeNull();
   resolve(info);
   await settle();
-  expect(document.querySelector(".unproven-banner")?.textContent).toContain("Upload");
-  expect(button("Upload…").disabled).toBe(true);
+  expect(document.querySelector(".unproven-banner")?.textContent).toContain("Copy");
+  expect(button("Copy to…").disabled).toBe(true);
   await connect();
-  expect(button("Upload…").disabled).toBe(false);
-  button("Upload…").click();
+  expect(button("Copy to…").disabled).toBe(false);
+  button("Copy to…").click();
   await settle();
-  expect(document.querySelector('[role="dialog"]')?.getAttribute("aria-label")).toBe("Upload");
+  expect(document.querySelector('[role="dialog"]')?.getAttribute("aria-label")).toBe("Transfer");
   expect(document.querySelector(".unproven-banner")?.textContent).toContain("not finished");
-  expect(labels()).not.toContain("Copy to…");
+  expect(labels()).not.toContain("Delete scope…");
 });
 
 it("keeps deferred controls closed and reports an Info failure while browsing still works", async () => {
@@ -96,8 +100,10 @@ it("keeps deferred controls closed and reports an Info failure while browsing st
   expect(document.body.textContent).toContain("service bridge unavailable");
   expect(document.querySelector(".unproven-banner")).toBeNull();
   await connect();
+  // Browsing AND the capabilities the release keeps survive an Info failure;
+  // only the switched-on ones are lost with the answer that would name them.
   expect(labels()).toContain("Download…");
-  expect(labels()).not.toContain("Upload…");
+  expect(labels()).toContain("Upload…");
   expect(labels()).not.toContain("Copy to…");
   expect(labels()).not.toContain("Delete scope…");
 });
@@ -108,11 +114,12 @@ it("accepts the null lists produced by the ordinary Go Info response", async () 
   await render();
   await connect();
   expect(document.querySelector(".unproven-banner")).toBeNull();
-  expect(labels()).not.toContain("Upload…");
+  expect(labels()).toContain("Upload…");
+  expect(labels()).not.toContain("Copy to…");
 });
 
 it("renders all enabled capability names and keeps unknown text inert", async () => {
-  const enabled = ["Upload", "Copy", "Bulk delete", "Marker and manifest editing", "Benchmark"];
+  const enabled = ["Copy", "Bulk delete", "Marker and manifest editing", "Benchmark"];
   const unknown = '<img src=x onerror="throw 1">';
   await prepare(enabled, [unknown, "__proto__", "mirror"]);
   await render();

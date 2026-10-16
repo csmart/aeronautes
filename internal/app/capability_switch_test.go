@@ -46,21 +46,21 @@ func TestCapabilitySwitchDefaultsToNothingEnabled(t *testing.T) {
 func TestCapabilitySwitchEnablesWholeCapabilities(t *testing.T) {
 	forceV1Gate(t)
 	restoreSwitch(t)
-	names, unrecognised := EnableCapabilities("upload")
-	if len(unrecognised) != 0 || len(names) != 1 || names[0] != "Upload" {
-		t.Fatalf("upload switch = %v %v", names, unrecognised)
+	names, unrecognised := EnableCapabilities("bulk-delete")
+	if len(unrecognised) != 0 || len(names) != 1 || names[0] != "Bulk delete" {
+		t.Fatalf("bulk-delete switch = %v %v", names, unrecognised)
 	}
-	uploads := deferredActionsFor("Upload")
-	if len(uploads) != 3 {
-		t.Fatalf("the table names %d upload actions, want 3: %v", len(uploads), uploads)
+	deletes := deferredActionsFor("Bulk delete")
+	if len(deletes) != 4 {
+		t.Fatalf("the table names %d bulk delete actions, want 4: %v", len(deletes), deletes)
 	}
-	for _, action := range uploads {
+	for _, action := range deletes {
 		if err := refuseIfDeferred(action); err != nil {
-			t.Errorf("%s refused although upload is enabled: %v", action, err)
+			t.Errorf("%s refused although bulk delete is enabled: %v", action, err)
 		}
 	}
 	for action, capability := range v1DeferredActions {
-		if capability == "Upload" {
+		if capability == "Bulk delete" {
 			continue
 		}
 		assertV1Refusal(t, refuseIfDeferred(action), capability)
@@ -73,14 +73,14 @@ func TestCapabilitySwitchEnablesWholeCapabilities(t *testing.T) {
 func TestCapabilitySwitchParsesTheOperatorSpelling(t *testing.T) {
 	forceV1Gate(t)
 	restoreSwitch(t)
-	names, unrecognised := EnableCapabilities(" Upload , ,COPY,upload ")
+	names, unrecognised := EnableCapabilities(" Benchmark , ,COPY,benchmark ")
 	if len(unrecognised) != 0 {
 		t.Fatalf("unrecognised = %v", unrecognised)
 	}
-	if strings.Join(names, "|") != "Copy|Upload" {
+	if strings.Join(names, "|") != "Benchmark|Copy" {
 		t.Fatalf("names = %v", names)
 	}
-	for _, action := range append(deferredActionsFor("Upload"), deferredActionsFor("Copy")...) {
+	for _, action := range append(deferredActionsFor("Benchmark"), deferredActionsFor("Copy")...) {
 		if err := refuseIfDeferred(action); err != nil {
 			t.Errorf("%s refused although its capability is enabled: %v", action, err)
 		}
@@ -96,15 +96,18 @@ func TestCapabilitySwitchParsesTheOperatorSpelling(t *testing.T) {
 func TestCapabilitySwitchReportsUnrecognisedTokens(t *testing.T) {
 	forceV1Gate(t)
 	restoreSwitch(t)
-	names, unrecognised := EnableCapabilities("uplaod, upload, uplaod")
-	if strings.Join(names, "|") != "Upload" {
+	// "upload" is in here on purpose: it named a capability this build has
+	// RETURNED, so it no longer names anything the switch can admit and must
+	// be reported as ignored rather than silently accepted.
+	names, unrecognised := EnableCapabilities("copz, copy, upload, copz")
+	if strings.Join(names, "|") != "Copy" {
 		t.Fatalf("names = %v", names)
 	}
-	if strings.Join(unrecognised, "|") != "uplaod" {
+	if strings.Join(unrecognised, "|") != "copz|upload" {
 		t.Fatalf("unrecognised = %v", unrecognised)
 	}
 	got, bad := EnabledCapabilitySnapshot()
-	if strings.Join(got, "|") != "Upload" || strings.Join(bad, "|") != "uplaod" {
+	if strings.Join(got, "|") != "Copy" || strings.Join(bad, "|") != "copz|upload" {
 		t.Fatalf("snapshot = %v %v", got, bad)
 	}
 }
@@ -119,14 +122,14 @@ func TestCapabilitySwitchCannotEnableMirror(t *testing.T) {
 			t.Fatal("a token maps to Mirror")
 		}
 	}
-	for _, spec := range []string{"mirror", "Mirror", "MIRROR", "TransferService.StartMirror", "upload,mirror", "*", "all"} {
+	for _, spec := range []string{"mirror", "Mirror", "MIRROR", "TransferService.StartMirror", "copy,mirror", "*", "all"} {
 		names, unrecognised := EnableCapabilities(spec)
 		for _, name := range names {
 			if name == "Mirror" {
 				t.Fatalf("%q enabled Mirror", spec)
 			}
 		}
-		if len(unrecognised) == 0 && spec != "upload,mirror" {
+		if len(unrecognised) == 0 && spec != "copy,mirror" {
 			t.Errorf("%q was accepted silently: %v", spec, names)
 		}
 		assertV1Refusal(t, refuseIfDeferred("TransferService.StartMirror"), "Mirror")
@@ -142,9 +145,13 @@ func TestCapabilitySwitchIsNotReReadPerCall(t *testing.T) {
 	if names, _ := ReadEnabledCapabilities(); len(names) != 0 {
 		t.Fatalf("startup reading = %v", names)
 	}
-	t.Setenv(EnableEnvVar, "upload")
-	for _, action := range deferredActionsFor("Upload") {
-		assertV1Refusal(t, refuseIfDeferred(action), "Upload")
+	t.Setenv(EnableEnvVar, "bulk-delete")
+	actions := deferredActionsFor("Bulk delete")
+	if len(actions) == 0 {
+		t.Fatal("bulk delete has no deferred actions, so this case asserts nothing")
+	}
+	for _, action := range actions {
+		assertV1Refusal(t, refuseIfDeferred(action), "Bulk delete")
 	}
 	if names, _ := EnabledCapabilitySnapshot(); len(names) != 0 {
 		t.Fatalf("snapshot followed the environment: %v", names)
@@ -159,12 +166,12 @@ func TestInfoCarriesTheCapabilitySwitch(t *testing.T) {
 	if info := service.Info(); len(info.EnabledCapabilities) != 0 || len(info.UnrecognisedCapabilities) != 0 {
 		t.Fatalf("unset Info = %+v", info)
 	}
-	EnableCapabilities("upload, nonsense")
+	EnableCapabilities("copy, nonsense")
 	info := service.Info()
-	if strings.Join(info.EnabledCapabilities, "|") != "Upload" || strings.Join(info.UnrecognisedCapabilities, "|") != "nonsense" {
+	if strings.Join(info.EnabledCapabilities, "|") != "Copy" || strings.Join(info.UnrecognisedCapabilities, "|") != "nonsense" {
 		t.Fatalf("Info = %+v", info)
 	}
-	if about := service.About(); strings.Join(about.EnabledCapabilities, "|") != "Upload" {
+	if about := service.About(); strings.Join(about.EnabledCapabilities, "|") != "Copy" {
 		t.Fatalf("About = %+v", about.Info)
 	}
 }
@@ -182,13 +189,18 @@ func TestStartupLinesNameWhatIsOfferedAndWhatWasIgnored(t *testing.T) {
 		none bool
 	}{
 		{spec: "", none: true},
-		{spec: "upload", want: []string{
-			"AERONAUTES_ENABLE: offering unproven capabilities in this process: Upload"}},
-		{spec: "upload, uplaod", want: []string{
-			"AERONAUTES_ENABLE: offering unproven capabilities in this process: Upload",
-			"AERONAUTES_ENABLE: ignored, not a capability: uplaod"}},
+		{spec: "copy", want: []string{
+			"AERONAUTES_ENABLE: offering unproven capabilities in this process: Copy"}},
+		{spec: "copy, copz", want: []string{
+			"AERONAUTES_ENABLE: offering unproven capabilities in this process: Copy",
+			"AERONAUTES_ENABLE: ignored, not a capability: copz"}},
 		{spec: "not-a-capability", want: []string{
 			"AERONAUTES_ENABLE: ignored, not a capability: not-a-capability"}},
+		// A RETURNED capability's token names nothing any more. The operator
+		// who still has "upload" in their environment is told it was ignored,
+		// rather than left to read the silence as confirmation.
+		{spec: "upload", want: []string{
+			"AERONAUTES_ENABLE: ignored, not a capability: upload"}},
 		// Mirror has no token, so asking for it is ignored and said to be
 		// ignored rather than silently dropped.
 		{spec: "mirror", want: []string{

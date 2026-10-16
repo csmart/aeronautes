@@ -1,6 +1,6 @@
 # ADR 0080: bind the upload routes to their source's content
 
-**Status:** Proposed on 25 September 2026 as the next step in the sequence [ADR 0045](0045-route-content-binding.md) left open, for the operator's decision of the same day that upload is the next release's capability; revised on 25 September 2026 after review; reviewed before its implementation, which follows as its own commit.
+**Status:** Accepted. Proposed on 25 September 2026 as the next step in the sequence [ADR 0045](0045-route-content-binding.md) left open, for the operator's decision of the same day that upload is the next release's capability; revised on 25 September 2026 after review; reviewed before its implementation, which followed as its own commit and is on master. This record is the content-binding half of the evidence the operator returned upload on, on 16 October 2026 ([ADR 0052](0052-v1-capability-gate.md) decision 9); the retained cases are `internal/transfer/local/upload_content_binding_test.go`.
 **Scope:** The two publishing paths in `internal/transfer/local/upload.go`: `nativeUpload`, which publishes at the live name in one request, and `commitStagedUpload`, which publishes a staged plain object or a staged large object's manifest. The native copy route stays in ADR 0045's sequence with Copy. Finish-line item L05, gates P16 and P21.
 
 ## Problem
