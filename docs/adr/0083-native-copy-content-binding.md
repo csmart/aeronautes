@@ -1,6 +1,7 @@
 # ADR 0083: bind the native copy route to its source's content
 
-**Status:** Proposed. Reviewed before implementation, which follows as its own commit, as [ADR 0080](0080-upload-content-binding.md) was.
+**Status:** Accepted and implemented on 6 October 2026, in commit `10a98f6a`, with decision 2 amended by [ADR 0084](0084-held-manifest-copy.md) — which records that decision as wrong and says in its own status line that the contract it amends is accepted and merged. Reviewed before implementation, which followed as its own commit, as [ADR 0080](0080-upload-content-binding.md) was.
+This line read "Proposed" until 16 October 2026, ten days after the implementation landed, and that staleness was not harmless: it was read as establishing that the route did not exist, twice — once into the finish line's L05 row and once into a draft of [ADR 0086](0086-mirror-deletes-what-the-source-does-not-have.md), which told the operator a mirror would have to stage every object or wait for a binding that was already there.
 This is the last member of the sequence [ADR 0045](0045-route-content-binding.md) opened: that decision delivered the local download route and named the native copy route, the native upload route and the staged upload commit as remaining; ADR 0080 took the two upload paths and handed this one back in terms.
 **Scope:** `nativeCopy` in `internal/transfer/copy/executor.go`. Finish-line item L05, gates P16 and P21. Nothing about the staged copy route changes; [ADR 0042](0042-source-content-ladder.md) bound that one.
 
