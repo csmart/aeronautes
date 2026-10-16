@@ -3,6 +3,7 @@ package local
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -468,7 +469,21 @@ type FragmentReading struct {
 	// Unknown is why a predecessor could not be read at all, empty when
 	// every name was read. A question with this set must not say there is
 	// no large object and must not authorise removing anything.
+	//
+	// It holds the FIRST reason and a count of the rest. It used to hold
+	// every reason joined, which its own producer's comment already said it
+	// did not: a selection where many names could not be read grew one
+	// sentence without bound, and that sentence is read on a confirmation
+	// surface (db:837).
 	Unknown string
+	// first is the reason note kept, and noted is how many it was given.
+	// They are held separately so Unknown never has to be taken back apart:
+	// a reason quotes a stored object NAME, which can contain any text at
+	// all including this helper's own count suffix, and splitting on that
+	// suffix would let a name shorten the diagnostic it appears in. Keeping
+	// the pieces is the fix; parsing them back out was the defect (db:838).
+	first string
+	noted int
 	// Shown is what each name held, by name, for the names this reading could
 	// read authoritatively. It is the acknowledged baseline ADR 0085 compares a
 	// publication against, and it costs nothing: these HEADs are already taken
@@ -571,12 +586,46 @@ func FragmentPlan(ctx context.Context, dst *swiftcontrol.Session, container stri
 
 // note keeps the first reason and counts the rest, so one sentence can say
 // how many names it could not read without growing without bound.
+//
+// It appended every reason until db:837, which is not what this comment has
+// always said and not what a bounded sentence is: the text reaches an
+// operator's confirmation on a native surface, and one selection with a
+// thousand unreadable names would have carried a thousand reasons onto it.
 func (r *FragmentReading) note(reason string) {
-	if r.Unknown == "" {
-		r.Unknown = reason
+	r.noted++
+	if r.noted == 1 {
+		// Bounded here, not only where the sentence is displayed: the count
+		// below comes AFTER the reason, so a reason long enough to fill the
+		// display budget would push the count out of the one sentence that
+		// says how many names this reading could not read (db:838).
+		r.first = cutRunes(reason, firstReasonRunes)
+		r.Unknown = r.first
 		return
 	}
-	r.Unknown += "; " + reason
+	rest := r.noted - 1
+	r.Unknown = r.first + fmt.Sprintf("; and %d more name%s could not be read",
+		rest, pluralSuffix(rest))
+}
+
+// firstReasonRunes bounds the one reason this reading keeps. An object name
+// is as long as a filesystem or a store allows, and the reason quotes it.
+const firstReasonRunes = 160
+
+// cutRunes ends text past limit runes in an ellipsis, so a cut is visible
+// rather than looking like the whole of what was said.
+func cutRunes(text string, limit int) string {
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text
+	}
+	return string(runes[:limit]) + "…"
+}
+
+func pluralSuffix(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }
 
 // reclaim removes what a replaced predecessor's record named, after the

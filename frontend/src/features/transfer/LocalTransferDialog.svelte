@@ -70,6 +70,19 @@
   const problemCount = $derived(mode === "download" ? report?.problemCount ?? 0 : problemRows.length);
   const truncated = $derived(mode === "download" && problemCount > problemRows.length);
 
+  // A collision is the one rejection the operator can answer: ADR 0081's
+  // acknowledged overwrite. Every OTHER rejecting problem is not a question,
+  // so a report mixing a collision with anything else stays a plain refusal
+  // and offers nothing.
+  const collisions = $derived(mode === "upload" ? rejections.filter((p) => p.kind === "exists") : []);
+  const collisionsOnly = $derived(mode === "upload" && rejected
+    && collisions.length > 0 && collisions.length === rejections.length);
+  // The acknowledged plan, once asked for: the collisions come back as
+  // warnings rather than rejections, and the names are what will be replaced.
+  const acknowledged = $derived(!!report && prepared?.mode === "upload"
+    && prepared.request.acknowledgeOverwrite === true);
+  const replacing = $derived(acknowledged ? warnings.filter((p) => p.kind === "exists") : []);
+
   function scope(): Scope {
     return {
       bookmarkId: browser.connectedBookmarkId ?? "",
@@ -134,6 +147,29 @@
         const result = await browser.preflightDownload(req);
         if (isCurrent(intent)) prepared = { intent, mode: "download", request: req, report: result, destination: dir.dir };
       }
+    } catch (e) {
+      if (isCurrent(intent)) error = e instanceof Error ? e.message : String(e);
+    } finally {
+      if (isCurrent(intent)) checking = false;
+    }
+  }
+
+  // Ask for the same selection as a REPLACING plan. The pick is not repeated:
+  // it is bound to this scope for its whole life (ADR 0041), and picking again
+  // would be a second selection the operator never made. Setting the field
+  // only says the operator asked — ADR 0081 decision 2 keeps the authorising
+  // question on a native surface this page cannot draw, and the backend raises
+  // it when the job starts, so this button cannot answer it.
+  async function replace() {
+    const current = prepared;
+    if (checking || starting || !current || current.mode !== "upload" || !isCurrent(current.intent)) return;
+    const intent = current.intent;
+    const req = Object.freeze({ ...current.request, acknowledgeOverwrite: true });
+    checking = true;
+    error = null;
+    try {
+      const result = await browser.preflightUpload(req);
+      if (isCurrent(intent)) prepared = { intent, mode: "upload", request: req, report: result, destination: "" };
     } catch (e) {
       if (isCurrent(intent)) error = e instanceof Error ? e.message : String(e);
     } finally {
@@ -213,6 +249,21 @@
             {mode === "download" ? ` → ${destDir}` : ""}
           </p>
         {/if}
+        {#if collisionsOnly}
+          <p class="hint">
+            {collisions.length === 1 ? "That name is" : "Those names are"} already in use at the
+            destination. Replacing {collisions.length === 1 ? "it" : "them"} is allowed, and the
+            application will ask you to confirm on its own dialog — not on this page — before
+            anything is written.
+          </p>
+        {/if}
+        {#if acknowledged && replacing.length > 0}
+          <p class="hint">
+            This upload will REPLACE what is at {replacing.length}
+            {replacing.length === 1 ? "name" : "names"}. The application will ask you to confirm,
+            naming the account and what it observed about the container, before it writes anything.
+          </p>
+        {/if}
         {#if truncated}
           <p class="summary">{problemCount} problems ({problemRows.length} shown)</p>
         {/if}
@@ -242,6 +293,11 @@
               ? "Choose files…"
               : "Choose directory…"}
         </button>
+        {#if collisionsOnly}
+          <button class="primary" onclick={replace} disabled={checking || starting}>
+            Replace {collisions.length} existing object{collisions.length === 1 ? "" : "s"}…
+          </button>
+        {/if}
         {#if report && !rejected}
           <button class="primary" onclick={start} disabled={checking || starting}>
             {mode === "upload" ? "Start upload" : "Start download"}

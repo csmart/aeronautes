@@ -419,3 +419,138 @@ describe.each(["upload", "download"] as Mode[])("%s selection scope", (mode) => 
     expect(picker).toHaveBeenCalledExactlyOnceWith({ bookmarkId: "source", container: "media", prefix: "selected/" });
   });
 });
+
+// ADR 0081: an upload may replace what is live, on an acknowledgement the
+// operator gave and a confirmation the BACKEND raises. These cases cover the
+// page's whole part in that: offering the question, carrying the answer, and
+// never being the thing that authorises the replacement.
+describe("upload replacement", () => {
+  const liveName = "selected/a.txt";
+  // The kind the Go preflight actually reports for a live destination name.
+  const collision = (reject: boolean) => ({
+    name: liveName, kind: "exists",
+    detail: reject
+      ? "already live at the destination; v1 upload never overwrites"
+      : "already live at the destination; this upload will replace it",
+    reject,
+  });
+  const replaceButton = (f: Fixture) =>
+    [...f.root.querySelectorAll<HTMLButtonElement>("footer button")]
+      .find((b) => b.textContent?.trim().startsWith("Replace "));
+  // What a reader sees: the markup wraps these sentences across source lines,
+  // and a browser collapses that run of whitespace into one space.
+  const visible = (f: Fixture) => (f.root.textContent ?? "").replace(/\s+/g, " ");
+
+  // The replacing preflight's reply: the collision comes back as a warning
+  // and the item is marked as replacing, which is what the Go route reports
+  // once the acknowledgement is set.
+  async function resolveReplacing(f: Fixture) {
+    f.uploads[1].resolve({
+      items: [{ path: "", name: liveName, size: 5, route: "rclone", replaces: true }],
+      problems: [collision(false)], totalBytes: 5,
+    });
+    await settle();
+  }
+
+  async function reachCollision(f: Fixture, extra: { name: string; kind: string; detail: string; reject: boolean }[] = []) {
+    f.choose();
+    await f.resolvePicker();
+    f.uploads[0].resolve({
+      items: [], problems: [collision(true), ...extra], totalBytes: 0,
+    });
+    await settle();
+    return f;
+  }
+
+  it("offers the replacement and says who will ask about it", async () => {
+    const f = await reachCollision(show("upload"));
+    expect(f.root.querySelector(".bad")?.textContent).toContain("Rejected");
+    expect(f.startButton()).toBeUndefined();
+    expect(replaceButton(f)?.textContent?.trim()).toBe("Replace 1 existing object…");
+    const text = visible(f);
+    expect(text).toContain("That name is already in use at the destination");
+    expect(text).toContain("on its own dialog");
+    expect(text).toContain("not on this page");
+  });
+
+  it("re-runs the preflight with the acknowledgement on the same selection", async () => {
+    const f = await reachCollision(show("upload"));
+    replaceButton(f)!.click();
+    await settle();
+    expect(f.api.pickUploadFiles).toHaveBeenCalledOnce();
+    expect(f.api.preflightUpload).toHaveBeenCalledTimes(2);
+    const first = vi.mocked(f.api.preflightUpload).mock.calls[0][0];
+    const second = vi.mocked(f.api.preflightUpload).mock.calls[1][0];
+    expect(first.acknowledgeOverwrite).toBe(false);
+    expect(second.acknowledgeOverwrite).toBe(true);
+    expect(second.selectionToken).toBe(first.selectionToken);
+    expect({ ...second, acknowledgeOverwrite: false }).toEqual(first);
+  });
+
+  // Split from the sentence case below on purpose: the ONE thing that must
+  // hold is that the request the backend is asked to start is the
+  // acknowledged one, since that is what makes it raise the question. An
+  // assertion about what the page says must not be able to fire first and
+  // leave this unchecked.
+  it("carries the acknowledgement into the start", async () => {
+    const f = await reachCollision(show("upload"));
+    replaceButton(f)!.click();
+    await settle();
+    await resolveReplacing(f);
+    f.startButton()!.click();
+    await settle();
+    expect(f.api.startUpload).toHaveBeenCalledOnce();
+    expect(vi.mocked(f.api.startUpload).mock.calls[0][0]).toEqual(
+      { ...vi.mocked(f.api.preflightUpload).mock.calls[1][0] });
+    expect(vi.mocked(f.api.startUpload).mock.calls[0][0].acknowledgeOverwrite).toBe(true);
+  });
+
+  it("says what the acknowledged plan will do and stops offering the question", async () => {
+    const f = await reachCollision(show("upload"));
+    replaceButton(f)!.click();
+    await settle();
+    await resolveReplacing(f);
+    expect(visible(f)).toContain("will REPLACE what is at 1 name.");
+    expect(visible(f)).toContain("naming the account and what it observed");
+    expect(replaceButton(f)).toBeUndefined();
+    expect(f.startButton()).toBeDefined();
+  });
+
+  // A collision is a question. Anything else rejecting is not, and a report
+  // holding both must not become answerable because one of its problems was.
+  it("does not offer a replacement when something else also rejects", async () => {
+    const f = await reachCollision(show("upload"), [{
+      name: "b.txt", kind: "unreadable", detail: "cannot be read", reject: true,
+    }]);
+    expect(replaceButton(f)).toBeUndefined();
+    expect(f.startButton()).toBeUndefined();
+    expect(visible(f)).not.toContain("on its own dialog");
+    expect(f.api.preflightUpload).toHaveBeenCalledOnce();
+  });
+
+  // The offer belongs to the scope it was computed under, like every other
+  // stage of this dialog.
+  it("withdraws the offer when the scope moves under it", async () => {
+    const f = await reachCollision(show("upload"));
+    changeScope(f, "container");
+    await settle();
+    expect(replaceButton(f)).toBeUndefined();
+    expect(f.root.querySelector(".report")).toBeNull();
+    expect(f.api.preflightUpload).toHaveBeenCalledOnce();
+  });
+
+  // A download never asks this question: its own refusal to overwrite is
+  // ADR 0045's and is not an acknowledgeable one.
+  it("never offers a replacement in download mode", async () => {
+    const f = show("download");
+    f.choose();
+    await f.resolvePicker();
+    f.downloads[0].resolve({
+      itemSamples: [], problemSamples: [{ name: "a.txt", kind: "exists", detail: "already exists", reject: true }],
+      totalBytes: 0, objects: 0, problemCount: 1, rejected: true,
+    });
+    await settle();
+    expect(replaceButton(f)).toBeUndefined();
+    expect(f.startButton()).toBeUndefined();
+  });
+});
