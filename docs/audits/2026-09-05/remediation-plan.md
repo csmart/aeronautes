@@ -304,6 +304,22 @@ Leave a broader general fault-testing platform separate unless an acceptance tes
 
 ## Finding-to-plan coverage
 
+**These rows were last revised on 22 September 2026 and several are stale.** ADR 0080 and ADR 0085
+landed on 16 October and the capability they serve was returned to the release the same day, so a
+number of the "still needs" clauses below have since been delivered by records the rows do not cite.
+The rows are deliberately **not** rewritten — their history is worth keeping and the forward rule in
+DESIGN section 65.12 says not to bulk-rewrite old evidence — so a clause-by-clause reconciliation
+against master lives beside them instead:
+[register reconciliation, 18 October 2026](../2026-10-18/register-reconciliation.md). It marks each
+clause delivered, delivered inside a boundary its own record states, a **documented limit** somebody
+already decided to accept, deferred with a refused capability, platform or acceptance work, or **not
+established**, and it closes nothing: re-disposing a row is the operator's. It also records the one
+residual that cuts across rows — bounded kill-and-recover and launch-and-restart cases exist, and
+what no record claims is the combination of a desktop startup recovering from an abrupt in-flight
+crash, fsync and power-loss durability, and the other targets. It examines the DS, SEC, PERF and TEST
+families only; this table's nine UI rows and DOC-01 are outside it and are given no disposition
+there, which is a bound on that page and not a judgement that they carry no safety portion.
+
 **Blocking** means an unresolved obligation for valuable-data operation or its required release evidence.
 **Contained** means the affected authority is withheld under an accepted contract; it is not a repaired implementation or permission to relax the refusal tests.
 **Delivered scope** identifies the original finding's bounded fix and leaves sibling guarantees explicit.
