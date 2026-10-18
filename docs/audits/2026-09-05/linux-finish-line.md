@@ -4,6 +4,7 @@ This is the single scope list for the current Linux implementation checkpoint, b
 The operator adopted this independently reviewed list on 13 September 2026; its scope is frozen, and additions require operator sign-off recorded here.
 New material risks must be reported for that decision, with affected release acceptance held.
 The 34 open or partial findings remain open; these work areas are not equivalent-sized tasks or new finding IDs.
+That sentence is true as bookkeeping and is not a safety picture: it does not distinguish a clause already delivered, or delivered inside a boundary its own record states, from a limit somebody already decided to accept, from one belonging to a capability this build refuses, from another platform's acceptance work, from something genuinely owed. The [register reconciliation of 18 October 2026](../2026-10-18/register-reconciliation.md) separates them clause by clause across the twenty-three rows of the DS, SEC, PERF and TEST families, leaving the register's nine UI rows and DOC-01 outside its scope and undisposed, and leaves every disposition for the operator.
 
 ## Operator re-baseline — 14 September 2026
 
