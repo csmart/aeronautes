@@ -21,12 +21,35 @@ tasks:
       - package.json
       - package-lock.json
     generates:
-      - node_modules
+      # A real FILE, not the directory. The pinned Task runner's fingerprint
+      # glob discards directory matches, so `node_modules` resolved to an empty
+      # list and the checksum checker then returned false unconditionally — the
+      # task re-ran on every invocation however unchanged the manifests were.
+      # npm writes node_modules/.package-lock.json as its own generated record
+      # of the installed tree. It is NOT a success marker — a failed
+      # postinstall can leave it in place — so it is not what makes a broken
+      # install retry. That comes from the runner: Task discards its saved
+      # checksum when a command fails, so the next invocation installs again.
+      # Delete the record, or change a manifest, and the install also runs.
+      - node_modules/.package-lock.json
     preconditions:
       - sh: npm version
         msg: "npm not found. It ships with Node: https://nodejs.org/en/download/"
     cmds:
-      - npm install
+      # `npm ci` and not `npm install`, because a build must not rewrite a
+      # tracked file. `npm install` re-resolves and writes package-lock.json,
+      # which left the tree modified on every build: the build identity then
+      # stamped every artifact `.dirty`, and the Windows release job's
+      # source-identity guard threw "Build changed source inputs" and failed.
+      # `npm ci` installs exactly the lock and never writes it; if the lock and
+      # package.json disagree it fails loudly, which is what a release build
+      # should do rather than quietly resolving something else. `npm ci` does
+      # remove and recreate node_modules, so it is only affordable because the
+      # `generates` file above lets the task actually be skipped — without that
+      # it ran on every invocation: once in `make build`, and again in a
+      # subsequent, separate `make rpm`. Updating a dependency is a
+      # deliberate `npm install` in frontend/, committed.
+      - npm ci
 
   build:frontend:
     label: build:frontend (DEV={{.DEV}})
