@@ -425,6 +425,13 @@ func TestItemPruningRetainsInterruptedRecords(t *testing.T) {
 	if n, err := s.FailInterrupted(t.Context()); err != nil || n != 2 {
 		t.Fatalf("interrupted jobs: %d %v", n, err)
 	}
+	// ADR 0088: an undisclosed interruption outlives retention, so what this
+	// case is about — item records protecting a job from pruning — is only
+	// visible once the operator has been told. Disclosing both and then
+	// pruning still removes exactly the ordinary one.
+	if n, err := s.DiscloseInterrupted(t.Context(), []string{job.ID, legacy.ID}); err != nil || n != 2 {
+		t.Fatalf("disclosing both interruptions: %d %v", n, err)
+	}
 	if n, err := s.PruneTerminal(t.Context(), time.Now().Add(time.Hour)); err != nil || n != 1 {
 		t.Fatalf("pruning must retain item job and remove only ordinary history: %d %v", n, err)
 	}

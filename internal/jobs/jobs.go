@@ -458,7 +458,14 @@ func (s *Store) PruneTerminal(ctx context.Context, before time.Time) (int64, err
 			WHERE state IN ('complete','partial','cancelled','failed')
 			  AND finished_at IS NOT NULL AND finished_at < ?
 			  AND id NOT IN (SELECT DISTINCT job_id FROM job_recovery)
-			  AND id NOT IN (SELECT job_id FROM job_items)`, cutoff)
+			  AND id NOT IN (SELECT job_id FROM job_items)
+			  -- ADR 0088: an interruption the operator has not been told about
+			  -- outlives retention. A job that was merely queued holds neither
+			  -- recovery nor item rows, so without this the one case whose
+			  -- whole message is that nothing was attempted is the one case
+			  -- that silently expires. Dismissal returns it to ordinary
+			  -- retention; until then the notice must be able to return.
+			  AND NOT (interrupted_at IS NOT NULL AND interrupt_disclosed_at IS NULL)`, cutoff)
 		if err != nil {
 			return err
 		}
