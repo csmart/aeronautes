@@ -52,8 +52,13 @@ func (s *Store) FailInterrupted(ctx context.Context) (int64, error) {
 				default:
 					return ErrInvalidItemRecord
 				}
-				result, err := tx.ExecContext(ctx, `UPDATE jobs SET state=?, finished_at=?, counters_json=?, error=? WHERE id=?`,
-					string(StateFailed), now, job.counters, reason, job.id)
+				// ADR 0088: the two interruption facts are written in the
+				// transaction that already classifies the job, so the count
+				// this returns and the set the notice derives cannot disagree.
+				result, err := tx.ExecContext(ctx, `UPDATE jobs
+					SET state=?, finished_at=?, counters_json=?, error=?, interrupted_at=?, interrupted_state=?
+					WHERE id=?`,
+					string(StateFailed), now, job.counters, reason, now, job.state, job.id)
 				if err != nil {
 					return err
 				}
@@ -84,10 +89,14 @@ type interruptedJob struct {
 	id       string
 	counters string
 	version  int
+	// state is what this sweep is about to overwrite. ADR 0088 keeps it
+	// because 'planning' and 'queued' are otherwise indistinguishable
+	// afterwards, and the difference is whether any request was made.
+	state string
 }
 
 func interruptedPage(ctx context.Context, tx *sql.Tx) ([]interruptedJob, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT id, COALESCE(counters_json,'{}'), item_records_version FROM jobs
+	rows, err := tx.QueryContext(ctx, `SELECT id, COALESCE(counters_json,'{}'), item_records_version, state FROM jobs
 		WHERE state NOT IN ('complete','partial','cancelled','failed') ORDER BY id LIMIT 100`)
 	if err != nil {
 		return nil, err
@@ -96,7 +105,7 @@ func interruptedPage(ctx context.Context, tx *sql.Tx) ([]interruptedJob, error) 
 	page := make([]interruptedJob, 0, 100)
 	for rows.Next() {
 		var job interruptedJob
-		if err := rows.Scan(&job.id, &job.counters, &job.version); err != nil {
+		if err := rows.Scan(&job.id, &job.counters, &job.version, &job.state); err != nil {
 			return nil, err
 		}
 		page = append(page, job)
@@ -106,4 +115,49 @@ func interruptedPage(ctx context.Context, tx *sql.Tx) ([]interruptedJob, error) 
 	}
 	// Finish this bounded read before updating rows that determine the next page.
 	return page, rows.Close()
+}
+
+// DiscloseInterrupted records that the operator was TOLD about these
+// interruptions, and nothing else (ADR 0088 decision 3). It does not touch
+// job_recovery, does not change any job's state, counters or error, and makes
+// no claim that anything was cleaned up — the retained-record summary keeps
+// counting those records afterwards. Two schema triggers enforce that rather
+// than trusting this caller or the next one.
+//
+// It belongs in this slice, beside the facts and the retention exemption,
+// because the exemption is what keeps an undisclosed interruption past
+// JobRetentionDays: without the write that ends it, that retention has no end.
+//
+// Already-disclosed and never-interrupted ids are skipped rather than refused,
+// so a dismissal that races another is idempotent; the count is of the rows
+// this call actually disclosed.
+func (s *Store) DiscloseInterrupted(ctx context.Context, ids []string) (int64, error) {
+	if err := s.Available(); err != nil {
+		return 0, err
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	var disclosed int64
+	err := s.db.WriteTx(ctx, func(tx *sql.Tx) error {
+		disclosed = 0
+		for _, id := range ids {
+			result, err := tx.ExecContext(ctx, `UPDATE jobs SET interrupt_disclosed_at=?
+				WHERE id=? AND interrupted_at IS NOT NULL AND interrupt_disclosed_at IS NULL`, now, id)
+			if err != nil {
+				return err
+			}
+			changed, err := result.RowsAffected()
+			if err != nil {
+				return err
+			}
+			disclosed += changed
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return disclosed, nil
 }

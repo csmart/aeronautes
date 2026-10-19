@@ -106,6 +106,21 @@ func TestTransferItemStorageReopen(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// ADR 0088: pruning exempts an interruption the operator has not been
+		// told about, so this reopen discloses what it just classified before
+		// pruning. Without it the case would measure the exemption instead of
+		// the thing it is about: which jobs survive pruning on their own
+		// retained facts.
+		disclose := append([]string{}, request.Recorded...)
+		if request.Legacy != "" {
+			disclose = append(disclose, request.Legacy)
+		}
+		if request.Pending != "" {
+			disclose = append(disclose, request.Pending)
+		}
+		if _, err := store.DiscloseInterrupted(t.Context(), disclose); err != nil {
+			t.Fatal(err)
+		}
 		result.Pruned, err = store.PruneTerminal(t.Context(), time.Now().Add(time.Hour))
 		if err != nil {
 			t.Fatal(err)
