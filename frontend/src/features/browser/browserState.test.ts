@@ -17,8 +17,8 @@ function bookmark(): BookmarkDTO {
   };
 }
 
-async function connected(): Promise<BrowserState> {
-  const s = new BrowserState(newFakeApi());
+async function connected(api = newFakeApi()): Promise<BrowserState> {
+  const s = new BrowserState(api);
   const saved = await s.saveBookmark(bookmark(), "testing");
   await s.connect(saved.id);
   return s;
@@ -378,5 +378,138 @@ describe("mutation identity binding (review-wave C-04)", () => {
     // The edited object is the one the detail showed.
     const detail = await api.objectDetail("fixtures", "empty-object", s.connectedBookmarkId!);
     expect(detail.meta?.["Team"]).toBe("ops");
+  });
+});
+
+describe("refreshing the open listing", () => {
+  const settings = { chunkSize: "", transfers: 0, checkers: 0, tpsLimit: 0, bwLimit: "", bufferSize: "" };
+  const upload = (bookmarkId: string, container: string) => ({
+    bookmarkId, container, prefix: "", selectionToken: "fake-selection", settings, acknowledgeOverwrite: false,
+  });
+
+  it("re-reads the current prefix in place and keeps the filter and the selection", async () => {
+    const api = newFakeApi();
+    const s = await connected(api);
+    await s.openContainer("fixtures");
+    s.filter = "external";
+    s.select(s.visibleEntries.findIndex((e) => e.name === "external-slo"));
+    await vi.waitFor(() => expect(s.detailLoading).toBe(false));
+    const detail = s.objectDetail;
+    const objects = vi.spyOn(api, "objects");
+    await s.refreshEntries();
+    expect(objects).toHaveBeenCalledWith(s.connectedBookmarkId, "fixtures", "", "", 1000);
+    expect(s.filter).toBe("external");
+    expect(s.selectedEntry?.name).toBe("external-slo");
+    // The row's listing facts did not change, so the inspector's HEAD stands.
+    expect(s.objectDetail).toBe(detail);
+    expect(s.entriesRefreshing).toBe(false);
+  });
+
+  it("re-inspects a selected row whose listing facts changed and clears one that is gone", async () => {
+    const api = newFakeApi();
+    const s = await connected(api);
+    await s.openContainer("fixtures");
+    s.select(s.entries.findIndex((e) => e.name === "external-slo"));
+    await vi.waitFor(() => expect(s.detailLoading).toBe(false));
+    const detail = s.objectDetail;
+    const listing = api.objects;
+    api.objects = async (...args) => {
+      const page = await listing(...args);
+      return { ...page, rows: page.rows.map((row) => (row.name === "external-slo" ? { ...row, etag: "replaced" } : row)) };
+    };
+    await s.refreshEntries();
+    expect(s.selectedEntry?.name).toBe("external-slo");
+    expect(s.detailLoading).toBe(true);
+    await vi.waitFor(() => expect(s.detailLoading).toBe(false));
+    expect(s.objectDetail).not.toBe(detail);
+    expect(s.objectDetail?.name).toBe("external-slo");
+
+    api.objects = async (...args) => {
+      const page = await listing(...args);
+      return { ...page, rows: page.rows.filter((row) => row.name !== "external-slo") };
+    };
+    await s.refreshEntries();
+    expect(s.selectedIndex).toBe(-1);
+    expect(s.detailIdentity).toBeNull();
+    expect(s.objectDetail).toBeNull();
+  });
+
+  it("drops a refresh reply that a navigation superseded", async () => {
+    const api = newFakeApi();
+    const s = await connected(api);
+    await s.openContainer("fixtures");
+    const listing = api.objects;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    api.objects = async (...args) => {
+      if (args[2] === "") await gate;
+      return listing(...args);
+    };
+    const refresh = s.refreshEntries();
+    await s.goTo("implied/");
+    release();
+    await refresh;
+    expect(s.prefix).toBe("implied/");
+    expect(s.entries.map((e) => e.name)).toEqual(["implied/child.txt"]);
+    expect(s.entriesRefreshing).toBe(false);
+  });
+
+  it("refreshes the view when a job it started finishes in the open container", async () => {
+    vi.useFakeTimers();
+    try {
+      const api = newFakeApi();
+      const s = await connected(api);
+      await s.openContainer("fixtures");
+      const objects = vi.spyOn(api, "objects");
+      const containers = vi.spyOn(api, "containers");
+      const id = await s.startUpload(upload(s.connectedBookmarkId!, "fixtures"));
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(objects).not.toHaveBeenCalled();
+      await api.cancelJob(id);
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(objects).toHaveBeenCalledWith(s.connectedBookmarkId, "fixtures", "", "", 1000);
+      expect(containers).toHaveBeenCalledTimes(1);
+      // The watch ended with the job.
+      await vi.advanceTimersByTimeAsync(4500);
+      expect(objects).toHaveBeenCalledTimes(1);
+      expect(containers).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reloads only the container column when the finished job wrote to another container", async () => {
+    vi.useFakeTimers();
+    try {
+      const api = newFakeApi();
+      const s = await connected(api);
+      await s.openContainer("fixtures");
+      const objects = vi.spyOn(api, "objects");
+      const containers = vi.spyOn(api, "containers");
+      const id = await s.startUpload(upload(s.connectedBookmarkId!, "photos"));
+      await api.cancelJob(id);
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(containers).toHaveBeenCalledTimes(1);
+      expect(objects).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("gives up on a job it can no longer read and leaves the view alone", async () => {
+    vi.useFakeTimers();
+    try {
+      const api = newFakeApi();
+      const s = await connected(api);
+      await s.openContainer("fixtures");
+      const objects = vi.spyOn(api, "objects");
+      const job = vi.spyOn(api, "job").mockRejectedValue(new Error("job not found"));
+      await s.startUpload(upload(s.connectedBookmarkId!, "fixtures"));
+      await vi.advanceTimersByTimeAsync(1500 * 6);
+      expect(job).toHaveBeenCalledTimes(3);
+      expect(objects).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
