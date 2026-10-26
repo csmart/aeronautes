@@ -160,28 +160,44 @@ type Runner struct {
 
 var versionPattern = regexp.MustCompile(`rclone (v[0-9][^\s]*)`)
 
-// NewRunner resolves and pin-checks the binary. Resolution order
-// (§61.1): an explicit Options.Binary; else a bundled sidecar next to
-// the executable, integrity-verified against the embedded manifest (a
-// failing sidecar is an error, never a silent fallback); else PATH
-// under the version pin.
-func NewRunner(opts Options) (*Runner, error) {
-	binary := opts.Binary
-	if binary == "" {
+// Resolution is the engine the runner will spawn and how it was chosen.
+type Resolution struct {
+	Path    string
+	Version string
+	// Source is one of SourceExplicit, SourceBeside, SourceLibexec or
+	// SourcePath.
+	Source string
+	// Verified reports that the binary's sha256 matched the embedded
+	// manifest, which only a sidecar is checked against; an explicit or
+	// PATH binary is pinned by version alone.
+	Verified bool
+}
+
+// Resolve finds and pin-checks the engine without constructing a
+// Runner. Resolution order (§61.1, ADR 0089): an explicit
+// Options.Binary; else a bundled sidecar — beside the executable, then
+// on Linux in ../libexec/aeronautes — integrity-verified against the
+// embedded manifest (a failing sidecar is an error, never a silent
+// fallback); else PATH under the version pin.
+func Resolve(opts Options) (Resolution, error) {
+	resolution := Resolution{Path: opts.Binary, Source: SourceExplicit}
+	if resolution.Path == "" {
 		if dir, err := executableDir(); err == nil {
-			sidecar, err := resolveSidecar(dir)
+			path, source, err := resolveBundled(dir)
 			if err != nil {
-				return nil, err
+				return Resolution{}, err
 			}
-			binary = sidecar
+			if path != "" {
+				resolution = Resolution{Path: path, Source: source, Verified: true}
+			}
 		}
 	}
-	if binary == "" {
+	if resolution.Path == "" {
 		found, err := exec.LookPath("rclone")
 		if err != nil {
-			return nil, fmt.Errorf("pinned rclone not found on PATH: %w", err)
+			return Resolution{}, fmt.Errorf("no bundled engine beside the executable or in ../libexec/aeronautes, and pinned rclone not found on PATH: %w", err)
 		}
-		binary = found
+		resolution = Resolution{Path: found, Source: SourcePath}
 	}
 	// The probe runs with a deadline and a minimal environment (PATH
 	// plus an empty rclone config so ~/.config/rclone is never read):
@@ -189,21 +205,31 @@ func NewRunner(opts Options) (*Runner, error) {
 	// up ambient credentials.
 	probeCtx, cancelProbe := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancelProbe()
-	probe := exec.CommandContext(probeCtx, binary, "version")
+	probe := exec.CommandContext(probeCtx, resolution.Path, "version")
 	probe.Env = []string{"PATH=" + os.Getenv("PATH"), "RCLONE_CONFIG=" + os.DevNull}
 	out, err := probe.Output()
 	if err != nil {
-		return nil, fmt.Errorf("rclone version check failed: %w", err)
+		return Resolution{}, fmt.Errorf("rclone version check failed: %w", err)
 	}
 	m := versionPattern.FindSubmatch(out)
 	if m == nil {
-		return nil, fmt.Errorf("cannot parse rclone version from %q", strings.SplitN(string(out), "\n", 2)[0])
+		return Resolution{}, fmt.Errorf("cannot parse rclone version from %q", strings.SplitN(string(out), "\n", 2)[0])
 	}
-	version := string(m[1])
-	if version != PinnedVersion && !opts.AllowVersionMismatch {
-		return nil, fmt.Errorf("rclone %s does not match the pin %s (§26.3); refusing", version, PinnedVersion)
+	resolution.Version = string(m[1])
+	if resolution.Version != PinnedVersion && !opts.AllowVersionMismatch {
+		return Resolution{}, fmt.Errorf("rclone %s does not match the pin %s (§26.3); refusing", resolution.Version, PinnedVersion)
 	}
-	return &Runner{binary: binary, version: version, opts: opts}, nil
+	return resolution, nil
+}
+
+// NewRunner resolves and pin-checks the binary (see Resolve) and wraps
+// it for spawning.
+func NewRunner(opts Options) (*Runner, error) {
+	resolution, err := Resolve(opts)
+	if err != nil {
+		return nil, err
+	}
+	return &Runner{binary: resolution.Path, version: resolution.Version, opts: opts}, nil
 }
 
 // Version reports the resolved binary's version.

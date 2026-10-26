@@ -23,6 +23,7 @@ import (
 	"github.com/csmart/aeronautes/internal/evidence"
 	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/secrets"
+	"github.com/csmart/aeronautes/internal/transfer/rclone"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -34,6 +35,20 @@ func main() {
 	if len(os.Args) == 2 && os.Args[1] == "--version" {
 		if err := json.NewEncoder(os.Stdout).Encode(identity); err != nil {
 			log.Fatal(err)
+		}
+		return
+	}
+	// What a transfer would spawn, or why it would refuse, found the way
+	// a transfer finds it and without opening state or a window
+	// (ADR 0089 decision 6). The exit status follows the answer so an
+	// install check can gate on it.
+	if len(os.Args) == 2 && os.Args[1] == "--engine" {
+		report := rclone.Describe()
+		if err := json.NewEncoder(os.Stdout).Encode(report); err != nil {
+			log.Fatal(err)
+		}
+		if report.Error != "" {
+			os.Exit(1)
 		}
 		return
 	}
