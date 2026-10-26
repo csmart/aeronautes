@@ -819,7 +819,16 @@ export class BrowserState {
    * is for a listing that changed underneath the operator, by a job they
    * started or when they ask. Pages beyond the first are dropped, as a
    * navigation drops them. The listing stays advisory (§15.3): a row's
-   * absence here proves nothing. */
+   * absence here proves nothing.
+   *
+   * The newest read owns the listing's lifecycle. A refresh that starts
+   * while a navigation is still loading reads the prefix that navigation
+   * set, so it finishes that navigation too: the rows stay hidden until
+   * it settles and it clears the loading flag the superseded read can no
+   * longer clear. A failed read leaves the same state a failed navigation
+   * leaves: no rows, the error, and no selection, so a later read cannot
+   * pair an old identity's detail with a row that happens to sit at the
+   * old index. */
   async refreshEntries() {
     const container = this.containerName;
     const bookmarkId = this.connectedBookmarkId;
@@ -845,10 +854,12 @@ export class BrowserState {
       if (seq === this.#listSeq && scope === this.#scopeRevision) {
         this.entries = [];
         this.entriesError = messageOf(err);
+        this.select(-1);
       }
     } finally {
       if (seq === this.#listSeq && scope === this.#scopeRevision) {
         this.entriesRefreshing = false;
+        this.entriesLoading = false;
       }
     }
   }
