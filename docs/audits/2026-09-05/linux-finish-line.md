@@ -115,6 +115,13 @@ The first two decide the release after v1 and are recorded here so the trail sta
     It answers their own question of the same day, which had offered two other shapes: whether the application should "prompt the user to re-visit those queued jobs and potentially kick them off again and restore the queue", or "at least prompt and tell them what failed and delete the queue".
     The decision is the disclosure and the dismissal. The author's reading, recorded as a reading and not as part of the decision, is [ADR 0088](../../adr/0088-interrupted-job-disclosure.md): neither of the other two shapes is available on the contracts this build already has, because restoring a queue would have to spend a one-shot selection capability ([ADR 0041](../../adr/0041-scoped-selection-capabilities.md), [ADR 0073](../../adr/0073-selected-resource-acknowledgement.md)) or replace a name the interrupted job may already have published ([ADR 0081](../../adr/0081-upload-overwrite-acknowledgement.md), [ADR 0085](../../adr/0085-reobserved-destructive-identity.md)), and deleting the queue, read as deleting the persisted job and recovery history, would destroy what [ADR 0020](../../adr/0020-recovery-containment.md) retains as the only evidence that residue may exist. Read the other way — discarding the runnable entries — it is what already happens: `FailInterrupted` ends queued work on every restart while keeping that history, so refusing automatic restoration needs no claim that every form of queue deletion erases evidence. Where the notice appears is the author's proposal and not the operator's decision.
 
+## Operator decision — 26 October 2026
+
+26. The Linux packages must not break when the system's rclone is updated.
+    The operator hit the refusal while testing the Linux build for 0.1.0: "the rclone pinning is unworkable - if I install an update then aeronautes breaks!", named three shapes — "test in a pipeline with a range of versions, support major and minor and any patch or bundle a static binary build" — and delegated the choice: "come up with the best solution, because it's unusable as it is".
+    The author's choice is to bundle the verified official binary inside the Linux packages, as the other targets already do, recorded with the reasons the other two shapes were not taken as [ADR 0089](../../adr/0089-bundled-engine-on-linux.md); the operator's re-test of the rebuilt package is its acceptance.
+    The pin, the enumerated flag surface and the [ADR 0020](../../adr/0020-recovery-containment.md) refusals are untouched, and no deferred capability moves.
+
 ## Six production gates
 
 | Gate | Existing packages | Completion condition |

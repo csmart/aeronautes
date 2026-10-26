@@ -19,17 +19,20 @@ exist.
 
 ## The transfer engine in bundles (§61.1)
 
-macOS and Windows artifacts carry the official pinned rclone beside the
-app executable: CI fetches it per target with
-`scripts/fetch-rclone.sh`, which verifies the release zip against
-rclone's published SHA256SUMS **and** the extracted binary against
-`internal/transfer/rclone/manifest.txt` — the same manifest the app
-embeds and re-checks at runtime before the first spawn. A bundle whose
-sidecar fails verification refuses to spawn it (no silent fallback).
-Linux packages instead **depend on the distribution's rclone** — the
-version pin tracks Fedora's build — and PATH binaries are verified by
-version pin, not hash. A pin upgrade regenerates every manifest line
-together and re-runs the §14.3 suite (docs/rclone.md).
+Every artifact carries the official pinned rclone: CI fetches it per
+target with `scripts/fetch-rclone.sh`, which verifies the release zip
+against rclone's published SHA256SUMS **and** the extracted binary
+against `internal/transfer/rclone/manifest.txt` — the same manifest the
+app embeds and re-checks at runtime before the first spawn. A bundle
+whose sidecar fails verification refuses to spawn it (no silent
+fallback). macOS and Windows carry it beside the app executable. The
+Linux rpm and deb install it at `/usr/local/libexec/aeronautes/rclone`,
+off `PATH`, and the Linux tarball carries it beside the executable; the
+packages depend on no distribution rclone
+([ADR 0089](adr/0089-bundled-engine-on-linux.md) records why the earlier
+distribution dependency failed). `aeronautes --engine` prints which
+engine an installation resolved. A pin upgrade regenerates every
+manifest line together and re-runs the §14.3 suite (docs/rclone.md).
 
 ## Local builds (Fedora)
 

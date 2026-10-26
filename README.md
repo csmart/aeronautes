@@ -80,8 +80,11 @@ The Makefile is a thin directory over the real build system, the Wails v3 Taskfi
 
 ## Quickstart
 
-1. Install the pinned transfer engine: `sudo dnf install rclone` (the app pins **v1.74.3** and
-   refuses others — transfers are disabled, browsing still works, if the pin is absent).
+1. Packages carry the pinned transfer engine (**rclone v1.74.3**, integrity-checked before its
+   first spawn), so nothing else is installed for transfers; `aeronautes --engine` shows what an
+   installation resolved. A source checkout has no bundled engine: put the official pinned binary
+   on `PATH` (`scripts/fetch-rclone.sh linux amd64 <dir>`) — any other version is refused, and
+   transfers are then disabled while browsing still works.
 2. Launch `bin/aeronautes`, click **Add**, and create a bookmark: display name, TempAuth v1 auth
    URL (`https://cluster/auth/v1.0`), `account:user`, API key. The key goes to the OS keychain;
    if none is reachable the app says so and keeps it for the session only.
@@ -142,4 +145,4 @@ Cross-account replication and destructive operations remain deferred beyond the 
 Compatible with the dependencies: rclone and `ncw/swift/v2` are MIT, which combines freely into an
 Apache-2.0 project. rclone is bundled as a separate binary (subprocess), so its licence does not
 constrain Aeronautes' — when distributing the bundled rclone binary, include rclone's MIT licence/notice in
-the third-party notices (a `NOTICE` / `THIRD_PARTY_NOTICES` file, added when code lands).
+the third-party notices (the `NOTICE` file, which every release artifact and Linux package carries).

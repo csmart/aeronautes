@@ -1474,6 +1474,10 @@ wants a **compatibility matrix** eventually: the pinned version plus latest upst
 the §14.3 encoding suite and the seam-spike checks, so a pin upgrade is a tested event rather
 than a hope.
 
+**Linux bundling decided (2026-10-26).** The Linux packages depended on the distribution's rclone from the first rpm until 26 October 2026, when Fedora 44's update to 1.75.2 made the installed application refuse every transfer.
+[ADR 0089](adr/0089-bundled-engine-on-linux.md) ends that dependency and bundles the verified official binary in the Linux rpm, deb and tarball, as the other targets already did, so the §61.1 question is answered the same way for all six targets.
+The compatibility matrix remains the instrument for choosing a pin upgrade.
+
 ### 26.4 Cancellation, crash recovery, and orphaned segments
 
 Cancelling a transfer — or the process dying — while a large object is uploading can leave **orphaned segments** at the destination: segment objects with no manifest, i.e. exactly the backstage mess the product exists to prevent. This is a first-class flow, not a setting. Graceful cancellation and hard interruption are **not** the same and must be handled differently.
@@ -3234,6 +3238,10 @@ The pinned rclone (§26.3) is a per-**target** native binary — one for each of
 - that the bundled binary's OS and arch match the app build (never ship an amd64 rclone in an arm64 bundle);
 - checksum verification at build time and again at runtime before first spawn (refuse to run an unexpected binary);
 - the hardest case is **Flatpak**: a bundled subprocess plus Secret Service access plus filesystem portals interact awkwardly — this is why Flatpak is gated on "keychain/sidecar behaviour proven" above. The Flatpak manifest must account for the rclone sidecar, the encrypted-vault fallback (§12.1), and portal-mediated local filesystem access for upload/download.
+
+Decided for Linux on 2026-10-26 ([ADR 0089](adr/0089-bundled-engine-on-linux.md)): the rpm and deb install the verified binary at `/usr/local/libexec/aeronautes/rclone` and the tarball places it beside the executable.
+The resolver probes the executable's directory and then, on Linux, `../libexec/aeronautes` relative to it, before falling back to `PATH` under the version pin for development checkouts.
+The packages no longer depend on the distribution's rclone, whose version the distribution changes on its own schedule.
 
 ---
 
