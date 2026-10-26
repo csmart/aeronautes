@@ -118,6 +118,42 @@ func TestDisclosureCannotReviseTheOutcome(t *testing.T) {
 	// The control: the same write WITHOUT revising anything must succeed, or
 	// the test above would pass for a trigger that refuses every disclosure.
 	discloseForTest(t, s, job.ID)
+
+	// A repeat write on the already disclosed row is held to the same rule.
+	// This row holds no item records (version 0), which is exactly the row
+	// migration 0010's terminal guard does not cover, so only this trigger
+	// stands between such a write and a revised outcome. Review found the
+	// first version of the guard let it through.
+	if v := rowCount(t, s, `SELECT item_records_version FROM jobs WHERE id=?`, job.ID); v != 0 {
+		t.Fatalf("this case is meant to exercise a job without item records, version = %d", v)
+	}
+	for _, tc := range []struct {
+		name, set string
+	}{
+		{"state", `state='complete'`},
+		{"counters", `counters_json='{"objectsCopied":99}'`},
+		{"error", `error='all fine actually'`},
+	} {
+		t.Run("repeat "+tc.name, func(t *testing.T) {
+			err := s.db.WriteTx(ctx, func(tx *sql.Tx) error {
+				_, err := tx.ExecContext(ctx,
+					`UPDATE jobs SET interrupt_disclosed_at=?, `+tc.set+` WHERE id=?`,
+					time.Now().UTC().Format(time.RFC3339), job.ID)
+				return err
+			})
+			if err == nil {
+				t.Fatalf("a repeat disclosure revised the %s and was accepted", tc.name)
+			}
+		})
+	}
+	// And the disclosed row is still what the first disclosure left it.
+	got, err := s.Get(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != StateFailed || got.Error == "" {
+		t.Fatalf("the refused writes changed the job: state=%s error=%q", got.State, got.Error)
+	}
 }
 
 // An interruption is a time AND the state it overwrote; neither alone is a
