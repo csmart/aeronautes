@@ -21,16 +21,26 @@ contents:
     dst: "/usr/share/icons/hicolor/128x128/apps/aeronautes.png"
   - src: "./build/linux/aeronautes.desktop"
     dst: "/usr/share/applications/aeronautes.desktop"
+  # The verified official pinned rclone (ADR 0089): off PATH, in the
+  # package's own libexec, where the application probes ../libexec/aeronautes
+  # relative to its executable. The build fetches it into ./bin first.
+  - src: "./bin/rclone"
+    dst: "/usr/local/libexec/aeronautes/rclone"
+    file_info:
+      mode: 0755
+  # The engine is redistributed, so its licence notice travels with it.
+  - src: "./NOTICE"
+    dst: "/usr/share/doc/aeronautes/NOTICE"
 
-# Runtime dependencies for the GTK4 + WebKitGTK 6.0 stack (ADR 0010),
-# plus the transfer engine: Linux packages depend on the DISTRO rclone
-# (§61.1 — the version pin tracks Fedora's build; macOS/Windows bundles
-# carry the checksummed official binary instead).
+# Runtime dependencies for the GTK4 + WebKitGTK 6.0 stack (ADR 0010).
+# The transfer engine is NOT a dependency: the package carries the
+# checksummed official binary above (ADR 0089), because a distribution
+# rclone changes version on the distribution's schedule and the runner
+# accepts exactly the pinned one.
 # Debian-family names first, distro overrides below.
 depends:
   - libgtk-4-1
   - libwebkitgtk-6.0-4
-  - rclone
 
 overrides:
   # Fedora is the first-class Tier-1 target (K-PLAT-002).
@@ -38,7 +48,6 @@ overrides:
     depends:
       - gtk4
       - webkitgtk6.0
-      - rclone
 
 scripts:
   postinstall: "./build/linux/nfpm/scripts/postinstall.sh"

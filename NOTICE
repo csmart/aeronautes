@@ -3,7 +3,7 @@ Copyright 2026 Chris Smart
 
 Licensed under the Apache License, Version 2.0.
 
-Bundled third-party software (macOS and Windows release artifacts):
+Bundled third-party software (every release artifact and Linux package):
 
   rclone (https://rclone.org) — MIT License
   Copyright (C) 2012 by Nick Craig-Wood
@@ -30,6 +30,3 @@ Bundled third-party software (macOS and Windows release artifacts):
     WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
     FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
     OTHER DEALINGS IN THE SOFTWARE.
-
-Linux packages depend on the distribution's rclone package instead of
-bundling one.

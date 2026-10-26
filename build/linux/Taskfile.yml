@@ -51,6 +51,7 @@ tasks:
     summary: Creates a deb package
     deps:
       - task: build
+      - task: fetch:engine
       - task: generate:dotdesktop
     cmds:
       - go run ./build/identity package -format deb
@@ -59,9 +60,18 @@ tasks:
     summary: Creates an rpm package
     deps:
       - task: build
+      - task: fetch:engine
       - task: generate:dotdesktop
     cmds:
       - go run ./build/identity package -format rpm
+
+  fetch:engine:
+    summary: Fetches the verified pinned rclone the packages carry (ADR 0089)
+    run: once
+    cmds:
+      # Into the bin directory, beside the built binary: nfpm maps it to the
+      # package's libexec path and the release tarball carries it as is.
+      - ./scripts/fetch-rclone.sh linux {{.ARCH | default ARCH}} {{.BIN_DIR}}
 
   generate:dotdesktop:
     summary: Generates a `.desktop` file
