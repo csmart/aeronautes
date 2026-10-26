@@ -25,14 +25,20 @@ expected=$(awk -v t="$GOOS-$GOARCH" '$1==t {print $2}' "$MANIFEST")
 
 # A build that already holds the verified binary (a repeated `make rpm`,
 # or packaging after the tarball step) is not a reason to download it
-# again; anything else at that path is replaced by the verified one.
-if [ -f "$DEST/$BIN" ]; then
-  present=$(sha256sum "$DEST/$BIN" | awk '{print $1}')
-  if [ "$present" = "$expected" ]; then
-    echo "pinned rclone already present at $DEST/$BIN (sha256 verified)"
+# again. The output contract is the same as a fresh fetch: a regular,
+# executable file holding the manifest's bytes. Matching bytes behind a
+# symlink or a non-executable mode are not enough, because the release
+# tarball copies whatever is at this path as is, so a link would ship
+# with no engine payload and a 0644 file would ship unrunnable.
+if [ -e "$DEST/$BIN" ] || [ -L "$DEST/$BIN" ]; then
+  if [ ! -L "$DEST/$BIN" ] && [ -f "$DEST/$BIN" ] \
+     && [ "$(sha256sum "$DEST/$BIN" | awk '{print $1}')" = "$expected" ]; then
+    chmod 0755 "$DEST/$BIN"
+    echo "pinned rclone already present at $DEST/$BIN (sha256 verified, mode 0755)"
     exit 0
   fi
-  echo "replacing $DEST/$BIN: sha256 $present does not match the manifest" >&2
+  echo "replacing $DEST/$BIN: not a verified regular file" >&2
+  rm -f "$DEST/$BIN"
 fi
 
 work=$(mktemp -d)
