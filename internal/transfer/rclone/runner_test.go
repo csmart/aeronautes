@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -503,5 +505,127 @@ func TestStagingShapeIsAPathSegment(t *testing.T) {
 	// A genuine staging path passes.
 	if _, err := r.Copy(ctx, remotes(), "aeronautes_src:c", "aeronautes_dst:c/.aeronautes/stage/job7/batch", []string{"x"}, nil); err != nil {
 		t.Errorf("genuine staging path refused: %v", err)
+	}
+}
+
+// The sidecar directories per platform (ADR 0089 decision 3): beside
+// the executable everywhere, then the Linux package layout on Linux only.
+func TestSidecarDirs(t *testing.T) {
+	exe := filepath.Join(string(filepath.Separator), "usr", "local", "bin")
+	libexec := filepath.Join(string(filepath.Separator), "usr", "local", "libexec", "aeronautes")
+	for _, tc := range []struct {
+		goos string
+		want []sidecarDir
+	}{
+		{"linux", []sidecarDir{{exe, SourceBeside}, {libexec, SourceLibexec}}},
+		{"darwin", []sidecarDir{{exe, SourceBeside}}},
+		{"windows", []sidecarDir{{exe, SourceBeside}}},
+	} {
+		got := sidecarDirs(tc.goos, exe)
+		if len(got) != len(tc.want) {
+			t.Fatalf("%s: sidecarDirs = %v, want %v", tc.goos, got, tc.want)
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Errorf("%s: sidecarDirs[%d] = %v, want %v", tc.goos, i, got[i], tc.want[i])
+			}
+		}
+	}
+}
+
+// copyFile installs src at dst, executable, for sidecar fixtures.
+func copyFile(t *testing.T, src, dst string) {
+	t.Helper()
+	in, err := os.Open(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		t.Fatal(err)
+	}
+	if err := out.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A Linux package's engine lives in ../libexec/aeronautes relative to
+// the executable (ADR 0089 decision 3). Tampering there refuses and
+// names the path, with no fall-through to PATH; the official binary
+// there is selected and verified; a binary beside the executable still
+// wins over it.
+func TestLibexecSidecar(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the libexec layout is probed on Linux only")
+	}
+	prefix := t.TempDir()
+	bin := filepath.Join(prefix, "bin")
+	libexec := filepath.Join(prefix, "libexec", "aeronautes")
+	for _, dir := range []string{bin, libexec} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	withExecutableDir(t, bin)
+
+	t.Run("tampered libexec refuses", func(t *testing.T) {
+		if err := os.WriteFile(filepath.Join(libexec, "rclone"), []byte("#!/bin/sh\necho tampered\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		_, err := Resolve(Options{})
+		if err == nil || !strings.Contains(err.Error(), "integrity") || !strings.Contains(err.Error(), libexec) {
+			t.Fatalf("tampered libexec sidecar accepted or misreported: %v", err)
+		}
+		if report := Describe(); report.Error == "" || report.Verified || report.Pin != PinnedVersion {
+			t.Fatalf("Describe hid the refusal: %+v", report)
+		}
+	})
+
+	official := os.Getenv("AERONAUTES_OFFICIAL_RCLONE_DIR")
+	if official == "" {
+		t.Skip("AERONAUTES_OFFICIAL_RCLONE_DIR not set; the verified libexec cases need the official binary")
+	}
+	t.Run("official libexec selected and verified", func(t *testing.T) {
+		copyFile(t, filepath.Join(official, "rclone"), filepath.Join(libexec, "rclone"))
+		resolution, err := Resolve(Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := Resolution{Path: filepath.Join(libexec, "rclone"), Version: PinnedVersion, Source: SourceLibexec, Verified: true}
+		if resolution != want {
+			t.Fatalf("Resolve = %+v, want %+v", resolution, want)
+		}
+		report := Describe()
+		if report.Error != "" || !report.Verified || report.Source != SourceLibexec || report.Version != PinnedVersion || report.Path != want.Path {
+			t.Fatalf("Describe = %+v", report)
+		}
+	})
+	t.Run("beside the executable wins over libexec", func(t *testing.T) {
+		copyFile(t, filepath.Join(official, "rclone"), filepath.Join(bin, "rclone"))
+		resolution, err := Resolve(Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resolution.Source != SourceBeside || resolution.Path != filepath.Join(bin, "rclone") || !resolution.Verified {
+			t.Fatalf("Resolve = %+v, want the sidecar beside the executable", resolution)
+		}
+	})
+}
+
+// With no sidecar and no rclone on PATH the report carries the refusal
+// and the pin, and claims nothing verified.
+func TestDescribeReportsTheRefusal(t *testing.T) {
+	withExecutableDir(t, t.TempDir())
+	t.Setenv("PATH", t.TempDir())
+	report := Describe()
+	if report.Error == "" || report.Verified || report.Pin != PinnedVersion || report.Engine != "rclone" || report.Path != "" {
+		t.Fatalf("Describe = %+v", report)
+	}
+	if !strings.Contains(report.Error, "libexec/aeronautes") || !strings.Contains(report.Error, "PATH") {
+		t.Fatalf("the refusal does not say where it looked: %s", report.Error)
 	}
 }
