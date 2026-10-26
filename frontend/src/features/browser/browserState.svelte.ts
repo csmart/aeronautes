@@ -52,6 +52,11 @@ const pageLimit = 1000;
  * operator's setting is read (ADR 0074 decision 1); mirrors
  * defaultBrowserRetentionCeiling in internal/app/settingsservice.go. */
 const defaultBrowserRetentionCeiling = 100_000;
+/** The job states after which nothing more changes (§46). */
+const terminalJobStates = ["complete", "partial", "cancelled", "failed"];
+/** How often a job this client started is re-read until it ends: the
+ * drawer's list cadence. */
+const jobPollMs = 1500;
 
 export interface ContainerGroups {
   main: ContainerRowDTO[];
@@ -288,25 +293,39 @@ export class BrowserState {
   set filter(value: string) {
     const selected = this.selectedEntry;
     this.#filter = value;
+    this.#followSelection(selected);
+  }
+
+  /** After the visible rows changed, the selection follows its identity
+   * (the review wave's C-04): the same row at a new position moves the
+   * index without re-running selection side effects; a row whose listing
+   * facts changed is selected again so the inspector HEADs it afresh
+   * (§14.2); a row no longer visible clears the selection and the state
+   * that depended on it. */
+  #followSelection(selected: ListingRowDTO | null) {
     if (selected === null) {
       return;
     }
     const idx = this.visibleEntries.findIndex((e) => e.name === selected.name && e.kind === selected.kind);
-    if (idx === this.selectedIndex) {
+    if (idx < 0) {
+      this.select(-1);
       return;
     }
-    if (idx >= 0) {
-      // Same identity, new position: move the index WITHOUT re-running
-      // selection side effects.
+    const row = this.visibleEntries[idx];
+    const sameFacts = row.etag === selected.etag && row.bytes === selected.bytes && row.lastModified === selected.lastModified;
+    if (sameFacts) {
       this.selectedIndex = idx;
     } else {
-      this.select(-1);
+      this.select(idx);
     }
   }
   entries: ListingRowDTO[] = $state([]);
   entriesMarker = $state("");
   entriesLoading = $state(false);
   entriesError: string | null = $state(null);
+  /** An in-place re-read of the loaded listing is in flight; the rows stay
+   * on screen meanwhile, unlike a navigation's load. */
+  entriesRefreshing = $state(false);
   selectedIndex = $state(-1);
   /** The exact identity the current detail state was fetched for —
    * every mutation binds THIS, never the live index. */
@@ -760,6 +779,8 @@ export class BrowserState {
   async #loadEntries(prefix: string) {
     this.#clearFind();
     const seq = ++this.#listSeq;
+    // A navigation supersedes an in-place refresh; its rows arrive here.
+    this.entriesRefreshing = false;
     this.#entriesPage = null;
     this.#entriesPageError = null;
     this.entriesMarker = "";
@@ -790,6 +811,53 @@ export class BrowserState {
         this.entriesLoading = false;
       }
     }
+  }
+
+  /** Re-read the open listing in place: the first page of the current
+   * prefix replaces the loaded rows, the filter stays and the selection
+   * follows its identity. Navigation is `goTo`, which starts clean; this
+   * is for a listing that changed underneath the operator, by a job they
+   * started or when they ask. Pages beyond the first are dropped, as a
+   * navigation drops them. The listing stays advisory (§15.3): a row's
+   * absence here proves nothing. */
+  async refreshEntries() {
+    const container = this.containerName;
+    const bookmarkId = this.connectedBookmarkId;
+    if (!container || this.connecting || !bookmarkId) return;
+    const seq = ++this.#listSeq;
+    this.#entriesPage = null;
+    this.#entriesPageError = null;
+    const scope = this.#scopeRevision;
+    const portrait = this.account ? { ...this.account.scope } : null;
+    this.entriesRefreshing = true;
+    try {
+      const page = await this.#api.objects(bookmarkId, container, this.prefix, "", pageLimit);
+      if (seq !== this.#listSeq || scope !== this.#scopeRevision) {
+        return; // a navigation or a later refresh superseded this read
+      }
+      this.#requireListingScope(page.scope, bookmarkId, portrait);
+      const selected = this.selectedEntry;
+      this.entries = page.rows;
+      this.entriesMarker = page.nextMarker;
+      this.entriesError = null;
+      this.#followSelection(selected);
+    } catch (err) {
+      if (seq === this.#listSeq && scope === this.#scopeRevision) {
+        this.entries = [];
+        this.entriesError = messageOf(err);
+      }
+    } finally {
+      if (seq === this.#listSeq && scope === this.#scopeRevision) {
+        this.entriesRefreshing = false;
+      }
+    }
+  }
+
+  /** Everything the open view shows that a finished job may have changed:
+   * the listing, the container column's counts and the open container's
+   * HEAD. */
+  async refreshView() {
+    await Promise.all([this.refreshEntries(), this.loadContainers(), this.refreshContainerDetail()]);
   }
 
   async loadMoreEntries() {
@@ -925,6 +993,47 @@ export class BrowserState {
     }
   }
 
+  /** Jobs this client started whose end should refresh the view they
+   * wrote to, by id, with the account and container they changed. */
+  #watchedJobs = new Map<string, { bookmarkId: string; container: string }>();
+
+  /** Follow one job this client started until it ends, then re-read what
+   * it changed if that is still on screen: the open container's view, or
+   * only the container column when the job wrote elsewhere in the same
+   * account. The drawer's list poll cannot serve here because the operator
+   * filters it and it is capped at fifty rows, so a job can end outside
+   * it; the item page polls the job itself for the same reason (ADR 0030). */
+  #watchJob(id: string, changed: { bookmarkId: string; container: string }) {
+    if (this.#watchedJobs.has(id)) return;
+    this.#watchedJobs.set(id, changed);
+    let misses = 0;
+    const tick = async () => {
+      let job: JobDTO | null = null;
+      try {
+        job = await this.#api.job(id, changed.bookmarkId);
+      } catch {
+        job = null;
+      }
+      if (job === null) {
+        // Three unreadable polls in a row: the job or its account is gone.
+        if (++misses >= 3) {
+          this.#watchedJobs.delete(id);
+          return;
+        }
+      } else if (terminalJobStates.includes(job.state)) {
+        this.#watchedJobs.delete(id);
+        if (changed.bookmarkId === this.connectedBookmarkId) {
+          await (changed.container === this.containerName ? this.refreshView() : this.loadContainers());
+        }
+        return;
+      } else {
+        misses = 0;
+      }
+      setTimeout(() => void tick(), jobPollMs);
+    };
+    setTimeout(() => void tick(), jobPollMs);
+  }
+
   #jobsSeq = 0;
   #jobsLoadedFilter: string | null = null;
 
@@ -1028,9 +1137,7 @@ export class BrowserState {
 
   /** Active (non-terminal) jobs — the drawer badge. */
   get activeJobs(): JobDTO[] {
-    return this.jobs.filter(
-      (j) => !["complete", "partial", "cancelled", "failed"].includes(j.state),
-    );
+    return this.jobs.filter((j) => !terminalJobStates.includes(j.state));
   }
 
   async planCopy(req: CopyRequestDTO): Promise<CopyPlanDTO> {
@@ -1039,6 +1146,7 @@ export class BrowserState {
 
   async startCopy(req: CopyRequestDTO): Promise<string> {
     const id = await this.#api.startCopy(req);
+    this.#watchJob(id, { bookmarkId: req.destBookmarkId, container: req.destContainer });
     await this.loadJobs();
     return id;
   }
@@ -1074,6 +1182,7 @@ export class BrowserState {
 
   async startUpload(req: UploadRequestDTO): Promise<string> {
     const id = await this.#api.startUpload(req);
+    this.#watchJob(id, { bookmarkId: req.bookmarkId, container: req.container });
     await this.loadJobs();
     return id;
   }
@@ -1287,6 +1396,7 @@ export class BrowserState {
 
   async startDelete(req: DeleteRequestDTO): Promise<string> {
     const id = await this.#api.startDelete(req);
+    this.#watchJob(id, { bookmarkId: req.bookmarkId, container: req.container });
     await this.loadJobs();
     return id;
   }

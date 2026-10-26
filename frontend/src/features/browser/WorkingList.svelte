@@ -103,6 +103,16 @@
         Find in container
       </button>
       <button
+        class="refresh"
+        title="Re-read this listing from the server"
+        aria-label="Refresh listing"
+        aria-busy={browser.entriesRefreshing}
+        disabled={browser.containerName === null || browser.entriesLoading || browser.entriesRefreshing}
+        onclick={() => browser.refreshView()}
+      >
+        Refresh
+      </button>
+      <button
         class="find"
         title="Count the objects under this prefix: streams the listing page by page and keeps no names"
         disabled={browser.containerName === null}
@@ -438,7 +448,8 @@
     border-color: var(--color-danger);
   }
 
-  .find {
+  .find,
+  .refresh {
     padding: var(--space-1) var(--space-3);
     font: inherit;
     font-size: var(--text-sm);
@@ -448,6 +459,11 @@
     border-radius: var(--radius-control);
     cursor: pointer;
     white-space: nowrap;
+  }
+
+  .refresh:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
 
   .columns {
