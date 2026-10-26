@@ -23,6 +23,18 @@ esac
 expected=$(awk -v t="$GOOS-$GOARCH" '$1==t {print $2}' "$MANIFEST")
 [ -n "$expected" ] || { echo "no manifest checksum for $GOOS-$GOARCH" >&2; exit 1; }
 
+# A build that already holds the verified binary (a repeated `make rpm`,
+# or packaging after the tarball step) is not a reason to download it
+# again; anything else at that path is replaced by the verified one.
+if [ -f "$DEST/$BIN" ]; then
+  present=$(sha256sum "$DEST/$BIN" | awk '{print $1}')
+  if [ "$present" = "$expected" ]; then
+    echo "pinned rclone already present at $DEST/$BIN (sha256 verified)"
+    exit 0
+  fi
+  echo "replacing $DEST/$BIN: sha256 $present does not match the manifest" >&2
+fi
+
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 name="rclone-$PIN-$RC_OS-$GOARCH"

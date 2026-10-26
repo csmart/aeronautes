@@ -176,6 +176,14 @@ func TestFixtureReleaseMetadata(t *testing.T) {
 				if !strings.Contains(string(data), "\nversion: \""+i.Version+"\"\n") || !strings.Contains(string(data), "\narch: \""+i.Arch+"\"\n") {
 					t.Fatal("incorrect package version or architecture")
 				}
+				// ADR 0089: the package carries the verified engine where the
+				// resolver probes and depends on no distribution rclone.
+				if !strings.Contains(string(data), "\n    dst: \"/usr/local/libexec/aeronautes/rclone\"\n") {
+					t.Fatal("the package does not carry the engine in libexec")
+				}
+				if strings.Contains(string(data), "\n  - rclone\n") || strings.Contains(string(data), "\n      - rclone\n") {
+					t.Fatal("the package still depends on the distribution's rclone")
+				}
 			}
 		}
 		// A real compiler/linker verifies the flags independently of the

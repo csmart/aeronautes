@@ -80,7 +80,10 @@ jobs:
           name=$(go run ./build/identity name)
           cp NOTICE bin/NOTICE
           cp bin/build-identity/identity.json bin/build-identity.json
-          tar -C bin -czf "dist/$name.tar.gz" aeronautes NOTICE build-identity.json
+          # bin/rclone is the verified pin the package tasks fetched
+          # (ADR 0089); beside the executable is where the tarball's
+          # resolver looks for it.
+          tar -C bin -czf "dist/$name.tar.gz" aeronautes rclone NOTICE build-identity.json
           cp "bin/$name.rpm" "bin/$name.deb" dist/
           go run ./build/identity record
       # SIGNING (deliberately absent): rpm --addsign / debsigs would go
