@@ -513,3 +513,70 @@ describe("refreshing the open listing", () => {
     }
   });
 });
+
+describe("the newest listing read owns the lifecycle", () => {
+  function gated(api: ReturnType<typeof newFakeApi>) {
+    // Each objects() call parks until the test releases it, so the test
+    // chooses the order replies arrive in.
+    const listing = api.objects;
+    const parked: Array<() => void> = [];
+    api.objects = (...args) =>
+      new Promise((resolve, reject) => {
+        parked.push(() => listing(...args).then(resolve, reject));
+      });
+    return parked;
+  }
+
+  it("a failed refresh retires the selection, so a retry cannot pair old detail with new rows", async () => {
+    const api = newFakeApi();
+    const s = await connected(api);
+    await s.openContainer("fixtures");
+    s.select(s.entries.findIndex((e) => e.name === "external-slo"));
+    await vi.waitFor(() => expect(s.detailLoading).toBe(false));
+    const listing = api.objects;
+    api.objects = async () => { throw new Error("listing unavailable"); };
+    await s.refreshEntries();
+    expect(s.entries).toEqual([]);
+    expect(s.entriesError).toMatch(/listing unavailable/);
+    expect(s.entriesLoading).toBe(false);
+    expect(s.selectedIndex).toBe(-1);
+    expect(s.detailIdentity).toBeNull();
+    expect(s.objectDetail).toBeNull();
+
+    // The retry lists a different object where the old one sat; nothing
+    // from the old selection may attach to it.
+    api.objects = async (...args) => {
+      const page = await listing(...args);
+      return { ...page, rows: page.rows.filter((row) => row.name !== "external-slo") };
+    };
+    await s.refreshEntries();
+    expect(s.entries.length).toBeGreaterThan(0);
+    expect(s.selectedEntry).toBeNull();
+    expect(s.detailIdentity).toBeNull();
+    expect(s.objectDetail).toBeNull();
+  });
+
+  it.each([
+    ["navigation first", [0, 1]],
+    ["refresh first", [1, 0]],
+  ])("a refresh overtaking a navigation finishes it (%s)", async (_order, release) => {
+    const api = newFakeApi();
+    const s = await connected(api);
+    await s.openContainer("fixtures");
+    const parked = gated(api);
+    const navigation = s.goTo("implied/");
+    expect(s.entriesLoading).toBe(true);
+    const refresh = s.refreshEntries();
+    expect(parked).toHaveLength(2);
+    expect(s.entriesLoading).toBe(true);
+    parked[release[0]]();
+    await Promise.resolve();
+    parked[release[1]]();
+    await Promise.all([navigation, refresh]);
+    expect(s.prefix).toBe("implied/");
+    expect(s.entries.map((e) => e.name)).toEqual(["implied/child.txt"]);
+    expect(s.entriesLoading).toBe(false);
+    expect(s.entriesRefreshing).toBe(false);
+    expect(s.entriesError).toBeNull();
+  });
+});
