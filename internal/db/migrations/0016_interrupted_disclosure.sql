@@ -42,12 +42,15 @@ END;
 -- claim. Enforced here rather than trusted to the caller, because the
 -- difference between "you were told" and "it was dealt with" is the whole point
 -- of the decision: a write that records the telling must not also revise the
--- outcome being told about.
+-- outcome being told about. Any write that assigns the disclosure column is
+-- held to that, not only the first disclosure: a repeat write on an already
+-- disclosed job that holds no item records is otherwise unguarded (migration
+-- 0010 protects terminal rows at item_records_version 1 only), and review
+-- showed such a write replacing the state, counters and error.
 CREATE TRIGGER job_disclosure_revises_nothing BEFORE UPDATE OF interrupt_disclosed_at ON jobs
-WHEN OLD.interrupt_disclosed_at IS NULL AND NEW.interrupt_disclosed_at IS NOT NULL
-  AND (NEW.state <> OLD.state
-    OR COALESCE(NEW.counters_json, '') <> COALESCE(OLD.counters_json, '')
-    OR COALESCE(NEW.error, '') <> COALESCE(OLD.error, ''))
+WHEN NEW.state <> OLD.state
+  OR COALESCE(NEW.counters_json, '') <> COALESCE(OLD.counters_json, '')
+  OR COALESCE(NEW.error, '') <> COALESCE(OLD.error, '')
 BEGIN
     SELECT RAISE(ABORT, 'disclosing an interruption cannot change the job state, counters or error');
 END;
