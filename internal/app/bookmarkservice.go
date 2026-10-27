@@ -170,6 +170,11 @@ func (s *BookmarkService) verifyConfig(ctx context.Context, dto BookmarkDTO, sec
 		StorageURLOverride: dto.StorageURLOverride,
 		TLSMode:            swiftcontrol.TLSMode(dto.TLSMode),
 	}
+	// An omitted mode is system trust, as Save stores it (ADR 0015), so a
+	// draft without one names the same binding as the saved bookmark.
+	if typed.TLSMode == "" {
+		typed.TLSMode = swiftcontrol.TLSModeSystem
+	}
 	var caPEM []byte
 	if dto.CAPem != "" {
 		caPEM = []byte(dto.CAPem)

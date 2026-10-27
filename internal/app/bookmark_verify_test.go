@@ -71,6 +71,12 @@ func TestBookmarkVerifyUsesTheStoredKeyOnlyForAnUnchangedBinding(t *testing.T) {
 	if _, err := h.bookmarks.Verify(ctx, renamed, ""); err != nil {
 		t.Errorf("a display-name change must not demand the key: %v", err)
 	}
+	// An omitted TLS mode is system trust, as Save stores it: the same binding.
+	blank := saved
+	blank.TLSMode = ""
+	if _, err := h.bookmarks.Verify(ctx, blank, ""); err != nil {
+		t.Errorf("an empty TLS mode is system trust and must not demand the key: %v", err)
+	}
 	// A changed user is not: the stored key may not reach it.
 	changed := saved
 	changed.Username = "other:user"
