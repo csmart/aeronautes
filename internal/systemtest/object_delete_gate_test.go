@@ -29,6 +29,9 @@ type swiftGate struct {
 	name                      string
 	beforeDelete, afterDelete func(token string)
 	fired                     map[string]bool
+	// afterAny runs after every forwarded request has been answered, with
+	// the method and path, so a case can act between a job's members.
+	afterAny func(method, path string)
 }
 
 func newSwiftGate(t *testing.T, authURL string) *swiftGate {
@@ -73,6 +76,12 @@ func (g *swiftGate) serve(w http.ResponseWriter, r *http.Request) {
 	replyBody, _ := io.ReadAll(resp.Body)
 	if fireAfter {
 		after(token)
+	}
+	g.mu.Lock()
+	afterAny := g.afterAny
+	g.mu.Unlock()
+	if afterAny != nil {
+		afterAny(r.Method, r.URL.Path)
 	}
 	for k, values := range resp.Header {
 		if k == "X-Storage-Url" {
