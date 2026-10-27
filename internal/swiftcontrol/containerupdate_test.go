@@ -280,16 +280,25 @@ func TestMarkers(t *testing.T) {
 	if _, err := s.CreateMarker(ctx, "media", "suit/"); err == nil || errors.Is(err, ErrAlreadyExists) {
 		t.Errorf("CreateMarker over real object = %v, want refusal", err)
 	}
-	if err := s.DeleteMarker(ctx, "media", "suit/"); err == nil {
-		t.Error("DeleteMarker deleted a folder-suit real object")
+	suit, err := s.ObjectDetail(ctx, "media", "suit/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DeleteMarkerObject(ctx, "media", "suit/", suit.ContentFingerprint()); err == nil {
+		t.Error("DeleteMarkerObject deleted a folder-suit real object")
 	}
 
 	// Delete: marker goes, children survive.
 	if _, err := conn.ObjectPut(ctx, "media", "photos/a.jpg", strings.NewReader("x"), true, "", "image/jpeg", nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.DeleteMarker(ctx, "media", "photos/"); err != nil {
-		t.Fatal(err)
+	shown, err := s.PrefixDetail(ctx, "media", "photos/")
+	if err != nil || shown.SelfObject == nil {
+		t.Fatalf("marker detail = %+v, %v", shown, err)
+	}
+	result, err := s.DeleteMarkerObject(ctx, "media", "photos/", shown.SelfObject.ContentFingerprint())
+	if err != nil || result.Outcome != UpdateApplied {
+		t.Fatalf("result = %+v, %v", result, err)
 	}
 	after, err := s.PrefixDetail(ctx, "media", "photos/")
 	if err != nil {
@@ -304,7 +313,7 @@ func TestMarkers(t *testing.T) {
 
 	// Deleting an implied prefix's marker is not-found, not silent success.
 	var se *SwiftError
-	if err := s.DeleteMarker(ctx, "media", "photos/"); !errors.As(err, &se) || se.Kind != KindNotFound {
+	if _, err := s.DeleteMarkerObject(ctx, "media", "photos/", shown.SelfObject.ContentFingerprint()); !errors.As(err, &se) || se.Kind != KindNotFound {
 		t.Errorf("delete implied marker = %v, want not_found", err)
 	}
 }

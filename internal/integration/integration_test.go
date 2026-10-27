@@ -546,10 +546,18 @@ func TestContainerMutationRealSwift(t *testing.T) {
 	if _, err := h.Session.CreateMarker(ctx, name, "suit/"); err == nil {
 		t.Error("CreateMarker over a real object must refuse")
 	}
-	if err := h.Session.DeleteMarker(ctx, name, "suit/"); err == nil {
-		t.Error("DeleteMarker over a real object must refuse")
+	suit, err := h.Session.ObjectDetail(ctx, name, "suit/")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := h.Session.DeleteMarker(ctx, name, "photos/"); err != nil {
+	if _, err := h.Session.DeleteMarkerObject(ctx, name, "suit/", suit.ContentFingerprint()); err == nil {
+		t.Error("DeleteMarkerObject over a real object must refuse")
+	}
+	shown, err := h.Session.PrefixDetail(ctx, name, "photos/")
+	if err != nil || shown.SelfObject == nil {
+		t.Fatalf("marker detail = %+v, %v", shown, err)
+	}
+	if _, err := h.Session.DeleteMarkerObject(ctx, name, "photos/", shown.SelfObject.ContentFingerprint()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := h.Session.ObjectDetail(ctx, name, "photos/a.jpg"); err != nil {
