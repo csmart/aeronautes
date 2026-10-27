@@ -30,6 +30,9 @@ const (
 	TypeDeletePrefix  Type = "delete_prefix"
 	TypeEmpty         Type = "empty_container"
 	TypeDeleteCont    Type = "delete_container"
+	// TypeDeleteSelected deletes the selected objects one by one with the
+	// verified per-name protocol and keeps its members as items (ADR 0093).
+	TypeDeleteSelected Type = "delete_selected"
 )
 
 // State is the §46 lifecycle state.
@@ -130,7 +133,7 @@ func (s *Store) Create(ctx context.Context, j Job) (Job, error) {
 	if j.Type == "" {
 		return Job{}, fmt.Errorf("job needs a type")
 	}
-	if j.ItemRecordsVersion != 0 && (j.ItemRecordsVersion != 1 || (j.Type != TypeCopy && j.Type != TypeUpload && j.Type != TypeDownload)) {
+	if j.ItemRecordsVersion != 0 && (j.ItemRecordsVersion != 1 || !recordsItems(j.Type)) {
 		return Job{}, ErrInvalidItemRecord
 	}
 	var raw [8]byte
@@ -162,6 +165,12 @@ func (s *Store) Create(ctx context.Context, j Job) (Job, error) {
 		return Job{}, err
 	}
 	return j, nil
+}
+
+// recordsItems says which job types keep the durable item ledger: the three
+// transfers, and the selected-set deletion whose members are its items.
+func recordsItems(kind Type) bool {
+	return kind == TypeCopy || kind == TypeUpload || kind == TypeDownload || kind == TypeDeleteSelected
 }
 
 // Transition moves a job to a new state, enforcing §46 legality, and

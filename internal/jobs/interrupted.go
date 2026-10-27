@@ -38,11 +38,28 @@ func (s *Store) FailInterrupted(ctx context.Context) (int64, error) {
 				switch job.version {
 				case 0:
 				case 1:
+					if job.kind == string(TypeDeleteSelected) {
+						// A deletion member with no issued mark was never requested,
+						// and says so; one issued with no outcome keeps its silence,
+						// which the totals count as unresolved because its DELETE
+						// may have been sent (ADR 0093 decision 4).
+						if _, err := tx.ExecContext(ctx, `INSERT INTO job_item_observations
+							(item_id, phase, result, effect, diagnostic_stage, diagnostic_code, http_status, copied_bytes, created_at)
+							SELECT i.id, 'execution', ?, ?, '', '', 0, 0, ? FROM job_items i
+							WHERE i.job_id=? AND i.issued_at IS NULL
+							AND NOT EXISTS (SELECT 1 FROM job_item_observations o WHERE o.item_id=i.id AND o.phase='execution')`,
+							string(ItemNotAttempted), string(EffectNotAttempted), time.Now().UTC().Format(time.RFC3339Nano), job.id); err != nil {
+							return err
+						}
+					}
 					totals, err := itemTotals(ctx, tx, job.id)
 					if err != nil {
 						return err
 					}
 					counters.ObjectsFailed = totals.Failed
+					if job.kind == string(TypeDeleteSelected) {
+						counters.ObjectsDeleted = totals.Deleted
+					}
 					encoded, err := json.Marshal(counters)
 					if err != nil {
 						return err
@@ -87,6 +104,7 @@ func (s *Store) FailInterrupted(ctx context.Context) (int64, error) {
 
 type interruptedJob struct {
 	id       string
+	kind     string
 	counters string
 	version  int
 	// state is what this sweep is about to overwrite. ADR 0088 keeps it
@@ -96,7 +114,7 @@ type interruptedJob struct {
 }
 
 func interruptedPage(ctx context.Context, tx *sql.Tx) ([]interruptedJob, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT id, COALESCE(counters_json,'{}'), item_records_version, state FROM jobs
+	rows, err := tx.QueryContext(ctx, `SELECT id, type, COALESCE(counters_json,'{}'), item_records_version, state FROM jobs
 		WHERE state NOT IN ('complete','partial','cancelled','failed') ORDER BY id LIMIT 100`)
 	if err != nil {
 		return nil, err
@@ -105,7 +123,7 @@ func interruptedPage(ctx context.Context, tx *sql.Tx) ([]interruptedJob, error) 
 	page := make([]interruptedJob, 0, 100)
 	for rows.Next() {
 		var job interruptedJob
-		if err := rows.Scan(&job.id, &job.counters, &job.version, &job.state); err != nil {
+		if err := rows.Scan(&job.id, &job.kind, &job.counters, &job.version, &job.state); err != nil {
 			return nil, err
 		}
 		page = append(page, job)

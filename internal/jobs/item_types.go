@@ -63,6 +63,11 @@ const (
 	ItemSame         ItemResult = "same"
 	ItemNotAttempted ItemResult = "not_attempted"
 	ItemVerified     ItemResult = "verified"
+	// ItemDeleted and ItemUnverified are a deletion member's outcomes (ADR 0093
+	// decision 4): the DELETE was accepted and the name no longer held what
+	// was shown, or the DELETE was sent and nothing proves what it did.
+	ItemDeleted    ItemResult = "deleted"
+	ItemUnverified ItemResult = "unverified"
 )
 
 type ItemEffect string
@@ -138,6 +143,13 @@ type ItemRecord struct {
 	// (ADR 0081 decision 7). Nil when nothing was recorded, which is every
 	// item that did not replace anything.
 	Predecessor *ItemPredecessor
+	// IssuedAt is when a deletion member's issued mark was written, before its
+	// final HEAD (ADR 0039, ADR 0093 decision 4); zero when it never was. A
+	// member issued with no outcome may have been deleted.
+	IssuedAt time.Time
+	// Successor is what a deletion member's verifying read found at the name
+	// afterwards; nil when nothing was recorded.
+	Successor *ItemSuccessor
 }
 
 type ItemPage struct {
@@ -156,6 +168,10 @@ type ItemTotals struct {
 	Unresolved int64
 	Unverified int64
 	Problems   int64
+	// Issued and Deleted are a deletion job's: how many members were marked
+	// issued, and how many were deleted (ADR 0093 decision 4).
+	Issued  int64
+	Deleted int64
 }
 
 func (l ItemLocation) valid() bool {
@@ -175,7 +191,15 @@ func (l ItemLocation) valid() bool {
 }
 
 func (i ItemIdentity) valid() bool {
-	return utf8.ValidString(i.Key) && i.Source.valid() && i.Destination.valid()
+	return utf8.ValidString(i.Key) && i.Source.valid() && (i.Destination.valid() || i.Destination == ItemLocation{})
+}
+
+// deletion says the item is a member of a deletion: its identity is its
+// source alone, with no destination (ADR 0093 decision 4). The write that
+// admits an item checks this against the job's type, because the identity
+// cannot see it.
+func (i ItemIdentity) deletion() bool {
+	return i.Destination == ItemLocation{}
 }
 
 func (i ItemIntent) valid() bool {
@@ -194,6 +218,57 @@ func (o ItemObservation) validPublication() bool {
 	}
 	return o.Result == ItemVerified && o.Effect == EffectNotAttempted && o.Diagnostic == (ItemDiagnostic{}) ||
 		o.Result == ItemFailed && o.Effect == EffectUnresolved && o.Diagnostic.Stage == StageVerification && o.Diagnostic.Code != ""
+}
+
+// validDeletion is the one observation a deletion member records, when its
+// verifying read settles (ADR 0093 decision 4). A deleted member had its
+// effect reported; an unverified one was sent a DELETE that nothing proves;
+// a refused, conflicting or failed member had nothing deleted and says why;
+// a member not attempted was never requested.
+func (o ItemObservation) validDeletion(phase string, admitted bool) bool {
+	if phase != "execution" || !admitted || !o.Diagnostic.valid() || o.CopiedBytes != 0 {
+		return false
+	}
+	switch o.Result {
+	case ItemDeleted:
+		return o.Effect == EffectReportedApplied && o.Diagnostic == (ItemDiagnostic{})
+	case ItemUnverified:
+		return o.Effect == EffectUnresolved && o.Diagnostic.Code != ""
+	case ItemRefused, ItemConflict, ItemFailed:
+		return o.Effect == EffectNotAttempted && o.Diagnostic != (ItemDiagnostic{})
+	case ItemNotAttempted:
+		return o.Effect == EffectNotAttempted && o.Diagnostic == (ItemDiagnostic{})
+	default:
+		return false
+	}
+}
+
+// ItemSuccessor is what the literal verifying read observed at a deletion
+// member's name after its DELETE (ADR 0093 decision 3): nothing, or the
+// object now there by class, length and entity tag. It is an observation
+// and never an identification of where that object came from.
+type ItemSuccessor struct {
+	Present   bool
+	Class     string
+	Length    int64
+	ETag      string
+	CreatedAt time.Time
+}
+
+func (s ItemSuccessor) valid() bool {
+	if !utf8.ValidString(s.Class) || !utf8.ValidString(s.ETag) || s.Length < 0 {
+		return false
+	}
+	if !s.Present {
+		return s.Class == "" && s.Length == 0 && s.ETag == ""
+	}
+	return s.Class != ""
+}
+
+// sameAs compares two readings by their own facts, ignoring when each was
+// written, so the identical observation is idempotent and another is a conflict.
+func (s ItemSuccessor) sameAs(other ItemSuccessor) bool {
+	return s.Present == other.Present && s.Class == other.Class && s.Length == other.Length && s.ETag == other.ETag
 }
 
 // Validate permits refusal before a write; invalid writes still latch the store.

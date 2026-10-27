@@ -84,7 +84,10 @@ func (s *Store) ReadItems(ctx context.Context, jobID string, cursor int64, limit
 		if err := readPublications(ctx, tx, jobID, cursor, page.Items); err != nil {
 			return err
 		}
-		return readPredecessors(ctx, tx, jobID, cursor, page.Items)
+		if err := readPredecessors(ctx, tx, jobID, cursor, page.Items); err != nil {
+			return err
+		}
+		return readSuccessors(ctx, tx, jobID, cursor, page.Items)
 	})
 	if err != nil {
 		return ItemPage{}, err
@@ -115,7 +118,14 @@ func readObservations(ctx context.Context, tx *sql.Tx, jobID string, cursor int6
 			return err
 		}
 		item := byID[id]
-		if item == nil || !observation.valid(phase, item.Admitted) {
+		if item == nil {
+			return ErrInvalidItemRecord
+		}
+		valid := observation.valid(phase, item.Admitted)
+		if item.deletion() {
+			valid = observation.validDeletion(phase, item.Admitted)
+		}
+		if !valid {
 			return ErrInvalidItemRecord
 		}
 		observation.CreatedAt, err = time.Parse(time.RFC3339Nano, created)
@@ -152,15 +162,18 @@ func itemTotals(ctx context.Context, tx *sql.Tx, jobID string) (ItemTotals, erro
 		COALESCE(SUM(CASE WHEN e.result='conflict' THEN 1 ELSE 0 END),0),
 		COALESCE(SUM(CASE WHEN e.result='refused' THEN 1 ELSE 0 END),0),
 		COALESCE(SUM(CASE WHEN i.admitted=1 AND (e.item_id IS NULL OR e.effect='unresolved' OR p.effect='unresolved') THEN 1 ELSE 0 END),0),
-		COALESCE(SUM(CASE WHEN e.result='copied' AND (v.item_id IS NULL OR v.result!='verified' OR
-			(i.publication_required=1 AND (p.item_id IS NULL OR p.result!='verified'))) THEN 1 ELSE 0 END),0),
-		COALESCE(SUM(CASE WHEN e.diagnostic_code!='' OR v.diagnostic_code!='' OR p.diagnostic_code!='' THEN 1 ELSE 0 END),0)
+		COALESCE(SUM(CASE WHEN e.result='unverified' OR (e.result='copied' AND (v.item_id IS NULL OR v.result!='verified' OR
+			(i.publication_required=1 AND (p.item_id IS NULL OR p.result!='verified')))) THEN 1 ELSE 0 END),0),
+		COALESCE(SUM(CASE WHEN e.diagnostic_code!='' OR v.diagnostic_code!='' OR p.diagnostic_code!='' THEN 1 ELSE 0 END),0),
+		COALESCE(SUM(CASE WHEN i.issued_at IS NOT NULL THEN 1 ELSE 0 END),0),
+		COALESCE(SUM(CASE WHEN e.result='deleted' THEN 1 ELSE 0 END),0)
 		FROM job_items i
 		LEFT JOIN job_item_observations e ON e.item_id=i.id AND e.phase='execution'
 		LEFT JOIN job_item_observations v ON v.item_id=i.id AND v.phase='verification'
 		LEFT JOIN job_item_publications p ON p.item_id=i.id
 		WHERE i.job_id=?`, jobID).Scan(&totals.Items, &totals.Planned, &totals.Admitted, &totals.Failed,
-		&totals.Conflicts, &totals.Refused, &totals.Unresolved, &totals.Unverified, &totals.Problems)
+		&totals.Conflicts, &totals.Refused, &totals.Unresolved, &totals.Unverified, &totals.Problems,
+		&totals.Issued, &totals.Deleted)
 	return totals, err
 }
 
