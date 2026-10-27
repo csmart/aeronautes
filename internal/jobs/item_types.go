@@ -109,11 +109,16 @@ const (
 	CodeForbidden      ItemCode = "forbidden"
 	CodeMissing        ItemCode = "missing"
 	CodeConflict       ItemCode = "conflict"
-	CodeUnsupported    ItemCode = "unsupported"
-	CodeIO             ItemCode = "io"
-	CodeIncomplete     ItemCode = "incomplete"
-	CodeUnverified     ItemCode = "unverified"
-	CodeUnknown        ItemCode = "unknown"
+	// CodeLink says the name held a symbolic link, in either representation,
+	// where a deletion member's read that fixes its baseline looked (ADR 0093
+	// decision 4): refused with its kind, because the identity listed is the
+	// target's and a DELETE there would remove the link instead.
+	CodeLink        ItemCode = "link"
+	CodeUnsupported ItemCode = "unsupported"
+	CodeIO          ItemCode = "io"
+	CodeIncomplete  ItemCode = "incomplete"
+	CodeUnverified  ItemCode = "unverified"
+	CodeUnknown     ItemCode = "unknown"
 )
 
 // ItemDiagnostic cannot carry raw provider text, credentials, headers or URLs.
@@ -354,7 +359,7 @@ func (d ItemDiagnostic) valid() bool {
 		return false
 	}
 	switch d.Code {
-	case CodeCancelled, CodeTimeout, CodeAuthentication, CodeForbidden, CodeMissing, CodeConflict,
+	case CodeCancelled, CodeTimeout, CodeAuthentication, CodeForbidden, CodeMissing, CodeConflict, CodeLink,
 		CodeUnsupported, CodeIO, CodeIncomplete, CodeUnverified, CodeUnknown:
 	default:
 		return false

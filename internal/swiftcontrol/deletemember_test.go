@@ -133,8 +133,13 @@ func TestDeleteMemberRefusesALinkAtTheLaterBaseline(t *testing.T) {
 	if row.Bytes != 0 {
 		t.Fatalf("a link row lists bytes: %+v", row)
 	}
-	if _, err := s.DeleteMember(ctx, "fixtures", row); err == nil || !strings.Contains(err.Error(), "symlink") {
-		t.Fatalf("the link was not refused: %v", err)
+	result, err := s.DeleteMember(ctx, "fixtures", row)
+	var refusal *ShownRefusalError
+	if err == nil || !strings.Contains(err.Error(), "symlink") || !errors.As(err, &refusal) || !refusal.Link {
+		t.Fatalf("the link was not refused with its kind: %v", err)
+	}
+	if result == nil || result.Requested || result.Baseline != nil || len(result.TransIDs) != 1 {
+		t.Fatalf("the refusal lost the read that found the link: %+v", result)
 	}
 	if _, err := s.LiteralObjectHead(ctx, "fixtures", "link.txt"); err != nil {
 		t.Fatalf("the link was deleted: %v", err)

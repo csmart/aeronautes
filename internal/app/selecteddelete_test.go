@@ -383,6 +383,41 @@ func TestSelectedDeleteAdoptsALaterBaselineForARowThatCannotSay(t *testing.T) {
 	}
 }
 
+// ADR 0093 decision 4: a member refused because the read that fixes its
+// baseline found a link is refused with its kind, readable from the drawer's
+// page without another read, and neither the link nor its target is touched.
+func TestSelectedDeleteRefusesALinkAtTheLaterBaselineWithItsKind(t *testing.T) {
+	h, service := selectedHarness(t)
+	h.mock.PutObject("fixtures", "choice.txt", swifttest.Object{Bytes: 0, ContentType: "text/plain", SymlinkTarget: "fixtures/normal/hello.txt"})
+	rows := rowsOf(t, h, "choice.txt")
+	if rows[0].Bytes != 0 {
+		t.Fatalf("the fixture must take a later baseline: %+v", rows[0])
+	}
+	jobID, err := service.StartSelectedDelete(t.Context(), selectedRequest(h, rows))
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, h, jobID)
+	if job.State != "failed" || len(deletesUnder(h, "fixtures")) != 0 {
+		t.Fatalf("the refusal sent a DELETE or did not settle: job=%+v deletes=%v", job, deletesUnder(h, "fixtures"))
+	}
+	session := h.transfer.connections.sessions[h.bookmarkID()].session
+	if _, err := session.LiteralObjectHead(t.Context(), "fixtures", "choice.txt"); err != nil {
+		t.Fatalf("the refused link disappeared: %v", err)
+	}
+	if _, err := session.ObjectDetail(t.Context(), "fixtures", "normal/hello.txt"); err != nil {
+		t.Fatalf("the link's target disappeared: %v", err)
+	}
+	page, err := h.jobsSvc.Items(t.Context(), h.bookmarkID(), jobID, "", 100)
+	if err != nil || len(page.Items) != 1 || page.Items[0].Execution == nil {
+		t.Fatalf("items = %+v, %v", page, err)
+	}
+	item := page.Items[0]
+	if item.Execution.Result != "refused" || item.Execution.Code != "link" || item.Execution.Stage != "source_read" || item.Baseline != nil {
+		t.Fatalf("the public record does not say a link was found: %+v", item.Execution)
+	}
+}
+
 // Members the protocol refuses or finds changed do not stop the job: each
 // lands as its own word and the others are deleted, and the job is partial.
 func TestSelectedDeleteSettlesEachMemberOnItsOwn(t *testing.T) {
@@ -401,7 +436,7 @@ func TestSelectedDeleteSettlesEachMemberOnItsOwn(t *testing.T) {
 		t.Fatalf("job = %+v", job)
 	}
 	items := itemsOf(t, h, jobID)
-	if items["link.txt"].Execution == nil || items["link.txt"].Execution.Result != jobs.ItemRefused {
+	if items["link.txt"].Execution == nil || items["link.txt"].Execution.Result != jobs.ItemRefused || items["link.txt"].Execution.Diagnostic.Code != jobs.CodeLink {
 		t.Fatalf("link item = %+v", items["link.txt"])
 	}
 	if items["normal/hello.txt"].Execution == nil || items["normal/hello.txt"].Execution.Result != jobs.ItemConflict {
