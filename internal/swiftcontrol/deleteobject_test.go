@@ -60,12 +60,16 @@ func TestDeletePlainObjectRefusesManifestsLinksAndABlankIdentity(t *testing.T) {
 
 	cases := []struct {
 		name, object, identity, wantInError string
+		// observed says the refusal came from the comparison HEAD, which the
+		// result then carries with no outcome, as a conflict's does (ADR 0094
+		// decision 1); a blank identity is refused before any read.
+		observed bool
 	}{
-		{"dynamic manifest", "external-dlo", shownIdentity(t, s, "fixtures", "external-dlo"), "manifest"},
-		{"static manifest", "external-slo", shownIdentity(t, s, "fixtures", "external-slo"), "manifest"},
-		{"followed link", "link", shownIdentity(t, s, "fixtures", "link"), "symlink"},
-		{"unfollowed cross-account link", "far-link", shownIdentity(t, s, "fixtures", "far-link"), "symlink"},
-		{"blank identity", plainName, "", "cannot say what it meant to destroy"},
+		{"dynamic manifest", "external-dlo", shownIdentity(t, s, "fixtures", "external-dlo"), "manifest", true},
+		{"static manifest", "external-slo", shownIdentity(t, s, "fixtures", "external-slo"), "manifest", true},
+		{"followed link", "link", shownIdentity(t, s, "fixtures", "link"), "symlink", true},
+		{"unfollowed cross-account link", "far-link", shownIdentity(t, s, "fixtures", "far-link"), "symlink", true},
+		{"blank identity", plainName, "", "cannot say what it meant to destroy", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -73,8 +77,13 @@ func TestDeletePlainObjectRefusesManifestsLinksAndABlankIdentity(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), tc.wantInError) {
 				t.Fatalf("err = %v, want a refusal mentioning %q", err, tc.wantInError)
 			}
-			if result != nil {
-				t.Fatalf("a refusal returned a result: %+v", result)
+			var refusal *ShownRefusalError
+			if tc.observed {
+				if !errors.As(err, &refusal) || result == nil || result.Before == nil || result.Outcome != "" || result.Accepted || len(result.TransIDs) != 1 {
+					t.Fatalf("a comparison refusal did not keep its observation: result = %+v, err = %T", result, err)
+				}
+			} else if result != nil || errors.As(err, &refusal) {
+				t.Fatalf("a refusal before any read returned a result: %+v", result)
 			}
 		})
 	}
