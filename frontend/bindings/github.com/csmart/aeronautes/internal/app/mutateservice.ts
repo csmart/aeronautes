@@ -54,6 +54,19 @@ export function DeleteMarker(container: string, prefix: string): $CancellablePro
 }
 
 /**
+ * DeleteObject deletes ONE plain object the operator was shown (ADR 0092).
+ * It is bound to the portrait the inspector's detail was read under
+ * (ADR 0079), carries the content identity that detail showed, records its
+ * intent before the store is asked and its outcome with the audit event in
+ * one transaction (ADR 0058), and returns the literal successor the
+ * verifying read observed so the interface can show it. Manifests, the
+ * marker journey on a prefix row and symlinks keep their own paths.
+ */
+export function DeleteObject(scope: $models.ListingScopeDTO, container: string, name: string, contentFingerprint: string): $CancellablePromise<$models.MutationResultDTO> {
+    return $Call.ByID(259793559, scope, container, name, contentFingerprint);
+}
+
+/**
  * UpdateContainer applies a complete container edit (§18, §19, §21).
  */
 export function UpdateContainer(scope: $models.ListingScopeDTO, name: string, baseFingerprint: string, edit: $models.ContainerEditDTO): $CancellablePromise<$models.MutationResultDTO> {

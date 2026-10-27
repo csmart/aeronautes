@@ -60,6 +60,12 @@ func deferredEntryPoints(t *testing.T, h *harness) []deferredEntryPoint {
 			_, err := h.mutate.DeleteManifest(t.Context(), "fixtures", "external-dlo", "any")
 			return err
 		}},
+		{"MutateService.DeleteObject", "Object deletion", func(t *testing.T, h *harness) error {
+			// Refused before the scope is checked and before any intent is
+			// recorded, so the portrait and the fingerprint cannot matter.
+			_, err := h.mutate.DeleteObject(t.Context(), h.portrait(), "fixtures", "normal/hello.txt", "any")
+			return err
+		}},
 		{"BenchmarkService.StartBenchmark", "Benchmark", func(t *testing.T, h *harness) error {
 			_, err := bench.StartBenchmark(t.Context(), BenchmarkRequestDTO{BookmarkID: h.bookmarkID(), Confirm: "x"})
 			return err
