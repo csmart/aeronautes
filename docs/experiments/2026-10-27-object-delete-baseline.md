@@ -21,7 +21,7 @@ Its missing-protected list is empty: every one of the 52 previously protected pa
 ## Producer reports
 
 Both reports are valid, record contract hash `9a97c56252343063`, 55 actions and 125 required cells, and the heavy report credits nothing, as before.
-The main report credits 55 cells across 22 actions, with 33 actions still carrying gaps; `coverageComplete` is false.
+The main report credits 55 cells across 31 actions, 22 of them completely and nine in part, with 33 actions still carrying gaps, the nine partial and 24 with no credited cell; `coverageComplete` is false.
 `MutateService.DeleteObject` is credited for `happy`, `refusal` and `conflict` by `TestObjectDeleteMock`, `TestObjectDeleteSwift`, `TestObjectDeleteRefusesManifestsAndLinksMock`, `TestObjectDeleteRefusesManifestsAndLinksSwift`, `TestObjectDeleteConflictIsRecordedMock` and `TestObjectDeleteConflictIsRecordedSwift` in `internal/systemtest`.
 
 | Input | SHA-256 |
