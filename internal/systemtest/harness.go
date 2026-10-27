@@ -475,6 +475,30 @@ func (h *Harness) DeleteObject(ctx context.Context, container, name, contentFing
 	return &Receipt{h: h, action: "MutateService.DeleteObject", outcome: outcome, err: err}
 }
 
+// DeleteMarker deletes one directory marker the operator was shown (ADR 0094
+// decision 2), the prefix detail's own object, by the same shape as DeleteObject.
+func (h *Harness) DeleteMarker(ctx context.Context, container, prefix, contentFingerprint string) *Receipt {
+	result, err := h.Mutate.DeleteMarker(ctx, h.ActiveScope(ctx), container, prefix, contentFingerprint)
+	outcome := result.Outcome
+	var conflict *swiftcontrol.IdentityConflictError
+	if errors.As(err, &conflict) {
+		outcome = "conflict"
+	}
+	return &Receipt{h: h, action: "MutateService.DeleteMarker", outcome: outcome, err: err}
+}
+
+// DeleteManifest deletes one manifest the operator was shown, manifest-only
+// (ADR 0094 decision 3), by the same shape as DeleteObject.
+func (h *Harness) DeleteManifest(ctx context.Context, container, name, contentFingerprint string) *Receipt {
+	result, err := h.Mutate.DeleteManifest(ctx, h.ActiveScope(ctx), container, name, contentFingerprint)
+	outcome := result.Outcome
+	var conflict *swiftcontrol.IdentityConflictError
+	if errors.As(err, &conflict) {
+		outcome = "conflict"
+	}
+	return &Receipt{h: h, action: "MutateService.DeleteManifest", outcome: outcome, err: err}
+}
+
 // account provisions a test account. It returns an error rather than
 // Fatal-ing so the caller can decide: the primary must exist (Fatal),
 // but a missing secondary is a Skip on a one-account laptop unless

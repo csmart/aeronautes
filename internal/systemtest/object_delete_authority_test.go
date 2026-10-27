@@ -48,19 +48,27 @@ func testObjectDeleteEmptyName(t *testing.T, h *Harness) {
 	// The identity a container HEAD would have supplied: plain, zero bytes,
 	// empty entity tag. It is detection input, never a capability.
 	identity := (&swiftcontrol.ObjectDetail{Class: swiftcontrol.ClassPlain}).ContentFingerprint()
+	// The three shown-object deletions share one service path, and each is
+	// refused the same way (ADR 0094 decision 1).
 	result, err := h.Mutate.DeleteObject(ctx, h.ActiveScope(ctx), c, "", identity)
 	if err == nil || result.Outcome == "applied" {
 		t.Fatalf("an empty object name was not refused: outcome %q, err %v", result.Outcome, err)
 	}
+	if result, err := h.Mutate.DeleteMarker(ctx, h.ActiveScope(ctx), c, "", identity); err == nil || result.Outcome == "applied" {
+		t.Fatalf("an empty marker name was not refused: outcome %q, err %v", result.Outcome, err)
+	}
+	if result, err := h.Mutate.DeleteManifest(ctx, h.ActiveScope(ctx), c, "", identity); err == nil || result.Outcome == "applied" {
+		t.Fatalf("an empty manifest name was not refused: outcome %q, err %v", result.Outcome, err)
+	}
 	if status := headStatus(); status/100 != 2 {
-		t.Fatalf("the container no longer answers after the refused delete: HEAD %d", status)
+		t.Fatalf("the container no longer answers after the refused deletes: HEAD %d", status)
 	}
 	facts, err := mutationfacts.NewStore(h.database).All(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, fact := range facts {
-		if fact.Operation == "object.delete" && fact.Resource == c+"/" {
+		if (fact.Operation == "object.delete" || fact.Operation == "marker.delete" || fact.Operation == "manifest.delete") && fact.Resource == c+"/" {
 			t.Fatalf("a refused empty-name delete left a fact: %+v", fact)
 		}
 	}
