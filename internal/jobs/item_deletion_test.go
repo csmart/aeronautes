@@ -392,16 +392,27 @@ func TestRecordedOutcomeCannotGainASuccessor(t *testing.T) {
 	}
 }
 
-// db:910: what a selected-set deletion deletes is a Swift object.
-func TestDeletionMembersAreSwiftObjects(t *testing.T) {
-	store, _ := newStore(t)
-	ctx := t.Context()
-	job, err := store.Create(ctx, Job{Type: TypeDeleteSelected, ItemRecordsVersion: 1})
-	if err != nil {
-		t.Fatal(err)
+// db:910 and db:911: what a selected-set deletion deletes is a Swift object,
+// and every member is admitted at once; a member the ledger would not count
+// as admitted cannot join, because the job could end complete with it
+// untouched.
+func TestDeletionMembersAreAdmittedSwiftObjects(t *testing.T) {
+	cases := map[string]ItemIntent{
+		"a local path":          {ItemIdentity: ItemIdentity{Key: "/tmp/not-an-object", Source: ItemLocation{Kind: ItemLocal, LocalPath: "/tmp/not-an-object"}}, Planned: true, Admitted: true},
+		"a member not admitted": {ItemIdentity: ItemIdentity{Key: "a.txt", Source: ItemLocation{Kind: ItemSwift, BookmarkID: "bm", Container: "c", Object: "a.txt"}}, Planned: true, Admitted: false},
+		"a member not planned":  {ItemIdentity: ItemIdentity{Key: "b.txt", Source: ItemLocation{Kind: ItemSwift, BookmarkID: "bm", Container: "c", Object: "b.txt"}}, Planned: false, Admitted: true},
 	}
-	local := ItemIntent{ItemIdentity: ItemIdentity{Key: "/tmp/not-an-object", Source: ItemLocation{Kind: ItemLocal, LocalPath: "/tmp/not-an-object"}}, Planned: true, Admitted: true}
-	if err := store.AdmitItems(ctx, job.ID, []ItemIntent{local}); !errors.Is(err, ErrInvalidItemRecord) {
-		t.Fatalf("a local path was admitted as a deletion member: %v", err)
+	for name, member := range cases {
+		t.Run(name, func(t *testing.T) {
+			store, _ := newStore(t)
+			ctx := t.Context()
+			job, err := store.Create(ctx, Job{Type: TypeDeleteSelected, ItemRecordsVersion: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := store.AdmitItems(ctx, job.ID, []ItemIntent{member}); !errors.Is(err, ErrInvalidItemRecord) {
+				t.Fatalf("%s was admitted as a deletion member: %v", name, err)
+			}
+		})
 	}
 }
