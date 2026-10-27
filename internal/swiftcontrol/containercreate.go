@@ -114,33 +114,3 @@ var (
 	ErrUnverifiedContainerCreate = errors.New("container creation unverified")
 	ErrUnverifiedMarkerCreate    = errors.New("marker creation unverified")
 )
-
-// DeleteMarker removes ONLY an explicit marker object: the one delete
-// that is Phase-3-safe, because a marker is a plain zero-byte object and
-// children are independent objects. Anything else at the name refuses.
-func (s *Session) DeleteMarker(ctx context.Context, container, prefix string) error {
-	detail, err := s.PrefixDetail(ctx, container, prefix)
-	if err != nil {
-		return err
-	}
-	if detail.SelfObject == nil {
-		return &SwiftError{Kind: KindNotFound, Message: fmt.Sprintf("no marker object at %s/%s (implied prefix)", container, prefix)}
-	}
-	if !detail.MarkerBacked {
-		// Classification never authorizes destruction of data it does not
-		// prove (§24.4 spirit): a folder-suit real object is not a marker.
-		return fmt.Errorf("the object at %s/%s is not a directory marker (%s, %d bytes); refusing to delete it through the marker path",
-			container, prefix, detail.SelfObject.ContentType, detail.SelfObject.ContentLength)
-	}
-	if err := s.conn.ObjectDelete(ctx, container, prefix); err != nil {
-		return Normalize(err)
-	}
-	after, err := s.PrefixDetail(ctx, container, prefix)
-	if err != nil {
-		return fmt.Errorf("marker deleted but verify read failed: %w", err)
-	}
-	if after.SelfObject != nil {
-		return fmt.Errorf("marker delete verified still present")
-	}
-	return nil
-}

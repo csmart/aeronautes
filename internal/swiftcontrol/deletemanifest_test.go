@@ -34,12 +34,12 @@ func TestDeleteManifestObjectDLO(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	before, err := s.DeleteManifestObject(ctx, "fixtures", "external-dlo", shown.ContentFingerprint())
+	result, err := s.DeleteManifestObject(ctx, "fixtures", "external-dlo", shown.ContentFingerprint())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if before.Class != ClassDLO {
-		t.Errorf("preflight class = %q", before.Class)
+	if result.Before.Class != ClassDLO || result.Outcome != UpdateApplied || result.After != nil || !result.Accepted {
+		t.Errorf("result = %+v", result)
 	}
 
 	var se *SwiftError
@@ -61,12 +61,12 @@ func TestDeleteManifestObjectSLO(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	before, err := s.DeleteManifestObject(ctx, "fixtures", "external-slo", shown.ContentFingerprint())
+	result, err := s.DeleteManifestObject(ctx, "fixtures", "external-slo", shown.ContentFingerprint())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if before.Class != ClassSLO {
-		t.Errorf("preflight class = %q", before.Class)
+	if result.Before.Class != ClassSLO || result.Outcome != UpdateApplied || result.After != nil {
+		t.Errorf("result = %+v", result)
 	}
 	if got := countObjects(t, s, "slo-parts"); got != segmentsBefore {
 		t.Errorf("segments = %d, want untouched %d", got, segmentsBefore)
@@ -119,12 +119,13 @@ func TestDeleteManifestObjectRefusesWhatItWasNotShown(t *testing.T) {
 		if other.ContentFingerprint() == shown.ContentFingerprint() {
 			t.Fatal("the fixture no longer distinguishes these two objects")
 		}
-		before, err := s.DeleteManifestObject(ctx, "fixtures", "external-dlo", other.ContentFingerprint())
-		if err == nil {
-			t.Fatal("a delete was accepted for an identity the name does not hold")
+		result, err := s.DeleteManifestObject(ctx, "fixtures", "external-dlo", other.ContentFingerprint())
+		var conflict *IdentityConflictError
+		if !errors.As(err, &conflict) {
+			t.Fatalf("a delete was accepted, or refused for another reason, for an identity the name does not hold: %v", err)
 		}
-		if before == nil || before.Class != ClassDLO {
-			t.Errorf("the refusal did not report what was actually there: %+v", before)
+		if result == nil || result.Before == nil || result.Before.Class != ClassDLO || result.Outcome != "" {
+			t.Errorf("the refusal did not report what was actually there: %+v", result)
 		}
 		// Refused BEFORE the DELETE: the object is still readable.
 		if _, err := s.ObjectDetail(ctx, "fixtures", "external-dlo"); err != nil {
