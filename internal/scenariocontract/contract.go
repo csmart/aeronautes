@@ -108,6 +108,10 @@ var inventory = map[string]Action{
 	"BookmarkService.Save":             {Kind: Mutate},
 	"BookmarkService.Delete":           {Kind: Destructive},
 	"BookmarkService.CredentialStatus": {Kind: Read, Scenarios: []string{"happy", "refusal"}},
+	// Verify authenticates typed details and persists nothing: a read of
+	// the endpoint's answer, with the refusal of a wrong key as its other
+	// required cell.
+	"BookmarkService.Verify": {Kind: Read, Scenarios: []string{"happy", "refusal"}},
 	// BrowseService
 	"BrowseService.Connect":      {Kind: Session, Scenarios: []string{"happy", "refusal"}},
 	"BrowseService.Account":      {Kind: Read, Scenarios: []string{"happy", "refusal"}},

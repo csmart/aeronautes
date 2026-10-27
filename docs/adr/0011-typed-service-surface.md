@@ -18,7 +18,11 @@ The frontend reaches Go **only** through these services (all in `internal/app`, 
 - **AppService** — shell identity/environment (version, linked Wails); no filesystem, no exec.
 - **BookmarkService** — bookmark CRUD over `internal/bookmarks`. Credentials cross the bridge
   **one way** (frontend → Go, at save time), are handed straight to the SecretStore, and are
-  never readable back; bookmark DTOs carry `HasCredential`, never the secret.
+  never readable back; bookmark DTOs carry `HasCredential`, never the secret. `Verify`
+  (2026-10-27) authenticates the details as typed without saving anything, under the same
+  endpoint policy and TLS trust a saved bookmark gets, and returns only the account name and
+  the HEAD counts; a typed key is used for that one exchange and discarded, and a stored key is
+  used only while the binding it was saved under is unchanged (ADR 0015).
 - **BrowseService** — account portrait, container/object listing pages (typed entries, §14).
 - **InspectorService** — selection-triggered HEAD detail (redacted views only).
 - **MutateService** — the ONLY mutating surface (Phase 3). Every method takes a complete

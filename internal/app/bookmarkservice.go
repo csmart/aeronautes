@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/csmart/aeronautes/internal/bookmarks"
 	"github.com/csmart/aeronautes/internal/jobs"
+	"github.com/csmart/aeronautes/internal/secrets"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
 
@@ -99,6 +101,93 @@ func (s *BookmarkService) Save(ctx context.Context, dto BookmarkDTO, secret stri
 	}
 	s.cleanupCredentials(ctx)
 	return toBookmarkDTO(saved), nil
+}
+
+// Verify authenticates the details as typed and saves nothing, so the
+// operator learns whether the endpoint accepts the user and key before the
+// bookmark and its key are stored. The session is built the way a saved
+// bookmark's is, so the endpoint policy and the TLS trust apply unchanged;
+// the result names the account and its HEAD counts and nothing else.
+func (s *BookmarkService) Verify(ctx context.Context, dto BookmarkDTO, secret string) (VerifyResultDTO, error) {
+	config, err := s.verifyConfig(ctx, dto, secret)
+	if err != nil {
+		return VerifyResultDTO{}, err
+	}
+	session, err := swiftcontrol.New(config)
+	if err != nil {
+		return VerifyResultDTO{}, err
+	}
+	if err := session.Authenticate(ctx); err != nil {
+		return VerifyResultDTO{}, err
+	}
+	portrait, err := session.AccountPortrait(ctx)
+	if err != nil {
+		return VerifyResultDTO{}, err
+	}
+	storageURL := session.StorageURL()
+	return VerifyResultDTO{
+		Account:    storageURL[strings.LastIndex(storageURL, "/")+1:],
+		Containers: portrait.Containers,
+		Objects:    portrait.Objects,
+		BytesUsed:  portrait.BytesUsed,
+	}, nil
+}
+
+var errVerifyNeedsKey = errors.New("enter the API key to verify these details")
+
+// verifyConfig is the session config for the details as typed. A typed key
+// is used as typed. Without one, an existing bookmark's stored key serves
+// only while the binding it was saved under (auth URL, username, storage
+// override, TLS trust) is unchanged, the rule Save applies (ADR 0015), so a
+// stored key never reaches an endpoint it was not saved for. The stored CA
+// bundle stands in when the editor left the PEM empty.
+func (s *BookmarkService) verifyConfig(ctx context.Context, dto BookmarkDTO, secret string) (swiftcontrol.Config, error) {
+	typed := bookmarks.Bookmark{
+		AuthURL:            dto.AuthURL,
+		Username:           dto.Username,
+		StorageURLOverride: dto.StorageURLOverride,
+		TLSMode:            swiftcontrol.TLSMode(dto.TLSMode),
+	}
+	var caPEM []byte
+	if dto.CAPem != "" {
+		caPEM = []byte(dto.CAPem)
+	}
+	if dto.ID == "" {
+		if secret == "" {
+			return swiftcontrol.Config{}, errVerifyNeedsKey
+		}
+		if typed.TLSMode == swiftcontrol.TLSModeCustomCA && caPEM == nil {
+			return swiftcontrol.Config{}, fmt.Errorf("custom-CA TLS needs a CA bundle (paste the PEM)")
+		}
+		return typed.SwiftConfig([]byte(secret), caPEM), nil
+	}
+
+	existing, err := s.store.Get(ctx, dto.ID)
+	if err != nil {
+		return swiftcontrol.Config{}, err
+	}
+	stored, _, storedErr := s.store.ConnectionConfig(ctx, dto.ID)
+	sameBinding := existing.AuthURL == dto.AuthURL && existing.Username == dto.Username &&
+		existing.StorageURLOverride == dto.StorageURLOverride && string(existing.TLSMode) == dto.TLSMode && caPEM == nil
+	if secret == "" {
+		if !sameBinding {
+			return swiftcontrol.Config{}, fmt.Errorf("re-enter the API key to verify changed details")
+		}
+		if storedErr != nil {
+			if errors.Is(storedErr, secrets.ErrNotFound) || errors.Is(storedErr, secrets.ErrAuthorityUnreachable) {
+				return swiftcontrol.Config{}, fmt.Errorf("no saved key is available; enter it to verify: %w", storedErr)
+			}
+			return swiftcontrol.Config{}, storedErr
+		}
+		return stored, nil
+	}
+	if typed.TLSMode == swiftcontrol.TLSModeCustomCA && caPEM == nil {
+		if storedErr != nil || len(stored.TLS.CACertPEM) == 0 {
+			return swiftcontrol.Config{}, fmt.Errorf("paste the CA bundle again to verify with a new key")
+		}
+		caPEM = stored.TLS.CACertPEM
+	}
+	return typed.SwiftConfig([]byte(secret), caPEM), nil
 }
 
 // Delete removes a bookmark. It refuses while any non-terminal job
