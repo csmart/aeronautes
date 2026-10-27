@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { BrowserState } from "./browserState.svelte";
 import { newFakeApi } from "./fakeApi";
-import type { BookmarkDTO } from "../../lib/api";
+import type { AppSettingsDTO, BookmarkDTO } from "../../lib/api";
 
 function bookmark(): BookmarkDTO {
   return {
@@ -600,5 +600,43 @@ describe("the newest listing read owns the lifecycle", () => {
     expect(s.entriesLoading).toBe(false);
     expect(s.entriesRefreshing).toBe(false);
     expect(s.entriesError).toBeNull();
+  });
+});
+
+describe("rail width persistence", () => {
+  it("writes the latest width asked for while an earlier settings write was in flight", async () => {
+    const api = newFakeApi();
+    const s = new BrowserState(api);
+    await s.loadAppSettings();
+    let release!: (settings: AppSettingsDTO) => void;
+    const first = new Promise<AppSettingsDTO>((resolve) => { release = resolve; });
+    const saves: number[] = [];
+    api.saveAppSettings = vi.fn(async (settings: AppSettingsDTO) => {
+      saves.push(settings.railWidthPx);
+      return saves.length === 1 ? first : settings;
+    });
+    const pending = s.saveRailWidth(80);
+    await s.saveRailWidth(96);
+    expect(saves).toEqual([80]);
+    release({ ...s.appSettings!, railWidthPx: 80 });
+    await pending;
+    await vi.waitFor(() => expect(saves).toEqual([80, 96]));
+    await vi.waitFor(() => expect(s.appSettings?.railWidthPx).toBe(96));
+    expect(s.appSettingsOperation).toBeNull();
+  });
+
+  it("waits for a settings read in flight and then writes the width", async () => {
+    const api = newFakeApi();
+    const s = new BrowserState(api);
+    const settings = await api.appSettings();
+    let release!: (settings: AppSettingsDTO) => void;
+    api.appSettings = () => new Promise<AppSettingsDTO>((resolve) => { release = resolve; });
+    const save = vi.spyOn(api, "saveAppSettings");
+    const reading = s.loadAppSettings();
+    await s.saveRailWidth(120);
+    expect(save).not.toHaveBeenCalled();
+    release(settings);
+    await reading;
+    await vi.waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ railWidthPx: 120 })));
   });
 });
