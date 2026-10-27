@@ -81,11 +81,11 @@ func TestObjectDeleteAppliesAndRecordsTheFact(t *testing.T) {
 		t.Fatalf("a sibling was touched: %v", err)
 	}
 	facts := objectDeleteFacts(t, h)
-	if len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeApplied || facts[0].Operation != "object.delete" || facts[0].Resource != "fixtures/"+deleteFixture {
+	if len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeApplied || facts[0].Operation != "object.delete" || facts[0].Resource != "fixtures/"+deleteFixture || !containsString(facts[0].TransIDs, "txswifttest-object-delete") {
 		t.Fatalf("facts = %+v", facts)
 	}
 	events := objectDeleteEvents(t, h)
-	if len(events) != 1 || events[0].Result != "applied" || !strings.Contains(events[0].Summary, "nothing observed at the name afterwards") {
+	if len(events) != 1 || events[0].Result != "applied" || !strings.Contains(events[0].Summary, "nothing observed at the name afterwards") || !containsString(events[0].TransIDs, "txswifttest-object-delete") {
 		t.Fatalf("audit = %+v", events)
 	}
 }
