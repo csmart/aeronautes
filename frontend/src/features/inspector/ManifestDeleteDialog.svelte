@@ -100,8 +100,7 @@
         // target.detail is the frozen detail this dialog was opened for, so its
         // content fingerprint is what the operator was actually shown. The
         // service refuses the delete if the name no longer holds it (ADR 0085).
-        await browser.deleteManifest(target.request.container, target.request.name,
-          target.detail.contentFingerprint, isCurrent);
+        await browser.deleteManifest(target.request.container, target.request.name, target.detail, isCurrent);
       }
       if (isCurrent()) close();
     } catch (err) {

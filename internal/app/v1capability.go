@@ -47,8 +47,8 @@ var v1DeferredActions = map[string]string{
 	// destructive halves of the mutation service (ADR 0052 decision 7,
 	// the operator's decisions of 22 and 23 September 2026). Container
 	// creation and marker creation are kept: both are non-destructive.
-	"MutateService.DeleteMarker":   "Marker and manifest editing",
-	"MutateService.DeleteManifest": "Marker and manifest editing",
+	"MutateService.DeleteMarker":   "Marker and manifest deletion",
+	"MutateService.DeleteManifest": "Marker and manifest deletion",
 	// one plain object the operator was shown, born deferred under ADR 0092
 	// and offered only while the operator trials it with its token
 	"MutateService.DeleteObject": "Object deletion",
@@ -74,7 +74,7 @@ const EnableEnvVar = "AERONAUTES_ENABLE"
 var v1CapabilityTokens = map[string]string{
 	"copy":                   "Copy",
 	"bulk-delete":            "Bulk delete",
-	"marker-manifest-delete": "Marker and manifest editing",
+	"marker-manifest-delete": "Marker and manifest deletion",
 	"benchmark":              "Benchmark",
 	"object-delete":          "Object deletion",
 }

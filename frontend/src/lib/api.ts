@@ -172,9 +172,12 @@ export interface Api {
   containerDetail(name: string, bookmarkId: string): Promise<ContainerDetailDTO>;
   sloManifest(container: string, name: string, bookmarkId: string): Promise<SLOManifestDTO>;
   dloSegments(manifest: string, bookmarkId: string): Promise<DLOSegmentsDTO>;
-  /** baseContent is the ContentFingerprint the caller displayed for this
-   * object; the delete is refused when the name no longer holds it (ADR 0085). */
-  deleteManifest(container: string, name: string, baseContent: string): Promise<ObjectDetailDTO>;
+  /** Deletes ONE manifest the operator was shown, manifest-only, under the
+   * scope its detail was read under; contentFingerprint is that detail's
+   * identity and the delete is refused when the name no longer holds it. A
+   * manifest of the same kind still observed afterwards is unverified, and
+   * any other successor is reported (ADR 0094). */
+  deleteManifest(scope: ListingScope, container: string, name: string, contentFingerprint: string): Promise<MutationResultDTO>;
   /** Deletes ONE plain object the operator was shown, under the scope its
    * detail was read under; contentFingerprint is that detail's identity and
    * the delete is refused when the name no longer holds it. The result
@@ -197,7 +200,11 @@ export interface Api {
   ): Promise<MutationResultDTO>;
   createContainer(scope: ListingScope, create: ContainerCreateDTO): Promise<ContainerDetailDTO>;
   createMarker(scope: ListingScope, container: string, prefix: string): Promise<PrefixDetailDTO>;
-  deleteMarker(container: string, prefix: string): Promise<void>;
+  /** Deletes ONE directory marker the operator was shown, the prefix
+   * detail's own object, under the scope that detail was read under;
+   * contentFingerprint is that object's identity, and the marker rule is
+   * required beside it (ADR 0094). The objects under the prefix are untouched. */
+  deleteMarker(scope: ListingScope, container: string, prefix: string, contentFingerprint: string): Promise<MutationResultDTO>;
   auditRecent(limit: number, bookmarkId: string): Promise<AuditEventDTO[]>;
   auditSearch(q: AuditQueryDTO): Promise<AuditEventDTO[]>;
   planCopy(req: CopyRequestDTO): Promise<CopyPlanDTO>;
@@ -262,7 +269,8 @@ export const liveApi: Api = {
   containerDetail: (name, bookmarkId) => InspectorService.Container(bookmarkId, name),
   sloManifest: (container, name, bookmarkId) => InspectorService.SLOManifest(bookmarkId, container, name),
   dloSegments: (manifest, bookmarkId) => InspectorService.DLOSegments(bookmarkId, manifest),
-  deleteManifest: (container, name, baseContent) => MutateService.DeleteManifest(container, name, baseContent),
+  deleteManifest: (scope, container, name, contentFingerprint) =>
+    MutateService.DeleteManifest(scope, container, name, contentFingerprint),
   deleteObject: (scope, container, name, contentFingerprint) =>
     MutateService.DeleteObject(scope, container, name, contentFingerprint),
   capabilities: (bookmarkId) => BrowseService.Capabilities(bookmarkId),
@@ -272,7 +280,8 @@ export const liveApi: Api = {
     MutateService.UpdateContainer(scope, name, baseFingerprint, edit),
   createContainer: (scope, create) => MutateService.CreateContainer(scope, create),
   createMarker: (scope, container, prefix) => MutateService.CreateMarker(scope, container, prefix),
-  deleteMarker: (container, prefix) => MutateService.DeleteMarker(container, prefix),
+  deleteMarker: (scope, container, prefix, contentFingerprint) =>
+    MutateService.DeleteMarker(scope, container, prefix, contentFingerprint),
   auditRecent: async (limit, bookmarkId) =>
     (await AuditService.RecentFor(bookmarkId, limit)) ?? [],
   auditSearch: async (q) => (await AuditService.Search(q)) ?? [],

@@ -34,23 +34,26 @@ export function CreateMarker(scope: $models.ListingScopeDTO, container: string, 
 }
 
 /**
- * DeleteManifest removes ONLY a DLO/SLO manifest object (§60 Phase 4's
- * low-risk delete): segments survive by construction, a plain object
- * refuses, and the outcome is audited either way.
- * baseContent is the ContentFingerprint the caller was shown for this object,
- * handed back the way the metadata editor hands back its EditableFingerprint
- * (ADR 0085). The delete is refused when the name no longer holds it.
+ * DeleteManifest deletes ONE dynamic or static large-object manifest the
+ * operator was shown, manifest-only: the segments stay by construction (§60
+ * Phase 4). It is the plain-object protocol with the class inverted (ADR
+ * 0094 decision 3), and a manifest of the same kind still observed at the
+ * name afterwards is unverified rather than compared.
  */
-export function DeleteManifest(container: string, name: string, baseContent: string): $CancellablePromise<$models.ObjectDetailDTO> {
-    return $Call.ByID(4014894181, container, name, baseContent);
+export function DeleteManifest(scope: $models.ListingScopeDTO, container: string, name: string, contentFingerprint: string): $CancellablePromise<$models.MutationResultDTO> {
+    return $Call.ByID(4014894181, scope, container, name, contentFingerprint);
 }
 
 /**
- * DeleteMarker deletes ONLY a verified directory marker (§14.1) — the
- * one Phase 3 delete.
+ * DeleteMarker deletes ONE directory marker the operator was shown, the
+ * prefix detail's own zero-byte object, by the plain-object protocol plus
+ * the marker rule (ADR 0094 decision 2): the comparison HEAD must show the
+ * identity shown AND a zero-byte object of the directory content type, so
+ * a real object in a folder's clothing never leaves through this path. The
+ * objects under the prefix are never read or touched.
  */
-export function DeleteMarker(container: string, prefix: string): $CancellablePromise<void> {
-    return $Call.ByID(1622704602, container, prefix);
+export function DeleteMarker(scope: $models.ListingScopeDTO, container: string, prefix: string, contentFingerprint: string): $CancellablePromise<$models.MutationResultDTO> {
+    return $Call.ByID(1622704602, scope, container, prefix, contentFingerprint);
 }
 
 /**

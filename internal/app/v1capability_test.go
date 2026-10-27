@@ -197,11 +197,12 @@ func TestV1GateRefusesDeferredEntryPoints(t *testing.T) {
 			_, err := (&DeleteService{}).DeleteManifestWithSegments(ctx, SegmentsDeleteRequestDTO{})
 			return err
 		}},
-		{"MutateService.DeleteMarker", "Marker and manifest editing", func() error {
-			return (&MutateService{}).DeleteMarker(ctx, "c", "p/")
+		{"MutateService.DeleteMarker", "Marker and manifest deletion", func() error {
+			_, err := (&MutateService{}).DeleteMarker(ctx, ListingScopeDTO{}, "c", "p/", "any")
+			return err
 		}},
-		{"MutateService.DeleteManifest", "Marker and manifest editing", func() error {
-			_, err := (&MutateService{}).DeleteManifest(ctx, "c", "n", "any")
+		{"MutateService.DeleteManifest", "Marker and manifest deletion", func() error {
+			_, err := (&MutateService{}).DeleteManifest(ctx, ListingScopeDTO{}, "c", "n", "any")
 			return err
 		}},
 		{"MutateService.DeleteObject", "Object deletion", func() error {

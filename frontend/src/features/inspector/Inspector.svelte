@@ -60,7 +60,7 @@
     browser.openBackstage(at.slice(0, slash), at.slice(slash + 1), detail.name);
   }
 
-  async function markerAction(expected: PrefixDetailDTO, action: (ownsView: () => boolean) => Promise<void>) {
+  async function markerAction(expected: PrefixDetailDTO, action: (ownsView: () => boolean) => Promise<unknown>) {
     if (!alive || markerBusy || browser.connecting || !browser.connectedBookmarkId
       || browser.prefixDetail !== expected || browser.detailIdentity?.name !== expected.prefix) return;
     const owner = browser;

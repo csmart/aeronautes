@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
-import type { Api, SegmentOwnershipDTO } from "../../lib/api";
+import type { Api, MutationResultDTO, SegmentOwnershipDTO } from "../../lib/api";
 import { BrowserState } from "./browserState.svelte";
 import { newFakeApi } from "./fakeApi";
 import BrowserScreen from "./BrowserScreen.svelte";
 import AboutDialog from "./AboutDialog.svelte";
 import ManifestDeleteDialog from "../inspector/ManifestDeleteDialog.svelte";
+const applied: MutationResultDTO = { outcome: "applied", mismatch: "", limitation: "", transIds: ["txfake", "txfake"], objectAfter: null, containerAfter: null };
 
 const api = vi.hoisted(() => ({} as Api));
 vi.mock("../../lib/api", () => ({ liveApi: api }));
@@ -261,12 +262,12 @@ describe("production modal ownership", () => {
     const shownDetail = await api.objectDetail("fixtures", "external-dlo", "bm-1");
     expect(shownDetail.contentFingerprint).toBeTruthy();
     expect(api.deleteManifest).toHaveBeenCalledExactlyOnceWith(
-      "fixtures", "external-dlo", shownDetail.contentFingerprint);
+      shownDetail.scope, "fixtures", "external-dlo", shownDetail.contentFingerprint);
     press(window, "Tab"); expect(document.activeElement).toBe(f.dialog);
     press(window, "Escape"); await settle();
     expect(document.querySelector('[role="alertdialog"]')).toBeNull();
     f.reopen(); await settle(); const replacement = get('[role="alertdialog"]');
-    if (outcome === "success") reply.resolve(await api.objectDetail("fixtures", "external-dlo", "bm-1"));
+    if (outcome === "success") reply.resolve(applied);
     else reply.reject(new Error("retired deletion failure"));
     await settle();
     expect(document.contains(replacement)).toBe(true);

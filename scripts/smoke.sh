@@ -176,6 +176,10 @@ switch_case copy "copy" \
 # token names the capability the operator trials.
 switch_case object-delete "object-delete" \
   "AERONAUTES_ENABLE: offering unproven capabilities in this process: Object deletion"
+# Marker and manifest deletion stay deferred until the operator returns them
+# (ADR 0094 decision 6); the capability says what its token admits.
+switch_case marker-manifest-delete "marker-manifest-delete" \
+  "AERONAUTES_ENABLE: offering unproven capabilities in this process: Marker and manifest deletion"
 switch_case unrecognised "copy, not-a-capability" \
   "AERONAUTES_ENABLE: offering unproven capabilities in this process: Copy" \
   "AERONAUTES_ENABLE: ignored, not a capability: not-a-capability"
