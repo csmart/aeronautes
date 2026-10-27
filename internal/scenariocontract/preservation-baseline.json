@@ -7,7 +7,7 @@
     "run_attempt": "1",
     "run_id": "35625767556"
   },
-  "contractHash": "9f0e99b3cf8bd327",
+  "contractHash": "a4f0914c2a290c0d",
   "actions": [
     {
       "action": "AppService.About",
@@ -90,6 +90,14 @@
     {
       "action": "BookmarkService.Save",
       "kind": "mutate",
+      "required": [
+        "happy",
+        "refusal"
+      ]
+    },
+    {
+      "action": "BookmarkService.Verify",
+      "kind": "read",
       "required": [
         "happy",
         "refusal"

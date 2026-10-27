@@ -385,6 +385,11 @@ func (h *Harness) CredentialStatus(ctx context.Context) (app.CredentialStatusDTO
 	return status, &Receipt{h: h, action: "BookmarkService.CredentialStatus", err: err}
 }
 
+func (h *Harness) Verify(ctx context.Context, dto app.BookmarkDTO, secret string) (app.VerifyResultDTO, *Receipt) {
+	result, err := h.Bookmarks.Verify(ctx, dto, secret)
+	return result, &Receipt{h: h, action: "BookmarkService.Verify", err: err}
+}
+
 func (h *Harness) RecoveryStatus(ctx context.Context) (app.RecoveryStatusDTO, *Receipt) {
 	status, err := h.Jobs.RecoveryStatus(ctx)
 	return status, &Receipt{h: h, action: "JobService.RecoveryStatus", err: err}

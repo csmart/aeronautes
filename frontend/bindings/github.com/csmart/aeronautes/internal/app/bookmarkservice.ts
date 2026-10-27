@@ -45,3 +45,14 @@ export function List(): $CancellablePromise<$models.BookmarkDTO[] | null> {
 export function Save(dto: $models.BookmarkDTO, secret: string): $CancellablePromise<$models.BookmarkDTO> {
     return $Call.ByID(4205203304, dto, secret);
 }
+
+/**
+ * Verify authenticates the details as typed and saves nothing, so the
+ * operator learns whether the endpoint accepts the user and key before the
+ * bookmark and its key are stored. The session is built the way a saved
+ * bookmark's is, so the endpoint policy and the TLS trust apply unchanged;
+ * the result names the account and its HEAD counts and nothing else.
+ */
+export function Verify(dto: $models.BookmarkDTO, secret: string): $CancellablePromise<$models.VerifyResultDTO> {
+    return $Call.ByID(3679145540, dto, secret);
+}
