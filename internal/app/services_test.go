@@ -580,11 +580,20 @@ func TestMarkerServiceWithAudit(t *testing.T) {
 	if !created.MarkerBacked {
 		t.Errorf("created = %+v", created)
 	}
-	if err := h.mutate.DeleteMarker(ctx, "fixtures", "newdir/"); err != nil {
+	marker, err := h.inspector.Prefix(ctx, h.bookmarkID(), "fixtures", "newdir/")
+	if err != nil || marker.SelfObject == nil {
+		t.Fatalf("marker detail = %+v, %v", marker, err)
+	}
+	if _, err := h.mutate.DeleteMarker(ctx, h.portrait(), "fixtures", "newdir/", marker.SelfObject.ContentFingerprint); err != nil {
 		t.Fatal(err)
 	}
-	// Refusals are audited as failures too.
-	if err := h.mutate.DeleteMarker(ctx, "fixtures", "fake/"); err == nil {
+	// A real object in a folder's clothing is refused by the marker rule
+	// whatever identity is stated, and the refusal is audited as a failure.
+	suit, err := h.inspector.Prefix(ctx, h.bookmarkID(), "fixtures", "fake/")
+	if err != nil || suit.SelfObject == nil {
+		t.Fatalf("folder-suit detail = %+v, %v", suit, err)
+	}
+	if _, err := h.mutate.DeleteMarker(ctx, h.portrait(), "fixtures", "fake/", suit.SelfObject.ContentFingerprint); err == nil {
 		t.Fatal("folder-suit delete must refuse")
 	}
 
@@ -630,7 +639,7 @@ func TestDeleteManifestService(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.mutate.DeleteManifest(ctx, "fixtures", "empty-object", plain.ContentFingerprint); err == nil {
+	if _, err := h.mutate.DeleteManifest(ctx, h.portrait(), "fixtures", "empty-object", plain.ContentFingerprint); err == nil {
 		t.Fatal("plain object accepted")
 	}
 
@@ -638,11 +647,11 @@ func TestDeleteManifestService(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	deleted, err := h.mutate.DeleteManifest(ctx, "fixtures", "external-dlo", shownDLO.ContentFingerprint)
+	deleted, err := h.mutate.DeleteManifest(ctx, h.portrait(), "fixtures", "external-dlo", shownDLO.ContentFingerprint)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if deleted.Class != "dlo" {
+	if deleted.Outcome != "applied" || deleted.ObjectAfter != nil {
 		t.Errorf("deleted = %+v", deleted)
 	}
 
@@ -906,7 +915,7 @@ func TestDeleteManifestSaysWhatAnUnrecordedOutcomeIs(t *testing.T) {
 		}
 		refuseSQL(t, h, refuseAuditInserts)
 
-		_, err = h.mutate.DeleteManifest(ctx, "fixtures", "external-dlo", shown.ContentFingerprint)
+		_, err = h.mutate.DeleteManifest(ctx, h.portrait(), "fixtures", "external-dlo", shown.ContentFingerprint)
 		if !errors.Is(err, errManifestDeleteResidue) {
 			t.Fatalf("err = %v, want residue", err)
 		}
@@ -925,23 +934,23 @@ func TestDeleteManifestSaysWhatAnUnrecordedOutcomeIs(t *testing.T) {
 		}
 		refuseSQL(t, h, refuseAuditInserts)
 
-		_, err = h.mutate.DeleteManifest(ctx, "fixtures", "external-dlo", other.ContentFingerprint)
+		_, err = h.mutate.DeleteManifest(ctx, h.portrait(), "fixtures", "external-dlo", other.ContentFingerprint)
 		var conflict *swiftcontrol.IdentityConflictError
 		if !errors.As(err, &conflict) {
 			t.Fatalf("err = %T %v, want the identity conflict to survive the join", err, err)
 		}
-		if !strings.Contains(err.Error(), "the refusal could not be recorded") {
+		if !strings.Contains(err.Error(), "the outcome could not be recorded") {
 			t.Errorf("err = %v, want it to say the refusal went unrecorded", err)
 		}
-		if errors.Is(err, errManifestDeleteResidue) || errors.Is(err, errManifestDeleteUnrecorded) {
-			t.Errorf("a refusal destroyed nothing, so it is neither residue nor unsettled: %v", err)
+		if errors.Is(err, errManifestDeleteResidue) {
+			t.Errorf("a refusal destroyed nothing, so it is not residue: %v", err)
 		}
 		if _, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "external-dlo"); err != nil {
 			t.Errorf("a refused delete removed the object anyway: %v", err)
 		}
 	})
 
-	t.Run("any other unrecorded failure is not called a refusal", func(t *testing.T) {
+	t.Run("a class refusal that could not be recorded is not residue either", func(t *testing.T) {
 		h := newHarness(t)
 		h.connect(t)
 		plain, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "empty-object")
@@ -950,17 +959,18 @@ func TestDeleteManifestSaysWhatAnUnrecordedOutcomeIs(t *testing.T) {
 		}
 		refuseSQL(t, h, refuseAuditInserts)
 
-		// The class refusal stands in for the whole generic branch, which also
-		// carries the outcomes where something may have been destroyed.
-		_, err = h.mutate.DeleteManifest(ctx, "fixtures", "empty-object", plain.ContentFingerprint)
-		if !errors.Is(err, errManifestDeleteUnrecorded) {
-			t.Fatalf("err = %v, want the unsettled sentinel", err)
-		}
-		if strings.Contains(err.Error(), "the refusal could not be recorded") {
-			t.Errorf("an error that settles nothing was reported as a refusal: %v", err)
+		// The protocol knows a refusal from a DELETE that may have landed, so
+		// an unrecorded class refusal stays a refusal that says it went
+		// unrecorded, and the object is still there.
+		_, err = h.mutate.DeleteManifest(ctx, h.portrait(), "fixtures", "empty-object", plain.ContentFingerprint)
+		if err == nil || !strings.Contains(err.Error(), "not a manifest") || !strings.Contains(err.Error(), "the outcome could not be recorded") {
+			t.Fatalf("err = %v, want the class refusal with its unrecorded outcome", err)
 		}
 		if errors.Is(err, errManifestDeleteResidue) {
-			t.Errorf("nothing proves this one was deleted, so it is not residue: %v", err)
+			t.Errorf("nothing was deleted, so it is not residue: %v", err)
+		}
+		if _, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "empty-object"); err != nil {
+			t.Errorf("a refused delete removed the object anyway: %v", err)
 		}
 	})
 }
@@ -996,15 +1006,15 @@ func TestDeleteManifestRecordsNamesTheFilterWouldReject(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		_, err = h.mutate.DeleteManifest(ctx, "fixtures", refused+"-manifest", other.ContentFingerprint)
+		_, err = h.mutate.DeleteManifest(ctx, h.portrait(), "fixtures", refused+"-manifest", other.ContentFingerprint)
 		var conflict *swiftcontrol.IdentityConflictError
 		if !errors.As(err, &conflict) {
 			t.Fatalf("refusal = %T %v, want an identity conflict", err, err)
 		}
 
 		e := soleManifestDeleteEvent(t, h, ctx)
-		if string(e.Result) != "failed" {
-			t.Errorf("recorded result = %q, want failed", e.Result)
+		if string(e.Result) != "conflict" {
+			t.Errorf("recorded result = %q, want conflict", e.Result)
 		}
 		for _, want := range []string{other.ContentFingerprint, shown.ContentFingerprint} {
 			if !strings.Contains(e.Summary, want) {
@@ -1033,7 +1043,7 @@ func TestDeleteManifestRecordsNamesTheFilterWouldReject(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := h.mutate.DeleteManifest(ctx, "fixtures", "ordinary-manifest", shown.ContentFingerprint); err != nil {
+		if _, err := h.mutate.DeleteManifest(ctx, h.portrait(), "fixtures", "ordinary-manifest", shown.ContentFingerprint); err != nil {
 			t.Fatalf("a matching identity was refused: %v", err)
 		}
 
@@ -1094,7 +1104,7 @@ func TestDeleteManifestRefusalRecordsBothIdentities(t *testing.T) {
 		t.Fatal("the fixture no longer distinguishes these two objects")
 	}
 
-	_, err = h.mutate.DeleteManifest(ctx, "fixtures", "external-dlo", other.ContentFingerprint)
+	_, err = h.mutate.DeleteManifest(ctx, h.portrait(), "fixtures", "external-dlo", other.ContentFingerprint)
 	if err == nil {
 		t.Fatal("a delete was accepted for an identity the name does not hold")
 	}
@@ -1122,8 +1132,8 @@ func TestDeleteManifestRefusalRecordsBothIdentities(t *testing.T) {
 			continue
 		}
 		found = true
-		if string(e.Result) != "failed" {
-			t.Errorf("recorded result = %q, want failed", e.Result)
+		if string(e.Result) != "conflict" {
+			t.Errorf("recorded result = %q, want conflict", e.Result)
 		}
 		for _, want := range []string{other.ContentFingerprint, shown.ContentFingerprint} {
 			if !strings.Contains(e.Summary, want) {

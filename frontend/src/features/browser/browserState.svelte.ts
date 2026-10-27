@@ -1857,20 +1857,21 @@ export class BrowserState {
    * (ADR 0085). It narrows the window between being shown an object and
    * destroying it; it does not close it, and nothing here may be presented as
    * proof that no one else is writing. */
-  async deleteManifest(container: string, name: string, baseContent: string, ownsView = () => true): Promise<void> {
+  async deleteManifest(container: string, name: string, detail: ObjectDetailDTO, ownsView = () => true): Promise<MutationResultDTO> {
     if (!container || !name) {
       throw new Error("no object identity");
     }
-    if (!baseContent) {
+    if (!detail.contentFingerprint) {
       throw new Error("no content identity for the object being deleted");
     }
     const scope = this.#scopeRevision;
     const selection = this.detailIdentity;
     const prefix = this.prefix;
     const displayed = container === selection?.container && name === selection.name;
-    await this.#api.deleteManifest(container, name, baseContent);
+    const result = await this.#api.deleteManifest(detail.scope, container, name, detail.contentFingerprint);
     await this.loadAudit();
     if (displayed && ownsView() && this.#currentView(scope, selection)) await this.goTo(prefix);
+    return result;
   }
 
   /** Delete ONE plain object the operator was shown (ADR 0092). The request
@@ -1964,21 +1965,29 @@ export class BrowserState {
     return null;
   }
 
-  /** Delete ONLY a verified marker; the working list refreshes. */
-  async deleteMarker(prefix: string, ownsView = () => true) {
+  /** Delete ONLY the marker object the current prefix detail showed (ADR
+   * 0094): the request names the scope that detail was read under and the
+   * identity of its own object, the marker rule is required beside it, and
+   * the working list refreshes. */
+  async deleteMarker(prefix: string, ownsView = () => true): Promise<MutationResultDTO> {
     const container = this.containerName;
     const identity = this.detailIdentity;
+    const detail = this.prefixDetail;
     if (!container || !identity || identity.container !== container || identity.name !== prefix
-      || this.prefixDetail?.prefix !== prefix || this.#detailScope !== this.#scopeRevision
+      || detail?.prefix !== prefix || this.#detailScope !== this.#scopeRevision
       || this.connecting || !this.connectedBookmarkId) {
       throw new Error("no current prefix detail selected — reload before deleting a marker");
+    }
+    if (!detail.selfObject?.contentFingerprint) {
+      throw new Error("no marker object was shown at this prefix");
     }
     const scope = this.#scopeRevision;
     const selection = this.detailIdentity;
     const parent = this.prefix;
-    await this.#api.deleteMarker(container, prefix);
+    const result = await this.#api.deleteMarker(detail.scope, container, prefix, detail.selfObject.contentFingerprint);
     await this.loadAudit();
     if (ownsView() && this.#currentView(scope, selection)) await this.goTo(parent);
+    return result;
   }
 }
 

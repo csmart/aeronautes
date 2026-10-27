@@ -15,7 +15,7 @@
 const affordancesOf: Record<string, (keyof typeof v1Offers)[]> = {
   "Copy": ["copy", "rerun"],
   "Bulk delete": ["bulkDelete"],
-  "Marker and manifest editing": ["markerDelete", "manifestDelete"],
+  "Marker and manifest deletion": ["markerDelete", "manifestDelete"],
   "Benchmark": ["benchmark"],
   // One plain object the operator was shown, born deferred (ADR 0092).
   "Object deletion": ["objectDelete"],

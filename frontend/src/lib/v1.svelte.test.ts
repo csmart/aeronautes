@@ -34,7 +34,7 @@ it("follows job re-run with Copy, as the backend table classifies it", () => {
 });
 
 it("offers both halves of marker and manifest editing together", () => {
-  applyEnabledCapabilities(["Marker and manifest editing"]);
+  applyEnabledCapabilities(["Marker and manifest deletion"]);
   expect(v1Offers.markerDelete).toBe(true);
   expect(v1Offers.manifestDelete).toBe(true);
 });

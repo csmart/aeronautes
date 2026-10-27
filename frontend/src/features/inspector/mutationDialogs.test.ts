@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
-import type { SegmentOwnershipDTO, SegmentsDeleteResultDTO, PrefixDetailDTO, Api } from "../../lib/api";
+import type { SegmentOwnershipDTO, SegmentsDeleteResultDTO, PrefixDetailDTO, MutationResultDTO, Api } from "../../lib/api";
 import { v1Offers } from "../../lib/v1.svelte";
 import { BrowserState } from "../browser/browserState.svelte";
 import { newFakeApi } from "../browser/fakeApi";
 import CreateContainerDialog from "../browser/CreateContainerDialog.svelte";
 import ManifestDeleteDialog from "./ManifestDeleteDialog.svelte";
 import Inspector from "./Inspector.svelte";
+const applied: MutationResultDTO = { outcome: "applied", mismatch: "", limitation: "", transIds: ["txfake", "txfake"], objectAfter: null, containerAfter: null };
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -100,7 +101,7 @@ describe("manifest dialog intent", () => {
   it.each(["bookmark", "bookmark return", "container", "prefix", "selection", "selection return"])(
     "retires ownership and submission after %s", async (change) => {
       const f = await manifest();
-      f.api.deleteManifest = vi.fn().mockResolvedValue(f.browser.objectDetail!);
+      f.api.deleteManifest = vi.fn().mockResolvedValue(applied);
       await changeView(f.browser, change);
       f.check.resolve(ownership); await settle();
       expect(f.root.querySelector('input[type="checkbox"]')).toBeNull();
@@ -144,7 +145,7 @@ describe("manifest dialog intent", () => {
     const reply = deferred<SegmentsDeleteResultDTO>();
     const mutate = vi.fn(() => reply.promise);
     f.api.deleteManifestWithSegments = mutate;
-    f.api.deleteManifest = vi.fn(async () => { await mutate(); return f.browser.objectDetail!; });
+    f.api.deleteManifest = vi.fn(async () => { await mutate(); return applied; });
     if (mode === "segments") await arm(f);
     const submit = button(f.root, mode === "plain" ? "Delete manifest only" : "Delete manifest + segments");
     click(submit); click(submit); expect(mutate).toHaveBeenCalledOnce();
@@ -274,7 +275,7 @@ describe("marker action ownership", () => {
       mounted.add(mount(Inspector, { target: f.root, props: { browser: f.browser } })); flushSync();
       const remove = button(f.root, "Delete marker object");
       f.api.connect = vi.fn().mockRejectedValue(new Error("failed reconnect"));
-      f.api.deleteMarker = vi.fn().mockResolvedValue(undefined);
+      f.api.deleteMarker = vi.fn().mockResolvedValue(applied);
       await expect(f.browser.connect(f.bookmark.id)).rejects.toThrow("failed reconnect");
       click(remove); await settle(); expect(f.api.deleteMarker).not.toHaveBeenCalled();
     });
@@ -312,12 +313,12 @@ describe("mutation follow-up ownership", () => {
   it("an unmounted inspector's marker deletion cannot refresh a replacement inspector", async () => {
     v1Offers.markerDelete = true;
     const f = await setup("implied/"); await f.browser.createMarker("implied/");
-    const reply = deferred<void>(); f.api.deleteMarker = vi.fn(() => reply.promise);
+    const reply = deferred<MutationResultDTO>(); f.api.deleteMarker = vi.fn(() => reply.promise);
     const old = mount(Inspector, { target: f.root, props: { browser: f.browser } }); mounted.add(old); flushSync();
     click(button(f.root, "Delete marker object")); await unmount(old); mounted.delete(old);
     mounted.add(mount(Inspector, { target: f.root, props: { browser: f.browser } })); flushSync();
     const selected = f.browser.detailIdentity;
-    reply.resolve(); await settle();
+    reply.resolve(applied); await settle();
     expect(f.browser.detailIdentity).toBe(selected); expect(button(f.root, "Delete marker object")).toBeDefined();
   });
 
@@ -335,7 +336,7 @@ describe("mutation follow-up ownership", () => {
 
   it.each(["plain", "segments"])("a closed %s deletion cannot refresh and close a new dialog in the same view", async (kind) => {
     const f = await manifest(); const reply = deferred<void>(); const detail = f.browser.objectDetail!;
-    f.api.deleteManifest = vi.fn(async () => { await reply.promise; return detail; });
+    f.api.deleteManifest = vi.fn(async () => { await reply.promise; return applied; });
     f.api.deleteManifestWithSegments = vi.fn(async () => { await reply.promise; return deleted; });
     if (kind === "segments") await arm(f);
     click(button(f.root, kind === "plain" ? "Delete manifest only" : "Delete manifest + segments"));
@@ -348,19 +349,18 @@ describe("mutation follow-up ownership", () => {
   });
 
   it.each(["create", "manifest", "segments", "marker"])("%s keeps its outcome and audit but cannot navigate after selection changes", async (kind) => {
-    const f = await setup(kind === "marker" ? "implied/" : "external-dlo");
+    const f = await setup(kind === "marker" ? "folder-marker/" : "external-dlo");
     const gate = deferred<void>();
-    const detail = f.browser.objectDetail;
     f.api.createContainer = vi.fn(async () => { await gate.promise; return f.browser.containerDetail!; });
-    f.api.deleteManifest = vi.fn(async () => { await gate.promise; return detail!; });
+    f.api.deleteManifest = vi.fn(async () => { await gate.promise; return applied; });
     f.api.deleteManifestWithSegments = vi.fn(async () => { await gate.promise; return deleted; });
-    f.api.deleteMarker = vi.fn(() => gate.promise);
+    f.api.deleteMarker = vi.fn(async () => { await gate.promise; return applied; });
     f.api.containers = vi.fn(f.api.containers); f.api.objects = vi.fn(f.api.objects);
     f.api.auditRecent = vi.fn(f.api.auditRecent);
     const pending = kind === "create" ? f.browser.createContainer({ name: "created", policy: "", meta: {} }, f.browser.portrait)
-      : kind === "manifest" ? f.browser.deleteManifest("fixtures", "external-dlo", "shown")
+      : kind === "manifest" ? f.browser.deleteManifest("fixtures", "external-dlo", f.browser.objectDetail!)
       : kind === "segments" ? f.browser.deleteManifestWithSegments({ bookmarkId: f.bookmark.id, container: "fixtures", name: "external-dlo", force: true, confirm: "external-dlo" })
-      : f.browser.deleteMarker("implied/");
+      : f.browser.deleteMarker("folder-marker/");
     await changeView(f.browser, "selection");
     const selected = f.browser.detailIdentity;
     gate.resolve(); const result = await pending; await settle();
@@ -371,18 +371,18 @@ describe("mutation follow-up ownership", () => {
   });
 
   it.each(["create", "manifest", "segments", "marker"])("%s rechecks its scope after the audit wait", async (kind) => {
-    const f = await setup(kind === "marker" ? "implied/" : "external-dlo");
+    const f = await setup(kind === "marker" ? "folder-marker/" : "external-dlo");
     const gate = deferred<Awaited<ReturnType<Api["auditRecent"]>>>();
     f.api.auditRecent = vi.fn(() => gate.promise);
     f.api.createContainer = vi.fn().mockResolvedValue(f.browser.containerDetail!);
-    f.api.deleteManifest = vi.fn().mockResolvedValue(f.browser.objectDetail!);
+    f.api.deleteManifest = vi.fn().mockResolvedValue(applied);
     f.api.deleteManifestWithSegments = vi.fn().mockResolvedValue(deleted);
-    f.api.deleteMarker = vi.fn().mockResolvedValue(undefined);
+    f.api.deleteMarker = vi.fn().mockResolvedValue(applied);
     f.api.containers = vi.fn(f.api.containers); f.api.objects = vi.fn(f.api.objects);
     const pending = kind === "create" ? f.browser.createContainer({ name: "created", policy: "", meta: {} }, f.browser.portrait)
-      : kind === "manifest" ? f.browser.deleteManifest("fixtures", "external-dlo", "shown")
+      : kind === "manifest" ? f.browser.deleteManifest("fixtures", "external-dlo", f.browser.objectDetail!)
       : kind === "segments" ? f.browser.deleteManifestWithSegments({ bookmarkId: f.bookmark.id, container: "fixtures", name: "external-dlo", force: true, confirm: "external-dlo" })
-      : f.browser.deleteMarker("implied/");
+      : f.browser.deleteMarker("folder-marker/");
     await settle(); expect(f.api.auditRecent).toHaveBeenCalledOnce();
     await changeView(f.browser, "bookmark return");
     gate.resolve([]); await pending; await settle();
@@ -406,11 +406,11 @@ describe("mutation follow-up ownership", () => {
 
   it.each(["manifest", "segments"])("a %s operation for a different explicit target cannot refresh this selection", async (kind) => {
     const f = await setup(); const selection = f.browser.detailIdentity;
-    f.api.deleteManifest = vi.fn().mockResolvedValue(f.browser.objectDetail!);
+    f.api.deleteManifest = vi.fn().mockResolvedValue(applied);
     f.api.deleteManifestWithSegments = vi.fn().mockResolvedValue(deleted);
     f.api.objects = vi.fn(f.api.objects);
     const req = { bookmarkId: "other", container: "different", name: "foreign", force: true, confirm: "foreign" };
-    if (kind === "manifest") await f.browser.deleteManifest(req.container, req.name, "shown");
+    if (kind === "manifest") await f.browser.deleteManifest(req.container, req.name, f.browser.objectDetail!);
     else {
       expect(await f.browser.deleteManifestWithSegments(req)).toEqual(deleted);
       expect(f.api.deleteManifestWithSegments).toHaveBeenCalledExactlyOnceWith(req);

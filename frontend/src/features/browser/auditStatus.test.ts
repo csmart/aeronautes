@@ -480,14 +480,14 @@ const mutationCases = [
     run: (browser: BrowserState) => browser.createMarker("implied/"),
   },
   {
-    method: "deleteMarker", operation: "marker.delete", returnsResult: false,
+    method: "deleteMarker", operation: "marker.delete", returnsResult: true,
     prefix: "", selected: "folder-marker/",
     run: (browser: BrowserState) => browser.deleteMarker("folder-marker/"),
   },
   {
-    method: "deleteManifest", operation: "manifest.delete", returnsResult: false,
+    method: "deleteManifest", operation: "manifest.delete", returnsResult: true,
     prefix: "", selected: "external-dlo",
-    run: (browser: BrowserState) => browser.deleteManifest("fixtures", "external-dlo", "shown"),
+    run: (browser: BrowserState) => browser.deleteManifest("fixtures", "external-dlo", browser.objectDetail!),
   },
   {
     method: "deleteManifestWithSegments", operation: "segments.delete", returnsResult: true,

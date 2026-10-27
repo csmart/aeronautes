@@ -51,13 +51,14 @@ func deferredEntryPoints(t *testing.T, h *harness) []deferredEntryPoint {
 			_, err := deleteSvc.DeleteManifestWithSegments(t.Context(), SegmentsDeleteRequestDTO{BookmarkID: h.bookmarkID(), Container: "fixtures", Name: "external-dlo", Force: true, Confirm: "external-dlo"})
 			return err
 		}},
-		{"MutateService.DeleteMarker", "Marker and manifest editing", func(t *testing.T, h *harness) error {
-			return h.mutate.DeleteMarker(t.Context(), "fixtures", "implied/")
+		{"MutateService.DeleteMarker", "Marker and manifest deletion", func(t *testing.T, h *harness) error {
+			_, err := h.mutate.DeleteMarker(t.Context(), h.portrait(), "fixtures", "implied/", "any")
+			return err
 		}},
-		{"MutateService.DeleteManifest", "Marker and manifest editing", func(t *testing.T, h *harness) error {
+		{"MutateService.DeleteManifest", "Marker and manifest deletion", func(t *testing.T, h *harness) error {
 			// The gate refuses at the entry point, before any identity is
 			// read, so the fingerprint's value cannot affect this case.
-			_, err := h.mutate.DeleteManifest(t.Context(), "fixtures", "external-dlo", "any")
+			_, err := h.mutate.DeleteManifest(t.Context(), h.portrait(), "fixtures", "external-dlo", "any")
 			return err
 		}},
 		{"MutateService.DeleteObject", "Object deletion", func(t *testing.T, h *harness) error {

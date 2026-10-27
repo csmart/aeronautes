@@ -119,7 +119,7 @@ it("accepts the null lists produced by the ordinary Go Info response", async () 
 });
 
 it("renders all enabled capability names and keeps unknown text inert", async () => {
-  const enabled = ["Copy", "Bulk delete", "Marker and manifest editing", "Benchmark"];
+  const enabled = ["Copy", "Bulk delete", "Marker and manifest deletion", "Benchmark"];
   const unknown = '<img src=x onerror="throw 1">';
   await prepare(enabled, [unknown, "__proto__", "mirror"]);
   await render();
@@ -140,7 +140,7 @@ it("renders all enabled capability names and keeps unknown text inert", async ()
 });
 
 it.each([false, true])("retains inline-SLO destruction disclosure with Bulk delete enabled=%s", async (bulkEnabled) => {
-  const enabled = ["Marker and manifest editing", ...(bulkEnabled ? ["Bulk delete"] : [])];
+  const enabled = ["Marker and manifest deletion", ...(bulkEnabled ? ["Bulk delete"] : [])];
   await prepare(enabled);
   const originalSLO = api.sloManifest;
   api.sloManifest = async (...args) => {
@@ -184,7 +184,7 @@ it.each([false, true])("retains inline-SLO destruction disclosure with Bulk dele
 // assert that everything survives. It says the answer is unknown and
 // that any inline data is destroyed with the manifest.
 it("never reports zero inline entries when nothing could answer", async () => {
-  await prepare(["Marker and manifest editing"]);
+  await prepare(["Marker and manifest deletion"]);
   api.sloManifest = vi.fn().mockRejectedValue(new Error("manifest unavailable"));
   api.checkSegmentOwnership = vi.fn().mockRejectedValue(
     new Error("Bulk delete is not available in this release: it is deferred until its safety is proven, and this build does not offer it"));

@@ -552,11 +552,14 @@ export function newFakeApi(): Api {
         contentType: "application/directory",
       });
       record("marker.create", `${container}/${prefix}`, "applied");
-      return { prefix, markerBacked: true, selfObject: objectDetailOf(container, prefix),
-        scope: { bookmarkId: "", generation: 0 } };
+      return { prefix, markerBacked: true, selfObject: objectDetailOf(container, prefix), scope: { ...scope } };
     },
 
-    deleteMarker: async (container, prefix) => {
+    deleteMarker: async (scope, container, prefix, contentFingerprint): Promise<MutationResultDTO> => {
+      requireWriteScope(scope);
+      if (contentFingerprint === "") {
+        throw new Error("deleting needs the content identity the caller was shown; a delete that cannot say what it meant to destroy is refused");
+      }
       const stored = findObject(container, prefix);
       if (!stored) {
         record("marker.delete", `${container}/${prefix}`, "failed");
@@ -564,10 +567,16 @@ export function newFakeApi(): Api {
       }
       if (stored.bytes !== 0 || stored.contentType !== "application/directory") {
         record("marker.delete", `${container}/${prefix}`, "failed");
-        throw new Error("not a directory marker; refusing");
+        throw new Error(`the object at ${container}/${prefix} is not a directory marker (${stored.contentType}, ${stored.bytes} bytes); refusing to delete it through the marker path`);
+      }
+      const detail = objectDetailOf(container, prefix);
+      if (detail.contentFingerprint !== contentFingerprint) {
+        record("marker.delete", `${container}/${prefix}`, "conflict");
+        throw new Error(`${container}/${prefix} is not what you were shown: it now reports a plain of ${detail.contentLength} bytes with entity tag ${detail.etag}, so nothing was deleted (expected identity ${contentFingerprint}, found ${detail.contentFingerprint})`);
       }
       objects[container] = objects[container].filter((o) => o.name !== prefix);
       record("marker.delete", `${container}/${prefix}`, "applied");
+      return { outcome: "applied", mismatch: "", limitation: "", transIds: ["txfake", "txfake"], objectAfter: null, containerAfter: null };
     },
 
     dloSegments: async (manifest, bookmarkId) => {
@@ -599,15 +608,27 @@ export function newFakeApi(): Api {
       };
     },
 
-    deleteManifest: async (container, name) => {
+    deleteManifest: async (scope, container, name, contentFingerprint): Promise<MutationResultDTO> => {
+      requireWriteScope(scope);
+      if (contentFingerprint === "") {
+        throw new Error("deleting needs the content identity the caller was shown; a delete that cannot say what it meant to destroy is refused");
+      }
       const detail = objectDetailOf(container, name);
       if (detail.class === "plain") {
         record("manifest.delete", `${container}/${name}`, "failed");
-        throw new Error("plain object; the manifest-only delete refuses it");
+        throw new Error(`${container}/${name} is a plain object, not a manifest; the manifest-only delete refuses it`);
+      }
+      if (detail.followedSymlink || detail.symlinkTarget) {
+        record("manifest.delete", `${container}/${name}`, "failed");
+        throw new Error(`${container}/${name} is a symlink: the identity shown is its target's`);
+      }
+      if (detail.contentFingerprint !== contentFingerprint) {
+        record("manifest.delete", `${container}/${name}`, "conflict");
+        throw new Error(`${container}/${name} is not what you were shown: it now reports a ${detail.class} of ${detail.contentLength} bytes with entity tag ${detail.etag}, so nothing was deleted (expected identity ${contentFingerprint}, found ${detail.contentFingerprint})`);
       }
       objects[container] = (objects[container] ?? []).filter((o) => o.name !== name);
       record("manifest.delete", `${container}/${name}`, "applied");
-      return detail;
+      return { outcome: "applied", mismatch: "", limitation: "", transIds: ["txfake", "txfake"], objectAfter: null, containerAfter: null };
     },
 
     deleteObject: async (scope, container, name, contentFingerprint): Promise<MutationResultDTO> => {
