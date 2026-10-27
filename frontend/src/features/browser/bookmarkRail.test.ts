@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
-import type { Api, BookmarkDTO } from "../../lib/api";
+import type { Api, AppSettingsDTO, BookmarkDTO } from "../../lib/api";
 import { BrowserState } from "./browserState.svelte";
 import { newFakeApi } from "./fakeApi";
 import BookmarkRail from "./BookmarkRail.svelte";
@@ -38,6 +38,14 @@ function showRail(bookmarks: BookmarkDTO[]) {
   state.bookmarksLoaded = true;
   mounted.add(mount(BookmarkRail, { target: document.body,
     props: { browser: state, onAddBookmark: vi.fn(), onEditBookmark: vi.fn() } }));
+  flushSync();
+  return state;
+}
+
+function typeFilter(value: string) {
+  const filter = document.querySelector<HTMLInputElement>(".filter")!;
+  filter.value = value;
+  filter.dispatchEvent(new Event("input", { bubbles: true }));
   flushSync();
 }
 
@@ -94,6 +102,34 @@ describe("bookmark rail arrangement", () => {
     expect(railNames()).toEqual([]);
     expect(document.body.textContent).toContain("No bookmark matches.");
   });
+
+  it("keeps the connected bookmark and its TLS warning in view through a filter", () => {
+    const many = Array.from({ length: 8 }, (_, i) => bookmark(`bm-${i}`, `Site ${i}`, "one.example"));
+    many[3] = { ...many[3], tlsMode: "insecure" };
+    const state = showRail(many);
+    state.connectedBookmarkId = "bm-3";
+    flushSync();
+    typeFilter("Site 5");
+    // The account in use is listed beside the match, warning and all.
+    expect(railNames()).toEqual(["Site 3", "Site 5"]);
+    expect(document.querySelector(".bookmark.active .insecure-flag")).not.toBeNull();
+    expect(document.querySelector<HTMLButtonElement>(".bookmark.active")!.title).toContain("TLS verification DISABLED");
+  });
+
+  it("keeps the filter box while a filter is typed, however short the list becomes", () => {
+    const many = Array.from({ length: 8 }, (_, i) => bookmark(`bm-${i}`, `Site ${i}`, "one.example"));
+    const state = showRail(many);
+    typeFilter("Site 7");
+    expect(railNames()).toEqual(["Site 7"]);
+    state.bookmarks = many.filter((b) => b.displayName !== "Site 7");
+    flushSync();
+    expect(document.querySelector(".filter")).not.toBeNull();
+    expect(railNames()).toEqual([]);
+    expect(document.body.textContent).toContain("No bookmark matches.");
+    typeFilter("");
+    expect(railNames()).toHaveLength(7);
+    expect(document.querySelector(".filter")).toBeNull();
+  });
 });
 
 describe("bookmark rail width", () => {
@@ -118,6 +154,9 @@ describe("bookmark rail width", () => {
     const save = vi.spyOn(api, "saveAppSettings");
     const { handle, screen: el } = await screen();
     expect(el.style.getPropertyValue("--rail-width")).toBe("");
+    // The splitter reports a position at the layout's default too; JSDOM
+    // measures nothing, so the minimum stands in for the rendered width.
+    expect(handle.getAttribute("aria-valuenow")).toBe("64");
     handle.dispatchEvent(pointer("pointerdown", 10));
     handle.dispatchEvent(pointer("pointermove", 110));
     flushSync();
@@ -144,6 +183,27 @@ describe("bookmark rail width", () => {
     await settle();
     expect(el.style.getPropertyValue("--rail-width")).toBe("");
     expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ railWidthPx: 0 }));
+    expect(handle.getAttribute("aria-valuenow")).toBe("64");
+  });
+
+  it("stores the last width chosen while an earlier write was still in flight", async () => {
+    let release!: (settings: AppSettingsDTO) => void;
+    const held = new Promise<AppSettingsDTO>((resolve) => { release = resolve; });
+    const saves: number[] = [];
+    api.saveAppSettings = vi.fn(async (settings: AppSettingsDTO) => {
+      saves.push(settings.railWidthPx);
+      return saves.length === 1 ? held : settings;
+    });
+    const { handle, screen: el } = await screen();
+    handle.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    handle.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    await settle();
+    expect(el.style.getPropertyValue("--rail-width")).toBe("96px");
+    expect(saves).toEqual([80]);
+    release({ ...(await newFakeApi().appSettings()), railWidthPx: 80 });
+    await settle();
+    expect(saves).toEqual([80, 96]);
+    expect(el.style.getPropertyValue("--rail-width")).toBe("96px");
   });
 
   it("opens at the persisted width and keeps a dragged width for the window when saving fails", async () => {
