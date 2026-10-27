@@ -45,7 +45,7 @@ The tag workflow then builds the six 0.1.0 artefacts.
 Why first: the operator met its absence on the first day of testing, and a workbench that cannot delete an object cannot be exercised end to end.
 Deletion carries the most hazards of any capability, which is why the 25 September plan placed it last; bringing it forward does not shorten its proof, it only starts it sooner.
 
-1. **Exact-object deletion**, which does not exist and which the remediation plan says must never be substituted by a prefix deletion (P27, UI-08).
+1. **Exact-object deletion**, which did not exist when this plan was written and which the remediation plan says must never be substituted by a prefix deletion (P27, UI-08).
    The shape: select an object, Delete, confirm.
    The request is bound to the identity the operator saw and refuses when the name no longer holds it, which is the fixed-point comparison [ADR 0085](../../adr/0085-reobserved-destructive-identity.md) already applies to manifests; it is manifest-only, so segments stay; the plain, empty, link and manifest identity transitions and same-prefix siblings P27 names are its test matrix, and its failure streams follow L04.
    It is a new bridge action, so its contract row and preservation baseline take the [ADR 0069](../../adr/0069-preserve-covered-scenario-cells.md) drift route as the verify action did, and it is refused under the gate until its proof is in, trialled with a token, then lifted.
