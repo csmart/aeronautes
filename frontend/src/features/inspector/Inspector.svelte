@@ -97,7 +97,25 @@ import { isLink } from "../browser/browserState.svelte";
 {/snippet}
 
 <aside class="pane" aria-label="Inspector">
-  {#if entry && entry.kind === "object"}
+  {#if browser.chosenRows.length >= 2}
+    <!-- ADR 0093 decision 1: several rows selected show a summary from the
+      listing's own facts, and no row is inspected, so nothing is read. -->
+    {@const chosen = browser.chosenRows}
+    {@const objects = chosen.filter((row) => row.kind === "object")}
+    <header class="head">
+      <h2 class="title">{chosen.length} rows selected</h2>
+      <p class="subtitle">Selection · no row is inspected</p>
+    </header>
+    <section class="card">
+      {@render kv("Objects", formatCount(objects.length))}
+      {@render kv("Listed bytes", formatBytes(objects.reduce((sum, row) => sum + row.bytes, 0)))}
+      {@render kv("Prefix rows", formatCount(chosen.length - objects.length))}
+      <p class="teach">
+        Listed facts only; nothing is read for a summary. Ctrl or Cmd with a click toggles a row, Shift with a click
+        extends the selection, Ctrl or Cmd with A selects every loaded row, and Escape clears it.
+      </p>
+    </section>
+  {:else if entry && entry.kind === "object"}
     <header class="head">
       <h2 class="title type-mono object-title">{entry.name}</h2>
       <p class="subtitle">

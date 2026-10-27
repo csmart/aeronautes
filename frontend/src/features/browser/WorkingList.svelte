@@ -232,7 +232,8 @@
         items={browser.visibleEntries}
         rowHeight={36}
         selected={browser.selectedIndex}
-        onSelect={(i) => browser.select(i)}
+        rowSelected={(entry) => browser.isChosen(entry)}
+        onSelect={(i, mode) => (mode === "toggle" ? browser.toggleRow(i) : mode === "range" ? browser.extendTo(i) : browser.select(i))}
         onActivate={(entry) => browser.activate(entry)}
       >
         {#snippet row(entry: ListingRowDTO, _index: number, isSelected: boolean)}
@@ -272,7 +273,7 @@
     {#if browser.containerName && !browser.entriesLoading}
       <span>
         {browser.visibleEntries.length} rows{browser.entriesMarker !== "" ? " (more on server)" : ""}
-        · {browser.selectedIndex >= 0 ? "1 selected" : "none selected"}
+        · {browser.selectionCount === 0 ? "none selected" : `${browser.selectionCount} selected`}
       </span>
       {#if browser.entriesAtCeiling}
         <span class="retention-notice" role="status">

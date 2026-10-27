@@ -167,6 +167,17 @@
     } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       // Arrows anywhere outside a field drive the working list (§4.4).
       workingList?.focusList();
+    } else if ((event.ctrlKey || event.metaKey) && !event.altKey && (event.key === "a" || event.key === "A")) {
+      // ADR 0093 decision 1: every loaded row, and never the page's text.
+      if (browser.visibleEntries.length > 0) {
+        event.preventDefault();
+        browser.selectAll();
+      }
+    } else if (event.key === "Escape") {
+      if (browser.chosenRows.length > 0) {
+        event.preventDefault();
+        browser.clearSelection();
+      }
     } else if (event.key === "Delete") {
       // §4.4: Delete opens the safe delete flow that owns the inspected row's
       // kind and never deletes (ADR 0092, ADR 0094 decision 5); a link, an

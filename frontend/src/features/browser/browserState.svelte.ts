@@ -103,6 +103,12 @@ function sameListingFacts(a: ListingRowDTO, b: ListingRowDTO): boolean {
     && a.contentType === b.contentType && a.sloListed === b.sloListed;
 }
 
+/** A row's identity within a listing: a prefix and an object can share a
+ * name, so the kind is part of it. */
+function rowIdentity(row: ListingRowDTO): string {
+  return row.kind + ":" + row.name;
+}
+
 function requireAdvancingMarker(previous: string, next: string) {
   if (next === "") return;
   // Swift orders UTF-8 names; JavaScript's UTF-16 comparison differs for
@@ -345,6 +351,10 @@ export class BrowserState {
    * (§14.2); a row no longer visible clears the selection and the state
    * that depended on it. */
   #followSelection(selected: ListingRowDTO | null) {
+    if (this.#chosen.size > 0) {
+      this.#followChosen(selected);
+      return;
+    }
     if (selected === null) {
       return;
     }
@@ -359,6 +369,27 @@ export class BrowserState {
       this.select(idx);
     }
   }
+
+  /** A multi-selection follows its identities too (ADR 0093 decision 1):
+   * rows no longer visible leave it, the focused row keeps its place, and
+   * a selection left with one row becomes that row's plain selection.
+   * Changed facts are not re-read here, because no row is inspected; the
+   * selected-set dialog compares them against its own snapshot. */
+  #followChosen(focused: ListingRowDTO | null) {
+    const visible = this.visibleEntries;
+    const present = new Set(visible.map(rowIdentity));
+    const kept = new Set([...this.#chosen].filter((key) => present.has(key)));
+    if (kept.size >= 2) {
+      this.#chosen = kept;
+      const focus = focused ? visible.findIndex((e) => rowIdentity(e) === rowIdentity(focused)) : -1;
+      this.selectedIndex = focus >= 0 ? focus : visible.findIndex((e) => kept.has(rowIdentity(e)));
+      this.#anchorIndex = this.selectedIndex;
+      return;
+    }
+    this.#chosen = new Set();
+    const only = [...kept][0];
+    this.#inspect(only === undefined ? -1 : visible.findIndex((e) => rowIdentity(e) === only));
+  }
   entries: ListingRowDTO[] = $state([]);
   entriesMarker = $state("");
   entriesLoading = $state(false);
@@ -367,6 +398,12 @@ export class BrowserState {
    * on screen meanwhile, unlike a navigation's load. */
   entriesRefreshing = $state(false);
   selectedIndex = $state(-1);
+  /** The rows a multi-selection holds, by identity (ADR 0093 decision 1):
+   * presentation only, and empty unless at least two rows are chosen, so a
+   * single choice is always the inspected plain selection. */
+  #chosen = $state<ReadonlySet<string>>(new Set());
+  /** The row a Shift click extends from: the last plainly chosen one. */
+  #anchorIndex = -1;
   /** The exact identity the current detail state was fetched for —
    * every mutation binds THIS, never the live index. */
   detailIdentity = $state<{ container: string; name: string } | null>(null);
@@ -774,6 +811,25 @@ export class BrowserState {
     return this.visibleEntries[this.selectedIndex] ?? null;
   }
 
+  /** The rows a multi-selection holds, in listing order; empty unless at
+   * least two rows are chosen (ADR 0093 decision 1). */
+  get chosenRows(): ListingRowDTO[] {
+    const chosen = this.#chosen;
+    if (chosen.size === 0) return [];
+    return this.visibleEntries.filter((e) => chosen.has(rowIdentity(e)));
+  }
+
+  /** How many rows are selected: the multi-selection's, or the one row of
+   * a plain selection. */
+  get selectionCount(): number {
+    const chosen = this.chosenRows.length;
+    return chosen > 0 ? chosen : this.selectedIndex >= 0 ? 1 : 0;
+  }
+
+  isChosen(row: ListingRowDTO): boolean {
+    return this.#chosen.has(rowIdentity(row));
+  }
+
   async openContainer(name: string) {
     if (this.connecting || !this.connectedBookmarkId) return;
     this.containerName = name;
@@ -953,9 +1009,96 @@ export class BrowserState {
     }
   }
 
-  /** Selection moves; the selected row triggers its authoritative HEAD
-   * (§14.2) — object detail or prefix classification. */
+  /** A plain selection: one row, which triggers its authoritative HEAD
+   * (§14.2), object detail or prefix classification, and which ends any
+   * multi-selection (ADR 0093 decision 1). */
   select(index: number) {
+    this.#chosen = new Set();
+    this.#anchorIndex = index;
+    this.#inspect(index);
+  }
+
+  /** Toggle a row in the multi-selection, a Ctrl or Cmd click (ADR 0093
+   * decision 1): the first toggle beside a plain selection keeps that row
+   * chosen too, and a selection left with one row collapses to its plain
+   * selection. */
+  toggleRow(index: number) {
+    const visible = this.visibleEntries;
+    const row = visible[index];
+    if (!row) return;
+    const chosen = new Set(this.#chosen);
+    if (chosen.size === 0 && this.selectedIndex >= 0 && this.selectedIndex !== index) {
+      const focused = visible[this.selectedIndex];
+      if (focused) chosen.add(rowIdentity(focused));
+    }
+    const key = rowIdentity(row);
+    if (chosen.has(key)) chosen.delete(key);
+    else chosen.add(key);
+    this.#anchorIndex = index;
+    this.#applyChosen(chosen, index);
+  }
+
+  /** Select the rows from the anchor to this one, replacing the
+   * multi-selection: a Shift click (ADR 0093 decision 1). */
+  extendTo(index: number) {
+    const visible = this.visibleEntries;
+    if (!visible[index]) return;
+    const anchor = this.#anchorIndex >= 0 && this.#anchorIndex < visible.length ? this.#anchorIndex
+      : this.selectedIndex >= 0 ? this.selectedIndex : index;
+    const [from, to] = anchor <= index ? [anchor, index] : [index, anchor];
+    this.#anchorIndex = anchor;
+    this.#applyChosen(new Set(visible.slice(from, to + 1).map(rowIdentity)), index);
+  }
+
+  /** Select every loaded row on screen and nothing beyond them (ADR 0072
+   * decision 3, ADR 0093 decision 1): the filter narrows what is on screen,
+   * so it narrows this too, and rows the server still holds are not here. */
+  selectAll() {
+    const visible = this.visibleEntries;
+    if (visible.length === 0) return;
+    const focus = this.selectedIndex >= 0 && this.selectedIndex < visible.length ? this.selectedIndex : 0;
+    this.#applyChosen(new Set(visible.map(rowIdentity)), focus);
+  }
+
+  /** Nothing selected: Escape (ADR 0093 decision 1). */
+  clearSelection() {
+    this.select(-1);
+  }
+
+  #applyChosen(chosen: Set<string>, focus: number) {
+    if (chosen.size >= 2) {
+      this.#chosen = chosen;
+      this.#focus(focus);
+      return;
+    }
+    this.#chosen = new Set();
+    const only = [...chosen][0];
+    const index = only === undefined ? -1 : this.visibleEntries.findIndex((e) => rowIdentity(e) === only);
+    // The plain selection a multi-selection collapses to is the anchor too.
+    this.#anchorIndex = index;
+    this.#inspect(index);
+  }
+
+  /** With several rows selected no row is inspected (ADR 0093 decision 1):
+   * the focused row keeps the list's keyboard position only, and the detail
+   * state is cleared so no mutation can bind a row the inspector no longer
+   * shows and no HEAD is made for the summary. */
+  #focus(index: number) {
+    this.selectedIndex = index;
+    this.mutationNotice = null;
+    ++this.#detailSeq;
+    this.detailIdentity = null;
+    this.objectDetail = null;
+    this.prefixDetail = null;
+    this.sloManifest = null;
+    this.dloSegments = null;
+    this.detailError = null;
+    this.detailLoading = false;
+  }
+
+  /** The inspected row: its authoritative HEAD (§14.2), object detail or
+   * prefix classification. */
+  #inspect(index: number) {
     this.selectedIndex = index;
     // The qualification belongs to the object it was earned on.
     this.mutationNotice = null;
@@ -1968,6 +2111,7 @@ export class BrowserState {
    * decision 5): its own kind, or null for a link, an implied prefix, a real
    * object at a prefix name, or nothing inspected. */
   deletableSelectionKind(): ShownDeleteKind | null {
+    if (this.#chosen.size > 0) return null;
     const identity = this.detailIdentity;
     const detail = this.objectDetail;
     if (detail && identity?.name === detail.name) {
