@@ -343,3 +343,158 @@ func TestObjectDeleteKeepsTheAuditSafeWhenTheLiteralReadFails(t *testing.T) {
 		})
 	}
 }
+
+// gatedHarness fronts the mock with a proxy so a case can alter one exchange
+// of the public service: the connection is made through the gate before
+// anything else runs.
+func gatedHarness(t *testing.T, gate func(w http.ResponseWriter, r *http.Request, h *harness) bool) *harness {
+	t.Helper()
+	h := newHarness(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if gate(w, r, h) {
+			return
+		}
+		h.mock.ServeHTTP(w, r)
+	}))
+	t.Cleanup(server.Close)
+	h.authURL = server.URL + "/auth/v1.0"
+	h.connect(t)
+	return h
+}
+
+func isLiteralReadOf(r *http.Request, name string) bool {
+	return r.Method == http.MethodHead && strings.HasSuffix(r.URL.Path, "/fixtures/"+name) && r.URL.Query().Get("symlink") == "get"
+}
+
+// The failure streams and successor kinds ADR 0092 names, through the public
+// service with its durable record: each lands as the outcome word the contract
+// gives it, with a summary that says what was observed.
+func TestObjectDeleteFailureStreamsAndSuccessorsThroughTheService(t *testing.T) {
+	ctx := context.Background()
+	t.Run("a server error is unverified with the object still observed", func(t *testing.T) {
+		h := newHarness(t)
+		h.connect(t)
+		shown := shownObject(t, h, deleteFixture)
+		h.mock.FailDeletes = true
+		_, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture, shown.ContentFingerprint)
+		if !errors.Is(err, swiftcontrol.ErrUnverifiedDelete) {
+			t.Fatalf("err = %v", err)
+		}
+		facts := objectDeleteFacts(t, h)
+		if len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeUnverified || !strings.Contains(facts[0].Summary, "the identity that was shown") {
+			t.Fatalf("facts = %+v", facts)
+		}
+		if _, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", deleteFixture); err != nil {
+			t.Fatalf("the object is gone after a server error: %v", err)
+		}
+	})
+	t.Run("the same identity written back is unverified", func(t *testing.T) {
+		h := newHarness(t)
+		h.connect(t)
+		shown := shownObject(t, h, deleteFixture)
+		placed := false
+		h.mock.AfterRequest = func(method, path string) {
+			if method == "DELETE" && strings.HasSuffix(path, "/fixtures/"+deleteFixture) && !placed {
+				placed = true
+				h.mock.PutObject("fixtures", deleteFixture, swifttest.Object{Bytes: 12, ContentType: "text/plain", ETag: "5eb63bbbe01eeed093cb22bb8f5acdc3"})
+			}
+		}
+		_, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture, shown.ContentFingerprint)
+		if !errors.Is(err, swiftcontrol.ErrUnverifiedDelete) || !placed {
+			t.Fatalf("err = %v placed = %v", err, placed)
+		}
+		if facts := objectDeleteFacts(t, h); len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeUnverified || !strings.Contains(facts[0].Summary, "the identity that was shown") {
+			t.Fatalf("facts = %+v", facts)
+		}
+	})
+	t.Run("an incomparable literal read is unverified and says so", func(t *testing.T) {
+		h := gatedHarness(t, func(w http.ResponseWriter, r *http.Request, h *harness) bool {
+			if !isLiteralReadOf(r, deleteFixture) {
+				return false
+			}
+			rec := httptest.NewRecorder()
+			h.mock.ServeHTTP(rec, r)
+			for k, values := range rec.Header() {
+				if k != "Etag" {
+					w.Header()[k] = append([]string(nil), values...)
+				}
+			}
+			w.WriteHeader(rec.Code)
+			return true
+		})
+		shown := shownObject(t, h, deleteFixture)
+		placed := false
+		h.mock.AfterRequest = func(method, path string) {
+			if method == "DELETE" && strings.HasSuffix(path, "/fixtures/"+deleteFixture) && !placed {
+				placed = true
+				h.mock.PutObject("fixtures", deleteFixture, swifttest.Object{Bytes: 12, ContentType: "text/plain", ETag: "5eb63bbbe01eeed093cb22bb8f5acdc3"})
+			}
+		}
+		_, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture, shown.ContentFingerprint)
+		if !errors.Is(err, swiftcontrol.ErrUnverifiedDelete) {
+			t.Fatalf("err = %v", err)
+		}
+		if facts := objectDeleteFacts(t, h); len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeUnverified || !strings.Contains(facts[0].Summary, "did not report completely") {
+			t.Fatalf("facts = %+v", facts)
+		}
+	})
+	t.Run("a manifest whose segments are missing is observed as the successor", func(t *testing.T) {
+		h := newHarness(t)
+		h.connect(t)
+		shown := shownObject(t, h, deleteFixture)
+		placed := false
+		h.mock.AfterRequest = func(method, path string) {
+			if method == "DELETE" && strings.HasSuffix(path, "/fixtures/"+deleteFixture) && !placed {
+				placed = true
+				h.mock.PutObject("fixtures", deleteFixture, swifttest.Object{Manifest: "missing-segments/x/", ContentType: "video/mp4"})
+			}
+		}
+		result, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture, shown.ContentFingerprint)
+		if err != nil || result.Outcome != "applied" || result.ObjectAfter == nil || result.ObjectAfter.Class != "dlo" {
+			t.Fatalf("result = %+v, err = %v", result, err)
+		}
+		if facts := objectDeleteFacts(t, h); len(facts) != 1 || !strings.Contains(facts[0].Summary, "dlo manifest") {
+			t.Fatalf("facts = %+v", facts)
+		}
+	})
+	t.Run("an empty object replaced by a link is observed as a link", func(t *testing.T) {
+		h := newHarness(t)
+		h.connect(t)
+		shown := shownObject(t, h, "empty-object")
+		placed := false
+		h.mock.AfterRequest = func(method, path string) {
+			if method == "DELETE" && strings.HasSuffix(path, "/fixtures/empty-object") && !placed {
+				placed = true
+				h.mock.PutObject("fixtures", "empty-object", swifttest.Object{SymlinkTarget: "fixtures/nowhere"})
+			}
+		}
+		result, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", "empty-object", shown.ContentFingerprint)
+		if err != nil || result.Outcome != "applied" || result.ObjectAfter == nil || result.ObjectAfter.SymlinkTarget != "fixtures/nowhere" {
+			t.Fatalf("result = %+v, err = %v", result, err)
+		}
+	})
+}
+
+// ADR 0085's accepted exposure, measured rather than prevented: a writer whose
+// replacement lands after the final comparison HEAD and before the DELETE
+// arrives loses that replacement, and the delete reports an applied absence.
+// Nothing here may be read as the window being closed.
+func TestObjectDeleteExposureAfterTheFinalComparisonIsMeasured(t *testing.T) {
+	ctx := context.Background()
+	landed := false
+	h := gatedHarness(t, func(w http.ResponseWriter, r *http.Request, h *harness) bool {
+		if r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/fixtures/"+deleteFixture) && !landed {
+			landed = true
+			h.mock.PutObject("fixtures", deleteFixture, swifttest.Object{Bytes: 40, ContentType: "text/plain", ETag: "00000000000000000000000000000040"})
+		}
+		return false
+	})
+	shown := shownObject(t, h, deleteFixture)
+	result, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture, shown.ContentFingerprint)
+	if err != nil || result.Outcome != "applied" || result.ObjectAfter != nil || !landed {
+		t.Fatalf("result = %+v, err = %v, landed = %v", result, err, landed)
+	}
+	if _, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", deleteFixture); !swiftcontrol.IsNotFound(err) {
+		t.Fatalf("the replacement that landed inside the window survived: %v", err)
+	}
+}
