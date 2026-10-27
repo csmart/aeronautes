@@ -83,6 +83,10 @@ func (s *Store) RecordDeletion(ctx context.Context, jobID, key string, observati
 		if err != nil {
 			return err
 		}
+		var recorded int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM job_item_observations WHERE item_id=? AND phase='execution'`, item.ID).Scan(&recorded); err != nil {
+			return err
+		}
 		if err := appendObservation(ctx, tx, item, "execution", observation); err != nil {
 			return err
 		}
@@ -99,6 +103,11 @@ func (s *Store) RecordDeletion(ctx context.Context, jobID, key string, observati
 			return err
 		case successor == nil:
 			return nil
+		case recorded != 0:
+			// The outcome was recorded with nothing observed; a successor
+			// arriving afterwards would be another observation attached to
+			// the earlier attempt, so the pair is immutable as a whole.
+			return ErrItemRecordConflict
 		}
 		_, err = tx.ExecContext(ctx, `INSERT INTO job_item_successors (item_id, present, class, length, etag, created_at)
 			VALUES (?, ?, ?, ?, ?, ?)`, item.ID, successor.Present, successor.Class, successor.Length, successor.ETag,

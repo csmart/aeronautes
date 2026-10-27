@@ -89,6 +89,11 @@ func (s *Store) AdmitItems(ctx context.Context, jobID string, items []ItemIntent
 			if item.deletion() != (kind == TypeDeleteSelected) {
 				return ErrInvalidItemRecord
 			}
+			if kind == TypeDeleteSelected && item.Source.Kind != ItemSwift {
+				// What a selected-set deletion deletes is a Swift object the
+				// operator selected (ADR 0093 decision 4); a local path is not one.
+				return ErrInvalidItemRecord
+			}
 			if _, err := insertItem(ctx, tx, jobID, item); err != nil {
 				return err
 			}
