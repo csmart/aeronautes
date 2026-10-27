@@ -60,7 +60,7 @@ Deletion carries the most hazards of any capability, which is why the 25 Septemb
    What the two returning actions must be before their return can be asked for is [ADR 0094](../../adr/0094-marker-and-manifest-deletion-return-ready.md), proposed on 27 October: the caller's scope and the durable facts for both, the marker compared and confirmed instead of deleted by one click, the manifest protocol aligned with the plain object's, and public proof on both fixtures.
 4. **Bulk deletion of a prefix or a container**, proposed as 0.2.x so that exact deletion is not held behind the hardest proof.
    It needs the prefix protocol ADR 0085 records as owed, for the listing-to-request race and names first listed in a later pass; L03's allowed-effect contract; and L04's deletion failure streams.
-   Its record is [ADR 0095](../../adr/0095-prefix-deletion-by-the-per-name-protocol.md), proposed on 28 October: the selected set's verified per-name protocol run over a listing pass, one request attempt per name per job marked before its final HEAD, every outcome retained with its identities beyond the display cap, and the segment branches on the same protocol.
+   Its record is [ADR 0095](../../adr/0095-prefix-deletion-by-the-per-name-protocol.md), proposed on 28 October: the selected set's verified per-name protocol run over a listing pass, the members durable items in the job item ledger admitted a listing page at a time, one request attempt per name per job marked before its final HEAD, every outcome retained with its identities, and the manifest-with-segments deletion made a job that owns its manifest and segment facts.
    Automatic segment reclamation stays refused apart from [ADR 0081](../../adr/0081-upload-overwrite-acknowledgement.md) decision 5, because the DS-01 hazard is a recovery sweep deleting segments an unrelated live manifest still references.
 
 Benchmark stays deferred; it writes real objects and bulk-deletes them, so it follows 0.2.x.
@@ -158,9 +158,9 @@ Shipped means offered by a build; gated means built and refused under ADR 0052; 
 | Delete | recursively delete normal prefixes | gated; protocol proposed in ADR 0095 | 0.2.x |
 | Delete | empty containers | gated; protocol proposed in ADR 0095 | 0.2.x |
 | Delete | delete SLO manifests | built behind the marker-manifest-delete trial token under ADR 0094, awaiting the operator's return | 0.2.0 |
-| Delete | delete SLOs with exact segments | gated with bulk delete, force-only with typed confirmation; ownership advisory | 0.2.x |
+| Delete | delete SLOs with exact segments | gated with bulk delete, force-only with typed confirmation; ownership advisory; a job under ADR 0095 | 0.2.x |
 | Delete | delete DLO manifests | built behind the marker-manifest-delete trial token under ADR 0094, awaiting the operator's return | 0.2.0 |
-| Delete | clean known-owned DLO segments | gated, prefix-scoped and force-only; ownership advisory | 0.2.x |
+| Delete | clean known-owned DLO segments | gated, prefix-scoped and force-only; ownership advisory; a job under ADR 0095 | 0.2.x |
 | Delete | deliberate Backstage cleanup | gated, force and typed confirmation | 0.2.x |
 | Performance | global resource budgets | shipped as settings under ADR 0074 | — |
 | Performance | bookmark overrides | not built | 0.6.0 |
