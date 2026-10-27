@@ -20,9 +20,9 @@ type requestAdmissionTransport struct {
 	admit func(context.Context) error
 }
 
-// CloseIdleConnections lets a session close what the wrapped transport
-// keeps idle.
-func (t requestAdmissionTransport) CloseIdleConnections() {
+// closeIdle lets a session close what the wrapped transport keeps idle;
+// see idleCloser for why this is not the exported method.
+func (t requestAdmissionTransport) closeIdle() {
 	closeIdleConnections(t.inner)
 }
 
