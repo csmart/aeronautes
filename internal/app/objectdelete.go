@@ -156,10 +156,17 @@ func (what shownDeletion) fact(result *swiftcontrol.ObjectDeleteResult, err erro
 		// What the comparison found explains the refusal: the class, the
 		// length, the entity tag and the content type are the store's own
 		// facts about the name, and the link target is withheld because it is
-		// a name this code does not control.
-		found := fmt.Sprintf("a %s of %d bytes with entity tag %s and content type %s", refusal.FoundClass, refusal.FoundLength, refusal.FoundETag, refusal.FoundType)
-		if refusal.Link != "" {
+		// a name this code does not control. The content type is free prose
+		// the store supplies, so it is asked of the filter before it is
+		// composed: a type the filter would refuse costs those words and never
+		// the record of a refusal that destroyed nothing.
+		found := fmt.Sprintf("a %s of %d bytes with entity tag %s", refusal.FoundClass, refusal.FoundLength, refusal.FoundETag)
+		if refusal.Link {
 			found = "a symbolic link, whose target this record withholds"
+		} else if withType := found + " and content type " + refusal.FoundType; audit.SummaryRefusal(withType) == "" {
+			found = withType
+		} else {
+			found += " and a content type this record withholds"
 		}
 		summary := fmt.Sprintf("%s delete refused: the name holds %s, not what this path deletes; expected identity %s, found %s; this request destroyed nothing",
 			what.noun, found, refusal.Expected, refusal.Found)
