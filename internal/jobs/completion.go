@@ -84,6 +84,10 @@ func (s *Store) finish(ctx context.Context, id string, result Completion, trail 
 					return ErrIncompleteItemRecords
 				}
 				result.Counters.ObjectsDeleted = totals.Deleted
+				// The settled members are the ones whose request ran to an
+				// outcome, each counted once by its result; the running count
+				// the job kept is replaced by the durable one here.
+				result.Counters.ObjectsCopied = totals.Deleted + totals.Unverified + totals.Failed + totals.Conflicts + totals.Refused
 			}
 			result.Counters.ObjectsFailed = totals.Failed
 			result.Audit.Summary += fmt.Sprintf(" · item outcomes: %d failed names, %d conflicts, %d refusals, %d unresolved, %d unverified, %d with problems",

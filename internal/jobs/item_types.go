@@ -46,10 +46,15 @@ type ItemIdentity struct {
 
 type ItemIntent struct {
 	ItemIdentity
-	Staging             *ItemLocation
-	Planned             bool
-	Admitted            bool
-	ListedBytes         int64
+	Staging     *ItemLocation
+	Planned     bool
+	Admitted    bool
+	ListedBytes int64
+	// ListedETag and ListedSLO are the facts a deletion member was listed
+	// with beside its bytes (ADR 0093 decision 2): the baseline rule reads
+	// them and the record keeps what the operator saw. Empty for a transfer.
+	ListedETag          string
+	ListedSLO           bool
 	PublicationRequired bool
 }
 
@@ -147,9 +152,15 @@ type ItemRecord struct {
 	// final HEAD (ADR 0039, ADR 0093 decision 4); zero when it never was. A
 	// member issued with no outcome may have been deleted.
 	IssuedAt time.Time
-	// Successor is what a deletion member's verifying read found at the name
-	// afterwards; nil when nothing was recorded.
+	// Successor is what a deletion member's read found at the name: the
+	// verifying read's after the DELETE, or the comparison HEAD's when the
+	// member was found changed before any DELETE; nil when nothing was
+	// recorded.
 	Successor *ItemSuccessor
+	// Baseline is the identity the member's comparison was made against
+	// (ADR 0093 decision 3), written with its outcome; nil when the member
+	// never reached a comparison.
+	Baseline *MemberBaseline
 }
 
 type ItemPage struct {
@@ -169,9 +180,12 @@ type ItemTotals struct {
 	Unverified int64
 	Problems   int64
 	// Issued and Deleted are a deletion job's: how many members were marked
-	// issued, and how many were deleted (ADR 0093 decision 4).
-	Issued  int64
-	Deleted int64
+	// issued, and how many were deleted (ADR 0093 decision 4). Unsettled is
+	// how many were issued and have no outcome yet, each of which may have
+	// been requested; it is a part of Unresolved that overlaps nothing else.
+	Issued    int64
+	Deleted   int64
+	Unsettled int64
 }
 
 func (l ItemLocation) valid() bool {
@@ -203,7 +217,7 @@ func (i ItemIdentity) deletion() bool {
 }
 
 func (i ItemIntent) valid() bool {
-	if !i.ItemIdentity.valid() || i.ListedBytes < 0 || i.Staging != nil && !i.Staging.valid() {
+	if !i.ItemIdentity.valid() || i.ListedBytes < 0 || !utf8.ValidString(i.ListedETag) || i.Staging != nil && !i.Staging.valid() {
 		return false
 	}
 	return !i.PublicationRequired || i.Planned && i.Admitted && i.Source.Kind == ItemSwift &&
@@ -243,20 +257,39 @@ func (o ItemObservation) validDeletion(phase string, admitted bool) bool {
 	}
 }
 
-// ItemSuccessor is what the literal verifying read observed at a deletion
-// member's name after its DELETE (ADR 0093 decision 3): nothing, or the
-// object now there by class, length and entity tag. It is an observation
-// and never an identification of where that object came from.
+// The read that observed a successor: the literal verifying read after the
+// member's DELETE, or the comparison HEAD that found the member changed
+// since it was listed before any DELETE was issued.
+const (
+	SuccessorAfter      = "after"
+	SuccessorComparison = "comparison"
+)
+
+// ItemSuccessor is what a read observed at a deletion member's name (ADR
+// 0093 decision 3): nothing, or the object there by class, length and entity
+// tag, and which read saw it. It is an observation and never an
+// identification of where that object came from.
 type ItemSuccessor struct {
 	Present   bool
 	Class     string
 	Length    int64
 	ETag      string
+	Role      string
 	CreatedAt time.Time
 }
 
 func (s ItemSuccessor) valid() bool {
 	if !utf8.ValidString(s.Class) || !utf8.ValidString(s.ETag) || s.Length < 0 {
+		return false
+	}
+	switch s.role() {
+	case SuccessorAfter:
+	case SuccessorComparison:
+		// The comparison refused the member because something stood there.
+		if !s.Present {
+			return false
+		}
+	default:
 		return false
 	}
 	if !s.Present {
@@ -265,10 +298,34 @@ func (s ItemSuccessor) valid() bool {
 	return s.Class != ""
 }
 
+// role defaults the verifying read, the one every deleted member has.
+func (s ItemSuccessor) role() string {
+	if s.Role == "" {
+		return SuccessorAfter
+	}
+	return s.Role
+}
+
 // sameAs compares two readings by their own facts, ignoring when each was
 // written, so the identical observation is idempotent and another is a conflict.
 func (s ItemSuccessor) sameAs(other ItemSuccessor) bool {
-	return s.Present == other.Present && s.Class == other.Class && s.Length == other.Length && s.ETag == other.ETag
+	return s.Present == other.Present && s.Class == other.Class && s.Length == other.Length && s.ETag == other.ETag && s.role() == other.role()
+}
+
+// MemberBaseline is the identity a deletion member's comparison was made
+// against (ADR 0093 decision 3): the listed row as a plain object for an
+// ordinary member, or the HEAD taken first for a member listed as zero bytes
+// or as a static large object. It is written with the member's outcome and
+// is immutable, so a conflict keeps the identity it expected beside the one
+// it found. (ItemBaseline, elsewhere, is a transfer's acknowledged state.)
+type MemberBaseline struct {
+	Class  string
+	Length int64
+	ETag   string
+}
+
+func (b MemberBaseline) valid() bool {
+	return b.Class != "" && utf8.ValidString(b.Class) && utf8.ValidString(b.ETag) && b.Length >= 0
 }
 
 // Validate permits refusal before a write; invalid writes still latch the store.

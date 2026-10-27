@@ -50,20 +50,35 @@ func (s *Store) MarkIssued(ctx context.Context, jobID, key string) (err error) {
 	})
 }
 
-// RecordDeletion records a deletion member's one outcome, when its verifying
-// read settles, together with what that read observed at the name. The two
-// are one transaction because a successor without its outcome, or an outcome
-// without the successor it was decided on, would be half a fact. The same
-// outcome and observation again is idempotent; a different one is a
-// conflict. Only a deleted or an unverified member can have observed a
-// successor: a refused, conflicting or failed member sent nothing that could
-// have been followed by one.
-func (s *Store) RecordDeletion(ctx context.Context, jobID, key string, observation ItemObservation, successor *ItemSuccessor) (err error) {
+// RecordDeletion records a deletion member's one outcome, when its request
+// settles, together with the baseline its comparison was made against and
+// what a read observed at the name: the verifying read's finding after the
+// DELETE for a deleted or an unverified member, or the comparison HEAD's for
+// a member found changed since it was listed. The three are one transaction
+// because an observation without its outcome, or an outcome without the
+// facts it was decided on, would be half a fact. The same record again is
+// idempotent; a different one is a conflict. A refused or failed member sent
+// nothing that could have been followed by a successor, and a member not
+// attempted was never compared, so it has no baseline.
+func (s *Store) RecordDeletion(ctx context.Context, jobID, key string, observation ItemObservation, successor *ItemSuccessor, baseline *MemberBaseline) (err error) {
 	defer s.itemWriteFailed(&err)
 	if successor != nil {
-		if !successor.valid() || (observation.Result != ItemDeleted && observation.Result != ItemUnverified) {
+		if !successor.valid() {
 			return ErrInvalidItemRecord
 		}
+		switch successor.role() {
+		case SuccessorAfter:
+			if observation.Result != ItemDeleted && observation.Result != ItemUnverified {
+				return ErrInvalidItemRecord
+			}
+		case SuccessorComparison:
+			if observation.Result != ItemConflict {
+				return ErrInvalidItemRecord
+			}
+		}
+	}
+	if baseline != nil && (!baseline.valid() || observation.Result == ItemNotAttempted) {
+		return ErrInvalidItemRecord
 	}
 	return s.db.WriteTx(ctx, func(tx *sql.Tx) error {
 		if err := s.Available(); err != nil {
@@ -90,6 +105,19 @@ func (s *Store) RecordDeletion(ctx context.Context, jobID, key string, observati
 		if err := appendObservation(ctx, tx, item, "execution", observation); err != nil {
 			return err
 		}
+		switch {
+		case item.Baseline != nil && baseline != nil && *item.Baseline != *baseline:
+			return ErrItemRecordConflict
+		case item.Baseline != nil && baseline == nil, item.Baseline == nil && baseline != nil && recorded != 0:
+			// The outcome and its baseline are immutable as a pair, as the
+			// successor is: neither can arrive on its own afterwards.
+			return ErrItemRecordConflict
+		case item.Baseline == nil && baseline != nil:
+			if _, err := tx.ExecContext(ctx, `UPDATE job_items SET baseline_class=?, baseline_length=?, baseline_etag=? WHERE id=? AND baseline_class=''`,
+				baseline.Class, baseline.Length, baseline.ETag, item.ID); err != nil {
+				return err
+			}
+		}
 		prior, err := readSuccessor(ctx, tx, item.ID)
 		switch {
 		case err == nil && successor == nil:
@@ -109,9 +137,9 @@ func (s *Store) RecordDeletion(ctx context.Context, jobID, key string, observati
 			// the earlier attempt, so the pair is immutable as a whole.
 			return ErrItemRecordConflict
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO job_item_successors (item_id, present, class, length, etag, created_at)
-			VALUES (?, ?, ?, ?, ?, ?)`, item.ID, successor.Present, successor.Class, successor.Length, successor.ETag,
-			time.Now().UTC().Format(time.RFC3339Nano))
+		_, err = tx.ExecContext(ctx, `INSERT INTO job_item_successors (item_id, present, class, length, etag, role, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`, item.ID, successor.Present, successor.Class, successor.Length, successor.ETag,
+			successor.role(), time.Now().UTC().Format(time.RFC3339Nano))
 		return err
 	})
 }
@@ -119,8 +147,8 @@ func (s *Store) RecordDeletion(ctx context.Context, jobID, key string, observati
 func readSuccessor(ctx context.Context, tx *sql.Tx, itemID int64) (ItemSuccessor, error) {
 	var observed ItemSuccessor
 	var created string
-	err := tx.QueryRowContext(ctx, `SELECT present, class, length, etag, created_at FROM job_item_successors WHERE item_id=?`, itemID).
-		Scan(&observed.Present, &observed.Class, &observed.Length, &observed.ETag, &created)
+	err := tx.QueryRowContext(ctx, `SELECT present, class, length, etag, role, created_at FROM job_item_successors WHERE item_id=?`, itemID).
+		Scan(&observed.Present, &observed.Class, &observed.Length, &observed.ETag, &observed.Role, &created)
 	if err != nil {
 		return ItemSuccessor{}, err
 	}
@@ -138,7 +166,7 @@ func readSuccessors(ctx context.Context, tx *sql.Tx, jobID string, cursor int64,
 	for i := range items {
 		byID[items[i].ID] = &items[i]
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT s.item_id, s.present, s.class, s.length, s.etag, s.created_at
+	rows, err := tx.QueryContext(ctx, `SELECT s.item_id, s.present, s.class, s.length, s.etag, s.role, s.created_at
 		FROM job_item_successors s JOIN job_items i ON i.id=s.item_id
 		WHERE i.job_id=? AND i.id>? AND i.id<=? ORDER BY i.id`, jobID, cursor, items[len(items)-1].ID)
 	if err != nil {
@@ -149,7 +177,7 @@ func readSuccessors(ctx context.Context, tx *sql.Tx, jobID string, cursor int64,
 		var id int64
 		var observed ItemSuccessor
 		var created string
-		if err := rows.Scan(&id, &observed.Present, &observed.Class, &observed.Length, &observed.ETag, &created); err != nil {
+		if err := rows.Scan(&id, &observed.Present, &observed.Class, &observed.Length, &observed.ETag, &observed.Role, &created); err != nil {
 			return err
 		}
 		observed.CreatedAt, err = time.Parse(time.RFC3339Nano, created)

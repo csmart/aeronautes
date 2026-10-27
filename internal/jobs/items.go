@@ -129,9 +129,10 @@ func insertItem(ctx context.Context, tx *sql.Tx, jobID string, item ItemIntent) 
 	}
 	result, err := tx.ExecContext(ctx, `
 		INSERT INTO job_items (job_id, item_key, source_json, destination_json, staging_json,
-			planned, admitted, listed_bytes, publication_required, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			planned, admitted, listed_bytes, listed_etag, listed_slo, publication_required, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		jobID, item.Key, string(source), string(destination), staging, item.Planned, item.Admitted,
-		item.ListedBytes, item.PublicationRequired, time.Now().UTC().Format(time.RFC3339Nano))
+		item.ListedBytes, item.ListedETag, item.ListedSLO, item.PublicationRequired, time.Now().UTC().Format(time.RFC3339Nano))
 	if err != nil {
 		return 0, err
 	}
@@ -233,15 +234,24 @@ func appendObservation(ctx context.Context, tx *sql.Tx, item ItemRecord, phase s
 }
 
 const selectItem = `SELECT id, job_id, item_key, source_json, destination_json, staging_json,
-	planned, admitted, listed_bytes, publication_required, created_at, issued_at FROM job_items`
+	planned, admitted, listed_bytes, listed_etag, listed_slo, publication_required, created_at, issued_at,
+	baseline_class, baseline_length, baseline_etag FROM job_items`
 
 func scanItem(scan func(...any) error) (ItemRecord, error) {
 	var item ItemRecord
 	var source, destination, created string
 	var staging, issued sql.NullString
+	var baseline MemberBaseline
 	if err := scan(&item.ID, &item.JobID, &item.Key, &source, &destination, &staging,
-		&item.Planned, &item.Admitted, &item.ListedBytes, &item.PublicationRequired, &created, &issued); err != nil {
+		&item.Planned, &item.Admitted, &item.ListedBytes, &item.ListedETag, &item.ListedSLO, &item.PublicationRequired, &created, &issued,
+		&baseline.Class, &baseline.Length, &baseline.ETag); err != nil {
 		return ItemRecord{}, err
+	}
+	if baseline.Class != "" {
+		if !baseline.valid() {
+			return ItemRecord{}, ErrInvalidItemRecord
+		}
+		item.Baseline = &baseline
 	}
 	if issued.Valid {
 		at, err := time.Parse(time.RFC3339Nano, issued.String)

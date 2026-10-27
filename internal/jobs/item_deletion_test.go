@@ -100,6 +100,26 @@ func TestDeletionMembersAreTheirSourceAlone(t *testing.T) {
 	})
 }
 
+// ADR 0093 decision 2: a member keeps the facts it was listed with, which
+// the baseline rule read and the record shows beside what was found.
+func TestDeletionMembersKeepTheirListedFacts(t *testing.T) {
+	store, bookmark := newStore(t)
+	ctx := t.Context()
+	job, err := store.Create(ctx, Job{Type: TypeDeleteSelected, ItemRecordsVersion: 1, SourceBookmarkID: bookmark, Source: "bookmark:c"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	member := ItemIntent{ItemIdentity: ItemIdentity{Key: "big.bin", Source: ItemLocation{Kind: ItemSwift, BookmarkID: bookmark, Container: "c", Object: "big.bin"}},
+		Planned: true, Admitted: true, ListedBytes: 1024, ListedETag: "abcd", ListedSLO: true}
+	if err := store.AdmitItems(ctx, job.ID, []ItemIntent{member}); err != nil {
+		t.Fatal(err)
+	}
+	item := itemsOf(t, store, job.ID)["big.bin"]
+	if item.ListedBytes != 1024 || item.ListedETag != "abcd" || !item.ListedSLO || item.Baseline != nil {
+		t.Fatalf("the listed facts were not kept: %+v", item)
+	}
+}
+
 // ADR 0039 and ADR 0093 decision 4: the issued mark is written once, before
 // the member's final HEAD, is the same fact when written again, and cannot
 // follow the member's outcome.
@@ -121,7 +141,7 @@ func TestIssuedMarkIsWrittenOnceAndNeverAfterAnOutcome(t *testing.T) {
 	if !items["a.txt"].IssuedAt.Equal(first) || !items["b.txt"].IssuedAt.IsZero() {
 		t.Fatalf("issued marks moved or spread: %+v", items)
 	}
-	if err := store.RecordDeletion(ctx, job.ID, "a.txt", ItemObservation{Result: ItemDeleted, Effect: EffectReportedApplied}, &ItemSuccessor{}); err != nil {
+	if err := store.RecordDeletion(ctx, job.ID, "a.txt", ItemObservation{Result: ItemDeleted, Effect: EffectReportedApplied}, &ItemSuccessor{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	// An issued member that settled was issued: saying so again is the same fact.
@@ -130,7 +150,7 @@ func TestIssuedMarkIsWrittenOnceAndNeverAfterAnOutcome(t *testing.T) {
 	}
 	// A member that settled without ever being issued, as a cancellation
 	// leaves the members after it, cannot be issued afterwards.
-	if err := store.RecordDeletion(ctx, job.ID, "b.txt", ItemObservation{Result: ItemNotAttempted, Effect: EffectNotAttempted}, nil); err != nil {
+	if err := store.RecordDeletion(ctx, job.ID, "b.txt", ItemObservation{Result: ItemNotAttempted, Effect: EffectNotAttempted}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.MarkIssued(ctx, job.ID, "b.txt"); !errors.Is(err, ErrItemRecordConflict) {
@@ -149,7 +169,7 @@ func TestDeletionOutcomeAndSuccessorAreOneRecord(t *testing.T) {
 		job := deletionJob(t, store, bookmark, "a.txt")
 		deleted := ItemObservation{Result: ItemDeleted, Effect: EffectReportedApplied}
 		for range 2 {
-			if err := store.RecordDeletion(ctx, job.ID, "a.txt", deleted, plain); err != nil {
+			if err := store.RecordDeletion(ctx, job.ID, "a.txt", deleted, plain, nil); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -159,7 +179,7 @@ func TestDeletionOutcomeAndSuccessorAreOneRecord(t *testing.T) {
 		}
 		other := *plain
 		other.ETag = "2222"
-		if err := store.RecordDeletion(ctx, job.ID, "a.txt", deleted, &other); !errors.Is(err, ErrItemRecordConflict) {
+		if err := store.RecordDeletion(ctx, job.ID, "a.txt", deleted, &other, nil); !errors.Is(err, ErrItemRecordConflict) {
 			t.Fatalf("a second, different successor was accepted: %v", err)
 		}
 	})
@@ -169,20 +189,20 @@ func TestDeletionOutcomeAndSuccessorAreOneRecord(t *testing.T) {
 		job := deletionJob(t, store, bookmark, "m.bin")
 		unverified := ItemObservation{Result: ItemUnverified, Effect: EffectUnresolved, Diagnostic: ItemDiagnostic{Stage: StageVerification, Code: CodeUnverified}}
 		manifest := &ItemSuccessor{Present: true, Class: "slo", Length: 0, ETag: "3333"}
-		if err := store.RecordDeletion(ctx, job.ID, "m.bin", unverified, manifest); err != nil {
+		if err := store.RecordDeletion(ctx, job.ID, "m.bin", unverified, manifest, nil); err != nil {
 			t.Fatal(err)
 		}
 		if item := itemsOf(t, store, job.ID)["m.bin"]; item.Execution.Effect != EffectUnresolved || item.Successor == nil || item.Successor.Class != "slo" {
 			t.Fatalf("the surviving manifest was not kept with the uncertainty: %+v", item)
 		}
-		if err := store.RecordDeletion(ctx, job.ID, "m.bin", unverified, nil); !errors.Is(err, ErrItemRecordConflict) {
+		if err := store.RecordDeletion(ctx, job.ID, "m.bin", unverified, nil, nil); !errors.Is(err, ErrItemRecordConflict) {
 			t.Fatalf("the observation was dropped on a repeat: %v", err)
 		}
 	})
 	t.Run("absence is an observation too", func(t *testing.T) {
 		store, bookmark := newStore(t)
 		job := deletionJob(t, store, bookmark, "a.txt")
-		if err := store.RecordDeletion(t.Context(), job.ID, "a.txt", ItemObservation{Result: ItemDeleted, Effect: EffectReportedApplied}, &ItemSuccessor{}); err != nil {
+		if err := store.RecordDeletion(t.Context(), job.ID, "a.txt", ItemObservation{Result: ItemDeleted, Effect: EffectReportedApplied}, &ItemSuccessor{}, nil); err != nil {
 			t.Fatal(err)
 		}
 		if item := itemsOf(t, store, job.ID)["a.txt"]; item.Successor == nil || item.Successor.Present {
@@ -193,14 +213,74 @@ func TestDeletionOutcomeAndSuccessorAreOneRecord(t *testing.T) {
 		store, bookmark := newStore(t)
 		job := deletionJob(t, store, bookmark, "a.txt")
 		refused := ItemObservation{Result: ItemRefused, Effect: EffectNotAttempted, Diagnostic: ItemDiagnostic{Stage: StageSourceRead, Code: CodeUnsupported}}
-		if err := store.RecordDeletion(t.Context(), job.ID, "a.txt", refused, plain); !errors.Is(err, ErrInvalidItemRecord) {
+		if err := store.RecordDeletion(t.Context(), job.ID, "a.txt", refused, plain, nil); !errors.Is(err, ErrInvalidItemRecord) {
 			t.Fatalf("a refusal was given a successor: %v", err)
+		}
+	})
+	t.Run("a changed member keeps the identity it expected and the one it found", func(t *testing.T) {
+		store, bookmark := newStore(t)
+		ctx := t.Context()
+		job := deletionJob(t, store, bookmark, "a.txt")
+		conflict := ItemObservation{Result: ItemConflict, Effect: EffectNotAttempted, Diagnostic: ItemDiagnostic{Stage: StageSourceRead, Code: CodeConflict}}
+		found := &ItemSuccessor{Present: true, Class: "plain", Length: 40, ETag: "4444", Role: SuccessorComparison}
+		expected := &MemberBaseline{Class: "plain", Length: 12, ETag: "1212"}
+		for range 2 {
+			if err := store.RecordDeletion(ctx, job.ID, "a.txt", conflict, found, expected); err != nil {
+				t.Fatal(err)
+			}
+		}
+		item := itemsOf(t, store, job.ID)["a.txt"]
+		if item.Baseline == nil || *item.Baseline != *expected || item.Successor == nil || item.Successor.Role != SuccessorComparison || !item.Successor.sameAs(*found) {
+			t.Fatalf("the record does not carry both identities: %+v", item)
+		}
+		other := *expected
+		other.ETag = "9999"
+		if err := store.RecordDeletion(ctx, job.ID, "a.txt", conflict, found, &other); !errors.Is(err, ErrItemRecordConflict) {
+			t.Fatalf("a second, different baseline was accepted: %v", err)
+		}
+	})
+	t.Run("a baseline cannot be dropped on a repeat", func(t *testing.T) {
+		// Its own store: a conflicting write latches the ledger, as any lost
+		// item write does.
+		store, bookmark := newStore(t)
+		ctx := t.Context()
+		job := deletionJob(t, store, bookmark, "a.txt")
+		conflict := ItemObservation{Result: ItemConflict, Effect: EffectNotAttempted, Diagnostic: ItemDiagnostic{Stage: StageSourceRead, Code: CodeConflict}}
+		found := &ItemSuccessor{Present: true, Class: "plain", Length: 40, ETag: "4444", Role: SuccessorComparison}
+		if err := store.RecordDeletion(ctx, job.ID, "a.txt", conflict, found, &MemberBaseline{Class: "plain", Length: 12, ETag: "1212"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.RecordDeletion(ctx, job.ID, "a.txt", conflict, found, nil); !errors.Is(err, ErrItemRecordConflict) {
+			t.Fatalf("the baseline was dropped on a repeat: %v", err)
+		}
+	})
+	t.Run("a successor names the read that saw it", func(t *testing.T) {
+		store, bookmark := newStore(t)
+		ctx := t.Context()
+		job := deletionJob(t, store, bookmark, "a.txt", "b.txt", "c.txt")
+		deleted := ItemObservation{Result: ItemDeleted, Effect: EffectReportedApplied}
+		conflict := ItemObservation{Result: ItemConflict, Effect: EffectNotAttempted, Diagnostic: ItemDiagnostic{Stage: StageSourceRead, Code: CodeConflict}}
+		// What the comparison found cannot be a deleted member's successor, and
+		// what the verifying read found cannot be a conflict's.
+		if err := store.RecordDeletion(ctx, job.ID, "a.txt", deleted, &ItemSuccessor{Present: true, Class: "plain", Length: 1, ETag: "1", Role: SuccessorComparison}, nil); !errors.Is(err, ErrInvalidItemRecord) {
+			t.Fatalf("a comparison successor was accepted on a deleted member: %v", err)
+		}
+		if err := store.RecordDeletion(ctx, job.ID, "b.txt", conflict, &ItemSuccessor{Present: true, Class: "plain", Length: 1, ETag: "1"}, nil); !errors.Is(err, ErrInvalidItemRecord) {
+			t.Fatalf("an after successor was accepted on a conflict: %v", err)
+		}
+		// A comparison that found nothing is not a conflict, and a member never
+		// attempted was never compared.
+		if err := store.RecordDeletion(ctx, job.ID, "b.txt", conflict, &ItemSuccessor{Role: SuccessorComparison}, nil); !errors.Is(err, ErrInvalidItemRecord) {
+			t.Fatalf("an absent comparison finding was accepted: %v", err)
+		}
+		if err := store.RecordDeletion(ctx, job.ID, "c.txt", ItemObservation{Result: ItemNotAttempted, Effect: EffectNotAttempted}, nil, &MemberBaseline{Class: "plain"}); !errors.Is(err, ErrInvalidItemRecord) {
+			t.Fatalf("a baseline was accepted on a member not attempted: %v", err)
 		}
 	})
 	t.Run("a deleted member reports its effect", func(t *testing.T) {
 		store, bookmark := newStore(t)
 		job := deletionJob(t, store, bookmark, "a.txt")
-		if err := store.RecordDeletion(t.Context(), job.ID, "a.txt", ItemObservation{Result: ItemDeleted, Effect: EffectNotAttempted}, nil); !errors.Is(err, ErrInvalidItemRecord) {
+		if err := store.RecordDeletion(t.Context(), job.ID, "a.txt", ItemObservation{Result: ItemDeleted, Effect: EffectNotAttempted}, nil, nil); !errors.Is(err, ErrInvalidItemRecord) {
 			t.Fatalf("a deletion with no effect was accepted: %v", err)
 		}
 	})
@@ -226,7 +306,7 @@ func settleFour(t *testing.T, store *Store, bookmark string) Job {
 		if name == "a.txt" {
 			successor = &ItemSuccessor{}
 		}
-		if err := store.RecordDeletion(ctx, job.ID, name, outcome, successor); err != nil {
+		if err := store.RecordDeletion(ctx, job.ID, name, outcome, successor, nil); err != nil {
 			t.Fatal(name, err)
 		}
 	}
@@ -246,6 +326,17 @@ func TestDeletionTotalsDeriveTheEnd(t *testing.T) {
 			t.Fatalf("totals = %+v, %v; want %+v", totals, err, want)
 		}
 	})
+	t.Run("an issued member with no outcome is unsettled", func(t *testing.T) {
+		store, bookmark := newStore(t)
+		job := deletionJob(t, store, bookmark, "a.txt", "b.txt")
+		if err := store.MarkIssued(t.Context(), job.ID, "a.txt"); err != nil {
+			t.Fatal(err)
+		}
+		totals, err := store.ReadItemTotals(t.Context(), job.ID)
+		if err != nil || totals.Unsettled != 1 || totals.Unresolved != 2 || totals.Issued != 1 {
+			t.Fatalf("totals = %+v, %v", totals, err)
+		}
+	})
 	t.Run("complete is refused", func(t *testing.T) {
 		store, bookmark := newStore(t)
 		job := settleFour(t, store, bookmark)
@@ -259,7 +350,9 @@ func TestDeletionTotalsDeriveTheEnd(t *testing.T) {
 		if err := store.FinishFromItems(t.Context(), job.ID, itemCompletion(job, StatePartial), auditTrail(t, store)); err != nil {
 			t.Fatal(err)
 		}
-		if got, err := store.Get(t.Context(), job.ID); err != nil || got.State != StatePartial {
+		// The settled count is the durable one: three members ran to an
+		// outcome, one was never attempted.
+		if got, err := store.Get(t.Context(), job.ID); err != nil || got.State != StatePartial || got.Counters.ObjectsCopied != 3 || got.Counters.ObjectsDeleted != 1 {
 			t.Fatalf("job = %+v, %v", got, err)
 		}
 	})
@@ -271,7 +364,7 @@ func TestDeletionTotalsDeriveTheEnd(t *testing.T) {
 			if err := store.MarkIssued(ctx, job.ID, name); err != nil {
 				t.Fatal(err)
 			}
-			if err := store.RecordDeletion(ctx, job.ID, name, ItemObservation{Result: ItemDeleted, Effect: EffectReportedApplied}, &ItemSuccessor{}); err != nil {
+			if err := store.RecordDeletion(ctx, job.ID, name, ItemObservation{Result: ItemDeleted, Effect: EffectReportedApplied}, &ItemSuccessor{}, nil); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -285,6 +378,9 @@ func TestDeletionTotalsDeriveTheEnd(t *testing.T) {
 		}
 		if totals, err := store.ReadItemTotals(ctx, job.ID); err != nil || totals.Deleted != 2 || totals.Issued != 2 || !totals.permitsComplete() {
 			t.Fatalf("totals = %+v, %v", totals, err)
+		}
+		if got, err := store.Get(ctx, job.ID); err != nil || got.Counters.ObjectsCopied != 2 || got.Counters.ObjectsDeleted != 2 {
+			t.Fatalf("the completed job lost its settled count: %+v, %v", got, err)
 		}
 	})
 }
@@ -302,7 +398,7 @@ func TestInterruptedDeletionKeepsItsMembersHonest(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := store.RecordDeletion(ctx, job.ID, "a.txt", ItemObservation{Result: ItemDeleted, Effect: EffectReportedApplied}, &ItemSuccessor{}); err != nil {
+	if err := store.RecordDeletion(ctx, job.ID, "a.txt", ItemObservation{Result: ItemDeleted, Effect: EffectReportedApplied}, &ItemSuccessor{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if n, err := store.FailInterrupted(ctx); err != nil || n != 1 {
@@ -337,7 +433,7 @@ func TestDeletionCompletionIsDerivedFromItsMembers(t *testing.T) {
 		ctx := t.Context()
 		job := deletionJob(t, store, bookmark, "a.txt", "b.txt")
 		for _, name := range []string{"a.txt", "b.txt"} {
-			if err := store.RecordDeletion(ctx, job.ID, name, ItemObservation{Result: ItemNotAttempted, Effect: EffectNotAttempted}, nil); err != nil {
+			if err := store.RecordDeletion(ctx, job.ID, name, ItemObservation{Result: ItemNotAttempted, Effect: EffectNotAttempted}, nil, nil); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -356,7 +452,7 @@ func TestDeletionCompletionIsDerivedFromItsMembers(t *testing.T) {
 			if err := store.MarkIssued(ctx, job.ID, name); err != nil {
 				t.Fatal(err)
 			}
-			if err := store.RecordDeletion(ctx, job.ID, name, ItemObservation{Result: ItemDeleted, Effect: EffectReportedApplied}, &ItemSuccessor{}); err != nil {
+			if err := store.RecordDeletion(ctx, job.ID, name, ItemObservation{Result: ItemDeleted, Effect: EffectReportedApplied}, &ItemSuccessor{}, nil); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -381,13 +477,13 @@ func TestRecordedOutcomeCannotGainASuccessor(t *testing.T) {
 	ctx := t.Context()
 	job := deletionJob(t, store, bookmark, "a.txt")
 	unverified := ItemObservation{Result: ItemUnverified, Effect: EffectUnresolved, Diagnostic: ItemDiagnostic{Stage: StageVerification, Code: CodeUnverified}}
-	if err := store.RecordDeletion(ctx, job.ID, "a.txt", unverified, nil); err != nil {
+	if err := store.RecordDeletion(ctx, job.ID, "a.txt", unverified, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.RecordDeletion(ctx, job.ID, "a.txt", unverified, nil); err != nil {
+	if err := store.RecordDeletion(ctx, job.ID, "a.txt", unverified, nil, nil); err != nil {
 		t.Fatalf("the same pair again is not idempotent: %v", err)
 	}
-	if err := store.RecordDeletion(ctx, job.ID, "a.txt", unverified, &ItemSuccessor{Present: true, Class: "plain", Length: 1, ETag: "9"}); !errors.Is(err, ErrItemRecordConflict) {
+	if err := store.RecordDeletion(ctx, job.ID, "a.txt", unverified, &ItemSuccessor{Present: true, Class: "plain", Length: 1, ETag: "9"}, nil); !errors.Is(err, ErrItemRecordConflict) {
 		t.Fatalf("a successor was attached to a recorded outcome: %v", err)
 	}
 }
