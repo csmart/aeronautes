@@ -35,8 +35,11 @@ func TestDeleteMemberUsesTheListingRowAsTheBaseline(t *testing.T) {
 		t.Fatalf("the fixture row is not an ordinary row: %+v", row)
 	}
 	result, err := s.DeleteMember(ctx, "fixtures", row)
-	if err != nil || result.Outcome != UpdateApplied || !result.Accepted || result.After != nil {
+	if err != nil || result.Outcome != UpdateApplied || !result.Accepted || !result.Requested || result.After != nil {
 		t.Fatalf("result = %+v, %v", result, err)
+	}
+	if b := result.Baseline; b == nil || b.Class != ClassPlain || b.ContentLength != row.Bytes || etagValue(b.ETag) != row.ETag {
+		t.Fatalf("the baseline is not the listed row: %+v", result.Baseline)
 	}
 	if _, err := s.ObjectDetail(ctx, "fixtures", "normal/hello.txt"); !IsNotFound(err) {
 		t.Fatalf("the member is still readable: %v", err)
@@ -88,11 +91,35 @@ func TestDeleteMemberRefusesAChangedClassAsAConflict(t *testing.T) {
 	mock.PutObject("fixtures", "normal/hello.txt", swifttest.Object{Bytes: 0, ContentType: "video/mp4", Manifest: "external-dlo-segments/wedding-video/"})
 	result, err := s.DeleteMember(ctx, "fixtures", row)
 	var conflict *IdentityConflictError
-	if !errors.As(err, &conflict) || conflict.FoundClass != string(ClassDLO) || result == nil || result.Outcome != "" {
+	if !errors.As(err, &conflict) || conflict.FoundClass != string(ClassDLO) || result == nil || result.Outcome != "" || result.Requested {
 		t.Fatalf("err = %v result = %+v, want a conflict naming the manifest found", err, result)
+	}
+	if b := result.Baseline; b == nil || b.ContentLength != row.Bytes || etagValue(b.ETag) != row.ETag {
+		t.Fatalf("the conflict lost the baseline it expected: %+v", result.Baseline)
 	}
 	if after, err := s.ObjectDetail(ctx, "fixtures", "normal/hello.txt"); err != nil || after.Class != ClassDLO {
 		t.Fatalf("the manifest at the name was touched: %+v, %v", after, err)
+	}
+}
+
+// ADR 0093 decision 3: an ordinary row's baseline is established by its
+// listing, so a link found at the comparison is a change since then, a
+// conflict with both identities, not a refusal; the link stays.
+func TestDeleteMemberRecordsAnOrdinaryRowReplacedByALinkAsAConflict(t *testing.T) {
+	s, mock := newFixtureSessionWithMock(t)
+	ctx := context.Background()
+	row := listedMember(t, s, "fixtures", "normal/hello.txt")
+	mock.PutObject("fixtures", "normal/hello.txt", swifttest.Object{SymlinkTarget: "fixtures/implied/child.txt"})
+	result, err := s.DeleteMember(ctx, "fixtures", row)
+	var conflict *IdentityConflictError
+	if !errors.As(err, &conflict) || conflict.FoundClass != "symlink" || conflict.Expected == conflict.Found || result == nil || result.Requested {
+		t.Fatalf("err = %v result = %+v, want a conflict naming the link found", err, result)
+	}
+	if _, err := s.LiteralObjectHead(ctx, "fixtures", "normal/hello.txt"); err != nil {
+		t.Fatalf("the link was deleted: %v", err)
+	}
+	if _, err := s.ObjectDetail(ctx, "fixtures", "implied/child.txt"); err != nil {
+		t.Fatalf("the target was deleted: %v", err)
 	}
 }
 
