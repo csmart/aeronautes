@@ -176,7 +176,7 @@ func (s *DeleteService) runSelectedDelete(ctx context.Context, jobID string, req
 		result, err := session.DeleteMember(background, req.Container, swiftcontrol.MemberRow{
 			Name: member.Name, Bytes: member.Bytes, ETag: member.ETag, SLOListed: member.SLOListed})
 		observation, successor := selectedMemberOutcome(result, err)
-		if recErr := s.jobs.RecordDeletion(background, jobID, member.Name, observation, successor); recErr != nil {
+		if recErr := s.jobs.RecordDeletion(background, jobID, member.Name, observation, successor, nil); recErr != nil {
 			recordingLost = fmt.Sprintf("the outcome of %q could not be recorded after its request, so it is unresolved and no later member was touched: %v", member.Name, recErr)
 			break
 		}
@@ -241,7 +241,7 @@ func (s *DeleteService) selectedEnd(ctx context.Context, jobID string, cancelled
 // the records and a missing one keeps the member unresolved.
 func (s *DeleteService) recordNotAttempted(ctx context.Context, jobID string, members []ListingRowDTO) {
 	for _, member := range members {
-		if err := s.jobs.RecordDeletion(ctx, jobID, member.Name, jobs.ItemObservation{Result: jobs.ItemNotAttempted, Effect: jobs.EffectNotAttempted}, nil); err != nil {
+		if err := s.jobs.RecordDeletion(ctx, jobID, member.Name, jobs.ItemObservation{Result: jobs.ItemNotAttempted, Effect: jobs.EffectNotAttempted}, nil, nil); err != nil {
 			log.Printf("job %s: member %q not attempted but unrecorded: %v", jobID, member.Name, err)
 			return
 		}
