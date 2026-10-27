@@ -78,7 +78,12 @@ func TestContainerDetailFull(t *testing.T) {
 	if d.Meta["Owner"] != "alice" || d.Meta["Lower"] != "case-insensitive" {
 		t.Errorf("Meta = %v", d.Meta)
 	}
-	for _, special := range []string{"Quota-Bytes", "Quota-Count", "Temp-Url-Key", "Access-Control-Allow-Origin", "Web-Index"} {
+	// Static web keys are editable metadata (ADR 0090): the editor's working
+	// copy must carry them, or an unrelated save would erase them.
+	if d.Meta["Web-Index"] != "index.html" {
+		t.Errorf("Meta[Web-Index] = %q, want the static web key in the editable set", d.Meta["Web-Index"])
+	}
+	for _, special := range []string{"Quota-Bytes", "Quota-Count", "Temp-Url-Key", "Access-Control-Allow-Origin"} {
 		if _, leaked := d.Meta[special]; leaked {
 			t.Errorf("special key %s leaked into plain Meta", special)
 		}

@@ -1139,6 +1139,8 @@ Useful presets may include:
 
 Dangerous public settings require clear confirmation.
 
+**Shipped as tick boxes (2026-10-27).** The container editor offers world read, public listing and static web as tick boxes above the raw editors, each derived from the value it stands for and rewriting only the entries or keys that stand for it, with the acknowledgement untouched ([ADR 0090](adr/0090-container-presets.md)).
+
 ### 19.2 Raw escape hatch
 
 Always available to experts.
@@ -2710,7 +2712,7 @@ Inspector sections are capability/resource driven.
 - versioning;
 - quota;
 - CORS;
-- staticweb;
+- staticweb (the `Web-*` keys are editable metadata since [ADR 0090](adr/0090-container-presets.md));
 - TempURL keys;
 - segment classification;
 - raw headers.

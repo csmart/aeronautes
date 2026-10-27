@@ -122,6 +122,10 @@ The first two decide the release after v1 and are recorded here so the trail sta
     The author's choice is to bundle the verified official binary inside the Linux packages, as the other targets already do, recorded with the reasons the other two shapes were not taken as [ADR 0089](../../adr/0089-bundled-engine-on-linux.md); the operator's re-test of the rebuilt package is its acceptance.
     The pin, the enumerated flag surface and the [ADR 0020](../../adr/0020-recovery-containment.md) refusals are untouched, and no deferred capability moves.
 
+27. Common container settings must not need header syntax.
+    Of the configure-container panel: "it's only k/v metadata values, can we have some buttons to tick to turn on read only, web, common things people might do? and then that's reflected below in the actual metadata (and vice versa, if someone adds the right metadata it ticks the boxes), maybe separated by a line?", and "I don't want people to need to know the exact syntax to make a container world readable and enable web".
+    The author's reading is [ADR 0090](../../adr/0090-container-presets.md): tick boxes for world read, public listing and static web derived from the values they stand for, with the `Web-*` family becoming editable metadata so the website tick has rows to stand for; the public-read acknowledgement and its native confirmation are untouched, and no deferred capability moves.
+
 ## Six production gates
 
 | Gate | Existing packages | Completion condition |
