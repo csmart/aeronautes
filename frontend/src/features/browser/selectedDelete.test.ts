@@ -170,7 +170,7 @@ describe("the working list", () => {
     mounted.add(component);
     flushSync(); await settle();
     const row = (name: string) => [...f.root.querySelectorAll<HTMLElement>('[role="option"]')]
-      .find((el) => el.querySelector(".name")?.textContent?.trim() === name)!;
+      .find((el) => el.querySelector(".name")?.firstChild?.textContent?.trim() === name)!;
     row("empty-object").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
     flushSync(); await settle();
     row("external-dlo").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, ctrlKey: true }));
@@ -194,6 +194,63 @@ describe("the working list", () => {
     click(button("Delete selected…", f.root));
     expect(f.browser.selectedDelete?.members.map((m) => m.name)).toEqual(["external-dlo", "external-slo"]);
     expect(f.browser.selectedDelete?.excludedPrefixes).toEqual(["fake/"]);
+  });
+
+  async function list() {
+    const f = await state();
+    const component = mount(WorkingList, { target: f.root, props: { browser: f.browser } });
+    mounted.add(component);
+    flushSync(); await settle();
+    const row = (name: string) => {
+      const found = [...f.root.querySelectorAll<HTMLElement>('[role="option"]')]
+        .find((el) => el.querySelector(".name")?.firstChild?.textContent?.trim() === name);
+      if (!found) throw new Error(`Missing rendered row ${name}`);
+      return found;
+    };
+    const pick = async (name: string, ctrlKey = false, shiftKey = false) => {
+      row(name).dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, ctrlKey, shiftKey }));
+      flushSync(); await settle();
+    };
+    return { ...f, row, pick, foot: () => f.root.querySelector(".pane-foot")?.textContent ?? "" };
+  }
+
+  it("shows a toggled-off member as not selected although it keeps the focus", async () => {
+    const f = await list();
+    await f.pick("empty-object");
+    await f.pick("external-dlo", true);
+    await f.pick("external-slo", true);
+    await f.pick("external-dlo", true);
+    expect(names(f.browser.chosenRows)).toEqual(["empty-object", "external-slo"]);
+    expect(f.browser.openSelectedDelete()).toBe(true);
+    expect(f.browser.selectedDelete?.members.map((m) => m.name)).toEqual(["empty-object", "external-slo"]);
+    expect(f.foot()).toContain("2 selected");
+    expect(f.row("empty-object").getAttribute("aria-selected")).toBe("true");
+    expect(f.row("external-slo").getAttribute("aria-selected")).toBe("true");
+    expect(f.row("external-dlo").getAttribute("aria-selected")).toBe("false");
+    expect(f.root.querySelector('[role="listbox"]')?.getAttribute("aria-activedescendant")).toBe(f.row("external-dlo").id);
+  });
+
+  it("toggles the sole selected row off with Ctrl", async () => {
+    const f = await list();
+    await f.pick("empty-object");
+    expect(f.browser.selectionCount).toBe(1);
+    expect(f.row("empty-object").getAttribute("aria-selected")).toBe("true");
+    await f.pick("empty-object", true);
+    expect(f.browser.selectionCount).toBe(0);
+    expect(f.browser.selectedIndex).toBe(-1);
+    expect(f.row("empty-object").getAttribute("aria-selected")).toBe("false");
+    expect(f.foot()).toContain("none selected");
+  });
+
+  it("keeps the range anchor through a refresh that leaves the rows unchanged", async () => {
+    const f = await list();
+    await f.pick("empty-object");
+    await f.pick("fake/", false, true);
+    expect(names(f.browser.chosenRows)).toEqual(["empty-object", "external-dlo", "external-slo", "fake/"]);
+    await f.browser.refreshEntries();
+    await settle();
+    await f.pick("external-dlo", false, true);
+    expect(names(f.browser.chosenRows)).toEqual(["empty-object", "external-dlo"]);
   });
 });
 
