@@ -155,6 +155,21 @@ func TestSelectedDeleteDeletesEveryMemberExactly(t *testing.T) {
 			t.Fatalf("%s: item = %+v", name, item)
 		}
 	}
+	// The drawer reads the same facts through the service: each member's
+	// issued mark and the empty successor its verifying read observed, and
+	// the deletion totals beside the transfer ones.
+	page, err := h.jobsSvc.Items(ctx, h.bookmarkID(), jobID, "", 100)
+	if err != nil || page.Status != "available" || len(page.Items) != 4 {
+		t.Fatalf("items page = %+v, %v", page, err)
+	}
+	for _, item := range page.Items {
+		if item.IssuedAt == "" || item.Execution == nil || item.Execution.Result != "deleted" || item.Successor == nil || item.Successor.Present {
+			t.Fatalf("item DTO %s = %+v", item.Key, item)
+		}
+	}
+	if totals, err := h.jobsSvc.ItemTotals(ctx, h.bookmarkID(), jobID); err != nil || totals.Issued != 4 || totals.Deleted != 4 {
+		t.Fatalf("totals DTO = %+v, %v", totals, err)
+	}
 	deletes := deletesUnder(h, "fixtures")
 	if len(deletes) != 4 {
 		t.Fatalf("DELETEs under fixtures = %d, want one per member: %v", len(deletes), deletes)

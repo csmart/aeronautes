@@ -77,6 +77,19 @@ type JobItemPredecessorDTO struct {
 	CreatedAt string `json:"createdAt"`
 }
 
+// JobItemSuccessorDTO is what a deletion member's verifying read found at
+// the name afterwards (ADR 0093 decision 4): nothing, or something with its
+// class, length and entity tag. It is an observation, never an outcome: the
+// item's execution says whether the member was deleted, and a successor
+// beside a deletion says the name did not stay empty.
+type JobItemSuccessorDTO struct {
+	Present   bool   `json:"present"`
+	Class     string `json:"class"`
+	Length    int64  `json:"length"`
+	ETag      string `json:"etag"`
+	CreatedAt string `json:"createdAt"`
+}
+
 type JobItemDTO struct {
 	ID                  string                 `json:"id"`
 	Key                 string                 `json:"key"`
@@ -96,6 +109,13 @@ type JobItemDTO struct {
 	// name, read before the attempt. It says nothing about whether the
 	// attempt happened: Execution and Verification do.
 	Predecessor *JobItemPredecessorDTO `json:"predecessor"`
+	// IssuedAt is when a deletion member's issued mark was written, before
+	// its final HEAD; empty when it never was. A member issued with no
+	// execution record may have been deleted (ADR 0093 decision 4).
+	IssuedAt string `json:"issuedAt"`
+	// Successor is what a deletion member's verifying read found at the name
+	// afterwards; nil when nothing was recorded.
+	Successor *JobItemSuccessorDTO `json:"successor"`
 }
 
 type JobItemPageDTO struct {
@@ -115,6 +135,10 @@ type JobItemTotalsDTO struct {
 	Unresolved int64  `json:"unresolved"`
 	Unverified int64  `json:"unverified"`
 	Problems   int64  `json:"problems"`
+	// Issued and Deleted are a deletion job's (ADR 0093 decision 4): how
+	// many members were marked issued, and how many were deleted.
+	Issued  int64 `json:"issued"`
+	Deleted int64 `json:"deleted"`
 }
 
 func (s *JobService) History(ctx context.Context, bookmarkID, cursor string, limit int) (JobHistoryDTO, error) {
@@ -178,7 +202,8 @@ func (s *JobService) ItemTotals(ctx context.Context, bookmarkID, jobID string) (
 	}
 	return JobItemTotalsDTO{Status: "available", Items: totals.Items, Planned: totals.Planned,
 		Admitted: totals.Admitted, Failed: totals.Failed, Conflicts: totals.Conflicts,
-		Refused: totals.Refused, Unresolved: totals.Unresolved, Unverified: totals.Unverified, Problems: totals.Problems}, nil
+		Refused: totals.Refused, Unresolved: totals.Unresolved, Unverified: totals.Unverified, Problems: totals.Problems,
+		Issued: totals.Issued, Deleted: totals.Deleted}, nil
 }
 
 func itemReadError(err error) error {
@@ -203,6 +228,14 @@ func jobItemDTO(item jobs.ItemRecord) JobItemDTO {
 		out.Staging = &staging
 	}
 	out.Predecessor = jobItemPredecessorDTO(item.Predecessor)
+	if !item.IssuedAt.IsZero() {
+		out.IssuedAt = item.IssuedAt.UTC().Format(time.RFC3339Nano)
+	}
+	if item.Successor != nil {
+		out.Successor = &JobItemSuccessorDTO{Present: item.Successor.Present, Class: item.Successor.Class,
+			Length: item.Successor.Length, ETag: item.Successor.ETag,
+			CreatedAt: item.Successor.CreatedAt.UTC().Format(time.RFC3339Nano)}
+	}
 	return out
 }
 

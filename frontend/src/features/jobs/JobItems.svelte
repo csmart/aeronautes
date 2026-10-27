@@ -19,6 +19,44 @@
   let pollRequest = 0;
   let disposed = false;
   const terminal = (state: string) => ["complete", "partial", "cancelled", "failed"].includes(state);
+  // A selected-set deletion's items are deletion members (ADR 0093 decision
+  // 4): one outcome each, with what the verifying read observed, and no
+  // destination.
+  const deletion = $derived(job.type === "delete_selected");
+
+  // A member's one line (ADR 0093 decision 5): the outcome word from its
+  // execution record, and what the verifying read found at the name, never a
+  // plain deletion when something stands there.
+  function deletionWords(item: JobItemDTO): { text: string; problem: boolean } {
+    const ex = item.execution;
+    if (!ex) {
+      return item.issuedAt
+        ? { text: "Unresolved: issued with no outcome recorded, so its DELETE may have been sent.", problem: true }
+        : { text: "Not attempted.", problem: false };
+    }
+    const diagnostic = ex.code ? ` (${ex.stage}: ${ex.code}${ex.httpStatus ? `, HTTP ${ex.httpStatus}` : ""})` : "";
+    switch (ex.result) {
+      case "deleted":
+        if (item.successor?.present) {
+          return {
+            text: `Deleted, but something stands at the name now: a ${item.successor.class} of ${item.successor.length} bytes`
+              + `${item.successor.etag ? ` with entity tag ${item.successor.etag}` : ""}. It may be an archived predecessor or a concurrent write; what this delete did to it is not observed.`,
+            problem: true,
+          };
+        }
+        return { text: "Deleted; the verifying read found nothing at the name.", problem: false };
+      case "unverified":
+        return { text: `Unverified: the name may still hold what was shown${diagnostic}.`, problem: true };
+      case "conflict":
+        return { text: `Changed since it was listed; left as it is${diagnostic}.`, problem: true };
+      case "refused":
+        return { text: `Refused; left as it is${diagnostic}.`, problem: true };
+      case "not_attempted":
+        return { text: "Not attempted.", problem: false };
+      default:
+        return { text: `${ex.result.replaceAll("_", " ")}; left as it is${diagnostic}.`, problem: true };
+    }
+  }
   const currentState = $derived(terminal(job.state) ? job.state : polledState ?? job.state);
   const active = $derived(!terminal(currentState));
 
@@ -114,7 +152,11 @@
       <div><dt>Conflicts</dt><dd>{totals.conflicts}</dd></div>
       <div><dt>Refused</dt><dd>{totals.refused}</dd></div>
       <div><dt>Unresolved effects</dt><dd>{totals.unresolved}</dd></div>
-      <div><dt>Unverified copies</dt><dd>{totals.unverified}</dd></div>
+      <div><dt>{deletion ? "Unverified deletions" : "Unverified copies"}</dt><dd>{totals.unverified}</dd></div>
+      {#if deletion}
+        <div><dt>Issued</dt><dd>{totals.issued}</dd></div>
+        <div><dt>Deleted</dt><dd>{totals.deleted}</dd></div>
+      {/if}
       <div><dt>Items with diagnostics</dt><dd>{totals.problems}</dd></div>
     </dl>
     <p>These counts overlap; do not add them together. While active, pages and counts are separate snapshots.</p>
@@ -128,13 +170,22 @@
               <summary><code>{item.keyDisplay}</code></summary>
               <dl class="locations">
                 <dt>Source ({item.source.kind})</dt><dd><code>{item.source.display}</code></dd>
-                <dt>Destination ({item.destination.kind})</dt><dd><code>{item.destination.display}</code></dd>
+                {#if !deletion}
+                  <dt>Destination ({item.destination.kind})</dt><dd><code>{item.destination.display}</code></dd>
+                {/if}
                 {#if item.staging}
                   <dt>Staging ({item.staging.kind})</dt><dd><code>{item.staging.display}</code></dd>
                 {/if}
               </dl>
               <p>Planned: {item.planned ? "yes" : "no"} · Admitted: {item.admitted ? "yes" : "no"} · Listed bytes (advisory): {item.listedBytes}</p>
             </details>
+            {#if deletion}
+              {@const words = deletionWords(item)}
+              <p class="observation outcome">
+                <strong>Outcome:</strong>
+                {#if words.problem}<span class="problem">{words.text}</span>{:else}{words.text}{/if}
+              </p>
+            {:else}
             <p>
               {#if item.admitted && (!item.execution || item.execution.effect === "unresolved" || item.publication?.effect === "unresolved")}<span class="problem">Unresolved effects. </span>{/if}
               {#if item.execution?.result === "copied" && (item.verification?.result !== "verified" || item.publicationRequired && item.publication?.result !== "verified")}<span class="problem">Unverified copy. </span>{/if}
@@ -167,6 +218,7 @@
                 Final check not reached.
               {/if}
             </p>
+            {/if}
           </article>
         {/each}
       </div>
