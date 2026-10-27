@@ -7,7 +7,6 @@
   import type { BrowserState } from "../browser/browserState.svelte";
   import ObjectEditPanel from "./ObjectEditPanel.svelte";
   import ContainerEditPanel from "./ContainerEditPanel.svelte";
-  import ManifestDeleteDialog from "./ManifestDeleteDialog.svelte";
 
   let { browser }: { browser: BrowserState } = $props();
 
@@ -18,7 +17,6 @@
 
   let editingObject = $state(false);
   let editingContainer = $state(false);
-  let deleteManifestOpen = $state(false);
   let markerBusy = $state(false);
   let markerError: string | null = $state(null);
   let alive = true;
@@ -30,7 +28,6 @@
     void browser.scopeRevision;
     editingObject = false;
     editingContainer = false;
-    deleteManifestOpen = false;
     markerError = null;
     markerBusy = false;
   });
@@ -148,14 +145,6 @@
       <ObjectEditPanel {browser} {detail} onDone={() => (editingObject = false)} />
     {/if}
 
-    {#if v1Offers.manifestDelete && deleteManifestOpen && detail}
-      <ManifestDeleteDialog
-        {browser}
-        {detail}
-        {segmentsAt}
-        onClose={() => (deleteManifestOpen = false)}
-      />
-    {/if}
 
     {#if detail && detail.class === "dlo"}
       <section class="card">
@@ -198,7 +187,7 @@
         <div class="lo-actions">
           <button class="edit-btn inline" onclick={openBackstage}>Open segments backstage</button>
           {#if v1Offers.manifestDelete}
-            <button class="edit-btn inline danger" onclick={() => (deleteManifestOpen = true)}>
+            <button class="edit-btn inline danger" onclick={() => browser.openManifestDelete()}>
               Delete manifest…
             </button>
           {/if}
@@ -253,7 +242,7 @@
             <button class="edit-btn inline" onclick={openBackstage}>Open segments backstage</button>
           {/if}
           {#if v1Offers.manifestDelete}
-            <button class="edit-btn inline danger" onclick={() => (deleteManifestOpen = true)}>
+            <button class="edit-btn inline danger" onclick={() => browser.openManifestDelete()}>
               Delete manifest…
             </button>
           {/if}
@@ -331,14 +320,10 @@
           {/if}
         {:else if pd.markerBacked}
           {#if v1Offers.markerDelete}
-            <button
-              class="edit-btn inline danger"
-              disabled={markerBusy}
-              onclick={() => markerAction(pd, (ownsView) => browser.deleteMarker(pd.prefix, ownsView))}
-            >
-              Delete marker object
+            <button class="edit-btn inline danger" onclick={() => browser.openMarkerDelete()}>
+              Delete marker…
             </button>
-            <p class="teach">Removes only the zero-byte marker; children are untouched.</p>
+            <p class="teach">Opens the delete for the marker object only; children are untouched.</p>
           {:else}
             <p class="teach">Marker deletion is not offered in this build; the marker and its children are untouched.</p>
           {/if}

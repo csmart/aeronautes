@@ -173,10 +173,19 @@ it.each([false, true])("retains inline-SLO destruction disclosure with Bulk dele
   await settle();
   const dialog = document.querySelector('[role="alertdialog"][aria-label="Delete manifest"]');
   expect(dialog).not.toBeNull();
-  expect(api.checkSegmentOwnership).toHaveBeenCalledOnce();
+  // The manifest-only path never asks the ownership check, which is
+  // classified with bulk deletion; the disclosure comes from the manifest
+  // the inspector already read (ADR 0094 decision 5).
+  expect(api.checkSegmentOwnership).not.toHaveBeenCalled();
   expect(button("Delete manifest only").disabled).toBe(false);
   expect(dialog?.textContent).toContain("1 inline data entry");
   expect(dialog?.textContent).toContain("will be destroyed");
+  const option = dialog?.querySelector<HTMLInputElement>('input[type="checkbox"]') ?? null;
+  expect(option !== null).toBe(bulkEnabled);
+  if (option) {
+    option.click(); await settle();
+    expect(api.checkSegmentOwnership).toHaveBeenCalledOnce();
+  }
 });
 
 // The fail-closed end of the same disclosure: when neither the gated
