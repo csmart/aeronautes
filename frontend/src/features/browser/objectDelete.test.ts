@@ -231,3 +231,22 @@ describe("the Delete key", () => {
     expect([...document.querySelectorAll<HTMLElement>('[role="option"]')].some((el) => el.querySelector(".name")?.textContent?.trim() === "empty-object")).toBe(false);
   });
 });
+
+describe("the operation's lifetime", () => {
+  it("closes a refused operation when a background refresh clears its selection", async () => {
+    const f = await dialog();
+    f.fake.deleteObject = vi.fn(async () => { throw new Error("identity changed; delete refused"); });
+    click(button("Delete object", f.root));
+    await settle();
+    expect(f.root.textContent).toContain("identity changed; delete refused");
+    expect(f.done).not.toHaveBeenCalled();
+    // A job finishing elsewhere refreshes the view; here the listing no longer
+    // holds the row, so the inspector clears and the stale operation must go.
+    const objects = f.fake.objects;
+    f.fake.objects = async (...args) => ({ ...(await objects(...args)), rows: [] });
+    await f.browser.refreshEntries();
+    await settle();
+    expect(f.browser.objectDetail).toBeNull();
+    expect(f.done).toHaveBeenCalledOnce();
+  });
+});

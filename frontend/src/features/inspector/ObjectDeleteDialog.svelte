@@ -28,11 +28,12 @@
   const observed = $derived(op.status === "done" ? op.result?.objectAfter ?? null : null);
   const current = $derived(browser.objectDeleteCurrent());
 
-  // A view the operator moved before confirming abandons the operation; the
-  // refresh after a success is the state's own and does not reach here as
-  // pending.
+  // A view that moved while the operation is still pending abandons it,
+  // whether the operator moved it or a background refresh did, and whether
+  // or not a refusal is on screen; the refresh after a success is the
+  // state's own and does not reach here as pending.
   $effect(() => {
-    if (pending && !op.error && !current) untrack(onClose);
+    if (pending && !current) untrack(onClose);
   });
 
   onMount(async () => {
