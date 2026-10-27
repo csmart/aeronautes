@@ -2,9 +2,12 @@
   million-object listings never render a row per object). Fixed row height,
   windowed rendering with overscan, list-level keyboard selection (
   arrows move, Enter activates). Selection state lives with the caller;
-  this component only reports intents. -->
+  this component only reports intents, including how a pointer chose a row
+  (plain, toggled with Ctrl or Cmd, or a range with Shift). -->
 <script lang="ts" generics="T">
   import { onMount, type Snippet } from "svelte";
+
+  type SelectMode = "single" | "toggle" | "range";
 
   interface Props {
     items: T[];
@@ -19,7 +22,12 @@
     /** Accessible name for the listbox. */
     ariaLabel?: string;
     row: Snippet<[T, number, boolean]>;
-    onSelect?: (index: number) => void;
+    /** Whether a row is in a multi-selection beyond the focused one; the
+     * caller owns that state too, and offering it marks the listbox as
+     * multi-selectable. */
+    rowSelected?: (item: T, index: number) => boolean;
+    /** Keyboard moves are always plain. */
+    onSelect?: (index: number, mode: SelectMode) => void;
     onActivate?: (item: T, index: number) => void;
   }
 
@@ -31,9 +39,31 @@
     viewport,
     ariaLabel,
     row,
+    rowSelected,
     onSelect,
     onActivate,
   }: Props = $props();
+
+  function isSelected(item: T, index: number): boolean {
+    return index === selected || (rowSelected?.(item, index) ?? false);
+  }
+
+  function modeOf(event: PointerEvent): SelectMode {
+    if (event.shiftKey) return "range";
+    if (event.ctrlKey || event.metaKey) return "toggle";
+    return "single";
+  }
+
+  function handlePointerdown(event: PointerEvent, index: number) {
+    const mode = modeOf(event);
+    if (mode === "range") {
+      // A Shift click would otherwise select the rows' text; the focus the
+      // default would have moved comes here explicitly.
+      event.preventDefault();
+      el?.focus();
+    }
+    onSelect?.(index, mode);
+  }
 
   // focus() moves keyboard focus into the listbox (screen shortcuts).
   export function focus() {
@@ -110,7 +140,7 @@
         event.key === "ArrowDown"
           ? Math.min(items.length - 1, selected + 1)
           : Math.max(0, selected - 1);
-      onSelect?.(next);
+      onSelect?.(next, "single");
       ensureVisible(next);
     } else if (event.key === "Enter" && selected >= 0 && selected < items.length) {
       event.preventDefault();
@@ -127,6 +157,7 @@
   tabindex="0"
   role="listbox"
   aria-label={ariaLabel}
+  aria-multiselectable={rowSelected ? true : undefined}
   aria-activedescendant={selected >= 0 ? `${uid}-row-${selected}` : undefined}
 >
   <div class="spacer" style:height="{totalHeight}px">
@@ -137,13 +168,13 @@
         id="{uid}-row-{index}"
         role="option"
         tabindex={-1}
-        aria-selected={index === selected}
+        aria-selected={isSelected(item, index)}
         style:transform="translateY({index * rowHeight}px)"
         style:height="{rowHeight}px"
-        onpointerdown={() => onSelect?.(index)}
+        onpointerdown={(event) => handlePointerdown(event, index)}
         ondblclick={() => onActivate?.(item, index)}
       >
-        {@render row(item, index, index === selected)}
+        {@render row(item, index, isSelected(item, index))}
       </div>
     {/each}
   </div>
