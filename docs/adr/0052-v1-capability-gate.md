@@ -97,6 +97,11 @@ inventory, with the two derivations agreeing.
    Copy, bulk delete, marker and manifest deletion, benchmark and job re-run stay deferred, and
    Mirror stays refused under [ADR 0020](0020-recovery-containment.md).
 
+10. **ADR 0092, 27 October 2026.** `MutateService.DeleteObject`, the deletion of one plain object the
+    operator was shown, joins the deferred table when it is born, under the capability "Object deletion"
+    with the token `object-delete`, so a build offers it only while the operator trials it; returning
+    it is the operator's word, recorded here when given, as the earlier returns were.
+
 ## What this does not establish
 
 It bounds what a v1 build offers.

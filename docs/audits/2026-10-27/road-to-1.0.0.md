@@ -80,7 +80,7 @@ TempURL keys and CORS management, which the README tracks as v1.x work.
 Directory upload and account metadata (P27).
 Pause and resume (finish line decision 17), feasible since the batching of ADR 0074.
 Raising the default active-job budget, which [ADR 0078](../../adr/0078-overlapping-download-destinations.md) made safe by construction.
-Keystone authentication and the vault fallback belong here if the operator decides they are in 1.0.0.
+Keystone authentication is here by finish-line decision 31: a bookmark authentication type beside TempAuth v1, the session's auth version and a Keystone-shaped fixture for its proof, kept cheap because the engine never speaks to Keystone (K-SEC-001); the vault fallback belongs here if the operator decides it is in 1.0.0.
 
 ### 0.6.0 — performance
 
@@ -170,10 +170,13 @@ Beyond §63, the operator has asked for or the records owe: selected-set deletio
 ## Decisions this plan needs from the operator
 
 1. The sequence itself: accept it, or reorder it.
+   Given on 27 October 2026 as finish-line decision 31: delivered through the Linux half of 0.7.0.
 2. The deletion split: exact-object, selected-set and the return of marker and manifest deletion in 0.2.0, with bulk deletion of a prefix or container in 0.2.x once its protocol is written.
 3. Mirror: in 1.0.0 under ADR 0086, or recorded as outside it (recommended).
 4. Keystone authentication: in 1.0.0, or kept as the v2 candidate the design lists.
+   Given on 27 October 2026 as finish-line decision 31: in 1.0.0, as part of 0.5.0.
 5. Platforms: all six targets as K-PLAT-003 requires, which needs macOS and Windows machines for acceptance, or a recorded narrowing.
+   Given on 27 October 2026 as finish-line decision 31: Linux first, as a complete release; macOS and Windows acceptance wait for hardware.
 6. Signing: whose keys, and whether 1.0.0 ships signed.
 7. The Wails 3.0.0 beta pin: ship 1.0.0 on it, or wait for a stable 3.0.0.
 8. The benchmark and the adaptive back-off: 1.0.0 or 1.x.
