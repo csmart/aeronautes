@@ -86,9 +86,9 @@ type redirectRefusingTransport struct {
 	inner http.RoundTripper
 }
 
-// CloseIdleConnections lets a session close what the wrapped transport
-// keeps idle.
-func (t redirectRefusingTransport) CloseIdleConnections() {
+// closeIdle lets a session close what the wrapped transport keeps idle;
+// see idleCloser for why this is not the exported method.
+func (t redirectRefusingTransport) closeIdle() {
 	closeIdleConnections(t.inner)
 }
 
