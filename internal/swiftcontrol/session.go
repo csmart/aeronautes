@@ -126,6 +126,22 @@ func New(cfg Config) (*Session, error) {
 	}, nil
 }
 
+// Close releases the session's idle connections. A one-shot session, such
+// as a bookmark verification, owns its transport and must not leave
+// keep-alive connections behind when it returns; cached bookmark sessions
+// live as long as their registry and never call this.
+func (s *Session) Close() {
+	closeIdleConnections(s.conn.Transport)
+}
+
+// closeIdleConnections closes what a transport, or the transport inside a
+// wrapper, keeps idle.
+func closeIdleConnections(rt http.RoundTripper) {
+	if closer, ok := rt.(interface{ CloseIdleConnections() }); ok {
+		closer.CloseIdleConnections()
+	}
+}
+
 // Authenticate performs v1 auth: GET AuthURL with X-Auth-User/X-Auth-Key,
 // keeping the returned token and storage URL. The wire library also
 // re-authenticates once and replays when a request meets 401 (§9.2); the
