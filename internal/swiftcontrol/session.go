@@ -134,10 +134,22 @@ func (s *Session) Close() {
 	closeIdleConnections(s.conn.Transport)
 }
 
+// idleCloser is how the transport wrappers forward a close to the transport
+// inside them. It is deliberately not the exported CloseIdleConnections:
+// the wire library calls that on any transport advertising it whenever it
+// re-authenticates, which would break the requests in flight on the
+// connections it closes.
+type idleCloser interface {
+	closeIdle()
+}
+
 // closeIdleConnections closes what a transport, or the transport inside a
 // wrapper, keeps idle.
 func closeIdleConnections(rt http.RoundTripper) {
-	if closer, ok := rt.(interface{ CloseIdleConnections() }); ok {
+	switch closer := rt.(type) {
+	case idleCloser:
+		closer.closeIdle()
+	case interface{ CloseIdleConnections() }:
 		closer.CloseIdleConnections()
 	}
 }
