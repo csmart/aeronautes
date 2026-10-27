@@ -132,15 +132,16 @@ func literalPlainDTO(d *swiftcontrol.ObjectDetail) bool {
 // kind, a length and an entity tag, and what that finding can and cannot
 // mean (ADR 0092 decision 3).
 func observedAfterDelete(result *swiftcontrol.ObjectDeleteResult) string {
+	prefix := ""
+	if result != nil && !result.Accepted {
+		prefix = "no store answer proves the delete, and "
+	}
 	if result == nil || result.After == nil {
 		observed := "nothing observed at the name afterwards"
 		if result != nil && result.AfterRead != nil {
 			observed = "the literal read of the name failed afterwards (" + safeReadFailure(result.AfterRead) + ")"
 		}
-		if result != nil && !result.Accepted {
-			return "no store answer proves the delete, and " + observed
-		}
-		return observed
+		return prefix + observed
 	}
 	if result.Accepted && literalPlainDTO(result.After) && !result.AfterComparable {
 		return "the name holds a plain object whose identity the literal read did not report completely, so it was not compared"
@@ -155,7 +156,7 @@ func observedAfterDelete(result *swiftcontrol.ObjectDeleteResult) string {
 	}
 	found := fmt.Sprintf("the name now holds a %s of %d bytes with entity tag %s", kind, after.ContentLength, strings.Trim(after.ETag, `"`))
 	if result.SameIdentityObserved() {
-		return found + ", the identity that was shown, so the delete may not have taken effect"
+		return prefix + found + ", the identity that was shown, so the delete may not have taken effect"
 	}
-	return found + ", which may be the archived predecessor or a concurrent write"
+	return prefix + found + ", which may be the archived predecessor or a concurrent write"
 }
