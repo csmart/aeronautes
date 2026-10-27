@@ -2,12 +2,12 @@
   "schemaVersion": 1,
   "reportSchemaVersion": 3,
   "identity": {
-    "commit": "4e7a35206a76de0d8fa8e97ea836fe0760c4841b",
+    "commit": "8a19728b6a6c8d472889d4c636307d481bd46eb1",
     "go_version": "go1.27.3",
-    "run_id": "40438457699",
+    "run_id": "40516591112",
     "run_attempt": "1"
   },
-  "contractHash": "a4f0914c2a290c0d",
+  "contractHash": "9a97c56252343063",
   "actions": [
     {
       "action": "AppService.About",
@@ -321,6 +321,15 @@
       ]
     },
     {
+      "action": "MutateService.DeleteObject",
+      "kind": "destructive",
+      "required": [
+        "happy",
+        "refusal",
+        "conflict"
+      ]
+    },
+    {
       "action": "MutateService.UpdateContainer",
       "kind": "mutate",
       "required": [
@@ -598,6 +607,18 @@
       "scenario": "refusal"
     },
     {
+      "action": "MutateService.DeleteObject",
+      "scenario": "conflict"
+    },
+    {
+      "action": "MutateService.DeleteObject",
+      "scenario": "happy"
+    },
+    {
+      "action": "MutateService.DeleteObject",
+      "scenario": "refusal"
+    },
+    {
       "action": "MutateService.UpdateContainer",
       "scenario": "conflict"
     },
@@ -667,10 +688,10 @@
     }
   ],
   "evidence": {
-    "reference": "docs/experiments/2026-10-27-verify-action-baseline.md",
-    "mainReportSHA256": "16e8a19afeb3a20cf72fffd94d8312b17b7a89c1045b5f91bdf8aef4cb79cbf0",
-    "mainReceiptSHA256": "f993aa9c92ae936e87ee4927c42375e9af1d3f54f1956a951a97b572fd759a7b",
-    "heavyReportSHA256": "c0194c149c32183d317a413e06f643bcb9dc3449caf81b6ef4192831327280db",
-    "heavyReceiptSHA256": "6351c2094f0bf7ef7ccfa95b6c4758a143af471aa9eb171f8bfe4f6492a069ab"
+    "reference": "docs/experiments/2026-10-27-object-delete-baseline.md",
+    "mainReportSHA256": "e774fadc7772b14f896cd70b1d4a286218743f2f0fd2ee8eef83a5231db17089",
+    "mainReceiptSHA256": "df0a6b44ac93d8bae98ce6a8d1656b93b28ca13ea0a605d39da6217d968865ae",
+    "heavyReportSHA256": "7cdd225726f4ca7ce1ce6cdf543000ddbcbb13c9b4e9114ed35e09a06004f32f",
+    "heavyReceiptSHA256": "474e598283721eaaaf923548ec65433351ae821b1de1cf10349076e1d348c0d5"
   }
 }
