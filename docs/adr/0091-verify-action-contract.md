@@ -15,7 +15,7 @@ Its required scenarios are `happy` and `refusal`, the same pair `BookmarkService
 - A right user and key against the fixture account answer with that account's name, the suffix of the storage URL the endpoint returned, and non-negative counts.
 - A wrong key is refused by the endpoint and the refusal reaches the caller; nothing is saved either way, so the bookmark list is the same before and after.
 - The session is built as a saved bookmark's is: the endpoint policy (DESIGN §65.11 P09) and the TLS trust apply before any request.
-- A saved key serves a verify only while the binding it was saved under is unchanged, and every request is admitted under the generation the key was acquired with ([ADR 0015](0015-credential-binding.md)); a typed key is used for the exchange and discarded.
+- A saved key serves a verify only while the binding it was saved under is unchanged, and every request is admitted under the generation the key was acquired with ([ADR 0015](0015-credential-bindings.md)); a typed key is used for the exchange and discarded.
 - No token, storage URL or key appears in the result (K-SEC-002).
 
 ## Previously protected identities
