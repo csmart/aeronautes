@@ -5,7 +5,7 @@ Written for review before any implementation, in the shape [ADR 0085](0085-reobs
 Nothing here is built.
 It proposes one new bridge action behind the [ADR 0052](0052-v1-capability-gate.md) gate, lifts nothing from that gate, and changes no refusal of [ADR 0020](0020-recovery-containment.md).
 **Scope:** One synchronous deletion of one plain object the operator has inspected: `MutateService.DeleteObject`, its guards, its durable facts, its contract row, its gate classification and its interface.
-It does not cover manifests, markers, segments, prefixes, containers, symbolic links or a selected set; each is named below with the record that owns it.
+It does not cover manifests, the marker journey on a prefix row, segments, prefixes, containers, symbolic links or a selected set; each is named below with the record that owns it, and decision 2 says what it does with a marker reached as an object.
 
 ## The requirement, and what exists today
 
@@ -41,27 +41,31 @@ That is ADR 0085's narrowest window, and it exists for manifests only.
 2. **The session guards are ADR 0085's three, with the class guard turned the other way.**
    A fresh HEAD of the name immediately before the DELETE is the final comparison.
    A name that holds a dynamic or static large object is refused and the operator is pointed at the manifest deletion, so the manifest-only semantics stay with the record that owns them and the two paths never overlap.
-   A HEAD that followed a symbolic link is refused: the identity the operator was shown is the target's, a DELETE at the name would remove the link rather than the thing shown, and deleting a link needs its own identity read (`Session.SymlinkGet`) under a record of its own.
+   A symbolic link in either representation is refused, with the two-part test the metadata editor already applies: a HEAD that followed a link (`FollowedSymlink`), or one that carries the link's target without following it (`SymlinkTarget`), which is how a cross-account link is represented.
+   The identity the operator was shown is the target's, a DELETE at the name would remove the link rather than the thing shown, and deleting a link needs its own identity read (`Session.SymlinkGet`) under a record of its own.
    A class, length or entity tag that differs from the fingerprint refuses with `IdentityConflictError`, carrying both identities, and deletes nothing.
    Only then is the DELETE sent, with nothing of ours between the HEAD's reply and it.
-   A zero-byte object is a plain object and is deleted like any other; a directory marker reached as an object row is the object it is, its children are untouched and the prefix they imply remains, and the dialog says so.
+   A zero-byte object is a plain object and is deleted like any other.
+   A directory marker reached as an object row is deleted as the literal object it is, not through the marker journey of `DeleteMarker`: its children are untouched, the prefix they imply remains, and the dialog says so.
 
-3. **Verification is a HEAD of the exact object, and only absence is success.**
+3. **Verification is a literal read of the exact name, and only absence is success.**
+   The read is the non-following HEAD that `Session.SymlinkGet` issues (`?symlink=get`), not the following `ObjectDetail`, because a writer can place a dangling link at the name after the DELETE and a following read would report the link's missing target as not found while an object still stands at the name; a non-link object answers that read as itself.
    A read that reports not found records `applied`.
-   A read that finds anything, whether the same identity or another, records `unverified` and names what it found, because either the DELETE has not taken effect yet or another writer has already placed something at the name, and this record cannot tell which.
+   A read that finds anything, whether the same identity, another object or a link, records `unverified` and names what it found, because either the DELETE has not taken effect yet or another writer has already placed something at the name, and this record cannot tell which.
    A read that fails records `unverified` with the DELETE's transaction identifier.
 
 4. **Durable facts in the ADR 0058 shape, with the operation `object.delete`.**
    The intent commits before the HEAD; a failed intent sends nothing.
    The outcome and the audit event commit in one transaction after the attempt: `applied`, `conflict` for the identity refusal, `failed` for a refusal or a store error that provably destroyed nothing, and `unverified` as decision 3 says.
-   A DELETE that landed and an outcome transaction that failed is residue, returned as a named error carrying the identity, and that identity is not `applied` on reopen.
+   A DELETE that landed, or that may have landed because its reply was lost, followed by an outcome transaction that failed, is residue: the call returns a named error carrying the identity and the warning that the deletion may have occurred, the only durable row is the intent, and on reopen that identity is neither `applied` nor any other terminal outcome, which is how a possibly posted metadata write is already treated.
    The audit summary withholds the object name as the manifest deletion's does, because a name can be a secret, and carries the two identities, the class, the byte count and the entity tag on a conflict.
    Returning `DeleteManifest` to a build is a separate change; whether it joins this ledger then is decided there, not here.
 
 5. **What the operator is told before and after.**
    The dialog binds the exact identity it opened for, as the manifest and bulk dialogs do, and acts on nothing else.
    It names the object, says the data at this name is destroyed, and states the container's versioning mode and archive as the inspector knows them.
-   What a DELETE does to a versioned container is not what an operator expects and is not recorded in this repository, so the implementation slice measures the effect under no versioning, a versions location and a history location against the owned Swift and records it before the dialog's sentence is written; the sentence states a measurement, not a reading of the documentation.
+   What a DELETE does to a versioned container is not what an operator expects, and the [measurement of 27 October 2026](../experiments/2026-10-27-delete-under-versioning.md) is what the dialog states: with no versioning the content is destroyed; with a versions location the content is destroyed and never archived, and if the archive holds a predecessor the name reverts to it and the archive gives it up; with a history location the content moves to the archive with a deletion marker and is recoverable from there.
+   The sentence names the archive container the inspector already knows.
    A conflict is shown with both identities, so an operator learns that something else is writing to their account rather than only that a delete was refused.
    After a success the working list refreshes and the inspector clears, as they do after a manifest deletion.
 
@@ -93,13 +97,14 @@ Nothing here is a lock, a reservation or exclusive ownership.
 Tier 1 under [DESIGN §65.12](../DESIGN.md): an authority change on a destructive path.
 Backend cases run through the public service on the mock and the owned Swift, with namespace snapshots before and after so collateral is compared and not assumed.
 
-- Happy: a plain object the inspector read is deleted; the after-HEAD finds nothing; the fact is `applied` with the DELETE's transaction identifier and the audit event is present; the siblings `prefix/name2` and `prefix/name/child` and the same name in the other account are unchanged.
-- Refusals, each with no DELETE sent and no intent where the record says so: a dynamic and a static large object at the name; a followed symbolic link; an empty fingerprint; a scope naming the other account's portrait while the first is active, with no intent and no request; the same bookmark at an earlier generation after a key change; a process with the capability not enabled, refusing through the public method with no request to the store.
+- Happy: a plain object the inspector read is deleted; the literal after-read finds nothing; the fact is `applied` with the DELETE's transaction identifier and the audit event is present; the siblings `prefix/name2` and `prefix/name/child` and the same name in the other account are unchanged.
+- Refusals, each with no DELETE sent and no intent where the record says so: a dynamic and a static large object at the name; a followed symbolic link and an unfollowed cross-account link; an empty fingerprint; a scope naming the other account's portrait while the first is active, with no intent and no request; the same bookmark at an earlier generation after a key change; a process with the capability not enabled, refusing through the public method with no request to the store.
+- Literal objects: a zero-byte object and a directory marker reached as an object row each delete; the marker's children survive and the prefix they imply still lists.
 - Conflict: a replacement of a different length landing after the inspector's HEAD and before the call; a replacement of the same length with a different entity tag; each refused, nothing deleted, both identities in the fact and the audit event, credited `conflict`.
-- Failure streams: a DELETE the store refuses leaves the object and records `failed`; a lost reply to the DELETE records `unverified`; a verify read that fails records `unverified` with the transaction identifier; an after-HEAD that still finds the object records `unverified` naming it; an outcome transaction failure after a landed DELETE returns the residue error and the identity is not `applied` after reopen; an intent failure sends nothing.
+- Failure streams: a DELETE the store refuses leaves the object and records `failed`; a lost reply to the DELETE records `unverified`; a verify read that fails records `unverified` with the transaction identifier; a literal after-read that still finds the object, or finds a dangling link placed at the name after the DELETE, records `unverified` naming what it found; an outcome transaction failure after a landed DELETE, and after a DELETE whose reply was lost, each return the residue error with the identity, and after reopen the identity is `intent` with no terminal outcome; an intent failure sends nothing.
 - The held-request exposure is stated, not claimed closed: a replacement landing after the final HEAD is deleted, as ADR 0085 says for every path, and no case may be written to pass as if that were prevented.
 - Frontend, around the real `BrowserState`: the dialog binds the identity it opened for and closes when the selection or scope moves; the Delete key opens it and deletes nothing; no affordance without the capability; a conflict shows both identities; a success refreshes the list and clears the inspector.
-- Retained mutants, each failing a case above: the final HEAD removed; the listing row used as the baseline instead of the fingerprint; the scope check removed; the outcome recorded before the DELETE; a failed verify read recorded as `failed`; the class guard removed; the symbolic link guard removed; the affordance shown from the frontend's defaults.
+- Retained mutants, each failing a case above: the final HEAD removed; the listing row used as the baseline instead of the fingerprint; the scope check removed; the outcome recorded before the DELETE; a failed verify read recorded as `failed`; the after-read made to follow links; the class guard removed; either half of the symbolic link guard removed; the affordance shown from the frontend's defaults.
 - The candidate run's drift diagnostic retained, the replacement baseline built from its reports, and the join preserving every previously protected pair plus this action's credited pairs.
 - The product-level smoke extended with one case: a process started with `object-delete` names "Object deletion" as unproven and offered.
 
