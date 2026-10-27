@@ -23,10 +23,15 @@
 
   let filter = $state("");
   // A filter box earns its place once the list is long enough to need
-  // one; a handful of accounts is read at a glance.
+  // one; a handful of accounts is read at a glance. While a filter is
+  // typed the box stays, however short the list has become, so it can
+  // always be cleared.
   const filterFrom = 8;
-  const showFilter = $derived(browser.bookmarks.length >= filterFrom);
-  const groups = $derived(groupBookmarks(browser.bookmarks.filter((bookmark) => matchesBookmark(bookmark, filter))));
+  const showFilter = $derived(browser.bookmarks.length >= filterFrom || filter !== "");
+  // The connected bookmark is never filtered out: the account in use stays
+  // in view, and with it the persistent TLS warning (K-SEC-005).
+  const groups = $derived(groupBookmarks(browser.bookmarks.filter(
+    (bookmark) => bookmark.id === browser.connectedBookmarkId || matchesBookmark(bookmark, filter))));
   // One cloud needs no heading over its accounts.
   const grouped = $derived(groups.length > 1);
 
