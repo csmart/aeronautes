@@ -298,6 +298,15 @@ export function newFakeApi(): Api {
       return { ...saved };
     },
 
+    // The fixture's one account answers for its own key; a bookmark being
+    // edited may lean on its stored key as the backend allows.
+    verifyBookmark: async (bookmark, secret) => {
+      if (secret === "" && !bookmark.hasCredential) throw new Error("enter the API key to verify these details");
+      if (secret !== "" && secret !== "testing") throw new Error("unauthorized: the endpoint rejected the user or key");
+      if (!bookmark.authUrl.includes("mock")) throw new Error("auth URL: no such host");
+      return { account: accountFixture.name, containers: containers.length, objects: accountFixture.objects, bytesUsed: accountFixture.bytes };
+    },
+
     deleteBookmark: async (id) => {
       const at = bookmarks.findIndex((b) => b.id === id);
       if (at === -1) {

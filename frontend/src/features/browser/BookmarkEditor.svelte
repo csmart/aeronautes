@@ -1,5 +1,7 @@
 <!-- Bookmark create/edit modal (§11). The API key field is write-only:
-  it crosses the bridge once at save and is never readable back. -->
+  it crosses the bridge at save, or at a verify, and is never readable
+  back. Verify checks the typed details against the endpoint and saves
+  nothing, so a wrong URL, user or key is found before anything is stored. -->
 <script lang="ts">
   import { onDestroy, untrack } from "svelte";
   import { trapFocus } from "../../lib/trapFocus";
@@ -44,10 +46,41 @@
   /* svelte-ignore state_referenced_locally */
   let tlsMode = $state(existing?.tlsMode ?? "system");
   let caPem = $state("");
-  let action = $state<"save" | "connect" | "delete" | null>(null);
+  let action = $state<"save" | "connect" | "delete" | "verify" | null>(null);
   const saving = $derived(action !== null);
   let error: string | null = $state(null);
+  let verified: string | null = $state(null);
   let confirmingDelete = $state(false);
+
+  function draft(): BookmarkDTO {
+    return {
+      id: bookmark?.id ?? "",
+      displayName,
+      authUrl,
+      username,
+      storageUrlOverride: bookmark?.storageUrlOverride ?? "",
+      tlsMode,
+      caPem,
+      hasCa: bookmark?.hasCa ?? false,
+      hasCredential: bookmark?.hasCredential ?? false,
+    };
+  }
+
+  async function verify() {
+    if (saving || !isCurrent()) return;
+    action = "verify";
+    error = null;
+    verified = null;
+    try {
+      const result = await browser.verifyBookmark(draft(), apiKey);
+      if (!isCurrent()) return;
+      verified = `Verified: account ${result.account}, ${result.containers.toLocaleString("en-US")} containers, ${result.objects.toLocaleString("en-US")} objects.`;
+    } catch (err) {
+      if (isCurrent()) error = err instanceof Error ? err.message : String(err);
+    } finally {
+      if (isCurrent()) action = null;
+    }
+  }
 
   async function remove() {
     if (saving || !isCurrent() || !bookmark) {
@@ -73,20 +106,7 @@
     action = "save";
     error = null;
     try {
-      const pending = browser.saveBookmark(
-        {
-          id: bookmark?.id ?? "",
-          displayName,
-          authUrl,
-          username,
-          storageUrlOverride: bookmark?.storageUrlOverride ?? "",
-          tlsMode,
-          caPem,
-          hasCa: bookmark?.hasCa ?? false,
-          hasCredential: bookmark?.hasCredential ?? false,
-        },
-        apiKey,
-      );
+      const pending = browser.saveBookmark(draft(), apiKey);
       // An active-bookmark save resets the connection synchronously itself.
       const scope = browser.scopeRevision;
       const saved = await pending;
@@ -127,7 +147,7 @@
   >
     <h2 class="title">{bookmark ? "Edit bookmark" : "Add bookmark"}</h2>
 
-    <fieldset class="fields" disabled={saving || !isCurrent()} aria-label="Bookmark settings">
+    <fieldset class="fields" disabled={saving || !isCurrent()} aria-label="Bookmark settings" oninput={() => (verified = null)}>
       <label class="field">
         <span>Display name</span>
         <!-- svelte-ignore a11y_autofocus -->
@@ -195,6 +215,9 @@
       </p>
     {/if}
 
+    {#if verified}
+      <p class="verified" role="status">{verified}</p>
+    {/if}
     {#if error}
       <p class="error" role="alert">{error}</p>
     {/if}
@@ -214,6 +237,15 @@
       <span class="spacer"></span>
       <button type="button" class="secondary" onclick={close} disabled={saving}>
         Cancel
+      </button>
+      <button
+        type="button"
+        class="secondary"
+        title="Check these details against the endpoint without saving them"
+        onclick={verify}
+        disabled={saving || !isCurrent()}
+      >
+        {action === "verify" ? "Verifying…" : "Verify"}
       </button>
       <button type="button" class="secondary" onclick={() => save(false)} disabled={saving || !isCurrent()}>
         Save
@@ -308,6 +340,15 @@
     background: var(--color-danger-soft);
     border-radius: var(--radius-control);
     overflow-wrap: anywhere;
+  }
+
+  .verified {
+    margin: 0;
+    padding: var(--space-2);
+    font-size: var(--text-sm);
+    color: var(--color-success);
+    background: var(--color-success-soft);
+    border-radius: var(--radius-control);
   }
 
   .warning {
