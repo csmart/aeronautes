@@ -134,6 +134,12 @@ The first two decide the release after v1 and are recorded here so the trail sta
     "if there are no accounts on the machine, we shoudl also prompt with a wizard to create theior first account and also, the account setup needs a verify button to validate the account details against the endpoint before saving/addin git".
     The author's reading: a welcome dialog on a known-empty bookmark list that opens the editor (§54), and a Verify action in the editor backed by the new bridge action `BookmarkService.Verify`, which authenticates the typed details under the saved-bookmark endpoint policy and TLS trust, persists nothing and returns only the account name and HEAD counts ([ADR 0011](../../adr/0011-typed-service-surface.md)); the scenario contract grows by that action's row under the drift route of [ADR 0069](../../adr/0069-preserve-covered-scenario-cells.md), with the contract decision recorded as [ADR 0091](../../adr/0091-verify-action-contract.md).
 
+## Operator decision — 27 October 2026
+
+30. Deletion comes next, and it starts with one object: "yes, we need delete", given after the author reported that deleting a single selected object was never built, that the built deletions are refused under [ADR 0052](../../adr/0052-v1-capability-gate.md), and that bringing deletion forward reverses the 25 September ordering.
+    The author's reading is [ADR 0092](../../adr/0092-exact-object-deletion.md) for the first slice, one bound, identity-compared deletion of one plain object behind a new deferred capability, and the [road to 1.0.0](../2026-10-27/road-to-1.0.0.md) for the sequence that follows it; the operator's acceptance of that sequence is still owed, as the plan itself says.
+    No capability moves with this decision; a return is recorded under ADR 0052 when the operator gives it.
+
 ## Six production gates
 
 | Gate | Existing packages | Completion condition |
