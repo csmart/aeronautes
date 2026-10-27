@@ -144,6 +144,15 @@ describe("bookmark rail width", () => {
     mounted.add(mount(BrowserScreen, { target: document.body }));
     flushSync();
     await settle();
+    // The fake starts with no bookmark, so the first-run welcome opens and
+    // its focus trap keeps keys away from the rest of the screen; these
+    // tests are about the rail, so decline it first.
+    const notNow = [...document.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent?.trim() === "Not now");
+    if (notNow) {
+      notNow.click();
+      flushSync();
+      await settle();
+    }
     return {
       handle: document.querySelector<HTMLElement>('[aria-label="Resize bookmark rail"]')!,
       screen: document.querySelector<HTMLElement>(".screen")!,
