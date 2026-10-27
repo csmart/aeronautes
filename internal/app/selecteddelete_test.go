@@ -292,6 +292,46 @@ func TestSelectedDeleteCountsARedirectedDeleteAsARequest(t *testing.T) {
 	}
 }
 
+// ADR 0093 decision 4: the members requested are counted once each by their
+// own outcome. A cancellation after one DELETE whose reply was lost leaves
+// one unverified member and one not attempted, and says one was requested.
+func TestSelectedDeleteCountsAnUnverifiedMemberOnceWhenCancelled(t *testing.T) {
+	h, service := selectedHarness(t)
+	rows := rowsOf(t, h, "normal/hello.txt", "empty-object")
+	h.mock.DropNextObjectDELETE()
+	ready := make(chan string, 1)
+	heads := 0
+	h.mock.AfterRequest = func(method, path string) {
+		// The second HEAD of the first member is its literal read after the
+		// lost DELETE; the cancellation lands then, before the next member.
+		if method == "HEAD" && strings.HasSuffix(path, "/fixtures/normal/hello.txt") {
+			heads++
+			if heads == 2 {
+				if err := h.transfer.CancelJob(context.Background(), <-ready); err != nil {
+					t.Error(err)
+				}
+			}
+		}
+	}
+	jobID, err := service.StartSelectedDelete(t.Context(), selectedRequest(h, rows))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ready <- jobID
+	job := awaitTerminal(t, h, jobID)
+	items := itemsOf(t, h, jobID)
+	first, later := items[rows[0].Name], items[rows[1].Name]
+	if first.Execution == nil || first.Execution.Result != jobs.ItemUnverified || later.Execution == nil || later.Execution.Result != jobs.ItemNotAttempted {
+		t.Fatalf("fixture did not settle one unverified DELETE and one untouched member: first=%+v later=%+v", first, later)
+	}
+	if got := len(deletesUnder(h, "fixtures")); got != 1 {
+		t.Fatalf("sent %d DELETEs, want one", got)
+	}
+	if job.State != "partial" || !strings.Contains(job.Error, "cancelled after 1 of 2 members were requested") {
+		t.Fatalf("the uncertain member was counted more than once: job=%+v", job)
+	}
+}
+
 // Members the protocol refuses or finds changed do not stop the job: each
 // lands as its own word and the others are deleted, and the job is partial.
 func TestSelectedDeleteSettlesEachMemberOnItsOwn(t *testing.T) {
