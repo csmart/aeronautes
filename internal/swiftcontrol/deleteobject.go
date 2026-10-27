@@ -107,6 +107,10 @@ func (s *Session) DeleteManifestObject(ctx context.Context, container, name, bas
 // found, as an identity conflict does (ADR 0094 decisions 1 and 2): the
 // identities shown and found, the class, the length, the entity tag and the
 // content type, with the comparison's transaction id on the result beside it.
+// Link reports a link in either representation, a followed one as much as a
+// cross-account one that arrives with its target named; the target itself is
+// not carried, because it is a name this code does not control and the
+// record withholds it either way.
 type ShownRefusalError struct {
 	Container, Name string
 	Reason          string
@@ -115,7 +119,7 @@ type ShownRefusalError struct {
 	FoundLength     int64
 	FoundETag       string
 	FoundType       string
-	Link            string
+	Link            bool
 }
 
 func (e *ShownRefusalError) Error() string { return e.Reason }
@@ -125,7 +129,8 @@ func shownRefusal(container, name, baseContent, reason string, before *ObjectDet
 		Container: container, Name: name, Reason: reason,
 		Expected: baseContent, Found: before.ContentFingerprint(),
 		FoundClass: string(before.Class), FoundLength: before.ContentLength,
-		FoundETag: etagValue(before.ETag), FoundType: before.ContentType, Link: before.SymlinkTarget,
+		FoundETag: etagValue(before.ETag), FoundType: before.ContentType,
+		Link: before.FollowedSymlink || before.SymlinkTarget != "",
 	}
 }
 

@@ -179,4 +179,60 @@ func TestComparisonRefusalKeepsItsEvidence(t *testing.T) {
 			t.Fatalf("facts = %+v", facts)
 		}
 	})
+	// A content type is prose the store supplies, and one the summary filter
+	// refuses would otherwise cost the whole record: the refusal is kept with
+	// the class, the length, the identities and the transaction id, and only
+	// those words withheld.
+	t.Run("a marker replaced by an empty object whose content type the filter refuses", func(t *testing.T) {
+		h := newHarness(t)
+		h.connect(t)
+		marker, err := h.inspector.Prefix(ctx, h.bookmarkID(), "fixtures", "folder-marker/")
+		if err != nil || marker.SelfObject == nil {
+			t.Fatalf("marker detail = %+v, %v", marker, err)
+		}
+		h.mock.PutObject("fixtures", "folder-marker/", swifttest.Object{Bytes: 0, ContentType: "application/x-password-db"})
+		requests := h.mock.Requests()
+		_, err = h.mutate.DeleteMarker(ctx, h.portrait(), "fixtures", "folder-marker/", marker.SelfObject.ContentFingerprint)
+		var refusal *swiftcontrol.ShownRefusalError
+		if !errors.As(err, &refusal) || refusal.FoundType != "application/x-password-db" {
+			t.Fatalf("err = %v, want a typed refusal carrying the content type", err)
+		}
+		if got := h.mock.Requests() - requests; got != 1 {
+			t.Fatalf("the refusal sent %d requests, want the comparison HEAD only", got)
+		}
+		facts := factsOfOperation(t, h, "marker.delete")
+		if len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeFailed || len(facts[0].TransIDs) == 0 ||
+			!strings.Contains(facts[0].Summary, "a plain of 0 bytes") || !strings.Contains(facts[0].Summary, "a content type this record withholds") ||
+			!strings.Contains(facts[0].Summary, "expected identity "+marker.SelfObject.ContentFingerprint) ||
+			strings.Contains(strings.ToLower(facts[0].Summary), "password") || strings.Contains(facts[0].Summary, "folder-marker") {
+			t.Fatalf("facts = %+v", facts)
+		}
+	})
+	// A followed link arrives as its target's detail with no target header, so
+	// the refusal must carry the link itself: the record says a link was
+	// found, not that the target's class is the wrong one for the path.
+	t.Run("a followed link to a manifest on the manifest path", func(t *testing.T) {
+		h := newHarness(t)
+		h.connect(t)
+		h.mock.PutObject("fixtures", "followed-link", swifttest.Object{SymlinkTarget: "fixtures/external-dlo"})
+		shown := shownObject(t, h, "followed-link")
+		if !shown.FollowedSymlink || shown.SymlinkTarget != "" || shown.Class != "dlo" {
+			t.Fatalf("the fixture is not a followed link to a manifest: %+v", shown)
+		}
+		requests := h.mock.Requests()
+		_, err := h.mutate.DeleteManifest(ctx, h.portrait(), "fixtures", "followed-link", shown.ContentFingerprint)
+		var refusal *swiftcontrol.ShownRefusalError
+		if !errors.As(err, &refusal) || !refusal.Link {
+			t.Fatalf("err = %v, want a typed refusal carrying the link", err)
+		}
+		if got := h.mock.Requests() - requests; got != 1 {
+			t.Fatalf("the refusal sent %d requests, want the comparison HEAD only", got)
+		}
+		facts := factsOfOperation(t, h, "manifest.delete")
+		if len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeFailed || len(facts[0].TransIDs) == 0 ||
+			!strings.Contains(facts[0].Summary, "a symbolic link, whose target this record withholds") ||
+			strings.Contains(facts[0].Summary, "a dlo") || strings.Contains(facts[0].Summary, "external-dlo") {
+			t.Fatalf("facts = %+v", facts)
+		}
+	})
 }
