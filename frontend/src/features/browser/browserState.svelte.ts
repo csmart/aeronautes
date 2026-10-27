@@ -23,6 +23,7 @@ import type {
   AuditEventDTO,
   BookmarkDTO,
   CredentialStatusDTO,
+  VerifyResultDTO,
   RecoveryStatusDTO,
   CapabilitiesDTO,
   ContainerCreateDTO,
@@ -452,6 +453,11 @@ export class BrowserState {
         this.credentialStatusLoading = false;
       }
     }
+  }
+
+  /** Checks typed bookmark details against the endpoint without saving. */
+  async verifyBookmark(bookmark: BookmarkDTO, secret: string): Promise<VerifyResultDTO> {
+    return await this.#api.verifyBookmark(bookmark, secret);
   }
 
   async deleteBookmark(id: string): Promise<void> {

@@ -87,6 +87,7 @@ const pairs: Pair[] = [
   ["editor warning", "MetadataEditor.svelte", ".warn", ".card", "ObjectEditPanel.svelte"],
   ["dialog warning", "TransferDialog.svelte", ".warn", ".dialog"],
   ["dialog success", "TransferDialog.svelte", ".started", ".dialog"],
+  ["editor success", "BookmarkEditor.svelte", ".verified", ".verified"],
   ["inspector error", "Inspector.svelte", ".error", ".pane"],
   ["editor error", "MetadataEditor.svelte", ".dup", ".card", "ObjectEditPanel.svelte"],
   ["dialog error", "TransferDialog.svelte", ".error", ".dialog"],
@@ -108,6 +109,7 @@ const pairs: Pair[] = [
 // A new surface must be inspected rather than silently escaping the inventory.
 const softSurfaces: [file: string, selector: string, foreground?: string][] = [
   ["BookmarkEditor.svelte", ".error"],
+  ["BookmarkEditor.svelte", ".verified"],
   ["BookmarkEditor.svelte", ".warning"],
   ["BookmarkRail.svelte", ".badge"],
   ["ContainerColumn.svelte", ".modes", ".mode"],

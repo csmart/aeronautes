@@ -26,6 +26,7 @@ import type {
   AuditEventDTO,
   BookmarkDTO,
   CredentialStatusDTO,
+  VerifyResultDTO,
   RecoveryStatusDTO,
   CapabilitiesDTO,
   ContainerCreateDTO,
@@ -63,6 +64,7 @@ export type {
   AuditEventDTO,
   BookmarkDTO,
   CredentialStatusDTO,
+  VerifyResultDTO,
   RecoveryStatusDTO,
   CapabilitiesDTO,
   ContainerCreateDTO,
@@ -152,6 +154,9 @@ export interface Api {
   listBookmarks(): Promise<BookmarkDTO[]>;
   credentialStatus(): Promise<CredentialStatusDTO>;
   saveBookmark(bookmark: BookmarkDTO, secret: string): Promise<BookmarkDTO>;
+  /** Authenticates the details as typed without saving them; the secret
+   * crosses one way for that exchange, as on save. */
+  verifyBookmark(bookmark: BookmarkDTO, secret: string): Promise<VerifyResultDTO>;
   deleteBookmark(id: string): Promise<void>;
   connect(bookmarkId: string): Promise<AccountDTO>;
   containers(bookmarkId: string, marker: string, limit: number): Promise<ContainerPage>;
@@ -231,6 +236,11 @@ export const liveApi: Api = {
   listBookmarks: async () => (await BookmarkService.List()) ?? [],
   credentialStatus: () => BookmarkService.CredentialStatus(),
   saveBookmark: (bookmark, secret) => BookmarkService.Save(bookmark, secret),
+  verifyBookmark: async (bookmark, secret) => {
+    const result = await BookmarkService.Verify(bookmark, secret);
+    if (!result) throw new Error("empty verify result");
+    return result;
+  },
   deleteBookmark: (id) => BookmarkService.Delete(id),
   connect: (bookmarkId) => BrowseService.Connect(bookmarkId),
   containers: async (bookmarkId, marker, limit) => {
