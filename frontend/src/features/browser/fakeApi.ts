@@ -886,6 +886,38 @@ export function newFakeApi(): Api {
       });
       return id;
     },
+    startSelectedDelete: async (req) => {
+      requireWriteScope(req.scope);
+      const members = req.members ?? [];
+      if (members.length === 0) throw new Error("nothing is selected; a selected-set deletion needs at least one object");
+      const seen = new Set<string>();
+      for (const member of members) {
+        if (member.kind !== "object") {
+          throw new Error(`${JSON.stringify(member.name)} is a ${member.kind} row, not an object; a prefix is deleted by the bulk deletion that owns it`);
+        }
+        if (member.name === "") throw new Error("a member needs its name; an empty name would address the container itself");
+        if (seen.has(member.name)) throw new Error(`${JSON.stringify(member.name)} is selected twice; a member is deleted once`);
+        seen.add(member.name);
+      }
+      if (req.confirm !== String(members.length)) {
+        throw new Error(`confirmation ${JSON.stringify(req.confirm)} does not match the number of members, ${members.length}; type it exactly`);
+      }
+      // The fake deletes every member as listed and ends the job at once;
+      // the real job compares each member first and records what it found.
+      const names = new Set(members.map((m) => m.name));
+      objects[req.container] = (objects[req.container] ?? []).filter((o) => !names.has(o.name));
+      const id = `job-${jobs.length + 1}`;
+      jobs.push({
+        id, type: "delete_selected", state: "complete", source: req.container, destination: "(deleted)",
+        sourceBookmarkId: req.scope.bookmarkId, destBookmarkId: "", createdAt: "2026-10-27T10:00:00Z",
+        startedAt: "2026-10-27T10:00:01Z", finishedAt: "2026-10-27T10:00:02Z", engine: "native", settings: "", recoveryRecords: 0,
+        counters: { objectsPlanned: members.length, objectsCopied: members.length, objectsVerified: 0, objectsFailed: 0,
+          bytesPlanned: 0, bytesCopied: 0, overwrites: 0, overwritesRefused: 0, nativeRouted: 0, objectsDeleted: members.length },
+        error: "",
+      });
+      record("delete.selected.start", req.container, "applied");
+      return id;
+    },
     startBenchmark: async (req) => {
       if (!req.confirm) throw new Error("confirmation does not match the target account");
       return "job-bench";

@@ -160,6 +160,15 @@
           Delete scope…
         </button>
       {/if}
+      {#if v1Offers.objectDelete && browser.chosenRows.some((row) => row.kind === "object")}
+        <button
+          class="find danger"
+          title="Delete the selected objects as one job, each checked against what was listed; prefix rows are left out"
+          onclick={() => browser.openSelectedDelete()}
+        >
+          Delete selected…
+        </button>
+      {/if}
     </div>
 
     {#if browser.prefixCount}

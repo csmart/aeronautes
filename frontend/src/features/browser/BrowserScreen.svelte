@@ -19,6 +19,7 @@
   import DeleteDialog from "../transfer/DeleteDialog.svelte";
   import ObjectDeleteDialog from "../inspector/ObjectDeleteDialog.svelte";
   import ManifestDeleteDialog from "../inspector/ManifestDeleteDialog.svelte";
+  import SelectedDeleteDialog from "../inspector/SelectedDeleteDialog.svelte";
   import { BrowserState } from "./browserState.svelte";
   import { activeModal } from "../../lib/trapFocus";
   import { applyEnabledCapabilities, v1Offers } from "../../lib/v1.svelte";
@@ -179,12 +180,15 @@
         browser.clearSelection();
       }
     } else if (event.key === "Delete") {
-      // §4.4: Delete opens the safe delete flow that owns the inspected row's
-      // kind and never deletes (ADR 0092, ADR 0094 decision 5); a link, an
-      // implied prefix and a real object at a prefix name have none, and a
-      // prefix's own deletion is bulk deletion with its own dialog.
+      // §4.4: Delete opens the safe delete flow that owns the selection and
+      // never deletes: several rows open the selected-set deletion (ADR 0093
+      // decision 5), one row the flow of its own kind (ADR 0092, ADR 0094
+      // decision 5); a link, an implied prefix and a real object at a prefix
+      // name have none, and a prefix's own deletion is bulk deletion with
+      // its own dialog.
       const kind = browser.deletableSelectionKind();
-      const opened = kind === "object" ? v1Offers.objectDelete && browser.openObjectDelete()
+      const opened = browser.chosenRows.length >= 2 ? v1Offers.objectDelete && browser.openSelectedDelete()
+        : kind === "object" ? v1Offers.objectDelete && browser.openObjectDelete()
         : kind === "marker" ? v1Offers.markerDelete && browser.openMarkerDelete()
         : kind === "manifest" ? v1Offers.manifestDelete && browser.openManifestDelete()
         : false;
@@ -300,6 +304,9 @@
 {/if}
 {#if browser.objectDelete?.kind === "manifest" && v1Offers.manifestDelete}
   <ManifestDeleteDialog {browser} onClose={() => browser.closeObjectDelete()} />
+{/if}
+{#if v1Offers.objectDelete && browser.selectedDelete}
+  <SelectedDeleteDialog {browser} onClose={() => browser.closeSelectedDelete()} />
 {/if}
 
 {#if aboutOpen}

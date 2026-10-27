@@ -114,6 +114,12 @@ import { isLink } from "../browser/browserState.svelte";
         Listed facts only; nothing is read for a summary. Ctrl or Cmd with a click toggles a row, Shift with a click
         extends the selection, Ctrl or Cmd with A selects every loaded row, and Escape clears it.
       </p>
+      {#if v1Offers.objectDelete && objects.length > 0}
+        <p class="teach">
+          Delete selected… in the working list deletes the objects as one job, each checked against what was listed;
+          prefix rows are left out.
+        </p>
+      {/if}
     </section>
   {:else if entry && entry.kind === "object"}
     <header class="head">
