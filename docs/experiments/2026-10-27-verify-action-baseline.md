@@ -43,7 +43,7 @@ Both 28-byte `exits.json` files have digest `8921738b238bbc9778e286e2efb98896a02
 | saio-diagnostics-main | 12705619062 | 2026-11-03 02:55:06 |
 | saio-diagnostics-heavy | 12705946498 | 2026-11-03 02:37:03 |
 
-The private retained packet is `/home/csmart/code/.aeronautes-work/20261027-ui-slices/candidate-40438457699`, 47 files with a `SHA256SUMS` manifest, holding every artifact above, the replacement baseline as built, and the builder's output.
+The private retained packet is `/home/csmart/code/.aeronautes-work/20261027-ui-slices/candidate-40438457699`: 49 files sealed by a `SHA256SUMS` manifest (SHA-256 `bd27f4dfc70908420444ba08c05f08ee359b65333f4e4f6f0fc5d44c18f60a9b`), holding every artifact above, the replacement baseline as built, the builder `build-baseline.py` and its output.
 
 ## The replacement baseline
 
