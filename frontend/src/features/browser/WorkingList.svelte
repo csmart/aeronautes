@@ -163,7 +163,7 @@
       {#if v1Offers.objectDelete && browser.chosenRows.some((row) => row.kind === "object")}
         <button
           class="find danger"
-          title="Delete the selected objects as one job, each checked against what was listed; prefix rows are left out"
+          title="Delete the selected objects as one job: an object listed with a size is checked against its listing, a zero-byte or SLO-listed row is read again first; prefix rows are left out"
           onclick={() => browser.openSelectedDelete()}
         >
           Delete selected…
