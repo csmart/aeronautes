@@ -140,6 +140,14 @@ The first two decide the release after v1 and are recorded here so the trail sta
     The author's reading is [ADR 0092](../../adr/0092-exact-object-deletion.md) for the first slice, one bound, identity-compared deletion of one plain object behind a new deferred capability, and the [road to 1.0.0](../2026-10-27/road-to-1.0.0.md) for the sequence that follows it; the operator's acceptance of that sequence is still owed, as the plan itself says.
     No capability moves with this decision; a return is recorded under ADR 0052 when the operator gives it.
 
+31. The plan is delivered through the Linux half of 0.7.0, and Keystone joins 0.5.0.
+    On the [road to 1.0.0](../2026-10-27/road-to-1.0.0.md): "great, let's continue getting all those things done and merged up to 0.7.0 as I don't have windows or mac yet, but I want a COMPLETE LInux release done".
+    On Keystone, after first saying it was out and asking whether it was cheap: "keystong needs to be IN for 1.0.0, it's a question of where we add it" and "yeah, just add keystone into 0.5.0, thanks", with the reason that the SwiftStack clusters the product is built for do not use it while "peple on lInux can try it on other swift installations".
+    The author's reading: the sequence 0.2.0 to 0.6.0 and the Linux items of 0.7.0 are authorised for delivery; macOS and Windows acceptance wait for hardware and the platform narrowing of decision 1 stands until then; Keystone authentication is in 1.0.0 as part of 0.5.0; the plan's other decisions (mirror, signing keys, the Wails pin, the benchmark and back-off, the vault, the Linux formats) remain open and are taken in the data-safe direction until given.
+
+32. Delivery authority for the Linux release: "you have permission to commit, run, build, test push, merge and do anything you need to, in order to get us to this Linux 1.0.0 release . go ahead".
+    The author's reading: every slice on the road to the Linux 1.0.0 still passes independent review and a green current-head run before a protected merge, publication happens from new branches rather than by rewriting published history, and the operator's own steps (the test plan runs, the real-cluster session, the signing keys) stay theirs; the grant removes the wait for a per-slice push or merge permission, not a gate.
+
 ## Six production gates
 
 | Gate | Existing packages | Completion condition |
