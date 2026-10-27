@@ -5,6 +5,7 @@
   import { v1Offers } from "../../lib/v1.svelte";
   import { isLiteralPlainObject } from "../../lib/objectKind";
   import type { BrowserState } from "../browser/browserState.svelte";
+import { isLink } from "../browser/browserState.svelte";
   import ObjectEditPanel from "./ObjectEditPanel.svelte";
   import ContainerEditPanel from "./ContainerEditPanel.svelte";
 
@@ -186,7 +187,9 @@
         {/if}
         <div class="lo-actions">
           <button class="edit-btn inline" onclick={openBackstage}>Open segments backstage</button>
-          {#if v1Offers.manifestDelete}
+          {#if v1Offers.manifestDelete && isLink(detail)}
+            <p class="teach">This name is a symbolic link to the manifest: deleting a link is not offered here, and the manifest is deleted at its own name.</p>
+          {:else if v1Offers.manifestDelete}
             <button class="edit-btn inline danger" onclick={() => browser.openManifestDelete()}>
               Delete manifest…
             </button>
@@ -241,7 +244,9 @@
           {#if segmentsAt !== ""}
             <button class="edit-btn inline" onclick={openBackstage}>Open segments backstage</button>
           {/if}
-          {#if v1Offers.manifestDelete}
+          {#if v1Offers.manifestDelete && isLink(detail)}
+            <p class="teach">This name is a symbolic link to the manifest: deleting a link is not offered here, and the manifest is deleted at its own name.</p>
+          {:else if v1Offers.manifestDelete}
             <button class="edit-btn inline danger" onclick={() => browser.openManifestDelete()}>
               Delete manifest…
             </button>
@@ -318,6 +323,8 @@
           {:else}
             <p class="teach">Marker creation is not offered in this build.</p>
           {/if}
+        {:else if pd.markerBacked && pd.selfObject && isLink(pd.selfObject)}
+          <p class="teach">This name is a symbolic link to a marker: deleting a link is not offered here, and the marker is deleted at its own name.</p>
         {:else if pd.markerBacked}
           {#if v1Offers.markerDelete}
             <button class="edit-btn inline danger" onclick={() => browser.openMarkerDelete()}>
