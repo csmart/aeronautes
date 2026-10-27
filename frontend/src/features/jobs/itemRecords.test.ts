@@ -27,15 +27,16 @@ function item(index: number, key = `item-${index}`): JobItemDTO {
     source: { kind: "swift", bookmarkId: "a", container: "source", object: key, localPath: "", display: `"a" / "source" / ${JSON.stringify(key)}` },
     destination: { kind: "swift", bookmarkId: "b", container: "dest", object: key, localPath: "", display: `"b" / "dest" / ${JSON.stringify(key)}` },
     staging: null, planned: true, admitted: true, listedBytes: 10, createdAt: "2000-01-01T00:00:00Z", publicationRequired: false, publication: null,
-    // Copy items replace nothing, so they carry no predecessor.
-    predecessor: null,
+    // Copy items replace nothing, so they carry no predecessor, and they are
+    // not deletion members, so no issued mark and no successor.
+    predecessor: null, issuedAt: "", successor: null,
     execution: { result: "failed", effect: "not_attempted", stage: "source_read", code: "forbidden", httpStatus: 403, copiedBytes: 0, createdAt: "" },
     verification: { result: "failed", effect: "not_attempted", stage: "verification", code: "missing", httpStatus: 404, copiedBytes: 0, createdAt: "" } };
 }
 
 function totals(overrides: Partial<JobItemTotalsDTO> = {}): JobItemTotalsDTO {
   return { status: "available", items: 0, planned: 0, admitted: 0, failed: 0, conflicts: 0, refused: 0,
-    unresolved: 0, unverified: 0, problems: 0, ...overrides };
+    unresolved: 0, unverified: 0, problems: 0, issued: 0, deleted: 0, ...overrides };
 }
 
 it("keeps early verification distinct from final publication evidence", async () => {

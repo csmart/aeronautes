@@ -714,6 +714,19 @@ export interface JobItemDTO {
      * attempt happened: Execution and Verification do.
      */
     "predecessor": JobItemPredecessorDTO | null;
+
+    /**
+     * IssuedAt is when a deletion member's issued mark was written, before
+     * its final HEAD; empty when it never was. A member issued with no
+     * execution record may have been deleted (ADR 0093 decision 4).
+     */
+    "issuedAt": string;
+
+    /**
+     * Successor is what a deletion member's verifying read found at the name
+     * afterwards; nil when nothing was recorded.
+     */
+    "successor": JobItemSuccessorDTO | null;
 }
 
 export interface JobItemLocationDTO {
@@ -804,6 +817,21 @@ export interface JobItemPredecessorDTO {
     "createdAt": string;
 }
 
+/**
+ * JobItemSuccessorDTO is what a deletion member's verifying read found at
+ * the name afterwards (ADR 0093 decision 4): nothing, or something with its
+ * class, length and entity tag. It is an observation, never an outcome: the
+ * item's execution says whether the member was deleted, and a successor
+ * beside a deletion says the name did not stay empty.
+ */
+export interface JobItemSuccessorDTO {
+    "present": boolean;
+    "class": string;
+    "length": number;
+    "etag": string;
+    "createdAt": string;
+}
+
 export interface JobItemTotalsDTO {
     "status": string;
     "items": number;
@@ -815,6 +843,13 @@ export interface JobItemTotalsDTO {
     "unresolved": number;
     "unverified": number;
     "problems": number;
+
+    /**
+     * Issued and Deleted are a deletion job's (ADR 0093 decision 4): how
+     * many members were marked issued, and how many were deleted.
+     */
+    "issued": number;
+    "deleted": number;
 }
 
 /**

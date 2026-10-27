@@ -55,6 +55,7 @@
       case "delete_prefix": return "Delete prefix";
       case "empty_container": return "Empty container";
       case "delete_container": return "Delete container";
+      case "delete_selected": return "Delete selected";
       default: return type || "Unknown operation";
     }
   }
@@ -618,7 +619,9 @@
                   {:else}
                     {job.counters.objectsCopied}{#if job.counters.objectsPlanned > 0}/{job.counters
                         .objectsPlanned}{/if}
-                    {#if isDeleteType(job.type)}
+                    {#if job.type === "delete_selected"}
+                      members settled
+                    {:else if isDeleteType(job.type)}
                       objects reported deleted
                     {:else}
                       obj · {formatBytes(job.counters.bytesCopied)}

@@ -53,7 +53,7 @@ const deleteTypes = ["delete_prefix", "empty_container", "delete_container"];
 it.each([
   ["copy", "Copy"], ["upload", "Upload"], ["download", "Download"],
   ["delete_prefix", "Delete prefix"], ["empty_container", "Empty container"],
-  ["delete_container", "Delete container"],
+  ["delete_container", "Delete container"], ["delete_selected", "Delete selected"],
 ])("visibly labels the actual %s operation as %s", async (type, label) => {
   const { api, row } = await show(job(type));
   expect(text(row, ".operation")).toBe(label);
@@ -77,6 +77,13 @@ it.each(deleteTypes.flatMap((type) => [
     expect(row.querySelector(".cancel")).toBeNull();
   }
   expect(row.querySelector(".rerun")).toBeNull();
+});
+
+it("counts a selected-set deletion's settled members apart from its deletions", async () => {
+  const { row } = await show(job("delete_selected", "running", { objectsDeleted: 2 }));
+  expect(text(row, ".counts")).toBe("3/10 members settled · 2 deleted");
+  expect(text(row, ".counts")).not.toContain("reported deleted");
+  expect(row.querySelector(".progress")?.getAttribute("style")).toContain("30%");
 });
 
 it.each([
