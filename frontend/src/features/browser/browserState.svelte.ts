@@ -117,6 +117,13 @@ function requireAdvancingMarker(previous: string, next: string) {
   if (after.length <= before.length) throw new Error("The page marker did not advance. Retry the page.");
 }
 
+/** A symbolic link in either representation: a followed link describes its
+ * target, and a cross-account link arrives unfollowed with its target named.
+ * No deletion flow opens for one (ADR 0092 decision 2, ADR 0094 decision 5). */
+export function isLink(detail: ObjectDetailDTO): boolean {
+  return detail.followedSymlink || !!detail.symlinkTarget;
+}
+
 /** Which shown-object deletion an operation is (ADR 0092, ADR 0094). */
 export type ShownDeleteKind = "object" | "marker" | "manifest";
 
@@ -1928,7 +1935,8 @@ export class BrowserState {
     const identity = this.detailIdentity;
     const container = this.containerName;
     if (!pd?.selfObject || !pd.markerBacked || !identity || !container || this.connecting
-      || identity.container !== container || identity.name !== pd.prefix || this.#detailScope !== this.#scopeRevision) {
+      || identity.container !== container || identity.name !== pd.prefix || this.#detailScope !== this.#scopeRevision
+      || isLink(pd.selfObject)) {
       return false;
     }
     this.objectDelete = {
@@ -1946,7 +1954,7 @@ export class BrowserState {
     const identity = this.detailIdentity;
     const container = this.containerName;
     if (!detail || !identity || !container || this.connecting || identity.container !== container
-      || identity.name !== detail.name || detail.class === "plain" || !!detail.symlinkTarget || detail.followedSymlink) {
+      || identity.name !== detail.name || detail.class === "plain" || isLink(detail)) {
       return false;
     }
     this.objectDelete = {
@@ -1963,12 +1971,13 @@ export class BrowserState {
     const identity = this.detailIdentity;
     const detail = this.objectDetail;
     if (detail && identity?.name === detail.name) {
-      if (detail.class !== "plain" && !detail.symlinkTarget && !detail.followedSymlink) return "manifest";
+      if (isLink(detail)) return null;
+      if (detail.class !== "plain") return "manifest";
       if (isLiteralPlainObject(detail)) return "object";
       return null;
     }
     const pd = this.prefixDetail;
-    if (pd?.markerBacked && pd.selfObject && identity?.name === pd.prefix) return "marker";
+    if (pd?.markerBacked && pd.selfObject && !isLink(pd.selfObject) && identity?.name === pd.prefix) return "marker";
     return null;
   }
 

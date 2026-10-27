@@ -258,3 +258,43 @@ describe("the Delete key", () => {
     expect(document.querySelector('[role="alertdialog"]')).toBeNull();
   });
 });
+
+describe("links have no deletion flow", () => {
+  // ADR 0094 decision 5: a link in either representation is excluded from
+  // every affordance, the Delete key included, and the inspector says why.
+  it("a link to a marker opens nothing and the inspector explains", async () => {
+    const f = await state("folder-marker/");
+    applyEnabledCapabilities(["Marker and manifest deletion"]);
+    const pd = f.browser.prefixDetail!;
+    f.browser.prefixDetail = { ...pd, selfObject: { ...pd.selfObject!, followedSymlink: true } };
+    expect(f.browser.deletableSelectionKind()).toBeNull();
+    expect(f.browser.openMarkerDelete()).toBe(false);
+    expect(f.browser.objectDelete).toBeNull();
+    const component = mount(Inspector, { target: f.root, props: { browser: f.browser } });
+    mounted.add(component);
+    flushSync(); await settle();
+    expect(labels(f.root)).not.toContain("Delete marker…");
+    expect(f.root.textContent).toContain("symbolic link to a marker");
+  });
+
+  it("a followed link to a manifest opens nothing and the inspector explains", async () => {
+    const f = await state("external-dlo");
+    applyEnabledCapabilities(["Marker and manifest deletion"]);
+    const detail = f.browser.objectDetail!;
+    f.browser.objectDetail = { ...detail, followedSymlink: true };
+    expect(f.browser.deletableSelectionKind()).toBeNull();
+    expect(f.browser.openManifestDelete()).toBe(false);
+    expect(f.browser.objectDelete).toBeNull();
+    const component = mount(Inspector, { target: f.root, props: { browser: f.browser } });
+    mounted.add(component);
+    flushSync(); await settle();
+    expect(labels(f.root)).not.toContain("Delete manifest…");
+    expect(f.root.textContent).toContain("symbolic link to the manifest");
+  });
+
+  it("the manifest dialog does not promise that the name becomes unreadable", async () => {
+    const f = await manifestDialog();
+    expect(f.root.textContent).not.toContain("reads of this name will fail");
+    expect(f.root.textContent).toContain("follows how this container keeps versions");
+  });
+});
