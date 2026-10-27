@@ -3,6 +3,7 @@
   import { formatBytes, formatCount } from "../../lib/format";
   import type { PrefixDetailDTO } from "../../lib/api";
   import { v1Offers } from "../../lib/v1.svelte";
+  import { isLiteralPlainObject } from "../../lib/objectKind";
   import type { BrowserState } from "../browser/browserState.svelte";
   import ObjectEditPanel from "./ObjectEditPanel.svelte";
   import ContainerEditPanel from "./ContainerEditPanel.svelte";
@@ -140,6 +141,9 @@
 
     {#if detail && !editingObject}
       <button class="edit-btn" onclick={() => (editingObject = true)}>Edit metadata</button>
+      {#if v1Offers.objectDelete && isLiteralPlainObject(detail)}
+        <button class="edit-btn danger" onclick={() => (browser.objectDeleteOpen = true)}>Delete object…</button>
+      {/if}
     {:else if detail && editingObject}
       <ObjectEditPanel {browser} {detail} onDone={() => (editingObject = false)} />
     {/if}

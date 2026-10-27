@@ -610,6 +610,29 @@ export function newFakeApi(): Api {
       return detail;
     },
 
+    deleteObject: async (scope, container, name, contentFingerprint): Promise<MutationResultDTO> => {
+      requireWriteScope(scope);
+      if (contentFingerprint === "") {
+        throw new Error("deleting needs the content identity the caller was shown; a delete that cannot say what it meant to destroy is refused");
+      }
+      const detail = objectDetailOf(container, name);
+      if (detail.class !== "plain") {
+        record("object.delete", `${container}/${name}`, "failed");
+        throw new Error(`${container}/${name} is a ${detail.class} manifest, not a plain object; the manifest deletion owns it`);
+      }
+      if (detail.followedSymlink || detail.symlinkTarget) {
+        record("object.delete", `${container}/${name}`, "failed");
+        throw new Error(`${container}/${name} is a symlink: the identity shown is its target's`);
+      }
+      if (detail.contentFingerprint !== contentFingerprint) {
+        record("object.delete", `${container}/${name}`, "conflict");
+        throw new Error(`${container}/${name} is not what you were shown: it now reports a plain of ${detail.contentLength} bytes with entity tag ${detail.etag}, so nothing was deleted (expected identity ${contentFingerprint}, found ${detail.contentFingerprint})`);
+      }
+      objects[container] = (objects[container] ?? []).filter((o) => o.name !== name);
+      record("object.delete", `${container}/${name}`, "applied");
+      return { outcome: "applied", mismatch: "", limitation: "", transIds: ["txfake", "txfake"], objectAfter: null, containerAfter: null };
+    },
+
     auditRecent: async (limit, bookmarkId) => {
       if (!bookmarkId) {
         throw new Error("name the bookmark the read is for");

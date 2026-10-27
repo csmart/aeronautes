@@ -3,7 +3,9 @@
 // and removing its names from the Go deferred table. Download, marker
 // creation and upload are kept (the operator returned marker creation on
 // 23 September 2026 and upload on 16 October 2026); copy, bulk delete,
-// marker deletion, manifest deletion, benchmark and re-run are not.
+// marker deletion, manifest deletion, benchmark and re-run are not, and
+// neither is the single-object deletion of ADR 0092 until the operator
+// returns it.
 // LocalTransferDialog serves both of its modes again.
 
 /** The capability names the backend reports, mapped onto the affordances
@@ -15,6 +17,8 @@ const affordancesOf: Record<string, (keyof typeof v1Offers)[]> = {
   "Bulk delete": ["bulkDelete"],
   "Marker and manifest editing": ["markerDelete", "manifestDelete"],
   "Benchmark": ["benchmark"],
+  // One plain object the operator was shown, born deferred (ADR 0092).
+  "Object deletion": ["objectDelete"],
 };
 
 /** Offers the capabilities this process reports as enabled, and only
@@ -37,6 +41,7 @@ export const v1Offers = $state({
   markerCreate: true,
   markerDelete: false,
   manifestDelete: false,
+  objectDelete: false,
   benchmark: false,
   rerun: false,
   download: true,
