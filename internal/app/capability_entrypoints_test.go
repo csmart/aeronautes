@@ -43,6 +43,11 @@ func deferredEntryPoints(t *testing.T, h *harness) []deferredEntryPoint {
 			_, err := deleteSvc.StartDelete(t.Context(), DeleteRequestDTO{BookmarkID: h.bookmarkID(), Container: "fixtures"})
 			return err
 		}},
+		{"DeleteService.StartSelectedDelete", "Object deletion", func(t *testing.T, h *harness) error {
+			_, err := deleteSvc.StartSelectedDelete(t.Context(), SelectedDeleteRequestDTO{Scope: h.portrait(), Container: "fixtures",
+				Members: []ListingRowDTO{{Kind: "object", Name: "empty-object"}}, Confirm: "1"})
+			return err
+		}},
 		{"DeleteService.CheckSegmentOwnership", "Bulk delete", func(t *testing.T, h *harness) error {
 			_, err := deleteSvc.CheckSegmentOwnership(t.Context(), SegmentsDeleteRequestDTO{BookmarkID: h.bookmarkID(), Container: "fixtures", Name: "external-dlo"})
 			return err

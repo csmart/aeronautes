@@ -28,6 +28,10 @@ type DeleteService struct {
 	jobs        *jobs.Store
 	runner      *jobRunner
 	evidence    *evidence.Store
+	// ceiling is the operator's retention ceiling, the most members one
+	// selected-set deletion admits (ADR 0093 decision 2); nil means the
+	// default ceiling.
+	ceiling func(context.Context) int
 }
 
 // NewDeleteService wires the service over the shared runner.

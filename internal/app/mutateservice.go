@@ -145,17 +145,23 @@ var ErrMutationScopeChanged = errors.New("the connected account changed; nothing
 // connection must be the named bookmark at the named generation, and the
 // store must still hold that generation, before any intent is recorded.
 func (s *MutateService) boundSnapshot(ctx context.Context, scope ListingScopeDTO) (cachedSession, string, *swiftcontrol.Capabilities, error) {
+	return s.connections.boundSnapshot(ctx, scope)
+}
+
+// boundSnapshot is activeSnapshot bound to the caller's scope, for any
+// service that starts a write or a job from a view (ADR 0079).
+func (c *Connections) boundSnapshot(ctx context.Context, scope ListingScopeDTO) (cachedSession, string, *swiftcontrol.Capabilities, error) {
 	if scope.BookmarkID == "" || scope.Generation <= 0 {
 		return cachedSession{}, "", nil, fmt.Errorf("%w: name the bookmark and generation the view was built under", ErrMutationScopeChanged)
 	}
-	entry, bookmarkID, caps, err := s.connections.activeSnapshot()
+	entry, bookmarkID, caps, err := c.activeSnapshot()
 	if err != nil {
 		return cachedSession{}, "", nil, err
 	}
 	if bookmarkID != scope.BookmarkID || entry.generation != scope.Generation {
 		return cachedSession{}, "", nil, ErrMutationScopeChanged
 	}
-	if err := s.connections.store.WithCurrentGeneration(ctx, bookmarkID, scope.Generation, nil); err != nil {
+	if err := c.store.WithCurrentGeneration(ctx, bookmarkID, scope.Generation, nil); err != nil {
 		return cachedSession{}, "", nil, fmt.Errorf("%w: %v", ErrMutationScopeChanged, err)
 	}
 	return entry, bookmarkID, caps, nil

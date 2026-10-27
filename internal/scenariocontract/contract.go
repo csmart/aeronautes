@@ -152,6 +152,9 @@ var inventory = map[string]Action{
 	"DeleteService.PreviewDelete":         {Kind: Read},
 	"DeleteService.CheckSegmentOwnership": {Kind: Read},
 	"DeleteService.StartDelete":           {Kind: Job},
+	// ADR 0093 decision 6: a job that never retries a destructive request
+	// has no retry scenario; its real contract is the five below.
+	"DeleteService.StartSelectedDelete": {Kind: Job, Scenarios: []string{"happy", "refusal", "conflict", "cancel", "partial"}},
 	// DeleteManifestWithSegments returns synchronously but has partial-result
 	// and retry semantics (it reports remaining segments and instructs a
 	// retry, and context cancellation can interrupt it), so it keeps
