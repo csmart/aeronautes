@@ -51,9 +51,9 @@ Deletion carries the most hazards of any capability, which is why the 25 Septemb
 2. **Selected-set deletion.**
    Multi-selection of the loaded rows, as ADR 0072 decision 3 records, and one confirmation that names what it will delete; each name is an exact deletion and no prefix is inferred from a selection.
 3. **Marker and manifest deletion return**, reversing ADR 0052 decision 7 on the operator's word.
-   Manifest deletion is already bound by ADR 0085.
-   Deleting a manifest with its segments is built as a force-only Backstage path with typed confirmation: recorded ownership is advisory because no live reverse-reference scan exists, and even a proven prefix does not delete without force.
-   That force-only path is what 0.2.0 returns; a cleanup authorised by ownership alone would need the exclusivity proof K-SEG-004 requires and is not proposed here.
+   Manifest-only deletion is already bound by ADR 0085, and the two actions that return here are `MutateService.DeleteMarker` and `MutateService.DeleteManifest`, the pair the gate classifies as marker and manifest editing.
+   Deleting a manifest together with its segments is a different pair, classified with bulk delete: `DeleteManifestWithSegments` is force-only with typed confirmation, recorded ownership is advisory because no live reverse-reference scan exists, and its dynamic large object branch is the prefix sweep itself.
+   One admission covers both of its branches, so it returns with bulk deletion in 0.2.x rather than here, and a cleanup authorised by ownership alone would need the exclusivity proof K-SEG-004 requires and is not proposed.
 4. **Bulk deletion of a prefix or a container**, proposed as 0.2.x so that exact deletion is not held behind the hardest proof.
    It needs the prefix protocol ADR 0085 records as owed, for the listing-to-request race and names first listed in a later pass; L03's allowed-effect contract; and L04's deletion failure streams.
    Automatic segment reclamation stays refused apart from [ADR 0081](../../adr/0081-upload-overwrite-acknowledgement.md) decision 5, because the DS-01 hazard is a recovery sweep deleting segments an unrelated live manifest still references.
@@ -86,7 +86,7 @@ Keystone authentication and the vault fallback belong here if the operator decid
 
 Measured workload bounds and fairness (P24 and P25), the benchmark's return, bookmark overrides, per-job settings on the local transfer dialog, and the adaptive back-off of K-PERF-003.
 The Auto, Balanced, Aggressive and Custom profiles and their per-job overrides already exist behind the copy affordance and return with copy in 0.3.0; Auto's stored recommendation needs the benchmark.
-Recommendation: re-scope the benchmark and the adaptive back-off to 1.x unless the operator needs them, since §63 lists them and only the operator can take them out.
+Recommendation: re-scope the benchmark and the adaptive back-off to 1.x unless the operator needs them, since §63 lists the benchmark, DESIGN §41 and K-PERF-003 require the back-off, and only the operator can take them out.
 
 ### 0.7.0 — platforms and distribution
 
@@ -152,13 +152,13 @@ Shipped means offered by a build; gated means built and refused under ADR 0052; 
 | Delete | recursively delete normal prefixes | gated, protocol owed | 0.2.x |
 | Delete | empty containers | gated, protocol owed | 0.2.x |
 | Delete | delete SLO manifests | gated, bound by ADR 0085 | 0.2.0 |
-| Delete | delete SLOs with exact segments | gated, force-only with typed confirmation; ownership advisory | 0.2.0 |
+| Delete | delete SLOs with exact segments | gated with bulk delete, force-only with typed confirmation; ownership advisory | 0.2.x |
 | Delete | delete DLO manifests | gated, bound by ADR 0085 | 0.2.0 |
 | Delete | clean known-owned DLO segments | gated, prefix-scoped and force-only; ownership advisory | 0.2.x |
 | Delete | deliberate Backstage cleanup | gated, force and typed confirmation | 0.2.x |
 | Performance | global resource budgets | shipped as settings under ADR 0074 | — |
 | Performance | bookmark overrides | not built | 0.6.0 |
-| Performance | per-job overrides | built behind copy; the local transfer dialog offers chunk size only | 0.3.0 with copy; 0.6.0 for local transfers |
+| Performance | per-job overrides | built behind copy; the local transfer dialog sends defaults though the bridge accepts overrides | 0.3.0 with copy; 0.6.0 for local transfers |
 | Performance | Auto, Balanced, Aggressive and Custom | built behind copy; Auto's recommendation needs the benchmark | 0.3.0 with copy |
 | Performance | benchmark a bookmark | gated | 0.6.0 or re-scoped |
 | Performance | report throughput and effective configuration | throughput and recorded settings shipped; effective-setting disclosure owed under UI-09 | 0.4.0 |
