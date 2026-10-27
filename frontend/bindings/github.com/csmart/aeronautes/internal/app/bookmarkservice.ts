@@ -51,7 +51,8 @@ export function Save(dto: $models.BookmarkDTO, secret: string): $CancellableProm
  * operator learns whether the endpoint accepts the user and key before the
  * bookmark and its key are stored. The session is built the way a saved
  * bookmark's is, so the endpoint policy and the TLS trust apply unchanged;
- * the result names the account and its HEAD counts and nothing else.
+ * it is closed before returning, since nothing keeps it; and the result
+ * names the account and its HEAD counts and nothing else.
  */
 export function Verify(dto: $models.BookmarkDTO, secret: string): $CancellablePromise<$models.VerifyResultDTO> {
     return $Call.ByID(3679145540, dto, secret);
