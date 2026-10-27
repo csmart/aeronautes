@@ -134,6 +134,56 @@ func shownRefusal(container, name, baseContent, reason string, before *ObjectDet
 	}
 }
 
+// MemberRow is the listing row a selected-set deletion carries for one
+// member (ADR 0093 decision 2): the facts the baseline rule reads.
+type MemberRow struct {
+	Name      string
+	Bytes     int64
+	ETag      string
+	SLOListed bool
+}
+
+// DeleteMember deletes ONE member of a selected set by the verified per-name
+// protocol (ADR 0093 decision 3). A member listed with a non-zero size and
+// not marked as a static large object has its listing row as the baseline,
+// a plain object of those bytes and that entity tag; a member listed as zero
+// bytes or as a static large object takes a HEAD of its own as a later
+// baseline, because such a row may be a plain object, a marker, a manifest
+// of either kind or a link, and the row cannot say which. A link found at
+// the later baseline is refused at once.
+//
+// The comparison HEAD, the DELETE and the literal read then run as for any
+// shown object, under one credentials snapshot. Any difference between the
+// baseline and the comparison, class included, refuses the member as changed
+// since listed with both identities, so an ordinary row whose name now holds
+// a manifest or a link is a conflict and never a replacement baseline; a
+// member whose baseline was a manifest is deleted manifest-only and judged by
+// the manifest words afterwards, one whose baseline was plain by the plain
+// words. No bulk request is sent and no DELETE is repeated.
+func (s *Session) DeleteMember(ctx context.Context, container string, row MemberRow) (*ObjectDeleteResult, error) {
+	if container == "" || row.Name == "" {
+		return nil, errors.New("deleting a member needs both its container and its name; an empty name would address the container itself")
+	}
+	baseContent := ""
+	target := targetListedPlain
+	if row.Bytes != 0 && !row.SLOListed {
+		baseContent = (&ObjectDetail{Class: ClassPlain, ContentLength: row.Bytes, ETag: row.ETag}).ContentFingerprint()
+	} else {
+		baseline, err := s.ObjectDetail(ctx, container, row.Name)
+		if err != nil {
+			return nil, err
+		}
+		if baseline.FollowedSymlink || baseline.SymlinkTarget != "" {
+			return nil, fmt.Errorf("%s/%s is a symlink: the identity listed is its target's and a delete at this name would remove the link instead; deleting a link is not offered here", container, row.Name)
+		}
+		baseContent = baseline.ContentFingerprint()
+		if baseline.Class != ClassPlain {
+			target = targetListedManifest
+		}
+	}
+	return s.deleteShown(ctx, container, row.Name, baseContent, target)
+}
+
 // deleteTarget is what a deletion's comparison HEAD must show for the DELETE
 // to be issued, and how what the literal read finds afterwards is judged.
 type deleteTarget int
@@ -142,7 +192,20 @@ const (
 	targetPlain deleteTarget = iota
 	targetMarker
 	targetManifest
+	// The listed targets are a selected set's members (ADR 0093 decision 3):
+	// no class is refused at admission, because the baseline carries the
+	// class and a change of class is a conflict with both identities; the
+	// literal read afterwards is judged by the baseline's kind.
+	targetListedPlain
+	targetListedManifest
 )
+
+// manifestWords says the literal read after the DELETE is judged by the
+// manifest words: no identity comparison, a manifest of the same kind still
+// observed is unverified (ADR 0094 decision 3, ADR 0093 decision 3).
+func (t deleteTarget) manifestWords() bool {
+	return t == targetManifest || t == targetListedManifest
+}
 
 // admit refuses, before any DELETE, what the comparison HEAD shows when it is
 // not of the kind this target deletes. Classification comes before the
@@ -295,7 +358,7 @@ func (s *Session) deleteCompared(ctx context.Context, credentials StorageCredent
 		result.Outcome = UpdateUnverified
 		return result, fmt.Errorf("%w: deleted (trans %s) but the literal read failed: %v", ErrUnverifiedDelete, deleteTransID, result.AfterRead)
 	}
-	if target == targetManifest {
+	if target.manifestWords() {
 		// The comparison described the assembled content and the literal read
 		// describes the stored manifest, so no identity is compared: a manifest
 		// of the same kind still at the name is the uncertainty itself.
