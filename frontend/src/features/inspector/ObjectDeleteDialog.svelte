@@ -5,66 +5,44 @@
   plain success. -->
 <script lang="ts">
   import { trapFocus } from "../../lib/trapFocus";
-  import { onDestroy, onMount, untrack } from "svelte";
+  import { onMount, untrack } from "svelte";
   import type { BrowserState } from "../browser/browserState.svelte";
   import type { ContainerSettingsDTO, ObjectDetailDTO } from "../../lib/api";
   import { formatBytes } from "../../lib/format";
 
-  let {
-    browser,
-    detail,
-    container,
-    onClose,
-  }: {
-    browser: BrowserState;
-    detail: ObjectDetailDTO;
-    container: string;
-    onClose: () => void;
-  } = $props();
+  let { browser, onClose }: { browser: BrowserState; onClose: () => void } = $props();
 
-  let deleting = $state(false);
-  let settling = $state(false);
-  let error: string | null = $state(null);
-  let observed: ObjectDetailDTO | null = $state(null);
-  // undefined while the container's facts are being read, null when they
-  // cannot be read.
-  let facts: ContainerSettingsDTO | null | undefined = $state(undefined);
-  let closed = $state(false);
-
-  // The dialog binds the EXACT identity it was opened for: whatever the
-  // list, filter or selection does afterwards, confirm acts on this and
-  // nothing else (C-04, as the manifest and bulk dialogs do).
+  // The operation is owned by the browser state (ADR 0092 decision 5): it was
+  // captured when the dialog opened and it outlives the listing refresh that
+  // follows a success, so the successor the verifying read observed is still
+  // here to show. Opening without an operation is a programming error the
+  // screen's mount condition prevents.
   // svelte-ignore state_referenced_locally
-  const target = {
-    browser, scope: browser.scopeRevision, selection: browser.detailIdentity, detail, container, name: detail.name,
-  };
+  const op = browser.objectDelete!;
 
-  function isCurrent() {
-    return !closed && browser === target.browser && !browser.connecting
-      && !!target.container && !!target.name
-      && target.container === target.selection?.container && target.name === target.selection.name
-      && browser.scopeRevision === target.scope && browser.detailIdentity === target.selection
-      && browser.objectDetail === target.detail && detail === target.detail;
-  }
-  function close() {
-    if (closed) return;
-    closed = true;
-    onClose();
-  }
-  onDestroy(() => { closed = true; });
-  // A view that moved closes the dialog, except while a delete is settling
-  // or once it has settled with a successor to show: the listing refresh
-  // that follows a success moves the selection on purpose.
-  $effect(() => { if (!isCurrent() && !settling && !observed) untrack(close); });
+  // undefined while the container's facts are being read, null when they
+  // cannot be read. Confirmation waits for either answer.
+  let facts: ContainerSettingsDTO | null | undefined = $state(undefined);
+
+  const pending = $derived(op.status === "pending");
+  const observed = $derived(op.status === "done" ? op.result?.objectAfter ?? null : null);
+  const current = $derived(browser.objectDeleteCurrent());
+
+  // A view the operator moved before confirming abandons the operation; the
+  // refresh after a success is the state's own and does not reach here as
+  // pending.
+  $effect(() => {
+    if (pending && !op.error && !current) untrack(onClose);
+  });
 
   onMount(async () => {
-    const result = await browser.containerFacts(target.container);
-    if (!closed) facts = result;
+    const result = await browser.containerFacts(op.container);
+    if (browser.objectDelete === op) facts = result;
   });
 
   // A directory marker reached as an object row is deleted as the literal
   // object it is; its children stay (ADR 0092 decision 2).
-  const marker = $derived(target.detail.contentLength === 0 && target.detail.contentType === "application/directory");
+  const marker = $derived(op.detail.contentLength === 0 && op.detail.contentType === "application/directory");
 
   // Measured against the owned Swift on 27 October 2026
   // (docs/experiments/2026-10-27-delete-under-versioning.md): a versions
@@ -90,48 +68,39 @@
     return "plain object";
   }
 
+  // Confirmation waits for the versioning consequence to be known or
+  // explicitly unknown, so the warning a versions location needs is on
+  // screen before the request can leave.
+  const canConfirm = $derived(pending && facts !== undefined && current);
+
   async function confirm() {
-    if (deleting || observed || !isCurrent()) return;
-    deleting = true;
-    settling = true;
-    error = null;
-    try {
-      const result = await browser.deleteObject(target.container, target.name, target.detail, () => !closed);
-      if (closed) return;
-      if (result.objectAfter) {
-        observed = result.objectAfter;
-      } else {
-        close();
-      }
-    } catch (err) {
-      if (!closed) error = err instanceof Error ? err.message : String(err);
-    } finally {
-      deleting = false;
-      settling = false;
-    }
+    if (!canConfirm) return;
+    await browser.runObjectDelete();
+    const settled = browser.objectDelete;
+    if (settled === op && op.status === "done" && !op.result?.objectAfter) onClose();
   }
 </script>
 
-<div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && close()}>
+<div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && onClose()}>
   <div class="dialog" role="alertdialog" aria-label="Delete object" aria-modal="true" tabindex="-1"
-    use:trapFocus={close}>
+    use:trapFocus={onClose}>
     <h2 class="title">{observed ? "Deleted" : "Delete object"}</h2>
     <div class="body">
       {#if observed}
         <p class="what">
-          <span class="type-mono">{target.name}</span> no longer holds what you were shown.
+          <span class="type-mono">{op.name}</span> no longer holds what you were shown.
         </p>
         <p class="keeps warn">
           <strong>Something stands at the name now:</strong> a {kindOf(observed)} of
           {formatBytes(observed.contentLength)}{observed.etag ? ` with entity tag ${observed.etag}` : ""}{observed.symlinkTarget
             ? `, pointing at ${observed.symlinkTarget}`
-            : ""}. It may be the archived predecessor or a concurrent write; this delete did not create it and did
-          not touch it.
+            : ""}. It may be the archived predecessor or a concurrent write; what this delete did to it is not
+          observed.
         </p>
       {:else}
         <p class="what">
-          <span class="type-mono">{target.name}</span> will be deleted: {formatBytes(target.detail.contentLength)},
-          entity tag <span class="type-mono">{target.detail.etag}</span>.
+          <span class="type-mono">{op.name}</span> will be deleted: {formatBytes(op.detail.contentLength)},
+          entity tag <span class="type-mono">{op.detail.etag}</span>.
         </p>
         <p class="keeps">{versioningSentence(facts)}</p>
         {#if marker}
@@ -142,17 +111,17 @@
           last look.
         </p>
       {/if}
-      {#if error}
-        <p class="error" role="alert">{error}</p>
+      {#if op.error}
+        <p class="error" role="alert">{op.error}</p>
       {/if}
     </div>
     <div class="actions">
       {#if observed}
-        <button class="secondary" onclick={close}>Close</button>
+        <button class="secondary" onclick={onClose}>Close</button>
       {:else}
-        <button class="secondary" onclick={close} disabled={deleting}>Cancel</button>
-        <button class="danger" onclick={confirm} disabled={deleting || !isCurrent()}>
-          {deleting ? "Deleting…" : "Delete object"}
+        <button class="secondary" onclick={onClose} disabled={op.status === "running"}>Cancel</button>
+        <button class="danger" onclick={confirm} disabled={!canConfirm}>
+          {op.status === "running" ? "Deleting…" : "Delete object"}
         </button>
       {/if}
     </div>

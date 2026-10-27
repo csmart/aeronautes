@@ -3,6 +3,7 @@
 // All data flows through the Api seam so this logic is tested against a
 // fixture-backed fake; loading and error state live per pane.
 
+import { isLiteralPlainObject } from "../../lib/objectKind";
 import type {
   AccountDTO,
   AppSettingsDTO,
@@ -116,6 +117,19 @@ function requireAdvancingMarker(previous: string, next: string) {
   if (after.length <= before.length) throw new Error("The page marker did not advance. Retry the page.");
 }
 
+/** One single-object delete from opening to its settled result (ADR 0092). */
+export interface ObjectDeleteOperation {
+  container: string;
+  name: string;
+  detail: ObjectDetailDTO;
+  /** The scope revision and selection identity the dialog was opened from. */
+  scope: number;
+  selection: { container: string; name: string } | null;
+  status: "pending" | "running" | "done";
+  result: MutationResultDTO | null;
+  error: string | null;
+}
+
 export class BrowserState {
   #api: Api;
 
@@ -190,8 +204,10 @@ export class BrowserState {
   }
   // Destructive-jobs dialog (§31–§33).
   deleteOpen = $state(false);
-  /** The single-object delete dialog (ADR 0092), opened by the inspector or the Delete key. */
-  objectDeleteOpen = $state(false);
+  /** The single-object delete the operator opened (ADR 0092), owned here so its
+   * result outlives the listing refresh that follows its success; the dialog
+   * renders it and never the live inspector detail. */
+  objectDelete: ObjectDeleteOperation | null = $state(null);
   // Application settings (§38/§40).
   appSettings: AppSettingsDTO | null = $state(null);
   appSettingsStatus = $state<"unavailable" | "current" | "stale" | "unconfirmed">("unavailable");
@@ -443,6 +459,7 @@ export class BrowserState {
     this.transferOpen = false;
     this.localTransfer = null;
     this.deleteOpen = false;
+    this.objectDelete = null;
     this.findOpen = false;
   }
 
@@ -1875,6 +1892,56 @@ export class BrowserState {
     await this.loadAudit();
     if (displayed && ownsView() && this.#currentView(scope, selection)) await this.goTo(prefix);
     return result;
+  }
+
+  /** Open the single-object delete for the inspected plain object, capturing
+   * the detail, the container and the view it was chosen from. False when
+   * nothing deletable is inspected. */
+  openObjectDelete(): boolean {
+    const detail = this.objectDetail;
+    const identity = this.detailIdentity;
+    const container = this.containerName;
+    if (!detail || !identity || !container || this.connecting || identity.container !== container
+      || identity.name !== detail.name || !isLiteralPlainObject(detail)) {
+      return false;
+    }
+    this.objectDelete = {
+      container, name: detail.name, detail, scope: this.#scopeRevision, selection: identity,
+      status: "pending", result: null, error: null,
+    };
+    return true;
+  }
+
+  closeObjectDelete() {
+    this.objectDelete = null;
+  }
+
+  /** True while the view the operation was opened from is still the one shown:
+   * a user who moves the selection or the scope before confirming abandons it;
+   * the refresh that follows a success is this state's own and does not. */
+  objectDeleteCurrent(): boolean {
+    const op = this.objectDelete;
+    return !!op && !this.connecting && this.#scopeRevision === op.scope
+      && this.detailIdentity === op.selection && this.objectDetail === op.detail;
+  }
+
+  /** Run the opened delete once. The result or the refusal lands on the
+   * operation, which survives the listing refresh, so the dialog can show an
+   * observed successor rather than a plain success. */
+  async runObjectDelete(): Promise<void> {
+    const op = this.objectDelete;
+    if (!op || op.status !== "pending" || !this.objectDeleteCurrent()) return;
+    op.status = "running";
+    try {
+      const result = await this.deleteObject(op.container, op.name, op.detail, () => this.objectDelete === op);
+      if (this.objectDelete !== op) return;
+      op.result = result;
+      op.status = "done";
+    } catch (err) {
+      if (this.objectDelete !== op) return;
+      op.error = err instanceof Error ? err.message : String(err);
+      op.status = "pending";
+    }
   }
 
   /** The open container's settings fact from its loaded row, or one HEAD
