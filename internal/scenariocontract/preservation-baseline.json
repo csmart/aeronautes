@@ -2,12 +2,12 @@
   "schemaVersion": 1,
   "reportSchemaVersion": 3,
   "identity": {
-    "commit": "65d8c5f53dfc57472efcde067b958f34deeaa94a",
-    "go_version": "go1.27.1",
-    "run_attempt": "1",
-    "run_id": "35625767556"
+    "commit": "4e7a35206a76de0d8fa8e97ea836fe0760c4841b",
+    "go_version": "go1.27.3",
+    "run_id": "40438457699",
+    "run_attempt": "1"
   },
-  "contractHash": "9f0e99b3cf8bd327",
+  "contractHash": "a4f0914c2a290c0d",
   "actions": [
     {
       "action": "AppService.About",
@@ -90,6 +90,14 @@
     {
       "action": "BookmarkService.Save",
       "kind": "mutate",
+      "required": [
+        "happy",
+        "refusal"
+      ]
+    },
+    {
+      "action": "BookmarkService.Verify",
+      "kind": "read",
       "required": [
         "happy",
         "refusal"
@@ -462,6 +470,14 @@
       "scenario": "refusal"
     },
     {
+      "action": "BookmarkService.Verify",
+      "scenario": "happy"
+    },
+    {
+      "action": "BookmarkService.Verify",
+      "scenario": "refusal"
+    },
+    {
       "action": "BrowseService.Account",
       "scenario": "happy"
     },
@@ -536,6 +552,14 @@
     {
       "action": "FindService.StartFind",
       "scenario": "refusal"
+    },
+    {
+      "action": "InspectorService.Object",
+      "scenario": "happy"
+    },
+    {
+      "action": "InspectorService.Prefix",
+      "scenario": "happy"
     },
     {
       "action": "JobService.History",
@@ -643,10 +667,10 @@
     }
   ],
   "evidence": {
-    "reference": "docs/experiments/2026-09-21-scenario-preservation-baseline.md",
-    "mainReportSHA256": "0a6564782b4ca232fb06764479b6b9de7634a7001f723ac00932600b838c2b83",
-    "mainReceiptSHA256": "19a6bdf78e8452f07f35179bc681435515fcbfbce3c149736d084008b5201dc5",
-    "heavyReportSHA256": "1aff19ee3e9f5980c96e06c517da334f3e635daf64455a793d029ee432bae629",
-    "heavyReceiptSHA256": "9ac5dee76e99612c49c72ac55d5fef07d92f8273f07d6b6ed826fd793f351cf0"
+    "reference": "docs/experiments/2026-10-27-verify-action-baseline.md",
+    "mainReportSHA256": "16e8a19afeb3a20cf72fffd94d8312b17b7a89c1045b5f91bdf8aef4cb79cbf0",
+    "mainReceiptSHA256": "f993aa9c92ae936e87ee4927c42375e9af1d3f54f1956a951a97b572fd759a7b",
+    "heavyReportSHA256": "c0194c149c32183d317a413e06f643bcb9dc3449caf81b6ef4192831327280db",
+    "heavyReceiptSHA256": "6351c2094f0bf7ef7ccfa95b6c4758a143af471aa9eb171f8bfe4f6492a069ab"
   }
 }
