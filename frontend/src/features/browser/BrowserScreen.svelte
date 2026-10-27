@@ -41,8 +41,70 @@
     return "key cleanup";
   });
 
+  // The rail's width (§4.3: panes should be resizable). The operator drags
+  // the rail's edge or uses the arrow keys on the handle; the width
+  // persists with the application settings so the webview's own storage,
+  // which need not survive a restart, is not relied on. Until the
+  // settings are read, or when they cannot be saved, the width still
+  // applies to this window. The bounds mirror internal/app/settingsservice.go.
+  const railMinPx = 64;
+  const railMaxPx = 480;
+  const railStepPx = 16;
+  let screenEl: HTMLDivElement | undefined = $state();
+  let railDrag: number | null = $state(null);
+  let railSession: number | null = $state(null);
+  const railWidthPx = $derived(railDrag ?? railSession ?? browser.appSettings?.railWidthPx ?? 0);
+
+  function clampRail(px: number): number {
+    return Math.min(railMaxPx, Math.max(railMinPx, Math.round(px)));
+  }
+
+  function currentRailPx(): number {
+    const rail = screenEl?.firstElementChild;
+    const measured = rail instanceof HTMLElement ? rail.getBoundingClientRect().width : 0;
+    return measured > 0 ? measured : railWidthPx || railMinPx;
+  }
+
+  function commitRail(px: number) {
+    const width = px === 0 ? 0 : clampRail(px);
+    railSession = width;
+    void browser.saveRailWidth(width);
+  }
+
+  function startRailResize(event: PointerEvent) {
+    if (event.button !== 0) return;
+    const handle = event.currentTarget as HTMLElement;
+    const origin = event.clientX;
+    const from = currentRailPx();
+    handle.setPointerCapture?.(event.pointerId);
+    const move = (moved: PointerEvent) => {
+      railDrag = clampRail(from + moved.clientX - origin);
+    };
+    const stop = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", stop);
+      handle.removeEventListener("pointercancel", stop);
+      if (railDrag !== null) commitRail(railDrag);
+      railDrag = null;
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", stop);
+    handle.addEventListener("pointercancel", stop);
+    event.preventDefault();
+  }
+
+  function railKeydown(event: KeyboardEvent) {
+    const from = railWidthPx || currentRailPx();
+    if (event.key === "ArrowLeft") commitRail(from - railStepPx);
+    else if (event.key === "ArrowRight") commitRail(from + railStepPx);
+    else if (event.key === "Home") commitRail(0);
+    else return;
+    event.preventDefault();
+  }
+
   onMount(async () => {
     void browser.loadCredentialStatus();
+    void browser.loadAppSettings();
     try {
       const info = await liveApi.info();
       shellInfo = `shell ${info.version} · Wails ${info.wails} · secrets: ${info.secretBackend}`;
@@ -103,7 +165,7 @@
     {/if}
   </div>
 {/if}
-<div class="screen">
+<div class="screen" bind:this={screenEl} style:--rail-width={railWidthPx ? `${railWidthPx}px` : undefined}>
   <BookmarkRail
     {browser}
     onAddBookmark={() => {
@@ -115,6 +177,24 @@
       editorOpen = true;
     }}
   />
+  <!-- The WAI-ARIA window-splitter pattern: a focusable separator that
+    reports its position and moves with the arrow keys; Svelte's rule
+    knows separators only as static. -->
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+  <div
+    class="rail-handle"
+    role="separator"
+    aria-orientation="vertical"
+    aria-label="Resize bookmark rail"
+    aria-valuemin={railMinPx}
+    aria-valuemax={railMaxPx}
+    aria-valuenow={railWidthPx || undefined}
+    tabindex="0"
+    title="Drag to resize the bookmark rail; Home resets it"
+    onpointerdown={startRailResize}
+    onkeydown={railKeydown}
+    ondblclick={() => commitRail(0)}
+  ></div>
   <ContainerColumn {browser} onCreate={() => (createOpen = true)} />
   <WorkingList bind:this={workingList} {browser} />
   <Inspector {browser} />
@@ -193,7 +273,7 @@
     flex: 1;
     min-height: 0;
     display: grid;
-    grid-template-columns: 5.4rem 17rem minmax(24rem, 1fr) minmax(19rem, 22rem);
+    grid-template-columns: var(--rail-width, 5.4rem) 17rem minmax(24rem, 1fr) minmax(19rem, 22rem);
     grid-template-rows: minmax(0, 1fr) auto auto;
   }
 
@@ -204,18 +284,41 @@
      scrolls inside its own pane. */
   @media (max-width: 1100px) {
     .screen {
-      grid-template-columns: 4.6rem 13rem minmax(19rem, 1fr) minmax(15rem, 18rem);
+      grid-template-columns: var(--rail-width, 4.6rem) 13rem minmax(19rem, 1fr) minmax(15rem, 18rem);
     }
   }
 
   @media (max-width: 920px) {
     .screen {
-      grid-template-columns: 4.2rem 10.5rem minmax(16rem, 1fr) minmax(13rem, 15rem);
+      grid-template-columns: var(--rail-width, 4.2rem) 10.5rem minmax(16rem, 1fr) minmax(13rem, 15rem);
     }
   }
 
   .screen > :global(*) {
     grid-row: 1;
+  }
+
+  /* The rail and its handle share the first cell: both placed there
+     explicitly, so the handle overlaps the rail's edge instead of taking
+     a column of its own. */
+  .screen > :global(.rail) {
+    grid-column: 1;
+  }
+
+  .rail-handle {
+    grid-column: 1;
+    justify-self: end;
+    width: 6px;
+    margin-right: -3px;
+    z-index: 1;
+    cursor: col-resize;
+    touch-action: none;
+  }
+
+  .rail-handle:hover,
+  .rail-handle:focus-visible {
+    background: var(--color-accent-border);
+    outline: none;
   }
 
   /* Declared after the catch-all so the tie-break lands here. */

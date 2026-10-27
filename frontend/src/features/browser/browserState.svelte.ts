@@ -1153,6 +1153,24 @@ export class BrowserState {
     }
   }
 
+  /** The bookmark rail's width persists in the settings document but is
+   * chrome rather than a budget: it takes the one write path without the
+   * drawer's attempt tracking, which names the active-job budget, and a
+   * failure costs nothing but persistence, since the width already applies
+   * to this window and the next drag writes again. */
+  async saveRailWidth(px: number) {
+    if (!this.canSaveAppSettings || !this.appSettings) return;
+    this.appSettingsOperation = "set";
+    try {
+      this.appSettings = await this.#api.saveAppSettings({ ...this.appSettings, railWidthPx: px });
+      this.appSettingsStatus = "current";
+    } catch {
+      // Not persisted; the window keeps the width it shows.
+    } finally {
+      this.appSettingsOperation = null;
+    }
+  }
+
   /** Active (non-terminal) jobs — the drawer badge. */
   get activeJobs(): JobDTO[] {
     return this.jobs.filter((j) => !terminalJobStates.includes(j.state));
