@@ -52,6 +52,9 @@ var v1DeferredActions = map[string]string{
 	// one plain object the operator was shown, born deferred under ADR 0092
 	// and offered only while the operator trials it with its token
 	"MutateService.DeleteObject": "Object deletion",
+	// ADR 0093: the selected set joins the object deletion's capability, so
+	// one token offers one object and a selected set together or neither.
+	"DeleteService.StartSelectedDelete": "Object deletion",
 	// a benchmark writes real objects and bulk-deletes them
 	"BenchmarkService.StartBenchmark": "Benchmark",
 }

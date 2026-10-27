@@ -189,6 +189,10 @@ func TestV1GateRefusesDeferredEntryPoints(t *testing.T) {
 			_, err := (&DeleteService{}).StartDelete(ctx, DeleteRequestDTO{})
 			return err
 		}},
+		{"DeleteService.StartSelectedDelete", "Object deletion", func() error {
+			_, err := (&DeleteService{}).StartSelectedDelete(ctx, SelectedDeleteRequestDTO{})
+			return err
+		}},
 		{"DeleteService.CheckSegmentOwnership", "Bulk delete", func() error {
 			_, err := (&DeleteService{}).CheckSegmentOwnership(ctx, SegmentsDeleteRequestDTO{})
 			return err

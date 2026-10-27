@@ -52,3 +52,16 @@ export function PreviewDelete(req: $models.DeleteRequestDTO): $CancellablePromis
 export function StartDelete(req: $models.DeleteRequestDTO): $CancellablePromise<string> {
     return $Call.ByID(1302339297, req);
 }
+
+/**
+ * StartSelectedDelete deletes the selected objects as one job whose members
+ * are each deleted exactly, by the verified per-name protocol (ADR 0093).
+ * The request is refused before any job row when the scope is empty or has
+ * moved, when it names no member, a prefix row, an empty or repeated name,
+ * or more members than the selection ceiling, or when the typed confirmation
+ * is not the member count. The whole member set is admitted to the ledger
+ * once, before any request, and a set that cannot be recorded sends nothing.
+ */
+export function StartSelectedDelete(req: $models.SelectedDeleteRequestDTO): $CancellablePromise<string> {
+    return $Call.ByID(2423131708, req);
+}

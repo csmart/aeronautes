@@ -1140,6 +1140,19 @@ export interface SegmentsDeleteResultDTO {
 }
 
 /**
+ * SelectedDeleteRequestDTO starts the deletion of the selected objects as one
+ * job (ADR 0093 decision 2): the scope the view was built under, the
+ * container, the member rows as the working list carries them, and the
+ * typed confirmation, which is the number of members.
+ */
+export interface SelectedDeleteRequestDTO {
+    "scope": ListingScopeDTO;
+    "container": string;
+    "members": ListingRowDTO[] | null;
+    "confirm": string;
+}
+
+/**
  * SelectionScopeDTO is the scope a pick is being made for. The service
  * resolves the named bookmark's current generation itself and, whenever
  * there is an active connection, requires the pick to name it — before

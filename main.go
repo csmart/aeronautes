@@ -123,6 +123,8 @@ func runDesktop(identity app.BuildIdentity, shutdown *shellShutdown,
 	app.WireOverwriteConfirmer(transferService, wailsOverwriteConfirmer{})
 	settingsService := app.NewSettingsService(database, jobRunner)
 	app.WireSettings(transferService, settingsService)
+	deleteService := app.NewDeleteService(connections, jobStore, jobRunner, evidenceStore)
+	app.WireDeleteSettings(deleteService, settingsService)
 	app.WireConnectionCap(connections, settingsService)
 	app.RunStartupRetention(context.Background(), settingsService, jobStore, auditStore)
 	benchmarkService := app.NewBenchmarkService(connections, jobStore, jobRunner, database)
@@ -140,7 +142,7 @@ func runDesktop(identity app.BuildIdentity, shutdown *shellShutdown,
 			application.NewService(mutateService),
 			application.NewService(app.NewAuditService(auditStore)),
 			application.NewService(transferService),
-			application.NewService(app.NewDeleteService(connections, jobStore, jobRunner, evidenceStore)),
+			application.NewService(deleteService),
 			application.NewService(app.NewJobService(jobStore)),
 			application.NewService(findService),
 			application.NewService(settingsService),
