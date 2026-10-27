@@ -215,13 +215,14 @@ func (s *DeleteService) runSelectedDelete(ctx context.Context, jobID string, req
 // sent, whatever refusals preceded it; failed when nothing was sent because
 // every member was refused or changed since listed. A DELETE was sent for
 // every member deleted, unverified or failed by the store's answer, and may
-// have been for one issued and never settled.
+// have been for one issued and never settled; each member is counted once,
+// by its own outcome, and never through a facet that overlaps another.
 func (s *DeleteService) selectedEnd(ctx context.Context, jobID string, cancelled bool) (jobs.State, string) {
 	totals, err := s.jobs.ReadItemTotals(ctx, jobID)
 	if err != nil {
 		return jobs.StatePartial, "the members' records could not be read: " + err.Error()
 	}
-	sent := totals.Deleted + totals.Unverified + totals.Failed + totals.Unresolved
+	sent := totals.Deleted + totals.Unverified + totals.Failed + totals.Unsettled
 	switch {
 	case cancelled && sent == 0:
 		return jobs.StateCancelled, ""
