@@ -139,6 +139,10 @@ type Server struct {
 	// dropNextObjectPOST closes the POST connection without a response,
 	// so the caller sees a transport failure after the request left.
 	dropNextObjectPOST bool
+	// dropNextObjectDELETE applies the next object DELETE and then closes the
+	// connection without a response, so the client has a request that
+	// landed and no answer for it (ADR 0092's lost-reply case).
+	dropNextObjectDELETE bool
 	// dropPUTResponseFor is "container/name". The next PUT to that object
 	// is APPLIED and then its connection is closed without a response, so
 	// the caller cannot know what the store did with a write that landed.
@@ -1076,6 +1080,22 @@ func (s *Server) DropNextObjectPOST() {
 	s.mu.Unlock()
 }
 
+// DropNextObjectDELETE applies the next object DELETE and loses its reply.
+func (s *Server) DropNextObjectDELETE() {
+	s.mu.Lock()
+	s.dropNextObjectDELETE = true
+	s.mu.Unlock()
+}
+
+// RemoveObject deletes a stored object directly, as another writer would.
+func (s *Server) RemoveObject(container, name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if c, ok := s.containers[container]; ok {
+		delete(c.objects, name)
+	}
+}
+
 // SetObjectPOSTStatus makes the next object POST return status without writing.
 func (s *Server) SetObjectPOSTStatus(status int) {
 	s.mu.Lock()
@@ -1135,6 +1155,20 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request, container,
 		if r.URL.Query().Get("multipart-manifest") == "delete" {
 			s.deleteSLOWithSegments(w, container, name)
 			return
+		}
+		s.mu.Lock()
+		drop := s.dropNextObjectDELETE
+		s.dropNextObjectDELETE = false
+		s.mu.Unlock()
+		if drop {
+			s.deleteObject(&discardResponse{}, container, name)
+			if hj, ok := w.(http.Hijacker); ok {
+				if conn, _, err := hj.Hijack(); err == nil {
+					conn.Close()
+					return
+				}
+			}
+			panic("swifttest: cannot drop object DELETE")
 		}
 		s.deleteObject(w, container, name)
 		return
@@ -1409,3 +1443,16 @@ func querySuffix(r *http.Request) string {
 	}
 	return "?" + r.URL.RawQuery
 }
+
+// discardResponse lets a handler apply its effect while the real connection is
+// closed without an answer.
+type discardResponse struct{ header http.Header }
+
+func (d *discardResponse) Header() http.Header {
+	if d.header == nil {
+		d.header = http.Header{}
+	}
+	return d.header
+}
+func (d *discardResponse) Write(b []byte) (int, error) { return len(b), nil }
+func (d *discardResponse) WriteHeader(int)             {}

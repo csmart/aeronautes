@@ -172,12 +172,26 @@ func isTrue(v string) bool {
 // session's raw client: the returned detail carries X-Symlink-Target
 // and the link's own metadata, never the followed target's.
 func (s *Session) SymlinkGet(ctx context.Context, container, name string) (*ObjectDetail, error) {
+	return s.literalHead(ctx, container, name, "symlink=get", "symlink HEAD")
+}
+
+// LiteralObjectHead HEADs exactly what is stored at a name: a symlink is
+// not followed and a large-object manifest is not expanded, because both
+// controls ride the request (?symlink=get&multipart-manifest=get). A read
+// that follows or expands reports a dangling link, or a manifest whose
+// segments are missing, as not found while an object still stands at the
+// name, which is why a deletion verifies with this read (ADR 0092).
+func (s *Session) LiteralObjectHead(ctx context.Context, container, name string) (*ObjectDetail, error) {
+	return s.literalHead(ctx, container, name, "symlink=get&multipart-manifest=get", "literal HEAD")
+}
+
+func (s *Session) literalHead(ctx context.Context, container, name, rawQuery, what string) (*ObjectDetail, error) {
 	send := func() (*http.Response, error) {
 		credentials, err := s.Credentials(ctx, 0)
 		if err != nil {
 			return nil, err
 		}
-		target := credentials.StorageURL + "/" + escapeObjectPath(container) + "/" + escapeObjectPath(name) + "?symlink=get"
+		target := credentials.StorageURL + "/" + escapeObjectPath(container) + "/" + escapeObjectPath(name) + "?" + rawQuery
 		req, err := http.NewRequestWithContext(ctx, http.MethodHead, target, nil)
 		if err != nil {
 			return nil, err
@@ -199,10 +213,10 @@ func (s *Session) SymlinkGet(ctx context.Context, container, name string) (*Obje
 		s.ForceReauth()
 	}
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, &SwiftError{Kind: KindNotFound, HTTPStatus: resp.StatusCode, Message: "symlink HEAD: not found"}
+		return nil, &SwiftError{Kind: KindNotFound, HTTPStatus: resp.StatusCode, Message: what + ": not found", TransID: resp.Header.Get("X-Trans-Id")}
 	}
 	if resp.StatusCode >= 300 {
-		return nil, &SwiftError{Kind: KindServer, HTTPStatus: resp.StatusCode, Message: "symlink HEAD failed"}
+		return nil, &SwiftError{Kind: KindServer, HTTPStatus: resp.StatusCode, Message: what + " failed", TransID: resp.Header.Get("X-Trans-Id")}
 	}
 	flat := map[string]string{}
 	for k, values := range resp.Header {
@@ -212,5 +226,17 @@ func (s *Session) SymlinkGet(ctx context.Context, container, name string) (*Obje
 	}
 	d := buildObjectDetail(flat, time.Now().UTC())
 	d.Name = name
+	// ObjectDetail takes the length, entity tag and content type from the
+	// wire library's object record; this read has only its own headers, so
+	// they are taken from there, or a literal observation could never be
+	// compared with the inspector's (ADR 0092 decision 3).
+	if n, err := strconv.ParseInt(flat["Content-Length"], 10, 64); err == nil {
+		d.ContentLength = n
+	}
+	d.ETag = flat["Etag"]
+	d.ContentType = flat["Content-Type"]
+	if modified, err := http.ParseTime(flat["Last-Modified"]); err == nil {
+		d.LastModified = modified
+	}
 	return d, nil
 }
