@@ -107,6 +107,21 @@ func objectDeleteFact(result *swiftcontrol.ObjectDeleteResult, err error) (mutat
 	return mutationfacts.OutcomeApplied, audit.ResultApplied, "deleted plain object; " + observedAfterDelete(result), transIDs
 }
 
+// safeReadFailure names a read's failure by kind and status only. A transport
+// error's text carries the request URL and with it the object name, which
+// ADR 0092 keeps out of the prose and the summary filter may refuse outright,
+// turning an ordinary unverified outcome into an unrecordable one.
+func safeReadFailure(err error) string {
+	var se *swiftcontrol.SwiftError
+	if errors.As(err, &se) {
+		if se.HTTPStatus != 0 {
+			return fmt.Sprintf("%s, HTTP %d", se.Kind, se.HTTPStatus)
+		}
+		return string(se.Kind)
+	}
+	return "unknown"
+}
+
 // literalPlainDTO mirrors the session's classification: a plain object in
 // every representation, so a link or a manifest is never compared by tuple.
 func literalPlainDTO(d *swiftcontrol.ObjectDetail) bool {
@@ -120,7 +135,7 @@ func observedAfterDelete(result *swiftcontrol.ObjectDeleteResult) string {
 	if result == nil || result.After == nil {
 		observed := "nothing observed at the name afterwards"
 		if result != nil && result.AfterRead != nil {
-			observed = "the literal read of the name failed afterwards: " + result.AfterRead.Error()
+			observed = "the literal read of the name failed afterwards (" + safeReadFailure(result.AfterRead) + ")"
 		}
 		if result != nil && !result.Accepted {
 			return "no store answer proves the delete, and " + observed
