@@ -1,8 +1,13 @@
+<!-- The bookmark rail: every saved account, grouped by the cloud it points
+  at and sorted for the eye, with a filter once the list is long and the
+  account and endpoint on hover. The rail's width is the screen's to set
+  (§4.3); the labels grow into whatever width it gets. -->
 <script lang="ts">
   import { getTheme, setTheme, type Theme } from "../../design/tokens";
   import type { BrowserState } from "./browserState.svelte";
 
   import type { BookmarkDTO } from "../../lib/api";
+  import { groupBookmarks, hoverText, matchesBookmark } from "../../lib/bookmarkRail";
 
   let {
     browser,
@@ -15,6 +20,15 @@
   } = $props();
 
   let theme: Theme = $state(getTheme());
+
+  let filter = $state("");
+  // A filter box earns its place once the list is long enough to need
+  // one; a handful of accounts is read at a glance.
+  const filterFrom = 8;
+  const showFilter = $derived(browser.bookmarks.length >= filterFrom);
+  const groups = $derived(groupBookmarks(browser.bookmarks.filter((bookmark) => matchesBookmark(bookmark, filter))));
+  // One cloud needs no heading over its accounts.
+  const grouped = $derived(groups.length > 1);
 
   const cycle: Record<Theme, Theme> = { system: "light", light: "dark", dark: "system" };
 
@@ -56,34 +70,51 @@
       <button class="list-refresh" aria-label="Refresh bookmark list"
         disabled={browser.bookmarksLoading} onclick={refreshBookmarks}>Refresh list</button>
     </div>
-    {#each browser.bookmarks as bookmark (bookmark.id)}
-      <div class="bookmark-row">
-        <button
-          class="bookmark"
-          class:active={browser.connectedBookmarkId === bookmark.id}
-          class:insecure={bookmark.tlsMode === "insecure"}
-          title={bookmark.tlsMode === "insecure"
-            ? `${bookmark.displayName} — TLS verification DISABLED`
-            : bookmark.displayName}
-          aria-pressed={browser.connectedBookmarkId === bookmark.id}
-          disabled={browser.connecting}
-          onclick={() => browser.connect(bookmark.id).catch(() => {})}
-        >
-          <span class="badge">{initials(bookmark.displayName)}</span>
-          <span class="label">{bookmark.displayName}</span>
-          {#if bookmark.tlsMode === "insecure"}
-            <!-- K-SEC-005: the warning is persistent chrome, not an
-              editor-only detail. -->
-            <span class="insecure-flag" role="img" aria-label="TLS verification disabled">⚠</span>
-          {/if}
-        </button>
-        <button
-          class="edit"
-          title="Edit {bookmark.displayName}"
-          aria-label="Edit {bookmark.displayName}"
-          onclick={() => onEditBookmark(bookmark)}
-        >✎</button>
-      </div>
+    {#if showFilter}
+      <input
+        class="filter"
+        type="search"
+        bind:value={filter}
+        placeholder="filter…"
+        aria-label="Filter bookmarks"
+        title="Filter by name, account or endpoint"
+      />
+      {#if groups.length === 0}
+        <p class="no-match" role="status">No bookmark matches.</p>
+      {/if}
+    {/if}
+    {#each groups as group (group.endpoint)}
+      {#if grouped}
+        <h3 class="group" title={group.endpoint}>{group.endpoint}</h3>
+      {/if}
+      {#each group.bookmarks as bookmark (bookmark.id)}
+        <div class="bookmark-row">
+          <button
+            class="bookmark"
+            class:active={browser.connectedBookmarkId === bookmark.id}
+            class:insecure={bookmark.tlsMode === "insecure"}
+            title={hoverText(bookmark)}
+            aria-label={bookmark.displayName}
+            aria-pressed={browser.connectedBookmarkId === bookmark.id}
+            disabled={browser.connecting}
+            onclick={() => browser.connect(bookmark.id).catch(() => {})}
+          >
+            <span class="badge">{initials(bookmark.displayName)}</span>
+            <span class="label">{bookmark.displayName}</span>
+            {#if bookmark.tlsMode === "insecure"}
+              <!-- K-SEC-005: the warning is persistent chrome, not an
+                editor-only detail. -->
+              <span class="insecure-flag" role="img" aria-label="TLS verification disabled">⚠</span>
+            {/if}
+          </button>
+          <button
+            class="edit"
+            title="Edit {bookmark.displayName}"
+            aria-label="Edit {bookmark.displayName}"
+            onclick={() => onEditBookmark(bookmark)}
+          >✎</button>
+        </div>
+      {/each}
     {/each}
 
     <button class="bookmark add" title="Add bookmark" onclick={onAddBookmark}>
@@ -132,6 +163,35 @@
   .list-refresh:disabled {
     opacity: 0.6;
     cursor: default;
+  }
+
+  .filter {
+    min-width: 0;
+    padding: 2px var(--space-1);
+    font: inherit;
+    font-size: var(--text-xs);
+    color: var(--color-text);
+    background: var(--color-bg-pane);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+  }
+
+  .no-match {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--color-text-secondary);
+    text-align: center;
+  }
+
+  .group {
+    margin: var(--space-1) 0 0;
+    font-size: var(--text-xs);
+    font-weight: var(--weight-medium);
+    color: var(--color-text-faint);
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .bookmark-row {
@@ -238,7 +298,7 @@
 
   .label {
     font-size: var(--text-xs);
-    max-width: 4.5rem;
+    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

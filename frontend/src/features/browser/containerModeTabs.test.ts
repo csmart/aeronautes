@@ -71,7 +71,7 @@ async function screen() {
   const root = document.createElement("div"); document.body.append(root);
   const component = mount(BrowserScreen, { target: root }); mounted.add(component);
   flushSync(); await settle();
-  click(get('[title="Mode fixture"]')); await settle();
+  click(get('[aria-label="Mode fixture"]')); await settle();
   click([...document.querySelectorAll<HTMLButtonElement>(".container-row")]
     .find((b) => b.querySelector(".container-name")?.textContent?.trim() === "fixtures")!);
   await settle();

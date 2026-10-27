@@ -49,7 +49,7 @@ async function openFixtures() {
   const component = mount(BrowserScreen, { target: document.body });
   mounted.add(component);
   flushSync(); await settle();
-  click(get(`[title="${fixtureBookmark.displayName}"]`)); await settle();
+  click(get(`[aria-label="${fixtureBookmark.displayName}"]`)); await settle();
   const row = [...document.querySelectorAll<HTMLButtonElement>(".container-row")]
     .find((r) => r.querySelector(".container-name")?.firstChild?.textContent?.trim() === "fixtures");
   if (!row) throw new Error("fixtures row missing");

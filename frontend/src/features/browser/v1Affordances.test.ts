@@ -39,7 +39,7 @@ async function connectedScreen(enabled: string[] = [], unrecognised: string[] = 
   const root = document.createElement("div"); document.body.append(root);
   component = mount(BrowserScreen, { target: root });
   flushSync(); await settle();
-  document.querySelector<HTMLButtonElement>('[title="V1 fixture"]')!.click(); await settle();
+  document.querySelector<HTMLButtonElement>('[aria-label="V1 fixture"]')!.click(); await settle();
   [...document.querySelectorAll<HTMLButtonElement>(".container-row")]
     .find((b) => b.querySelector(".container-name")?.textContent?.trim() === "fixtures")!
     .click();

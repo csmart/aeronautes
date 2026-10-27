@@ -58,7 +58,7 @@ async function render() {
 }
 
 async function connect() {
-  const bookmark = document.querySelector<HTMLButtonElement>('[title="Reviewer fixture"]');
+  const bookmark = document.querySelector<HTMLButtonElement>('[aria-label="Reviewer fixture"]');
   expect(bookmark).not.toBeNull();
   bookmark!.click();
   await settle();
