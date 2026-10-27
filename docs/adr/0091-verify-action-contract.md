@@ -26,7 +26,7 @@ The 48 protected pairs of the admitted baseline stay required and must stay cred
 ## Required coverage
 
 `TestBookmarkVerifyMock` and `TestBookmarkVerifyRealSwift` in `internal/systemtest` credit `happy` and `refusal` on the mock and the real fixture from one top-level test each, through the harness receipt that binds a credit to the call that earned it.
-Unit tests in `internal/app` cover the typed-key, saved-key, changed-binding, saved-CA and endpoint-policy paths, revocation during a held authentication, and the closing of the one-shot session.
+Unit tests in `internal/app` cover the typed-key, saved-key, changed-binding, saved-CA and endpoint-policy paths, revocation during a held authentication or a held account HEAD, and the closing of the one-shot session.
 
 ## The evidence route
 
