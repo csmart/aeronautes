@@ -1,13 +1,23 @@
-<!-- Container configuration edit mode (§65.2 item 7): metadata working
-  copy, ACL editors, quotas, and versioning per the pin — the mode
-  select is capability-gated: modes the cluster is KNOWN to reject are
-  disabled; an unknown /info leaves everything enabled with a note. -->
+<!-- Container configuration edit mode (§65.2 item 7): common settings as
+  tick boxes over the same values (ADR 0090), metadata working copy, ACL
+  editors, quotas, and versioning per the pin — the mode select is
+  capability-gated: modes the cluster is KNOWN to reject are disabled; an
+  unknown /info leaves everything enabled with a note. -->
 <script lang="ts">
   import { onDestroy } from "svelte";
   import MetadataEditor from "./MetadataEditor.svelte";
   import AclEditor from "./AclEditor.svelte";
   import type { BrowserState } from "../browser/browserState.svelte";
   import type { ContainerDetailDTO } from "../../lib/api";
+  import { metaFromRows, rowsFromMeta, type MetaRow } from "../../lib/metadataDiff";
+  import {
+    grantsWorldListing,
+    grantsWorldRead,
+    hasStaticWeb,
+    withStaticWeb,
+    withWorldListing,
+    withWorldRead,
+  } from "../../lib/containerPresets";
 
   let {
     browser,
@@ -31,8 +41,9 @@
   }
   onDestroy(() => { closed = true; });
 
-  let editor: MetadataEditor | undefined = $state();
   // The panel mounts fresh per edit session; initial capture is intended.
+  /* svelte-ignore state_referenced_locally */
+  let rows: MetaRow[] = $state(rowsFromMeta(detail.meta ?? {}));
   /* svelte-ignore state_referenced_locally */
   let readAcl = $state(detail.readAcl);
   /* svelte-ignore state_referenced_locally */
@@ -59,10 +70,13 @@
     return !capsKnown || (caps?.versioningFlags ?? []).includes(flag);
   }
 
-  // A read ACL that grants the world (.r:* / .r:*,.rlistings) turns
-  // private data public in one Save; require an explicit acknowledgement
-  // first (DESIGN §19.1).
-  const grantsPublic = $derived(/(^|,)\s*\.r:\*/.test(readAcl));
+  // A read ACL that grants the world turns private data public in one
+  // Save; require an explicit acknowledgement first (DESIGN §19.1). The
+  // predicate is the exact-entry rule the backend gate and the badges use
+  // (ADR 0071), so the tick, the acknowledgement and the badge agree.
+  const grantsPublic = $derived(grantsWorldRead(readAcl));
+  const grantsListing = $derived(grantsWorldListing(readAcl));
+  const staticWeb = $derived(hasStaticWeb(rows));
   let publicAck = $state(false);
 
   // Modern object_versioning has no safe editable representation in v1
@@ -77,7 +91,7 @@
       error = "This container uses modern object versioning, which v1 cannot edit safely — manage it with swift/CLI for now.";
       return;
     }
-    const { meta, duplicate } = editor!.value();
+    const { meta, duplicate } = metaFromRows(rows);
     if (duplicate !== null) {
       error = `duplicate key "${duplicate}"`;
       return;
@@ -124,8 +138,37 @@
   <h3 class="card-title">Configure container</h3>
 
   <fieldset class="fields" aria-label="Container configuration" disabled={saving || !currentBaseline}>
+    <h4 class="sub">Common settings</h4>
+    <div class="presets">
+      <label class="preset">
+        <input
+          type="checkbox"
+          checked={grantsPublic}
+          onchange={(e) => (readAcl = withWorldRead(readAcl, e.currentTarget.checked))}
+        />
+        <span>Anyone can read objects <span class="hint type-mono">read ACL .r:*</span></span>
+      </label>
+      <label class="preset">
+        <input
+          type="checkbox"
+          checked={grantsListing}
+          disabled={!grantsPublic}
+          onchange={(e) => (readAcl = withWorldListing(readAcl, e.currentTarget.checked))}
+        />
+        <span>Anyone can list object names <span class="hint type-mono">.rlistings</span></span>
+      </label>
+      <label class="preset">
+        <input type="checkbox" checked={staticWeb} onchange={(e) => (rows = withStaticWeb(rows, e.currentTarget.checked))} />
+        <span>Serve as a static website <span class="hint type-mono">Web-Index, Web-Listings metadata</span></span>
+      </label>
+      {#if staticWeb && !grantsPublic}
+        <p class="note">Browsers reach a website anonymously: it needs "Anyone can read objects" too.</p>
+      {/if}
+    </div>
+    <hr class="rule" />
+
     <h4 class="sub">User metadata</h4>
-    <MetadataEditor bind:this={editor} base={target.detail.meta ?? {}} />
+    <MetadataEditor base={target.detail.meta ?? {}} bind:rows />
 
     <AclEditor label="Read ACL" bind:value={readAcl} />
     <AclEditor label="Write ACL" bind:value={writeAcl} />
@@ -241,6 +284,33 @@
     font-size: var(--text-xs);
     color: var(--color-text-faint);
     font-weight: var(--weight-medium);
+  }
+
+  .presets {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  .preset {
+    display: flex;
+    gap: var(--space-2);
+    align-items: baseline;
+    font-size: var(--text-sm);
+    color: var(--color-text);
+  }
+
+  .hint {
+    margin-left: var(--space-1);
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+  }
+
+  .rule {
+    width: 100%;
+    margin: var(--space-1) 0;
+    border: 0;
+    border-top: 1px solid var(--color-border);
   }
 
   .grid {

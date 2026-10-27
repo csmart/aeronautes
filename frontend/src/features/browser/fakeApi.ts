@@ -25,6 +25,7 @@ import {
   objectMetaFixture,
 } from "../../lib/fixtures";
 import { delimiterView, type FixtureObject } from "../../lib/listing";
+import { isStaticWebKey } from "../../lib/containerPresets";
 
 interface ContainerState {
   meta: Record<string, string>;
@@ -209,7 +210,7 @@ export function newFakeApi(): Api {
       publicListing: publicRead && entries.includes(".rlistings"),
       referrerGrants: entries.filter((e) => e.startsWith(".r:") && e !== ".r:*" && e !== ".r:" && !e.startsWith(".r:-")).map((e) => e.slice(3)),
       sharedWrite: s.writeAcl.trim() !== "",
-      staticWeb: false,
+      staticWeb: Object.keys(s.meta).some(isStaticWebKey),
       versioningMode: s.versioningMode,
       versioningArchive: s.versioningArchive,
       quota: s.quotaBytes > 0 || s.quotaCount > 0,
@@ -245,7 +246,7 @@ export function newFakeApi(): Api {
       quotaBytes: s.quotaBytes,
       quotaCount: s.quotaCount,
       cors: false,
-      staticWeb: false,
+      staticWeb: Object.keys(s.meta).some(isStaticWebKey),
       tempUrlKeySlots: [],
       meta: { ...s.meta },
       rawHeaders: { "X-Trans-Id": "txfake" },
