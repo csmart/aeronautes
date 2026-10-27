@@ -185,38 +185,55 @@ func (s *Session) LiteralObjectHead(ctx context.Context, container, name string)
 	return s.literalHead(ctx, container, name, "symlink=get&multipart-manifest=get", "literal HEAD")
 }
 
+// literalHead is a read-only raw HEAD that answers a refused token once with
+// fresh credentials, which is harmless for a read. A path whose requests must
+// share one token and one storage URL takes credentials itself and calls
+// rawHead directly.
 func (s *Session) literalHead(ctx context.Context, container, name, rawQuery, what string) (*ObjectDetail, error) {
-	send := func() (*http.Response, error) {
+	for attempt := 0; ; attempt++ {
 		credentials, err := s.Credentials(ctx, 0)
 		if err != nil {
-			return nil, err
+			return nil, Normalize(err)
 		}
-		target := credentials.StorageURL + "/" + escapeObjectPath(container) + "/" + escapeObjectPath(name) + "?" + rawQuery
-		req, err := http.NewRequestWithContext(ctx, http.MethodHead, target, nil)
-		if err != nil {
-			return nil, err
+		d, _, status, err := s.rawHead(ctx, credentials, container, name, rawQuery, what)
+		if status == http.StatusUnauthorized && attempt == 0 {
+			s.ForceReauth()
+			continue
 		}
-		req.Header.Set("X-Auth-Token", credentials.Token)
-		return s.raw.Do(req)
+		return d, err
 	}
-	resp, err := send()
-	if err == nil && resp.StatusCode == http.StatusUnauthorized {
-		resp.Body.Close()
-		s.ForceReauth()
-		resp, err = send()
+}
+
+// rawHead HEADs a name through the raw client under the credentials given,
+// with rawQuery deciding what the store follows or expands. It returns the
+// response headers beside the detail so a caller can judge whether the
+// identity it carries is complete, and the status so a caller can decide
+// what a refused token means on its own path. A 404 and any other
+// non-success status are returned as a SwiftError carrying that status.
+func (s *Session) rawHead(ctx context.Context, credentials StorageCredentials, container, name, rawQuery, what string) (*ObjectDetail, http.Header, int, error) {
+	target := credentials.StorageURL + "/" + escapeObjectPath(container) + "/" + escapeObjectPath(name)
+	if rawQuery != "" {
+		target += "?" + rawQuery
 	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, target, nil)
 	if err != nil {
-		return nil, Normalize(err)
+		return nil, nil, 0, Normalize(err)
+	}
+	req.Header.Set("X-Auth-Token", credentials.Token)
+	resp, err := s.raw.Do(req)
+	if err != nil {
+		return nil, nil, 0, Normalize(err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusUnauthorized {
-		s.ForceReauth()
-	}
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, &SwiftError{Kind: KindNotFound, HTTPStatus: resp.StatusCode, Message: what + ": not found", TransID: resp.Header.Get("X-Trans-Id")}
-	}
-	if resp.StatusCode >= 300 {
-		return nil, &SwiftError{Kind: KindServer, HTTPStatus: resp.StatusCode, Message: what + " failed", TransID: resp.Header.Get("X-Trans-Id")}
+	transID := resp.Header.Get("X-Trans-Id")
+	switch {
+	case resp.StatusCode == http.StatusNotFound:
+		return nil, resp.Header, resp.StatusCode, &SwiftError{Kind: KindNotFound, HTTPStatus: resp.StatusCode, Message: what + ": not found", TransID: transID}
+	case resp.StatusCode == http.StatusUnauthorized:
+		return nil, resp.Header, resp.StatusCode, &SwiftError{Kind: KindUnauthorized, HTTPStatus: resp.StatusCode, Message: what + ": the token was refused", TransID: transID}
+	case resp.StatusCode >= 300:
+		kind, retryable := classifyStatus(resp.StatusCode)
+		return nil, resp.Header, resp.StatusCode, &SwiftError{Kind: kind, HTTPStatus: resp.StatusCode, Message: what + " failed", TransID: transID, Retryable: retryable}
 	}
 	flat := map[string]string{}
 	for k, values := range resp.Header {
@@ -228,8 +245,9 @@ func (s *Session) literalHead(ctx context.Context, container, name, rawQuery, wh
 	d.Name = name
 	// ObjectDetail takes the length, entity tag and content type from the
 	// wire library's object record; this read has only its own headers, so
-	// they are taken from there, or a literal observation could never be
-	// compared with the inspector's (ADR 0092 decision 3).
+	// they are taken from there, or an observation could never be compared
+	// with the inspector's (ADR 0092 decision 3). Whether they were present
+	// is the caller's question, answered from the headers returned beside.
 	if n, err := strconv.ParseInt(flat["Content-Length"], 10, 64); err == nil {
 		d.ContentLength = n
 	}
@@ -238,5 +256,16 @@ func (s *Session) literalHead(ctx context.Context, container, name, rawQuery, wh
 	if modified, err := http.ParseTime(flat["Last-Modified"]); err == nil {
 		d.LastModified = modified
 	}
-	return d, nil
+	return d, resp.Header, resp.StatusCode, nil
+}
+
+// identityComparable reports whether a HEAD response carried the two fields
+// a plain object's identity is compared by: a parseable Content-Length and a
+// non-empty entity tag. A response missing either must not be compared,
+// because the zero values would make an unchanged object look different.
+func identityComparable(headers http.Header) bool {
+	if _, err := strconv.ParseInt(headers.Get("Content-Length"), 10, 64); err != nil {
+		return false
+	}
+	return headers.Get("Etag") != ""
 }

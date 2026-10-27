@@ -3,6 +3,8 @@ package swiftcontrol
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -282,5 +284,310 @@ func TestLiteralObjectHeadReportsWhatIsStoredAtTheName(t *testing.T) {
 	}
 	if assembled, err := s.ObjectDetail(ctx, "fixtures", "external-dlo"); err != nil || assembled.ContentLength == 0 {
 		t.Fatalf("the following read should assemble the manifest: %+v %v", assembled, err)
+	}
+}
+
+// gatedSession builds a session whose every request passes through gate, a
+// proxy in front of the fixture mock. The mock derives the storage URL from
+// the Host it sees, so a session built against the gate keeps flowing through
+// it; forward() hands the untouched request to the mock.
+type gateFn func(w http.ResponseWriter, r *http.Request, forward func())
+
+func gatedServer(t *testing.T, mock *swifttest.Server, gate gateFn) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gate(w, r, func() { mock.ServeHTTP(w, r) })
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+func sessionThrough(t *testing.T, server *httptest.Server) *Session {
+	t.Helper()
+	s, err := New(Config{AuthURL: server.URL + "/auth/v1.0", Username: "test:tester", APIKey: "testing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func isComparisonHead(r *http.Request, name string) bool {
+	return r.Method == http.MethodHead && strings.HasSuffix(r.URL.Path, "/fixtures/"+name) && r.URL.RawQuery == ""
+}
+func isLiteralHead(r *http.Request, name string) bool {
+	return r.Method == http.MethodHead && strings.HasSuffix(r.URL.Path, "/fixtures/"+name) && strings.Contains(r.URL.RawQuery, "multipart-manifest=get")
+}
+func isDelete(r *http.Request, name string) bool {
+	return r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/fixtures/"+name)
+}
+
+// ADR 0085's adjacency: nothing of ours, and no authentication, runs between
+// the comparison HEAD and the DELETE. A token the store refuses on the DELETE
+// is therefore a refusal, not a cue to authenticate and delete again.
+func TestDeletePlainObjectRefusedTokenOnTheDeleteIsARefusal(t *testing.T) {
+	mock := swifttest.New("test:tester", "testing")
+	mock.LoadCanonicalFixtures()
+	deletes := 0
+	server := gatedServer(t, mock, func(w http.ResponseWriter, r *http.Request, forward func()) {
+		if isDelete(r, plainName) {
+			deletes++
+			if deletes == 1 {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+		}
+		forward()
+	})
+	s := sessionThrough(t, server)
+	ctx := context.Background()
+	shown := shownIdentity(t, s, "fixtures", plainName)
+
+	result, err := s.DeletePlainObject(ctx, "fixtures", plainName, shown)
+	var se *SwiftError
+	if !errors.As(err, &se) || se.Kind != KindUnauthorized {
+		t.Fatalf("err = %v, want the token refusal", err)
+	}
+	if result == nil || result.Accepted || result.Outcome != "" {
+		t.Fatalf("result = %+v, want nothing accepted", result)
+	}
+	if deletes != 1 {
+		t.Fatalf("%d DELETE requests, want exactly the refused one", deletes)
+	}
+	if _, err := s.ObjectDetail(ctx, "fixtures", plainName); err != nil {
+		t.Fatalf("the object is gone after a refused DELETE: %v", err)
+	}
+}
+
+// A token the store refuses on the comparison HEAD restarts the whole
+// sequence under fresh credentials, and those may name another storage URL:
+// the comparison, the DELETE and the verifying read all go where the new
+// credentials point, and the namespace the refused HEAD was aimed at sees no
+// DELETE.
+func TestDeletePlainObjectRestartsUnderFreshCredentialsAfterARefusedHead(t *testing.T) {
+	mock := swifttest.New("test:tester", "testing")
+	mock.LoadCanonicalFixtures()
+	var second *httptest.Server
+	secondSeen := map[string]int{}
+	second = gatedServer(t, mock, func(w http.ResponseWriter, r *http.Request, forward func()) {
+		switch {
+		case isComparisonHead(r, plainName):
+			secondSeen["head"]++
+		case isDelete(r, plainName):
+			secondSeen["delete"]++
+		case isLiteralHead(r, plainName):
+			secondSeen["literal"]++
+		}
+		forward()
+	})
+	firstSeen := map[string]int{}
+	auths := 0
+	first := gatedServer(t, mock, func(w http.ResponseWriter, r *http.Request, forward func()) {
+		switch {
+		case r.URL.Path == "/auth/v1.0":
+			auths++
+			if auths == 1 {
+				forward()
+				return
+			}
+			// The re-authentication names the other storage URL.
+			rec := httptest.NewRecorder()
+			mock.ServeHTTP(rec, r)
+			for k, values := range rec.Header() {
+				w.Header()[k] = append([]string(nil), values...)
+			}
+			if rec.Header().Get("X-Storage-Url") != "" {
+				w.Header().Set("X-Storage-Url", second.URL+"/v1/AUTH_test")
+			}
+			w.WriteHeader(rec.Code)
+			_, _ = w.Write(rec.Body.Bytes())
+		case isComparisonHead(r, plainName):
+			firstSeen["head"]++
+			if firstSeen["head"] == 1 {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			forward()
+		case isDelete(r, plainName):
+			firstSeen["delete"]++
+			forward()
+		default:
+			forward()
+		}
+	})
+	s := sessionThrough(t, first)
+	ctx := context.Background()
+	shown, err := s.LiteralObjectHead(ctx, "fixtures", plainName)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := s.DeletePlainObject(ctx, "fixtures", plainName, shown.ContentFingerprint())
+	if err != nil || result.Outcome != UpdateApplied {
+		t.Fatalf("result = %+v, err = %v, want applied under the fresh credentials", result, err)
+	}
+	if firstSeen["head"] != 1 || firstSeen["delete"] != 0 {
+		t.Fatalf("the refused namespace saw %+v, want one refused HEAD and no DELETE", firstSeen)
+	}
+	if secondSeen["head"] != 1 || secondSeen["delete"] != 1 || secondSeen["literal"] != 1 {
+		t.Fatalf("the fresh namespace saw %+v, want one comparison, one DELETE and one literal read", secondSeen)
+	}
+}
+
+// Only a success status accepts the DELETE: a redirect arrives as a plain
+// status because the session's transport drops redirects, and it must not be
+// read as the store having applied the request.
+func TestDeletePlainObjectDoesNotAcceptARedirect(t *testing.T) {
+	mock := swifttest.New("test:tester", "testing")
+	mock.LoadCanonicalFixtures()
+	server := gatedServer(t, mock, func(w http.ResponseWriter, r *http.Request, forward func()) {
+		if isDelete(r, plainName) {
+			w.WriteHeader(http.StatusTemporaryRedirect)
+			return
+		}
+		forward()
+	})
+	s := sessionThrough(t, server)
+	ctx := context.Background()
+	shown := shownIdentity(t, s, "fixtures", plainName)
+
+	result, err := s.DeletePlainObject(ctx, "fixtures", plainName, shown)
+	var se *SwiftError
+	if !errors.As(err, &se) || se.HTTPStatus != http.StatusTemporaryRedirect || errors.Is(err, ErrUnverifiedDelete) {
+		t.Fatalf("err = %v, want the redirect reported as not accepted", err)
+	}
+	if result == nil || result.Accepted || result.Outcome != "" {
+		t.Fatalf("result = %+v, want nothing accepted", result)
+	}
+	if _, err := s.ObjectDetail(ctx, "fixtures", plainName); err != nil {
+		t.Fatalf("the object is gone after a redirected DELETE: %v", err)
+	}
+}
+
+// A found plain object whose literal response lacks the fields the identity
+// is compared by is not compared: the zero values would make an unchanged
+// object look different, so the outcome stays unverified.
+func TestDeletePlainObjectKeepsAnIncomparableSuccessorUnverified(t *testing.T) {
+	mock := swifttest.New("test:tester", "testing")
+	mock.LoadCanonicalFixtures()
+	server := gatedServer(t, mock, func(w http.ResponseWriter, r *http.Request, forward func()) {
+		if isLiteralHead(r, plainName) {
+			rec := httptest.NewRecorder()
+			mock.ServeHTTP(rec, r)
+			for k, values := range rec.Header() {
+				if k == "Etag" {
+					continue
+				}
+				w.Header()[k] = append([]string(nil), values...)
+			}
+			w.WriteHeader(rec.Code)
+			return
+		}
+		forward()
+	})
+	s := sessionThrough(t, server)
+	ctx := context.Background()
+	shown := shownIdentity(t, s, "fixtures", plainName)
+	placed := false
+	mock.AfterRequest = func(method, path string) {
+		if method == "DELETE" && strings.HasSuffix(path, "/fixtures/"+plainName) && !placed {
+			placed = true
+			// The exact shown object written back: a comparable read would call it
+			// the same identity; an incomparable one must not call it different.
+			mock.PutObject("fixtures", plainName, swifttest.Object{Bytes: 12, ContentType: "text/plain", ETag: "5eb63bbbe01eeed093cb22bb8f5acdc3"})
+		}
+	}
+
+	result, err := s.DeletePlainObject(ctx, "fixtures", plainName, shown)
+	if !errors.Is(err, ErrUnverifiedDelete) || !strings.Contains(err.Error(), "comparable identity") {
+		t.Fatalf("err = %v, want unverified for an incomparable identity", err)
+	}
+	if result == nil || result.Outcome != UpdateUnverified || !result.Accepted || result.After == nil || result.AfterComparable {
+		t.Fatalf("result = %+v, want unverified with an incomparable successor", result)
+	}
+}
+
+func TestIdentityComparableNeedsBothFields(t *testing.T) {
+	complete := http.Header{"Content-Length": {"12"}, "Etag": {"abc"}}
+	if !identityComparable(complete) {
+		t.Fatal("a length and an entity tag are comparable")
+	}
+	for name, headers := range map[string]http.Header{
+		"no length":        {"Etag": {"abc"}},
+		"unparseable":      {"Content-Length": {"x"}, "Etag": {"abc"}},
+		"no entity tag":    {"Content-Length": {"12"}},
+		"empty entity tag": {"Content-Length": {"12"}, "Etag": {""}},
+	} {
+		if identityComparable(headers) {
+			t.Errorf("%s: reported comparable", name)
+		}
+	}
+}
+
+// A lost reply followed by a literal read that fails is unverified, and the
+// result says the read failed rather than that the name was empty.
+func TestDeletePlainObjectKeepsAFailedLiteralReadApart(t *testing.T) {
+	mock := swifttest.New("test:tester", "testing")
+	mock.LoadCanonicalFixtures()
+	server := gatedServer(t, mock, func(w http.ResponseWriter, r *http.Request, forward func()) {
+		if isLiteralHead(r, plainName) {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		forward()
+	})
+	s := sessionThrough(t, server)
+	ctx := context.Background()
+	shown := shownIdentity(t, s, "fixtures", plainName)
+	mock.DropNextObjectDELETE()
+
+	result, err := s.DeletePlainObject(ctx, "fixtures", plainName, shown)
+	if !errors.Is(err, ErrUnverifiedDelete) {
+		t.Fatalf("err = %v, want unverified", err)
+	}
+	if result == nil || result.Accepted || result.After != nil || result.AfterRead == nil {
+		t.Fatalf("result = %+v, want the literal read's failure kept apart from an empty name", result)
+	}
+}
+
+// Between the comparison HEAD's reply and the DELETE nothing of ours runs,
+// and in particular no authentication: a writer who lands during one would be
+// deleted unseen. The gate watches for an authentication inside that window
+// and, as the reviewer's probe did, places a manifest at the name during it.
+func TestDeletePlainObjectIssuesNoAuthenticationBetweenComparisonAndDelete(t *testing.T) {
+	mock := swifttest.New("test:tester", "testing")
+	mock.LoadCanonicalFixtures()
+	// armed once the inspector's own read is done, so the HEAD the gate counts
+	// as the comparison is the one DeletePlainObject makes.
+	armed, compared, deleted := false, false, false
+	authsBetween := 0
+	server := gatedServer(t, mock, func(w http.ResponseWriter, r *http.Request, forward func()) {
+		switch {
+		case !armed:
+		case isComparisonHead(r, plainName):
+			forward()
+			compared = true
+			return
+		case isDelete(r, plainName):
+			deleted = true
+		case r.URL.Path == "/auth/v1.0" && compared && !deleted:
+			authsBetween++
+			mock.PutObject("fixtures", plainName, swifttest.Object{Manifest: "external-dlo-segments/wedding-video/", ContentType: "video/mp4"})
+		}
+		forward()
+	})
+	s := sessionThrough(t, server)
+	ctx := context.Background()
+	shown := shownIdentity(t, s, "fixtures", plainName)
+	armed = true
+
+	result, err := s.DeletePlainObject(ctx, "fixtures", plainName, shown)
+	if err != nil || result.Outcome != UpdateApplied {
+		t.Fatalf("result = %+v, err = %v", result, err)
+	}
+	if authsBetween != 0 {
+		t.Fatalf("%d authentication requests ran between the comparison HEAD and the DELETE", authsBetween)
+	}
+	if !compared || !deleted {
+		t.Fatalf("the sequence did not run: compared=%v deleted=%v", compared, deleted)
 	}
 }
