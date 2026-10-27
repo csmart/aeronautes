@@ -16,9 +16,9 @@ The principle is unchanged: none of the deferred capabilities is unbuilt, return
 
 **Refused independently of the gate:** Mirror, under [ADR 0020](../../adr/0020-recovery-containment.md), with [ADR 0086](../../adr/0086-mirror-deletes-what-the-source-does-not-have.md) as its proposed contract.
 
-**Built behind trial tokens since this record was written:** deleting one selected object (P27, [ADR 0092](../../adr/0092-exact-object-deletion.md)) behind `object-delete`, and marker and manifest deletion made return-ready ([ADR 0094](../../adr/0094-marker-and-manifest-deletion-return-ready.md)) behind `marker-manifest-delete`.
+**Built behind trial tokens since this record was written:** deleting one selected object (P27, [ADR 0092](../../adr/0092-exact-object-deletion.md)) and deleting the selected objects as one job with the multi-selection it needs ([ADR 0093](../../adr/0093-selected-set-deletion.md)), both behind `object-delete`, and marker and manifest deletion made return-ready ([ADR 0094](../../adr/0094-marker-and-manifest-deletion-return-ready.md)) behind `marker-manifest-delete`.
 
-**Not built:** multi-selection, whose rule [ADR 0072](../../adr/0072-large-namespace-handling.md) decision 3 records for later work; directory upload; modern versioning management, which [ADR 0054](../../adr/0054-versioning-preflight-authority.md) keeps read-only while legacy versions and history locations are already editable; TempURL and CORS management, which are read-only; Keystone authentication, since the session speaks TempAuth v1 only; the encrypted vault fallback of [ADR 0006](../../adr/0006-secret-storage-linux.md); pause and resume (finish line decision 17); bookmark overrides and the adaptive back-off of K-PERF-003; job history export, support diagnostics and backup and restore (P28); the restart disclosure of [ADR 0088](../../adr/0088-interrupted-job-disclosure.md), whose recording half landed and whose notice has not.
+**Not built:** directory upload; modern versioning management, which [ADR 0054](../../adr/0054-versioning-preflight-authority.md) keeps read-only while legacy versions and history locations are already editable; TempURL and CORS management, which are read-only; Keystone authentication, since the session speaks TempAuth v1 only; the encrypted vault fallback of [ADR 0006](../../adr/0006-secret-storage-linux.md); pause and resume (finish line decision 17); bookmark overrides and the adaptive back-off of K-PERF-003; job history export, support diagnostics and backup and restore (P28); the restart disclosure of [ADR 0088](../../adr/0088-interrupted-job-disclosure.md), whose recording half landed and whose notice has not.
 
 **Release state.** 0.1.0 is not tagged: it waits on the operator's run of the [0.1.0 test plan](../2026-09-24/0.1.0-test-plan.md) and its results file, as [RELEASING](../../RELEASING.md) requires, against the Linux packages built from master `2928da48`.
 Every artefact is unsigned by decision, v1 supports Linux only (finish line decision 1), and the macOS and Windows builds are development builds without acceptance.
@@ -52,7 +52,7 @@ Deletion carries the most hazards of any capability, which is why the 25 Septemb
    The Delete key opens it, as §4.4 of the design has always said.
 2. **Selected-set deletion.**
    Multi-selection of the loaded rows, as ADR 0072 decision 3 records, and one confirmation that names what it will delete; each name is an exact deletion and no prefix is inferred from a selection.
-   Its record is [ADR 0093](../../adr/0093-selected-set-deletion.md), proposed on 27 October: one job over the selected objects, each member deleted by the verified per-name protocol, prefix rows excluded, and the member count typed as the confirmation.
+   Its record is [ADR 0093](../../adr/0093-selected-set-deletion.md), proposed and built behind the `object-delete` token on 27 October: one job over the selected objects, each member deleted by the verified per-name protocol, prefix rows excluded, and the member count typed as the confirmation.
 3. **Marker and manifest deletion return**, reversing ADR 0052 decision 7 on the operator's word.
    Manifest-only deletion is already bound by ADR 0085, and the two actions that return here are `MutateService.DeleteMarker` and `MutateService.DeleteManifest`, the pair the gate classifies as marker and manifest editing.
    Deleting a manifest together with its segments is a different pair, classified with bulk delete: `DeleteManifestWithSegments` is force-only with typed confirmation, recorded ownership is advisory because no live reverse-reference scan exists, and its dynamic large object branch is the prefix sweep itself.
@@ -152,6 +152,7 @@ Shipped means offered by a build; gated means built and refused under ADR 0052; 
 | Transfer | cancel | shipped | — |
 | Transfer | understand destination large-object placement | chunk sizing and collision preflight shipped; the copy preview names the data path behind the gate, the local transfer dialog does not | 0.4.0 |
 | Delete | delete ordinary objects | built behind the object-delete trial token under ADR 0092, awaiting the operator's return | 0.2.0 |
+| Delete | delete the selected objects as one job | built behind the object-delete trial token under ADR 0093, with multi-selection of the loaded rows, awaiting the operator's return | 0.2.0 |
 | Delete | remove markers | built behind the marker-manifest-delete trial token under ADR 0094, awaiting the operator's return | 0.2.0 |
 | Delete | recursively delete normal prefixes | gated, protocol owed | 0.2.x |
 | Delete | empty containers | gated, protocol owed | 0.2.x |
