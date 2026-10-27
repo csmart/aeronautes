@@ -355,6 +355,34 @@ func TestSelectedDeleteUsesTheSelectionCeilingSetting(t *testing.T) {
 	}
 }
 
+// ADR 0093 decision 3, the exception the confirmation names: a row listed
+// as zero bytes cannot say what it holds, so its baseline is a HEAD taken
+// first, and what that read finds is what is deleted, here a replacement
+// written after the listing. This is the protocol as decided, not a defect.
+func TestSelectedDeleteAdoptsALaterBaselineForARowThatCannotSay(t *testing.T) {
+	h, service := selectedHarness(t)
+	rows := rowsOf(t, h, "empty-object")
+	if rows[0].Bytes != 0 {
+		t.Fatal("the fixture was not listed as zero bytes")
+	}
+	h.mock.PutObject("fixtures", "empty-object", swifttest.Object{Bytes: 31, ContentType: "text/plain", ETag: "00000000000000000000000000000031"})
+	jobID, err := service.StartSelectedDelete(t.Context(), selectedRequest(h, rows))
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, h, jobID)
+	if job.State != "complete" || job.Counters.ObjectsDeleted != 1 || len(deletesUnder(h, "fixtures")) != 1 {
+		t.Fatalf("the later-baseline rule was not exercised: %+v", job)
+	}
+	if _, err := h.inspector.Object(t.Context(), h.bookmarkID(), "fixtures", "empty-object"); err == nil {
+		t.Fatal("the replacement was not deleted")
+	}
+	item := itemsOf(t, h, jobID)["empty-object"]
+	if item.Baseline == nil || item.Baseline.Length != 31 || item.Baseline.ETag != "00000000000000000000000000000031" {
+		t.Fatalf("the record does not say the member was compared as the replacement: %+v", item.Baseline)
+	}
+}
+
 // Members the protocol refuses or finds changed do not stop the job: each
 // lands as its own word and the others are deleted, and the job is partial.
 func TestSelectedDeleteSettlesEachMemberOnItsOwn(t *testing.T) {

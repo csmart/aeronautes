@@ -93,8 +93,10 @@
         {/if}
         <p class="keeps">{versioningSentence(facts)}</p>
         <p class="keeps">
-          Each object is deleted only if it still matches what was listed; one that changed since is left as it is and
-          recorded as changed. The delete cannot see a change that lands after its last look. A selection holds at most
+          An object listed with a size is deleted only if it still matches its listing; one that changed since is left
+          as it is and recorded as changed. A row listed as zero bytes or as a static large object cannot say what it
+          holds, so it is read again first and what that read finds is what is deleted, a marker or a manifest included
+          and a link refused. The delete cannot see a change that lands after its last look. A selection holds at most
           {op.ceiling.toLocaleString("en-US")} objects; the ceiling is set in the jobs drawer.
         </p>
         <label class="confirm">

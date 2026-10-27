@@ -286,6 +286,7 @@ describe("the selected-set dialog", () => {
     expect(text).toContain("at most 250,000 objects");
     expect(text).toContain("keeps versions in the-archive");
     expect(text).toContain("changed since is left as it is");
+    expect(text).toContain("read again first and what that read finds is what is deleted");
     const start = vi.spyOn(f.fake, "startSelectedDelete");
     const confirm = button("Delete 2 objects", f.root);
     expect(confirm.disabled).toBe(true);
