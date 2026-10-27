@@ -117,10 +117,17 @@ function requireAdvancingMarker(previous: string, next: string) {
   if (after.length <= before.length) throw new Error("The page marker did not advance. Retry the page.");
 }
 
-/** One single-object delete from opening to its settled result (ADR 0092). */
+/** Which shown-object deletion an operation is (ADR 0092, ADR 0094). */
+export type ShownDeleteKind = "object" | "marker" | "manifest";
+
+/** One shown-object delete from opening to its settled result: a plain
+ * object (ADR 0092), a directory marker or a manifest (ADR 0094). */
 export interface ObjectDeleteOperation {
+  kind: ShownDeleteKind;
   container: string;
   name: string;
+  /** The identity the dialog opened for: the inspector's detail, or for a
+   * marker the prefix detail's own object. */
   detail: ObjectDetailDTO;
   /** The scope revision and selection identity the dialog was opened from. */
   scope: number;
@@ -1907,10 +1914,62 @@ export class BrowserState {
       return false;
     }
     this.objectDelete = {
-      container, name: detail.name, detail, scope: this.#scopeRevision, selection: identity,
+      kind: "object", container, name: detail.name, detail, scope: this.#scopeRevision, selection: identity,
       status: "pending", result: null, error: null,
     };
     return true;
+  }
+
+  /** Open the marker delete for the inspected marker-backed prefix (ADR 0094
+   * decision 2), capturing the prefix detail's own object as the identity.
+   * False when no marker is inspected. */
+  openMarkerDelete(): boolean {
+    const pd = this.prefixDetail;
+    const identity = this.detailIdentity;
+    const container = this.containerName;
+    if (!pd?.selfObject || !pd.markerBacked || !identity || !container || this.connecting
+      || identity.container !== container || identity.name !== pd.prefix || this.#detailScope !== this.#scopeRevision) {
+      return false;
+    }
+    this.objectDelete = {
+      kind: "marker", container, name: pd.prefix, detail: pd.selfObject, scope: this.#scopeRevision, selection: identity,
+      status: "pending", result: null, error: null,
+    };
+    return true;
+  }
+
+  /** Open the manifest-only delete for the inspected manifest (ADR 0094
+   * decision 3). False when the inspected object is not a manifest or is a
+   * link in either representation. */
+  openManifestDelete(): boolean {
+    const detail = this.objectDetail;
+    const identity = this.detailIdentity;
+    const container = this.containerName;
+    if (!detail || !identity || !container || this.connecting || identity.container !== container
+      || identity.name !== detail.name || detail.class === "plain" || !!detail.symlinkTarget || detail.followedSymlink) {
+      return false;
+    }
+    this.objectDelete = {
+      kind: "manifest", container, name: detail.name, detail, scope: this.#scopeRevision, selection: identity,
+      status: "pending", result: null, error: null,
+    };
+    return true;
+  }
+
+  /** The deletion the Delete key would open for the inspected row (ADR 0094
+   * decision 5): its own kind, or null for a link, an implied prefix, a real
+   * object at a prefix name, or nothing inspected. */
+  deletableSelectionKind(): ShownDeleteKind | null {
+    const identity = this.detailIdentity;
+    const detail = this.objectDetail;
+    if (detail && identity?.name === detail.name) {
+      if (detail.class !== "plain" && !detail.symlinkTarget && !detail.followedSymlink) return "manifest";
+      if (isLiteralPlainObject(detail)) return "object";
+      return null;
+    }
+    const pd = this.prefixDetail;
+    if (pd?.markerBacked && pd.selfObject && identity?.name === pd.prefix) return "marker";
+    return null;
   }
 
   closeObjectDelete() {
@@ -1922,8 +1981,10 @@ export class BrowserState {
    * the refresh that follows a success is this state's own and does not. */
   objectDeleteCurrent(): boolean {
     const op = this.objectDelete;
-    return !!op && !this.connecting && this.#scopeRevision === op.scope
-      && this.detailIdentity === op.selection && this.objectDetail === op.detail;
+    if (!op) return false;
+    const shown = op.kind === "marker" ? this.prefixDetail?.selfObject : this.objectDetail;
+    return !this.connecting && this.#scopeRevision === op.scope
+      && this.detailIdentity === op.selection && shown === op.detail;
   }
 
   /** Run the opened delete once. The result or the refusal lands on the
@@ -1934,7 +1995,12 @@ export class BrowserState {
     if (!op || op.status !== "pending" || !this.objectDeleteCurrent()) return;
     op.status = "running";
     try {
-      const result = await this.deleteObject(op.container, op.name, op.detail, () => this.objectDelete === op);
+      const owns = () => this.objectDelete === op;
+      const result = op.kind === "object"
+        ? await this.deleteObject(op.container, op.name, op.detail, owns)
+        : op.kind === "marker"
+          ? await this.deleteMarker(op.name, owns)
+          : await this.deleteManifest(op.container, op.name, op.detail, owns);
       if (this.objectDelete !== op) return;
       op.result = result;
       op.status = "done";

@@ -18,6 +18,7 @@
   import CredentialStatusDialog from "./CredentialStatusDialog.svelte";
   import DeleteDialog from "../transfer/DeleteDialog.svelte";
   import ObjectDeleteDialog from "../inspector/ObjectDeleteDialog.svelte";
+  import ManifestDeleteDialog from "../inspector/ManifestDeleteDialog.svelte";
   import { BrowserState } from "./browserState.svelte";
   import { activeModal } from "../../lib/trapFocus";
   import { applyEnabledCapabilities, v1Offers } from "../../lib/v1.svelte";
@@ -167,12 +168,16 @@
       // Arrows anywhere outside a field drive the working list (§4.4).
       workingList?.focusList();
     } else if (event.key === "Delete") {
-      // §4.4: Delete opens the safe delete flow and never deletes. Only a
-      // plain object has one in this build (ADR 0092); a prefix row's
-      // deletion is bulk deletion with its own dialog.
-      if (v1Offers.objectDelete && browser.openObjectDelete()) {
-        event.preventDefault();
-      }
+      // §4.4: Delete opens the safe delete flow that owns the inspected row's
+      // kind and never deletes (ADR 0092, ADR 0094 decision 5); a link, an
+      // implied prefix and a real object at a prefix name have none, and a
+      // prefix's own deletion is bulk deletion with its own dialog.
+      const kind = browser.deletableSelectionKind();
+      const opened = kind === "object" ? v1Offers.objectDelete && browser.openObjectDelete()
+        : kind === "marker" ? v1Offers.markerDelete && browser.openMarkerDelete()
+        : kind === "manifest" ? v1Offers.manifestDelete && browser.openManifestDelete()
+        : false;
+      if (opened) event.preventDefault();
     }
   }
 </script>
@@ -279,8 +284,11 @@
 {#if v1Offers.bulkDelete && browser.deleteOpen}
   <DeleteDialog {browser} onClose={() => (browser.deleteOpen = false)} />
 {/if}
-{#if v1Offers.objectDelete && browser.objectDelete}
+{#if browser.objectDelete && ((browser.objectDelete.kind === "object" && v1Offers.objectDelete) || (browser.objectDelete.kind === "marker" && v1Offers.markerDelete))}
   <ObjectDeleteDialog {browser} onClose={() => browser.closeObjectDelete()} />
+{/if}
+{#if browser.objectDelete?.kind === "manifest" && v1Offers.manifestDelete}
+  <ManifestDeleteDialog {browser} onClose={() => browser.closeObjectDelete()} />
 {/if}
 
 {#if aboutOpen}

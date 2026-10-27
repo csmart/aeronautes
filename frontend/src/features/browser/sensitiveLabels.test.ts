@@ -20,6 +20,8 @@ afterEach(async () => {
   states.clear();
   document.body.innerHTML = "";
   v1Offers.benchmark = false;
+  v1Offers.manifestDelete = false;
+  v1Offers.bulkDelete = false;
   vi.restoreAllMocks();
 });
 
@@ -290,14 +292,15 @@ async function manifest() {
   const f = await fixture();
   f.browser.select(f.browser.entries.findIndex((entry) => entry.name === "external-dlo"));
   await settle();
+  v1Offers.manifestDelete = true; v1Offers.bulkDelete = true;
   f.api.checkSegmentOwnership = vi.fn().mockResolvedValue({
     class: "dlo", target: "backing/old/", proven: false, segments: 3, inlineEntries: 0,
   });
-  mounted.add(mount(ManifestDeleteDialog, { target: f.root, props: {
-    browser: f.browser, detail: f.browser.objectDetail!, segmentsAt: "backing/old/", onClose: vi.fn(),
-  } }));
+  expect(f.browser.openManifestDelete()).toBe(true);
+  mounted.add(mount(ManifestDeleteDialog, { target: f.root, props: { browser: f.browser, onClose: vi.fn() } }));
   await settle();
   click(f.root.querySelector<HTMLInputElement>('input[type="checkbox"]')!);
+  await settle();
   return f;
 }
 

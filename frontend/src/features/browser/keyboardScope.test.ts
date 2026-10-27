@@ -80,16 +80,14 @@ async function manifest() {
   await browser.openContainer("fixtures");
   browser.select(browser.entries.findIndex((entry) => entry.name === "external-dlo")); await settle();
   let dialogComponent: ReturnType<typeof mount>;
-  const close = () => { const done = unmount(dialogComponent); mounted.delete(dialogComponent); return done; };
-  dialogComponent = mount(ManifestDeleteDialog, { target: document.body, props: {
-    browser, detail: browser.objectDetail!, segmentsAt: "backing/old/", onClose: close,
-  } });
+  const close = () => { browser.closeObjectDelete(); const done = unmount(dialogComponent); mounted.delete(dialogComponent); return done; };
+  expect(browser.openManifestDelete()).toBe(true);
+  dialogComponent = mount(ManifestDeleteDialog, { target: document.body, props: { browser, onClose: close } });
   mounted.add(dialogComponent); flushSync(); await settle();
   return { ...f, opener, ownership, browser, close, dialog: get('[role="alertdialog"]'),
     reopen() {
-      dialogComponent = mount(ManifestDeleteDialog, { target: document.body, props: {
-        browser, detail: browser.objectDetail!, segmentsAt: "backing/old/", onClose: close,
-      } });
+      expect(browser.openManifestDelete()).toBe(true);
+      dialogComponent = mount(ManifestDeleteDialog, { target: document.body, props: { browser, onClose: close } });
       mounted.add(dialogComponent); flushSync();
     },
   };

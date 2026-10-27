@@ -1,14 +1,15 @@
-<!-- The single-object delete confirm (ADR 0092 decision 5): it binds the
-  exact identity it opened for, says what the delete does to the content at
-  this name under the container's versioning mode, and when the verifying
-  read observed something at the name afterwards it shows that instead of a
-  plain success. -->
+<!-- The shown-object delete confirm for a plain object (ADR 0092 decision 5)
+  and a directory marker (ADR 0094 decision 5): it binds the exact identity it
+  opened for, says what the delete does to the content at this name under the
+  container's versioning mode, and when the verifying read observed something
+  at the name afterwards it shows that instead of a plain success. -->
 <script lang="ts">
   import { trapFocus } from "../../lib/trapFocus";
   import { onMount, untrack } from "svelte";
   import type { BrowserState } from "../browser/browserState.svelte";
   import type { ContainerSettingsDTO, ObjectDetailDTO } from "../../lib/api";
   import { formatBytes } from "../../lib/format";
+  import { versioningSentence } from "./versioningSentence";
 
   let { browser, onClose }: { browser: BrowserState; onClose: () => void } = $props();
 
@@ -42,26 +43,11 @@
   });
 
   // A directory marker reached as an object row is deleted as the literal
-  // object it is; its children stay (ADR 0092 decision 2).
-  const marker = $derived(op.detail.contentLength === 0 && op.detail.contentType === "application/directory");
-
-  // Measured against the owned Swift on 27 October 2026
-  // (docs/experiments/2026-10-27-delete-under-versioning.md): a versions
-  // location archives on overwrite and never on delete.
-  function versioningSentence(f: ContainerSettingsDTO | null | undefined): string {
-    if (f === undefined) return "Checking how this container keeps versions…";
-    if (f === null) return "How this container keeps versions could not be read; assume the content is destroyed.";
-    switch (f.versioningMode) {
-      case "versions_location":
-        return `This container keeps versions in ${f.versioningArchive}, but a delete archives nothing: the current content is destroyed, and if an earlier version is archived the name reverts to it.`;
-      case "history_location":
-        return `This container keeps history in ${f.versioningArchive}: the current content moves there with a deletion marker, and the name stops resolving.`;
-      case "enabled":
-        return "This container uses in-container versioning, which this release does not manage; the delete follows the cluster's own rules.";
-      default:
-        return "This container keeps no versions: the content is destroyed.";
-    }
-  }
+  // object it is (ADR 0092 decision 2), and one reached as a prefix row is
+  // deleted through the marker path (ADR 0094 decision 2); either way its
+  // children stay.
+  const marker = $derived(op.kind === "marker" || (op.detail.contentLength === 0 && op.detail.contentType === "application/directory"));
+  const noun = $derived(op.kind === "marker" ? "marker" : "object");
 
   function kindOf(d: ObjectDetailDTO): string {
     if (d.symlinkTarget) return "symlink";
@@ -83,9 +69,9 @@
 </script>
 
 <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && onClose()}>
-  <div class="dialog" role="alertdialog" aria-label="Delete object" aria-modal="true" tabindex="-1"
+  <div class="dialog" role="alertdialog" aria-label={`Delete ${noun}`} aria-modal="true" tabindex="-1"
     use:trapFocus={onClose}>
-    <h2 class="title">{observed ? "Deleted" : "Delete object"}</h2>
+    <h2 class="title">{observed ? "Deleted" : `Delete ${noun}`}</h2>
     <div class="body">
       {#if observed}
         <p class="what">
@@ -99,10 +85,16 @@
           observed.
         </p>
       {:else}
-        <p class="what">
-          <span class="type-mono">{op.name}</span> will be deleted: {formatBytes(op.detail.contentLength)},
-          entity tag <span class="type-mono">{op.detail.etag}</span>.
-        </p>
+        {#if op.kind === "marker"}
+          <p class="what">
+            The marker object at <span class="type-mono">{op.name}</span> will be deleted, and only it.
+          </p>
+        {:else}
+          <p class="what">
+            <span class="type-mono">{op.name}</span> will be deleted: {formatBytes(op.detail.contentLength)},
+            entity tag <span class="type-mono">{op.detail.etag}</span>.
+          </p>
+        {/if}
         <p class="keeps">{versioningSentence(facts)}</p>
         {#if marker}
           <p class="keeps">This is a directory marker: the objects under it stay, and the folder remains implied by them.</p>
@@ -122,7 +114,7 @@
       {:else}
         <button class="secondary" onclick={onClose} disabled={op.status === "running"}>Cancel</button>
         <button class="danger" onclick={confirm} disabled={!canConfirm}>
-          {op.status === "running" ? "Deleting…" : "Delete object"}
+          {op.status === "running" ? "Deleting…" : `Delete ${noun}`}
         </button>
       {/if}
     </div>
