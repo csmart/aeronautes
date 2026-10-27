@@ -163,8 +163,11 @@ func TestSelectedDeleteDeletesEveryMemberExactly(t *testing.T) {
 		t.Fatalf("items page = %+v, %v", page, err)
 	}
 	for _, item := range page.Items {
-		if item.IssuedAt == "" || item.Execution == nil || item.Execution.Result != "deleted" || item.Successor == nil || item.Successor.Present {
+		if item.IssuedAt == "" || item.Execution == nil || item.Execution.Result != "deleted" || item.Successor == nil || item.Successor.Present || item.Successor.Role != "after" {
 			t.Fatalf("item DTO %s = %+v", item.Key, item)
+		}
+		if item.Baseline == nil || item.Baseline.Class == "" || item.ListedETag == "" {
+			t.Fatalf("item DTO %s lost its listed facts or baseline: %+v", item.Key, item)
 		}
 	}
 	if totals, err := h.jobsSvc.ItemTotals(ctx, h.bookmarkID(), jobID); err != nil || totals.Issued != 4 || totals.Deleted != 4 {
@@ -183,6 +186,73 @@ func TestSelectedDeleteDeletesEveryMemberExactly(t *testing.T) {
 			t.Fatalf("a DELETE was repeated: %s", line)
 		}
 		seen[line] = true
+	}
+}
+
+// ADR 0093 decisions 3 and 4: a member found changed since it was listed
+// keeps the identity it expected and the one it found, both readable from
+// the drawer's page, and no DELETE is issued for it.
+func TestSelectedDeleteChangedMemberKeepsBothIdentities(t *testing.T) {
+	h, service := selectedHarness(t)
+	rows := rowsOf(t, h, "normal/hello.txt")
+	const replacementETag = "00000000000000000000000000000040"
+	h.mock.PutObject("fixtures", rows[0].Name, swifttest.Object{Bytes: 40, ContentType: "text/plain", ETag: replacementETag})
+	jobID, err := service.StartSelectedDelete(t.Context(), selectedRequest(h, rows))
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, h, jobID)
+	if job.State != "failed" || len(deletesUnder(h, "fixtures")) != 0 {
+		t.Fatalf("expected a settled conflict without a DELETE: job=%+v requests=%v", job, deletesUnder(h, "fixtures"))
+	}
+	page, err := h.jobsSvc.Items(t.Context(), h.bookmarkID(), jobID, "", 100)
+	if err != nil || len(page.Items) != 1 {
+		t.Fatalf("items = %+v, %v", page, err)
+	}
+	item := page.Items[0]
+	if item.Execution == nil || item.Execution.Result != "conflict" || item.ListedETag != rows[0].ETag || item.ListedBytes != rows[0].Bytes {
+		t.Fatalf("the listed facts were not kept: %+v", item)
+	}
+	if item.Baseline == nil || item.Baseline.Class != "plain" || item.Baseline.Length != rows[0].Bytes || item.Baseline.ETag != rows[0].ETag {
+		t.Fatalf("the identity expected was not kept: %+v", item.Baseline)
+	}
+	if item.Successor == nil || item.Successor.Role != "comparison" || !item.Successor.Present || item.Successor.Class != "plain" || item.Successor.Length != 40 || item.Successor.ETag != replacementETag {
+		t.Fatalf("the identity found was not kept: %+v", item.Successor)
+	}
+}
+
+// ADR 0093 decision 3: an ordinary member replaced by a link is changed since
+// it was listed, a conflict naming the link, and the link is left untouched.
+func TestSelectedDeleteTreatsALinkAtAnOrdinaryMemberAsChanged(t *testing.T) {
+	h, service := selectedHarness(t)
+	rows := rowsOf(t, h, "normal/hello.txt")
+	h.mock.PutObject("fixtures", rows[0].Name, swifttest.Object{SymlinkTarget: "fixtures/implied/child.txt"})
+	jobID, err := service.StartSelectedDelete(t.Context(), selectedRequest(h, rows))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = awaitTerminal(t, h, jobID)
+	item := itemsOf(t, h, jobID)[rows[0].Name]
+	if got := len(deletesUnder(h, "fixtures")); got != 0 {
+		t.Fatalf("sent %d DELETEs for the changed member", got)
+	}
+	if item.Execution == nil || item.Execution.Result != jobs.ItemConflict || item.Successor == nil || item.Successor.Class != "symlink" || item.Successor.Role != jobs.SuccessorComparison {
+		t.Fatalf("an ordinary row replaced by a link was not recorded as changed since listed: %+v successor=%+v", item, item.Successor)
+	}
+}
+
+// ADR 0093 decision 4 and the drawer's words: a completed job keeps the
+// count of members that ran to an outcome beside its deleted count.
+func TestSelectedDeleteKeepsItsSettledCountWhenComplete(t *testing.T) {
+	h, service := selectedHarness(t)
+	rows := rowsOf(t, h, "normal/hello.txt", "empty-object")
+	jobID, err := service.StartSelectedDelete(t.Context(), selectedRequest(h, rows))
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, h, jobID)
+	if job.State != "complete" || job.Counters.ObjectsDeleted != 2 || job.Counters.ObjectsCopied != 2 || job.Counters.ObjectsPlanned != 2 {
+		t.Fatalf("the completed job lost its counts: %+v", job)
 	}
 }
 

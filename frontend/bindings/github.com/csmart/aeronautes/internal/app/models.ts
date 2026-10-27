@@ -692,6 +692,18 @@ export interface JobHistoryDTO {
     "nextCursor": string;
 }
 
+/**
+ * JobItemBaselineDTO is the identity a deletion member's comparison was made
+ * against (ADR 0093 decision 3): the listed row as a plain object for an
+ * ordinary member, or the HEAD taken first for a member listed as zero bytes
+ * or as a static large object.
+ */
+export interface JobItemBaselineDTO {
+    "class": string;
+    "length": number;
+    "etag": string;
+}
+
 export interface JobItemDTO {
     "id": string;
     "key": string;
@@ -723,10 +735,20 @@ export interface JobItemDTO {
     "issuedAt": string;
 
     /**
-     * Successor is what a deletion member's verifying read found at the name
-     * afterwards; nil when nothing was recorded.
+     * Successor is what a deletion member's read found at the name, the
+     * verifying read's after the DELETE or the comparison HEAD's when the
+     * member was found changed; nil when nothing was recorded.
      */
     "successor": JobItemSuccessorDTO | null;
+
+    /**
+     * ListedETag and ListedSLO are the facts a deletion member was listed
+     * with beside ListedBytes; Baseline is the identity its comparison was
+     * made against, nil when it never reached one.
+     */
+    "listedEtag": string;
+    "listedSlo": boolean;
+    "baseline": JobItemBaselineDTO | null;
 }
 
 export interface JobItemLocationDTO {
@@ -829,6 +851,13 @@ export interface JobItemSuccessorDTO {
     "class": string;
     "length": number;
     "etag": string;
+
+    /**
+     * Role names the read that saw it: "after", the verifying read after the
+     * DELETE, or "comparison", the comparison HEAD that found the member
+     * changed since it was listed before any DELETE.
+     */
+    "role": string;
     "createdAt": string;
 }
 
@@ -846,10 +875,12 @@ export interface JobItemTotalsDTO {
 
     /**
      * Issued and Deleted are a deletion job's (ADR 0093 decision 4): how
-     * many members were marked issued, and how many were deleted.
+     * many members were marked issued, and how many were deleted; Unsettled
+     * how many were issued and have no outcome yet.
      */
     "issued": number;
     "deleted": number;
+    "unsettled": number;
 }
 
 /**
