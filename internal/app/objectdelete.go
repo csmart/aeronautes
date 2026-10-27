@@ -146,11 +146,24 @@ func (what shownDeletion) fact(result *swiftcontrol.ObjectDeleteResult, err erro
 		transIDs = result.TransIDs
 	}
 	var conflict *swiftcontrol.IdentityConflictError
+	var refusal *swiftcontrol.ShownRefusalError
 	switch {
 	case errors.As(err, &conflict):
 		summary := fmt.Sprintf("%s delete refused: the name no longer holds what was shown; expected identity %s, found %s on a %s of %d bytes with entity tag %s",
 			what.noun, conflict.Expected, conflict.Found, conflict.FoundClass, conflict.FoundLength, conflict.FoundETag)
 		return mutationfacts.OutcomeConflict, audit.ResultConflict, summary, transIDs
+	case errors.As(err, &refusal):
+		// What the comparison found explains the refusal: the class, the
+		// length, the entity tag and the content type are the store's own
+		// facts about the name, and the link target is withheld because it is
+		// a name this code does not control.
+		found := fmt.Sprintf("a %s of %d bytes with entity tag %s and content type %s", refusal.FoundClass, refusal.FoundLength, refusal.FoundETag, refusal.FoundType)
+		if refusal.Link != "" {
+			found = "a symbolic link, whose target this record withholds"
+		}
+		summary := fmt.Sprintf("%s delete refused: the name holds %s, not what this path deletes; expected identity %s, found %s; this request destroyed nothing",
+			what.noun, found, refusal.Expected, refusal.Found)
+		return mutationfacts.OutcomeFailed, audit.ResultFailed, summary, transIDs
 	case errors.Is(err, swiftcontrol.ErrUnverifiedDelete):
 		return mutationfacts.OutcomeUnverified, audit.ResultUnverified, what.noun + " delete unverified; " + observedAfterDelete(result), transIDs
 	case err != nil:

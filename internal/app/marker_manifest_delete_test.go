@@ -132,3 +132,51 @@ func TestMarkerDeleteWrittenBackIsUnverified(t *testing.T) {
 		t.Fatalf("facts = %+v", facts)
 	}
 }
+
+// ADR 0094 decisions 1 and 2: a refusal at the comparison keeps what was
+// found, so the durable record explains it: the class, length, entity tag
+// and content type beside both identities, with the comparison's
+// transaction identifier, and no DELETE sent.
+func TestComparisonRefusalKeepsItsEvidence(t *testing.T) {
+	ctx := context.Background()
+	t.Run("a manifest replaced by an empty plain object", func(t *testing.T) {
+		h := newHarness(t)
+		h.connect(t)
+		shown := shownObject(t, h, "external-dlo")
+		h.mock.PutObject("fixtures", "external-dlo", swifttest.Object{Bytes: 0, ContentType: "application/octet-stream"})
+		requests := h.mock.Requests()
+		_, err := h.mutate.DeleteManifest(ctx, h.portrait(), "fixtures", "external-dlo", shown.ContentFingerprint)
+		var refusal *swiftcontrol.ShownRefusalError
+		if !errors.As(err, &refusal) || refusal.FoundClass != "plain" || refusal.Expected != shown.ContentFingerprint {
+			t.Fatalf("err = %v, want a typed refusal carrying the observation", err)
+		}
+		facts := factsOfOperation(t, h, "manifest.delete")
+		if len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeFailed || len(facts[0].TransIDs) == 0 ||
+			!strings.Contains(facts[0].Summary, "a plain of 0 bytes") || !strings.Contains(facts[0].Summary, "application/octet-stream") ||
+			!strings.Contains(facts[0].Summary, "expected identity "+shown.ContentFingerprint) || strings.Contains(facts[0].Summary, "external-dlo") {
+			t.Fatalf("facts = %+v", facts)
+		}
+		if got := h.mock.Requests() - requests; got != 1 {
+			t.Fatalf("the refusal sent %d requests, want the comparison HEAD only", got)
+		}
+	})
+	t.Run("a marker replaced by an empty object of another type", func(t *testing.T) {
+		h := newHarness(t)
+		h.connect(t)
+		marker, err := h.inspector.Prefix(ctx, h.bookmarkID(), "fixtures", "folder-marker/")
+		if err != nil || marker.SelfObject == nil {
+			t.Fatalf("marker detail = %+v, %v", marker, err)
+		}
+		h.mock.PutObject("fixtures", "folder-marker/", swifttest.Object{Bytes: 0, ContentType: "text/plain"})
+		_, err = h.mutate.DeleteMarker(ctx, h.portrait(), "fixtures", "folder-marker/", marker.SelfObject.ContentFingerprint)
+		var refusal *swiftcontrol.ShownRefusalError
+		if !errors.As(err, &refusal) || refusal.FoundType != "text/plain" || refusal.Found != marker.SelfObject.ContentFingerprint {
+			t.Fatalf("err = %v, want a typed refusal naming the content type with the identical fingerprint", err)
+		}
+		facts := factsOfOperation(t, h, "marker.delete")
+		if len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeFailed || len(facts[0].TransIDs) == 0 ||
+			!strings.Contains(facts[0].Summary, "content type text/plain") || strings.Contains(facts[0].Summary, "folder-marker") {
+			t.Fatalf("facts = %+v", facts)
+		}
+	})
+}

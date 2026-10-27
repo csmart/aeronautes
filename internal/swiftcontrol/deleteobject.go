@@ -99,6 +99,36 @@ func (s *Session) DeleteManifestObject(ctx context.Context, container, name, bas
 	return s.deleteShown(ctx, container, name, baseContent, targetManifest)
 }
 
+// ShownRefusalError is a destructive request refused at the comparison HEAD
+// because what the name holds is not of the kind this path deletes: a link in
+// either representation, a manifest on the object or marker path, a plain
+// object on the manifest path, or an object in a folder's clothing on the
+// marker path. It carries the observation so the record can say what was
+// found, as an identity conflict does (ADR 0094 decisions 1 and 2): the
+// identities shown and found, the class, the length, the entity tag and the
+// content type, with the comparison's transaction id on the result beside it.
+type ShownRefusalError struct {
+	Container, Name string
+	Reason          string
+	Expected, Found string
+	FoundClass      string
+	FoundLength     int64
+	FoundETag       string
+	FoundType       string
+	Link            string
+}
+
+func (e *ShownRefusalError) Error() string { return e.Reason }
+
+func shownRefusal(container, name, baseContent, reason string, before *ObjectDetail) *ShownRefusalError {
+	return &ShownRefusalError{
+		Container: container, Name: name, Reason: reason,
+		Expected: baseContent, Found: before.ContentFingerprint(),
+		FoundClass: string(before.Class), FoundLength: before.ContentLength,
+		FoundETag: etagValue(before.ETag), FoundType: before.ContentType, Link: before.SymlinkTarget,
+	}
+}
+
 // deleteTarget is what a deletion's comparison HEAD must show for the DELETE
 // to be issued, and how what the literal read finds afterwards is judged.
 type deleteTarget int
@@ -177,7 +207,11 @@ func (s *Session) deleteShown(ctx context.Context, container, name, baseContent 
 			return nil, err
 		}
 		if err := target.admit(container, name, before); err != nil {
-			return nil, err
+			// The comparison HEAD travels with the refusal, as with a conflict,
+			// so the record can cite what was found and the transaction that
+			// found it; no outcome is set because nothing was issued.
+			return &ObjectDeleteResult{Before: before, TransIDs: []string{before.TransID}},
+				shownRefusal(container, name, baseContent, err.Error(), before)
 		}
 		if found := before.ContentFingerprint(); found != baseContent {
 			// The comparison HEAD travels with the refusal so the record can carry
@@ -193,9 +227,11 @@ func (s *Session) deleteShown(ctx context.Context, container, name, baseContent 
 		if target == targetMarker && !markerShaped(before) {
 			// Classification never authorises destruction of data it does not
 			// prove (§24.4 spirit): an empty object in a folder's clothing has
-			// every marker's fingerprint and is still not a marker.
-			return nil, fmt.Errorf("the object at %s/%s is not a directory marker (%s, %d bytes); refusing to delete it through the marker path",
-				container, name, before.ContentType, before.ContentLength)
+			// every marker's fingerprint and is still not a marker, and its
+			// content type is what the record has to say.
+			return &ObjectDeleteResult{Before: before, TransIDs: []string{before.TransID}},
+				shownRefusal(container, name, baseContent, fmt.Sprintf("the object at %s/%s is not a directory marker (%s, %d bytes); refusing to delete it through the marker path",
+					container, name, before.ContentType, before.ContentLength), before)
 		}
 		return s.deleteCompared(ctx, credentials, container, name, before, target)
 	}
