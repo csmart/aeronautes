@@ -42,6 +42,15 @@ type ObjectDeleteResult struct {
 	// Accepted reports that the store answered the DELETE with success. A
 	// lost reply, a server error or an unexpected status leaves it false.
 	Accepted bool
+	// Requested reports that the DELETE left: the store was asked, whatever
+	// it answered or failed to answer. A refusal or a conflict at the
+	// comparison leaves it false, because nothing was sent.
+	Requested bool
+	// Baseline is the identity a selected member's comparison was made
+	// against (ADR 0093 decision 3): the listed row as a plain object, or the
+	// HEAD taken first for a row that could not say what it held. Nil on the
+	// shown-object paths, whose caller holds the identity it was shown.
+	Baseline *ObjectDetail
 	TransIDs []string
 }
 
@@ -164,24 +173,28 @@ func (s *Session) DeleteMember(ctx context.Context, container string, row Member
 	if container == "" || row.Name == "" {
 		return nil, errors.New("deleting a member needs both its container and its name; an empty name would address the container itself")
 	}
-	baseContent := ""
 	target := targetListedPlain
+	var baseline *ObjectDetail
 	if row.Bytes != 0 && !row.SLOListed {
-		baseContent = (&ObjectDetail{Class: ClassPlain, ContentLength: row.Bytes, ETag: row.ETag}).ContentFingerprint()
+		baseline = &ObjectDetail{Class: ClassPlain, ContentLength: row.Bytes, ETag: row.ETag}
 	} else {
-		baseline, err := s.ObjectDetail(ctx, container, row.Name)
+		head, err := s.ObjectDetail(ctx, container, row.Name)
 		if err != nil {
 			return nil, err
 		}
-		if baseline.FollowedSymlink || baseline.SymlinkTarget != "" {
+		if head.FollowedSymlink || head.SymlinkTarget != "" {
 			return nil, fmt.Errorf("%s/%s is a symlink: the identity listed is its target's and a delete at this name would remove the link instead; deleting a link is not offered here", container, row.Name)
 		}
-		baseContent = baseline.ContentFingerprint()
-		if baseline.Class != ClassPlain {
+		baseline = head
+		if head.Class != ClassPlain {
 			target = targetListedManifest
 		}
 	}
-	return s.deleteShown(ctx, container, row.Name, baseContent, target)
+	result, err := s.deleteShown(ctx, container, row.Name, baseline.ContentFingerprint(), target)
+	if result != nil {
+		result.Baseline = baseline
+	}
+	return result, err
 }
 
 // deleteTarget is what a deletion's comparison HEAD must show for the DELETE
@@ -205,6 +218,12 @@ const (
 // observed is unverified (ADR 0094 decision 3, ADR 0093 decision 3).
 func (t deleteTarget) manifestWords() bool {
 	return t == targetManifest || t == targetListedManifest
+}
+
+// listed says the target is a selected member whose baseline is already
+// established, by its listing or by its own earlier HEAD.
+func (t deleteTarget) listed() bool {
+	return t == targetListedPlain || t == targetListedManifest
 }
 
 // admit refuses, before any DELETE, what the comparison HEAD shows when it is
@@ -274,6 +293,17 @@ func (s *Session) deleteShown(ctx context.Context, container, name, baseContent 
 		if err != nil {
 			return nil, err
 		}
+		if target.listed() && (before.FollowedSymlink || before.SymlinkTarget != "") {
+			// A selected member's baseline is established, so a link found at
+			// the comparison is a change since then: refused as a conflict with
+			// both identities, never compared by tuple, and never deleted (ADR
+			// 0093 decision 3). The shown-object paths keep their link refusal.
+			return &ObjectDeleteResult{Before: before, TransIDs: []string{before.TransID}}, &IdentityConflictError{
+				Container: container, Name: name,
+				Expected: baseContent, Found: before.ContentFingerprint(),
+				FoundClass: "symlink", FoundLength: before.ContentLength, FoundETag: etagValue(before.ETag),
+			}
+		}
 		if err := target.admit(container, name, before); err != nil {
 			// The comparison HEAD travels with the refusal, as with a conflict,
 			// so the record can cite what was found and the transaction that
@@ -308,7 +338,7 @@ func (s *Session) deleteShown(ctx context.Context, container, name, baseContent 
 // deleteCompared issues the DELETE under the credentials the comparison HEAD
 // used and decides the outcome from the store's answer and the literal read.
 func (s *Session) deleteCompared(ctx context.Context, credentials StorageCredentials, container, name string, before *ObjectDetail, target deleteTarget) (*ObjectDeleteResult, error) {
-	result := &ObjectDeleteResult{Before: before, TransIDs: []string{before.TransID}}
+	result := &ObjectDeleteResult{Before: before, TransIDs: []string{before.TransID}, Requested: true}
 	status, deleteTransID, err := s.rawDelete(ctx, credentials, container, name)
 	if deleteTransID != "" {
 		result.TransIDs = append(result.TransIDs, deleteTransID)
