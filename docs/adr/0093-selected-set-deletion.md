@@ -1,15 +1,15 @@
 # ADR 0093 — delete the selected objects as one job
 
 **Status:** Proposed on 27 October 2026 as the record [ADR 0092](0092-exact-object-deletion.md) decision 9 named, for the operator's question of the same day recorded under decision 30 in the [Linux finish line](../audits/2026-09-05/linux-finish-line.md): "do we need like a selector or something to do some batch deletion/modification?".
-Written for review before any implementation.
-Nothing here is built.
-It proposes one new bridge action behind the capability "Object deletion" that ADR 0092 created, lifts nothing from the [ADR 0052](0052-v1-capability-gate.md) gate, and changes no refusal of [ADR 0020](0020-recovery-containment.md).
+Written for review before any implementation, and implemented on 27 October 2026 behind the `object-delete` token: the deletion-capable item ledger, the per-member protocol, the job, the multi-selection with its browser-owned dialog and the public proof on both fixtures are in the range that carries this sentence, with the capability still deferred.
+Nothing here returns a capability: the return is the operator's word, recorded in ADR 0052 when given.
+It adds one bridge action behind the capability "Object deletion" that ADR 0092 created, lifts nothing from the [ADR 0052](0052-v1-capability-gate.md) gate, and changes no refusal of [ADR 0020](0020-recovery-containment.md).
 **Scope:** Selecting several loaded rows in the working list, and deleting the selected objects as one job whose members are each deleted exactly, by the protocol [ADR 0085](0085-reobserved-destructive-identity.md) decided for prefix deletion and ADR 0092 refined for one object.
 Batch modification of a selection, such as a metadata change over many objects, is a later record and is named here only so it is not lost.
 
-## The requirement, and what exists today
+## The requirement, and what existed when this was written
 
-v1 selects one row at a time, and [ADR 0072](0072-large-namespace-handling.md) decision 3 recorded the rule for later work: select all means the loaded rows, as every surveyed client does, and whole-prefix intent stays the prefix scope.
+When this record was written v1 selected one row at a time, and [ADR 0072](0072-large-namespace-handling.md) decision 3 recorded the rule for later work: select all means the loaded rows, as every surveyed client does, and whole-prefix intent stays the prefix scope.
 ADR 0092 gives one selected plain object an exact deletion with an observed outcome, and says a set deletion composes that shape, one name with its own identity per member, deciding here whether a set of N is N synchronous calls or a job and what one confirmation names.
 
 The deletion job family exists: `DeleteService.StartDelete` sweeps a prefix or a container through listing pages and bulk-delete requests, with job rows, counters, the issued index of [ADR 0039](0039-delete-request-authority.md) that is discarded with the job, and cancellation.
