@@ -337,6 +337,36 @@ func (r *Receipt) CreditPartial() {
 	r.emit("partial", "job "+r.jobID+" partial")
 }
 
+// CreditCancelled emits a cancel claim for a JOB action, validating from THIS
+// receipt that the job was admitted and ended cancelled: nothing it was asked
+// for was requested of the store.
+func (r *Receipt) CreditCancelled() {
+	r.h.T.Helper()
+	if r.err != nil || r.jobID == "" || scenariocontract.All()[r.action].Kind != scenariocontract.Job {
+		r.h.T.Fatalf("CreditCancelled %s: not an admitted job (%v)", r.action, r.err)
+	}
+	if job := r.h.AwaitJob(r.jobID); job.State != "cancelled" {
+		r.h.T.Fatalf("CreditCancelled %s: job %s is %q, not cancelled", r.action, r.jobID, job.State)
+	}
+	r.emit("cancel", "job "+r.jobID+" cancelled")
+}
+
+// CreditJobConflict emits a conflict claim for a JOB action whose members are
+// items, validating from THIS receipt's terminal job that at least one member
+// was recorded as changed since it was listed and left untouched.
+func (r *Receipt) CreditJobConflict() {
+	r.h.T.Helper()
+	if r.err != nil || r.jobID == "" || scenariocontract.All()[r.action].Kind != scenariocontract.Job {
+		r.h.T.Fatalf("CreditJobConflict %s: not an admitted job (%v)", r.action, r.err)
+	}
+	job := r.h.AwaitJob(r.jobID)
+	totals, rec := r.h.JobItemTotals(r.h.ctx, r.jobID)
+	if rec.Err() != nil || totals.Conflicts == 0 {
+		r.h.T.Fatalf("CreditJobConflict %s: job %s (%s) recorded no conflicting member: %+v, %v", r.action, r.jobID, job.State, totals, rec.Err())
+	}
+	r.emit("conflict", fmt.Sprintf("job %s %s with %d members changed since listed", r.jobID, job.State, totals.Conflicts))
+}
+
 // CreditApplied emits a happy claim for a SYNCHRONOUS mutate, validating
 // from THIS receipt that the outcome was "applied".
 func (r *Receipt) CreditApplied() {
@@ -445,6 +475,13 @@ func (h *Harness) StartMirror(ctx context.Context, req app.MirrorRequestDTO) *Re
 func (h *Harness) StartDelete(ctx context.Context, req app.DeleteRequestDTO) *Receipt {
 	jobID, err := h.Delete.StartDelete(ctx, req)
 	return &Receipt{h: h, action: "DeleteService.StartDelete", jobID: jobID, err: err}
+}
+
+// StartSelectedDelete starts the deletion of the selected objects as one job
+// (ADR 0093); the receipt carries the job for the job-shaped credits.
+func (h *Harness) StartSelectedDelete(ctx context.Context, req app.SelectedDeleteRequestDTO) *Receipt {
+	jobID, err := h.Delete.StartSelectedDelete(ctx, req)
+	return &Receipt{h: h, action: "DeleteService.StartSelectedDelete", jobID: jobID, err: err}
 }
 
 func (h *Harness) DeleteManifestWithSegments(ctx context.Context, req app.SegmentsDeleteRequestDTO) *Receipt {
