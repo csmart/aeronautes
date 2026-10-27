@@ -671,3 +671,32 @@ func TestRefusedDeleteTokenIsInvalidated(t *testing.T) {
 		t.Fatalf("Credentials after a refused DELETE authenticated %d times, want one", auths-before)
 	}
 }
+
+// An empty object name is the container's own path: refused before any request
+// at the session and at both raw boundaries, so no caller can turn an object
+// delete into a container delete.
+func TestDeletePlainObjectRefusesAnEmptyTargetPart(t *testing.T) {
+	s, mock := newFixtureSessionWithMock(t)
+	ctx := context.Background()
+	shown := shownIdentity(t, s, "fixtures", plainName)
+	before := mock.Requests()
+	for name, parts := range map[string][2]string{"empty name": {"fixtures", ""}, "empty container": {"", plainName}} {
+		result, err := s.DeletePlainObject(ctx, parts[0], parts[1], shown)
+		if err == nil || result != nil {
+			t.Fatalf("%s: result = %+v, err = %v, want a refusal with no result", name, result, err)
+		}
+	}
+	credentials, err := s.Credentials(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status, _, err := s.rawDelete(ctx, credentials, "fixtures", ""); err == nil || status != 0 {
+		t.Fatalf("raw DELETE of an empty name: status %d, err %v", status, err)
+	}
+	if _, _, status, err := s.rawHead(ctx, credentials, "fixtures", "", "", "head"); err == nil || status != 0 {
+		t.Fatalf("raw HEAD of an empty name: status %d, err %v", status, err)
+	}
+	if got := mock.Requests(); got != before {
+		t.Fatalf("%d requests reached the store for empty target parts", got-before)
+	}
+}

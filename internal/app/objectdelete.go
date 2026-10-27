@@ -28,6 +28,12 @@ func (s *MutateService) DeleteObject(ctx context.Context, scope ListingScopeDTO,
 	if err := refuseIfDeferred("MutateService.DeleteObject"); err != nil {
 		return MutationResultDTO{}, err
 	}
+	if container == "" || name == "" {
+		// Refused before the writer gate, the scope and any intent: an empty
+		// object name is the container's own path, and this action may never
+		// broaden into a container action.
+		return MutationResultDTO{}, errors.New("deleting an object needs both its container and its name; an empty name would address the container itself")
+	}
 	if err := s.occupy(); err != nil {
 		return MutationResultDTO{}, err
 	}

@@ -67,6 +67,12 @@ type ObjectDeleteResult struct {
 // unverified. Applied says nothing about bytes being gone or about where a
 // successor came from, and a match is never exclusive ownership (ADR 0020).
 func (s *Session) DeletePlainObject(ctx context.Context, container, name, baseContent string) (*ObjectDeleteResult, error) {
+	if container == "" || name == "" {
+		// An empty object name would address the container itself: Swift routes
+		// a DELETE of "container/" to its container controller. Refused before
+		// any request, whatever identity the caller supplies.
+		return nil, errors.New("deleting an object needs both its container and its name; an empty name would address the container itself")
+	}
 	if baseContent == "" {
 		return nil, fmt.Errorf("deleting %s/%s needs the content identity the caller was shown; a delete that cannot say what it meant to destroy is refused", container, name)
 	}
@@ -216,6 +222,11 @@ func literalPlain(d *ObjectDetail) bool {
 // server error from a lost reply. It never repeats the request; a refused
 // token is invalidated here and the caller decides what the refusal means.
 func (s *Session) rawDelete(ctx context.Context, credentials StorageCredentials, container, name string) (int, string, error) {
+	if container == "" || name == "" {
+		// The I/O boundary refuses too: "container/" is the container's own
+		// path, and no caller may reach it through an object delete.
+		return 0, "", errors.New("object DELETE: the container and object name must both be present")
+	}
 	target := credentials.StorageURL + "/" + escapeObjectPath(container) + "/" + escapeObjectPath(name)
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, target, nil)
 	if err != nil {

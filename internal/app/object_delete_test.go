@@ -256,3 +256,31 @@ func TestObjectDeleteDisclosesAnObservedSuccessor(t *testing.T) {
 		t.Fatalf("audit = %+v", events)
 	}
 }
+
+// ADR 0092: an empty object name must never broaden the action into a
+// container action, and the inspector must never supply an identity for one.
+func TestObjectDeleteRefusesAnEmptyNameBeforeAnythingHappens(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+	ctx := context.Background()
+	requests := h.mock.Requests()
+	if _, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", ""); err == nil {
+		t.Fatal("the inspector answered an empty object name")
+	}
+	identity := shownObject(t, h, deleteFixture).ContentFingerprint
+	requests = h.mock.Requests()
+	for name, parts := range map[string][2]string{"empty name": {"fixtures", ""}, "empty container": {"", deleteFixture}} {
+		if _, err := h.mutate.DeleteObject(ctx, h.portrait(), parts[0], parts[1], identity); err == nil {
+			t.Fatalf("%s was not refused", name)
+		}
+	}
+	if got := h.mock.Requests(); got != requests {
+		t.Fatalf("refused deletes sent %d requests", got-requests)
+	}
+	if facts := objectDeleteFacts(t, h); len(facts) != 0 {
+		t.Fatalf("refused deletes recorded facts: %+v", facts)
+	}
+	if _, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", deleteFixture); err != nil {
+		t.Fatalf("the object is gone: %v", err)
+	}
+}
