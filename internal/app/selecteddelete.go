@@ -271,6 +271,7 @@ func (s *DeleteService) finishSelected(ctx context.Context, jobID string, req Se
 func selectedMemberOutcome(result *swiftcontrol.ObjectDeleteResult, err error) (jobs.ItemObservation, *jobs.ItemSuccessor, *jobs.MemberBaseline) {
 	baseline := memberBaseline(result)
 	var conflict *swiftcontrol.IdentityConflictError
+	var refusal *swiftcontrol.ShownRefusalError
 	var se *swiftcontrol.SwiftError
 	switch {
 	case err == nil:
@@ -282,6 +283,12 @@ func selectedMemberOutcome(result *swiftcontrol.ObjectDeleteResult, err error) (
 		found := &jobs.ItemSuccessor{Present: true, Class: conflict.FoundClass, Length: conflict.FoundLength, ETag: conflict.FoundETag, Role: jobs.SuccessorComparison}
 		return jobs.ItemObservation{Result: jobs.ItemConflict, Effect: jobs.EffectNotAttempted,
 			Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageSourceRead, Code: jobs.CodeConflict}}, found, baseline
+	case errors.As(err, &refusal) && refusal.Link:
+		// A link at the read that fixes the member's baseline: refused with
+		// its kind, the fact the record needs to say why nothing was deleted
+		// (ADR 0093 decision 4); the target is never named.
+		return jobs.ItemObservation{Result: jobs.ItemRefused, Effect: jobs.EffectNotAttempted,
+			Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageSourceRead, Code: jobs.CodeLink}}, nil, baseline
 	case result != nil && result.Requested && errors.As(err, &se):
 		// The DELETE left and the store answered with something other than
 		// success: a client-side refusal, a refused token or a status outside

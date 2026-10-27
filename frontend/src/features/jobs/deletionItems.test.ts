@@ -62,7 +62,7 @@ it("shows each member's outcome and what its verifying read observed", async () 
     member("lost", { execution: observation("unverified", "unresolved", "verification", "unverified") }),
     member("changed", { execution: observation("conflict", "not_attempted", "source_read", "conflict"),
       successor: { present: true, class: "plain", length: 40, etag: "ffff", role: "comparison", createdAt: "" } }),
-    member("link", { execution: observation("refused", "not_attempted", "source_read", "unsupported") }),
+    member("link", { baseline: null, execution: observation("refused", "not_attempted", "source_read", "link") }),
     member("later", { issuedAt: "", execution: observation("not_attempted", "not_attempted") }),
     member("in-flight", {}),
     member("never", { issuedAt: "" }),
@@ -79,7 +79,7 @@ it("shows each member's outcome and what its verifying read observed", async () 
   expect(outcome(1)).toContain("not observed");
   expect(outcome(2)).toBe("Outcome: Unverified: the name may still hold what was shown (verification: unverified).");
   expect(outcome(3)).toBe("Outcome: Changed since it was listed: expected a plain of 10 bytes with entity tag 5eb63bbbe01eeed093cb22bb8f5acdc3; found a plain of 40 bytes with entity tag ffff; left as it is (source_read: conflict).");
-  expect(outcome(4)).toBe("Outcome: Refused; left as it is (source_read: unsupported).");
+  expect(outcome(4)).toBe("Outcome: Refused: the name holds a symbolic link, whose identity is its target's, and a link is not deleted; left as it is.");
   expect(outcome(5)).toBe("Outcome: Not attempted.");
   expect(outcome(6)).toBe("Outcome: Unresolved: issued with no outcome recorded, so its DELETE may have been sent.");
   expect(outcome(7)).toBe("Outcome: Not attempted.");

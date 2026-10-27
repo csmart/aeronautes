@@ -183,7 +183,11 @@ func (s *Session) DeleteMember(ctx context.Context, container string, row Member
 			return nil, err
 		}
 		if head.FollowedSymlink || head.SymlinkTarget != "" {
-			return nil, fmt.Errorf("%s/%s is a symlink: the identity listed is its target's and a delete at this name would remove the link instead; deleting a link is not offered here", container, row.Name)
+			// Refused with its kind before any baseline is fixed: the typed
+			// refusal says a link was found, and the read's transaction id
+			// travels with it, so the member's record can say why.
+			return &ObjectDeleteResult{TransIDs: []string{head.TransID}}, shownRefusal(container, row.Name, "",
+				fmt.Sprintf("%s/%s is a symlink: the identity listed is its target's and a delete at this name would remove the link instead; deleting a link is not offered here", container, row.Name), head)
 		}
 		baseline = head
 		if head.Class != ClassPlain {

@@ -66,6 +66,9 @@
         return { text: `Changed since it was listed: expected ${expected}${found}; left as it is${diagnostic}.`, problem: true };
       }
       case "refused":
+        if (ex.code === "link") {
+          return { text: "Refused: the name holds a symbolic link, whose identity is its target's, and a link is not deleted; left as it is.", problem: true };
+        }
         return { text: `Refused; left as it is${diagnostic}.`, problem: true };
       case "not_attempted":
         return { text: "Not attempted.", problem: false };
