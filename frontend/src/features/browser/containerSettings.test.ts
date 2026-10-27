@@ -60,7 +60,7 @@ async function connectFixture() {
   const component = mount(BrowserScreen, { target: document.body });
   mounted.add(component);
   flushSync(); await settle();
-  click(get(`[title="${fixtureBookmark.displayName}"]`)); await settle();
+  click(get(`[aria-label="${fixtureBookmark.displayName}"]`)); await settle();
   return saved;
 }
 
@@ -135,7 +135,7 @@ describe("container settings badges", () => {
     // A saved secret is a new generation for this bookmark in the fake, as a
     // rekey is in the product; the reconnected listing carries no facts.
     await api.saveBookmark({ ...saved }, "rotated");
-    click(get(`[title="${fixtureBookmark.displayName}"]`)); await settle();
+    click(get(`[aria-label="${fixtureBookmark.displayName}"]`)); await settle();
     expect(badges("fixtures")).toEqual([]);
     expect(document.querySelector(".public-banner")).toBeNull();
   }, 20_000);
