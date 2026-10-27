@@ -124,7 +124,7 @@ The first two decide the release after v1 and are recorded here so the trail sta
 
 27. A first account must be easy to add and checkable before it is saved.
     "if there are no accounts on the machine, we shoudl also prompt with a wizard to create theior first account and also, the account setup needs a verify button to validate the account details against the endpoint before saving/addin git".
-    The author's reading: a welcome dialog on a known-empty bookmark list that opens the editor (§54), and a Verify action in the editor backed by the new bridge action `BookmarkService.Verify`, which authenticates the typed details under the saved-bookmark endpoint policy and TLS trust, persists nothing and returns only the account name and HEAD counts ([ADR 0011](../../adr/0011-typed-service-surface.md)); the scenario contract and the preservation baseline grow by that action's row, as recorded in the baseline's experiment note.
+    The author's reading: a welcome dialog on a known-empty bookmark list that opens the editor (§54), and a Verify action in the editor backed by the new bridge action `BookmarkService.Verify`, which authenticates the typed details under the saved-bookmark endpoint policy and TLS trust, persists nothing and returns only the account name and HEAD counts ([ADR 0011](../../adr/0011-typed-service-surface.md)); the scenario contract grows by that action's row under the drift route of [ADR 0069](../../adr/0069-preserve-covered-scenario-cells.md), with the contract decision recorded as [ADR 0091](../../adr/0091-verify-action-contract.md).
 
 ## Six production gates
 

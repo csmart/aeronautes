@@ -75,11 +75,3 @@ Thirteen compiled broken guards fail named assertions; deliberate syntax and set
 The durable private activation packet is `/home/csmart/code/.aeronautes-work/20260922-p34-activation`, with retained proof manifest `PROOF-SHA256SUMS` digest `104b626f0f0fd9e3909a2a6b0d562e84577a24774854dc9f28c7c3b63c3f0605`.
 Its raw synthetic inputs, actual process exits and workflow-wiring checks establish composed local failure-path evidence, not an observed hosted failed upload or new admission evidence.
 Exact reviewed-head hosted success-artifact readback and resulting protected-master reconciliation remain required delivery evidence.
-
-## Amendment of 2026-10-27: the verify action joins the rows
-
-`BookmarkService.Verify` is the first bridge action added since admission; it authenticates typed bookmark details without saving them and is a read with a happy and a refusal cell.
-Its row joins the baseline's action list and the contract hash becomes `a4f0914c2a290c0d`, recomputed from the rows with the join's own fingerprint so the baseline still validates against itself.
-The protected pairs, the producer identity and the evidence digests are unchanged: they describe the run of 21 September, which could not have credited an action that did not exist.
-The system tests `TestBookmarkVerifyMock` and `TestBookmarkVerifyRealSwift` emit the new action's happy and refusal claims on both fixtures.
-Those cells become protected pairs only through the next reconciled baseline refresh from a successful protected-source run, as ADR 0069 requires for any routine update; until then they are genuine credits that pass without being protected.
