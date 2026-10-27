@@ -6,6 +6,7 @@
   import { liveApi, type BookmarkDTO } from "../../lib/api";
   import BookmarkRail from "./BookmarkRail.svelte";
   import BookmarkEditor from "./BookmarkEditor.svelte";
+  import WelcomeDialog from "./WelcomeDialog.svelte";
   import ContainerColumn from "./ContainerColumn.svelte";
   import CreateContainerDialog from "./CreateContainerDialog.svelte";
   import WorkingList from "./WorkingList.svelte";
@@ -24,6 +25,13 @@
 
   let workingList: WorkingList | undefined = $state();
   let editorOpen = $state(false);
+  // First run: the bookmark list is known and empty. A failed read is not
+  // an empty list (audit UI-10), so the welcome waits for a successful
+  // one; declining it lasts the window.
+  let welcomeDismissed = $state(false);
+  const firstRun = $derived(browser.bookmarksLoaded && !browser.bookmarksLoading && !browser.bookmarksStale
+    && browser.bookmarksError === null && browser.bookmarks.length === 0);
+  const welcomeOpen = $derived(firstRun && !welcomeDismissed && !editorOpen);
   let editorExisting = $state<BookmarkDTO | null>(null);
   let createOpen = $state(false);
   let shellInfo = $state("connecting…");
@@ -137,6 +145,16 @@
 </div>
 </div>
 
+{#if welcomeOpen}
+  <WelcomeDialog
+    onAdd={() => {
+      welcomeDismissed = true;
+      editorExisting = null;
+      editorOpen = true;
+    }}
+    onDismiss={() => (welcomeDismissed = true)}
+  />
+{/if}
 {#if editorOpen}
   <BookmarkEditor {browser} existing={editorExisting} onClose={() => (editorOpen = false)} />
 {/if}
