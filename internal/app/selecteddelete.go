@@ -116,7 +116,7 @@ func (s *DeleteService) StartSelectedDelete(ctx context.Context, req SelectedDel
 		intents = append(intents, jobs.ItemIntent{
 			ItemIdentity: jobs.ItemIdentity{Key: member.Name, Source: jobs.ItemLocation{
 				Kind: jobs.ItemSwift, BookmarkID: bookmarkID, Container: req.Container, Object: member.Name}},
-			Planned: true, Admitted: true, ListedBytes: member.Bytes,
+			Planned: true, Admitted: true, ListedBytes: member.Bytes, ListedETag: member.ETag, ListedSLO: member.SLOListed,
 		})
 	}
 	for start := 0; start < len(intents); start += 500 {
@@ -175,8 +175,8 @@ func (s *DeleteService) runSelectedDelete(ctx context.Context, jobID string, req
 		// comparison, the DELETE and the verifying read.
 		result, err := session.DeleteMember(background, req.Container, swiftcontrol.MemberRow{
 			Name: member.Name, Bytes: member.Bytes, ETag: member.ETag, SLOListed: member.SLOListed})
-		observation, successor := selectedMemberOutcome(result, err)
-		if recErr := s.jobs.RecordDeletion(background, jobID, member.Name, observation, successor, nil); recErr != nil {
+		observation, successor, baseline := selectedMemberOutcome(result, err)
+		if recErr := s.jobs.RecordDeletion(background, jobID, member.Name, observation, successor, baseline); recErr != nil {
 			recordingLost = fmt.Sprintf("the outcome of %q could not be recorded after its request, so it is unresolved and no later member was touched: %v", member.Name, recErr)
 			break
 		}
@@ -261,33 +261,45 @@ func (s *DeleteService) finishSelected(ctx context.Context, jobID string, req Se
 }
 
 // selectedMemberOutcome classifies one member's attempt into the ledger's
-// words (ADR 0093 decision 4): deleted with what the literal read observed;
-// unverified with the same; changed since listed as a conflict; a store
-// answer that refused the DELETE as failed; and a refusal of ours before any
-// DELETE, a link, a missing name or a read that could not be made, as
-// refused.
-func selectedMemberOutcome(result *swiftcontrol.ObjectDeleteResult, err error) (jobs.ItemObservation, *jobs.ItemSuccessor) {
+// words (ADR 0093 decision 4), each with the baseline its comparison was made
+// against: deleted with what the literal read observed; unverified with the
+// same; changed since listed as a conflict with what the comparison found as
+// the successor that stopped it; a store answer that refused the DELETE as
+// failed; and a refusal of ours before any DELETE, a link, a missing name or
+// a read that could not be made, as refused.
+func selectedMemberOutcome(result *swiftcontrol.ObjectDeleteResult, err error) (jobs.ItemObservation, *jobs.ItemSuccessor, *jobs.MemberBaseline) {
+	baseline := memberBaseline(result)
 	var conflict *swiftcontrol.IdentityConflictError
 	var se *swiftcontrol.SwiftError
 	switch {
 	case err == nil:
-		return jobs.ItemObservation{Result: jobs.ItemDeleted, Effect: jobs.EffectReportedApplied}, observedSuccessor(result)
+		return jobs.ItemObservation{Result: jobs.ItemDeleted, Effect: jobs.EffectReportedApplied}, observedSuccessor(result), baseline
 	case errors.Is(err, swiftcontrol.ErrUnverifiedDelete):
 		diagnostic := jobs.ItemDiagnostic{Stage: jobs.StageVerification, Code: jobs.CodeUnverified}
-		return jobs.ItemObservation{Result: jobs.ItemUnverified, Effect: jobs.EffectUnresolved, Diagnostic: diagnostic}, observedSuccessor(result)
+		return jobs.ItemObservation{Result: jobs.ItemUnverified, Effect: jobs.EffectUnresolved, Diagnostic: diagnostic}, observedSuccessor(result), baseline
 	case errors.As(err, &conflict):
+		found := &jobs.ItemSuccessor{Present: true, Class: conflict.FoundClass, Length: conflict.FoundLength, ETag: conflict.FoundETag, Role: jobs.SuccessorComparison}
 		return jobs.ItemObservation{Result: jobs.ItemConflict, Effect: jobs.EffectNotAttempted,
-			Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageSourceRead, Code: jobs.CodeConflict}}, nil
+			Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageSourceRead, Code: jobs.CodeConflict}}, found, baseline
 	case result != nil && errors.As(err, &se) && se.HTTPStatus >= 400:
 		return jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectNotAttempted,
-			Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageCommit, Code: itemCodeOf(se.Kind), HTTPStatus: se.HTTPStatus}}, nil
+			Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageCommit, Code: itemCodeOf(se.Kind), HTTPStatus: se.HTTPStatus}}, nil, baseline
 	default:
 		diagnostic := jobs.ItemDiagnostic{Stage: jobs.StageSourceRead, Code: jobs.CodeUnsupported}
 		if errors.As(err, &se) {
 			diagnostic.Code, diagnostic.HTTPStatus = itemCodeOf(se.Kind), se.HTTPStatus
 		}
-		return jobs.ItemObservation{Result: jobs.ItemRefused, Effect: jobs.EffectNotAttempted, Diagnostic: diagnostic}, nil
+		return jobs.ItemObservation{Result: jobs.ItemRefused, Effect: jobs.EffectNotAttempted, Diagnostic: diagnostic}, nil, baseline
 	}
+}
+
+// memberBaseline is the identity the member's comparison was made against,
+// as the session reports it; nil when the member never reached a comparison.
+func memberBaseline(result *swiftcontrol.ObjectDeleteResult) *jobs.MemberBaseline {
+	if result == nil || result.Baseline == nil {
+		return nil
+	}
+	return &jobs.MemberBaseline{Class: string(result.Baseline.Class), Length: result.Baseline.ContentLength, ETag: strings.Trim(result.Baseline.ETag, `"`)}
 }
 
 func itemCodeOf(kind swiftcontrol.ErrorKind) jobs.ItemCode {

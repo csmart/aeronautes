@@ -24,9 +24,23 @@
   // destination.
   const deletion = $derived(job.type === "delete_selected");
 
+  // An object's identity in words: its class, bytes and entity tag.
+  function identity(what: { class: string; length: number; etag: string }): string {
+    return `a ${what.class} of ${what.length} bytes${what.etag ? ` with entity tag ${what.etag}` : ""}`;
+  }
+
+  // The identity a member's comparison was made against, when it was not
+  // simply the listing: a row listed as zero bytes or as a static large
+  // object is read first (ADR 0093 decision 3).
+  function laterBaseline(item: JobItemDTO): string {
+    if (!item.baseline || (item.listedBytes !== 0 && !item.listedSlo)) return "";
+    return ` Its listing could not say what it held, so it was read first and compared as ${identity(item.baseline)}.`;
+  }
+
   // A member's one line (ADR 0093 decision 5): the outcome word from its
-  // execution record, and what the verifying read found at the name, never a
-  // plain deletion when something stands there.
+  // execution record, and what a read found at the name, never a plain
+  // deletion when something stands there and both identities for a member
+  // changed since it was listed.
   function deletionWords(item: JobItemDTO): { text: string; problem: boolean } {
     const ex = item.execution;
     if (!ex) {
@@ -39,16 +53,18 @@
       case "deleted":
         if (item.successor?.present) {
           return {
-            text: `Deleted, but something stands at the name now: a ${item.successor.class} of ${item.successor.length} bytes`
-              + `${item.successor.etag ? ` with entity tag ${item.successor.etag}` : ""}. It may be an archived predecessor or a concurrent write; what this delete did to it is not observed.`,
+            text: `Deleted, but something stands at the name now: ${identity(item.successor)}. It may be an archived predecessor or a concurrent write; what this delete did to it is not observed.${laterBaseline(item)}`,
             problem: true,
           };
         }
-        return { text: "Deleted; the verifying read found nothing at the name.", problem: false };
+        return { text: `Deleted; the verifying read found nothing at the name.${laterBaseline(item)}`, problem: false };
       case "unverified":
-        return { text: `Unverified: the name may still hold what was shown${diagnostic}.`, problem: true };
-      case "conflict":
-        return { text: `Changed since it was listed; left as it is${diagnostic}.`, problem: true };
+        return { text: `Unverified: the name may still hold what was shown${diagnostic}.${laterBaseline(item)}`, problem: true };
+      case "conflict": {
+        const expected = item.baseline ? identity(item.baseline) : `${item.listedBytes} bytes with entity tag ${item.listedEtag}`;
+        const found = item.successor?.role === "comparison" && item.successor.present ? `; found ${identity(item.successor)}` : "";
+        return { text: `Changed since it was listed: expected ${expected}${found}; left as it is${diagnostic}.`, problem: true };
+      }
       case "refused":
         return { text: `Refused; left as it is${diagnostic}.`, problem: true };
       case "not_attempted":
@@ -156,6 +172,7 @@
       {#if deletion}
         <div><dt>Issued</dt><dd>{totals.issued}</dd></div>
         <div><dt>Deleted</dt><dd>{totals.deleted}</dd></div>
+        <div><dt>Issued without an outcome</dt><dd>{totals.unsettled}</dd></div>
       {/if}
       <div><dt>Items with diagnostics</dt><dd>{totals.problems}</dd></div>
     </dl>
@@ -177,7 +194,7 @@
                   <dt>Staging ({item.staging.kind})</dt><dd><code>{item.staging.display}</code></dd>
                 {/if}
               </dl>
-              <p>Planned: {item.planned ? "yes" : "no"} · Admitted: {item.admitted ? "yes" : "no"} · Listed bytes (advisory): {item.listedBytes}</p>
+              <p>Planned: {item.planned ? "yes" : "no"} · Admitted: {item.admitted ? "yes" : "no"} · Listed bytes (advisory): {item.listedBytes}{#if deletion} · Listed entity tag: <code>{item.listedEtag}</code> · Listed as a static large object: {item.listedSlo ? "yes" : "no"}{/if}</p>
             </details>
             {#if deletion}
               {@const words = deletionWords(item)}

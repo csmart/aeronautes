@@ -83,11 +83,25 @@ type JobItemPredecessorDTO struct {
 // item's execution says whether the member was deleted, and a successor
 // beside a deletion says the name did not stay empty.
 type JobItemSuccessorDTO struct {
-	Present   bool   `json:"present"`
-	Class     string `json:"class"`
-	Length    int64  `json:"length"`
-	ETag      string `json:"etag"`
+	Present bool   `json:"present"`
+	Class   string `json:"class"`
+	Length  int64  `json:"length"`
+	ETag    string `json:"etag"`
+	// Role names the read that saw it: "after", the verifying read after the
+	// DELETE, or "comparison", the comparison HEAD that found the member
+	// changed since it was listed before any DELETE.
+	Role      string `json:"role"`
 	CreatedAt string `json:"createdAt"`
+}
+
+// JobItemBaselineDTO is the identity a deletion member's comparison was made
+// against (ADR 0093 decision 3): the listed row as a plain object for an
+// ordinary member, or the HEAD taken first for a member listed as zero bytes
+// or as a static large object.
+type JobItemBaselineDTO struct {
+	Class  string `json:"class"`
+	Length int64  `json:"length"`
+	ETag   string `json:"etag"`
 }
 
 type JobItemDTO struct {
@@ -113,9 +127,16 @@ type JobItemDTO struct {
 	// its final HEAD; empty when it never was. A member issued with no
 	// execution record may have been deleted (ADR 0093 decision 4).
 	IssuedAt string `json:"issuedAt"`
-	// Successor is what a deletion member's verifying read found at the name
-	// afterwards; nil when nothing was recorded.
+	// Successor is what a deletion member's read found at the name, the
+	// verifying read's after the DELETE or the comparison HEAD's when the
+	// member was found changed; nil when nothing was recorded.
 	Successor *JobItemSuccessorDTO `json:"successor"`
+	// ListedETag and ListedSLO are the facts a deletion member was listed
+	// with beside ListedBytes; Baseline is the identity its comparison was
+	// made against, nil when it never reached one.
+	ListedETag string              `json:"listedEtag"`
+	ListedSLO  bool                `json:"listedSlo"`
+	Baseline   *JobItemBaselineDTO `json:"baseline"`
 }
 
 type JobItemPageDTO struct {
@@ -136,9 +157,11 @@ type JobItemTotalsDTO struct {
 	Unverified int64  `json:"unverified"`
 	Problems   int64  `json:"problems"`
 	// Issued and Deleted are a deletion job's (ADR 0093 decision 4): how
-	// many members were marked issued, and how many were deleted.
-	Issued  int64 `json:"issued"`
-	Deleted int64 `json:"deleted"`
+	// many members were marked issued, and how many were deleted; Unsettled
+	// how many were issued and have no outcome yet.
+	Issued    int64 `json:"issued"`
+	Deleted   int64 `json:"deleted"`
+	Unsettled int64 `json:"unsettled"`
 }
 
 func (s *JobService) History(ctx context.Context, bookmarkID, cursor string, limit int) (JobHistoryDTO, error) {
@@ -203,7 +226,7 @@ func (s *JobService) ItemTotals(ctx context.Context, bookmarkID, jobID string) (
 	return JobItemTotalsDTO{Status: "available", Items: totals.Items, Planned: totals.Planned,
 		Admitted: totals.Admitted, Failed: totals.Failed, Conflicts: totals.Conflicts,
 		Refused: totals.Refused, Unresolved: totals.Unresolved, Unverified: totals.Unverified, Problems: totals.Problems,
-		Issued: totals.Issued, Deleted: totals.Deleted}, nil
+		Issued: totals.Issued, Deleted: totals.Deleted, Unsettled: totals.Unsettled}, nil
 }
 
 func itemReadError(err error) error {
@@ -219,7 +242,7 @@ func itemReadError(err error) error {
 func jobItemDTO(item jobs.ItemRecord) JobItemDTO {
 	out := JobItemDTO{ID: strconv.FormatInt(item.ID, 10), Key: item.Key, KeyDisplay: strconv.Quote(item.Key),
 		Source: jobItemLocationDTO(item.Source), Destination: jobItemLocationDTO(item.Destination),
-		Planned: item.Planned, Admitted: item.Admitted, ListedBytes: item.ListedBytes,
+		Planned: item.Planned, Admitted: item.Admitted, ListedBytes: item.ListedBytes, ListedETag: item.ListedETag, ListedSLO: item.ListedSLO,
 		CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano),
 		Execution: jobItemObservationDTO(item.Execution), Verification: jobItemObservationDTO(item.Verification),
 		PublicationRequired: item.PublicationRequired, Publication: jobItemObservationDTO(item.Publication)}
@@ -232,9 +255,16 @@ func jobItemDTO(item jobs.ItemRecord) JobItemDTO {
 		out.IssuedAt = item.IssuedAt.UTC().Format(time.RFC3339Nano)
 	}
 	if item.Successor != nil {
+		role := item.Successor.Role
+		if role == "" {
+			role = jobs.SuccessorAfter
+		}
 		out.Successor = &JobItemSuccessorDTO{Present: item.Successor.Present, Class: item.Successor.Class,
-			Length: item.Successor.Length, ETag: item.Successor.ETag,
+			Length: item.Successor.Length, ETag: item.Successor.ETag, Role: role,
 			CreatedAt: item.Successor.CreatedAt.UTC().Format(time.RFC3339Nano)}
+	}
+	if item.Baseline != nil {
+		out.Baseline = &JobItemBaselineDTO{Class: item.Baseline.Class, Length: item.Baseline.Length, ETag: item.Baseline.ETag}
 	}
 	return out
 }

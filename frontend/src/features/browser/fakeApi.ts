@@ -1004,7 +1004,7 @@ export function newFakeApi(): Api {
     jobItemTotals: async (id, bookmarkId) => {
       scopedJob(id, bookmarkId);
       return { status: "not_captured", items: 0, planned: 0, admitted: 0,
-        failed: 0, conflicts: 0, refused: 0, unresolved: 0, unverified: 0, problems: 0, issued: 0, deleted: 0 };
+        failed: 0, conflicts: 0, refused: 0, unresolved: 0, unverified: 0, problems: 0, issued: 0, deleted: 0, unsettled: 0 };
     },
     jobs: async (bookmarkId, activeOnly, limit) =>
       jobs

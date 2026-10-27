@@ -61,6 +61,7 @@ export type {
     Info,
     JobDTO,
     JobHistoryDTO,
+    JobItemBaselineDTO,
     JobItemDTO,
     JobItemLocationDTO,
     JobItemObservationDTO,
