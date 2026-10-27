@@ -1129,7 +1129,7 @@ export class BrowserState {
         this.appSettingsStatus = this.appSettings ? "stale" : "unavailable";
       }
     } finally {
-      this.appSettingsOperation = null;
+      this.#endSettingsOperation();
     }
   }
 
@@ -1149,17 +1149,27 @@ export class BrowserState {
       this.appSettingsAttempt = { value: request.maxActiveJobs, state: "unconfirmed" };
       throw error;
     } finally {
-      this.appSettingsOperation = null;
+      this.#endSettingsOperation();
     }
   }
+
+  /** The latest rail width asked for while a settings read or write was in
+   * flight; written against the document that operation leaves behind. */
+  #pendingRailWidth: number | null = null;
 
   /** The bookmark rail's width persists in the settings document but is
    * chrome rather than a budget: it takes the one write path without the
    * drawer's attempt tracking, which names the active-job budget, and a
    * failure costs nothing but persistence, since the width already applies
-   * to this window and the next drag writes again. */
+   * to this window and the next drag writes again. A width asked for while
+   * another settings operation is running waits for it, so the last width
+   * the operator chose is the one stored. */
   async saveRailWidth(px: number) {
-    if (!this.canSaveAppSettings || !this.appSettings) return;
+    if (this.appSettingsOperation !== null) {
+      this.#pendingRailWidth = px;
+      return;
+    }
+    if (this.appSettingsStatus !== "current" || !this.appSettings) return;
     this.appSettingsOperation = "set";
     try {
       this.appSettings = await this.#api.saveAppSettings({ ...this.appSettings, railWidthPx: px });
@@ -1167,7 +1177,18 @@ export class BrowserState {
     } catch {
       // Not persisted; the window keeps the width it shows.
     } finally {
-      this.appSettingsOperation = null;
+      this.#endSettingsOperation();
+    }
+  }
+
+  /** Every settings operation ends here so a rail width that waited for it
+   * is written against the document it left behind. */
+  #endSettingsOperation() {
+    this.appSettingsOperation = null;
+    if (this.#pendingRailWidth !== null) {
+      const px = this.#pendingRailWidth;
+      this.#pendingRailWidth = null;
+      void this.saveRailWidth(px);
     }
   }
 

@@ -54,15 +54,28 @@
   let railDrag: number | null = $state(null);
   let railSession: number | null = $state(null);
   const railWidthPx = $derived(railDrag ?? railSession ?? browser.appSettings?.railWidthPx ?? 0);
+  // The width the rail actually renders, from layout, so the splitter can
+  // report its position at the layout's default too; zero until measured
+  // (and in environments without layout), when the chosen or minimum width
+  // stands in.
+  let railRenderedPx = $state(0);
+  const railValueNow = $derived(railDrag ?? (railRenderedPx || railWidthPx || railMinPx));
+  $effect(() => {
+    const rail = screenEl?.firstElementChild;
+    if (!(rail instanceof HTMLElement) || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      railRenderedPx = Math.round(rail.getBoundingClientRect().width);
+    });
+    observer.observe(rail);
+    return () => observer.disconnect();
+  });
 
   function clampRail(px: number): number {
     return Math.min(railMaxPx, Math.max(railMinPx, Math.round(px)));
   }
 
   function currentRailPx(): number {
-    const rail = screenEl?.firstElementChild;
-    const measured = rail instanceof HTMLElement ? rail.getBoundingClientRect().width : 0;
-    return measured > 0 ? measured : railWidthPx || railMinPx;
+    return railRenderedPx || railWidthPx || railMinPx;
   }
 
   function commitRail(px: number) {
@@ -188,7 +201,7 @@
     aria-label="Resize bookmark rail"
     aria-valuemin={railMinPx}
     aria-valuemax={railMaxPx}
-    aria-valuenow={railWidthPx || undefined}
+    aria-valuenow={railValueNow}
     tabindex="0"
     title="Drag to resize the bookmark rail; Home resets it"
     onpointerdown={startRailResize}
