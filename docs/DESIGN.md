@@ -221,6 +221,8 @@ rail | working list
 
 Panes should be resizable.
 
+**Rail width and many accounts (2026-10-27).** The bookmark rail is resizable: drag its edge, or use the arrow keys on the handle and Home to reset; the width persists in the application settings as `railWidthPx`, zero meaning the layout's default. The rail groups bookmarks by the host of their auth URL with the groups and the names in alphabetical order, offers a filter over name, account and endpoint once eight or more bookmarks are saved, and names the account and endpoint on hover. Grouping by host is for the eye only; identity for every safety decision stays the account (§28.5).
+
 ### 4.4 Keyboard model
 
 Initial keyboard targets:

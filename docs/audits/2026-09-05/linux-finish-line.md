@@ -126,6 +126,10 @@ The first two decide the release after v1 and are recorded here so the trail sta
     Of the configure-container panel: "it's only k/v metadata values, can we have some buttons to tick to turn on read only, web, common things people might do? and then that's reflected below in the actual metadata (and vice versa, if someone adds the right metadata it ticks the boxes), maybe separated by a line?", and "I don't want people to need to know the exact syntax to make a container world readable and enable web".
     The author's reading is [ADR 0090](../../adr/0090-container-presets.md): tick boxes for world read, public listing and static web derived from the values they stand for, with the `Web-*` family becoming editable metadata so the website tick has rows to stand for; the public-read acknowledgement and its native confirmation are untouched, and no deferred capability moves.
 
+28. The bookmark rail must work for someone with many accounts across several clouds.
+    "another thing I think we'll need is tha abillity to resize the sidebar that lists all of the accounts, and I wonder whether we should group the accounts in alphabetical order but by cloud endpoint, too? like I might have 3 or 4 accounts in the one cloud"; "filtering the accounts might be useful too (but maybe it's too hard in that skinny sidebar, so ignore if that's not a good idea), but maybe hover over the accounts tells you the name and accout name or something - I often have 30 or so accounts acorss multiple providers, so we need to keep that in mind, that sidebar might even scale?..".
+    The author's reading is recorded in §4.3: a draggable rail whose width persists with the application settings, bookmarks grouped by auth-URL host and sorted, a filter once eight or more are saved, and the account and endpoint on hover; grouping is presentation only and no identity decision reads it.
+
 ## Six production gates
 
 | Gate | Existing packages | Completion condition |
