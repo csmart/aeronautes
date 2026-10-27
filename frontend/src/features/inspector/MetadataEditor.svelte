@@ -1,22 +1,15 @@
-<!-- Reusable metadata working-copy editor (§17): rows seeded from the
-  base set, a live semantic diff so removals are seen before they happen,
-  and duplicate-key refusal. The parent pulls the complete intended set
-  via value() at save time — this editor never talks to services. -->
+<!-- Reusable metadata working-copy editor (§17): the parent owns the rows
+  (seeded from the base set with rowsFromMeta) and binds them in, so it can
+  read and rewrite the working copy itself; this editor shows a live
+  semantic diff so removals are seen before they happen, refuses duplicate
+  keys, and never talks to services. -->
 <script lang="ts">
-  import {
-    diffMeta,
-    isDiffEmpty,
-    metaFromRows,
-    rowsFromMeta,
-    type MetaRow,
-  } from "../../lib/metadataDiff";
+  import { diffMeta, isDiffEmpty, metaFromRows, type MetaRow } from "../../lib/metadataDiff";
 
-  let { base }: { base: { [key: string]: string | undefined } } = $props();
-
-  // The editor mounts fresh per edit session; seeding rows from the
-  // initial base is intended.
-  /* svelte-ignore state_referenced_locally */
-  let rows: MetaRow[] = $state(rowsFromMeta(base));
+  let {
+    base,
+    rows = $bindable(),
+  }: { base: { [key: string]: string | undefined }; rows: MetaRow[] } = $props();
 
   const current = $derived(metaFromRows(rows));
   const diff = $derived(diffMeta(base, current.meta));

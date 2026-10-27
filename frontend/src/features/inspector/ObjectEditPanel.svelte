@@ -5,6 +5,7 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
   import MetadataEditor from "./MetadataEditor.svelte";
+  import { rowsFromMeta, type MetaRow } from "../../lib/metadataDiff";
   import type { BrowserState } from "../browser/browserState.svelte";
   import type { ObjectDetailDTO } from "../../lib/api";
 
@@ -32,6 +33,8 @@
 
   let editor: MetadataEditor | undefined = $state();
   // The panel mounts fresh per edit session; initial capture is intended.
+  /* svelte-ignore state_referenced_locally */
+  let rows: MetaRow[] = $state(rowsFromMeta(detail.meta ?? {}));
   /* svelte-ignore state_referenced_locally */
   let contentType = $state(detail.contentType);
   /* svelte-ignore state_referenced_locally */
@@ -77,7 +80,7 @@
   <h3 class="card-title">Edit metadata</h3>
 
   <fieldset class="fields" aria-label="Object metadata" disabled={saving || !currentBaseline}>
-    <MetadataEditor bind:this={editor} base={target.detail.meta ?? {}} />
+    <MetadataEditor bind:this={editor} base={target.detail.meta ?? {}} bind:rows />
 
     <label class="field">
       <span>Content type</span>
