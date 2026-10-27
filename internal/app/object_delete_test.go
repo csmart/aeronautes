@@ -125,12 +125,16 @@ func TestObjectDeleteIntentAbortSendsNoDelete(t *testing.T) {
 	shown := shownObject(t, h, deleteFixture)
 	refuseSQL(t, h, `CREATE TRIGGER refuse_intent BEFORE INSERT ON mutation_facts
 		BEGIN SELECT RAISE(ABORT,'fixture required intent refusal'); END`)
+	requests := h.mock.Requests()
 
 	if _, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture, shown.ContentFingerprint); err == nil {
 		t.Fatal("a refused intent must fail the call")
 	}
 	if n := deleteRequests(h.mock.RequestLog(), deleteFixture); n != 0 {
 		t.Fatalf("%d DELETE requests left although the intent was refused", n)
+	}
+	if got := h.mock.Requests(); got != requests {
+		t.Fatalf("a refused intent still sent %d requests of some kind", got-requests)
 	}
 	if _, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", deleteFixture); err != nil {
 		t.Fatalf("the object is gone: %v", err)
@@ -180,9 +184,9 @@ func TestObjectDeleteResidueWhenTheOutcomeCannotBeRecorded(t *testing.T) {
 			refuseSQL(t, h, `CREATE TRIGGER refuse_audit BEFORE INSERT ON audit_events
 				BEGIN SELECT RAISE(ABORT,'fixture required audit refusal'); END`)
 
-			_, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture, shown.ContentFingerprint)
-			if !errors.Is(err, errObjectDeleteResidue) {
-				t.Fatalf("err = %v, want residue", err)
+			_, residue := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture, shown.ContentFingerprint)
+			if !errors.Is(residue, errObjectDeleteResidue) {
+				t.Fatalf("err = %v, want residue", residue)
 			}
 			all, err := reopenFacts(t, h).All(ctx)
 			if err != nil {
@@ -190,6 +194,9 @@ func TestObjectDeleteResidueWhenTheOutcomeCannotBeRecorded(t *testing.T) {
 			}
 			if len(all) != 1 || all[0].Outcome != mutationfacts.OutcomeIntent {
 				t.Fatalf("reopen = %+v, want the intent alone", all)
+			}
+			if !strings.Contains(residue.Error(), all[0].Identity) {
+				t.Fatalf("the residue error does not name its identity %s: %v", all[0].Identity, residue)
 			}
 		})
 	}
@@ -257,6 +264,12 @@ func TestObjectDeleteDisclosesAnObservedSuccessor(t *testing.T) {
 	events := objectDeleteEvents(t, h)
 	if len(events) != 1 || !strings.Contains(events[0].Summary, "the name now holds a symlink") || !strings.Contains(events[0].Summary, "archived predecessor or a concurrent write") {
 		t.Fatalf("audit = %+v", events)
+	}
+	// The DELETE's own transaction identifier survives into the record, not
+	// only the comparison HEAD's.
+	facts := objectDeleteFacts(t, h)
+	if len(facts) != 1 || !containsString(facts[0].TransIDs, "txswifttest-object-delete") || !containsString(events[0].TransIDs, "txswifttest-object-delete") {
+		t.Fatalf("the DELETE transaction id is missing: facts %+v event %+v", facts, events[0])
 	}
 }
 
@@ -453,7 +466,7 @@ func TestObjectDeleteFailureStreamsAndSuccessorsThroughTheService(t *testing.T) 
 		if err != nil || result.Outcome != "applied" || result.ObjectAfter == nil || result.ObjectAfter.Class != "dlo" {
 			t.Fatalf("result = %+v, err = %v", result, err)
 		}
-		if facts := objectDeleteFacts(t, h); len(facts) != 1 || !strings.Contains(facts[0].Summary, "dlo manifest") {
+		if facts := objectDeleteFacts(t, h); len(facts) != 1 || !strings.Contains(facts[0].Summary, "dlo manifest") || !containsString(facts[0].TransIDs, "txswifttest-object-delete") {
 			t.Fatalf("facts = %+v", facts)
 		}
 	})
@@ -472,7 +485,19 @@ func TestObjectDeleteFailureStreamsAndSuccessorsThroughTheService(t *testing.T) 
 		if err != nil || result.Outcome != "applied" || result.ObjectAfter == nil || result.ObjectAfter.SymlinkTarget != "fixtures/nowhere" {
 			t.Fatalf("result = %+v, err = %v", result, err)
 		}
+		if facts := objectDeleteFacts(t, h); len(facts) != 1 || !strings.Contains(facts[0].Summary, "symlink") || !containsString(facts[0].TransIDs, "txswifttest-object-delete") {
+			t.Fatalf("facts = %+v", facts)
+		}
 	})
+}
+
+func containsString(list []string, want string) bool {
+	for _, s := range list {
+		if s == want {
+			return true
+		}
+	}
+	return false
 }
 
 // ADR 0085's accepted exposure, measured rather than prevented: a writer whose
@@ -497,4 +522,105 @@ func TestObjectDeleteExposureAfterTheFinalComparisonIsMeasured(t *testing.T) {
 	if _, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", deleteFixture); !swiftcontrol.IsNotFound(err) {
 		t.Fatalf("the replacement that landed inside the window survived: %v", err)
 	}
+	if facts := objectDeleteFacts(t, h); len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeApplied || !containsString(facts[0].TransIDs, "txswifttest-object-delete") || !strings.Contains(facts[0].Summary, "nothing observed") {
+		t.Fatalf("facts = %+v", facts)
+	}
+	if _, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "empty-object"); err != nil {
+		t.Fatalf("a sibling was touched: %v", err)
+	}
+}
+
+// ADR 0079 with the real generation change: saving the bookmark's key moves
+// the generation, and a portrait captured before it is refused before intent,
+// audit or request.
+func TestObjectDeleteRefusesAPortraitFromBeforeAKeyChange(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+	ctx := context.Background()
+	shown := shownObject(t, h, deleteFixture)
+	stale := h.portrait()
+	if _, err := h.bookmarks.Save(ctx, BookmarkDTO{ID: h.bookmarkID(), DisplayName: "Mock", AuthURL: h.authURL, Username: "test:tester"}, "testing"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.browse.Connect(ctx, h.bookmarkID()); err != nil {
+		t.Fatal(err)
+	}
+	if current := h.portrait(); current.Generation <= stale.Generation {
+		t.Fatalf("the generation did not move: %+v after %+v", current, stale)
+	}
+	requests := h.mock.Requests()
+	if _, err := h.mutate.DeleteObject(ctx, stale, "fixtures", deleteFixture, shown.ContentFingerprint); !errors.Is(err, ErrMutationScopeChanged) {
+		t.Fatalf("err = %v, want the scope refusal", err)
+	}
+	if got := h.mock.Requests(); got != requests {
+		t.Fatalf("the refused delete sent %d requests", got-requests)
+	}
+	if facts := objectDeleteFacts(t, h); len(facts) != 0 {
+		t.Fatalf("facts = %+v", facts)
+	}
+	if events := objectDeleteEvents(t, h); len(events) != 0 {
+		t.Fatalf("audit = %+v", events)
+	}
+	if _, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", deleteFixture); err != nil {
+		t.Fatalf("the object is gone: %v", err)
+	}
+}
+
+// A store refusal is failed and destroys nothing; a reply lost before the store
+// applied anything is unverified with the object still observed; both say so.
+func TestObjectDeleteStoreRefusalAndLostReplyVariants(t *testing.T) {
+	ctx := context.Background()
+	t.Run("a refused DELETE is failed with the object intact", func(t *testing.T) {
+		h := gatedHarness(t, func(w http.ResponseWriter, r *http.Request, h *harness) bool {
+			if r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/fixtures/"+deleteFixture) {
+				w.WriteHeader(http.StatusForbidden)
+				return true
+			}
+			return false
+		})
+		shown := shownObject(t, h, deleteFixture)
+		_, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture, shown.ContentFingerprint)
+		var se *swiftcontrol.SwiftError
+		if !errors.As(err, &se) || se.Kind != swiftcontrol.KindForbidden || errors.Is(err, swiftcontrol.ErrUnverifiedDelete) {
+			t.Fatalf("err = %v, want the store's refusal", err)
+		}
+		facts := objectDeleteFacts(t, h)
+		if len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeFailed || !strings.Contains(facts[0].Summary, "destroyed nothing") {
+			t.Fatalf("facts = %+v", facts)
+		}
+		if events := objectDeleteEvents(t, h); len(events) != 1 || events[0].Result != "failed" {
+			t.Fatalf("audit = %+v", events)
+		}
+		if _, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", deleteFixture); err != nil {
+			t.Fatalf("the object is gone after a refused DELETE: %v", err)
+		}
+	})
+	t.Run("a reply lost before the store acted is unverified with the object still observed", func(t *testing.T) {
+		h := gatedHarness(t, func(w http.ResponseWriter, r *http.Request, h *harness) bool {
+			if r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/fixtures/"+deleteFixture) {
+				if hj, ok := w.(http.Hijacker); ok {
+					if conn, _, err := hj.Hijack(); err == nil {
+						conn.Close()
+						return true
+					}
+				}
+				t.Errorf("the DELETE could not be cut off")
+				return true
+			}
+			return false
+		})
+		shown := shownObject(t, h, deleteFixture)
+		_, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture, shown.ContentFingerprint)
+		if !errors.Is(err, swiftcontrol.ErrUnverifiedDelete) {
+			t.Fatalf("err = %v, want unverified", err)
+		}
+		facts := objectDeleteFacts(t, h)
+		if len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeUnverified ||
+			!strings.Contains(facts[0].Summary, "no store answer proves the delete, and the name now holds") || !strings.Contains(facts[0].Summary, "the identity that was shown") {
+			t.Fatalf("facts = %+v", facts)
+		}
+		if _, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", deleteFixture); err != nil {
+			t.Fatalf("the object is gone although the store never answered: %v", err)
+		}
+	})
 }

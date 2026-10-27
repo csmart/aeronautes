@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/csmart/aeronautes/internal/app"
+	"github.com/csmart/aeronautes/internal/mutationfacts"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
 
@@ -138,6 +139,7 @@ func TestObjectDeleteSuccessorsAndExposureOnRealSwift(t *testing.T) {
 	bookmark := gatedSwift(t, h, g)
 	objectPath := func(name string) string { return account + "/" + c + "/" + name }
 
+	h.Seed(h.Primary, c, "keep.txt", []byte("collateral that must survive"), textType)
 	h.Seed(h.Primary, c, "manifest-after.txt", []byte("to be replaced by a manifest"), textType)
 	h.Seed(h.Primary, c, "empty-after", nil, textType)
 	h.Seed(h.Primary, c, "same-after.txt", []byte("written back"), textType)
@@ -183,6 +185,7 @@ func TestObjectDeleteSuccessorsAndExposureOnRealSwift(t *testing.T) {
 			}
 		}},
 	}
+	keepBefore, keepBody := literalHeadStatus(t, h, h.Primary, c, "keep.txt"), rawBody(t, h, h.Primary, c, "keep.txt")
 	for _, tc := range cases {
 		shown, err := h.Inspector.Object(ctx, bookmark, c, tc.name)
 		if err != nil {
@@ -196,15 +199,45 @@ func TestObjectDeleteSuccessorsAndExposureOnRealSwift(t *testing.T) {
 		if !fired {
 			t.Fatalf("%s: the writer never acted", tc.name)
 		}
+		facts := deleteFactsFor(t, h, c+"/"+tc.name)
 		if tc.wantErr {
 			if !errors.Is(err, swiftcontrol.ErrUnverifiedDelete) {
 				t.Fatalf("%s: err = %v, want unverified", tc.name, err)
 			}
-			continue
+			if len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeUnverified {
+				t.Fatalf("%s: facts = %+v", tc.name, facts)
+			}
+		} else {
+			if err != nil || result.Outcome != tc.wantOutcome {
+				t.Fatalf("%s: result = %+v, err = %v", tc.name, result, err)
+			}
+			// The record carries the DELETE's transaction id beside the HEAD's.
+			if len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeApplied || distinctIDs(facts[0].TransIDs) < 2 {
+				t.Fatalf("%s: facts = %+v", tc.name, facts)
+			}
+			tc.check(t, result)
 		}
-		if err != nil || result.Outcome != tc.wantOutcome {
-			t.Fatalf("%s: result = %+v, err = %v", tc.name, result, err)
+		// Collateral: the neighbour is byte for byte what it was.
+		if status, body := literalHeadStatus(t, h, h.Primary, c, "keep.txt"), rawBody(t, h, h.Primary, c, "keep.txt"); status != keepBefore || body != keepBody {
+			t.Fatalf("%s: the neighbour changed: %d %q", tc.name, status, body)
 		}
-		tc.check(t, result)
 	}
+}
+
+// rawBody GETs an object's bytes directly, for a collateral comparison that
+// does not go through the product.
+func rawBody(t *testing.T, h *Harness, a *Account, container, name string) string {
+	t.Helper()
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, a.storageURL+"/"+container+"/"+name, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-Auth-Token", a.token)
+	resp, err := a.rawClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	return string(body)
 }

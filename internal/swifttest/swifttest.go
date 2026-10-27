@@ -950,6 +950,7 @@ func (s *Server) deleteObject(w http.ResponseWriter, container, name string) {
 		return
 	}
 	delete(c.objects, name)
+	w.Header().Set("X-Trans-Id", "txswifttest-object-delete")
 	w.WriteHeader(http.StatusNoContent)
 }
 

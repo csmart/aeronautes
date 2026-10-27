@@ -42,6 +42,16 @@ func literalHeadStatus(t *testing.T, h *Harness, a *Account, container, name str
 	return resp.StatusCode
 }
 
+func distinctIDs(ids []string) int {
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if id != "" {
+			seen[id] = true
+		}
+	}
+	return len(seen)
+}
+
 func deleteFactsFor(t *testing.T, h *Harness, resource string) []mutationfacts.Fact {
 	t.Helper()
 	all, err := mutationfacts.NewStore(h.database).All(context.Background())
@@ -94,25 +104,29 @@ func testObjectDeleteRefusesManifestsAndLinks(t *testing.T, h *Harness) {
 	h.SeedSLO(h.Primary, c, "backup.slo", fmt.Sprintf(`[{"path": "/%s/segs/0001", "etag": "%s", "size_bytes": %d}]`, c, hex.EncodeToString(sum[:]), len(segment)))
 	h.Seed(h.Primary, c, "plain.txt", []byte("plain"), textType)
 	h.Seed(h.Primary, c, "link.txt", nil, map[string]string{"X-Symlink-Target": c + "/plain.txt"})
-	members := []string{"video.dlo", "backup.slo", "link.txt"}
+	members := map[string]string{"video.dlo": c, "backup.slo": c, "link.txt": c}
+	// The cross-account link lives in its own container: a logical read of it
+	// may fail on a real Swift, which would break the snapshot of the others.
 	if h.Secondary != nil {
 		sc := h.Container(h.Secondary, "far")
+		lc := h.Container(h.Primary, "links")
 		h.Seed(h.Secondary, sc, "far.txt", []byte("far"), textType)
-		h.rawPut(h.Primary, "/"+c+"/far-link", nil, map[string]string{
+		h.rawPut(h.Primary, "/"+lc+"/far-link", nil, map[string]string{
 			"X-Symlink-Target": sc + "/far.txt", "X-Symlink-Target-Account": path.Base(h.Secondary.storageURL)})
-		members = append(members, "far-link")
+		members["far-link"] = lc
 	}
+	before := h.Snapshot(h.Primary, c)
 	var credited bool
-	for _, name := range members {
+	for name, container := range members {
 		identity := "any"
-		if shown, err := h.Inspector.Object(ctx, h.Primary.BookmarkID, c, name); err == nil {
+		if shown, err := h.Inspector.Object(ctx, h.Primary.BookmarkID, container, name); err == nil {
 			identity = shown.ContentFingerprint
 		}
-		rec := h.DeleteObject(ctx, c, name, identity)
+		rec := h.DeleteObject(ctx, container, name, identity)
 		if rec.Err() == nil {
 			t.Fatalf("%s was not refused", name)
 		}
-		if status := literalHeadStatus(t, h, h.Primary, c, name); status != http.StatusOK {
+		if status := literalHeadStatus(t, h, h.Primary, container, name); status != http.StatusOK {
 			t.Fatalf("%s is no longer stored after a refused delete: literal HEAD %d", name, status)
 		}
 		if !credited {
@@ -120,8 +134,19 @@ func testObjectDeleteRefusesManifestsAndLinks(t *testing.T, h *Harness) {
 			credited = true
 		}
 	}
-	if status := literalHeadStatus(t, h, h.Primary, c, "segs/0001"); status != http.StatusOK {
-		t.Fatalf("the segment is gone: %d", status)
+	// Nothing in the container changed: the namespace oracle compares content,
+	// metadata and the segment the manifests reference.
+	if d := diffOf(before, h.Snapshot(h.Primary, c)); !d.Empty() {
+		t.Fatalf("refused deletes changed the container:\n%s", d)
+	}
+	if h.MockPrimary != nil {
+		// Object DELETEs under this container; the harness's own fixture
+		// containers come and go through the same log.
+		for _, line := range h.MockPrimary.RequestLog() {
+			if strings.HasPrefix(line, "DELETE ") && strings.Contains(line, "/"+c+"/") {
+				t.Fatalf("a refused delete sent a DELETE: %s", line)
+			}
+		}
 	}
 }
 
@@ -220,11 +245,11 @@ func testObjectDeleteConflictIsRecorded(t *testing.T, h *Harness) {
 	}
 	resource = c + "/plain.txt"
 	facts = deleteFactsFor(t, h, resource)
-	if len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeApplied || len(facts[0].TransIDs) == 0 {
+	if len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeApplied || distinctIDs(facts[0].TransIDs) < 2 {
 		t.Fatalf("applied fact = %+v", facts)
 	}
 	events = deleteEventsFor(t, h, resource)
-	if len(events) != 1 || events[0].Result != "applied" || len(events[0].TransIDs) == 0 || !strings.Contains(events[0].Summary, "nothing observed") {
+	if len(events) != 1 || events[0].Result != "applied" || distinctIDs(events[0].TransIDs) < 2 || !strings.Contains(events[0].Summary, "nothing observed") {
 		t.Fatalf("applied event = %+v", events)
 	}
 	applied.CreditApplied()

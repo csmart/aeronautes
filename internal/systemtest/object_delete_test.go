@@ -70,10 +70,13 @@ func testObjectDelete(t *testing.T, h *Harness) {
 	}
 	// The durable record of the success: one applied fact and one audit event
 	// for this resource, each carrying the transaction identifiers it saw.
-	if facts := deleteFactsFor(t, h, c+"/target.txt"); len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeApplied || len(facts[0].TransIDs) == 0 {
+	// The DELETE's own transaction identifier is recorded beside the comparison
+	// HEAD's: a list with one identifier would prove only that the HEAD's
+	// survived.
+	if facts := deleteFactsFor(t, h, c+"/target.txt"); len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeApplied || distinctIDs(facts[0].TransIDs) < 2 {
 		t.Fatalf("applied fact = %+v", facts)
 	}
-	if events := deleteEventsFor(t, h, c+"/target.txt"); len(events) != 1 || events[0].Result != "applied" || len(events[0].TransIDs) == 0 {
+	if events := deleteEventsFor(t, h, c+"/target.txt"); len(events) != 1 || events[0].Result != "applied" || distinctIDs(events[0].TransIDs) < 2 {
 		t.Fatalf("applied event = %+v", events)
 	}
 	rec.CreditApplied()
