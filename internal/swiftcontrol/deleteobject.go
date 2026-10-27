@@ -77,9 +77,9 @@ func (s *Session) DeletePlainObject(ctx context.Context, container, name, baseCo
 		}
 		before, _, status, err := s.rawHead(ctx, credentials, container, name, "", "comparison HEAD")
 		if status == http.StatusUnauthorized && attempt == 0 {
-			// Fresh credentials may name another storage URL, so the
-			// comparison is repeated under them rather than carried over.
-			s.ForceReauth()
+			// rawHead has invalidated the refused token. Fresh credentials may
+			// name another storage URL, so the comparison is repeated under
+			// them rather than carried over.
 			continue
 		}
 		if err != nil {
@@ -137,8 +137,7 @@ func (s *Session) deleteCompared(ctx context.Context, credentials StorageCredent
 		// and deleting again would put an authentication between the final
 		// comparison and the effect, which ADR 0085's adjacency forbids, so this
 		// is a refusal: nothing was deleted, and the next attempt compares again
-		// under fresh credentials.
-		s.ForceReauth()
+		// under the fresh credentials rawDelete's invalidation forces.
 		return result, &SwiftError{Kind: KindUnauthorized, HTTPStatus: status, TransID: deleteTransID,
 			Message: "the token was refused when the DELETE arrived; nothing was deleted, and the next attempt compares the object again"}
 	case status >= 400:
@@ -214,8 +213,8 @@ func literalPlain(d *ObjectDetail) bool {
 // rawDelete issues the DELETE under the credentials given, through the raw
 // client, so the store's own status and transaction id are observed rather
 // than folded into one error: the outcome rule has to tell a refusal from a
-// server error from a lost reply. It never re-authenticates; the caller
-// decides what a refused token means on its path.
+// server error from a lost reply. It never repeats the request; a refused
+// token is invalidated here and the caller decides what the refusal means.
 func (s *Session) rawDelete(ctx context.Context, credentials StorageCredentials, container, name string) (int, string, error) {
 	target := credentials.StorageURL + "/" + escapeObjectPath(container) + "/" + escapeObjectPath(name)
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, target, nil)
@@ -229,6 +228,12 @@ func (s *Session) rawDelete(ctx context.Context, credentials StorageCredentials,
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, resp.Body)
+	if resp.StatusCode == http.StatusUnauthorized {
+		// A refused token is invalidated where it is seen, as rawHead does, so
+		// no later Credentials call can hand it on; the caller still never
+		// repeats the DELETE.
+		s.ForceReauth()
+	}
 	transID := resp.Header.Get("X-Trans-Id")
 	if transID == "" {
 		transID = resp.Header.Get("X-Openstack-Request-Id")

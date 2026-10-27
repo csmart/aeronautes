@@ -591,3 +591,83 @@ func TestDeletePlainObjectIssuesNoAuthenticationBetweenComparisonAndDelete(t *te
 		t.Fatalf("the sequence did not run: compared=%v deleted=%v", compared, deleted)
 	}
 }
+
+// A refused token is invalidated where it is observed, whether or not the
+// caller retries: after a terminal refusal the next Credentials call
+// authenticates again instead of handing the rejected token on.
+func TestRefusedTokensAreInvalidatedEvenWhenNoRetryRemains(t *testing.T) {
+	ctx := context.Background()
+	for name, call := range map[string]func(s *Session) error{
+		"comparison HEAD": func(s *Session) error {
+			_, err := s.DeletePlainObject(ctx, "fixtures", plainName, "any")
+			return err
+		},
+		"symlink read": func(s *Session) error {
+			_, err := s.SymlinkGet(ctx, "fixtures", plainName)
+			return err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			mock := swifttest.New("test:tester", "testing")
+			mock.LoadCanonicalFixtures()
+			auths, refused := 0, 0
+			server := gatedServer(t, mock, func(w http.ResponseWriter, r *http.Request, forward func()) {
+				switch {
+				case r.URL.Path == "/auth/v1.0":
+					auths++
+				case r.Method == http.MethodHead && strings.HasSuffix(r.URL.Path, "/fixtures/"+plainName):
+					refused++
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+				forward()
+			})
+			s := sessionThrough(t, server)
+			err := call(s)
+			var se *SwiftError
+			if !errors.As(err, &se) || se.Kind != KindUnauthorized {
+				t.Fatalf("err = %v, want the token refusal after the one retry", err)
+			}
+			if refused != 2 {
+				t.Fatalf("%d refused HEADs, want the first and its one retry", refused)
+			}
+			before := auths
+			if _, err := s.Credentials(ctx, 0); err != nil {
+				t.Fatalf("credentials after the terminal refusal: %v", err)
+			}
+			if auths != before+1 {
+				t.Fatalf("Credentials after a terminal refusal authenticated %d times, want exactly one fresh authentication", auths-before)
+			}
+		})
+	}
+}
+
+// The same holds for a refused token on the DELETE itself.
+func TestRefusedDeleteTokenIsInvalidated(t *testing.T) {
+	mock := swifttest.New("test:tester", "testing")
+	mock.LoadCanonicalFixtures()
+	auths := 0
+	server := gatedServer(t, mock, func(w http.ResponseWriter, r *http.Request, forward func()) {
+		switch {
+		case r.URL.Path == "/auth/v1.0":
+			auths++
+		case isDelete(r, plainName):
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		forward()
+	})
+	s := sessionThrough(t, server)
+	ctx := context.Background()
+	shown := shownIdentity(t, s, "fixtures", plainName)
+	if _, err := s.DeletePlainObject(ctx, "fixtures", plainName, shown); err == nil {
+		t.Fatal("a refused DELETE token was not reported")
+	}
+	before := auths
+	if _, err := s.Credentials(ctx, 0); err != nil {
+		t.Fatal(err)
+	}
+	if auths != before+1 {
+		t.Fatalf("Credentials after a refused DELETE authenticated %d times, want one", auths-before)
+	}
+}
