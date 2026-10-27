@@ -3,7 +3,10 @@ package app
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/csmart/aeronautes/internal/mutationfacts"
@@ -282,5 +285,61 @@ func TestObjectDeleteRefusesAnEmptyNameBeforeAnythingHappens(t *testing.T) {
 	}
 	if _, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", deleteFixture); err != nil {
 		t.Fatalf("the object is gone: %v", err)
+	}
+}
+
+// A literal read that fails after a landed DELETE is unverified, and its
+// summary names the failure by kind, never by the request text, which carries
+// the URL and with it the object name. A name the summary filter would refuse
+// must not make the outcome unrecordable (review db:900).
+func TestObjectDeleteKeepsTheAuditSafeWhenTheLiteralReadFails(t *testing.T) {
+	for _, name := range []string{"private-name.txt", "password.txt"} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t)
+			h.mock.PutObject("fixtures", name, swifttest.Object{Bytes: 12, ContentType: "text/plain", ETag: "0123456789abcdef0123456789abcdef"})
+			var literalReads atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodHead && strings.HasSuffix(r.URL.Path, "/fixtures/"+name) && r.URL.Query().Get("symlink") == "get" {
+					literalReads.Add(1)
+					if hj, ok := w.(http.Hijacker); ok {
+						if conn, _, err := hj.Hijack(); err == nil {
+							conn.Close()
+							return
+						}
+					}
+					t.Errorf("the literal read could not be cut off")
+					return
+				}
+				h.mock.ServeHTTP(w, r)
+			}))
+			t.Cleanup(server.Close)
+			h.authURL = server.URL + "/auth/v1.0"
+			h.connect(t)
+			ctx := context.Background()
+			shown := shownObject(t, h, name)
+
+			_, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", name, shown.ContentFingerprint)
+			if literalReads.Load() == 0 {
+				t.Fatal("the literal read was never reached")
+			}
+			if !errors.Is(err, swiftcontrol.ErrUnverifiedDelete) || errors.Is(err, errObjectDeleteResidue) {
+				t.Fatalf("err = %v, want unverified without a residue claim", err)
+			}
+			if _, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", name); !swiftcontrol.IsNotFound(err) {
+				t.Fatalf("the DELETE did not land: %v", err)
+			}
+			facts := objectDeleteFacts(t, h)
+			if len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeUnverified {
+				t.Fatalf("facts = %+v", facts)
+			}
+			events := objectDeleteEvents(t, h)
+			if len(events) != 1 || events[0].Result != "unverified" {
+				t.Fatalf("audit = %+v", events)
+			}
+			summary := events[0].Summary
+			if strings.Contains(summary, name) || strings.Contains(summary, server.URL) || strings.Contains(summary, "http") || !strings.Contains(summary, "the literal read of the name failed afterwards (") {
+				t.Fatalf("summary = %q", summary)
+			}
+		})
 	}
 }
