@@ -1,7 +1,7 @@
 # Road to 1.0.0 — release plan
 
 Written on 27 October 2026, after the operator decided that deletion comes next, in their words "yes, we need delete", and asked for the plan and the outstanding features on the way to a 1.0.0 release.
-This is the author's proposed sequence and not yet the operator's decision.
+This was the author's proposed sequence when it was written; on 27 October 2026 the operator accepted it through the Linux half of 0.7.0 and granted delivery authority for the Linux release (finish-line decisions 31 and 32), and the decisions still open are listed at the end.
 The decisions it needs are listed at the end, and the [finish line](../2026-09-05/linux-finish-line.md) records them in its operator trail when they are given.
 
 It supersedes the [25 September plan](../2026-09-25/next-release-plan.md) in its numbering only.
@@ -16,7 +16,9 @@ The principle is unchanged: none of the deferred capabilities is unbuilt, return
 
 **Refused independently of the gate:** Mirror, under [ADR 0020](../../adr/0020-recovery-containment.md), with [ADR 0086](../../adr/0086-mirror-deletes-what-the-source-does-not-have.md) as its proposed contract.
 
-**Not built:** deleting one selected object (P27); multi-selection, whose rule [ADR 0072](../../adr/0072-large-namespace-handling.md) decision 3 records for later work; directory upload; modern versioning management, which [ADR 0054](../../adr/0054-versioning-preflight-authority.md) keeps read-only while legacy versions and history locations are already editable; TempURL and CORS management, which are read-only; Keystone authentication, since the session speaks TempAuth v1 only; the encrypted vault fallback of [ADR 0006](../../adr/0006-secret-storage-linux.md); pause and resume (finish line decision 17); bookmark overrides and the adaptive back-off of K-PERF-003; job history export, support diagnostics and backup and restore (P28); the restart disclosure of [ADR 0088](../../adr/0088-interrupted-job-disclosure.md), whose recording half landed and whose notice has not.
+**Built behind the `object-delete` trial token since this record was written:** deleting one selected object (P27, [ADR 0092](../../adr/0092-exact-object-deletion.md)).
+
+**Not built:** multi-selection, whose rule [ADR 0072](../../adr/0072-large-namespace-handling.md) decision 3 records for later work; directory upload; modern versioning management, which [ADR 0054](../../adr/0054-versioning-preflight-authority.md) keeps read-only while legacy versions and history locations are already editable; TempURL and CORS management, which are read-only; Keystone authentication, since the session speaks TempAuth v1 only; the encrypted vault fallback of [ADR 0006](../../adr/0006-secret-storage-linux.md); pause and resume (finish line decision 17); bookmark overrides and the adaptive back-off of K-PERF-003; job history export, support diagnostics and backup and restore (P28); the restart disclosure of [ADR 0088](../../adr/0088-interrupted-job-disclosure.md), whose recording half landed and whose notice has not.
 
 **Release state.** 0.1.0 is not tagged: it waits on the operator's run of the [0.1.0 test plan](../2026-09-24/0.1.0-test-plan.md) and its results file, as [RELEASING](../../RELEASING.md) requires, against the Linux packages built from master `2928da48`.
 Every artefact is unsigned by decision, v1 supports Linux only (finish line decision 1), and the macOS and Windows builds are development builds without acceptance.
@@ -120,7 +122,7 @@ Shipped means offered by a build; gated means built and refused under ADR 0052; 
 
 | §63 area | Item | State | Release |
 | --- | --- | --- | --- |
-| Browse | save multiple bookmarks | shipped, TempAuth v1 only; Keystone is a decision | 0.5.0 if decided |
+| Browse | save multiple bookmarks | shipped, TempAuth v1 only; Keystone joins under decision 31 | 0.5.0 |
 | Browse | browse containers without loading the account namespace | shipped | — |
 | Browse | browse very large containers page by page | shipped | — |
 | Browse | navigate marker-backed and implied prefixes | shipped | — |
@@ -147,7 +149,7 @@ Shipped means offered by a build; gated means built and refused under ADR 0052; 
 | Transfer | progress, throughput and worker allocation | progress and throughput shipped, and the jobs drawer shows each job's recorded settings; the remaining UI-09 counters are owed | 0.4.0 |
 | Transfer | cancel | shipped | — |
 | Transfer | understand destination large-object placement | chunk sizing and collision preflight shipped; the copy preview names the data path behind the gate, the local transfer dialog does not | 0.4.0 |
-| Delete | delete ordinary objects | not built | 0.2.0 |
+| Delete | delete ordinary objects | built behind the object-delete trial token under ADR 0092, awaiting the operator's return | 0.2.0 |
 | Delete | remove markers | gated | 0.2.0 |
 | Delete | recursively delete normal prefixes | gated, protocol owed | 0.2.x |
 | Delete | empty containers | gated, protocol owed | 0.2.x |
@@ -165,7 +167,7 @@ Shipped means offered by a build; gated means built and refused under ADR 0052; 
 | Performance | choose among native and engine strategies | shipped | — |
 | Safety | the eight prohibitions | enforced by refusals and maintained tests | — |
 
-Beyond §63, the operator has asked for or the records owe: selected-set deletion (0.2.0), the restart notice (0.4.0), export and backup (0.4.0), pause and resume (0.5.0), Keystone and the vault (decisions), signing and the six targets (0.7.0), and the Linux formats (decision).
+Beyond §63, the operator has asked for or the records owe: selected-set deletion (0.2.0), the restart notice (0.4.0), export and backup (0.4.0), pause and resume (0.5.0), Keystone (0.5.0, decision 31) and the vault (a decision), signing and the six targets (0.7.0), and the Linux formats (decision).
 
 ## Decisions this plan needs from the operator
 

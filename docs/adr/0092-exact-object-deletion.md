@@ -1,8 +1,7 @@
 # ADR 0092 — delete one object the operator was shown
 
 **Status:** Proposed on 27 October 2026 for the operator's decision of the same day, recorded as decision 30 in the [Linux finish line](../audits/2026-09-05/linux-finish-line.md), in their words "yes, we need delete".
-Written for review before any implementation, in the shape [ADR 0085](0085-reobserved-destructive-identity.md) took.
-Nothing here is built.
+Written for review before any implementation, in the shape [ADR 0085](0085-reobserved-destructive-identity.md) took, and implemented on 27 October 2026 behind the `object-delete` token: the session, service and interface are built in the range that carries this sentence, with the public-service, owned-Swift, durable-fact and browser proof listed below; the capability stays deferred until the operator returns it, and the preservation baseline is admitted through the drift route from that range's candidate run.
 It proposes one new bridge action behind the [ADR 0052](0052-v1-capability-gate.md) gate, lifts nothing from that gate, and changes no refusal of [ADR 0020](0020-recovery-containment.md).
 **Scope:** One synchronous deletion of one plain object the operator has inspected: `MutateService.DeleteObject`, its guards, its durable facts, its contract row, its gate classification and its interface.
 It does not cover manifests, the marker journey on a prefix row, segments, prefixes, containers, symbolic links or a selected set; each is named below with the record that owns it, and decision 2 says what it does with a marker reached as an object.
@@ -18,7 +17,7 @@ The [road to 1.0.0](../audits/2026-10-27/road-to-1.0.0.md) brings deletion forwa
 What a build has, behind the gate, is the shape this record extends.
 `Session.DeleteManifestObject` HEADs the name, refuses a plain object, refuses when the class, length and entity tag differ from the identity the inspector showed, deletes with nothing of ours between the HEAD and the DELETE, and verifies by a read that finds nothing.
 `MutateService.DeleteManifest` wraps it with the gate, the writer gate and an audit event whose summary withholds the name and carries both identities on a conflict.
-That is ADR 0085's narrowest window, and it exists for manifests only.
+That was ADR 0085's narrowest window when this record was written, and it existed for manifests only; the same shape now serves plain objects under this record.
 
 ## The behaviour oracle
 
