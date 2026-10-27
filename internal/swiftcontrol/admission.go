@@ -20,6 +20,12 @@ type requestAdmissionTransport struct {
 	admit func(context.Context) error
 }
 
+// CloseIdleConnections lets a session close what the wrapped transport
+// keeps idle.
+func (t requestAdmissionTransport) CloseIdleConnections() {
+	closeIdleConnections(t.inner)
+}
+
 func (t requestAdmissionTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err := t.admit(req.Context()); err != nil {
 		if req.Body != nil {

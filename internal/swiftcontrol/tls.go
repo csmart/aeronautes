@@ -86,6 +86,12 @@ type redirectRefusingTransport struct {
 	inner http.RoundTripper
 }
 
+// CloseIdleConnections lets a session close what the wrapped transport
+// keeps idle.
+func (t redirectRefusingTransport) CloseIdleConnections() {
+	closeIdleConnections(t.inner)
+}
+
 func (t redirectRefusingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	resp, err := t.inner.RoundTrip(req)
 	if err == nil && resp != nil && resp.StatusCode >= 300 && resp.StatusCode < 400 && resp.Header.Get("Location") != "" {
