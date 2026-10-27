@@ -434,6 +434,28 @@ describe("refreshing the open listing", () => {
     expect(s.objectDetail).toBeNull();
   });
 
+  it.each([
+    ["content type", { contentType: "application/x-review-refresh" }],
+    ["large-object listing", { sloListed: true }],
+  ])("re-inspects a selected row when only its %s changed", async (_fact, change) => {
+    const api = newFakeApi();
+    const s = await connected(api);
+    await s.openContainer("fixtures");
+    s.select(s.entries.findIndex((e) => e.name === "empty-object"));
+    await vi.waitFor(() => expect(s.detailLoading).toBe(false));
+    const detail = s.objectDetail;
+    const listing = api.objects;
+    api.objects = async (...args) => {
+      const page = await listing(...args);
+      return { ...page, rows: page.rows.map((row) => (row.name === "empty-object" ? { ...row, ...change } : row)) };
+    };
+    await s.refreshEntries();
+    expect(s.selectedEntry?.name).toBe("empty-object");
+    expect(s.detailLoading).toBe(true);
+    await vi.waitFor(() => expect(s.detailLoading).toBe(false));
+    expect(s.objectDetail).not.toBe(detail);
+  });
+
   it("drops a refresh reply that a navigation superseded", async () => {
     const api = newFakeApi();
     const s = await connected(api);

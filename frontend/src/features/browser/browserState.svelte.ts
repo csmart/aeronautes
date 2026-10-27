@@ -92,6 +92,15 @@ interface FindRequest {
   id: string | null;
 }
 
+/** Every fact a listing row carries about its object, compared whole: a
+ * metadata write changes the content type while the ETag, the size and
+ * the second-precision timestamp stay equal, so no subset of these can
+ * stand in for the others. */
+function sameListingFacts(a: ListingRowDTO, b: ListingRowDTO): boolean {
+  return a.etag === b.etag && a.bytes === b.bytes && a.lastModified === b.lastModified
+    && a.contentType === b.contentType && a.sloListed === b.sloListed;
+}
+
 function requireAdvancingMarker(previous: string, next: string) {
   if (next === "") return;
   // Swift orders UTF-8 names; JavaScript's UTF-16 comparison differs for
@@ -311,9 +320,7 @@ export class BrowserState {
       this.select(-1);
       return;
     }
-    const row = this.visibleEntries[idx];
-    const sameFacts = row.etag === selected.etag && row.bytes === selected.bytes && row.lastModified === selected.lastModified;
-    if (sameFacts) {
+    if (sameListingFacts(this.visibleEntries[idx], selected)) {
       this.selectedIndex = idx;
     } else {
       this.select(idx);
