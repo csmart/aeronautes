@@ -130,6 +130,10 @@ The first two decide the release after v1 and are recorded here so the trail sta
     "another thing I think we'll need is tha abillity to resize the sidebar that lists all of the accounts, and I wonder whether we should group the accounts in alphabetical order but by cloud endpoint, too? like I might have 3 or 4 accounts in the one cloud"; "filtering the accounts might be useful too (but maybe it's too hard in that skinny sidebar, so ignore if that's not a good idea), but maybe hover over the accounts tells you the name and accout name or something - I often have 30 or so accounts acorss multiple providers, so we need to keep that in mind, that sidebar might even scale?..".
     The author's reading is recorded in §4.3: a draggable rail whose width persists with the application settings, bookmarks grouped by auth-URL host and sorted, a filter once eight or more are saved, and the account and endpoint on hover; grouping is presentation only and no identity decision reads it.
 
+29. A first account must be easy to add and checkable before it is saved.
+    "if there are no accounts on the machine, we shoudl also prompt with a wizard to create theior first account and also, the account setup needs a verify button to validate the account details against the endpoint before saving/addin git".
+    The author's reading: a welcome dialog on a known-empty bookmark list that opens the editor (§54), and a Verify action in the editor backed by the new bridge action `BookmarkService.Verify`, which authenticates the typed details under the saved-bookmark endpoint policy and TLS trust, persists nothing and returns only the account name and HEAD counts ([ADR 0011](../../adr/0011-typed-service-surface.md)); the scenario contract and the preservation baseline grow by that action's row, as recorded in the baseline's experiment note.
+
 ## Six production gates
 
 | Gate | Existing packages | Completion condition |
