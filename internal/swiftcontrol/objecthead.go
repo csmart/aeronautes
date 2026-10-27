@@ -185,8 +185,8 @@ func (s *Session) LiteralObjectHead(ctx context.Context, container, name string)
 	return s.literalHead(ctx, container, name, "symlink=get&multipart-manifest=get", "literal HEAD")
 }
 
-// literalHead is a read-only raw HEAD that answers a refused token once with
-// fresh credentials, which is harmless for a read. A path whose requests must
+// literalHead is a read-only raw HEAD that asks once more with fresh
+// credentials after a refused token, which is harmless for a read. A path whose requests must
 // share one token and one storage URL takes credentials itself and calls
 // rawHead directly.
 func (s *Session) literalHead(ctx context.Context, container, name, rawQuery, what string) (*ObjectDetail, error) {
@@ -197,7 +197,8 @@ func (s *Session) literalHead(ctx context.Context, container, name, rawQuery, wh
 		}
 		d, _, status, err := s.rawHead(ctx, credentials, container, name, rawQuery, what)
 		if status == http.StatusUnauthorized && attempt == 0 {
-			s.ForceReauth()
+			// rawHead has already invalidated the refused token; this only
+			// decides to ask once more with fresh credentials.
 			continue
 		}
 		return d, err
@@ -230,6 +231,10 @@ func (s *Session) rawHead(ctx context.Context, credentials StorageCredentials, c
 	case resp.StatusCode == http.StatusNotFound:
 		return nil, resp.Header, resp.StatusCode, &SwiftError{Kind: KindNotFound, HTTPStatus: resp.StatusCode, Message: what + ": not found", TransID: transID}
 	case resp.StatusCode == http.StatusUnauthorized:
+		// The store refused this token, so it is invalidated here, whatever the
+		// caller decides next: Credentials must never hand a rejected token to
+		// anyone, the engine remote included. Retrying is the caller's choice.
+		s.ForceReauth()
 		return nil, resp.Header, resp.StatusCode, &SwiftError{Kind: KindUnauthorized, HTTPStatus: resp.StatusCode, Message: what + ": the token was refused", TransID: transID}
 	case resp.StatusCode >= 300:
 		kind, retryable := classifyStatus(resp.StatusCode)
