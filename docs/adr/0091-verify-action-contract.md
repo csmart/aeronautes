@@ -1,6 +1,6 @@
 # ADR 0091 — admit the bookmark verify action to the scenario contract
 
-**Status:** Proposed (2026-10-27); it becomes Accepted when the replacement baseline it authorises lands with the candidate evidence [ADR 0069](0069-preserve-covered-scenario-cells.md) requires, in the same reviewed change as the contract row.
+**Status:** Accepted (2026-10-27) with the replacement baseline it authorises, built from candidate run 40438457699 as the [baseline record](../experiments/2026-10-27-verify-action-baseline.md) describes and reviewed in the same change as the contract row, as [ADR 0069](0069-preserve-covered-scenario-cells.md) requires.
 **Scope:** The action/scenario contract decision for one new bridge action, `BookmarkService.Verify`, and the evidence route by which the preservation baseline admits its snapshot.
 It changes no other action, no previously protected pair, and no gate.
 
