@@ -3,8 +3,11 @@ package app
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -253,6 +256,39 @@ func TestSelectedDeleteKeepsItsSettledCountWhenComplete(t *testing.T) {
 	job := awaitTerminal(t, h, jobID)
 	if job.State != "complete" || job.Counters.ObjectsDeleted != 2 || job.Counters.ObjectsCopied != 2 || job.Counters.ObjectsPlanned != 2 {
 		t.Fatalf("the completed job lost its counts: %+v", job)
+	}
+}
+
+// ADR 0093 decision 4: a DELETE the store answered with a status outside
+// success, a redirect here, was a request all the same; the member failed at
+// its request and the job is partial, never failed as if nothing was sent.
+func TestSelectedDeleteCountsARedirectedDeleteAsARequest(t *testing.T) {
+	h := newHarness(t)
+	var deletes atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/fixtures/normal/hello.txt") {
+			deletes.Add(1)
+			w.WriteHeader(http.StatusTemporaryRedirect)
+			return
+		}
+		h.mock.ServeHTTP(w, r)
+	}))
+	t.Cleanup(server.Close)
+	h.authURL = server.URL + "/auth/v1.0"
+	h.connect(t)
+	service := NewDeleteService(h.transfer.connections, h.transfer.jobs, h.transfer.runner, h.evidence)
+	rows := rowsOf(t, h, "normal/hello.txt")
+	jobID, err := service.StartSelectedDelete(t.Context(), selectedRequest(h, rows))
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, h, jobID)
+	item := itemsOf(t, h, jobID)[rows[0].Name]
+	if deletes.Load() != 1 {
+		t.Fatalf("the response gate saw %d DELETEs, want exactly one", deletes.Load())
+	}
+	if job.State != "partial" || item.Execution == nil || item.Execution.Result != jobs.ItemFailed || item.Execution.Diagnostic.Stage != jobs.StageCommit || item.Execution.Diagnostic.HTTPStatus != 307 {
+		t.Fatalf("an issued DELETE became a pre-request refusal: job=%+v execution=%+v", job, item.Execution)
 	}
 }
 
