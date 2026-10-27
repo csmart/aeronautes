@@ -16,7 +16,7 @@ The principle is unchanged: none of the deferred capabilities is unbuilt, return
 
 **Refused independently of the gate:** Mirror, under [ADR 0020](../../adr/0020-recovery-containment.md), with [ADR 0086](../../adr/0086-mirror-deletes-what-the-source-does-not-have.md) as its proposed contract.
 
-**Built behind the `object-delete` trial token since this record was written:** deleting one selected object (P27, [ADR 0092](../../adr/0092-exact-object-deletion.md)).
+**Built behind trial tokens since this record was written:** deleting one selected object (P27, [ADR 0092](../../adr/0092-exact-object-deletion.md)) behind `object-delete`, and marker and manifest deletion made return-ready ([ADR 0094](../../adr/0094-marker-and-manifest-deletion-return-ready.md)) behind `marker-manifest-delete`.
 
 **Not built:** multi-selection, whose rule [ADR 0072](../../adr/0072-large-namespace-handling.md) decision 3 records for later work; directory upload; modern versioning management, which [ADR 0054](../../adr/0054-versioning-preflight-authority.md) keeps read-only while legacy versions and history locations are already editable; TempURL and CORS management, which are read-only; Keystone authentication, since the session speaks TempAuth v1 only; the encrypted vault fallback of [ADR 0006](../../adr/0006-secret-storage-linux.md); pause and resume (finish line decision 17); bookmark overrides and the adaptive back-off of K-PERF-003; job history export, support diagnostics and backup and restore (P28); the restart disclosure of [ADR 0088](../../adr/0088-interrupted-job-disclosure.md), whose recording half landed and whose notice has not.
 
@@ -152,12 +152,12 @@ Shipped means offered by a build; gated means built and refused under ADR 0052; 
 | Transfer | cancel | shipped | — |
 | Transfer | understand destination large-object placement | chunk sizing and collision preflight shipped; the copy preview names the data path behind the gate, the local transfer dialog does not | 0.4.0 |
 | Delete | delete ordinary objects | built behind the object-delete trial token under ADR 0092, awaiting the operator's return | 0.2.0 |
-| Delete | remove markers | gated | 0.2.0 |
+| Delete | remove markers | built behind the marker-manifest-delete trial token under ADR 0094, awaiting the operator's return | 0.2.0 |
 | Delete | recursively delete normal prefixes | gated, protocol owed | 0.2.x |
 | Delete | empty containers | gated, protocol owed | 0.2.x |
-| Delete | delete SLO manifests | gated, bound by ADR 0085 | 0.2.0 |
+| Delete | delete SLO manifests | built behind the marker-manifest-delete trial token under ADR 0094, awaiting the operator's return | 0.2.0 |
 | Delete | delete SLOs with exact segments | gated with bulk delete, force-only with typed confirmation; ownership advisory | 0.2.x |
-| Delete | delete DLO manifests | gated, bound by ADR 0085 | 0.2.0 |
+| Delete | delete DLO manifests | built behind the marker-manifest-delete trial token under ADR 0094, awaiting the operator's return | 0.2.0 |
 | Delete | clean known-owned DLO segments | gated, prefix-scoped and force-only; ownership advisory | 0.2.x |
 | Delete | deliberate Backstage cleanup | gated, force and typed confirmation | 0.2.x |
 | Performance | global resource budgets | shipped as settings under ADR 0074 | — |

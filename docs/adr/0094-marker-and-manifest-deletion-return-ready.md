@@ -1,23 +1,23 @@
 # ADR 0094 — make marker and manifest deletion return-ready
 
 **Status:** Proposed on 27 October 2026 for the 0.2.0 step of the [road to 1.0.0](../audits/2026-10-27/road-to-1.0.0.md) that returns marker and manifest deletion, the pair [ADR 0052](0052-v1-capability-gate.md) decision 7 deferred with the destructive work.
-Written for review before any implementation.
-Nothing here is built, and nothing here returns a capability: the return is the operator's word, recorded in ADR 0052 when given, as the earlier returns were.
+Written for review before any implementation, and implemented on 27 October 2026 behind the `marker-manifest-delete` token: the shared session protocol, the bound services with their ledger, the browser-owned dialogs and the public proof on both fixtures are in the range that carries this sentence, with the capability renamed and still deferred.
+Nothing here returns a capability: the return is the operator's word, recorded in ADR 0052 when given, as the earlier returns were.
 This record decides what the two actions must be before that word can be asked for.
 **Scope:** `MutateService.DeleteMarker` and `MutateService.DeleteManifest`, the session protocol behind each, the interface that offers them behind the `marker-manifest-delete` token, and their public proof.
 Deleting a manifest together with its segments stays force-only with bulk deletion; selected sets are [ADR 0093](0093-selected-set-deletion.md); prefixes, containers and symbolic links keep their own records.
 
 ## What exists today, and what is missing
 
-Both actions are built and gated: the deferred-table entries and the token, the frontend flags, the inspector's buttons, a manifest dialog and the services with their unit tests all exist, and [ADR 0085](0085-reobserved-destructive-identity.md) bound the manifest deletion to the identity the operator was shown.
-Four things are missing, and each is something [ADR 0092](0092-exact-object-deletion.md) built for the plain object that these two older paths predate.
+When this record was written both actions were built and gated: the deferred-table entries and the token, the frontend flags, the inspector's buttons, a manifest dialog and the services with their unit tests all existed, and [ADR 0085](0085-reobserved-destructive-identity.md) had bound the manifest deletion to the identity the operator was shown.
+Four things were missing, and each was something [ADR 0092](0092-exact-object-deletion.md) built for the plain object that these two older paths predated.
 
 - Neither action takes the caller's scope under [ADR 0079](0079-caller-named-mutation-binding.md); both act on the active session.
 - Neither records the durable facts of [ADR 0058](0058-object-metadata-durable-facts.md); decision 7 of that record left them on best-effort audit, and the marker path discards an audit failure.
 - The marker deletion compares no identity: it checks that the name holds a zero-byte `application/directory` object, and nothing else, and the inspector offers it as a one-click button with no confirmation, which §4.4 of the design forbids for any deletion.
 - The manifest protocol lacks three things the plain-object protocol has: one credentials snapshot around the comparison, the DELETE and the verifying read; the DELETE's own transaction identifier in the record; and an unverified outcome, so a manifest still observed afterwards is reported as a failure although nothing says whether the DELETE took effect, and a predecessor restored by versioning reads as the delete having failed.
 
-Neither action has a producer in the scenario inventory, so their six required cells are uncredited and unprotected.
+Neither action had a producer in the scenario inventory, so their six required cells were uncredited and unprotected.
 
 ## The behaviour oracle
 
