@@ -175,6 +175,12 @@ export interface Api {
   /** baseContent is the ContentFingerprint the caller displayed for this
    * object; the delete is refused when the name no longer holds it (ADR 0085). */
   deleteManifest(container: string, name: string, baseContent: string): Promise<ObjectDetailDTO>;
+  /** Deletes ONE plain object the operator was shown, under the scope its
+   * detail was read under; contentFingerprint is that detail's identity and
+   * the delete is refused when the name no longer holds it. The result
+   * carries the literal successor the verifying read observed, when any
+   * (ADR 0092). */
+  deleteObject(scope: ListingScope, container: string, name: string, contentFingerprint: string): Promise<MutationResultDTO>;
   capabilities(bookmarkId: string): Promise<CapabilitiesDTO>;
   updateObjectMetadata(
     scope: ListingScope,
@@ -257,6 +263,8 @@ export const liveApi: Api = {
   sloManifest: (container, name, bookmarkId) => InspectorService.SLOManifest(bookmarkId, container, name),
   dloSegments: (manifest, bookmarkId) => InspectorService.DLOSegments(bookmarkId, manifest),
   deleteManifest: (container, name, baseContent) => MutateService.DeleteManifest(container, name, baseContent),
+  deleteObject: (scope, container, name, contentFingerprint) =>
+    MutateService.DeleteObject(scope, container, name, contentFingerprint),
   capabilities: (bookmarkId) => BrowseService.Capabilities(bookmarkId),
   updateObjectMetadata: (scope, container, name, baseFingerprint, edit) =>
     MutateService.UpdateObjectMetadata(scope, container, name, baseFingerprint, edit),

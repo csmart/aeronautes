@@ -190,6 +190,8 @@ export class BrowserState {
   }
   // Destructive-jobs dialog (§31–§33).
   deleteOpen = $state(false);
+  /** The single-object delete dialog (ADR 0092), opened by the inspector or the Delete key. */
+  objectDeleteOpen = $state(false);
   // Application settings (§38/§40).
   appSettings: AppSettingsDTO | null = $state(null);
   appSettingsStatus = $state<"unavailable" | "current" | "stale" | "unconfirmed">("unavailable");
@@ -1852,6 +1854,47 @@ export class BrowserState {
     await this.#api.deleteManifest(container, name, baseContent);
     await this.loadAudit();
     if (displayed && ownsView() && this.#currentView(scope, selection)) await this.goTo(prefix);
+  }
+
+  /** Delete ONE plain object the operator was shown (ADR 0092). The request
+   * names the scope the detail was read under (ADR 0079) and carries that
+   * detail's content identity; the listing refreshes afterwards, and the
+   * caller shows any successor the result reports. */
+  async deleteObject(container: string, name: string, detail: ObjectDetailDTO, ownsView = () => true): Promise<MutationResultDTO> {
+    if (!container || !name) {
+      throw new Error("no object identity");
+    }
+    if (!detail.contentFingerprint) {
+      throw new Error("no content identity for the object being deleted");
+    }
+    const scope = this.#scopeRevision;
+    const selection = this.detailIdentity;
+    const prefix = this.prefix;
+    const displayed = container === selection?.container && name === selection.name;
+    const result = await this.#api.deleteObject(detail.scope, container, name, detail.contentFingerprint);
+    await this.loadAudit();
+    if (displayed && ownsView() && this.#currentView(scope, selection)) await this.goTo(prefix);
+    return result;
+  }
+
+  /** The open container's settings fact from its loaded row, or one HEAD
+   * folded into that row when no row holds it yet; null when the container
+   * cannot answer, so a caller says the mode is unknown rather than guesses. */
+  async containerFacts(container: string): Promise<ContainerSettingsDTO | null> {
+    const row = this.containers.find((r) => r.name === container);
+    if (row?.settings) return row.settings;
+    const bookmarkId = this.connectedBookmarkId;
+    if (!bookmarkId) return null;
+    try {
+      const detail = await this.#api.containerDetail(container, bookmarkId);
+      if (detail.name === container && this.#answeredBy(detail.scope, bookmarkId) && this.#factCurrent(detail)) {
+        this.#applySettings(container, detail.settings);
+        return detail.settings;
+      }
+    } catch {
+      // The dialog states that the mode is unknown; nothing else depends on it.
+    }
+    return null;
   }
 
   /** Delete ONLY a verified marker; the working list refreshes. */

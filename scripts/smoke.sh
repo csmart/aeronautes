@@ -172,6 +172,10 @@ if grep -q "AERONAUTES_ENABLE" "$ART/switch-unset.log"; then
 fi
 switch_case copy "copy" \
   "AERONAUTES_ENABLE: offering unproven capabilities in this process: Copy"
+# The single-object deletion is born deferred (ADR 0092 decision 7); its
+# token names the capability the operator trials.
+switch_case object-delete "object-delete" \
+  "AERONAUTES_ENABLE: offering unproven capabilities in this process: Object deletion"
 switch_case unrecognised "copy, not-a-capability" \
   "AERONAUTES_ENABLE: offering unproven capabilities in this process: Copy" \
   "AERONAUTES_ENABLE: ignored, not a capability: not-a-capability"
