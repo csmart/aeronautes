@@ -25,27 +25,27 @@ type SelectedDeleteRequestDTO struct {
 }
 
 // selectionCeiling is the most members one selected-set deletion admits:
-// ADR 0072 decision 4's retention ceiling, which the loaded rows a selection
-// is drawn from cannot exceed either. The shell wires the operator's setting;
-// without it the default ceiling applies.
+// the selection ceiling of ADR 0072 decision 4, the operator's download
+// object ceiling setting, which ADR 0093 decision 2 reuses for selected
+// sets. The shell wires the setting; without it the default applies.
 func (s *DeleteService) selectionCeiling(ctx context.Context) int {
 	if s.ceiling != nil {
 		if n := s.ceiling(ctx); n > 0 {
 			return n
 		}
 	}
-	return defaultBrowserRetentionCeiling
+	return defaultDownloadObjectCeiling
 }
 
-// WireDeleteSettings gives the deletion service the operator's retention
-// ceiling as its selection ceiling.
+// WireDeleteSettings gives the deletion service the operator's selection
+// ceiling, the download object ceiling of ADR 0072 decision 4.
 func WireDeleteSettings(s *DeleteService, settings *SettingsService) {
 	s.ceiling = func(ctx context.Context) int {
 		current, err := settings.Get(ctx)
 		if err != nil {
 			return 0
 		}
-		return current.BrowserRetentionCeiling
+		return current.DownloadObjectCeiling
 	}
 }
 

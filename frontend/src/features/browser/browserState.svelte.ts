@@ -55,6 +55,10 @@ const pageLimit = 1000;
  * operator's setting is read (ADR 0074 decision 1); mirrors
  * defaultBrowserRetentionCeiling in internal/app/settingsservice.go. */
 const defaultBrowserRetentionCeiling = 100_000;
+/** The most objects one selection holds, until the operator's setting is
+ * read (ADR 0072 decision 4, reused by ADR 0093 decision 2); mirrors
+ * defaultDownloadObjectCeiling in internal/app/settingsservice.go. */
+const defaultDownloadObjectCeiling = 250_000;
 /** The job states after which nothing more changes (§46). */
 const terminalJobStates = ["complete", "partial", "cancelled", "failed"];
 /** How often a job this client started is re-read until it ends: the
@@ -164,7 +168,8 @@ export interface SelectedDeleteOperation {
   scope: number;
   members: ListingRowDTO[];
   excludedPrefixes: string[];
-  /** The most members one selection admits (ADR 0072 decision 4). */
+  /** The most members one selection admits (ADR 0072 decision 4, the
+   * download object ceiling setting). */
   ceiling: number;
   status: "pending" | "running" | "done";
   jobId: string | null;
@@ -754,6 +759,12 @@ export class BrowserState {
   /** The retention ceiling in force (ADR 0074 decision 1): the operator's
    * setting once read, otherwise its default. A column at the ceiling
    * keeps every row it holds and loads no further page. */
+  /** The most members one selected-set deletion admits: the download
+   * object ceiling setting, which ADR 0093 decision 2 reuses. */
+  get selectionCeiling(): number {
+    return this.appSettings?.downloadObjectCeiling ?? defaultDownloadObjectCeiling;
+  }
+
   get retentionCeiling(): number {
     return this.appSettings?.browserRetentionCeiling ?? defaultBrowserRetentionCeiling;
   }
@@ -2218,7 +2229,7 @@ export class BrowserState {
     if (members.length === 0) return false;
     this.selectedDelete = {
       container, listingScope: { ...listingScope }, scope: this.#scopeRevision, members, excludedPrefixes,
-      ceiling: this.retentionCeiling, status: "pending", jobId: null, error: null,
+      ceiling: this.selectionCeiling, status: "pending", jobId: null, error: null,
     };
     return true;
   }
