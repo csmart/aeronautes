@@ -88,63 +88,69 @@ func TestBookmarkVerifyUsesTheStoredKeyOnlyForAnUnchangedBinding(t *testing.T) {
 	}
 }
 
-// A saved key verifies under the generation it was acquired with: a key
-// replaced or a bookmark deleted while the authentication is still held
-// must not have the account HEAD dispatched afterwards (ADR 0015).
-func TestBookmarkVerifyRefusesAfterRevocationDuringAuthentication(t *testing.T) {
-	for _, revoke := range []string{"key replaced", "deleted"} {
-		t.Run(revoke, func(t *testing.T) {
-			h := newHarness(t)
-			ctx := context.Background()
-			arrived := make(chan struct{}, 1)
-			release := make(chan struct{})
-			var heads atomic.Int64
-			gate := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/auth/v1.0" {
-					select {
-					case arrived <- struct{}{}:
-					default:
+// A saved key verifies under the generation it was acquired with (ADR
+// 0015): a key replaced or a bookmark deleted while the authentication is
+// still held must not have the account HEAD dispatched afterwards, and the
+// same revocation while that HEAD is already in flight must not have its
+// answer published.
+func TestBookmarkVerifyRefusesAfterRevocationMidExchange(t *testing.T) {
+	for _, held := range []string{"authentication", "account HEAD"} {
+		for _, revoke := range []string{"key replaced", "deleted"} {
+			t.Run(held+", "+revoke, func(t *testing.T) {
+				h := newHarness(t)
+				ctx := context.Background()
+				arrived := make(chan struct{}, 1)
+				release := make(chan struct{})
+				var heads atomic.Int64
+				gate := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					isAuth := r.URL.Path == "/auth/v1.0"
+					isHead := r.Method == http.MethodHead && strings.HasPrefix(r.URL.Path, "/v1/AUTH_test")
+					if isHead {
+						heads.Add(1)
 					}
-					<-release
-				}
-				if strings.HasPrefix(r.URL.Path, "/v1/AUTH_test") {
-					heads.Add(1)
-				}
-				h.mock.ServeHTTP(w, r)
-			}))
-			t.Cleanup(gate.Close)
-			saved, err := h.bookmarks.Save(ctx, BookmarkDTO{DisplayName: "Held", AuthURL: gate.URL + "/auth/v1.0", Username: "test:tester", TLSMode: "system"}, "testing")
-			if err != nil {
-				t.Fatal(err)
-			}
-			done := make(chan error, 1)
-			go func() {
-				_, err := h.bookmarks.Verify(ctx, saved, "")
-				done <- err
-			}()
-			select {
-			case <-arrived:
-			case <-time.After(10 * time.Second):
-				t.Fatal("the authentication request never arrived")
-			}
-			switch revoke {
-			case "key replaced":
-				if _, err := h.bookmarks.Save(ctx, saved, "testing-replacement"); err != nil {
+					if (held == "authentication" && isAuth) || (held == "account HEAD" && isHead) {
+						select {
+						case arrived <- struct{}{}:
+						default:
+						}
+						<-release
+					}
+					h.mock.ServeHTTP(w, r)
+				}))
+				t.Cleanup(gate.Close)
+				saved, err := h.bookmarks.Save(ctx, BookmarkDTO{DisplayName: "Held", AuthURL: gate.URL + "/auth/v1.0", Username: "test:tester", TLSMode: "system"}, "testing")
+				if err != nil {
 					t.Fatal(err)
 				}
-			case "deleted":
-				if err := h.bookmarks.Delete(ctx, saved.ID); err != nil {
-					t.Fatal(err)
+				done := make(chan error, 1)
+				go func() {
+					_, err := h.bookmarks.Verify(ctx, saved, "")
+					done <- err
+				}()
+				select {
+				case <-arrived:
+				case <-time.After(10 * time.Second):
+					t.Fatalf("the %s request never arrived", held)
 				}
-			}
-			close(release)
-			if err := <-done; err == nil {
-				t.Fatal("verify succeeded under a revoked generation")
-			}
-			if heads.Load() != 0 {
-				t.Errorf("the account HEAD was dispatched %d time(s) after revocation", heads.Load())
-			}
-		})
+				switch revoke {
+				case "key replaced":
+					if _, err := h.bookmarks.Save(ctx, saved, "testing-replacement"); err != nil {
+						t.Fatal(err)
+					}
+				case "deleted":
+					if err := h.bookmarks.Delete(ctx, saved.ID); err != nil {
+						t.Fatal(err)
+					}
+				}
+				close(release)
+				if err := <-done; err == nil {
+					t.Fatal("verify succeeded under a revoked generation")
+				}
+				if held == "authentication" && heads.Load() != 0 {
+					t.Errorf("the account HEAD was dispatched %d time(s) after revocation", heads.Load())
+				}
+			})
+		}
 	}
 }
 
