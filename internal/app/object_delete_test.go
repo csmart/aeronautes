@@ -1,0 +1,258 @@
+package app
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"testing"
+
+	"github.com/csmart/aeronautes/internal/mutationfacts"
+	"github.com/csmart/aeronautes/internal/swiftcontrol"
+	"github.com/csmart/aeronautes/internal/swifttest"
+)
+
+const deleteFixture = "normal/hello.txt"
+
+// shownObject reads the inspector's detail for a fixture object: the identity a
+// delete carries is the one the operator was shown, never a listing row.
+func shownObject(t *testing.T, h *harness, name string) ObjectDetailDTO {
+	t.Helper()
+	detail, err := h.inspector.Object(context.Background(), h.bookmarkID(), "fixtures", name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return detail
+}
+
+func objectDeleteFacts(t *testing.T, h *harness) []mutationfacts.Fact {
+	t.Helper()
+	all, err := factsOn(t, h).All(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return all
+}
+
+func objectDeleteEvents(t *testing.T, h *harness) []AuditEventDTO {
+	t.Helper()
+	events, err := h.auditSvc.RecentFor(context.Background(), h.bookmarkID(), 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []AuditEventDTO
+	for _, e := range events {
+		if e.Operation == "object.delete" {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+func deleteRequests(log []string, name string) int {
+	n := 0
+	for _, line := range log {
+		if strings.HasPrefix(line, "DELETE ") && strings.Contains(line, name) {
+			n++
+		}
+	}
+	return n
+}
+
+func TestObjectDeleteAppliesAndRecordsTheFact(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+	ctx := context.Background()
+	shown := shownObject(t, h, deleteFixture)
+
+	result, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture, shown.ContentFingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != "applied" || result.ObjectAfter != nil {
+		t.Fatalf("result = %+v, want applied with nothing observed", result)
+	}
+	if _, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", deleteFixture); !swiftcontrol.IsNotFound(err) {
+		t.Fatalf("the object is still readable: %v", err)
+	}
+	if _, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "empty-object"); err != nil {
+		t.Fatalf("a sibling was touched: %v", err)
+	}
+	facts := objectDeleteFacts(t, h)
+	if len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeApplied || facts[0].Operation != "object.delete" || facts[0].Resource != "fixtures/"+deleteFixture {
+		t.Fatalf("facts = %+v", facts)
+	}
+	events := objectDeleteEvents(t, h)
+	if len(events) != 1 || events[0].Result != "applied" || !strings.Contains(events[0].Summary, "nothing observed at the name afterwards") {
+		t.Fatalf("audit = %+v", events)
+	}
+}
+
+// ADR 0079: a portrait that is empty, names another generation or another
+// bookmark is refused before any intent and before any request.
+func TestObjectDeleteRefusesAChangedScopeWithoutTouchingAnything(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+	ctx := context.Background()
+	shown := shownObject(t, h, deleteFixture)
+	current := h.portrait()
+	requests := h.mock.Requests()
+
+	for name, scope := range map[string]ListingScopeDTO{
+		"empty":            {},
+		"moved generation": {BookmarkID: current.BookmarkID, Generation: current.Generation + 7},
+		"another bookmark": {BookmarkID: "not-the-active-one", Generation: current.Generation},
+	} {
+		_, err := h.mutate.DeleteObject(ctx, scope, "fixtures", deleteFixture, shown.ContentFingerprint)
+		if !errors.Is(err, ErrMutationScopeChanged) {
+			t.Fatalf("%s: err = %v, want the scope refusal", name, err)
+		}
+	}
+	if got := h.mock.Requests(); got != requests {
+		t.Fatalf("refused deletes sent %d requests to the store", got-requests)
+	}
+	if facts := objectDeleteFacts(t, h); len(facts) != 0 {
+		t.Fatalf("refused deletes recorded facts: %+v", facts)
+	}
+}
+
+func TestObjectDeleteIntentAbortSendsNoDelete(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+	ctx := context.Background()
+	shown := shownObject(t, h, deleteFixture)
+	refuseSQL(t, h, `CREATE TRIGGER refuse_intent BEFORE INSERT ON mutation_facts
+		BEGIN SELECT RAISE(ABORT,'fixture required intent refusal'); END`)
+
+	if _, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture, shown.ContentFingerprint); err == nil {
+		t.Fatal("a refused intent must fail the call")
+	}
+	if n := deleteRequests(h.mock.RequestLog(), deleteFixture); n != 0 {
+		t.Fatalf("%d DELETE requests left although the intent was refused", n)
+	}
+	if _, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", deleteFixture); err != nil {
+		t.Fatalf("the object is gone: %v", err)
+	}
+}
+
+// ADR 0085: a replacement between the display and the request is refused with
+// both identities in the fact and the event, and nothing is deleted.
+func TestObjectDeleteRecordsAnIdentityConflict(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+	ctx := context.Background()
+	shown := shownObject(t, h, deleteFixture)
+	h.mock.PutObject("fixtures", deleteFixture, swifttest.Object{Bytes: 40, ContentType: "text/plain", ETag: "00000000000000000000000000000040"})
+
+	_, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture, shown.ContentFingerprint)
+	var conflict *swiftcontrol.IdentityConflictError
+	if !errors.As(err, &conflict) {
+		t.Fatalf("err = %v, want an identity conflict", err)
+	}
+	if detail, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", deleteFixture); err != nil || detail.ContentLength != 40 {
+		t.Fatalf("the replacement was touched: %+v %v", detail, err)
+	}
+	facts := objectDeleteFacts(t, h)
+	if len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeConflict {
+		t.Fatalf("facts = %+v", facts)
+	}
+	events := objectDeleteEvents(t, h)
+	if len(events) != 1 || events[0].Result != "conflict" || !strings.Contains(events[0].Summary, shown.ContentFingerprint) || !strings.Contains(events[0].Summary, conflict.Found) {
+		t.Fatalf("audit = %+v", events)
+	}
+}
+
+// ADR 0058 and ADR 0092 decision 4: a landed or possibly landed DELETE whose
+// outcome cannot be recorded is residue carrying the identity, and a reopen
+// shows the intent and no terminal outcome.
+func TestObjectDeleteResidueWhenTheOutcomeCannotBeRecorded(t *testing.T) {
+	for name, loseReply := range map[string]bool{"landed": false, "reply lost": true} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t)
+			h.connect(t)
+			ctx := context.Background()
+			shown := shownObject(t, h, deleteFixture)
+			if loseReply {
+				h.mock.DropNextObjectDELETE()
+			}
+			refuseSQL(t, h, `CREATE TRIGGER refuse_audit BEFORE INSERT ON audit_events
+				BEGIN SELECT RAISE(ABORT,'fixture required audit refusal'); END`)
+
+			_, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture, shown.ContentFingerprint)
+			if !errors.Is(err, errObjectDeleteResidue) {
+				t.Fatalf("err = %v, want residue", err)
+			}
+			all, err := reopenFacts(t, h).All(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(all) != 1 || all[0].Outcome != mutationfacts.OutcomeIntent {
+				t.Fatalf("reopen = %+v, want the intent alone", all)
+			}
+		})
+	}
+}
+
+// A refusal that destroyed nothing is not residue when its record fails.
+func TestObjectDeleteRefusalRecordFailureIsNotResidue(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+	ctx := context.Background()
+	shown := shownObject(t, h, deleteFixture)
+	h.mock.PutObject("fixtures", deleteFixture, swifttest.Object{Bytes: 40, ContentType: "text/plain", ETag: "00000000000000000000000000000040"})
+	refuseSQL(t, h, `CREATE TRIGGER refuse_audit BEFORE INSERT ON audit_events
+		BEGIN SELECT RAISE(ABORT,'fixture required audit refusal'); END`)
+
+	_, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture, shown.ContentFingerprint)
+	if err == nil || errors.Is(err, errObjectDeleteResidue) {
+		t.Fatalf("err = %v, want the record failure without a residue claim", err)
+	}
+}
+
+func TestObjectDeleteLostReplyIsUnverified(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+	ctx := context.Background()
+	shown := shownObject(t, h, deleteFixture)
+	h.mock.DropNextObjectDELETE()
+
+	_, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture, shown.ContentFingerprint)
+	if !errors.Is(err, swiftcontrol.ErrUnverifiedDelete) {
+		t.Fatalf("err = %v, want unverified", err)
+	}
+	facts := objectDeleteFacts(t, h)
+	if len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeUnverified {
+		t.Fatalf("facts = %+v", facts)
+	}
+	events := objectDeleteEvents(t, h)
+	if len(events) != 1 || events[0].Result != "unverified" || !strings.Contains(events[0].Summary, "no store answer proves the delete") {
+		t.Fatalf("audit = %+v", events)
+	}
+}
+
+// ADR 0092 decision 5: a successor the literal read observed reaches the
+// caller as ObjectAfter and the ledger as a described observation.
+func TestObjectDeleteDisclosesAnObservedSuccessor(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+	ctx := context.Background()
+	shown := shownObject(t, h, deleteFixture)
+	placed := false
+	h.mock.AfterRequest = func(method, path string) {
+		if method == "DELETE" && strings.HasSuffix(path, "/fixtures/"+deleteFixture) && !placed {
+			placed = true
+			h.mock.PutObject("fixtures", deleteFixture, swifttest.Object{SymlinkTarget: "fixtures/nowhere"})
+		}
+	}
+
+	result, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture, shown.ContentFingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != "applied" || result.ObjectAfter == nil || result.ObjectAfter.SymlinkTarget != "fixtures/nowhere" {
+		t.Fatalf("result = %+v, want applied with the link observed", result)
+	}
+	events := objectDeleteEvents(t, h)
+	if len(events) != 1 || !strings.Contains(events[0].Summary, "the name now holds a symlink") || !strings.Contains(events[0].Summary, "archived predecessor or a concurrent write") {
+		t.Fatalf("audit = %+v", events)
+	}
+}

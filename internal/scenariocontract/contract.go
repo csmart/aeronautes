@@ -130,6 +130,7 @@ var inventory = map[string]Action{
 	"MutateService.CreateMarker":         {Kind: Mutate},
 	"MutateService.DeleteMarker":         {Kind: Destructive},
 	"MutateService.DeleteManifest":       {Kind: Destructive},
+	"MutateService.DeleteObject":         {Kind: Destructive},
 	"MutateService.UpdateObjectMetadata": {Kind: Mutate, Scenarios: []string{"happy", "refusal", "conflict"}},
 	// AuditService
 	"AuditService.Recent":    {Kind: Read, Scenarios: []string{"refusal"}},

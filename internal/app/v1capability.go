@@ -49,6 +49,9 @@ var v1DeferredActions = map[string]string{
 	// creation and marker creation are kept: both are non-destructive.
 	"MutateService.DeleteMarker":   "Marker and manifest editing",
 	"MutateService.DeleteManifest": "Marker and manifest editing",
+	// one plain object the operator was shown, born deferred under ADR 0092
+	// and offered only while the operator trials it with its token
+	"MutateService.DeleteObject": "Object deletion",
 	// a benchmark writes real objects and bulk-deletes them
 	"BenchmarkService.StartBenchmark": "Benchmark",
 }
@@ -73,6 +76,7 @@ var v1CapabilityTokens = map[string]string{
 	"bulk-delete":            "Bulk delete",
 	"marker-manifest-delete": "Marker and manifest editing",
 	"benchmark":              "Benchmark",
+	"object-delete":          "Object deletion",
 }
 
 // enabledCapabilities is one reading of the switch: which deferred

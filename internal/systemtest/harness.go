@@ -11,7 +11,9 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"errors"
 	"fmt"
+	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	"io"
 	"net/http"
 	"os"
@@ -458,6 +460,19 @@ func (h *Harness) DeleteManifestWithSegments(ctx context.Context, req app.Segmen
 func (h *Harness) UpdateObjectMetadata(ctx context.Context, container, name, baseFingerprint string, edit app.ObjectMetadataEditDTO) *Receipt {
 	result, err := h.Mutate.UpdateObjectMetadata(ctx, h.ActiveScope(ctx), container, name, baseFingerprint, edit)
 	return &Receipt{h: h, action: "MutateService.UpdateObjectMetadata", outcome: result.Outcome, err: err}
+}
+
+// DeleteObject deletes one plain object the operator was shown (ADR 0092); the
+// identity conflict arrives as an error with no DTO, as the manifest deletion's
+// does, so the receipt names that outcome itself.
+func (h *Harness) DeleteObject(ctx context.Context, container, name, contentFingerprint string) *Receipt {
+	result, err := h.Mutate.DeleteObject(ctx, h.ActiveScope(ctx), container, name, contentFingerprint)
+	outcome := result.Outcome
+	var conflict *swiftcontrol.IdentityConflictError
+	if errors.As(err, &conflict) {
+		outcome = "conflict"
+	}
+	return &Receipt{h: h, action: "MutateService.DeleteObject", outcome: outcome, err: err}
 }
 
 // account provisions a test account. It returns an error rather than
