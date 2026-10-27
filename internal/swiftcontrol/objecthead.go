@@ -212,6 +212,11 @@ func (s *Session) literalHead(ctx context.Context, container, name, rawQuery, wh
 // what a refused token means on its own path. A 404 and any other
 // non-success status are returned as a SwiftError carrying that status.
 func (s *Session) rawHead(ctx context.Context, credentials StorageCredentials, container, name, rawQuery, what string) (*ObjectDetail, http.Header, int, error) {
+	if container == "" || name == "" {
+		// An empty object name addresses the container; an object read must
+		// never be answered by a container's headers.
+		return nil, nil, 0, &SwiftError{Kind: KindUnknown, Message: what + ": the container and object name must both be present"}
+	}
 	target := credentials.StorageURL + "/" + escapeObjectPath(container) + "/" + escapeObjectPath(name)
 	if rawQuery != "" {
 		target += "?" + rawQuery

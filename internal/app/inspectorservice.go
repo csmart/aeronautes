@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"log"
 	"strconv"
 	"time"
@@ -28,6 +29,12 @@ func NewInspectorService(connections *Connections, ev *evidence.Store) *Inspecto
 // Object HEADs one object and returns its inspector detail; a DLO's
 // manifest reference becomes Confirmed evidence.
 func (s *InspectorService) Object(ctx context.Context, bookmarkID, container, name string) (ObjectDetailDTO, error) {
+	if container == "" || name == "" {
+		// A HEAD of "container/" is answered by the container, and an object
+		// detail built from it would carry an identity a destructive caller
+		// could hand back; neither part may be empty.
+		return ObjectDetailDTO{}, errors.New("an object read needs both its container and its name")
+	}
 	session, scope, err := s.connections.scopedSession(ctx, bookmarkID)
 	if err != nil {
 		return ObjectDetailDTO{}, err
