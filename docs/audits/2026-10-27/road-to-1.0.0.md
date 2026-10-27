@@ -52,6 +52,7 @@ Deletion carries the most hazards of any capability, which is why the 25 Septemb
    The Delete key opens it, as §4.4 of the design has always said.
 2. **Selected-set deletion.**
    Multi-selection of the loaded rows, as ADR 0072 decision 3 records, and one confirmation that names what it will delete; each name is an exact deletion and no prefix is inferred from a selection.
+   Its record is [ADR 0093](../../adr/0093-selected-set-deletion.md), proposed on 27 October: one job over the selected objects, each member deleted by the verified per-name protocol, prefix rows excluded, and the member count typed as the confirmation.
 3. **Marker and manifest deletion return**, reversing ADR 0052 decision 7 on the operator's word.
    Manifest-only deletion is already bound by ADR 0085, and the two actions that return here are `MutateService.DeleteMarker` and `MutateService.DeleteManifest`, the pair the gate classifies as marker and manifest editing.
    Deleting a manifest together with its segments is a different pair, classified with bulk delete: `DeleteManifestWithSegments` is force-only with typed confirmation, recorded ownership is advisory because no live reverse-reference scan exists, and its dynamic large object branch is the prefix sweep itself.

@@ -89,7 +89,7 @@ That was ADR 0085's narrowest window when this record was written, and it existe
 
 9. **A selected set is the next record, not this one.**
    Multi-selection of loaded rows is the rule [ADR 0072](0072-large-namespace-handling.md) decision 3 records, and a set deletion composes this action's shape, one name with its own identity per deletion; where no inspector HEAD exists for a row, the baseline is the listing row and ADR 0085's prefix rules apply.
-   Its own record decides whether a set of N names is N synchronous calls or a job, and what one confirmation names.
+   Its own record, [ADR 0093](0093-selected-set-deletion.md), decides whether a set of N names is N synchronous calls or a job, and what one confirmation names.
 
 ## What this does not touch
 
