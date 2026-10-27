@@ -87,5 +87,6 @@ export type {
     SelectionScopeDTO,
     StoragePolicyDTO,
     TransferSettingsDTO,
-    UploadRequestDTO
+    UploadRequestDTO,
+    VerifyResultDTO
 } from "./models.js";

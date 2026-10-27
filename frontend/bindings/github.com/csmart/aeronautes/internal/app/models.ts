@@ -1218,3 +1218,15 @@ export interface UploadRequestDTO {
      */
     "acknowledgeOverwrite": boolean;
 }
+
+/**
+ * VerifyResultDTO is what a successful check of unsaved bookmark details
+ * reports: the account the endpoint answered for and the counts its HEAD
+ * returned. It carries neither the token nor the storage URL (K-SEC-002).
+ */
+export interface VerifyResultDTO {
+    "account": string;
+    "containers": number;
+    "objects": number;
+    "bytesUsed": number;
+}
