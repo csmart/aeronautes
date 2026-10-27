@@ -44,8 +44,11 @@
     onActivate,
   }: Props = $props();
 
+  // A caller that owns membership says which rows are selected; the focused
+  // row is then only the keyboard position, which may have been toggled
+  // off. Without that owner the focused row is the selection.
   function isSelected(item: T, index: number): boolean {
-    return index === selected || (rowSelected?.(item, index) ?? false);
+    return rowSelected ? rowSelected(item, index) : index === selected;
   }
 
   function modeOf(event: PointerEvent): SelectMode {

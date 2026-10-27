@@ -410,7 +410,6 @@ export class BrowserState {
       this.#chosen = kept;
       const focus = focused ? visible.findIndex((e) => rowIdentity(e) === rowIdentity(focused)) : -1;
       this.selectedIndex = focus >= 0 ? focus : visible.findIndex((e) => kept.has(rowIdentity(e)));
-      this.#anchorIndex = this.selectedIndex;
       return;
     }
     this.#chosen = new Set();
@@ -432,8 +431,10 @@ export class BrowserState {
    * presentation only, and empty unless at least two rows are chosen, so a
    * single choice is always the inspected plain selection. */
   #chosen = $state<ReadonlySet<string>>(new Set());
-  /** The row a Shift click extends from: the last plainly chosen one. */
-  #anchorIndex = -1;
+  /** The row a Shift click extends from, by identity: the last row plainly
+   * chosen or toggled, so a refresh or a filter moves the anchor with its
+   * row rather than to whatever sits at its old index. */
+  #anchorKey: string | null = null;
   /** The exact identity the current detail state was fetched for —
    * every mutation binds THIS, never the live index. */
   detailIdentity = $state<{ container: string; name: string } | null>(null);
@@ -864,8 +865,13 @@ export class BrowserState {
     return chosen > 0 ? chosen : this.selectedIndex >= 0 ? 1 : 0;
   }
 
+  /** Whether a row is selected: a member of the multi-selection, or the
+   * one row of a plain selection. Focus is not membership: with several
+   * rows chosen the focused row may have been toggled off. */
   isChosen(row: ListingRowDTO): boolean {
-    return this.#chosen.has(rowIdentity(row));
+    if (this.#chosen.size > 0) return this.#chosen.has(rowIdentity(row));
+    const selected = this.selectedEntry;
+    return selected !== null && rowIdentity(selected) === rowIdentity(row);
   }
 
   async openContainer(name: string) {
@@ -1055,39 +1061,41 @@ export class BrowserState {
    * multi-selection (ADR 0093 decision 1). */
   select(index: number) {
     this.#chosen = new Set();
-    this.#anchorIndex = index;
+    const row = this.visibleEntries[index];
+    this.#anchorKey = row ? rowIdentity(row) : null;
     this.#inspect(index);
   }
 
-  /** Toggle a row in the multi-selection, a Ctrl or Cmd click (ADR 0093
-   * decision 1): the first toggle beside a plain selection keeps that row
-   * chosen too, and a selection left with one row collapses to its plain
-   * selection. */
+  /** Toggle a row's membership, a Ctrl or Cmd click (ADR 0093 decision 1).
+   * The plain selection is a member too: toggling another row beside it
+   * keeps both, and toggling it alone empties the selection; a selection
+   * left with one row collapses to that row's plain selection. */
   toggleRow(index: number) {
     const visible = this.visibleEntries;
     const row = visible[index];
     if (!row) return;
     const chosen = new Set(this.#chosen);
-    if (chosen.size === 0 && this.selectedIndex >= 0 && this.selectedIndex !== index) {
+    if (chosen.size === 0 && this.selectedIndex >= 0) {
       const focused = visible[this.selectedIndex];
       if (focused) chosen.add(rowIdentity(focused));
     }
     const key = rowIdentity(row);
     if (chosen.has(key)) chosen.delete(key);
     else chosen.add(key);
-    this.#anchorIndex = index;
+    this.#anchorKey = key;
     this.#applyChosen(chosen, index);
   }
 
   /** Select the rows from the anchor to this one, replacing the
-   * multi-selection: a Shift click (ADR 0093 decision 1). */
+   * multi-selection: a Shift click (ADR 0093 decision 1). The anchor is
+   * found by identity; when its row is gone the focused row stands in. */
   extendTo(index: number) {
     const visible = this.visibleEntries;
     if (!visible[index]) return;
-    const anchor = this.#anchorIndex >= 0 && this.#anchorIndex < visible.length ? this.#anchorIndex
-      : this.selectedIndex >= 0 ? this.selectedIndex : index;
+    let anchor = this.#anchorKey === null ? -1 : visible.findIndex((e) => rowIdentity(e) === this.#anchorKey);
+    if (anchor < 0) anchor = this.selectedIndex >= 0 && this.selectedIndex < visible.length ? this.selectedIndex : index;
+    this.#anchorKey = rowIdentity(visible[anchor]);
     const [from, to] = anchor <= index ? [anchor, index] : [index, anchor];
-    this.#anchorIndex = anchor;
     this.#applyChosen(new Set(visible.slice(from, to + 1).map(rowIdentity)), index);
   }
 
@@ -1114,10 +1122,9 @@ export class BrowserState {
     }
     this.#chosen = new Set();
     const only = [...chosen][0];
-    const index = only === undefined ? -1 : this.visibleEntries.findIndex((e) => rowIdentity(e) === only);
     // The plain selection a multi-selection collapses to is the anchor too.
-    this.#anchorIndex = index;
-    this.#inspect(index);
+    this.#anchorKey = only ?? null;
+    this.#inspect(only === undefined ? -1 : this.visibleEntries.findIndex((e) => rowIdentity(e) === only));
   }
 
   /** With several rows selected no row is inspected (ADR 0093 decision 1):
