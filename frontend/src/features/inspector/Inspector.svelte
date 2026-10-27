@@ -142,7 +142,7 @@
     {#if detail && !editingObject}
       <button class="edit-btn" onclick={() => (editingObject = true)}>Edit metadata</button>
       {#if v1Offers.objectDelete && isLiteralPlainObject(detail)}
-        <button class="edit-btn danger" onclick={() => (browser.objectDeleteOpen = true)}>Delete object…</button>
+        <button class="edit-btn danger" onclick={() => browser.openObjectDelete()}>Delete object…</button>
       {/if}
     {:else if detail && editingObject}
       <ObjectEditPanel {browser} {detail} onDone={() => (editingObject = false)} />

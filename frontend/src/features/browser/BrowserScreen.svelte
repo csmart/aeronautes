@@ -18,7 +18,6 @@
   import CredentialStatusDialog from "./CredentialStatusDialog.svelte";
   import DeleteDialog from "../transfer/DeleteDialog.svelte";
   import ObjectDeleteDialog from "../inspector/ObjectDeleteDialog.svelte";
-  import { isLiteralPlainObject } from "../../lib/objectKind";
   import { BrowserState } from "./browserState.svelte";
   import { activeModal } from "../../lib/trapFocus";
   import { applyEnabledCapabilities, v1Offers } from "../../lib/v1.svelte";
@@ -171,9 +170,8 @@
       // §4.4: Delete opens the safe delete flow and never deletes. Only a
       // plain object has one in this build (ADR 0092); a prefix row's
       // deletion is bulk deletion with its own dialog.
-      if (v1Offers.objectDelete && browser.containerName && isLiteralPlainObject(browser.objectDetail)) {
+      if (v1Offers.objectDelete && browser.openObjectDelete()) {
         event.preventDefault();
-        browser.objectDeleteOpen = true;
       }
     }
   }
@@ -281,13 +279,8 @@
 {#if v1Offers.bulkDelete && browser.deleteOpen}
   <DeleteDialog {browser} onClose={() => (browser.deleteOpen = false)} />
 {/if}
-{#if v1Offers.objectDelete && browser.objectDeleteOpen && browser.containerName && isLiteralPlainObject(browser.objectDetail)}
-  <ObjectDeleteDialog
-    {browser}
-    detail={browser.objectDetail}
-    container={browser.containerName}
-    onClose={() => (browser.objectDeleteOpen = false)}
-  />
+{#if v1Offers.objectDelete && browser.objectDelete}
+  <ObjectDeleteDialog {browser} onClose={() => browser.closeObjectDelete()} />
 {/if}
 
 {#if aboutOpen}

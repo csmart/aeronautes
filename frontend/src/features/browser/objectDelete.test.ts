@@ -54,8 +54,9 @@ async function state(name = "empty-object") {
 async function dialog(name = "empty-object") {
   const f = await state(name);
   const done = vi.fn();
-  const detail = f.browser.objectDetail!;
-  const component = mount(ObjectDeleteDialog, { target: f.root, props: { browser: f.browser, detail, container: "fixtures", onClose: done } });
+  if (!f.browser.openObjectDelete()) throw new Error("nothing deletable is inspected");
+  const detail = f.browser.objectDelete!.detail;
+  const component = mount(ObjectDeleteDialog, { target: f.root, props: { browser: f.browser, onClose: done } });
   mounted.add(component);
   flushSync();
   await settle();
@@ -126,12 +127,37 @@ describe("the object delete dialog", () => {
     expect(f.done).toHaveBeenCalledOnce();
   });
 
+  it("cannot confirm until the versioning consequence is known or explicitly unknown", async () => {
+    const f = await state();
+    let settleFacts!: (facts: ContainerSettingsDTO | null) => void;
+    vi.spyOn(f.browser, "containerFacts").mockReturnValue(new Promise((resolve) => { settleFacts = resolve; }));
+    f.fake.deleteObject = vi.fn(async () => applied);
+    f.browser.openObjectDelete();
+    const component = mount(ObjectDeleteDialog, { target: f.root, props: { browser: f.browser, onClose: vi.fn() } });
+    mounted.add(component);
+    flushSync(); await settle();
+    expect(f.root.textContent).toContain("Checking how this container keeps versions");
+    const confirm = button("Delete object", f.root);
+    expect(confirm.disabled).toBe(true);
+    click(confirm);
+    await settle();
+    expect(f.fake.deleteObject).not.toHaveBeenCalled();
+    settleFacts(null);
+    await settle();
+    expect(f.root.textContent).toContain("could not be read");
+    expect(confirm.disabled).toBe(false);
+    click(confirm);
+    await settle();
+    expect(f.fake.deleteObject).toHaveBeenCalledOnce();
+  });
+
   it("states what the delete does under the container's versioning mode", async () => {
     const f = await state();
     const facts: ContainerSettingsDTO = { publicRead: false, publicListing: false, referrerGrants: [], sharedWrite: false, staticWeb: false,
       versioningMode: "versions_location", versioningArchive: "the-archive", quota: false, cors: false, readAcl: "", writeAcl: "", observedAt: "", generation: 1 };
     vi.spyOn(f.browser, "containerFacts").mockResolvedValue(facts);
-    const component = mount(ObjectDeleteDialog, { target: f.root, props: { browser: f.browser, detail: f.browser.objectDetail!, container: "fixtures", onClose: vi.fn() } });
+    f.browser.openObjectDelete();
+    const component = mount(ObjectDeleteDialog, { target: f.root, props: { browser: f.browser, onClose: vi.fn() } });
     mounted.add(component);
     flushSync(); await settle();
     expect(f.root.textContent).toContain("keeps versions in the-archive");
@@ -144,6 +170,8 @@ describe("the Delete key", () => {
     Object.assign(api, newFakeApi());
     const info = api.info;
     api.info = async () => ({ ...(await info()), enabledCapabilities: enabled, unrecognisedCapabilities: [] });
+    // The fake's own delete removes the row; cases that need it back restore it.
+    const realDeleteObject = api.deleteObject;
     api.deleteObject = vi.fn(async () => applied);
     await api.saveBookmark({ id: "", displayName: "Key fixture", authUrl: "https://example.test/auth",
       username: "fixture:user", storageUrlOverride: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "test-only");
@@ -159,6 +187,7 @@ describe("the Delete key", () => {
     row.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); flushSync(); await settle();
     const listbox = document.querySelector<HTMLElement>('[role="listbox"]')!;
     listbox.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true })); flushSync(); await settle();
+    return { realDeleteObject };
   }
 
   it("opens the delete dialog for a selected plain object and deletes nothing by itself", async () => {
@@ -171,5 +200,34 @@ describe("the Delete key", () => {
     await screen([]);
     expect(document.querySelector('[aria-label="Delete object"]')).toBeNull();
     expect(api.deleteObject).not.toHaveBeenCalled();
+  });
+
+  it("keeps an observed successor on screen through the refresh that follows the delete", async () => {
+    await screen(["Object deletion"]);
+    api.deleteObject = vi.fn(async (scope, container, name) => {
+      const before = await api.objectDetail(container, name, scope.bookmarkId);
+      return { ...applied, objectAfter: { ...before, contentLength: 3, etag: "successor-etag", contentFingerprint: "successor" } };
+    });
+    const dialog = document.querySelector<HTMLElement>('[aria-label="Delete object"]')!;
+    click(button("Delete object", dialog));
+    await settle();
+    expect(api.deleteObject).toHaveBeenCalledOnce();
+    expect(document.querySelector('[aria-label="Delete object"]')).not.toBeNull();
+    expect(document.body.textContent).toContain("Something stands at the name now");
+    expect(document.body.textContent).toContain("successor-etag");
+    click(button("Close", document.querySelector<HTMLElement>('[aria-label="Delete object"]')!));
+    await settle();
+    expect(document.querySelector('[aria-label="Delete object"]')).toBeNull();
+  });
+
+  it("closes through the refresh after a plain success and the row is gone", async () => {
+    const { realDeleteObject } = await screen(["Object deletion"]);
+    api.deleteObject = vi.fn(realDeleteObject);
+    const dialog = document.querySelector<HTMLElement>('[aria-label="Delete object"]')!;
+    click(button("Delete object", dialog));
+    await settle();
+    expect(api.deleteObject).toHaveBeenCalledOnce();
+    expect(document.querySelector('[aria-label="Delete object"]')).toBeNull();
+    expect([...document.querySelectorAll<HTMLElement>('[role="option"]')].some((el) => el.querySelector(".name")?.textContent?.trim() === "empty-object")).toBe(false);
   });
 });
