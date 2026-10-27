@@ -22,6 +22,7 @@ func TestUpdateContainerAppliesDelta(t *testing.T) {
 		"X-Container-Meta-Drop":                        "gone-soon",
 		"X-Container-Meta-Access-Control-Allow-Origin": "https://app.example",
 		"X-Container-Meta-Temp-URL-Key":                "sekrit",
+		"X-Container-Meta-Web-Index":                   "index.html",
 		"X-Container-Read":                             ".r:*",
 	}); err != nil {
 		t.Fatal(err)
@@ -32,8 +33,10 @@ func TestUpdateContainerAppliesDelta(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// A working copy built from the detail carries the static web key
+	// along (ADR 0090); this edit leaves it as it was.
 	result, err := s.UpdateContainer(ctx, "media", before.EditableFingerprint, ContainerEdit{
-		Meta:       map[string]string{"Keep": "new", "Added": "yes"},
+		Meta:       map[string]string{"Keep": "new", "Added": "yes", "Web-Index": "index.html"},
 		WriteACL:   "acct:writer",
 		Versioning: ContainerVersioning{Mode: VersioningVersionsLocation, Archive: "media-versions"},
 		QuotaBytes: 1000,
@@ -68,6 +71,9 @@ func TestUpdateContainerAppliesDelta(t *testing.T) {
 	if len(after.TempURLKeySlots) != 1 {
 		t.Errorf("TempURL slots = %v, must be untouched", after.TempURLKeySlots)
 	}
+	if !after.StaticWeb || after.Meta["Web-Index"] != "index.html" {
+		t.Errorf("static web after a copy that kept it: StaticWeb=%v Meta=%v", after.StaticWeb, after.Meta)
+	}
 	if len(result.TransIDs) != 3 {
 		t.Errorf("TransIDs = %v", result.TransIDs)
 	}
@@ -77,7 +83,8 @@ func TestUpdateContainerAppliesDelta(t *testing.T) {
 		}
 	}
 
-	// Second edit: swap versioning mode and clear the quota.
+	// Second edit: swap versioning mode, clear the quota, and drop the static
+	// web key from the working copy, which removes it like any other key.
 	result2, err := s.UpdateContainer(ctx, "media", after.EditableFingerprint, ContainerEdit{
 		Meta:       map[string]string{"Keep": "new", "Added": "yes"},
 		WriteACL:   "acct:writer",
@@ -94,6 +101,12 @@ func TestUpdateContainerAppliesDelta(t *testing.T) {
 	}
 	if result2.After.QuotaBytes != 0 {
 		t.Errorf("QuotaBytes = %d, want cleared", result2.After.QuotaBytes)
+	}
+	if result2.After.StaticWeb {
+		t.Errorf("static web still configured after the working copy dropped it: %v", result2.After.Meta)
+	}
+	if !result2.After.CORS || len(result2.After.TempURLKeySlots) != 1 {
+		t.Error("CORS or TempURL configuration was destroyed by the second edit")
 	}
 }
 

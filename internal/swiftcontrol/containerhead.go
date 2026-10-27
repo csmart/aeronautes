@@ -48,14 +48,18 @@ type ContainerDetail struct {
 	// QuotaBytes/QuotaCount are 0 when unset.
 	QuotaBytes int64
 	QuotaCount int64
-	// CORS / StaticWeb report configured-feature presence (§60 Phase 2).
-	CORS      bool
+	// CORS reports configured-feature presence (§60 Phase 2); its values
+	// stay in the raw view.
+	CORS bool
+	// StaticWeb reports that a Web-* key is set. The keys themselves are
+	// ordinary editable metadata in Meta (ADR 0090); the flag feeds the
+	// row badge and the inspector's summary line.
 	StaticWeb bool
 	// TempURLKeySlots lists which key slots exist; values are withheld
 	// (§22, K-SEC-006).
 	TempURLKeySlots []string
-	// Meta is the user metadata minus special keys (quota, TempURL, CORS,
-	// staticweb).
+	// Meta is the user metadata minus the special families (quota,
+	// TempURL, CORS); the static web keys are part of it (ADR 0090).
 	Meta map[string]string
 	// RawHeaders is the full header set with secret values redacted.
 	RawHeaders map[string]string
@@ -105,7 +109,10 @@ func buildContainerDetail(headers map[string]string, now time.Time) *ContainerDe
 				d.CORS = true
 				editable[k] = v
 			case hasFoldedPrefix(name, "Web-"):
+				// Static web is configured by plain metadata keys an
+				// operator edits like any other (ADR 0090).
 				d.StaticWeb = true
+				d.Meta[name] = v
 				editable[k] = v
 			default:
 				d.Meta[name] = v

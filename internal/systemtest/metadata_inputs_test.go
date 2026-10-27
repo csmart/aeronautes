@@ -226,6 +226,10 @@ func literalMetadataRoundTrips(t *testing.T, h *Harness) {
 					objectApplied = receipt
 				}
 			case "container":
+				// Static web keys are part of the working copy (ADR 0090): a
+				// copy built from the detail carries the seeded one along.
+				meta["Web-Index"] = "index.html"
+				wantMeta["Web-Index"] = "index.html"
 				result, receipt := h.UpdateContainer(t.Context(), container, "", app.ContainerEditDTO{Meta: meta, VersioningMode: "off"})
 				if receipt.Err() != nil || receipt.Outcome() != "applied" {
 					t.Fatalf("literal container metadata failed: outcome=%q error=%v", receipt.Outcome(), receipt.Err())
@@ -235,7 +239,6 @@ func literalMetadataRoundTrips(t *testing.T, h *Harness) {
 				}
 				containerApplied = receipt
 				wantMeta["Access-Control-Allow-Origin"] = "https://fixture.invalid"
-				wantMeta["Web-Index"] = "index.html"
 				wantMeta["Temp-Url-Key"] = "synthetic-fixture"
 				allowed, path = container, h.Primary.storageURL+"/"+container
 			case "create":

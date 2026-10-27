@@ -27,14 +27,16 @@ var ErrUnverifiedContainerWrite = errors.New("container metadata write unverifie
 // Container mutation (§18, §19, §20, §21): the caller states the
 // complete intended editable surface — the same working-copy contract as
 // objects — and the update computes the additive POST delta (sets plus
-// X-Remove-* headers) from the preflight state. CORS, staticweb, and
-// TempURL container metadata are outside this surface and are never
-// touched by the delta.
+// X-Remove-* headers) from the preflight state. CORS and TempURL
+// container metadata are outside this surface and are never touched by
+// the delta; the static web keys are inside it, as ordinary metadata
+// (ADR 0090).
 
 // ContainerEdit is the complete intended editable state of a container.
 type ContainerEdit struct {
-	// Meta is the complete intended plain user metadata set (the special
-	// families — quota, TempURL, CORS, staticweb — are not part of it).
+	// Meta is the complete intended plain user metadata set, static web
+	// keys included; the special families — quota, TempURL, CORS — are not
+	// part of it.
 	Meta map[string]string
 	// ReadACL / WriteACL "" means no ACL.
 	ReadACL  string
