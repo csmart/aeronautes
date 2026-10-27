@@ -1,16 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
-import type { Api, ListingRowDTO } from "../../lib/api";
-import { v1Offers } from "../../lib/v1.svelte";
+import type { Api, ContainerSettingsDTO, ListingRowDTO } from "../../lib/api";
+import { applyEnabledCapabilities, v1Offers } from "../../lib/v1.svelte";
 import { BrowserState } from "./browserState.svelte";
 import { newFakeApi } from "./fakeApi";
 import Inspector from "../inspector/Inspector.svelte";
 import WorkingList from "./WorkingList.svelte";
+import SelectedDeleteDialog from "../inspector/SelectedDeleteDialog.svelte";
 import BrowserScreen from "./BrowserScreen.svelte";
 
-// ADR 0093 decision 1: several loaded rows can be selected, with a toggle, a
-// range and select all over the loaded rows only, and the inspector
-// summarises them without a read.
+// ADR 0093 decisions 1 and 5: several loaded rows can be selected, the
+// inspector summarises them without a read, and the selected-set deletion is
+// one dialog around a snapshot, confirmed by the typed count, built from that
+// snapshot alone and ended without deleting when the view no longer matches.
 const api = vi.hoisted(() => ({} as Api));
 vi.mock("../../lib/api", () => ({ liveApi: api }));
 
@@ -27,12 +29,22 @@ afterEach(async () => {
 async function settle() {
   for (let i = 0; i < 16; i++) { await Promise.resolve(); flushSync(); }
 }
+function labels(root: ParentNode = document): string[] {
+  return [...root.querySelectorAll("button")].map((b) => b.textContent?.trim() ?? "");
+}
 function button(label: string, root: ParentNode = document): HTMLButtonElement {
   const found = [...root.querySelectorAll("button")].find((b) => b.textContent?.trim() === label);
   if (!found) throw new Error(`Missing button: ${label}`);
   return found;
 }
 function click(element: HTMLElement) { element.click(); flushSync(); }
+function type(root: ParentNode, value: string) {
+  const input = root.querySelector<HTMLInputElement>(".confirm input");
+  if (!input) throw new Error("no confirmation field");
+  input.value = value;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  flushSync();
+}
 function names(rows: ListingRowDTO[]): string[] { return rows.map((row) => row.name); }
 
 async function state() {
@@ -152,7 +164,7 @@ describe("the inspector summary", () => {
 });
 
 describe("the working list", () => {
-  it("toggles with Ctrl, extends with Shift and counts the selection", async () => {
+  it("toggles with Ctrl, extends with Shift, counts the selection and offers the delete only with the capability", async () => {
     const f = await state();
     const component = mount(WorkingList, { target: f.root, props: { browser: f.browser } });
     mounted.add(component);
@@ -169,20 +181,178 @@ describe("the working list", () => {
     expect(row("fake/").getAttribute("aria-selected")).toBe("false");
     expect(f.root.querySelector('[role="listbox"]')?.getAttribute("aria-multiselectable")).toBe("true");
     expect(f.root.querySelector(".pane-foot")?.textContent).toContain("2 selected");
+    expect(labels(f.root)).not.toContain("Delete selected…");
 
     // A Shift click extends from the last toggled row.
     row("fake/").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, shiftKey: true }));
     flushSync(); await settle();
     expect(names(f.browser.chosenRows)).toEqual(["external-dlo", "external-slo", "fake/"]);
-    expect(f.root.querySelector(".pane-foot")?.textContent).toContain("3 selected");
+
+    applyEnabledCapabilities(["Object deletion"]);
+    flushSync(); await settle();
+    expect(labels(f.root)).toContain("Delete selected…");
+    click(button("Delete selected…", f.root));
+    expect(f.browser.selectedDelete?.members.map((m) => m.name)).toEqual(["external-dlo", "external-slo"]);
+    expect(f.browser.selectedDelete?.excludedPrefixes).toEqual(["fake/"]);
   });
 });
 
-describe("the selection shortcuts", () => {
+describe("the selected-set dialog", () => {
+  async function dialog(facts: ContainerSettingsDTO | null | "real" = "real") {
+    const f = await state();
+    applyEnabledCapabilities(["Object deletion"]);
+    if (facts !== "real") vi.spyOn(f.browser, "containerFacts").mockResolvedValue(facts);
+    f.browser.select(f.index("empty-object"));
+    f.browser.toggleRow(f.index("external-slo"));
+    f.browser.toggleRow(f.index("normal/"));
+    await settle();
+    if (!f.browser.openSelectedDelete()) throw new Error("no selection to delete");
+    const op = f.browser.selectedDelete!;
+    const snapshot = JSON.parse(JSON.stringify(op.members)) as ListingRowDTO[];
+    const done = vi.fn();
+    const component = mount(SelectedDeleteDialog, { target: f.root, props: { browser: f.browser, onClose: done } });
+    mounted.add(component);
+    flushSync(); await settle();
+    return { ...f, op, snapshot, done };
+  }
+
+  it("lists the members, the prefix rows left out, the ceiling and the versioning consequence, and confirms only with the typed count", async () => {
+    const facts: ContainerSettingsDTO = { publicRead: false, publicListing: false, referrerGrants: [], sharedWrite: false, staticWeb: false,
+      versioningMode: "versions_location", versioningArchive: "the-archive", quota: false, cors: false, readAcl: "", writeAcl: "", observedAt: "", generation: 1 };
+    const f = await dialog(facts);
+    const text = (f.root.textContent ?? "").replace(/\s+/g, " ");
+    expect(text).toContain("Delete 2 selected objects");
+    expect(text).toContain("empty-object");
+    expect(text).toContain("external-slo");
+    expect(text).toContain("Not included: 1 prefix row");
+    expect(text).toContain("normal/");
+    expect(text).toContain("at most 100,000 objects");
+    expect(text).toContain("keeps versions in the-archive");
+    expect(text).toContain("changed since is left as it is");
+    const start = vi.spyOn(f.fake, "startSelectedDelete");
+    const confirm = button("Delete 2 objects", f.root);
+    expect(confirm.disabled).toBe(true);
+    type(f.root, "3");
+    expect(confirm.disabled).toBe(true);
+    click(confirm);
+    await settle();
+    expect(start).not.toHaveBeenCalled();
+    type(f.root, "2");
+    expect(confirm.disabled).toBe(false);
+    click(confirm);
+    await settle();
+    expect(start).toHaveBeenCalledOnce();
+    expect(start.mock.calls[0][0]).toEqual({ scope: { bookmarkId: f.bookmark.id, generation: 1 }, container: "fixtures", members: f.snapshot, confirm: "2" });
+    expect(f.op.status).toBe("done");
+    expect(f.op.jobId).toBe("job-1");
+    expect(f.root.textContent).toContain("Deletion started");
+    expect(f.root.textContent).toContain("job-1");
+    expect(f.browser.selectionCount).toBe(0);
+    expect(f.done).not.toHaveBeenCalled();
+    await f.browser.refreshEntries();
+    await settle();
+    expect(names(f.browser.entries)).not.toContain("empty-object");
+    expect(names(f.browser.entries)).not.toContain("external-slo");
+    expect(names(f.browser.entries)).toContain("external-dlo");
+    expect(names(f.browser.entries)).toContain("normal/");
+    click(button("Close", f.root));
+    expect(f.done).toHaveBeenCalledOnce();
+  });
+
+  it("cannot confirm until the versioning consequence is known or explicitly unknown", async () => {
+    const f = await state();
+    applyEnabledCapabilities(["Object deletion"]);
+    let settleFacts!: (facts: ContainerSettingsDTO | null) => void;
+    vi.spyOn(f.browser, "containerFacts").mockReturnValue(new Promise((resolve) => { settleFacts = resolve; }));
+    const start = vi.spyOn(f.fake, "startSelectedDelete");
+    f.browser.select(f.index("empty-object"));
+    f.browser.toggleRow(f.index("external-slo"));
+    await settle();
+    f.browser.openSelectedDelete();
+    const component = mount(SelectedDeleteDialog, { target: f.root, props: { browser: f.browser, onClose: vi.fn() } });
+    mounted.add(component);
+    flushSync(); await settle();
+    expect(f.root.textContent).toContain("Checking how this container keeps versions");
+    type(f.root, "2");
+    const confirm = button("Delete 2 objects", f.root);
+    expect(confirm.disabled).toBe(true);
+    click(confirm);
+    await settle();
+    expect(start).not.toHaveBeenCalled();
+    settleFacts(null);
+    await settle();
+    expect(f.root.textContent).toContain("could not be read");
+    expect(confirm.disabled).toBe(false);
+  });
+
+  it("ends the confirmation without deleting when the view moves", async () => {
+    const f = await dialog(null);
+    const start = vi.spyOn(f.fake, "startSelectedDelete");
+    type(f.root, "2");
+    await f.browser.openContainer("slo-parts");
+    await settle();
+    expect(f.root.textContent).toContain("Nothing was deleted");
+    expect(f.root.textContent).toContain("the view moved");
+    expect(labels(f.root)).toEqual(["Close"]);
+    expect(start).not.toHaveBeenCalled();
+    expect(f.op.status).toBe("pending");
+  });
+
+  it("ends the confirmation when the selection changes to other names with the same count, for good", async () => {
+    const f = await dialog(null);
+    const start = vi.spyOn(f.fake, "startSelectedDelete");
+    type(f.root, "2");
+    f.browser.toggleRow(f.index("external-dlo"));
+    f.browser.toggleRow(f.index("external-slo"));
+    await settle();
+    expect(names(f.browser.chosenRows)).toEqual(["empty-object", "external-dlo", "normal/"]);
+    expect(f.root.textContent).toContain("the selection changed");
+    expect(labels(f.root)).toEqual(["Close"]);
+    // The original rows selected again do not re-arm a snapshot the operator has not re-read.
+    f.browser.toggleRow(f.index("external-slo"));
+    f.browser.toggleRow(f.index("external-dlo"));
+    await settle();
+    expect(f.browser.selectedDeleteProblem()).toBeNull();
+    expect(labels(f.root)).toEqual(["Close"]);
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it("ends the confirmation when a refresh changes one member's listed entity tag with the same count", async () => {
+    const f = await dialog(null);
+    const start = vi.spyOn(f.fake, "startSelectedDelete");
+    type(f.root, "2");
+    const real = f.fake.objects;
+    f.fake.objects = async (...args) => {
+      const page = await real(...args);
+      return { ...page, rows: page.rows.map((row) => row.name === "external-slo" ? { ...row, etag: "replaced-since-listed" } : row) };
+    };
+    await f.browser.refreshEntries();
+    await settle();
+    expect(f.browser.selectionCount).toBe(3);
+    expect(f.root.textContent).toContain("external-slo changed since it was listed");
+    expect(labels(f.root)).toEqual(["Close"]);
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it("shows a refused start and stays open for another try", async () => {
+    const f = await dialog(null);
+    f.fake.startSelectedDelete = vi.fn(async () => { throw new Error("the members could not be recorded, so nothing was sent"); });
+    type(f.root, "2");
+    click(button("Delete 2 objects", f.root));
+    await settle();
+    expect(f.root.textContent).toContain("nothing was sent");
+    expect(f.op.status).toBe("pending");
+    expect(labels(f.root)).toContain("Delete 2 objects");
+    expect(f.browser.selectionCount).toBe(3);
+  });
+});
+
+describe("the Delete key and the selection shortcuts", () => {
   async function screen(enabled: string[]) {
     Object.assign(api, newFakeApi());
     const info = api.info;
     api.info = async () => ({ ...(await info()), enabledCapabilities: enabled, unrecognisedCapabilities: [] });
+    api.startSelectedDelete = vi.fn(async () => "job-screen");
     await api.saveBookmark({ id: "", displayName: "Key fixture", authUrl: "https://example.test/auth",
       username: "fixture:user", storageUrlOverride: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "test-only");
     const root = document.createElement("div"); document.body.append(root);
@@ -197,6 +367,26 @@ describe("the selection shortcuts", () => {
     const listbox = document.querySelector<HTMLElement>('[role="listbox"]')!;
     return { row, listbox, foot: listbox.closest("section")!.querySelector<HTMLElement>(".pane-foot")! };
   }
+
+  it("opens the selected-set dialog for several rows and deletes nothing by itself", async () => {
+    const s = await screen(["Object deletion"]);
+    s.row("empty-object").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); flushSync(); await settle();
+    s.row("external-dlo").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, ctrlKey: true })); flushSync(); await settle();
+    expect(s.foot.textContent).toContain("2 selected");
+    s.listbox.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true })); flushSync(); await settle();
+    expect(document.querySelector('[aria-label="Delete selected objects"]')).not.toBeNull();
+    expect(document.querySelector('[aria-label="Delete object"]')).toBeNull();
+    expect(api.startSelectedDelete).not.toHaveBeenCalled();
+  });
+
+  it("does nothing without the capability", async () => {
+    const s = await screen([]);
+    s.row("empty-object").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); flushSync(); await settle();
+    s.row("external-dlo").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, ctrlKey: true })); flushSync(); await settle();
+    s.listbox.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true })); flushSync(); await settle();
+    expect(document.querySelector('[aria-label="Delete selected objects"]')).toBeNull();
+    expect(api.startSelectedDelete).not.toHaveBeenCalled();
+  });
 
   it("selects every loaded row with Ctrl+A and clears with Escape", async () => {
     const s = await screen([]);

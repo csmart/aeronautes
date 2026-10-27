@@ -14,6 +14,7 @@ import type {
   DeleteRequestDTO,
   SegmentOwnershipDTO,
   SegmentsDeleteRequestDTO,
+  SelectedDeleteRequestDTO,
   DownloadPreflightView,
   DownloadRequestDTO,
   FindStatusDTO,
@@ -150,6 +151,26 @@ export interface ObjectDeleteOperation {
   error: string | null;
 }
 
+/** One selected-set deletion from opening to its start (ADR 0093 decision
+ * 5): a snapshot captured when the dialog opened of the scope the rows were
+ * listed under, the container, the object rows with the facts they were
+ * listed with, unique by name, and the prefix rows left out. The request
+ * is built from this snapshot alone, never from the live rows. */
+export interface SelectedDeleteOperation {
+  container: string;
+  /** The scope the listing the rows came from was read under (ADR 0079). */
+  listingScope: ListingScope;
+  /** The scope revision the dialog was opened from. */
+  scope: number;
+  members: ListingRowDTO[];
+  excludedPrefixes: string[];
+  /** The most members one selection admits (ADR 0072 decision 4). */
+  ceiling: number;
+  status: "pending" | "running" | "done";
+  jobId: string | null;
+  error: string | null;
+}
+
 export class BrowserState {
   #api: Api;
 
@@ -228,6 +249,7 @@ export class BrowserState {
    * result outlives the listing refresh that follows its success; the dialog
    * renders it and never the live inspector detail. */
   objectDelete: ObjectDeleteOperation | null = $state(null);
+  selectedDelete: SelectedDeleteOperation | null = $state(null);
   // Application settings (§38/§40).
   appSettings: AppSettingsDTO | null = $state(null);
   appSettingsStatus = $state<"unavailable" | "current" | "stale" | "unconfirmed">("unavailable");
@@ -392,6 +414,9 @@ export class BrowserState {
   }
   entries: ListingRowDTO[] = $state([]);
   entriesMarker = $state("");
+  /** The scope the loaded rows were read under, for a request that names
+   * the portrait its view was built under (ADR 0079). */
+  #entriesScope: ListingScope | null = null;
   entriesLoading = $state(false);
   entriesError: string | null = $state(null);
   /** An in-place re-read of the loaded listing is in flight; the rows stay
@@ -503,6 +528,7 @@ export class BrowserState {
     this.#entriesPageError = null;
     this.entries = [];
     this.entriesMarker = "";
+    this.#entriesScope = null;
     this.entriesLoading = false;
     this.entriesError = null;
     this.filter = "";
@@ -511,6 +537,7 @@ export class BrowserState {
     this.localTransfer = null;
     this.deleteOpen = false;
     this.objectDelete = null;
+    this.selectedDelete = null;
     this.findOpen = false;
   }
 
@@ -901,6 +928,7 @@ export class BrowserState {
         return; // a newer navigation superseded this load
       }
       this.#requireListingScope(page.scope, bookmarkId, portrait);
+      this.#entriesScope = page.scope;
       this.entries = page.rows;
       this.entriesMarker = page.nextMarker;
     } catch (err) {
@@ -947,6 +975,7 @@ export class BrowserState {
         return; // a navigation or a later refresh superseded this read
       }
       this.#requireListingScope(page.scope, bookmarkId, portrait);
+      this.#entriesScope = page.scope;
       const selected = this.selectedEntry;
       this.entries = page.rows;
       this.entriesMarker = page.nextMarker;
@@ -988,6 +1017,7 @@ export class BrowserState {
       const page = await this.#api.objects(bookmarkId, this.containerName, this.prefix, request.marker, pageLimit);
       if (!this.#currentEntriesPage(request)) return;
       this.#requireListingScope(page.scope, bookmarkId, portrait);
+      this.#entriesScope = page.scope;
       requireAdvancingMarker(request.marker, page.nextMarker);
       const identity = (row: ListingRowDTO) => row.kind + ":" + row.name;
       const names = new Set(this.entries.map(identity));
@@ -2162,6 +2192,91 @@ export class BrowserState {
       op.error = err instanceof Error ? err.message : String(err);
       op.status = "pending";
     }
+  }
+
+  /** Open the selected-set deletion (ADR 0093 decision 5) around a snapshot
+   * of what is selected now: the scope the rows were listed under, the
+   * container, the object rows with the facts they were listed with, unique
+   * by name, and the prefix rows left out. False when fewer than two rows
+   * are selected or none of them is an object. */
+  openSelectedDelete(): boolean {
+    const container = this.containerName;
+    const listingScope = this.#entriesScope;
+    const rows = this.chosenRows;
+    if (!container || !listingScope || this.connecting || rows.length < 2) return false;
+    const members: ListingRowDTO[] = [];
+    const seen = new Set<string>();
+    const excludedPrefixes: string[] = [];
+    for (const row of rows) {
+      if (row.kind !== "object") {
+        excludedPrefixes.push(row.name);
+      } else if (!seen.has(row.name)) {
+        seen.add(row.name);
+        members.push({ ...row });
+      }
+    }
+    if (members.length === 0) return false;
+    this.selectedDelete = {
+      container, listingScope: { ...listingScope }, scope: this.#scopeRevision, members, excludedPrefixes,
+      ceiling: this.retentionCeiling, status: "pending", jobId: null, error: null,
+    };
+    return true;
+  }
+
+  closeSelectedDelete() {
+    this.selectedDelete = null;
+  }
+
+  /** Why the open selected-set deletion no longer matches the view, or null
+   * while it still does (ADR 0093 decision 5): the view moved, the
+   * selection changed, a member left the listing, or a member's listed facts
+   * differ from the snapshot. A count that still matches is never enough. */
+  selectedDeleteProblem(): string | null {
+    const op = this.selectedDelete;
+    if (!op) return null;
+    if (this.connecting || this.#scopeRevision !== op.scope || this.containerName !== op.container) {
+      return "the view moved, so the selection it was made from is gone";
+    }
+    const live = new Map(this.chosenRows.map((row) => [rowIdentity(row), row]));
+    if (live.size !== op.members.length + op.excludedPrefixes.length) return "the selection changed";
+    for (const prefix of op.excludedPrefixes) {
+      if (!live.has("prefix:" + prefix)) return "the selection changed";
+    }
+    for (const member of op.members) {
+      const row = live.get("object:" + member.name);
+      if (!row) return "the selection changed";
+      if (!sameListingFacts(row, member)) return `${member.name} changed since it was listed`;
+    }
+    return null;
+  }
+
+  /** Start the opened selected-set deletion once, from the snapshot alone,
+   * with the count the operator typed; the job id lands on the operation
+   * and the selection it was made from is released. */
+  async runSelectedDelete(confirm: string): Promise<void> {
+    const op = this.selectedDelete;
+    if (!op || op.status !== "pending" || this.selectedDeleteProblem() !== null) return;
+    op.status = "running";
+    try {
+      const jobId = await this.startSelectedDelete({
+        scope: { ...op.listingScope }, container: op.container, members: op.members.map((m) => ({ ...m })), confirm,
+      });
+      if (this.selectedDelete !== op) return;
+      op.jobId = jobId;
+      op.status = "done";
+      this.clearSelection();
+    } catch (err) {
+      if (this.selectedDelete !== op) return;
+      op.error = err instanceof Error ? err.message : String(err);
+      op.status = "pending";
+    }
+  }
+
+  async startSelectedDelete(req: SelectedDeleteRequestDTO): Promise<string> {
+    const id = await this.#api.startSelectedDelete(req);
+    this.#watchJob(id, { bookmarkId: req.scope.bookmarkId, container: req.container });
+    await this.loadJobs();
+    return id;
   }
 
   /** The open container's settings fact from its loaded row, or one HEAD

@@ -105,6 +105,7 @@ export type {
   SegmentOwnershipDTO,
   SegmentsDeleteRequestDTO,
   SegmentsDeleteResultDTO,
+  SelectedDeleteRequestDTO,
   UploadRequestDTO,
 } from "../../bindings/github.com/csmart/aeronautes/internal/app";
 import type {
@@ -121,6 +122,7 @@ import type {
   SegmentOwnershipDTO,
   SegmentsDeleteRequestDTO,
   SegmentsDeleteResultDTO,
+  SelectedDeleteRequestDTO,
   UploadRequestDTO,
 } from "../../bindings/github.com/csmart/aeronautes/internal/app";
 
@@ -226,6 +228,9 @@ export interface Api {
   startDownload(req: DownloadRequestDTO): Promise<string>;
   previewDelete(req: DeleteRequestDTO): Promise<DeletePreviewDTO>;
   startDelete(req: DeleteRequestDTO): Promise<string>;
+  /** Delete the selected objects as one job (ADR 0093): the members are the
+   * listing rows as shown and the confirmation is their count, typed. */
+  startSelectedDelete(req: SelectedDeleteRequestDTO): Promise<string>;
   startBenchmark(req: BenchmarkRequestDTO): Promise<string>;
   latestBenchmark(bookmarkId: string): Promise<BenchmarkResultDTO | null>;
   appSettings(): Promise<AppSettingsDTO>;
@@ -321,6 +326,7 @@ export const liveApi: Api = {
     return preview;
   },
   startDelete: (req) => DeleteService.StartDelete(req),
+  startSelectedDelete: (req) => DeleteService.StartSelectedDelete(req),
   startBenchmark: (req) => BenchmarkService.StartBenchmark(req),
   latestBenchmark: (bookmarkId) => BenchmarkService.Latest(bookmarkId),
   appSettings: async () => {
