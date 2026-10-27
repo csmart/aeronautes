@@ -55,8 +55,9 @@ func (s *Store) finish(ctx context.Context, id string, result Completion, trail 
 	now := time.Now().UTC().Format(time.RFC3339)
 	return s.db.WriteTx(ctx, func(tx *sql.Tx) error {
 		var current State
+		var kind Type
 		var version int
-		if err := tx.QueryRowContext(ctx, `SELECT state, item_records_version FROM jobs WHERE id=?`, id).Scan(&current, &version); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT state, type, item_records_version FROM jobs WHERE id=?`, id).Scan(&current, &kind, &version); err != nil {
 			return fmt.Errorf("read job completion state: %w", err)
 		}
 		if !fromItems && version == 1 {
@@ -72,6 +73,17 @@ func (s *Store) finish(ctx context.Context, id string, result Completion, trail 
 			}
 			if result.State == StateComplete && !totals.permitsComplete() {
 				return ErrIncompleteItemRecords
+			}
+			if kind == TypeDeleteSelected {
+				// A deletion is complete only when every admitted member was
+				// deleted: a member not attempted carries no problem facet and
+				// must still keep the job from claiming completion. The durable
+				// deleted count is the items', never the caller's (ADR 0093
+				// decision 4).
+				if result.State == StateComplete && totals.Deleted != totals.Admitted {
+					return ErrIncompleteItemRecords
+				}
+				result.Counters.ObjectsDeleted = totals.Deleted
 			}
 			result.Counters.ObjectsFailed = totals.Failed
 			result.Audit.Summary += fmt.Sprintf(" · item outcomes: %d failed names, %d conflicts, %d refusals, %d unresolved, %d unverified, %d with problems",

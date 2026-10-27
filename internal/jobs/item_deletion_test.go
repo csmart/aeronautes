@@ -327,3 +327,81 @@ func TestInterruptedDeletionKeepsItsMembersHonest(t *testing.T) {
 		t.Fatalf("totals = %+v, %v", totals, err)
 	}
 }
+
+// db:910: completion understands a deletion. Members never attempted carry no
+// problem facet, so they must keep the job from completing on their own, and
+// the deleted count a caller supplies is replaced by the items'.
+func TestDeletionCompletionIsDerivedFromItsMembers(t *testing.T) {
+	t.Run("members not attempted cannot complete", func(t *testing.T) {
+		store, bookmark := newStore(t)
+		ctx := t.Context()
+		job := deletionJob(t, store, bookmark, "a.txt", "b.txt")
+		for _, name := range []string{"a.txt", "b.txt"} {
+			if err := store.RecordDeletion(ctx, job.ID, name, ItemObservation{Result: ItemNotAttempted, Effect: EffectNotAttempted}, nil); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := store.Transition(ctx, job.ID, StateVerifying); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.FinishFromItems(ctx, job.ID, itemCompletion(job, StateComplete), auditTrail(t, store)); !errors.Is(err, ErrIncompleteItemRecords) {
+			t.Fatalf("a job that deleted nothing completed: %v", err)
+		}
+	})
+	t.Run("the deleted count is the items'", func(t *testing.T) {
+		store, bookmark := newStore(t)
+		ctx := t.Context()
+		job := deletionJob(t, store, bookmark, "a.txt", "b.txt")
+		for _, name := range []string{"a.txt", "b.txt"} {
+			if err := store.MarkIssued(ctx, job.ID, name); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.RecordDeletion(ctx, job.ID, name, ItemObservation{Result: ItemDeleted, Effect: EffectReportedApplied}, &ItemSuccessor{}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := store.Transition(ctx, job.ID, StateVerifying); err != nil {
+			t.Fatal(err)
+		}
+		result := itemCompletion(job, StateComplete)
+		result.Counters.ObjectsDeleted = 41
+		if err := store.FinishFromItems(ctx, job.ID, result, auditTrail(t, store)); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := store.Get(ctx, job.ID); err != nil || got.State != StateComplete || got.Counters.ObjectsDeleted != 2 {
+			t.Fatalf("job = %+v, %v; want two deletions from the items", got, err)
+		}
+	})
+}
+
+// db:910: the outcome and the observation are one immutable pair, so an
+// outcome recorded with nothing observed cannot gain a successor later.
+func TestRecordedOutcomeCannotGainASuccessor(t *testing.T) {
+	store, bookmark := newStore(t)
+	ctx := t.Context()
+	job := deletionJob(t, store, bookmark, "a.txt")
+	unverified := ItemObservation{Result: ItemUnverified, Effect: EffectUnresolved, Diagnostic: ItemDiagnostic{Stage: StageVerification, Code: CodeUnverified}}
+	if err := store.RecordDeletion(ctx, job.ID, "a.txt", unverified, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordDeletion(ctx, job.ID, "a.txt", unverified, nil); err != nil {
+		t.Fatalf("the same pair again is not idempotent: %v", err)
+	}
+	if err := store.RecordDeletion(ctx, job.ID, "a.txt", unverified, &ItemSuccessor{Present: true, Class: "plain", Length: 1, ETag: "9"}); !errors.Is(err, ErrItemRecordConflict) {
+		t.Fatalf("a successor was attached to a recorded outcome: %v", err)
+	}
+}
+
+// db:910: what a selected-set deletion deletes is a Swift object.
+func TestDeletionMembersAreSwiftObjects(t *testing.T) {
+	store, _ := newStore(t)
+	ctx := t.Context()
+	job, err := store.Create(ctx, Job{Type: TypeDeleteSelected, ItemRecordsVersion: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	local := ItemIntent{ItemIdentity: ItemIdentity{Key: "/tmp/not-an-object", Source: ItemLocation{Kind: ItemLocal, LocalPath: "/tmp/not-an-object"}}, Planned: true, Admitted: true}
+	if err := store.AdmitItems(ctx, job.ID, []ItemIntent{local}); !errors.Is(err, ErrInvalidItemRecord) {
+		t.Fatalf("a local path was admitted as a deletion member: %v", err)
+	}
+}
