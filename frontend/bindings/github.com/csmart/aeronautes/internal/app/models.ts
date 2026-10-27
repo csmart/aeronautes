@@ -129,6 +129,15 @@ export interface AppSettingsDTO {
      * confirmation states what will be removed.
      */
     "reclaimReplacedFragments": boolean;
+
+    /**
+     * RailWidthPx is the width the operator dragged the bookmark rail to,
+     * in CSS pixels; 0 means the layout's own default. It lives with the
+     * settings because the webview's own storage is not guaranteed to
+     * survive a restart, and a width that resets on every launch is not
+     * a setting.
+     */
+    "railWidthPx": number;
 }
 
 /**

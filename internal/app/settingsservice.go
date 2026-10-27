@@ -102,6 +102,12 @@ type AppSettingsDTO struct {
 	// decision 2's native confirmation, which no page can answer, and that
 	// confirmation states what will be removed.
 	ReclaimReplacedFragments bool `json:"reclaimReplacedFragments"`
+	// RailWidthPx is the width the operator dragged the bookmark rail to,
+	// in CSS pixels; 0 means the layout's own default. It lives with the
+	// settings because the webview's own storage is not guaranteed to
+	// survive a restart, and a width that resets on every launch is not
+	// a setting.
+	RailWidthPx int `json:"railWidthPx"`
 }
 
 // defaultDownloadObjectCeiling is 250,000 objects: about 352 MiB of peak
@@ -142,6 +148,13 @@ const (
 	defaultMaxConnsPerHost = swiftcontrol.DefaultMaxConnsPerHost
 	minMaxConnsPerHost     = 1
 	maxMaxConnsPerHost     = 256
+)
+
+// The bookmark rail's dragged width: below 64 pixels the account badge no
+// longer fits, above 480 the rail crowds out the panes beside it.
+const (
+	minRailWidthPx = 64
+	maxRailWidthPx = 480
 )
 
 func defaults() AppSettingsDTO {
@@ -208,6 +221,10 @@ func (s *SettingsService) Get(ctx context.Context) (AppSettingsDTO, error) {
 			if on, err := strconv.ParseBool(value); err == nil {
 				settings.ReclaimReplacedFragments = on
 			}
+		case "rail_width_px":
+			if n, err := strconv.Atoi(value); err == nil {
+				settings.RailWidthPx = n
+			}
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -233,6 +250,10 @@ func (s *SettingsService) Get(ctx context.Context) (AppSettingsDTO, error) {
 	}
 	if settings.MaxConnsPerHost < minMaxConnsPerHost || settings.MaxConnsPerHost > maxMaxConnsPerHost {
 		settings.MaxConnsPerHost = defaultMaxConnsPerHost
+	}
+	// A stored width the range no longer admits reads back as the default.
+	if settings.RailWidthPx != 0 && (settings.RailWidthPx < minRailWidthPx || settings.RailWidthPx > maxRailWidthPx) {
+		settings.RailWidthPx = 0
 	}
 	return settings, nil
 }
@@ -282,6 +303,9 @@ func (s *SettingsService) Set(ctx context.Context, settings AppSettingsDTO) (App
 	if settings.MaxConnsPerHost < minMaxConnsPerHost || settings.MaxConnsPerHost > maxMaxConnsPerHost {
 		return AppSettingsDTO{}, fmt.Errorf("max connections per host %d out of range %d..%d", settings.MaxConnsPerHost, minMaxConnsPerHost, maxMaxConnsPerHost)
 	}
+	if settings.RailWidthPx != 0 && (settings.RailWidthPx < minRailWidthPx || settings.RailWidthPx > maxRailWidthPx) {
+		return AppSettingsDTO{}, fmt.Errorf("rail width %d px out of range %d..%d (0 for the default)", settings.RailWidthPx, minRailWidthPx, maxRailWidthPx)
+	}
 	err := s.db.WriteTx(ctx, func(tx *sql.Tx) error {
 		for key, value := range map[string]string{
 			"max_active_jobs":           strconv.Itoa(settings.MaxActiveJobs),
@@ -296,6 +320,7 @@ func (s *SettingsService) Set(ctx context.Context, settings AppSettingsDTO) (App
 			// reclaiming off has a row saying so rather than relying on the
 			// absence of one.
 			"reclaim_replaced_fragments": strconv.FormatBool(settings.ReclaimReplacedFragments),
+			"rail_width_px":              strconv.Itoa(settings.RailWidthPx),
 		} {
 			if _, err := tx.ExecContext(ctx,
 				`INSERT INTO app_settings (key, value) VALUES (?, ?)
