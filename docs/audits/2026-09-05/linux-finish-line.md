@@ -126,6 +126,10 @@ The first two decide the release after v1 and are recorded here so the trail sta
     Of the configure-container panel: "it's only k/v metadata values, can we have some buttons to tick to turn on read only, web, common things people might do? and then that's reflected below in the actual metadata (and vice versa, if someone adds the right metadata it ticks the boxes), maybe separated by a line?", and "I don't want people to need to know the exact syntax to make a container world readable and enable web".
     The author's reading is [ADR 0090](../../adr/0090-container-presets.md): tick boxes for world read, public listing and static web derived from the values they stand for, with the `Web-*` family becoming editable metadata so the website tick has rows to stand for; the public-read acknowledgement and its native confirmation are untouched, and no deferred capability moves.
 
+29. A first account must be easy to add and checkable before it is saved.
+    "if there are no accounts on the machine, we shoudl also prompt with a wizard to create theior first account and also, the account setup needs a verify button to validate the account details against the endpoint before saving/addin git".
+    The author's reading: a welcome dialog on a known-empty bookmark list that opens the editor (§54), and a Verify action in the editor backed by the new bridge action `BookmarkService.Verify`, which authenticates the typed details under the saved-bookmark endpoint policy and TLS trust, persists nothing and returns only the account name and HEAD counts ([ADR 0011](../../adr/0011-typed-service-surface.md)); the scenario contract and the preservation baseline grow by that action's row, as recorded in the baseline's experiment note.
+
 ## Six production gates
 
 | Gate | Existing packages | Completion condition |
