@@ -12,11 +12,11 @@ The principle is unchanged: none of the deferred capabilities is unbuilt, return
 
 **A build offers** browse, inspect, download, upload including an acknowledged replacement, object and container metadata editing, container creation with a storage policy, prefix-marker creation, the container presets of [ADR 0090](../../adr/0090-container-presets.md), a verify-before-save action and a first-run welcome under [ADR 0091](../../adr/0091-verify-action-contract.md), an account rail that groups and filters many bookmarks, and listings that refresh after a job.
 
-**Built, tested and refused behind the gate**, each with a trial token under [ADR 0082](../../adr/0082-operator-enabled-unproven-capabilities.md): copy and job re-run; bulk deletion of a prefix, of a container's contents or of a container; marker deletion; manifest deletion, alone or together with its exclusively owned segments; benchmark.
+**Built, tested and refused behind the gate**, each with a trial token under [ADR 0082](../../adr/0082-operator-enabled-unproven-capabilities.md): copy and job re-run; bulk deletion of a prefix, of a container's contents or of a container; marker deletion; manifest deletion, alone or together with its segments on the force-only Backstage path, where recorded ownership is advisory and never authorises on its own; benchmark; and, with copy, the Auto, Balanced, Aggressive and Custom profiles with their per-job overrides.
 
 **Refused independently of the gate:** Mirror, under [ADR 0020](../../adr/0020-recovery-containment.md), with [ADR 0086](../../adr/0086-mirror-deletes-what-the-source-does-not-have.md) as its proposed contract.
 
-**Not built:** deleting one selected object (P27); multi-selection, whose rule [ADR 0072](../../adr/0072-large-namespace-handling.md) decision 3 records for later work; directory upload; versioning management, where [ADR 0054](../../adr/0054-versioning-preflight-authority.md) refuses an edit on an established mode and modern editing stays refused; TempURL and CORS management, which are read-only; Keystone authentication, since the session speaks TempAuth v1 only; the encrypted vault fallback of [ADR 0006](../../adr/0006-secret-storage-linux.md); pause and resume (finish line decision 17); performance profiles, bookmark and per-job overrides and the adaptive back-off of K-PERF-003; job history export, support diagnostics and backup and restore (P28); the restart disclosure of [ADR 0088](../../adr/0088-interrupted-job-disclosure.md), whose recording half landed and whose notice has not.
+**Not built:** deleting one selected object (P27); multi-selection, whose rule [ADR 0072](../../adr/0072-large-namespace-handling.md) decision 3 records for later work; directory upload; modern versioning management, which [ADR 0054](../../adr/0054-versioning-preflight-authority.md) keeps read-only while legacy versions and history locations are already editable; TempURL and CORS management, which are read-only; Keystone authentication, since the session speaks TempAuth v1 only; the encrypted vault fallback of [ADR 0006](../../adr/0006-secret-storage-linux.md); pause and resume (finish line decision 17); bookmark overrides and the adaptive back-off of K-PERF-003; job history export, support diagnostics and backup and restore (P28); the restart disclosure of [ADR 0088](../../adr/0088-interrupted-job-disclosure.md), whose recording half landed and whose notice has not.
 
 **Release state.** 0.1.0 is not tagged: it waits on the operator's run of the [0.1.0 test plan](../2026-09-24/0.1.0-test-plan.md) and its results file, as [RELEASING](../../RELEASING.md) requires, against the Linux packages built from master `2928da48`.
 Every artefact is unsigned by decision, v1 supports Linux only (finish line decision 1), and the macOS and Windows builds are development builds without acceptance.
@@ -51,7 +51,9 @@ Deletion carries the most hazards of any capability, which is why the 25 Septemb
 2. **Selected-set deletion.**
    Multi-selection of the loaded rows, as ADR 0072 decision 3 records, and one confirmation that names what it will delete; each name is an exact deletion and no prefix is inferred from a selection.
 3. **Marker and manifest deletion return**, reversing ADR 0052 decision 7 on the operator's word.
-   Manifest deletion is already bound by ADR 0085; deleting a manifest with its segments keeps the exclusive-ownership proof of K-SEG-004 and the force-only Backstage path.
+   Manifest deletion is already bound by ADR 0085.
+   Deleting a manifest with its segments is built as a force-only Backstage path with typed confirmation: recorded ownership is advisory because no live reverse-reference scan exists, and even a proven prefix does not delete without force.
+   That force-only path is what 0.2.0 returns; a cleanup authorised by ownership alone would need the exclusivity proof K-SEG-004 requires and is not proposed here.
 4. **Bulk deletion of a prefix or a container**, proposed as 0.2.x so that exact deletion is not held behind the hardest proof.
    It needs the prefix protocol ADR 0085 records as owed, for the listing-to-request race and names first listed in a later pass; L03's allowed-effect contract; and L04's deletion failure streams.
    Automatic segment reclamation stays refused apart from [ADR 0081](../../adr/0081-upload-overwrite-acknowledgement.md) decision 5, because the DS-01 hazard is a recovery sweep deleting segments an unrelated live manifest still references.
@@ -72,7 +74,8 @@ The three clauses the register reconciliation could not establish are resolved h
 
 ### 0.5.0 — account and container features
 
-Versioning management (P26): the ADR 0054 refusal stands until the legacy archive and modern display-only matrix has real-Swift evidence, and then container versioning becomes configurable where the cluster supports it.
+Versioning (P26): the container editor already switches legacy versioning off or to a versions or history location with its archive container, and refuses an edit whose preflight is unestablished.
+Modern in-container versioning stays read-only under ADR 0054 until the legacy archive and modern display-only matrix has real-Swift evidence, and the hidden-version preservation L09 asks of the transfer and delete routes returns with those routes.
 TempURL keys and CORS management, which the README tracks as v1.x work.
 Directory upload and account metadata (P27).
 Pause and resume (finish line decision 17), feasible since the batching of ADR 0074.
@@ -81,8 +84,9 @@ Keystone authentication and the vault fallback belong here if the operator decid
 
 ### 0.6.0 — performance
 
-Measured workload bounds and fairness (P24 and P25), the benchmark's return, the Auto, Balanced, Aggressive and Custom profiles with bookmark and per-job overrides that §63 lists, and the adaptive back-off of K-PERF-003.
-Recommendation: re-scope the profiles and the benchmark to 1.x unless the operator needs them, since §63 lists them and only the operator can take them out.
+Measured workload bounds and fairness (P24 and P25), the benchmark's return, bookmark overrides, per-job settings on the local transfer dialog, and the adaptive back-off of K-PERF-003.
+The Auto, Balanced, Aggressive and Custom profiles and their per-job overrides already exist behind the copy affordance and return with copy in 0.3.0; Auto's stored recommendation needs the benchmark.
+Recommendation: re-scope the benchmark and the adaptive back-off to 1.x unless the operator needs them, since §63 lists them and only the operator can take them out.
 
 ### 0.7.0 — platforms and distribution
 
@@ -133,31 +137,31 @@ Shipped means offered by a build; gated means built and refused under ADR 0052; 
 | Mutate | edit container and account metadata | container shipped; account not built | 0.5.0 |
 | Mutate | edit container ACLs | shipped, with the public-read acknowledgement | — |
 | Mutate | create containers with the correct policy | shipped | — |
-| Mutate | configure supported container features | presets and quotas shipped; versioning refused; TempURL and CORS read-only | 0.5.0 |
+| Mutate | configure supported container features | presets, quotas and legacy versioning locations shipped; modern versioning read-only; TempURL and CORS read-only | 0.5.0 |
 | Mutate | meaningful diffs and conflicts | shipped | — |
 | Transfer | upload | shipped, with acknowledged replacement | — |
 | Transfer | download | shipped | — |
 | Transfer | upload directories and multiple files | multiple files shipped; directories not built | 0.5.0 |
 | Transfer | copy across bookmarks | gated | 0.3.0 |
 | Transfer | mirror | refused under ADR 0020 | decision at 1.0.0 |
-| Transfer | progress, throughput and worker allocation | progress and throughput shipped; effective settings owed under UI-09 | 0.4.0 |
+| Transfer | progress, throughput and worker allocation | progress and throughput shipped, and the jobs drawer shows each job's recorded settings; the remaining UI-09 counters are owed | 0.4.0 |
 | Transfer | cancel | shipped | — |
-| Transfer | understand destination large-object placement | chunk sizing and collision preflight shipped; the native-versus-engine data path is not labelled | 0.4.0 |
+| Transfer | understand destination large-object placement | chunk sizing and collision preflight shipped; the copy preview names the data path behind the gate, the local transfer dialog does not | 0.4.0 |
 | Delete | delete ordinary objects | not built | 0.2.0 |
 | Delete | remove markers | gated | 0.2.0 |
 | Delete | recursively delete normal prefixes | gated, protocol owed | 0.2.x |
 | Delete | empty containers | gated, protocol owed | 0.2.x |
 | Delete | delete SLO manifests | gated, bound by ADR 0085 | 0.2.0 |
-| Delete | delete SLOs with exact segments | gated, with the ownership proof | 0.2.0 |
+| Delete | delete SLOs with exact segments | gated, force-only with typed confirmation; ownership advisory | 0.2.0 |
 | Delete | delete DLO manifests | gated, bound by ADR 0085 | 0.2.0 |
-| Delete | clean known-owned DLO segments | gated, prefix-scoped with the ownership proof | 0.2.x |
+| Delete | clean known-owned DLO segments | gated, prefix-scoped and force-only; ownership advisory | 0.2.x |
 | Delete | deliberate Backstage cleanup | gated, force and typed confirmation | 0.2.x |
 | Performance | global resource budgets | shipped as settings under ADR 0074 | — |
 | Performance | bookmark overrides | not built | 0.6.0 |
-| Performance | per-job overrides | chunk size per job only | 0.6.0 |
-| Performance | Auto, Balanced, Aggressive and Custom | not built | 0.6.0 or re-scoped |
+| Performance | per-job overrides | built behind copy; the local transfer dialog offers chunk size only | 0.3.0 with copy; 0.6.0 for local transfers |
+| Performance | Auto, Balanced, Aggressive and Custom | built behind copy; Auto's recommendation needs the benchmark | 0.3.0 with copy |
 | Performance | benchmark a bookmark | gated | 0.6.0 or re-scoped |
-| Performance | report throughput and effective configuration | throughput shipped; effective configuration owed under UI-09 | 0.4.0 |
+| Performance | report throughput and effective configuration | throughput and recorded settings shipped; effective-setting disclosure owed under UI-09 | 0.4.0 |
 | Performance | choose among native and engine strategies | shipped | — |
 | Safety | the eight prohibitions | enforced by refusals and maintained tests | — |
 
@@ -172,7 +176,7 @@ Beyond §63, the operator has asked for or the records owe: selected-set deletio
 5. Platforms: all six targets as K-PLAT-003 requires, which needs macOS and Windows machines for acceptance, or a recorded narrowing.
 6. Signing: whose keys, and whether 1.0.0 ships signed.
 7. The Wails 3.0.0 beta pin: ship 1.0.0 on it, or wait for a stable 3.0.0.
-8. Performance profiles and the benchmark: 1.0.0 or 1.x.
+8. The benchmark and the adaptive back-off: 1.0.0 or 1.x.
 9. The vault fallback for hosts without a Secret Service: 1.0.0 or 1.x.
 10. Linux formats: whether AppImage or Flatpak join the rpm, deb and tarball.
 
