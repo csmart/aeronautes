@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/csmart/aeronautes/internal/mutationfacts"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	"github.com/csmart/aeronautes/internal/systemtest/oracle"
 )
@@ -66,6 +67,14 @@ func testObjectDelete(t *testing.T, h *Harness) {
 		if d := diffOf(secondaryBefore, secondaryAfter); !d.Empty() {
 			t.Fatalf("the other account changed:\n%s", d)
 		}
+	}
+	// The durable record of the success: one applied fact and one audit event
+	// for this resource, each carrying the transaction identifiers it saw.
+	if facts := deleteFactsFor(t, h, c+"/target.txt"); len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeApplied || len(facts[0].TransIDs) == 0 {
+		t.Fatalf("applied fact = %+v", facts)
+	}
+	if events := deleteEventsFor(t, h, c+"/target.txt"); len(events) != 1 || events[0].Result != "applied" || len(events[0].TransIDs) == 0 {
+		t.Fatalf("applied event = %+v", events)
 	}
 	rec.CreditApplied()
 
