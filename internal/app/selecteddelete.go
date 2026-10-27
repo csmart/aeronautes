@@ -281,7 +281,11 @@ func selectedMemberOutcome(result *swiftcontrol.ObjectDeleteResult, err error) (
 		found := &jobs.ItemSuccessor{Present: true, Class: conflict.FoundClass, Length: conflict.FoundLength, ETag: conflict.FoundETag, Role: jobs.SuccessorComparison}
 		return jobs.ItemObservation{Result: jobs.ItemConflict, Effect: jobs.EffectNotAttempted,
 			Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageSourceRead, Code: jobs.CodeConflict}}, found, baseline
-	case result != nil && errors.As(err, &se) && se.HTTPStatus >= 400:
+	case result != nil && result.Requested && errors.As(err, &se):
+		// The DELETE left and the store answered with something other than
+		// success: a client-side refusal, a refused token or a status outside
+		// success such as a redirect. The member failed at its request, and
+		// a request was sent whatever the answer (ADR 0093 decision 4).
 		return jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectNotAttempted,
 			Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageCommit, Code: itemCodeOf(se.Kind), HTTPStatus: se.HTTPStatus}}, nil, baseline
 	default:
