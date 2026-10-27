@@ -226,7 +226,7 @@ describe("the selected-set dialog", () => {
     expect(text).toContain("external-slo");
     expect(text).toContain("Not included: 1 prefix row");
     expect(text).toContain("normal/");
-    expect(text).toContain("at most 100,000 objects");
+    expect(text).toContain("at most 250,000 objects");
     expect(text).toContain("keeps versions in the-archive");
     expect(text).toContain("changed since is left as it is");
     const start = vi.spyOn(f.fake, "startSelectedDelete");
@@ -257,6 +257,22 @@ describe("the selected-set dialog", () => {
     expect(names(f.browser.entries)).toContain("normal/");
     click(button("Close", f.root));
     expect(f.done).toHaveBeenCalledOnce();
+  });
+
+  it("states the operator's selection ceiling, the download object ceiling setting", async () => {
+    const f = await state();
+    applyEnabledCapabilities(["Object deletion"]);
+    await f.browser.loadAppSettings();
+    await f.browser.saveAppSettings({ ...f.browser.appSettings!, downloadObjectCeiling: 1000, browserRetentionCeiling: 2000 });
+    f.browser.select(f.index("empty-object"));
+    f.browser.toggleRow(f.index("external-slo"));
+    await settle();
+    expect(f.browser.openSelectedDelete()).toBe(true);
+    expect(f.browser.selectedDelete?.ceiling).toBe(1000);
+    const component = mount(SelectedDeleteDialog, { target: f.root, props: { browser: f.browser, onClose: vi.fn() } });
+    mounted.add(component);
+    flushSync(); await settle();
+    expect((f.root.textContent ?? "").replace(/\s+/g, " ")).toContain("at most 1,000 objects; the ceiling is set in the jobs drawer");
   });
 
   it("cannot confirm until the versioning consequence is known or explicitly unknown", async () => {

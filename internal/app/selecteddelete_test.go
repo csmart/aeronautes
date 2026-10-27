@@ -332,6 +332,29 @@ func TestSelectedDeleteCountsAnUnverifiedMemberOnceWhenCancelled(t *testing.T) {
 	}
 }
 
+// ADR 0093 decision 2 reuses ADR 0072 decision 4's selection ceiling, the
+// download object ceiling setting, not the browser's retention ceiling.
+func TestSelectedDeleteUsesTheSelectionCeilingSetting(t *testing.T) {
+	h, service := selectedHarness(t)
+	settings := NewSettingsService(h.db, h.transfer.runner)
+	current, err := settings.Get(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	current.DownloadObjectCeiling = 1000
+	current.BrowserRetentionCeiling = 2000
+	if _, err := settings.Set(t.Context(), current); err != nil {
+		t.Fatal(err)
+	}
+	WireDeleteSettings(service, settings)
+	if got := service.selectionCeiling(t.Context()); got != 1000 {
+		t.Fatalf("the selection ceiling is %d, want the download object ceiling 1000 rather than the retention ceiling 2000", got)
+	}
+	if service.ceiling = nil; service.selectionCeiling(t.Context()) != defaultDownloadObjectCeiling {
+		t.Fatalf("the default is not the download object ceiling's: %d", service.selectionCeiling(t.Context()))
+	}
+}
+
 // Members the protocol refuses or finds changed do not stop the job: each
 // lands as its own word and the others are deleted, and the job is partial.
 func TestSelectedDeleteSettlesEachMemberOnItsOwn(t *testing.T) {
