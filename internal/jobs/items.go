@@ -89,9 +89,12 @@ func (s *Store) AdmitItems(ctx context.Context, jobID string, items []ItemIntent
 			if item.deletion() != (kind == TypeDeleteSelected) {
 				return ErrInvalidItemRecord
 			}
-			if kind == TypeDeleteSelected && item.Source.Kind != ItemSwift {
+			if kind == TypeDeleteSelected && (item.Source.Kind != ItemSwift || !item.Admitted || !item.Planned) {
 				// What a selected-set deletion deletes is a Swift object the
-				// operator selected (ADR 0093 decision 4); a local path is not one.
+				// operator selected, and the whole selected set is admitted at
+				// once (ADR 0093 decision 4): a local path is not a member, and
+				// a member the ledger does not count as admitted would end the
+				// job complete with it untouched.
 				return ErrInvalidItemRecord
 			}
 			if _, err := insertItem(ctx, tx, jobID, item); err != nil {
