@@ -850,7 +850,9 @@ export function newFakeApi(): Api {
       objects: 42,
       bytes: 9_000_000,
       possibleManifests: 2,
-      strategy: "bulk-delete",
+      laterBaselineRows: 2,
+      requestCost: 86,
+      strategy: "per-name-verified",
     }),
     startDelete: async (req) => {
       if (req.confirm !== req.container) {
@@ -979,13 +981,29 @@ export function newFakeApi(): Api {
       proven: req.name === "owned.bin",
       segments: 0,
       inlineEntries: 0,
+      reviewed: { class: "dlo", fingerprint: "dlo:0:etag", namespace: "media_segments/owned/" },
     }),
     deleteManifestWithSegments: async (req) => {
       if (req.confirm !== req.name) {
         throw new Error("confirmation does not match the object name");
       }
-      record("segments.delete", `${req.container}/${req.name}`, "applied");
-      return { manifestDeleted: true, segmentsDeleted: 3, segmentsFailed: 0, basis: req.force ? "backstage-forced" : "exclusive-ownership" };
+      if (!req.force) {
+        throw new Error("deleting segments needs the Backstage force with typed confirmation");
+      }
+      // A job now (ADR 0095 decision 8): the manifest is removed and the job
+      // ends at once; the real job compares the reviewed graph first.
+      objects[req.container] = (objects[req.container] ?? []).filter((o) => o.name !== req.name);
+      const id = `job-${jobs.length + 1}`;
+      jobs.push({
+        id, type: "delete_segments", state: "complete", source: `${req.container}/${req.name}`, destination: "(manifest + segments)",
+        sourceBookmarkId: req.bookmarkId, destBookmarkId: "", createdAt: "2026-10-27T10:00:00Z",
+        startedAt: "2026-10-27T10:00:01Z", finishedAt: "2026-10-27T10:00:02Z", engine: "native", settings: "", recoveryRecords: 0,
+        counters: { objectsPlanned: 4, objectsCopied: 4, objectsVerified: 0, objectsFailed: 0,
+          bytesPlanned: 0, bytesCopied: 0, overwrites: 0, overwritesRefused: 0, nativeRouted: 0, objectsDeleted: 4 },
+        error: "",
+      });
+      record("segments.delete.start", `${req.container}/${req.name}`, "applied");
+      return id;
     },
     recoveryStatus: async () => ({ jobs: 0, records: 0 }),
     job: async (id, bookmarkId) => scopedJob(id, bookmarkId),

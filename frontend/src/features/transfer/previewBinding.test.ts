@@ -22,7 +22,7 @@ const copyPlan: CopyPlanDTO = {
   versionedDestination: false, largeObjectsAsDlo: false,
 };
 const deletePlan: DeletePreviewDTO = {
-  objects: 1, bytes: 5, possibleManifests: 0, strategy: "current deletion",
+  objects: 1, bytes: 5, possibleManifests: 0, laterBaselineRows: 0, requestCost: 2, strategy: "current deletion",
 };
 
 const mounted = new Set<ReturnType<typeof mount>>();
@@ -414,4 +414,15 @@ it("Copy submits the complete previewed settings and both scopes", async () => {
   expect(f.api.planCopy).toHaveBeenCalledExactlyOnceWith(expected);
   expect(f.api.startCopy).toHaveBeenCalledExactlyOnceWith(expected);
   f.startReply.resolve("accepted-job"); await settle();
+});
+
+it("the delete preview states the per-name request cost and the later-baseline rows", async () => {
+  const f = show("delete");
+  f.deletes.length = 0;
+  f.preview();
+  f.deletes[0].resolve({ objects: 12, bytes: 1000, possibleManifests: 2, laterBaselineRows: 2, requestCost: 26, strategy: "per-name-verified" });
+  await settle();
+  const cost = f.root.querySelector(".cost")!.textContent!;
+  expect(cost).toContain("26 requests");
+  expect(cost).toContain("2 of these rows take that extra read");
 });

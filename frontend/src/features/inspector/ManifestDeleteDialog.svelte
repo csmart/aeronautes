@@ -8,7 +8,7 @@
   option is taken, never for the manifest-only path. -->
 <script lang="ts">
   import { trapFocus } from "../../lib/trapFocus";
-  import { onMount, untrack } from "svelte";
+  import { onMount, onDestroy, untrack } from "svelte";
   import type { BrowserState } from "../browser/browserState.svelte";
   import type { ContainerSettingsDTO, ObjectDetailDTO, SegmentOwnershipDTO } from "../../lib/api";
   import { v1Offers } from "../../lib/v1.svelte";
@@ -26,6 +26,7 @@
   // svelte-ignore state_referenced_locally
   const request = Object.freeze({
     bookmarkId: browser.connectedBookmarkId ?? "", container: op.container, name: op.name, force: false, confirm: "",
+    reviewed: { class: "", fingerprint: "" },
   });
 
   // undefined while the container's facts are being read, null when they
@@ -38,6 +39,10 @@
   let confirmText = $state("");
   let segmentsBusy = $state(false);
   let segmentsError: string | null = $state(null);
+  // The segments deletion starts a job and resolves after the dialog may
+  // already have closed or unmounted; a late success must not call back then.
+  let live = true;
+  onDestroy(() => { live = false; });
 
   const pending = $derived(op.status === "pending");
   const observed = $derived(op.status === "done" ? op.result?.objectAfter ?? null : null);
@@ -107,9 +112,10 @@
       segmentsError = null;
       try {
         // Force is always true for segment deletion; the confirmation is what
-        // the operator typed.
-        await browser.deleteManifestWithSegments({ ...request, force: true, confirm: confirmText }, () => browser.objectDelete === op && current);
-        if (browser.objectDelete === op) onClose();
+        // the operator typed, and the reviewed graph the check returned is
+        // carried back so the job acts on what was shown (ADR 0095 decision 8).
+        await browser.deleteManifestWithSegments({ ...request, force: true, confirm: confirmText, reviewed: ownership!.reviewed });
+        if (live && browser.objectDelete === op) onClose();
       } catch (err) {
         if (browser.objectDelete === op) segmentsError = err instanceof Error ? err.message : String(err);
       } finally {

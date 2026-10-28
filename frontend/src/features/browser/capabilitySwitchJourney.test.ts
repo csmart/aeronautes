@@ -154,7 +154,7 @@ it.each([false, true])("retains inline-SLO destruction disclosure with Bulk dele
   // Bulk delete, while DeleteManifest belongs to marker/manifest editing.
   api.checkSegmentOwnership = vi.fn(async () => {
     if (!bulkEnabled) throw new Error("Bulk delete is not available in this release: it is deferred until its safety is proven, and this build does not offer it");
-    return { class: "slo", target: "slo-parts/backup/", proven: false, segments: 3, inlineEntries: 1 };
+    return { class: "slo", target: "slo-parts/backup/", proven: false, segments: 3, inlineEntries: 1, reviewed: { class: "slo", fingerprint: "slo:0:etag" } };
   });
   await render();
   await connect();

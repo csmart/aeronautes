@@ -554,6 +554,16 @@ export interface DeletePreviewDTO {
     "possibleManifests": number;
 
     /**
+     * LaterBaselineRows is how many rows take a HEAD of their own before
+     * their comparison, the zero-byte and SLO-listed ones, and RequestCost
+     * the object requests the sweep makes for the scope before listing,
+     * retries or verification: two per member plus one per such row (ADR
+     * 0085, ADR 0095 decision 7).
+     */
+    "laterBaselineRows": number;
+    "requestCost": number;
+
+    /**
      * Strategy is what execution would select right now.
      */
     "strategy": string;
@@ -1097,6 +1107,23 @@ export interface RecoveryStatusDTO {
 }
 
 /**
+ * ReviewedMembershipDTO is the graph the operator reviewed, carried back on
+ * the request so the job acts on it instead of a graph resolved again at
+ * execution (ADR 0095 decision 8): the manifest's reviewed identity and, for
+ * a static large object, its whole-object entries, or, for a dynamic large
+ * object, its canonical namespace.
+ */
+export interface ReviewedMembershipDTO {
+    /**
+     * dlo | slo
+     */
+    "class": string;
+    "fingerprint": string;
+    "namespace"?: string;
+    "entries"?: SegmentRefDTO[] | null;
+}
+
+/**
  * SLOManifestDTO is the exact manifest, order preserved (§23).
  */
 export interface SLOManifestDTO {
@@ -1141,6 +1168,11 @@ export interface SegmentOwnershipDTO {
     "class": string;
 
     /**
+     * Reviewed is the graph a deletion would carry back and act on.
+     */
+    "reviewed": ReviewedMembershipDTO;
+
+    /**
      * Target describes the segment scope ("container/prefix" for a DLO;
      * "N segments" for an SLO).
      */
@@ -1166,6 +1198,17 @@ export interface SegmentOwnershipDTO {
 }
 
 /**
+ * SegmentRefDTO is one reviewed whole-object segment the request carries from
+ * the review to the execution (ADR 0095 decision 8).
+ */
+export interface SegmentRefDTO {
+    "container": string;
+    "object": string;
+    "size": number;
+    "etag": string;
+}
+
+/**
  * SegmentsDeleteRequestDTO names one manifest and the operator's intent.
  */
 export interface SegmentsDeleteRequestDTO {
@@ -1183,26 +1226,12 @@ export interface SegmentsDeleteRequestDTO {
      * Confirm must equal the object name.
      */
     "confirm": string;
-}
-
-/**
- * SegmentsDeleteResultDTO retains the manifest result and reported segment counts.
- */
-export interface SegmentsDeleteResultDTO {
-    "manifestDeleted": boolean;
-    "segmentsDeleted": number;
 
     /**
-     * SegmentsFailed counts reported errors, not proof of survival.
-     * Incomplete accounting makes these counts last-confirmed progress.
+     * Reviewed is the membership the review returned, carried back so the job
+     * acts on the graph the operator saw (ADR 0095 decision 8).
      */
-    "segmentsFailed": number;
-
-    /**
-     * "exclusive-ownership" | "backstage-forced"
-     */
-    "basis": string;
-    "deletionAccountingIncomplete"?: boolean;
+    "reviewed": ReviewedMembershipDTO;
 }
 
 /**

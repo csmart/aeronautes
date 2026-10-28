@@ -54,6 +54,7 @@ it.each([
   ["copy", "Copy"], ["upload", "Upload"], ["download", "Download"],
   ["delete_prefix", "Delete prefix"], ["empty_container", "Empty container"],
   ["delete_container", "Delete container"], ["delete_selected", "Delete selected"],
+  ["delete_segments", "Delete manifest + segments"],
 ])("visibly labels the actual %s operation as %s", async (type, label) => {
   const { api, row } = await show(job(type));
   expect(text(row, ".operation")).toBe(label);

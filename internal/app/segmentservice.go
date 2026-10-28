@@ -75,17 +75,6 @@ type SegmentOwnershipDTO struct {
 	InlineEntries int64 `json:"inlineEntries"`
 }
 
-// SegmentsDeleteResultDTO retains the manifest result and reported segment counts.
-type SegmentsDeleteResultDTO struct {
-	ManifestDeleted bool  `json:"manifestDeleted"`
-	SegmentsDeleted int64 `json:"segmentsDeleted"`
-	// SegmentsFailed counts reported errors, not proof of survival.
-	// Incomplete accounting makes these counts last-confirmed progress.
-	SegmentsFailed               int64  `json:"segmentsFailed"`
-	Basis                        string `json:"basis"` // "exclusive-ownership" | "backstage-forced"
-	DeletionAccountingIncomplete bool   `json:"deletionAccountingIncomplete,omitempty"`
-}
-
 // sloSegmentRefs flattens a manifest's direct whole-object references
 // and says whether the graph is PROVABLE at all. A nested sub-SLO entry
 // makes it unprovable — the proof would cover the nested manifest

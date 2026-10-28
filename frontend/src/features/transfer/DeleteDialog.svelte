@@ -155,6 +155,13 @@
           <strong>{preview.objects}</strong> objects · {formatBytes(preview.bytes)} ·
           strategy <span class="type-mono">{preview.strategy}</span>
         </p>
+        <p class="cost">
+          Each object is compared then deleted, and a row that cannot say what it holds is read once
+          more first: <strong>{preview.requestCost}</strong> requests before any retry or the final
+          check{preview.laterBaselineRows > 0
+            ? ` (${preview.laterBaselineRows} of these rows take that extra read)`
+            : ""}.
+        </p>
         {#if preview.possibleManifests > 0}
           <p class="warn">
             {preview.possibleManifests} possible manifest{preview.possibleManifests === 1
