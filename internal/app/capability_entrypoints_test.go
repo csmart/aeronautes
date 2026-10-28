@@ -53,7 +53,11 @@ func deferredEntryPoints(t *testing.T, h *harness) []deferredEntryPoint {
 			return err
 		}},
 		{"DeleteService.DeleteManifestWithSegments", "Bulk delete", func(t *testing.T, h *harness) error {
-			_, err := deleteSvc.DeleteManifestWithSegments(t.Context(), SegmentsDeleteRequestDTO{BookmarkID: h.bookmarkID(), Container: "fixtures", Name: "external-dlo", Force: true, Confirm: "external-dlo"})
+			// A deliberate confirmation mismatch: the gate is checked first, so
+			// a deferred build still refuses at the gate, while a switched-on
+			// build refuses at the typed confirmation before launching a job,
+			// so this gate test leaves no background deletion running.
+			_, err := deleteSvc.DeleteManifestWithSegments(t.Context(), SegmentsDeleteRequestDTO{BookmarkID: h.bookmarkID(), Container: "fixtures", Name: "external-dlo", Force: true, Confirm: "mismatch"})
 			return err
 		}},
 		{"MutateService.DeleteMarker", "Marker and manifest deletion", func(t *testing.T, h *harness) error {

@@ -575,7 +575,7 @@ func TestPrefixSweepScaleBoundedAndDurable(t *testing.T) {
 	h, service, bookmark := deleteHarness(t)
 	ctx := context.Background()
 	h.mock.AddContainer("sweep", "standard")
-	const members = 1200 // > the 500-row admission chunk and the 200-row drawer page
+	const members = 650 // > the 500-row admission chunk and the 200-row drawer page, and quick under -race
 	for i := range members {
 		seedObject(h.mock, "sweep", "scope/obj-"+padded(i), "x", nil)
 	}
