@@ -56,12 +56,8 @@ func (j *segmentJob) run(ctx context.Context) {
 	// cancelled (ADR 0043). An already-issued member finishes whole; here
 	// none is issued yet.
 	if ctx.Err() != nil {
-		for _, key := range admittedKeys {
-			if err := j.s.jobs.RecordDeletion(background, j.jobID, key,
-				jobs.ItemObservation{Result: jobs.ItemNotAttempted, Effect: jobs.EffectNotAttempted}, nil, nil); err != nil {
-				j.lost(background, fmt.Sprintf("a not-attempted member could not be recorded: %v", err))
-				return
-			}
+		if !j.settleNotAttempted(background, admittedKeys) {
+			return
 		}
 		j.finish(background, jobs.StateCancelled, "", admitted)
 		return
@@ -91,6 +87,20 @@ func (j *segmentJob) run(ctx context.Context) {
 		// nothing deleted; one whose DELETE failed or is unverified ends it
 		// partial with every segment untouched, because an unconfirmed manifest
 		// deletion is not consent to remove what it may still reference.
+		// The static segments were admitted before any effect, so each one,
+		// never issued, is settled not attempted (ADR 0095 decision 4) before
+		// the job finishes, rather than left as a phantom unresolved effect the
+		// terminal job can no longer settle; the manifest's own refused,
+		// conflict or uncertain outcome already stands.
+		var segmentKeys []string
+		for _, key := range admittedKeys {
+			if key != j.manifestKey() {
+				segmentKeys = append(segmentKeys, key)
+			}
+		}
+		if !j.settleNotAttempted(background, segmentKeys) {
+			return
+		}
 		switch observation.Result {
 		case jobs.ItemConflict, jobs.ItemRefused:
 			j.finish(background, jobs.StateFailed, "the manifest changed since it was reviewed or was refused; nothing was deleted", admitted)
@@ -111,6 +121,21 @@ func (j *segmentJob) run(ctx context.Context) {
 		}
 	}
 	j.finish(background, state, reason, admitted)
+}
+
+// settleNotAttempted records each key as not attempted, the outcome ADR 0095
+// decision 4 requires for an admitted member that was never issued; a record
+// it cannot write latches the job unavailable. It reports whether every key
+// settled.
+func (j *segmentJob) settleNotAttempted(ctx context.Context, keys []string) bool {
+	for _, key := range keys {
+		if err := j.s.jobs.RecordDeletion(ctx, j.jobID, key,
+			jobs.ItemObservation{Result: jobs.ItemNotAttempted, Effect: jobs.EffectNotAttempted}, nil, nil); err != nil {
+			j.lost(ctx, fmt.Sprintf("a not-attempted member could not be recorded: %v", err))
+			return false
+		}
+	}
+	return true
 }
 
 // admit records the manifest member and, for a static large object, every

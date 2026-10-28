@@ -548,3 +548,58 @@ func TestSegmentJobDisclosesTheDeletedManifestWhenALaterWriteFails(t *testing.T)
 		t.Fatalf("reopened totals = %+v %v (manifest deleted stands, segment unresolved)", totals, err)
 	}
 }
+
+// ADR 0095 decision 4: when the manifest is not deleted, the static segments
+// admitted before any effect are never issued, so each must be recorded not
+// attempted before the job finishes rather than left as a phantom unresolved
+// effect the terminal job can no longer settle. An execution-time graph read
+// that returns a partial response refuses the manifest after review.
+func TestSegmentJobSettlesAdmittedSegmentsWhenTheManifestIsNotDeleted(t *testing.T) {
+	h, service, bookmark := deleteHarness(t)
+	ctx := context.Background()
+	seedSLO(h, "media", "big.slo", "parts", map[string]string{"job/aa/000001": "0123456789", "job/aa/000002": "abcdefghij"})
+	seedObject(h.mock, "parts", "other/keep", "unrelated!", nil)
+	reviewed := reviewOf(t, service, bookmark, "media", "big.slo")
+	// The graph is swapped for a different segment after review, keeping the SLO
+	// etag, so the execution-time comparison refuses the manifest as changed and
+	// no segment is attempted; its two reviewed segments were admitted up front.
+	swapped := fmt.Sprintf(`[{"name":"/parts/other/keep","hash":"%s","bytes":9}]`, md5hex("unrelated!"))
+	h.mock.PutObject("media", "big.slo", swifttest.Object{
+		Bytes: 20, SLO: true, SLOEtag: "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f",
+		SLOManifestJSON: swapped, ContentType: "application/octet-stream",
+	})
+	jobID, err := service.DeleteManifestWithSegments(ctx, SegmentsDeleteRequestDTO{
+		BookmarkID: bookmark, Container: "media", Name: "big.slo", Confirm: "big.slo", Force: true, Reviewed: reviewed,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, h, jobID)
+	if job.State != "failed" {
+		t.Fatalf("job = %+v, want failed with the manifest refused", job)
+	}
+	if !segmentReadable(t, h, bookmark, "media", "big.slo") {
+		t.Fatal("the manifest was deleted despite the refusal")
+	}
+	for _, seg := range []string{"job/aa/000001", "job/aa/000002"} {
+		if !segmentReadable(t, h, bookmark, "parts", seg) {
+			t.Fatalf("segment %s was deleted", seg)
+		}
+	}
+	// Every admitted member is settled, with no phantom unresolved or unsettled
+	// effect: the manifest a conflict, both reviewed segments not attempted.
+	totals, err := h.jobsSvc.ItemTotals(ctx, bookmark, jobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if totals.Admitted != 3 || totals.Deleted != 0 || totals.Unresolved != 0 || totals.Unsettled != 0 {
+		t.Fatalf("totals = %+v, want 3 admitted, 0 deleted, 0 unresolved, 0 unsettled", totals)
+	}
+	items := itemsOf(t, h, jobID)
+	for _, seg := range []string{"parts/job/aa/000001", "parts/job/aa/000002"} {
+		item := items[seg]
+		if item.Execution == nil || item.Execution.Result != "not_attempted" {
+			t.Fatalf("segment %s settled %+v, want not_attempted", seg, item.Execution)
+		}
+	}
+}
