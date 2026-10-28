@@ -111,3 +111,31 @@ func TestDeleteReviewedManifestRefusesAMovedDLONamespace(t *testing.T) {
 		t.Fatalf("the manifest was deleted despite the namespace move: %v", err)
 	}
 }
+
+// ADR 0095 decision 8 with ADR 0081 decision 5: the live graph that authorises
+// a manifest DELETE is an operation's authoritative record, so a response that
+// is not complete and bounded is refused with nothing deleted. The review read
+// the graph cleanly; the fault then spoils the execution-time read, the one the
+// DELETE rests on: HTTP 206, HTTP 200 with a Content-Range, a truncated body,
+// and a valid entry list followed by other bytes must each be refused rather
+// than credited as the exact membership and acted on.
+func TestDeleteReviewedManifestRefusesAnIncompleteGraphResponse(t *testing.T) {
+	for _, fault := range []string{"partial", "ranged", "truncated", "trailing"} {
+		t.Run(fault, func(t *testing.T) {
+			s, mock := newFixtureSessionWithMock(t)
+			ctx := context.Background()
+			reviewed := reviewedSLO(t, s, "fixtures", "external-slo")
+			mock.SetManifestReadFault("fixtures", "external-slo", fault)
+			result, err := s.DeleteReviewedManifest(ctx, "fixtures", "external-slo", reviewed)
+			if err == nil {
+				t.Fatalf("a %q graph response was accepted; want a refusal", fault)
+			}
+			if result != nil && result.Requested {
+				t.Fatalf("a DELETE was requested on a %q graph: %+v", fault, result)
+			}
+			if _, err := s.ObjectDetail(ctx, "fixtures", "external-slo"); err != nil {
+				t.Fatalf("the manifest was deleted on a %q graph: %v", fault, err)
+			}
+		})
+	}
+}
