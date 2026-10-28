@@ -438,19 +438,23 @@ func (s *DeleteService) DeleteManifestWithSegments(ctx context.Context, req Segm
 			releasePins()
 		}
 	}()
+	// The reviewed identity and scope are part of the job's own durable record,
+	// written with the row that admits the job, so the authority that bounds
+	// this deletion exists before any effect (ADR 0095 decision 8). Recording
+	// it in a later write would leave a window where the write could be refused
+	// while the job still deleted the manifest and its segments; a failed
+	// Create instead launches nothing.
 	created, err := s.jobs.Create(ctx, jobs.Job{
 		Type: jobs.TypeDeleteSegments, ItemRecordsVersion: 1,
 		Source: resource, Destination: "(manifest + segments)", SourceBookmarkID: req.BookmarkID, Engine: "native",
+		Settings: fmt.Sprintf(`{"strategy":%q,"basis":%q,"class":%q,"reviewedFingerprint":%q,"reviewedNamespace":%q}`,
+			sweepStrategy, job.basis, detail.Class, req.Reviewed.Fingerprint, req.Reviewed.Namespace),
 	})
 	if err != nil {
 		return "", err
 	}
 	job.jobID = created.ID
 	job.session = session
-	// The reviewed identity and scope are persisted, so the durable reviewed
-	// graph survives a restart rather than living only in this goroutine.
-	_ = s.jobs.SetSettings(ctx, created.ID, fmt.Sprintf(`{"strategy":%q,"basis":%q,"class":%q,"reviewedFingerprint":%q,"reviewedNamespace":%q}`,
-		sweepStrategy, job.basis, detail.Class, req.Reviewed.Fingerprint, req.Reviewed.Namespace))
 	s.runner.register(created.ID, owner.cancel)
 	s.runner.record(ctx, req.BookmarkID, "segments.delete.start", resource, "job "+created.ID, audit.ResultApplied)
 	owner.launch(created.ID, req.BookmarkID, releasePins, job.run, func(background context.Context) {

@@ -415,3 +415,136 @@ func TestSegmentJobPartialWhenTheNamespaceListingFails(t *testing.T) {
 		t.Fatal("the manifest was not deleted")
 	}
 }
+
+// ADR 0095 decision 8: the reviewed identity and scope that bound a segment
+// deletion are written with the row that admits the job, so the authority
+// exists before any effect. When the admitting write that carries them is
+// refused, the start fails and nothing is deleted, rather than a later
+// best-effort settings write failing while the job already runs; and on the
+// ordinary path the job records that authority durably.
+func TestSegmentJobRecordsTheReviewedAuthorityBeforeAnyEffect(t *testing.T) {
+	h, service, bookmark := deleteHarness(t)
+	ctx := context.Background()
+	seedSLO(h, "media", "big.slo", "parts", map[string]string{"job/aa/000001": "0123456789"})
+	reviewed := reviewOf(t, service, bookmark, "media", "big.slo")
+	// Refuse the admitting row precisely when it carries the reviewed settings.
+	// The fix writes them with the row, so no job is created and nothing is
+	// deleted; a later best-effort settings write would leave the row inserted
+	// and let the job run against an authority it never recorded.
+	refuseSQL(t, h, `CREATE TRIGGER refuse_authority BEFORE INSERT ON jobs
+		WHEN NEW.settings_json IS NOT NULL
+		BEGIN SELECT RAISE(ABORT,'fixture authority write refusal'); END`)
+	_, err := service.DeleteManifestWithSegments(ctx, SegmentsDeleteRequestDTO{
+		BookmarkID: bookmark, Container: "media", Name: "big.slo", Confirm: "big.slo", Force: true, Reviewed: reviewed,
+	})
+	refuseSQL(t, h, `DROP TRIGGER refuse_authority`)
+	if err == nil {
+		t.Fatal("the start succeeded although the reviewed authority could not be recorded")
+	}
+	if !segmentReadable(t, h, bookmark, "media", "big.slo") {
+		t.Fatal("the manifest was deleted although its authority was never recorded")
+	}
+	if deletes := deletesUnder(h, "parts"); len(deletes) != 0 {
+		t.Fatalf("a segment was deleted although the authority was never recorded: %v", deletes)
+	}
+	// With the authority write allowed, the job records it durably with its row.
+	jobID, err := service.DeleteManifestWithSegments(ctx, SegmentsDeleteRequestDTO{
+		BookmarkID: bookmark, Container: "media", Name: "big.slo", Confirm: "big.slo", Force: true, Reviewed: reviewed,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job := awaitTerminal(t, h, jobID); job.State != "complete" {
+		t.Fatalf("job = %+v", job)
+	}
+	var settings string
+	if err := h.db.Reader().QueryRowContext(ctx, `SELECT COALESCE(settings_json,'') FROM jobs WHERE id=?`, jobID).Scan(&settings); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(settings, reviewed.Fingerprint) || !strings.Contains(settings, `"reviewedNamespace"`) {
+		t.Fatalf("the job did not record the reviewed authority with its row: %q", settings)
+	}
+}
+
+// ADR 0095 decision 8, boundary two: when a later write fails after the
+// manifest's deleted outcome has committed, that record stands, the job's
+// status is unavailable, and the deleted manifest is disclosed by the record;
+// a lost later write never unwinds a committed manifest deletion. The trigger
+// lets the manifest's own outcome through and refuses the next outcome write,
+// the first segment's, so the failure lands strictly after the manifest is
+// recorded deleted.
+func TestSegmentJobDisclosesTheDeletedManifestWhenALaterWriteFails(t *testing.T) {
+	h, service, bookmark := deleteHarness(t)
+	ctx := context.Background()
+	seedSLO(h, "media", "big.slo", "parts", map[string]string{"job/aa/000001": "0123456789"})
+	reviewed := reviewOf(t, service, bookmark, "media", "big.slo")
+	refuseSQL(t, h, `CREATE TABLE fault_after(n INTEGER NOT NULL)`)
+	refuseSQL(t, h, `INSERT INTO fault_after VALUES(0)`)
+	refuseSQL(t, h, `CREATE TRIGGER refuse_later_outcome BEFORE INSERT ON job_item_observations
+		BEGIN
+			UPDATE fault_after SET n = n + 1;
+			SELECT CASE WHEN (SELECT n FROM fault_after) > 1
+				THEN RAISE(ABORT,'fixture later-write refusal') END;
+		END`)
+	jobID, err := service.DeleteManifestWithSegments(ctx, SegmentsDeleteRequestDTO{
+		BookmarkID: bookmark, Container: "media", Name: "big.slo", Confirm: "big.slo", Force: true, Reviewed: reviewed,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := 0
+	for {
+		events, err := h.auditSvc.RecentFor(ctx, bookmark, 20)
+		if err != nil {
+			t.Fatal(err)
+		}
+		noted := false
+		for _, e := range events {
+			if e.Operation == "segments.delete.unavailable" {
+				noted = true
+			}
+		}
+		if noted {
+			break
+		}
+		if deadline++; deadline > 200 {
+			t.Fatal("the job never reported unavailable after the later write failed")
+		}
+		awaitTick()
+	}
+	if err := h.transfer.jobs.Available(); err == nil {
+		t.Fatal("the ledger did not latch unavailable after the later write failed")
+	}
+	// The manifest's deletion stands on the wire and is disclosed in its record.
+	if segmentReadable(t, h, bookmark, "media", "big.slo") {
+		t.Fatal("the manifest survived although its deleted outcome had committed")
+	}
+	refuseSQL(t, h, `DROP TRIGGER refuse_later_outcome`)
+	reopened := jobs.NewStore(h.db)
+	if _, err := reopened.FailInterrupted(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var manifestDeleted bool
+	for cursor := int64(0); ; {
+		page, err := reopened.ReadItems(ctx, jobID, cursor, 200)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range page.Items {
+			if item.Key == "media/big.slo" && item.Execution != nil && item.Execution.Result == jobs.ItemDeleted {
+				manifestDeleted = true
+			}
+		}
+		if page.NextCursor == 0 {
+			break
+		}
+		cursor = page.NextCursor
+	}
+	if !manifestDeleted {
+		t.Fatal("the manifest's deleted outcome did not stand after the later write failed")
+	}
+	totals, err := reopened.ReadItemTotals(ctx, jobID)
+	if err != nil || totals.Deleted != 1 || totals.Unresolved != 1 {
+		t.Fatalf("reopened totals = %+v %v (manifest deleted stands, segment unresolved)", totals, err)
+	}
+}
