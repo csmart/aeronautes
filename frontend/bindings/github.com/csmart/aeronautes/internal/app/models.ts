@@ -1119,7 +1119,25 @@ export interface ReviewedMembershipDTO {
      */
     "class": string;
     "fingerprint": string;
+
+    /**
+     * Length and ETag are the reviewed manifest's identity beside the
+     * fingerprint, so the job records what the operator approved as the
+     * manifest member's baseline rather than reconstructing it from a later
+     * read (ADR 0095 decision 8).
+     */
+    "length": number;
+    "etag": string;
+
+    /**
+     * Namespace is a dynamic manifest's canonical, slash-bounded scope
+     * ("container/prefix/") and RawManifest the X-Object-Manifest value it was
+     * reviewed with ("container/prefix"); both come from the reviewed graph so
+     * the execution scope and the ADR 0044 outside-name check rest on one
+     * validated authority, never a later startup read.
+     */
     "namespace"?: string;
+    "rawManifest"?: string;
     "entries"?: SegmentRefDTO[] | null;
 }
 

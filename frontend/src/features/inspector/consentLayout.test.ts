@@ -44,7 +44,7 @@ function type(element: HTMLInputElement, value: string) {
   element.value = value; element.dispatchEvent(new Event("input", { bubbles: true })); flushSync();
 }
 const ownership: SegmentOwnershipDTO =
-  { class: "dlo", target: LONG_TARGET, proven: false, segments: 3, inlineEntries: 0, reviewed: { class: "dlo", fingerprint: "dlo:0:etag", namespace: LONG_TARGET } };
+  { class: "dlo", target: LONG_TARGET, proven: false, segments: 3, inlineEntries: 0, reviewed: { class: "dlo", fingerprint: "dlo:0:etag", length: 0, etag: "", namespace: LONG_TARGET } };
 
 // The dialog opens through the browser state (ADR 0094 decision 5), and the
 // ownership check behind the with-segments option is asked only once that

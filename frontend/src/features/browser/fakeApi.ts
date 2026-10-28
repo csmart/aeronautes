@@ -981,7 +981,7 @@ export function newFakeApi(): Api {
       proven: req.name === "owned.bin",
       segments: 0,
       inlineEntries: 0,
-      reviewed: { class: "dlo", fingerprint: "dlo:0:etag", namespace: "media_segments/owned/" },
+      reviewed: { class: "dlo", fingerprint: "dlo:0:etag", length: 0, etag: "", namespace: "media_segments/owned/" },
     }),
     deleteManifestWithSegments: async (req) => {
       if (req.confirm !== req.name) {

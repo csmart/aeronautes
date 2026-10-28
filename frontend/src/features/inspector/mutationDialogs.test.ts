@@ -46,7 +46,7 @@ async function setup(name = "external-dlo") {
   const scope = { ...browser.account!.scope };
   return { api, browser, scope, root, bookmark };
 }
-const ownership: SegmentOwnershipDTO = { class: "dlo", target: "backing/old/", proven: false, segments: 3, inlineEntries: 0, reviewed: { class: "dlo", fingerprint: "dlo:0:etag", namespace: "backing/old/" } };
+const ownership: SegmentOwnershipDTO = { class: "dlo", target: "backing/old/", proven: false, segments: 3, inlineEntries: 0, reviewed: { class: "dlo", fingerprint: "dlo:0:etag", length: 0, etag: "", namespace: "backing/old/" } };
 const segmentJobId = "job-seg-1";
 
 // The manifest dialog is owned by the browser state (ADR 0094 decision 5):
@@ -63,7 +63,7 @@ async function manifest() {
   const close = () => { done(); f.browser.closeObjectDelete(); void unmount(component); mounted.delete(component); };
   component = mount(ManifestDeleteDialog, { target: f.root, props: { browser: f.browser, onClose: close } });
   mounted.add(component); flushSync(); await settle();
-  const request = { bookmarkId: f.bookmark.id, container: "fixtures", name: "external-dlo", force: false, confirm: "", reviewed: { class: "", fingerprint: "" } };
+  const request = { bookmarkId: f.bookmark.id, container: "fixtures", name: "external-dlo", force: false, confirm: "", reviewed: { class: "", fingerprint: "", length: 0, etag: "" } };
   return { ...f, check, done, component, request };
 }
 // The ownership check is asked only when the with-segments option is taken.
@@ -371,7 +371,7 @@ describe("mutation follow-up ownership", () => {
     f.api.auditRecent = vi.fn(f.api.auditRecent);
     const pending = kind === "create" ? f.browser.createContainer({ name: "created", policy: "", meta: {} }, f.browser.portrait)
       : kind === "manifest" ? f.browser.deleteManifest("fixtures", "external-dlo", f.browser.objectDetail!)
-      : kind === "segments" ? f.browser.deleteManifestWithSegments({ bookmarkId: f.bookmark.id, container: "fixtures", name: "external-dlo", force: true, confirm: "external-dlo", reviewed: { class: "dlo", fingerprint: "dlo:0:etag" } })
+      : kind === "segments" ? f.browser.deleteManifestWithSegments({ bookmarkId: f.bookmark.id, container: "fixtures", name: "external-dlo", force: true, confirm: "external-dlo", reviewed: { class: "dlo", fingerprint: "dlo:0:etag", length: 0, etag: "" } })
       : f.browser.deleteMarker("folder-marker/");
     await changeView(f.browser, "selection");
     const selected = f.browser.detailIdentity;
@@ -393,7 +393,7 @@ describe("mutation follow-up ownership", () => {
     f.api.containers = vi.fn(f.api.containers); f.api.objects = vi.fn(f.api.objects);
     const pending = kind === "create" ? f.browser.createContainer({ name: "created", policy: "", meta: {} }, f.browser.portrait)
       : kind === "manifest" ? f.browser.deleteManifest("fixtures", "external-dlo", f.browser.objectDetail!)
-      : kind === "segments" ? f.browser.deleteManifestWithSegments({ bookmarkId: f.bookmark.id, container: "fixtures", name: "external-dlo", force: true, confirm: "external-dlo", reviewed: { class: "dlo", fingerprint: "dlo:0:etag" } })
+      : kind === "segments" ? f.browser.deleteManifestWithSegments({ bookmarkId: f.bookmark.id, container: "fixtures", name: "external-dlo", force: true, confirm: "external-dlo", reviewed: { class: "dlo", fingerprint: "dlo:0:etag", length: 0, etag: "" } })
       : f.browser.deleteMarker("folder-marker/");
     await settle(); expect(f.api.auditRecent).toHaveBeenCalledOnce();
     await changeView(f.browser, "bookmark return");
@@ -421,7 +421,7 @@ describe("mutation follow-up ownership", () => {
     f.api.deleteManifest = vi.fn().mockResolvedValue(applied);
     f.api.deleteManifestWithSegments = vi.fn().mockResolvedValue(segmentJobId);
     f.api.objects = vi.fn(f.api.objects);
-    const req = { bookmarkId: "other", container: "different", name: "foreign", force: true, confirm: "foreign", reviewed: { class: "dlo", fingerprint: "dlo:0:etag" } };
+    const req = { bookmarkId: "other", container: "different", name: "foreign", force: true, confirm: "foreign", reviewed: { class: "dlo", fingerprint: "dlo:0:etag", length: 0, etag: "" } };
     if (kind === "manifest") await f.browser.deleteManifest(req.container, req.name, f.browser.objectDetail!);
     else {
       expect(await f.browser.deleteManifestWithSegments(req)).toBe(segmentJobId);
@@ -435,7 +435,7 @@ describe("mutation follow-up ownership", () => {
     f.api.objects = vi.fn(f.api.objects);
     f.api.jobs = vi.fn(f.api.jobs);
     f.api.auditRecent = vi.fn(f.api.auditRecent);
-    const req = { bookmarkId: f.bookmark.id, container: "fixtures", name: "external-dlo", force: true, confirm: "external-dlo", reviewed: { class: "dlo", fingerprint: "dlo:0:etag" } };
+    const req = { bookmarkId: f.bookmark.id, container: "fixtures", name: "external-dlo", force: true, confirm: "external-dlo", reviewed: { class: "dlo", fingerprint: "dlo:0:etag", length: 0, etag: "" } };
     f.api.deleteManifestWithSegments = vi.fn().mockResolvedValue(segmentJobId);
     expect(await f.browser.deleteManifestWithSegments(req)).toBe(segmentJobId);
     expect(f.api.deleteManifestWithSegments).toHaveBeenCalledExactlyOnceWith(req);
