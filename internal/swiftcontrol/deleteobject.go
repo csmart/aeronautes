@@ -302,6 +302,14 @@ func (s *Session) deleteShownBound(ctx context.Context, container, name, baseCon
 		liveGraphWhole := true
 		if graph != nil && graph.isStatic {
 			live, err := s.sloManifestWith(ctx, credentials, container, name)
+			var se *SwiftError
+			if errors.As(err, &se) && se.Kind == KindUnauthorized && attempt == 0 {
+				// The token was refused reading the graph. Fresh credentials may
+				// name another storage URL, so the whole comparison restarts
+				// under them rather than reading the graph at one authority and
+				// deleting at another (ADR 0095 decision 8).
+				continue
+			}
 			if err != nil {
 				return nil, err
 			}

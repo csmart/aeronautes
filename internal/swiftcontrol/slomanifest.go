@@ -81,19 +81,12 @@ func (RawEntry) isSLOEntry() {}
 func (s *Session) SLOManifest(ctx context.Context, container, name string) (*SLOManifest, error) {
 	// The library's operation wrappers authenticate lazily; a direct Call
 	// (needed for the query parameter) must do the same, and refresh its
-	// target on mid-call re-auth.
+	// target on mid-call re-auth. This is the inspector's read, so a refused
+	// token is re-authenticated transparently.
 	credentials, err := s.Credentials(ctx, 0)
 	if err != nil {
 		return nil, err
 	}
-	return s.sloManifestWith(ctx, credentials, container, name)
-}
-
-// sloManifestWith reads a static large object's manifest under credentials
-// the caller already holds, so a segment job can read the graph immediately
-// before its comparison HEAD under the one snapshot and no re-authentication
-// falls between the two (ADR 0095 decision 8).
-func (s *Session) sloManifestWith(ctx context.Context, credentials StorageCredentials, container, name string) (*SLOManifest, error) {
 	resp, _, err := s.conn.Call(ctx, credentials.StorageURL, swift.RequestOpts{
 		Container:  container,
 		ObjectName: name,
@@ -105,16 +98,57 @@ func (s *Session) sloManifestWith(ctx context.Context, credentials StorageCreden
 		return nil, Normalize(err)
 	}
 	defer resp.Body.Close()
+	return parseSLOManifest(resp.Body, container, name)
+}
 
-	// Field order inside entries doesn't matter, entry order does; numbers
-	// stay json.Number so large sizes survive the round-trip untouched.
-	decoder := json.NewDecoder(resp.Body)
+// sloManifestWith reads a static large object's manifest under credentials
+// the caller already holds, pinned to that snapshot's storage URL and token
+// with no re-authentication callback, so a segment job reads the graph
+// immediately before its comparison HEAD under the one snapshot and names the
+// same storage authority the comparison and the DELETE will use (ADR 0095
+// decision 8). A token refused here invalidates the token and surfaces as
+// unauthorized, and the caller restarts the whole comparison under fresh
+// credentials rather than reading the graph from one account and deleting at
+// another. It is never the inspector's read, which re-authenticates in place.
+func (s *Session) sloManifestWith(ctx context.Context, credentials StorageCredentials, container, name string) (*SLOManifest, error) {
+	if container == "" || name == "" {
+		return nil, &SwiftError{Kind: KindUnknown, Message: "read SLO manifest: the container and object name must both be present"}
+	}
+	target := credentials.StorageURL + "/" + escapeObjectPath(container) + "/" + escapeObjectPath(name) + "?multipart-manifest=get"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		return nil, Normalize(err)
+	}
+	req.Header.Set("X-Auth-Token", credentials.Token)
+	resp, err := s.raw.Do(req)
+	if err != nil {
+		return nil, Normalize(err)
+	}
+	defer resp.Body.Close()
+	transID := resp.Header.Get("X-Trans-Id")
+	switch {
+	case resp.StatusCode == http.StatusUnauthorized:
+		s.ForceReauth()
+		return nil, &SwiftError{Kind: KindUnauthorized, HTTPStatus: resp.StatusCode, Message: "read SLO manifest: the token was refused", TransID: transID}
+	case resp.StatusCode == http.StatusNotFound:
+		return nil, &SwiftError{Kind: KindNotFound, HTTPStatus: resp.StatusCode, Message: "read SLO manifest: not found", TransID: transID}
+	case resp.StatusCode >= 300:
+		kind, retryable := classifyStatus(resp.StatusCode)
+		return nil, &SwiftError{Kind: kind, HTTPStatus: resp.StatusCode, Message: "read SLO manifest failed", TransID: transID, Retryable: retryable}
+	}
+	return parseSLOManifest(resp.Body, container, name)
+}
+
+// parseSLOManifest decodes the ?multipart-manifest=get body into the exact
+// model. Field order inside entries doesn't matter, entry order does; numbers
+// stay json.Number so large sizes survive the round-trip untouched.
+func parseSLOManifest(body io.Reader, container, name string) (*SLOManifest, error) {
+	decoder := json.NewDecoder(body)
 	decoder.UseNumber()
 	var rawEntries []map[string]any
 	if err := decoder.Decode(&rawEntries); err != nil {
 		return nil, fmt.Errorf("parse SLO manifest for %s/%s: %w", container, name, err)
 	}
-
 	manifest := &SLOManifest{Entries: make([]SLOEntry, 0, len(rawEntries))}
 	for i, fields := range rawEntries {
 		entry, err := parseSLOEntry(fields)
