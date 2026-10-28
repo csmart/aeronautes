@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/csmart/aeronautes/internal/audit"
-	"github.com/csmart/aeronautes/internal/deletion"
 	"github.com/csmart/aeronautes/internal/evidence"
+	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
 
@@ -30,11 +30,37 @@ type SegmentsDeleteRequestDTO struct {
 	Force bool `json:"force"`
 	// Confirm must equal the object name.
 	Confirm string `json:"confirm"`
+	// Reviewed is the membership the review returned, carried back so the job
+	// acts on the graph the operator saw (ADR 0095 decision 8).
+	Reviewed ReviewedMembershipDTO `json:"reviewed"`
+}
+
+// SegmentRefDTO is one reviewed whole-object segment the request carries from
+// the review to the execution (ADR 0095 decision 8).
+type SegmentRefDTO struct {
+	Container string `json:"container"`
+	Object    string `json:"object"`
+	Size      int64  `json:"size"`
+	ETag      string `json:"etag"`
+}
+
+// ReviewedMembershipDTO is the graph the operator reviewed, carried back on
+// the request so the job acts on it instead of a graph resolved again at
+// execution (ADR 0095 decision 8): the manifest's reviewed identity and, for
+// a static large object, its whole-object entries, or, for a dynamic large
+// object, its canonical namespace.
+type ReviewedMembershipDTO struct {
+	Class       string          `json:"class"` // dlo | slo
+	Fingerprint string          `json:"fingerprint"`
+	Namespace   string          `json:"namespace,omitempty"`
+	Entries     []SegmentRefDTO `json:"entries,omitempty"`
 }
 
 // SegmentOwnershipDTO reports what a segments-delete would rest on.
 type SegmentOwnershipDTO struct {
 	Class string `json:"class"` // dlo | slo
+	// Reviewed is the graph a deletion would carry back and act on.
+	Reviewed ReviewedMembershipDTO `json:"reviewed"`
 	// Target describes the segment scope ("container/prefix" for a DLO;
 	// "N segments" for an SLO).
 	Target string `json:"target"`
@@ -273,177 +299,151 @@ func (s *DeleteService) CheckSegmentOwnership(ctx context.Context, req SegmentsD
 	if err != nil {
 		return nil, err
 	}
-	_, ownership, _, err := s.segmentScope(ctx, session, req)
-	return ownership, err
-}
-
-// DeleteManifestWithSegments removes a manifest AND its segments. It is
-// ALWAYS gated on the Backstage force with typed confirmation — ownership
-// evidence is advisory and never auto-authorizes (no live
-// reverse-reference scan exists yet). The HEAD here is the §28.6 required
-// authoritative re-check: the operation follows segments, so identity at
-// execution time matters. The residual HEAD-to-DELETE window and the
-// content-ETag-only recheck are stated honestly below (review W-10).
-func (s *DeleteService) DeleteManifestWithSegments(ctx context.Context, req SegmentsDeleteRequestDTO) (*SegmentsDeleteResultDTO, error) {
-	if err := refuseIfDeferred("DeleteService.DeleteManifestWithSegments"); err != nil {
+	detail, ownership, _, err := s.segmentScope(ctx, session, req)
+	if err != nil {
 		return nil, err
 	}
+	reviewed, err := s.reviewedMembership(ctx, session, req.Container, req.Name, detail)
+	if err != nil {
+		return nil, err
+	}
+	ownership.Reviewed = reviewed
+	return ownership, nil
+}
+
+// reviewedMembership resolves the graph a deletion would carry: for a static
+// large object its whole-object entries with the size and entity tag the
+// manifest records, for a dynamic large object its canonical namespace, each
+// beside the manifest's reviewed identity (ADR 0095 decision 8). A static
+// graph that is not purely whole-object yields no entries: the manifest-only
+// delete still applies, but no segment is a reviewed member to reclaim.
+func (s *DeleteService) reviewedMembership(ctx context.Context, session *swiftcontrol.Session,
+	container, name string, detail *swiftcontrol.ObjectDetail) (ReviewedMembershipDTO, error) {
+
+	reviewed := ReviewedMembershipDTO{Class: string(detail.Class), Fingerprint: detail.ContentFingerprint()}
+	switch detail.Class {
+	case swiftcontrol.ClassSLO:
+		manifest, err := session.SLOManifest(ctx, container, name)
+		if err != nil {
+			return ReviewedMembershipDTO{}, err
+		}
+		entries, _ := manifest.WholeObjectEntries()
+		for _, entry := range entries {
+			reviewed.Entries = append(reviewed.Entries, SegmentRefDTO{
+				Container: entry.Container, Object: entry.Object, Size: entry.Size, ETag: entry.ETag})
+		}
+	case swiftcontrol.ClassDLO:
+		slash := strings.Index(detail.Manifest, "/")
+		if slash <= 0 {
+			return ReviewedMembershipDTO{}, fmt.Errorf("malformed X-Object-Manifest %q", detail.Manifest)
+		}
+		reviewed.Namespace = detail.Manifest[:slash] + "/" + dloNamespace(detail.Manifest[slash+1:])
+	}
+	return reviewed, nil
+}
+
+// DeleteManifestWithSegments deletes a manifest and its segments as one job
+// (ADR 0095 decision 8). It is always gated on the Backstage force with the
+// typed object name, because ownership evidence is advisory until a live
+// reverse-reference scan exists. The job owns the reviewed graph the request
+// carries: it deletes the manifest by the reviewed-manifest protocol, which
+// refuses a graph swap or a moved namespace, and only after that is durably
+// recorded deleted does it delete the segments by the per-name protocol. The
+// result is the job id; the drawer shows the manifest and each segment.
+func (s *DeleteService) DeleteManifestWithSegments(ctx context.Context, req SegmentsDeleteRequestDTO) (string, error) {
+	if err := refuseIfDeferred("DeleteService.DeleteManifestWithSegments"); err != nil {
+		return "", err
+	}
 	if req.BookmarkID == "" || req.Container == "" || req.Name == "" {
-		return nil, errors.New("bookmark, container, and object are required")
+		return "", errors.New("bookmark, container, and object are required")
 	}
 	if req.Confirm != req.Name {
-		return nil, fmt.Errorf("confirmation does not match the object name — type it exactly")
+		return "", fmt.Errorf("confirmation does not match the object name — type it exactly")
 	}
 	session, err := s.connections.SessionFor(ctx, req.BookmarkID)
 	if err != nil {
-		return nil, err
-	}
-	detail, ownership, refs, err := s.segmentScope(ctx, session, req)
-	if err != nil {
-		return nil, err
+		return "", err
 	}
 	resource := req.Container + "/" + req.Name
-	// Evidence rows IDENTIFY candidate-owned segments; they do NOT
-	// PROVE exclusivity — no live reverse-reference scan exists yet, so
-	// an external or later manifest can share an Aeronautes-created
-	// prefix (review R-02, K-SEG-004 second clause = §65.10). Until that
-	// scan lands, a row-only "proof" MUST NOT auto-authorize
-	// destruction: every manifest+segments delete requires the
-	// deliberate Backstage force + typed confirmation. The proof still
-	// shows in the dialog as context; it just never deletes on its own.
+	// The startup read also confirms the class and resolves the dynamic
+	// namespace for the outside-name refusal, all before any job row exists.
+	detail, ownership, _, err := s.segmentScope(ctx, session, req)
+	if err != nil {
+		return "", err
+	}
 	if !req.Force {
 		s.runner.record(ctx, req.BookmarkID, "segments.delete", resource,
 			"refused: segment deletion needs Backstage force (ownership evidence is advisory until the live reference scan exists)", audit.ResultFailed)
-		return nil, fmt.Errorf("deleting %s's segments needs the Backstage force with typed confirmation: ownership evidence identifies likely-owned segments but cannot yet PROVE no other object references them (%s)", resource, ownership.Target)
+		return "", fmt.Errorf("deleting %s's segments needs the Backstage force with typed confirmation: ownership evidence identifies likely-owned segments but cannot yet PROVE no other object references them (%s)", resource, ownership.Target)
 	}
-	basis := "backstage-forced"
-	if ownership.Proven {
-		basis = "backstage-forced-with-evidence"
+	if req.Reviewed.Class != "" && req.Reviewed.Class != string(detail.Class) {
+		return "", fmt.Errorf("the reviewed graph is a %s but %s is a %s now — re-open the dialog to review the current graph", req.Reviewed.Class, resource, detail.Class)
 	}
-
-	// The segment preflight runs BEFORE the final identity recheck. It
-	// issues a listing, and a listing between that recheck and the DELETE
-	// would widen the very window the recheck exists to close, so the
-	// order is: resolve the destructive scope, refuse when it is wider
-	// than this manifest's namespace, and only then re-read identity.
-	//
-	// A refusal here leaves the graph exactly as it was, including the
-	// selected manifest, which is a separate authorised deletion that
-	// normally sits outside the namespace it points at.
-	var segContainer, namespace string
+	job := &segmentJob{s: s, bookmarkID: req.BookmarkID, container: req.Container, name: req.Name,
+		resource: resource, reviewed: req.Reviewed, basis: segmentBasis(ownership)}
 	if detail.Class == swiftcontrol.ClassDLO {
 		slash := strings.Index(detail.Manifest, "/")
-		segPrefix := detail.Manifest[slash+1:]
-		segContainer, namespace = detail.Manifest[:slash], dloNamespace(segPrefix)
-		outside, err := namesOutsideNamespace(ctx, session, segContainer, segPrefix, namespace)
+		job.segContainer, job.segPrefix = detail.Manifest[:slash], detail.Manifest[slash+1:]
+		job.namespace = dloNamespace(job.segPrefix)
+		// The outside-name refusal is made before any effect and before any
+		// job row exists: a manifest that reads names outside its namespace is
+		// never acted on (ADR 0044). The listing is admitted startup I/O.
+		outside, err := namesOutsideNamespace(ctx, session, job.segContainer, job.segPrefix, job.namespace)
 		if err != nil {
 			s.runner.record(ctx, req.BookmarkID, "segments.delete", resource,
 				"refused: the segment listing did not complete, so the destructive scope is unknown", audit.ResultFailed)
-			return nil, err
+			return "", err
 		}
 		if outside.count > 0 {
 			s.runner.record(ctx, req.BookmarkID, "segments.delete", resource,
-				fmt.Sprintf("refused: %d observed name(s) outside the namespace %s/%s", outside.count, segContainer, namespace), audit.ResultFailed)
-			return nil, outsideRefusal(segContainer, namespace, outside)
+				fmt.Sprintf("refused: %d observed name(s) outside the namespace %s/%s", outside.count, job.segContainer, job.namespace), audit.ResultFailed)
+			return "", outsideRefusal(job.segContainer, job.namespace, outside)
 		}
 	}
-
-	// The proof/delete gap is bound as tightly as Swift allows: DELETE
-	// ignores If-Match (measured on SAIO — a wrong etag still 204s), so
-	// the manifest is re-HEADed IMMEDIATELY before deletion and any
-	// identity change refuses. The residual is one HEAD-to-DELETE hop,
-	// stated here rather than implied closed.
-	recheck, err := session.ObjectDetail(ctx, req.Container, req.Name)
+	// The reviewed facts recorded against the manifest member.
+	job.manifestListed = jobs.ItemIntent{
+		ItemIdentity: jobs.ItemIdentity{Key: req.Container + "/" + req.Name, Source: jobs.ItemLocation{
+			Kind: jobs.ItemSwift, BookmarkID: req.BookmarkID, Container: req.Container, Object: req.Name}},
+		Planned: true, Admitted: true, ListedBytes: detail.ContentLength,
+		ListedETag: strings.Trim(detail.ETag, `"`), ListedSLO: detail.Class == swiftcontrol.ClassSLO,
+	}
+	owner, ctx, err := s.runner.admit(ctx)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	if strings.Trim(recheck.ETag, `"`) != strings.Trim(detail.ETag, `"`) {
-		s.runner.record(ctx, req.BookmarkID, "segments.delete", resource,
-			"refused: the manifest changed between review and deletion", audit.ResultFailed)
-		return nil, fmt.Errorf("%s changed since the segments were reviewed (etag moved) — re-open the dialog to review the CURRENT graph", resource)
+	defer owner.finishStart()
+	releasePins, err := s.connections.pinForJob(ctx, req.BookmarkID)
+	if err != nil {
+		return "", err
 	}
+	defer func() {
+		if releasePins != nil {
+			releasePins()
+		}
+	}()
+	created, err := s.jobs.Create(ctx, jobs.Job{
+		Type: jobs.TypeDeleteSegments, ItemRecordsVersion: 1,
+		Source: resource, Destination: "(manifest + segments)", SourceBookmarkID: req.BookmarkID, Engine: "native",
+	})
+	if err != nil {
+		return "", err
+	}
+	job.jobID = created.ID
+	job.session = session
+	_ = s.jobs.SetSettings(ctx, created.ID, fmt.Sprintf(`{"strategy":%q,"basis":%q,"class":%q}`, sweepStrategy, job.basis, detail.Class))
+	s.runner.register(created.ID, owner.cancel)
+	s.runner.record(ctx, req.BookmarkID, "segments.delete.start", resource, "job "+created.ID, audit.ResultApplied)
+	owner.launch(created.ID, req.BookmarkID, releasePins, job.run, func(background context.Context) {
+		job.finish(background, jobs.StateCancelled, "", 0)
+	})
+	releasePins = nil
+	return created.ID, nil
+}
 
-	result := &SegmentsDeleteResultDTO{Basis: basis}
-	switch detail.Class {
-	case swiftcontrol.ClassSLO:
-		// Manifest-only DELETE first, then native deletion of EXACTLY
-		// the fetched identities. Swift's ?multipart-manifest=delete
-		// would follow whatever manifest occupies the live name at
-		// execution time — a proof/delete TOCTOU — so it is never used:
-		// the destructive set is the graph that was actually reviewed.
-		if err := session.DeleteObject(ctx, req.Container, req.Name); err != nil {
-			s.runner.record(ctx, req.BookmarkID, "segments.delete", resource, "manifest delete failed: "+err.Error(), audit.ResultFailed)
-			return nil, err
-		}
-		result.ManifestDeleted = true
-		for _, ref := range refs {
-			if err := session.DeleteObject(ctx, ref.Container, ref.Object); err != nil {
-				if swiftcontrol.IsNotFound(err) {
-					continue
-				}
-				result.SegmentsFailed++
-				continue
-			}
-			result.SegmentsDeleted++
-		}
-		if result.SegmentsFailed > 0 {
-			s.runner.record(ctx, req.BookmarkID, "segments.delete", resource,
-				fmt.Sprintf("PARTIAL: manifest + %d segments deleted, %d segment deletes failed (%s)", result.SegmentsDeleted, result.SegmentsFailed, basis), audit.ResultVerifyMismatch)
-			return result, fmt.Errorf("%d segment deletes failed; the manifest is gone and %d segments were removed — retry the leftover names", result.SegmentsFailed, result.SegmentsDeleted)
-		}
-	case swiftcontrol.ClassDLO:
-		// Manifest first, then the namespace through the native engine
-		// (manifest-only per object; this scope IS the segments).
-		if err := session.DeleteObject(ctx, req.Container, req.Name); err != nil {
-			s.runner.record(ctx, req.BookmarkID, "segments.delete", resource, "manifest delete failed: "+err.Error(), audit.ResultFailed)
-			return nil, err
-		}
-		result.ManifestDeleted = true
-		capabilities, err := session.FetchCapabilities(ctx)
-		if err != nil {
-			return result, err
-		}
-		sweep, err := deletion.DeletePrefix(ctx, session, capabilities, segContainer, namespace, deletion.Options{})
-		if sweep != nil {
-			result.SegmentsDeleted = sweep.Deleted
-			result.SegmentsFailed = sweep.Failed
-			result.DeletionAccountingIncomplete = sweep.AccountingIncomplete
-		}
-		if errors.Is(err, deletion.ErrIdentityAccounting) || result.DeletionAccountingIncomplete {
-			reason := fmt.Sprintf("the manifest is gone; segment-prefix deletion stopped after %d credited deletions and %d reported failures", result.SegmentsDeleted, result.SegmentsFailed)
-			summary := "partial: manifest deleted; segment deletion accounting storage unavailable"
-			if result.DeletionAccountingIncomplete {
-				reason = "the manifest is gone; " + incompleteDeletionReason(sweep)
-				summary = "partial: manifest deleted; deletion accounting incomplete"
-			}
-			problem := errors.New(reason)
-			if err != nil {
-				problem = fmt.Errorf("%s: %w", reason, err)
-			}
-			if auditErr := s.runner.audit.Append(context.WithoutCancel(ctx), audit.Event{
-				BookmarkID: req.BookmarkID, Operation: "segments.delete", Resource: resource,
-				Summary: summary, Result: audit.ResultVerifyMismatch,
-			}); auditErr != nil {
-				problem = errors.Join(problem, fmt.Errorf("record partial segment deletion audit: %w", auditErr))
-			}
-			return result, problem
-		}
-		if err != nil {
-			s.runner.record(ctx, req.BookmarkID, "segments.delete", resource, "prefix sweep failed: "+err.Error(), audit.ResultFailed)
-			return result, err
-		}
-		if sweep != nil && (sweep.Failed > 0 || sweep.Remaining > 0) {
-			// Never "applied" with residue: the manifest is gone but the
-			// prefix retains objects — the operator gets exact numbers
-			// and the retained prefix for a retry.
-			s.runner.record(ctx, req.BookmarkID, "segments.delete", resource,
-				fmt.Sprintf("PARTIAL: %d segments deleted, %d failed, %d still answering under %s/%s (%s)",
-					sweep.Deleted, sweep.Failed, sweep.Remaining, segContainer, namespace, basis), audit.ResultVerifyMismatch)
-			return result, fmt.Errorf("%d segment deletes failed and %d names still answer under %s/%s — the manifest is gone; retry the prefix",
-				sweep.Failed, sweep.Remaining, segContainer, namespace)
-		}
+// segmentBasis names what the force rests on, for the job's configuration.
+func segmentBasis(ownership *SegmentOwnershipDTO) string {
+	if ownership.Proven {
+		return "backstage-forced-with-evidence"
 	}
-	s.runner.record(ctx, req.BookmarkID, "segments.delete", resource,
-		fmt.Sprintf("%s: manifest + %d segments (%s)", ownership.Target, result.SegmentsDeleted, basis), audit.ResultApplied)
-	return result, nil
+	return "backstage-forced"
 }
