@@ -141,6 +141,12 @@ func TestSegmentSweepContainsAStaleListing(t *testing.T) {
 	ctx := context.Background()
 	segments, aliases := seedSubject(t, h, "job1")
 
+	// Review the graph on the real store before the proxy is installed, so
+	// the request carries the reviewed graph the dialog would (ADR 0095
+	// decision 8) and the proxy only sees the deletion that follows.
+	req := subjectRequest(h, aliases)
+	req.Reviewed = h.ReviewSegmentMembership(ctx, aliases, "subject.bin")
+
 	var once sync.Once
 	front := segmentFrontFor(t, h, segments, func() {
 		once.Do(func() {
@@ -149,8 +155,12 @@ func TestSegmentSweepContainsAStaleListing(t *testing.T) {
 		})
 	}, nil, false)
 
-	if rec := h.DeleteManifestWithSegments(ctx, subjectRequest(h, aliases)); rec.Err() != nil {
+	rec := h.DeleteManifestWithSegments(ctx, req)
+	if rec.Err() != nil {
 		t.Fatalf("the preflight observed nothing outside, so the delete should proceed: %v", rec.Err())
+	}
+	if job := h.AwaitJob(rec.JobID()); job.State != "complete" {
+		t.Fatalf("the sweep did not complete: state %q, error %q", job.State, job.Error)
 	}
 
 	snapshot := h.SnapshotNamespace(h.Primary)
@@ -178,10 +188,13 @@ func TestSegmentSweepRefusesAnUnreadableListing(t *testing.T) {
 	h := New(t)
 	ctx := context.Background()
 	segments, aliases := seedSubject(t, h, "job1")
+	// Review on the real store before the failing proxy is installed.
+	req := subjectRequest(h, aliases)
+	req.Reviewed = h.ReviewSegmentMembership(ctx, aliases, "subject.bin")
 	front := segmentFrontFor(t, h, segments, nil, nil, true)
 
 	before := h.SnapshotNamespace(h.Primary)
-	rec := h.DeleteManifestWithSegments(ctx, subjectRequest(h, aliases))
+	rec := h.DeleteManifestWithSegments(ctx, req)
 	if rec.Err() == nil {
 		t.Fatal("a segment deletion whose preflight listing failed was allowed; want a refusal")
 	}
@@ -205,6 +218,12 @@ func TestSegmentDeleteRefusesAnIdentityMovedDuringThePreflight(t *testing.T) {
 	ctx := context.Background()
 	segments, aliases := seedSubject(t, h, "job1")
 
+	// Review the original graph on the real store before the proxy moves
+	// the selected name; the request carries that graph, and the job's own
+	// recheck (ADR 0095 decision 8) is what must catch the move.
+	req := subjectRequest(h, aliases)
+	req.Reviewed = h.ReviewSegmentMembership(ctx, aliases, "subject.bin")
+
 	var once sync.Once
 	front := segmentFrontFor(t, h, segments, nil, func() {
 		once.Do(func() {
@@ -214,12 +233,16 @@ func TestSegmentDeleteRefusesAnIdentityMovedDuringThePreflight(t *testing.T) {
 	}, false)
 
 	before := h.SnapshotNamespace(h.Primary)
-	rec := h.DeleteManifestWithSegments(ctx, subjectRequest(h, aliases))
-	if rec.Err() == nil {
-		t.Fatal("the selected manifest was replaced during the preflight and the delete still ran; want a refusal")
+	rec := h.DeleteManifestWithSegments(ctx, req)
+	if rec.Err() != nil {
+		t.Fatalf("the job did not start; the reviewed graph matched at startup: %v", rec.Err())
 	}
-	if !strings.Contains(rec.Err().Error(), "changed since the segments were reviewed") {
-		t.Errorf("refusal %q does not name the identity change", rec.Err())
+	job := h.AwaitJob(rec.JobID())
+	if job.State != "failed" {
+		t.Fatalf("the selected manifest was replaced during the preflight but the job did not fail: state %q, error %q", job.State, job.Error)
+	}
+	if !strings.Contains(job.Error, "reviewed") {
+		t.Errorf("job failure %q does not name the reviewed-graph change", job.Error)
 	}
 	// The fixture itself rewrote the selected name, so that one object is
 	// the approved change; nothing else may have moved, and in particular
@@ -244,7 +267,9 @@ func TestSegmentDeletePreflightCountsEveryOutsideName(t *testing.T) {
 		h.Seed(h.Primary, segments, fmt.Sprintf("job1x/%08d", i), []byte("outside"), nil)
 	}
 
-	rec := h.DeleteManifestWithSegments(ctx, subjectRequest(h, aliases))
+	req := subjectRequest(h, aliases)
+	req.Reviewed = h.ReviewSegmentMembership(ctx, aliases, "subject.bin")
+	rec := h.DeleteManifestWithSegments(ctx, req)
 	if rec.Err() == nil {
 		t.Fatal("want a refusal")
 	}

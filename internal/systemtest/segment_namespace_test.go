@@ -76,6 +76,10 @@ func TestSegmentDeleteRefusesNamesOutsideTheNamespace(t *testing.T) {
 	if want := segments + "/job1/"; owned.Target != want {
 		t.Errorf("dialog target = %q, want the namespace %q", owned.Target, want)
 	}
+	// The dialog's reviewed graph is carried back on the request (ADR 0095
+	// decision 8); the outside-name refusal is made synchronously, before
+	// any job row exists.
+	req.Reviewed = owned.Reviewed
 
 	before := h.SnapshotNamespace(h.Primary)
 	rec := h.DeleteManifestWithSegments(ctx, req)
@@ -100,9 +104,15 @@ func TestSegmentDeleteAcceptsTheEnginesUnslashedHeader(t *testing.T) {
 	// A neighbour that shares no prefix at all must also survive.
 	h.Seed(h.Primary, segments, "other/00000000", []byte("unrelated"), nil)
 
+	req := subjectRequest(h, aliases)
+	req.Reviewed = h.ReviewSegmentMembership(ctx, aliases, "subject.bin")
 	before := h.SnapshotNamespace(h.Primary)
-	if rec := h.DeleteManifestWithSegments(ctx, subjectRequest(h, aliases)); rec.Err() != nil {
+	rec := h.DeleteManifestWithSegments(ctx, req)
+	if rec.Err() != nil {
 		t.Fatalf("the engine's own manifest shape was refused: %v", rec.Err())
+	}
+	if job := h.AwaitJob(rec.JobID()); job.State != "complete" {
+		t.Fatalf("the segment deletion did not complete: state %q, error %q", job.State, job.Error)
 	}
 	h.AssertNoCollateral(before, h.SnapshotNamespace(h.Primary),
 		aliases+"/subject.bin",
@@ -121,9 +131,15 @@ func TestSegmentDeleteWithASlashTerminatedHeaderSparesTheStem(t *testing.T) {
 	segments, aliases := seedSubject(t, h, "job1/")
 	h.Seed(h.Primary, segments, "job1keep.bin", []byte("prefix substring, not a child"), nil)
 
+	req := subjectRequest(h, aliases)
+	req.Reviewed = h.ReviewSegmentMembership(ctx, aliases, "subject.bin")
 	before := h.SnapshotNamespace(h.Primary)
-	if rec := h.DeleteManifestWithSegments(ctx, subjectRequest(h, aliases)); rec.Err() != nil {
+	rec := h.DeleteManifestWithSegments(ctx, req)
+	if rec.Err() != nil {
 		t.Fatalf("a manifest reading only its own namespace was refused: %v", rec.Err())
+	}
+	if job := h.AwaitJob(rec.JobID()); job.State != "complete" {
+		t.Fatalf("the segment deletion did not complete: state %q, error %q", job.State, job.Error)
 	}
 	h.AssertNoCollateral(before, h.SnapshotNamespace(h.Primary),
 		aliases+"/subject.bin",
