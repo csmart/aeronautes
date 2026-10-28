@@ -2,10 +2,15 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/csmart/aeronautes/internal/db"
 	"github.com/csmart/aeronautes/internal/jobs"
@@ -592,6 +597,10 @@ func TestPrefixSweepLeavesTheJobOpenWhenARecordIsLost(t *testing.T) {
 // resident memory, which the sweep bounds by holding one listing page at a
 // time in its structure rather than by anything this test asserts.
 func TestPrefixSweepScaleBoundedAndDurable(t *testing.T) {
+	if input := os.Getenv("AERONAUTES_SCALE_READBACK"); input != "" {
+		scaleReadbackChild(t, input)
+		return
+	}
 	h, service, bookmark := deleteHarness(t)
 	ctx := context.Background()
 	h.mock.AddContainer("sweep", "standard")
@@ -660,46 +669,99 @@ func TestPrefixSweepScaleBoundedAndDurable(t *testing.T) {
 	if issued != members || observations != members {
 		t.Fatalf("ledger rows = %d issued, %d observations; want %d each", issued, observations, members)
 	}
-	// A real restart: close this process's database so nothing of it stays
-	// open, reopen on its file, and read every member's record back from
-	// durable storage in the drawer's own pages — not totals alone, and not a
-	// second handle layered over the still-open original.
+	// A real restart across a process boundary: this process closes its
+	// database, and a genuinely fresh child process opens it on its file and
+	// reads every member of this larger-than-a-page sweep back in the drawer's
+	// own pages, with exact counts — not an in-process handle reopen, and not
+	// totals alone.
 	if err := h.db.Close(); err != nil {
 		t.Fatal(err)
 	}
-	restarted, err := db.Open(ctx, h.dbPath)
+	dir := t.TempDir()
+	inputPath := filepath.Join(dir, "scale-input.json")
+	outputPath := filepath.Join(dir, "scale-output.json")
+	reqData, err := json.Marshal(struct{ Database, JobID, Output string }{h.dbPath, jobID, outputPath})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() {
-		if err := restarted.Close(); err != nil {
-			t.Error(err)
-		}
-	}()
-	store := jobs.NewStore(restarted)
-	recovered := map[string]bool{}
+	if err := os.WriteFile(inputPath, reqData, 0600); err != nil {
+		t.Fatal(err)
+	}
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cctx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+	child := exec.CommandContext(cctx, self, "-test.run=^TestPrefixSweepScaleBoundedAndDurable$", "-test.timeout=80s")
+	child.Env = append(os.Environ(), "AERONAUTES_SCALE_READBACK="+inputPath)
+	if out, err := child.CombinedOutput(); err != nil {
+		t.Fatalf("scale readback child: %v\n%s", err, out)
+	}
+	outData, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		Members           int
+		Deleted, Admitted int64
+	}
+	if err := json.Unmarshal(outData, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Members != members || result.Deleted != members || result.Admitted != members {
+		t.Fatalf("after a process restart the fresh process read %+v, want %d members all deleted and admitted", result, members)
+	}
+}
+
+// scaleReadbackChild is the fresh process of the scale restart: it opens the
+// database the parent's sweep wrote and closed, reads every member in the
+// drawer's pages, and reports the count and totals it recovered.
+func scaleReadbackChild(t *testing.T, inputPath string) {
+	t.Helper()
+	data, err := os.ReadFile(inputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var req struct{ Database, JobID, Output string }
+	if err := json.Unmarshal(data, &req); err != nil {
+		t.Fatal(err)
+	}
+	database, err := db.Open(context.Background(), req.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	store := jobs.NewStore(database)
+	seen := map[string]bool{}
 	for cursor := int64(0); ; {
-		page, err := store.ReadItems(ctx, jobID, cursor, 200)
+		page, err := store.ReadItems(context.Background(), req.JobID, cursor, 200)
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, item := range page.Items {
-			if item.Execution == nil || item.Execution.Result != jobs.ItemDeleted {
-				t.Fatalf("member %s not deleted after restart: %+v", item.Key, item.Execution)
+			if item.Execution != nil && item.Execution.Result == jobs.ItemDeleted {
+				seen[item.Key] = true
 			}
-			recovered[item.Key] = true
 		}
 		if page.NextCursor == 0 {
 			break
 		}
 		cursor = page.NextCursor
 	}
-	if len(recovered) != members {
-		t.Fatalf("after restart, %d members readable in the drawer's pages, want %d", len(recovered), members)
+	totals, err := store.ReadItemTotals(context.Background(), req.JobID)
+	if err != nil {
+		t.Fatal(err)
 	}
-	totals, err := store.ReadItemTotals(ctx, jobID)
-	if err != nil || totals.Deleted != members || totals.Admitted != members {
-		t.Fatalf("reopened totals = %+v, %v", totals, err)
+	out, err := json.Marshal(struct {
+		Members           int
+		Deleted, Admitted int64
+	}{len(seen), totals.Deleted, totals.Admitted})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(req.Output, out, 0600); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -911,5 +973,119 @@ func TestDeleteContainerSurvivesAPartialSweep(t *testing.T) {
 	}
 	if containerDeleted(h.mock.RequestLog(), "sweep") {
 		t.Fatal("the container was deleted after a partial sweep")
+	}
+}
+
+// ADR 0095 decision 4 (ADR 0093 decision 4) for the sweep specifically: the
+// issued mark is written before a member's final comparison HEAD, so a crash
+// between the HEAD and the outcome leaves a mark that settles the member as
+// possibly-deleted. This exercises the sweep's own member path, not the static
+// segment loop: at the object's comparison HEAD the ledger already holds an
+// issued mark, which a mutant moving MarkIssued after DeleteMember would not.
+func TestPrefixSweepIssuesBeforeTheComparisonHead(t *testing.T) {
+	h, service, bookmark := deleteHarness(t)
+	ctx := context.Background()
+	h.mock.AddContainer("sweep", "standard")
+	seedObject(h.mock, "sweep", "scope/only", "x", nil)
+	var mu sync.Mutex
+	issuedAtFirstHead := int64(-1)
+	h.mock.BeforeRequest = func(method, path string) {
+		if method != "HEAD" || !strings.Contains(path, "/sweep/scope/only") {
+			return
+		}
+		var n int64
+		if err := h.db.Reader().QueryRowContext(ctx,
+			"SELECT COUNT(*) FROM job_items WHERE issued_at IS NOT NULL").Scan(&n); err != nil {
+			return
+		}
+		mu.Lock()
+		if issuedAtFirstHead < 0 {
+			issuedAtFirstHead = n
+		}
+		mu.Unlock()
+	}
+	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Prefix: "scope/", Mode: ModePrefix, Confirm: "sweep"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job := awaitTerminal(t, h, jobID); job.State != "complete" {
+		t.Fatalf("job = %+v", job)
+	}
+	mu.Lock()
+	seen := issuedAtFirstHead
+	mu.Unlock()
+	if seen < 1 {
+		t.Fatalf("at the member's comparison HEAD the ledger held %d issued marks, want at least 1 (the issued mark must precede the HEAD)", seen)
+	}
+}
+
+// ADR 0095 decision 4 / line 119, the concurrent recording-failure boundary:
+// one member's outcome write fails and latches the ledger unavailable while a
+// second, already-issued worker is held at its comparison HEAD; that held
+// worker then completes its own DELETE whole, because a member in flight is
+// never interrupted inside its own requests, and the latch runs no
+// postcondition and deletes no container. The single-member lost-record test
+// does not exercise a second held worker, and the strengthened interleaving
+// test has no recording failure; this is their required combination.
+func TestPrefixSweepHeldWorkerFinishesWholeWhenAnotherRecordIsLost(t *testing.T) {
+	h, service, bookmark := deleteHarness(t)
+	ctx := context.Background()
+	h.mock.AddContainer("sweep", "standard")
+	seedObject(h.mock, "sweep", "aa", "alpha", nil) // records first and fails, latching the ledger
+	seedObject(h.mock, "sweep", "zz", "zulu", nil)  // held at its comparison HEAD, finishes whole
+	refuseSQL(t, h, `CREATE TRIGGER refuse_sweep_outcomes BEFORE INSERT ON job_item_observations
+		BEGIN SELECT RAISE(ABORT,'fixture required outcome refusal'); END`)
+	h.mock.BeforeRequest = func(method, path string) {
+		if method == "HEAD" && strings.Contains(path, "/sweep/zz") {
+			for i := 0; i < 1000 && h.transfer.jobs.Available() == nil; i++ {
+				awaitTick()
+			}
+		}
+	}
+	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Mode: ModeDeleteContainer, Confirm: "sweep"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := 0
+	for {
+		events, err := h.auditSvc.RecentFor(ctx, bookmark, 20)
+		if err != nil {
+			t.Fatal(err)
+		}
+		noted := false
+		for _, e := range events {
+			if e.Operation == "delete.delete_container.unavailable" {
+				noted = true
+			}
+		}
+		if noted {
+			break
+		}
+		if deadline++; deadline > 1000 {
+			t.Fatal("the job never reported unavailable after the lost record")
+		}
+		awaitTick()
+	}
+	if err := h.transfer.jobs.Available(); err == nil {
+		t.Fatal("the ledger did not latch unavailable after the lost record")
+	}
+	zzDeleted := false
+	for _, line := range deletesUnder(h, "sweep") {
+		if strings.Contains(line, "/sweep/zz") {
+			zzDeleted = true
+		}
+	}
+	if !zzDeleted {
+		t.Fatalf("the held, already-issued worker did not complete its own DELETE: %v", deletesUnder(h, "sweep"))
+	}
+	if containerDeleted(h.mock.RequestLog(), "sweep") {
+		t.Fatal("the container was deleted over an unavailable ledger")
+	}
+	var issued int
+	if err := h.db.Reader().QueryRowContext(ctx, `SELECT COUNT(*) FROM job_items WHERE job_id=? AND issued_at IS NOT NULL`, jobID).Scan(&issued); err != nil {
+		t.Fatal(err)
+	}
+	if issued != 2 {
+		t.Fatalf("%d members issued, want exactly the two admitted and no later issuing", issued)
 	}
 }
