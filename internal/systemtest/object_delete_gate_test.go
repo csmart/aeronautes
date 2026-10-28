@@ -30,8 +30,11 @@ type swiftGate struct {
 	beforeDelete, afterDelete func(token string)
 	fired                     map[string]bool
 	// afterAny runs after every forwarded request has been answered, with
-	// the method and path, so a case can act between a job's members.
-	afterAny func(method, path string)
+	// the method and path, so a case can act between a job's members;
+	// beforeAny runs before a request is forwarded, so a case can act
+	// between a listing and the request that follows it.
+	afterAny  func(method, path string)
+	beforeAny func(method, path string)
 }
 
 func newSwiftGate(t *testing.T, authURL string) *swiftGate {
@@ -60,6 +63,12 @@ func (g *swiftGate) serve(w http.ResponseWriter, r *http.Request) {
 	g.mu.Unlock()
 	if fireBefore {
 		before(token)
+	}
+	g.mu.Lock()
+	beforeAny := g.beforeAny
+	g.mu.Unlock()
+	if beforeAny != nil {
+		beforeAny(r.Method, r.URL.Path)
 	}
 	req, err := http.NewRequestWithContext(r.Context(), r.Method, g.upstream+r.URL.RequestURI(), strings.NewReader(string(body)))
 	if err != nil {

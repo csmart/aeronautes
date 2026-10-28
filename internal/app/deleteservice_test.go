@@ -36,8 +36,10 @@ func TestDeletePreviewCountsAndDisclosures(t *testing.T) {
 	if preview.Objects != 3 || preview.Bytes != 10 || preview.PossibleManifests != 1 {
 		t.Fatalf("preview = %+v", preview)
 	}
-	if preview.Strategy != "bulk-delete" {
-		t.Errorf("strategy = %s", preview.Strategy)
+	// ADR 0095 decision 7: the cost is stated before the job, two requests
+	// per member and one more for each row that takes a later baseline.
+	if preview.Strategy != "per-name-verified" || preview.LaterBaselineRows != 1 || preview.RequestCost != 7 {
+		t.Errorf("strategy and cost = %+v", preview)
 	}
 
 	// Wrong typed confirmation refuses before any job exists.
@@ -86,7 +88,7 @@ func TestDeletePrefixJob(t *testing.T) {
 	if job.Counters.ObjectsPlanned == 0 || job.Counters.ObjectsCopied != job.Counters.ObjectsPlanned {
 		t.Errorf("counters = %+v", job.Counters)
 	}
-	if !strings.Contains(job.Settings, "bulk-delete") || !strings.Contains(job.Settings, "limit=1") {
+	if !strings.Contains(job.Settings, "per-name-verified") || !strings.Contains(job.Settings, "limit=1") {
 		t.Errorf("effective config = %q", job.Settings)
 	}
 	// Survivors: kept.txt and the sibling manifest, still assembling.

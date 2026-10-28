@@ -1,16 +1,11 @@
 package app
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
-	"os"
-	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/deletion"
@@ -70,6 +65,13 @@ type DeletePreviewDTO struct {
 	// is manifest-only, so their segments (if any) will remain as
 	// recoverable orphans unless separately owned and cleaned.
 	PossibleManifests int64 `json:"possibleManifests"`
+	// LaterBaselineRows is how many rows take a HEAD of their own before
+	// their comparison, the zero-byte and SLO-listed ones, and RequestCost
+	// the object requests the sweep makes for the scope before listing,
+	// retries or verification: two per member plus one per such row (ADR
+	// 0085, ADR 0095 decision 7).
+	LaterBaselineRows int64 `json:"laterBaselineRows"`
+	RequestCost       int64 `json:"requestCost"`
 	// Strategy is what execution would select right now.
 	Strategy string `json:"strategy"`
 }
@@ -106,10 +108,7 @@ func (s *DeleteService) PreviewDelete(ctx context.Context, req DeleteRequestDTO)
 	if err != nil {
 		return nil, err
 	}
-	preview := &DeletePreviewDTO{Strategy: string(deletion.StrategyParallel)}
-	if capabilities := s.connections.Capabilities(); capabilities != nil && capabilities.BulkDeleteMaxDeletes() > 0 {
-		preview.Strategy = string(deletion.StrategyBulk)
-	}
+	preview := &DeletePreviewDTO{Strategy: sweepStrategy}
 	for entry, err := range session.Objects(ctx, req.Container, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.Prefix}) {
 		if err != nil {
 			return nil, err
@@ -122,10 +121,27 @@ func (s *DeleteService) PreviewDelete(ctx context.Context, req DeleteRequestDTO)
 			}
 		}
 	}
+	// ADR 0085's cost, stated before the job: one HEAD and one DELETE per
+	// member, and a baseline HEAD for each row that cannot say what it holds.
+	preview.LaterBaselineRows = preview.PossibleManifests
+	preview.RequestCost = 2*preview.Objects + preview.LaterBaselineRows
 	return preview, nil
 }
 
-// StartDelete validates the typed confirmation and launches the job.
+// sweepStrategy and sweepVerifyPolicy name, in the job's effective
+// configuration, what a bulk deletion runs (ADR 0095 decisions 1 and 5):
+// the verified per-name protocol over listing passes, and the one-row
+// postcondition after bounded retries.
+const (
+	sweepStrategy     = "per-name-verified"
+	sweepVerifyPolicy = "prefix limit=1 empty after ≤3 passes"
+)
+
+// StartDelete validates the typed confirmation and launches the job: a
+// verified per-name sweep over the scope whose members are durable items of
+// the job (ADR 0095). The three modes share it; the empty mode compares the
+// container's configuration before and after, and the delete-container mode
+// deletes the container only after a complete sweep.
 func (s *DeleteService) StartDelete(ctx context.Context, req DeleteRequestDTO) (string, error) {
 	if err := refuseIfDeferred("DeleteService.StartDelete"); err != nil {
 		return "", err
@@ -135,6 +151,10 @@ func (s *DeleteService) StartDelete(ctx context.Context, req DeleteRequestDTO) (
 	}
 	if req.Confirm != req.Container {
 		return "", fmt.Errorf("confirmation %q does not match the container name — type it exactly", req.Confirm)
+	}
+	session, err := s.connections.SessionFor(ctx, req.BookmarkID)
+	if err != nil {
+		return "", err
 	}
 	owner, ctx, err := s.runner.admit(ctx)
 	if err != nil {
@@ -150,329 +170,169 @@ func (s *DeleteService) StartDelete(ctx context.Context, req DeleteRequestDTO) (
 			releasePins()
 		}
 	}()
-	session, err := s.connections.SessionFor(ctx, req.BookmarkID)
-	if err != nil {
+	// A destructive job's startup I/O: confirm the session still has
+	// authority to reach the store before any job row exists, so a bookmark
+	// whose generation moved is refused here and shutdown can cancel this
+	// admitted request with no row left behind, as every job family does.
+	if _, err := session.FetchCapabilities(ctx); err != nil {
 		return "", err
 	}
-	// The capability snapshot steers strategy; fetch through the session
-	// so a non-active bookmark still gets one.
-	capabilities, err := session.FetchCapabilities(ctx)
-	if err != nil {
-		return "", err
-	}
-
 	jobType := map[DeleteMode]jobs.Type{
 		ModePrefix: jobs.TypeDeletePrefix, ModeEmpty: jobs.TypeEmpty, ModeDeleteContainer: jobs.TypeDeleteCont,
 	}[req.Mode]
 	job, err := s.jobs.Create(ctx, jobs.Job{
-		Type:             jobType,
-		Source:           req.Container + "/" + req.Prefix,
-		Destination:      "(deleted)",
-		SourceBookmarkID: req.BookmarkID,
-		Engine:           "native",
+		Type: jobType, ItemRecordsVersion: 1,
+		Source: req.Container + "/" + req.Prefix, Destination: "(deleted)", SourceBookmarkID: req.BookmarkID, Engine: "native",
 	})
 	if err != nil {
 		return "", err
 	}
+	// §32/§45: the strategy and the postcondition are the job's effective
+	// configuration, never a silent shortcut.
+	_ = s.jobs.SetSettings(ctx, job.ID, fmt.Sprintf(`{"strategy":%q,"verify":%q,"passes":%d,"workers":%d}`,
+		sweepStrategy, sweepVerifyPolicy, sweepPasses, sweepWorkers))
 	s.runner.register(job.ID, owner.cancel)
 	s.runner.record(ctx, req.BookmarkID, "delete."+string(req.Mode)+".start",
 		req.Container+"/"+req.Prefix, "job "+job.ID, audit.ResultApplied)
-
 	owner.launch(job.ID, req.BookmarkID, releasePins, func(runCtx context.Context) {
-		s.runDelete(runCtx, job.ID, req, session, capabilities)
-	}, nil)
+		s.runSweepJob(runCtx, job.ID, req, session)
+	}, func(background context.Context) {
+		// Cancelled before it ran: nothing was listed, admitted or issued.
+		s.finishSweep(background, job.ID, req, jobs.StateCancelled, "", 0)
+	})
 	releasePins = nil
 	return job.ID, nil
 }
 
-func (s *DeleteService) runDelete(ctx context.Context, jobID string, req DeleteRequestDTO,
-	session *swiftcontrol.Session, capabilities *swiftcontrol.Capabilities) {
-
+// runSweepJob is the job goroutine: the listing passes over the scope, then
+// the terminal state from the members and the postcondition, then the mode's
+// own step (ADR 0095 decisions 5 and 6). A lost record leaves the job open
+// with its status unavailable, as the selected set's does.
+func (s *DeleteService) runSweepJob(ctx context.Context, jobID string, req DeleteRequestDTO, session *swiftcontrol.Session) {
 	background := context.WithoutCancel(ctx)
-	counters := jobs.Counters{}
-	transition := func(state jobs.State) {
+	for _, state := range []jobs.State{jobs.StatePlanning, jobs.StateRunning} {
 		if err := s.jobs.Transition(background, jobID, state); err != nil {
 			log.Printf("job %s: %v", jobID, err)
 		}
 	}
-	finish := func(state jobs.State, message string) {
-		// Deregister BEFORE the terminal state becomes visible: a job
-		// that reads terminal must no longer be cancel-addressable.
-		s.runner.release(jobID)
-		summary := "job " + jobID
-		if counters.DeletionAccountingIncomplete {
-			summary += "; deletion accounting incomplete"
-		}
-		if err := s.jobs.Finish(background, jobID, jobs.Completion{
-			State: state, Counters: counters, Error: message,
-			Audit: audit.Event{BookmarkID: req.BookmarkID,
-				Operation: "delete." + string(req.Mode) + "." + string(state),
-				Resource:  req.Container + "/" + req.Prefix, Summary: summary, Result: terminalAuditResult(state)},
-		}, s.runner.audit); err != nil {
-			log.Printf("job %s: finish deletion: %v", jobID, err)
-		}
-	}
-
-	// Planning: count the scope for honest progress.
-	transition(jobs.StatePlanning)
-	for entry, err := range session.Objects(ctx, req.Container, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.Prefix}) {
-		if err != nil {
-			if errors.Is(err, context.Canceled) {
-				finish(jobs.StateCancelled, "")
-			} else {
-				finish(jobs.StateFailed, "planning: "+err.Error())
-			}
-			return
-		}
-		if object, ok := entry.(swiftcontrol.ObjectEntry); ok {
-			counters.ObjectsPlanned++
-			counters.BytesPlanned += object.Bytes
-		}
-	}
-	_ = s.jobs.UpdateCounters(background, jobID, counters)
-
-	// §33 acceptance baseline for the container-preserving modes.
+	// §33 acceptance baseline for the container-preserving mode; a
+	// cancellation this early requested nothing.
 	var before *swiftcontrol.ContainerDetail
 	if req.Mode == ModeEmpty {
-		var err error
-		before, err = session.ContainerDetail(ctx, req.Container)
-		if err != nil {
-			finish(jobs.StateFailed, "container baseline: "+err.Error())
+		detail, err := session.ContainerDetail(ctx, req.Container)
+		if ctx.Err() != nil {
+			s.finishSweep(background, jobID, req, jobs.StateCancelled, "", 0)
 			return
 		}
-	}
-
-	transition(jobs.StateRunning)
-	recordFailure, closeSpill := failureSpill(jobID)
-	// Unresolved names are a different public fact from reported
-	// failures and get their own retained set, never folded into the
-	// failure count and never presented as a deletion.
-	recordUnresolved, closeUnresolvedRetention := unresolvedRetention(jobID)
-	var countersMu sync.Mutex
-	result, err := deletion.DeletePrefix(ctx, session, capabilities, req.Container, req.Prefix, deletion.Options{
-		OnProgress: func(deleted, failed int64) {
-			countersMu.Lock()
-			counters.ObjectsCopied = deleted // "processed" for the drawer's n/planned display
-			counters.ObjectsFailed = failed
-			snapshot := counters
-			countersMu.Unlock()
-			_ = s.jobs.UpdateCounters(background, jobID, snapshot)
-		},
-		OnFailure:    recordFailure,
-		OnUnresolved: recordUnresolved,
-	})
-	spillPath, failedTotal := closeSpill()
-	unresolvedPath, _, retentionProblem := closeUnresolvedRetention()
-	if result != nil {
-		// Only a validated reply's aggregate reaches these counters, so
-		// an untrusted reply can no longer publish claimed deletions as
-		// verified beside the same names as failures. These remain the
-		// service's report rather than an independent observation of the
-		// store.
-		countersMu.Lock()
-		counters.ObjectsCopied = result.Deleted
-		counters.ObjectsFailed = result.Failed
-		counters.ObjectsVerified = result.Deleted
-		counters.DeletionAccountingIncomplete = result.AccountingIncomplete
-		countersMu.Unlock()
-	}
-	if result != nil && result.AccountingIncomplete {
-		reason := incompleteDeletionReason(result)
 		if err != nil {
-			reason += "; " + err.Error()
+			s.finishSweep(background, jobID, req, jobs.StateFailed, "container baseline: "+err.Error(), 0)
+			return
 		}
-		if result.Failed > 0 && spillPath != "" {
-			reason += "; partial reported-failure observations: " + spillPath
-		}
-		if result.Unresolved > 0 && unresolvedPath != "" {
-			reason += "; partial unresolved observations: " + unresolvedPath
-		}
-		if retentionProblem != "" {
-			reason += "; " + retentionProblem
-		}
-		finish(jobs.StatePartial, reason)
+		before = detail
+	}
+	sweep := &prefixSweep{s: s, jobID: jobID, bookmarkID: req.BookmarkID, container: req.Container, prefix: req.Prefix, session: session}
+	sweep.run(ctx)
+	if lost := sweep.lostReason(); lost != "" {
+		// The ledger's own latch: the job stays open with its status
+		// unavailable, no postcondition is run and no container is deleted
+		// (ADR 0095 decision 4).
+		s.runner.release(jobID)
+		s.runner.record(background, req.BookmarkID, "delete."+string(req.Mode)+".unavailable",
+			req.Container+"/"+req.Prefix, "job "+jobID+" · "+lost, audit.ResultUnverified)
+		log.Printf("job %s: %s", jobID, lost)
 		return
 	}
-	// A name whose effect the reply did not establish is neither a
-	// deletion nor a proven failure, and it must reach the operator on
-	// every terminal path, including the one an error takes.
-	unresolvedDetail := ""
-	if result != nil && result.Unresolved > 0 {
-		unresolvedDetail = fmt.Sprintf("%d names have an unresolved effect: the reply did not establish whether the object was destroyed (first: %s)",
-			result.Unresolved, result.Unresolveds[0].Name)
-		if unresolvedPath != "" {
-			unresolvedDetail += "; full list: " + unresolvedPath
-		}
-		if retentionProblem != "" {
-			// The count and the bounded sample are all that survived, and
-			// the operator is told so rather than shown a ledger that
-			// reads as complete.
-			unresolvedDetail += "; " + retentionProblem
-		}
-	}
-	// A name a later listing offered again was not requested again by
-	// this job: whatever stands there now was never part of its consent.
-	if result != nil && result.NotRequestedAgain > 0 && len(result.NotRequestedAgainNames) > 0 {
-		detail := fmt.Sprintf("%d names were still listed after this job's only request for them and were not requested again (first: %s)",
-			result.NotRequestedAgain, result.NotRequestedAgainNames[0])
-		if unresolvedDetail == "" {
-			unresolvedDetail = detail
-		} else {
-			unresolvedDetail += "; " + detail
-		}
-	}
-	withUnresolved := func(reason string) string {
-		switch {
-		case unresolvedDetail == "":
-			return reason
-		case reason == "":
-			return unresolvedDetail
-		default:
-			return reason + "; " + unresolvedDetail
-		}
-	}
-	if err != nil {
-		// Once anything was irreversibly deleted, an interruption is
-		// PARTIAL with the exact count — never a plain cancel/fail
-		// that understates what happened (review F-10).
-		deleted := int64(0)
-		if result != nil {
-			deleted = result.Deleted
-		}
-		switch {
-		// An unresolved effect is not zero effect: crediting no deletion
-		// does not establish that none landed, so the run is partial
-		// whatever else happened to it.
-		case unresolvedDetail != "" && errors.Is(err, context.Canceled):
-			finish(jobs.StatePartial, withUnresolved(fmt.Sprintf("cancelled after %d credited deletions", deleted)))
-		case unresolvedDetail != "":
-			finish(jobs.StatePartial, withUnresolved(fmt.Sprintf("stopped after %d credited deletions: %v", deleted, err)))
-		case deleted > 0 && errors.Is(err, context.Canceled):
-			finish(jobs.StatePartial, fmt.Sprintf("cancelled after %d deletions", deleted))
-		case deleted > 0:
-			finish(jobs.StatePartial, fmt.Sprintf("stopped after %d deletions: %v", deleted, err))
-		case errors.Is(err, context.Canceled):
-			finish(jobs.StateCancelled, "")
-		default:
-			finish(jobs.StateFailed, err.Error())
-		}
-		return
-	}
-	// §32/§45: the chosen strategy and verification policy are never a
-	// silent shortcut — they land on the job as effective configuration.
-	settings := fmt.Sprintf(`{"strategy":%q,"verify":%q,"passes":%d}`, result.Strategy, result.VerifyPolicy, result.Passes)
-	_ = s.jobs.SetSettings(background, jobID, settings)
-
-	transition(jobs.StateVerifying)
-	problems := []string{}
-	if result.Failed > 0 {
-		detail := fmt.Sprintf("%d deletes failed (first: %s: %s)",
-			result.Failed, result.Failures[0].Name, result.Failures[0].Err)
-		if spillPath != "" {
-			detail += "; full list: " + spillPath
-		}
-		problems = append(problems, detail)
-	}
-	_ = failedTotal
-	if unresolvedDetail != "" {
-		// A run holding an unresolved name has not completed.
-		problems = append(problems, unresolvedDetail)
-	}
-	if result.Remaining > 0 {
-		problems = append(problems, "objects still listed after the final pass (concurrent writer or listing lag)")
-	}
-
-	if req.Mode == ModeEmpty && before != nil {
+	state, reason := s.sweepEnd(background, jobID, req, session, sweep)
+	if state == jobs.StateComplete && req.Mode == ModeEmpty {
 		after, err := session.ContainerDetail(background, req.Container)
 		if err != nil {
-			problems = append(problems, "config re-check failed: "+err.Error())
+			state, reason = jobs.StatePartial, "config re-check failed: "+err.Error()
 		} else if diff := deletion.SnapshotConfig(before).Diff(deletion.SnapshotConfig(after)); diff != "" {
-			problems = append(problems, "container config changed during empty: "+diff)
+			state, reason = jobs.StatePartial, "container config changed during empty: "+diff
 		}
 	}
-	if req.Mode == ModeDeleteContainer && len(problems) == 0 {
-		if err := session.DeleteContainer(ctx, req.Container); err != nil {
-			problems = append(problems, "container delete: "+err.Error())
-		} else if _, err := session.ContainerDetail(background, req.Container); !swiftcontrol.IsNotFound(err) {
-			problems = append(problems, "container still answers after DELETE")
+	if state == jobs.StateComplete && req.Mode == ModeDeleteContainer {
+		// Only a complete sweep with an empty postcondition reaches here;
+		// anything less leaves the container standing (decision 6), and so
+		// does a cancellation landing at this boundary, with the objects
+		// already gone.
+		switch {
+		case ctx.Err() != nil:
+			state, reason = jobs.StatePartial, "cancelled after the objects were deleted and before the container was"
+		default:
+			if err := session.DeleteContainer(background, req.Container); err != nil {
+				state, reason = jobs.StatePartial, "container delete: "+err.Error()
+			} else if _, err := session.ContainerDetail(background, req.Container); !swiftcontrol.IsNotFound(err) {
+				state, reason = jobs.StatePartial, "container still answers after DELETE"
+			}
 		}
 	}
-
-	if len(problems) > 0 {
-		finish(jobs.StatePartial, strings.Join(problems, "; "))
-		return
+	if state == jobs.StateComplete {
+		if err := s.jobs.Transition(background, jobID, jobs.StateVerifying); err != nil {
+			log.Printf("job %s: %v", jobID, err)
+		}
 	}
-	finish(jobs.StateComplete, "")
+	s.finishSweep(background, jobID, req, state, reason, sweep.counts().admitted)
 }
 
-// unresolvedRetention keeps the complete set of names whose effect a
-// run could not state. It is opened before any destructive request, so
-// a run cannot discover at the end that it had nowhere to put the list,
-// and it reports its own failures instead of degrading to a count in
-// silence: a ledger that quietly loses its identities is not a ledger.
-func unresolvedRetention(jobID string) (record func(name, detail string), closeRetention func() (path string, count int64, problem string)) {
-	dir, err := os.UserCacheDir()
+// sweepEnd derives the terminal state from the members and the postcondition
+// (ADR 0095 decision 5): complete only when every member issued was deleted
+// and the scope lists nothing; partial whenever a DELETE was sent and the
+// job is not complete; cancelled only before any DELETE; failed when nothing
+// was sent, because every member was refused or changed, because the
+// listing or the scope could not be read before any request, or because the
+// scope held a name this job never listed. Each member is counted once by
+// its own outcome. The postcondition runs to its end whatever the job's
+// context does now: the sweep's requests are over and this is their
+// evidence.
+func (s *DeleteService) sweepEnd(ctx context.Context, jobID string, req DeleteRequestDTO, session *swiftcontrol.Session, sweep *prefixSweep) (jobs.State, string) {
+	totals, err := s.jobs.ReadItemTotals(ctx, jobID)
 	if err != nil {
-		dir = os.TempDir()
+		return jobs.StatePartial, "the members' records could not be read: " + err.Error()
 	}
-	dir = filepath.Join(dir, "aeronautes", "unresolved")
-	var (
-		mu            sync.Mutex
-		count         int64
-		file          *os.File
-		writer        *bufio.Writer
-		enc           *json.Encoder
-		storageErrors int64
-		openErr       error
-	)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		openErr = err
-	} else if f, err := os.OpenFile(filepath.Join(dir, jobID+".jsonl"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600); err != nil {
-		openErr = err
-	} else {
-		file = f
-		writer = bufio.NewWriter(f)
-		enc = json.NewEncoder(writer)
+	counts := sweep.counts()
+	sent := totals.Deleted + totals.Unverified + totals.Failed + totals.Unsettled
+	breakdown := fmt.Sprintf("%d of %d members deleted; %d refused, %d changed since listed, %d failed, %d unverified",
+		totals.Deleted, totals.Admitted, totals.Refused, totals.Conflicts, totals.Failed, totals.Unverified)
+	switch {
+	case counts.cancelled && sent == 0:
+		return jobs.StateCancelled, ""
+	case counts.cancelled:
+		return jobs.StatePartial, fmt.Sprintf("cancelled after %d of %d members were requested, %d deleted", sent, totals.Admitted, totals.Deleted)
+	case counts.listErr != nil && sent == 0:
+		return jobs.StateFailed, "the listing could not be read before any request: " + counts.listErr.Error()
+	case counts.listErr != nil:
+		return jobs.StatePartial, "the listing stopped: " + counts.listErr.Error() + "; " + breakdown
 	}
-	record = func(name, detail string) {
-		mu.Lock()
-		defer mu.Unlock()
-		count++
-		if enc == nil {
-			return
-		}
-		if err := enc.Encode(map[string]string{"name": name, "unresolved": detail}); err != nil {
-			storageErrors++
-		}
+	remaining, err := deletion.VerifyPrefixEmpty(ctx, session, req.Container, req.Prefix)
+	switch {
+	case err != nil && sent == 0:
+		return jobs.StateFailed, "the scope could not be verified and no request was sent: " + err.Error()
+	case err != nil:
+		return jobs.StatePartial, "the scope could not be verified: " + err.Error() + "; " + breakdown
+	case sent == 0 && totals.Admitted > 0:
+		return jobs.StateFailed, fmt.Sprintf("nothing was deleted: every member was refused or changed since listed (%d refused, %d changed)", totals.Refused, totals.Conflicts)
+	case remaining > 0 && totals.Admitted == 0:
+		return jobs.StateFailed, fmt.Sprintf("no request was sent and the scope was not empty at verification (%d row sampled): a name this job never listed stands under it; run the deletion again for fresh authority", remaining)
+	case remaining > 0 && counts.heldAgain > 0:
+		return jobs.StatePartial, fmt.Sprintf("%s; %d names still listed after this job's only request for them were not requested again", breakdown, counts.heldAgain)
+	case remaining > 0:
+		return jobs.StatePartial, breakdown + "; a name this job never listed stood under the scope at verification; run the deletion again for fresh authority"
+	case totals.Deleted == totals.Admitted:
+		return jobs.StateComplete, ""
+	default:
+		return jobs.StatePartial, breakdown
 	}
-	closeRetention = func() (string, int64, string) {
-		mu.Lock()
-		defer mu.Unlock()
-		// A buffered write that fails at the flush loses records the
-		// encoder already accepted, so a storage error anywhere means the
-		// artifact cannot be offered as the complete list, and the number
-		// of identities lost is not something this recorder can state.
-		if writer != nil {
-			if err := writer.Flush(); err != nil {
-				storageErrors++
-			}
-		}
-		if file != nil {
-			if err := file.Close(); err != nil {
-				storageErrors++
-			}
-		}
-		switch {
-		case openErr != nil:
-			return "", count, "the complete unresolved list could not be retained: " + openErr.Error()
-		case file == nil:
-			return "", count, "the complete unresolved list could not be retained"
-		case storageErrors > 0:
-			return "", count, fmt.Sprintf(
-				"the retained unresolved list is incomplete: %d storage errors occurred while writing it, and how many identities were lost is not established",
-				storageErrors)
-		}
-		return file.Name(), count, ""
+}
+
+func (s *DeleteService) finishSweep(ctx context.Context, jobID string, req DeleteRequestDTO, state jobs.State, message string, admitted int64) {
+	s.runner.release(jobID)
+	err := s.jobs.FinishFromItems(ctx, jobID, jobs.Completion{
+		State: state, Counters: jobs.Counters{ObjectsPlanned: admitted}, Error: message,
+		Audit: audit.Event{BookmarkID: req.BookmarkID, Operation: "delete." + string(req.Mode) + "." + string(state),
+			Resource: req.Container + "/" + req.Prefix, Summary: fmt.Sprintf("job %s · %d members", jobID, admitted), Result: terminalAuditResult(state)},
+	}, s.runner.audit)
+	if err != nil {
+		log.Printf("job %s terminal outcome was not saved: %v", jobID, err)
 	}
-	return record, closeRetention
 }

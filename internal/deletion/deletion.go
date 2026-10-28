@@ -325,6 +325,13 @@ func deletePass(ctx, admissionCtx context.Context, session *swiftcontrol.Session
 	return errors.Join(accounting.problem(), listErr, ctx.Err())
 }
 
+// VerifyPrefixEmpty is the postcondition the verified per-name sweep shares
+// with this executor (ADR 0095 decision 5): how many rows still answer under
+// the scope, zero or one, after bounded retries.
+func VerifyPrefixEmpty(ctx context.Context, session *swiftcontrol.Session, container, prefix string) (int64, error) {
+	return verifyPrefixEmpty(ctx, session, container, prefix)
+}
+
 // verifyPrefixEmpty is the §32 low-cost postcondition: one-row listing
 // with bounded retries for listing consistency (§15.3). Returns how
 // many rows still answer (0 or 1 — it never rescans the namespace).
