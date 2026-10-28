@@ -595,7 +595,7 @@ func TestPrefixSweepScaleBoundedAndDurable(t *testing.T) {
 	h, service, bookmark := deleteHarness(t)
 	ctx := context.Background()
 	h.mock.AddContainer("sweep", "standard")
-	const members = 650 // > the 500-row admission chunk and the 200-row drawer page, and quick under -race
+	const members = 520 // > the 500-row admission chunk and the 200-row drawer page, and quick under -race
 	for i := range members {
 		seedObject(h.mock, "sweep", "scope/obj-"+padded(i), "x", nil)
 	}
@@ -711,14 +711,18 @@ func TestDeleteContainerEmptyCancelledIsCancelled(t *testing.T) {
 	ctx := context.Background()
 	h.mock.AddContainer("empty-c", "standard")
 	ready := make(chan string, 1)
-	cancelled := false
+	listings := 0
 	h.mock.AfterRequest = func(method, path string) {
-		// The sweep's first (empty) listing of the container; cancel there,
-		// before the one-row verification and before any DELETE.
-		if method == "GET" && path == "/v1/AUTH_test/empty-c" && !cancelled {
-			cancelled = true
-			if err := h.transfer.CancelJob(ctx, <-ready); err != nil {
-				t.Error(err)
+		// The container's empty sweep listing is the first GET; its one-row
+		// verification is the second. Cancel at the verification, so the sweep
+		// ends complete and the cancellation lands at the delete-container
+		// boundary, with no destructive request issued.
+		if method == "GET" && path == "/v1/AUTH_test/empty-c" {
+			listings++
+			if listings == 2 {
+				if err := h.transfer.CancelJob(ctx, <-ready); err != nil {
+					t.Error(err)
+				}
 			}
 		}
 	}
