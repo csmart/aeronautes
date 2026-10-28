@@ -1042,30 +1042,62 @@ func TestPrefixSweepHeldWorkerFinishesWholeWhenAnotherRecordIsLost(t *testing.T)
 	}
 	refuseSQL(t, h, `CREATE TRIGGER refuse_sweep_outcomes BEFORE INSERT ON job_item_observations
 		BEGIN SELECT RAISE(ABORT,'fixture required outcome refusal'); END`)
-	heldAtHead := make(chan struct{})
-	var once sync.Once
+	memberOf := func(path string) string {
+		if _, after, ok := strings.Cut(path, "/sweep/"); ok {
+			return after
+		}
+		return ""
+	}
+	var mu sync.Mutex
+	atHead := map[string]bool{} // the seven non-failing in-flight members, at their comparison HEADs
+	gateExpired := false
+	allAtHead := make(chan struct{})
+	var allOnce sync.Once
 	waitForLatch := func() {
-		for i := 0; i < 3000 && h.transfer.jobs.Available() == nil; i++ {
+		for i := 0; i < 5000; i++ {
+			if h.transfer.jobs.Available() != nil {
+				return
+			}
 			awaitTick()
 		}
+		mu.Lock()
+		gateExpired = true
+		mu.Unlock()
 	}
-	// Barriers establish the ordering rather than relying on the pool's race.
-	// a_held signals once it is at its comparison HEAD and then stays there
-	// until the latch; a_fail waits for that signal before it can record and
-	// latch, so the failure always lands while a_held is held at its HEAD; and
-	// every other in-flight filler is held at its HEAD too, so none finishes
-	// early and frees a worker to issue one of the two queued members.
+	// Barriers impose the whole schedule rather than relying on the pool's
+	// race. Each of the seven non-failing in-flight members marks itself at its
+	// comparison HEAD, so the full issued set is established before a_fail is
+	// let past its HEAD to record and latch; and those seven stay at their
+	// HEADs until the latch, so none finishes early and frees a worker to
+	// issue one of the two queued members. A barrier that expires before its
+	// boundary fails the test rather than silently releasing.
 	h.mock.BeforeRequest = func(method, path string) {
 		if method != "HEAD" {
 			return
 		}
-		switch {
-		case strings.Contains(path, "/sweep/a_held"):
-			once.Do(func() { close(heldAtHead) })
-			waitForLatch()
-		case strings.Contains(path, "/sweep/a_fail"):
-			<-heldAtHead
-		default:
+		member := memberOf(path)
+		if member == "" {
+			return
+		}
+		if member == "a_fail" {
+			select {
+			case <-allAtHead:
+			case <-time.After(60 * time.Second):
+				mu.Lock()
+				gateExpired = true
+				mu.Unlock()
+			}
+			return
+		}
+		mu.Lock()
+		first := !atHead[member]
+		atHead[member] = true
+		n := len(atHead)
+		mu.Unlock()
+		if n >= 7 {
+			allOnce.Do(func() { close(allAtHead) })
+		}
+		if first {
 			waitForLatch()
 		}
 	}
@@ -1090,45 +1122,64 @@ func TestPrefixSweepHeldWorkerFinishesWholeWhenAnotherRecordIsLost(t *testing.T)
 		if noted {
 			break
 		}
-		if deadline++; deadline > 3000 {
+		if deadline++; deadline > 5000 {
 			t.Fatal("the job never reported unavailable after the lost record")
 		}
 		awaitTick()
 	}
+	mu.Lock()
+	expired := gateExpired
+	mu.Unlock()
+	if expired {
+		t.Fatal("a barrier expired before its boundary was reached; the intended schedule was not imposed")
+	}
 	if err := h.transfer.jobs.Available(); err == nil {
 		t.Fatal("the ledger did not latch unavailable after the lost record")
 	}
-	// The held, already-issued worker completed its whole member on the wire
-	// after the latch: its comparison HEAD, its DELETE and its verifying read.
-	heads, deleted := 0, false
-	for _, line := range h.mock.RequestLog() {
-		if !strings.Contains(line, "/sweep/a_held") {
-			continue
-		}
-		if strings.HasPrefix(line, "HEAD ") {
-			heads++
-		}
-		if strings.HasPrefix(line, "DELETE ") {
-			deleted = true
+	log := h.mock.RequestLog()
+	pathOf := func(line string) string {
+		_, rest, _ := strings.Cut(line, " ")
+		path, _, _ := strings.Cut(rest, "?")
+		return path
+	}
+	// The held, already-issued worker completed its whole member on the wire in
+	// order and nothing else: its comparison HEAD, its DELETE, its literal read.
+	var heldSeq []string
+	for _, line := range log {
+		if memberOf(pathOf(line)) == "a_held" {
+			method, _, _ := strings.Cut(line, " ")
+			heldSeq = append(heldSeq, method)
 		}
 	}
-	if !deleted || heads < 2 {
-		t.Fatalf("the held worker did not finish its whole member: %d HEADs, deleted=%v", heads, deleted)
+	if len(heldSeq) != 3 || heldSeq[0] != "HEAD" || heldSeq[1] != "DELETE" || heldSeq[2] != "HEAD" {
+		t.Fatalf("held member's wire sequence = %v, want exactly [HEAD DELETE HEAD] (comparison, delete, literal read)", heldSeq)
 	}
-	// No postcondition ran and no container was deleted over the unavailable ledger.
-	if containerDeleted(h.mock.RequestLog(), "sweep") {
+	// No postcondition ran: no one-row verification listing over the latch.
+	if _, oneRow := listingsOf(t, log, "sweep"); oneRow != 0 {
+		t.Fatalf("%d one-row verification listings ran over the unavailable ledger; want 0 (no postcondition)", oneRow)
+	}
+	if containerDeleted(log, "sweep") {
 		t.Fatal("the container was deleted over an unavailable ledger")
 	}
-	// Exactly the eight dispatched members were issued; the two queued members
-	// stayed unissued, so no member was issued after the lost record.
-	var admitted, issued int
+	// The two queued members were neither requested on the wire nor issued.
+	for _, q := range []string{"f6", "f7"} {
+		for _, line := range log {
+			if memberOf(pathOf(line)) == q {
+				t.Fatalf("queued member %s was requested: %s", q, line)
+			}
+		}
+	}
+	var admitted, issued, queuedIssued int
 	if err := h.db.Reader().QueryRowContext(ctx, `SELECT COUNT(*) FROM job_items WHERE job_id=?`, jobID).Scan(&admitted); err != nil {
 		t.Fatal(err)
 	}
 	if err := h.db.Reader().QueryRowContext(ctx, `SELECT COUNT(*) FROM job_items WHERE job_id=? AND issued_at IS NOT NULL`, jobID).Scan(&issued); err != nil {
 		t.Fatal(err)
 	}
-	if admitted != 10 || issued != 8 {
-		t.Fatalf("admitted %d, issued %d; want 10 admitted and exactly 8 issued (two queued members stay unissued)", admitted, issued)
+	if err := h.db.Reader().QueryRowContext(ctx, `SELECT COUNT(*) FROM job_items WHERE job_id=? AND issued_at IS NOT NULL AND item_key IN ('sweep/f6','sweep/f7')`, jobID).Scan(&queuedIssued); err != nil {
+		t.Fatal(err)
+	}
+	if admitted != 10 || issued != 8 || queuedIssued != 0 {
+		t.Fatalf("admitted %d, issued %d, queued issued %d; want 10 admitted, exactly 8 issued, 0 queued issued", admitted, issued, queuedIssued)
 	}
 }
