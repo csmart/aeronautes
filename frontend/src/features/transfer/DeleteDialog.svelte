@@ -21,6 +21,11 @@
   let error: string | null = $state(null);
   let startedJobId: string | null = $state(null);
   let closed = $state(false);
+  // `facts` is undefined while the container's versioning facts are still
+  // loading, then null or a value once settled. Start waits for settled
+  // (facts !== undefined) so the versioning consequence is disclosed before a
+  // destructive request is authorised (ADR 0095 decision 9).
+  let facts: ContainerSettingsDTO | null | undefined = $state(undefined);
   let generation = 0;
   interface Intent {
     generation: number;
@@ -33,6 +38,7 @@
   const canPreview = $derived(!closed && !previewing && !starting && !browser.connecting
     && !!browser.connectedBookmarkId && !!browser.containerName && (mode !== "prefix" || hasPrefix));
   const canStart = $derived(!!prepared && !!preview && !previewing && !starting
+    && facts !== undefined
     && confirmText === prepared.intent.request.container);
 
   function request(): DeleteRequestDTO {
@@ -67,7 +73,6 @@
 
   // The container's versioning facts drive the consent sentence that says what
   // a delete leaves at the name, the same pattern the manifest dialog uses.
-  let facts: ContainerSettingsDTO | null | undefined = $state(undefined);
   $effect(() => {
     const container = browser.containerName;
     facts = undefined;
@@ -106,6 +111,7 @@
   async function start() {
     const current = prepared;
     if (starting || previewing || !current || !isCurrent(current.intent)
+      || facts === undefined
       || confirmText !== current.intent.request.container) return;
     const req = { ...current.intent.request, confirm: confirmText };
     prepared = null;
