@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"modernc.org/sqlite"
 )
@@ -26,6 +27,12 @@ type DB struct {
 	// contention out of SQLite's busy handler, where it would surface as
 	// opaque SQLITE_BUSY errors instead of an orderly queue.
 	writeMu sync.Mutex
+
+	// writes counts committed write transactions since this handle opened.
+	// Every write goes through WriteTx, so this is the one place that can
+	// count them, which lets a proof measure a path's write cost (the work
+	// done) rather than infer it from the rows left behind (ADR 0095).
+	writes atomic.Int64
 }
 
 // Open opens (creating if needed) the database at path, configures the
@@ -77,7 +84,15 @@ func (d *DB) WriteTx(ctx context.Context, fn func(*sql.Tx) error) error {
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit write tx: %w", err)
 	}
+	d.writes.Add(1)
 	return nil
+}
+
+// WritesCommitted reports how many write transactions have committed through
+// WriteTx since this handle opened. It measures a path's write cost directly,
+// for a proof that counts the work done rather than the rows retained.
+func (d *DB) WritesCommitted() int64 {
+	return d.writes.Load()
 }
 
 // Close closes the database.
