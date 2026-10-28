@@ -301,7 +301,7 @@ func (s *Session) deleteShownBound(ctx context.Context, container, name, baseCon
 		var liveEntries []ReviewedEntry
 		liveGraphWhole := true
 		if graph != nil && graph.isStatic {
-			live, err := s.sloManifestWith(ctx, credentials, container, name)
+			live, err := s.sloManifestWith(ctx, credentials, container, name, maxReviewedManifestEntries, maxReviewedManifestBytes)
 			var se *SwiftError
 			if errors.As(err, &se) && se.Kind == KindUnauthorized && attempt == 0 {
 				// The token was refused reading the graph. Fresh credentials may

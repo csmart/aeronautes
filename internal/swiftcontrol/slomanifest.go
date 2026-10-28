@@ -101,6 +101,14 @@ func (s *Session) SLOManifest(ctx context.Context, container, name string) (*SLO
 	return parseSLOManifest(resp.Body, container, name)
 }
 
+// The bounds the reviewed-graph re-read is parsed within, matching the
+// project's manifest limits elsewhere, so the live graph that authorises a
+// DELETE is read whole within the same budget rather than trusted unbounded.
+const (
+	maxReviewedManifestEntries = 10000
+	maxReviewedManifestBytes   = 8 << 20
+)
+
 // sloManifestWith reads a static large object's manifest under credentials
 // the caller already holds, pinned to that snapshot's storage URL and token
 // with no re-authentication callback, so a segment job reads the graph
@@ -110,7 +118,7 @@ func (s *Session) SLOManifest(ctx context.Context, container, name string) (*SLO
 // unauthorized, and the caller restarts the whole comparison under fresh
 // credentials rather than reading the graph from one account and deleting at
 // another. It is never the inspector's read, which re-authenticates in place.
-func (s *Session) sloManifestWith(ctx context.Context, credentials StorageCredentials, container, name string) (*SLOManifest, error) {
+func (s *Session) sloManifestWith(ctx context.Context, credentials StorageCredentials, container, name string, maxEntries int, maxBytes int64) (manifest *SLOManifest, err error) {
 	if container == "" || name == "" {
 		return nil, &SwiftError{Kind: KindUnknown, Message: "read SLO manifest: the container and object name must both be present"}
 	}
@@ -124,7 +132,9 @@ func (s *Session) sloManifestWith(ctx context.Context, credentials StorageCreden
 	if err != nil {
 		return nil, Normalize(err)
 	}
-	defer resp.Body.Close()
+	// A graph that could not be read and closed cleanly is not evidence a
+	// DELETE may rest on, so the close error joins the result.
+	defer func() { err = errors.Join(err, resp.Body.Close()) }()
 	transID := resp.Header.Get("X-Trans-Id")
 	switch {
 	case resp.StatusCode == http.StatusUnauthorized:
@@ -132,11 +142,30 @@ func (s *Session) sloManifestWith(ctx context.Context, credentials StorageCreden
 		return nil, &SwiftError{Kind: KindUnauthorized, HTTPStatus: resp.StatusCode, Message: "read SLO manifest: the token was refused", TransID: transID}
 	case resp.StatusCode == http.StatusNotFound:
 		return nil, &SwiftError{Kind: KindNotFound, HTTPStatus: resp.StatusCode, Message: "read SLO manifest: not found", TransID: transID}
-	case resp.StatusCode >= 300:
-		kind, retryable := classifyStatus(resp.StatusCode)
-		return nil, &SwiftError{Kind: kind, HTTPStatus: resp.StatusCode, Message: "read SLO manifest failed", TransID: transID, Retryable: retryable}
 	}
-	return parseSLOManifest(resp.Body, container, name)
+	// This graph authorises a DELETE, so it is read as an operation's
+	// authoritative record and not as a display: a complete, bounded response —
+	// HTTP 200 with no Content-Range, parsed whole with a clean end and no
+	// trailing content — on the same contract the strict readers use. A partial
+	// body (HTTP 206, or 200 with a Content-Range) or a valid array followed by
+	// other bytes is refused rather than credited as the manifest (ADR 0081
+	// decision 5), because a short or padded read credited as the exact graph
+	// would authorise deleting against a membership the server never sent.
+	complete := resp.StatusCode == http.StatusOK
+	for key := range resp.Header {
+		// Header.Get cannot distinguish an absent field from an empty one.
+		if strings.EqualFold(key, "Content-Range") {
+			complete = false
+		}
+	}
+	if !complete {
+		return nil, fmt.Errorf("read SLO manifest for %s/%s requires a complete HTTP 200 without Content-Range (received HTTP %d)", container, name, resp.StatusCode)
+	}
+	entries, err := parseSLOManifestEntries(resp.Body, maxEntries, maxBytes, container+"/"+name)
+	if err != nil {
+		return nil, err
+	}
+	return &SLOManifest{Entries: entries}, nil
 }
 
 // parseSLOManifest decodes the ?multipart-manifest=get body into the exact
