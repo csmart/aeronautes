@@ -485,13 +485,25 @@ func (h *Harness) StartSelectedDelete(ctx context.Context, req app.SelectedDelet
 }
 
 func (h *Harness) DeleteManifestWithSegments(ctx context.Context, req app.SegmentsDeleteRequestDTO) *Receipt {
-	// The result DTO (failed/remaining segments) is intentionally not yet
-	// surfaced on the receipt: this action's partial/retry/cancel cells are
-	// deferred, and the full DTO and typed outcomes should be retained BEFORE
-	// those cells are added. Until then only happy/refusal/conflict are
-	// creditable, none of which needs the remainder list.
-	_, err := h.Delete.DeleteManifestWithSegments(ctx, req)
-	return &Receipt{h: h, action: "DeleteService.DeleteManifestWithSegments", err: err}
+	// The manifest-with-segments deletion is a job now (ADR 0095 decision 8):
+	// the receipt carries the job id so a refusal credits from the returned
+	// error and a started job credits from its terminal state.
+	jobID, err := h.Delete.DeleteManifestWithSegments(ctx, req)
+	return &Receipt{h: h, action: "DeleteService.DeleteManifestWithSegments", jobID: jobID, err: err}
+}
+
+// ReviewSegmentMembership returns the graph a manifest-with-segments deletion
+// would carry, so a producer can pass it back on the request as the dialog
+// does (ADR 0095 decision 8).
+func (h *Harness) ReviewSegmentMembership(ctx context.Context, container, name string) app.ReviewedMembershipDTO {
+	h.T.Helper()
+	status, err := h.Delete.CheckSegmentOwnership(ctx, app.SegmentsDeleteRequestDTO{
+		BookmarkID: h.ActiveScope(ctx).BookmarkID, Container: container, Name: name,
+	})
+	if err != nil {
+		h.T.Fatalf("review segment membership %s/%s: %v", container, name, err)
+	}
+	return status.Reviewed
 }
 
 func (h *Harness) UpdateObjectMetadata(ctx context.Context, container, name, baseFingerprint string, edit app.ObjectMetadataEditDTO) *Receipt {
