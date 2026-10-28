@@ -65,8 +65,14 @@ func newHarness(t *testing.T) *harness {
 // newHarnessWithInfo lets a test serve a custom /info document — the
 // capability-gating tests need clusters that advertise less.
 func newHarnessWithInfo(t *testing.T, infoJSON string) *harness {
+	return newHarnessAt(t, filepath.Join(t.TempDir(), "state.sqlite"), infoJSON)
+}
+
+// newHarnessAt is newHarnessWithInfo on a caller-chosen database path, so a
+// process-restart test can share one database file across a parent and a
+// deliberately crashed child process.
+func newHarnessAt(t *testing.T, path, infoJSON string) *harness {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "state.sqlite")
 	d, err := db.Open(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)
