@@ -41,13 +41,13 @@ The sweep's lost-record guard is over-determined with `MarkIssued`, which refuse
 
 | Obligation (ADR 0095 decision list) | Test | Control |
 | --- | --- | --- |
-| a bulk request used | `TestPrefixSweepDeletesEveryMemberExactly`, `TestSegmentJobDeletesStaticManifestAndSegments` | none retained: no bulk-delete call site exists; the tests assert per-name DELETEs only |
+| a bulk request used | `TestPrefixSweepDeletesEveryMemberExactly`, `TestSegmentJobDeletesStaticManifestAndSegments` | selected S1 (shared `rawDelete`, the segment-expanding multi-object form); the Swift bulk-delete API has no call site in this path |
 | the listed row ignored for a HEAD baseline on an ordinary row | `TestSelectedDeleteDeletesEveryMemberExactly` | selected S2 (shared baseline code) |
 | the replacement adopted as the baseline when a comparison finds a manifest | `TestPrefixSweepRefusesAMemberChangedSinceListed` | selected S3 (shared comparison code) |
 | a DELETE repeated after a lost reply | `TestPrefixSweepUnverifiedWhenReplyLost` | selected S4 (shared lost-reply code) |
-| cancellation honoured inside a member | `TestPrefixSweepCancelDuringSweep` | none retained: the sweep runs a member's requests under a non-cancellable context and stops dispatch on cancel, so a single-line mutant on the member-start check is equivalent; test-covered |
+| cancellation honoured inside a member | `TestPrefixSweepCancelDuringSweep` | this packet `C-cancel-inside-member` (the member DELETE moved to the cancellable context, so a cancellation reaches inside) |
 | the issued mark written after the comparison HEAD | `TestPrefixSweepIssuesBeforeTheComparisonHead` | this packet `F-issue` |
-| a new member issued after a lost record | `TestPrefixSweepHeldWorkerFinishesWholeWhenAnotherRecordIsLost` | none retained: `MarkIssued` refuses the unavailable store, so the latch blocks issuance independent of the sweep's guard, making a mutant on the guard equivalent; test-covered |
+| a new member issued after a lost record | `TestPrefixSweepHeldWorkerFinishesWholeWhenAnotherRecordIsLost` | none retained: two independent layers block it, the member-start lost-reason guard and `MarkIssued` refusing the unavailable store, so no single-line mutant violates the boundary; the test asserts exactly eight issued and both queued members unissued |
 | the container deleted after a partial sweep | `TestDeleteContainerSurvivesAPartialSweep` | this packet `C-container-deleted-after-partial-sweep` |
 | the container reported deletion on a zero-effect cancel | `TestDeleteContainerEmptyCancelledIsCancelled` | this packet `F10` |
 | a non-empty postcondition with no request reported complete | `TestPrefixSweepFailsWhenScopeNonEmptyWithNoRequest` | this packet `C-postcondition-nonempty-reported-complete` |
@@ -62,12 +62,12 @@ The sweep's lost-record guard is over-determined with `MarkIssued`, which refuse
 | the admitted segments left unsettled on a refused manifest | `TestSegmentJobSettlesAdmittedSegmentsWhenTheManifestIsNotDeleted` | this packet `F0b` |
 | the segment phase started after an unverified manifest | `TestSegmentJobLeavesSegmentsOnUnverifiedManifest` | this packet `C-segment-phase-after-unverified-manifest` |
 | the manifest deleted by a plain DELETE without the identity comparison | `TestDeleteReviewedManifestAppliesWhenTheGraphMatches`, `TestDeletePlainObjectRefusesWhatItWasNotShown` | none retained for the identity-comparison skip; the comparison HEAD is the shared `deleteShown` code, with the graph half covered by `G` |
-| the reviewed DLO namespace resolved again at execution | `TestDeleteReviewedManifestRefusesAMovedDLONamespace`, `TestSegmentJobDeletesDynamicManifestAndNamespace` | none retained: the reviewed-DLO path is new and not in the marker/manifest packet; test-covered only |
-| a deleted outcome fabricated from an issued mark | `TestSegmentJobLeavesTheJobOpenWhenTheManifestRecordIsLost`, `TestSegmentDeletionSurvivesAProcessRestart` | none retained for the shared `FailInterrupted` reopen rule; the tests assert an issued-only member recovers unresolved, never deleted |
+| the reviewed DLO namespace resolved again at execution | `TestSegmentJobDeletesDynamicManifestAndNamespace` | none retained: a dedicated control needs an equal-content second namespace so the identity comparison passes before the namespace guard; the owned-vs-external namespace delete is test-covered |
+| a deleted outcome fabricated from an issued mark | `TestSegmentJobLeavesTheJobOpenWhenTheManifestRecordIsLost`, `TestSegmentDeletionSurvivesAProcessRestart` | this packet `C-fabricate-deleted-from-issued-mark` (reopen gives an issued-but-unrecorded member a deleted outcome) |
 
 ## Bounds and outstanding receipts
 
-This slice's packet seals fifteen controls, each with its mutation diff, named failing test, clean and mutant output and source hash; the six rows above with no retained control say so and are test-covered, two of them because the decision is over-determined by another layer (the unavailable-store latch, the non-cancellable member context) that already enforces it, so a single-line mutant is equivalent.
+This slice's packet seals seventeen controls, each with its mutation diff, named failing test, clean and mutant output and source hash. Three rows have no retained control and say why: a new member issued after a lost record is over-determined by two independent layers so no single-line mutant violates it; the reviewed-DLO namespace guard needs an equal-content-namespace fixture to isolate it from the identity comparison; and the manifest identity-comparison skip is the shared `deleteShown` HEAD, whose graph half is control `G`. The bulk row cites the shared segment-expanding control S1.
 The shared-protocol rows cite only the selected-set controls whose mutation lands in the unchanged `DeleteMember`/`deleteShown` code and yields the same outcome; the selected-only cancellation (S5), lost-record terminal (S10), ledger-write (S8) and segment-expansion (S1) controls are not cited for this path.
 The owned-Swift producers establish mock-and-cluster agreement for the ordinary deletion journeys and were last run in the db:925 round; this record does not re-run them.
 The "no later issuing" case is exercised by the barriered held-worker test above with a fixture larger than the worker pool.
