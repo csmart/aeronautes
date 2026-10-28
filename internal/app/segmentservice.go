@@ -50,9 +50,21 @@ type SegmentRefDTO struct {
 // a static large object, its whole-object entries, or, for a dynamic large
 // object, its canonical namespace.
 type ReviewedMembershipDTO struct {
-	Class       string          `json:"class"` // dlo | slo
-	Fingerprint string          `json:"fingerprint"`
+	Class       string `json:"class"` // dlo | slo
+	Fingerprint string `json:"fingerprint"`
+	// Length and ETag are the reviewed manifest's identity beside the
+	// fingerprint, so the job records what the operator approved as the
+	// manifest member's baseline rather than reconstructing it from a later
+	// read (ADR 0095 decision 8).
+	Length int64  `json:"length"`
+	ETag   string `json:"etag"`
+	// Namespace is a dynamic manifest's canonical, slash-bounded scope
+	// ("container/prefix/") and RawManifest the X-Object-Manifest value it was
+	// reviewed with ("container/prefix"); both come from the reviewed graph so
+	// the execution scope and the ADR 0044 outside-name check rest on one
+	// validated authority, never a later startup read.
 	Namespace   string          `json:"namespace,omitempty"`
+	RawManifest string          `json:"rawManifest,omitempty"`
 	Entries     []SegmentRefDTO `json:"entries,omitempty"`
 }
 
@@ -178,18 +190,18 @@ func outsideRefusal(container, namespace string, outside outsideNames) error {
 
 // segmentScope resolves a manifest's authoritative class and scope.
 func (s *DeleteService) segmentScope(ctx context.Context, session *swiftcontrol.Session,
-	req SegmentsDeleteRequestDTO) (*swiftcontrol.ObjectDetail, *SegmentOwnershipDTO, []swiftcontrol.ObjectRef, error) {
+	req SegmentsDeleteRequestDTO) (*swiftcontrol.ObjectDetail, *SegmentOwnershipDTO, []swiftcontrol.ObjectRef, *swiftcontrol.SLOManifest, error) {
 
 	detail, err := session.ObjectDetail(ctx, req.Container, req.Name)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	ownership := &SegmentOwnershipDTO{Class: string(detail.Class)}
 	switch detail.Class {
 	case swiftcontrol.ClassDLO:
 		slash := strings.Index(detail.Manifest, "/")
 		if slash <= 0 {
-			return nil, nil, nil, fmt.Errorf("malformed X-Object-Manifest %q", detail.Manifest)
+			return nil, nil, nil, nil, fmt.Errorf("malformed X-Object-Manifest %q", detail.Manifest)
 		}
 		segContainer, segPrefix := detail.Manifest[:slash], detail.Manifest[slash+1:]
 		if segPrefix == "" {
@@ -198,7 +210,7 @@ func (s *DeleteService) segmentScope(ctx context.Context, session *swiftcontrol.
 			// authority reaches. This store rejects the header at
 			// creation, so the guard is defence in depth against one
 			// that does not (ADR 0044).
-			return nil, nil, nil, fmt.Errorf("X-Object-Manifest %q names a whole container and no segment prefix — segment deletion has no bounded scope here", detail.Manifest)
+			return nil, nil, nil, nil, fmt.Errorf("X-Object-Manifest %q names a whole container and no segment prefix — segment deletion has no bounded scope here", detail.Manifest)
 		}
 		// The dialog states the boundary that would be swept, not the
 		// raw header, so the operator is shown the set the operation
@@ -206,14 +218,14 @@ func (s *DeleteService) segmentScope(ctx context.Context, session *swiftcontrol.
 		ownership.Target = segContainer + "/" + dloNamespace(segPrefix)
 		proven, err := s.evidence.HasExclusiveOwnership(ctx, req.BookmarkID, segContainer, segPrefix)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		ownership.Proven = proven
-		return detail, ownership, nil, nil
+		return detail, ownership, nil, nil, nil
 	case swiftcontrol.ClassSLO:
 		manifest, err := session.SLOManifest(ctx, req.Container, req.Name)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		refs, provable := sloSegmentRefs(manifest)
 		for _, entry := range manifest.Entries {
@@ -226,16 +238,16 @@ func (s *DeleteService) segmentScope(ctx context.Context, session *swiftcontrol.
 		if !provable || len(refs) != len(manifest.Entries) {
 			// Nested, ranged, inline, or unrecognised entries: never
 			// provable in v1 — the proof cannot see past them.
-			return detail, ownership, refs, nil
+			return detail, ownership, refs, manifest, nil
 		}
 		owned, err := s.ownedRefs(ctx, req.BookmarkID, refs)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		ownership.Proven = owned
-		return detail, ownership, refs, nil
+		return detail, ownership, refs, manifest, nil
 	default:
-		return nil, nil, nil, fmt.Errorf("%s/%s is a plain object — segment deletion does not apply", req.Container, req.Name)
+		return nil, nil, nil, nil, fmt.Errorf("%s/%s is a plain object — segment deletion does not apply", req.Container, req.Name)
 	}
 }
 
@@ -288,11 +300,14 @@ func (s *DeleteService) CheckSegmentOwnership(ctx context.Context, req SegmentsD
 	if err != nil {
 		return nil, err
 	}
-	detail, ownership, _, err := s.segmentScope(ctx, session, req)
+	detail, ownership, _, manifest, err := s.segmentScope(ctx, session, req)
 	if err != nil {
 		return nil, err
 	}
-	reviewed, err := s.reviewedMembership(ctx, session, req.Container, req.Name, detail)
+	// One graph read serves both the ownership facts and the reviewed
+	// membership, so the dialog's visible scope and the membership it carries
+	// back cannot disagree (ADR 0095 decision 8).
+	reviewed, err := reviewedMembership(detail, manifest)
 	if err != nil {
 		return nil, err
 	}
@@ -306,15 +321,15 @@ func (s *DeleteService) CheckSegmentOwnership(ctx context.Context, req SegmentsD
 // beside the manifest's reviewed identity (ADR 0095 decision 8). A static
 // graph that is not purely whole-object yields no entries: the manifest-only
 // delete still applies, but no segment is a reviewed member to reclaim.
-func (s *DeleteService) reviewedMembership(ctx context.Context, session *swiftcontrol.Session,
-	container, name string, detail *swiftcontrol.ObjectDetail) (ReviewedMembershipDTO, error) {
-
-	reviewed := ReviewedMembershipDTO{Class: string(detail.Class), Fingerprint: detail.ContentFingerprint()}
+func reviewedMembership(detail *swiftcontrol.ObjectDetail, manifest *swiftcontrol.SLOManifest) (ReviewedMembershipDTO, error) {
+	reviewed := ReviewedMembershipDTO{
+		Class: string(detail.Class), Fingerprint: detail.ContentFingerprint(),
+		Length: detail.ContentLength, ETag: strings.Trim(detail.ETag, `"`),
+	}
 	switch detail.Class {
 	case swiftcontrol.ClassSLO:
-		manifest, err := session.SLOManifest(ctx, container, name)
-		if err != nil {
-			return ReviewedMembershipDTO{}, err
+		if manifest == nil {
+			return ReviewedMembershipDTO{}, fmt.Errorf("the static manifest's graph was not read")
 		}
 		entries, _ := manifest.WholeObjectEntries()
 		for _, entry := range entries {
@@ -326,6 +341,7 @@ func (s *DeleteService) reviewedMembership(ctx context.Context, session *swiftco
 		if slash <= 0 {
 			return ReviewedMembershipDTO{}, fmt.Errorf("malformed X-Object-Manifest %q", detail.Manifest)
 		}
+		reviewed.RawManifest = detail.Manifest
 		reviewed.Namespace = detail.Manifest[:slash] + "/" + dloNamespace(detail.Manifest[slash+1:])
 	}
 	return reviewed, nil
@@ -354,9 +370,10 @@ func (s *DeleteService) DeleteManifestWithSegments(ctx context.Context, req Segm
 		return "", err
 	}
 	resource := req.Container + "/" + req.Name
-	// The startup read also confirms the class and resolves the dynamic
-	// namespace for the outside-name refusal, all before any job row exists.
-	detail, ownership, _, err := s.segmentScope(ctx, session, req)
+	// The startup read confirms the class and that the manifest still exists;
+	// the scope it acts on, though, is the reviewed graph the request carries,
+	// never this later read.
+	detail, ownership, _, _, err := s.segmentScope(ctx, session, req)
 	if err != nil {
 		return "", err
 	}
@@ -365,15 +382,24 @@ func (s *DeleteService) DeleteManifestWithSegments(ctx context.Context, req Segm
 			"refused: segment deletion needs Backstage force (ownership evidence is advisory until the live reference scan exists)", audit.ResultFailed)
 		return "", fmt.Errorf("deleting %s's segments needs the Backstage force with typed confirmation: ownership evidence identifies likely-owned segments but cannot yet PROVE no other object references them (%s)", resource, ownership.Target)
 	}
-	if req.Reviewed.Class != "" && req.Reviewed.Class != string(detail.Class) {
-		return "", fmt.Errorf("the reviewed graph is a %s but %s is a %s now — re-open the dialog to review the current graph", req.Reviewed.Class, resource, detail.Class)
+	if req.Reviewed.Class != string(detail.Class) || req.Reviewed.Fingerprint == "" {
+		return "", fmt.Errorf("the reviewed graph does not match %s as it is now — re-open the dialog to review the current graph", resource)
 	}
 	job := &segmentJob{s: s, bookmarkID: req.BookmarkID, container: req.Container, name: req.Name,
 		resource: resource, reviewed: req.Reviewed, basis: segmentBasis(ownership)}
 	if detail.Class == swiftcontrol.ClassDLO {
-		slash := strings.Index(detail.Manifest, "/")
-		job.segContainer, job.segPrefix = detail.Manifest[:slash], detail.Manifest[slash+1:]
+		// The scope and the outside-name check rest on the one reviewed
+		// namespace, so a temporary graph change during startup cannot widen
+		// what the reviewed request deletes (ADR 0095 decision 8, ADR 0044).
+		slash := strings.Index(req.Reviewed.RawManifest, "/")
+		if req.Reviewed.Namespace == "" || slash <= 0 {
+			return "", fmt.Errorf("the reviewed dynamic graph is incomplete — re-open the dialog")
+		}
+		job.segContainer, job.segPrefix = req.Reviewed.RawManifest[:slash], req.Reviewed.RawManifest[slash+1:]
 		job.namespace = dloNamespace(job.segPrefix)
+		if job.segContainer+"/"+job.namespace != req.Reviewed.Namespace {
+			return "", fmt.Errorf("the reviewed dynamic graph is inconsistent — re-open the dialog")
+		}
 		// The outside-name refusal is made before any effect and before any
 		// job row exists: a manifest that reads names outside its namespace is
 		// never acted on (ADR 0044). The listing is admitted startup I/O.
@@ -389,12 +415,14 @@ func (s *DeleteService) DeleteManifestWithSegments(ctx context.Context, req Segm
 			return "", outsideRefusal(job.segContainer, job.namespace, outside)
 		}
 	}
-	// The reviewed facts recorded against the manifest member.
+	// The manifest member records the identity the operator reviewed, not the
+	// later startup read, so a conflict keeps the approved identity (ADR 0095
+	// decision 8).
 	job.manifestListed = jobs.ItemIntent{
 		ItemIdentity: jobs.ItemIdentity{Key: req.Container + "/" + req.Name, Source: jobs.ItemLocation{
 			Kind: jobs.ItemSwift, BookmarkID: req.BookmarkID, Container: req.Container, Object: req.Name}},
-		Planned: true, Admitted: true, ListedBytes: detail.ContentLength,
-		ListedETag: strings.Trim(detail.ETag, `"`), ListedSLO: detail.Class == swiftcontrol.ClassSLO,
+		Planned: true, Admitted: true, ListedBytes: req.Reviewed.Length,
+		ListedETag: req.Reviewed.ETag, ListedSLO: detail.Class == swiftcontrol.ClassSLO,
 	}
 	owner, ctx, err := s.runner.admit(ctx)
 	if err != nil {
@@ -419,7 +447,10 @@ func (s *DeleteService) DeleteManifestWithSegments(ctx context.Context, req Segm
 	}
 	job.jobID = created.ID
 	job.session = session
-	_ = s.jobs.SetSettings(ctx, created.ID, fmt.Sprintf(`{"strategy":%q,"basis":%q,"class":%q}`, sweepStrategy, job.basis, detail.Class))
+	// The reviewed identity and scope are persisted, so the durable reviewed
+	// graph survives a restart rather than living only in this goroutine.
+	_ = s.jobs.SetSettings(ctx, created.ID, fmt.Sprintf(`{"strategy":%q,"basis":%q,"class":%q,"reviewedFingerprint":%q,"reviewedNamespace":%q}`,
+		sweepStrategy, job.basis, detail.Class, req.Reviewed.Fingerprint, req.Reviewed.Namespace))
 	s.runner.register(created.ID, owner.cancel)
 	s.runner.record(ctx, req.BookmarkID, "segments.delete.start", resource, "job "+created.ID, audit.ResultApplied)
 	owner.launch(created.ID, req.BookmarkID, releasePins, job.run, func(background context.Context) {

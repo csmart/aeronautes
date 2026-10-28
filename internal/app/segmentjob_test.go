@@ -189,6 +189,14 @@ func TestSegmentJobRefusesAnEqualTagGraphSwap(t *testing.T) {
 	if item.Execution == nil || item.Execution.Result != jobs.ItemConflict {
 		t.Fatalf("manifest item = %+v, want a conflict", item)
 	}
+	// The conflict keeps the identity the operator reviewed as its baseline,
+	// not the later startup read (ADR 0095 decision 8).
+	if item.Baseline == nil || item.Baseline.Class != "slo" || item.Baseline.Length != 20 {
+		t.Fatalf("the reviewed identity was not kept on the conflict: %+v", item.Baseline)
+	}
+	if item.Successor == nil || item.Successor.Role != "comparison" {
+		t.Fatalf("the found identity was not kept on the conflict: %+v", item.Successor)
+	}
 }
 
 // ADR 0095 decision 8: a manifest whose DELETE reply is lost is unverified,
@@ -333,5 +341,77 @@ func TestSegmentJobRefusesAnOutsideNamespaceName(t *testing.T) {
 	}
 	if !segmentReadable(t, h, bookmark, "media", "wide.bin") || !segmentReadable(t, h, bookmark, "media_segments", "pfx/0001") {
 		t.Fatal("the manifest or a segment was deleted despite the outside-name refusal")
+	}
+}
+
+// ADR 0095 decision 8: a segment whose object name equals the manifest's
+// container/object key is a distinct member, because every member in this
+// multi-container job is keyed by its own container and object, so it is not
+// mistaken for the already-held manifest.
+func TestSegmentJobKeysSegmentsByContainer(t *testing.T) {
+	h, service, bookmark := deleteHarness(t)
+	ctx := context.Background()
+	h.mock.AddContainer("media", "standard")
+	h.mock.AddContainer("parts", "standard")
+	// The segment's object name is "media/manifest", the same string as the
+	// manifest member's container/object key.
+	seedObject(h.mock, "parts", "media/manifest", "segment bytes", nil)
+	h.mock.PutObject("media", "manifest", swifttest.Object{Manifest: "parts/media"})
+	reviewed := reviewOf(t, service, bookmark, "media", "manifest")
+	jobID, err := service.DeleteManifestWithSegments(ctx, SegmentsDeleteRequestDTO{
+		BookmarkID: bookmark, Container: "media", Name: "manifest", Force: true, Confirm: "manifest", Reviewed: reviewed,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job := awaitTerminal(t, h, jobID); job.State != "complete" {
+		t.Fatalf("job = %s: %s", job.State, job.Error)
+	}
+	if segmentReadable(t, h, bookmark, "media", "manifest") {
+		t.Fatal("the manifest survived")
+	}
+	if segmentReadable(t, h, bookmark, "parts", "media/manifest") {
+		t.Fatal("the segment whose name collided with the manifest key was not deleted")
+	}
+	totals, err := h.jobsSvc.ItemTotals(ctx, bookmark, jobID)
+	if err != nil || totals.Admitted != 2 || totals.Deleted != 2 {
+		t.Fatalf("totals = %+v %v (manifest + one distinct segment)", totals, err)
+	}
+}
+
+// ADR 0095 decision 8: a dynamic sweep whose namespace listing fails after the
+// manifest's deletion has committed ends partial with the deleted manifest
+// disclosed, never complete; ledger totals alone cannot say an unlisted
+// namespace was swept.
+func TestSegmentJobPartialWhenTheNamespaceListingFails(t *testing.T) {
+	h, service, bookmark := deleteHarness(t)
+	ctx := context.Background()
+	h.mock.AddContainer("media", "standard")
+	h.mock.AddContainer("media_segments", "standard")
+	seedObject(h.mock, "media_segments", "owned/pfx/0001", "seg", nil)
+	h.mock.PutObject("media", "ours.bin", swifttest.Object{Manifest: "media_segments/owned/pfx/"})
+	reviewed := reviewOf(t, service, bookmark, "media", "ours.bin")
+	failed := false
+	h.mock.AfterRequest = func(method, path string) {
+		// After the manifest's DELETE, the namespace sweep's listing fails.
+		if method == "DELETE" && strings.HasSuffix(path, "/media/ours.bin") && !failed {
+			failed = true
+			h.mock.FailNextListings(10)
+		}
+	}
+	jobID, err := service.DeleteManifestWithSegments(ctx, SegmentsDeleteRequestDTO{
+		BookmarkID: bookmark, Container: "media", Name: "ours.bin", Force: true, Confirm: "ours.bin", Reviewed: reviewed,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, h, jobID)
+	h.mock.AfterRequest = nil
+	h.mock.FailNextListings(0)
+	if job.State != "partial" || !strings.Contains(job.Error, "the manifest is gone") {
+		t.Fatalf("job = %s: %s, want partial disclosing the deleted manifest", job.State, job.Error)
+	}
+	if segmentReadable(t, h, bookmark, "media", "ours.bin") {
+		t.Fatal("the manifest was not deleted")
 	}
 }

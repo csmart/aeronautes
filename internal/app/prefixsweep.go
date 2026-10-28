@@ -132,8 +132,11 @@ func (r *prefixSweep) pass(ctx, background context.Context) (admittedNew int64, 
 		if r.lostReason() != "" {
 			return admittedNew, false, nil
 		}
-		fresh, ok := r.admitPage(background, page.Entries)
-		if !ok {
+		fresh, readErr, latched := r.admitPage(background, page.Entries)
+		if readErr != nil {
+			return admittedNew, false, readErr
+		}
+		if latched {
 			return admittedNew, false, nil
 		}
 		admittedNew += int64(len(fresh))
@@ -153,31 +156,39 @@ func (r *prefixSweep) pass(ctx, background context.Context) (admittedNew int64, 
 	return admittedNew, false, nil
 }
 
+// key is a member's ledger identity, qualified by its container so a segment
+// job spanning the manifest's container and the segment container keeps every
+// member distinct (ADR 0095 decision 8); for the single-container bulk sweep
+// it is simply the container and the object.
+func (r *prefixSweep) key(name string) string { return r.container + "/" + name }
+
 // admitPage records one listing page's object rows the job does not yet
 // hold, once and fail-closed: a page the ledger cannot record ends the sweep
 // before any of its names is requested (ADR 0095 decision 2). The names the
 // job already holds are the ones still listed after its only request for
 // them; they are counted for the pass and never requested again.
-func (r *prefixSweep) admitPage(ctx context.Context, entries []swiftcontrol.ListingEntry) ([]sweepMember, bool) {
+func (r *prefixSweep) admitPage(ctx context.Context, entries []swiftcontrol.ListingEntry) (fresh []sweepMember, readErr error, latched bool) {
 	rows := make([]sweepMember, 0, len(entries))
-	names := make([]string, 0, len(entries))
+	keys := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		if object, ok := entry.(swiftcontrol.ObjectEntry); ok {
 			rows = append(rows, sweepMember{name: object.Name, bytes: object.Bytes, etag: object.ETag, slo: object.SLOListed})
-			names = append(names, object.Name)
+			keys = append(keys, r.key(object.Name))
 		}
 	}
-	fresh := rows[:0]
+	fresh = rows[:0]
 	var heldAgain int64
 	for start := 0; start < len(rows); start += 1000 {
 		end := min(start+1000, len(rows))
-		held, err := r.s.jobs.HeldKeys(ctx, r.jobID, names[start:end])
+		// HeldKeys is a read: a failure here sent nothing and does not latch
+		// the ledger, so it is reported as a listing-style error the caller
+		// turns into failed or partial, never a false unavailable status.
+		held, err := r.s.jobs.HeldKeys(ctx, r.jobID, keys[start:end])
 		if err != nil {
-			r.latch("the members the job holds could not be read, so no more were requested: " + err.Error())
-			return nil, false
+			return nil, fmt.Errorf("the members the job holds could not be read, so no more were requested: %w", err), false
 		}
 		for _, row := range rows[start:end] {
-			if held[row.name] {
+			if held[r.key(row.name)] {
 				heldAgain++
 			} else {
 				fresh = append(fresh, row)
@@ -187,16 +198,18 @@ func (r *prefixSweep) admitPage(ctx context.Context, entries []swiftcontrol.List
 	intents := make([]jobs.ItemIntent, 0, len(fresh))
 	for _, m := range fresh {
 		intents = append(intents, jobs.ItemIntent{
-			ItemIdentity: jobs.ItemIdentity{Key: m.name, Source: jobs.ItemLocation{
+			ItemIdentity: jobs.ItemIdentity{Key: r.key(m.name), Source: jobs.ItemLocation{
 				Kind: jobs.ItemSwift, BookmarkID: r.bookmarkID, Container: r.container, Object: m.name}},
 			Planned: true, Admitted: true, ListedBytes: m.bytes, ListedETag: m.etag, ListedSLO: m.slo,
 		})
 	}
 	for start := 0; start < len(intents); start += 500 {
 		end := min(start+500, len(intents))
+		// AdmitItems is a write: a failure latches the ledger unavailable, so
+		// the caller leaves the job open with that genuine status.
 		if err := r.s.jobs.AdmitItems(ctx, r.jobID, intents[start:end]); err != nil {
 			r.latch("the members could not be recorded, so no more were requested: " + err.Error())
-			return nil, false
+			return nil, nil, true
 		}
 	}
 	r.mu.Lock()
@@ -206,7 +219,7 @@ func (r *prefixSweep) admitPage(ctx context.Context, entries []swiftcontrol.List
 	if len(fresh) > 0 {
 		r.publishCounters(ctx)
 	}
-	return fresh, true
+	return fresh, nil, false
 }
 
 // member runs one listed row whole: the issued mark before its final HEAD,
@@ -223,13 +236,13 @@ func (r *prefixSweep) member(ctx, background context.Context, m sweepMember) {
 		r.notAttempted(background, m)
 		return
 	}
-	if err := r.s.jobs.MarkIssued(background, r.jobID, m.name); err != nil {
+	if err := r.s.jobs.MarkIssued(background, r.jobID, r.key(m.name)); err != nil {
 		r.latch(fmt.Sprintf("the issued mark for %q could not be written, so it and every later member were not attempted: %v", m.name, err))
 		return
 	}
 	result, err := r.session.DeleteMember(background, r.container, swiftcontrol.MemberRow{Name: m.name, Bytes: m.bytes, ETag: m.etag, SLOListed: m.slo})
 	observation, successor, baseline := selectedMemberOutcome(result, err)
-	if recErr := r.s.jobs.RecordDeletion(background, r.jobID, m.name, observation, successor, baseline); recErr != nil {
+	if recErr := r.s.jobs.RecordDeletion(background, r.jobID, r.key(m.name), observation, successor, baseline); recErr != nil {
 		r.latch(fmt.Sprintf("the outcome of %q could not be recorded after its request, so it is unresolved and no later member was issued: %v", m.name, recErr))
 		return
 	}
@@ -248,7 +261,7 @@ func (r *prefixSweep) notAttempted(ctx context.Context, m sweepMember) {
 	if r.lostReason() != "" {
 		return
 	}
-	if err := r.s.jobs.RecordDeletion(ctx, r.jobID, m.name, jobs.ItemObservation{Result: jobs.ItemNotAttempted, Effect: jobs.EffectNotAttempted}, nil, nil); err != nil {
+	if err := r.s.jobs.RecordDeletion(ctx, r.jobID, r.key(m.name), jobs.ItemObservation{Result: jobs.ItemNotAttempted, Effect: jobs.EffectNotAttempted}, nil, nil); err != nil {
 		log.Printf("job %s: member %q not attempted but unrecorded: %v", r.jobID, m.name, err)
 	}
 }

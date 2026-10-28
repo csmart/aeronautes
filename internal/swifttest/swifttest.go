@@ -247,6 +247,20 @@ func (s *Server) EnableModernVersioning(container string) {
 	}
 }
 
+// SetContainerMeta changes a container's metadata directly, modelling an
+// external writer so a test can move the configuration between an operation's
+// before and after reads.
+func (s *Server) SetContainerMeta(container, key, value string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if c, ok := s.containers[container]; ok {
+		if c.Meta == nil {
+			c.Meta = map[string]string{}
+		}
+		c.Meta[key] = value
+	}
+}
+
 func (s *Server) PutObject(container, name string, o Object) {
 	if o.ContentType == "" {
 		o.ContentType = "application/octet-stream"
