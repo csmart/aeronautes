@@ -98,14 +98,20 @@ type Server struct {
 	// accounting fixtures' knob.
 	FailDeletes bool
 	// FailDeletesAfter, when > 0, deletes succeed until this many have
-	// landed, then every further delete fails — an exact
-	// irreversible-subset-then-fail fixture within a single bulk batch.
+	// landed, then every further delete fails, a bulk row and a single
+	// object DELETE alike — an exact irreversible-subset-then-fail fixture.
 	FailDeletesAfter int
 	deletesDone      int
 	// AfterRequest, when set, runs AFTER each request's response is
 	// written — the barrier-test hook for planting a concurrent writer
 	// at an exact protocol point.
 	AfterRequest func(method, path string)
+	// BeforeRequest, when set, runs after a request is logged and before it
+	// is served, so a fixture can change the store or hold the request at a
+	// protocol point the response hook cannot reach: a writer landing
+	// between a listing and the HEAD that follows it, or between two
+	// listings.
+	BeforeRequest func(method, path string)
 	// StaleListingRows names objects a container listing reports although
 	// the store does not hold them, keyed by container. Container listings
 	// lag deletes, so a row for an object that is gone is a thing a real
@@ -298,8 +304,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.requests++
 	s.requestLog = append(s.requestLog, r.Method+" "+r.URL.Path+querySuffix(r))
-	after := s.AfterRequest
+	after, before := s.AfterRequest, s.BeforeRequest
 	s.mu.Unlock()
+	if before != nil {
+		before(r.Method, r.URL.Path)
+	}
 	if after != nil {
 		defer after(r.Method, r.URL.Path)
 	}
@@ -949,7 +958,12 @@ func (s *Server) deleteObject(w http.ResponseWriter, container, name string) {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
+	if s.FailDeletesAfter > 0 && s.deletesDone >= s.FailDeletesAfter {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 	delete(c.objects, name)
+	s.deletesDone++
 	w.Header().Set("X-Trans-Id", "txswifttest-object-delete")
 	w.WriteHeader(http.StatusNoContent)
 }
