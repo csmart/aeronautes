@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
-import type { BookmarkDTO, CopyPlanDTO, DeletePreviewDTO } from "../../lib/api";
+import type { BookmarkDTO, ContainerSettingsDTO, CopyPlanDTO, DeletePreviewDTO } from "../../lib/api";
 import { BrowserState } from "../browser/browserState.svelte";
 import { newFakeApi } from "../browser/fakeApi";
 import TransferDialog from "./TransferDialog.svelte";
@@ -52,7 +52,7 @@ function clickEvenIfDisabled(element: HTMLButtonElement) {
 }
 
 type Kind = "copy" | "delete";
-function show(kind: Kind) {
+function show(kind: Kind, factsLoader?: () => Promise<ContainerSettingsDTO | null>) {
   const api = newFakeApi();
   const copies: ReturnType<typeof deferred<CopyPlanDTO>>[] = [];
   const deletes: ReturnType<typeof deferred<DeletePreviewDTO>>[] = [];
@@ -76,6 +76,7 @@ function show(kind: Kind) {
     storageUrlOverride: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: true,
   });
   browser.bookmarks = [bookmark("source"), bookmark("destination")];
+  if (factsLoader) browser.containerFacts = factsLoader;
   const root = document.createElement("div");
   document.body.append(root);
   const onClose = vi.fn();
@@ -425,4 +426,28 @@ it("the delete preview states the per-name request cost and the later-baseline r
   const cost = f.root.querySelector(".cost")!.textContent!;
   expect(cost).toContain("26 requests");
   expect(cost).toContain("2 of these rows take that extra read");
+});
+
+it("Delete waits for the versioning facts to settle before enabling or accepting Start", async () => {
+  const facts = deferred<ContainerSettingsDTO | null>();
+  const f = show("delete", () => facts.promise);
+  f.preview();
+  await f.resolve();
+  f.arm();
+  // The versioning facts are still loading: the dialog says so, Start stays
+  // disabled, and a synthetic click is refused, so the destructive request
+  // cannot be sent before its consequence has been disclosed.
+  expect(f.root.textContent).toContain("Checking how this container keeps versions");
+  expect(f.startButton().disabled).toBe(true);
+  clickEvenIfDisabled(f.startButton());
+  expect(f.api.startDelete).not.toHaveBeenCalled();
+  // Once the facts settle — here as the unknown result, which still discloses a
+  // consequence — Start becomes available and sends the previewed request.
+  facts.resolve(null);
+  await settle();
+  expect(f.root.textContent).toContain("could not be read; assume the content is destroyed");
+  expect(f.startButton().disabled).toBe(false);
+  f.startButton().click();
+  flushSync();
+  expect(f.api.startDelete).toHaveBeenCalledOnce();
 });
