@@ -1,88 +1,86 @@
 # ADR 0095 required-proof map
 
 [ADR 0095](../adr/0095-prefix-deletion-by-the-per-name-protocol.md) lists the proof its implementation must carry before it is accepted.
-This record maps each required case to the executable result that establishes it, so a reader can run the named test and watch the behaviour rather than take the claim on trust.
+This record maps each required case to the executable result that establishes it and to the control that proves that result actually catches the fault, so a reader can run the named test, run the named mutation, and see the test fail on it.
+A passing test name alone is not treated as discharging an obligation.
 
-The evidence is of four distinct kinds, and this map keeps them distinct rather than treating one as another:
+The evidence is of four distinct kinds, kept distinct here:
 
-- **In-process mock tests** in `internal/app` and `internal/swiftcontrol`, which drive the real services and protocol against the in-process Swift mock.
-- **A real process-restart test**, `internal/app` `TestSegmentDeletionSurvivesAProcessRestart`, which runs the real job in a child process, kills that process at a chosen boundary, and recovers in a fresh process.
-- **Owned-Swift producers** in `internal/systemtest`, which run the deletion journeys against a real cluster; these are unchanged since db:925 and are cited here as prior evidence, not re-run for this record.
-- **The executable mutant packet** under `.aeronautes-work/20261027-release-plan/controls/adr0095-fixes-<head>`, which injects a **representative subset** of the retained-mutant faults into the source and records, for each, the named test that then fails. It is not the complete ADR retained-mutant list; the table below names the test for every obligation, and the packet seals the subset it actually ran.
+- **In-process mock tests** in `internal/app` and `internal/swiftcontrol`, driving the real services and protocol against the in-process Swift mock.
+- **Real process-restart tests**, which run the real job or sweep, cross an actual process boundary, and recover or read back in a fresh process: `TestSegmentDeletionSurvivesAProcessRestart` and the scale test's child readback.
+- **Owned-Swift producers** in `internal/systemtest`, run against a real cluster; these are unchanged since db:925 and are cited as prior evidence, not re-run for this record.
+- **Mutant control packets**: this slice's packet under `controls/adr0095-fixes-<head>`, and the shared-protocol packets `controls/selected-4e63b6a0` and `controls/marker-manifest-b1151283`. The sweep and the segment job call `Session.DeleteMember` and the `deleteShown` protocol unchanged from the selected set and the marker/manifest work, so the controls that mutate that exact code in those packets establish the shared-protocol obligations for this path too. This slice's packet adds only the bulk and segment-specific controls.
 
 ## Reuse of the verified per-name protocol
 
-The bulk sweep and the segment job delete by the same per-name protocol the selected set uses, over a listing pass or a reviewed graph rather than a chosen set, so the rules ADR 0085 and ADR 0093 settled are not re-decided.
-`TestPrefixSweepDeletesEveryMemberExactly` and `TestSelectedDeleteDeletesEveryMemberExactly` exercise the shared member path.
-`TestSegmentJobDeletesStaticManifestAndSegments` and `TestSegmentJobDeletesDynamicManifestAndNamespace` exercise it under the segment job, each asserting no segment-expanding `multipart-manifest=delete` request is ever sent.
+The bulk sweep and the segment job delete by the same per-name protocol the selected set uses.
+`TestPrefixSweepDeletesEveryMemberExactly` and `TestSegmentJobDeletesStaticManifestAndSegments` exercise it, each asserting no segment-expanding `multipart-manifest=delete` request is sent; control `selected-4e63b6a0` S1 mutates the shared member DELETE into the expanding form.
 
-## Scale and retention: ledger page, drawer page, measured write cost
+## Scale and retention: ledger page, drawer page, measured write cost, process restart
 
-`TestPrefixSweepScaleBoundedAndDurable` sweeps 520 members, more than the 500-row admission chunk and the 200-row drawer page.
-Its resident membership stays bounded to a listing page, because the sweep admits and settles a page at a time rather than holding the whole scope.
-It measures the ledger's write cost as committed write transactions, the work actually done, read from `db.WritesCommitted`, not inferred from the rows that survive; it is linear at three a member, being the two ledger writes ADR 0095 adds (the issued mark and the outcome) plus the one per-member progress counter every job writes, with the admitted pages and the job's lifecycle on top.
-It reads every member's record in the drawer's pages while the process is alive, then closes the database and reopens it on its file and reads them again: an in-process durability readback, not a process restart, which the next case supplies.
+`TestPrefixSweepScaleBoundedAndDurable` sweeps 520 members, more than the 500-row admission chunk and the 200-row drawer page, with resident membership bounded to a listing page.
+It measures the ledger's write cost as committed write transactions through `db.WritesCommitted`, the work done rather than the rows retained: three a member, the two ledger writes ADR 0095 adds (the issued mark and the outcome) plus the one per-member progress counter every job writes, asserted linear.
+It then closes its database and a genuinely fresh child process opens the file and reads every one of the 520 members back in the drawer's pages, with exact deleted and admitted counts: a real process boundary, not an in-process handle reopen.
 
-## A real process restart, including the boundary immediately after the manifest deletion
+## A real process restart of the segment job, including the boundary after the manifest deletion
 
-`TestSegmentDeletionSurvivesAProcessRestart` runs the real segment-delete job in a child process and kills that process hard, with no cleanup and no clean database close, at two boundaries; a genuinely fresh process then reopens the database on its file, runs startup recovery, and reads back the members.
-A crash while the manifest DELETE is still outstanding leaves the manifest issued with no outcome, recovered as unresolved and never fabricated into a deleted outcome.
-A crash at the first segment, immediately after the manifest's deletion has been recorded, leaves that deleted record standing, the interrupted segment unresolved, and the untouched segment not attempted, with exact totals.
-Together these establish the issued-only versus durably-deleted manifest distinction across an actual process boundary, which the in-process close/reopen above does not.
+`TestSegmentDeletionSurvivesAProcessRestart` runs the real segment-delete job in a child process and kills it hard at two boundaries; a fresh process reopens the database and runs startup recovery.
+A crash while the manifest DELETE is outstanding recovers the manifest as unresolved, never fabricated deleted; a crash at the first segment, just after the manifest's deletion is recorded, leaves that deleted record standing, the interrupted segment unresolved and the untouched one not attempted.
 
 ## Adjacency: nothing of a member's own between its HEAD and its DELETE
 
-`TestDeletePlainObjectIssuesNoAuthenticationBetweenComparisonAndDelete` and `TestDeletePlainObjectRefusedTokenOnTheDeleteIsARefusal` establish the per-member guarantee at the protocol: no request of the member's own and no authentication runs between its comparison HEAD and its DELETE, and a token refused on the DELETE is a refusal, never a cue to authenticate and delete again.
-`TestPrefixSweepHoldsPerMemberAdjacencyUnderWorkerInterleaving` establishes it under the bounded worker pool: one worker is held between its HEAD and its DELETE while another worker completes its whole member on the wire — its comparison HEAD, its DELETE and its verifying read — and the recorded order, `HEAD a, HEAD b, DELETE b, HEAD b, DELETE a, HEAD a`, shows the held member's DELETE still immediately after that member's own HEAD, with only the other member's complete member in between.
+`TestDeletePlainObjectIssuesNoAuthenticationBetweenComparisonAndDelete` establishes the per-member protocol guarantee; control `selected-4e63b6a0` S5 mutates a cancellation to reach inside a member between its HEAD and DELETE.
+`TestPrefixSweepHoldsPerMemberAdjacencyUnderWorkerInterleaving` establishes it under the bounded worker pool: one worker is held between its HEAD and its DELETE while another completes its whole member on the wire — comparison HEAD, DELETE and verifying read — with the recorded order `HEAD a, HEAD b, DELETE b, HEAD b, DELETE a, HEAD a`.
 
-## Preview and dialog
+## The issued mark precedes the sweep's comparison HEAD
 
-`TestDeletePreviewCountsAndDisclosures` states the counts, the `2N + Z` request cost and the per-name strategy before the job.
-The frontend `previewBinding.test.ts` shows the cost sentence and the later-baseline rows, the typed-container confirmation, and that Start waits for the versioning facts to settle before it enables or accepts the destructive request.
-The segment job's reviewed membership is shown by `TestSegmentJobDeletesStaticManifestAndSegments`, and its namespace boundary by `TestSegmentJobRefusesAnOutsideNamespaceName`.
+`TestPrefixSweepIssuesBeforeTheComparisonHead` reads the ledger at the sweep member's comparison HEAD and finds the issued mark already written, exercising the sweep's own member path rather than the selected set's or the static segment loop's.
+This slice's control moves the sweep's `MarkIssued` after `DeleteMember`, and the test then fails with issued count zero at the HEAD; the selected set's own path is covered separately by `selected-4e63b6a0` S11.
 
-## Segment job: admission, settlement and the two lost-record boundaries
+## The concurrent recording-failure boundary
 
-`TestSegmentJobSettlesAdmittedSegmentsWhenTheManifestIsNotDeleted` shows that when the manifest is refused at execution, the segments admitted before any effect are each settled not attempted, leaving no phantom unresolved effect the terminal job can no longer settle.
-Boundary one — the manifest's own outcome lost after its DELETE — is `TestSegmentJobLeavesTheJobOpenWhenTheManifestRecordIsLost`: only the issued mark survives, no segment is attempted, the job is unavailable, and the manifest settles unresolved on reopen with no deleted outcome anywhere.
-Boundary two — a later write failing after the manifest's deleted outcome committed — is `TestSegmentJobDisclosesTheDeletedManifestWhenALaterWriteFails`: the manifest's deleted record stands, the job is unavailable with the deleted manifest disclosed, and the segment is unresolved.
+`TestPrefixSweepHeldWorkerFinishesWholeWhenAnotherRecordIsLost` holds one already-issued worker at its comparison HEAD while another member's outcome write fails and latches the ledger unavailable; the held worker then completes its own DELETE whole, the latch runs no postcondition and deletes no container, and exactly the admitted members were issued.
+A member in flight is never interrupted inside its own requests (ADR 0095 decision 4, line 119).
+Bound: with the two admitted members both issued before the latch, "no later issuing" is shown as the issued count equal to the admitted set; a member admitted only in a later listing pass is prevented from issuing by the member path's lost-reason guard, which is structural and not separately mutated here.
 
-## Admission before effect
+## Preview, dialog, segment job and admission
 
-`TestSegmentJobRecordsTheReviewedAuthorityBeforeAnyEffect` refuses the admitting write that carries the reviewed identity and scope and shows nothing is deleted, then shows the ordinary path records that authority with the job's own row.
-`TestDeleteReviewedManifestRefusesAnIncompleteGraphResponse` shows the live graph that authorises a DELETE is read strictly: an HTTP 206, a Content-Range 200, a truncated body and a valid entry list followed by other bytes are each refused with nothing deleted.
+`TestDeletePreviewCountsAndDisclosures` states the counts, the `2N + Z` cost and the strategy; control dd0d packet P mutates the cost to count N alone.
+The frontend `previewBinding.test.ts` shows the cost sentence, the typed confirmation, and that Start waits for the versioning facts.
+`TestSegmentJobSettlesAdmittedSegmentsWhenTheManifestIsNotDeleted`, `TestSegmentJobLeavesTheJobOpenWhenTheManifestRecordIsLost` and `TestSegmentJobDisclosesTheDeletedManifestWhenALaterWriteFails` cover admission settlement and the two lost-record boundaries.
+`TestSegmentJobRecordsTheReviewedAuthorityBeforeAnyEffect` and `TestDeleteReviewedManifestRefusesAnIncompleteGraphResponse` cover admission before effect and the strict graph read.
 
-## Retained-mutant obligations, each failing a case above
+## Retained-mutant obligations, each with its test and control
 
-The packet seals the controls marked (packet); the rest are named by their failing test and not yet mechanically mutated.
+| Obligation (ADR 0095 decision list) | Test | Control |
+| --- | --- | --- |
+| a bulk request used | `TestPrefixSweepDeletesEveryMemberExactly` | selected S1 (shared DELETE form) |
+| the listed row ignored for a HEAD baseline on an ordinary row | `TestSelectedDeleteDeletesEveryMemberExactly` | selected S2 |
+| the replacement adopted as the baseline when a comparison finds a manifest | `TestPrefixSweepRefusesAMemberChangedSinceListed` | selected S3 |
+| a DELETE repeated after a lost reply | `TestPrefixSweepUnverifiedWhenReplyLost` | selected S4 |
+| cancellation honoured inside a member | `TestPrefixSweepCancelDuringSweep` | selected S5 |
+| the issued mark written after the comparison HEAD | `TestPrefixSweepIssuesBeforeTheComparisonHead` | dd0d F-issue (sweep path); selected S11 (selected path) |
+| a new member issued after a lost record / concurrent record failure | `TestPrefixSweepHeldWorkerFinishesWholeWhenAnotherRecordIsLost`, `TestPrefixSweepLeavesTheJobOpenWhenARecordIsLost` | dd0d F10/F9 family; selected S10 (terminal after lost record) |
+| the container deleted after a partial sweep | `TestDeleteContainerSurvivesAPartialSweep` | dd0d C |
+| the container reported deletion on a zero-effect cancel | `TestDeleteContainerEmptyCancelledIsCancelled` | dd0d F10 |
+| a non-empty postcondition with no request reported complete | `TestPrefixSweepFailsWhenScopeNonEmptyWithNoRequest` | selected S10 (shared terminal rule) |
+| the empty-mode configuration change omitted during a partial | `TestEmptySweepReportsAConfigChangeAfterAPartial` | dd0d F9 |
+| a conflict recorded without its identities | `TestSegmentJobRefusesAnEqualTagGraphSwap` | dd0d F4; selected S8/S17/S18 |
+| a member keyed by the bare name, colliding across containers | `TestSegmentJobKeysSegmentsByContainer` | dd0d F5 |
+| the preview cost counting N alone | `TestDeletePreviewCountsAndDisclosures` | dd0d P |
+| the manifest deleted by a plain DELETE without the comparison | `TestDeleteReviewedManifestRefusesAnEqualTagGraphSwap` | dd0d G |
+| the graph resolved again at execution instead of the reviewed membership | `TestDeleteReviewedManifestRefusesAMovedDLONamespace` | dd0d G (static); marker/manifest packet (dynamic) |
+| the reviewed graph read permissively or on a partial response | `TestDeleteReviewedManifestRefusesAnIncompleteGraphResponse` | dd0d G2, G3 |
+| the reviewed authority recorded by a later write, not the admitting row | `TestSegmentJobRecordsTheReviewedAuthorityBeforeAnyEffect` | dd0d F1 |
+| the admitted segments left unsettled on a refused manifest | `TestSegmentJobSettlesAdmittedSegmentsWhenTheManifestIsNotDeleted` | dd0d F0b |
+| the segment phase started after an unverified manifest | `TestSegmentJobLeavesSegmentsOnUnverifiedManifest` | dd0d F4 family |
+| a deleted outcome fabricated from the manifest's issued mark | `TestSegmentJobLeavesTheJobOpenWhenTheManifestRecordIsLost`, `TestSegmentDeletionSurvivesAProcessRestart` | dd0d F0b family; process restart |
 
-| Obligation (ADR 0095 decision list) | Executable result |
-| --- | --- |
-| a bulk request used | `TestPrefixSweepDeletesEveryMemberExactly`, `TestSegmentJobDeletesStaticManifestAndSegments` (no `multipart-manifest=delete`) |
-| the listed row ignored for a HEAD baseline on an ordinary row | `TestSelectedDeleteDeletesEveryMemberExactly`, `TestSelectedDeleteAdoptsALaterBaselineForARowThatCannotSay` |
-| the replacement adopted as the baseline when a comparison finds a manifest | `TestPrefixSweepRefusesAMemberChangedSinceListed`, `TestSelectedDeleteTreatsALinkAtAnOrdinaryMemberAsChanged` |
-| a DELETE repeated after a lost reply | `TestPrefixSweepUnverifiedWhenReplyLost`, `TestSelectedDeleteLostReplyIsUnverifiedAndPartial` |
-| cancellation honoured inside a member | `TestPrefixSweepCancelDuringSweep`, `TestSelectedDeleteCancelsBetweenMembers` |
-| the issued mark written after the HEAD | `TestSegmentDeletionSurvivesAProcessRestart` (the interrupted member keeps an issued mark, so it recovers unresolved rather than not attempted) |
-| a refused name requested again in a later pass | `TestPrefixSweepLaterPassRequestsOnlyNewNames` |
-| a new member issued after a lost record | `TestPrefixSweepLeavesTheJobOpenWhenARecordIsLost`, `TestSelectedDeleteLeavesTheJobOpenWhenARecordIsLost` |
-| the container deleted after a partial sweep | `TestDeleteContainerSurvivesAPartialSweep` (packet) |
-| the container reported complete-or-partial deletion on a zero-effect cancel | `TestDeleteContainerEmptyCancelledIsCancelled` (packet) |
-| a non-empty postcondition with no request reported complete | `TestPrefixSweepFailsWhenScopeNonEmptyWithNoRequest` |
-| the empty-mode configuration change omitted during a partial | `TestEmptySweepReportsAConfigChangeAfterAPartial` (packet) |
-| a conflict recorded without its identities | `TestSelectedDeleteChangedMemberKeepsBothIdentities`, `TestSegmentJobRefusesAnEqualTagGraphSwap` (packet, manifest baseline) |
-| a member keyed by the bare name, colliding across containers | `TestSegmentJobKeysSegmentsByContainer` (packet) |
-| the preview cost counting N alone | `TestDeletePreviewCountsAndDisclosures` (packet) |
-| the manifest deleted by a plain DELETE without the comparison | `TestDeleteReviewedManifestAppliesWhenTheGraphMatches`, `TestDeleteReviewedManifestRefusesAnEqualTagGraphSwap` (packet) |
-| the graph resolved again at execution instead of the reviewed membership | `TestSegmentJobRefusesAnEqualTagGraphSwap`, `TestDeleteReviewedManifestRefusesAMovedDLONamespace` |
-| the reviewed graph read permissively or on a partial response | `TestDeleteReviewedManifestRefusesAnIncompleteGraphResponse` (packet, two controls) |
-| the reviewed authority recorded by a later write, not the admitting row | `TestSegmentJobRecordsTheReviewedAuthorityBeforeAnyEffect` (packet) |
-| the admitted segments left unsettled on a refused manifest | `TestSegmentJobSettlesAdmittedSegmentsWhenTheManifestIsNotDeleted` (packet) |
-| the segment phase started after an unverified manifest | `TestSegmentJobLeavesSegmentsOnUnverifiedManifest` |
-| a deleted outcome fabricated from the manifest's issued mark | `TestSegmentJobLeavesTheJobOpenWhenTheManifestRecordIsLost`, `TestSegmentDeletionSurvivesAProcessRestart` |
+"dd0d" is this slice's packet `controls/adr0095-fixes-<head>`; "selected" is `controls/selected-4e63b6a0`, whose controls mutate the shared `DeleteMember`/`deleteShown` code this path reuses unchanged.
 
 ## Bounds and outstanding receipts
 
-The mutant packet is a representative subset, currently eleven controls, each sealed with its mutation diff, the named failing test, the clean and mutant output, and a source hash in `SHA256SUMS`; it is not the exhaustive retained-mutant list, and the table above is the authoritative map of every obligation to its test.
-The owned-Swift producers establish the mock-and-real-cluster agreement for the ordinary deletion journeys and were last run in the db:925 round; this record does not re-run them and does not claim a fresh hosted run.
-The process-restart evidence is the child-process test named above; the scale test's close/reopen is an in-process durability readback and is described as such, not as a process restart.
+This slice's packet seals twelve controls, each with its mutation diff, named failing test, clean and mutant output, and source hash; the shared-protocol obligations are backed by the selected-set and marker/manifest packets, which mutate the same unchanged code.
+The owned-Swift producers establish mock-and-cluster agreement for the ordinary deletion journeys and were last run in the db:925 round; this record does not re-run them and claims no fresh hosted run.
+The process-restart evidence is the two child-process tests named above; the scale test's readback is now a fresh child process, not an in-process reopen.
+The "no later issuing" bound stated above is the one case exercised by count rather than by a held un-issued member.
