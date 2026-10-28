@@ -7,9 +7,26 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/csmart/aeronautes/internal/db"
 	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/swifttest"
 )
+
+// sweepItems reads a sweep job's members keyed by their object name; the
+// durable ledger key is container-qualified now (ADR 0095 decision 8), so the
+// tests index by the object the row names.
+func sweepItems(t *testing.T, h *harness, jobID string) map[string]jobs.ItemRecord {
+	t.Helper()
+	page, err := h.transfer.jobs.ReadItems(context.Background(), jobID, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]jobs.ItemRecord{}
+	for _, item := range page.Items {
+		out[item.Source.Object] = item
+	}
+	return out
+}
 
 // seedSweepScope fills one container with the row kinds ADR 0095 decision 1
 // names: plain objects at two depths, a zero-byte object, a directory
@@ -128,7 +145,7 @@ func TestPrefixSweepDeletesEveryMemberExactly(t *testing.T) {
 		t.Fatalf("effective configuration = %q", job.Settings)
 	}
 	wire := h.mock.RequestLog()[startedAt:]
-	items := itemsOf(t, h, jobID)
+	items := sweepItems(t, h, jobID)
 	later := map[string]bool{}
 	for _, name := range laterBaseline {
 		later[name] = true
@@ -208,7 +225,7 @@ func TestPrefixSweepRefusesALinkWithItsKind(t *testing.T) {
 	if job.State != "partial" || job.Counters.ObjectsDeleted != 1 || !strings.Contains(job.Error, "1 refused") {
 		t.Fatalf("job = %+v", job)
 	}
-	items := itemsOf(t, h, jobID)
+	items := sweepItems(t, h, jobID)
 	link := items["scope/link"]
 	if link.Execution == nil || link.Execution.Result != jobs.ItemRefused || link.Execution.Diagnostic.Code != jobs.CodeLink {
 		t.Fatalf("link item = %+v", link)
@@ -270,7 +287,7 @@ func TestPrefixSweepRefusesAMemberChangedSinceListed(t *testing.T) {
 			if !stillReadable(t, h, "sweep", "scope/racy.txt") || stillReadable(t, h, "sweep", "scope/other.txt") {
 				t.Fatal("the changed member was touched or the unchanged one was kept")
 			}
-			item := itemsOf(t, h, jobID)["scope/racy.txt"]
+			item := sweepItems(t, h, jobID)["scope/racy.txt"]
 			if item.Execution == nil || item.Execution.Result != jobs.ItemConflict || item.Baseline == nil || item.Baseline.ETag != listedETag || item.Baseline.Length != 5 {
 				t.Fatalf("the identity expected was not kept: %+v", item)
 			}
@@ -330,7 +347,7 @@ func TestPrefixSweepLaterPassRequestsOnlyNewNames(t *testing.T) {
 			t.Fatalf("job message %q lacks %q", job.Error, want)
 		}
 	}
-	items := itemsOf(t, h, jobID)
+	items := sweepItems(t, h, jobID)
 	if late := items["scope/late.txt"]; late.Execution == nil || late.Execution.Result != jobs.ItemDeleted || stillReadable(t, h, "sweep", "scope/late.txt") {
 		t.Fatalf("the late name was not deleted in a later pass: %+v", late)
 	}
@@ -432,7 +449,7 @@ func TestPrefixSweepCancelBeforeAnyDelete(t *testing.T) {
 	if job.State != "cancelled" || job.Counters.ObjectsDeleted != 0 {
 		t.Fatalf("job = %+v", job)
 	}
-	if item := itemsOf(t, h, jobID)["scope/link"]; item.Execution == nil || item.Execution.Result != jobs.ItemRefused {
+	if item := sweepItems(t, h, jobID)["scope/link"]; item.Execution == nil || item.Execution.Result != jobs.ItemRefused {
 		t.Fatalf("link item = %+v", item)
 	}
 	for _, line := range h.mock.RequestLog() {
@@ -567,10 +584,13 @@ func TestPrefixSweepLeavesTheJobOpenWhenARecordIsLost(t *testing.T) {
 	}
 }
 
-// ADR 0095 decision 4 and L04: a sweep of more members than a ledger page and
-// than the drawer's page deletes them all, bounds the ledger to two writes a
-// member, keeps every member's record readable in the drawer's pages and after
-// a reopen, and carries exact counts.
+// ADR 0095 decision 4 and L04: a sweep of more members than a ledger admission
+// page and than the drawer's page deletes them all, writes exactly two ledger
+// rows a member (one issued mark and one observation), keeps every member's
+// record readable in the drawer's pages, and reads them all back from a fresh
+// database opened on the same file. It measures the ledger row count, not
+// resident memory, which the sweep bounds by holding one listing page at a
+// time in its structure rather than by anything this test asserts.
 func TestPrefixSweepScaleBoundedAndDurable(t *testing.T) {
 	h, service, bookmark := deleteHarness(t)
 	ctx := context.Background()
@@ -621,10 +641,24 @@ func TestPrefixSweepScaleBoundedAndDurable(t *testing.T) {
 	if issued != members || observations != members {
 		t.Fatalf("ledger writes = %d issued, %d observations; want %d each", issued, observations, members)
 	}
-	t.Logf("ledger write cost: %d issued marks + %d observations for %d members (2 writes/member)", issued, observations, members)
-	// The records survive a reopen with the job.
-	reopened := jobs.NewStore(h.db)
-	totals, err := reopened.ReadItemTotals(ctx, jobID)
+	t.Logf("ledger write rows: %d issued marks + %d observations for %d members (two rows per member)", issued, observations, members)
+	// A real restart: a fresh database opened on the same file reads every
+	// member's durable outcome, not a second store over the still-open handle.
+	var sequence int
+	var name, path string
+	if err := h.db.Reader().QueryRowContext(ctx, "PRAGMA database_list").Scan(&sequence, &name, &path); err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := db.Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := restarted.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	totals, err := jobs.NewStore(restarted).ReadItemTotals(ctx, jobID)
 	if err != nil || totals.Deleted != members || totals.Admitted != members {
 		t.Fatalf("reopened totals = %+v, %v", totals, err)
 	}
@@ -633,4 +667,72 @@ func TestPrefixSweepScaleBoundedAndDurable(t *testing.T) {
 func padded(i int) string {
 	const digits = "0123456789"
 	return string([]byte{digits[(i/1000)%10], digits[(i/100)%10], digits[(i/10)%10], digits[i%10]})
+}
+
+// ADR 0095 decision 6: emptying a container compares its configuration before
+// and after even when the sweep ends partial, so a change an external writer
+// made during a partial empty is reported rather than omitted.
+func TestEmptySweepReportsAConfigChangeAfterAPartial(t *testing.T) {
+	h, service, bookmark := deleteHarness(t)
+	ctx := context.Background()
+	h.mock.AddContainer("media", "standard")
+	h.mock.SetContainerMeta("media", "Team", "ops")
+	seedObject(h.mock, "media", "keep-target", "target", nil)
+	seedObject(h.mock, "media", "plain.txt", "doomed", nil)
+	h.mock.PutObject("media", "link", swifttest.Object{Bytes: 0, ContentType: "text/plain", SymlinkTarget: "media/keep-target"})
+	moved := false
+	h.mock.AfterRequest = func(method, path string) {
+		// An external writer changes the configuration after the job's before
+		// baseline and before its after comparison.
+		if method == "DELETE" && strings.HasSuffix(path, "/media/plain.txt") && !moved {
+			moved = true
+			h.mock.SetContainerMeta("media", "Team", "changed-by-another")
+		}
+	}
+	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "media", Mode: ModeEmpty, Confirm: "media"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, h, jobID)
+	h.mock.AfterRequest = nil
+	if job.State != "partial" {
+		t.Fatalf("job = %s: %s", job.State, job.Error)
+	}
+	if !strings.Contains(job.Error, "container config changed during empty") {
+		t.Fatalf("the config change was omitted from a partial empty: %q", job.Error)
+	}
+}
+
+// ADR 0095 decision 5 and 6: an already-empty container asked to be deleted
+// and cancelled before any destructive request is cancelled, not partial with
+// a claimed deletion, and the container is left standing.
+func TestDeleteContainerEmptyCancelledIsCancelled(t *testing.T) {
+	h, service, bookmark := deleteHarness(t)
+	ctx := context.Background()
+	h.mock.AddContainer("empty-c", "standard")
+	ready := make(chan string, 1)
+	cancelled := false
+	h.mock.AfterRequest = func(method, path string) {
+		// The sweep's first (empty) listing of the container; cancel there,
+		// before the one-row verification and before any DELETE.
+		if method == "GET" && path == "/v1/AUTH_test/empty-c" && !cancelled {
+			cancelled = true
+			if err := h.transfer.CancelJob(ctx, <-ready); err != nil {
+				t.Error(err)
+			}
+		}
+	}
+	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "empty-c", Mode: ModeDeleteContainer, Confirm: "empty-c"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ready <- jobID
+	job := awaitTerminal(t, h, jobID)
+	h.mock.AfterRequest = nil
+	if job.State != "cancelled" {
+		t.Fatalf("job = %s: %s", job.State, job.Error)
+	}
+	if containerDeleted(h.mock.RequestLog(), "empty-c") {
+		t.Fatal("the container was deleted after a cancellation")
+	}
 }

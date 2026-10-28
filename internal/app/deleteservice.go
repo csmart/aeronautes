@@ -243,23 +243,43 @@ func (s *DeleteService) runSweepJob(ctx context.Context, jobID string, req Delet
 		return
 	}
 	state, reason := s.sweepEnd(background, jobID, req, session, sweep)
-	if state == jobs.StateComplete && req.Mode == ModeEmpty {
-		after, err := session.ContainerDetail(background, req.Container)
-		if err != nil {
-			state, reason = jobs.StatePartial, "config re-check failed: "+err.Error()
+	// Emptying a container compares its configuration before and after
+	// whenever the sweep reached a terminal with an effect, complete or
+	// partial, so a change an external writer made during a partial sweep is
+	// still reported (ADR 0095 decision 6). The lost path returned above, so
+	// an accounting failure never reaches this follow-up verification.
+	if req.Mode == ModeEmpty && before != nil && (state == jobs.StateComplete || state == jobs.StatePartial) {
+		configProblem := ""
+		if after, err := session.ContainerDetail(background, req.Container); err != nil {
+			configProblem = "config re-check failed: " + err.Error()
 		} else if diff := deletion.SnapshotConfig(before).Diff(deletion.SnapshotConfig(after)); diff != "" {
-			state, reason = jobs.StatePartial, "container config changed during empty: "+diff
+			configProblem = "container config changed during empty: " + diff
+		}
+		if configProblem != "" {
+			state = jobs.StatePartial
+			if reason == "" {
+				reason = configProblem
+			} else {
+				reason += "; " + configProblem
+			}
 		}
 	}
-	if state == jobs.StateComplete && req.Mode == ModeDeleteContainer {
-		// Only a complete sweep with an empty postcondition reaches here;
-		// anything less leaves the container standing (decision 6), and so
-		// does a cancellation landing at this boundary, with the objects
-		// already gone.
+	if req.Mode == ModeDeleteContainer {
+		sent := s.deletionRequested(background, jobID)
 		switch {
-		case ctx.Err() != nil:
-			state, reason = jobs.StatePartial, "cancelled after the objects were deleted and before the container was"
-		default:
+		case state == jobs.StateComplete && ctx.Err() != nil:
+			// A cancellation at this boundary leaves the container standing. It
+			// is cancelled only when no destructive request was issued at all,
+			// as for an already-empty container; otherwise the objects are gone
+			// and it is partial.
+			if sent == 0 {
+				state, reason = jobs.StateCancelled, ""
+			} else {
+				state, reason = jobs.StatePartial, "cancelled after the objects were deleted and before the container was"
+			}
+		case state == jobs.StateComplete:
+			// Only a complete sweep with an empty postcondition deletes the
+			// container; anything less leaves it standing (decision 6).
 			if err := session.DeleteContainer(background, req.Container); err != nil {
 				state, reason = jobs.StatePartial, "container delete: "+err.Error()
 			} else if _, err := session.ContainerDetail(background, req.Container); !swiftcontrol.IsNotFound(err) {
@@ -273,6 +293,19 @@ func (s *DeleteService) runSweepJob(ctx context.Context, jobID string, req Delet
 		}
 	}
 	s.finishSweep(background, jobID, req, state, reason, sweep.counts().admitted)
+}
+
+// deletionRequested reports how many members had a destructive request sent,
+// each counted once by its own outcome; it decides whether a cancellation at
+// the container-delete boundary claims any irreversible effect.
+func (s *DeleteService) deletionRequested(ctx context.Context, jobID string) int64 {
+	totals, err := s.jobs.ReadItemTotals(ctx, jobID)
+	if err != nil {
+		// A read failure here cannot prove nothing was sent, so the caller
+		// treats the boundary as a partial rather than claiming cancelled.
+		return 1
+	}
+	return totals.Deleted + totals.Unverified + totals.Failed + totals.Unsettled
 }
 
 // sweepEnd derives the terminal state from the members and the postcondition
