@@ -86,6 +86,14 @@ func (s *Session) SLOManifest(ctx context.Context, container, name string) (*SLO
 	if err != nil {
 		return nil, err
 	}
+	return s.sloManifestWith(ctx, credentials, container, name)
+}
+
+// sloManifestWith reads a static large object's manifest under credentials
+// the caller already holds, so a segment job can read the graph immediately
+// before its comparison HEAD under the one snapshot and no re-authentication
+// falls between the two (ADR 0095 decision 8).
+func (s *Session) sloManifestWith(ctx context.Context, credentials StorageCredentials, container, name string) (*SLOManifest, error) {
 	resp, _, err := s.conn.Call(ctx, credentials.StorageURL, swift.RequestOpts{
 		Container:  container,
 		ObjectName: name,

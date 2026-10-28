@@ -273,6 +273,17 @@ func markerShaped(d *ObjectDetail) bool {
 // credentials snapshot, the comparison HEAD, the target's admission, the
 // identity comparison, the DELETE immediately after, and the literal read.
 func (s *Session) deleteShown(ctx context.Context, container, name, baseContent string, target deleteTarget) (*ObjectDeleteResult, error) {
+	return s.deleteShownBound(ctx, container, name, baseContent, target, nil)
+}
+
+// deleteShownBound is deleteShown with an optional reviewed-graph binding for
+// a segment job's manifest member (ADR 0095 decision 8): under the one
+// credentials snapshot, a static manifest's entries are read immediately
+// before the comparison HEAD and a dynamic manifest's namespace is compared
+// against the one the HEAD reports, and any difference refuses the manifest as
+// changed since reviewed with nothing deleted. The binding is nil on every
+// other path, which then behaves exactly as before.
+func (s *Session) deleteShownBound(ctx context.Context, container, name, baseContent string, target deleteTarget, graph *reviewedGraph) (*ObjectDeleteResult, error) {
 	if container == "" || name == "" {
 		// An empty object name would address the container itself: Swift routes
 		// a DELETE of "container/" to its container controller. Refused before
@@ -286,6 +297,15 @@ func (s *Session) deleteShown(ctx context.Context, container, name, baseContent 
 		credentials, err := s.Credentials(ctx, 0)
 		if err != nil {
 			return nil, Normalize(err)
+		}
+		var liveEntries []ReviewedEntry
+		liveGraphWhole := true
+		if graph != nil && graph.isStatic {
+			live, err := s.sloManifestWith(ctx, credentials, container, name)
+			if err != nil {
+				return nil, err
+			}
+			liveEntries, liveGraphWhole = live.WholeObjectEntries()
 		}
 		before, _, status, err := s.rawHead(ctx, credentials, container, name, "", "comparison HEAD")
 		if status == http.StatusUnauthorized && attempt == 0 {
@@ -324,6 +344,18 @@ func (s *Session) deleteShown(ctx context.Context, container, name, baseContent 
 				Expected: baseContent, Found: found,
 				FoundClass: string(before.Class), FoundLength: before.ContentLength,
 				FoundETag: etagValue(before.ETag),
+			}
+		}
+		if graph != nil {
+			if changed, expected, found := graph.differs(before, liveEntries, liveGraphWhole); changed {
+				// The identity matched but the graph the operator reviewed did
+				// not: an equal-tag segment swap or a moved namespace. Refused
+				// as changed since reviewed, with nothing deleted and the
+				// manifest's current identity carried for the record.
+				return &ObjectDeleteResult{Before: before, TransIDs: []string{before.TransID}}, &IdentityConflictError{
+					Container: container, Name: name, Expected: expected, Found: found,
+					FoundClass: string(before.Class), FoundLength: before.ContentLength, FoundETag: etagValue(before.ETag),
+				}
 			}
 		}
 		if target == targetMarker && !markerShaped(before) {
