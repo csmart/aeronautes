@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"os"
 	"os/exec"
@@ -1031,21 +1032,49 @@ func TestPrefixSweepHeldWorkerFinishesWholeWhenAnotherRecordIsLost(t *testing.T)
 	h, service, bookmark := deleteHarness(t)
 	ctx := context.Background()
 	h.mock.AddContainer("sweep", "standard")
-	seedObject(h.mock, "sweep", "aa", "alpha", nil) // records first and fails, latching the ledger
-	seedObject(h.mock, "sweep", "zz", "zulu", nil)  // held at its comparison HEAD, finishes whole
+	// Ten members, more than the eight-worker pool, so two are admitted but
+	// never dispatched. The names sort so a_fail and a_held are the first two
+	// dispatched and in flight.
+	seedObject(h.mock, "sweep", "a_fail", "alpha", nil) // the only member let past its HEAD; its record fails and latches
+	seedObject(h.mock, "sweep", "a_held", "held", nil)  // already issued, held at its comparison HEAD across the failure
+	for i := 0; i < 8; i++ {
+		seedObject(h.mock, "sweep", fmt.Sprintf("f%d", i), "filler", nil)
+	}
 	refuseSQL(t, h, `CREATE TRIGGER refuse_sweep_outcomes BEFORE INSERT ON job_item_observations
 		BEGIN SELECT RAISE(ABORT,'fixture required outcome refusal'); END`)
+	heldAtHead := make(chan struct{})
+	var once sync.Once
+	waitForLatch := func() {
+		for i := 0; i < 3000 && h.transfer.jobs.Available() == nil; i++ {
+			awaitTick()
+		}
+	}
+	// Barriers establish the ordering rather than relying on the pool's race.
+	// a_held signals once it is at its comparison HEAD and then stays there
+	// until the latch; a_fail waits for that signal before it can record and
+	// latch, so the failure always lands while a_held is held at its HEAD; and
+	// every other in-flight filler is held at its HEAD too, so none finishes
+	// early and frees a worker to issue one of the two queued members.
 	h.mock.BeforeRequest = func(method, path string) {
-		if method == "HEAD" && strings.Contains(path, "/sweep/zz") {
-			for i := 0; i < 1000 && h.transfer.jobs.Available() == nil; i++ {
-				awaitTick()
-			}
+		if method != "HEAD" {
+			return
+		}
+		switch {
+		case strings.Contains(path, "/sweep/a_held"):
+			once.Do(func() { close(heldAtHead) })
+			waitForLatch()
+		case strings.Contains(path, "/sweep/a_fail"):
+			<-heldAtHead
+		default:
+			waitForLatch()
 		}
 	}
 	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Mode: ModeDeleteContainer, Confirm: "sweep"})
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The unavailable audit event is the early return after the latch, taken
+	// before any postcondition or container delete (ADR 0095 decision 4).
 	deadline := 0
 	for {
 		events, err := h.auditSvc.RecentFor(ctx, bookmark, 20)
@@ -1061,7 +1090,7 @@ func TestPrefixSweepHeldWorkerFinishesWholeWhenAnotherRecordIsLost(t *testing.T)
 		if noted {
 			break
 		}
-		if deadline++; deadline > 1000 {
+		if deadline++; deadline > 3000 {
 			t.Fatal("the job never reported unavailable after the lost record")
 		}
 		awaitTick()
@@ -1069,23 +1098,37 @@ func TestPrefixSweepHeldWorkerFinishesWholeWhenAnotherRecordIsLost(t *testing.T)
 	if err := h.transfer.jobs.Available(); err == nil {
 		t.Fatal("the ledger did not latch unavailable after the lost record")
 	}
-	zzDeleted := false
-	for _, line := range deletesUnder(h, "sweep") {
-		if strings.Contains(line, "/sweep/zz") {
-			zzDeleted = true
+	// The held, already-issued worker completed its whole member on the wire
+	// after the latch: its comparison HEAD, its DELETE and its verifying read.
+	heads, deleted := 0, false
+	for _, line := range h.mock.RequestLog() {
+		if !strings.Contains(line, "/sweep/a_held") {
+			continue
+		}
+		if strings.HasPrefix(line, "HEAD ") {
+			heads++
+		}
+		if strings.HasPrefix(line, "DELETE ") {
+			deleted = true
 		}
 	}
-	if !zzDeleted {
-		t.Fatalf("the held, already-issued worker did not complete its own DELETE: %v", deletesUnder(h, "sweep"))
+	if !deleted || heads < 2 {
+		t.Fatalf("the held worker did not finish its whole member: %d HEADs, deleted=%v", heads, deleted)
 	}
+	// No postcondition ran and no container was deleted over the unavailable ledger.
 	if containerDeleted(h.mock.RequestLog(), "sweep") {
 		t.Fatal("the container was deleted over an unavailable ledger")
 	}
-	var issued int
+	// Exactly the eight dispatched members were issued; the two queued members
+	// stayed unissued, so no member was issued after the lost record.
+	var admitted, issued int
+	if err := h.db.Reader().QueryRowContext(ctx, `SELECT COUNT(*) FROM job_items WHERE job_id=?`, jobID).Scan(&admitted); err != nil {
+		t.Fatal(err)
+	}
 	if err := h.db.Reader().QueryRowContext(ctx, `SELECT COUNT(*) FROM job_items WHERE job_id=? AND issued_at IS NOT NULL`, jobID).Scan(&issued); err != nil {
 		t.Fatal(err)
 	}
-	if issued != 2 {
-		t.Fatalf("%d members issued, want exactly the two admitted and no later issuing", issued)
+	if admitted != 10 || issued != 8 {
+		t.Fatalf("admitted %d, issued %d; want 10 admitted and exactly 8 issued (two queued members stay unissued)", admitted, issued)
 	}
 }
