@@ -197,7 +197,7 @@ func TestItemRecordVersionAndEmpty(t *testing.T) {
 			t.Fatal("recording mode disabled after creation")
 		}
 	}
-	for _, input := range []Job{{Type: TypeCopy, ItemRecordsVersion: -1}, {Type: TypeCopy, ItemRecordsVersion: 2}, {Type: TypeDeletePrefix, ItemRecordsVersion: 1}, {Type: TypeMirror, ItemRecordsVersion: 1}, {Type: TypeMirrorPreview, ItemRecordsVersion: 1}} {
+	for _, input := range []Job{{Type: TypeCopy, ItemRecordsVersion: -1}, {Type: TypeCopy, ItemRecordsVersion: 2}, {Type: TypeMirror, ItemRecordsVersion: 1}, {Type: TypeMirrorPreview, ItemRecordsVersion: 1}} {
 		if _, err := s.Create(t.Context(), input); !errors.Is(err, ErrInvalidItemRecord) {
 			t.Fatalf("invalid opt-in accepted: %+v %v", input, err)
 		}

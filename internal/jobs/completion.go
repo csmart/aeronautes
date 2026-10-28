@@ -74,7 +74,7 @@ func (s *Store) finish(ctx context.Context, id string, result Completion, trail 
 			if result.State == StateComplete && !totals.permitsComplete() {
 				return ErrIncompleteItemRecords
 			}
-			if kind == TypeDeleteSelected {
+			if kind.deletion() {
 				// A deletion is complete only when every admitted member was
 				// deleted: a member not attempted carries no problem facet and
 				// must still keep the job from claiming completion. The durable

@@ -86,10 +86,10 @@ func (s *Store) AdmitItems(ctx context.Context, jobID string, items []ItemIntent
 		for _, item := range items {
 			// A deletion member is its source alone; a transfer item has a
 			// destination. The identity cannot see the job, so the write does.
-			if item.deletion() != (kind == TypeDeleteSelected) {
+			if item.deletion() != kind.deletion() {
 				return ErrInvalidItemRecord
 			}
-			if kind == TypeDeleteSelected && (item.Source.Kind != ItemSwift || !item.Admitted || !item.Planned) {
+			if kind.deletion() && (item.Source.Kind != ItemSwift || !item.Admitted || !item.Planned) {
 				// What a selected-set deletion deletes is a Swift object the
 				// operator selected, and the whole selected set is admitted at
 				// once (ADR 0093 decision 4): a local path is not a member, and
@@ -192,10 +192,50 @@ func transferItemJob(ctx context.Context, tx *sql.Tx, jobID string) error {
 	if err != nil {
 		return err
 	}
-	if kind == TypeDeleteSelected {
+	if kind.deletion() {
 		return ErrInvalidItemRecord
 	}
 	return nil
+}
+
+// HeldKeys reports which of a listing page's keys the job already holds, so
+// a later pass of a sweep admits only names first listed in it without
+// keeping a run-wide set of names (ADR 0095 decision 2). The page is the
+// caller's bound; the ledger answers it in one statement.
+func (s *Store) HeldKeys(ctx context.Context, jobID string, keys []string) (map[string]bool, error) {
+	held := map[string]bool{}
+	if len(keys) == 0 {
+		return held, nil
+	}
+	if len(keys) > 1000 {
+		return nil, ErrInvalidItemPage
+	}
+	err := s.readItems(ctx, jobID, func(tx *sql.Tx) error {
+		args := make([]any, 0, len(keys)+1)
+		args = append(args, jobID)
+		marks := make([]string, len(keys))
+		for i, key := range keys {
+			args = append(args, key)
+			marks[i] = "?"
+		}
+		rows, err := tx.QueryContext(ctx, `SELECT item_key FROM job_items WHERE job_id=? AND item_key IN (`+strings.Join(marks, ",")+`)`, args...)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var key string
+			if err := rows.Scan(&key); err != nil {
+				return err
+			}
+			held[key] = true
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return held, nil
 }
 
 func appendObservation(ctx context.Context, tx *sql.Tx, item ItemRecord, phase string, observation ItemObservation) error {

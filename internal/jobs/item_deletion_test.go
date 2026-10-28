@@ -76,10 +76,44 @@ func TestDeletionMembersAreTheirSourceAlone(t *testing.T) {
 			t.Fatalf("admitted a source-only item into a copy: %v", err)
 		}
 	})
-	t.Run("the other deletion jobs keep no items", func(t *testing.T) {
+	t.Run("every deletion job keeps items", func(t *testing.T) {
+		// ADR 0095 decisions 2 and 8: a sweep's members and a manifest's
+		// reviewed segments are durable items like a selected set's.
+		for _, kind := range []Type{TypeDeletePrefix, TypeEmpty, TypeDeleteCont, TypeDeleteSegments} {
+			store, bookmark := newStore(t)
+			job, err := store.Create(t.Context(), Job{Type: kind, ItemRecordsVersion: 1, SourceBookmarkID: bookmark, Source: "bookmark:c"})
+			if err != nil {
+				t.Fatalf("%s: %v", kind, err)
+			}
+			if err := store.AdmitItems(t.Context(), job.ID, []ItemIntent{memberOf(bookmark, "a.txt")}); err != nil {
+				t.Fatalf("%s: a member was refused: %v", kind, err)
+			}
+			if err := store.MarkIssued(t.Context(), job.ID, "a.txt"); err != nil {
+				t.Fatalf("%s: the issued mark was refused: %v", kind, err)
+			}
+			if err := store.RecordDeletion(t.Context(), job.ID, "a.txt", ItemObservation{Result: ItemDeleted, Effect: EffectReportedApplied}, &ItemSuccessor{}, nil); err != nil {
+				t.Fatalf("%s: the outcome was refused: %v", kind, err)
+			}
+		}
 		store, _ := newStore(t)
-		if _, err := store.Create(t.Context(), Job{Type: TypeDeletePrefix, ItemRecordsVersion: 1}); !errors.Is(err, ErrInvalidItemRecord) {
-			t.Fatalf("a prefix deletion was given item records: %v", err)
+		if _, err := store.Create(t.Context(), Job{Type: TypeMirror, ItemRecordsVersion: 1}); !errors.Is(err, ErrInvalidItemRecord) {
+			t.Fatalf("a job that keeps no items was given item records: %v", err)
+		}
+	})
+	t.Run("a later pass asks which keys the job already holds", func(t *testing.T) {
+		// ADR 0095 decision 2: a sweep admits only the names a page lists
+		// that the ledger does not hold, asked a page at a time.
+		store, bookmark := newStore(t)
+		job := deletionJob(t, store, bookmark, "a.txt", "b.txt")
+		held, err := store.HeldKeys(t.Context(), job.ID, []string{"a.txt", "c.txt", "b.txt"})
+		if err != nil || len(held) != 2 || !held["a.txt"] || !held["b.txt"] || held["c.txt"] {
+			t.Fatalf("held = %v, %v", held, err)
+		}
+		if held, err := store.HeldKeys(t.Context(), job.ID, nil); err != nil || len(held) != 0 {
+			t.Fatalf("an empty page asked for keys: %v, %v", held, err)
+		}
+		if _, err := store.HeldKeys(t.Context(), "no-such-job", []string{"a.txt"}); err == nil {
+			t.Fatal("a job without item records answered a held-keys question")
 		}
 	})
 	t.Run("the transfer phases refuse a deletion", func(t *testing.T) {
