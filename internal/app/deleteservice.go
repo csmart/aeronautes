@@ -152,15 +152,19 @@ func (s *DeleteService) StartDelete(ctx context.Context, req DeleteRequestDTO) (
 	if req.Confirm != req.Container {
 		return "", fmt.Errorf("confirmation %q does not match the container name — type it exactly", req.Confirm)
 	}
-	session, err := s.connections.SessionFor(ctx, req.BookmarkID)
-	if err != nil {
-		return "", err
-	}
+	// The shutdown guard runs before any store or database access, so a start
+	// during shutdown is refused cleanly ("job shutdown has begun") instead of
+	// surfacing a closed-database or missing-bookmark error from the session
+	// lookup, the way every other job entrypoint admits first.
 	owner, ctx, err := s.runner.admit(ctx)
 	if err != nil {
 		return "", err
 	}
 	defer owner.finishStart()
+	session, err := s.connections.SessionFor(ctx, req.BookmarkID)
+	if err != nil {
+		return "", err
+	}
 	releasePins, err := s.connections.pinForJob(ctx, req.BookmarkID)
 	if err != nil {
 		return "", err
