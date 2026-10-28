@@ -84,9 +84,7 @@ async function fixture() {
   api.auditSearch = vi.fn(api.auditSearch);
   api.updateContainer = vi.fn(api.updateContainer);
   api.startCopy = vi.fn(api.startCopy);
-  api.deleteManifestWithSegments = vi.fn().mockResolvedValue({
-    manifestDeleted: true, segmentsDeleted: 3, segmentsFailed: 0, basis: "backstage-forced",
-  });
+  api.deleteManifestWithSegments = vi.fn().mockResolvedValue("job-seg-1");
   return { api, browser, bookmark, root: host() };
 }
 

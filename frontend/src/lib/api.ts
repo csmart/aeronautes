@@ -104,7 +104,6 @@ export type {
   MirrorRequestDTO,
   SegmentOwnershipDTO,
   SegmentsDeleteRequestDTO,
-  SegmentsDeleteResultDTO,
   SelectedDeleteRequestDTO,
   UploadRequestDTO,
 } from "../../bindings/github.com/csmart/aeronautes/internal/app";
@@ -121,7 +120,6 @@ import type {
   MirrorRequestDTO,
   SegmentOwnershipDTO,
   SegmentsDeleteRequestDTO,
-  SegmentsDeleteResultDTO,
   SelectedDeleteRequestDTO,
   UploadRequestDTO,
 } from "../../bindings/github.com/csmart/aeronautes/internal/app";
@@ -240,7 +238,7 @@ export interface Api {
   findStatus(id: string, bookmarkId: string): Promise<FindStatusDTO>;
   cancelFind(id: string, bookmarkId: string): Promise<void>;
   checkSegmentOwnership(req: SegmentsDeleteRequestDTO): Promise<SegmentOwnershipDTO>;
-  deleteManifestWithSegments(req: SegmentsDeleteRequestDTO): Promise<SegmentsDeleteResultDTO>;
+  deleteManifestWithSegments(req: SegmentsDeleteRequestDTO): Promise<string>;
 }
 
 /** The live bridge. */
@@ -352,9 +350,5 @@ export const liveApi: Api = {
     if (!status) throw new Error("empty ownership status");
     return status;
   },
-  deleteManifestWithSegments: async (req) => {
-    const result = await DeleteService.DeleteManifestWithSegments(req);
-    if (!result) throw new Error("empty result");
-    return result;
-  },
+  deleteManifestWithSegments: (req) => DeleteService.DeleteManifestWithSegments(req),
 };

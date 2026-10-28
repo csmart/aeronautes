@@ -490,11 +490,11 @@ const mutationCases = [
     run: (browser: BrowserState) => browser.deleteManifest("fixtures", "external-dlo", browser.objectDetail!),
   },
   {
-    method: "deleteManifestWithSegments", operation: "segments.delete", returnsResult: true,
+    method: "deleteManifestWithSegments", operation: "segments.delete.start", returnsResult: true,
     prefix: "", selected: "external-dlo",
     run: (browser: BrowserState) => browser.deleteManifestWithSegments({
       bookmarkId: browser.connectedBookmarkId!, container: "fixtures", name: "external-dlo",
-      force: true, confirm: "external-dlo",
+      force: true, confirm: "external-dlo", reviewed: { class: "dlo", fingerprint: "dlo:0:etag" },
     }),
   },
 ] as const;

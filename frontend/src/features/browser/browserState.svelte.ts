@@ -1692,15 +1692,16 @@ export class BrowserState {
     return await this.#api.checkSegmentOwnership(req);
   }
 
-  async deleteManifestWithSegments(req: SegmentsDeleteRequestDTO, ownsView = () => true) {
-    const scope = this.#scopeRevision;
-    const selection = this.detailIdentity;
-    const prefix = this.prefix;
-    const displayed = req.bookmarkId === this.connectedBookmarkId && req.container === selection?.container && req.name === selection.name;
-    const result = await this.#api.deleteManifestWithSegments(req);
+  // Deleting a manifest with its segments is a job now (ADR 0095 decision 8):
+  // it starts, is watched, and refreshes the view when it settles, like the
+  // selected-set deletion. The reviewed membership the dialog carries back is
+  // on the request.
+  async deleteManifestWithSegments(req: SegmentsDeleteRequestDTO): Promise<string> {
+    const id = await this.#api.deleteManifestWithSegments(req);
+    this.#watchJob(id, { bookmarkId: req.bookmarkId, container: req.container });
+    await this.loadJobs();
     await this.loadAudit();
-    if (displayed && result.manifestDeleted && ownsView() && this.#currentView(scope, selection)) await this.goTo(prefix);
-    return result;
+    return id;
   }
 
   // A reopened dialog can share this identity, so dialog callers also supply

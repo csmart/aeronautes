@@ -19,10 +19,11 @@
   let pollRequest = 0;
   let disposed = false;
   const terminal = (state: string) => ["complete", "partial", "cancelled", "failed"].includes(state);
-  // A selected-set deletion's items are deletion members (ADR 0093 decision
-  // 4): one outcome each, with what the verifying read observed, and no
-  // destination.
-  const deletion = $derived(job.type === "delete_selected");
+  // Every deletion job's items are deletion members (ADR 0093 decision 4,
+  // ADR 0095): one outcome each, with what the verifying read observed, and
+  // no destination.
+  const deletionTypes = ["delete_selected", "delete_prefix", "empty_container", "delete_container", "delete_segments"];
+  const deletion = $derived(deletionTypes.includes(job.type));
 
   // An object's identity in words: its class, bytes and entity tag.
   function identity(what: { class: string; length: number; etag: string }): string {

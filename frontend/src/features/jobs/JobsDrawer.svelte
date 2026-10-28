@@ -56,6 +56,7 @@
       case "empty_container": return "Empty container";
       case "delete_container": return "Delete container";
       case "delete_selected": return "Delete selected";
+      case "delete_segments": return "Delete manifest + segments";
       default: return type || "Unknown operation";
     }
   }

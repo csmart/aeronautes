@@ -26,15 +26,16 @@ export function CheckSegmentOwnership(req: $models.SegmentsDeleteRequestDTO): $C
 }
 
 /**
- * DeleteManifestWithSegments removes a manifest AND its segments. It is
- * ALWAYS gated on the Backstage force with typed confirmation — ownership
- * evidence is advisory and never auto-authorizes (no live
- * reverse-reference scan exists yet). The HEAD here is the §28.6 required
- * authoritative re-check: the operation follows segments, so identity at
- * execution time matters. The residual HEAD-to-DELETE window and the
- * content-ETag-only recheck are stated honestly below (review W-10).
+ * DeleteManifestWithSegments deletes a manifest and its segments as one job
+ * (ADR 0095 decision 8). It is always gated on the Backstage force with the
+ * typed object name, because ownership evidence is advisory until a live
+ * reverse-reference scan exists. The job owns the reviewed graph the request
+ * carries: it deletes the manifest by the reviewed-manifest protocol, which
+ * refuses a graph swap or a moved namespace, and only after that is durably
+ * recorded deleted does it delete the segments by the per-name protocol. The
+ * result is the job id; the drawer shows the manifest and each segment.
  */
-export function DeleteManifestWithSegments(req: $models.SegmentsDeleteRequestDTO): $CancellablePromise<$models.SegmentsDeleteResultDTO | null> {
+export function DeleteManifestWithSegments(req: $models.SegmentsDeleteRequestDTO): $CancellablePromise<string> {
     return $Call.ByID(1751193110, req);
 }
 
@@ -47,7 +48,11 @@ export function PreviewDelete(req: $models.DeleteRequestDTO): $CancellablePromis
 }
 
 /**
- * StartDelete validates the typed confirmation and launches the job.
+ * StartDelete validates the typed confirmation and launches the job: a
+ * verified per-name sweep over the scope whose members are durable items of
+ * the job (ADR 0095). The three modes share it; the empty mode compares the
+ * container's configuration before and after, and the delete-container mode
+ * deletes the container only after a complete sweep.
  */
 export function StartDelete(req: $models.DeleteRequestDTO): $CancellablePromise<string> {
     return $Call.ByID(1302339297, req);
