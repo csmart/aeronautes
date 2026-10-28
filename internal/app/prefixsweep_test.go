@@ -805,13 +805,16 @@ func TestPrefixSweepHoldsPerMemberAdjacencyUnderWorkerInterleaving(t *testing.T)
 	}
 	var mu sync.Mutex
 	var seq []string
+	var bRequests int
 	aHeadSeen := make(chan struct{})
-	bDeleted := make(chan struct{})
+	bSettled := make(chan struct{})
 	var aOnce, bOnce sync.Once
 	// Make the interleaving deterministic rather than hoping the pool races the
 	// right way: member b waits until member a has taken its comparison HEAD,
-	// and member a is then held at its DELETE until b has completed its own
-	// member, so b's pair always falls strictly inside a's HEAD→DELETE window.
+	// and member a is then held at its DELETE until b has completed its whole
+	// member on the wire — its comparison HEAD, its DELETE and its verifying
+	// read, three requests — so b's entire member falls strictly inside a's
+	// HEAD→DELETE window and a's DELETE is not released early.
 	h.mock.BeforeRequest = func(method, path string) {
 		member := memberOf(path)
 		if member == "" {
@@ -821,18 +824,26 @@ func TestPrefixSweepHoldsPerMemberAdjacencyUnderWorkerInterleaving(t *testing.T)
 			<-aHeadSeen
 		}
 		if method == "DELETE" && member == "a" {
-			<-bDeleted
+			<-bSettled
 		}
 		mu.Lock()
 		seq = append(seq, method+" "+member)
 		mu.Unlock()
 	}
 	h.mock.AfterRequest = func(method, path string) {
-		switch {
-		case method == "HEAD" && memberOf(path) == "a":
-			aOnce.Do(func() { close(aHeadSeen) })
-		case method == "DELETE" && memberOf(path) == "b":
-			bOnce.Do(func() { close(bDeleted) })
+		switch memberOf(path) {
+		case "a":
+			if method == "HEAD" {
+				aOnce.Do(func() { close(aHeadSeen) })
+			}
+		case "b":
+			mu.Lock()
+			bRequests++
+			complete := bRequests >= 3
+			mu.Unlock()
+			if complete {
+				bOnce.Do(func() { close(bSettled) })
+			}
 		}
 	}
 	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Prefix: "scope/", Mode: ModePrefix, Confirm: "sweep"})
@@ -875,4 +886,30 @@ func TestPrefixSweepHoldsPerMemberAdjacencyUnderWorkerInterleaving(t *testing.T)
 		t.Fatalf("no member-b request interleaved between member a's HEAD and DELETE: %v", seq)
 	}
 	t.Logf("adjacency under interleaving: %v", seq)
+}
+
+// ADR 0095 decision 6: the container is deleted only after a COMPLETE sweep
+// with an empty postcondition. A sweep left partial by a lost reply must leave
+// the container standing; widening the guard from complete to complete-or-
+// partial would delete it over an unverified member, and this is the case that
+// catches that, where TestDeleteContainerEmptyCancelledIsCancelled (a cancel
+// before any effect) does not.
+func TestDeleteContainerSurvivesAPartialSweep(t *testing.T) {
+	h, service, bookmark := deleteHarness(t)
+	ctx := context.Background()
+	h.mock.AddContainer("sweep", "standard")
+	seedObject(h.mock, "sweep", "a.txt", "alpha", nil)
+	seedObject(h.mock, "sweep", "b.txt", "bravo", nil)
+	h.mock.DropNextObjectDELETE() // one member's reply is lost, so the sweep is partial
+	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Mode: ModeDeleteContainer, Confirm: "sweep"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, h, jobID)
+	if job.State != "partial" {
+		t.Fatalf("job = %+v, want partial for the lost reply", job)
+	}
+	if containerDeleted(h.mock.RequestLog(), "sweep") {
+		t.Fatal("the container was deleted after a partial sweep")
+	}
 }
