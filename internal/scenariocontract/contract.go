@@ -151,15 +151,16 @@ var inventory = map[string]Action{
 	// DeleteService
 	"DeleteService.PreviewDelete":         {Kind: Read},
 	"DeleteService.CheckSegmentOwnership": {Kind: Read},
-	"DeleteService.StartDelete":           {Kind: Job},
-	// ADR 0093 decision 6: a job that never retries a destructive request
-	// has no retry scenario; its real contract is the five below.
+	// ADR 0093 decision 6 and ADR 0095 decision 9: a deletion job never
+	// retries a destructive request, so it has no retry scenario; its real
+	// contract is the five below. The bulk deletion became this job in ADR
+	// 0095.
+	"DeleteService.StartDelete":         {Kind: Job, Scenarios: []string{"happy", "refusal", "conflict", "cancel", "partial"}},
 	"DeleteService.StartSelectedDelete": {Kind: Job, Scenarios: []string{"happy", "refusal", "conflict", "cancel", "partial"}},
-	// DeleteManifestWithSegments returns synchronously but has partial-result
-	// and retry semantics (it reports remaining segments and instructs a
-	// retry, and context cancellation can interrupt it), so it keeps
-	// partial/retry/cancel via an explicit contract.
-	"DeleteService.DeleteManifestWithSegments": {Kind: Destructive, Scenarios: []string{"happy", "refusal", "conflict", "partial", "retry", "cancel"}},
+	// ADR 0095 decision 8 made DeleteManifestWithSegments a job that owns the
+	// reviewed manifest and its segments; decision 9 drops its retry for the
+	// same reason, so its contract is the five a deletion job keeps.
+	"DeleteService.DeleteManifestWithSegments": {Kind: Job, Scenarios: []string{"happy", "refusal", "conflict", "cancel", "partial"}},
 	// JobService
 	"JobService.Get":            {Kind: Read},
 	"JobService.List":           {Kind: Read},
