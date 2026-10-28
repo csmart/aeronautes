@@ -26,7 +26,7 @@
   // svelte-ignore state_referenced_locally
   const request = Object.freeze({
     bookmarkId: browser.connectedBookmarkId ?? "", container: op.container, name: op.name, force: false, confirm: "",
-    reviewed: { class: "", fingerprint: "" },
+    reviewed: { class: "", fingerprint: "", length: 0, etag: "" },
   });
 
   // undefined while the container's facts are being read, null when they

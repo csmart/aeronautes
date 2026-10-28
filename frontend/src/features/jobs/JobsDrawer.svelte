@@ -61,8 +61,12 @@
     }
   }
 
-  function isDeleteType(type: string): boolean {
-    return type === "delete_prefix" || type === "empty_container" || type === "delete_container";
+  // Every deletion job settles members and carries a separate deleted count;
+  // the settled counter (objectsCopied) includes changed, refused and
+  // unverified members, so it is never labelled "deleted" (ADR 0095).
+  function isDeletionFamily(type: string): boolean {
+    return type === "delete_selected" || type === "delete_prefix" || type === "empty_container"
+      || type === "delete_container" || type === "delete_segments";
   }
 
   function progressOf(job: JobDTO): number | null {
@@ -620,10 +624,8 @@
                   {:else}
                     {job.counters.objectsCopied}{#if job.counters.objectsPlanned > 0}/{job.counters
                         .objectsPlanned}{/if}
-                    {#if job.type === "delete_selected"}
+                    {#if isDeletionFamily(job.type)}
                       members settled
-                    {:else if isDeleteType(job.type)}
-                      objects reported deleted
                     {:else}
                       obj · {formatBytes(job.counters.bytesCopied)}
                     {/if}

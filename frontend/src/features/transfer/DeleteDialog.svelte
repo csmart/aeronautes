@@ -6,8 +6,9 @@
   import { onDestroy, untrack } from "svelte";
   import { trapFocus } from "../../lib/trapFocus";
   import type { BrowserState } from "../browser/browserState.svelte";
-  import type { DeletePreviewDTO, DeleteRequestDTO } from "../../lib/api";
+  import type { ContainerSettingsDTO, DeletePreviewDTO, DeleteRequestDTO } from "../../lib/api";
   import { formatBytes } from "../../lib/format";
+  import { versioningSentence } from "../inspector/versioningSentence";
 
   let { browser, onClose }: { browser: BrowserState; onClose: () => void } = $props();
 
@@ -62,6 +63,21 @@
   $effect(() => {
     void browser.scopeRevision;
     untrack(invalidate);
+  });
+
+  // The container's versioning facts drive the consent sentence that says what
+  // a delete leaves at the name, the same pattern the manifest dialog uses.
+  let facts: ContainerSettingsDTO | null | undefined = $state(undefined);
+  $effect(() => {
+    const container = browser.containerName;
+    facts = undefined;
+    if (!container) return;
+    untrack(() => {
+      void (async () => {
+        const loaded = await browser.containerFacts(container);
+        if (browser.containerName === container) facts = loaded;
+      })();
+    });
   });
 
   function close() {
@@ -157,11 +173,19 @@
         </p>
         <p class="cost">
           Each object is compared then deleted, and a row that cannot say what it holds is read once
-          more first: <strong>{preview.requestCost}</strong> requests before any retry or the final
-          check{preview.laterBaselineRows > 0
+          more first: <strong>{preview.requestCost}</strong> requests{preview.laterBaselineRows > 0
             ? ` (${preview.laterBaselineRows} of these rows take that extra read)`
-            : ""}.
+            : ""}, not counting this listing, any retries, the final check or each member's own
+          verifying read.
         </p>
+        <p class="keeps">
+          An object listed with a size is deleted only if it still matches that listing; one that
+          changed since is left and recorded. A row listed as zero bytes or as a static large object
+          is read once more first, and what that read then holds is what is deleted, a directory
+          marker or a manifest included. A link is refused and left, never followed. Each name is
+          requested once by this job; whatever is still listed after that is left for a fresh run.
+        </p>
+        <p class="keeps">{versioningSentence(facts)}</p>
         {#if preview.possibleManifests > 0}
           <p class="warn">
             {preview.possibleManifests} possible manifest{preview.possibleManifests === 1
@@ -276,6 +300,13 @@
   .summary {
     margin: 0;
     font-size: var(--text-sm);
+  }
+
+  .cost,
+  .keeps {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--color-text-secondary);
   }
 
   .warn {

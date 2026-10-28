@@ -48,7 +48,7 @@ function text(row: HTMLElement, selector: string): string {
   return row.querySelector(selector)?.textContent?.replace(/\s+/g, " ").trim() ?? "";
 }
 
-const deleteTypes = ["delete_prefix", "empty_container", "delete_container"];
+const deleteTypes = ["delete_prefix", "empty_container", "delete_container", "delete_segments"];
 
 it.each([
   ["copy", "Copy"], ["upload", "Upload"], ["download", "Download"],
@@ -65,9 +65,9 @@ it.each([
 
 it.each(deleteTypes.flatMap((type) => [
   { type, state: "running" }, { type, state: "partial" },
-]))("uses reported deletion nouns without copied bytes for $type $state", async ({ type, state }) => {
+]))("uses settled-member wording without copied bytes for $type $state", async ({ type, state }) => {
   const { row } = await show(job(type, state));
-  expect(text(row, ".counts")).toBe("3/10 objects reported deleted");
+  expect(text(row, ".counts")).toBe("3/10 members settled");
   expect(text(row, ".counts")).not.toContain("24 B");
   expect(text(row, ".badge")).toBe(state);
   if (state === "running") {
@@ -106,14 +106,14 @@ it.each([
 it.each(deleteTypes)("keeps %s reported progress distinct from a retained deletion suffix", async (type) => {
   const { row } = await show(job(type, "running", { objectsDeleted: 7 }));
   expect(row.querySelector(".progress")?.getAttribute("style")).toContain("30%");
-  expect(text(row, ".counts")).toBe("3/10 objects reported deleted · 7 deleted");
+  expect(text(row, ".counts")).toBe("3/10 members settled · 7 deleted");
   expect(text(row, ".counts")).not.toMatch(/(?:7|10)\/10/);
 });
 
 it.each([
-  { planned: 0, copied: 3, expected: "3 objects reported deleted", progress: null },
-  { planned: -1, copied: 0, expected: "0 objects reported deleted", progress: null },
-  { planned: 10, copied: 0, expected: "0/10 objects reported deleted", progress: "0%" },
+  { planned: 0, copied: 3, expected: "3 members settled", progress: null },
+  { planned: -1, copied: 0, expected: "0 members settled", progress: null },
+  { planned: 10, copied: 0, expected: "0/10 members settled", progress: "0%" },
 ])("preserves zero counts and optional planned totals ($planned planned, $copied reported)", async ({ planned, copied, expected, progress }) => {
   const { row } = await show(job("delete_prefix", "running", { objectsPlanned: planned, objectsCopied: copied }));
   expect(text(row, ".counts")).toBe(expected);
