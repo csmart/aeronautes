@@ -101,7 +101,12 @@ jobs:
           echo "$RUNNER_TEMP/rclone-pin" >> "$GITHUB_PATH"
           echo "AERONAUTES_OFFICIAL_RCLONE_DIR=$RUNNER_TEMP/rclone-pin" >> "$GITHUB_ENV"
       - name: go test -race
-        run: go test -race -count=1 -parallel=3 ./...
+        # The deletion jobs' race coverage (bounded worker sweeps over large
+        # member sets, each job awaited to a terminal) takes the internal/app
+        # package close to ten minutes under the detector, so the per-package
+        # timeout is raised above the default to leave headroom on a slower
+        # runner.
+        run: go test -race -count=1 -parallel=3 -timeout 20m ./...
 
   frontend:
     name: Frontend — lint, build, test
