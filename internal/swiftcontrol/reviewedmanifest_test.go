@@ -95,9 +95,21 @@ func TestDeleteReviewedManifestRefusesAMovedDLONamespace(t *testing.T) {
 		t.Fatal(err)
 	}
 	reviewed := ReviewedManifest{Class: ClassDLO, Fingerprint: detail.ContentFingerprint(), Namespace: "external-dlo-segments/wedding-video/"}
-	// The manifest now points at a different namespace, same assembled identity.
+	// Seed a second namespace whose segments are identical to the wedding
+	// namespace — the same names below the prefix, the same sizes and the same
+	// (empty) tags — so the manifest's assembled identity, its summed size and
+	// the MD5 of its segments' concatenated tags, is unchanged by the move. The
+	// identity comparison then passes and the namespace guard itself is what
+	// refuses the move, which a changed fingerprint would otherwise mask.
+	for _, seg := range []string{
+		"honeymoon-video/0000000000000001",
+		"honeymoon-video/0000000000000002",
+		"honeymoon-video/0000000000000003",
+	} {
+		mock.PutObject("external-dlo-segments", seg, swifttest.Object{Bytes: 1_000_000_000})
+	}
 	mock.PutObject("fixtures", "external-dlo", swifttest.Object{
-		Bytes: 0, ContentType: "video/mp4", ETag: detail.ETag, Manifest: "external-dlo-segments/honeymoon-video/",
+		Bytes: 0, ContentType: "video/mp4", Manifest: "external-dlo-segments/honeymoon-video/",
 	})
 	result, err := s.DeleteReviewedManifest(ctx, "fixtures", "external-dlo", reviewed)
 	var conflict *IdentityConflictError
