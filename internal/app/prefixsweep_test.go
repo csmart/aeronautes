@@ -599,11 +599,13 @@ func TestPrefixSweepScaleBoundedAndDurable(t *testing.T) {
 	for i := range members {
 		seedObject(h.mock, "sweep", "scope/obj-"+padded(i), "x", nil)
 	}
+	before := h.db.WritesCommitted()
 	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Prefix: "scope/", Mode: ModePrefix, Confirm: "sweep"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	job := awaitTerminal(t, h, jobID)
+	swept := h.db.WritesCommitted() - before // measured before any read inflates it
 	if job.State != "complete" || job.Counters.ObjectsPlanned != members || job.Counters.ObjectsDeleted != members {
 		t.Fatalf("job = %+v", job)
 	}
@@ -628,8 +630,25 @@ func TestPrefixSweepScaleBoundedAndDurable(t *testing.T) {
 	if len(drawer) != members {
 		t.Fatalf("drawer held %d members, want %d", len(drawer), members)
 	}
-	// The ledger cost is two writes a member: one issued mark and one
-	// observation, no more.
+	// Measured write cost: the committed write transactions during the sweep
+	// are the work actually done, not the rows that happen to survive it. The
+	// two ledger writes a member ADR 0095 adds beside the 2N+Z requests — the
+	// issued mark and the outcome — are joined by the one per-member progress
+	// counter every job writes, so the sweep's cost is three committed writes a
+	// member, plus the admitted pages and the job's own lifecycle. The cost
+	// must be linear and never inflated per member: at least the two ledger
+	// writes each, and no more than three each plus the pages and a small
+	// bounded lifecycle. A regression that re-wrote a member would cross it.
+	pages := int64((members + 499) / 500)
+	if swept < 2*members {
+		t.Fatalf("the sweep committed %d write transactions for %d members; want at least the two ledger writes a member", swept, members)
+	}
+	if swept > 3*members+pages+48 {
+		t.Fatalf("the sweep committed %d write transactions for %d members; want ~three a member (two ledger + one progress counter) plus %d admitted pages and bounded lifecycle", swept, members, pages)
+	}
+	t.Logf("measured write cost: %d committed write transactions for %d members (%.3f a member = two ledger writes + one progress counter), plus %d admitted pages and lifecycle",
+		swept, members, float64(swept)/float64(members), pages)
+	// The same two-a-member shape seen as retained rows, for completeness.
 	var issued, observations int
 	reader := h.db.Reader()
 	if err := reader.QueryRowContext(ctx, `SELECT COUNT(*) FROM job_items WHERE job_id=? AND issued_at IS NOT NULL`, jobID).Scan(&issued); err != nil {
@@ -639,17 +658,16 @@ func TestPrefixSweepScaleBoundedAndDurable(t *testing.T) {
 		t.Fatal(err)
 	}
 	if issued != members || observations != members {
-		t.Fatalf("ledger writes = %d issued, %d observations; want %d each", issued, observations, members)
+		t.Fatalf("ledger rows = %d issued, %d observations; want %d each", issued, observations, members)
 	}
-	t.Logf("ledger write rows: %d issued marks + %d observations for %d members (two rows per member)", issued, observations, members)
-	// A real restart: a fresh database opened on the same file reads every
-	// member's durable outcome, not a second store over the still-open handle.
-	var sequence int
-	var name, path string
-	if err := h.db.Reader().QueryRowContext(ctx, "PRAGMA database_list").Scan(&sequence, &name, &path); err != nil {
+	// A real restart: close this process's database so nothing of it stays
+	// open, reopen on its file, and read every member's record back from
+	// durable storage in the drawer's own pages — not totals alone, and not a
+	// second handle layered over the still-open original.
+	if err := h.db.Close(); err != nil {
 		t.Fatal(err)
 	}
-	restarted, err := db.Open(ctx, path)
+	restarted, err := db.Open(ctx, h.dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -658,7 +676,28 @@ func TestPrefixSweepScaleBoundedAndDurable(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	totals, err := jobs.NewStore(restarted).ReadItemTotals(ctx, jobID)
+	store := jobs.NewStore(restarted)
+	recovered := map[string]bool{}
+	for cursor := int64(0); ; {
+		page, err := store.ReadItems(ctx, jobID, cursor, 200)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range page.Items {
+			if item.Execution == nil || item.Execution.Result != jobs.ItemDeleted {
+				t.Fatalf("member %s not deleted after restart: %+v", item.Key, item.Execution)
+			}
+			recovered[item.Key] = true
+		}
+		if page.NextCursor == 0 {
+			break
+		}
+		cursor = page.NextCursor
+	}
+	if len(recovered) != members {
+		t.Fatalf("after restart, %d members readable in the drawer's pages, want %d", len(recovered), members)
+	}
+	totals, err := store.ReadItemTotals(ctx, jobID)
 	if err != nil || totals.Deleted != members || totals.Admitted != members {
 		t.Fatalf("reopened totals = %+v, %v", totals, err)
 	}
@@ -739,4 +778,101 @@ func TestDeleteContainerEmptyCancelledIsCancelled(t *testing.T) {
 	if containerDeleted(h.mock.RequestLog(), "empty-c") {
 		t.Fatal("the container was deleted after a cancellation")
 	}
+}
+
+// ADR 0095 decision 3 and the ADR 0085 adjacency under the bounded worker
+// pool: another worker's requests may interleave with a member's pair on the
+// wire, but a held member's DELETE still follows its own comparison HEAD with
+// nothing of its own between. One worker is deliberately held between its HEAD
+// and its DELETE while a second worker completes its member; the recorded
+// order then shows the held member's DELETE immediately after that member's
+// own HEAD, with the other member's requests, and only those, in between.
+func TestPrefixSweepHoldsPerMemberAdjacencyUnderWorkerInterleaving(t *testing.T) {
+	h, service, bookmark := deleteHarness(t)
+	ctx := context.Background()
+	h.mock.AddContainer("sweep", "standard")
+	seedObject(h.mock, "sweep", "scope/a", "aaa", nil)
+	seedObject(h.mock, "sweep", "scope/b", "bbb", nil)
+
+	memberOf := func(path string) string {
+		switch {
+		case strings.Contains(path, "scope/a"):
+			return "a"
+		case strings.Contains(path, "scope/b"):
+			return "b"
+		}
+		return ""
+	}
+	var mu sync.Mutex
+	var seq []string
+	aHeadSeen := make(chan struct{})
+	bDeleted := make(chan struct{})
+	var aOnce, bOnce sync.Once
+	// Make the interleaving deterministic rather than hoping the pool races the
+	// right way: member b waits until member a has taken its comparison HEAD,
+	// and member a is then held at its DELETE until b has completed its own
+	// member, so b's pair always falls strictly inside a's HEAD→DELETE window.
+	h.mock.BeforeRequest = func(method, path string) {
+		member := memberOf(path)
+		if member == "" {
+			return
+		}
+		if method == "HEAD" && member == "b" {
+			<-aHeadSeen
+		}
+		if method == "DELETE" && member == "a" {
+			<-bDeleted
+		}
+		mu.Lock()
+		seq = append(seq, method+" "+member)
+		mu.Unlock()
+	}
+	h.mock.AfterRequest = func(method, path string) {
+		switch {
+		case method == "HEAD" && memberOf(path) == "a":
+			aOnce.Do(func() { close(aHeadSeen) })
+		case method == "DELETE" && memberOf(path) == "b":
+			bOnce.Do(func() { close(bDeleted) })
+		}
+	}
+	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Prefix: "scope/", Mode: ModePrefix, Confirm: "sweep"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job := awaitTerminal(t, h, jobID); job.State != "complete" {
+		t.Fatalf("job = %+v", job)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	iDel := -1
+	for i, s := range seq {
+		if s == "DELETE a" {
+			iDel = i
+			break
+		}
+	}
+	if iDel < 0 {
+		t.Fatalf("member a was never deleted; sequence = %v", seq)
+	}
+	iPrevA := -1
+	for i := iDel - 1; i >= 0; i-- {
+		if strings.HasSuffix(seq[i], " a") {
+			iPrevA = i
+			break
+		}
+	}
+	if iPrevA < 0 || seq[iPrevA] != "HEAD a" {
+		t.Fatalf("member a's DELETE did not immediately follow its own comparison HEAD; sequence = %v", seq)
+	}
+	interleaved := false
+	for i := iPrevA + 1; i < iDel; i++ {
+		if strings.HasSuffix(seq[i], " b") {
+			interleaved = true
+		}
+	}
+	if !interleaved {
+		t.Fatalf("no member-b request interleaved between member a's HEAD and DELETE: %v", seq)
+	}
+	t.Logf("adjacency under interleaving: %v", seq)
 }
