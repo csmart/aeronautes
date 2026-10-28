@@ -30,6 +30,10 @@ const (
 	TypeDeletePrefix  Type = "delete_prefix"
 	TypeEmpty         Type = "empty_container"
 	TypeDeleteCont    Type = "delete_container"
+	// TypeDeleteSegments deletes a manifest with its segments as one job
+	// whose members are the reviewed manifest and segments (ADR 0095
+	// decision 8).
+	TypeDeleteSegments Type = "delete_segments"
 	// TypeDeleteSelected deletes the selected objects one by one with the
 	// verified per-name protocol and keeps its members as items (ADR 0093).
 	TypeDeleteSelected Type = "delete_selected"
@@ -168,9 +172,20 @@ func (s *Store) Create(ctx context.Context, j Job) (Job, error) {
 }
 
 // recordsItems says which job types keep the durable item ledger: the three
-// transfers, and the selected-set deletion whose members are its items.
+// transfers, and every deletion whose members are its items.
 func recordsItems(kind Type) bool {
-	return kind == TypeCopy || kind == TypeUpload || kind == TypeDownload || kind == TypeDeleteSelected
+	return kind == TypeCopy || kind == TypeUpload || kind == TypeDownload || kind.deletion()
+}
+
+// deletion says the job's members are deletion members (ADR 0093 decision 4,
+// ADR 0095 decisions 2 and 8): a Swift source alone, an issued mark before
+// the final HEAD and one deletion outcome each.
+func (t Type) deletion() bool {
+	switch t {
+	case TypeDeleteSelected, TypeDeletePrefix, TypeEmpty, TypeDeleteCont, TypeDeleteSegments:
+		return true
+	}
+	return false
 }
 
 // Transition moves a job to a new state, enforcing §46 legality, and

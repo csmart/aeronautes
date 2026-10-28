@@ -38,7 +38,7 @@ func (s *Store) FailInterrupted(ctx context.Context) (int64, error) {
 				switch job.version {
 				case 0:
 				case 1:
-					if job.kind == string(TypeDeleteSelected) {
+					if Type(job.kind).deletion() {
 						// A deletion member with no issued mark was never requested,
 						// and says so; one issued with no outcome keeps its silence,
 						// which the totals count as unresolved because its DELETE
@@ -57,7 +57,7 @@ func (s *Store) FailInterrupted(ctx context.Context) (int64, error) {
 						return err
 					}
 					counters.ObjectsFailed = totals.Failed
-					if job.kind == string(TypeDeleteSelected) {
+					if Type(job.kind).deletion() {
 						counters.ObjectsDeleted = totals.Deleted
 					}
 					encoded, err := json.Marshal(counters)

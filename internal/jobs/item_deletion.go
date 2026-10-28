@@ -24,7 +24,7 @@ func (s *Store) MarkIssued(ctx context.Context, jobID, key string) (err error) {
 		if err != nil {
 			return err
 		}
-		if kind != TypeDeleteSelected {
+		if !kind.deletion() {
 			return ErrInvalidItemRecord
 		}
 		item, err := scanItem(tx.QueryRowContext(ctx, selectItem+` WHERE job_id=? AND item_key=?`, jobID, key).Scan)
@@ -88,7 +88,7 @@ func (s *Store) RecordDeletion(ctx context.Context, jobID, key string, observati
 		if err != nil {
 			return err
 		}
-		if kind != TypeDeleteSelected {
+		if !kind.deletion() {
 			return ErrInvalidItemRecord
 		}
 		item, err := scanItem(tx.QueryRowContext(ctx, selectItem+` WHERE job_id=? AND item_key=?`, jobID, key).Scan)
