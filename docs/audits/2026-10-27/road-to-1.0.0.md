@@ -152,8 +152,8 @@ Shipped means offered by a build; gated means built and refused under ADR 0052; 
 | Transfer | progress, throughput and worker allocation | progress and throughput shipped, and the jobs drawer shows each job's recorded settings; the remaining UI-09 counters are owed | 0.4.0 |
 | Transfer | cancel | shipped | — |
 | Transfer | understand destination large-object placement | chunk sizing and collision preflight shipped; the copy preview names the data path behind the gate, the local transfer dialog does not | 0.4.0 |
-| Delete | delete ordinary objects | built behind the object-delete trial token under ADR 0092, awaiting the operator's return | 0.2.0 |
-| Delete | delete the selected objects as one job | built behind the object-delete trial token under ADR 0093, with multi-selection of the loaded rows, awaiting the operator's return | 0.2.0 |
+| Delete | delete ordinary objects | shipped; returned to the release on 29 October 2026 (ADR 0092, ADR 0052 decision 11) | 0.2.0 |
+| Delete | delete the selected objects as one job | shipped; returned on 29 October 2026 (ADR 0093, ADR 0052 decision 11), with multi-selection of the loaded rows | 0.2.0 |
 | Delete | remove markers | built behind the marker-manifest-delete trial token under ADR 0094, awaiting the operator's return | 0.2.0 |
 | Delete | recursively delete normal prefixes | gated; implemented behind the token (ADR 0095) | 0.2.x |
 | Delete | empty containers | gated; implemented behind the token (ADR 0095) | 0.2.x |
