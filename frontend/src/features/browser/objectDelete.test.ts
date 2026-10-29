@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
 import type { Api, ContainerSettingsDTO, MutationResultDTO, ObjectDetailDTO } from "../../lib/api";
-import { applyEnabledCapabilities, v1Offers } from "../../lib/v1.svelte";
+import { v1Offers } from "../../lib/v1.svelte";
 import { BrowserState } from "./browserState.svelte";
 import { newFakeApi } from "./fakeApi";
 import Inspector from "../inspector/Inspector.svelte";
@@ -64,15 +64,13 @@ async function dialog(name = "empty-object") {
 }
 
 describe("the inspector's delete affordance", () => {
-  it("offers Delete object for a plain object only while the capability is enabled, and never for a manifest", async () => {
+  it("offers Delete object for a plain object and never for a manifest", async () => {
     const f = await state();
     const component = mount(Inspector, { target: f.root, props: { browser: f.browser } });
     mounted.add(component);
     flushSync(); await settle();
-    expect(labels(f.root)).not.toContain("Delete object…");
-
-    applyEnabledCapabilities(["Object deletion"]);
-    flushSync(); await settle();
+    // Returned to the release on 29 October 2026 (ADR 0052 decision 11): the
+    // affordance ships on, so a plain object offers it with nothing switched on.
     expect(labels(f.root)).toContain("Delete object…");
 
     f.browser.select(f.browser.entries.findIndex((row) => row.name === "external-dlo"));
@@ -196,9 +194,11 @@ describe("the Delete key", () => {
     expect(api.deleteObject).not.toHaveBeenCalled();
   });
 
-  it("does nothing without the capability", async () => {
+  it("opens the delete dialog in an ordinary build with nothing switched on", async () => {
+    // Returned on 29 October 2026 (ADR 0052 decision 11): the Delete key
+    // reaches the dialog with no token, and still deletes nothing by itself.
     await screen([]);
-    expect(document.querySelector('[aria-label="Delete object"]')).toBeNull();
+    expect(document.querySelector('[aria-label="Delete object"]')).not.toBeNull();
     expect(api.deleteObject).not.toHaveBeenCalled();
   });
 

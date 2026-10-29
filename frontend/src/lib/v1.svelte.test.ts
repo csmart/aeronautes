@@ -10,6 +10,9 @@ it("keeps download, marker creation and upload and withholds deferred affordance
   // Returned to the release on 16 October 2026: upload is no longer behind
   // the switch, so the shipped default is on and no token can turn it off.
   expect(v1Offers.upload).toBe(true);
+  // Returned on 29 October 2026 (ADR 0052 decision 11): object deletion
+  // ships on as well, like upload before it.
+  expect(v1Offers.objectDelete).toBe(true);
   expect(v1Offers.copy).toBe(false);
   expect(v1Offers.bulkDelete).toBe(false);
   expect(v1Offers.markerDelete).toBe(false);
@@ -39,11 +42,12 @@ it("offers both halves of marker and manifest editing together", () => {
   expect(v1Offers.manifestDelete).toBe(true);
 });
 
-// "Upload" is in here on purpose: it names a capability the release has
-// RETURNED, so the backend cannot report it and the name must change nothing
-// rather than being treated as a switch for an affordance that is already on.
+// "Upload" and "Object deletion" are in here on purpose: each names a
+// capability the release has RETURNED, so the backend cannot report it and
+// the name must change nothing rather than being treated as a switch for an
+// affordance that is already on.
 it("changes nothing for a name it does not know, including Mirror and a returned capability", () => {
-  applyEnabledCapabilities(["Mirror", "mirror", "copz", "", "Copy ", "Upload"]);
+  applyEnabledCapabilities(["Mirror", "mirror", "copz", "", "Copy ", "Upload", "Object deletion"]);
   expect(v1Offers).toEqual(shipped);
 });
 
