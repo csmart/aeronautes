@@ -2,12 +2,12 @@
   "schemaVersion": 1,
   "reportSchemaVersion": 3,
   "identity": {
-    "commit": "a929eb7f21d4419b1417f94194ae602e022ed979",
+    "commit": "c721c64d377d235a17c6a2b40d75ea8e22b802ae",
     "go_version": "go1.27.3",
-    "run_id": "40589971369",
+    "run_id": "40787014308",
     "run_attempt": "1"
   },
-  "contractHash": "382d2db3b45cddd7",
+  "contractHash": "06d9e43fce961af9",
   "actions": [
     {
       "action": "AppService.About",
@@ -152,14 +152,13 @@
     },
     {
       "action": "DeleteService.DeleteManifestWithSegments",
-      "kind": "destructive",
+      "kind": "job",
       "required": [
         "happy",
         "refusal",
         "conflict",
-        "partial",
-        "retry",
-        "cancel"
+        "cancel",
+        "partial"
       ]
     },
     {
@@ -177,8 +176,7 @@
         "refusal",
         "conflict",
         "cancel",
-        "partial",
-        "retry"
+        "partial"
       ]
     },
     {
@@ -535,7 +533,23 @@
     },
     {
       "action": "DeleteService.DeleteManifestWithSegments",
+      "scenario": "conflict"
+    },
+    {
+      "action": "DeleteService.DeleteManifestWithSegments",
+      "scenario": "happy"
+    },
+    {
+      "action": "DeleteService.DeleteManifestWithSegments",
       "scenario": "refusal"
+    },
+    {
+      "action": "DeleteService.StartDelete",
+      "scenario": "cancel"
+    },
+    {
+      "action": "DeleteService.StartDelete",
+      "scenario": "conflict"
     },
     {
       "action": "DeleteService.StartDelete",
@@ -743,10 +757,10 @@
     }
   ],
   "evidence": {
-    "reference": "docs/experiments/2026-10-27-selected-delete-baseline.md",
-    "mainReportSHA256": "2389f75714992fe73024fc83f3f01b0995a680a486681a898ed3a213ecbcba72",
-    "mainReceiptSHA256": "193c14bb5e2fc5bd366d357e621c3c8e02ab850acb97e97ebd270fa5884d725a",
-    "heavyReportSHA256": "563d2bed40594dbf3d51dadf8e6a91e5e0e186bcf5fc95b2f18405719a66b0ac",
-    "heavyReceiptSHA256": "ec71e87f905175687f5e62512ab104dfa64c963b73b7c2929f2b44be625e2c3b"
+    "reference": "docs/experiments/2026-10-28-bulk-delete-baseline.md",
+    "mainReportSHA256": "06491785f5b170f1937c0e464506e12361a1698876eee700bff273465f9c8cab",
+    "mainReceiptSHA256": "422dc1485882bbdeaf8ed7f71f5777eaace9a54e81f7cbe8a4eb1d70f1262c88",
+    "heavyReportSHA256": "6b3f0a6b1427d8bb04259649a812272535df063902b9e548d5e0de14b906d003",
+    "heavyReceiptSHA256": "45e2e5cbd9123ca6b353df3cd25b16c66ffc0f38299944188c93d9d058b9bf0f"
   }
 }
