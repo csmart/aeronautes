@@ -102,6 +102,24 @@ inventory, with the two derivations agreeing.
     with the token `object-delete`, so a build offers it only while the operator trials it; returning
     it is the operator's word, recorded here when given, as the earlier returns were.
 
+11. **Operator decision, 29 October 2026.** Object deletion is a v1 capability: asked whether it was
+    safe to return now, the operator's word was "if object delete is safe now, then lift the band".
+    The evidence is [ADR 0092](0092-exact-object-deletion.md), accepted and proven on both fixtures,
+    whose delete is bound to the identity the operator saw by the fixed-point comparison of
+    [ADR 0085](0085-reobserved-destructive-identity.md) and leaves segments untouched, and
+    [ADR 0093](0093-selected-set-deletion.md), the selected objects deleted as one job by the same
+    verified per-name protocol; both were built behind the `object-delete` token and reconciled
+    through the [ADR 0069](0069-preserve-covered-scenario-cells.md) drift route.
+    `MutateService.DeleteObject` and `DeleteService.StartSelectedDelete` leave the deferred table and
+    join the kept set. The `object-delete` token leaves
+    [ADR 0082](0082-operator-enabled-unproven-capabilities.md) decision 3's list with them, because it
+    now names nothing the switch can admit; by decision 5 of that record an operator who still has it
+    in their environment is told it was ignored. It is not a claim the route is proven: a delete keeps
+    the window its identity comparison narrows and cannot close, exactly as upload does.
+    Prefix, container and bulk deletion, the manifest-with-segments job, marker and manifest deletion,
+    copy, benchmark and job re-run stay deferred, and Mirror stays refused under
+    [ADR 0020](0020-recovery-containment.md).
+
 ## What this does not establish
 
 It bounds what a v1 build offers.

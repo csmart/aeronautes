@@ -74,7 +74,10 @@ func TestEveryBridgeActionIsClassified(t *testing.T) {
 		// Upload was returned on 16 October 2026, once ADR 0085's comparison
 		// completed its path: its three actions are kept rather than deferred.
 		"TransferService.PickUploadFiles": true, "TransferService.PreflightUpload": true,
-		"TransferService.StartUpload":        true,
+		"TransferService.StartUpload": true,
+		// Object deletion was returned on 29 October 2026 (ADR 0052 decision
+		// 11): one object (ADR 0092) and the selected set (ADR 0093) are kept.
+		"MutateService.DeleteObject": true, "DeleteService.StartSelectedDelete": true,
 		"MutateService.UpdateContainer":      true,
 		"MutateService.UpdateObjectMetadata": true,
 		"SettingsService.Get":                true, "SettingsService.Set": true,
@@ -125,6 +128,10 @@ func TestKeptActionsAreNotRefused(t *testing.T) {
 		"TransferService.PickUploadFiles",
 		"TransferService.PreflightUpload",
 		"TransferService.StartUpload",
+		// Returned on 29 October 2026 (ADR 0052 decision 11); the behavioural
+		// half of the classification change above.
+		"MutateService.DeleteObject",
+		"DeleteService.StartSelectedDelete",
 		"TransferService.CancelJob",
 		"MutateService.UpdateObjectMetadata",
 		"MutateService.UpdateContainer",
@@ -189,10 +196,6 @@ func TestV1GateRefusesDeferredEntryPoints(t *testing.T) {
 			_, err := (&DeleteService{}).StartDelete(ctx, DeleteRequestDTO{})
 			return err
 		}},
-		{"DeleteService.StartSelectedDelete", "Object deletion", func() error {
-			_, err := (&DeleteService{}).StartSelectedDelete(ctx, SelectedDeleteRequestDTO{})
-			return err
-		}},
 		{"DeleteService.CheckSegmentOwnership", "Bulk delete", func() error {
 			_, err := (&DeleteService{}).CheckSegmentOwnership(ctx, SegmentsDeleteRequestDTO{})
 			return err
@@ -207,10 +210,6 @@ func TestV1GateRefusesDeferredEntryPoints(t *testing.T) {
 		}},
 		{"MutateService.DeleteManifest", "Marker and manifest deletion", func() error {
 			_, err := (&MutateService{}).DeleteManifest(ctx, ListingScopeDTO{}, "c", "n", "any")
-			return err
-		}},
-		{"MutateService.DeleteObject", "Object deletion", func() error {
-			_, err := (&MutateService{}).DeleteObject(ctx, ListingScopeDTO{}, "c", "n", "any")
 			return err
 		}},
 		{"BenchmarkService.StartBenchmark", "Benchmark", func() error {

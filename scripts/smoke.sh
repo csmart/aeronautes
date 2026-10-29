@@ -172,10 +172,11 @@ if grep -q "AERONAUTES_ENABLE" "$ART/switch-unset.log"; then
 fi
 switch_case copy "copy" \
   "AERONAUTES_ENABLE: offering unproven capabilities in this process: Copy"
-# The single-object deletion is born deferred (ADR 0092 decision 7); its
-# token names the capability the operator trials.
+# Object deletion was returned to the release on 29 October 2026 (ADR 0052
+# decision 11); its token no longer names a capability, so the switch says it
+# was ignored rather than silently accepting a token that now does nothing.
 switch_case object-delete "object-delete" \
-  "AERONAUTES_ENABLE: offering unproven capabilities in this process: Object deletion"
+  "AERONAUTES_ENABLE: ignored, not a capability: object-delete"
 # Marker and manifest deletion stay deferred until the operator returns them
 # (ADR 0094 decision 6); the capability says what its token admits.
 switch_case marker-manifest-delete "marker-manifest-delete" \

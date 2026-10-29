@@ -164,7 +164,7 @@ describe("the inspector summary", () => {
 });
 
 describe("the working list", () => {
-  it("toggles with Ctrl, extends with Shift, counts the selection and offers the delete only with the capability", async () => {
+  it("toggles with Ctrl, extends with Shift, counts the selection and offers the delete", async () => {
     const f = await state();
     const component = mount(WorkingList, { target: f.root, props: { browser: f.browser } });
     mounted.add(component);
@@ -181,15 +181,15 @@ describe("the working list", () => {
     expect(row("fake/").getAttribute("aria-selected")).toBe("false");
     expect(f.root.querySelector('[role="listbox"]')?.getAttribute("aria-multiselectable")).toBe("true");
     expect(f.root.querySelector(".pane-foot")?.textContent).toContain("2 selected");
-    expect(labels(f.root)).not.toContain("Delete selected…");
+    // Returned to the release on 29 October 2026 (ADR 0052 decision 11): the
+    // selected-set delete is offered by default, with nothing switched on.
+    expect(labels(f.root)).toContain("Delete selected…");
 
     // A Shift click extends from the last toggled row.
     row("fake/").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, shiftKey: true }));
     flushSync(); await settle();
     expect(names(f.browser.chosenRows)).toEqual(["external-dlo", "external-slo", "fake/"]);
 
-    applyEnabledCapabilities(["Object deletion"]);
-    flushSync(); await settle();
     expect(labels(f.root)).toContain("Delete selected…");
     click(button("Delete selected…", f.root));
     expect(f.browser.selectedDelete?.members.map((m) => m.name)).toEqual(["external-dlo", "external-slo"]);
@@ -453,12 +453,14 @@ describe("the Delete key and the selection shortcuts", () => {
     expect(api.startSelectedDelete).not.toHaveBeenCalled();
   });
 
-  it("does nothing without the capability", async () => {
+  it("opens the selected-set dialog in an ordinary build with nothing switched on", async () => {
+    // Returned on 29 October 2026 (ADR 0052 decision 11): the Delete key
+    // reaches the dialog with no token, and still deletes nothing by itself.
     const s = await screen([]);
     s.row("empty-object").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); flushSync(); await settle();
     s.row("external-dlo").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, ctrlKey: true })); flushSync(); await settle();
     s.listbox.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true })); flushSync(); await settle();
-    expect(document.querySelector('[aria-label="Delete selected objects"]')).toBeNull();
+    expect(document.querySelector('[aria-label="Delete selected objects"]')).not.toBeNull();
     expect(api.startSelectedDelete).not.toHaveBeenCalled();
   });
 

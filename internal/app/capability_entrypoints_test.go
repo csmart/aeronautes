@@ -43,11 +43,6 @@ func deferredEntryPoints(t *testing.T, h *harness) []deferredEntryPoint {
 			_, err := deleteSvc.StartDelete(t.Context(), DeleteRequestDTO{BookmarkID: h.bookmarkID(), Container: "fixtures"})
 			return err
 		}},
-		{"DeleteService.StartSelectedDelete", "Object deletion", func(t *testing.T, h *harness) error {
-			_, err := deleteSvc.StartSelectedDelete(t.Context(), SelectedDeleteRequestDTO{Scope: h.portrait(), Container: "fixtures",
-				Members: []ListingRowDTO{{Kind: "object", Name: "empty-object"}}, Confirm: "1"})
-			return err
-		}},
 		{"DeleteService.CheckSegmentOwnership", "Bulk delete", func(t *testing.T, h *harness) error {
 			_, err := deleteSvc.CheckSegmentOwnership(t.Context(), SegmentsDeleteRequestDTO{BookmarkID: h.bookmarkID(), Container: "fixtures", Name: "external-dlo"})
 			return err
@@ -70,12 +65,6 @@ func deferredEntryPoints(t *testing.T, h *harness) []deferredEntryPoint {
 			_, err := h.mutate.DeleteManifest(t.Context(), h.portrait(), "fixtures", "external-dlo", "any")
 			return err
 		}},
-		{"MutateService.DeleteObject", "Object deletion", func(t *testing.T, h *harness) error {
-			// Refused before the scope is checked and before any intent is
-			// recorded, so the portrait and the fingerprint cannot matter.
-			_, err := h.mutate.DeleteObject(t.Context(), h.portrait(), "fixtures", "normal/hello.txt", "any")
-			return err
-		}},
 		{"BenchmarkService.StartBenchmark", "Benchmark", func(t *testing.T, h *harness) error {
 			_, err := bench.StartBenchmark(t.Context(), BenchmarkRequestDTO{BookmarkID: h.bookmarkID(), Confirm: "x"})
 			return err
@@ -83,10 +72,12 @@ func deferredEntryPoints(t *testing.T, h *harness) []deferredEntryPoint {
 	}
 	// Every deferred action except StartMirror, which refuses on ADR 0020's
 	// terms and has its own case below. Upload's three actions are absent
-	// because the operator returned that capability on 16 October 2026 and
-	// the table no longer defers it. The count is asserted against the table
-	// so a future return cannot quietly shrink this list on its own, and so
-	// a newly deferred action cannot be left unexercised here.
+	// because the operator returned it on 16 October 2026, and object
+	// deletion's two (DeleteObject and StartSelectedDelete) because the
+	// operator returned it on 29 October 2026; the table no longer defers
+	// them. The count is asserted against the table so a future return
+	// cannot quietly shrink this list on its own, and so a newly deferred
+	// action cannot be left unexercised here.
 	if len(entries) != len(v1DeferredActions)-1 {
 		t.Fatalf("entry points = %d, want %d deferred actions minus StartMirror", len(entries), len(v1DeferredActions)-1)
 	}
