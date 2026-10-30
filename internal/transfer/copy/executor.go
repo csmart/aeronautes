@@ -264,13 +264,16 @@ const maxFailures = 200
 
 // Executor runs one job's transfer phase.
 type Executor struct {
-	cfg        Config
-	report     *Report
-	stage      string // staging prefix inside DstContainer
-	refusals   refusalLog
-	batch      []string
-	batchBytes int64
-	printed    map[rclone.SegmentPrefix]bool
+	cfg      Config
+	report   *Report
+	stage    string // staging prefix inside DstContainer
+	refusals refusalLog
+	// refusalsDeferred holds the staged route's refusals, appended at flush out
+	// of the name order the immediate route uses; verify merges both spools.
+	refusalsDeferred refusalLog
+	batch            []string
+	batchBytes       int64
+	printed          map[rclone.SegmentPrefix]bool
 	// recoveryBroken latches a failed captured-fact persist: staged
 	// bytes may keep landing, but nothing COMMITS past a boundary the
 	// sweep could not replay (§65.9 item 5 fail-closed rule).
@@ -354,7 +357,7 @@ func (e *Executor) Handle(ctx context.Context, item plan.Item) error {
 // cancellation mid-run.
 func (e *Executor) Finish(ctx context.Context) (*Report, error) {
 	err := e.flushBatch(ctx)
-	return e.report, errors.Join(err, e.stopped, e.recoveryBroken, e.refusals.broken)
+	return e.report, errors.Join(err, e.stopped, e.recoveryBroken, e.refusals.broken, e.refusalsDeferred.broken)
 }
 
 // Stop prevents a later Finish from dispatching buffered work after planning
@@ -692,7 +695,7 @@ func (e *Executor) nativeCopy(ctx context.Context, item plan.Item) (result execu
 	closeSource := closeOnce(body)
 	defer func() { result.addProblem(StageSourceRead, closeSource.Close()) }()
 	if src.FollowedSymlink {
-		return e.copySymlink(ctx, srcName, dstName, EffectNotAttempted)
+		return e.copySymlink(ctx, item.Name, srcName, dstName, EffectNotAttempted)
 	}
 	if src.ContentLength > maxSinglePut {
 		return failed(EffectNotAttempted, StageSourceRead, CodeUnsupported, "native-size", fmt.Errorf(
@@ -772,11 +775,11 @@ func (e *Executor) nativeCopy(ctx context.Context, item plan.Item) (result execu
 			// live object untouched.
 			found, identifiable := shownFrom(dstDetail)
 			if !identifiable {
-				return e.overwriteRefused(item.Name, "the destination could not be identified before replacing it: its HEAD stated no entity tag or no length")
+				return e.overwriteRefused(item.Name, EffectNotAttempted, "the destination could not be identified before replacing it: its HEAD stated no entity tag or no length")
 			}
 			if found != shown {
 				e.recordRefused(item.Name, shown, found)
-				return e.overwriteRefused(item.Name, fmt.Sprintf(
+				return e.overwriteRefused(item.Name, EffectNotAttempted, fmt.Sprintf(
 					"the destination no longer holds what was acknowledged: it was a %s of %d bytes with entity tag %s, and it is now a %s of %d bytes with entity tag %s",
 					shown.Class, shown.Length, shown.ETag, found.Class, found.Length, found.ETag))
 			}
@@ -894,7 +897,7 @@ func (e *Executor) refuseOverwrite(item plan.Item) error {
 // Close removes only this executor's private local refusal record.
 // It must run after verification, including on cancellation and failures.
 func (e *Executor) Close() error {
-	return errors.Join(e.refusals.close(), e.evidence.close())
+	return errors.Join(e.refusals.close(), e.refusalsDeferred.close(), e.evidence.close())
 }
 
 // Staged bytes must verify before becoming visible at a new live name.
@@ -919,7 +922,7 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 	if src.FollowedSymlink {
 		// The source is a Swift symlink: the staged bytes are the
 		// followed TARGET's — faithful §17.1 semantics copy the LINK.
-		result = e.copySymlink(ctx, srcName, dstName, EffectUnresolved)
+		result = e.copySymlink(ctx, item.Name, srcName, dstName, EffectUnresolved)
 		result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
 		return result
 	}
@@ -1015,13 +1018,13 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 		// a replacement proceed against an identity nobody established.
 		found, identifiable := shownFrom(dstDetail)
 		if !identifiable {
-			result = e.overwriteRefused(item.Name, "the destination could not be identified before replacing it: its HEAD stated no entity tag or no length")
+			result = e.overwriteRefused(item.Name, EffectUnresolved, "the destination could not be identified before replacing it: its HEAD stated no entity tag or no length")
 			result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
 			return result
 		}
 		if found != shown {
 			e.recordRefused(item.Name, shown, found)
-			result = e.overwriteRefused(item.Name, fmt.Sprintf(
+			result = e.overwriteRefused(item.Name, EffectUnresolved, fmt.Sprintf(
 				"the destination no longer holds what was acknowledged: it was a %s of %d bytes with entity tag %s, and it is now a %s of %d bytes with entity tag %s",
 				shown.Class, shown.Length, shown.ETag, found.Class, found.Length, found.ETag))
 			result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
@@ -1035,7 +1038,7 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 		// operator was not shown, so there is nothing to reclaim here.
 		if recErr := e.replacing(item.Name, observedFrom(dstDetail)); recErr != nil {
 			e.stop(recErr)
-			result = failed(EffectNotAttempted, StageRecording, CodeUnknown, "commit-replace-record", recErr)
+			result = failed(EffectUnresolved, StageRecording, CodeUnknown, "commit-replace-record", recErr)
 			result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
 			return result
 		}
@@ -1054,7 +1057,7 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 		// rather than left as a silent create. A recording failure stops it.
 		if recErr := e.replacing(item.Name, ObservedPredecessor{Present: false}); recErr != nil {
 			e.stop(recErr)
-			result = failed(EffectNotAttempted, StageRecording, CodeUnknown, "commit-absent-record", recErr)
+			result = failed(EffectUnresolved, StageRecording, CodeUnknown, "commit-absent-record", recErr)
 			result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
 			return result
 		}
@@ -1230,7 +1233,7 @@ func (e *Executor) verifyStagedSegments(ctx context.Context, staged *swiftcontro
 // user metadata land at the destination in one empty-body PUT; the
 // target itself moves (or not) as its own listed name. A dangling
 // destination link is legal Swift and reported honestly.
-func (e *Executor) copySymlink(ctx context.Context, srcName, dstName string, priorEffect Effect) executionResult {
+func (e *Executor) copySymlink(ctx context.Context, name, srcName, dstName string, priorEffect Effect) executionResult {
 	link, err := e.cfg.Source.SymlinkGet(ctx, e.cfg.SrcContainer, srcName)
 	if err != nil {
 		return failed(priorEffect, StageSourceRead, CodeUnknown, "symlink-head", err)
@@ -1238,18 +1241,62 @@ func (e *Executor) copySymlink(ctx context.Context, srcName, dstName string, pri
 	if link.SymlinkTarget == "" {
 		return failed(priorEffect, StageSourceRead, CodeIncomplete, "symlink-head", errors.New("followed a symlink but ?symlink=get shows no target"))
 	}
-	_, err = e.cfg.Dest.ObjectDetail(ctx, e.cfg.DstContainer, dstName)
+	dstDetail, err := e.cfg.Dest.ObjectDetail(ctx, e.cfg.DstContainer, dstName)
 	if err != nil && !swiftcontrol.IsNotFound(err) {
 		return failed(priorEffect, StageCommit, CodeUnknown, "symlink-rehead", err)
 	}
+	overwrite := false
 	if err == nil {
-		return conflict(priorEffect, nil, "destination appeared since planning")
+		// The symlink route's own pre-PUT destination read is the fixed point
+		// (ADR 0085): nothing prepares between it and the empty-body PUT below.
+		// A destination the operator did not acknowledge still conflicts; an
+		// acknowledged one is replaced only when its fresh reading still matches
+		// what they were shown, and refused with both identities otherwise.
+		shown, acknowledged, ackErr := e.acknowledged(name)
+		if ackErr != nil {
+			return failed(priorEffect, StageCommit, CodeUnknown, "symlink-ack", ackErr)
+		}
+		if !acknowledged {
+			return conflict(priorEffect, nil, "destination appeared since planning")
+		}
+		found, identifiable := shownFrom(dstDetail)
+		if !identifiable {
+			return e.overwriteRefused(name, priorEffect, "the destination could not be identified before replacing it: its HEAD stated no entity tag or no length")
+		}
+		if found != shown {
+			e.recordRefused(name, shown, found)
+			return e.overwriteRefused(name, priorEffect, fmt.Sprintf(
+				"the destination no longer holds what was acknowledged: it was a %s of %d bytes with entity tag %s, and it is now a %s of %d bytes with entity tag %s",
+				shown.Class, shown.Length, shown.ETag, found.Class, found.Length, found.ETag))
+		}
+		// Decision 6 retains the replaced object's segments, which sit on the
+		// destination account the operator was not shown, so there is nothing to
+		// reclaim here; record what is there before the PUT replaces it.
+		if recErr := e.replacing(name, observedFrom(dstDetail)); recErr != nil {
+			e.stop(recErr)
+			return failed(priorEffect, StageRecording, CodeUnknown, "symlink-replace-record", recErr)
+		}
+		overwrite = true
+	} else if _, acknowledged, ackErr := e.acknowledged(name); ackErr != nil {
+		return failed(priorEffect, StageCommit, CodeUnknown, "symlink-ack", ackErr)
+	} else if acknowledged {
+		// IsNotFound: the destination the operator acknowledged is gone by the
+		// fixed point. It publishes create-only below, but its observed absence
+		// is recorded first, as ADR 0085 keeps the observed predecessor including
+		// the absence this contract's race admits, rather than leaving a silent
+		// first write. A recording failure stops it.
+		if recErr := e.replacing(name, ObservedPredecessor{Present: false}); recErr != nil {
+			e.stop(recErr)
+			return failed(priorEffect, StageRecording, CodeUnknown, "symlink-absent-record", recErr)
+		}
 	}
 
 	// No leading slash: real Swift silently stores a plain object when
 	// the target carries one (measured on SAIO — the mock mimics it).
 	headers := map[string]string{"X-Symlink-Target": link.SymlinkTarget}
-	headers["If-None-Match"] = "*"
+	if !overwrite {
+		headers["If-None-Match"] = "*"
+	}
 	if link.SymlinkTargetAccount != "" {
 		headers["X-Symlink-Target-Account"] = link.SymlinkTargetAccount
 	}
@@ -1271,5 +1318,7 @@ func (e *Executor) copySymlink(ctx context.Context, srcName, dstName string, pri
 	if written.SymlinkTarget != link.SymlinkTarget {
 		return failed(EffectUnresolved, StageVerification, CodeUnverified, "symlink-verify", errors.New("destination link does not carry the target"))
 	}
-	return copied(0, "symlink")
+	result := copied(0, "symlink")
+	result.overwrote = overwrite
+	return result
 }

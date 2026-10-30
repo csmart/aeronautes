@@ -166,6 +166,28 @@ func (r *refusalReader) contains(name string) (bool, error) {
 	return false, nil
 }
 
+// refusalReaders merges the two ascending refusal spools — the immediate route's
+// and the staged route's, which is flushed out of name order — so a verify pass
+// in name order can exclude a name refused on either without holding the
+// namespace in memory.
+type refusalReaders struct{ a, b *refusalReader }
+
+func (r refusalReaders) contains(name string) (bool, error) {
+	inA, err := r.a.contains(name)
+	if err != nil {
+		return false, err
+	}
+	inB, err := r.b.contains(name)
+	if err != nil {
+		return false, err
+	}
+	return inA || inB, nil
+}
+
+func (r refusalReaders) finish() error {
+	return errors.Join(r.a.finish(), r.b.finish())
+}
+
 func (r *refusalReader) finish() error {
 	// Refused objects may disappear from fresh listings. Consume all
 	// original decisions so a missing tail cannot escape validation.

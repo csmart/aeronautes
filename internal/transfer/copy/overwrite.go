@@ -110,10 +110,19 @@ func (e *Executor) recordRefused(name string, acknowledged, found ShownObject) {
 // point and appends the private refusal record the report closes over. Unlike
 // the planning-time refusal it is a commit-stage conflict: the name changed
 // under an acknowledgement that was valid when it was given.
-func (e *Executor) overwriteRefused(name, detail string) executionResult {
-	result := executionResult{Observation: Observation{Result: ResultRefused, Effect: EffectNotAttempted,
+func (e *Executor) overwriteRefused(name string, effect Effect, detail string) executionResult {
+	result := executionResult{Observation: Observation{Result: ResultRefused, Effect: effect,
 		Diagnostic: ClassifyDiagnostic(StageCommit, CodeConflict, nil)}, detail: detail}
-	result.addProblem(StageRecording, e.refusals.append(name))
+	// A staged refusal is recorded at flush, out of the ascending name order the
+	// immediate (native) refusals append in, and keeps the unresolved effect the
+	// engine's staging bytes carry (ADR 0030). It goes to a separate ordered spool
+	// so the verify pass merges the two name-ordered streams rather than stopping
+	// on an out-of-order append, which is ADR 0085's continued execution.
+	spool := &e.refusals
+	if effect == EffectUnresolved {
+		spool = &e.refusalsDeferred
+	}
+	result.addProblem(StageRecording, spool.append(name))
 	return result
 }
 

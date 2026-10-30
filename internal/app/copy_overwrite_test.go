@@ -7,6 +7,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/csmart/aeronautes/internal/jobs"
+	"github.com/csmart/aeronautes/internal/swifttest"
 )
 
 // An acknowledged copy into a second account replaces the live destination,
@@ -487,5 +490,121 @@ func TestAcknowledgedCopyOverwriteReplacesNativeRoute(t *testing.T) {
 	snap := mirrorSnapshot(t, witness, "backup")
 	if obj := snap.Containers["backup"].Objects[name]; obj.Size != int64(len("new native content")) {
 		t.Fatalf("native destination was not replaced: %+v", obj)
+	}
+}
+
+// A copy whose plan mixes routes — a staged symlink and two rclone-unsafe plain
+// objects on the native route — refuses a member on EACH route at the fixed
+// point without aborting the unrelated member that still matches what the
+// operator acknowledged. The two routes record their refusals in separate
+// ascending spools, so a staged refusal flushed after a lexically-later native
+// refusal no longer trips the strictly-ascending append that used to fail the
+// whole job (db:944 finding 1). The staged refusal also keeps the engine's
+// unresolved effect end to end: the admitted-item validator accepts it (the job
+// would not complete otherwise), the totals count it, and the DTO the UI reads
+// reports it (db:944 finding 2).
+func TestCopyOverwriteMixedRouteRefusalsDoNotAbortAdmittedCopies(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+	source := h.transfer.connections.ActiveBookmarkID()
+	dest, mock := secondCluster(t, h)
+	h.mock.AddContainer("media", "standard")
+	mock.AddContainer("backup", "standard")
+
+	// "a-link" is a safe-named Swift symlink, so it routes staged and its refusal
+	// runs through the staged symlink commit. 'a' sorts before the native names.
+	seedObject(h.mock, "media", "target", "symlink target bytes", nil)
+	h.mock.PutObject("media", "a-link", swifttest.Object{
+		Bytes: 0, ContentType: "text/plain", SymlinkTarget: "media/target",
+	})
+	seedObject(mock, "backup", "a-link", "old link dest", nil)
+
+	// Two rclone-unsafe names (a newline) route native. "weird\nkeep" is left
+	// untouched so it replaces cleanly; "weird\nrefuse" is changed under the
+	// acknowledgement so the native route refuses it, appending its name to the
+	// immediate spool before the staged flush appends the smaller "a-link".
+	keep := "weird\nkeep"
+	refuseNative := "weird\nrefuse"
+	seedObject(h.mock, "media", keep, "new keep content", nil)
+	seedObject(mock, "backup", keep, "old keep dest", nil)
+	seedObject(h.mock, "media", refuseNative, "new refuse content", nil)
+	seedObject(mock, "backup", refuseNative, "old refuse dest", nil)
+	h.installEngine(nil)
+
+	// While the operator answers, a racing writer changes the two destinations
+	// that must refuse. The collision SET is unchanged — the same names still
+	// collide — so the whole-plan admission passes and each member reaches its
+	// own fixed-point comparison.
+	h.transfer.setOverwriteConfirmer(&recordingOverwriteConfirmer{yes: true, before: func() {
+		seedObject(mock, "backup", "a-link", "changed link dest", nil)
+		seedObject(mock, "backup", refuseNative, "changed refuse dest", nil)
+	}})
+
+	id, err := h.transfer.StartCopy(t.Context(), CopyRequestDTO{
+		SourceBookmarkID: source, SourceContainer: "media",
+		DestBookmarkID: dest, DestContainer: "backup",
+		AcknowledgeOverwrite: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, h, id)
+	// Refusals make the job partial, but partial is reached by COMPLETING the
+	// admitted members, not by aborting them: the pre-fix broken-spool latch
+	// failed the whole job instead. The symlink's target is a fourth member, a
+	// plain new name that also copies, so two members copy and two refuse.
+	if job.State != "partial" {
+		t.Fatalf("mixed-route refusals did not finish as a partial job: %+v", job)
+	}
+	if job.Counters.Overwrites != 1 || job.Counters.OverwritesRefused != 2 ||
+		job.Counters.ObjectsCopied != 2 || job.Counters.ObjectsVerified != 2 || job.Counters.ObjectsFailed != 0 {
+		t.Fatalf("mixed-route counters wrong: %+v", job.Counters)
+	}
+
+	// The unrelated admitted member actually holds its source content, and the
+	// two refused destinations were left exactly as the racer wrote them.
+	witness := mirrorWitness(t, mock, "test2:tester2", "testing2")
+	snap := mirrorSnapshot(t, witness, "backup")
+	if obj := snap.Containers["backup"].Objects[keep]; obj.Size != int64(len("new keep content")) {
+		t.Fatalf("the unrelated admitted member was not replaced with its source content: %+v", obj)
+	}
+	if obj := snap.Containers["backup"].Objects["a-link"]; obj.Size != int64(len("changed link dest")) {
+		t.Errorf("a refused staged symlink clobbered its destination: %+v", obj)
+	}
+	if obj := snap.Containers["backup"].Objects[refuseNative]; obj.Size != int64(len("changed refuse dest")) {
+		t.Errorf("a refused native overwrite clobbered its destination: %+v", obj)
+	}
+
+	// Durable per-item outcomes are coherent: the completed member copied and
+	// verified; the staged symlink refusal carries the unresolved effect; the
+	// native refusal attempted nothing.
+	items := itemsOf(t, h, id)
+	if rec := items[keep]; rec.Execution == nil || rec.Execution.Result != jobs.ItemCopied ||
+		rec.Verification == nil || rec.Verification.Result != jobs.ItemVerified {
+		t.Fatalf("the completed member's durable outcome is wrong: %+v", rec.Execution)
+	}
+	if rec := items["a-link"]; rec.Execution == nil || rec.Execution.Result != jobs.ItemRefused ||
+		rec.Execution.Effect != jobs.EffectUnresolved {
+		t.Fatalf("the staged symlink refusal did not record refused+unresolved: %+v", rec.Execution)
+	}
+	if rec := items[refuseNative]; rec.Execution == nil || rec.Execution.Result != jobs.ItemRefused ||
+		rec.Execution.Effect != jobs.EffectNotAttempted {
+		t.Fatalf("the native refusal did not record refused+not_attempted: %+v", rec.Execution)
+	}
+
+	// The DTO the UI reads reports the same effect, so the unresolved-effects
+	// surface keys off a real value rather than a flattened not_attempted.
+	page, err := h.jobsSvc.Items(t.Context(), source, id, "", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	effects := map[string]string{}
+	for _, it := range page.Items {
+		if it.Execution != nil {
+			effects[it.Key] = it.Execution.Effect
+		}
+	}
+	if effects["a-link"] != string(jobs.EffectUnresolved) {
+		t.Errorf("the staged symlink refusal effect did not reach the DTO: %q", effects["a-link"])
 	}
 }
