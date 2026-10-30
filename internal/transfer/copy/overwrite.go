@@ -118,17 +118,19 @@ func (e *Executor) overwriteRefused(name, detail string) executionResult {
 }
 
 // routeOverwrite dispatches an item whose live destination the operator
-// acknowledged replacing. Only the staged route carries the fixed-point
-// comparison so far; an unsafe-named object copies through the native route,
-// which still publishes create-only, so an acknowledged overwrite of one keeps
-// refusing until that route learns to compare. An item that is not acknowledged
-// refuses exactly as it did before any acknowledgement existed.
+// acknowledged replacing. Both the staged and the native route now carry the
+// fixed-point comparison, each immediately before its own publishing request,
+// so an acknowledged overwrite routes through runNew exactly as a first copy
+// does and the route it lands on compares and replaces. An item that is not
+// acknowledged refuses exactly as it did before any acknowledgement existed: a
+// build with no acknowledgement surface wired reaches this with ok false for
+// every item and replaces nothing.
 func (e *Executor) routeOverwrite(ctx context.Context, item plan.Item) error {
 	_, ok, err := e.acknowledged(item.Name)
 	if err != nil {
 		return e.observe(item.Name, failed(EffectNotAttempted, StagePlanning, CodeUnknown, "ack-read", err))
 	}
-	if !ok || item.Route == plan.RouteNative {
+	if !ok {
 		return e.refuseOverwrite(item)
 	}
 	return e.runNew(ctx, item)
