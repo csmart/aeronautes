@@ -344,7 +344,7 @@ func (e *Executor) Handle(ctx context.Context, item plan.Item) error {
 	case plan.VerdictNew:
 		return e.runNew(ctx, item)
 	case plan.VerdictChanged:
-		return e.refuseOverwrite(item)
+		return e.routeOverwrite(ctx, item)
 	}
 	return fmt.Errorf("unhandled verdict %q", item.Verdict)
 }
@@ -399,7 +399,11 @@ func (e *Executor) runUnknown(ctx context.Context, item plan.Item) error {
 	if skippableEqual(src, dst) {
 		return e.observe(item.Name, executionResult{Observation: Observation{Result: ResultSame, Effect: EffectNotAttempted}})
 	}
-	return e.refuseOverwrite(item)
+	// The destination is live and not provably equal. An acknowledged overwrite
+	// routes on to a replacement with its own fixed-point comparison; anything
+	// else refuses, exactly as it did before overwrite existed.
+	item.SourceBytes = src.ContentLength
+	return e.routeOverwrite(ctx, item)
 }
 
 // provenEqual implements the executor-grade §28.4 test over two
@@ -901,18 +905,66 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 		}
 	}
 
-	_, err = e.cfg.Dest.ObjectDetail(ctx, e.cfg.DstContainer, dstName)
+	dstDetail, err := e.cfg.Dest.ObjectDetail(ctx, e.cfg.DstContainer, dstName)
 	if err != nil && !swiftcontrol.IsNotFound(err) {
 		return failed(EffectUnresolved, StageCommit, CodeUnknown, "commit-rehead", err)
 	}
+	overwrite := false
 	if err == nil {
-		result = conflict(EffectUnresolved, nil, "destination appeared since planning")
-		result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
-		return result
+		// The destination is live at the fixed point, the one ADR 0085 keeps the
+		// comparison at: after all preparation and immediately before the
+		// publishing request. A replacement may land here only when the operator
+		// acknowledged this name AND a fresh reading still matches what they were
+		// shown. Everything else is a destination that appeared, or changed,
+		// since planning and conflicts rather than clobbers.
+		shown, acknowledged, ackErr := e.acknowledged(item.Name)
+		if ackErr != nil {
+			result = failed(EffectUnresolved, StageCommit, CodeUnknown, "commit-ack", ackErr)
+			result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
+			return result
+		}
+		if !acknowledged {
+			result = conflict(EffectUnresolved, nil, "destination appeared since planning")
+			result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
+			return result
+		}
+		// The fresh read answers the same completeness rule as the capture: a
+		// HEAD stating no entity tag or no length identifies nothing, and a zero
+		// compared against a genuine empty object's baseline would otherwise let
+		// a replacement proceed against an identity nobody established.
+		found, identifiable := shownFrom(dstDetail)
+		if !identifiable {
+			result = e.overwriteRefused(item.Name, "the destination could not be identified before replacing it: its HEAD stated no entity tag or no length")
+			result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
+			return result
+		}
+		if found != shown {
+			e.recordRefused(item.Name, shown, found)
+			result = e.overwriteRefused(item.Name, fmt.Sprintf(
+				"the destination no longer holds what was acknowledged: it was a %s of %d bytes with entity tag %s, and it is now a %s of %d bytes with entity tag %s",
+				shown.Class, shown.Length, shown.ETag, found.Class, found.Length, found.ETag))
+			result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
+			return result
+		}
+		// The reading still matches what was acknowledged. Record what is about
+		// to be replaced before the publication destroys the ability to read it,
+		// then publish unconditionally: the create conditional would reject the
+		// very name the operator asked to replace. Decision 6 retains the
+		// predecessor's segments, which sit on the destination account the
+		// operator was not shown, so there is nothing to reclaim here.
+		if recErr := e.replacing(item.Name, observedFrom(dstDetail)); recErr != nil {
+			e.stop(recErr)
+			result = failed(EffectNotAttempted, StageRecording, CodeUnknown, "commit-replace-record", recErr)
+			result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
+			return result
+		}
+		overwrite = true
 	}
 
 	headers := metadataHeaders(src, "X-Object-Meta-")
-	headers["If-None-Match"] = "*"
+	if !overwrite {
+		headers["If-None-Match"] = "*"
+	}
 	headers["X-Object-Meta-"+fingerprintMetaKey] = fingerprint(src.ContentLength, src.ETag)
 	if staged.Class == swiftcontrol.ClassDLO {
 		// The durable COMMITTING intent rides ahead of the live PUT: it
@@ -960,18 +1012,20 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 			defer func() { result.addProblem(StageRecording, err) }()
 		}
 	} else {
-		// Planned-new plain commit: server-side COPY cannot be
-		// destination-conditioned (Swift evaluates If-None-Match on the
-		// COPY SOURCE — measured, 304), so a concurrent writer between
-		// the re-HEAD and an unconditional COPY would be overwritten
-		// (review R-01). Stream the staged bytes through a CONDITIONAL
-		// live PUT instead: costs one dest-internal GET+PUT, but a 412
-		// means the racer won and we CONFLICT rather than clobber.
+		// Plain commit: server-side COPY cannot be destination-conditioned
+		// (Swift evaluates If-None-Match on the COPY SOURCE — measured, 304),
+		// so a concurrent writer between the re-HEAD and an unconditional COPY
+		// would be overwritten (review R-01). Stream the staged bytes through a
+		// live PUT instead, carrying whatever condition headers already holds:
+		// create-only for a planned-new name, so a 412 means the racer won and
+		// we CONFLICT rather than clobber; and, for an acknowledged overwrite
+		// that matched at the fixed point, unconditional, because the create
+		// conditional would reject the very name the operator asked to replace.
 		body, _, err := e.cfg.Dest.OpenObject(ctx, e.cfg.DstContainer, stagedName)
 		if err != nil {
 			return failed(EffectUnresolved, StageStaging, CodeUnknown, "commit-open-staged", err)
 		}
-		putHeaders := map[string]string{"If-None-Match": "*"}
+		putHeaders := map[string]string{}
 		for k, v := range headers {
 			putHeaders[k] = v
 		}
