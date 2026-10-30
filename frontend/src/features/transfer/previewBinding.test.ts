@@ -410,7 +410,8 @@ it("Copy submits the complete previewed settings and both scopes", async () => {
   const expected = {
     sourceBookmarkId: "source", sourceContainer: "media", sourcePrefix: "selected/",
     destBookmarkId: "destination", destContainer: "elsewhere", destPrefix: "elsewhere/",
-    profile: "custom", settings: { chunkSize: "2Mi", transfers: 2, checkers: 0, tpsLimit: 0, bwLimit: "1M", bufferSize: "" },
+    profile: "custom", acknowledgeOverwrite: false,
+    settings: { chunkSize: "2Mi", transfers: 2, checkers: 0, tpsLimit: 0, bwLimit: "1M", bufferSize: "" },
   };
   expect(f.api.planCopy).toHaveBeenCalledExactlyOnceWith(expected);
   expect(f.api.startCopy).toHaveBeenCalledExactlyOnceWith(expected);

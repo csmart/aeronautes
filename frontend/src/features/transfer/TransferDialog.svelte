@@ -52,6 +52,11 @@
       destContainer,
       destPrefix,
       profile,
+      // Copy does not yet offer the overwrite acknowledgement, and copy itself
+      // is still a deferred capability, so every request is unacknowledged and
+      // the backend refuses each overwrite. The acknowledgement flow (mirroring
+      // the upload dialog's) arrives with the frontend slice that offers it.
+      acknowledgeOverwrite: false,
       settings: {
         chunkSize: chunkSize.trim(),
         transfers: Number.parseInt(transfers, 10) || 0,
