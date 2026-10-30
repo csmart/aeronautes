@@ -1051,6 +1051,7 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 	}
 
 	result = copied(src.ContentLength, "stage-and-commit")
+	result.overwrote = overwrite
 	if e.recoveryBroken == nil {
 		result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
 	}

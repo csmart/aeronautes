@@ -85,7 +85,7 @@ func TestAcknowledgedStagedOverwriteReplacesMatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Copied != 1 || report.OverwritesRefused != 0 || len(report.Failures) != 0 || len(report.Conflicts) != 0 {
+	if report.Copied != 1 || report.Overwrites != 1 || report.OverwritesRefused != 0 || len(report.Failures) != 0 || len(report.Conflicts) != 0 {
 		t.Fatalf("acknowledged overwrite did not replace cleanly: %+v", report)
 	}
 	if d := headDst(t, w, "doc"); d.ContentLength != int64(len(source)) || d.ETag != etagOf(source) {
@@ -250,7 +250,7 @@ func TestAcknowledgedOverwriteRetainsReplacedSegments(t *testing.T) {
 	report, err := e.Run(context.Background(), []plan.Item{
 		{Name: "doc", Verdict: plan.VerdictUnknown, Route: plan.RouteRclone, SourceBytes: int64(len(source))},
 	})
-	if err != nil || report.Copied != 1 || report.OverwritesRefused != 0 {
+	if err != nil || report.Copied != 1 || report.Overwrites != 1 || report.OverwritesRefused != 0 {
 		t.Fatalf("DLO overwrite did not replace: %+v, %v", report, err)
 	}
 	if _, err := w.dst.ObjectDetail(context.Background(), "backup_segments", "doc/0001"); err != nil {
