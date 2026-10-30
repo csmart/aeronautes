@@ -104,10 +104,17 @@ type OverwriteConfirmation struct {
 	// own field so that shortening a long label can never remove the one
 	// part of the statement that tells two accounts apart (ADR 0073's
 	// counterexample). A caller rendering one line should state both.
-	Bookmark  string
-	Account   string
-	Container string
-	Prefix    string
+	Bookmark string
+	Account  string
+	// SourceBookmark and SourceAccount name where a copy's bytes come FROM,
+	// so a replacement that reads one account and writes another states both
+	// (ADR 0073's counterexample, ADR 0087). They are empty for an upload,
+	// whose bytes come from the local disk and whose single account is the one
+	// above; when SourceAccount is set the question names the two accounts.
+	SourceBookmark string
+	SourceAccount  string
+	Container      string
+	Prefix         string
 	// Names are the live object names this job would replace, in the
 	// order the preflight reported them.
 	Names []string

@@ -473,6 +473,16 @@ export interface CopyRequestDTO {
      * (§38); with Profile "custom" they are the whole configuration.
      */
     "settings": TransferSettingsDTO;
+
+    /**
+     * AcknowledgeOverwrite says the operator asked for a copy that may
+     * replace existing destinations (ADR 0087). It is an accident guard, not
+     * the authorisation: the backend still raises the one native question
+     * that names both accounts and captures the destination baseline the
+     * ADR 0085 comparison rests on, and an unacknowledged copy behaves
+     * exactly as it does today (ADR 0081 decision 1's shape).
+     */
+    "acknowledgeOverwrite": boolean;
 }
 
 /**
@@ -951,6 +961,16 @@ export interface MirrorRequestDTO {
      * (§38); with Profile "custom" they are the whole configuration.
      */
     "settings": TransferSettingsDTO;
+
+    /**
+     * AcknowledgeOverwrite says the operator asked for a copy that may
+     * replace existing destinations (ADR 0087). It is an accident guard, not
+     * the authorisation: the backend still raises the one native question
+     * that names both accounts and captures the destination baseline the
+     * ADR 0085 comparison rests on, and an unacknowledged copy behaves
+     * exactly as it does today (ADR 0081 decision 1's shape).
+     */
+    "acknowledgeOverwrite": boolean;
     "confirm": string;
 }
 

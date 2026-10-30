@@ -50,7 +50,7 @@ func TestCopyItemAdapterRejectsInvalidIdentityBeforeWrite(t *testing.T) {
 			}); err != nil {
 				t.Fatal(err)
 			}
-			err = h.transfer.copyItemRecorder(t.Context(), job.ID, req).Admit(admission)
+			err = h.transfer.copyItemRecorder(t.Context(), job.ID, req, nil).Admit(admission)
 			if err == nil || store.Available() != nil {
 				t.Fatalf("invalid representation reached persistence or was accepted: %v latch=%v", err, store.Available())
 			}
@@ -139,7 +139,7 @@ func TestCopyItemRecordingCost(t *testing.T) {
 		}
 	}
 	req := CopyRequestDTO{SourceBookmarkID: "source", SourceContainer: "source", DestBookmarkID: "dest", DestContainer: "dest"}
-	recorder := h.transfer.copyItemRecorder(t.Context(), job.ID, req)
+	recorder := h.transfer.copyItemRecorder(t.Context(), job.ID, req, nil)
 	const count = 201
 	started := time.Now()
 	for i := range count {
@@ -255,7 +255,7 @@ func TestCopyItemAdapterPreservesExactIdentities(t *testing.T) {
 				t.Fatal(err)
 			}
 			req := CopyRequestDTO{SourceBookmarkID: "source", SourceContainer: "source-c", SourcePrefix: "source/", DestBookmarkID: "dest", DestContainer: "dest-c", DestPrefix: "dest/"}
-			recorder := h.transfer.copyItemRecorder(t.Context(), job.ID, req)
+			recorder := h.transfer.copyItemRecorder(t.Context(), job.ID, req, nil)
 			keys := []string{"", "a\nname", "zero\x00name", "snow☃", "replacement�", "a%2Fb"}
 			for _, key := range keys {
 				if verdict != "comparison_only" {
