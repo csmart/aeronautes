@@ -612,6 +612,10 @@ func (s *TransferService) finishCopy(ctx context.Context, jobID string, req Copy
 	}
 }
 
+// errCollisionSetChanged refuses an acknowledged copy whose executable collision
+// set no longer matches the one the operator confirmed (ADR 0087 decision 4).
+var errCollisionSetChanged = errors.New("the set of destinations to replace changed after it was confirmed; nothing was replaced, confirm the copy again")
+
 // runCopy is the job goroutine: Planning → Running (single-pass plan
 // streamed straight into the executor — the plan is advisory either way,
 // §15.3, so the planned counters grow live rather than costing a second
@@ -733,10 +737,63 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 		return executor.Handle(ctx, item)
 	}
 
-	_, planErr := plan.Copy(ctx,
-		src.Objects(ctx, req.SourceContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.SourcePrefix}),
-		dst.Objects(ctx, req.DestContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.DestPrefix}),
-		req.SourcePrefix, req.DestPrefix, planned)
+	// An acknowledged copy prepares ONE authoritative plan and executes that same
+	// plan (ADR 0087 decision 4). A single enumeration spools the plan to disk and
+	// collects its collision set; the whole start is refused, before any item is
+	// dispatched, if that set differs from what the operator confirmed — a name
+	// added, or a confirmed one now gone or without a source. The spooled plan is
+	// then replayed through the executor, so a member whose source disappears
+	// after the reading is attempted and recorded rather than dropped by a second
+	// enumeration, and each name still takes its own fixed-point comparison and
+	// conditional creation. Spooling keeps the admitted plan without holding the
+	// namespace in memory (K-PERF-001); the collision set is bounded by what the
+	// operator was shown. The listing error, a cancellation included, flows to the
+	// terminal handling below so it keeps its kind. An unacknowledged copy streams,
+	// with no set to hold and nothing to compare.
+	var planErr error
+	if req.AcknowledgeOverwrite {
+		spool := &copyPlanSpool{}
+		defer func() {
+			if err := spool.close(); err != nil {
+				log.Printf("job %s close copy plan spool: %v", jobID, err)
+			}
+		}()
+		seen := map[string]struct{}{}
+		_, planErr = plan.Copy(ctx,
+			src.Objects(ctx, req.SourceContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.SourcePrefix}),
+			dst.Objects(ctx, req.DestContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.DestPrefix}),
+			req.SourcePrefix, req.DestPrefix, func(item plan.Item) error {
+				// A destination-only name is ignored by the executor, so spooling
+				// it would only grow the spool without changing execution.
+				if item.Verdict == plan.VerdictDestOnly {
+					return nil
+				}
+				if item.Verdict == plan.VerdictChanged || item.Verdict == plan.VerdictUnknown {
+					// A collision the operator did not confirm means the set changed
+					// since the confirmation. Refuse at once, before the newly
+					// collided names are retained, so the tracking map stays bounded
+					// by the confirmed set rather than the namespace (K-PERF-001).
+					if _, ok := acknowledged[item.Name]; !ok {
+						return errCollisionSetChanged
+					}
+					seen[item.Name] = struct{}{}
+				}
+				return spool.add(item)
+			})
+		// A confirmed collision never seen is gone or has no source: the set
+		// shrank, so the whole start is still refused.
+		if planErr == nil && !sameCollisionSet(acknowledged, seen) {
+			planErr = errCollisionSetChanged
+		}
+		if planErr == nil {
+			planErr = spool.replay(planned)
+		}
+	} else {
+		_, planErr = plan.Copy(ctx,
+			src.Objects(ctx, req.SourceContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.SourcePrefix}),
+			dst.Objects(ctx, req.DestContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.DestPrefix}),
+			req.SourcePrefix, req.DestPrefix, planned)
+	}
 	executor.Stop(planErr)
 	report, finishErr := executor.Finish(ctx)
 	planErr = finishErr
