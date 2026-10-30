@@ -10,6 +10,24 @@ import (
 	"github.com/csmart/aeronautes/internal/transfer/plan"
 )
 
+// sameCollisionSet reports whether the collision names enumerated at execution
+// are exactly the set the operator confirmed replacing. A name in one and not
+// the other — a collision that appeared, or a confirmed one that is no longer
+// live or no longer has a source — means the plan changed since the
+// confirmation, which ADR 0087 decision 4 refuses as a whole rather than a
+// member at a time.
+func sameCollisionSet(confirmed map[string]jobs.ItemBaseline, executable map[string]struct{}) bool {
+	if len(confirmed) != len(executable) {
+		return false
+	}
+	for name := range confirmed {
+		if _, ok := executable[name]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
 func copyItemIdentity(req CopyRequestDTO, key string) jobs.ItemIdentity {
 	return jobs.ItemIdentity{Key: key,
 		Source: jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: req.SourceBookmarkID,
