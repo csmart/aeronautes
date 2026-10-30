@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -381,16 +382,14 @@ func TestPrefixSweepCancelDuringSweep(t *testing.T) {
 		seedObject(h.mock, "sweep", "scope/obj-"+padded(i), "data", nil)
 	}
 	ready := make(chan string, 1)
-	cancelled := false
-	var once sync.Once
+	// The mock serves requests from concurrent goroutines, so this one-shot guard
+	// must be atomic; CompareAndSwap both wins the race and fires the cancel once.
+	var cancelled atomic.Bool
 	h.mock.AfterRequest = func(method, path string) {
-		if method == "DELETE" && strings.Contains(path, "/sweep/scope/") && !cancelled {
-			cancelled = true
-			once.Do(func() {
-				if err := h.transfer.CancelJob(ctx, <-ready); err != nil {
-					t.Error(err)
-				}
-			})
+		if method == "DELETE" && strings.Contains(path, "/sweep/scope/") && cancelled.CompareAndSwap(false, true) {
+			if err := h.transfer.CancelJob(ctx, <-ready); err != nil {
+				t.Error(err)
+			}
 		}
 	}
 	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Prefix: "scope/", Mode: ModePrefix, Confirm: "sweep"})
