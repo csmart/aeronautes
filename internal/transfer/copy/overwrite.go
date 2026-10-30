@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	"github.com/csmart/aeronautes/internal/transfer/plan"
@@ -25,15 +26,18 @@ type ShownObject struct {
 // publishing over it (ADR 0087 decision 6). Present is false when the name held
 // nothing at that moment although it was live when the acknowledgement was
 // taken, which is the race this contract admits, stated rather than inferred
-// from empty facts. Unlike upload's predecessor it carries no fragment
-// inventory: copy retains the replaced object's segments rather than reclaiming
-// them (decision 6), because they live on the destination account, which the
-// operator was not shown, so nothing here is this operation's to remove.
+// from empty facts. Its entity tag, length and last-modified are the observed
+// facts ADR 0081 decision 7 keeps with the item. Unlike upload's predecessor it
+// carries no fragment inventory: copy retains the replaced object's segments
+// rather than reclaiming them (decision 6), because they live on the destination
+// account, which the operator was not shown, so nothing here is this operation's
+// to remove.
 type ObservedPredecessor struct {
-	Present bool
-	Class   string
-	Length  int64
-	ETag    string
+	Present      bool
+	Class        string
+	Length       int64
+	ETag         string
+	LastModified time.Time
 }
 
 // shownFrom reads a HEAD into the identity the fixed-point comparison needs, or
@@ -59,7 +63,8 @@ func shownFrom(detail *swiftcontrol.ObjectDetail) (ShownObject, bool) {
 // kept is that something was there, not that it could be named.
 func observedFrom(detail *swiftcontrol.ObjectDetail) ObservedPredecessor {
 	return ObservedPredecessor{Present: true, Class: string(detail.Class),
-		Length: detail.ContentLength, ETag: strings.Trim(detail.ETag, `"`)}
+		Length: detail.ContentLength, ETag: strings.Trim(detail.ETag, `"`),
+		LastModified: detail.LastModified}
 }
 
 // acknowledged asks what the operator was shown at a name, so a replacement can

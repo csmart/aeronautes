@@ -84,12 +84,26 @@ func (s *TransferService) copyItemRecorder(ctx context.Context, jobID string, re
 			return transfercopy.ShownObject{Class: baseline.Class, Length: baseline.Length, ETag: baseline.ETag}, true, nil
 		},
 		Replacing: func(key string, observed transfercopy.ObservedPredecessor) error {
-			// What was live immediately before the replacement, for the trail
-			// ADR 0087 decision 6 requires. It says "observed" rather than
-			// "replaced" because this contract admits a racing writer, so the
-			// object actually replaced may not be the one this reading saw.
-			// Copy retains the predecessor's segments, so there is no
-			// predecessor-for-reclaim record, only this audit line.
+			// What was live immediately before the replacement, kept WITH THE
+			// item (ADR 0081 decision 7, ADR 0087 decision 6): the publication
+			// destroys the ability to read it again, and the audit line below is
+			// pruned on its own age and event-cap policy, so the durable record
+			// is the item's. It is "observed" rather than "replaced" because this
+			// contract admits a racing writer, so the object actually replaced
+			// may not be the one this reading saw; copy retains its segments, so
+			// the record names no fragments to reclaim. A record that cannot be
+			// saved stops the replacement rather than letting it land unrecorded.
+			identity := copyItemIdentity(req, key)
+			record := copyItemPredecessor(observed)
+			if err := identity.Validate(); err != nil {
+				return err
+			}
+			if err := record.Validate(); err != nil {
+				return err
+			}
+			if err := s.jobs.RecordPredecessor(ctx, jobID, identity, record); err != nil {
+				return err
+			}
 			return s.runner.audit.Append(ctx, audit.Event{
 				BookmarkID: req.DestBookmarkID,
 				Operation:  "transfer.copy.replace",
@@ -99,10 +113,32 @@ func (s *TransferService) copyItemRecorder(ctx context.Context, jobID string, re
 			})
 		},
 		Refused: func(key string, acknowledged, found transfercopy.ShownObject) error {
-			// Both identities, durably, for this one name. The name is kept in
-			// the event's resource field and out of the summary, which the
-			// summary filter does not inspect, so a valid object cannot make
-			// its own refusal unrecordable through a crafted name.
+			// Both identities, durably, for this one name. The acknowledged
+			// baseline already rides with the item; the found identity is kept
+			// with it too, as the observation seen at the name when the
+			// comparison refused — an observation record, not reclamation
+			// authority, and it does not change the comparison tuple. Audit
+			// alone is pruned on its own policy, so a refusal recorded only
+			// there loses which object blocked the replacement. It carries no
+			// fragments and no last-modified: the comparison compares class,
+			// length and entity tag, which is all a ShownObject holds.
+			//
+			// The name is kept in the event's resource field and out of the
+			// summary, which the summary filter does not inspect, so a valid
+			// object cannot make its own refusal unrecordable through a crafted
+			// name.
+			identity := copyItemIdentity(req, key)
+			record := jobs.ItemPredecessor{Present: true, ETag: found.ETag,
+				Length: found.Length, Class: found.Class}
+			if err := identity.Validate(); err != nil {
+				return err
+			}
+			if err := record.Validate(); err != nil {
+				return err
+			}
+			if err := s.jobs.RecordPredecessor(ctx, jobID, identity, record); err != nil {
+				return err
+			}
 			return s.runner.audit.Append(ctx, audit.Event{
 				BookmarkID: req.DestBookmarkID,
 				Operation:  "transfer.copy.refused",
@@ -113,6 +149,19 @@ func (s *TransferService) copyItemRecorder(ctx context.Context, jobID string, re
 			})
 		},
 	}
+}
+
+// copyItemPredecessor is the durable form of what the commit observed at a
+// name. Copy retains a replaced manifest's segments (ADR 0087 decision 6), so
+// unlike the upload form it names no fragments; it keeps the entity tag, length
+// and last-modified ADR 0081 decision 7 requires. An absent observation is kept
+// as the absence the race admits rather than an empty identity.
+func copyItemPredecessor(observed transfercopy.ObservedPredecessor) jobs.ItemPredecessor {
+	if !observed.Present {
+		return jobs.ItemPredecessor{}
+	}
+	return jobs.ItemPredecessor{Present: true, ETag: observed.ETag, Length: observed.Length,
+		LastModified: observed.LastModified, Class: observed.Class}
 }
 
 // copyObservedPredecessorSummary states what was live before a replacement,
