@@ -959,6 +959,24 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 			return result
 		}
 		overwrite = true
+	} else if _, acknowledged, ackErr := e.acknowledged(item.Name); ackErr != nil {
+		// err is IsNotFound here: the destination is gone. A failure to even
+		// ask whether this name was acknowledged stops rather than guesses.
+		result = failed(EffectUnresolved, StageCommit, CodeUnknown, "commit-ack", ackErr)
+		result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
+		return result
+	} else if acknowledged {
+		// The destination the operator acknowledged is gone by the fixed point.
+		// It is a free name again and publishes create-only (decision 7), but
+		// its observed absence is recorded first: ADR 0085 keeps the observed
+		// predecessor including the absence this contract's race admits, stated
+		// rather than left as a silent create. A recording failure stops it.
+		if recErr := e.replacing(item.Name, ObservedPredecessor{Present: false}); recErr != nil {
+			e.stop(recErr)
+			result = failed(EffectNotAttempted, StageRecording, CodeUnknown, "commit-absent-record", recErr)
+			result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
+			return result
+		}
 	}
 
 	headers := metadataHeaders(src, "X-Object-Meta-")

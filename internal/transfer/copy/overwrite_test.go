@@ -260,3 +260,40 @@ func TestAcknowledgedOverwriteRetainsReplacedSegments(t *testing.T) {
 		t.Errorf("live name did not take the replacement: len=%d etag=%s", d.ContentLength, d.ETag)
 	}
 }
+
+// An acknowledged destination that has vanished by the fixed point is a free
+// name again and is created, but its observed absence is recorded first, so the
+// trail is not a silent create (db:937 finding 3).
+func TestAcknowledgedOverwriteRecordsVanishedAbsence(t *testing.T) {
+	w := newWorld(t)
+	source := []byte("NEW SOURCE CONTENT")
+	seed(w.srcMock, "media", "doc", source, nil)
+	seed(w.dstMock, "backup", "doc", []byte("OLD"), nil)
+
+	rec := newOverwriteRecorder()
+	rec.acknowledge(t, w, "doc") // baseline captured while it was live
+
+	// The destination goes away after the acknowledgement, before the commit.
+	w.dstMock.RemoveObject("backup", "doc")
+
+	e := recordingExecutor(t, w, &fakeEngine{w: w, interruptAfter: -1}, rec.recorder())
+	report, err := e.Run(context.Background(), []plan.Item{
+		{Name: "doc", Verdict: plan.VerdictChanged, Route: plan.RouteRclone, SourceBytes: int64(len(source))},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Copied != 1 || report.Overwrites != 0 || report.OverwritesRefused != 0 {
+		t.Fatalf("vanished acknowledged destination was not created cleanly: %+v", report)
+	}
+	observed, ok := rec.replaced["doc"]
+	if !ok {
+		t.Fatal("the vanished destination's absence was not recorded")
+	}
+	if observed.Present {
+		t.Errorf("absence recorded as present: %+v", observed)
+	}
+	if d := headDst(t, w, "doc"); d.ContentLength != int64(len(source)) || d.ETag != etagOf(source) {
+		t.Errorf("create did not land the source content: len=%d", d.ContentLength)
+	}
+}
