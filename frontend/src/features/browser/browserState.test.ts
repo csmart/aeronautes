@@ -298,6 +298,7 @@ describe("jobs drawer state", () => {
       destContainer: "backup",
       destPrefix: "",
       profile: "balanced",
+      acknowledgeOverwrite: false,
       settings: { chunkSize: "", transfers: 0, checkers: 0, tpsLimit: 0, bwLimit: "" , bufferSize: ""},
     });
     expect(s.jobs.length).toBe(1);
@@ -329,6 +330,7 @@ describe("jobs drawer state", () => {
       destContainer: "versioned",
       destPrefix: "",
       profile: "balanced",
+      acknowledgeOverwrite: false,
       settings: { chunkSize: "", transfers: 0, checkers: 0, tpsLimit: 0, bwLimit: "" , bufferSize: ""},
     });
     expect(plan.summary.new).toBe(3);
