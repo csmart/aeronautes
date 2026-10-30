@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/jobs"
 	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
 	"github.com/csmart/aeronautes/internal/transfer/plan"
@@ -23,13 +25,24 @@ func copyItemObservation(observation transfercopy.Observation) jobs.ItemObservat
 			HTTPStatus: observation.Diagnostic.HTTPStatus}}
 }
 
-func (s *TransferService) copyItemRecorder(ctx context.Context, jobID string, req CopyRequestDTO) *transfercopy.Recorder {
+// copyItemRecorder wires the executor's acknowledgements to the job ledger.
+// acknowledged holds the baselines captured when the operator confirmed
+// replacing live destinations, keyed by name; it is empty for an
+// unacknowledged copy, which then replaces nothing.
+func (s *TransferService) copyItemRecorder(ctx context.Context, jobID string, req CopyRequestDTO,
+	acknowledged map[string]jobs.ItemBaseline) *transfercopy.Recorder {
 	return &transfercopy.Recorder{
 		Admit: func(admission transfercopy.Admission) error {
 			item := admission.Item
+			// A copied item must be admitted (the ledger refuses a copied
+			// outcome for an unadmitted item), so an acknowledged overwrite —
+			// which may copy — is admitted alongside New and Unknown. A
+			// Changed item that is not acknowledged stays unadmitted and only
+			// ever records a refusal, which needs no admission.
+			_, isAcknowledged := acknowledged[item.Name]
 			intent := jobs.ItemIntent{ItemIdentity: copyItemIdentity(req, item.Name), ListedBytes: item.SourceBytes,
 				Planned:  item.Verdict == plan.VerdictNew || item.Verdict == plan.VerdictUnknown || item.Verdict == plan.VerdictChanged,
-				Admitted: item.Verdict == plan.VerdictNew || item.Verdict == plan.VerdictUnknown}
+				Admitted: item.Verdict == plan.VerdictNew || item.Verdict == plan.VerdictUnknown || isAcknowledged}
 			if admission.StagingObject != "" {
 				intent.Staging = &jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: req.DestBookmarkID,
 					Container: req.DestContainer, Object: admission.StagingObject}
@@ -37,7 +50,17 @@ func (s *TransferService) copyItemRecorder(ctx context.Context, jobID string, re
 			if err := intent.Validate(); err != nil {
 				return err
 			}
-			return s.jobs.AdmitItems(ctx, jobID, []jobs.ItemIntent{intent})
+			if err := s.jobs.AdmitItems(ctx, jobID, []jobs.ItemIntent{intent}); err != nil {
+				return err
+			}
+			// Record the acknowledged baseline now the item row exists; the
+			// baseline references that row. A baseline that cannot be saved
+			// stops the item rather than letting it replace against nothing.
+			baseline, ok := acknowledged[item.Name]
+			if !ok {
+				return nil
+			}
+			return s.jobs.RecordAcknowledgedBaseline(ctx, jobID, copyItemIdentity(req, item.Name), baseline)
 		},
 		Execute: func(key string, observation transfercopy.Observation) error {
 			return s.jobs.RecordExecution(ctx, jobID, key, copyItemObservation(observation))
@@ -49,5 +72,55 @@ func (s *TransferService) copyItemRecorder(ctx context.Context, jobID string, re
 			}
 			return s.jobs.RecordComparison(ctx, jobID, identity, copyItemObservation(observation))
 		},
+		Acknowledged: func(key string) (transfercopy.ShownObject, bool, error) {
+			// What the operator was shown when they accepted replacing this
+			// name, for the comparison the route makes immediately before
+			// publishing. A name whose acknowledgement captured no identity
+			// reads as absent, which the route treats as a refusal.
+			baseline, ok, err := s.jobs.ReadAcknowledgedBaseline(ctx, jobID, key)
+			if err != nil || !ok {
+				return transfercopy.ShownObject{}, false, err
+			}
+			return transfercopy.ShownObject{Class: baseline.Class, Length: baseline.Length, ETag: baseline.ETag}, true, nil
+		},
+		Replacing: func(key string, observed transfercopy.ObservedPredecessor) error {
+			// What was live immediately before the replacement, for the trail
+			// ADR 0087 decision 6 requires. It says "observed" rather than
+			// "replaced" because this contract admits a racing writer, so the
+			// object actually replaced may not be the one this reading saw.
+			// Copy retains the predecessor's segments, so there is no
+			// predecessor-for-reclaim record, only this audit line.
+			return s.runner.audit.Append(ctx, audit.Event{
+				BookmarkID: req.DestBookmarkID,
+				Operation:  "transfer.copy.replace",
+				Resource:   req.DestContainer + "/" + req.DestPrefix + key,
+				Summary:    copyObservedPredecessorSummary(observed),
+				Result:     audit.ResultObserved,
+			})
+		},
+		Refused: func(key string, acknowledged, found transfercopy.ShownObject) error {
+			// Both identities, durably, for this one name. The name is kept in
+			// the event's resource field and out of the summary, which the
+			// summary filter does not inspect, so a valid object cannot make
+			// its own refusal unrecordable through a crafted name.
+			return s.runner.audit.Append(ctx, audit.Event{
+				BookmarkID: req.DestBookmarkID,
+				Operation:  "transfer.copy.refused",
+				Resource:   req.DestContainer + "/" + req.DestPrefix + key,
+				Summary: fmt.Sprintf("replacement refused at the last observation: the name no longer holds what was acknowledged; it was a %s of %d bytes with entity tag %s, and it is now a %s of %d bytes with entity tag %s",
+					acknowledged.Class, acknowledged.Length, acknowledged.ETag, found.Class, found.Length, found.ETag),
+				Result: audit.ResultConflict,
+			})
+		},
 	}
+}
+
+// copyObservedPredecessorSummary states what was live before a replacement,
+// without the name, which travels in the audit event's resource field.
+func copyObservedPredecessorSummary(observed transfercopy.ObservedPredecessor) string {
+	if !observed.Present {
+		return "observed nothing live at the name immediately before replacing it"
+	}
+	return fmt.Sprintf("observed a %s of %d bytes with entity tag %s immediately before replacing it",
+		observed.Class, observed.Length, observed.ETag)
 }

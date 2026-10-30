@@ -37,11 +37,22 @@ func OverwriteQuestion(about OverwriteConfirmation) (string, []string) {
 	if about.Prefix != "" {
 		target += "/" + titleSafe(about.Prefix)
 	}
+	replaceLine := fmt.Sprintf("%d object%s already in %s will be REPLACED in %s.",
+		total, plural(total, "", "s"), shortenText(target, 120),
+		bindingText(about.Bookmark, about.Account, 80))
+	if about.SourceAccount != "" {
+		// A copy reads one account and writes another, so the sentence names
+		// both: the destination it replaces in, and the source the bytes come
+		// from. The account is what tells two bindings that read alike apart,
+		// which is why it is kept in its own field and stated for each side.
+		replaceLine = fmt.Sprintf("%d object%s already in %s in %s will be REPLACED by a copy from %s.",
+			total, plural(total, "", "s"), shortenText(target, 120),
+			bindingText(about.Bookmark, about.Account, 80),
+			bindingText(about.SourceBookmark, about.SourceAccount, 80))
+	}
 	return fmt.Sprintf("Replace %d object%s?", total, plural(total, "", "s")),
 		[]string{
-			fmt.Sprintf("%d object%s already in %s will be REPLACED in %s.",
-				total, plural(total, "", "s"), shortenText(target, 120),
-				bindingText(about.Bookmark, about.Account, 80)),
+			replaceLine,
 			"Replacing — " + overwriteNames(about.Names),
 			// Composed in this package, and still not trusted here: both
 			// sentences INTERPOLATE stored data — the archive name the

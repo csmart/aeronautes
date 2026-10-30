@@ -34,6 +34,13 @@ type CopyRequestDTO struct {
 	// Settings are the per-job §44.1 overrides layered over the profile
 	// (§38); with Profile "custom" they are the whole configuration.
 	Settings TransferSettingsDTO `json:"settings"`
+	// AcknowledgeOverwrite says the operator asked for a copy that may
+	// replace existing destinations (ADR 0087). It is an accident guard, not
+	// the authorisation: the backend still raises the one native question
+	// that names both accounts and captures the destination baseline the
+	// ADR 0085 comparison rests on, and an unacknowledged copy behaves
+	// exactly as it does today (ADR 0081 decision 1's shape).
+	AcknowledgeOverwrite bool `json:"acknowledgeOverwrite"`
 }
 
 // CopyPlanDTO is the §65.4 preflight surface: honest conservative
@@ -367,6 +374,17 @@ func (s *TransferService) StartCopy(ctx context.Context, req CopyRequestDTO) (st
 	if err != nil {
 		return "", err
 	}
+	// An acknowledged copy raises the one native confirmation before anything
+	// is created, naming both accounts and capturing the baseline the
+	// fixed-point comparison rests on. An unacknowledged copy skips it and
+	// refuses every overwrite in the executor, exactly as it does today.
+	var acknowledged map[string]jobs.ItemBaseline
+	if req.AcknowledgeOverwrite {
+		acknowledged, err = s.confirmCopyOverwrite(ctx, req, src, dst)
+		if err != nil {
+			return "", err
+		}
+	}
 	engine, effective, err := s.buildEngine(ctx, req, src, dst)
 	if err != nil {
 		return "", fmt.Errorf("transfer engine: %w", err)
@@ -398,12 +416,155 @@ func (s *TransferService) StartCopy(ctx context.Context, req CopyRequestDTO) (st
 		return "", fmt.Errorf("start audit unavailable: %w", err)
 	}
 	owner.launch(job.ID, req.SourceBookmarkID, releasePins, func(runCtx context.Context) {
-		s.runCopy(runCtx, job.ID, req, src, dst, engine)
+		s.runCopy(runCtx, job.ID, req, src, dst, engine, acknowledged)
 	}, func(background context.Context) {
 		s.finishCopy(background, job.ID, req, job.Counters, jobs.StateCancelled, "")
 	})
 	releasePins = nil
 	return job.ID, nil
+}
+
+// confirmCopyOverwrite raises the one native confirmation that authorises
+// replacing live destinations, naming BOTH accounts — the one the bytes come
+// from and the one they land in (ADR 0073, ADR 0081 decision 2). It HEADs each
+// candidate to capture the baseline ADR 0085 compares at the fixed point,
+// refuses unless the answer is yes about exactly this plan, and re-checks both
+// accounts' generations either side of the dialog so an answer given about one
+// pair of accounts cannot authorise a write under another.
+//
+// It returns the baselines it captured, keyed by name, for the recorder to
+// store once each item row exists. An empty map with no error means there was
+// nothing live to replace, so the copy proceeds with every name conditional.
+func (s *TransferService) confirmCopyOverwrite(ctx context.Context, req CopyRequestDTO,
+	src, dst *swiftcontrol.Session) (map[string]jobs.ItemBaseline, error) {
+	// Changed and Unknown are the join's two "a destination exists" verdicts;
+	// New has no destination and Same needs no replacement. The plan is advisory
+	// — the executor re-reads at the fixed point — so this pass only names the
+	// candidates to ask about.
+	var candidates []string
+	if _, err := plan.Copy(ctx,
+		src.Objects(ctx, req.SourceContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.SourcePrefix}),
+		dst.Objects(ctx, req.DestContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.DestPrefix}),
+		req.SourcePrefix, req.DestPrefix, func(item plan.Item) error {
+			if item.Verdict == plan.VerdictChanged || item.Verdict == plan.VerdictUnknown {
+				candidates = append(candidates, item.Name)
+			}
+			return nil
+		}); err != nil {
+		return nil, err
+	}
+	// HEAD each candidate to capture what the operator is about to be shown. A
+	// name the plan called a candidate but that no longer identifies anything is
+	// left out of both the baseline set and the question: it was not shown, so
+	// it carries no acknowledgement, and the executor refuses it at the fixed
+	// point as an unacknowledged overwrite rather than replacing it blind.
+	baselines := map[string]jobs.ItemBaseline{}
+	var names []string
+	for _, name := range candidates {
+		detail, err := dst.ObjectDetail(ctx, req.DestContainer, req.DestPrefix+name)
+		if err != nil {
+			if swiftcontrol.IsNotFound(err) {
+				continue
+			}
+			return nil, fmt.Errorf("reading %s before asking to replace it: %w", name, err)
+		}
+		baseline, ok := copyShownFrom(detail)
+		if !ok {
+			continue
+		}
+		baselines[name] = baseline
+		names = append(names, name)
+	}
+	if len(names) == 0 {
+		return map[string]jobs.ItemBaseline{}, nil
+	}
+	if s.overwrites == nil {
+		return nil, errors.New("replacing an existing object needs the shell's confirmation, and this build has none")
+	}
+	versioning, err := s.observedVersioning(ctx, req.DestBookmarkID, req.DestContainer)
+	if err != nil {
+		return nil, err
+	}
+	// Both generations are observed either side of the dialog: an answer given
+	// about one account's credentials must not authorise a write once either
+	// account's credentials have rotated under it.
+	srcBefore, err := s.connections.sessionEntryFor(ctx, req.SourceBookmarkID)
+	if err != nil {
+		return nil, err
+	}
+	dstBefore, err := s.connections.sessionEntryFor(ctx, req.DestBookmarkID)
+	if err != nil {
+		return nil, err
+	}
+	question, err := copyOverwriteQuestion(
+		s.connections.displayName(ctx, req.SourceBookmarkID), accountSuffix(src.StorageURL()),
+		s.connections.displayName(ctx, req.DestBookmarkID), accountSuffix(dst.StorageURL()),
+		req.DestContainer, req.DestPrefix, versioning, names)
+	if err != nil {
+		return nil, err
+	}
+	yes, err := s.overwrites.ConfirmOverwrite(ctx, question)
+	if err != nil {
+		return nil, err
+	}
+	if !yes {
+		return nil, errors.New("the replacement was not confirmed; nothing was written")
+	}
+	srcAfter, err := s.connections.sessionEntryFor(ctx, req.SourceBookmarkID)
+	if err != nil {
+		return nil, err
+	}
+	dstAfter, err := s.connections.sessionEntryFor(ctx, req.DestBookmarkID)
+	if err != nil {
+		return nil, err
+	}
+	if srcAfter.generation != srcBefore.generation || dstAfter.generation != dstBefore.generation {
+		return nil, errors.New("an account's credentials changed while you were answering; start again")
+	}
+	return baselines, nil
+}
+
+// copyShownFrom reads a destination HEAD into the baseline the fixed-point
+// comparison needs, or reports that it identifies nothing. It mirrors the
+// executor's own reading (internal/transfer/copy), so the baseline captured
+// here and the fresh observation compared there describe an object the same
+// way: a HEAD with no entity tag or no stated length is not an identity.
+func copyShownFrom(detail *swiftcontrol.ObjectDetail) (jobs.ItemBaseline, bool) {
+	tag := strings.Trim(detail.ETag, `"`)
+	if tag == "" {
+		return jobs.ItemBaseline{}, false
+	}
+	if _, stated := detail.RawHeaders["Content-Length"]; !stated {
+		return jobs.ItemBaseline{}, false
+	}
+	return jobs.ItemBaseline{Class: string(detail.Class), Length: detail.ContentLength, ETag: tag}, true
+}
+
+// copyOverwriteQuestion composes the two-account confirmation. It refuses to
+// compose a statement missing either account, the container, its versioning or
+// the names, so no caller can raise a question that authorises nothing. Copy
+// keeps the replaced objects' segments (ADR 0087 decision 6), so the question
+// says so rather than offering a removal it will not perform.
+func copyOverwriteQuestion(srcLabel, srcAccount, dstLabel, dstAccount,
+	container, prefix, versioning string, names []string) (OverwriteConfirmation, error) {
+	switch {
+	case srcAccount == "":
+		return OverwriteConfirmation{}, errors.New("the source account could not be identified, so an overwrite is refused")
+	case dstAccount == "":
+		return OverwriteConfirmation{}, errors.New("the destination account could not be identified, so an overwrite is refused")
+	case container == "":
+		return OverwriteConfirmation{}, errors.New("the destination container could not be identified, so an overwrite is refused")
+	case versioning == "":
+		return OverwriteConfirmation{}, errors.New("the destination container's versioning could not be stated, so an overwrite is refused")
+	case len(names) == 0:
+		return OverwriteConfirmation{}, errors.New("there is nothing live to ask about, so no overwrite is authorised")
+	}
+	return OverwriteConfirmation{
+		Bookmark: titleText(dstLabel, 80), Account: titleText(dstAccount, 80),
+		SourceBookmark: titleText(srcLabel, 80), SourceAccount: titleText(srcAccount, 80),
+		Container: container, Prefix: prefix, Names: names, Versioning: versioning,
+		Fragments: "the replaced objects' segments are kept, not removed: they are on the destination account, which was not enumerated",
+	}, nil
 }
 
 func (s *TransferService) finishCopy(ctx context.Context, jobID string, req CopyRequestDTO, counters jobs.Counters, state jobs.State, message string) {
@@ -457,7 +618,7 @@ func (s *TransferService) finishCopy(ctx context.Context, jobID string, req Copy
 // full listing pass) → Verifying → terminal, with reconciliation on
 // every exit path.
 func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyRequestDTO,
-	src, dst *swiftcontrol.Session, engine transfercopy.Engine) {
+	src, dst *swiftcontrol.Session, engine transfercopy.Engine, acknowledged map[string]jobs.ItemBaseline) {
 
 	background := context.WithoutCancel(ctx) // store/reconcile writes survive cancel
 	var overwritesRefused int64
@@ -519,7 +680,7 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 		SrcContainer: req.SourceContainer, DstContainer: req.DestContainer,
 		SrcPrefix: req.SourcePrefix, DstPrefix: req.DestPrefix,
 		JobID:    jobID,
-		Recorder: s.copyItemRecorder(background, jobID, req),
+		Recorder: s.copyItemRecorder(background, jobID, req, acknowledged),
 		OnItem: func(outcome transfercopy.ItemOutcome) {
 			countersMu.Lock()
 			switch outcome.Outcome {
