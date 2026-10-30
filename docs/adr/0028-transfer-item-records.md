@@ -106,8 +106,10 @@ An interrupted, ambiguous or failed effect remains `unresolved` unless the calle
 An admitted item without an execution observation also remains unresolved.
 A verification observation cannot erase that uncertainty.
 The caller migration must review the mapping at each real execution boundary; the store does not infer it from an HTTP aggregate count, error text, object HEAD or exit status.
-`same`, `refused` and `not_attempted` have effect knowledge `not_attempted`.
-`copied` may have `reported_applied` or `unresolved` effect knowledge; `failed` and `conflict` may have `not_attempted` or `unresolved` knowledge, never an invented applied copy.
+`same` and `not_attempted` have effect knowledge `not_attempted`.
+A `refused` is normally `not_attempted`, but an admitted overwrite refused at the staged commit's fixed point may carry `unresolved`, because the staged route may have written the source bytes before the refusal and the destination's staged residue is then not known to be absent (ADR 0030).
+An unadmitted refusal, and an immediate native or planning-time refusal, stage nothing and stay `not_attempted`.
+`copied` may have `reported_applied` or `unresolved` effect knowledge; `failed`, `conflict` and an admitted `refused` may have `not_attempted` or `unresolved` knowledge, never an invented applied copy.
 An observation without a diagnostic uses explicit absent diagnostic fields, distinct from an actual problem with the recognised `unknown` code.
 Diagnostic stage and code must be either both absent or both recognised values; an optional HTTP status requires a diagnostic and must be between 100 and 599.
 Execution `failed`, `conflict` and `refused` observations and verification `failed` observations require a diagnostic, using the explicit unknown classification when needed.
