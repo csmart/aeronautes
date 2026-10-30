@@ -905,6 +905,26 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 		}
 	}
 
+	// Each shape finishes its preparation BEFORE the fixed-point comparison, so
+	// no store round trip sits between the last reading of the destination and
+	// the publication that replaces it (ADR 0087 decision 3, ADR 0085). A racer
+	// that lands during this preparation is then caught by the comparison below.
+	var stagedBody io.ReadCloser
+	if staged.Class == swiftcontrol.ClassDLO {
+		// metaBudgetFor can FetchCapabilities, a request; read it now so the
+		// aggregate-stamp decision below is a cache hit. It is memoised and read
+		// once per run, so reading it early changes nothing it decides.
+		e.metaBudgetFor(ctx)
+	} else {
+		var openErr error
+		stagedBody, _, openErr = e.cfg.Dest.OpenObject(ctx, e.cfg.DstContainer, stagedName)
+		if openErr != nil {
+			return failed(EffectUnresolved, StageStaging, CodeUnknown, "commit-open-staged", openErr)
+		}
+		closeStaged := closeOnce(stagedBody)
+		defer func() { result.addProblem(StageStaging, closeStaged.Close()) }()
+	}
+
 	dstDetail, err := e.cfg.Dest.ObjectDetail(ctx, e.cfg.DstContainer, dstName)
 	if err != nil && !swiftcontrol.IsNotFound(err) {
 		return failed(EffectUnresolved, StageCommit, CodeUnknown, "commit-rehead", err)
@@ -1039,17 +1059,14 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 		// we CONFLICT rather than clobber; and, for an acknowledged overwrite
 		// that matched at the fixed point, unconditional, because the create
 		// conditional would reject the very name the operator asked to replace.
-		body, _, err := e.cfg.Dest.OpenObject(ctx, e.cfg.DstContainer, stagedName)
-		if err != nil {
-			return failed(EffectUnresolved, StageStaging, CodeUnknown, "commit-open-staged", err)
-		}
+		// The reader was opened before the comparison above, so nothing reads
+		// the store between that comparison and this PUT; its deferred close
+		// was registered where it was opened.
 		putHeaders := map[string]string{}
 		for k, v := range headers {
 			putHeaders[k] = v
 		}
-		_, putErr := e.cfg.Dest.PutObject(ctx, e.cfg.DstContainer, dstName, body, staged.ContentType, putHeaders)
-		closeErr := body.Close()
-		defer func() { result.addProblem(StageStaging, closeErr) }()
+		_, putErr := e.cfg.Dest.PutObject(ctx, e.cfg.DstContainer, dstName, stagedBody, staged.ContentType, putHeaders)
 		if putErr != nil {
 			if swiftcontrol.IsPreconditionFailed(putErr) {
 				result = conflict(EffectUnresolved, putErr, "destination appeared at commit time")
