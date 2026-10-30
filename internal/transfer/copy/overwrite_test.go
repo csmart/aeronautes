@@ -4,6 +4,9 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/hex"
+	"net/http"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/csmart/aeronautes/internal/swifttest"
@@ -295,5 +298,52 @@ func TestAcknowledgedOverwriteRecordsVanishedAbsence(t *testing.T) {
 	}
 	if d := headDst(t, w, "doc"); d.ContentLength != int64(len(source)) || d.ETag != etagOf(source) {
 		t.Errorf("create did not land the source content: len=%d", d.ContentLength)
+	}
+}
+
+// Each publication shape prepares before the fixed-point comparison, so a racer
+// that lands DURING that preparation is still caught by the comparison and the
+// overwrite refuses rather than clobbering it (db:937 finding 1). Without the
+// ordering the comparison runs first, the preparation then opens a window, and
+// the racer is overwritten unrefused.
+func TestStagedOverwritePreparesBeforeTheFixedPoint(t *testing.T) {
+	racer := []byte("A RACER WROTE THIS LATER ON")
+	var once sync.Once
+	var w *world
+	w = newWorldWrappingDest(t, func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+			// The staged reader open is the plain shape's only preparation
+			// request; replace the live destination as it is served.
+			if r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/batch/doc") {
+				once.Do(func() {
+					sum := md5.Sum(racer)
+					w.dstMock.PutObject("backup", "doc", swifttest.Object{
+						Bytes: int64(len(racer)), ETag: hex.EncodeToString(sum[:]),
+						Data: racer, ContentType: "application/octet-stream",
+					})
+				})
+			}
+			next.ServeHTTP(rw, r)
+		})
+	})
+	source := []byte("NEW SOURCE CONTENT")
+	seed(w.srcMock, "media", "doc", source, nil)
+	seed(w.dstMock, "backup", "doc", []byte("OLD"), nil)
+
+	rec := newOverwriteRecorder()
+	rec.acknowledge(t, w, "doc") // baseline: the 3-byte OLD object
+
+	e := recordingExecutor(t, w, &fakeEngine{w: w, interruptAfter: -1}, rec.recorder())
+	report, err := e.Run(context.Background(), []plan.Item{
+		{Name: "doc", Verdict: plan.VerdictChanged, Route: plan.RouteRclone, SourceBytes: int64(len(source))},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.OverwritesRefused != 1 || report.Overwrites != 0 || report.Copied != 0 {
+		t.Fatalf("a racer during preparation was not caught by the comparison: %+v", report)
+	}
+	if d := headDst(t, w, "doc"); d.ContentLength != int64(len(racer)) || d.ETag != etagOf(racer) {
+		t.Errorf("preparation-window overwrite clobbered the racer: len=%d etag=%s", d.ContentLength, d.ETag)
 	}
 }
