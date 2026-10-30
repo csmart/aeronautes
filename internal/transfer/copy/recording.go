@@ -10,11 +10,30 @@ import (
 )
 
 // Recorder acknowledgements precede dependent work; OnItem remains advisory.
-// All three callbacks are required when a caller opts into recorded execution.
+// Admit, Execute and Verify are required when a caller opts into recorded
+// execution; the overwrite hooks below are optional, because only an
+// acknowledged overwrite reaches them and a run that never replaces would
+// otherwise have to supply hooks it cannot use.
 type Recorder struct {
 	Admit   func(Admission) error
 	Execute func(string, Observation) error
 	Verify  func(string, Observation) error
+	// Acknowledged asks what the operator was shown at a destination name when
+	// they accepted replacing it, for the comparison ADR 0085 makes immediately
+	// before the publication. The second result is false when the
+	// acknowledgement captured no identity, which that decision makes a refusal
+	// to overwrite rather than a licence to proceed. A recorder without this hook
+	// never lets an overwrite through, which is the state a build with no
+	// acknowledgement surface stays in.
+	Acknowledged func(string) (ShownObject, bool, error)
+	// Replacing records what was live immediately before a publication replaced
+	// it (ADR 0087 decision 6). A replacing item with no hook is refused rather
+	// than published unrecorded, the same rule the upload route follows.
+	Replacing func(string, ObservedPredecessor) error
+	// Refused records both identities for a replacement stopped at the fixed
+	// point: the one acknowledged and the one found there. The run's own failure
+	// list cannot carry them, so a refusal that cannot be recorded stops the run.
+	Refused func(name string, acknowledged, found ShownObject) error
 }
 
 type Admission struct {
@@ -168,7 +187,15 @@ func (e *Executor) admitItem(item plan.Item) error {
 		return nil
 	}
 	admission := Admission{Item: item}
-	if item.Route != plan.RouteNative && (item.Verdict == plan.VerdictNew || item.Verdict == plan.VerdictUnknown) {
+	// A non-native item that is not already live (New), might be (Unknown) or is
+	// a proven plain difference (Changed) can stage: New and Unknown always, and
+	// Changed once the operator acknowledges replacing it. The staging location
+	// is recorded for all three so an interrupted run's residue is tracked even
+	// when the acknowledgement that would have staged it is not known yet here;
+	// an item that never stages leaves a hint pointing at nothing, which
+	// cleanup treats as already gone.
+	if item.Route != plan.RouteNative &&
+		(item.Verdict == plan.VerdictNew || item.Verdict == plan.VerdictUnknown || item.Verdict == plan.VerdictChanged) {
 		admission.StagingObject = e.stage + "batch/" + item.Name
 	}
 	return e.stop(e.cfg.Recorder.Admit(admission))
