@@ -608,3 +608,97 @@ func TestCopyOverwriteMixedRouteRefusalsDoNotAbortAdmittedCopies(t *testing.T) {
 		t.Errorf("the staged symlink refusal effect did not reach the DTO: %q", effects["a-link"])
 	}
 }
+
+// ADR 0087 decision 8: OverwritesRefused keeps its meaning and counts BOTH kinds
+// of refusal under one number, while the item record distinguishes them. A
+// replacement nobody acknowledged is a planning-stage refusal that records no
+// found identity; a replacement whose fixed-point comparison failed is a
+// commit-stage conflict that records the identity that stood in its way. A test
+// pins the distinction so a later change cannot quietly merge the two kinds and
+// change what every historical count means.
+func TestOverwritesRefusedDistinguishesItsTwoKinds(t *testing.T) {
+	// Kind one: an unacknowledged copy over a live destination. The planner
+	// refuses it before staging, and nothing was acknowledged, so the item
+	// carries no found identity.
+	t.Run("unacknowledged is a planning refusal with no found identity", func(t *testing.T) {
+		h := newHarness(t)
+		h.connect(t)
+		source := h.transfer.connections.ActiveBookmarkID()
+		dest, mock := secondCluster(t, h)
+		h.mock.AddContainer("media", "standard")
+		mock.AddContainer("backup", "standard")
+		seedObject(h.mock, "media", "doc", "source replacement", nil)
+		seedObject(mock, "backup", "doc", "live destination", nil)
+		h.installEngine(nil)
+
+		id, err := h.transfer.StartCopy(t.Context(), CopyRequestDTO{
+			SourceBookmarkID: source, SourceContainer: "media",
+			DestBookmarkID: dest, DestContainer: "backup",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		job := awaitTerminal(t, h, id)
+		if job.Counters.OverwritesRefused != 1 {
+			t.Fatalf("unacknowledged collision was not counted as one refusal: %+v", job.Counters)
+		}
+		rec := itemsOf(t, h, id)["doc"]
+		if rec.Execution == nil || rec.Execution.Result != jobs.ItemRefused {
+			t.Fatalf("unacknowledged collision was not refused: %+v", rec.Execution)
+		}
+		if rec.Execution.Diagnostic.Stage != jobs.StagePlanning || rec.Execution.Diagnostic.Code != jobs.CodeUnsupported {
+			t.Errorf("planning refusal lost its distinguishing diagnostic: %+v", rec.Execution.Diagnostic)
+		}
+		// itemsOf read and validated the item's predecessor header, so a nil
+		// field is a genuine absence. A second ReadPredecessor here would hide a
+		// lookup error behind ok=false, which it also returns on a read error.
+		if rec.Predecessor != nil {
+			t.Errorf("a planning refusal recorded a found identity it never read: %+v", rec.Predecessor)
+		}
+	})
+
+	// Kind two: an acknowledged copy whose destination changes under the
+	// acknowledgement. The fixed-point comparison refuses it at the commit stage
+	// and records the identity that stood in its way.
+	t.Run("fixed-point is a commit conflict with a found identity", func(t *testing.T) {
+		h := newHarness(t)
+		h.connect(t)
+		source := h.transfer.connections.ActiveBookmarkID()
+		dest, mock := secondCluster(t, h)
+		h.mock.AddContainer("media", "standard")
+		mock.AddContainer("backup", "standard")
+		seedObject(h.mock, "media", "doc", "source replacement", nil)
+		seedObject(mock, "backup", "doc", "old destination", nil)
+		h.installEngine(nil)
+
+		racer := "a racer wrote this instead"
+		h.transfer.setOverwriteConfirmer(&recordingOverwriteConfirmer{yes: true, before: func() {
+			seedObject(mock, "backup", "doc", racer, nil)
+		}})
+
+		id, err := h.transfer.StartCopy(t.Context(), CopyRequestDTO{
+			SourceBookmarkID: source, SourceContainer: "media",
+			DestBookmarkID: dest, DestContainer: "backup",
+			AcknowledgeOverwrite: true,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		job := awaitTerminal(t, h, id)
+		if job.Counters.OverwritesRefused != 1 {
+			t.Fatalf("changed destination was not counted as one refusal: %+v", job.Counters)
+		}
+		rec := itemsOf(t, h, id)["doc"]
+		if rec.Execution == nil || rec.Execution.Result != jobs.ItemRefused {
+			t.Fatalf("changed destination was not refused: %+v", rec.Execution)
+		}
+		if rec.Execution.Diagnostic.Stage != jobs.StageCommit || rec.Execution.Diagnostic.Code != jobs.CodeConflict {
+			t.Errorf("fixed-point refusal lost its distinguishing diagnostic: %+v", rec.Execution.Diagnostic)
+		}
+		// The found identity is the validated predecessor header itemsOf already
+		// read, so assert that field rather than reading the store a second time.
+		if rec.Predecessor == nil || !rec.Predecessor.Present || rec.Predecessor.Length != int64(len(racer)) {
+			t.Fatalf("fixed-point refusal did not record the identity it found: %+v", rec.Predecessor)
+		}
+	})
+}
