@@ -3,6 +3,7 @@ package app
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // An acknowledged copy into a second account replaces the live destination,
@@ -95,5 +96,97 @@ func TestDeclinedCopyOverwriteWritesNothing(t *testing.T) {
 	snap := mirrorSnapshot(t, witness, "backup")
 	if obj := snap.Containers["backup"].Objects["doc"]; obj.Size != int64(len("old destination")) {
 		t.Fatalf("declined copy changed the destination: %+v", obj)
+	}
+}
+
+// The object a replacement destroys is kept WITH THE ITEM, not only in the
+// audit trail, and it carries the last-modified ADR 0081 decision 7 requires,
+// so pruning the audit log cannot lose what was replaced (db:937 finding 4).
+func TestAcknowledgedCopyOverwritePersistsPredecessorPastAuditPrune(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+	source := h.transfer.connections.ActiveBookmarkID()
+	dest, mock := secondCluster(t, h)
+	h.mock.AddContainer("media", "standard")
+	mock.AddContainer("backup", "standard")
+	seedObject(h.mock, "media", "doc", "new source content", nil)
+	seedObject(mock, "backup", "doc", "old destination", nil)
+	h.installEngine(nil)
+
+	h.transfer.setOverwriteConfirmer(&recordingOverwriteConfirmer{yes: true})
+
+	id, err := h.transfer.StartCopy(t.Context(), CopyRequestDTO{
+		SourceBookmarkID: source, SourceContainer: "media",
+		DestBookmarkID: dest, DestContainer: "backup",
+		AcknowledgeOverwrite: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job := awaitTerminal(t, h, id); job.State != "complete" || job.Counters.Overwrites != 1 {
+		t.Fatalf("overwrite did not complete: %+v", job)
+	}
+
+	want := time.Date(2026, time.August, 28, 10, 0, 0, 0, time.UTC)
+	pred, ok, err := h.transfer.jobs.ReadPredecessor(t.Context(), id, "doc")
+	if err != nil || !ok {
+		t.Fatalf("predecessor was not recorded with the item: ok=%t err=%v", ok, err)
+	}
+	if !pred.Present || pred.Length != int64(len("old destination")) || !pred.LastModified.Equal(want) {
+		t.Fatalf("predecessor record is wrong: %+v", pred)
+	}
+
+	if _, err := h.transfer.runner.audit.Prune(t.Context(), time.Now().Add(time.Hour)); err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	after, ok, err := h.transfer.jobs.ReadPredecessor(t.Context(), id, "doc")
+	if err != nil || !ok || !after.Present || after.Length != int64(len("old destination")) {
+		t.Fatalf("predecessor did not survive an audit prune: %+v ok=%t err=%v", after, ok, err)
+	}
+}
+
+// A replacement refused at the fixed point keeps the identity it FOUND with the
+// item too, so an audit prune cannot lose which object blocked it (finding 4).
+func TestRefusedCopyOverwritePersistsFoundIdentityPastAuditPrune(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+	source := h.transfer.connections.ActiveBookmarkID()
+	dest, mock := secondCluster(t, h)
+	h.mock.AddContainer("media", "standard")
+	mock.AddContainer("backup", "standard")
+	seedObject(h.mock, "media", "doc", "new source content", nil)
+	seedObject(mock, "backup", "doc", "old destination", nil)
+	h.installEngine(nil)
+
+	// A racing writer replaces the destination after the operator was shown the
+	// baseline but before the fixed-point comparison, so the overwrite refuses
+	// and the found identity is what stood in its way.
+	racer := "a racer wrote different content"
+	h.transfer.setOverwriteConfirmer(&recordingOverwriteConfirmer{yes: true, before: func() {
+		seedObject(mock, "backup", "doc", racer, nil)
+	}})
+
+	id, err := h.transfer.StartCopy(t.Context(), CopyRequestDTO{
+		SourceBookmarkID: source, SourceContainer: "media",
+		DestBookmarkID: dest, DestContainer: "backup",
+		AcknowledgeOverwrite: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job := awaitTerminal(t, h, id); job.Counters.OverwritesRefused != 1 || job.Counters.Overwrites != 0 {
+		t.Fatalf("racing change was not refused at the fixed point: %+v", job.Counters)
+	}
+
+	found, ok, err := h.transfer.jobs.ReadPredecessor(t.Context(), id, "doc")
+	if err != nil || !ok || !found.Present || found.Length != int64(len(racer)) {
+		t.Fatalf("found identity was not recorded with the item: %+v ok=%t err=%v", found, ok, err)
+	}
+	if _, err := h.transfer.runner.audit.Prune(t.Context(), time.Now().Add(time.Hour)); err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	after, ok, err := h.transfer.jobs.ReadPredecessor(t.Context(), id, "doc")
+	if err != nil || !ok || !after.Present || after.Length != int64(len(racer)) {
+		t.Fatalf("found identity did not survive an audit prune: %+v ok=%t err=%v", after, ok, err)
 	}
 }
