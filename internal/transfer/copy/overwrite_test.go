@@ -145,12 +145,14 @@ func TestAcknowledgedStagedOverwriteRefusesChanged(t *testing.T) {
 	}
 }
 
-// An unsafe-named object copies through the native route, which has no
-// fixed-point comparison yet, so an acknowledged overwrite of one still refuses.
-func TestAcknowledgedNativeOverwriteRefuses(t *testing.T) {
+// An unsafe-named object copies through the native route. A destination whose
+// fresh reading still matches what the operator acknowledged is replaced by a
+// single unconditional PUT, and the predecessor is recorded before it.
+func TestAcknowledgedNativeOverwriteReplacesMatch(t *testing.T) {
 	w := newWorld(t)
 	name := "line\nname"
-	seed(w.srcMock, "media", name, []byte("NEW"), nil)
+	source := []byte("NEW NATIVE CONTENT")
+	seed(w.srcMock, "media", name, source, nil)
 	seed(w.dstMock, "backup", name, []byte("OLD"), nil)
 
 	rec := newOverwriteRecorder()
@@ -163,14 +165,123 @@ func TestAcknowledgedNativeOverwriteRefuses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.OverwritesRefused != 1 || report.Copied != 0 {
-		t.Fatalf("acknowledged native overwrite was not refused: %+v", report)
+	if report.Copied != 1 || report.Overwrites != 1 || report.OverwritesRefused != 0 || len(report.Failures) != 0 || len(report.Conflicts) != 0 {
+		t.Fatalf("acknowledged native overwrite did not replace cleanly: %+v", report)
 	}
-	if d := headDst(t, w, name); d.ContentLength != 3 {
-		t.Errorf("refused native overwrite altered the destination: len=%d", d.ContentLength)
+	if d := headDst(t, w, name); d.ContentLength != int64(len(source)) || d.ETag != etagOf(source) {
+		t.Errorf("live name did not take the replacement: len=%d etag=%s", d.ContentLength, d.ETag)
+	}
+	if predecessor, ok := rec.replaced[name]; !ok || predecessor.Length != 3 || predecessor.ETag != etagOf([]byte("OLD")) {
+		t.Errorf("predecessor was not recorded before the publication: %+v ok=%t", rec.replaced[name], ok)
+	}
+	if _, ok := rec.refused[name]; ok {
+		t.Error("a matching native overwrite recorded a refusal")
+	}
+}
+
+// A native destination that changed between the acknowledgement and the fixed
+// point is refused, both identities recorded, and the racer's content intact.
+func TestAcknowledgedNativeOverwriteRefusesChanged(t *testing.T) {
+	w := newWorld(t)
+	name := "line\nname"
+	seed(w.srcMock, "media", name, []byte("NEW NATIVE CONTENT"), nil)
+	seed(w.dstMock, "backup", name, []byte("OLD"), nil)
+
+	rec := newOverwriteRecorder()
+	rec.acknowledge(t, w, name) // baseline: a 3-byte object
+
+	racer := []byte("CHANGED BY SOMEONE ELSE")
+	seed(w.dstMock, "backup", name, racer, nil)
+
+	e := recordingExecutor(t, w, &fakeEngine{w: w, interruptAfter: -1}, rec.recorder())
+	report, err := e.Run(context.Background(), []plan.Item{
+		{Name: name, Verdict: plan.VerdictChanged, Route: plan.RouteNative},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.OverwritesRefused != 1 || report.Copied != 0 || report.Overwrites != 0 || len(report.Failures) != 0 {
+		t.Fatalf("changed native destination was not refused at the fixed point: %+v", report)
+	}
+	if d := headDst(t, w, name); d.ContentLength != int64(len(racer)) || d.ETag != etagOf(racer) {
+		t.Errorf("refused native overwrite clobbered the changed destination: len=%d etag=%s", d.ContentLength, d.ETag)
+	}
+	pair, ok := rec.refused[name]
+	if !ok {
+		t.Fatal("the fixed-point refusal recorded no identities")
+	}
+	if pair[0].Length != 3 || pair[0].ETag != etagOf([]byte("OLD")) {
+		t.Errorf("refusal did not record what was acknowledged: %+v", pair[0])
+	}
+	if pair[1].Length != int64(len(racer)) || pair[1].ETag != etagOf(racer) {
+		t.Errorf("refusal did not record what was found: %+v", pair[1])
 	}
 	if _, ok := rec.replaced[name]; ok {
-		t.Error("refused native overwrite recorded a replacement")
+		t.Error("a refused native overwrite recorded a replacement")
+	}
+}
+
+// A destination the operator acknowledged but that is gone by the fixed point
+// is a free name again: the native route falls through to its create-only
+// publication, so it copies as a first write and counts no overwrite.
+func TestAcknowledgedNativeOverwriteVanishedFallsThroughToCreate(t *testing.T) {
+	w := newWorld(t)
+	name := "line\nname"
+	source := []byte("NEW NATIVE CONTENT")
+	seed(w.srcMock, "media", name, source, nil)
+	seed(w.dstMock, "backup", name, []byte("OLD"), nil)
+
+	rec := newOverwriteRecorder()
+	rec.acknowledge(t, w, name)
+	w.dstMock.RemoveObject("backup", name) // the acknowledged destination is deleted before the run
+
+	e := recordingExecutor(t, w, &fakeEngine{w: w, interruptAfter: -1}, rec.recorder())
+	report, err := e.Run(context.Background(), []plan.Item{
+		{Name: name, Verdict: plan.VerdictChanged, Route: plan.RouteNative},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Copied != 1 || report.Overwrites != 0 || report.OverwritesRefused != 0 || len(report.Failures) != 0 || len(report.Conflicts) != 0 {
+		t.Fatalf("vanished acknowledged destination was not copied as a first write: %+v", report)
+	}
+	if d := headDst(t, w, name); d.ContentLength != int64(len(source)) || d.ETag != etagOf(source) {
+		t.Errorf("free name did not take the copy: len=%d etag=%s", d.ContentLength, d.ETag)
+	}
+	observed, ok := rec.replaced[name]
+	if !ok {
+		t.Fatal("the vanished destination's absence was not recorded")
+	}
+	if observed.Present {
+		t.Errorf("absence recorded as present: %+v", observed)
+	}
+}
+
+// A name the operator did not acknowledge keeps the native route's create-only
+// publication: a destination that appeared since planning is a conflict, never
+// a clobber, so the unconditional replace is reached only through an
+// acknowledgement.
+func TestNativeNewNameStaysCreateOnly(t *testing.T) {
+	w := newWorld(t)
+	name := "line\nname"
+	racer := []byte("RACER APPEARED")
+	seed(w.srcMock, "media", name, []byte("NEW"), nil)
+	seed(w.dstMock, "backup", name, racer, nil)
+
+	rec := newOverwriteRecorder() // no baseline: this name was never acknowledged
+
+	e := recordingExecutor(t, w, &fakeEngine{w: w, interruptAfter: -1}, rec.recorder())
+	report, err := e.Run(context.Background(), []plan.Item{
+		{Name: name, Verdict: plan.VerdictNew, Route: plan.RouteNative},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Copied != 0 || report.Overwrites != 0 || len(report.Conflicts) != 1 {
+		t.Fatalf("unacknowledged native copy did not conflict on the create-only condition: %+v", report)
+	}
+	if d := headDst(t, w, name); d.ContentLength != int64(len(racer)) || d.ETag != etagOf(racer) {
+		t.Errorf("create-only native copy clobbered the racer: len=%d etag=%s", d.ContentLength, d.ETag)
 	}
 }
 

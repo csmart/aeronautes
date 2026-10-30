@@ -449,3 +449,43 @@ func TestCopyOverwriteCancelDuringAdmissionStaysCancelled(t *testing.T) {
 		t.Fatalf("a cancelled admission changed the destination: %+v", obj)
 	}
 }
+
+// An acknowledged copy of an rclone-unsafe name replaces its live destination
+// through the native route, which adds a fixed-point HEAD before its single PUT
+// and keeps the predecessor with the item, exactly as the staged route does.
+func TestAcknowledgedCopyOverwriteReplacesNativeRoute(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+	source := h.transfer.connections.ActiveBookmarkID()
+	dest, mock := secondCluster(t, h)
+	h.mock.AddContainer("media", "standard")
+	mock.AddContainer("backup", "standard")
+	name := "weird\nname" // a newline is rclone-unsafe, so this routes native
+	seedObject(h.mock, "media", name, "new native content", nil)
+	seedObject(mock, "backup", name, "old destination", nil)
+	h.installEngine(nil)
+
+	h.transfer.setOverwriteConfirmer(&recordingOverwriteConfirmer{yes: true})
+
+	id, err := h.transfer.StartCopy(t.Context(), CopyRequestDTO{
+		SourceBookmarkID: source, SourceContainer: "media",
+		DestBookmarkID: dest, DestContainer: "backup",
+		AcknowledgeOverwrite: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, h, id)
+	if job.State != "complete" || job.Counters.Overwrites != 1 || job.Counters.NativeRouted != 1 {
+		t.Fatalf("native overwrite did not complete via the native route: %+v", job)
+	}
+	pred, ok, err := h.transfer.jobs.ReadPredecessor(t.Context(), id, name)
+	if err != nil || !ok || !pred.Present || pred.Length != int64(len("old destination")) {
+		t.Fatalf("native overwrite did not keep the predecessor with the item: %+v ok=%t err=%v", pred, ok, err)
+	}
+	witness := mirrorWitness(t, mock, "test2:tester2", "testing2")
+	snap := mirrorSnapshot(t, witness, "backup")
+	if obj := snap.Containers["backup"].Objects[name]; obj.Size != int64(len("new native content")) {
+		t.Fatalf("native destination was not replaced: %+v", obj)
+	}
+}

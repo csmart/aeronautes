@@ -747,6 +747,64 @@ func (e *Executor) nativeCopy(ctx context.Context, item plan.Item) (result execu
 		declared = hex.EncodeToString(sum[:])
 		body = io.NopCloser(bytes.NewReader(held.bytes))
 	}
+	// The native route publishes at the live name in a single request and has
+	// no pre-PUT destination read of its own. An acknowledged replacement
+	// therefore adds the fixed-point HEAD here — after the source content is
+	// prepared and immediately before the live PUT, the point ADR 0085 keeps the
+	// comparison — and gates an unconditional replace on it. A name the operator
+	// did not acknowledge is a first copy: it skips the HEAD and keeps the
+	// create-only publication below, so only an acknowledged name is allowed to
+	// find a destination already there.
+	overwrite := false
+	shown, acknowledged, ackErr := e.acknowledged(item.Name)
+	if ackErr != nil {
+		return failed(EffectNotAttempted, StageCommit, CodeUnknown, "native-ack", ackErr)
+	}
+	if acknowledged {
+		dstDetail, headErr := e.cfg.Dest.ObjectDetail(ctx, e.cfg.DstContainer, dstName)
+		if headErr != nil && !swiftcontrol.IsNotFound(headErr) {
+			return failed(EffectNotAttempted, StageCommit, CodeUnknown, "native-rehead", headErr)
+		}
+		if headErr == nil {
+			// Live at the fixed point. Only a fresh reading that still matches
+			// what the operator was shown may be replaced; a reading that differs
+			// or identifies nothing refuses with both identities kept and the
+			// live object untouched.
+			found, identifiable := shownFrom(dstDetail)
+			if !identifiable {
+				return e.overwriteRefused(item.Name, "the destination could not be identified before replacing it: its HEAD stated no entity tag or no length")
+			}
+			if found != shown {
+				e.recordRefused(item.Name, shown, found)
+				return e.overwriteRefused(item.Name, fmt.Sprintf(
+					"the destination no longer holds what was acknowledged: it was a %s of %d bytes with entity tag %s, and it is now a %s of %d bytes with entity tag %s",
+					shown.Class, shown.Length, shown.ETag, found.Class, found.Length, found.ETag))
+			}
+			// Record what is about to be replaced before the PUT destroys the
+			// ability to read it, then publish unconditionally: the create
+			// conditional would reject the very name the operator asked to
+			// replace. Decision 6 retains the predecessor's segments (they sit on
+			// the destination account the operator was not shown), so there is
+			// nothing to reclaim here.
+			if recErr := e.replacing(item.Name, observedFrom(dstDetail)); recErr != nil {
+				e.stop(recErr)
+				return failed(EffectNotAttempted, StageRecording, CodeUnknown, "native-replace-record", recErr)
+			}
+			overwrite = true
+		} else {
+			// IsNotFound: the destination the operator acknowledged is gone by
+			// the fixed point. It publishes create-only below (the name is free,
+			// and a racer that takes it first is a conflict, not a clobber), but
+			// its observed absence is recorded first, as ADR 0085 keeps the
+			// observed predecessor including the absence this contract's race
+			// admits, rather than leaving a silent first write. A recording
+			// failure stops it.
+			if recErr := e.replacing(item.Name, ObservedPredecessor{Present: false}); recErr != nil {
+				e.stop(recErr)
+				return failed(EffectNotAttempted, StageRecording, CodeUnknown, "native-absent-record", recErr)
+			}
+		}
+	}
 	// No fingerprint. The stamp asserts that the destination holds the source's
 	// content, and this route publishes at the live name in ONE request, so a
 	// stamp in that request is written before anything has been checked. ADR 0045
@@ -759,7 +817,9 @@ func (e *Executor) nativeCopy(ctx context.Context, item plan.Item) (result execu
 	// skipped it as equal.
 	headers := metadataHeaders(src, "X-Object-Meta-")
 	headers["ETag"] = declared
-	headers["If-None-Match"] = "*"
+	if !overwrite {
+		headers["If-None-Match"] = "*"
+	}
 	if _, err := e.cfg.Dest.PutObject(ctx, e.cfg.DstContainer, dstName, body, src.ContentType, headers); err != nil {
 		if swiftcontrol.IsPreconditionFailed(err) {
 			return conflict(EffectUnresolved, err, "destination appeared at commit time")
@@ -802,6 +862,7 @@ func (e *Executor) nativeCopy(ctx context.Context, item plan.Item) (result execu
 	// verification pass reads the source again, and evidence that this content
 	// was copied says nothing about a source that has changed since.
 	result = copied(src.ContentLength, "native")
+	result.overwrote = overwrite
 	if src.Class != swiftcontrol.ClassPlain {
 		// Recorded only for the case that needs it. A plain source's destination
 		// is a plain object with the same entity tag, which the verification
