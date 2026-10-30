@@ -142,6 +142,9 @@ type executionResult struct {
 	detail  string
 	failure error
 	problem error
+	// overwrote marks a copied result that replaced a live destination, so the
+	// report can count replacements apart from first copies.
+	overwrote bool
 }
 
 func failed(effect Effect, stage Stage, code Code, label string, err error) executionResult {
@@ -207,6 +210,9 @@ func (e *Executor) observe(name string, result executionResult) error {
 	case ResultCopied:
 		e.report.Copied++
 		e.report.BytesCopied += result.CopiedBytes
+		if result.overwrote {
+			e.report.Overwrites++
+		}
 	case ResultFailed:
 		if len(e.report.Failures) < maxFailures {
 			e.report.Failures = append(e.report.Failures, Failure{Name: name, Stage: result.label, Err: result.failure.Error()})
