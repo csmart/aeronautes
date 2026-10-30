@@ -22,6 +22,7 @@ type overwriteRecorder struct {
 	baselines map[string]ShownObject
 	replaced  map[string]ObservedPredecessor
 	refused   map[string][2]ShownObject
+	executed  map[string]Observation
 }
 
 func newOverwriteRecorder() *overwriteRecorder {
@@ -29,6 +30,7 @@ func newOverwriteRecorder() *overwriteRecorder {
 		baselines: map[string]ShownObject{},
 		replaced:  map[string]ObservedPredecessor{},
 		refused:   map[string][2]ShownObject{},
+		executed:  map[string]Observation{},
 	}
 }
 
@@ -47,7 +49,7 @@ func (r *overwriteRecorder) acknowledge(t *testing.T, w *world, name string) {
 func (r *overwriteRecorder) recorder() *Recorder {
 	return &Recorder{
 		Admit:   func(Admission) error { return nil },
-		Execute: func(string, Observation) error { return nil },
+		Execute: func(name string, o Observation) error { r.executed[name] = o; return nil },
 		Verify:  func(string, Observation) error { return nil },
 		Acknowledged: func(name string) (ShownObject, bool, error) {
 			shown, ok := r.baselines[name]
@@ -456,5 +458,150 @@ func TestStagedOverwritePreparesBeforeTheFixedPoint(t *testing.T) {
 	}
 	if d := headDst(t, w, "doc"); d.ContentLength != int64(len(racer)) || d.ETag != etagOf(racer) {
 		t.Errorf("preparation-window overwrite clobbered the racer: len=%d etag=%s", d.ContentLength, d.ETag)
+	}
+}
+
+func TestAcknowledgedSymlinkOverwriteReplacesMatch(t *testing.T) {
+	w := newWorld(t)
+	name := "linkobj"
+	seed(w.srcMock, "media", "target", []byte("target bytes"), nil)
+	w.srcMock.PutObject("media", name, swifttest.Object{
+		ContentType: "application/octet-stream", SymlinkTarget: "media/target",
+	})
+	seed(w.dstMock, "backup", name, []byte("OLD"), nil)
+
+	rec := newOverwriteRecorder()
+	rec.acknowledge(t, w, name)
+
+	e := recordingExecutor(t, w, &fakeEngine{w: w, interruptAfter: -1}, rec.recorder())
+	report, err := e.Run(context.Background(), []plan.Item{
+		{Name: name, Verdict: plan.VerdictChanged, Route: plan.RouteNative},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Copied != 1 || report.Overwrites != 1 || report.OverwritesRefused != 0 || len(report.Failures) != 0 || len(report.Conflicts) != 0 {
+		t.Fatalf("acknowledged symlink overwrite did not replace cleanly: %+v", report)
+	}
+	link, err := w.dst.SymlinkGet(context.Background(), "backup", name)
+	if err != nil || link.SymlinkTarget != "media/target" {
+		t.Fatalf("destination is not the replacement symlink: %+v %v", link, err)
+	}
+	if predecessor, ok := rec.replaced[name]; !ok || predecessor.Length != 3 || predecessor.ETag != etagOf([]byte("OLD")) {
+		t.Errorf("predecessor was not recorded before the symlink replaced it: %+v ok=%t", rec.replaced[name], ok)
+	}
+}
+
+func TestAcknowledgedSymlinkOverwriteRefusesChanged(t *testing.T) {
+	w := newWorld(t)
+	name := "linkobj"
+	seed(w.srcMock, "media", "target", []byte("target bytes"), nil)
+	w.srcMock.PutObject("media", name, swifttest.Object{
+		ContentType: "application/octet-stream", SymlinkTarget: "media/target",
+	})
+	seed(w.dstMock, "backup", name, []byte("OLD"), nil)
+
+	rec := newOverwriteRecorder()
+	rec.acknowledge(t, w, name) // baseline: plain 3-byte object
+
+	racer := []byte("CHANGED")
+	seed(w.dstMock, "backup", name, racer, nil)
+
+	e := recordingExecutor(t, w, &fakeEngine{w: w, interruptAfter: -1}, rec.recorder())
+	report, err := e.Run(context.Background(), []plan.Item{
+		{Name: name, Verdict: plan.VerdictChanged, Route: plan.RouteNative},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.OverwritesRefused != 1 || report.Copied != 0 || report.Overwrites != 0 || len(report.Failures) != 0 {
+		t.Fatalf("changed destination under a symlink copy was not refused: %+v", report)
+	}
+	if d := headDst(t, w, name); d.ContentLength != int64(len(racer)) || d.ETag != etagOf(racer) {
+		t.Errorf("refused symlink overwrite clobbered the racer: len=%d etag=%s", d.ContentLength, d.ETag)
+	}
+	pair, ok := rec.refused[name]
+	if !ok || pair[0].ETag != etagOf([]byte("OLD")) || pair[1].ETag != etagOf(racer) {
+		t.Errorf("symlink refusal did not record both identities: %+v ok=%t", rec.refused[name], ok)
+	}
+	if _, ok := rec.replaced[name]; ok {
+		t.Error("a refused symlink overwrite recorded a replacement")
+	}
+}
+
+// A source symlink whose acknowledged destination has vanished by the fixed
+// point is created as a symlink, with its observed absence recorded first, the
+// same as the plain and native routes (db:937 finding 3).
+func TestAcknowledgedSymlinkOverwriteRecordsVanishedAbsence(t *testing.T) {
+	w := newWorld(t)
+	name := "linkobj"
+	seed(w.srcMock, "media", "target", []byte("target bytes"), nil)
+	w.srcMock.PutObject("media", name, swifttest.Object{
+		ContentType: "application/octet-stream", SymlinkTarget: "media/target",
+	})
+	seed(w.dstMock, "backup", name, []byte("OLD"), nil)
+
+	rec := newOverwriteRecorder()
+	rec.acknowledge(t, w, name)
+	w.dstMock.RemoveObject("backup", name) // vanished after the acknowledgement
+
+	e := recordingExecutor(t, w, &fakeEngine{w: w, interruptAfter: -1}, rec.recorder())
+	report, err := e.Run(context.Background(), []plan.Item{
+		{Name: name, Verdict: plan.VerdictChanged, Route: plan.RouteNative},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Copied != 1 || report.Overwrites != 0 || report.OverwritesRefused != 0 {
+		t.Fatalf("vanished symlink destination was not created cleanly: %+v", report)
+	}
+	observed, ok := rec.replaced[name]
+	if !ok {
+		t.Fatal("the vanished symlink destination's absence was not recorded")
+	}
+	if observed.Present {
+		t.Errorf("absence recorded as present: %+v", observed)
+	}
+	if written, serr := w.dst.SymlinkGet(context.Background(), "backup", name); serr != nil || written.SymlinkTarget != "media/target" {
+		t.Errorf("free name did not take the symlink: target=%q err=%v", written.SymlinkTarget, serr)
+	}
+}
+
+// A staged symlink overwrite refused at the fixed point carries the engine's
+// unresolved effect, not not-attempted: by the refusal the staged route has
+// already written the symlink's bytes into the staging namespace (ADR 0030), so
+// the item's recorded uncertainty must say the destination MIGHT hold staged
+// residue. The native route, which stages nothing, keeps not-attempted
+// (its existing tests cover that). The admitted-item validator must also accept
+// refused+unresolved, which it did not before (db:944 finding 2).
+func TestAcknowledgedStagedSymlinkOverwriteRefusalCarriesUnresolvedEffect(t *testing.T) {
+	w := newWorld(t)
+	name := "linkobj" // rclone-safe, so the copy routes staged
+	seed(w.srcMock, "media", "target", []byte("target bytes"), nil)
+	w.srcMock.PutObject("media", name, swifttest.Object{
+		ContentType: "application/octet-stream", SymlinkTarget: "media/target",
+	})
+	seed(w.dstMock, "backup", name, []byte("OLD"), nil)
+
+	rec := newOverwriteRecorder()
+	rec.acknowledge(t, w, name) // baseline: the plain 3-byte object
+	seed(w.dstMock, "backup", name, []byte("CHANGED"), nil)
+
+	e := recordingExecutor(t, w, &fakeEngine{w: w, interruptAfter: -1}, rec.recorder())
+	report, err := e.Run(context.Background(), []plan.Item{
+		{Name: name, Verdict: plan.VerdictChanged, Route: plan.RouteRclone, SourceBytes: 3},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.OverwritesRefused != 1 || report.Overwrites != 0 {
+		t.Fatalf("staged symlink overwrite of a changed destination was not refused: %+v", report)
+	}
+	observed, ok := rec.executed[name]
+	if !ok || observed.Result != ResultRefused {
+		t.Fatalf("the staged symlink refusal was not recorded as a refusal: %+v ok=%t", observed, ok)
+	}
+	if observed.Effect != EffectUnresolved {
+		t.Errorf("staged symlink refusal lost the staged bytes' uncertainty: effect=%q, want %q", observed.Effect, EffectUnresolved)
 	}
 }

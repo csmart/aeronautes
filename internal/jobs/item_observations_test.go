@@ -20,6 +20,11 @@ func TestItemObservationRules(t *testing.T) {
 		{"conflict", true, false, itemProblem(ItemConflict, StageCommit, CodeConflict), true},
 		{"same", false, false, ItemObservation{Result: ItemSame, Effect: EffectNotAttempted}, true},
 		{"refused", false, false, itemProblem(ItemRefused, StagePlanning, CodeUnsupported), true},
+		// A staged overwrite refused at the fixed point may carry the unresolved
+		// effect its staged bytes leave behind, but only for an admitted item;
+		// an unadmitted refusal never staged anything under an acknowledgement.
+		{"refused_unresolved_admitted", true, false, ItemObservation{Result: ItemRefused, Effect: EffectUnresolved, Diagnostic: ItemDiagnostic{Stage: StageCommit, Code: CodeConflict}}, true},
+		{"refused_unresolved_unadmitted", false, false, ItemObservation{Result: ItemRefused, Effect: EffectUnresolved, Diagnostic: ItemDiagnostic{Stage: StageCommit, Code: CodeConflict}}, false},
 		{"not_attempted", false, false, ItemObservation{Result: ItemNotAttempted, Effect: EffectNotAttempted}, true},
 		{"verified", false, true, ItemObservation{Result: ItemVerified, Effect: EffectNotAttempted}, true},
 		{"verification_failed", false, true, itemProblem(ItemFailed, StageVerification, CodeMissing), true},

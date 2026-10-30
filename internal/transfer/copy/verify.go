@@ -33,10 +33,20 @@ func (e *Executor) Verify(ctx context.Context, source, dest listingStream) (*Ver
 	if e.stopped != nil {
 		return report, e.stopped
 	}
-	refused, err := e.refusals.reader(e.report.OverwritesRefused)
+	// Refusals land in two ascending spools: the immediate route's and the staged
+	// route's, the latter flushed out of name order. Verify merges them.
+	if e.refusals.count+e.refusalsDeferred.count != e.report.OverwritesRefused {
+		return report, errors.New("refusal spool counts do not sum to the refusal total")
+	}
+	immediate, err := e.refusals.reader(e.refusals.count)
 	if err != nil {
 		return report, err
 	}
+	deferredRefusals, err := e.refusalsDeferred.reader(e.refusalsDeferred.count)
+	if err != nil {
+		return report, err
+	}
+	refused := refusalReaders{a: immediate, b: deferredRefusals}
 	// Opened once and read forward beside the refusal spool, in the same
 	// ascending name order execution wrote both.
 	evidence, err := e.evidence.reader()
