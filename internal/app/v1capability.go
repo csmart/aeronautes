@@ -16,27 +16,23 @@ import (
 // The operator narrowed v1 to browse, inspect, download and metadata
 // reading and writing; copy, mirror, upload and bulk delete were deferred
 // until each was proven. Upload was RETURNED on 16 October 2026 (ADR 0052
-// decision 9) and object deletion on 29 October 2026 (decision 11).
+// decision 9), object deletion on 29 October 2026 (decision 11), and copy
+// with its job re-run on 31 October 2026 (decision 12).
 // RETURNING A CAPABILITY IS REMOVING ITS NAMES FROM THIS TABLE — no call
 // site changes, and the code behind it is untouched precisely so that it
 // still works when that happens. Its token leaves v1CapabilityTokens below
 // at the same time, so the switch reports it as naming nothing rather than
 // accepting it silently.
 //
-// Two entries are here on BEHAVIOUR rather than on name, and a
-// classification by capability name would have shipped both:
-// StartBenchmark writes real objects and bulk-deletes them, and RerunJob
-// refuses every job type except copy. See TestEveryBridgeActionIsClassified
+// StartBenchmark is here on BEHAVIOUR rather than on name — it writes
+// real objects and bulk-deletes them, which a classification by capability
+// name would have shipped. See TestEveryBridgeActionIsClassified
 // for the check that keeps this table exhaustive against the inventory, so
 // a new bridge method cannot land unclassified and silently reachable.
 //
 // A name here is NOT a claim that the route is unsafe to run, nor that
 // removing it would be safe. It records that a v1 build does not offer it.
 var v1DeferredActions = map[string]string{
-	// copy
-	"TransferService.PlanCopy":  "Copy",
-	"TransferService.StartCopy": "Copy",
-	"TransferService.RerunJob":  "Copy",
 	// mirror — ADR 0020 refuses this independently and first; the gate
 	// must never become the only thing refusing it.
 	"TransferService.StartMirror": "Mirror",
@@ -70,7 +66,6 @@ const EnableEnvVar = "AERONAUTES_ENABLE"
 // refusal must never become a scoping decision, so no value of the
 // variable can admit it.
 var v1CapabilityTokens = map[string]string{
-	"copy":                   "Copy",
 	"bulk-delete":            "Bulk delete",
 	"marker-manifest-delete": "Marker and manifest deletion",
 	"benchmark":              "Benchmark",

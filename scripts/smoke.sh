@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Release smoke (§65.6 item 8): launch the real binary headless against
 # the in-repo mock cluster and drive bookmark → connect → browse.
-# Copy, mirror and bulk delete are deferred in a v1 build (ADR 0052).
+# Mirror and bulk delete are deferred in a v1 build (ADR 0052); copy was
+# returned on 31 October 2026 (decision 12).
 # Upload returned to the release on 16 October 2026 but, like download, needs
 # a native picker this harness cannot operate, so neither is driven here. Screenshots
 # and logs go to smoke-artifacts/. The §57.4 smoke against real SwiftStack
@@ -170,8 +171,11 @@ switch_case unset ""
 if grep -q "AERONAUTES_ENABLE" "$ART/switch-unset.log"; then
   fail "an unset switch logged something about capabilities (see $ART/switch-unset.log)"
 fi
+# Copy was returned to the release on 31 October 2026 (ADR 0052 decision 12);
+# its token no longer names a capability, so the switch says it was ignored
+# rather than silently accepting a token that now does nothing.
 switch_case copy "copy" \
-  "AERONAUTES_ENABLE: offering unproven capabilities in this process: Copy"
+  "AERONAUTES_ENABLE: ignored, not a capability: copy"
 # Object deletion was returned to the release on 29 October 2026 (ADR 0052
 # decision 11); its token no longer names a capability, so the switch says it
 # was ignored rather than silently accepting a token that now does nothing.
@@ -181,8 +185,8 @@ switch_case object-delete "object-delete" \
 # (ADR 0094 decision 6); the capability says what its token admits.
 switch_case marker-manifest-delete "marker-manifest-delete" \
   "AERONAUTES_ENABLE: offering unproven capabilities in this process: Marker and manifest deletion"
-switch_case unrecognised "copy, not-a-capability" \
-  "AERONAUTES_ENABLE: offering unproven capabilities in this process: Copy" \
+switch_case unrecognised "benchmark, not-a-capability" \
+  "AERONAUTES_ENABLE: offering unproven capabilities in this process: Benchmark" \
   "AERONAUTES_ENABLE: ignored, not a capability: not-a-capability"
 # Mirror has no token deliberately (ADR 0052 decision 5, ADR 0082 decision 3),
 # and "upload" stopped naming one when the operator returned that capability

@@ -47,12 +47,13 @@ async function connectedScreen(enabled: string[] = [], unrecognised: string[] = 
   return root;
 }
 
-it("keeps download and upload and withholds copy and bulk delete", async () => {
+it("keeps download, upload and copy and withholds bulk delete", async () => {
   await connectedScreen();
   const shown = labels();
   expect(shown).toContain("Download…");
   expect(shown).toContain("Upload…");
-  expect(shown).not.toContain("Copy to…");
+  // Copy returned on 31 October 2026 (ADR 0052 decision 12): its control ships.
+  expect(shown).toContain("Copy to…");
   expect(shown).not.toContain("Delete scope…");
   document.querySelector<HTMLButtonElement>(".drawer .bar")!.click();
   flushSync();
@@ -111,7 +112,10 @@ it("offers a switched-on capability and says it is unproven", async () => {
   // unproven: the banner names only what the operator turned on.
   expect(shown).toContain("Upload…");
   expect(banner?.textContent).not.toContain("Upload");
-  expect(shown).not.toContain("Copy to…");
+  // Copy is kept by the release, so its control is present whether or not the
+  // switch named it, and it is not in the unproven banner.
+  expect(shown).toContain("Copy to…");
+  expect(banner?.textContent).not.toContain("Copy");
 });
 
 // A token that names no capability is reported and offers nothing.
@@ -120,7 +124,9 @@ it("names an unrecognised token and offers nothing for it", async () => {
   const banner = document.querySelector('[role="alert"].unproven-banner');
   expect(banner?.textContent).toContain("Ignored, not a capability: copz");
   expect(banner?.textContent).not.toContain("Unproven:");
-  expect(labels()).not.toContain("Copy to…");
+  // Copy is kept, so its control stays present and an unrecognised token
+  // changes nothing about it.
+  expect(labels()).toContain("Copy to…");
 });
 
 // With nothing switched on there is no banner at all.

@@ -120,6 +120,24 @@ inventory, with the two derivations agreeing.
     copy, benchmark and job re-run stay deferred, and Mirror stays refused under
     [ADR 0020](0020-recovery-containment.md).
 
+12. **Operator decision, 31 October 2026.** Copy is a v1 capability, and its job re-run with it. The
+    operator's word was "Lift the copy gate now", given as a standing rule that once a release's
+    implementation is complete behind the gate its gate may be lifted, and copy's implementation for
+    0.3.0 is complete. The evidence is [ADR 0087](0087-copy-overwrite-on-upload-terms.md), the
+    overwrite of an acknowledged destination on the terms upload has, with its fixed-point comparison
+    and retained segments, and [ADR 0096](0096-copy-skip-requires-full-fidelity.md), under which a copy
+    skips a destination only when it is a full-fidelity replica, so a difference in metadata, content
+    headers, expiry or a symlink's target is never reported as equivalent replication; both were built
+    behind the `copy` token and reviewed. `TransferService.PlanCopy`, `StartCopy` and `RerunJob` leave
+    the deferred table and join the kept set, so job re-run — classified with copy because it refuses
+    every job type except a copy — returns with it. The `copy` token leaves
+    [ADR 0082](0082-operator-enabled-unproven-capabilities.md) decision 3's list, because it now names
+    nothing the switch can admit; by decision 5 of that record an operator who still has it in their
+    environment is told it was ignored. It is not a claim the route is proven: a replacement keeps the
+    window its identity comparison narrows and cannot close, exactly as upload and object deletion do.
+    Bulk deletion and its segment job, marker and manifest deletion and benchmark stay deferred, and
+    Mirror stays refused under [ADR 0020](0020-recovery-containment.md).
+
 ## What this does not establish
 
 It bounds what a v1 build offers.

@@ -190,7 +190,9 @@ it.each(["running", "complete"])("keeps unknown rate and later rate/ETA qualific
   } else {
     expect(text(row, ".when")).toBe("2026-09-12 00:00:09");
     expect(row.querySelector(".cancel")).toBeNull();
-    expect(row.querySelector(".rerun")).toBeNull();
+    // Job re-run returned with copy on 31 October 2026 (ADR 0052 decision 12),
+    // so a complete copy job now offers it.
+    expect(row.querySelector(".rerun")).not.toBeNull();
     expect(row.querySelector(".progress")).toBeNull();
   }
 });

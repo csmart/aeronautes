@@ -23,18 +23,6 @@ func deferredEntryPoints(t *testing.T, h *harness) []deferredEntryPoint {
 	deleteSvc := NewDeleteService(h.transfer.connections, h.transfer.jobs, h.transfer.runner, evidence.NewStore(h.db))
 	bench := NewBenchmarkService(h.transfer.connections, h.transfer.jobs, h.transfer.runner, h.db)
 	entries := []deferredEntryPoint{
-		{"TransferService.PlanCopy", "Copy", func(t *testing.T, h *harness) error {
-			_, err := h.transfer.PlanCopy(t.Context(), CopyRequestDTO{SourceBookmarkID: h.bookmarkID(), SourceContainer: "fixtures", DestBookmarkID: h.bookmarkID(), DestContainer: "fixtures"})
-			return err
-		}},
-		{"TransferService.StartCopy", "Copy", func(t *testing.T, h *harness) error {
-			_, err := h.transfer.StartCopy(t.Context(), CopyRequestDTO{SourceBookmarkID: h.bookmarkID(), SourceContainer: "fixtures", DestBookmarkID: h.bookmarkID(), DestContainer: "fixtures"})
-			return err
-		}},
-		{"TransferService.RerunJob", "Copy", func(t *testing.T, h *harness) error {
-			_, err := h.transfer.RerunJob(t.Context(), "any-job")
-			return err
-		}},
 		{"DeleteService.PreviewDelete", "Bulk delete", func(t *testing.T, h *harness) error {
 			_, err := deleteSvc.PreviewDelete(t.Context(), DeleteRequestDTO{BookmarkID: h.bookmarkID(), Container: "fixtures"})
 			return err
@@ -166,7 +154,7 @@ func TestMirrorRefusesAtItsEntryPointWhateverTheSwitchSays(t *testing.T) {
 	forceV1Gate(t)
 	restoreSwitch(t)
 
-	for _, spec := range []string{"", "mirror", "Mirror", "copy,mirror", "copy", "copy, bulk-delete, benchmark, marker-manifest-delete"} {
+	for _, spec := range []string{"", "mirror", "Mirror", "benchmark,mirror", "bulk-delete", "bulk-delete, benchmark, marker-manifest-delete"} {
 		EnableCapabilities(spec)
 		before := takeCollateral(t, h)
 		_, err := h.transfer.StartMirror(t.Context(), MirrorRequestDTO{
