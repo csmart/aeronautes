@@ -824,8 +824,9 @@ func TestStaleManifestFingerprintCannotSkip(t *testing.T) {
 	// ONE segment actually remains (2000 of 3000 bytes).
 	seed(w.dstMock, "backup_segments", "video.bin/gen/00000000", bytes.Repeat([]byte("v"), 2000), nil)
 	w.dstMock.PutObject("backup", "video.bin", swifttest.Object{
-		Manifest: "backup_segments/video.bin/gen/",
-		Meta:     map[string]string{"Aeronautes-Fingerprint": fingerprint(src.ContentLength, src.ETag)},
+		Manifest:    "backup_segments/video.bin/gen/",
+		ContentType: "text/plain", // a faithful copy carries the source's content type (§27.4)
+		Meta:        map[string]string{"Aeronautes-Fingerprint": fingerprint(src.ContentLength, src.ETag)},
 	})
 	dst, err := w.dst.ObjectDetail(context.Background(), "backup", "video.bin")
 	if err != nil {
@@ -846,7 +847,8 @@ func TestStaleManifestFingerprintCannotSkip(t *testing.T) {
 
 	// Stamped with the aggregate actually observed, it IS proven.
 	w.dstMock.PutObject("backup", "video.bin", swifttest.Object{
-		Manifest: "backup_segments/video.bin/gen/",
+		Manifest:    "backup_segments/video.bin/gen/",
+		ContentType: "text/plain", // a faithful copy carries the source's content type (§27.4)
 		Meta: map[string]string{
 			"Aeronautes-Fingerprint":      fingerprint(src.ContentLength, src.ETag),
 			"Aeronautes-Staged-Aggregate": aggregateStamp(dst.ContentLength, dst.ETag),
