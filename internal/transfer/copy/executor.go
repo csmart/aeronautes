@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"strings"
 	"time"
 
@@ -338,10 +339,7 @@ func (e *Executor) Handle(ctx context.Context, item plan.Item) error {
 	}
 	switch item.Verdict {
 	case plan.VerdictSame:
-		if e.cfg.Recorder != nil {
-			return e.stop(e.cfg.Recorder.Execute(item.Name, Observation{Result: ResultSame, Effect: EffectNotAttempted}))
-		}
-		return nil
+		return e.resolveSame(ctx, item)
 	case plan.VerdictUnknown:
 		return e.runUnknown(ctx, item)
 	case plan.VerdictNew:
@@ -384,6 +382,47 @@ func (e *Executor) emit(name, outcome, detail string) {
 	}
 }
 
+// resolveSame confirms the advisory listing's equal verdict against both
+// authoritative HEADs before skipping. A copy skips only a full-fidelity replica
+// (ADR 0096), so a content-equal destination whose carried set or link differs,
+// one that changed or vanished since the advisory plan, or one that cannot be
+// read to confirm, is refused rather than skipped. A Same item is never offered
+// for acknowledgement (ADR 0087 decisions 2 and 4), so it never replaces or
+// creates and never needs admission: skip or refuse are its only outcomes, and
+// the operator re-runs for the fresh verdict.
+func (e *Executor) resolveSame(ctx context.Context, item plan.Item) error {
+	src, err := e.cfg.Source.ObjectDetail(ctx, e.cfg.SrcContainer, e.cfg.SrcPrefix+item.Name)
+	if err != nil {
+		return e.observe(item.Name, e.refuseSame(item.Name, StageSourceRead, CodeUnknown, err,
+			"the source counted equal could not be read to confirm a full-fidelity replica"))
+	}
+	dst, err := e.cfg.Dest.ObjectDetail(ctx, e.cfg.DstContainer, e.cfg.DstPrefix+item.Name)
+	if err != nil {
+		if swiftcontrol.IsNotFound(err) {
+			return e.observe(item.Name, e.refuseSame(item.Name, StageCommit, CodeConflict, nil,
+				"the destination the plan counted equal is gone, and a name the plan counted equal is not acknowledged for creation"))
+		}
+		return e.observe(item.Name, e.refuseSame(item.Name, StageCommit, CodeUnknown, err,
+			"the destination the plan counted equal could not be read to confirm a full-fidelity replica"))
+	}
+	if skippableEqual(src, dst) {
+		return e.observe(item.Name, executionResult{Observation: Observation{Result: ResultSame, Effect: EffectNotAttempted}})
+	}
+	return e.observe(item.Name, e.refuseSame(item.Name, StageCommit, CodeConflict, nil,
+		"the destination the plan counted equal is not a full-fidelity replica: its content headers, expiry, metadata or link target differ from the source"))
+}
+
+// refuseSame records a Same item the executor declined to skip. A Same item is
+// never admitted, so a refusal — not a failure or conflict — is its only non-skip
+// outcome; the diagnostic carries why, and the name joins the immediate refusal
+// spool in the ascending order the verify pass reads (ADR 0096 decision 5).
+func (e *Executor) refuseSame(name string, stage Stage, code Code, cause error, detail string) executionResult {
+	result := executionResult{Observation: Observation{Result: ResultRefused, Effect: EffectNotAttempted,
+		Diagnostic: ClassifyDiagnostic(stage, code, cause)}, detail: detail}
+	result.addProblem(StageRecording, e.refusals.append(name))
+	return result
+}
+
 // runUnknown HEAD-resolves a conservative pair (§28.4): equality proven
 // → skip; destination gone → New; otherwise refuse the overwrite.
 func (e *Executor) runUnknown(ctx context.Context, item plan.Item) error {
@@ -415,6 +454,26 @@ func (e *Executor) runUnknown(ctx context.Context, item plan.Item) error {
 // copy of this content) AND live logical-length equality — a DLO whose
 // backing segments changed or vanished re-sums differently on HEAD, so
 // a stale fingerprint alone can no longer skip it (review H-04).
+// isSymlink reports whether a HEAD describes a Swift symlink in either
+// representation: a followed link carries Content-Location (FollowedSymlink), and
+// a link that was not followed — a dangling or cross-account link — carries
+// X-Symlink-Target (SymlinkTarget). A copy carries the link itself, so neither
+// is a plain object to skip or copy by its bytes (§17.1, ADR 0096 decision 2).
+func isSymlink(d *swiftcontrol.ObjectDetail) bool {
+	return d.FollowedSymlink || d.SymlinkTarget != ""
+}
+
+// fidelityEqual reports whether the destination carries the same replica facts
+// as the source beyond its bytes: the §27.4 set a copy applies on a transfer —
+// content type, content encoding, content disposition, expiry and user metadata.
+// metadataHeaders is the one definition of that set and already drops the
+// reserved Aeronautes stamps the destination carries and the source does not, so
+// comparing the two built sets is the fidelity test (P17, ADR 0096). The DLO
+// manifest is not compared: §27.4 gives the destination its own.
+func fidelityEqual(src, dst *swiftcontrol.ObjectDetail) bool {
+	return maps.Equal(metadataHeaders(src, "X-Object-Meta-"), metadataHeaders(dst, "X-Object-Meta-"))
+}
+
 func provenEqual(src, dst *swiftcontrol.ObjectDetail) bool {
 	if src.Class == swiftcontrol.ClassPlain && dst.Class == swiftcontrol.ClassPlain {
 		return src.ContentLength == dst.ContentLength &&
@@ -435,7 +494,21 @@ func provenEqual(src, dst *swiftcontrol.ObjectDetail) bool {
 // provenEqual; otherwise a destination that legitimately carries no
 // stamp would turn an ordinary copy into a verification failure.
 func skippableEqual(src, dst *swiftcontrol.ObjectDetail) bool {
+	// A symlink is carried AS a link (§17.1), never skipped on content, so it is
+	// recognised in both HEAD representations: a followed link (Content-Location)
+	// shows its target's content, and a link that was not followed — a dangling or
+	// cross-account link — shows X-Symlink-Target. Either way it routes to the
+	// symlink commit, which reads the link with ?symlink=get and compares it, so a
+	// different target or account is never reported equivalent (ADR 0096 d2).
+	if isSymlink(src) || isSymlink(dst) {
+		return false
+	}
 	if !provenEqual(src, dst) {
+		return false
+	}
+	// A skip must be a full-fidelity replica, not merely content-equal (P17, ADR
+	// 0096 decision 1): the §27.4 carried set has to match too.
+	if !fidelityEqual(src, dst) {
 		return false
 	}
 	if src.Class == swiftcontrol.ClassPlain && dst.Class == swiftcontrol.ClassPlain {
@@ -694,7 +767,7 @@ func (e *Executor) nativeCopy(ctx context.Context, item plan.Item) (result execu
 	// the same failure twice.
 	closeSource := closeOnce(body)
 	defer func() { result.addProblem(StageSourceRead, closeSource.Close()) }()
-	if src.FollowedSymlink {
+	if isSymlink(src) {
 		return e.copySymlink(ctx, item.Name, srcName, dstName, EffectNotAttempted)
 	}
 	if src.ContentLength > maxSinglePut {
@@ -919,9 +992,9 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 	if err != nil {
 		return failed(EffectUnresolved, StageSourceRead, CodeUnknown, "stage-head-source", err)
 	}
-	if src.FollowedSymlink {
-		// The source is a Swift symlink: the staged bytes are the
-		// followed TARGET's — faithful §17.1 semantics copy the LINK.
+	if isSymlink(src) {
+		// The source is a Swift symlink in either HEAD representation: faithful
+		// §17.1 semantics copy the LINK, never the followed target's bytes.
 		result = e.copySymlink(ctx, item.Name, srcName, dstName, EffectUnresolved)
 		result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
 		return result

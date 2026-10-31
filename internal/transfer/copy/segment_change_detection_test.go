@@ -308,7 +308,7 @@ func TestMaterialisedPlainDestinationKeepsItsDecision(t *testing.T) {
 	w.srcMock.AddContainer("media_segments", "standard")
 	seed(w.srcMock, "media_segments", "asset/gen/00000000", []byte("GOOD"), nil)
 	seed(w.srcMock, "media_segments", "asset/gen/00000001", []byte("DATA"), nil)
-	w.srcMock.PutObject("media", "asset", swifttest.Object{Manifest: "media_segments/asset/gen/"})
+	w.srcMock.PutObject("media", "asset", swifttest.Object{Manifest: "media_segments/asset/gen/", ContentType: "text/plain"})
 	src, err := w.src.ObjectDetail(context.Background(), "media", "asset")
 	if err != nil {
 		t.Fatal(err)

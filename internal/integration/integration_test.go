@@ -1027,10 +1027,15 @@ func TestCopyExecutorRealSwift(t *testing.T) {
 
 		// Restoring the original source makes both pairs equal again;
 		// refusal has preserved the prior destination fingerprint and bytes.
+		// A full-fidelity skip (ADR 0096) treats a missing X-Object-Meta-Shoot as a
+		// difference, so the restore returns big.bin's metadata too, not only its
+		// bytes: idempotency now requires the source's carried set to match what
+		// was copied, which is what "the original source" means.
 		if err := h.put(ctx, src, "small.txt", []byte("v1 bytes"), "text/plain", nil); err != nil {
 			t.Fatal(err)
 		}
-		if err := h.put(ctx, src, "big.bin", big, "application/octet-stream", nil); err != nil {
+		if err := h.put(ctx, src, "big.bin", big, "application/octet-stream",
+			swift.Headers{"X-Object-Meta-Shoot": "launch"}); err != nil {
 			t.Fatal(err)
 		}
 		executor3 := executorFixture(t, h, src, dst, "job-noop")
