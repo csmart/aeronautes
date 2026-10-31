@@ -35,7 +35,7 @@ function show() {
 
 it("distinguishes refused overwrites from uncertain comparison candidates", async () => {
   show();
-  expect(document.body.textContent).toContain("Existing changed objects are refused");
+  expect(document.body.textContent).toMatch(/refused unless you\s+choose to replace/);
   button("Preview")!.click();
   await vi.waitFor(() => expect(document.querySelector(".preview")).not.toBeNull());
   const text = document.body.textContent!;
@@ -48,6 +48,52 @@ it("distinguishes refused overwrites from uncertain comparison candidates", asyn
   expect(text).not.toContain("to transfer");
 });
 
+it("lets the operator acknowledge replacing the existing destinations", async () => {
+  const api = show();
+  button("Preview")!.click();
+  await vi.waitFor(() => expect(document.querySelector(".preview")).not.toBeNull());
+  // Refusal is the default: the acknowledged wording is not shown yet.
+  expect(document.body.textContent).toMatch(/1\s+overwrite refused/);
+  expect(document.body.textContent).not.toContain("will REPLACE");
+  // Opt into replacing. The flag only records the request; the authorising
+  // question is raised later, by the backend, on a native dialog.
+  button("Replace existing objects…")!.click();
+  flushSync();
+  expect(document.body.textContent).toContain("will REPLACE");
+  expect(document.body.textContent).toMatch(/1\s+to replace/);
+  expect(document.body.textContent).toContain("unequal existing destinations are replaced once you confirm");
+  expect(document.body.textContent).toContain("changed objects to replace");
+  // The affordance is one-way until a fresh preview; it does not linger.
+  expect(button("Replace existing objects…")).toBeUndefined();
+  button("Start copy")!.click();
+  await vi.waitFor(() => expect(api.startCopy).toHaveBeenCalledOnce());
+  expect(vi.mocked(api.startCopy).mock.calls[0][0].acknowledgeOverwrite).toBe(true);
+});
+
+it("drops a pending overwrite acknowledgement when the scope changes", async () => {
+  const api = show();
+  button("Preview")!.click();
+  await vi.waitFor(() => expect(document.querySelector(".preview")).not.toBeNull());
+  button("Replace existing objects…")!.click();
+  flushSync();
+  expect(document.body.textContent).toContain("will REPLACE");
+  // Editing the destination retires the acknowledged preview rather than
+  // carrying the answer across to a scope the operator never saw.
+  const container = document.querySelector<HTMLInputElement>('input[placeholder="container"]')!;
+  container.value = "elsewhere";
+  container.dispatchEvent(new Event("input", { bubbles: true }));
+  flushSync();
+  expect(document.querySelector(".preview")).toBeNull();
+  expect(button("Start copy")?.disabled).toBe(true);
+  // A fresh preview starts unacknowledged again.
+  button("Preview")!.click();
+  await vi.waitFor(() => expect(document.querySelector(".preview")).not.toBeNull());
+  expect(document.body.textContent).not.toContain("will REPLACE");
+  button("Start copy")!.click();
+  await vi.waitFor(() => expect(api.startCopy).toHaveBeenCalledOnce());
+  expect(vi.mocked(api.startCopy).mock.calls[0][0].acknowledgeOverwrite).toBe(false);
+});
+
 it("keeps overwrite refusal visible for a versioned destination", async () => {
   show();
   const container = document.querySelector<HTMLInputElement>('input[placeholder="container"]')!;
@@ -56,8 +102,25 @@ it("keeps overwrite refusal visible for a versioned destination", async () => {
   flushSync();
   button("Preview")!.click();
   await vi.waitFor(() => expect(document.querySelector(".preview")).not.toBeNull());
-  expect(document.body.textContent).toContain("Existing changed objects are still refused");
+  expect(document.body.textContent).toContain("refused unless you choose to replace them");
   expect(document.body.textContent).not.toContain("accumulate versions");
+});
+
+it("states versioning as an observation, not a retention promise, when replacing", async () => {
+  show();
+  const container = document.querySelector<HTMLInputElement>('input[placeholder="container"]')!;
+  container.value = "versioned";
+  container.dispatchEvent(new Event("input", { bubbles: true }));
+  flushSync();
+  button("Preview")!.click();
+  await vi.waitFor(() => expect(document.querySelector(".preview")).not.toBeNull());
+  button("Replace existing objects…")!.click();
+  flushSync();
+  const text = document.body.textContent!;
+  expect(text).toContain("reported versioning");
+  expect(text).toContain("is not verified here");
+  // ADR 0081 decision 8: the preview must not promise the prior version survives.
+  expect(text).not.toContain("keeps its prior version");
 });
 
 it("keeps a cancelled fixture copy partial after an overwrite refusal", async () => {

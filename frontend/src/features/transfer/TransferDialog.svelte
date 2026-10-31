@@ -31,19 +31,34 @@
   let closed = $state(false);
   let generation = 0;
   let cancelPreviewFocus: (() => void) | undefined;
+  // The scope is the copy's identity: every field a late navigation could
+  // change. acknowledgeOverwrite is NOT part of it — it is the operator's
+  // answer to the overwrite question, carried on the request this dialog
+  // starts and kept out of the identity so acknowledging is not mistaken for a
+  // scope change. The plan is advisory and ignores the flag (PlanCopy), so the
+  // plan shown is the plan acknowledged; the authorising question lives on the
+  // native dialog StartCopy raises (ADR 0081 decision 2), not on this page.
+  type Scope = Omit<CopyRequestDTO, "acknowledgeOverwrite">;
   interface Intent {
     generation: number;
     browser: BrowserState;
     scopeRevision: number;
     mode: TransferMode;
-    request: CopyRequestDTO;
+    scope: Scope;
   }
-  let prepared = $state.raw<{ intent: Intent; plan: CopyPlanDTO } | null>(null);
+  let prepared = $state.raw<{ intent: Intent; plan: CopyPlanDTO; request: CopyRequestDTO } | null>(null);
   const preview = $derived(prepared && isCurrent(prepared.intent) ? prepared.plan : null);
   const canPreview = $derived(!closed && !previewing && !starting && !browser.connecting
     && !!browser.connectedBookmarkId && !!browser.containerName && destContainer !== "");
+  // The overwrite question only has an answer once a copy preview shows a
+  // destination that exists: Changed is a listed difference, Unknown a pair the
+  // listing could not prove equal. Both are refused by default and both can be
+  // replaced once acknowledged — the executor replaces what still differs at
+  // the fixed point and skips what is identical.
+  const overwriteCandidates = $derived(mode === "copy" && preview ? preview.summary.changed + preview.summary.unknown : 0);
+  const acknowledged = $derived(!!preview && prepared?.request.acknowledgeOverwrite === true);
 
-  function request(): CopyRequestDTO {
+  function scope(): Scope {
     return {
       sourceBookmarkId: browser.connectedBookmarkId ?? "",
       sourceContainer: browser.containerName ?? "",
@@ -52,11 +67,6 @@
       destContainer,
       destPrefix,
       profile,
-      // Copy does not yet offer the overwrite acknowledgement, and copy itself
-      // is still a deferred capability, so every request is unacknowledged and
-      // the backend refuses each overwrite. The acknowledgement flow (mirroring
-      // the upload dialog's) arrives with the frontend slice that offers it.
-      acknowledgeOverwrite: false,
       settings: {
         chunkSize: chunkSize.trim(),
         transfers: Number.parseInt(transfers, 10) || 0,
@@ -71,7 +81,7 @@
   function isCurrent(intent: Intent): boolean {
     return !closed && !browser.connecting && intent.generation === generation
       && intent.browser === browser && intent.scopeRevision === browser.scopeRevision
-      && intent.mode === mode && JSON.stringify(intent.request) === JSON.stringify(request());
+      && intent.mode === mode && JSON.stringify(intent.scope) === JSON.stringify(scope());
   }
 
   function invalidate() {
@@ -140,15 +150,18 @@
   async function runPreview(button: HTMLButtonElement) {
     if (!canPreview) return;
     invalidate();
-    const req = request();
-    Object.freeze(req.settings);
-    Object.freeze(req);
-    const intent: Intent = { generation, browser, scopeRevision: browser.scopeRevision, mode, request: req };
+    const capturedScope = scope();
+    Object.freeze(capturedScope.settings);
+    Object.freeze(capturedScope);
+    const intent: Intent = { generation, browser, scopeRevision: browser.scopeRevision, mode, scope: capturedScope };
+    // A preview is unacknowledged: it asks what the copy would do, refusing
+    // every overwrite. Replacing is a second, deliberate step.
+    const req = Object.freeze({ ...capturedScope, acknowledgeOverwrite: false });
     const finishFocus = trackPreviewFocus(button, intent);
     previewing = true;
     try {
       const plan = await browser.planCopy(req);
-      if (isCurrent(intent)) prepared = { intent, plan };
+      if (isCurrent(intent)) prepared = { intent, plan, request: req };
     } catch (e) {
       if (isCurrent(intent)) error = e instanceof Error ? e.message : String(e);
     } finally {
@@ -158,6 +171,22 @@
     }
   }
 
+  // Record that the operator asked to replace the differing destinations. The
+  // plan is not re-read: it does not depend on this flag, so re-listing would
+  // only risk showing a different set than the one they chose to replace. The
+  // flag is an accident guard — StartCopy raises the one native confirmation,
+  // naming both accounts and the live names, before it writes anything, and the
+  // executor still refuses at the fixed point anything whose identity no longer
+  // matches what was acknowledged.
+  function replace() {
+    const current = prepared;
+    if (previewing || starting || mode !== "copy" || !current || !isCurrent(current.intent)
+      || current.request.acknowledgeOverwrite
+      || current.plan.summary.changed + current.plan.summary.unknown === 0) return;
+    const request = Object.freeze({ ...current.request, acknowledgeOverwrite: true });
+    prepared = { intent: current.intent, plan: current.plan, request };
+  }
+
   async function start() {
     const current = prepared;
     if (mode !== "copy" || starting || previewing || !current || !isCurrent(current.intent)) return;
@@ -165,7 +194,7 @@
     starting = true;
     error = null;
     try {
-      const jobId = await browser.startCopy(current.intent.request);
+      const jobId = await browser.startCopy(current.request);
       if (isCurrent(current.intent)) startedJobId = jobId;
     } catch (e) {
       if (isCurrent(current.intent)) error = e instanceof Error ? e.message : String(e);
@@ -203,8 +232,8 @@
       </p>
     {:else}
       <p class="warn" role="status">
-        Copy adds missing objects. Existing changed objects are refused because concurrent
-        changes cannot be protected.
+        Copy adds missing objects. An existing object that differs is refused unless you
+        choose to replace it, which the application asks you to confirm before it writes anything.
       </p>
     {/if}
 
@@ -298,7 +327,11 @@
       <div class="preview num">
         <div class="counts">
           <span class="count"><strong>{s.new}</strong> new</span>
-          <span class="count"><strong>{s.changed}</strong> {mode === "copy" ? `${s.changed === 1 ? "overwrite" : "overwrites"} refused` : "changed"}</span>
+          <span class="count"><strong>{s.changed}</strong> {mode === "mirror"
+            ? "changed"
+            : acknowledged
+              ? "to replace"
+              : `${s.changed === 1 ? "overwrite" : "overwrites"} refused`}</span>
           <span class="count"><strong>{s.same}</strong> unchanged</span>
           <span class="count conservative" title="Equality is not established by listings">
             <strong>{s.unknown}</strong> unable to prove unchanged
@@ -309,10 +342,19 @@
         </div>
         {#if mode === "copy"}
           <div class="notes">
+            {#if acknowledged}
+              <p class="warn">
+                This copy will REPLACE what still differs at the destination. The application
+                will ask you to confirm — naming both accounts and the container — before it
+                writes anything. Identical objects are skipped either way.
+              </p>
+            {/if}
             {#if s.unknown > 0}
               <p>
                 {s.unknown} uncertain object{s.unknown === 1 ? "" : "s"} will be checked.
-                Equal objects are skipped; unequal existing destinations are refused.
+                Equal objects are skipped; {acknowledged
+                  ? "unequal existing destinations are replaced once you confirm"
+                  : "unequal existing destinations are refused"}.
                 A missing destination can be created conditionally.
               </p>
             {/if}
@@ -330,12 +372,14 @@
             {/if}
             {#if preview.versionedDestination}
               <p class="warn">
-                The destination container is versioned. Existing changed objects are still refused.
+                The destination container reported versioning when it was read. {acknowledged
+                  ? "Whether a replaced object's earlier version is kept is the cluster's to decide and is not verified here; the confirmation states what it observed."
+                  : "Existing changed objects are refused unless you choose to replace them."}
               </p>
             {/if}
             <p class="data-path">
               {preview.dataPath}{preview.overwriteBytes > 0
-                ? ` · ${formatBytes(preview.overwriteBytes)} listed bytes in refused changed objects`
+                ? ` · ${formatBytes(preview.overwriteBytes)} listed bytes in ${acknowledged ? "changed objects to replace" : "refused changed objects"}`
                 : ""}
             </p>
           </div>
@@ -362,6 +406,11 @@
           {previewing ? "Planning…" : "Preview"}
         </button>
         {#if mode === "copy"}
+          {#if overwriteCandidates > 0 && !acknowledged}
+            <button onclick={replace} disabled={previewing || starting || closed}>
+              Replace existing objects…
+            </button>
+          {/if}
           <button class="primary" onclick={start} disabled={!preview || previewing || starting || closed}>
             {starting ? "Starting…" : "Start copy"}
           </button>
