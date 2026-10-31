@@ -702,3 +702,74 @@ func TestOverwritesRefusedDistinguishesItsTwoKinds(t *testing.T) {
 		}
 	})
 }
+
+// A copy skips a destination only when it is a full-fidelity replica (P17, ADR
+// 0096). The listing cannot see user metadata, so the advisory preview counts a
+// content-equal pair Same; the executor then HEADs it and skips a true replica
+// but refuses one whose metadata differs, leaving the destination untouched. This
+// is the preview-advisory, execution-authoritative contract ADR 0096 decision 6.
+func TestCopySkipRequiresFullFidelity(t *testing.T) {
+	const content = "identical bytes on both sides of the copy"
+
+	t.Run("a full-fidelity replica is skipped", func(t *testing.T) {
+		h := newHarness(t)
+		h.connect(t)
+		source := h.transfer.connections.ActiveBookmarkID()
+		dest, mock := secondCluster(t, h)
+		h.mock.AddContainer("media", "standard")
+		mock.AddContainer("backup", "standard")
+		seedObject(h.mock, "media", "doc", content, map[string]string{"Owner": "alice"})
+		seedObject(mock, "backup", "doc", content, map[string]string{"Owner": "alice"})
+		h.installEngine(nil)
+
+		id, err := h.transfer.StartCopy(t.Context(), CopyRequestDTO{
+			SourceBookmarkID: source, SourceContainer: "media",
+			DestBookmarkID: dest, DestContainer: "backup",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		job := awaitTerminal(t, h, id)
+		if job.State != "complete" || job.Counters.ObjectsCopied != 0 || job.Counters.OverwritesRefused != 0 || job.Counters.ObjectsFailed != 0 {
+			t.Fatalf("a full-fidelity replica was not skipped cleanly: %+v", job)
+		}
+		if rec := itemsOf(t, h, id)["doc"]; rec.Execution == nil || rec.Execution.Result != jobs.ItemSame {
+			t.Fatalf("the replica was not recorded as skipped-equal: %+v", rec.Execution)
+		}
+	})
+
+	t.Run("a content-equal object with different metadata refuses", func(t *testing.T) {
+		h := newHarness(t)
+		h.connect(t)
+		source := h.transfer.connections.ActiveBookmarkID()
+		dest, mock := secondCluster(t, h)
+		h.mock.AddContainer("media", "standard")
+		mock.AddContainer("backup", "standard")
+		// Same bytes, so the listing counts the pair Same; different user metadata,
+		// so the authoritative HEAD finds the destination is not a replica.
+		seedObject(h.mock, "media", "doc", content, map[string]string{"Owner": "alice"})
+		seedObject(mock, "backup", "doc", content, map[string]string{"Owner": "bob"})
+		h.installEngine(nil)
+
+		id, err := h.transfer.StartCopy(t.Context(), CopyRequestDTO{
+			SourceBookmarkID: source, SourceContainer: "media",
+			DestBookmarkID: dest, DestContainer: "backup",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		job := awaitTerminal(t, h, id)
+		if job.State != "partial" || job.Counters.OverwritesRefused != 1 || job.Counters.ObjectsCopied != 0 {
+			t.Fatalf("a content-equal object with different metadata was not refused: %+v", job)
+		}
+		if rec := itemsOf(t, h, id)["doc"]; rec.Execution == nil || rec.Execution.Result != jobs.ItemRefused {
+			t.Fatalf("the fidelity difference was not recorded as a refusal: %+v", rec.Execution)
+		}
+		// The destination is left exactly as it was: nothing was rewritten.
+		witness := mirrorWitness(t, mock, "test2:tester2", "testing2")
+		snap := mirrorSnapshot(t, witness, "backup")
+		if obj := snap.Containers["backup"].Objects["doc"]; obj.Size != int64(len(content)) {
+			t.Fatalf("the refused destination was changed: %+v", obj)
+		}
+	})
+}
