@@ -1685,6 +1685,7 @@ Therefore a naive MD5 comparison — including whatever an execution engine does
 - never let a Mirror **delete** a destination object on the basis of an ambiguous large-object equality result.
 
 This section governs both the preview counts and any decision to delegate execution.
+The preview's equality here is content equality from the listing and stays advisory (§15); a copy's executor skips an existing destination only when it is a full-fidelity replica — content equality **and** the §27.4 carried set (content type, content headers, expiry, user metadata) and link identity, read from the authoritative HEAD it already takes. A difference is not skipped: a destination the preview presented as a collision takes the acknowledged overwrite path, and a listing-`Same` object refuses (it is never offered for acknowledgement), per [ADR 0096](adr/0096-copy-skip-requires-full-fidelity.md).
 Mirror execution rules below are future re-enablement requirements; every current Mirror start refuses under ADR 0020.
 
 **Comparison model.** Represent every object comparison as a typed result plus evidence, not a boolean:
