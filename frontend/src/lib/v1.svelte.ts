@@ -1,18 +1,18 @@
 // Affordances a v1 build offers (ADR 0052).
 // Returning a deferred capability is flipping the matching flag here
 // and removing its names from the Go deferred table. Download, marker
-// creation, upload and object deletion are kept (the operator returned
-// marker creation on 23 September 2026, upload on 16 October 2026 and
-// object deletion on 29 October 2026); copy, bulk delete, marker deletion,
-// manifest deletion, benchmark and re-run are not.
+// creation, upload, object deletion and copy (with its job re-run) are
+// kept (the operator returned marker creation on 23 September 2026, upload
+// on 16 October 2026, object deletion on 29 October 2026 and copy on
+// 31 October 2026); bulk delete, marker deletion, manifest deletion and
+// benchmark are not.
 // LocalTransferDialog serves both of its modes again.
 
 /** The capability names the backend reports, mapped onto the affordances
  * each one covers (ADR 0082). A capability turns on all of its
  * affordances or none, so no half-capability can be assembled here. Job
- * re-run is classified with Copy in the backend's table and follows it. */
+ * re-run was classified with Copy and returned alongside it. */
 const affordancesOf: Record<string, (keyof typeof v1Offers)[]> = {
-  "Copy": ["copy", "rerun"],
   "Bulk delete": ["bulkDelete"],
   "Marker and manifest deletion": ["markerDelete", "manifestDelete"],
   "Benchmark": ["benchmark"],
@@ -32,7 +32,7 @@ export function applyEnabledCapabilities(names: readonly string[] | undefined) {
 // Reactive, because the process reports its enabled capabilities after
 // the first render and the affordances must follow (ADR 0082).
 export const v1Offers = $state({
-  copy: false,
+  copy: true,
   upload: true,
   bulkDelete: false,
   markerCreate: true,
@@ -40,6 +40,6 @@ export const v1Offers = $state({
   manifestDelete: false,
   objectDelete: true,
   benchmark: false,
-  rerun: false,
+  rerun: true,
   download: true,
 });

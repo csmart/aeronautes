@@ -78,6 +78,11 @@ func TestEveryBridgeActionIsClassified(t *testing.T) {
 		// Object deletion was returned on 29 October 2026 (ADR 0052 decision
 		// 11): one object (ADR 0092) and the selected set (ADR 0093) are kept.
 		"MutateService.DeleteObject": true, "DeleteService.StartSelectedDelete": true,
+		// Copy and its job re-run were returned on 31 October 2026 (ADR 0052
+		// decision 12), once ADR 0087's overwrite and ADR 0096's full-fidelity
+		// skip completed copy's path.
+		"TransferService.PlanCopy": true, "TransferService.StartCopy": true,
+		"TransferService.RerunJob":           true,
 		"MutateService.UpdateContainer":      true,
 		"MutateService.UpdateObjectMetadata": true,
 		"SettingsService.Get":                true, "SettingsService.Set": true,
@@ -111,7 +116,7 @@ func TestEveryBridgeActionIsClassified(t *testing.T) {
 // rather than reading as a failure of the action itself.
 func TestRefuseIfDeferredNamesTheCapability(t *testing.T) {
 	forceV1Gate(t)
-	assertV1Refusal(t, refuseIfDeferred("TransferService.StartCopy"), "Copy")
+	assertV1Refusal(t, refuseIfDeferred("DeleteService.StartDelete"), "Bulk delete")
 }
 
 // A kept action must not refuse, or the gate would withdraw v1 itself.
@@ -160,7 +165,7 @@ func TestUnknownActionIsNotRefused(t *testing.T) {
 // must still reach the implementation, or lifting the gate later has no
 // evidence that the routes still work (ADR 0052 decision 4).
 func TestDeferredRoutesRemainCallableInTheTestBinary(t *testing.T) {
-	if err := refuseIfDeferred("TransferService.StartCopy"); err != nil {
+	if err := refuseIfDeferred("DeleteService.StartDelete"); err != nil {
 		t.Fatalf("deferred routes must stay callable in tests: %v", err)
 	}
 }
@@ -176,18 +181,6 @@ func TestV1GateRefusesDeferredEntryPoints(t *testing.T) {
 		capability string
 		call       func() error
 	}{
-		{"TransferService.PlanCopy", "Copy", func() error {
-			_, err := (&TransferService{}).PlanCopy(ctx, CopyRequestDTO{})
-			return err
-		}},
-		{"TransferService.StartCopy", "Copy", func() error {
-			_, err := (&TransferService{}).StartCopy(ctx, CopyRequestDTO{})
-			return err
-		}},
-		{"TransferService.RerunJob", "Copy", func() error {
-			_, err := (&TransferService{}).RerunJob(ctx, "job")
-			return err
-		}},
 		{"DeleteService.PreviewDelete", "Bulk delete", func() error {
 			_, err := (&DeleteService{}).PreviewDelete(ctx, DeleteRequestDTO{})
 			return err

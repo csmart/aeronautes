@@ -69,28 +69,29 @@ async function connect() {
   await settle();
 }
 
-it("keeps deferred controls hidden until Info settles and then opens the offered copy", async () => {
-  const info = await prepare(["Copy"]);
+it("keeps a deferred control hidden until Info settles while the kept ones are there at once", async () => {
+  const info = await prepare(["Bulk delete"]);
   let resolve!: (value: Info) => void;
   api.info = () => new Promise<Info>((yes) => { resolve = yes; });
   await render();
-  expect(labels()).not.toContain("Copy to…");
-  // A capability the release KEEPS does not wait for Info: upload was
-  // returned on 16 October 2026, so its control is there before the process
-  // has said anything, which is the difference the return makes.
+  // A deferred capability's control waits for Info to name it as switched on.
+  expect(labels()).not.toContain("Delete scope…");
+  // A capability the release KEEPS does not wait for Info: copy was returned
+  // on 31 October 2026 and upload on 16 October, so their controls are there
+  // before the process has said anything, which is the difference the return
+  // makes.
+  expect(labels()).toContain("Copy to…");
   expect(labels()).toContain("Upload…");
   expect(document.querySelector(".unproven-banner")).toBeNull();
   resolve(info);
   await settle();
-  expect(document.querySelector(".unproven-banner")?.textContent).toContain("Copy");
-  expect(button("Copy to…").disabled).toBe(true);
+  expect(document.querySelector(".unproven-banner")?.textContent).toContain("Bulk delete");
   await connect();
-  expect(button("Copy to…").disabled).toBe(false);
-  button("Copy to…").click();
+  button("Delete scope…").click();
   await settle();
-  expect(document.querySelector('[role="dialog"]')?.getAttribute("aria-label")).toBe("Transfer");
+  expect(document.querySelector('[role="dialog"], [role="alertdialog"]')).not.toBeNull();
+  // The switched-on deferred capability keeps saying its safety is not finished.
   expect(document.querySelector(".unproven-banner")?.textContent).toContain("not finished");
-  expect(labels()).not.toContain("Delete scope…");
 });
 
 it("keeps deferred controls closed and reports an Info failure while browsing still works", async () => {
@@ -104,7 +105,7 @@ it("keeps deferred controls closed and reports an Info failure while browsing st
   // only the switched-on ones are lost with the answer that would name them.
   expect(labels()).toContain("Download…");
   expect(labels()).toContain("Upload…");
-  expect(labels()).not.toContain("Copy to…");
+  expect(labels()).toContain("Copy to…");
   expect(labels()).not.toContain("Delete scope…");
 });
 
@@ -115,11 +116,11 @@ it("accepts the null lists produced by the ordinary Go Info response", async () 
   await connect();
   expect(document.querySelector(".unproven-banner")).toBeNull();
   expect(labels()).toContain("Upload…");
-  expect(labels()).not.toContain("Copy to…");
+  expect(labels()).toContain("Copy to…");
 });
 
 it("renders all enabled capability names and keeps unknown text inert", async () => {
-  const enabled = ["Copy", "Bulk delete", "Marker and manifest deletion", "Benchmark"];
+  const enabled = ["Bulk delete", "Marker and manifest deletion", "Benchmark"];
   const unknown = '<img src=x onerror="throw 1">';
   await prepare(enabled, [unknown, "__proto__", "mirror"]);
   await render();

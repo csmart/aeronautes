@@ -69,26 +69,23 @@ func TestCapabilitySwitchEnablesWholeCapabilities(t *testing.T) {
 
 // Several tokens at once, in any case, with blanks and repeats, and a
 // capability enables every action classified under it rather than the
-// ones whose names look related. RerunJob is classified Copy.
+// ones whose names look related.
 func TestCapabilitySwitchParsesTheOperatorSpelling(t *testing.T) {
 	forceV1Gate(t)
 	restoreSwitch(t)
-	names, unrecognised := EnableCapabilities(" Benchmark , ,COPY,benchmark ")
+	names, unrecognised := EnableCapabilities(" Benchmark , ,BULK-DELETE,benchmark ")
 	if len(unrecognised) != 0 {
 		t.Fatalf("unrecognised = %v", unrecognised)
 	}
-	if strings.Join(names, "|") != "Benchmark|Copy" {
+	if strings.Join(names, "|") != "Benchmark|Bulk delete" {
 		t.Fatalf("names = %v", names)
 	}
-	for _, action := range append(deferredActionsFor("Benchmark"), deferredActionsFor("Copy")...) {
+	for _, action := range append(deferredActionsFor("Benchmark"), deferredActionsFor("Bulk delete")...) {
 		if err := refuseIfDeferred(action); err != nil {
 			t.Errorf("%s refused although its capability is enabled: %v", action, err)
 		}
 	}
-	if err := refuseIfDeferred("TransferService.RerunJob"); err != nil {
-		t.Errorf("RerunJob is classified Copy and should follow it: %v", err)
-	}
-	assertV1Refusal(t, refuseIfDeferred("DeleteService.StartDelete"), "Bulk delete")
+	assertV1Refusal(t, refuseIfDeferred("MutateService.DeleteMarker"), "Marker and manifest deletion")
 }
 
 // A token that names no capability changes nothing and is reported, so a
@@ -96,18 +93,18 @@ func TestCapabilitySwitchParsesTheOperatorSpelling(t *testing.T) {
 func TestCapabilitySwitchReportsUnrecognisedTokens(t *testing.T) {
 	forceV1Gate(t)
 	restoreSwitch(t)
-	// "upload" is in here on purpose: it named a capability this build has
-	// RETURNED, so it no longer names anything the switch can admit and must
-	// be reported as ignored rather than silently accepted.
-	names, unrecognised := EnableCapabilities("copz, copy, upload, copz")
-	if strings.Join(names, "|") != "Copy" {
+	// "copy" is in here on purpose: it named a capability this build has
+	// RETURNED (ADR 0052 decision 12), so it no longer names anything the switch
+	// can admit and must be reported as ignored rather than silently accepted.
+	names, unrecognised := EnableCapabilities("copy, copz, bulk-delete, copz")
+	if strings.Join(names, "|") != "Bulk delete" {
 		t.Fatalf("names = %v", names)
 	}
-	if strings.Join(unrecognised, "|") != "copz|upload" {
+	if strings.Join(unrecognised, "|") != "copy|copz" {
 		t.Fatalf("unrecognised = %v", unrecognised)
 	}
 	got, bad := EnabledCapabilitySnapshot()
-	if strings.Join(got, "|") != "Copy" || strings.Join(bad, "|") != "copz|upload" {
+	if strings.Join(got, "|") != "Bulk delete" || strings.Join(bad, "|") != "copy|copz" {
 		t.Fatalf("snapshot = %v %v", got, bad)
 	}
 }
@@ -166,12 +163,12 @@ func TestInfoCarriesTheCapabilitySwitch(t *testing.T) {
 	if info := service.Info(); len(info.EnabledCapabilities) != 0 || len(info.UnrecognisedCapabilities) != 0 {
 		t.Fatalf("unset Info = %+v", info)
 	}
-	EnableCapabilities("copy, nonsense")
+	EnableCapabilities("benchmark, nonsense")
 	info := service.Info()
-	if strings.Join(info.EnabledCapabilities, "|") != "Copy" || strings.Join(info.UnrecognisedCapabilities, "|") != "nonsense" {
+	if strings.Join(info.EnabledCapabilities, "|") != "Benchmark" || strings.Join(info.UnrecognisedCapabilities, "|") != "nonsense" {
 		t.Fatalf("Info = %+v", info)
 	}
-	if about := service.About(); strings.Join(about.EnabledCapabilities, "|") != "Copy" {
+	if about := service.About(); strings.Join(about.EnabledCapabilities, "|") != "Benchmark" {
 		t.Fatalf("About = %+v", about.Info)
 	}
 }
@@ -189,18 +186,18 @@ func TestStartupLinesNameWhatIsOfferedAndWhatWasIgnored(t *testing.T) {
 		none bool
 	}{
 		{spec: "", none: true},
-		{spec: "copy", want: []string{
-			"AERONAUTES_ENABLE: offering unproven capabilities in this process: Copy"}},
-		{spec: "copy, copz", want: []string{
-			"AERONAUTES_ENABLE: offering unproven capabilities in this process: Copy",
+		{spec: "benchmark", want: []string{
+			"AERONAUTES_ENABLE: offering unproven capabilities in this process: Benchmark"}},
+		{spec: "benchmark, copz", want: []string{
+			"AERONAUTES_ENABLE: offering unproven capabilities in this process: Benchmark",
 			"AERONAUTES_ENABLE: ignored, not a capability: copz"}},
 		{spec: "not-a-capability", want: []string{
 			"AERONAUTES_ENABLE: ignored, not a capability: not-a-capability"}},
 		// A RETURNED capability's token names nothing any more. The operator
-		// who still has "upload" in their environment is told it was ignored,
+		// who still has "copy" in their environment is told it was ignored,
 		// rather than left to read the silence as confirmation.
-		{spec: "upload", want: []string{
-			"AERONAUTES_ENABLE: ignored, not a capability: upload"}},
+		{spec: "copy", want: []string{
+			"AERONAUTES_ENABLE: ignored, not a capability: copy"}},
 		// Mirror has no token, so asking for it is ignored and said to be
 		// ignored rather than silently dropped.
 		{spec: "mirror", want: []string{

@@ -13,12 +13,14 @@ it("keeps download, marker creation and upload and withholds deferred affordance
   // Returned on 29 October 2026 (ADR 0052 decision 11): object deletion
   // ships on as well, like upload before it.
   expect(v1Offers.objectDelete).toBe(true);
-  expect(v1Offers.copy).toBe(false);
+  // Returned on 31 October 2026 (ADR 0052 decision 12): copy and its job
+  // re-run ship on too, so the switch no longer withholds them.
+  expect(v1Offers.copy).toBe(true);
+  expect(v1Offers.rerun).toBe(true);
   expect(v1Offers.bulkDelete).toBe(false);
   expect(v1Offers.markerDelete).toBe(false);
   expect(v1Offers.manifestDelete).toBe(false);
   expect(v1Offers.benchmark).toBe(false);
-  expect(v1Offers.rerun).toBe(false);
 });
 
 // ADR 0082: the affordances follow the capabilities the process reports,
@@ -26,12 +28,16 @@ it("keeps download, marker creation and upload and withholds deferred affordance
 it("offers a reported capability's whole affordance set", () => {
   applyEnabledCapabilities(["Bulk delete"]);
   expect(v1Offers.bulkDelete).toBe(true);
-  expect(v1Offers.copy).toBe(false);
+  expect(v1Offers.markerDelete).toBe(false);
   expect(v1Offers.benchmark).toBe(false);
 });
 
-it("follows job re-run with Copy, as the backend table classifies it", () => {
-  applyEnabledCapabilities(["Copy"]);
+it("ships copy and its job re-run on, independent of the switch", () => {
+  // Copy returned on 31 October 2026 (ADR 0052 decision 12): its affordances
+  // ship on and no token names or toggles them.
+  expect(v1Offers.copy).toBe(true);
+  expect(v1Offers.rerun).toBe(true);
+  applyEnabledCapabilities(["copy", "Copy"]);
   expect(v1Offers.copy).toBe(true);
   expect(v1Offers.rerun).toBe(true);
 });
