@@ -261,7 +261,10 @@ describe("production modal ownership", () => {
     expect(shownDetail.contentFingerprint).toBeTruthy();
     expect(api.deleteManifest).toHaveBeenCalledExactlyOnceWith(
       shownDetail.scope, "fixtures", "external-dlo", shownDetail.contentFingerprint);
-    press(window, "Tab"); expect(document.activeElement).toBe(f.dialog);
+    // The segment checkbox (bulk delete returned on 1 November 2026) is the
+    // first focusable control while the confirm button is busy, so Tab lands
+    // on it inside the modal; the window-level Escape then routes here.
+    press(window, "Tab"); expect(document.activeElement).toBe(f.dialog.querySelector('input[type="checkbox"]'));
     press(window, "Escape"); await settle();
     expect(document.querySelector('[role="alertdialog"]')).toBeNull();
     f.reopen(); await settle(); const replacement = get('[role="alertdialog"]');
@@ -313,7 +316,9 @@ describe("production modal ownership", () => {
     cancel.remove();
     await unmount(top); mounted.delete(top); await settle();
     expect(document.activeElement).toBe(f.dialog);
-    press(f.dialog, "Tab"); expect(document.activeElement).toBe(button("Delete manifest only", f.dialog));
+    // The segment checkbox (bulk delete returned on 1 November 2026) is the
+    // first focusable control in the dialog body, so Tab moves to it.
+    press(f.dialog, "Tab"); expect(document.activeElement).toBe(f.dialog.querySelector('input[type="checkbox"]'));
   });
 
   it("isolates later background nodes and restores existing inert values", async () => {

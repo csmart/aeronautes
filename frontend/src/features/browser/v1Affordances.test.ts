@@ -47,14 +47,16 @@ async function connectedScreen(enabled: string[] = [], unrecognised: string[] = 
   return root;
 }
 
-it("keeps download, upload and copy and withholds bulk delete", async () => {
+it("keeps download, upload, copy and bulk delete and withholds benchmark", async () => {
   await connectedScreen();
   const shown = labels();
   expect(shown).toContain("Download…");
   expect(shown).toContain("Upload…");
   // Copy returned on 31 October 2026 (ADR 0052 decision 12): its control ships.
   expect(shown).toContain("Copy to…");
-  expect(shown).not.toContain("Delete scope…");
+  // Bulk delete returned on 1 November 2026 (ADR 0052 decision 14): its scope
+  // control ships like the other returns rather than waiting for the switch.
+  expect(shown).toContain("Delete scope…");
   document.querySelector<HTMLButtonElement>(".drawer .bar")!.click();
   flushSync();
   expect(labels()).not.toContain("Benchmark…");
@@ -101,13 +103,12 @@ it("offers manifest deletion on a DLO and marker creation on an implied prefix",
 // ADR 0082: a capability the operator switched on for this process is
 // offered and named as unproven; nothing else is offered with it.
 it("offers a switched-on capability and says it is unproven", async () => {
-  await connectedScreen(["Bulk delete"]);
+  await connectedScreen(["Benchmark"]);
   const banner = document.querySelector('[role="alert"].unproven-banner');
   expect(banner?.textContent).toContain("Unproven:");
-  expect(banner?.textContent).toContain("Bulk delete");
+  expect(banner?.textContent).toContain("Benchmark");
   expect(banner?.textContent).toContain("not finished");
   const shown = labels();
-  expect(shown).toContain("Delete scope…");
   expect(shown).toContain("Download…");
   // Kept by the release rather than by this switch, and not described as
   // unproven: the banner names only what the operator turned on.
@@ -117,6 +118,15 @@ it("offers a switched-on capability and says it is unproven", async () => {
   // switch named it, and it is not in the unproven banner.
   expect(shown).toContain("Copy to…");
   expect(banner?.textContent).not.toContain("Copy");
+  // Bulk delete is kept now too, so its scope control ships and is not called
+  // unproven; the banner names only benchmark, which the operator turned on.
+  expect(shown).toContain("Delete scope…");
+  expect(banner?.textContent).not.toContain("Bulk delete");
+  // The benchmark control is the one this switch turns on; it lives in the
+  // jobs drawer.
+  document.querySelector<HTMLButtonElement>(".drawer .bar")!.click();
+  flushSync();
+  expect(labels()).toContain("Benchmark…");
 });
 
 // A token that names no capability is reported and offers nothing.

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Release smoke (§65.6 item 8): launch the real binary headless against
 # the in-repo mock cluster and drive bookmark → connect → browse.
-# Mirror and bulk delete are deferred in a v1 build (ADR 0052); copy was
-# returned on 31 October 2026 (decision 12).
+# Mirror and benchmark are deferred in a v1 build (ADR 0052); copy was
+# returned on 31 October 2026 (decision 12), and bulk delete on 1 November
+# 2026 (decision 14).
 # Upload returned to the release on 16 October 2026 but, like download, needs
 # a native picker this harness cannot operate, so neither is driven here. Screenshots
 # and logs go to smoke-artifacts/. The §57.4 smoke against real SwiftStack
@@ -186,6 +187,11 @@ switch_case object-delete "object-delete" \
 # it was ignored, as for the earlier returns.
 switch_case marker-manifest-delete "marker-manifest-delete" \
   "AERONAUTES_ENABLE: ignored, not a capability: marker-manifest-delete"
+# Bulk deletion was RETURNED on 1 November 2026 (ADR 0052 decision 14), so its
+# token no longer names a capability and the switch says it was ignored, as
+# for the earlier returns.
+switch_case bulk-delete "bulk-delete" \
+  "AERONAUTES_ENABLE: ignored, not a capability: bulk-delete"
 switch_case unrecognised "benchmark, not-a-capability" \
   "AERONAUTES_ENABLE: offering unproven capabilities in this process: Benchmark" \
   "AERONAUTES_ENABLE: ignored, not a capability: not-a-capability"

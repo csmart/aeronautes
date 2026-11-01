@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/csmart/aeronautes/internal/evidence"
 	"github.com/csmart/aeronautes/internal/jobs"
 )
 
@@ -20,29 +19,8 @@ type deferredEntryPoint struct {
 
 func deferredEntryPoints(t *testing.T, h *harness) []deferredEntryPoint {
 	t.Helper()
-	deleteSvc := NewDeleteService(h.transfer.connections, h.transfer.jobs, h.transfer.runner, evidence.NewStore(h.db))
 	bench := NewBenchmarkService(h.transfer.connections, h.transfer.jobs, h.transfer.runner, h.db)
 	entries := []deferredEntryPoint{
-		{"DeleteService.PreviewDelete", "Bulk delete", func(t *testing.T, h *harness) error {
-			_, err := deleteSvc.PreviewDelete(t.Context(), DeleteRequestDTO{BookmarkID: h.bookmarkID(), Container: "fixtures"})
-			return err
-		}},
-		{"DeleteService.StartDelete", "Bulk delete", func(t *testing.T, h *harness) error {
-			_, err := deleteSvc.StartDelete(t.Context(), DeleteRequestDTO{BookmarkID: h.bookmarkID(), Container: "fixtures"})
-			return err
-		}},
-		{"DeleteService.CheckSegmentOwnership", "Bulk delete", func(t *testing.T, h *harness) error {
-			_, err := deleteSvc.CheckSegmentOwnership(t.Context(), SegmentsDeleteRequestDTO{BookmarkID: h.bookmarkID(), Container: "fixtures", Name: "external-dlo"})
-			return err
-		}},
-		{"DeleteService.DeleteManifestWithSegments", "Bulk delete", func(t *testing.T, h *harness) error {
-			// A deliberate confirmation mismatch: the gate is checked first, so
-			// a deferred build still refuses at the gate, while a switched-on
-			// build refuses at the typed confirmation before launching a job,
-			// so this gate test leaves no background deletion running.
-			_, err := deleteSvc.DeleteManifestWithSegments(t.Context(), SegmentsDeleteRequestDTO{BookmarkID: h.bookmarkID(), Container: "fixtures", Name: "external-dlo", Force: true, Confirm: "mismatch"})
-			return err
-		}},
 		{"BenchmarkService.StartBenchmark", "Benchmark", func(t *testing.T, h *harness) error {
 			_, err := bench.StartBenchmark(t.Context(), BenchmarkRequestDTO{BookmarkID: h.bookmarkID(), Confirm: "x"})
 			return err
@@ -50,13 +28,15 @@ func deferredEntryPoints(t *testing.T, h *harness) []deferredEntryPoint {
 	}
 	// Every deferred action except StartMirror, which refuses on ADR 0020's
 	// terms and has its own case below. Upload's three actions are absent
-	// because the operator returned it on 16 October 2026, and object
-	// deletion's two (DeleteObject and StartSelectedDelete) because the
-	// operator returned it on 29 October 2026, and marker and manifest
-	// deletion's two (DeleteMarker and DeleteManifest) on 1 November 2026;
-	// the table no longer defers them. The count is asserted against the table so a future return
-	// cannot quietly shrink this list on its own, and so a newly deferred
-	// action cannot be left unexercised here.
+	// because the operator returned it on 16 October 2026, object
+	// deletion's two (DeleteObject and StartSelectedDelete) on 29 October
+	// 2026, marker and manifest deletion's two (DeleteMarker and
+	// DeleteManifest) on 1 November 2026, and bulk deletion's four
+	// (PreviewDelete, StartDelete, CheckSegmentOwnership and
+	// DeleteManifestWithSegments) on 1 November 2026; the table no longer
+	// defers them. The count is asserted against the table so a future
+	// return cannot quietly shrink this list on its own, and so a newly
+	// deferred action cannot be left unexercised here.
 	if len(entries) != len(v1DeferredActions)-1 {
 		t.Fatalf("entry points = %d, want %d deferred actions minus StartMirror", len(entries), len(v1DeferredActions)-1)
 	}
@@ -113,7 +93,7 @@ func TestSwitchedOnCapabilityAdmitsOnlyItsOwnEntryPoints(t *testing.T) {
 	h.connect(t)
 	forceV1Gate(t)
 	restoreSwitch(t)
-	if names, _ := EnableCapabilities("bulk-delete"); strings.Join(names, "|") != "Bulk delete" {
+	if names, _ := EnableCapabilities("benchmark"); strings.Join(names, "|") != "Benchmark" {
 		t.Fatalf("switch = %v", names)
 	}
 
@@ -121,7 +101,7 @@ func TestSwitchedOnCapabilityAdmitsOnlyItsOwnEntryPoints(t *testing.T) {
 		t.Run(entry.action, func(t *testing.T) {
 			before := takeCollateral(t, h)
 			err := entry.call(t, h)
-			if entry.capability != "Bulk delete" {
+			if entry.capability != "Benchmark" {
 				assertV1Refusal(t, err, entry.capability)
 				if after := takeCollateral(t, h); after != before {
 					t.Errorf("a refused %s reached something: %+v -> %+v", entry.action, before, after)
@@ -131,7 +111,7 @@ func TestSwitchedOnCapabilityAdmitsOnlyItsOwnEntryPoints(t *testing.T) {
 			// An admitted entry point runs its own route and may fail on
 			// its own terms; what it must not do is refuse for the gate.
 			if err != nil && strings.Contains(err.Error(), "not available in this release") {
-				t.Errorf("%s still refused although bulk delete is switched on: %v", entry.action, err)
+				t.Errorf("%s still refused although benchmark is switched on: %v", entry.action, err)
 			}
 		})
 	}
@@ -145,7 +125,7 @@ func TestMirrorRefusesAtItsEntryPointWhateverTheSwitchSays(t *testing.T) {
 	forceV1Gate(t)
 	restoreSwitch(t)
 
-	for _, spec := range []string{"", "mirror", "Mirror", "benchmark,mirror", "bulk-delete", "bulk-delete, benchmark"} {
+	for _, spec := range []string{"", "mirror", "Mirror", "benchmark,mirror", "benchmark"} {
 		EnableCapabilities(spec)
 		before := takeCollateral(t, h)
 		_, err := h.transfer.StartMirror(t.Context(), MirrorRequestDTO{
