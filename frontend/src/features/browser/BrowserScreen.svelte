@@ -43,6 +43,17 @@
   let aboutOpen = $state(false);
   let credentialStatusOpen = $state(false);
 
+  // ADR 0088: the interrupted-job notice. The banner announces it and offers a
+  // one-click dismissal of the entries read (decision 3); the jobs panel shows
+  // each one's detail and its own dismiss.
+  const interruptions = $derived(browser.interruptedDisclosures);
+  const interruptionsShown = $derived(interruptions?.entries?.length ?? 0);
+  const interruptionsBeyond = $derived(interruptions ? interruptions.total - interruptionsShown : 0);
+  function dismissShownInterruptions() {
+    const ids = (interruptions?.entries ?? []).map((e) => e.jobId);
+    if (ids.length > 0) void browser.dismissInterrupted(ids);
+  }
+
   let cleanupLabel = $derived.by(() => {
     if (browser.credentialStatusLoading) return "key cleanup: checking…";
     if (browser.credentialStatusError || !browser.credentialStatus) return "key cleanup: unknown";
@@ -129,6 +140,7 @@
   onMount(async () => {
     void browser.loadCredentialStatus();
     void browser.loadAppSettings();
+    void browser.loadInterruptedDisclosures();
     try {
       const info = await liveApi.info();
       shellInfo = `shell ${info.version} · Wails ${info.wails} · secrets: ${info.secretBackend}`;
@@ -211,6 +223,35 @@
       <span class="unproven-ignored">
         Ignored, not a capability: {unrecognisedCapabilities.join(", ")}.
       </span>
+    {/if}
+  </div>
+{/if}
+{#if browser.interruptedDisclosuresError}
+  <div class="interrupted-banner" role="alert">
+    <span>
+      <strong>Interruption status is unknown.</strong>
+      The check for jobs an earlier run left unfinished did not complete, so whether any are
+      still pending cannot be shown.
+    </span>
+  </div>
+{:else if interruptions && interruptions.total > 0}
+  <div class="interrupted-banner" role="alert">
+    <span>
+      <strong>A previous run was interrupted.</strong>
+      {interruptions.total} unfinished {interruptions.total === 1 ? "job" : "jobs"} from an earlier session
+      {interruptions.total === 1 ? "was" : "were"} not resumed. Their data and records are kept; nothing was
+      cleaned up. Open the jobs panel below to see each one.
+    </span>
+    <span class="interrupted-actions">
+      <button onclick={dismissShownInterruptions}>
+        Dismiss {interruptionsShown === 1 ? "this interruption" : `these ${interruptionsShown}`}
+      </button>
+      {#if interruptionsBeyond > 0}
+        <span class="interrupted-more">{interruptionsBeyond} more not shown</span>
+      {/if}
+    </span>
+    {#if browser.interruptedDismissError}
+      <span class="interrupted-error">The dismissal did not happen; the notice remains.</span>
     {/if}
   </div>
 {/if}
@@ -334,6 +375,30 @@
   }
 
   .unproven-ignored {
+    color: var(--color-text-faint);
+  }
+
+  .interrupted-banner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--text-sm);
+    color: var(--color-warning);
+    background: var(--color-warning-soft);
+    border-bottom: 1px solid var(--color-warning);
+  }
+
+  .interrupted-actions {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    margin-left: auto;
+  }
+
+  .interrupted-more,
+  .interrupted-error {
     color: var(--color-text-faint);
   }
 

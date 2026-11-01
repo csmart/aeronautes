@@ -141,6 +141,8 @@ const softSurfaces: [file: string, selector: string, foreground?: string][] = [
   ["JobsDrawer.svelte", ".badge.applied, .badge.complete"],
   ["JobsDrawer.svelte", ".badge.conflict, .badge.verify_mismatch, .badge.partial, .badge.cancelled"],
   ["JobsDrawer.svelte", ".badge.failed"],
+  ["BrowserScreen.svelte", ".interrupted-banner"],
+  ["JobsDrawer.svelte", ".interrupted", ".interrupted-head"],
 ];
 
 describe("normal-text contrast arithmetic", () => {
