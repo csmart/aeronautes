@@ -6,7 +6,7 @@ require (
 	github.com/adrg/xdg v0.5.3
 	github.com/godbus/dbus/v5 v5.2.4
 	github.com/ncw/swift/v2 v2.0.5
-	github.com/wailsapp/wails/v3 v3.0.0-beta.27
+	github.com/wailsapp/wails/v3 v3.1.0-nightly.20261028
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/sys v0.49.0
 	golang.org/x/text v0.43.0
