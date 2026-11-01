@@ -84,6 +84,10 @@ func TestEveryBridgeActionIsClassified(t *testing.T) {
 		// Marker and manifest deletion returned on 1 November 2026 (ADR 0052
 		// decision 13) under the broadened gate-lift grant.
 		"MutateService.DeleteMarker": true, "MutateService.DeleteManifest": true,
+		// Bulk deletion and the manifest-with-segments job returned on 1
+		// November 2026 (ADR 0052 decision 14).
+		"DeleteService.PreviewDelete": true, "DeleteService.StartDelete": true,
+		"DeleteService.CheckSegmentOwnership": true, "DeleteService.DeleteManifestWithSegments": true,
 		// Copy and its job re-run were returned on 31 October 2026 (ADR 0052
 		// decision 12), once ADR 0087's overwrite and ADR 0096's full-fidelity
 		// skip completed copy's path.
@@ -122,7 +126,7 @@ func TestEveryBridgeActionIsClassified(t *testing.T) {
 // rather than reading as a failure of the action itself.
 func TestRefuseIfDeferredNamesTheCapability(t *testing.T) {
 	forceV1Gate(t)
-	assertV1Refusal(t, refuseIfDeferred("DeleteService.StartDelete"), "Bulk delete")
+	assertV1Refusal(t, refuseIfDeferred("BenchmarkService.StartBenchmark"), "Benchmark")
 }
 
 // A kept action must not refuse, or the gate would withdraw v1 itself.
@@ -171,7 +175,7 @@ func TestUnknownActionIsNotRefused(t *testing.T) {
 // must still reach the implementation, or lifting the gate later has no
 // evidence that the routes still work (ADR 0052 decision 4).
 func TestDeferredRoutesRemainCallableInTheTestBinary(t *testing.T) {
-	if err := refuseIfDeferred("DeleteService.StartDelete"); err != nil {
+	if err := refuseIfDeferred("BenchmarkService.StartBenchmark"); err != nil {
 		t.Fatalf("deferred routes must stay callable in tests: %v", err)
 	}
 }
@@ -187,22 +191,6 @@ func TestV1GateRefusesDeferredEntryPoints(t *testing.T) {
 		capability string
 		call       func() error
 	}{
-		{"DeleteService.PreviewDelete", "Bulk delete", func() error {
-			_, err := (&DeleteService{}).PreviewDelete(ctx, DeleteRequestDTO{})
-			return err
-		}},
-		{"DeleteService.StartDelete", "Bulk delete", func() error {
-			_, err := (&DeleteService{}).StartDelete(ctx, DeleteRequestDTO{})
-			return err
-		}},
-		{"DeleteService.CheckSegmentOwnership", "Bulk delete", func() error {
-			_, err := (&DeleteService{}).CheckSegmentOwnership(ctx, SegmentsDeleteRequestDTO{})
-			return err
-		}},
-		{"DeleteService.DeleteManifestWithSegments", "Bulk delete", func() error {
-			_, err := (&DeleteService{}).DeleteManifestWithSegments(ctx, SegmentsDeleteRequestDTO{})
-			return err
-		}},
 		{"BenchmarkService.StartBenchmark", "Benchmark", func() error {
 			_, err := (&BenchmarkService{}).StartBenchmark(ctx, BenchmarkRequestDTO{})
 			return err

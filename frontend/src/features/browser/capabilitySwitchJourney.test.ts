@@ -1,10 +1,10 @@
 // The capability switch through a mounted browser screen (ADR 0082):
 // what a build offers, what it says about it, and what it must keep
-// disclosing when one capability is switched on without another. Built
-// by the reviewer for db:736 and retained as maintained coverage: the
-// inline-SLO case is the regression for finding 2, and its paired
-// control with bulk delete also enabled is what distinguishes a missing
-// disclosure from a missing capability.
+// disclosing. Built by the reviewer for db:736 and retained as
+// maintained coverage: the inline-SLO case is the regression for
+// finding 2 — the manifest-only path discloses the inline data it will
+// destroy from the manifest the inspector read, not from the ownership
+// check that bulk deletion owns.
 import { afterEach, expect, it, vi } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
 import type { Api, Info } from "../../lib/api";
@@ -70,27 +70,31 @@ async function connect() {
 }
 
 it("keeps a deferred control hidden until Info settles while the kept ones are there at once", async () => {
-  const info = await prepare(["Bulk delete"]);
+  const info = await prepare(["Benchmark"]);
   let resolve!: (value: Info) => void;
   api.info = () => new Promise<Info>((yes) => { resolve = yes; });
   await render();
-  // A deferred capability's control waits for Info to name it as switched on.
-  expect(labels()).not.toContain("Delete scope…");
+  // Benchmark is the one capability still behind the switch, so its banner
+  // waits for Info to name it; nothing switch-fed appears before then.
+  expect(document.querySelector(".unproven-banner")).toBeNull();
   // A capability the release KEEPS does not wait for Info: copy was returned
   // on 31 October 2026 and upload on 16 October, so their controls are there
   // before the process has said anything, which is the difference the return
   // makes.
   expect(labels()).toContain("Copy to…");
   expect(labels()).toContain("Upload…");
-  expect(document.querySelector(".unproven-banner")).toBeNull();
   resolve(info);
   await settle();
-  expect(document.querySelector(".unproven-banner")?.textContent).toContain("Bulk delete");
+  expect(document.querySelector(".unproven-banner")?.textContent).toContain("Benchmark");
   await connect();
-  button("Delete scope…").click();
+  // Bulk delete was returned on 1 November 2026, so its scope control is a
+  // kept one and present now without any switch naming it.
+  expect(labels()).toContain("Delete scope…");
+  // The switched-on deferred control appears once Info has named it; it lives
+  // in the jobs drawer, and the banner keeps saying its safety is not finished.
+  document.querySelector<HTMLButtonElement>(".drawer .bar")!.click();
   await settle();
-  expect(document.querySelector('[role="dialog"], [role="alertdialog"]')).not.toBeNull();
-  // The switched-on deferred capability keeps saying its safety is not finished.
+  expect(labels()).toContain("Benchmark…");
   expect(document.querySelector(".unproven-banner")?.textContent).toContain("not finished");
 });
 
@@ -106,7 +110,12 @@ it("keeps deferred controls closed and reports an Info failure while browsing st
   expect(labels()).toContain("Download…");
   expect(labels()).toContain("Upload…");
   expect(labels()).toContain("Copy to…");
-  expect(labels()).not.toContain("Delete scope…");
+  // Bulk delete is kept now, so its scope control survives an Info failure
+  // like the other returns; benchmark, still behind the switch, does not.
+  expect(labels()).toContain("Delete scope…");
+  document.querySelector<HTMLButtonElement>(".drawer .bar")!.click();
+  await settle();
+  expect(labels()).not.toContain("Benchmark…");
 });
 
 it("accepts the null lists produced by the ordinary Go Info response", async () => {
@@ -120,17 +129,21 @@ it("accepts the null lists produced by the ordinary Go Info response", async () 
 });
 
 it("renders all enabled capability names and keeps unknown text inert", async () => {
-  const enabled = ["Bulk delete", "Marker and manifest deletion", "Benchmark"];
+  const enabled = ["Benchmark"];
   const unknown = '<img src=x onerror="throw 1">';
   await prepare(enabled, [unknown, "__proto__", "mirror"]);
   await render();
   await connect();
   const banner = document.querySelector(".unproven-banner");
   for (const name of enabled) expect(banner?.textContent).toContain(name);
+  // An unrecognised token is shown verbatim and never parsed as markup, so a
+  // hostile capability name cannot run script through the banner.
   expect(banner?.textContent).toContain(unknown);
   expect(banner?.querySelector("img")).toBeNull();
   expect(labels()).toContain("Upload…");
   expect(labels()).toContain("Copy to…");
+  // Bulk delete, marker and manifest deletion are all kept now, so their
+  // controls are present whether or not the switch named them.
   expect(labels()).toContain("Delete scope…");
   document.querySelector<HTMLButtonElement>(".drawer .bar")!.click();
   await settle();
@@ -140,9 +153,8 @@ it("renders all enabled capability names and keeps unknown text inert", async ()
   expect(v1Offers.manifestDelete).toBe(true);
 });
 
-it.each([false, true])("retains inline-SLO destruction disclosure with Bulk delete enabled=%s", async (bulkEnabled) => {
-  const enabled = ["Marker and manifest deletion", ...(bulkEnabled ? ["Bulk delete"] : [])];
-  await prepare(enabled);
+it("retains the inline-SLO destruction disclosure on the manifest-only path", async () => {
+  await prepare(["Marker and manifest deletion"]);
   const originalSLO = api.sloManifest;
   api.sloManifest = async (...args) => {
     const value = await originalSLO(...args);
@@ -151,12 +163,9 @@ it.each([false, true])("retains inline-SLO destruction disclosure with Bulk dele
       range: "", nestedSlo: false, dataSize: 10,
     }] };
   };
-  // This mirrors the production gate: CheckSegmentOwnership belongs to
-  // Bulk delete, while DeleteManifest belongs to marker/manifest editing.
-  api.checkSegmentOwnership = vi.fn(async () => {
-    if (!bulkEnabled) throw new Error("Bulk delete is not available in this release: it is deferred until its safety is proven, and this build does not offer it");
-    return { class: "slo", target: "slo-parts/backup/", proven: false, segments: 3, inlineEntries: 1, reviewed: { class: "slo", fingerprint: "slo:0:etag", length: 0, etag: "" } };
-  });
+  api.checkSegmentOwnership = vi.fn(async () => (
+    { class: "slo", target: "slo-parts/backup/", proven: false, segments: 3, inlineEntries: 1, reviewed: { class: "slo", fingerprint: "slo:0:etag", length: 0, etag: "" } }
+  ));
   await render();
   await connect();
   const filter = document.querySelector<HTMLInputElement>('input[placeholder="filter loaded rows…"]');
@@ -174,19 +183,20 @@ it.each([false, true])("retains inline-SLO destruction disclosure with Bulk dele
   await settle();
   const dialog = document.querySelector('[role="alertdialog"][aria-label="Delete manifest"]');
   expect(dialog).not.toBeNull();
-  // The manifest-only path never asks the ownership check, which is
-  // classified with bulk deletion; the disclosure comes from the manifest
-  // the inspector already read (ADR 0094 decision 5).
+  // The disclosure comes from the manifest the inspector already read, not
+  // from the ownership check: the manifest-only path never asks it until the
+  // operator opts into deleting the segments (ADR 0094 decision 5).
   expect(api.checkSegmentOwnership).not.toHaveBeenCalled();
   expect(button("Delete manifest only").disabled).toBe(false);
   expect(dialog?.textContent).toContain("1 inline data entry");
   expect(dialog?.textContent).toContain("will be destroyed");
+  // Bulk delete returned on 1 November 2026 (ADR 0052 decision 14), so the
+  // segment-deletion option — and its ownership check — are offered here now
+  // rather than withheld behind the switch; ticking it asks the check once.
   const option = dialog?.querySelector<HTMLInputElement>('input[type="checkbox"]') ?? null;
-  expect(option !== null).toBe(bulkEnabled);
-  if (option) {
-    option.click(); await settle();
-    expect(api.checkSegmentOwnership).toHaveBeenCalledOnce();
-  }
+  expect(option).not.toBeNull();
+  option!.click(); await settle();
+  expect(api.checkSegmentOwnership).toHaveBeenCalledOnce();
 });
 
 // The fail-closed end of the same disclosure: when neither the gated

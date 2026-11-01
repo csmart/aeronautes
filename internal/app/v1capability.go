@@ -17,8 +17,9 @@ import (
 // reading and writing; copy, mirror, upload and bulk delete were deferred
 // until each was proven. Upload was RETURNED on 16 October 2026 (ADR 0052
 // decision 9), object deletion on 29 October 2026 (decision 11), and copy
-// with its job re-run on 31 October 2026 (decision 12), and marker and
-// manifest deletion on 1 November 2026 (decision 13).
+// with its job re-run on 31 October 2026 (decision 12), marker and
+// manifest deletion on 1 November 2026 (decision 13), and bulk deletion
+// with the manifest-with-segments job on 1 November 2026 (decision 14).
 // RETURNING A CAPABILITY IS REMOVING ITS NAMES FROM THIS TABLE — no call
 // site changes, and the code behind it is untouched precisely so that it
 // still works when that happens. Its token leaves v1CapabilityTokens below
@@ -37,11 +38,6 @@ var v1DeferredActions = map[string]string{
 	// mirror — ADR 0020 refuses this independently and first; the gate
 	// must never become the only thing refusing it.
 	"TransferService.StartMirror": "Mirror",
-	// bulk delete, and the read-only actions that exist only to serve it
-	"DeleteService.PreviewDelete":              "Bulk delete",
-	"DeleteService.StartDelete":                "Bulk delete",
-	"DeleteService.CheckSegmentOwnership":      "Bulk delete",
-	"DeleteService.DeleteManifestWithSegments": "Bulk delete",
 	// a benchmark writes real objects and bulk-deletes them
 	"BenchmarkService.StartBenchmark": "Benchmark",
 }
@@ -62,8 +58,7 @@ const EnableEnvVar = "AERONAUTES_ENABLE"
 // refusal must never become a scoping decision, so no value of the
 // variable can admit it.
 var v1CapabilityTokens = map[string]string{
-	"bulk-delete": "Bulk delete",
-	"benchmark":   "Benchmark",
+	"benchmark": "Benchmark",
 }
 
 // enabledCapabilities is one reading of the switch: which deferred

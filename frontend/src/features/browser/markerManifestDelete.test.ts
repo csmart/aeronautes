@@ -185,7 +185,9 @@ describe("the manifest delete dialog", () => {
     const f = await manifestDialog();
     f.fake.checkSegmentOwnership = vi.fn();
     f.fake.deleteManifest = vi.fn(async () => applied);
-    expect(f.root.querySelector('input[type="checkbox"]')).toBeNull();
+    // Bulk delete returned on 1 November 2026 (ADR 0052 decision 14), so the
+    // segment option is offered; left unticked, the manifest-only path must
+    // still never ask the ownership check.
     click(button("Delete manifest only", f.root)); await settle();
     expect(f.fake.checkSegmentOwnership).not.toHaveBeenCalled();
     expect(f.fake.deleteManifest).toHaveBeenCalledExactlyOnceWith(f.detail.scope, "fixtures", "external-dlo", f.detail.contentFingerprint);

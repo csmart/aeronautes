@@ -46,21 +46,23 @@ func TestCapabilitySwitchDefaultsToNothingEnabled(t *testing.T) {
 func TestCapabilitySwitchEnablesWholeCapabilities(t *testing.T) {
 	forceV1Gate(t)
 	restoreSwitch(t)
-	names, unrecognised := EnableCapabilities("bulk-delete")
-	if len(unrecognised) != 0 || len(names) != 1 || names[0] != "Bulk delete" {
-		t.Fatalf("bulk-delete switch = %v %v", names, unrecognised)
+	names, unrecognised := EnableCapabilities("benchmark")
+	if len(unrecognised) != 0 || len(names) != 1 || names[0] != "Benchmark" {
+		t.Fatalf("benchmark switch = %v %v", names, unrecognised)
 	}
-	deletes := deferredActionsFor("Bulk delete")
-	if len(deletes) != 4 {
-		t.Fatalf("the table names %d bulk delete actions, want 4: %v", len(deletes), deletes)
+	// Benchmark is the only tokened capability still deferred after the
+	// deletion returns; enabling it un-defers its action and nothing else.
+	enabled := deferredActionsFor("Benchmark")
+	if len(enabled) == 0 {
+		t.Fatalf("the table names no benchmark actions: %v", enabled)
 	}
-	for _, action := range deletes {
+	for _, action := range enabled {
 		if err := refuseIfDeferred(action); err != nil {
-			t.Errorf("%s refused although bulk delete is enabled: %v", action, err)
+			t.Errorf("%s refused although benchmark is enabled: %v", action, err)
 		}
 	}
 	for action, capability := range v1DeferredActions {
-		if capability == "Bulk delete" {
+		if capability == "Benchmark" {
 			continue
 		}
 		assertV1Refusal(t, refuseIfDeferred(action), capability)
@@ -73,14 +75,16 @@ func TestCapabilitySwitchEnablesWholeCapabilities(t *testing.T) {
 func TestCapabilitySwitchParsesTheOperatorSpelling(t *testing.T) {
 	forceV1Gate(t)
 	restoreSwitch(t)
-	names, unrecognised := EnableCapabilities(" Benchmark , ,BULK-DELETE,benchmark ")
-	if len(unrecognised) != 0 {
+	// Mixed case, blanks and a repeat collapse to the one capability; a
+	// returned name (copy) is reported, not silently accepted.
+	names, unrecognised := EnableCapabilities(" Benchmark , ,BENCHMARK, copy ")
+	if strings.Join(unrecognised, "|") != "copy" {
 		t.Fatalf("unrecognised = %v", unrecognised)
 	}
-	if strings.Join(names, "|") != "Benchmark|Bulk delete" {
+	if strings.Join(names, "|") != "Benchmark" {
 		t.Fatalf("names = %v", names)
 	}
-	for _, action := range append(deferredActionsFor("Benchmark"), deferredActionsFor("Bulk delete")...) {
+	for _, action := range deferredActionsFor("Benchmark") {
 		if err := refuseIfDeferred(action); err != nil {
 			t.Errorf("%s refused although its capability is enabled: %v", action, err)
 		}
@@ -96,15 +100,15 @@ func TestCapabilitySwitchReportsUnrecognisedTokens(t *testing.T) {
 	// "copy" is in here on purpose: it named a capability this build has
 	// RETURNED (ADR 0052 decision 12), so it no longer names anything the switch
 	// can admit and must be reported as ignored rather than silently accepted.
-	names, unrecognised := EnableCapabilities("copy, copz, bulk-delete, copz")
-	if strings.Join(names, "|") != "Bulk delete" {
+	names, unrecognised := EnableCapabilities("copy, copz, benchmark, copz")
+	if strings.Join(names, "|") != "Benchmark" {
 		t.Fatalf("names = %v", names)
 	}
 	if strings.Join(unrecognised, "|") != "copy|copz" {
 		t.Fatalf("unrecognised = %v", unrecognised)
 	}
 	got, bad := EnabledCapabilitySnapshot()
-	if strings.Join(got, "|") != "Bulk delete" || strings.Join(bad, "|") != "copy|copz" {
+	if strings.Join(got, "|") != "Benchmark" || strings.Join(bad, "|") != "copy|copz" {
 		t.Fatalf("snapshot = %v %v", got, bad)
 	}
 }
@@ -142,13 +146,13 @@ func TestCapabilitySwitchIsNotReReadPerCall(t *testing.T) {
 	if names, _ := ReadEnabledCapabilities(); len(names) != 0 {
 		t.Fatalf("startup reading = %v", names)
 	}
-	t.Setenv(EnableEnvVar, "bulk-delete")
-	actions := deferredActionsFor("Bulk delete")
+	t.Setenv(EnableEnvVar, "benchmark")
+	actions := deferredActionsFor("Benchmark")
 	if len(actions) == 0 {
-		t.Fatal("bulk delete has no deferred actions, so this case asserts nothing")
+		t.Fatal("benchmark has no deferred actions, so this case asserts nothing")
 	}
 	for _, action := range actions {
-		assertV1Refusal(t, refuseIfDeferred(action), "Bulk delete")
+		assertV1Refusal(t, refuseIfDeferred(action), "Benchmark")
 	}
 	if names, _ := EnabledCapabilitySnapshot(); len(names) != 0 {
 		t.Fatalf("snapshot followed the environment: %v", names)

@@ -21,17 +21,20 @@ it("keeps download, marker creation and upload and withholds deferred affordance
   // deletion ship on, like the earlier returns.
   expect(v1Offers.markerDelete).toBe(true);
   expect(v1Offers.manifestDelete).toBe(true);
-  expect(v1Offers.bulkDelete).toBe(false);
+  // Returned on 1 November 2026 (ADR 0052 decision 14): bulk delete ships on
+  // too, so benchmark is the only affordance the switch still withholds.
+  expect(v1Offers.bulkDelete).toBe(true);
   expect(v1Offers.benchmark).toBe(false);
 });
 
 // ADR 0082: the affordances follow the capabilities the process reports,
 // one whole capability at a time, and nothing else changes.
 it("offers a reported capability's whole affordance set", () => {
-  applyEnabledCapabilities(["Bulk delete"]);
-  expect(v1Offers.bulkDelete).toBe(true);
-  // Enabling one capability does not reach another still-deferred one.
-  expect(v1Offers.benchmark).toBe(false);
+  applyEnabledCapabilities(["Benchmark"]);
+  expect(v1Offers.benchmark).toBe(true);
+  // Benchmark is the only capability still behind the switch; enabling it
+  // flips its own affordance and leaves every other offer as shipped.
+  expect({ ...v1Offers, benchmark: shipped.benchmark }).toEqual(shipped);
 });
 
 it("ships copy and its job re-run on, independent of the switch", () => {

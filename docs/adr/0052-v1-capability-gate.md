@@ -157,6 +157,25 @@ inventory, with the two derivations agreeing.
     deletion and stays deferred; bulk deletion of a prefix or container and benchmark stay deferred,
     and Mirror stays refused under [ADR 0020](0020-recovery-containment.md).
 
+14. **Operator decision, 1 November 2026.** Bulk deletion of a prefix or a container, and the
+    manifest-with-segments job, are v1 capabilities. Under the broadened gate-lift grant recorded in
+    decision 13 — "you have permission to lift ANY gate you need if the code requires it" — their gate
+    may be lifted once proven. The evidence is
+    [ADR 0095](0095-prefix-deletion-by-the-per-name-protocol.md), implemented and proven on both
+    fixtures: the preview states the verified per-name protocol cost and the sweep executes it one name at a time, and the
+    manifest-with-segments deletion owns the reviewed graph and asks the segment-ownership check that
+    [ADR 0094](0094-marker-and-manifest-deletion-return-ready.md) decision 5 keeps classified here
+    rather than with the manifest-only path. `DeleteService.PreviewDelete`, `StartDelete`,
+    `CheckSegmentOwnership` and `DeleteManifestWithSegments` leave the deferred table and join the kept
+    set, reversing this record's decision 7 for the four actions it classifies as bulk deletion. The
+    `bulk-delete` token leaves [ADR 0082](0082-operator-enabled-unproven-capabilities.md) decision 3's
+    list, because it now names nothing the switch can admit; by decision 5 of that record an operator
+    who still has it in their environment is told it was ignored. It is not a claim the route is proven
+    beyond that evidence: a delete keeps the window its identity comparison narrows and cannot close,
+    exactly as the earlier returns do. Bulk deletion was the last deletion capability behind the gate;
+    only benchmark now stays deferred with a token, and Mirror stays refused under
+    [ADR 0020](0020-recovery-containment.md).
+
 ## What this does not establish
 
 It bounds what a v1 build offers.
