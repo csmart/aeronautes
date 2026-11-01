@@ -1133,3 +1133,141 @@ func canonicalEndpoint(raw string) string {
 	host = strings.TrimSuffix(host, ":80")
 	return strings.ToLower(u.Scheme) + "://" + host + strings.TrimSuffix(u.Path, "/")
 }
+
+// InterruptedItemFactsDTO is the acknowledged item ledger for one interrupted
+// job (ADR 0088 decision 5). The counts are facts the records retain, never a
+// verdict: an admitted copied or verified item stands, a conflict is its own
+// fact, and an unresolved or unverified member is reported as such.
+type InterruptedItemFactsDTO struct {
+	Items       int64 `json:"items"`
+	Admitted    int64 `json:"admitted"`
+	Copied      int64 `json:"copied"`
+	Verified    int64 `json:"verified"`
+	CopiedBytes int64 `json:"copiedBytes"`
+	Failed      int64 `json:"failed"`
+	Conflicts   int64 `json:"conflicts"`
+	Refused     int64 `json:"refused"`
+	Unresolved  int64 `json:"unresolved"`
+	Unverified  int64 `json:"unverified"`
+	Deleted     int64 `json:"deleted"`
+	Unsettled   int64 `json:"unsettled"`
+}
+
+// InterruptedDisclosureDTO is one undisclosed interrupted job for the ADR 0088
+// notice. It reports only what the retained records prove.
+type InterruptedDisclosureDTO struct {
+	JobID         string `json:"jobId"`
+	Type          string `json:"type"`
+	Source        string `json:"source"`
+	Destination   string `json:"destination"`
+	CreatedAt     string `json:"createdAt"`
+	InterruptedAt string `json:"interruptedAt"`
+	// InterruptedState is the state the restart overwrote; "queued" is the one
+	// value that proves nothing was attempted.
+	InterruptedState string `json:"interruptedState"`
+	// Attempted is true when the ledger records at least one execution
+	// observation, whatever state the sweep overwrote. Only a job that is queued
+	// AND attempted nothing proves nothing was attempted; a queued deletion that
+	// logged outcomes is attempted.
+	Attempted bool `json:"attempted"`
+	// ItemsCaptured is false when the job kept no item ledger; the counts are
+	// then zero because there is nothing to read, not because nothing happened.
+	ItemsCaptured bool                    `json:"itemsCaptured"`
+	Items         InterruptedItemFactsDTO `json:"items"`
+	// RecoveryRecords may indicate remote residue where the route writes them.
+	RecoveryRecords int64 `json:"recoveryRecords"`
+	// InconclusiveCommits counts names whose commit ledger is inconclusive —
+	// not failures (ADR 0031 line 75).
+	InconclusiveCommits int64 `json:"inconclusiveCommits"`
+	// PlacesLocalResidue is true for a route that places bytes in the operator's
+	// own filesystem (download); what is there now is theirs to inspect, and ADR
+	// 0020 forbids a sweep. The renderer uses it to explain a zero
+	// recovery-record count rather than read it as nothing having happened; a
+	// positive count is shown whatever the route, so a historical Mirror job's
+	// retained records are never hidden.
+	PlacesLocalResidue bool `json:"placesLocalResidue"`
+}
+
+// InterruptedDisclosuresDTO is the bounded page the ADR 0088 notice reads.
+type InterruptedDisclosuresDTO struct {
+	Entries []InterruptedDisclosureDTO `json:"entries"`
+	Total   int64                      `json:"total"`
+}
+
+// InterruptedDisclosures returns the interruptions the operator has not been
+// told about, newest first (ADR 0088 decision 4). An unavailable read is an
+// error, never an empty page, so the renderer shows the status as unknown and
+// never as "no interruptions".
+func (s *JobService) InterruptedDisclosures(ctx context.Context, limit int) (InterruptedDisclosuresDTO, error) {
+	page, err := s.jobs.InterruptedDisclosures(ctx, limit)
+	if err != nil {
+		return InterruptedDisclosuresDTO{}, errors.New("interrupted job disclosures are unavailable")
+	}
+	out := InterruptedDisclosuresDTO{Entries: make([]InterruptedDisclosureDTO, 0, len(page.Entries)), Total: page.Total}
+	for _, e := range page.Entries {
+		out.Entries = append(out.Entries, interruptedDisclosureDTO(e))
+	}
+	return out, nil
+}
+
+// DismissInterruptedDTO reports how many notices the dismissal recorded as
+// disclosed — never a cleanup claim (ADR 0088 decision 3).
+type DismissInterruptedDTO struct {
+	Dismissed int64 `json:"dismissed"`
+}
+
+// DismissInterrupted records that the operator was told about these
+// interruptions and dismisses their notices (ADR 0088 decision 3). It changes
+// no job's state, counters or error and clears no residue. A write that cannot
+// be made is a failure, not a silent success (decision 7).
+func (s *JobService) DismissInterrupted(ctx context.Context, jobIDs []string) (DismissInterruptedDTO, error) {
+	dismissed, err := s.jobs.DiscloseInterrupted(ctx, jobIDs)
+	if err != nil {
+		return DismissInterruptedDTO{}, errors.New("dismissing the interruption notice did not succeed; it remains")
+	}
+	return DismissInterruptedDTO{Dismissed: dismissed}, nil
+}
+
+func interruptedDisclosureDTO(e jobs.InterruptedDisclosure) InterruptedDisclosureDTO {
+	formatTime := func(t time.Time) string {
+		if t.IsZero() {
+			return ""
+		}
+		return t.UTC().Format(time.RFC3339)
+	}
+	return InterruptedDisclosureDTO{
+		JobID:            e.JobID,
+		Type:             string(e.Type),
+		Source:           e.Source,
+		Destination:      e.Destination,
+		CreatedAt:        formatTime(e.CreatedAt),
+		InterruptedAt:    formatTime(e.InterruptedAt),
+		InterruptedState: string(e.InterruptedState),
+		Attempted:        e.Attempted,
+		ItemsCaptured:    e.ItemsCaptured,
+		Items: InterruptedItemFactsDTO{
+			Items:       e.Items.Items,
+			Admitted:    e.Items.Admitted,
+			Copied:      e.Copied,
+			Verified:    e.Verified,
+			CopiedBytes: e.CopiedBytes,
+			Failed:      e.Items.Failed,
+			Conflicts:   e.Items.Conflicts,
+			Refused:     e.Items.Refused,
+			Unresolved:  e.Items.Unresolved,
+			Unverified:  e.Items.Unverified,
+			Deleted:     e.Items.Deleted,
+			Unsettled:   e.Items.Unsettled,
+		},
+		RecoveryRecords:     e.RecoveryRecords,
+		InconclusiveCommits: e.InconclusiveCommits,
+		PlacesLocalResidue:  placesLocalResidue(e.Type),
+	}
+}
+
+// placesLocalResidue says whether a job type puts bytes in the operator's own
+// filesystem. Only download does; what is in that directory now is the
+// operator's to inspect, and ADR 0020's containment forbids a sweep of it.
+func placesLocalResidue(t jobs.Type) bool {
+	return t == jobs.TypeDownload
+}

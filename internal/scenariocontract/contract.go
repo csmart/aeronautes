@@ -168,6 +168,11 @@ var inventory = map[string]Action{
 	"JobService.Items":          {Kind: Read, Scenarios: []string{"happy", "refusal"}},
 	"JobService.ItemTotals":     {Kind: Read, Scenarios: []string{"happy", "refusal"}},
 	"JobService.RecoveryStatus": {Kind: Read, Scenarios: []string{"happy", "refusal"}},
+	// ADR 0088: the interrupted-job notice read and its dismissal. The read is
+	// unavailable-or-happy like RecoveryStatus; the dismissal is a local mutate
+	// that either applies or refuses (decision 7).
+	"JobService.InterruptedDisclosures": {Kind: Read, Scenarios: []string{"happy", "refusal"}},
+	"JobService.DismissInterrupted":     {Kind: Mutate},
 	// FindService — StartFind launches a cancellable async scan.
 	"FindService.StartFind":  {Kind: Read, Scenarios: []string{"happy", "cancel", "refusal"}},
 	"FindService.FindStatus": {Kind: Read, Scenarios: []string{"happy", "refusal"}},
