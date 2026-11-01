@@ -268,3 +268,370 @@ func TestDiscloseInterruptedCountsOnlyWhatItDisclosed(t *testing.T) {
 		t.Fatalf("the disclosure revised the job: state=%s error=%q", got.State, got.Error)
 	}
 }
+
+// ADR 0088 decision 4: the read returns a bounded, newest-first page of only
+// the interruptions the operator has NOT been told about, with a total count
+// that stands apart from the page limit. A job that reached a terminal state
+// on its own is not an interruption and must not appear.
+func TestInterruptedDisclosuresSelectsUndisclosedNewestFirst(t *testing.T) {
+	ctx := context.Background()
+	s, bm := newStore(t)
+
+	ids := make([]string, 3)
+	for i, ts := range []string{
+		"2026-10-19T00:00:01Z", "2026-10-19T00:00:02Z", "2026-10-19T00:00:03Z",
+	} {
+		job, err := s.Create(ctx, Job{Type: TypeDownload, SourceBookmarkID: bm})
+		if err != nil {
+			t.Fatal(err)
+		}
+		setCreatedAt(t, s, job.ID, ts)
+		ids[i] = job.ID
+	}
+	ordinary, err := s.Create(ctx, Job{Type: TypeDownload, SourceBookmarkID: bm})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, to := range []State{StatePlanning, StateRunning, StateVerifying, StateComplete} {
+		if err := s.Transition(ctx, ordinary.ID, to); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.FailInterrupted(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := s.InterruptedDisclosures(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 3 {
+		t.Fatalf("Total = %d, want 3; the completed job must not count as an interruption", page.Total)
+	}
+	wantOrder := []string{ids[2], ids[1], ids[0]}
+	if got := entryIDs(page); !equalIDs(got, wantOrder) {
+		t.Fatalf("page order = %v, want newest-first %v", got, wantOrder)
+	}
+
+	// A disclosed interruption leaves the set.
+	discloseForTest(t, s, ids[1])
+	page, err = s.InterruptedDisclosures(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 2 || !equalIDs(entryIDs(page), []string{ids[2], ids[0]}) {
+		t.Fatalf("after disclosing one: Total=%d order=%v, want 2 and [%s %s]", page.Total, entryIDs(page), ids[2], ids[0])
+	}
+
+	// The page is bounded while Total keeps counting everything undisclosed.
+	page, err = s.InterruptedDisclosures(ctx, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 2 {
+		t.Fatalf("Total = %d, want 2 even under a page limit of 1", page.Total)
+	}
+	if !equalIDs(entryIDs(page), []string{ids[2]}) {
+		t.Fatalf("limited page = %v, want just the newest (%s)", entryIDs(page), ids[2])
+	}
+}
+
+// ADR 0088 decision 5: each entry reports what the retained facts prove. An
+// admitted job carries its item ledger, its recovery residue, and — the case
+// that needs the most care — a committing name never committed shows as ONE
+// inconclusive commit, not a failure. A job that never left the queue proves
+// nothing was attempted and has no ledger at all.
+func TestInterruptedDisclosuresReportsPerEntryFacts(t *testing.T) {
+	ctx := context.Background()
+	s, bm := newStore(t)
+
+	admitted, err := s.Create(ctx, Job{Type: TypeDownload, SourceBookmarkID: bm, ItemRecordsVersion: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, to := range []State{StatePlanning, StateRunning} {
+		if err := s.Transition(ctx, admitted.ID, to); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.AdmitItems(ctx, admitted.ID, []ItemIntent{downloadItem(bm, "one"), downloadItem(bm, "two")}); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range []RecoveryRecord{
+		{JobID: admitted.ID, BookmarkID: bm, Kind: RecoveryStaging, Container: "c", Prefix: "stage"},
+		{JobID: admitted.ID, BookmarkID: bm, Kind: RecoveryCommitting, Container: "c", Prefix: "p1", Object: "c/one"},
+		{JobID: admitted.ID, BookmarkID: bm, Kind: RecoveryCommitting, Container: "c", Prefix: "p2", Object: "c/two"},
+		{JobID: admitted.ID, BookmarkID: bm, Kind: RecoveryCommitted, Container: "c", Prefix: "p2"},
+	} {
+		if err := s.RecoveryAdd(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	queued, err := s.Create(ctx, Job{Type: TypeDownload, SourceBookmarkID: bm})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.FailInterrupted(ctx); err != nil {
+		t.Fatal(err)
+	}
+	page, err := s.InterruptedDisclosures(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	a := findEntry(t, page, admitted.ID)
+	if a.InterruptedState != StateRunning {
+		t.Fatalf("admitted job interrupted_state = %s, want running", a.InterruptedState)
+	}
+	if !a.ItemsCaptured || a.Items.Items != 2 || a.Items.Admitted != 2 {
+		t.Fatalf("admitted item facts = captured:%v items:%d admitted:%d, want true/2/2",
+			a.ItemsCaptured, a.Items.Items, a.Items.Admitted)
+	}
+	if a.RecoveryRecords != 4 {
+		t.Fatalf("admitted RecoveryRecords = %d, want 4", a.RecoveryRecords)
+	}
+	if a.InconclusiveCommits != 1 {
+		t.Fatalf("admitted InconclusiveCommits = %d, want exactly 1 (p1 committing, never committed)", a.InconclusiveCommits)
+	}
+	// No execution was recorded, so nothing was attempted yet and the positive
+	// facts are zero — a distinct fact from the recovery residue above.
+	if a.Attempted || a.Copied != 0 || a.Verified != 0 || a.CopiedBytes != 0 {
+		t.Fatalf("admitted-but-unexecuted facts = attempted:%v copied:%d verified:%d bytes:%d, want false/0/0/0",
+			a.Attempted, a.Copied, a.Verified, a.CopiedBytes)
+	}
+
+	q := findEntry(t, page, queued.ID)
+	if q.InterruptedState != StateQueued {
+		t.Fatalf("queued job interrupted_state = %s, want queued", q.InterruptedState)
+	}
+	if q.ItemsCaptured || q.Items.Items != 0 {
+		t.Fatalf("queued job must carry no item ledger: captured:%v items:%d", q.ItemsCaptured, q.Items.Items)
+	}
+	if q.RecoveryRecords != 0 || q.InconclusiveCommits != 0 {
+		t.Fatalf("queued job residue = recovery:%d inconclusive:%d, want 0/0", q.RecoveryRecords, q.InconclusiveCommits)
+	}
+	if q.Attempted || q.Copied != 0 {
+		t.Fatalf("queued job with no ledger must read as not attempted: attempted:%v copied:%d", q.Attempted, q.Copied)
+	}
+}
+
+// ADR 0088 decision 5 / review db:958: a recorded execution outcome is an
+// attempt whatever state the sweep overwrote. A job can record a copied and
+// verified member while still queued — a crash before the state change leaves
+// interrupted_state queued — and the notice must read the ledger, not the
+// state, so it does not claim nothing was attempted beside recorded work. The
+// acknowledged copied/verified members and their bytes are carried too.
+func TestInterruptedDisclosuresReadsAttemptFromTheLedger(t *testing.T) {
+	ctx := context.Background()
+	s, bm := newStore(t)
+
+	job, err := s.Create(ctx, Job{Type: TypeDownload, SourceBookmarkID: bm, ItemRecordsVersion: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := downloadItem(bm, "obj")
+	if err := s.AdmitItems(ctx, job.ID, []ItemIntent{item}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordExecution(ctx, job.ID, item.Key, ItemObservation{Result: ItemCopied, Effect: EffectReportedApplied, CopiedBytes: 2048}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordComparison(ctx, job.ID, item.ItemIdentity, ItemObservation{Result: ItemVerified, Effect: EffectNotAttempted}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.FailInterrupted(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := s.InterruptedDisclosures(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := findEntry(t, page, job.ID)
+	if e.InterruptedState != StateQueued {
+		t.Fatalf("interrupted_state = %s, want queued (the crash preceded the state change)", e.InterruptedState)
+	}
+	if !e.Attempted {
+		t.Fatal("a queued job with a recorded execution must read as attempted, not nothing-attempted")
+	}
+	if e.Copied != 1 || e.Verified != 1 || e.CopiedBytes != 2048 {
+		t.Fatalf("acknowledged facts = copied:%d verified:%d bytes:%d, want 1/1/2048", e.Copied, e.Verified, e.CopiedBytes)
+	}
+}
+
+func setCreatedAt(t *testing.T, s *Store, id, ts string) {
+	t.Helper()
+	ctx := context.Background()
+	if err := s.db.WriteTx(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `UPDATE jobs SET created_at=? WHERE id=?`, ts, id)
+		return err
+	}); err != nil {
+		t.Fatalf("set created_at: %v", err)
+	}
+}
+
+func downloadItem(bm, key string) ItemIntent {
+	return ItemIntent{
+		ItemIdentity: ItemIdentity{
+			Key:         key,
+			Source:      ItemLocation{Kind: ItemSwift, BookmarkID: bm, Container: "src", Object: key},
+			Destination: ItemLocation{Kind: ItemLocal, LocalPath: "/tmp/aeronautes-test/" + key},
+		},
+		Planned: true, Admitted: true, ListedBytes: 10,
+	}
+}
+
+func findEntry(t *testing.T, page InterruptedDisclosurePage, id string) InterruptedDisclosure {
+	t.Helper()
+	for _, e := range page.Entries {
+		if e.JobID == id {
+			return e
+		}
+	}
+	t.Fatalf("job %s not in the disclosure page", id)
+	return InterruptedDisclosure{}
+}
+
+func entryIDs(page InterruptedDisclosurePage) []string {
+	ids := make([]string, len(page.Entries))
+	for i, e := range page.Entries {
+		ids[i] = e.JobID
+	}
+	return ids
+}
+
+func equalIDs(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func deletionItem(bm, key string) ItemIntent {
+	return ItemIntent{
+		ItemIdentity: ItemIdentity{
+			Key:    key,
+			Source: ItemLocation{Kind: ItemSwift, BookmarkID: bm, Container: "c", Object: key},
+		},
+		Planned: true, Admitted: true, ListedBytes: 1,
+	}
+}
+
+func publicationItem(bm, key string) ItemIntent {
+	return ItemIntent{
+		ItemIdentity: ItemIdentity{
+			Key:         key,
+			Source:      ItemLocation{Kind: ItemSwift, BookmarkID: bm, Container: "src", Object: key},
+			Destination: ItemLocation{Kind: ItemLocal, LocalPath: "/tmp/aeronautes-test/" + key},
+		},
+		Staging:             &ItemLocation{Kind: ItemLocal, LocalPath: "/tmp/aeronautes-test/.stage/" + key},
+		Planned:             true,
+		Admitted:            true,
+		PublicationRequired: true,
+	}
+}
+
+// ADR 0088 decision 5 / review db:959: the attempt signal must exclude the
+// synthetic not_attempted rows the sweep writes for never-issued deletion
+// members, and must include an issued member with no recorded outcome, whose
+// DELETE may have been sent (ADR 0093). A raw count of execution rows gets both
+// wrong.
+func TestInterruptedDisclosuresAttemptExcludesSyntheticNotAttempted(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("issued member with no outcome counts as attempted", func(t *testing.T) {
+		s, bm := newStore(t)
+		job, err := s.Create(ctx, Job{Type: TypeDeleteSelected, SourceBookmarkID: bm, ItemRecordsVersion: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.AdmitItems(ctx, job.ID, []ItemIntent{deletionItem(bm, "k")}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.MarkIssued(ctx, job.ID, "k"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.FailInterrupted(ctx); err != nil {
+			t.Fatal(err)
+		}
+		page, err := s.InterruptedDisclosures(ctx, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if e := findEntry(t, page, job.ID); !e.Attempted {
+			t.Fatal("an issued deletion member with no outcome must read as attempted")
+		}
+	})
+
+	t.Run("only synthetic not_attempted rows do not count as attempted", func(t *testing.T) {
+		s, bm := newStore(t)
+		job, err := s.Create(ctx, Job{Type: TypeDeleteSelected, SourceBookmarkID: bm, ItemRecordsVersion: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.AdmitItems(ctx, job.ID, []ItemIntent{deletionItem(bm, "a"), deletionItem(bm, "b")}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.FailInterrupted(ctx); err != nil {
+			t.Fatal(err)
+		}
+		// The sweep wrote the synthetic rows, so a naive count would read these
+		// as attempts; this test fails for that mistake.
+		if n := rowCount(t, s, `SELECT COUNT(*) FROM job_item_observations o JOIN job_items i ON o.item_id=i.id
+			WHERE i.job_id=? AND o.phase='execution' AND o.result='not_attempted'`, job.ID); n != 2 {
+			t.Fatalf("expected 2 synthetic not_attempted rows, got %d", n)
+		}
+		page, err := s.InterruptedDisclosures(ctx, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if e := findEntry(t, page, job.ID); e.Attempted {
+			t.Fatal("never-issued members carrying only synthetic not_attempted rows must not read as attempted")
+		}
+	})
+}
+
+// ADR 0061/0070 / review db:959: a publication-required download is not
+// "verified" on the strength of its staged read alone; the final publication
+// must be verified too. The copied fact still stands on its own.
+func TestInterruptedDisclosuresVerifiedRequiresFinalPublication(t *testing.T) {
+	ctx := context.Background()
+	s, bm := newStore(t)
+	job, err := s.Create(ctx, Job{Type: TypeDownload, SourceBookmarkID: bm, ItemRecordsVersion: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := publicationItem(bm, "obj")
+	if err := s.AdmitItems(ctx, job.ID, []ItemIntent{item}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordExecution(ctx, job.ID, item.Key, ItemObservation{Result: ItemCopied, Effect: EffectReportedApplied, CopiedBytes: 10}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordComparison(ctx, job.ID, item.ItemIdentity, ItemObservation{Result: ItemVerified, Effect: EffectNotAttempted}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.FailInterrupted(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := s.InterruptedDisclosures(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := findEntry(t, page, job.ID)
+	if e.Verified != 0 {
+		t.Fatalf("verified = %d with the final publication unrecorded, want 0 (the staged read alone is not verified)", e.Verified)
+	}
+	// The copied member and the attempt stand on their own.
+	if !e.Attempted || e.Copied != 1 {
+		t.Fatalf("attempted/copied = %v/%d, want true/1", e.Attempted, e.Copied)
+	}
+}
