@@ -76,16 +76,14 @@ async function manifestDialog() {
 }
 
 describe("the inspector's marker affordance", () => {
-  it("offers the marker delete only while the capability is enabled, and never a one-click deletion", async () => {
+  it("offers the marker delete through a confirmation, never a one-click deletion", async () => {
     const f = await state("folder-marker/");
     const component = mount(Inspector, { target: f.root, props: { browser: f.browser } });
     mounted.add(component);
     flushSync(); await settle();
-    expect(labels(f.root)).not.toContain("Delete marker…");
-    expect(labels(f.root)).not.toContain("Delete marker object");
-
-    applyEnabledCapabilities(["Marker and manifest deletion"]);
-    flushSync(); await settle();
+    // Marker deletion is a returned capability (ADR 0052 decision 13), so the
+    // affordance is offered; it opens the confirmation and never deletes on
+    // the click itself.
     expect(labels(f.root)).toContain("Delete marker…");
     expect(labels(f.root)).not.toContain("Delete marker object");
     f.fake.deleteMarker = vi.fn(async () => applied);
@@ -249,13 +247,6 @@ describe("the Delete key", () => {
     expect(document.querySelector('[aria-label="Delete manifest"]')).not.toBeNull();
     expect(api.deleteManifest).not.toHaveBeenCalled();
     expect(api.checkSegmentOwnership === undefined || !(api.checkSegmentOwnership as unknown as { mock?: unknown }).mock).toBe(true);
-  });
-
-  it("does nothing for a marker or a manifest without the capability", async () => {
-    await screen(["Object deletion"], "folder-marker/");
-    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
-    await screen(["Object deletion"], "external-dlo");
-    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
   });
 });
 

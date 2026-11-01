@@ -138,6 +138,25 @@ inventory, with the two derivations agreeing.
     Bulk deletion and its segment job, marker and manifest deletion and benchmark stay deferred, and
     Mirror stays refused under [ADR 0020](0020-recovery-containment.md).
 
+13. **Operator decision, 1 November 2026.** Marker and manifest deletion are v1 capabilities. The
+    operator broadened the standing gate-lift grant — "you have permission to lift ANY gate you need
+    if the code requires it" — which delegates the valuable-data hold on the deletion returns, so
+    their gate may be lifted once each is proven. The evidence is
+    [ADR 0094](0094-marker-and-manifest-deletion-return-ready.md), implemented and proven on both
+    fixtures: the caller's scope and durable facts for both, the marker compared and confirmed rather
+    than deleted by one click, and the manifest deletion aligned with the plain object's and bound to
+    the identity the operator was shown by [ADR 0085](0085-reobserved-destructive-identity.md)'s
+    fixed-point comparison. `MutateService.DeleteMarker` and `MutateService.DeleteManifest` leave the
+    deferred table and join the kept set, reversing this record's decision 7 for the two actions it
+    classifies as marker and manifest editing. The `marker-manifest-delete` token leaves
+    [ADR 0082](0082-operator-enabled-unproven-capabilities.md) decision 3's list, because it now names
+    nothing the switch can admit; by decision 5 of that record an operator who still has it in their
+    environment is told it was ignored. It is not a claim the route is proven beyond that evidence: a
+    delete keeps the window its identity comparison narrows and cannot close, exactly as the earlier
+    returns do. Deleting a manifest together with its segments is a different pair classified with bulk
+    deletion and stays deferred; bulk deletion of a prefix or container and benchmark stay deferred,
+    and Mirror stays refused under [ADR 0020](0020-recovery-containment.md).
+
 ## What this does not establish
 
 It bounds what a v1 build offers.

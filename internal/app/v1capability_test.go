@@ -81,6 +81,9 @@ func TestEveryBridgeActionIsClassified(t *testing.T) {
 		// Object deletion was returned on 29 October 2026 (ADR 0052 decision
 		// 11): one object (ADR 0092) and the selected set (ADR 0093) are kept.
 		"MutateService.DeleteObject": true, "DeleteService.StartSelectedDelete": true,
+		// Marker and manifest deletion returned on 1 November 2026 (ADR 0052
+		// decision 13) under the broadened gate-lift grant.
+		"MutateService.DeleteMarker": true, "MutateService.DeleteManifest": true,
 		// Copy and its job re-run were returned on 31 October 2026 (ADR 0052
 		// decision 12), once ADR 0087's overwrite and ADR 0096's full-fidelity
 		// skip completed copy's path.
@@ -198,14 +201,6 @@ func TestV1GateRefusesDeferredEntryPoints(t *testing.T) {
 		}},
 		{"DeleteService.DeleteManifestWithSegments", "Bulk delete", func() error {
 			_, err := (&DeleteService{}).DeleteManifestWithSegments(ctx, SegmentsDeleteRequestDTO{})
-			return err
-		}},
-		{"MutateService.DeleteMarker", "Marker and manifest deletion", func() error {
-			_, err := (&MutateService{}).DeleteMarker(ctx, ListingScopeDTO{}, "c", "p/", "any")
-			return err
-		}},
-		{"MutateService.DeleteManifest", "Marker and manifest deletion", func() error {
-			_, err := (&MutateService{}).DeleteManifest(ctx, ListingScopeDTO{}, "c", "n", "any")
 			return err
 		}},
 		{"BenchmarkService.StartBenchmark", "Benchmark", func() error {

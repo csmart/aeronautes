@@ -17,9 +17,11 @@ it("keeps download, marker creation and upload and withholds deferred affordance
   // re-run ship on too, so the switch no longer withholds them.
   expect(v1Offers.copy).toBe(true);
   expect(v1Offers.rerun).toBe(true);
+  // Returned on 1 November 2026 (ADR 0052 decision 13): marker and manifest
+  // deletion ship on, like the earlier returns.
+  expect(v1Offers.markerDelete).toBe(true);
+  expect(v1Offers.manifestDelete).toBe(true);
   expect(v1Offers.bulkDelete).toBe(false);
-  expect(v1Offers.markerDelete).toBe(false);
-  expect(v1Offers.manifestDelete).toBe(false);
   expect(v1Offers.benchmark).toBe(false);
 });
 
@@ -28,7 +30,7 @@ it("keeps download, marker creation and upload and withholds deferred affordance
 it("offers a reported capability's whole affordance set", () => {
   applyEnabledCapabilities(["Bulk delete"]);
   expect(v1Offers.bulkDelete).toBe(true);
-  expect(v1Offers.markerDelete).toBe(false);
+  // Enabling one capability does not reach another still-deferred one.
   expect(v1Offers.benchmark).toBe(false);
 });
 
@@ -42,7 +44,11 @@ it("ships copy and its job re-run on, independent of the switch", () => {
   expect(v1Offers.rerun).toBe(true);
 });
 
-it("offers both halves of marker and manifest editing together", () => {
+it("ships both halves of marker and manifest deletion on, independent of the switch", () => {
+  // Returned on 1 November 2026 (ADR 0052 decision 13): both affordances ship
+  // on and no token names or toggles them.
+  expect(v1Offers.markerDelete).toBe(true);
+  expect(v1Offers.manifestDelete).toBe(true);
   applyEnabledCapabilities(["Marker and manifest deletion"]);
   expect(v1Offers.markerDelete).toBe(true);
   expect(v1Offers.manifestDelete).toBe(true);

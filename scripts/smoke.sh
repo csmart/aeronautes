@@ -181,10 +181,11 @@ switch_case copy "copy" \
 # was ignored rather than silently accepting a token that now does nothing.
 switch_case object-delete "object-delete" \
   "AERONAUTES_ENABLE: ignored, not a capability: object-delete"
-# Marker and manifest deletion stay deferred until the operator returns them
-# (ADR 0094 decision 6); the capability says what its token admits.
+# Marker and manifest deletion was RETURNED on 1 November 2026 (ADR 0052
+# decision 13), so its token no longer names a capability and the switch says
+# it was ignored, as for the earlier returns.
 switch_case marker-manifest-delete "marker-manifest-delete" \
-  "AERONAUTES_ENABLE: offering unproven capabilities in this process: Marker and manifest deletion"
+  "AERONAUTES_ENABLE: ignored, not a capability: marker-manifest-delete"
 switch_case unrecognised "benchmark, not-a-capability" \
   "AERONAUTES_ENABLE: offering unproven capabilities in this process: Benchmark" \
   "AERONAUTES_ENABLE: ignored, not a capability: not-a-capability"

@@ -81,18 +81,19 @@ it("opens each local transfer control in its own mode", async () => {
   expect(dialog?.textContent).not.toContain("Choose a destination directory");
 });
 
-it("offers marker creation and withholds manifest and marker deletion", async () => {
+it("offers manifest deletion on a DLO and marker creation on an implied prefix", async () => {
   await connectedScreen();
   const dlo = [...document.querySelectorAll<HTMLElement>('[role="option"]')]
     .find((el) => el.querySelector(".name")?.textContent?.trim() === "external-dlo")!;
   dlo.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); flushSync(); await settle();
-  expect(labels()).not.toContain("Delete manifest…");
+  // Manifest deletion is a returned capability (ADR 0052 decision 13), so it
+  // is offered on a manifest.
+  expect(labels()).toContain("Delete manifest…");
   const prefix = [...document.querySelectorAll<HTMLElement>('[role="option"]')]
     .find((el) => el.querySelector(".name")?.textContent?.trim() === "implied/")!;
   prefix.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); flushSync(); await settle();
-  // ADR 0052 decision 8: creation is offered on an implied prefix; the
-  // deletion half stays withheld (mutationDialogs.test.ts covers the
-  // marker-backed prefix, where the withheld button is named in place).
+  // Creation is offered on an implied prefix; such a prefix has no marker
+  // object, so there is nothing for marker deletion to offer here regardless.
   expect(labels()).toContain("Create marker object");
   expect(labels()).not.toContain("Delete marker object");
 });
