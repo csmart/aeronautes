@@ -27,7 +27,7 @@ func TestCopyRepresentationFactoryPolicy(t *testing.T) {
 			// here keeps the resolved copy settings equal to the request.
 			settings := TransferSettingsDTO{ChunkSize: "1Mi", Transfers: 7, Checkers: 9, TPSLimit: 11, BWLimit: "10M", BufferSize: DefaultBufferSize}
 			if operation == "copy" {
-				_, effective, err := h.transfer.buildEngine(t.Context(), CopyRequestDTO{SourceBookmarkID: bookmark, Settings: settings}, session, session)
+				_, effective, _, err := h.transfer.buildEngine(t.Context(), CopyRequestDTO{SourceBookmarkID: bookmark, Settings: settings}, session, session)
 				if err != nil || effective != settings {
 					t.Fatalf("Copy settings = %+v; error=%v", effective, err)
 				}
@@ -73,7 +73,7 @@ func TestCopyRepresentationRunnerPolicy(t *testing.T) {
 			settings := TransferSettingsDTO{ChunkSize: "1Mi", Transfers: 7, Checkers: 9, TPSLimit: 11, BWLimit: "10M"}
 			var result *rclone.Result
 			if operation == "copy" {
-				engine, _, err := h.transfer.buildEngine(t.Context(), CopyRequestDTO{SourceBookmarkID: bookmark, Settings: settings}, session, session)
+				engine, _, _, err := h.transfer.buildEngine(t.Context(), CopyRequestDTO{SourceBookmarkID: bookmark, Settings: settings}, session, session)
 				if err != nil {
 					t.Fatal(err)
 				}
