@@ -27,6 +27,7 @@ import type {
   CredentialStatusDTO,
   VerifyResultDTO,
   RecoveryStatusDTO,
+  InterruptedDisclosuresDTO,
   CapabilitiesDTO,
   ContainerCreateDTO,
   ContainerDetailDTO,
@@ -234,6 +235,14 @@ export class BrowserState {
   recoveryStatusLoading = $state(false);
   recoveryStatusError = $state(false);
   #recoveryStatusSeq = 0;
+  // ADR 0088: the interrupted-job notice. Null while unknown; a page with
+  // total 0 means there is nothing to disclose. The dismiss error is kept
+  // apart from the read error because a failed dismissal (decision 7) must
+  // say so without claiming the read itself is unavailable.
+  interruptedDisclosures = $state<InterruptedDisclosuresDTO | null>(null);
+  interruptedDisclosuresError = $state(false);
+  interruptedDismissError = $state(false);
+  #interruptedDisclosuresSeq = 0;
 
   // Transfer dialog (§27.1 Copy / §27.2 Mirror preview).
   transferOpen = $state(false);
@@ -1239,6 +1248,38 @@ export class BrowserState {
         this.recoveryStatusLoading = false;
       }
     }
+  }
+
+  // The ADR 0088 notice read. An unavailable read is recorded as an error,
+  // never as an empty page, so the banner shows the status as unknown rather
+  // than silently saying there was nothing to disclose.
+  async loadInterruptedDisclosures(): Promise<void> {
+    const seq = ++this.#interruptedDisclosuresSeq;
+    try {
+      const page = await this.#api.interruptedDisclosures(0);
+      if (seq === this.#interruptedDisclosuresSeq) {
+        this.interruptedDisclosures = page;
+        this.interruptedDisclosuresError = false;
+      }
+    } catch {
+      if (seq === this.#interruptedDisclosuresSeq) {
+        this.interruptedDisclosures = null;
+        this.interruptedDisclosuresError = true;
+      }
+    }
+  }
+
+  // Dismissal records only that the operator was told (ADR 0088 decision 3);
+  // a failed write leaves the notice standing and says so (decision 7).
+  async dismissInterrupted(jobIds: string[]): Promise<void> {
+    this.interruptedDismissError = false;
+    try {
+      await this.#api.dismissInterrupted(jobIds);
+    } catch {
+      this.interruptedDismissError = true;
+      return;
+    }
+    await this.loadInterruptedDisclosures();
   }
 
   /** Jobs this client started whose end should refresh the view they

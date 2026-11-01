@@ -54,6 +54,9 @@ import type {
   PickedDirDTO,
   PickedFilesDTO,
   SelectionScopeDTO,
+  InterruptedDisclosuresDTO,
+  InterruptedDisclosureDTO,
+  DismissInterruptedDTO,
 } from "../../bindings/github.com/csmart/aeronautes/internal/app";
 
 export type {
@@ -89,6 +92,9 @@ export type {
   ObjectMetadataEditDTO,
   PrefixDetailDTO,
   SLOManifestDTO,
+  InterruptedDisclosuresDTO,
+  InterruptedDisclosureDTO,
+  DismissInterruptedDTO,
 };
 export type { DownloadPreflightView, UploadPreflight };
 export type {
@@ -218,6 +224,8 @@ export interface Api {
   jobItems(jobId: string, cursor: string, limit: number, bookmarkId: string): Promise<JobItemPageDTO>;
   jobItemTotals(jobId: string, bookmarkId: string): Promise<JobItemTotalsDTO>;
   recoveryStatus(): Promise<RecoveryStatusDTO>;
+  interruptedDisclosures(limit: number): Promise<InterruptedDisclosuresDTO>;
+  dismissInterrupted(jobIds: string[]): Promise<DismissInterruptedDTO>;
   pickUploadFiles(scope: SelectionScopeDTO): Promise<PickedFilesDTO | null>;
   pickDownloadDir(scope: SelectionScopeDTO): Promise<PickedDirDTO | null>;
   preflightUpload(req: UploadRequestDTO): Promise<UploadPreflight>;
@@ -300,6 +308,8 @@ export const liveApi: Api = {
   jobs: async (bookmarkId, activeOnly, limit) =>
     (await JobService.List(bookmarkId, activeOnly, limit)) ?? [],
   recoveryStatus: () => JobService.RecoveryStatus(),
+  interruptedDisclosures: (limit) => JobService.InterruptedDisclosures(limit),
+  dismissInterrupted: (jobIds) => JobService.DismissInterrupted(jobIds),
   job: (jobId, bookmarkId) => JobService.Get(bookmarkId, jobId),
   jobHistory: (bookmarkId, cursor, limit) => JobService.History(bookmarkId, cursor, limit),
   jobItems: (jobId, cursor, limit, bookmarkId) => JobService.Items(bookmarkId, jobId, cursor, limit),

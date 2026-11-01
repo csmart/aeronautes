@@ -596,6 +596,14 @@ export interface DeleteRequestDTO {
 }
 
 /**
+ * DismissInterruptedDTO reports how many notices the dismissal recorded as
+ * disclosed — never a cleanup claim (ADR 0088 decision 3).
+ */
+export interface DismissInterruptedDTO {
+    "dismissed": number;
+}
+
+/**
  * DownloadRequestDTO scopes a prefix download; DestDirToken is the
  * picker-issued directory handle (paths never cross the bridge).
  */
@@ -680,6 +688,90 @@ export interface Info {
      * name no capability, so a typo is visible rather than silent.
      */
     "unrecognisedCapabilities": string[] | null;
+}
+
+/**
+ * InterruptedDisclosureDTO is one undisclosed interrupted job for the ADR 0088
+ * notice. It reports only what the retained records prove.
+ */
+export interface InterruptedDisclosureDTO {
+    "jobId": string;
+    "type": string;
+    "source": string;
+    "destination": string;
+    "createdAt": string;
+    "interruptedAt": string;
+
+    /**
+     * InterruptedState is the state the restart overwrote; "queued" is the one
+     * value that proves nothing was attempted.
+     */
+    "interruptedState": string;
+
+    /**
+     * Attempted is true when the ledger records at least one execution
+     * observation, whatever state the sweep overwrote. Only a job that is queued
+     * AND attempted nothing proves nothing was attempted; a queued deletion that
+     * logged outcomes is attempted.
+     */
+    "attempted": boolean;
+
+    /**
+     * ItemsCaptured is false when the job kept no item ledger; the counts are
+     * then zero because there is nothing to read, not because nothing happened.
+     */
+    "itemsCaptured": boolean;
+    "items": InterruptedItemFactsDTO;
+
+    /**
+     * RecoveryRecords may indicate remote residue where the route writes them.
+     */
+    "recoveryRecords": number;
+
+    /**
+     * InconclusiveCommits counts names whose commit ledger is inconclusive —
+     * not failures (ADR 0031 line 75).
+     */
+    "inconclusiveCommits": number;
+
+    /**
+     * PlacesLocalResidue is true for a route that places bytes in the operator's
+     * own filesystem (download); what is there now is theirs to inspect, and ADR
+     * 0020 forbids a sweep. The renderer uses it to explain a zero
+     * recovery-record count rather than read it as nothing having happened; a
+     * positive count is shown whatever the route, so a historical Mirror job's
+     * retained records are never hidden.
+     */
+    "placesLocalResidue": boolean;
+}
+
+/**
+ * InterruptedDisclosuresDTO is the bounded page the ADR 0088 notice reads.
+ */
+export interface InterruptedDisclosuresDTO {
+    "entries": InterruptedDisclosureDTO[] | null;
+    "total": number;
+}
+
+/**
+ * InterruptedItemFactsDTO is the acknowledged item ledger for one interrupted
+ * job (ADR 0088 decision 5). The counts are facts the records retain, never a
+ * verdict: an admitted copied or verified item stands, a conflict is its own
+ * fact, and an unresolved or unverified member is reported as such.
+ */
+export interface InterruptedItemFactsDTO {
+    "items": number;
+    "admitted": number;
+    "copied": number;
+    "verified": number;
+    "copiedBytes": number;
+    "failed": number;
+    "conflicts": number;
+    "refused": number;
+    "unresolved": number;
+    "unverified": number;
+    "deleted": number;
+    "unsettled": number;
 }
 
 /**
