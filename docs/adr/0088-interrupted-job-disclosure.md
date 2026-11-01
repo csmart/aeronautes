@@ -1,6 +1,6 @@
 # ADR 0088 — tell the operator what a restart interrupted, and let them dismiss it
 
-**Status:** Proposed. Written for review before implementation, in the shape [ADR 0087](0087-copy-overwrite-on-upload-terms.md) and [ADR 0086](0086-mirror-deletes-what-the-source-does-not-have.md) took. Nothing here is built. It proposes no new capability, lifts nothing from [ADR 0052](0052-v1-capability-gate.md)'s deferred table, and changes no refusal.
+**Status:** Accepted. The recording, the retention exemption and the dismissal write landed first behind migration 0016; this change adds the bounded read, its two bridge actions and the operator-facing notice, in the shape [ADR 0087](0087-copy-overwrite-on-upload-terms.md) and [ADR 0086](0086-mirror-deletes-what-the-source-does-not-have.md) took. It adds no new capability, lifts nothing from [ADR 0052](0052-v1-capability-gate.md)'s deferred table, and changes no refusal.
 **Scope:** What the application tells the operator at startup about the jobs a previous run did not finish, and what it lets them do about it. It does **not** propose resuming a job, restoring a queue, reclaiming residue, or widening `TransferService.RerunJob`. It does not touch [ADR 0020](0020-recovery-containment.md)'s retention or [ADR 0047](0047-single-active-job.md)'s ceiling.
 
 ## The operator's decision
@@ -133,8 +133,11 @@ are retained, which the reason text does; it did not require anybody to be shown
    to carry a verdict it cannot.
 
    First, **admission**, from `interrupted_state`:
-   - `queued` — the job was never admitted to execution, so no request was made and nothing was
-     attempted. This is the only case where that can be said.
+   - `queued` — nothing is recorded as attempted, and the job had not recorded leaving the
+     queue. The recorded state is not by itself a promise that no request was made: a lost
+     best-effort transition can leave a running sweep reading queued, and a bulk sweep issues
+     listing and container requests that are not member steps. So the notice reports what the
+     ledger shows — nothing recorded as attempted — rather than claiming no request was made.
    - `planning`, `running` or `verifying` — the job was admitted. Work **may** have started, and the
      facets below say what is retained about it.
 
@@ -245,6 +248,6 @@ are retained, which the reason text does; it did not require anybody to be shown
 
 ## Limits
 
-This record is a proposal and nothing in it is implemented. It makes the application say out loud
+This record's design is now implemented as described. It makes the application say out loud
 what it already knows; it does not make the application know more. The valuable-data hold is
 unchanged, the 0.1.0 test plan is unchanged, and no refusal is relaxed.
