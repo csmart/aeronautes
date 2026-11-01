@@ -75,4 +75,60 @@ func ResolveSettings(p Profile, overrides TransferSettingsDTO, recommendation *T
 	return base.withDefaults(), nil
 }
 
+// settingOrigins classifies where each resolved §44.1 knob's value came
+// from, mirroring ResolveSettings' precedence: a non-zero per-job
+// override wins; otherwise the value is the profile base, or a benchmark
+// recommendation under Auto; otherwise a filled default, or — for the
+// chunk size, which no profile sets — a value calculated against the
+// destination. The §45 record stores this so a profile or calculated
+// value does not read as one the operator set (UI-09). It is a
+// provenance view only; ResolveSettings stays the one place that decides
+// the values.
+func settingOrigins(p Profile, overrides TransferSettingsDTO, recommendation *TransferSettingsDTO) map[string]string {
+	base, _ := profileBase(p)
+	baseToken := "profile"
+	if p == ProfileAuto && recommendation != nil {
+		base = *recommendation
+		baseToken = "recommendation"
+	}
+	str := func(override, baseValue, fallback string) string {
+		switch {
+		case override != "":
+			return "override"
+		case baseValue != "":
+			return baseToken
+		default:
+			return fallback
+		}
+	}
+	num := func(override, baseValue int) string {
+		switch {
+		case override != 0:
+			return "override"
+		case baseValue != 0:
+			return baseToken
+		default:
+			return "default"
+		}
+	}
+	flt := func(override, baseValue float64) string {
+		switch {
+		case override != 0:
+			return "override"
+		case baseValue != 0:
+			return baseToken
+		default:
+			return "default"
+		}
+	}
+	return map[string]string{
+		"transfers":  num(overrides.Transfers, base.Transfers),
+		"checkers":   num(overrides.Checkers, base.Checkers),
+		"tpsLimit":   flt(overrides.TPSLimit, base.TPSLimit),
+		"bwLimit":    str(overrides.BWLimit, base.BWLimit, "default"),
+		"bufferSize": str(overrides.BufferSize, base.BufferSize, "default"),
+		"chunkSize":  str(overrides.ChunkSize, base.ChunkSize, "calculated"),
+	}
+}
+
 var _ = rclone.Options{} // the settings map onto the runner's options

@@ -99,18 +99,34 @@ func (s TransferSettingsDTO) effectiveJSON() string {
 	return string(encoded)
 }
 
-// effectiveJSONWithProfile prepends the resolved §40 profile to the
-// record.
-func effectiveJSONWithProfile(profile Profile, s TransferSettingsDTO) string {
-	encoded := s.effectiveJSON()
-	if encoded == "" {
-		return ""
-	}
+// effectiveRecord is the §45 record stored on a job: the resolved §40
+// profile, the typed settings the child ran with, and where each knob's
+// value came from (origins). The origins let the operator tell a value
+// they chose on this job from one the profile, a benchmark
+// recommendation, or a default supplied — the distinction the flat
+// record used to lose (UI-09).
+type effectiveRecord struct {
+	Profile string `json:"profile"`
+	TransferSettingsDTO
+	Origins map[string]string `json:"origins,omitempty"`
+}
+
+// effectiveJSONWithProfile records the resolved §40 profile, the typed
+// settings, and the per-knob origins (§45).
+func effectiveJSONWithProfile(profile Profile, s TransferSettingsDTO, origins map[string]string) string {
 	name := profile
 	if name == "" {
 		name = ProfileBalanced
 	}
-	return `{"profile":` + fmt.Sprintf("%q", string(name)) + `,` + encoded[1:]
+	encoded, err := json.Marshal(effectiveRecord{
+		Profile:             string(name),
+		TransferSettingsDTO: s,
+		Origins:             origins,
+	})
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
 }
 
 // ParseSize converts the SizeSuffix grammar to bytes (K-XFER-004: the

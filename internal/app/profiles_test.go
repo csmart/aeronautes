@@ -51,10 +51,46 @@ func TestResolveSettings(t *testing.T) {
 		t.Fatal("unknown profile resolved")
 	}
 
-	// The §45 record carries the profile.
-	record := effectiveJSONWithProfile(ProfileAggressive, TransferSettingsDTO{Transfers: 16})
+	// The §45 record carries the profile and each knob's origin.
+	origins := settingOrigins(ProfileAggressive, TransferSettingsDTO{Transfers: 16}, nil)
+	record := effectiveJSONWithProfile(ProfileAggressive, TransferSettingsDTO{Transfers: 16}, origins)
 	if !strings.Contains(record, `"profile":"aggressive"`) || !strings.Contains(record, `"transfers":16`) {
 		t.Fatalf("record = %q", record)
+	}
+	// transfers:16 was the per-job override; checkers was the profile's.
+	if !strings.Contains(record, `"transfers":"override"`) || !strings.Contains(record, `"checkers":"profile"`) {
+		t.Fatalf("origins missing from record = %q", record)
+	}
+}
+
+func TestSettingOrigins(t *testing.T) {
+	// Balanced: a per-job override wins; the rest are the profile's.
+	o := settingOrigins(ProfileBalanced, TransferSettingsDTO{Transfers: 12}, nil)
+	if o["transfers"] != "override" || o["checkers"] != "profile" {
+		t.Fatalf("balanced+override origins = %v", o)
+	}
+	// A chunk size nobody set is calculated against the destination; a
+	// buffer nobody set is the engine default.
+	if o["chunkSize"] != "calculated" || o["bufferSize"] != "default" {
+		t.Fatalf("unset chunk/buffer origins = %v", o)
+	}
+	// Auto with a recommendation: the recommended knobs are the
+	// recommendation's, including a chunk size it carries.
+	rec := &TransferSettingsDTO{Transfers: 24, Checkers: 48, ChunkSize: "256Mi"}
+	o = settingOrigins(ProfileAuto, TransferSettingsDTO{}, rec)
+	if o["transfers"] != "recommendation" || o["chunkSize"] != "recommendation" {
+		t.Fatalf("auto+recommendation origins = %v", o)
+	}
+	// …with a per-job override still winning on top.
+	o = settingOrigins(ProfileAuto, TransferSettingsDTO{Transfers: 2}, rec)
+	if o["transfers"] != "override" || o["checkers"] != "recommendation" {
+		t.Fatalf("auto+recommendation+override origins = %v", o)
+	}
+	// Custom with a chunk override: set knobs are the operator's; a
+	// buffer nobody set is still the default.
+	o = settingOrigins(ProfileCustom, TransferSettingsDTO{ChunkSize: "128Mi"}, nil)
+	if o["chunkSize"] != "override" || o["bufferSize"] != "default" {
+		t.Fatalf("custom origins = %v", o)
 	}
 }
 

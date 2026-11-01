@@ -275,16 +275,40 @@
     }
   }
 
-  function settingsRows(job: JobDTO): [string, string][] {
+  type SettingRow = { key: string; value: string; origin: string };
+
+  // The §45 record stores where each knob's value came from (origins);
+  // the note turns that into plain words so a profile or calculated value
+  // is not mistaken for one the operator set on this job (UI-09). A record
+  // without origins — an older job, or an upload/download — shows no note.
+  function settingOriginNote(origin: string | undefined): string {
+    switch (origin) {
+      case "override":
+        return "set for this job";
+      case "profile":
+        return "from profile";
+      case "recommendation":
+        return "benchmark recommendation";
+      case "calculated":
+        return "calculated";
+      case "default":
+        return "default";
+      default:
+        return "";
+    }
+  }
+
+  function settingsRows(job: JobDTO): SettingRow[] {
     try {
       const parsed = JSON.parse(job.settings);
-      const rows: [string, string][] = Object.entries(parsed)
-        .filter(([, v]) => v !== "" && v !== 0)
-        .map(([k, v]) => [k, String(v)]);
+      const origins = (parsed.origins ?? {}) as Record<string, string>;
+      const rows: SettingRow[] = Object.entries(parsed)
+        .filter(([k, v]) => k !== "origins" && v !== "" && v !== 0)
+        .map(([k, v]) => ({ key: k, value: String(v), origin: settingOriginNote(origins[k]) }));
       // The child's per-transfer buffers are the memory to reason about
       // (ADR 0074 decision 3): transfers × buffer size, when both are known.
       if (typeof parsed.transfers === "number" && parsed.transfers > 0 && typeof parsed.bufferSize === "string" && parsed.bufferSize !== "") {
-        rows.push(["child buffers", `${parsed.transfers} × ${parsed.bufferSize}`]);
+        rows.push({ key: "child buffers", value: `${parsed.transfers} × ${parsed.bufferSize}`, origin: "" });
       }
       return rows;
     } catch {
@@ -764,8 +788,8 @@
                     {#if !job.counters.deletionAccountingIncomplete}
                       <span class="config-row"><span class="k">verified</span><span>{job.counters.objectsVerified}</span></span>
                     {/if}
-                    {#each settingsRows(job) as [key, value] (key)}
-                      <span class="config-row"><span class="k">{key}</span><span class="type-mono">{value}</span></span>
+                    {#each settingsRows(job) as row (row.key)}
+                      <span class="config-row"><span class="k">{row.key}</span><span class="type-mono">{row.value}</span>{#if row.origin}<span class="origin">{row.origin}</span>{/if}</span>
                     {/each}
                     {#if settingsRows(job).length === 0}
                       <span class="config-row"><span class="k">settings</span><span>defaults</span></span>
@@ -1151,6 +1175,10 @@
   }
 
   .config-row .k {
+    color: var(--color-text-faint);
+  }
+
+  .config-row .origin {
     color: var(--color-text-faint);
   }
 

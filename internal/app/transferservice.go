@@ -294,7 +294,7 @@ func (s *TransferService) setRecommendationSource(f func(bookmarkID string) *Tra
 // with the job's effective options. Remotes resolve PER SPAWN: each
 // child gets tokens refreshed against expiry first (§26.2 — the child
 // cannot re-authenticate itself).
-func (s *TransferService) buildEngine(ctx context.Context, req CopyRequestDTO, src, dst *swiftcontrol.Session) (transfercopy.Engine, TransferSettingsDTO, error) {
+func (s *TransferService) buildEngine(ctx context.Context, req CopyRequestDTO, src, dst *swiftcontrol.Session) (transfercopy.Engine, TransferSettingsDTO, map[string]string, error) {
 	source := func(spawnCtx context.Context) ([]rclone.Remote, error) {
 		srcRemote, err := s.connections.EngineRemote(spawnCtx, src, "aeronautes_src")
 		if err != nil {
@@ -308,29 +308,36 @@ func (s *TransferService) buildEngine(ctx context.Context, req CopyRequestDTO, s
 	}
 	remotes, err := source(ctx)
 	if err != nil {
-		return nil, TransferSettingsDTO{}, err
+		return nil, TransferSettingsDTO{}, nil, err
 	}
 	// §12.3: one child may serve both endpoints only when their TLS
 	// trust identities are EQUAL — refuse here so the operator sees the
 	// reason at start, not a child-spawn failure mid-job.
 	srcTrust, err := rclone.TrustIdentity(remotes[0].InsecureTLS, remotes[0].CACertFile)
 	if err != nil {
-		return nil, TransferSettingsDTO{}, err
+		return nil, TransferSettingsDTO{}, nil, err
 	}
 	dstTrust, err := rclone.TrustIdentity(remotes[1].InsecureTLS, remotes[1].CACertFile)
 	if err != nil {
-		return nil, TransferSettingsDTO{}, err
+		return nil, TransferSettingsDTO{}, nil, err
 	}
 	if srcTrust != dstTrust {
-		return nil, TransferSettingsDTO{}, errors.New("the two bookmarks carry different TLS trust (custom CA or insecure): one transfer child cannot serve both safely (§12.3) — align their trust settings or move data via a location both trust")
+		return nil, TransferSettingsDTO{}, nil, errors.New("the two bookmarks carry different TLS trust (custom CA or insecure): one transfer child cannot serve both safely (§12.3) — align their trust settings or move data via a location both trust")
 	}
-	effective, err := s.effectiveSettings(req)
+	// One recommendation read serves both the resolved values and their
+	// recorded provenance (§45). A second, later lookup could disagree
+	// with the values if a benchmark recommendation appeared or vanished
+	// between the two, labelling a recommended value a profile default or
+	// the reverse (db:968).
+	recommendation := s.recommendationFor(req.SourceBookmarkID)
+	effective, err := ResolveSettings(Profile(req.Profile), req.Settings, recommendation)
 	if err != nil {
-		return nil, TransferSettingsDTO{}, err
+		return nil, TransferSettingsDTO{}, nil, err
 	}
+	origins := settingOrigins(Profile(req.Profile), req.Settings, recommendation)
 	effective, err = effective.forDestination(ctx, dst)
 	if err != nil {
-		return nil, TransferSettingsDTO{}, err
+		return nil, TransferSettingsDTO{}, nil, err
 	}
 	options := effective.options()
 	// Source sizes and digests describe stored bytes, so Copy must not
@@ -338,13 +345,13 @@ func (s *TransferService) buildEngine(ctx context.Context, req CopyRequestDTO, s
 	options.NoGzipEncoding = true
 	if s.engineFactory != nil {
 		engine, err := s.engineFactory(source, options)
-		return engine, effective, err
+		return engine, effective, origins, err
 	}
 	runner, err := rclone.NewRunner(options)
 	if err != nil {
-		return nil, TransferSettingsDTO{}, err
+		return nil, TransferSettingsDTO{}, nil, err
 	}
-	return transfercopy.BindRunnerSource(runner, source), effective, nil
+	return transfercopy.BindRunnerSource(runner, source), effective, origins, nil
 }
 
 // StartCopy creates the job and launches execution in the background;
@@ -385,7 +392,7 @@ func (s *TransferService) StartCopy(ctx context.Context, req CopyRequestDTO) (st
 			return "", err
 		}
 	}
-	engine, effective, err := s.buildEngine(ctx, req, src, dst)
+	engine, effective, origins, err := s.buildEngine(ctx, req, src, dst)
 	if err != nil {
 		return "", fmt.Errorf("transfer engine: %w", err)
 	}
@@ -398,7 +405,7 @@ func (s *TransferService) StartCopy(ctx context.Context, req CopyRequestDTO) (st
 		SourceBookmarkID:   req.SourceBookmarkID,
 		DestBookmarkID:     req.DestBookmarkID,
 		Engine:             "rclone+native",
-		Settings:           effectiveJSONWithProfile(Profile(req.Profile), effective),
+		Settings:           effectiveJSONWithProfile(Profile(req.Profile), effective, origins),
 	})
 	if err != nil {
 		return "", err

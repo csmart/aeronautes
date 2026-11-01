@@ -177,6 +177,35 @@ it.each(["copy", "upload", "download", ...deleteTypes])("keeps active %s diagnos
   expect(api.rerunJob).not.toHaveBeenCalled();
 });
 
+it("shows where each effective setting came from (§45 provenance)", async () => {
+  const settings = JSON.stringify({
+    profile: "balanced",
+    chunkSize: "5Gi",
+    transfers: 12,
+    checkers: 8,
+    bufferSize: "16Mi",
+    origins: { transfers: "override", checkers: "profile", chunkSize: "calculated", bufferSize: "default" },
+  });
+  const { row } = await show({ ...job("copy"), settings });
+  row.querySelector<HTMLButtonElement>(".details")!.click();
+  flushSync();
+  const config = text(row, ".config");
+  expect(config).toContain("transfers12set for this job");
+  expect(config).toContain("checkers8from profile");
+  expect(config).toContain("chunkSize5Gicalculated");
+  expect(config).toContain("bufferSize16Midefault");
+});
+
+it("shows no provenance note for a settings record without origins", async () => {
+  const { row } = await show({ ...job("copy"), settings: '{"transfers":2,"checkers":4}' });
+  row.querySelector<HTMLButtonElement>(".details")!.click();
+  flushSync();
+  const config = text(row, ".config");
+  expect(config).toContain("transfers2");
+  expect(config).not.toContain("set for this job");
+  expect(config).not.toContain("from profile");
+});
+
 it.each(["running", "complete"])("keeps unknown rate and later rate/ETA qualification for %s Copy", async (state) => {
   const { browser, row } = await show(job("copy", state));
   expect(browser.jobRates["presentation-job"]).toBeUndefined();

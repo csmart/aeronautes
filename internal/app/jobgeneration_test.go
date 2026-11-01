@@ -369,3 +369,50 @@ func TestJobRunnerKeepsPinsThroughFinalBodyCleanup(t *testing.T) {
 	awaitConnection(t, done)
 	assertJobBindingsReleased(t, h, []string{id})
 }
+
+// A benchmark recommendation can appear or vanish between reads, so the
+// §45 provenance must be classified from the same snapshot that fixed
+// the execution values, not a later re-read (db:968). Here the
+// recommendation resolves the Auto values, then vanishes once the engine
+// is built; the record must still call 24 transfers a recommendation.
+func TestCopyRecordsProvenanceFromResolutionSnapshot(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+	source := h.transfer.connections.ActiveBookmarkID()
+	h.installEngine(nil)
+	h.mock.AddContainer("media", "standard")
+	seedObject(h.mock, "media", "scope/file", "contents", nil)
+	destination, mock := secondCluster(t, h)
+	mock.AddContainer("backup", "standard")
+
+	live := true
+	h.transfer.setRecommendationSource(func(string) *TransferSettingsDTO {
+		if !live {
+			return nil
+		}
+		return &TransferSettingsDTO{Transfers: 24, Checkers: 48}
+	})
+	original := h.transfer.engineFactory
+	h.transfer.setEngineFactory(func(src transfercopy.RemoteSource, opts rclone.Options) (transfercopy.Engine, error) {
+		live = false
+		return original(src, opts)
+	})
+
+	id, err := h.transfer.StartCopy(t.Context(), CopyRequestDTO{
+		Profile:          string(ProfileAuto),
+		SourceBookmarkID: source, SourceContainer: "media", SourcePrefix: "scope/",
+		DestBookmarkID: destination, DestContainer: "backup", DestPrefix: "scope/",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Join the launched job before the fixture closes; the recorded
+	// settings are fixed at creation and survive to the terminal row.
+	job := awaitTerminal(t, h, id)
+	if !strings.Contains(job.Settings, `"transfers":24`) {
+		t.Fatalf("recommendation did not fix the values: %s", job.Settings)
+	}
+	if !strings.Contains(job.Settings, `"transfers":"recommendation"`) {
+		t.Fatalf("provenance not from the resolution snapshot: %s", job.Settings)
+	}
+}
