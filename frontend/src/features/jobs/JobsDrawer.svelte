@@ -6,7 +6,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import type { BrowserState } from "../browser/browserState.svelte";
-  import type { AppSettingsDTO, JobDTO } from "../../lib/api";
+  import type { AppSettingsDTO, JobDTO, InterruptedDisclosureDTO } from "../../lib/api";
   import { formatBytes } from "../../lib/format";
   import { v1Offers } from "../../lib/v1.svelte";
   import JobHistory from "./JobHistory.svelte";
@@ -59,6 +59,43 @@
       case "delete_segments": return "Delete manifest + segments";
       default: return type || "Unknown operation";
     }
+  }
+
+  // Admission is read from the ledger, not the state alone: a recorded
+  // execution is an attempt even from a queued state, so only a queued job that
+  // attempted nothing claims nothing was attempted (ADR 0088 decision 5).
+  function interruptionAdmission(e: InterruptedDisclosureDTO): string {
+    if (e.attempted) return "Work had begun when the run ended; some of it may have completed.";
+    // The records show no step; this does not by itself prove no request was
+    // made, since a bulk sweep issues listings and container requests that are
+    // not member steps, so the wording stays with what the ledger shows.
+    if (e.interruptedState === "queued") return "Nothing is recorded as attempted; it had not left the queue.";
+    return `Nothing is recorded as attempted; it reached ${e.interruptedState} when the run ended.`;
+  }
+
+  // The acknowledged item facts, positive first (ADR 0031 line 94): the copied
+  // and verified members and their bytes stand beside the failed, refused and
+  // inconclusive ones, never erased by them. An absent ledger is its own
+  // statement, not a zero count (ADR 0088 decision 5).
+  function interruptionItems(e: InterruptedDisclosureDTO): string {
+    if (!e.itemsCaptured) return "No item ledger was kept for this job.";
+    const f = e.items;
+    const parts = [`${f.items} recorded ${f.items === 1 ? "member" : "members"}`];
+    const add = (n: number, label: string) => {
+      if (n > 0) parts.push(`${n} ${label}`);
+    };
+    add(f.copied, "copied");
+    add(f.verified, "verified");
+    add(f.failed, "failed");
+    add(f.conflicts, "in conflict");
+    add(f.refused, "refused");
+    add(f.unresolved, "unresolved");
+    add(f.unverified, "unverified");
+    add(f.deleted, "deleted");
+    add(f.unsettled, "unsettled");
+    let summary = parts.join(", ") + ".";
+    if (f.copiedBytes > 0) summary += ` ${formatBytes(f.copiedBytes)} copied.`;
+    return summary;
   }
 
   // Every deletion job settles members and carries a separate deleted count;
@@ -310,6 +347,44 @@
 
   {#if open}
     <div class="body">
+      {#if browser.interruptedDisclosuresError}
+        <section class="interrupted" role="status">
+          <p>Interrupted-job status is unavailable; whether an earlier run left jobs unfinished is unknown.</p>
+        </section>
+      {:else if browser.interruptedDisclosures && browser.interruptedDisclosures.total > 0}
+        <section class="interrupted" aria-label="Interrupted jobs from a previous run">
+          <p class="interrupted-head">An earlier run was interrupted. Its data and records are kept; nothing was cleaned up.</p>
+          <ul class="interrupted-list">
+            {#each browser.interruptedDisclosures.entries ?? [] as entry (entry.jobId)}
+              <li>
+                <span class="operation-state">
+                  <span class="operation">{operationLabel(entry.type)}</span>
+                  <button class="dismiss-interruption" onclick={() => void browser.dismissInterrupted([entry.jobId])}>Dismiss</button>
+                </span>
+                <span class="route type-mono" title="{entry.source} → {entry.destination}">{entry.source} → {entry.destination}</span>
+                <span class="interrupted-fact">{interruptionAdmission(entry)}</span>
+                <span class="interrupted-fact">{interruptionItems(entry)}</span>
+                {#if entry.recoveryRecords > 0}
+                  <span class="interrupted-fact">
+                    {entry.recoveryRecords} recovery {entry.recoveryRecords === 1 ? "record" : "records"} retained{#if entry.inconclusiveCommits > 0}, {entry.inconclusiveCommits} {entry.inconclusiveCommits === 1 ? "name" : "names"} with an inconclusive commit — not a failure{/if}.
+                  </span>
+                {:else if entry.placesLocalResidue}
+                  <span class="interrupted-fact">This route keeps no recovery records, so none here is not a sign that nothing happened.</span>
+                {/if}
+                {#if entry.placesLocalResidue}
+                  <span class="interrupted-fact">Files may remain in the folder you chose; what is there is yours to check.</span>
+                {/if}
+              </li>
+            {/each}
+          </ul>
+          {#if browser.interruptedDisclosures.total > (browser.interruptedDisclosures.entries ?? []).length}
+            <p class="interrupted-more">{browser.interruptedDisclosures.total - (browser.interruptedDisclosures.entries ?? []).length} more not shown.</p>
+          {/if}
+          {#if browser.interruptedDismissError}
+            <p class="bad" role="alert">The dismissal did not happen; the notice remains.</p>
+          {/if}
+        </section>
+      {/if}
       {#if cancellationNotices.length > 0}
         <section class="cancellation-feedback" aria-label="Cancellation requests">
           <ul class="cancellation-notices">
@@ -1258,5 +1333,44 @@
     color: var(--color-danger);
     background: var(--color-danger-soft);
     border-color: var(--color-danger);
+  }
+
+  .interrupted {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-2);
+    border: 1px solid var(--color-warning);
+    background: var(--color-warning-soft);
+  }
+
+  .interrupted-head {
+    font-weight: 600;
+    color: var(--color-warning);
+  }
+
+  .interrupted-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .interrupted-list li {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .interrupted-fact,
+  .interrupted-more {
+    font-size: var(--text-sm);
+    color: var(--color-text-faint);
+  }
+
+  .dismiss-interruption {
+    margin-left: auto;
   }
 </style>

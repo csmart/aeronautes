@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
-import type { JobDTO } from "../../lib/api";
+import type { JobDTO, InterruptedDisclosureDTO } from "../../lib/api";
 import { BrowserState } from "../browser/browserState.svelte";
 import { newFakeApi } from "../browser/fakeApi";
 import JobsDrawer from "./JobsDrawer.svelte";
@@ -178,4 +178,60 @@ it("does not describe a successful zero-record read as verified remote cleanup",
     .toMatch(/0 recovery records retained across\s+0 finished jobs in all accounts/));
   expect(document.body.textContent).toContain("Remote residue is unverified");
   expect(document.body.textContent).toContain("Automatic recovery cleanup is unavailable");
+});
+
+it("shows interrupted-job detail and dismisses one through the drawer", async () => {
+  const api = newFakeApi();
+  const entry: InterruptedDisclosureDTO = {
+    jobId: "j1", type: "download", source: "acc/src", destination: "/home/me/dl",
+    createdAt: "2026-10-19T00:00:00Z", interruptedAt: "2026-10-19T00:00:01Z",
+    interruptedState: "running", attempted: true, itemsCaptured: true,
+    items: { items: 3, admitted: 3, copied: 1, verified: 0, copiedBytes: 4096, failed: 1, conflicts: 0, refused: 0, unresolved: 2, unverified: 0, deleted: 0, unsettled: 0 },
+    recoveryRecords: 0, inconclusiveCommits: 0, placesLocalResidue: true,
+  };
+  api.interruptedDisclosures = vi.fn()
+    .mockResolvedValueOnce({ entries: [entry], total: 1 })
+    .mockResolvedValue({ entries: [], total: 0 });
+  api.dismissInterrupted = vi.fn().mockResolvedValue({ dismissed: 1 });
+  const browser = new BrowserState(api);
+  await browser.loadInterruptedDisclosures();
+  show(browser);
+
+  const section = document.querySelector(".interrupted")!;
+  expect(section).not.toBeNull();
+  // Admission, item facts, and the two residue facets are reported honestly.
+  expect(section.textContent).toContain("Work had begun when the run ended");
+  expect(section.textContent).toContain("3 recorded members");
+  expect(section.textContent).toContain("1 copied");
+  expect(section.textContent).toContain("1 failed");
+  expect(section.textContent).toContain("2 unresolved");
+  expect(section.textContent).toContain("keeps no recovery records");
+  expect(section.textContent).toContain("Files may remain");
+
+  const dismiss = [...section.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Dismiss")!;
+  dismiss.click();
+  await vi.waitFor(() => expect(api.dismissInterrupted).toHaveBeenCalledWith(["j1"]));
+  // The reload shows nothing left, so the section goes away.
+  await vi.waitFor(() => expect(document.querySelector(".interrupted")).toBeNull());
+});
+
+it("does not claim no request was made for a queued bulk-delete interruption", async () => {
+  const api = newFakeApi();
+  const entry: InterruptedDisclosureDTO = {
+    jobId: "q1", type: "empty_container", source: "acc/c", destination: "(emptied)",
+    createdAt: "2026-10-19T00:00:00Z", interruptedAt: "2026-10-19T00:00:01Z",
+    interruptedState: "queued", attempted: false, itemsCaptured: true,
+    items: { items: 0, admitted: 0, copied: 0, verified: 0, copiedBytes: 0, failed: 0, conflicts: 0, refused: 0, unresolved: 0, unverified: 0, deleted: 0, unsettled: 0 },
+    recoveryRecords: 0, inconclusiveCommits: 0, placesLocalResidue: false,
+  };
+  api.interruptedDisclosures = vi.fn().mockResolvedValue({ entries: [entry], total: 1 });
+  const browser = new BrowserState(api);
+  await browser.loadInterruptedDisclosures();
+  show(browser);
+  const section = document.querySelector(".interrupted")!;
+  // A sweep makes listing and container requests that are not member steps, so
+  // absent item evidence must not be stated as "no request was made".
+  expect(section.textContent).toContain("Nothing is recorded as attempted");
+  expect(section.textContent).not.toContain("no request was made");
+  expect(section.textContent).not.toContain("Never started");
 });
