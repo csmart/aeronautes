@@ -882,6 +882,9 @@
                 <span class="summary">{event.summary}</span>
                 <span class="when">{timeOf(event.at)}</span>
                 <span class="audit-bookmark">{auditBookmarkLabel(event.bookmarkId)}</span>
+                {#if event.transIds?.some((id) => id)}
+                  <span class="trans">Transaction IDs: <span class="type-mono">{event.transIds.filter((id) => id).join(" ")}</span></span>
+                {/if}
               </div>
             {/each}
             {#if browser.auditLoaded && browser.auditEvents.length > 0 && !browser.auditExhausted && !browser.auditError}
@@ -1290,7 +1293,8 @@
     border-radius: var(--radius-control);
   }
 
-  .audit-bookmark {
+  .audit-bookmark,
+  .trans {
     grid-column: 1 / -1;
     overflow-wrap: anywhere;
     color: var(--color-text-secondary);

@@ -331,3 +331,31 @@ it("attributes the recent slice to the connected account, not every account", as
     .not.toContain("across all accounts");
   expect(api.auditRecent).toHaveBeenLastCalledWith(50, "source");
 });
+
+it("shows transaction IDs when present and omits the row when none were recorded", async () => {
+  const api = newFakeApi();
+  const withIds: AuditEventDTO = { id: 22, at: "", bookmarkId: "", operation: "delete.object",
+    resource: "object-22", summary: "deleted", result: "applied", transIds: ["txABC123", "txDEF456"] };
+  const noIds: AuditEventDTO = { id: 21, at: "", bookmarkId: "", operation: "settings.update",
+    resource: "local", summary: "recorded", result: "applied", transIds: [] };
+  // A Swift response can supply no transaction id, which the store records as
+  // a single blank entry; that must read as none, not as an empty label.
+  const blankId: AuditEventDTO = { id: 20, at: "", bookmarkId: "", operation: "metadata.update",
+    resource: "object-20", summary: "updated", result: "applied", transIds: [""] };
+  api.auditSearch = vi.fn().mockResolvedValueOnce([withIds, noIds, blankId]);
+  const browser = new BrowserState(api);
+  show(browser);
+  await vi.waitFor(() => expect(browser.auditLoaded).toBe(true));
+  flushSync();
+  const events = [...document.querySelectorAll(".event")];
+  expect(events.length).toBe(3);
+  // The event that reached Swift surfaces its transaction IDs for correlation.
+  const shown = events[0].querySelector(".trans");
+  expect(shown?.textContent).toContain("txABC123");
+  expect(shown?.textContent).toContain("txDEF456");
+  // An event that recorded none (a local-only change) shows no transaction-ID
+  // row, so an empty list reads as none rather than as an unavailable field.
+  expect(events[1].querySelector(".trans")).toBeNull();
+  // A blank-only list is none in substance, so it shows no row and no bare label.
+  expect(events[2].querySelector(".trans")).toBeNull();
+});
