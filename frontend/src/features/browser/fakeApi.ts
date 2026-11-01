@@ -1006,6 +1006,8 @@ export function newFakeApi(): Api {
       return id;
     },
     recoveryStatus: async () => ({ jobs: 0, records: 0 }),
+    interruptedDisclosures: async () => ({ entries: [], total: 0 }),
+    dismissInterrupted: async () => ({ dismissed: 0 }),
     job: async (id, bookmarkId) => scopedJob(id, bookmarkId),
     jobHistory: async (bookmarkId, cursor, limit) => {
       const ordered = jobs.filter((j) => !bookmarkId || j.sourceBookmarkId === bookmarkId || j.destBookmarkId === bookmarkId)

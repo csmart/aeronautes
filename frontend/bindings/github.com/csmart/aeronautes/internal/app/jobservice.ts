@@ -15,6 +15,16 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as $models from "./models.js";
 
 /**
+ * DismissInterrupted records that the operator was told about these
+ * interruptions and dismisses their notices (ADR 0088 decision 3). It changes
+ * no job's state, counters or error and clears no residue. A write that cannot
+ * be made is a failure, not a silent success (decision 7).
+ */
+export function DismissInterrupted(jobIDs: string[] | null): $CancellablePromise<$models.DismissInterruptedDTO> {
+    return $Call.ByID(1969150788, jobIDs);
+}
+
+/**
  * Get returns one job bound to the named bookmark (ADR 0059).
  */
 export function Get(bookmarkID: string, jobID: string): $CancellablePromise<$models.JobDTO | null> {
@@ -23,6 +33,16 @@ export function Get(bookmarkID: string, jobID: string): $CancellablePromise<$mod
 
 export function History(bookmarkID: string, cursor: string, limit: number): $CancellablePromise<$models.JobHistoryDTO> {
     return $Call.ByID(2144743990, bookmarkID, cursor, limit);
+}
+
+/**
+ * InterruptedDisclosures returns the interruptions the operator has not been
+ * told about, newest first (ADR 0088 decision 4). An unavailable read is an
+ * error, never an empty page, so the renderer shows the status as unknown and
+ * never as "no interruptions".
+ */
+export function InterruptedDisclosures(limit: number): $CancellablePromise<$models.InterruptedDisclosuresDTO> {
+    return $Call.ByID(1701158542, limit);
 }
 
 export function ItemTotals(bookmarkID: string, jobID: string): $CancellablePromise<$models.JobItemTotalsDTO> {
