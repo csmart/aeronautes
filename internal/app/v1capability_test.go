@@ -70,6 +70,9 @@ func TestEveryBridgeActionIsClassified(t *testing.T) {
 		"JobService.Get":               true, "JobService.History": true,
 		"JobService.Items": true, "JobService.ItemTotals": true,
 		"JobService.List": true, "JobService.RecoveryStatus": true,
+		// ADR 0088's notice read and dismissal are always available: the
+		// decision lifts nothing and gates nothing, so both are kept.
+		"JobService.InterruptedDisclosures": true, "JobService.DismissInterrupted": true,
 		"MutateService.CreateContainer": true, "MutateService.CreateMarker": true,
 		// Upload was returned on 16 October 2026, once ADR 0085's comparison
 		// completed its path: its three actions are kept rather than deferred.
