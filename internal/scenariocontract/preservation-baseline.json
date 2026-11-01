@@ -2,12 +2,12 @@
   "schemaVersion": 1,
   "reportSchemaVersion": 3,
   "identity": {
-    "commit": "c721c64d377d235a17c6a2b40d75ea8e22b802ae",
+    "commit": "bdf581dccb5eabe438b9fc8eb9d320c374e9d360",
     "go_version": "go1.27.3",
-    "run_id": "40787014308",
+    "run_id": "41281369835",
     "run_attempt": "1"
   },
-  "contractHash": "06d9e43fce961af9",
+  "contractHash": "55276603077ba4f5",
   "actions": [
     {
       "action": "AppService.About",
@@ -250,6 +250,14 @@
       ]
     },
     {
+      "action": "JobService.DismissInterrupted",
+      "kind": "mutate",
+      "required": [
+        "happy",
+        "refusal"
+      ]
+    },
+    {
       "action": "JobService.Get",
       "kind": "read",
       "required": [
@@ -258,6 +266,14 @@
     },
     {
       "action": "JobService.History",
+      "kind": "read",
+      "required": [
+        "happy",
+        "refusal"
+      ]
+    },
+    {
+      "action": "JobService.InterruptedDisclosures",
       "kind": "read",
       "required": [
         "happy",
@@ -616,11 +632,27 @@
       "scenario": "happy"
     },
     {
+      "action": "JobService.DismissInterrupted",
+      "scenario": "happy"
+    },
+    {
+      "action": "JobService.DismissInterrupted",
+      "scenario": "refusal"
+    },
+    {
       "action": "JobService.History",
       "scenario": "happy"
     },
     {
       "action": "JobService.History",
+      "scenario": "refusal"
+    },
+    {
+      "action": "JobService.InterruptedDisclosures",
+      "scenario": "happy"
+    },
+    {
+      "action": "JobService.InterruptedDisclosures",
       "scenario": "refusal"
     },
     {
@@ -757,10 +789,10 @@
     }
   ],
   "evidence": {
-    "reference": "docs/experiments/2026-10-28-bulk-delete-baseline.md",
-    "mainReportSHA256": "06491785f5b170f1937c0e464506e12361a1698876eee700bff273465f9c8cab",
-    "mainReceiptSHA256": "422dc1485882bbdeaf8ed7f71f5777eaace9a54e81f7cbe8a4eb1d70f1262c88",
-    "heavyReportSHA256": "6b3f0a6b1427d8bb04259649a812272535df063902b9e548d5e0de14b906d003",
-    "heavyReceiptSHA256": "45e2e5cbd9123ca6b353df3cd25b16c66ffc0f38299944188c93d9d058b9bf0f"
+    "reference": "/home/csmart/code/.aeronautes-work/20261101-adr0088-slice2/candidate-41281369835",
+    "mainReportSHA256": "6a02a4b4e905a36d668a5ef0e71a4d4aba5d13b36820dc83d2ba8e06a1f93e73",
+    "mainReceiptSHA256": "564fb957c743b7df361da96edc14ae228f45a5aa5e043e777c7f01ed71eaec38",
+    "heavyReportSHA256": "c3e4da0fdc8e3908c1493aded30c7548ac2d377c7f96fd83d47564cba4dc8554",
+    "heavyReceiptSHA256": "850325a9396a79426223153d698060a851bcf4a7acf53a2806e137eee7134773"
   }
 }
