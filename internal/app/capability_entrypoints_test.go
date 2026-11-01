@@ -43,16 +43,6 @@ func deferredEntryPoints(t *testing.T, h *harness) []deferredEntryPoint {
 			_, err := deleteSvc.DeleteManifestWithSegments(t.Context(), SegmentsDeleteRequestDTO{BookmarkID: h.bookmarkID(), Container: "fixtures", Name: "external-dlo", Force: true, Confirm: "mismatch"})
 			return err
 		}},
-		{"MutateService.DeleteMarker", "Marker and manifest deletion", func(t *testing.T, h *harness) error {
-			_, err := h.mutate.DeleteMarker(t.Context(), h.portrait(), "fixtures", "implied/", "any")
-			return err
-		}},
-		{"MutateService.DeleteManifest", "Marker and manifest deletion", func(t *testing.T, h *harness) error {
-			// The gate refuses at the entry point, before any identity is
-			// read, so the fingerprint's value cannot affect this case.
-			_, err := h.mutate.DeleteManifest(t.Context(), h.portrait(), "fixtures", "external-dlo", "any")
-			return err
-		}},
 		{"BenchmarkService.StartBenchmark", "Benchmark", func(t *testing.T, h *harness) error {
 			_, err := bench.StartBenchmark(t.Context(), BenchmarkRequestDTO{BookmarkID: h.bookmarkID(), Confirm: "x"})
 			return err
@@ -62,8 +52,9 @@ func deferredEntryPoints(t *testing.T, h *harness) []deferredEntryPoint {
 	// terms and has its own case below. Upload's three actions are absent
 	// because the operator returned it on 16 October 2026, and object
 	// deletion's two (DeleteObject and StartSelectedDelete) because the
-	// operator returned it on 29 October 2026; the table no longer defers
-	// them. The count is asserted against the table so a future return
+	// operator returned it on 29 October 2026, and marker and manifest
+	// deletion's two (DeleteMarker and DeleteManifest) on 1 November 2026;
+	// the table no longer defers them. The count is asserted against the table so a future return
 	// cannot quietly shrink this list on its own, and so a newly deferred
 	// action cannot be left unexercised here.
 	if len(entries) != len(v1DeferredActions)-1 {
@@ -154,7 +145,7 @@ func TestMirrorRefusesAtItsEntryPointWhateverTheSwitchSays(t *testing.T) {
 	forceV1Gate(t)
 	restoreSwitch(t)
 
-	for _, spec := range []string{"", "mirror", "Mirror", "benchmark,mirror", "bulk-delete", "bulk-delete, benchmark, marker-manifest-delete"} {
+	for _, spec := range []string{"", "mirror", "Mirror", "benchmark,mirror", "bulk-delete", "bulk-delete, benchmark"} {
 		EnableCapabilities(spec)
 		before := takeCollateral(t, h)
 		_, err := h.transfer.StartMirror(t.Context(), MirrorRequestDTO{

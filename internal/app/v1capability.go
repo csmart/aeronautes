@@ -17,7 +17,8 @@ import (
 // reading and writing; copy, mirror, upload and bulk delete were deferred
 // until each was proven. Upload was RETURNED on 16 October 2026 (ADR 0052
 // decision 9), object deletion on 29 October 2026 (decision 11), and copy
-// with its job re-run on 31 October 2026 (decision 12).
+// with its job re-run on 31 October 2026 (decision 12), and marker and
+// manifest deletion on 1 November 2026 (decision 13).
 // RETURNING A CAPABILITY IS REMOVING ITS NAMES FROM THIS TABLE — no call
 // site changes, and the code behind it is untouched precisely so that it
 // still works when that happens. Its token leaves v1CapabilityTokens below
@@ -41,11 +42,6 @@ var v1DeferredActions = map[string]string{
 	"DeleteService.StartDelete":                "Bulk delete",
 	"DeleteService.CheckSegmentOwnership":      "Bulk delete",
 	"DeleteService.DeleteManifestWithSegments": "Bulk delete",
-	// destructive halves of the mutation service (ADR 0052 decision 7,
-	// the operator's decisions of 22 and 23 September 2026). Container
-	// creation and marker creation are kept: both are non-destructive.
-	"MutateService.DeleteMarker":   "Marker and manifest deletion",
-	"MutateService.DeleteManifest": "Marker and manifest deletion",
 	// a benchmark writes real objects and bulk-deletes them
 	"BenchmarkService.StartBenchmark": "Benchmark",
 }
@@ -66,9 +62,8 @@ const EnableEnvVar = "AERONAUTES_ENABLE"
 // refusal must never become a scoping decision, so no value of the
 // variable can admit it.
 var v1CapabilityTokens = map[string]string{
-	"bulk-delete":            "Bulk delete",
-	"marker-manifest-delete": "Marker and manifest deletion",
-	"benchmark":              "Benchmark",
+	"bulk-delete": "Bulk delete",
+	"benchmark":   "Benchmark",
 }
 
 // enabledCapabilities is one reading of the switch: which deferred

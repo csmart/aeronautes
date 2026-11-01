@@ -85,7 +85,7 @@ func TestCapabilitySwitchParsesTheOperatorSpelling(t *testing.T) {
 			t.Errorf("%s refused although its capability is enabled: %v", action, err)
 		}
 	}
-	assertV1Refusal(t, refuseIfDeferred("MutateService.DeleteMarker"), "Marker and manifest deletion")
+	assertV1Refusal(t, refuseIfDeferred("TransferService.StartMirror"), "Mirror")
 }
 
 // A token that names no capability changes nothing and is reported, so a
