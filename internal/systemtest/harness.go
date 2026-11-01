@@ -987,3 +987,22 @@ func envOr(k, d string) string {
 func diffOf(before, after *oracle.AccountSnapshot) oracle.Delta {
 	return oracle.Diff(before, after)
 }
+
+// InterruptedDisclosures reads the ADR 0088 notice page — a read receipt like
+// RecoveryStatus, so happy and refusal credit from this call.
+func (h *Harness) InterruptedDisclosures(ctx context.Context, limit int) (app.InterruptedDisclosuresDTO, *Receipt) {
+	page, err := h.Jobs.InterruptedDisclosures(ctx, limit)
+	return page, &Receipt{h: h, action: "JobService.InterruptedDisclosures", err: err}
+}
+
+// DismissInterrupted records the disclosure (ADR 0088 decision 3) — a
+// synchronous mutate: a successful dismissal credits happy as "applied", a
+// refused one credits refusal from the returned error.
+func (h *Harness) DismissInterrupted(ctx context.Context, jobIDs []string) (app.DismissInterruptedDTO, *Receipt) {
+	result, err := h.Jobs.DismissInterrupted(ctx, jobIDs)
+	outcome := ""
+	if err == nil {
+		outcome = "applied"
+	}
+	return result, &Receipt{h: h, action: "JobService.DismissInterrupted", outcome: outcome, err: err}
+}
