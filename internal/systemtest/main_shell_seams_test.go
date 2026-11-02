@@ -74,7 +74,10 @@ func TestMainWiresEverySeamTheShellMustSupply(t *testing.T) {
 		t.Fatal("found no exported interfaces in internal/app, so this test would assert nothing")
 	}
 
-	wiring := map[string]string{} // interface name -> Wire function name
+	// A seam may have more than one consumer (FilePicker is wired into both
+	// the transfer service and the audit export), so each interface maps to
+	// every Wire function that takes it, and main.go must call them all.
+	wiring := map[string][]string{} // interface name -> Wire function names
 	for _, file := range pkg.Files {
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
@@ -86,18 +89,14 @@ func TestMainWiresEverySeamTheShellMustSupply(t *testing.T) {
 				if !ok || !interfaces[id.Name] {
 					continue
 				}
-				if existing, clash := wiring[id.Name]; clash {
-					t.Fatalf("%s is taken by both %s and %s, so this test cannot say which wires it",
-						id.Name, existing, fn.Name.Name)
-				}
-				wiring[id.Name] = fn.Name.Name
+				wiring[id.Name] = append(wiring[id.Name], fn.Name.Name)
 			}
 		}
 	}
 
 	var unwirable []string
 	for name := range interfaces {
-		if wiring[name] == "" {
+		if len(wiring[name]) == 0 {
 			unwirable = append(unwirable, name)
 		}
 	}
@@ -131,9 +130,11 @@ func TestMainWiresEverySeamTheShellMustSupply(t *testing.T) {
 	}
 
 	var missing []string
-	for name, wire := range wiring {
-		if !called[wire] {
-			missing = append(missing, name+" (wire it with app."+wire+")")
+	for name, wires := range wiring {
+		for _, wire := range wires {
+			if !called[wire] {
+				missing = append(missing, name+" (wire it with app."+wire+")")
+			}
 		}
 	}
 	sort.Strings(missing)
