@@ -104,6 +104,7 @@ export type {
   About,
   AppSettingsDTO,
   AuditQueryDTO,
+  ExportResultDTO,
   BenchmarkRequestDTO,
   BenchmarkResultDTO,
   FindStatusDTO,
@@ -117,6 +118,7 @@ import type {
   About,
   AppSettingsDTO,
   AuditQueryDTO,
+  ExportResultDTO,
   BenchmarkRequestDTO,
   BenchmarkResultDTO,
   DeletePreviewDTO,
@@ -213,6 +215,9 @@ export interface Api {
   deleteMarker(scope: ListingScope, container: string, prefix: string, contentFingerprint: string): Promise<MutationResultDTO>;
   auditRecent(limit: number, bookmarkId: string): Promise<AuditEventDTO[]>;
   auditSearch(q: AuditQueryDTO): Promise<AuditEventDTO[]>;
+  /** Archive the trail under these filters to a file the operator chooses
+   * (§51); null when the operator cancels the dialog. */
+  exportAudit(q: AuditQueryDTO): Promise<ExportResultDTO | null>;
   planCopy(req: CopyRequestDTO): Promise<CopyPlanDTO>;
   startCopy(req: CopyRequestDTO): Promise<string>;
   startMirror(req: MirrorRequestDTO): Promise<string>;
@@ -296,6 +301,7 @@ export const liveApi: Api = {
   auditRecent: async (limit, bookmarkId) =>
     (await AuditService.RecentFor(bookmarkId, limit)) ?? [],
   auditSearch: async (q) => (await AuditService.Search(q)) ?? [],
+  exportAudit: (q) => AuditService.ExportAudit(q),
   planCopy: async (req) => {
     const dto = await TransferService.PlanCopy(req);
     if (!dto) throw new Error("empty plan");

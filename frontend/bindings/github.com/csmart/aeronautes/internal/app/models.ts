@@ -624,6 +624,18 @@ export interface DownloadRequestDTO {
 }
 
 /**
+ * ExportResultDTO reports a completed §51 archive: how many events were
+ * written and the file they went to, so the operator can find it. The
+ * directory is the one the native dialog returned, never a path the page
+ * chose (ADR 0011).
+ */
+export interface ExportResultDTO {
+    "count": number;
+    "directory": string;
+    "fileName": string;
+}
+
+/**
  * FindMatchDTO is one matching object row.
  */
 export interface FindMatchDTO {

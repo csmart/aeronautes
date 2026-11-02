@@ -57,6 +57,7 @@ export type {
     DeleteRequestDTO,
     DismissInterruptedDTO,
     DownloadRequestDTO,
+    ExportResultDTO,
     FindMatchDTO,
     FindStatusDTO,
     Info,
