@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"sort"
@@ -469,6 +470,10 @@ func (s *Server) handleContainer(w http.ResponseWriter, r *http.Request, name st
 		bytes += o.Bytes
 	}
 	snapshot := *c
+	// snapshot is a shallow copy, so snapshot.Meta still aliases c.Meta;
+	// clone it under the lock because the header loop below ranges it after
+	// the unlock, while another request's SetContainerMeta may write c.Meta.
+	snapshot.Meta = maps.Clone(c.Meta)
 	count := len(c.objects)
 	s.mu.Unlock()
 	sort.Strings(objectNames)
