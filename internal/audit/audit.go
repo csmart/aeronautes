@@ -250,6 +250,58 @@ func (s *Store) List(ctx context.Context, q Query) ([]Event, error) {
 	return out, rows.Err()
 }
 
+// ExportTo streams every event matching the query to fn, newest first,
+// from a SINGLE read so the archive is one consistent snapshot even if
+// retention compacts rows while it runs (§51). Paging is deliberately
+// absent — the whole matching trail is read — and the one statement
+// bounds memory to a row at a time while, as a reader, never holding the
+// serial write lane. It is the §51 export's read; List stays the paged
+// viewer read.
+func (s *Store) ExportTo(ctx context.Context, q Query, fn func(Event) error) error {
+	query := `
+		SELECT id, at, COALESCE(bookmark_id,''), operation, resource, summary, result, COALESCE(transaction_ids_json,'')
+		FROM audit_events WHERE 1=1`
+	var args []any
+	if q.OperationPrefix != "" {
+		query += ` AND operation LIKE ? ESCAPE '\'`
+		args = append(args, likePrefix(q.OperationPrefix))
+	}
+	if q.Result != "" {
+		query += ` AND result = ?`
+		args = append(args, q.Result)
+	}
+	if q.BookmarkID != "" {
+		query += ` AND bookmark_id = ?`
+		args = append(args, q.BookmarkID)
+	}
+	query += ` ORDER BY id DESC`
+	rows, err := s.db.Reader().QueryContext(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var e Event
+		var at, result, transIDs string
+		if err := rows.Scan(&e.ID, &at, &e.BookmarkID, &e.Operation, &e.Resource, &e.Summary, &result, &transIDs); err != nil {
+			return err
+		}
+		if e.At, err = time.Parse(time.RFC3339, at); err != nil {
+			return fmt.Errorf("audit event %d: bad timestamp: %w", e.ID, err)
+		}
+		e.Result = Result(result)
+		if transIDs != "" {
+			if err := json.Unmarshal([]byte(transIDs), &e.TransIDs); err != nil {
+				return fmt.Errorf("audit event %d: bad transaction ids: %w", e.ID, err)
+			}
+		}
+		if err := fn(e); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}
+
 // likePrefix escapes LIKE metacharacters so a prefix filter is a
 // prefix filter, never a pattern (hostile input, ADR 0011).
 func likePrefix(prefix string) string {

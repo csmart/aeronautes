@@ -133,9 +133,10 @@ var inventory = map[string]Action{
 	"MutateService.DeleteObject":         {Kind: Destructive},
 	"MutateService.UpdateObjectMetadata": {Kind: Mutate, Scenarios: []string{"happy", "refusal", "conflict"}},
 	// AuditService
-	"AuditService.Recent":    {Kind: Read, Scenarios: []string{"refusal"}},
-	"AuditService.RecentFor": {Kind: Read},
-	"AuditService.Search":    {Kind: Read},
+	"AuditService.Recent":      {Kind: Read, Scenarios: []string{"refusal"}},
+	"AuditService.RecentFor":   {Kind: Read},
+	"AuditService.Search":      {Kind: Read},
+	"AuditService.ExportAudit": {Kind: Read, Scenarios: []string{"happy", "refusal"}},
 	// TransferService
 	"TransferService.PlanCopy":          {Kind: Read},
 	"TransferService.PreflightUpload":   {Kind: Read},

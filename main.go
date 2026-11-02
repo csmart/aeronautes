@@ -119,6 +119,8 @@ func runDesktop(identity app.BuildIdentity, shutdown *shellShutdown,
 	transferService := app.NewTransferServiceWithRunner(connections, jobStore, jobRunner)
 	app.WireEvidenceStore(transferService, evidenceStore)
 	app.WireFilePicker(transferService, wailsPicker{})
+	auditService := app.NewAuditService(auditStore)
+	app.WireAuditFilePicker(auditService, wailsPicker{})
 	app.WireConfirmer(mutateService, wailsConfirmer{})
 	app.WireOverwriteConfirmer(transferService, wailsOverwriteConfirmer{})
 	settingsService := app.NewSettingsService(database, jobRunner)
@@ -140,7 +142,7 @@ func runDesktop(identity app.BuildIdentity, shutdown *shellShutdown,
 			application.NewService(app.NewBrowseService(connections, evidenceStore)),
 			application.NewService(app.NewInspectorService(connections, evidenceStore)),
 			application.NewService(mutateService),
-			application.NewService(app.NewAuditService(auditStore)),
+			application.NewService(auditService),
 			application.NewService(transferService),
 			application.NewService(deleteService),
 			application.NewService(app.NewJobService(jobStore)),

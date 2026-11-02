@@ -31,7 +31,13 @@ The frontend reaches Go **only** through these services (all in `internal/app`, 
   connect-time capabilities only where the cluster is KNOWN to reject the request — Unknown never
   gates (§10). Methods: object metadata update, container update, container create, marker
   create/delete.
-- **AuditService** — read-only §50 trail (recent events).
+- **AuditService** — the §50 trail. Reads are `Recent`/`RecentFor`/`Search` (newest-first,
+  filtered, paged). `ExportAudit` archives the trail to a file (§51): it opens the OS directory
+  dialog Go-side (the operator authorises a folder, not an arbitrary path — paths never originate
+  in the webview, and the file is created fresh, never replacing one already there), streams one
+  consistent snapshot of the whole matching trail as JSON Lines of the same non-secret §50 fields
+  the read DTOs carry, and reports only the chosen directory, file name, and event count. A
+  headless shell with no dialog refuses; a failed write leaves no file that looks complete.
 - **TransferService** — the transfer surface (Phase 5): `PlanCopy` (read-only §15.2/§28.4
   preview with versioned-destination and DLO-commit disclosures), `StartCopy` (creates the §46
   job, runs plan→execute→verify→reconcile in a background goroutine; start and terminal states

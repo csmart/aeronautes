@@ -128,3 +128,39 @@ func TestRecentRequiresBookmark(t *testing.T) {
 		t.Fatalf("unscoped Recent = %v, want ErrBookmarkRequired", err)
 	}
 }
+
+// ExportTo must read one consistent snapshot across the former page
+// boundary: with 501 rows at a cap of 501, an append after the 500th row
+// is read prunes the oldest (id 1) while the read cursor is still open
+// (WAL lets the writer commit concurrently). A paged read would miss id 1
+// on its second page; the single snapshot must still yield it (db:973).
+func TestExportToSnapshotSurvivesConcurrentRetention(t *testing.T) {
+	ctx := context.Background()
+	const total = 501
+	store := newStore(t, total)
+	for range total {
+		if err := store.Append(ctx, Event{BookmarkID: "bm", Operation: "op", Resource: "r", Summary: "s", Result: ResultApplied}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var seen []int64
+	appended := false
+	if err := store.ExportTo(ctx, Query{}, func(e Event) error {
+		seen = append(seen, e.ID)
+		if len(seen) == 500 && !appended {
+			appended = true
+			// One more row past the cap prunes the oldest (id 1), committed
+			// after the former first page but while this cursor is open.
+			return store.Append(ctx, Event{BookmarkID: "bm", Operation: "op", Resource: "r", Summary: "s", Result: ResultApplied})
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != total {
+		t.Fatalf("export saw %d rows, want the full %d-row snapshot", len(seen), total)
+	}
+	if oldest := seen[len(seen)-1]; oldest != 1 {
+		t.Fatalf("export snapshot lost the oldest row to a concurrent prune: oldest seen is id %d, want 1", oldest)
+	}
+}

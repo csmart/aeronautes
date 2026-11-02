@@ -457,9 +457,12 @@ func auditResult(outcome swiftcontrol.UpdateOutcome) audit.Result {
 	return audit.ResultFailed
 }
 
-// AuditService exposes the §50 trail read-only.
+// AuditService exposes the §50 trail: reads for the viewer, and the §51
+// export that archives the trail to a local file before retention
+// compacts it. It never modifies the trail itself.
 type AuditService struct {
-	audit *audit.Store
+	audit  *audit.Store
+	picker FilePicker
 }
 
 // NewAuditService builds the service.
