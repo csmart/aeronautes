@@ -57,7 +57,7 @@ func TestEveryBridgeActionIsClassified(t *testing.T) {
 		"AuditService.Recent": true, "AuditService.RecentFor": true, "AuditService.Search": true,
 		// The §51 export archives the trail to a local file; it gates
 		// nothing and lifts nothing, so it is kept.
-		"AuditService.ExportAudit": true,
+		"AuditService.ExportAudit":         true,
 		"BenchmarkService.Latest":          true,
 		"BookmarkService.CredentialStatus": true, "BookmarkService.Delete": true,
 		"BookmarkService.List": true, "BookmarkService.Save": true,
