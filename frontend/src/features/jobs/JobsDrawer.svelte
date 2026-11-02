@@ -893,6 +893,14 @@
           <button disabled={browser.auditLoading} onclick={() => browser.searchAudit()}>
             {browser.auditError ? "Retry audit search" : browser.auditLoaded ? "Refresh audit search" : "Load audit events"}
           </button>
+          <button class="export" disabled={browser.auditExporting} onclick={() => browser.exportAudit()}>
+            {browser.auditExporting ? "Exporting…" : "Export log…"}
+          </button>
+          {#if browser.auditExportError}
+            <p role="alert">{browser.auditExportError}</p>
+          {:else if browser.auditExportMessage}
+            <p class="export-result">{browser.auditExportMessage}</p>
+          {/if}
         </div>
         <div class="rows">
           {#if browser.auditLoaded && !browser.auditLoading && !browser.auditError && browser.auditEvents.length === 0}

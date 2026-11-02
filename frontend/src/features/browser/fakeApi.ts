@@ -668,6 +668,14 @@ export function newFakeApi(): Api {
         .filter((e) => q.result === "" || e.result === q.result)
         .filter((e) => q.beforeId === 0 || e.id < q.beforeId)
         .slice(0, q.limit > 0 ? q.limit : 100),
+    exportAudit: async (q) => ({
+      count: audit
+        .filter((e) => q.bookmarkId === "" || e.bookmarkId === q.bookmarkId)
+        .filter((e) => q.operationPrefix === "" || e.operation.startsWith(q.operationPrefix))
+        .filter((e) => q.result === "" || e.result === q.result).length,
+      directory: "/home/operator/exports",
+      fileName: "aeronautes-audit-20260102T000000Z.jsonl",
+    }),
 
     // Transfers: the fake plans a canned preview and runs jobs through a
     // tiny scripted lifecycle so drawer logic is testable.

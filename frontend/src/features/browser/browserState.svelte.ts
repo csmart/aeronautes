@@ -1845,6 +1845,39 @@ export class BrowserState {
     }
   }
 
+  auditExporting = $state(false);
+  auditExportMessage = $state<string | null>(null);
+  auditExportError = $state<string | null>(null);
+
+  // Archive the trail under the viewer's current filters to a file the
+  // operator chooses (§51). A cancelled dialog writes nothing; the whole
+  // matching trail is written regardless of which page is on screen.
+  async exportAudit() {
+    if (this.auditExporting) return;
+    this.auditExporting = true;
+    this.auditExportError = null;
+    this.auditExportMessage = null;
+    try {
+      const result = await this.#api.exportAudit({
+        operationPrefix: this.auditFilterOp,
+        result: this.auditFilterResult,
+        bookmarkId: this.auditFilterBookmark,
+        beforeId: 0,
+        limit: 0,
+      });
+      if (result === null) {
+        this.auditExportMessage = "Export cancelled; nothing was written.";
+      } else {
+        const events = result.count === 1 ? "event" : "events";
+        this.auditExportMessage = `Exported ${result.count} ${events} to ${result.directory}/${result.fileName}.`;
+      }
+    } catch {
+      this.auditExportError = "The audit log could not be exported.";
+    } finally {
+      this.auditExporting = false;
+    }
+  }
+
   recentAuditEvents: AuditEventDTO[] = $state([]);
   recentAuditLoaded = $state(false);
   recentAuditLoading = $state(false);
