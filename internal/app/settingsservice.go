@@ -175,8 +175,15 @@ func defaults() AppSettingsDTO {
 
 // Get returns the persisted settings with defaults filled in.
 func (s *SettingsService) Get(ctx context.Context) (AppSettingsDTO, error) {
+	return s.getFrom(ctx, s.db.Reader())
+}
+
+// getFrom reads the application settings through a caller-supplied querier,
+// so the settings backup can take them inside its own read-transaction
+// snapshot (ADR 0098) rather than on a separate pooled connection.
+func (s *SettingsService) getFrom(ctx context.Context, q dbQuerier) (AppSettingsDTO, error) {
 	settings := defaults()
-	rows, err := s.db.Reader().QueryContext(ctx, `SELECT key, value FROM app_settings`)
+	rows, err := q.QueryContext(ctx, `SELECT key, value FROM app_settings`)
 	if err != nil {
 		return settings, err
 	}
