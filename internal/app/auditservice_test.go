@@ -142,7 +142,7 @@ func TestLinkPublishRefusesAnOccupiedDestination(t *testing.T) {
 	if err := os.WriteFile(final, []byte("KEEP\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	name, err := linkPublish(partPath, dir, base)
+	name, err := linkPublish(partPath, dir, base, ".jsonl")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestLinkPublishDoesNotReplaceASymlink(t *testing.T) {
 	if err := os.Symlink(victim, filepath.Join(dir, base+".jsonl")); err != nil {
 		t.Fatal(err)
 	}
-	name, err := linkPublish(partPath, dir, base)
+	name, err := linkPublish(partPath, dir, base, ".jsonl")
 	if err != nil {
 		t.Fatal(err)
 	}
