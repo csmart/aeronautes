@@ -145,6 +145,9 @@ func runDesktop(identity app.BuildIdentity, shutdown *shellShutdown,
 	benchmarkService := app.NewBenchmarkService(connections, jobStore, jobRunner, database)
 	app.WireBenchmarkRecommendations(transferService, benchmarkService)
 
+	backupService := app.NewBackupService(database, bookmarkStore, settingsService)
+	app.WireBackupFilePicker(backupService, wailsPicker{})
+
 	options := application.Options{
 		Name:        "Aeronautes",
 		Description: "Desktop operator workbench for OpenStack Swift",
@@ -162,6 +165,7 @@ func runDesktop(identity app.BuildIdentity, shutdown *shellShutdown,
 			application.NewService(findService),
 			application.NewService(settingsService),
 			application.NewService(benchmarkService),
+			application.NewService(backupService),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),

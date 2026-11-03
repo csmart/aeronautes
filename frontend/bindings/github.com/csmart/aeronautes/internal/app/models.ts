@@ -170,6 +170,16 @@ export interface AuditQueryDTO {
 }
 
 /**
+ * BackupResultDTO reports a completed export: how many bookmarks it wrote and
+ * the folder and file the operator chose.
+ */
+export interface BackupResultDTO {
+    "bookmarkCount": number;
+    "directory": string;
+    "fileName": string;
+}
+
+/**
  * BenchmarkPhaseDTO is one measured phase.
  */
 export interface BenchmarkPhaseDTO {

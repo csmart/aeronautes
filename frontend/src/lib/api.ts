@@ -6,6 +6,7 @@
 import {
   AppService,
   AuditService,
+  BackupService,
   BookmarkService,
   BrowseService,
   BenchmarkService,
@@ -105,6 +106,7 @@ export type {
   AppSettingsDTO,
   AuditQueryDTO,
   ExportResultDTO,
+  BackupResultDTO,
   BenchmarkRequestDTO,
   BenchmarkResultDTO,
   FindStatusDTO,
@@ -119,6 +121,7 @@ import type {
   AppSettingsDTO,
   AuditQueryDTO,
   ExportResultDTO,
+  BackupResultDTO,
   BenchmarkRequestDTO,
   BenchmarkResultDTO,
   DeletePreviewDTO,
@@ -218,6 +221,9 @@ export interface Api {
   /** Archive the trail under these filters to a file the operator chooses
    * (§51); null when the operator cancels the dialog. */
   exportAudit(q: AuditQueryDTO): Promise<ExportResultDTO | null>;
+  /** Write the operator's configuration (settings and bookmarks, no
+   * credentials) to a file they choose (ADR 0098); null when cancelled. */
+  exportSettings(): Promise<BackupResultDTO | null>;
   planCopy(req: CopyRequestDTO): Promise<CopyPlanDTO>;
   startCopy(req: CopyRequestDTO): Promise<string>;
   startMirror(req: MirrorRequestDTO): Promise<string>;
@@ -302,6 +308,7 @@ export const liveApi: Api = {
     (await AuditService.RecentFor(bookmarkId, limit)) ?? [],
   auditSearch: async (q) => (await AuditService.Search(q)) ?? [],
   exportAudit: (q) => AuditService.ExportAudit(q),
+  exportSettings: () => BackupService.ExportSettings(),
   planCopy: async (req) => {
     const dto = await TransferService.PlanCopy(req);
     if (!dto) throw new Error("empty plan");

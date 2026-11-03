@@ -101,7 +101,7 @@ func TestDesktopCallerUsesActualServices(t *testing.T) {
 				var find *app.FindService
 				var deleteService *app.DeleteService
 				launch := func(options application.Options) error {
-					if len(options.Services) != 12 || options.OnShutdown == nil {
+					if len(options.Services) != 13 || options.OnShutdown == nil {
 						t.Fatal("actual desktop service/callback assembly is incomplete")
 					}
 					for _, bound := range options.Services {

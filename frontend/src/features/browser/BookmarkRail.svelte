@@ -129,6 +129,14 @@
   </div>
 
   <div class="rail-foot">
+    <button
+      class="rail-backup"
+      title="Back up settings and bookmarks to a file (passwords are not included)"
+      onclick={() => browser.exportSettings()}
+      disabled={browser.settingsBackingUp}
+    >
+      {browser.settingsBackingUp ? "Backing up…" : "Back up settings…"}
+    </button>
     <button class="foot-btn" title="Theme: {theme}" onclick={cycleTheme} aria-label="Cycle theme ({theme})">
       <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
         <circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5" />
@@ -136,6 +144,12 @@
       </svg>
     </button>
   </div>
+  {#if browser.settingsBackupMessage}
+    <p class="backup-msg" role="status">{browser.settingsBackupMessage}</p>
+  {/if}
+  {#if browser.settingsBackupError}
+    <p class="backup-msg error" role="alert">{browser.settingsBackupError}</p>
+  {/if}
 </nav>
 
 <style>
@@ -311,8 +325,42 @@
 
   .rail-foot {
     display: flex;
-    justify-content: center;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
     padding-top: var(--space-2);
+  }
+
+  .rail-backup {
+    flex: 1;
+    text-align: left;
+    font-size: var(--text-xs);
+    color: var(--color-text-secondary);
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    transition: color var(--motion-fast) var(--ease-out);
+  }
+
+  .rail-backup:hover:not(:disabled) {
+    color: var(--color-accent-strong);
+  }
+
+  .rail-backup:disabled {
+    cursor: default;
+    opacity: 0.7;
+  }
+
+  .backup-msg {
+    margin: var(--space-1) 0 0;
+    font-size: var(--text-xs);
+    color: var(--color-text-secondary);
+    overflow-wrap: anywhere;
+  }
+
+  .backup-msg.error {
+    font-weight: 600;
   }
 
   .foot-btn {

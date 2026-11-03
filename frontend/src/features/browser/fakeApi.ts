@@ -676,6 +676,11 @@ export function newFakeApi(): Api {
       directory: "/home/operator/exports",
       fileName: "aeronautes-audit-20260102T000000Z.jsonl",
     }),
+    exportSettings: async () => ({
+      bookmarkCount: 2,
+      directory: "/home/operator/exports",
+      fileName: "aeronautes-settings-20260102T000000Z.json",
+    }),
 
     // Transfers: the fake plans a canned preview and runs jobs through a
     // tiny scripted lifecycle so drawer logic is testable.
