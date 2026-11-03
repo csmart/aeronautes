@@ -137,6 +137,11 @@ var inventory = map[string]Action{
 	"AuditService.RecentFor":   {Kind: Read},
 	"AuditService.Search":      {Kind: Read},
 	"AuditService.ExportAudit": {Kind: Read, Scenarios: []string{"happy", "refusal"}},
+
+	// BackupService
+	// The §51/P28 settings export writes the operator's configuration to a
+	// file they choose; it reads config and writes a file, gating nothing.
+	"BackupService.ExportSettings": {Kind: Read, Scenarios: []string{"happy", "refusal"}},
 	// TransferService
 	"TransferService.PlanCopy":          {Kind: Read},
 	"TransferService.PreflightUpload":   {Kind: Read},

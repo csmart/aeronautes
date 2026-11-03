@@ -70,6 +70,7 @@ type Harness struct {
 	Audit     *app.AuditService
 	Find      *app.FindService
 	Settings  *app.SettingsService
+	Backup    *app.BackupService
 	// MockPrimary is the primary account's in-process mock when the
 	// harness runs against swifttest, so a test can count its requests;
 	// nil against the owned Swift fixture.

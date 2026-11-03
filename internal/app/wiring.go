@@ -32,6 +32,13 @@ func WireAuditFilePicker(s *AuditService, picker FilePicker) {
 	s.setFilePicker(picker)
 }
 
+// WireBackupFilePicker attaches the shell's native directory dialog so the
+// settings backup can write to a folder the operator chooses (ADR 0098). A
+// service without one has no dialog and refuses to export.
+func WireBackupFilePicker(s *BackupService, picker FilePicker) {
+	s.setFilePicker(picker)
+}
+
 // WireOverwriteConfirmer attaches the shell's native confirmation for an
 // upload that would replace existing objects (ADR 0081 decision 2). A
 // service without one refuses to replace anything.
