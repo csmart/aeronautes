@@ -125,7 +125,7 @@ func (s *AuditService) ExportAudit(ctx context.Context, q AuditQueryDTO) (*Expor
 	if err := file.Close(); err != nil {
 		return nil, err
 	}
-	name, err := linkPublish(partPath, dir, base)
+	name, err := linkPublish(partPath, dir, base, ".jsonl")
 	if err != nil {
 		return nil, err
 	}
@@ -133,16 +133,17 @@ func (s *AuditService) ExportAudit(ctx context.Context, q AuditQueryDTO) (*Expor
 	return &ExportResultDTO{Count: count, Directory: dir, FileName: name}, nil
 }
 
-// linkPublish publishes the written .part under a fresh .jsonl name by
-// hard link, which atomically refuses an occupied destination: it never
+// linkPublish publishes the written .part under a fresh name with the given
+// extension by hard link, which atomically refuses an occupied destination:
+// it never
 // replaces a file or symlink that is present at the name, and there is no
 // check-and-use gap for a late arrival to race through. A collision steps
 // the suffix on. The .part is unlinked once the final name is in place.
-func linkPublish(partPath, dir, base string) (string, error) {
+func linkPublish(partPath, dir, base, ext string) (string, error) {
 	for attempt := 0; attempt <= 1024; attempt++ {
-		name := base + ".jsonl"
+		name := base + ext
 		if attempt > 0 {
-			name = fmt.Sprintf("%s-%d.jsonl", base, attempt)
+			name = fmt.Sprintf("%s-%d%s", base, attempt, ext)
 		}
 		err := os.Link(partPath, filepath.Join(dir, name))
 		if err == nil {
