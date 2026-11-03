@@ -16,7 +16,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
@@ -265,7 +264,7 @@ func TestShellProcessLockHelper(t *testing.T) {
 	release, err := app.AcquireInstanceLock(path)
 	if err == nil {
 		release()
-	} else if !errors.Is(err, syscall.EWOULDBLOCK) {
+	} else if !errors.Is(err, app.ErrInstanceAlreadyRunning) {
 		t.Fatal(err)
 	}
 	fmt.Printf("shell process lock acquired=%t\n", err == nil)

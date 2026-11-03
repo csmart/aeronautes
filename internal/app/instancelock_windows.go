@@ -3,11 +3,16 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"syscall"
 	"unsafe"
 )
+
+// errorSharingViolation is the Windows error a second CreateFile returns
+// while the first instance holds the no-sharing lock handle.
+const errorSharingViolation syscall.Errno = 32
 
 // AcquireInstanceLock holds the state-directory lock via a Windows file
 // opened with NO sharing: a second CreateFile on the same path fails
@@ -32,7 +37,14 @@ func AcquireInstanceLock(stateDir string) (release func(), err error) {
 		0,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("another aeronautes instance holds %s: %w", stateDir, err)
+		// A sharing violation means the first instance holds the handle; the
+		// kernel releases it when that process dies. Any other CreateFile
+		// error is a real locking failure, not a second instance.
+		var errno syscall.Errno
+		if errors.As(err, &errno) && errno == errorSharingViolation {
+			return nil, fmt.Errorf("another aeronautes instance holds %s: %w", stateDir, ErrInstanceAlreadyRunning)
+		}
+		return nil, fmt.Errorf("lock %s: %w", stateDir, err)
 	}
 	// Keep the pointer alive for the handle's lifetime semantics.
 	_ = unsafe.Pointer(pathPtr)
