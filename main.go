@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/adrg/xdg"
 	"github.com/csmart/aeronautes/internal/app"
@@ -25,6 +26,7 @@ import (
 	"github.com/csmart/aeronautes/internal/secrets"
 	"github.com/csmart/aeronautes/internal/transfer/rclone"
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
 //go:embed all:frontend/dist
@@ -57,6 +59,17 @@ func main() {
 	// including GC, until the kernel releases it on process exit.
 	defer runtime.KeepAlive(shutdown)
 	if err := runDesktop(identity, shutdown, launchDesktop, secrets.OpenDefault); err != nil {
+		if alreadyRunning(err) {
+			// Log the reason first: a console launch sees it here, and on a
+			// host with no display the native notice below cannot appear
+			// (GTK exits during its own initialisation), so this line is the
+			// only record the operator gets. Then show the dialog where a
+			// display exists, and exit without the bare log.Fatal a desktop
+			// launch would discard.
+			log.Print(err)
+			showAlreadyRunningNotice()
+			os.Exit(1)
+		}
 		log.Fatal(err)
 	}
 }
@@ -184,6 +197,50 @@ func launchDesktop(options application.Options) error {
 	})
 
 	return a.Run()
+}
+
+// alreadyRunning reports whether a startup error is the single-instance lock
+// refusing a second copy, as opposed to any other failure. main uses it to
+// show a visible notice instead of a bare log line, because a desktop launch
+// has no console on which the lock error would be seen.
+func alreadyRunning(err error) bool {
+	return errors.Is(err, app.ErrInstanceAlreadyRunning)
+}
+
+// showAlreadyRunningNotice tells an operator who launched a second copy that
+// one is already running, on a native dialog, then exits. The primary
+// instance is left untouched. The lock is taken before any window exists, so
+// this runs a minimal application purely to own the dialog. The caller logs
+// the lock error before calling this, so a host with no display (headless,
+// SSH, a Flatpak without a portal), where the dialog cannot appear, still has
+// the reason on its console.
+func showAlreadyRunningNotice() {
+	a := application.New(application.Options{
+		Name:        "Aeronautes",
+		Description: "Desktop operator workbench for OpenStack Swift",
+	})
+	a.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
+		dialog := a.Dialog.Info().
+			SetTitle("Aeronautes is already running").
+			SetMessage("Another Aeronautes window is already open on this computer. Switch to it to carry on — only one instance can use your saved bookmarks and jobs at a time.")
+		// The pinned Wails beta.27 Windows backend maps IDOK to the label
+		// "Ok" and matches it case-sensitively, so the button must be "Ok"
+		// for its callback to fire there; Linux matches by index either way.
+		ok := dialog.AddButton("Ok")
+		ok.OnClick(func() { a.Quit() })
+		dialog.SetDefaultButton(ok)
+		dialog.Show()
+		// A dialog dismissed through the window manager rather than the
+		// button leaves no window, and an app with no window never quits on
+		// its own; this backstop keeps the invisible helper from lingering.
+		go func() {
+			time.Sleep(time.Minute)
+			a.Quit()
+		}()
+	})
+	if err := a.Run(); err != nil {
+		log.Printf("another aeronautes instance is already running (%v)", err)
+	}
 }
 
 // askNative puts one question on the Wails question dialog: a native, modal
