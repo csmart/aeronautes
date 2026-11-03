@@ -24,6 +24,7 @@ The principle is unchanged: none of the deferred capabilities is unbuilt, return
 Every artefact is unsigned by decision, v1 supports Linux only (finish line decision 1), and the macOS and Windows builds are development builds without acceptance.
 The valuable-data release hold is in force.
 What holds it is the artefact and deployment evidence that P31 to P35 of the [remediation plan](../2026-09-05/remediation-plan.md) require and the durability residual the [register reconciliation](../2026-10-18/register-reconciliation.md) names, not the rows of the register: among the twenty-three rows it examined, no outstanding clause names a known way for this build to lose data in ordinary operation.
+The durability residual is consolidated and bounded as of 3 November 2026 by the [durability-limits record](../../experiments/2026-11-02-durability-limits.md) and the [register clause resolutions](../2026-11-02-register-clause-resolutions.md): the power-loss contract and the abrupt-crash recovery and disclosure components are evidenced on Linux, and what remains of it is the end-to-end desktop-start-after-crash measurement, within the fsync-honesty and non-Linux boundaries those records state.
 
 ## What 1.0.0 means here
 
