@@ -3,6 +3,7 @@
 
 import * as AppService from "./appservice.js";
 import * as AuditService from "./auditservice.js";
+import * as BackupService from "./backupservice.js";
 import * as BenchmarkService from "./benchmarkservice.js";
 import * as BookmarkService from "./bookmarkservice.js";
 import * as BrowseService from "./browseservice.js";
@@ -16,6 +17,7 @@ import * as TransferService from "./transferservice.js";
 export {
     AppService,
     AuditService,
+    BackupService,
     BenchmarkService,
     BookmarkService,
     BrowseService,
@@ -38,6 +40,7 @@ export type {
     AppSettingsDTO,
     AuditEventDTO,
     AuditQueryDTO,
+    BackupResultDTO,
     BenchmarkPhaseDTO,
     BenchmarkRequestDTO,
     BenchmarkResultDTO,

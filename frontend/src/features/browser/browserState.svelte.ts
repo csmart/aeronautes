@@ -1878,6 +1878,33 @@ export class BrowserState {
     }
   }
 
+  settingsBackingUp = $state(false);
+  settingsBackupMessage = $state<string | null>(null);
+  settingsBackupError = $state<string | null>(null);
+
+  // Write the operator's configuration — settings and bookmarks, no
+  // credentials — to a file they choose (ADR 0098). A cancelled dialog
+  // writes nothing; passwords are re-entered after a restore.
+  async exportSettings() {
+    if (this.settingsBackingUp) return;
+    this.settingsBackingUp = true;
+    this.settingsBackupError = null;
+    this.settingsBackupMessage = null;
+    try {
+      const result = await this.#api.exportSettings();
+      if (result === null) {
+        this.settingsBackupMessage = "Backup cancelled; nothing was written.";
+      } else {
+        const marks = result.bookmarkCount === 1 ? "bookmark" : "bookmarks";
+        this.settingsBackupMessage = `Backed up settings and ${result.bookmarkCount} ${marks} to ${result.directory}/${result.fileName}. Passwords are not included; re-enter them after a restore.`;
+      }
+    } catch {
+      this.settingsBackupError = "Your settings could not be backed up.";
+    } finally {
+      this.settingsBackingUp = false;
+    }
+  }
+
   recentAuditEvents: AuditEventDTO[] = $state([]);
   recentAuditLoaded = $state(false);
   recentAuditLoading = $state(false);
