@@ -29,5 +29,6 @@ func BoundServices() []BoundService {
 		{"FindService", "NewFindService", &FindService{}},
 		{"SettingsService", "NewSettingsService", &SettingsService{}},
 		{"BenchmarkService", "NewBenchmarkService", &BenchmarkService{}},
+		{"BackupService", "NewBackupService", &BackupService{}},
 	}
 }
