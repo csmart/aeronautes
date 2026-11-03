@@ -2,12 +2,12 @@
   "schemaVersion": 1,
   "reportSchemaVersion": 3,
   "identity": {
-    "commit": "caffdb56f361bc4d7eb1eab0b1b7cdcfe72dd368",
+    "commit": "aabbfa00532d3170a0c5f24d4cb030d6f0c3a6d3",
     "go_version": "go1.27.3",
-    "run_id": "41388974121",
+    "run_id": "41640321681",
     "run_attempt": "1"
   },
-  "contractHash": "6ee45266e3d1d10f",
+  "contractHash": "4b36aeee9fee9331",
   "actions": [
     {
       "action": "AppService.About",
@@ -50,6 +50,14 @@
       "kind": "read",
       "required": [
         "happy"
+      ]
+    },
+    {
+      "action": "BackupService.ExportSettings",
+      "kind": "read",
+      "required": [
+        "happy",
+        "refusal"
       ]
     },
     {
@@ -512,6 +520,14 @@
       "scenario": "refusal"
     },
     {
+      "action": "BackupService.ExportSettings",
+      "scenario": "happy"
+    },
+    {
+      "action": "BackupService.ExportSettings",
+      "scenario": "refusal"
+    },
+    {
       "action": "BookmarkService.CredentialStatus",
       "scenario": "happy"
     },
@@ -805,10 +821,10 @@
     }
   ],
   "evidence": {
-    "reference": "docs/experiments/2026-11-02-audit-export-baseline.md",
-    "mainReportSHA256": "1e34f052089269c0d45f114bc3b1b3fb7ef23a944676d0991b093bcf34f42389",
-    "mainReceiptSHA256": "4217cd2807ca1cb19e1734a97c0189e2860bfca31931ca94c612739771696b18",
-    "heavyReportSHA256": "9a5fbdfa6fd83920f3f7c5add82f97790311e0fb3c1bcea6c890d14f63e21421",
-    "heavyReceiptSHA256": "cdadba7f68cc137763be59bb261c631d0aea4c6e38a538e429a0b83dc9a868b7"
+    "reference": "docs/experiments/2026-11-03-backup-export-baseline.md",
+    "mainReportSHA256": "e8d709ed5b65aca09d0de2e2f43ba3c1858ba329b01673dcadc41e448776ccb4",
+    "mainReceiptSHA256": "114cf1150722a7c6fc99e75a25687b4b980466b4edd950c7481a2c38e42d96e1",
+    "heavyReportSHA256": "e91df965cb49a740f659d07055a0d75891881560cc3778345ad26084136cb11c",
+    "heavyReceiptSHA256": "a18e68842c25d82b43c64a78a72d15451f4f4c8a8dd71d472dd23c66ee9b52cc"
   }
 }
