@@ -3,6 +3,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,7 +22,13 @@ func AcquireInstanceLock(stateDir string) (release func(), err error) {
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		f.Close()
-		return nil, fmt.Errorf("another aeronautes instance holds %s: %w", stateDir, err)
+		// LOCK_NB reports EWOULDBLOCK (EAGAIN on Linux) only when another
+		// process already holds the lock; any other errno is a real locking
+		// failure, not a second instance, so only the former is named as one.
+		if errors.Is(err, syscall.EWOULDBLOCK) {
+			return nil, fmt.Errorf("another aeronautes instance holds %s: %w", stateDir, ErrInstanceAlreadyRunning)
+		}
+		return nil, fmt.Errorf("lock %s: %w", stateDir, err)
 	}
 	return func() { f.Close() }, nil
 }

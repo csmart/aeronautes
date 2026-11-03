@@ -188,8 +188,15 @@ func TestDesktopStartupFailureCleansAcquiredLock(t *testing.T) {
 					t.Fatalf("failed database startup retained lock: %v", err)
 				}
 				release()
-			} else if !strings.Contains(err.Error(), "lock state directory") || shutdown.releaseLock != nil {
-				t.Fatalf("failed acquisition changed lock ownership: %v", err)
+			} else {
+				if !strings.Contains(err.Error(), "lock state directory") || shutdown.releaseLock != nil {
+					t.Fatalf("failed acquisition changed lock ownership: %v", err)
+				}
+				// Only a held lock is a second instance; a missing directory
+				// is a real failure, not another copy running.
+				if got, want := errors.Is(err, app.ErrInstanceAlreadyRunning), failure == "lock_held"; got != want {
+					t.Fatalf("already-running classification for %s = %v, want %v: %v", failure, got, want, err)
+				}
 			}
 		})
 	}
