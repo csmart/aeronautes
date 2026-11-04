@@ -94,17 +94,19 @@ func (b bothWriter) Write(p []byte) (int, error) {
 // missed close on an abrupt exit loses nothing already written.
 func Configure() (path string, closeFn func() error, err error) {
 	level := parseLevel(os.Getenv(EnvLevel))
-	w := io.Writer(os.Stderr)
 	closeFn = func() error { return nil }
 	if path = os.Getenv(EnvFile); path != "" {
 		f, openErr := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 		if openErr != nil {
-			return "", func() error { return nil }, fmt.Errorf("open log file %s: %w", path, openErr)
+			// Fall back to standard error at the requested level, so the level
+			// still takes effect, and report the failure; the app runs on.
+			logger.Store(slog.New(newHandler(os.Stderr, level)))
+			return "", closeFn, fmt.Errorf("open log file %s: %w", path, openErr)
 		}
-		w = bothWriter{sinks: []io.Writer{f, os.Stderr}}
-		closeFn = f.Close
+		logger.Store(slog.New(newHandler(bothWriter{sinks: []io.Writer{f, os.Stderr}}, level)))
+		return path, f.Close, nil
 	}
-	logger.Store(slog.New(newHandler(w, level)))
+	logger.Store(slog.New(newHandler(os.Stderr, level)))
 	return path, closeFn, nil
 }
 

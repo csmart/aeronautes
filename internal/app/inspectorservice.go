@@ -3,10 +3,10 @@ package app
 import (
 	"context"
 	"errors"
-	"log"
 	"strconv"
 	"time"
 
+	"github.com/csmart/aeronautes/internal/applog"
 	"github.com/csmart/aeronautes/internal/evidence"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
@@ -138,7 +138,7 @@ func (s *InspectorService) record(ctx context.Context, bookmarkID string, observ
 		if err := s.evidence.Record(ctx, bookmarkID, obs); err != nil {
 			// Diagnostic only: the HEAD/manifest the user asked for
 			// succeeded; a bookkeeping failure must not mask it.
-			log.Printf("evidence record failed: %v", err)
+			applog.Warnf("evidence record failed: %v", err)
 			return
 		}
 	}

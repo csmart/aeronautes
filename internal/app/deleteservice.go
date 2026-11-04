@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 
+	"github.com/csmart/aeronautes/internal/applog"
 	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/deletion"
 	"github.com/csmart/aeronautes/internal/evidence"
@@ -216,7 +216,7 @@ func (s *DeleteService) runSweepJob(ctx context.Context, jobID string, req Delet
 	background := context.WithoutCancel(ctx)
 	for _, state := range []jobs.State{jobs.StatePlanning, jobs.StateRunning} {
 		if err := s.jobs.Transition(background, jobID, state); err != nil {
-			log.Printf("job %s: %v", jobID, err)
+			applog.Errorf("job %s: %v", jobID, err)
 		}
 	}
 	// §33 acceptance baseline for the container-preserving mode; a
@@ -243,7 +243,7 @@ func (s *DeleteService) runSweepJob(ctx context.Context, jobID string, req Delet
 		s.runner.release(jobID)
 		s.runner.record(background, req.BookmarkID, "delete."+string(req.Mode)+".unavailable",
 			req.Container+"/"+req.Prefix, "job "+jobID+" · "+lost, audit.ResultUnverified)
-		log.Printf("job %s: %s", jobID, lost)
+		applog.Warnf("job %s: %s", jobID, lost)
 		return
 	}
 	state, reason := s.sweepEnd(background, jobID, req, session, sweep)
@@ -293,7 +293,7 @@ func (s *DeleteService) runSweepJob(ctx context.Context, jobID string, req Delet
 	}
 	if state == jobs.StateComplete {
 		if err := s.jobs.Transition(background, jobID, jobs.StateVerifying); err != nil {
-			log.Printf("job %s: %v", jobID, err)
+			applog.Errorf("job %s: %v", jobID, err)
 		}
 	}
 	s.finishSweep(background, jobID, req, state, reason, sweep.counts().admitted)
@@ -370,6 +370,6 @@ func (s *DeleteService) finishSweep(ctx context.Context, jobID string, req Delet
 			Resource: req.Container + "/" + req.Prefix, Summary: fmt.Sprintf("job %s · %d members", jobID, admitted), Result: terminalAuditResult(state)},
 	}, s.runner.audit)
 	if err != nil {
-		log.Printf("job %s terminal outcome was not saved: %v", jobID, err)
+		applog.Errorf("job %s terminal outcome was not saved: %v", jobID, err)
 	}
 }

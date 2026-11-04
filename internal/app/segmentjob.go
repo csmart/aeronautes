@@ -3,8 +3,8 @@ package app
 import (
 	"context"
 	"fmt"
-	"log"
 
+	"github.com/csmart/aeronautes/internal/applog"
 	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/deletion"
 	"github.com/csmart/aeronautes/internal/jobs"
@@ -44,7 +44,7 @@ func (j *segmentJob) run(ctx context.Context) {
 	background := context.WithoutCancel(ctx)
 	for _, state := range []jobs.State{jobs.StatePlanning, jobs.StateRunning} {
 		if err := j.s.jobs.Transition(background, j.jobID, state); err != nil {
-			log.Printf("job %s: %v", j.jobID, err)
+			applog.Errorf("job %s: %v", j.jobID, err)
 		}
 	}
 	admitted, admittedKeys, ok := j.admit(background)
@@ -117,7 +117,7 @@ func (j *segmentJob) run(ctx context.Context) {
 	state, reason := j.segmentEnd(background, cancelled, listErr)
 	if state == jobs.StateComplete {
 		if err := j.s.jobs.Transition(background, j.jobID, jobs.StateVerifying); err != nil {
-			log.Printf("job %s: %v", j.jobID, err)
+			applog.Errorf("job %s: %v", j.jobID, err)
 		}
 	}
 	j.finish(background, state, reason, admitted)
@@ -197,7 +197,7 @@ func (j *segmentJob) deleteSegments(ctx, background context.Context) (bool, erro
 		if ctx.Err() != nil {
 			if err := j.s.jobs.RecordDeletion(background, j.jobID, key,
 				jobs.ItemObservation{Result: jobs.ItemNotAttempted, Effect: jobs.EffectNotAttempted}, nil, nil); err != nil {
-				log.Printf("job %s: segment %q not attempted but unrecorded: %v", j.jobID, key, err)
+				applog.Errorf("job %s: segment %q not attempted but unrecorded: %v", j.jobID, key, err)
 				return true, nil
 			}
 			continue
@@ -262,7 +262,7 @@ func (j *segmentJob) segmentEnd(ctx context.Context, cancelled bool, listErr err
 func (j *segmentJob) lost(ctx context.Context, reason string) {
 	j.s.runner.release(j.jobID)
 	j.s.runner.record(ctx, j.bookmarkID, "segments.delete.unavailable", j.resource, "job "+j.jobID+" · "+reason, audit.ResultUnverified)
-	log.Printf("job %s: %s", j.jobID, reason)
+	applog.Warnf("job %s: %s", j.jobID, reason)
 }
 
 func (j *segmentJob) lostLatched(ctx context.Context) bool {
@@ -277,7 +277,7 @@ func (j *segmentJob) finish(ctx context.Context, state jobs.State, message strin
 			Summary: fmt.Sprintf("job %s · %s", j.jobID, j.basis), Result: terminalAuditResult(state)},
 	}, j.s.runner.audit)
 	if err != nil {
-		log.Printf("job %s terminal outcome was not saved: %v", j.jobID, err)
+		applog.Errorf("job %s terminal outcome was not saved: %v", j.jobID, err)
 	}
 }
 

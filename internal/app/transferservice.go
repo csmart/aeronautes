@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/csmart/aeronautes/internal/applog"
 	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/evidence"
 	"github.com/csmart/aeronautes/internal/jobs"
@@ -139,7 +139,7 @@ func (s *TransferService) recordOwnership(ctx context.Context, bookmarkID, jobID
 	}
 	for _, p := range prefixes {
 		if err := s.evidence.RecordOwnership(ctx, bookmarkID, jobID, p.Container, p.Prefix); err != nil {
-			log.Printf("job %s: ownership record %s/%s: %v", jobID, p.Container, p.Prefix, err)
+			applog.Warnf("job %s: ownership record %s/%s: %v", jobID, p.Container, p.Prefix, err)
 		}
 	}
 }
@@ -615,7 +615,7 @@ func (s *TransferService) finishCopy(ctx context.Context, jobID string, req Copy
 		},
 	}, s.runner.audit)
 	if err != nil {
-		log.Printf("job %s terminal outcome was not saved: %v", jobID, err)
+		applog.Errorf("job %s terminal outcome was not saved: %v", jobID, err)
 	}
 }
 
@@ -717,7 +717,7 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 	}
 	defer func() {
 		if err := executor.Close(); err != nil {
-			log.Printf("job %s close refusal record: %v", jobID, err)
+			applog.Warnf("job %s close refusal record: %v", jobID, err)
 		}
 	}()
 	// Persist creation intent before writes so an interrupted transfer
@@ -762,7 +762,7 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 		spool := &copyPlanSpool{}
 		defer func() {
 			if err := spool.close(); err != nil {
-				log.Printf("job %s close copy plan spool: %v", jobID, err)
+				applog.Warnf("job %s close copy plan spool: %v", jobID, err)
 			}
 		}()
 		seen := map[string]struct{}{}
@@ -823,7 +823,7 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 		planErr = errors.Join(planErr, fmt.Errorf("reconciliation: %w", err))
 	} else {
 		if len(reconcile.Notes) != 0 {
-			log.Printf("job %s reconcile kept records: %s", jobID, strings.Join(reconcile.Notes, "; "))
+			applog.Infof("job %s reconcile kept records: %s", jobID, strings.Join(reconcile.Notes, "; "))
 		}
 	}
 
@@ -895,7 +895,7 @@ func (s *TransferService) recoveryRecorder(ctx context.Context, jobID, bookmarkI
 			Container: container, Prefix: prefix, Object: object,
 		})
 		if err != nil {
-			log.Printf("job %s: recovery record (%s %s/%s): %v", jobID, kind, container, prefix, err)
+			applog.Errorf("job %s: recovery record (%s %s/%s): %v", jobID, kind, container, prefix, err)
 		}
 		return err
 	}

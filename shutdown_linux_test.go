@@ -8,7 +8,6 @@ import (
 	"crypto/md5"
 	"errors"
 	"fmt"
-	"log"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -366,8 +365,7 @@ func TestShellShutdownDrainFailureStaysBlocked(t *testing.T) {
 
 func testShellBlockedDrain(t *testing.T) {
 	t.Helper()
-	entered := make(chan struct{})
-	log.SetOutput(&shellDrainLog{entered: entered})
+	drained := make(chan struct{})
 	shutdown := &shellShutdown{}
 	services := make(chan *app.JobService, 1)
 	done := make(chan error, 1)
@@ -378,12 +376,19 @@ func testShellBlockedDrain(t *testing.T) {
 					services <- service
 				}
 			}
-			shutdown.drain = func(context.Context) error { return errors.New("injected unexpected drain failure") }
+			// Signal from inside the drain itself rather than by watching a log
+			// line: once the injected drain returns its error, wait() blocks in
+			// select{} and never releases the database or lock, so the retention
+			// checks below are safe from the moment drain is called.
+			shutdown.drain = func(context.Context) error {
+				close(drained)
+				return errors.New("injected unexpected drain failure")
+			}
 			return nil
 		}, shellSessionSecrets)
 	}()
 	jobService := shellAwait(t, services)
-	shellAwait(t, entered)
+	shellAwait(t, drained)
 	runtime.GC()
 	if _, err := jobService.List(t.Context(), "", false, 1); err != nil {
 		t.Fatalf("failed drain permitted database closure: %v", err)
@@ -397,16 +402,4 @@ func testShellBlockedDrain(t *testing.T) {
 	default:
 	}
 	fmt.Println("failed drain kept database and lock while caller blocked")
-}
-
-type shellDrainLog struct {
-	entered chan struct{}
-	once    sync.Once
-}
-
-func (w *shellDrainLog) Write(data []byte) (int, error) {
-	if bytes.Contains(data, []byte("owned work did not drain: injected unexpected drain failure")) {
-		w.once.Do(func() { close(w.entered) })
-	}
-	return os.Stdout.Write(data)
 }

@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 
+	"github.com/csmart/aeronautes/internal/applog"
 	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
@@ -152,7 +152,7 @@ func (s *DeleteService) runSelectedDelete(ctx context.Context, jobID string, req
 	background := context.WithoutCancel(ctx)
 	for _, state := range []jobs.State{jobs.StatePlanning, jobs.StateRunning} {
 		if err := s.jobs.Transition(background, jobID, state); err != nil {
-			log.Printf("job %s: %v", jobID, err)
+			applog.Errorf("job %s: %v", jobID, err)
 		}
 	}
 	counters := jobs.Counters{ObjectsPlanned: int64(len(req.Members))}
@@ -196,13 +196,13 @@ func (s *DeleteService) runSelectedDelete(ctx context.Context, jobID string, req
 		// never requested.
 		s.runner.release(jobID)
 		s.runner.record(background, bookmarkID, "delete.selected.unavailable", req.Container, "job "+jobID+" · "+recordingLost, audit.ResultUnverified)
-		log.Printf("job %s: %s", jobID, recordingLost)
+		applog.Warnf("job %s: %s", jobID, recordingLost)
 		return
 	}
 	state, reason := s.selectedEnd(background, jobID, cancelled)
 	if state == jobs.StateComplete {
 		if err := s.jobs.Transition(background, jobID, jobs.StateVerifying); err != nil {
-			log.Printf("job %s: %v", jobID, err)
+			applog.Errorf("job %s: %v", jobID, err)
 		}
 	}
 	s.finishSelected(background, jobID, req, bookmarkID, state, reason)
@@ -243,7 +243,7 @@ func (s *DeleteService) selectedEnd(ctx context.Context, jobID string, cancelled
 func (s *DeleteService) recordNotAttempted(ctx context.Context, jobID string, members []ListingRowDTO) {
 	for _, member := range members {
 		if err := s.jobs.RecordDeletion(ctx, jobID, member.Name, jobs.ItemObservation{Result: jobs.ItemNotAttempted, Effect: jobs.EffectNotAttempted}, nil, nil); err != nil {
-			log.Printf("job %s: member %q not attempted but unrecorded: %v", jobID, member.Name, err)
+			applog.Errorf("job %s: member %q not attempted but unrecorded: %v", jobID, member.Name, err)
 			return
 		}
 	}
@@ -257,7 +257,7 @@ func (s *DeleteService) finishSelected(ctx context.Context, jobID string, req Se
 			Summary: fmt.Sprintf("job %s · %d members", jobID, len(req.Members)), Result: terminalAuditResult(state)},
 	}, s.runner.audit)
 	if err != nil {
-		log.Printf("job %s terminal outcome was not saved: %v", jobID, err)
+		applog.Errorf("job %s terminal outcome was not saved: %v", jobID, err)
 	}
 }
 

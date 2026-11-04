@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/adrg/xdg"
 	"github.com/csmart/aeronautes/internal/app"
+	"github.com/csmart/aeronautes/internal/applog"
 	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/bookmarks"
 	"github.com/csmart/aeronautes/internal/db"
@@ -36,7 +36,8 @@ func main() {
 	identity := buildIdentity()
 	if len(os.Args) == 2 && os.Args[1] == "--version" {
 		if err := json.NewEncoder(os.Stdout).Encode(identity); err != nil {
-			log.Fatal(err)
+			applog.Errorf("%v", err)
+			os.Exit(1)
 		}
 		return
 	}
@@ -47,13 +48,24 @@ func main() {
 	if len(os.Args) == 2 && os.Args[1] == "--engine" {
 		report := rclone.Describe()
 		if err := json.NewEncoder(os.Stdout).Encode(report); err != nil {
-			log.Fatal(err)
+			applog.Errorf("%v", err)
+			os.Exit(1)
 		}
 		if report.Error != "" {
 			os.Exit(1)
 		}
 		return
 	}
+	// Install the logger before desktop startup so the operator's level and
+	// capture file apply to every line, including the startup, runtime and
+	// shutdown errors reported below. It is owned here, not in runDesktop, so
+	// it stays open through that final reporting; a bad capture path only
+	// warns, and slog's unbuffered writes mean os.Exit loses nothing (ADR 0099).
+	_, logClose, logErr := applog.Configure()
+	if logErr != nil {
+		applog.Warnf("configured log file unavailable; logging to standard error only: %v", logErr)
+	}
+	defer logClose()
 	shutdown := &shellShutdown{}
 	// A failed database close retains the lock through error reporting,
 	// including GC, until the kernel releases it on process exit.
@@ -64,13 +76,14 @@ func main() {
 			// host with no display the native notice below cannot appear
 			// (GTK exits during its own initialisation), so this line is the
 			// only record the operator gets. Then show the dialog where a
-			// display exists, and exit without the bare log.Fatal a desktop
+			// display exists, and exit without the bare error line a desktop
 			// launch would discard.
-			log.Print(err)
+			applog.Warnf("%v", err)
 			showAlreadyRunningNotice()
 			os.Exit(1)
 		}
-		log.Fatal(err)
+		applog.Errorf("%v", err)
+		os.Exit(1)
 	}
 }
 
@@ -103,14 +116,14 @@ func runDesktop(identity app.BuildIdentity, shutdown *shellShutdown,
 	// nowhere else (ADR 0082). A deferred capability it names is offered
 	// by this process although it is not proven; the interface says so.
 	for _, line := range app.StartupCapabilityLines(app.ReadEnabledCapabilities()) {
-		log.Print(line)
+		applog.Infof("%s", line)
 	}
 
 	// OS keychain when reachable; otherwise session-only, surfaced in the
 	// UI — never a silent downgrade (§12.1, ADR 0012).
 	secretStore, secretBackend := openSecrets()
 	if secretBackend == secrets.BackendSession {
-		log.Print("no OS keychain reachable: credentials are session-only and die with the process")
+		applog.Warnf("no OS keychain reachable: credentials are session-only and die with the process")
 	}
 	bookmarkStore := bookmarks.NewStore(database, secretStore)
 	connections := app.NewConnections(bookmarkStore)
@@ -119,9 +132,9 @@ func runDesktop(identity app.BuildIdentity, shutdown *shellShutdown,
 	auditStore := audit.NewStore(database)
 	jobStore := jobs.NewStore(database)
 	if interrupted, err := jobStore.FailInterrupted(context.Background()); err != nil {
-		log.Printf("job crash recovery: %v", err)
+		applog.Errorf("job crash recovery: %v", err)
 	} else if interrupted > 0 {
-		log.Printf("job crash recovery: %d interrupted job(s) marked failed", interrupted)
+		applog.Infof("job crash recovery: %d interrupted job(s) marked failed", interrupted)
 	}
 	jobRunner := app.NewJobRunner(jobStore, auditStore)
 	findService := app.NewFindService(connections)
@@ -243,7 +256,7 @@ func showAlreadyRunningNotice() {
 		}()
 	})
 	if err := a.Run(); err != nil {
-		log.Printf("another aeronautes instance is already running (%v)", err)
+		applog.Errorf("another aeronautes instance is already running (%v)", err)
 	}
 }
 
