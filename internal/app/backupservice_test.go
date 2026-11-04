@@ -9,6 +9,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -30,6 +31,10 @@ func (f fixedSettings) getFrom(context.Context, dbQuerier) (AppSettingsDTO, erro
 	return f.dto, nil
 }
 
+func (f fixedSettings) Set(_ context.Context, s AppSettingsDTO) (AppSettingsDTO, error) {
+	return s, nil
+}
+
 type folderPicker struct{ dir string }
 
 func (p folderPicker) PickFiles(string) ([]string, error)   { return nil, nil }
@@ -49,6 +54,10 @@ func (s interleavingSettings) getFrom(ctx context.Context, q dbQuerier) (AppSett
 		s.onRead()
 	}
 	return dto, err
+}
+
+func (s interleavingSettings) Set(ctx context.Context, dto AppSettingsDTO) (AppSettingsDTO, error) {
+	return s.real.Set(ctx, dto)
 }
 
 // selfSigned builds a self-signed certificate and returns its DER and the DER
@@ -110,7 +119,7 @@ func TestCertificatesOnlyKeepsOnlyRealHeaderFreeCertificates(t *testing.T) {
 		string(pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: key1})) +
 		string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert2}))
 
-	out := certificatesOnly(bundle)
+	out := string(bookmarks.CertificatesOnly([]byte(bundle)))
 	if strings.Contains(out, "PRIVATE KEY") || strings.Contains(out, "Comment") {
 		t.Fatalf("filter kept a private key or a header-bearing block: %q", out)
 	}
@@ -267,5 +276,355 @@ func TestExportSettingsTakesOneCoherentSnapshot(t *testing.T) {
 	}
 	if len(doc.Bookmarks) != 1 || doc.Bookmarks[0].DisplayName != "before" {
 		t.Fatalf("bookmark not from the same snapshot (never-existed combination): %+v", doc.Bookmarks)
+	}
+}
+
+// restorePicker chooses a specific backup file for a restore.
+type restorePicker struct{ file string }
+
+func (p restorePicker) PickFiles(string) ([]string, error)   { return []string{p.file}, nil }
+func (p restorePicker) PickDirectory(string) (string, error) { return "", nil }
+
+// writeBackup marshals a backup document to a fresh file and returns its path.
+func writeBackup(t *testing.T, doc SettingsBackupDTO) string {
+	t.Helper()
+	raw, err := json.MarshalIndent(&doc, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "backup.json")
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// restoreInto imports a backup file into the given stores through a fresh
+// service, as the shell would after the operator chose the file.
+func restoreInto(t *testing.T, database *db.DB, store *bookmarks.Store, settings settingsPort, file string) (*RestoreResultDTO, error) {
+	t.Helper()
+	svc := NewBackupService(database, store, settings)
+	svc.setFilePicker(restorePicker{file: file})
+	return svc.ImportSettings(t.Context())
+}
+
+// A backup an export wrote restores onto a fresh instance: the application
+// settings are replaced, and the bookmark is recreated with its full
+// configuration and its CA but no credential, so its password is re-entered
+// the next time the operator uses it (ADR 0098, Chris's 4 Nov decision).
+func TestImportSettingsRestoresConfigurationFromExport(t *testing.T) {
+	ctx := t.Context()
+	sourceStore, sourceDB := newBackupStore(t)
+	src := bookmarks.Bookmark{
+		DisplayName:        "Prod AU",
+		AuthURL:            "https://swift.example/auth/v1.0",
+		Username:           "acct:user",
+		StorageURLOverride: "https://swift.example/v1/AUTH_acct",
+		TLSMode:            swiftcontrol.TLSModeCustomCA,
+		SegmentPlacement:   bookmarks.PlacementSidecar,
+		ChunkSizeBytes:     1 << 30,
+	}
+	if _, err := sourceStore.SaveWithCA(ctx, src, []byte("super-secret-key"), caBundle(t)); err != nil {
+		t.Fatal(err)
+	}
+	wantSettings := defaults()
+	wantSettings.RailWidthPx = 199
+
+	exportDir := t.TempDir()
+	exporter := NewBackupService(sourceDB, sourceStore, fixedSettings{dto: wantSettings})
+	exporter.setFilePicker(folderPicker{dir: exportDir})
+	exported, err := exporter.ExportSettings(ctx)
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	backupFile := filepath.Join(exportDir, exported.FileName)
+
+	targetStore, targetDB := newBackupStore(t)
+	targetSettings := NewSettingsService(targetDB, NewJobRunner(jobs.NewStore(targetDB), audit.NewStore(targetDB)))
+	before, err := targetSettings.Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := restoreInto(t, targetDB, targetStore, targetSettings, backupFile)
+	if err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	if !result.SettingsApplied || result.BookmarksCreated != 1 || result.BookmarksSkipped != 0 {
+		t.Fatalf("restore result = %+v", result)
+	}
+
+	after, err := targetSettings.Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.RailWidthPx != 199 {
+		t.Fatalf("settings not restored: RailWidthPx=%d (was %d), want 199", after.RailWidthPx, before.RailWidthPx)
+	}
+
+	marks, err := targetStore.List(ctx)
+	if err != nil || len(marks) != 1 {
+		t.Fatalf("restored bookmarks = %+v %v", marks, err)
+	}
+	got := marks[0]
+	if got.HasCredential {
+		t.Fatal("restored bookmark carried a credential")
+	}
+	if got.DisplayName != src.DisplayName || got.AuthURL != src.AuthURL || got.Username != src.Username ||
+		got.StorageURLOverride != src.StorageURLOverride || got.TLSMode != src.TLSMode ||
+		got.SegmentPlacement != src.SegmentPlacement || got.ChunkSizeBytes != src.ChunkSizeBytes {
+		t.Fatalf("restored configuration does not match the source: %+v", got)
+	}
+	caPEM, err := targetStore.CAPem(ctx, got.TLSCAID)
+	if err != nil || len(caPEM) == 0 {
+		t.Fatalf("restored CA missing: %v", err)
+	}
+	if !x509.NewCertPool().AppendCertsFromPEM(caPEM) {
+		t.Fatal("restored CA is not a usable certificate")
+	}
+}
+
+// A restore merges by a bookmark's complete configuration: it creates one not
+// already present, skips an identical one so a repeat import adds nothing, and
+// keeps as distinct two bookmarks that differ in any restorable field.
+func TestImportSettingsMergesByCompleteConfiguration(t *testing.T) {
+	ctx := t.Context()
+	store, database := newBackupStore(t)
+	settings := fixedSettings{dto: defaults()}
+
+	bmA := BackupBookmarkDTO{
+		DisplayName: "Prod", AuthURL: "https://swift.example/auth/v1.0", Username: "acct:user",
+		StorageURLOverride: "https://swift.example/v1/AUTH_a",
+	}
+	fileA := writeBackup(t, SettingsBackupDTO{SchemaVersion: backupSchemaVersion, AppSettings: defaults(), Bookmarks: []BackupBookmarkDTO{bmA}})
+
+	if r, err := restoreInto(t, database, store, settings, fileA); err != nil || r.BookmarksCreated != 1 || r.BookmarksSkipped != 0 {
+		t.Fatalf("first restore = %+v %v", r, err)
+	}
+	if r, err := restoreInto(t, database, store, settings, fileA); err != nil || r.BookmarksCreated != 0 || r.BookmarksSkipped != 1 {
+		t.Fatalf("repeat restore not idempotent = %+v %v", r, err)
+	}
+
+	bmB := bmA
+	bmB.StorageURLOverride = "https://swift.example/v1/AUTH_b"
+	fileB := writeBackup(t, SettingsBackupDTO{SchemaVersion: backupSchemaVersion, AppSettings: defaults(), Bookmarks: []BackupBookmarkDTO{bmB}})
+	if r, err := restoreInto(t, database, store, settings, fileB); err != nil || r.BookmarksCreated != 1 {
+		t.Fatalf("distinct restore = %+v %v", r, err)
+	}
+
+	marks, err := store.List(ctx)
+	if err != nil || len(marks) != 2 {
+		t.Fatalf("want 2 distinct bookmarks, got %+v %v", marks, err)
+	}
+}
+
+// A restore validates the whole file before it changes anything: an
+// unsupported version or any malformed bookmark refuses, and nothing — not the
+// settings, not even the good bookmark that shared the bad file — is applied.
+func TestImportSettingsValidatesWholeFileBeforeApplying(t *testing.T) {
+	ctx := t.Context()
+	store, database := newBackupStore(t)
+	settings := NewSettingsService(database, NewJobRunner(jobs.NewStore(database), audit.NewStore(database)))
+	baseline, err := settings.Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	changed := defaults()
+	changed.RailWidthPx = 199
+
+	future := writeBackup(t, SettingsBackupDTO{SchemaVersion: backupSchemaVersion + 1, AppSettings: changed})
+	if _, err := restoreInto(t, database, store, settings, future); err == nil {
+		t.Fatal("restore accepted an unsupported version")
+	}
+
+	bad := SettingsBackupDTO{
+		SchemaVersion: backupSchemaVersion,
+		AppSettings:   changed,
+		Bookmarks: []BackupBookmarkDTO{
+			{DisplayName: "Good", AuthURL: "https://swift.example/auth/v1.0", Username: "acct:user"},
+			{DisplayName: "Bad CA", AuthURL: "https://swift.example/auth/v1.0", Username: "acct:user",
+				TLSMode: string(swiftcontrol.TLSModeCustomCA), CACertPEM: "this is not a certificate"},
+		},
+	}
+	if _, err := restoreInto(t, database, store, settings, writeBackup(t, bad)); err == nil {
+		t.Fatal("restore accepted a file with a malformed bookmark")
+	}
+
+	after, err := settings.Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.RailWidthPx != baseline.RailWidthPx {
+		t.Fatalf("a refused restore changed settings: RailWidthPx %d -> %d", baseline.RailWidthPx, after.RailWidthPx)
+	}
+	marks, err := store.List(ctx)
+	if err != nil || len(marks) != 0 {
+		t.Fatalf("a refused restore created a bookmark: %+v %v", marks, err)
+	}
+}
+
+func TestImportSettingsRefusesHeadlessAndReportsCancellation(t *testing.T) {
+	ctx := t.Context()
+	store, database := newBackupStore(t)
+
+	svc := NewBackupService(database, store, fixedSettings{dto: defaults()})
+	if _, err := svc.ImportSettings(ctx); err == nil {
+		t.Fatal("restore without a file picker did not refuse")
+	}
+
+	// An empty file choice is an ordinary cancellation: nil result, no error.
+	svc.setFilePicker(folderPicker{})
+	result, err := svc.ImportSettings(ctx)
+	if err != nil || result != nil {
+		t.Fatalf("cancelled restore = %+v, %v; want nil, nil", result, err)
+	}
+}
+
+// A hand-edited backup whose CA bundle is a certificate followed by its
+// private key is refused before anything is applied, so no key reaches trust
+// storage and no partial restore lands (ADR 0098; review db:991 finding 2).
+func TestImportSettingsRefusesABackupCarryingAPrivateKey(t *testing.T) {
+	ctx := t.Context()
+	store, database := newBackupStore(t)
+	settings := NewSettingsService(database, NewJobRunner(jobs.NewStore(database), audit.NewStore(database)))
+	before, err := settings.Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	changed := defaults()
+	changed.RailWidthPx = 199
+	doc := SettingsBackupDTO{
+		SchemaVersion: backupSchemaVersion,
+		AppSettings:   changed,
+		Bookmarks: []BackupBookmarkDTO{{
+			DisplayName: "Keyed", AuthURL: "https://swift.example/auth/v1.0", Username: "acct:user",
+			TLSMode: string(swiftcontrol.TLSModeCustomCA), CACertPEM: string(caBundle(t)),
+		}},
+	}
+	if _, err := restoreInto(t, database, store, settings, writeBackup(t, doc)); err == nil {
+		t.Fatal("restore accepted a backup carrying a private key")
+	}
+
+	after, err := settings.Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.RailWidthPx != before.RailWidthPx {
+		t.Fatalf("a refused restore changed settings: %d -> %d", before.RailWidthPx, after.RailWidthPx)
+	}
+	if marks, _ := store.List(ctx); len(marks) != 0 {
+		t.Fatalf("a refused restore created a bookmark: %d", len(marks))
+	}
+}
+
+// Exporting a custom-CA bookmark and restoring it into the same database adds
+// nothing: the stored bundle (a certificate and its key) and the exported
+// certificate-only form reduce to the same trust set, so duplicate detection
+// skips it rather than creating a second credential-less copy (review db:991
+// finding 5).
+func TestImportSettingsDedupsExportIntoSamePopulatedDatabase(t *testing.T) {
+	ctx := t.Context()
+	store, database := newBackupStore(t)
+	b := bookmarks.Bookmark{
+		DisplayName: "Prod", AuthURL: "https://swift.example/auth/v1.0", Username: "acct:user",
+		TLSMode: swiftcontrol.TLSModeCustomCA,
+	}
+	if _, err := store.SaveWithCA(ctx, b, []byte("key"), caBundle(t)); err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	exporter := NewBackupService(database, store, fixedSettings{dto: defaults()})
+	exporter.setFilePicker(folderPicker{dir: dir})
+	exported, err := exporter.ExportSettings(ctx)
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+
+	result, err := restoreInto(t, database, store, fixedSettings{dto: defaults()}, filepath.Join(dir, exported.FileName))
+	if err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	if result.BookmarksCreated != 0 || result.BookmarksSkipped != 1 {
+		t.Fatalf("export then restore into the same database duplicated trust: %+v", result)
+	}
+	if marks, _ := store.List(ctx); len(marks) != 1 {
+		t.Fatalf("want 1 bookmark after an idempotent restore, got %d", len(marks))
+	}
+}
+
+// failingSettings models a settings write that fails at its commit boundary,
+// where the new values may already be durable (review db:992 finding 2).
+type failingSettings struct{}
+
+func (failingSettings) getFrom(context.Context, dbQuerier) (AppSettingsDTO, error) {
+	return defaults(), nil
+}
+
+func (failingSettings) Set(context.Context, AppSettingsDTO) (AppSettingsDTO, error) {
+	return AppSettingsDTO{}, errors.New("injected lost settings commit reply")
+}
+
+// A settings write that fails after it may have committed is an uncertain
+// outcome, not a proved refusal: the restore carries it in the result (so the
+// shell reloads rather than writing a stale document over it) instead of
+// returning an error the bridge would drop, and it stops before bookmarks.
+func TestImportSettingsReportsUncertainSettings(t *testing.T) {
+	ctx := t.Context()
+	store, database := newBackupStore(t)
+	doc := SettingsBackupDTO{
+		SchemaVersion: backupSchemaVersion,
+		AppSettings:   defaults(),
+		Bookmarks: []BackupBookmarkDTO{{
+			DisplayName: "Prod", AuthURL: "https://swift.example/auth/v1.0", Username: "acct:user",
+		}},
+	}
+	result, err := restoreInto(t, database, store, failingSettings{}, writeBackup(t, doc))
+	if err != nil {
+		t.Fatalf("an uncertain settings outcome must be carried in the result, not an error: %v", err)
+	}
+	if result == nil || result.SettingsApplied || result.Complete || result.Detail == "" {
+		t.Fatalf("uncertain settings result = %+v", result)
+	}
+	if result.BookmarksCreated != 0 {
+		t.Fatalf("bookmarks were applied despite an uncertain settings outcome: %+v", result)
+	}
+	if marks, _ := store.List(ctx); len(marks) != 0 {
+		t.Fatalf("a stopped restore created a bookmark: %d", len(marks))
+	}
+}
+
+// Strict CA validation refuses a bundle with any undecodable or non-certificate
+// material, whether it comes before or after a valid certificate, so a
+// hand-edited backup cannot smuggle it past pem.Decode's skipping (review
+// db:992 finding 1).
+func TestImportSettingsRefusesUndecodableCA(t *testing.T) {
+	ctx := t.Context()
+	certDER, _ := selfSigned(t)
+	valid := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER}))
+	bad := "-----BEGIN CERTIFICATE-----\nnot valid base64 certificate data\n-----END CERTIFICATE-----\n"
+
+	for _, ca := range []string{
+		valid + "trailing material that is not a certificate\n",
+		"leading material that is not a certificate\n" + valid,
+		valid + bad,
+		bad + valid,
+	} {
+		store, database := newBackupStore(t)
+		doc := SettingsBackupDTO{
+			SchemaVersion: backupSchemaVersion,
+			AppSettings:   defaults(),
+			Bookmarks: []BackupBookmarkDTO{{
+				DisplayName: "Prod", AuthURL: "https://swift.example/auth/v1.0", Username: "acct:user",
+				TLSMode: string(swiftcontrol.TLSModeCustomCA), CACertPEM: ca,
+			}},
+		}
+		if _, err := restoreInto(t, database, store, fixedSettings{dto: defaults()}, writeBackup(t, doc)); err == nil {
+			t.Fatalf("restore accepted an undecodable CA bundle: %q", ca)
+		}
+		if marks, _ := store.List(ctx); len(marks) != 0 {
+			t.Fatalf("a refused restore created a bookmark for CA %q: %d", ca, len(marks))
+		}
 	}
 }
