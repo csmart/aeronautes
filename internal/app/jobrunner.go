@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"sync"
 
+	"github.com/csmart/aeronautes/internal/applog"
 	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/jobs"
 )
@@ -323,6 +323,6 @@ func (r *jobRunner) record(ctx context.Context, bookmarkID, operation, resource,
 		Summary:    summary,
 		Result:     result,
 	}); err != nil {
-		log.Printf("AUDIT WRITE FAILED for %s %s: %v", operation, resource, err)
+		applog.Errorf("AUDIT WRITE FAILED for %s %s: %v", operation, resource, err)
 	}
 }

@@ -5,10 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
+	"github.com/csmart/aeronautes/internal/applog"
 	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/evidence"
 	"github.com/csmart/aeronautes/internal/mutationfacts"
@@ -382,7 +382,7 @@ func (s *MutateService) recordFor(ctx context.Context, bookmarkID, operation, re
 		TransIDs:   transIDs,
 	})
 	if err != nil {
-		log.Printf("AUDIT WRITE FAILED for %s %s: %v", operation, resource, err)
+		applog.Errorf("AUDIT WRITE FAILED for %s %s: %v", operation, resource, err)
 	}
 	return err
 }

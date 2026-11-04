@@ -9,11 +9,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/csmart/aeronautes/internal/applog"
 	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/db"
 	"github.com/csmart/aeronautes/internal/deletion"
@@ -242,7 +242,7 @@ func (s *BenchmarkService) runBenchmark(ctx context.Context, jobID, bookmarkID s
 			Audit: audit.Event{BookmarkID: bookmarkID, Operation: "benchmark." + string(state),
 				Resource: container, Summary: summary, Result: terminalAuditResult(state)},
 		}, s.runner.audit); err != nil {
-			log.Printf("job %s: finish benchmark: %v", jobID, err)
+			applog.Errorf("job %s: finish benchmark: %v", jobID, err)
 		}
 	}
 	fail := func(stage string, err error, result *deletion.Result) {

@@ -118,6 +118,38 @@ func TestCaptureSurvivesBrokenStderr(t *testing.T) {
 	}
 }
 
+// TestConfigureKeepsLevelWhenFileFails runs a child whose capture path cannot
+// be opened (a directory), and confirms the requested level still takes effect
+// on standard error rather than falling back to the default. A subprocess
+// keeps the global logger and os.Stderr out of the parent's other tests.
+func TestConfigureKeepsLevelWhenFileFails(t *testing.T) {
+	if os.Getenv("APPLOG_BADFILE_CHILD") == "1" {
+		if _, _, err := Configure(); err == nil {
+			os.Exit(3) // the path opened after all; not the case under test
+		}
+		Infof("info-marker")
+		Errorf("error-marker")
+		os.Exit(0)
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestConfigureKeepsLevelWhenFileFails$")
+	cmd.Env = append(os.Environ(),
+		"APPLOG_BADFILE_CHILD=1",
+		EnvLevel+"=error",
+		EnvFile+"="+t.TempDir(), // a directory cannot be opened as a log file
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("child exited non-zero (%v):\n%s", err, out)
+	}
+	if bytes.Contains(out, []byte("info-marker")) {
+		t.Errorf("info written at error level after the capture file failed:\n%s", out)
+	}
+	if !bytes.Contains(out, []byte("error-marker")) {
+		t.Errorf("error not written after the capture file failed:\n%s", out)
+	}
+}
+
 // configureToTemp points the log at a fresh temp file at the given level and
 // returns the file path, so a test can read back exactly what was written.
 func configureToTemp(t *testing.T, level string) string {

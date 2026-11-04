@@ -4,8 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/csmart/aeronautes/internal/applog"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
-	"log"
 	"strconv"
 	"time"
 
@@ -41,22 +41,22 @@ func NewSettingsService(database *db.DB, runner *jobRunner) *SettingsService {
 func (s *SettingsService) runRetention(ctx context.Context, jobStore *jobs.Store, auditStore *audit.Store) {
 	settings, err := s.Get(ctx)
 	if err != nil {
-		log.Printf("retention: read settings: %v", err)
+		applog.Warnf("retention: read settings: %v", err)
 		return
 	}
 	now := time.Now()
 	if settings.AuditRetentionDays > 0 {
 		if n, err := auditStore.Prune(ctx, now.AddDate(0, 0, -settings.AuditRetentionDays)); err != nil {
-			log.Printf("retention: audit prune: %v", err)
+			applog.Warnf("retention: audit prune: %v", err)
 		} else if n > 0 {
-			log.Printf("retention: pruned %d audit events older than %d days", n, settings.AuditRetentionDays)
+			applog.Infof("retention: pruned %d audit events older than %d days", n, settings.AuditRetentionDays)
 		}
 	}
 	if settings.JobRetentionDays > 0 {
 		if n, err := jobStore.PruneTerminal(ctx, now.AddDate(0, 0, -settings.JobRetentionDays)); err != nil {
-			log.Printf("retention: job prune: %v", err)
+			applog.Warnf("retention: job prune: %v", err)
 		} else if n > 0 {
-			log.Printf("retention: pruned %d terminal jobs older than %d days", n, settings.JobRetentionDays)
+			applog.Infof("retention: pruned %d terminal jobs older than %d days", n, settings.JobRetentionDays)
 		}
 	}
 }

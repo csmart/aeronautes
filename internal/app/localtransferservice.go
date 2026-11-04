@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/csmart/aeronautes/internal/applog"
 	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
@@ -1082,7 +1082,7 @@ func (s *TransferService) finishLocal(ctx context.Context, jobID, bookmarkID str
 		Audit: audit.Event{BookmarkID: bookmarkID, Operation: "transfer.local." + string(state), Resource: "job " + jobID, Summary: auditSummary, Result: terminalAuditResult(state)},
 	}, s.runner.audit)
 	if err != nil {
-		log.Printf("job %s terminal outcome was not saved: %v", jobID, err)
+		applog.Errorf("job %s terminal outcome was not saved: %v", jobID, err)
 	}
 }
 

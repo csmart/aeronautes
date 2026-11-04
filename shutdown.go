@@ -3,8 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
+
+	"github.com/csmart/aeronautes/internal/applog"
 )
 
 type shellShutdown struct {
@@ -24,7 +25,7 @@ func (s *shellShutdown) wait() {
 		if err := s.drain(context.Background()); err != nil {
 			// The background waiter has no deadline. A future error class
 			// must not turn an unproved drain into permission to quit.
-			log.Printf("owned work did not drain: %v", err)
+			applog.Errorf("owned work did not drain: %v", err)
 			select {}
 		}
 	})

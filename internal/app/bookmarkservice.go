@@ -5,9 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 
+	"github.com/csmart/aeronautes/internal/applog"
 	"github.com/csmart/aeronautes/internal/bookmarks"
 	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/secrets"
@@ -269,7 +269,7 @@ func (s *BookmarkService) Delete(ctx context.Context, id string) error {
 // because an abandoned native delete is unresolved rather than undone.
 func (s *BookmarkService) cleanupCredentials(ctx context.Context) {
 	if _, err := s.store.Cleanup(context.WithoutCancel(ctx), ""); err != nil {
-		log.Printf("credential cleanup: %v", err)
+		applog.Warnf("credential cleanup: %v", err)
 	}
 }
 

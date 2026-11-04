@@ -3,9 +3,9 @@ package app
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
 
+	"github.com/csmart/aeronautes/internal/applog"
 	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
@@ -262,7 +262,7 @@ func (r *prefixSweep) notAttempted(ctx context.Context, m sweepMember) {
 		return
 	}
 	if err := r.s.jobs.RecordDeletion(ctx, r.jobID, r.key(m.name), jobs.ItemObservation{Result: jobs.ItemNotAttempted, Effect: jobs.EffectNotAttempted}, nil, nil); err != nil {
-		log.Printf("job %s: member %q not attempted but unrecorded: %v", r.jobID, m.name, err)
+		applog.Errorf("job %s: member %q not attempted but unrecorded: %v", r.jobID, m.name, err)
 	}
 }
 
