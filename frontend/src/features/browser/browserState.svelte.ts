@@ -7,6 +7,7 @@ import { isLiteralPlainObject } from "../../lib/objectKind";
 import type {
   AccountDTO,
   AppSettingsDTO,
+  RestoreResultDTO,
   CopyPlanDTO,
   CopyRequestDTO,
   DeletePreviewDTO,
@@ -1903,6 +1904,91 @@ export class BrowserState {
     } finally {
       this.settingsBackingUp = false;
     }
+  }
+
+  settingsRestoring = $state(false);
+  settingsRestoreMessage = $state<string | null>(null);
+  settingsRestoreError = $state<string | null>(null);
+
+  // Restore the operator's configuration from a backup file they choose
+  // (ADR 0098): replace the settings and add any bookmarks not already
+  // present, leaving existing ones untouched. Credentials are never
+  // restored, so each account's password is re-entered the next time it is
+  // used. A cancelled dialog changes nothing.
+  async importSettings() {
+    if (this.settingsRestoring) return;
+    // A settings write in flight (a rail resize sends the whole document)
+    // would otherwise race the restore and could persist a stale document
+    // over it. Hold the settings operation for the whole restore so such a
+    // write waits, then refresh the cached settings before releasing it so
+    // the waiting write applies against the restored document, not the old
+    // one (ADR 0098; review db:991 finding 1).
+    if (this.appSettingsOperation !== null) {
+      this.settingsRestoreError = "Settings are busy; try the restore again in a moment.";
+      return;
+    }
+    this.settingsRestoring = true;
+    this.settingsRestoreError = null;
+    this.settingsRestoreMessage = null;
+    this.appSettingsOperation = "set";
+    try {
+      const result = await this.#api.importSettings();
+      if (result === null) {
+        this.settingsRestoreMessage = "Restore cancelled; nothing was changed.";
+        return;
+      }
+      // Settings were replaced on the backend; read them back so a later
+      // whole-document write cannot undo the restore.
+      try {
+        this.appSettings = await this.#api.appSettings();
+        this.appSettingsStatus = "current";
+      } catch {
+        this.appSettingsStatus = this.appSettings ? "stale" : "unavailable";
+      }
+      this.settingsRestoreMessage = this.#restoreMessage(result);
+    } catch (error) {
+      this.settingsRestoreError =
+        error instanceof Error && error.message ? error.message : "Your settings could not be restored.";
+    } finally {
+      // Releasing here flushes any rail width asked for during the restore,
+      // written against the refreshed document.
+      this.#endSettingsOperation();
+      this.settingsRestoring = false;
+      // Show any newly added bookmarks in the rail.
+      void this.loadBookmarks();
+    }
+  }
+
+  // #restoreMessage turns a restore result into one honest line: what landed,
+  // what remains when it did not finish, and that passwords are re-entered on
+  // use (ADR 0098; review db:991 finding 3).
+  #restoreMessage(result: RestoreResultDTO): string {
+    // Settings replace first; if they could not be confirmed the restore
+    // stopped there, so report that and nothing else.
+    if (!result.settingsApplied) {
+      return result.detail ? `${result.detail}.` : "The restore could not be applied; nothing changed.";
+    }
+    const added = `${result.bookmarksCreated} ${result.bookmarksCreated === 1 ? "bookmark" : "bookmarks"}`;
+    const skipped =
+      result.bookmarksSkipped > 0
+        ? ` ${result.bookmarksSkipped} already present ${result.bookmarksSkipped === 1 ? "was" : "were"} left unchanged.`
+        : "";
+    let message = `Restored your settings and added ${added}.${skipped}`;
+    // Entries whose commit could not be confirmed are not counted as failed:
+    // the row may be durable, so they are reported separately with reload
+    // guidance, while only entries known not to be restored invite a re-run.
+    const notRestored =
+      result.bookmarksTotal - result.bookmarksCreated - result.bookmarksSkipped - result.bookmarksUnresolved;
+    if (notRestored > 0) {
+      message += ` ${notRestored} of ${result.bookmarksTotal} not yet restored`;
+      message += result.detail
+        ? ` (${result.detail}); re-run the restore to finish.`
+        : "; re-run the restore to finish.";
+    }
+    if (result.bookmarksUnresolved > 0) {
+      message += ` ${result.bookmarksUnresolved} could not be confirmed; reload when local state is available.`;
+    }
+    return `${message} Re-enter each account's password the next time you use it.`;
   }
 
   recentAuditEvents: AuditEventDTO[] = $state([]);

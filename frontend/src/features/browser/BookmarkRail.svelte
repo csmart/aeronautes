@@ -129,14 +129,24 @@
   </div>
 
   <div class="rail-foot">
-    <button
-      class="rail-backup"
-      title="Back up settings and bookmarks to a file (passwords are not included)"
-      onclick={() => browser.exportSettings()}
-      disabled={browser.settingsBackingUp}
-    >
-      {browser.settingsBackingUp ? "Backing up…" : "Back up settings…"}
-    </button>
+    <div class="rail-actions">
+      <button
+        class="rail-backup"
+        title="Back up settings and bookmarks to a file (passwords are not included)"
+        onclick={() => browser.exportSettings()}
+        disabled={browser.settingsBackingUp}
+      >
+        {browser.settingsBackingUp ? "Backing up…" : "Back up settings…"}
+      </button>
+      <button
+        class="rail-backup"
+        title="Restore settings and bookmarks from a backup file (passwords are re-entered on use)"
+        onclick={() => browser.importSettings()}
+        disabled={browser.settingsRestoring}
+      >
+        {browser.settingsRestoring ? "Restoring…" : "Restore settings…"}
+      </button>
+    </div>
     <button class="foot-btn" title="Theme: {theme}" onclick={cycleTheme} aria-label="Cycle theme ({theme})">
       <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
         <circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5" />
@@ -149,6 +159,12 @@
   {/if}
   {#if browser.settingsBackupError}
     <p class="backup-msg error" role="alert">{browser.settingsBackupError}</p>
+  {/if}
+  {#if browser.settingsRestoreMessage}
+    <p class="backup-msg" role="status">{browser.settingsRestoreMessage}</p>
+  {/if}
+  {#if browser.settingsRestoreError}
+    <p class="backup-msg error" role="alert">{browser.settingsRestoreError}</p>
   {/if}
 </nav>
 
@@ -331,8 +347,17 @@
     padding-top: var(--space-2);
   }
 
-  .rail-backup {
+  .rail-actions {
     flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    align-items: flex-start;
+  }
+
+  .rail-backup {
+    width: 100%;
     text-align: left;
     font-size: var(--text-xs);
     color: var(--color-text-secondary);

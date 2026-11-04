@@ -27,3 +27,25 @@ import * as $models from "./models.js";
 export function ExportSettings(): $CancellablePromise<$models.BackupResultDTO | null> {
     return $Call.ByID(1548392908);
 }
+
+/**
+ * ImportSettings restores the operator's configuration from a backup file
+ * they choose (ADR 0098). It validates the whole file before it changes
+ * anything — refusing a schema version it does not understand, a malformed
+ * bookmark, or a CA bundle carrying anything but bare certificates, so a bad
+ * file applies nothing and no key reaches trust storage — then replaces the
+ * application settings and merges each bookmark by its complete
+ * configuration, creating one not already present and leaving an existing one
+ * untouched. It carries no credential, so restored bookmarks need their
+ * passwords re-entered, and it never starts a transfer, touches a remote, or
+ * deletes anything.
+ * A pre-apply refusal and an ordinary cancellation both return no result: an
+ * error for the refusal, nil for a cancelled picker. Once settings are
+ * applied a later bookmark problem is a partial restore, not a failure, so the
+ * outcome is carried in the result — what landed, what remains, and anything
+ * unconfirmed — rather than an error the bridge would drop. A re-run is safe
+ * because the merge is by identity.
+ */
+export function ImportSettings(): $CancellablePromise<$models.RestoreResultDTO | null> {
+    return $Call.ByID(1661314199);
+}

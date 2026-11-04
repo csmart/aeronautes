@@ -89,6 +89,7 @@ export type {
     PickedFilesDTO,
     PrefixDetailDTO,
     RecoveryStatusDTO,
+    RestoreResultDTO,
     ReviewedMembershipDTO,
     SLOManifestDTO,
     SLOSegmentDTO,
