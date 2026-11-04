@@ -1241,6 +1241,23 @@ export interface RecoveryStatusDTO {
 }
 
 /**
+ * RestoreResultDTO reports a restore's outcome: whether the application
+ * settings were replaced, how many bookmarks were created or skipped because
+ * an identical configuration was already present, and how many could not be
+ * confirmed. Complete is false when a bookmark failed or is unresolved, so the
+ * shell can show what landed and what remains rather than a dropped error.
+ */
+export interface RestoreResultDTO {
+    "settingsApplied": boolean;
+    "bookmarksTotal": number;
+    "bookmarksCreated": number;
+    "bookmarksSkipped": number;
+    "bookmarksUnresolved": number;
+    "complete": boolean;
+    "detail": string;
+}
+
+/**
  * ReviewedMembershipDTO is the graph the operator reviewed, carried back on
  * the request so the job acts on it instead of a graph resolved again at
  * execution (ADR 0095 decision 8): the manifest's reviewed identity and, for
