@@ -1,6 +1,6 @@
 # Replacement scenario-preservation baseline for the settings restore
 
-[ADR 0098](../adr/0098-settings-backup-and-restore.md) adds the restore half of the settings backup, and [ADR 0011](../adr/0011-typed-service-surface.md) records its bridge surface: one new scenario-contract row, `BackupService.ImportSettings`, a mutate requiring `happy` and `refusal`.
+[ADR 0098](../adr/0098-settings-backup-and-restore.md) adds the restore half of the settings backup and, under the typed service surface of [ADR 0011](../adr/0011-typed-service-surface.md), one new scenario-contract row: `BackupService.ImportSettings`, a mutate requiring `happy` and `refusal`.
 [ADR 0069](../adr/0069-preserve-covered-scenario-cells.md) admits a changed inventory only through its drift route: candidate evidence from the candidate's own run, a replacement baseline built from that run's reports that keeps every previously protected pair, and a review of the replacement together with the contract change.
 This record is that evidence and the baseline built from it.
 It replaces the [backup-export baseline](2026-11-03-backup-export-baseline.md) as the current admission, which stays as the history of the pairs this one keeps.

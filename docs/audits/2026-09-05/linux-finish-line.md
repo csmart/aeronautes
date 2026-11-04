@@ -148,6 +148,25 @@ The first two decide the release after v1 and are recorded here so the trail sta
 32. Delivery authority for the Linux release: "you have permission to commit, run, build, test push, merge and do anything you need to, in order to get us to this Linux 1.0.0 release . go ahead".
     The author's reading: every slice on the road to the Linux 1.0.0 still passes independent review and a green current-head run before a protected merge, publication happens from new branches rather than by rewriting published history, and the operator's own steps (the test plan runs, the real-cluster session, the signing keys) stay theirs; the grant removes the wait for a per-slice push or merge permission, not a gate.
 
+## Operator decision — 4 November 2026
+
+The operator settled three 0.4.0 questions under the sign-off rule above.
+
+33. Backup and restore covers the configuration only, and credentials are never in a backup.
+    The operator's words: "never ever ever do home-grown crypto. ever ... for now we can just exclude passwords from backups, and on restore when the user clicks on the account it re-prompts and gets saved in a new system", with an encrypted credential bundle left as "a possible later extension".
+    This re-scopes the finish line's "tested backup and restore of the database and the keychain items" to the application settings and bookmarks; job and audit history and the keychain items are out of scope, the keychain because carrying credentials across machines is the separate, security-sensitive choice that bundle would be.
+    [ADR 0098](../../adr/0098-settings-backup-and-restore.md) carries the design.
+
+34. The durability residual's end-to-end measurement — a desktop start recovering from an abrupt in-flight crash, measured through the real binary — is deferred to nearer 1.0.0.
+    The operator's words: "defer, I'll come back to it later, we can patch it if it doesn't work as expected down the track, but it is feature complete for now".
+    The crash-recovery behaviour is implemented and component-tested (ADR 0088 slice 2 and the startup FailInterrupted), and the fsync and power-loss limits are recorded; what is deferred is the measurement receipt, not missing behaviour.
+
+35. Support diagnostics are the native About dialog plus a levelled application log the operator enables out of band, in lieu of a packaged diagnostics bundle.
+    The operator's words: "I don't want diagnostic bundle for now, just about is fine" and "we need to be able to enable logging with various levels of debug, info, warn, error ... that will be very handy to work out where problems are".
+    [ADR 0099](../../adr/0099-application-log.md) carries the log, which never records credentials.
+
+None of these decisions closes a finding, changes a production gate or lifts the valuable-data hold.
+
 ## Six production gates
 
 | Gate | Existing packages | Completion condition |
