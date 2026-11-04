@@ -206,6 +206,44 @@ it("shows no provenance note for a settings record without origins", async () =>
   expect(config).not.toContain("from profile");
 });
 
+it("marks a job with no recorded settings as not recorded, not defaults", async () => {
+  const { row } = await show({ ...job("copy"), settings: "" });
+  row.querySelector<HTMLButtonElement>(".details")!.click();
+  flushSync();
+  const config = text(row, ".config");
+  expect(config).toContain("settingsnot recorded");
+  expect(config).not.toContain("defaults");
+});
+
+it("marks an unreadable settings record as not recorded", async () => {
+  const { row } = await show({ ...job("copy"), settings: "{not valid json" });
+  row.querySelector<HTMLButtonElement>(".details")!.click();
+  flushSync();
+  const config = text(row, ".config");
+  expect(config).toContain("settingsnot recorded");
+  expect(config).not.toContain("defaults");
+});
+
+it("shows defaults when a settings record carries no non-default values", async () => {
+  const { row } = await show({ ...job("copy"), settings: '{"transfers":0,"checkers":0}' });
+  row.querySelector<HTMLButtonElement>(".details")!.click();
+  flushSync();
+  const config = text(row, ".config");
+  expect(config).toContain("settingsdefaults");
+  expect(config).not.toContain("not recorded");
+});
+
+it("marks a settings record whose value cannot be displayed as not recorded", async () => {
+  // Parses and is a top-level object, but String() on the field throws; the
+  // record is unreadable, so expanding the job must show not recorded, not crash.
+  const { row } = await show({ ...job("copy"), settings: '{"transfers":{"toString":null}}' });
+  row.querySelector<HTMLButtonElement>(".details")!.click();
+  flushSync();
+  const config = text(row, ".config");
+  expect(config).toContain("settingsnot recorded");
+  expect(config).not.toContain("defaults");
+});
+
 it.each(["running", "complete"])("keeps unknown rate and later rate/ETA qualification for %s Copy", async (state) => {
   const { browser, row } = await show(job("copy", state));
   expect(browser.jobRates["presentation-job"]).toBeUndefined();

@@ -298,21 +298,40 @@
     }
   }
 
-  function settingsRows(job: JobDTO): SettingRow[] {
+  type SettingsView =
+    | { kind: "rows"; rows: SettingRow[] }
+    | { kind: "defaults" }
+    | { kind: "unavailable" };
+
+  // A job records its effective configuration as JSON, or "" when it carries
+  // none (internal/jobs §45). Three states are distinguished so a record that
+  // is absent or unreadable is never shown as if the job deliberately ran with
+  // defaults (P28: empty versus unavailable must be distinct).
+  function settingsView(job: JobDTO): SettingsView {
+    if (job.settings.trim() === "") {
+      return { kind: "unavailable" };
+    }
+    // Parsing and formatting stay under one fallback: a value that parses but
+    // cannot be rendered (for example a field whose String() throws) is an
+    // unreadable record, not a defaults run, and must not break the view.
     try {
-      const parsed = JSON.parse(job.settings);
-      const origins = (parsed.origins ?? {}) as Record<string, string>;
-      const rows: SettingRow[] = Object.entries(parsed)
+      const parsed: unknown = JSON.parse(job.settings);
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        return { kind: "unavailable" };
+      }
+      const fields = parsed as Record<string, unknown>;
+      const origins = (fields.origins ?? {}) as Record<string, string>;
+      const rows: SettingRow[] = Object.entries(fields)
         .filter(([k, v]) => k !== "origins" && v !== "" && v !== 0)
         .map(([k, v]) => ({ key: k, value: String(v), origin: settingOriginNote(origins[k]) }));
       // The child's per-transfer buffers are the memory to reason about
       // (ADR 0074 decision 3): transfers × buffer size, when both are known.
-      if (typeof parsed.transfers === "number" && parsed.transfers > 0 && typeof parsed.bufferSize === "string" && parsed.bufferSize !== "") {
-        rows.push({ key: "child buffers", value: `${parsed.transfers} × ${parsed.bufferSize}`, origin: "" });
+      if (typeof fields.transfers === "number" && fields.transfers > 0 && typeof fields.bufferSize === "string" && fields.bufferSize !== "") {
+        rows.push({ key: "child buffers", value: `${fields.transfers} × ${fields.bufferSize}`, origin: "" });
       }
-      return rows;
+      return rows.length === 0 ? { kind: "defaults" } : { kind: "rows", rows };
     } catch {
-      return [];
+      return { kind: "unavailable" };
     }
   }
 
@@ -783,16 +802,20 @@
                   </p>
                 {/if}
                 {#if expanded === job.id}
+                  {@const view = settingsView(job)}
                   <div class="config num">
                     <span class="config-row"><span class="k">engine</span><span class="type-mono">{job.engine}</span></span>
                     {#if !job.counters.deletionAccountingIncomplete}
                       <span class="config-row"><span class="k">verified</span><span>{job.counters.objectsVerified}</span></span>
                     {/if}
-                    {#each settingsRows(job) as row (row.key)}
-                      <span class="config-row"><span class="k">{row.key}</span><span class="type-mono">{row.value}</span>{#if row.origin}<span class="origin">{row.origin}</span>{/if}</span>
-                    {/each}
-                    {#if settingsRows(job).length === 0}
+                    {#if view.kind === "rows"}
+                      {#each view.rows as row (row.key)}
+                        <span class="config-row"><span class="k">{row.key}</span><span class="type-mono">{row.value}</span>{#if row.origin}<span class="origin">{row.origin}</span>{/if}</span>
+                      {/each}
+                    {:else if view.kind === "defaults"}
                       <span class="config-row"><span class="k">settings</span><span>defaults</span></span>
+                    {:else}
+                      <span class="config-row"><span class="k">settings</span><span>not recorded</span></span>
                     {/if}
                   </div>
                   {#key job.id}<JobItems {browser} {job} />{/key}
