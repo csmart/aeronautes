@@ -2,12 +2,12 @@
   "schemaVersion": 1,
   "reportSchemaVersion": 3,
   "identity": {
-    "commit": "aabbfa00532d3170a0c5f24d4cb030d6f0c3a6d3",
+    "commit": "ff6dce799a6b440665609122135d3328edede546",
     "go_version": "go1.27.3",
-    "run_id": "41640321681",
+    "run_id": "41782003381",
     "run_attempt": "1"
   },
-  "contractHash": "4b36aeee9fee9331",
+  "contractHash": "2e5700b792f1701b",
   "actions": [
     {
       "action": "AppService.About",
@@ -55,6 +55,14 @@
     {
       "action": "BackupService.ExportSettings",
       "kind": "read",
+      "required": [
+        "happy",
+        "refusal"
+      ]
+    },
+    {
+      "action": "BackupService.ImportSettings",
+      "kind": "mutate",
       "required": [
         "happy",
         "refusal"
@@ -528,6 +536,14 @@
       "scenario": "refusal"
     },
     {
+      "action": "BackupService.ImportSettings",
+      "scenario": "happy"
+    },
+    {
+      "action": "BackupService.ImportSettings",
+      "scenario": "refusal"
+    },
+    {
       "action": "BookmarkService.CredentialStatus",
       "scenario": "happy"
     },
@@ -821,10 +837,10 @@
     }
   ],
   "evidence": {
-    "reference": "docs/experiments/2026-11-03-backup-export-baseline.md",
-    "mainReportSHA256": "e8d709ed5b65aca09d0de2e2f43ba3c1858ba329b01673dcadc41e448776ccb4",
-    "mainReceiptSHA256": "114cf1150722a7c6fc99e75a25687b4b980466b4edd950c7481a2c38e42d96e1",
-    "heavyReportSHA256": "e91df965cb49a740f659d07055a0d75891881560cc3778345ad26084136cb11c",
-    "heavyReceiptSHA256": "a18e68842c25d82b43c64a78a72d15451f4f4c8a8dd71d472dd23c66ee9b52cc"
+    "reference": "docs/experiments/2026-11-04-settings-restore-baseline.md",
+    "mainReportSHA256": "68c1b9fd121ba0d016cf652270ac4ba52549abe375e5ed47b218ef85b7eebfb1",
+    "mainReceiptSHA256": "b1b9831284c2c01fbd6e85e6f6d4ed4f988737fe31972ccd4535f4ffa507a011",
+    "heavyReportSHA256": "f34923f7c60d4bb17be7c460f187fe3773ee6f7816d27a735650d1286c454c56",
+    "heavyReceiptSHA256": "92fdc449b14fcb3cbf3ff5e24b5c5173e564db66da05a06cbb9eeaa3bf4b6e34"
   }
 }
