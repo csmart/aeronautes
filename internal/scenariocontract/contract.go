@@ -142,6 +142,10 @@ var inventory = map[string]Action{
 	// The §51/P28 settings export writes the operator's configuration to a
 	// file they choose; it reads config and writes a file, gating nothing.
 	"BackupService.ExportSettings": {Kind: Read, Scenarios: []string{"happy", "refusal"}},
+	// The restore reads a chosen file and merges the operator's
+	// configuration — creating bookmarks and replacing settings, never
+	// deleting or overwriting — so it is a mutate.
+	"BackupService.ImportSettings": {Kind: Mutate, Scenarios: []string{"happy", "refusal"}},
 	// TransferService
 	"TransferService.PlanCopy":          {Kind: Read},
 	"TransferService.PreflightUpload":   {Kind: Read},

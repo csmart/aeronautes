@@ -60,7 +60,10 @@ func TestEveryBridgeActionIsClassified(t *testing.T) {
 		"AuditService.ExportAudit": true,
 		// The §51/P28 settings export writes config to a local file; it
 		// gates nothing and lifts nothing, so it is kept.
-		"BackupService.ExportSettings":     true,
+		"BackupService.ExportSettings": true,
+		// The settings restore merges backed-up configuration; it gates and
+		// lifts nothing, so it is kept.
+		"BackupService.ImportSettings":     true,
 		"BenchmarkService.Latest":          true,
 		"BookmarkService.CredentialStatus": true, "BookmarkService.Delete": true,
 		"BookmarkService.List": true, "BookmarkService.Save": true,

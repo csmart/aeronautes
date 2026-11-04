@@ -2,10 +2,8 @@ package app
 
 import (
 	"context"
-	"crypto/x509"
 	"database/sql"
 	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"os"
@@ -14,6 +12,7 @@ import (
 
 	"github.com/csmart/aeronautes/internal/bookmarks"
 	"github.com/csmart/aeronautes/internal/db"
+	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
 
 // backupSchemaVersion is the on-disk format version of a settings backup
@@ -55,6 +54,21 @@ type BackupResultDTO struct {
 	FileName      string `json:"fileName"`
 }
 
+// RestoreResultDTO reports a restore's outcome: whether the application
+// settings were replaced, how many bookmarks were created or skipped because
+// an identical configuration was already present, and how many could not be
+// confirmed. Complete is false when a bookmark failed or is unresolved, so the
+// shell can show what landed and what remains rather than a dropped error.
+type RestoreResultDTO struct {
+	SettingsApplied     bool   `json:"settingsApplied"`
+	BookmarksTotal      int    `json:"bookmarksTotal"`
+	BookmarksCreated    int    `json:"bookmarksCreated"`
+	BookmarksSkipped    int    `json:"bookmarksSkipped"`
+	BookmarksUnresolved int    `json:"bookmarksUnresolved"`
+	Complete            bool   `json:"complete"`
+	Detail              string `json:"detail"`
+}
+
 // dbQuerier is the read surface shared by the pooled reader and a read
 // transaction, so the backup can take both its projections from one
 // consistent snapshot.
@@ -62,12 +76,13 @@ type dbQuerier interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
-// settingsReader is the slice of SettingsService the backup needs: the
-// application settings, read through a caller-supplied querier so they share
-// the backup's snapshot. A small consumer interface keeps the backup testable
-// without the whole settings service.
-type settingsReader interface {
+// settingsPort is the slice of SettingsService the backup needs: reading the
+// application settings through a caller-supplied querier, so the export shares
+// its snapshot, and replacing them on a restore. A small consumer interface
+// keeps the backup testable without the whole settings service.
+type settingsPort interface {
 	getFrom(ctx context.Context, q dbQuerier) (AppSettingsDTO, error)
+	Set(ctx context.Context, settings AppSettingsDTO) (AppSettingsDTO, error)
 }
 
 // BackupService exports the operator's configuration to a file they choose
@@ -76,7 +91,7 @@ type settingsReader interface {
 type BackupService struct {
 	db        *db.DB
 	bookmarks *bookmarks.Store
-	settings  settingsReader
+	settings  settingsPort
 	picker    FilePicker
 }
 
@@ -84,7 +99,7 @@ type BackupService struct {
 // store and a settings reader. The database is used only to take one
 // read-transaction snapshot of the configuration; a file picker is wired
 // separately by the shell.
-func NewBackupService(database *db.DB, store *bookmarks.Store, settings settingsReader) *BackupService {
+func NewBackupService(database *db.DB, store *bookmarks.Store, settings settingsPort) *BackupService {
 	return &BackupService{db: database, bookmarks: store, settings: settings}
 }
 
@@ -134,7 +149,7 @@ func (s *BackupService) ExportSettings(ctx context.Context) (*BackupResultDTO, e
 			Username:           r.Username,
 			StorageURLOverride: r.StorageURLOverride,
 			TLSMode:            r.TLSMode,
-			CACertPEM:          certificatesOnly(r.CACertPEM),
+			CACertPEM:          string(bookmarks.CertificatesOnly([]byte(r.CACertPEM))),
 			PerformanceProfile: r.PerformanceProfile,
 			SegmentPlacement:   r.SegmentPlacement,
 			ChunkSizeBytes:     r.ChunkSizeBytes,
@@ -201,31 +216,106 @@ func createExclusivePart(dir, base, ext string) (*os.File, string, error) {
 	return nil, "", fmt.Errorf("could not create a new backup file in the chosen folder")
 }
 
-// certificatesOnly re-encodes PEM input keeping only its CERTIFICATE blocks,
-// dropping a private key or any other block type a stored CA bundle might
-// hold, so the default backup cannot carry a secret. It is the export
-// boundary's guarantee that trust material travels and nothing else does.
-func certificatesOnly(stored string) string {
-	var out []byte
-	rest := []byte(stored)
-	for {
-		block, remaining := pem.Decode(rest)
-		if block == nil {
-			break
-		}
-		rest = remaining
-		// Match the trust loader, which ignores a block that is not a bare
-		// CERTIFICATE, that carries PEM headers, or whose bytes are not a real
-		// X.509 certificate. Exporting only what the loader would accept keeps
-		// the backup's trust set identical to the one on record and stops a
-		// private key mislabelled CERTIFICATE from travelling.
-		if block.Type != "CERTIFICATE" || len(block.Headers) != 0 {
-			continue
-		}
-		if _, err := x509.ParseCertificate(block.Bytes); err != nil {
-			continue
-		}
-		out = append(out, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: block.Bytes})...)
+// ImportSettings restores the operator's configuration from a backup file
+// they choose (ADR 0098). It validates the whole file before it changes
+// anything — refusing a schema version it does not understand, a malformed
+// bookmark, or a CA bundle carrying anything but bare certificates, so a bad
+// file applies nothing and no key reaches trust storage — then replaces the
+// application settings and merges each bookmark by its complete
+// configuration, creating one not already present and leaving an existing one
+// untouched. It carries no credential, so restored bookmarks need their
+// passwords re-entered, and it never starts a transfer, touches a remote, or
+// deletes anything.
+// A pre-apply refusal and an ordinary cancellation both return no result: an
+// error for the refusal, nil for a cancelled picker. Once settings are
+// applied a later bookmark problem is a partial restore, not a failure, so the
+// outcome is carried in the result — what landed, what remains, and anything
+// unconfirmed — rather than an error the bridge would drop. A re-run is safe
+// because the merge is by identity.
+func (s *BackupService) ImportSettings(ctx context.Context) (*RestoreResultDTO, error) {
+	if s.picker == nil {
+		return nil, errors.New("no file picker available (headless shell)")
 	}
-	return string(out)
+	files, err := s.picker.PickFiles("Choose a settings backup to restore")
+	if err != nil || len(files) == 0 {
+		// An empty choice with no error is an ordinary cancellation.
+		return nil, err
+	}
+	raw, err := os.ReadFile(files[0])
+	if err != nil {
+		return nil, err
+	}
+	var doc SettingsBackupDTO
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return nil, fmt.Errorf("this file is not a valid settings backup: %w", err)
+	}
+	if doc.SchemaVersion != backupSchemaVersion {
+		return nil, fmt.Errorf("unsupported backup version %d; this build restores version %d", doc.SchemaVersion, backupSchemaVersion)
+	}
+
+	// Validate the whole file before any effect: a malformed bookmark, or a CA
+	// bundle that holds anything but bare certificates, refuses the restore
+	// rather than applying part of it or storing non-trust material. The
+	// canonical certificate bytes validated here are the ones stored.
+	type pending struct {
+		mark  bookmarks.Bookmark
+		caPEM []byte
+	}
+	marks := make([]pending, 0, len(doc.Bookmarks))
+	for i, bm := range doc.Bookmarks {
+		mark := bookmarks.Bookmark{
+			DisplayName:        bm.DisplayName,
+			AuthURL:            bm.AuthURL,
+			Username:           bm.Username,
+			StorageURLOverride: bm.StorageURLOverride,
+			TLSMode:            swiftcontrol.TLSMode(bm.TLSMode),
+			PerformanceProfile: bm.PerformanceProfile,
+			SegmentPlacement:   bookmarks.SegmentPlacement(bm.SegmentPlacement),
+			ChunkSizeBytes:     bm.ChunkSizeBytes,
+		}
+		if err := bookmarks.Validate(mark); err != nil {
+			return nil, fmt.Errorf("bookmark %d (%q): %w", i+1, bm.DisplayName, err)
+		}
+		var caPEM []byte
+		if mark.TLSMode == swiftcontrol.TLSModeCustomCA {
+			caPEM, err = bookmarks.CanonicalCACertificates([]byte(bm.CACertPEM))
+			if err != nil {
+				return nil, fmt.Errorf("bookmark %d (%q): %w", i+1, bm.DisplayName, err)
+			}
+		}
+		marks = append(marks, pending{mark: mark, caPEM: caPEM})
+	}
+
+	result := &RestoreResultDTO{BookmarksTotal: len(marks)}
+	if _, err := s.settings.Set(ctx, doc.AppSettings); err != nil {
+		// Set can fail at its commit boundary after the new settings were
+		// applied, so this is an uncertain outcome, not a proved refusal.
+		// Report it and stop before touching bookmarks; the shell reloads the
+		// settings to show whatever landed rather than writing a stale
+		// document over it. SettingsApplied stays false because it is not
+		// confirmed, and Complete stays false.
+		result.Detail = "the settings could not be confirmed; reload to see what was applied"
+		return result, nil
+	}
+	result.SettingsApplied = true
+	for i, p := range marks {
+		outcome, err := s.bookmarks.ImportBookmark(ctx, p.mark, p.caPEM)
+		switch {
+		case err == nil && outcome == bookmarks.ImportCreated:
+			result.BookmarksCreated++
+		case err == nil && outcome == bookmarks.ImportSkipped:
+			result.BookmarksSkipped++
+		case outcome == bookmarks.ImportUnresolved:
+			// The commit reply was lost; the row may or may not be present.
+			// Report it and stop, since a further insert could duplicate it.
+			result.BookmarksUnresolved++
+			result.Detail = fmt.Sprintf("bookmark %d (%q) could not be confirmed; reload when local state is available", i+1, p.mark.DisplayName)
+			return result, nil
+		default:
+			result.Detail = fmt.Sprintf("bookmark %d (%q) could not be restored: %v; re-run to finish", i+1, p.mark.DisplayName, err)
+			return result, nil
+		}
+	}
+	result.Complete = true
+	return result, nil
 }
