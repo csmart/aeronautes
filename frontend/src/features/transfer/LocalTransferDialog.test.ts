@@ -58,10 +58,11 @@ function show(mode: Mode) {
     else dirs[index].resolve({ token: "dir-" + index, dir: "chosen directory " + index });
     await settle();
   };
-  const resolvePreflight = async (index = 0, reject = false, warning = false) => {
+  const resolvePreflight = async (index = 0, reject = false, warning = false, largeObjects = false) => {
     const problems = reject || warning ? [{ name: "a.txt", kind: "collision", detail: "reported issue", reject }] : [];
     if (mode === "upload") uploads[index].resolve({
       items: [{ path: "", name: "selected/a.txt", size: 5, route: "rclone" }], problems, totalBytes: 5,
+      largeObjectsAsDlo: largeObjects,
     });
     else downloads[index].resolve({
       itemSamples: [{ name: "selected/a.txt", relPath: "a.txt", size: 5, route: "rclone", dir: false }],
@@ -375,9 +376,29 @@ it("discloses a truncated warning sample without rebuilding the count from it", 
   expect(f.startButton()?.disabled).toBe(false);
 });
 
+it("names the destination large-object placement for an upload that segments", async () => {
+  const f = show("upload");
+  await f.reach("preflight");
+  await f.resolvePreflight(0, false, false, true);
+  expect(f.root.querySelector(".note")?.textContent).toContain("destination DLOs");
+});
+
+it("omits the large-object note when no selected file would segment", async () => {
+  const f = show("upload");
+  await f.reach("ready");
+  expect(f.root.querySelector(".note")).toBeNull();
+  expect(f.root.textContent).not.toContain("destination DLOs");
+});
+
+it("never shows the large-object note for a download", async () => {
+  const f = show("download");
+  await f.reach("ready");
+  expect(f.root.querySelector(".note")).toBeNull();
+});
+
 it.each(["upload", "download"] as const)("forwards the complete captured %s request without rebuilding its scope", async (mode) => {
   const api = newFakeApi();
-  api.preflightUpload = vi.fn().mockResolvedValue({ items: [], problems: [], totalBytes: 0 });
+  api.preflightUpload = vi.fn().mockResolvedValue({ items: [], problems: [], totalBytes: 0, largeObjectsAsDlo: false });
   api.preflightDownload = vi.fn().mockResolvedValue({ itemSamples: [], problemSamples: [], totalBytes: 0, objects: 0, problemCount: 0, rejected: false });
   api.startUpload = vi.fn().mockResolvedValue("job"); api.startDownload = vi.fn().mockResolvedValue("job");
   const browser = new BrowserState(api);
@@ -447,7 +468,7 @@ describe("upload replacement", () => {
   async function resolveReplacing(f: Fixture) {
     f.uploads[1].resolve({
       items: [{ path: "", name: liveName, size: 5, route: "rclone", replaces: true }],
-      problems: [collision(false)], totalBytes: 5,
+      problems: [collision(false)], totalBytes: 5, largeObjectsAsDlo: false,
     });
     await settle();
   }
@@ -456,7 +477,7 @@ describe("upload replacement", () => {
     f.choose();
     await f.resolvePicker();
     f.uploads[0].resolve({
-      items: [], problems: [collision(true), ...extra], totalBytes: 0,
+      items: [], problems: [collision(true), ...extra], totalBytes: 0, largeObjectsAsDlo: false,
     });
     await settle();
     return f;

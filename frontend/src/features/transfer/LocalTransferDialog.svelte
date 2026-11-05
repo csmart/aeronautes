@@ -20,6 +20,7 @@
     objects?: number;
     problemCount?: number;
     rejected?: boolean;
+    largeObjectsAsDlo?: boolean;
   }
 
   let {
@@ -67,6 +68,11 @@
   const rejected = $derived(mode === "download" ? report?.rejected ?? false : report?.problems?.some((p) => p.reject) ?? false);
   const warnings = $derived(problemRows.filter((p) => !p.reject));
   const rejections = $derived(problemRows.filter((p) => p.reject));
+  // §63.8: name the destination large-object placement before Start, the way
+  // the copy preview does. The backend sets the flag when the selection holds a
+  // file the engine segments into a DLO; a refused upload writes nothing, so the
+  // note is moot there.
+  const placesLargeObjectsAsDlo = $derived(mode === "upload" && !rejected && (report?.largeObjectsAsDlo ?? false));
   const problemCount = $derived(mode === "download" ? report?.problemCount ?? 0 : problemRows.length);
   const truncated = $derived(mode === "download" && problemCount > problemRows.length);
 
@@ -249,6 +255,12 @@
             {mode === "download" ? ` → ${destDir}` : ""}
           </p>
         {/if}
+        {#if placesLargeObjectsAsDlo}
+          <p class="note">
+            Some files in this selection upload as destination DLOs — split into
+            segments whose reads depend on container-listing consistency.
+          </p>
+        {/if}
         {#if collisionsOnly}
           <p class="hint">
             {collisions.length === 1 ? "That name is" : "Those names are"} already in use at the
@@ -352,6 +364,12 @@
   .summary {
     margin: 0;
     font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+  }
+
+  .note {
+    margin: 0;
+    font-size: var(--text-xs);
     color: var(--color-text-secondary);
   }
 
