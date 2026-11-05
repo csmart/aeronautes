@@ -394,13 +394,62 @@ func (s *TransferService) uploadPreflight(ctx context.Context, req UploadRequest
 	if err != nil {
 		return nil, err
 	}
-	if _, err := req.Settings.forDestination(ctx, session); err != nil {
+	effective, err := req.Settings.forDestination(ctx, session)
+	if err != nil {
 		return nil, err
 	}
+	var report *local.UploadPreflight
 	if req.AcknowledgeOverwrite {
-		return local.PreflightUploadReplacing(ctx, session, req.Container, req.Prefix, paths)
+		report, err = local.PreflightUploadReplacing(ctx, session, req.Container, req.Prefix, paths)
+	} else {
+		report, err = local.PreflightUpload(ctx, session, req.Container, req.Prefix, paths)
 	}
-	return local.PreflightUpload(ctx, session, req.Container, req.Prefix, paths)
+	if err != nil {
+		return nil, err
+	}
+	// Name the destination large-object placement before Start, as the copy
+	// preview already does (§63.8): the engine uploads a file larger than the
+	// effective chunk size as a segmented DLO.
+	report.LargeObjectsAsDLO = uploadsLargeObject(report.Items, effective.ChunkSize)
+	return report, nil
+}
+
+// uploadsLargeObject reports whether any selected file will be uploaded as a
+// segmented destination DLO (§63.8): only the engine route segments, and only
+// a file larger than the effective --swift-chunk-size. A native-routed name is
+// one plain PutObject whatever its size, so it never counts.
+func uploadsLargeObject(items []local.UploadItem, chunkSize string) bool {
+	chunkBytes, ok := engineChunkBytes(chunkSize)
+	if !ok {
+		return false
+	}
+	for _, item := range items {
+		if item.Route == "rclone" && item.Size > chunkBytes {
+			return true
+		}
+	}
+	return false
+}
+
+// engineChunkBytes converts a --swift-chunk-size value to bytes the way the
+// pinned rclone does, so the preview names the same threshold execution uses.
+// rclone's SizeSuffix agrees with ParseSize on every unit suffix but reads a
+// bare number as KiB, not bytes; naming the placement with ParseSize's reading
+// would disclose the wrong threshold for a suffixless override. ParseSize stays
+// the admission and capping parser it already is.
+func engineChunkBytes(chunkSize string) (int64, bool) {
+	if chunkSize == "" {
+		return 0, false
+	}
+	normalized := chunkSize
+	if last := chunkSize[len(chunkSize)-1]; last >= '0' && last <= '9' {
+		normalized += "Ki" // a bare number is KiB to the engine, not bytes
+	}
+	bytes, err := ParseSize(normalized)
+	if err != nil || bytes <= 0 {
+		return 0, false
+	}
+	return bytes, true
 }
 
 // confirmOverwrite raises the one native confirmation that authorises

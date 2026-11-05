@@ -53,6 +53,12 @@ type UploadPreflight struct {
 	Items      []UploadItem `json:"items"`
 	Problems   []Problem    `json:"problems"`
 	TotalBytes int64        `json:"totalBytes"`
+	// LargeObjectsAsDLO discloses that the selection contains a file the
+	// engine will upload as a segmented destination DLO (§63.8), so the
+	// local dialog can name the placement the copy preview already names.
+	// The app-layer bridge fills it from the effective --swift-chunk-size;
+	// this package, which never resolves that size, leaves it false.
+	LargeObjectsAsDLO bool `json:"largeObjectsAsDlo"`
 }
 
 // Rejected reports whether any finding aborts the operation.
