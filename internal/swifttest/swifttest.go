@@ -184,18 +184,20 @@ type Server struct {
 	// serves defaultInfoJSON.
 	InfoJSON string
 
-	mu         sync.Mutex
-	containers map[string]*Container
-	requests   int
+	mu          sync.Mutex
+	containers  map[string]*Container
+	accountMeta map[string]string
+	requests    int
 }
 
 // New builds an empty cluster accepting the given TempAuth credentials.
 func New(user, key string) *Server {
 	return &Server{
-		user:       user,
-		key:        key,
-		token:      "AUTH_tk_swifttest_0000000000000001",
-		containers: map[string]*Container{},
+		user:        user,
+		key:         key,
+		token:       "AUTH_tk_swifttest_0000000000000001",
+		containers:  map[string]*Container{},
+		accountMeta: map[string]string{},
 	}
 }
 
@@ -405,6 +407,17 @@ func (s *Server) handleAccount(w http.ResponseWriter, r *http.Request) {
 		rows = append(rows, row{Name: name, Count: int64(len(c.objects)), Bytes: cb})
 	}
 	containerCount := len(s.containers)
+	if r.Method == http.MethodPost {
+		applyAccountHeaders(s, r)
+		s.mu.Unlock()
+		w.Header().Set("X-Trans-Id", "txswifttest-account-post")
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	metaCopy := make(map[string]string, len(s.accountMeta))
+	for k, v := range s.accountMeta {
+		metaCopy[k] = v
+	}
 	s.mu.Unlock()
 
 	h := w.Header()
@@ -412,6 +425,9 @@ func (s *Server) handleAccount(w http.ResponseWriter, r *http.Request) {
 	h.Set("X-Account-Object-Count", strconv.FormatInt(objects, 10))
 	h.Set("X-Account-Bytes-Used", strconv.FormatInt(bytes, 10))
 	h.Set("X-Trans-Id", "txswifttest-account")
+	for k, v := range metaCopy {
+		h.Set("X-Account-Meta-"+k, v)
+	}
 
 	if r.Method == http.MethodHead {
 		w.WriteHeader(http.StatusNoContent)
@@ -591,6 +607,33 @@ func applyContainerHeaders(c *Container, r *http.Request) {
 			c.VersionsLocation = ""
 		case key == "X-Remove-History-Location":
 			c.HistoryLocation = ""
+		}
+	}
+}
+
+// applyAccountHeaders applies a POST's additive account-metadata delta to
+// the stored account meta; the caller holds s.mu. It mirrors real Swift:
+// X-Account-Meta-<k> sets (empty value deletes) and X-Remove-Account-Meta-<k>
+// removes, so a TempURL key the delta never names simply survives.
+func applyAccountHeaders(s *Server, r *http.Request) {
+	if s.accountMeta == nil {
+		s.accountMeta = map[string]string{}
+	}
+	for key, values := range r.Header {
+		if len(values) == 0 {
+			continue
+		}
+		value := values[0]
+		switch {
+		case strings.HasPrefix(key, "X-Account-Meta-"):
+			metaKey := strings.TrimPrefix(key, "X-Account-Meta-")
+			if value == "" {
+				delete(s.accountMeta, metaKey)
+			} else {
+				s.accountMeta[metaKey] = value
+			}
+		case strings.HasPrefix(key, "X-Remove-Account-Meta-"):
+			delete(s.accountMeta, strings.TrimPrefix(key, "X-Remove-Account-Meta-"))
 		}
 	}
 }
