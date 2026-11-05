@@ -47,7 +47,7 @@ type AccountPortrait struct {
 func (s *Session) AccountPortrait(ctx context.Context) (*AccountPortrait, error) {
 	info, headers, err := s.conn.Account(ctx)
 	if err != nil {
-		return nil, Normalize(err)
+		return nil, WithTransID(Normalize(err), headers)
 	}
 	p := buildAccountPortrait(canonicalHeaders(headers), time.Now().UTC())
 	p.Containers = info.Containers
