@@ -2,12 +2,12 @@
   "schemaVersion": 1,
   "reportSchemaVersion": 3,
   "identity": {
-    "commit": "ff6dce799a6b440665609122135d3328edede546",
+    "commit": "01d62c5f72fcead79d69f843c0ccf80e6e143b05",
     "go_version": "go1.27.3",
-    "run_id": "41782003381",
+    "run_id": "42170704686",
     "run_attempt": "1"
   },
-  "contractHash": "2e5700b792f1701b",
+  "contractHash": "0f98572feed32ab8",
   "actions": [
     {
       "action": "AppService.About",
@@ -372,6 +372,15 @@
     {
       "action": "MutateService.DeleteObject",
       "kind": "destructive",
+      "required": [
+        "happy",
+        "refusal",
+        "conflict"
+      ]
+    },
+    {
+      "action": "MutateService.UpdateAccountMetadata",
+      "kind": "mutate",
       "required": [
         "happy",
         "refusal",
@@ -768,6 +777,18 @@
       "scenario": "refusal"
     },
     {
+      "action": "MutateService.UpdateAccountMetadata",
+      "scenario": "conflict"
+    },
+    {
+      "action": "MutateService.UpdateAccountMetadata",
+      "scenario": "happy"
+    },
+    {
+      "action": "MutateService.UpdateAccountMetadata",
+      "scenario": "refusal"
+    },
+    {
       "action": "MutateService.UpdateContainer",
       "scenario": "conflict"
     },
@@ -837,10 +858,10 @@
     }
   ],
   "evidence": {
-    "reference": "docs/experiments/2026-11-04-settings-restore-baseline.md",
-    "mainReportSHA256": "68c1b9fd121ba0d016cf652270ac4ba52549abe375e5ed47b218ef85b7eebfb1",
-    "mainReceiptSHA256": "b1b9831284c2c01fbd6e85e6f6d4ed4f988737fe31972ccd4535f4ffa507a011",
-    "heavyReportSHA256": "f34923f7c60d4bb17be7c460f187fe3773ee6f7816d27a735650d1286c454c56",
-    "heavyReceiptSHA256": "92fdc449b14fcb3cbf3ff5e24b5c5173e564db66da05a06cbb9eeaa3bf4b6e34"
+    "reference": "docs/experiments/2026-11-06-account-metadata-baseline.md",
+    "mainReportSHA256": "0bd9cee9117d4490147a026a443c9b8aa6236822a5fd1150e307a2f95f156673",
+    "mainReceiptSHA256": "e86c0a5a440b8ebfcd3f6ff20c5b326d3179689fd8aa35a85dfacd43bb9c51a4",
+    "heavyReportSHA256": "9992351b87651b5817c9de0342d1936a33fa0ff98e604f94e8b3a259507edb49",
+    "heavyReceiptSHA256": "30380b4af562f0eb56d3873d6316302488e8db1e2b1c183f51a2027b62762d3f"
   }
 }
