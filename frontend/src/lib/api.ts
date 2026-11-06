@@ -24,6 +24,7 @@ import type {
 } from "../../bindings/github.com/csmart/aeronautes/internal/transfer/local";
 import type {
   AccountDTO,
+  AccountEditDTO,
   AuditEventDTO,
   BookmarkDTO,
   CredentialStatusDTO,
@@ -62,6 +63,7 @@ import type {
 
 export type {
   AccountDTO,
+  AccountEditDTO,
   PickedDirDTO,
   PickedFilesDTO,
   SelectionScopeDTO,
@@ -172,6 +174,9 @@ export interface Api {
   verifyBookmark(bookmark: BookmarkDTO, secret: string): Promise<VerifyResultDTO>;
   deleteBookmark(id: string): Promise<void>;
   connect(bookmarkId: string): Promise<AccountDTO>;
+  /** Re-read the connected account's portrait under the current scope
+   * (ADR 0059), to refresh the working copy after a conflict. */
+  account(bookmarkId: string): Promise<AccountDTO>;
   containers(bookmarkId: string, marker: string, limit: number): Promise<ContainerPage>;
   objects(
     bookmarkId: string,
@@ -210,6 +215,11 @@ export interface Api {
     name: string,
     baseFingerprint: string,
     edit: ContainerEditDTO,
+  ): Promise<MutationResultDTO>;
+  updateAccountMetadata(
+    scope: ListingScope,
+    baseFingerprint: string,
+    edit: AccountEditDTO,
   ): Promise<MutationResultDTO>;
   createContainer(scope: ListingScope, create: ContainerCreateDTO): Promise<ContainerDetailDTO>;
   createMarker(scope: ListingScope, container: string, prefix: string): Promise<PrefixDetailDTO>;
@@ -282,6 +292,7 @@ export const liveApi: Api = {
   },
   deleteBookmark: (id) => BookmarkService.Delete(id),
   connect: (bookmarkId) => BrowseService.Connect(bookmarkId),
+  account: (bookmarkId) => BrowseService.Account(bookmarkId),
   containers: async (bookmarkId, marker, limit) => {
     const page = await BrowseService.Containers(bookmarkId, marker, limit);
     return { rows: page.rows ?? [], nextMarker: page.nextMarker, effectiveLimit: page.effectiveLimit, scope: page.scope };
@@ -304,6 +315,8 @@ export const liveApi: Api = {
     MutateService.UpdateObjectMetadata(scope, container, name, baseFingerprint, edit),
   updateContainer: (scope, name, baseFingerprint, edit) =>
     MutateService.UpdateContainer(scope, name, baseFingerprint, edit),
+  updateAccountMetadata: (scope, baseFingerprint, edit) =>
+    MutateService.UpdateAccountMetadata(scope, baseFingerprint, edit),
   createContainer: (scope, create) => MutateService.CreateContainer(scope, create),
   createMarker: (scope, container, prefix) => MutateService.CreateMarker(scope, container, prefix),
   deleteMarker: (scope, container, prefix, contentFingerprint) =>

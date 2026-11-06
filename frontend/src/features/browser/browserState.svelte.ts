@@ -6,6 +6,7 @@
 import { isLiteralPlainObject } from "../../lib/objectKind";
 import type {
   AccountDTO,
+  AccountEditDTO,
   AppSettingsDTO,
   RestoreResultDTO,
   CopyPlanDTO,
@@ -222,6 +223,10 @@ export class BrowserState {
   #bookmarkChanges = new Map<string, number>();
   connectError: string | null = $state(null);
   account: AccountDTO | null = $state(null);
+  /** The last account reload's failure, surfaced by the editor's reload
+   * path; cleared on a successful account read or save (mirrors
+   * containerDetailError). */
+  accountError: string | null = $state(null);
   /** Connect-time §10 capability snapshot; null until connected. */
   capabilities: CapabilitiesDTO | null = $state(null);
   /** Selected §50 query results; background Recent reads stay separate. */
@@ -462,6 +467,7 @@ export class BrowserState {
   #detailScope = -1;
   #containerDetailSeq = 0;
   #containerDetailConnection = -1;
+  #accountSeq = 0;
   #listSeq = 0;
   #entriesPage = $state.raw<PageRequest | null>(null);
   #entriesPageError = $state.raw<(PageRequest & { message: string }) | null>(null);
@@ -520,6 +526,8 @@ export class BrowserState {
     this.#connectionRevision++;
     this.connectedBookmarkId = null;
     this.account = null;
+    this.accountError = null;
+    this.#accountSeq++;
     this.capabilities = null;
     this.connectError = null;
     this.#containersSeq++;
@@ -2045,6 +2053,69 @@ export class BrowserState {
     }
     await this.loadAudit();
     return result;
+  }
+
+  /** True while scope and the account-request sequence still name the
+   * operation that started: a later save or reload supersedes an in-flight
+   * one, so its stale reply cannot replace the current working-copy
+   * baseline (the sequence check the container reader uses). */
+  #currentAccount(scope: number, seq: number): boolean {
+    return !this.connecting && scope === this.#scopeRevision && seq === this.#accountSeq;
+  }
+
+  /** Save an account metadata and quota edit for the connected account.
+   * The write names the account's own scope (ADR 0079) and hands back the
+   * fingerprint the portrait was read under, so a change since the read is
+   * refused as a conflict rather than overwritten (§18). It takes the
+   * account-request sequence, so a reload still in flight cannot overwrite
+   * the verified after-state once it resolves, and adopts the after-state
+   * only when it names this connection's generation. */
+  async saveAccountMetadata(edit: AccountEditDTO, force = false): Promise<MutationResultDTO> {
+    const account = this.account;
+    const bookmarkId = this.connectedBookmarkId;
+    if (!account || this.connecting || !bookmarkId) {
+      throw new Error("no connected account — reconnect before editing");
+    }
+    const scope = this.#scopeRevision;
+    const seq = ++this.#accountSeq;
+    const portrait = this.#portrait();
+    const base = force ? "" : account.editableFingerprint;
+    const result = await this.#api.updateAccountMetadata(account.scope, base, edit);
+    if (this.#currentAccount(scope, seq) && result.outcome === "applied" && result.accountAfter
+      && this.#readerScopeMatches(result.accountAfter.scope, bookmarkId, portrait)) {
+      this.account = result.accountAfter;
+      this.accountError = null;
+    }
+    await this.loadAudit();
+    return result;
+  }
+
+  /** Re-read the connected account's portrait to refresh the working copy
+   * after a conflict. The reply must name the same connection generation
+   * the read started under — a reconnect moved through the bridge elsewhere
+   * is reported, not adopted beside the older capabilities and listings —
+   * and a save or newer reload that started since supersedes it. Returns
+   * whether the portrait was refreshed; a failure is kept in accountError
+   * for the editor to show. */
+  async refreshAccount(): Promise<boolean> {
+    const bookmarkId = this.connectedBookmarkId;
+    if (!bookmarkId || this.connecting) return false;
+    const scope = this.#scopeRevision;
+    const seq = ++this.#accountSeq;
+    const portrait = this.#portrait();
+    let failure: string | null = null;
+    const fresh = await this.#api.account(bookmarkId).catch((err) => {
+      failure = messageOf(err);
+      return null;
+    });
+    if (!this.#currentAccount(scope, seq)) return false;
+    if (fresh && this.#readerScopeMatches(fresh.scope, bookmarkId, portrait)) {
+      this.account = fresh;
+      this.accountError = null;
+      return true;
+    }
+    this.accountError = failure ?? "the account portrait does not match this connection and was not shown; reconnect and try again";
+    return false;
   }
 
   /** Re-fetch the selected row's detail (after a conflict, say). */

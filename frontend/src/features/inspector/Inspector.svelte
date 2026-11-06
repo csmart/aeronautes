@@ -8,6 +8,7 @@
 import { isLink } from "../browser/browserState.svelte";
   import ObjectEditPanel from "./ObjectEditPanel.svelte";
   import ContainerEditPanel from "./ContainerEditPanel.svelte";
+  import AccountEditPanel from "./AccountEditPanel.svelte";
 
   let { browser }: { browser: BrowserState } = $props();
 
@@ -18,6 +19,7 @@ import { isLink } from "../browser/browserState.svelte";
 
   let editingObject = $state(false);
   let editingContainer = $state(false);
+  let editingAccount = $state(false);
   let markerBusy = $state(false);
   let markerError: string | null = $state(null);
   let alive = true;
@@ -29,6 +31,7 @@ import { isLink } from "../browser/browserState.svelte";
     void browser.scopeRevision;
     editingObject = false;
     editingContainer = false;
+    editingAccount = false;
     markerError = null;
     markerBusy = false;
   });
@@ -471,13 +474,18 @@ import { isLink } from "../browser/browserState.svelte";
           : "none",
       )}
     </section>
-    {#if sortedEntries(browser.account.meta).length > 0}
-      <section class="card">
-        <h3 class="card-title">Account metadata</h3>
-        {#each sortedEntries(browser.account.meta) as [key, value] (key)}
-          {@render kv(key, value)}
-        {/each}
-      </section>
+    {#if editingAccount}
+      <AccountEditPanel {browser} account={browser.account} onDone={() => (editingAccount = false)} />
+    {:else}
+      {#if sortedEntries(browser.account.meta).length > 0}
+        <section class="card">
+          <h3 class="card-title">Account metadata</h3>
+          {#each sortedEntries(browser.account.meta) as [key, value] (key)}
+            {@render kv(key, value)}
+          {/each}
+        </section>
+      {/if}
+      <button class="edit-btn" onclick={() => (editingAccount = true)}>Edit metadata</button>
     {/if}
   {:else}
     <header class="head">

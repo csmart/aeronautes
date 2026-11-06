@@ -103,8 +103,10 @@ const pairs: Pair[] = [
   ["selected insecure bookmark warning", "BookmarkRail.svelte", ".insecure-flag", ".bookmark.active"],
   ["object conflict force action", "ObjectEditPanel.svelte", "button.danger", ".banner.conflict"],
   ["container conflict force action", "ContainerEditPanel.svelte", "button.danger", ".banner.conflict"],
+  ["account conflict force action", "AccountEditPanel.svelte", "button.danger", ".banner.conflict"],
   ["object reload action", "ObjectEditPanel.svelte", "button", "button"],
   ["container reload action", "ContainerEditPanel.svelte", "button", "button"],
+  ["account reload action", "AccountEditPanel.svelte", "button", "button"],
 ];
 
 // Every current inset or semantic soft-fill rule has an explicit text owner.
@@ -126,6 +128,8 @@ const softSurfaces: [file: string, selector: string, foreground?: string][] = [
   ["WorkingList.svelte", ".public-banner"],
   ["ContainerEditPanel.svelte", ".banner.conflict"],
   ["ContainerEditPanel.svelte", ".banner.mismatch"],
+  ["AccountEditPanel.svelte", ".banner.conflict"],
+  ["AccountEditPanel.svelte", ".banner.mismatch"],
   ["Inspector.svelte", ".raw"],
   ["ManifestDeleteDialog.svelte", ".keeps.warn"],
   ["ManifestDeleteDialog.svelte", ".error"],
@@ -180,6 +184,7 @@ describe("production theme and surface inventory", () => {
     ["BookmarkRail.svelte", ".badge.plus"],
     ["ObjectEditPanel.svelte", "button.danger"],
     ["ContainerEditPanel.svelte", "button.danger"],
+    ["AccountEditPanel.svelte", "button.danger"],
   ])("retains the checked transparent override in %s %s", (file, selector) => {
     expect(style(file, selector).background).toMatch(/^(none|transparent)$/);
   });
