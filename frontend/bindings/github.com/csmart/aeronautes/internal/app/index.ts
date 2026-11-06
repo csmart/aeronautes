@@ -37,6 +37,7 @@ export {
 export type {
     About,
     AccountDTO,
+    AccountEditDTO,
     AppSettingsDTO,
     AuditEventDTO,
     AuditQueryDTO,

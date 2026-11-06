@@ -104,7 +104,11 @@ func TestEveryBridgeActionIsClassified(t *testing.T) {
 		"TransferService.RerunJob":           true,
 		"MutateService.UpdateContainer":      true,
 		"MutateService.UpdateObjectMetadata": true,
-		"SettingsService.Get":                true, "SettingsService.Set": true,
+		// Account metadata writing joins container and object metadata
+		// writing in the v1 scope of metadata reading and writing: a
+		// bounded, verified, reversible edit, not a deferred capability.
+		"MutateService.UpdateAccountMetadata": true,
+		"SettingsService.Get":                 true, "SettingsService.Set": true,
 		"TransferService.CancelJob": true, "TransferService.PickDownloadDir": true,
 		"TransferService.PreflightDownload": true, "TransferService.StartDownload": true,
 	}
@@ -159,6 +163,7 @@ func TestKeptActionsAreNotRefused(t *testing.T) {
 		"TransferService.CancelJob",
 		"MutateService.UpdateObjectMetadata",
 		"MutateService.UpdateContainer",
+		"MutateService.UpdateAccountMetadata",
 		"MutateService.CreateContainer",
 		"BrowseService.Containers",
 		"InspectorService.Object",

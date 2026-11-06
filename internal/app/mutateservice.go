@@ -557,3 +557,121 @@ func grantsPublicRead(acl string) bool {
 	}
 	return false
 }
+
+// errAccountMetadataResidue is returned when the outcome could not be
+// recorded after a write whose effect on the store is not known to be
+// absent: the POST either applied or was left unverified. The wording
+// stays uncertain because accountMetadataPosted treats an unverified POST
+// as residue too, so claiming the POST succeeded would overstate an
+// unknown effect (§49, ADR 0062).
+var errAccountMetadataResidue = errors.New("account metadata write residue: the account may have changed and the outcome could not be recorded")
+
+// UpdateAccountMetadata applies a complete account metadata edit (§53),
+// mirroring the container and object metadata editors: a bound snapshot,
+// a recorded intent, the verified adapter write, and a recorded outcome.
+// The reserved-key and TempURL-secret guards live in the adapter.
+func (s *MutateService) UpdateAccountMetadata(ctx context.Context, scope ListingScopeDTO, baseFingerprint string, edit AccountEditDTO) (MutationResultDTO, error) {
+	if err := s.occupy(); err != nil {
+		return MutationResultDTO{}, err
+	}
+	defer s.writers.leave()
+	entry, bookmarkID, _, err := s.boundSnapshot(ctx, scope)
+	if err != nil {
+		return MutationResultDTO{}, err
+	}
+	adapterEdit := swiftcontrol.AccountEdit{Meta: edit.Meta, QuotaBytes: edit.QuotaBytes}
+
+	identity, err := mutationfacts.NewIdentity()
+	if err != nil {
+		return MutationResultDTO{}, err
+	}
+	if err := s.facts.RecordIntent(ctx, mutationfacts.Intent{
+		Identity:   identity,
+		BookmarkID: bookmarkID,
+		Operation:  "account.metadata.update",
+		Resource:   "account",
+	}); err != nil {
+		return MutationResultDTO{}, err
+	}
+
+	result, err := entry.session.UpdateAccount(ctx, baseFingerprint, adapterEdit)
+	outcome, auditRes, summary, transIDs := accountMetadataFact(result, err, edit)
+	if recErr := s.recordAccountOutcome(ctx, identity, bookmarkID, outcome, auditRes, summary, transIDs); recErr != nil {
+		if accountMetadataPosted(result, err) {
+			return MutationResultDTO{}, fmt.Errorf("%w: identity %s: %v", errAccountMetadataResidue, identity, recErr)
+		}
+		return MutationResultDTO{}, recErr
+	}
+	if err != nil {
+		if errors.Is(err, swiftcontrol.ErrUnverifiedAccountWrite) {
+			return MutationResultDTO{}, fmt.Errorf("%w: identity %s", swiftcontrol.ErrUnverifiedAccountWrite, identity)
+		}
+		return MutationResultDTO{}, err
+	}
+	dto := MutationResultDTO{
+		Outcome:  string(result.Outcome),
+		Mismatch: result.Mismatch,
+		TransIDs: result.TransIDs,
+	}
+	if result.After != nil {
+		after := accountDTO(result.After, scope, entry.session.StorageURL())
+		dto.AccountAfter = &after
+	}
+	return dto, nil
+}
+
+func (s *MutateService) recordAccountOutcome(ctx context.Context, identity, bookmarkID string, outcome mutationfacts.Outcome, result audit.Result, summary string, transIDs []string) error {
+	return s.facts.RecordOutcome(ctx, identity, outcome, summary, transIDs, func(tx *sql.Tx) error {
+		return s.audit.AppendTx(ctx, tx, audit.Event{
+			BookmarkID: bookmarkID,
+			Operation:  "account.metadata.update",
+			Resource:   "account",
+			Summary:    summary,
+			Result:     result,
+			TransIDs:   transIDs,
+		})
+	})
+}
+
+func accountMetadataPosted(result *swiftcontrol.AccountUpdateResult, err error) bool {
+	if errors.Is(err, swiftcontrol.ErrUnverifiedAccountWrite) {
+		return true
+	}
+	if result == nil {
+		return false
+	}
+	switch result.Outcome {
+	case swiftcontrol.UpdateApplied, swiftcontrol.UpdateVerifyMismatch, swiftcontrol.UpdateUnverified:
+		return true
+	}
+	return false
+}
+
+func accountMetadataFact(result *swiftcontrol.AccountUpdateResult, err error, edit AccountEditDTO) (mutationfacts.Outcome, audit.Result, string, []string) {
+	summary := fmt.Sprintf("set %d account metadata keys", len(edit.Meta))
+	if edit.QuotaBytes > 0 {
+		summary += fmt.Sprintf(", quota %d bytes", edit.QuotaBytes)
+	}
+	var transIDs []string
+	if result != nil {
+		transIDs = result.TransIDs
+	}
+	if errors.Is(err, swiftcontrol.ErrUnverifiedAccountWrite) || (result != nil && result.Outcome == swiftcontrol.UpdateUnverified) {
+		return mutationfacts.OutcomeUnverified, audit.ResultUnverified, "account write unverified; " + summary, transIDs
+	}
+	if result == nil {
+		return mutationfacts.OutcomeFailed, audit.ResultFailed, "account metadata update failed", nil
+	}
+	switch result.Outcome {
+	case swiftcontrol.UpdateApplied:
+		return mutationfacts.OutcomeApplied, audit.ResultApplied, summary, transIDs
+	case swiftcontrol.UpdateConflict:
+		return mutationfacts.OutcomeConflict, audit.ResultConflict, summary, transIDs
+	case swiftcontrol.UpdateVerifyMismatch:
+		return mutationfacts.OutcomeVerifyMismatch, audit.ResultVerifyMismatch, summary, transIDs
+	}
+	// Every posted outcome (applied, verify-mismatch) and the unverified
+	// case are returned above, so anything left is a write that did not
+	// reach the store.
+	return mutationfacts.OutcomeFailed, audit.ResultFailed, "account metadata update failed", transIDs
+}

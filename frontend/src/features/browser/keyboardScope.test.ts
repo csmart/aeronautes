@@ -6,7 +6,7 @@ import { newFakeApi } from "./fakeApi";
 import BrowserScreen from "./BrowserScreen.svelte";
 import AboutDialog from "./AboutDialog.svelte";
 import ManifestDeleteDialog from "../inspector/ManifestDeleteDialog.svelte";
-const applied: MutationResultDTO = { outcome: "applied", mismatch: "", limitation: "", transIds: ["txfake", "txfake"], objectAfter: null, containerAfter: null };
+const applied: MutationResultDTO = { outcome: "applied", mismatch: "", limitation: "", transIds: ["txfake", "txfake"], objectAfter: null, containerAfter: null, accountAfter: null };
 
 const api = vi.hoisted(() => ({} as Api));
 vi.mock("../../lib/api", () => ({ liveApi: api }));

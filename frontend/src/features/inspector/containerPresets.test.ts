@@ -35,7 +35,7 @@ async function show(readAcl = "", meta: Record<string, string> = { Keep: "untouc
   const browser = new BrowserState(api);
   browser.connectedBookmarkId = "source";
   browser.account = { name: "AUTH_source", containers: 1, objects: 1, bytesUsed: 0,
-    quotaBytes: 0, meta: {}, tempUrlKeySlots: [], scope: { bookmarkId: "source", generation: 1 } };
+    quotaBytes: 0, meta: {}, tempUrlKeySlots: [], scope: { bookmarkId: "source", generation: 1 }, editableFingerprint: "" };
   await browser.loadContainers();
   await browser.openContainer("fixtures");
   browser.containerDetail = { ...browser.containerDetail!, meta, readAcl };

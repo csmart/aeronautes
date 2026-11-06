@@ -31,7 +31,7 @@ async function show(kind: "object" | "container") {
   const browser = new BrowserState(api);
   browser.connectedBookmarkId = "source";
   browser.account = { name: "AUTH_source", containers: 1, objects: 1, bytesUsed: 0,
-    quotaBytes: 0, meta: {}, tempUrlKeySlots: [], scope: { bookmarkId: "source", generation: 1 } };
+    quotaBytes: 0, meta: {}, tempUrlKeySlots: [], scope: { bookmarkId: "source", generation: 1 }, editableFingerprint: "" };
   await browser.loadContainers();
   await browser.openContainer("fixtures");
   if (kind === "object") browser.select(browser.entries.findIndex((e) => e.name === "empty-object"));
@@ -56,7 +56,7 @@ it.each(["object", "container"] as const)("an obsolete %s save cannot close a ne
   await settle();
   button(f.root, label).click(); flushSync();
   expect([...f.root.querySelectorAll(".card-title")].some((title) => title.textContent?.trim() === label)).toBe(true);
-  old.resolve({ outcome: "applied", objectAfter: object, containerAfter: container, mismatch: "", limitation: "", transIds: [] });
+  old.resolve({ outcome: "applied", objectAfter: object, containerAfter: container, accountAfter: null, mismatch: "", limitation: "", transIds: [] });
   await settle();
   expect([...f.root.querySelectorAll("button")].some((b) => b.textContent?.trim() === "Save")).toBe(true);
 });
@@ -95,6 +95,7 @@ async function showEditor(kind: Kind) {
     outcome, mismatch: outcome === "verify_mismatch" ? "current mismatch" : "", limitation: "", transIds: [],
     objectAfter: outcome === "applied" ? f.browser.objectDetail : null,
     containerAfter: outcome === "applied" ? f.browser.containerDetail : null,
+    accountAfter: null,
   });
   const click = (label: string) => { button(root, label).dispatchEvent(new MouseEvent("click", { bubbles: true })); flushSync(); };
   return { ...f, root, done, component, replies, mutate, result, click };

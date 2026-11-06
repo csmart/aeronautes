@@ -335,6 +335,7 @@ export function newFakeApi(): Api {
         quotaBytes: 0,
         meta: accountFixture.meta,
         tempUrlKeySlots: ["Temp-Url-Key"],
+        editableFingerprint: JSON.stringify(accountFixture.meta),
       };
     },
 
@@ -451,7 +452,7 @@ export function newFakeApi(): Api {
       }
       if (baseFingerprint !== "" && baseFingerprint !== objectFingerprint(container, name)) {
         record("object.metadata.update", `${container}/${name}`, "conflict");
-        return { outcome: "conflict", mismatch: "", limitation: "", transIds: ["txfake"], objectAfter: null, containerAfter: null };
+        return { outcome: "conflict", mismatch: "", limitation: "", transIds: ["txfake"], objectAfter: null, containerAfter: null, accountAfter: null };
       }
       objectMeta[`${container}/${name}`] = cleanMap(edit.meta);
       if (edit.contentType !== "") {
@@ -469,6 +470,7 @@ export function newFakeApi(): Api {
         transIds: ["txfake", "txfake", "txfake"],
         objectAfter: objectDetailOf(container, name),
         containerAfter: null,
+        accountAfter: null,
       };
     },
 
@@ -486,7 +488,7 @@ export function newFakeApi(): Api {
       }
       if (baseFingerprint !== "" && baseFingerprint !== containerFingerprint(name)) {
         record("container.update", name, "conflict");
-        return { outcome: "conflict", mismatch: "", limitation: "", transIds: ["txfake"], objectAfter: null, containerAfter: null };
+        return { outcome: "conflict", mismatch: "", limitation: "", transIds: ["txfake"], objectAfter: null, containerAfter: null, accountAfter: null };
       }
       const s = stateOf(name);
       s.meta = cleanMap(edit.meta);
@@ -511,6 +513,7 @@ export function newFakeApi(): Api {
           ...containerDetailOf(name),
           settings: connectedScope ? rememberSettings(name, connectedScope.bookmarkId) : deriveSettings(name, 0),
         },
+        accountAfter: null,
       };
     },
 
@@ -576,7 +579,7 @@ export function newFakeApi(): Api {
       }
       objects[container] = objects[container].filter((o) => o.name !== prefix);
       record("marker.delete", `${container}/${prefix}`, "applied");
-      return { outcome: "applied", mismatch: "", limitation: "", transIds: ["txfake", "txfake"], objectAfter: null, containerAfter: null };
+      return { outcome: "applied", mismatch: "", limitation: "", transIds: ["txfake", "txfake"], objectAfter: null, containerAfter: null, accountAfter: null };
     },
 
     dloSegments: async (manifest, bookmarkId) => {
@@ -628,7 +631,7 @@ export function newFakeApi(): Api {
       }
       objects[container] = (objects[container] ?? []).filter((o) => o.name !== name);
       record("manifest.delete", `${container}/${name}`, "applied");
-      return { outcome: "applied", mismatch: "", limitation: "", transIds: ["txfake", "txfake"], objectAfter: null, containerAfter: null };
+      return { outcome: "applied", mismatch: "", limitation: "", transIds: ["txfake", "txfake"], objectAfter: null, containerAfter: null, accountAfter: null };
     },
 
     deleteObject: async (scope, container, name, contentFingerprint): Promise<MutationResultDTO> => {
@@ -651,7 +654,7 @@ export function newFakeApi(): Api {
       }
       objects[container] = (objects[container] ?? []).filter((o) => o.name !== name);
       record("object.delete", `${container}/${name}`, "applied");
-      return { outcome: "applied", mismatch: "", limitation: "", transIds: ["txfake", "txfake"], objectAfter: null, containerAfter: null };
+      return { outcome: "applied", mismatch: "", limitation: "", transIds: ["txfake", "txfake"], objectAfter: null, containerAfter: null, accountAfter: null };
     },
 
     auditRecent: async (limit, bookmarkId) => {

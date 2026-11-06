@@ -53,7 +53,7 @@ async function show() {
   const browser = new BrowserState(api);
   browser.connectedBookmarkId = "source";
   browser.account = { name: "AUTH_source", containers: 1, objects: 2, bytesUsed: 1,
-    quotaBytes: 0, meta: {}, tempUrlKeySlots: [], scope };
+    quotaBytes: 0, meta: {}, tempUrlKeySlots: [], scope, editableFingerprint: "" };
   await browser.openContainer("fixtures");
   browser.select(0);
   await settle();
@@ -86,6 +86,7 @@ function mutation(f: Fixture, kind: Mutation, label: string) {
     outcome: "applied", mismatch: "", limitation: "", transIds: [label],
     objectAfter: { ...f.object, name: "empty-object", meta: { Completion: label } },
     containerAfter: { ...f.container, name: "fixtures", meta: { Completion: label } },
+    accountAfter: null,
   };
   const task = kind === "object" ? f.browser.saveObjectMetadata(objectEdit)
     : kind === "container" ? f.browser.saveContainer(containerEdit) : f.browser.createMarker("implied/");
@@ -292,7 +293,7 @@ it.each(["object", "container"] as const)("preserves current %s conflict and mis
     const f = await show();
     await prepare(f, kind);
     const before = portrait(f, kind);
-    const result: MutationResultDTO = { outcome, objectAfter: null, containerAfter: null, mismatch: "changed", limitation: "", transIds: ["tx-result"] };
+    const result: MutationResultDTO = { outcome, objectAfter: null, containerAfter: null, accountAfter: null, mismatch: "changed", limitation: "", transIds: ["tx-result"] };
     f.api.updateObjectMetadata = vi.fn().mockResolvedValue(result);
     f.api.updateContainer = vi.fn().mockResolvedValue(result);
     const actual = kind === "object" ? await f.browser.saveObjectMetadata(objectEdit) : await f.browser.saveContainer(containerEdit);
@@ -421,6 +422,7 @@ it.each(["object", "container", "marker"] as const)("does not publish a current 
   const wrong: MutationResultDTO = {
     outcome: "applied", mismatch: "", limitation: "", transIds: ["tx-wrong"],
     objectAfter: { ...f.object, name: "wrong" }, containerAfter: { ...f.container, name: "wrong" },
+    accountAfter: null,
   };
   f.api.updateObjectMetadata = vi.fn().mockResolvedValue(wrong);
   f.api.updateContainer = vi.fn().mockResolvedValue(wrong);

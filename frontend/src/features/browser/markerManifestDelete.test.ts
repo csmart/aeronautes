@@ -37,7 +37,7 @@ function button(label: string, root: ParentNode = document): HTMLButtonElement {
   return found;
 }
 function click(element: HTMLElement) { element.click(); flushSync(); }
-const applied: MutationResultDTO = { outcome: "applied", mismatch: "", limitation: "", transIds: ["tx", "tx2"], objectAfter: null, containerAfter: null };
+const applied: MutationResultDTO = { outcome: "applied", mismatch: "", limitation: "", transIds: ["tx", "tx2"], objectAfter: null, containerAfter: null, accountAfter: null };
 
 async function state(name: string) {
   const fake = newFakeApi();
