@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { BrowserState } from "./browserState.svelte";
 import { newFakeApi } from "./fakeApi";
-import type { AppSettingsDTO, BookmarkDTO } from "../../lib/api";
+import type { AccountDTO, AppSettingsDTO, BookmarkDTO } from "../../lib/api";
 
 function bookmark(): BookmarkDTO {
   return {
@@ -640,5 +640,99 @@ describe("rail width persistence", () => {
     release(settings);
     await reading;
     await vi.waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ railWidthPx: 120 })));
+  });
+});
+
+describe("account metadata editing (§65.2)", () => {
+  it("saves an account metadata and quota working copy and refreshes state", async () => {
+    const s = await connected();
+    const edit = { meta: { ...s.account!.meta, Team: "storage" }, quotaBytes: 5_000_000 };
+    const result = await s.saveAccountMetadata(edit);
+    expect(result.outcome).toBe("applied");
+    expect(s.account?.meta?.Team).toBe("storage");
+    expect(s.account?.meta?.["Book-Owner"]).toBe("ops-team");
+    expect(s.account?.quotaBytes).toBe(5_000_000);
+    expect(s.recentAuditEvents[0]?.operation).toBe("account.metadata.update");
+  });
+
+  it("conflicts on a stale account fingerprint and applies with force", async () => {
+    const s = await connected();
+    s.account = { ...s.account!, editableFingerprint: "stale" };
+    const edit = { meta: { Only: "mine" }, quotaBytes: 0 };
+
+    const refused = await s.saveAccountMetadata(edit);
+    expect(refused.outcome).toBe("conflict");
+    expect(s.account?.meta?.Only).toBeUndefined();
+
+    const forced = await s.saveAccountMetadata(edit, true);
+    expect(forced.outcome).toBe("applied");
+    expect(s.account?.meta?.Only).toBe("mine");
+  });
+
+  it("refuses a TempURL secret-slot key before any write", async () => {
+    const s = await connected();
+    await expect(
+      s.saveAccountMetadata({ meta: { "Temp-URL-Key": "leak" }, quotaBytes: 0 }),
+    ).rejects.toThrow(/TempURL/);
+    expect(s.account?.meta?.["Book-Owner"]).toBe("ops-team");
+  });
+
+  it("refreshAccount re-reads the portrait under the current scope", async () => {
+    const s = await connected();
+    await s.saveAccountMetadata({ meta: { ...s.account!.meta, Peer: "keep" }, quotaBytes: 0 });
+    s.account = { ...s.account!, meta: {}, editableFingerprint: "stale" };
+    await s.refreshAccount();
+    expect(s.account?.meta?.Peer).toBe("keep");
+  });
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((yes) => { resolve = yes; });
+  return { promise, resolve };
+}
+
+describe("account reload safety (§65.2)", () => {
+  it("does not adopt a portrait from a different connection generation", async () => {
+    const api = newFakeApi();
+    const s = await connected(api);
+    const gen = s.account!.scope.generation;
+    const before = s.account;
+    // A reconnect elsewhere answers the reload under a newer generation.
+    api.account = vi.fn(async (bookmarkId: string): Promise<AccountDTO> => ({
+      ...before!, scope: { bookmarkId, generation: gen + 1 }, meta: { Elsewhere: "yes" },
+    }));
+    const ok = await s.refreshAccount();
+    expect(ok).toBe(false);
+    expect(s.account).toBe(before);
+    expect(s.account?.meta?.Elsewhere).toBeUndefined();
+    expect(s.accountError).toMatch(/reconnect/i);
+  });
+
+  it("keeps a newer save's result when an older reload resolves late", async () => {
+    const api = newFakeApi();
+    const s = await connected(api);
+    const slow = deferred<AccountDTO>();
+    api.account = vi.fn(() => slow.promise);
+    const reloading = s.refreshAccount();
+    const saved = await s.saveAccountMetadata({ meta: { ...s.account!.meta, Team: "storage" }, quotaBytes: 0 });
+    expect(saved.outcome).toBe("applied");
+    expect(s.account?.meta?.Team).toBe("storage");
+    // The older reload resolves after the save; it must not roll the state back.
+    slow.resolve({ ...s.account!, meta: { Stale: "old" }, editableFingerprint: "old" });
+    expect(await reloading).toBe(false);
+    expect(s.account?.meta?.Team).toBe("storage");
+    expect(s.account?.meta?.Stale).toBeUndefined();
+  });
+
+  it("reports a reload failure instead of silently keeping the old portrait", async () => {
+    const api = newFakeApi();
+    const s = await connected(api);
+    const before = s.account;
+    api.account = vi.fn().mockRejectedValue(new Error("account HEAD failed: 503"));
+    const ok = await s.refreshAccount();
+    expect(ok).toBe(false);
+    expect(s.account).toBe(before);
+    expect(s.accountError).toMatch(/503/);
   });
 });

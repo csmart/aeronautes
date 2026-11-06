@@ -77,6 +77,7 @@ export function newFakeApi(): Api {
 
   // Instance copies: mutations must not leak into the shared fixtures.
   const containers = containersFixture.map((c) => ({ ...c }));
+  const accountState = { meta: { ...accountFixture.meta }, quotaBytes: accountFixture.quotaBytes };
   const objects: Record<string, FixtureObject[]> = Object.fromEntries(
     Object.entries(fixtureObjects).map(([name, list]) => [name, list.map((o) => ({ ...o }))]),
   );
@@ -147,6 +148,23 @@ export function newFakeApi(): Api {
       result,
       transIds: ["txfake"],
     });
+  }
+
+  function accountFingerprint(): string {
+    return JSON.stringify({ meta: accountState.meta, quotaBytes: accountState.quotaBytes });
+  }
+  function accountPortrait(scope: ListingScope) {
+    return {
+      scope: { ...scope },
+      name: accountFixture.name,
+      containers: containers.length,
+      objects: accountFixture.objects,
+      bytesUsed: accountFixture.bytes,
+      quotaBytes: accountState.quotaBytes,
+      meta: { ...accountState.meta },
+      tempUrlKeySlots: ["Temp-Url-Key"],
+      editableFingerprint: accountFingerprint(),
+    };
   }
 
   function findObject(container: string, name: string): FixtureObject | undefined {
@@ -326,17 +344,15 @@ export function newFakeApi(): Api {
         throw new Error("no credential on record");
       }
       connectedScope = readScope(bookmarkId);
-      return {
-        scope: { ...connectedScope },
-        name: accountFixture.name,
-        containers: containers.length,
-        objects: accountFixture.objects,
-        bytesUsed: accountFixture.bytes,
-        quotaBytes: 0,
-        meta: accountFixture.meta,
-        tempUrlKeySlots: ["Temp-Url-Key"],
-        editableFingerprint: JSON.stringify(accountFixture.meta),
-      };
+      return accountPortrait(connectedScope);
+    },
+
+    account: async (bookmarkId) => {
+      const scope = connectedScope;
+      if (!bookmarkId || scope === null || scope.bookmarkId !== bookmarkId) {
+        throw new Error("not connected");
+      }
+      return accountPortrait(scope);
     },
 
     capabilities: async (bookmarkId) => {
@@ -515,6 +531,27 @@ export function newFakeApi(): Api {
         },
         accountAfter: null,
       };
+    },
+
+    updateAccountMetadata: async (scope, baseFingerprint, edit): Promise<MutationResultDTO> => {
+      requireWriteScope(scope);
+      for (const key of Object.keys(edit.meta ?? {})) {
+        const lower = key.toLowerCase();
+        if (lower.startsWith("temp-url-key")) {
+          throw new Error(`account metadata key "${key}" is a TempURL secret slot and cannot be set through the metadata editor`);
+        }
+        if (lower === "quota-bytes") {
+          throw new Error(`account metadata key "${key}" is the account quota; set QuotaBytes rather than a metadata entry`);
+        }
+      }
+      if (baseFingerprint !== "" && baseFingerprint !== accountFingerprint()) {
+        record("account.metadata.update", "account", "conflict");
+        return { outcome: "conflict", mismatch: "", limitation: "", transIds: ["txfake"], objectAfter: null, containerAfter: null, accountAfter: null };
+      }
+      accountState.meta = cleanMap(edit.meta);
+      accountState.quotaBytes = Math.max(edit.quotaBytes, 0);
+      record("account.metadata.update", "account", "applied");
+      return { outcome: "applied", mismatch: "", limitation: "", transIds: ["txfake", "txfake"], objectAfter: null, containerAfter: null, accountAfter: accountPortrait(scope) };
     },
 
     createContainer: async (scope, create) => {
