@@ -61,6 +61,24 @@ export interface AccountDTO {
     "quotaBytes": number;
     "meta": { [_ in string]?: string } | null;
     "tempUrlKeySlots": string[] | null;
+
+    /**
+     * EditableFingerprint is the working-copy base for §18 conflict
+     * detection on an account metadata edit: hand it back with the edit so
+     * the write refuses a stale base rather than overwriting a change made
+     * since the account was read.
+     */
+    "editableFingerprint": string;
+}
+
+/**
+ * AccountEditDTO states the complete intended editable account surface
+ * (§53): the plain user metadata and the quota. TempURL key slots are
+ * secrets, refused in Meta rather than carried here.
+ */
+export interface AccountEditDTO {
+    "meta": { [_ in string]?: string } | null;
+    "quotaBytes": number;
 }
 
 /**
@@ -1114,6 +1132,12 @@ export interface MutationResultDTO {
      */
     "objectAfter": ObjectDetailDTO | null;
     "containerAfter": ContainerDetailDTO | null;
+
+    /**
+     * AccountAfter carries the verified post-write account state (nil
+     * otherwise, and nil on conflict).
+     */
+    "accountAfter": AccountDTO | null;
 }
 
 /**

@@ -59,6 +59,11 @@ type AccountDTO struct {
 	QuotaBytes      int64             `json:"quotaBytes"`
 	Meta            map[string]string `json:"meta"`
 	TempURLKeySlots []string          `json:"tempUrlKeySlots"`
+	// EditableFingerprint is the working-copy base for §18 conflict
+	// detection on an account metadata edit: hand it back with the edit so
+	// the write refuses a stale base rather than overwriting a change made
+	// since the account was read.
+	EditableFingerprint string `json:"editableFingerprint"`
 }
 
 // ContainerRowDTO is one container listing row. Class is the §24
@@ -217,6 +222,14 @@ type ObjectMetadataEditDTO struct {
 	DeleteAt string `json:"deleteAt"`
 }
 
+// AccountEditDTO states the complete intended editable account surface
+// (§53): the plain user metadata and the quota. TempURL key slots are
+// secrets, refused in Meta rather than carried here.
+type AccountEditDTO struct {
+	Meta       map[string]string `json:"meta"`
+	QuotaBytes int64             `json:"quotaBytes"`
+}
+
 // ContainerEditDTO states the complete intended editable surface of a
 // container (§18, §19, §21).
 type ContainerEditDTO struct {
@@ -257,6 +270,9 @@ type MutationResultDTO struct {
 	// conflict).
 	ObjectAfter    *ObjectDetailDTO    `json:"objectAfter"`
 	ContainerAfter *ContainerDetailDTO `json:"containerAfter"`
+	// AccountAfter carries the verified post-write account state (nil
+	// otherwise, and nil on conflict).
+	AccountAfter *AccountDTO `json:"accountAfter"`
 }
 
 // AuditEventDTO is one §50 audit-trail row.

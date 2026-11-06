@@ -70,6 +70,16 @@ export function DeleteObject(scope: $models.ListingScopeDTO, container: string, 
 }
 
 /**
+ * UpdateAccountMetadata applies a complete account metadata edit (§53),
+ * mirroring the container and object metadata editors: a bound snapshot,
+ * a recorded intent, the verified adapter write, and a recorded outcome.
+ * The reserved-key and TempURL-secret guards live in the adapter.
+ */
+export function UpdateAccountMetadata(scope: $models.ListingScopeDTO, baseFingerprint: string, edit: $models.AccountEditDTO): $CancellablePromise<$models.MutationResultDTO> {
+    return $Call.ByID(3975921592, scope, baseFingerprint, edit);
+}
+
+/**
  * UpdateContainer applies a complete container edit (§18, §19, §21).
  */
 export function UpdateContainer(scope: $models.ListingScopeDTO, name: string, baseFingerprint: string, edit: $models.ContainerEditDTO): $CancellablePromise<$models.MutationResultDTO> {

@@ -7,7 +7,7 @@ import { newFakeApi } from "../browser/fakeApi";
 import CreateContainerDialog from "../browser/CreateContainerDialog.svelte";
 import ManifestDeleteDialog from "./ManifestDeleteDialog.svelte";
 import Inspector from "./Inspector.svelte";
-const applied: MutationResultDTO = { outcome: "applied", mismatch: "", limitation: "", transIds: ["txfake", "txfake"], objectAfter: null, containerAfter: null };
+const applied: MutationResultDTO = { outcome: "applied", mismatch: "", limitation: "", transIds: ["txfake", "txfake"], objectAfter: null, containerAfter: null, accountAfter: null };
 
 function deferred<T>() {
   let resolve!: (value: T) => void;

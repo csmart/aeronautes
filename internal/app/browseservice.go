@@ -45,6 +45,13 @@ func (s *BrowseService) Account(ctx context.Context, bookmarkID string) (Account
 		return AccountDTO{}, err
 	}
 	storageURL := session.StorageURL()
+	return accountDTO(p, scope, storageURL), nil
+}
+
+// accountDTO renders an account portrait as the bridge DTO under a scope.
+// It is the one place a portrait becomes an AccountDTO, shared by the
+// account read and the account metadata edit's verified after-state.
+func accountDTO(p *swiftcontrol.AccountPortrait, scope ListingScopeDTO, storageURL string) AccountDTO {
 	return AccountDTO{
 		Scope:           scope,
 		Name:            storageURL[strings.LastIndex(storageURL, "/")+1:],
@@ -54,7 +61,9 @@ func (s *BrowseService) Account(ctx context.Context, bookmarkID string) (Account
 		QuotaBytes:      p.QuotaBytes,
 		Meta:            p.Meta,
 		TempURLKeySlots: p.TempURLKeySlots,
-	}, nil
+
+		EditableFingerprint: p.EditableFingerprint,
+	}
 }
 
 // Capabilities returns the connect-time capability snapshot (§10) the
