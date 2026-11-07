@@ -39,6 +39,17 @@ type Config struct {
 	// host, so a burst of reads and scans cannot open them without bound
 	// (ADR 0074 decision 4); zero means DefaultMaxConnsPerHost.
 	MaxConnsPerHost int
+	// AuthVersion selects the auth protocol: 0 or 1 is TempAuth v1 (the
+	// default), 3 is Keystone v3. New rejects any other value.
+	AuthVersion int
+	// Keystone v3 (AuthVersion 3) identity for the password method with
+	// project scope — the minimal first cut. Username/APIKey carry the
+	// user and password; these name the user's domain and the project the
+	// token is scoped to. The identity catalog, not an override, selects
+	// the storage endpoint, so StorageURLOverride is rejected for v3.
+	UserDomain    string
+	ProjectName   string
+	ProjectDomain string
 }
 
 // DefaultMaxConnsPerHost is the per-host connection cap a session gets
@@ -50,9 +61,10 @@ const DefaultMaxConnsPerHost = 16
 type Session struct {
 	conn *swift.Connection
 	tls  TLSConfig
-	// auth is the v1 authenticator preset on conn — the source of the
-	// atomic credential snapshot Session reads (review R-06).
-	auth *v1Auth
+	// auth is the authenticator preset on conn (v1Auth for TempAuth,
+	// guardedAuth for Keystone v3) — the source of the atomic credential
+	// snapshot Session reads (review R-06).
+	auth snapshotAuth
 	// raw serves the requests the wire library has no verb for (bulk
 	// delete): the SAME bookmark transport (custom CA / insecure), no
 	// redirect following (a redirect would resend X-Auth-Token wherever
@@ -94,14 +106,38 @@ func New(cfg Config) (*Session, error) {
 		transport = requestAdmissionTransport{inner: transport, admit: cfg.AdmitRequest}
 	}
 	const userAgent = "aeronautes"
-	auth := &v1Auth{
-		authURL:   cfg.AuthURL,
-		username:  cfg.Username,
-		apiKey:    cfg.APIKey,
-		userAgent: userAgent,
-		tlsMode:   cfg.TLS.Mode,
-		override:  cfg.StorageURLOverride,
+	conn := &swift.Connection{
+		AuthUrl:   cfg.AuthURL,
+		UserName:  cfg.Username,
+		ApiKey:    cfg.APIKey,
+		UserAgent: userAgent,
+		Transport: transport,
 	}
+	var auth snapshotAuth
+	switch cfg.AuthVersion {
+	case 0, 1:
+		conn.AuthVersion = 1
+		auth = &v1Auth{
+			authURL:   cfg.AuthURL,
+			username:  cfg.Username,
+			apiKey:    cfg.APIKey,
+			userAgent: userAgent,
+			tlsMode:   cfg.TLS.Mode,
+			override:  cfg.StorageURLOverride,
+		}
+	case 3:
+		if cfg.StorageURLOverride != "" {
+			return nil, errors.New("storage URL override is not supported for Keystone v3; the identity catalog selects the endpoint by interface and region")
+		}
+		conn.AuthVersion = 3
+		conn.Domain = cfg.UserDomain
+		conn.Tenant = cfg.ProjectName
+		conn.TenantDomain = cfg.ProjectDomain
+		auth = newGuardedV3Auth(cfg.AuthURL, cfg.TLS.Mode)
+	default:
+		return nil, fmt.Errorf("unsupported auth version %d", cfg.AuthVersion)
+	}
+	conn.Auth = auth
 	return &Session{
 		auth:          auth,
 		tls:           cfg.TLS,
@@ -114,15 +150,7 @@ func New(cfg Config) (*Session, error) {
 				return errors.New("redirect refused: native Swift calls never follow one (the token must not travel)")
 			},
 		},
-		conn: &swift.Connection{
-			AuthUrl:     cfg.AuthURL,
-			UserName:    cfg.Username,
-			ApiKey:      cfg.APIKey,
-			AuthVersion: 1,
-			UserAgent:   userAgent,
-			Transport:   transport,
-			Auth:        auth,
-		},
+		conn: conn,
 	}, nil
 }
 
