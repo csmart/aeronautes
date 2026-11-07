@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Object is one stored object's listable/HEADable state.
@@ -183,6 +184,11 @@ type Server struct {
 	// InfoJSON overrides the /info document (set before serving); ""
 	// serves defaultInfoJSON.
 	InfoJSON string
+	// V3StorageEndpoint overrides the object-store endpoint URL the mock
+	// Keystone v3 catalog advertises; "" derives it from the request host
+	// (this same server). A test sets it to a public http URL to exercise
+	// the client's storage-URL gate on the catalog's choice.
+	V3StorageEndpoint string
 
 	mu          sync.Mutex
 	containers  map[string]*Container
@@ -304,6 +310,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.handleAuth(w, r)
 		return
 	}
+	if ep == "/v3/auth/tokens" {
+		s.handleV3Auth(w, r)
+		return
+	}
 	if ep == "/info" {
 		w.Header().Set("Content-Type", "application/json")
 		info := s.InfoJSON
@@ -376,6 +386,75 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Storage-Url", scheme+"://"+r.Host+accountPath)
 	w.Header().Set("X-Auth-Token", s.token)
 	w.WriteHeader(http.StatusOK)
+}
+
+// handleV3Auth is a minimal Keystone v3 identity endpoint (POST
+// /v3/auth/tokens): it checks the password-method credentials, then
+// returns the subject token and a service catalog whose object-store
+// public endpoint is this mock's own account, so a v3-authenticated
+// client then talks to the same server. V3StorageEndpoint overrides that
+// endpoint, which a test uses to exercise the client's storage-URL gate.
+// The token is the same one TempAuth issues, so the ordinary X-Auth-Token
+// check accepts the client's subsequent requests.
+func (s *Server) handleV3Auth(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Auth struct {
+			Identity struct {
+				Password struct {
+					User struct {
+						Name     string `json:"name"`
+						Password string `json:"password"`
+					} `json:"user"`
+				} `json:"password"`
+			} `json:"identity"`
+		} `json:"auth"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	user := body.Auth.Identity.Password.User
+	if user.Name != s.user || user.Password != s.key {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	storageURL := s.V3StorageEndpoint
+	if storageURL == "" {
+		storageURL = scheme + "://" + r.Host + accountPath
+	}
+	type endpoint struct {
+		Interface string `json:"interface"`
+		Region    string `json:"region"`
+		URL       string `json:"url"`
+	}
+	type service struct {
+		Type      string     `json:"type"`
+		Endpoints []endpoint `json:"endpoints"`
+	}
+	var reply struct {
+		Token struct {
+			ExpiresAt string    `json:"expires_at"`
+			Catalog   []service `json:"catalog"`
+		} `json:"token"`
+	}
+	reply.Token.ExpiresAt = time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+	reply.Token.Catalog = []service{{
+		Type:      "object-store",
+		Endpoints: []endpoint{{Interface: "public", Region: "RegionOne", URL: storageURL}},
+	}}
+	payload, err := json.Marshal(reply)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("X-Subject-Token", s.token)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_, _ = w.Write(payload)
 }
 
 func (s *Server) handleAccount(w http.ResponseWriter, r *http.Request) {
