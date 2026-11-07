@@ -60,6 +60,10 @@ func (st *Store) ImportBookmark(ctx context.Context, b Bookmark, caPEM []byte) (
 	if b.TLSMode == "" {
 		b.TLSMode = swiftcontrol.TLSModeSystem
 	}
+	// Apply the same auth normalisation Save does, so a legacy backup with no
+	// version imports as v1 and a v3 backup with blank domains imports with
+	// Default, and so the identity below matches a saved bookmark's (ADR 0100).
+	NormalizeAuth(&b)
 	want := identityOf(b, caPEM)
 
 	var proposed record
@@ -142,6 +146,8 @@ func (st *Store) ImportBookmark(ctx context.Context, b Bookmark, caPEM []byte) (
 // text across fields.
 type identity struct {
 	displayName, authURL, username, storageURLOverride string
+	authVersion                                        int
+	userDomain, projectName, projectDomain, region     string
 	tlsMode, performanceProfile, segmentPlacement      string
 	chunkSizeBytes                                     int64
 	caCertificates                                     string
@@ -155,6 +161,11 @@ func identityOf(b Bookmark, caPEM []byte) identity {
 		authURL:            b.AuthURL,
 		username:           b.Username,
 		storageURLOverride: b.StorageURLOverride,
+		authVersion:        b.AuthVersion,
+		userDomain:         b.UserDomain,
+		projectName:        b.ProjectName,
+		projectDomain:      b.ProjectDomain,
+		region:             b.Region,
 		tlsMode:            string(b.TLSMode),
 		performanceProfile: b.PerformanceProfile,
 		segmentPlacement:   string(b.SegmentPlacement),
