@@ -150,6 +150,7 @@ class SourceGateTests(unittest.TestCase):
             "listing-response.patch": b"+\t\t\tobject.LastModified = object.LastModified.Truncate(time.Second)",
             "listing-fidelity.patch": b"+// Aeronautes",
             "content-read.patch": b"+// The legacy helpers detach Do/Read",
+            "v3-authenticator-export.patch": b"+func NewV3Authenticator() Authenticator {",
         }
         for name, anchor in anchors.items():
             with self.subTest(patch=name):

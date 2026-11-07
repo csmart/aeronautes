@@ -14,7 +14,7 @@ import zipfile
 
 MODULE = "github.com/ncw/swift/v2"
 REPLACEMENT = "./third_party/ncw-swift/source"
-PATCHES = ["credential-pairing.patch", "listing-response.patch", "listing-fidelity.patch", "content-read.patch"]
+PATCHES = ["credential-pairing.patch", "listing-response.patch", "listing-fidelity.patch", "content-read.patch", "v3-authenticator-export.patch"]
 
 
 def run(args, cwd):

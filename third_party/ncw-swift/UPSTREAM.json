@@ -8,6 +8,7 @@
     "credential-pairing.patch",
     "listing-response.patch",
     "listing-fidelity.patch",
-    "content-read.patch"
+    "content-read.patch",
+    "v3-authenticator-export.patch"
   ]
 }

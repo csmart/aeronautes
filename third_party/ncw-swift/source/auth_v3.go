@@ -301,3 +301,15 @@ func (auth *v3Auth) Expires() time.Time {
 func (auth *v3Auth) CdnUrl() string {
 	return ""
 }
+
+// NewV3Authenticator returns the library's built-in Keystone v3
+// authenticator. It is an Aeronautes-local addition (see the sibling
+// v3-authenticator-export.patch): the v3Auth type and the newAuth
+// constructor are unexported, so a caller that leaves Connection.Auth
+// nil with AuthVersion=3 gets the built-in but never a handle to it.
+// Aeronautes needs a handle to wrap Response() with its storage-URL
+// validation and credential snapshot (internal/swiftcontrol/authv3.go).
+// Behaviour-preserving: the same value newAuth builds for AuthVersion 3.
+func NewV3Authenticator() Authenticator {
+	return &v3Auth{}
+}
