@@ -30,6 +30,7 @@ The two Aeronautes invariants that must live in the auth exchange, the storage-U
 
 The built-in v3 authenticator type is unexported, so a caller that leaves `Connection.Auth` nil and sets `AuthVersion=3` gets it but no handle to wrap.
 A one-line, behaviour-preserving export, `NewV3Authenticator`, is added to the vendored source as a registered patch, `v3-authenticator-export.patch`, recorded in `third_party/ncw-swift/UPSTREAM.json` and verified by `scripts/check-swift-source.py` exactly like the existing patches.
+The operator chose to carry it through the existing in-repo vendored-patch mechanism for now; migrating this dependency to a standalone pinned fork, and offering the minimal export upstream, are tracked as later work rather than part of this slice.
 
 `v1Auth` and `guardedAuth` share one `credentialSnapshot` primitive, so the concurrency-sensitive snapshot logic cannot drift between the two paths.
 
@@ -45,6 +46,13 @@ Letting the library authenticate with no wrapper (`Auth=nil`, `AuthVersion=3`) a
 The override is a v1/TempAuth workaround for a single returned `X-Storage-Url`.
 Keystone's catalog already distinguishes endpoints by interface (public, internal, admin) and region, so the endpoint is chosen there rather than overridden.
 `New` rejects a storage-URL override when `AuthVersion=3`.
+
+### Binding the storage region
+
+A Keystone catalog can advertise object-store endpoints in several regions.
+The built-in selects the first public endpoint matching the connection's region, so with no region configured a multi-region catalog is ambiguous — and, worse, an implicit 401 re-authentication against a reordered catalog can select a *different* region, silently moving operations and a metadata write to a namespace the operator never reviewed.
+So `New` requires an explicit `Region` for v3, which pins the selection, and `guardedAuth` binds the endpoint chosen at first authentication and refuses any later authentication that selects a different one.
+Neither the TLS gate nor the credential snapshot establishes *which* namespace is in use; this does.
 
 ### Token expiry
 

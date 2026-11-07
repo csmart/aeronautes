@@ -50,6 +50,13 @@ type Config struct {
 	UserDomain    string
 	ProjectName   string
 	ProjectDomain string
+	// Region names the catalog region whose object-store endpoint the
+	// token binds to. It is required for v3: a Keystone catalog can
+	// advertise object-store endpoints in several regions, and without an
+	// explicit choice the selection is ambiguous and can change across an
+	// implicit re-auth, silently moving operations — and a metadata
+	// write — to another region (ADR 0100).
+	Region string
 }
 
 // DefaultMaxConnsPerHost is the per-host connection cap a session gets
@@ -129,7 +136,11 @@ func New(cfg Config) (*Session, error) {
 		if cfg.StorageURLOverride != "" {
 			return nil, errors.New("storage URL override is not supported for Keystone v3; the identity catalog selects the endpoint by interface and region")
 		}
+		if cfg.Region == "" {
+			return nil, errors.New("Keystone v3 requires an explicit region: the catalog can advertise object-store endpoints in several regions and the token must bind to the one you reviewed")
+		}
 		conn.AuthVersion = 3
+		conn.Region = cfg.Region
 		conn.Domain = cfg.UserDomain
 		conn.Tenant = cfg.ProjectName
 		conn.TenantDomain = cfg.ProjectDomain

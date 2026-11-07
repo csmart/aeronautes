@@ -189,6 +189,11 @@ type Server struct {
 	// (this same server). A test sets it to a public http URL to exercise
 	// the client's storage-URL gate on the catalog's choice.
 	V3StorageEndpoint string
+	// V3Endpoints, when non-empty, is the full ordered set of object-store
+	// public endpoints the mock Keystone v3 catalog advertises. A test
+	// sets several regions (and reorders them between authentications) to
+	// exercise region-pinned endpoint selection across a re-auth.
+	V3Endpoints []V3Endpoint
 
 	mu          sync.Mutex
 	containers  map[string]*Container
@@ -388,6 +393,13 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// V3Endpoint is one object-store public endpoint the mock Keystone v3
+// catalog advertises, used by tests that need multiple regions.
+type V3Endpoint struct {
+	Region string
+	URL    string
+}
+
 // handleV3Auth is a minimal Keystone v3 identity endpoint (POST
 // /v3/auth/tokens): it checks the password-method credentials, then
 // returns the subject token and a service catalog whose object-store
@@ -442,10 +454,15 @@ func (s *Server) handleV3Auth(w http.ResponseWriter, r *http.Request) {
 		} `json:"token"`
 	}
 	reply.Token.ExpiresAt = time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
-	reply.Token.Catalog = []service{{
-		Type:      "object-store",
-		Endpoints: []endpoint{{Interface: "public", Region: "RegionOne", URL: storageURL}},
-	}}
+	var eps []endpoint
+	if len(s.V3Endpoints) > 0 {
+		for _, e := range s.V3Endpoints {
+			eps = append(eps, endpoint{Interface: "public", Region: e.Region, URL: e.URL})
+		}
+	} else {
+		eps = []endpoint{{Interface: "public", Region: "RegionOne", URL: storageURL}}
+	}
+	reply.Token.Catalog = []service{{Type: "object-store", Endpoints: eps}}
 	payload, err := json.Marshal(reply)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)

@@ -21,6 +21,7 @@ func v3Config(authBase string) Config {
 		UserDomain:    "Default",
 		ProjectName:   "demo",
 		ProjectDomain: "Default",
+		Region:        "RegionOne",
 	}
 }
 
@@ -132,5 +133,85 @@ func TestNewRejectsUnsupportedAuthVersion(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "unsupported auth version") {
 		t.Fatalf("err = %v, want an unsupported-version rejection", err)
+	}
+}
+
+// TestNewRejectsV3WithoutRegion keeps v3 from selecting an endpoint
+// ambiguously: a multi-region catalogue with no configured region could
+// bind the token to the wrong namespace (review db:1015).
+func TestNewRejectsV3WithoutRegion(t *testing.T) {
+	cfg := v3Config("https://keystone.example")
+	cfg.Region = ""
+	if _, err := New(cfg); err == nil || !strings.Contains(err.Error(), "region") {
+		t.Fatalf("err = %v, want a missing-region rejection", err)
+	}
+}
+
+// TestKeystoneV3PinsRegionAcrossReorder is the regression for db:1015: a
+// re-authentication against a reordered multi-region catalogue must keep
+// the configured region's endpoint, never silently switch to another
+// region's namespace.
+func TestKeystoneV3PinsRegionAcrossReorder(t *testing.T) {
+	mock := swifttest.New("keystoneuser", "keystonepass")
+	srv := httptest.NewServer(mock)
+	defer srv.Close()
+	one := srv.URL + "/v1/AUTH_test"
+	two := "https://two.example.invalid/v1/AUTH_other"
+	mock.V3Endpoints = []swifttest.V3Endpoint{
+		{Region: "RegionOne", URL: one},
+		{Region: "RegionTwo", URL: two},
+	}
+
+	s, err := New(v3Config(srv.URL)) // Region RegionOne
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := s.Authenticate(ctx); err != nil {
+		t.Fatalf("first auth: %v", err)
+	}
+	if s.StorageURL() != one {
+		t.Fatalf("StorageURL = %q, want RegionOne %q", s.StorageURL(), one)
+	}
+
+	// The catalogue now lists RegionTwo first; a re-auth must still bind
+	// RegionOne, not the first entry.
+	mock.V3Endpoints = []swifttest.V3Endpoint{
+		{Region: "RegionTwo", URL: two},
+		{Region: "RegionOne", URL: one},
+	}
+	s.ForceReauth()
+	if err := s.Authenticate(ctx); err != nil {
+		t.Fatalf("re-auth after reorder: %v", err)
+	}
+	if s.StorageURL() != one {
+		t.Errorf("after reorder StorageURL = %q, want RegionOne %q; region pinning must defeat catalogue order", s.StorageURL(), one)
+	}
+}
+
+// TestKeystoneV3RefusesEndpointSwitchOnReauth is the defence-in-depth
+// guard: even within the configured region, a re-auth that advertises a
+// different endpoint URL is refused rather than silently adopted, so the
+// namespace the operator reviewed cannot move mid-session.
+func TestKeystoneV3RefusesEndpointSwitchOnReauth(t *testing.T) {
+	mock := swifttest.New("keystoneuser", "keystonepass")
+	srv := httptest.NewServer(mock)
+	defer srv.Close()
+	mock.V3StorageEndpoint = srv.URL + "/v1/AUTH_test"
+
+	s, err := New(v3Config(srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := s.Authenticate(ctx); err != nil {
+		t.Fatalf("first auth: %v", err)
+	}
+
+	// The same region now advertises a moved endpoint; the re-auth refuses.
+	mock.V3StorageEndpoint = "https://moved.example.invalid/v1/AUTH_test"
+	s.ForceReauth()
+	if err := s.Authenticate(ctx); err == nil {
+		t.Fatal("expected a refusal when the re-auth endpoint differs from the one in use")
 	}
 }

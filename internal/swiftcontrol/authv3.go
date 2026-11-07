@@ -2,6 +2,7 @@ package swiftcontrol
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -19,7 +20,11 @@ import (
 //   - a consistent (token, URL, expiry) snapshot is published from
 //     Response, which the wire library runs under its own authLock, so
 //     Session reads credentials without racing an implicit 401 reauth
-//     (review R-06).
+//     (review R-06);
+//   - the selected object-store endpoint is bound to the configured
+//     region and preserved across re-authentication, so an implicit
+//     re-auth cannot move operations or a metadata write to a different
+//     region's namespace (Config.Region; ADR 0100).
 //
 // It WRAPS rather than reimplements: the v3 request, response and catalog
 // parsing are the library's well-exercised code, so our surface is only
@@ -52,11 +57,18 @@ func (a *guardedAuth) Response(ctx context.Context, resp *http.Response) error {
 		return err
 	}
 	// The built-in selected the object-store endpoint from the catalog;
-	// gate that choice before Session hands the token to it, then capture
-	// the consistent snapshot under the library's auth lock.
+	// gate that choice before Session hands the token to it.
 	storageURL := a.inner.StorageUrl(false)
 	if err := ValidateStorageURL(a.authURL, storageURL, a.tlsMode); err != nil {
 		return err
+	}
+	// Bind the namespace: once an endpoint is in use, an implicit re-auth
+	// that selects a different one must not silently move operations (and
+	// a metadata write) to another region. The configured region pins the
+	// selection; this refuses any residual switch as defence in depth,
+	// before the new token is published.
+	if bound := a.snapshot().storageURL; bound != "" && storageURL != bound {
+		return fmt.Errorf("Keystone re-authentication selected a different storage endpoint than the one in use; refusing to switch the account namespace mid-session")
 	}
 	a.publish(resp.StatusCode, a.inner.Token(), storageURL, a.Expires())
 	return nil
