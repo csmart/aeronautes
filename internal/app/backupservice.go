@@ -15,10 +15,16 @@ import (
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
 
-// backupSchemaVersion is the on-disk format version of a settings backup
-// (ADR 0098). A restore refuses a version it does not understand, including
-// a newer one, so an older build never misreads a file a newer one wrote.
-const backupSchemaVersion = 1
+// backupSchemaVersion is the on-disk format version a backup is written as,
+// and minReadableBackupVersion the oldest a restore still reads (ADR 0098). A
+// restore refuses any version outside that range, including a newer one, so an
+// older build never misreads a file a newer one wrote. Version 2 added the
+// Keystone v3 authentication identity; version 1 holds TempAuth bookmarks
+// only, which still restore because their absent auth fields normalise to v1.
+const (
+	backupSchemaVersion      = 2
+	minReadableBackupVersion = 1
+)
 
 // SettingsBackupDTO is the whole configuration backup: the application
 // settings and every bookmark's non-secret configuration, as one versioned
@@ -39,6 +45,11 @@ type BackupBookmarkDTO struct {
 	AuthURL            string `json:"authUrl"`
 	Username           string `json:"username"`
 	StorageURLOverride string `json:"storageUrlOverride"`
+	AuthVersion        int    `json:"authVersion"`
+	UserDomain         string `json:"userDomain"`
+	ProjectName        string `json:"projectName"`
+	ProjectDomain      string `json:"projectDomain"`
+	Region             string `json:"region"`
 	TLSMode            string `json:"tlsMode"`
 	CACertPEM          string `json:"caCertPem"`
 	PerformanceProfile string `json:"performanceProfile"`
@@ -148,6 +159,11 @@ func (s *BackupService) ExportSettings(ctx context.Context) (*BackupResultDTO, e
 			AuthURL:            r.AuthURL,
 			Username:           r.Username,
 			StorageURLOverride: r.StorageURLOverride,
+			AuthVersion:        r.AuthVersion,
+			UserDomain:         r.UserDomain,
+			ProjectName:        r.ProjectName,
+			ProjectDomain:      r.ProjectDomain,
+			Region:             r.Region,
 			TLSMode:            r.TLSMode,
 			CACertPEM:          string(bookmarks.CertificatesOnly([]byte(r.CACertPEM))),
 			PerformanceProfile: r.PerformanceProfile,
@@ -249,8 +265,8 @@ func (s *BackupService) ImportSettings(ctx context.Context) (*RestoreResultDTO, 
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		return nil, fmt.Errorf("this file is not a valid settings backup: %w", err)
 	}
-	if doc.SchemaVersion != backupSchemaVersion {
-		return nil, fmt.Errorf("unsupported backup version %d; this build restores version %d", doc.SchemaVersion, backupSchemaVersion)
+	if doc.SchemaVersion < minReadableBackupVersion || doc.SchemaVersion > backupSchemaVersion {
+		return nil, fmt.Errorf("unsupported backup version %d; this build restores versions %d to %d", doc.SchemaVersion, minReadableBackupVersion, backupSchemaVersion)
 	}
 
 	// Validate the whole file before any effect: a malformed bookmark, or a CA
@@ -268,6 +284,11 @@ func (s *BackupService) ImportSettings(ctx context.Context) (*RestoreResultDTO, 
 			AuthURL:            bm.AuthURL,
 			Username:           bm.Username,
 			StorageURLOverride: bm.StorageURLOverride,
+			AuthVersion:        bm.AuthVersion,
+			UserDomain:         bm.UserDomain,
+			ProjectName:        bm.ProjectName,
+			ProjectDomain:      bm.ProjectDomain,
+			Region:             bm.Region,
 			TLSMode:            swiftcontrol.TLSMode(bm.TLSMode),
 			PerformanceProfile: bm.PerformanceProfile,
 			SegmentPlacement:   bookmarks.SegmentPlacement(bm.SegmentPlacement),

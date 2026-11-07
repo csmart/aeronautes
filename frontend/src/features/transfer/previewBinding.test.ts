@@ -73,7 +73,7 @@ function show(kind: Kind, factsLoader?: () => Promise<ContainerSettingsDTO | nul
   browser.prefix = "selected/";
   const bookmark = (id: string): BookmarkDTO => ({
     id, displayName: id, authUrl: "https://swift.invalid/auth/v1.0", username: "test:tester",
-    storageUrlOverride: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: true,
+    storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: true,
   });
   browser.bookmarks = [bookmark("source"), bookmark("destination")];
   if (factsLoader) browser.containerFacts = factsLoader;

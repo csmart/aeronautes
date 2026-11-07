@@ -63,7 +63,7 @@ describe("first run", () => {
 
   it("does not appear when a bookmark exists", async () => {
     await api.saveBookmark({ id: "", displayName: "Existing", authUrl: "https://swift.example/auth/v1.0", username: "a:b",
-      storageUrlOverride: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "key");
+      storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "key");
     await showScreen();
     expect(welcome()).toBeNull();
     expect(document.body.textContent).toContain("Existing");

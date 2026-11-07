@@ -42,7 +42,7 @@ function button(label: string): HTMLButtonElement {
 }
 
 const fixtureBookmark = { id: "", displayName: "Count fixture", authUrl: "https://example.test/auth",
-  username: "fixture:user", storageUrlOverride: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false };
+  username: "fixture:user", storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false };
 
 async function openFixtures() {
   await api.saveBookmark(fixtureBookmark, "test-only");

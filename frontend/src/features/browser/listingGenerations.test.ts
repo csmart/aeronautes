@@ -19,7 +19,7 @@ async function connected() {
   const api = newFakeApi();
   const state = new BrowserState(api);
   const bookmark = await state.saveBookmark({ id: "", displayName: "Generation fixture",
-    authUrl: "http://mock/auth/v1.0", username: "test:tester", storageUrlOverride: "",
+    authUrl: "http://mock/auth/v1.0", username: "test:tester", storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "",
     tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "testing");
   let servedScope: ListingScope = { bookmarkId: bookmark.id, generation: 1 };
   const connect = api.connect;
@@ -227,7 +227,7 @@ it.each<Read>(["loadMoreContainers", "loadMoreEntries"])("%s retries a refused p
 it.each(["containers", "objects"] as const)("the shared fake %s listing follows the connected generation", async (kind) => {
   const api = newFakeApi();
   const bookmark = await api.saveBookmark({ id: "", displayName: "Fake scope",
-    authUrl: "http://mock/auth/v1.0", username: "test:tester", storageUrlOverride: "",
+    authUrl: "http://mock/auth/v1.0", username: "test:tester", storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "",
     tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "testing");
   const first = await api.connect(bookmark.id);
   const read = () => kind === "containers" ? api.containers(bookmark.id, "", 100)

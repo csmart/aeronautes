@@ -51,7 +51,7 @@ function badges(name: string): string[] {
 }
 
 const fixtureBookmark = { id: "", displayName: "Settings fixture", authUrl: "https://example.test/auth",
-  username: "fixture:user", storageUrlOverride: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false };
+  username: "fixture:user", storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false };
 
 async function connectFixture() {
   fakeContainerSeeds.set("fixtures", { readAcl: ".r:*,.rlistings" });

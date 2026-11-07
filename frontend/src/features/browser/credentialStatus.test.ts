@@ -7,7 +7,7 @@ const empty: CredentialStatusDTO = { retired: 0, unfinished: 0, saving: 0, unver
 const retained: CredentialStatusDTO = { retired: 2, unfinished: 1, saving: 0, unverified: 1, cleanupReason: "" };
 const bookmark: BookmarkDTO = {
   id: "", displayName: "test", authUrl: "https://swift.example/auth/v1.0",
-  username: "account:user", storageUrlOverride: "", tlsMode: "system",
+  username: "account:user", storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "", tlsMode: "system",
   caPem: "", hasCa: false, hasCredential: false,
 };
 

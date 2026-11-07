@@ -29,7 +29,7 @@ const done = { scanned: 1, matches: [{ name: 'normal/hello.txt', bytes: 12 }], d
 async function fixture() {
   const api = newFakeApi(); const state = new BrowserState(api);
   states.add(state);
-  const bookmark = await state.saveBookmark({ id: '', displayName: 'Mock', authUrl: 'http://mock/auth/v1.0', username: 'test:tester', storageUrlOverride: '', tlsMode: 'system', caPem: '', hasCa: false, hasCredential: false }, 'testing');
+  const bookmark = await state.saveBookmark({ id: '', displayName: 'Mock', authUrl: 'http://mock/auth/v1.0', username: 'test:tester', storageUrlOverride: '', authVersion: 1, userDomain: '', projectName: '', projectDomain: '', region: '', tlsMode: 'system', caPem: '', hasCa: false, hasCredential: false }, 'testing');
   await state.connect(bookmark.id); await state.openContainer('fixtures');
   api.findStatus = vi.fn().mockResolvedValue(done); api.cancelFind = vi.fn().mockResolvedValue(undefined);
   state.findOpen = true;

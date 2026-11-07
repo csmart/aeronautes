@@ -67,7 +67,7 @@ const suspectedNames = containersFixture.filter((c) => c.segmentRole === "suspec
 
 async function screen() {
   await api.saveBookmark({ id: "", displayName: "Mode fixture", authUrl: "https://example.test/auth",
-    username: "fixture:user", storageUrlOverride: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "test-only");
+    username: "fixture:user", storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "test-only");
   const root = document.createElement("div"); document.body.append(root);
   const component = mount(BrowserScreen, { target: root }); mounted.add(component);
   flushSync(); await settle();

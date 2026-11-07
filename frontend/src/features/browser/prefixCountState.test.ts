@@ -6,7 +6,7 @@ describe("prefix count state", () => {
   it("counts through a count-only scan and keeps the result for the scope", async () => {
     const api = newFakeApi();
     const saved = await api.saveBookmark({ id: "", displayName: "Count", authUrl: "https://example.test/auth",
-      username: "fixture:user", storageUrlOverride: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "test-only");
+      username: "fixture:user", storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "test-only");
     const state = new BrowserState(api);
     await state.loadBookmarks();
     await state.connect(saved.id);

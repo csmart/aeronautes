@@ -17,7 +17,7 @@ function deferred<T>() {
 async function settle() { for (let i = 0; i < 24; i++) { await Promise.resolve(); flushSync(); } }
 async function connected() {
   const api = newFakeApi(); const state = new BrowserState(api);
-  const bookmark = await state.saveBookmark({ id: '', displayName: 'Mock', authUrl: 'http://mock/auth/v1.0', username: 'test:tester', storageUrlOverride: '', tlsMode: 'system', caPem: '', hasCa: false, hasCredential: false }, 'testing');
+  const bookmark = await state.saveBookmark({ id: '', displayName: 'Mock', authUrl: 'http://mock/auth/v1.0', username: 'test:tester', storageUrlOverride: '', authVersion: 1, userDomain: '', projectName: '', projectDomain: '', region: '', tlsMode: 'system', caPem: '', hasCa: false, hasCredential: false }, 'testing');
   await state.connect(bookmark.id); await state.openContainer('fixtures');
   return { api, state, bookmark };
 }

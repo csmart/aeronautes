@@ -239,6 +239,25 @@ export interface BookmarkDTO {
     "storageUrlOverride": string;
 
     /**
+     * AuthVersion selects the auth protocol: 1 is TempAuth v1 (the
+     * default), 3 is Keystone v3. Zero from an older frontend is read as 1.
+     */
+    "authVersion": number;
+
+    /**
+     * UserDomain, ProjectName, ProjectDomain and Region are the Keystone v3
+     * (AuthVersion 3) identity for the password method with project scope.
+     * They are empty for a v1 bookmark. UserDomain and ProjectDomain default
+     * to "Default" when a v3 bookmark leaves them blank; Region names the
+     * catalog region whose object-store endpoint the token binds to and is
+     * required for v3 (ADR 0100).
+     */
+    "userDomain": string;
+    "projectName": string;
+    "projectDomain": string;
+    "region": string;
+
+    /**
      * TLSMode is "system", "custom_ca", or "insecure".
      */
     "tlsMode": string;

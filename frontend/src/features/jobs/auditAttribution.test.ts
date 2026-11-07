@@ -23,7 +23,7 @@ function event(id: number, bookmarkId: string): AuditEventDTO {
 
 function bookmark(id: string, displayName = "Same display name"): BookmarkDTO {
   return { id, displayName, authUrl: "http://mock/auth/v1.0", username: "test:tester",
-    storageUrlOverride: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false };
+    storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false };
 }
 
 function selector(): HTMLSelectElement {

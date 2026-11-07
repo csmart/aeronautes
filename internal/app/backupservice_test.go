@@ -628,3 +628,97 @@ func TestImportSettingsRefusesUndecodableCA(t *testing.T) {
 		}
 	}
 }
+
+// A Keystone v3 bookmark survives a backup and restore with its auth version
+// and project-scope identity intact, so the complete-configuration contract
+// holds for v3 as well as v1 (ADR 0098, ADR 0100).
+func TestBackupRoundTripPreservesKeystoneV3(t *testing.T) {
+	ctx := t.Context()
+	sourceStore, sourceDB := newBackupStore(t)
+	src := bookmarks.Bookmark{
+		DisplayName: "Keystone AU",
+		AuthURL:     "https://keystone.example/v3",
+		Username:    "keystoneuser",
+		AuthVersion: 3,
+		ProjectName: "demo",
+		Region:      "RegionOne",
+	}
+	if _, err := sourceStore.Save(ctx, src, []byte("keystone-pass")); err != nil {
+		t.Fatal(err)
+	}
+
+	exportDir := t.TempDir()
+	exporter := NewBackupService(sourceDB, sourceStore, fixedSettings{dto: defaults()})
+	exporter.setFilePicker(folderPicker{dir: exportDir})
+	exported, err := exporter.ExportSettings(ctx)
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	// Pin the written version with a literal, independent of the writer
+	// constant: a v3 export must use a format newer than the legacy version 1,
+	// so an older version-1-only reader refuses it rather than dropping the
+	// identity. Reverting the writer to 1 fails here.
+	raw, err := os.ReadFile(filepath.Join(exportDir, exported.FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc SettingsBackupDTO
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc.SchemaVersion != 2 {
+		t.Fatalf("v3 export schema version = %d, want the literal 2 (newer than legacy version 1)", doc.SchemaVersion)
+	}
+
+	targetStore, targetDB := newBackupStore(t)
+	targetSettings := NewSettingsService(targetDB, NewJobRunner(jobs.NewStore(targetDB), audit.NewStore(targetDB)))
+	if _, err := restoreInto(t, targetDB, targetStore, targetSettings, filepath.Join(exportDir, exported.FileName)); err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+
+	marks, err := targetStore.List(ctx)
+	if err != nil || len(marks) != 1 {
+		t.Fatalf("restored bookmarks = %+v %v", marks, err)
+	}
+	got := marks[0]
+	if got.AuthVersion != 3 || got.ProjectName != "demo" || got.Region != "RegionOne" ||
+		got.UserDomain != "Default" || got.ProjectDomain != "Default" {
+		t.Fatalf("restore dropped the v3 identity: %+v", got)
+	}
+	if got.HasCredential {
+		t.Fatal("restored bookmark carried a credential")
+	}
+}
+
+// A version-1 backup written before the Keystone fields existed still restores
+// on this build: its absent auth fields normalise to TempAuth v1, so the
+// legacy read path keeps working after the format moved to version 2 (ADR
+// 0098 compatibility). The newer-version refusal is covered separately by
+// TestImportSettingsValidatesWholeFileBeforeApplying.
+func TestBackupRestoresLegacyVersionOne(t *testing.T) {
+	ctx := t.Context()
+	store, database := newBackupStore(t)
+	settings := NewSettingsService(database, NewJobRunner(jobs.NewStore(database), audit.NewStore(database)))
+	doc := SettingsBackupDTO{
+		SchemaVersion: 1, // literal: a genuine historical file, independent of the reader's minimum
+		ExportedAt:    "2026-01-01T00:00:00Z",
+		AppSettings:   defaults(),
+		Bookmarks: []BackupBookmarkDTO{
+			{DisplayName: "Legacy", AuthURL: "https://swift.example/auth/v1.0", Username: "acct:user", TLSMode: "system"},
+		},
+	}
+	result, err := restoreInto(t, database, store, settings, writeBackup(t, doc))
+	if err != nil {
+		t.Fatalf("legacy version-1 restore: %v", err)
+	}
+	if result.BookmarksCreated != 1 {
+		t.Fatalf("legacy restore result = %+v, want one bookmark created", result)
+	}
+	marks, err := store.List(ctx)
+	if err != nil || len(marks) != 1 {
+		t.Fatalf("restored bookmarks = %+v %v", marks, err)
+	}
+	if marks[0].AuthVersion != 1 {
+		t.Fatalf("legacy bookmark restored as version %d, want 1", marks[0].AuthVersion)
+	}
+}

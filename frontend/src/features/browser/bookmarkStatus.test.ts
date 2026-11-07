@@ -26,7 +26,7 @@ afterEach(async () => {
 
 function draft(displayName = "Created λ"): BookmarkDTO {
   return { id: "", displayName, authUrl: "https://swift.example/auth/v1.0",
-    username: "fixture:user", storageUrlOverride: "", tlsMode: "system",
+    username: "fixture:user", storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "", tlsMode: "system",
     caPem: "", hasCa: false, hasCredential: false };
 }
 

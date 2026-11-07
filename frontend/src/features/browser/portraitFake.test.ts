@@ -5,7 +5,7 @@ import { newFakeApi } from "./fakeApi";
 
 function save(api: Api, name: string) {
   return api.saveBookmark({ id: "", displayName: name, authUrl: `http://${name}/auth/v1.0`, username: "test:tester",
-    storageUrlOverride: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "fixture-key");
+    storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "fixture-key");
 }
 
 it("the fake requires the active bookmark and keeps its generation across reconnects", async () => {

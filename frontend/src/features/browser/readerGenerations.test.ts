@@ -19,7 +19,7 @@ async function connected() {
   const api = newFakeApi();
   const state = new BrowserState(api);
   const bookmark = await state.saveBookmark({ id: "", displayName: "Reader generation fixture",
-    authUrl: "http://mock/auth/v1.0", username: "test:tester", storageUrlOverride: "",
+    authUrl: "http://mock/auth/v1.0", username: "test:tester", storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "",
     tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "testing");
   expect(await state.connect(bookmark.id)).toBe(true);
   await state.openContainer("fixtures");
