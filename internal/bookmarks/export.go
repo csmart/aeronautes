@@ -22,6 +22,11 @@ type ExportRecord struct {
 	AuthURL            string
 	Username           string
 	StorageURLOverride string
+	AuthVersion        int
+	UserDomain         string
+	ProjectName        string
+	ProjectDomain      string
+	Region             string
 	TLSMode            string
 	PerformanceProfile string
 	SegmentPlacement   string
@@ -51,6 +56,11 @@ func (st *Store) ExportAll(ctx context.Context, q Querier) ([]ExportRecord, erro
 			AuthURL:            r.Bookmark.AuthURL,
 			Username:           r.Bookmark.Username,
 			StorageURLOverride: r.Bookmark.StorageURLOverride,
+			AuthVersion:        r.Bookmark.AuthVersion,
+			UserDomain:         r.Bookmark.UserDomain,
+			ProjectName:        r.Bookmark.ProjectName,
+			ProjectDomain:      r.Bookmark.ProjectDomain,
+			Region:             r.Bookmark.Region,
 			TLSMode:            string(r.Bookmark.TLSMode),
 			PerformanceProfile: r.Bookmark.PerformanceProfile,
 			SegmentPlacement:   string(r.Bookmark.SegmentPlacement),

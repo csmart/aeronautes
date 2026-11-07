@@ -66,12 +66,14 @@ func publishRecord(ctx context.Context, tx *sql.Tx, previous, proposed record, c
 	if isNew {
 		_, err := tx.ExecContext(ctx, `
 			INSERT INTO bookmarks (id, display_name, auth_url, username,
-				storage_url_override, secret_ref, tls_mode, tls_ca_id,
+				storage_url_override, auth_version, user_domain, project_name, project_domain, region,
+				secret_ref, tls_mode, tls_ca_id,
 				performance_profile, segment_placement, chunk_size_bytes,
 				created_at, updated_at, origin_kind, origin_instance, origin_persistent, generation, revision)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			proposed.ID, proposed.DisplayName, proposed.AuthURL, proposed.Username,
-			nullable(proposed.StorageURLOverride), nullable(proposed.ref), string(proposed.TLSMode), nullable(proposed.TLSCAID),
+			nullable(proposed.StorageURLOverride), proposed.AuthVersion, nullable(proposed.UserDomain), nullable(proposed.ProjectName), nullable(proposed.ProjectDomain), nullable(proposed.Region),
+			nullable(proposed.ref), string(proposed.TLSMode), nullable(proposed.TLSCAID),
 			proposed.PerformanceProfile, string(proposed.SegmentPlacement), nullableInt(proposed.ChunkSizeBytes),
 			proposed.CreatedAt.Format(time.RFC3339), proposed.UpdatedAt.Format(time.RFC3339),
 			string(proposed.origin.Kind), proposed.origin.Instance, proposed.origin.Persistent, proposed.generation, proposed.revision)
@@ -81,12 +83,14 @@ func publishRecord(ctx context.Context, tx *sql.Tx, previous, proposed record, c
 	} else {
 		result, err := tx.ExecContext(ctx, `
 			UPDATE bookmarks SET display_name=?, auth_url=?, username=?,
-				storage_url_override=?, secret_ref=?, tls_mode=?, tls_ca_id=?,
+				storage_url_override=?, auth_version=?, user_domain=?, project_name=?, project_domain=?, region=?,
+				secret_ref=?, tls_mode=?, tls_ca_id=?,
 				performance_profile=?, segment_placement=?, chunk_size_bytes=?,
 				updated_at=?, origin_kind=?, origin_instance=?, origin_persistent=?, generation=?, revision=?
 			WHERE id=? AND generation=? AND revision=?`,
 			proposed.DisplayName, proposed.AuthURL, proposed.Username,
-			nullable(proposed.StorageURLOverride), nullable(proposed.ref), string(proposed.TLSMode), nullable(proposed.TLSCAID),
+			nullable(proposed.StorageURLOverride), proposed.AuthVersion, nullable(proposed.UserDomain), nullable(proposed.ProjectName), nullable(proposed.ProjectDomain), nullable(proposed.Region),
+			nullable(proposed.ref), string(proposed.TLSMode), nullable(proposed.TLSCAID),
 			proposed.PerformanceProfile, string(proposed.SegmentPlacement), nullableInt(proposed.ChunkSizeBytes),
 			proposed.UpdatedAt.Format(time.RFC3339), string(proposed.origin.Kind), proposed.origin.Instance, proposed.origin.Persistent,
 			proposed.generation, proposed.revision, proposed.ID, previous.generation, previous.revision)
