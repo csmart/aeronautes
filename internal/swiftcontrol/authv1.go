@@ -2,24 +2,37 @@ package swiftcontrol
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"strconv"
-	"sync/atomic"
 	"time"
 
 	"github.com/ncw/swift/v2"
 )
 
-// v1Auth is Aeronautes' own TempAuth/v1 authenticator, preset on the
-// wire connection so it replaces the library's builtin. Two reasons it
-// exists (§9.2, §26.2):
+// v1Auth is Aeronautes' own TempAuth/v1 authenticator, preset on the wire
+// connection so it replaces the library's builtin. It exists because the
+// builtin v1 authenticator offers none of four things Aeronautes needs,
+// two of which can only be enforced from inside the auth exchange
+// (§9.2, §26.2, §12.3, review R-06):
 //
-//   - the builtin ignores X-Auth-Token-Expires, but the §26.2 lifetime
-//     priority puts the server's own statement first — TempAuth sends the
-//     remaining lifetime in seconds (verified against upstream SAIO);
+//   - §26.2 token lifetime: the builtin v1 implements no Expires(), but
+//     the lifetime priority puts the server's own statement first, so we
+//     read X-Auth-Token-Expires (TempAuth sends the remaining seconds,
+//     verified against upstream SAIO);
 //   - the storage-URL override must hold across every re-auth, which is
-//     naturally an authenticator property, not a one-shot field write.
+//     naturally an authenticator property, not a one-shot field write;
+//   - ValidateStorageURL gates the storage URL before any token travels,
+//     so an HTTPS login cannot hand its token to an http:// endpoint; and
+//   - the (token, URL, expiry) snapshot is published here, under the wire
+//     library's authLock, so Session reads credentials without racing an
+//     implicit 401 reauth.
+//
+// The v1 protocol is a GET with two headers, so reimplementing the wire
+// authenticator was cheaper than exporting and wrapping the builtin. The
+// Keystone v3 authenticator makes the opposite trade: its protocol is
+// substantial, so guardedAuth WRAPS the builtin (see authv3.go) and adds
+// only the gate and snapshot. The shared credentialSnapshot keeps both
+// paths identical on that concurrency-sensitive step (ADR 0100).
 //
 // The wire library serialises Request/Response under its auth lock;
 // accessor methods are only called on an authenticated connection.
@@ -34,18 +47,11 @@ type v1Auth struct {
 
 	headers http.Header
 	expires time.Time
-	// snap is an atomically-published credential snapshot captured on
-	// every (re)authentication — Response runs inside ncw/swift's own
-	// authLock, so a value stored here is consistent, and Session reads
-	// it via atomic load instead of racing the connection's exported
-	// fields during an implicit 401 reauth (review R-06).
-	snap atomic.Pointer[authSnapshot]
-}
-
-// authSnapshot is one consistent (token, storage URL, expiry) triple.
-type authSnapshot struct {
-	token, storageURL string
-	expires           time.Time
+	// credentialSnapshot publishes the (token, URL, expiry) triple from
+	// Response under the wire library's authLock; Session reads it without
+	// racing an implicit 401 reauth (review R-06). Shared with the v3
+	// authenticator so both paths capture credentials identically.
+	credentialSnapshot
 }
 
 func (a *v1Auth) Request(ctx context.Context, _ *swift.Connection) (*http.Request, error) {
@@ -70,34 +76,8 @@ func (a *v1Auth) Response(_ context.Context, resp *http.Response) error {
 	a.headers = resp.Header
 	a.expires = parseV1Expiry(resp.Header.Get("X-Auth-Token-Expires"), time.Now())
 	token := resp.Header.Get("X-Auth-Token")
-	// Publish the snapshot ONLY on a genuinely successful auth: a
-	// non-2xx (a 401 caught during a token-rollover window) or a
-	// tokenless response must NEVER clobber a good snapshot with empty
-	// credentials, or a concurrent reader would get an empty storage
-	// URL/token (the R-06 snapshot's own corner).
-	if resp.StatusCode/100 == 2 && token != "" {
-		a.snap.Store(&authSnapshot{token: token, storageURL: storageURL, expires: a.expires})
-	}
+	a.publish(resp.StatusCode, token, storageURL, a.expires)
 	return nil
-}
-
-// snapshot returns the last published credential triple, or the zero
-// snapshot before first authentication.
-func (a *v1Auth) snapshot() authSnapshot {
-	if s := a.snap.Load(); s != nil {
-		return *s
-	}
-	return authSnapshot{}
-}
-
-// storageTarget runs under the wire connection's authentication lock, so
-// its accepted URL belongs to the token selected in that same critical section.
-func (a *v1Auth) storageTarget() (string, error) {
-	target := a.snapshot().storageURL
-	if target == "" {
-		return "", errors.New("no accepted Swift storage URL")
-	}
-	return target, nil
 }
 
 // StorageUrl ignores the library's internal/service-net flag: Aeronautes

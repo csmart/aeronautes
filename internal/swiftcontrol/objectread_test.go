@@ -219,7 +219,7 @@ func TestObjectContentRefusesRevokedOrCancelledSession(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			auth := &contentRefusedAuth{v1Auth: session.auth}
+			auth := &contentRefusedAuth{v1Auth: session.auth.(*v1Auth)}
 			session.conn.Auth = auth
 			reader, err := session.OpenObjectContent(ctx, "owned", "object")
 			if reader != nil {
@@ -376,8 +376,9 @@ func nearExpiryObjectContentCredentials(session *Session) {
 	// Advance the accepted tuple together before concurrency, without a minute-long wait.
 	expiry := time.Now().Add(30 * time.Second)
 	session.conn.Expires = expiry
-	session.auth.expires = expiry
-	snapshot := session.auth.snapshot()
+	v1 := session.auth.(*v1Auth)
+	v1.expires = expiry
+	snapshot := v1.snapshot()
 	snapshot.expires = expiry
-	session.auth.snap.Store(&snapshot)
+	v1.snap.Store(&snapshot)
 }
