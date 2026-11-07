@@ -51,7 +51,7 @@ async function state() {
   const fake = newFakeApi();
   const browser = new BrowserState(fake);
   const bookmark = await browser.saveBookmark({ id: "", displayName: "Mock", authUrl: "https://example.test/auth",
-    username: "fixture:user", storageUrlOverride: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "test-only");
+    username: "fixture:user", storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "test-only");
   await browser.connect(bookmark.id);
   await browser.openContainer("fixtures");
   await settle();
@@ -428,7 +428,7 @@ describe("the Delete key and the selection shortcuts", () => {
     api.info = async () => ({ ...(await info()), enabledCapabilities: enabled, unrecognisedCapabilities: [] });
     api.startSelectedDelete = vi.fn(async () => "job-screen");
     await api.saveBookmark({ id: "", displayName: "Key fixture", authUrl: "https://example.test/auth",
-      username: "fixture:user", storageUrlOverride: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "test-only");
+      username: "fixture:user", storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "test-only");
     const root = document.createElement("div"); document.body.append(root);
     const component = mount(BrowserScreen, { target: root }); mounted.add(component);
     flushSync(); await settle();

@@ -32,7 +32,7 @@ async function fixture(prefix = "") {
   const browser = new BrowserState(api);
   const bookmark = await browser.saveBookmark({
     id: "", displayName: "Mock", authUrl: "http://mock/auth/v1.0",
-    username: "test:tester", storageUrlOverride: "", tlsMode: "system",
+    username: "test:tester", storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "", tlsMode: "system",
     caPem: "", hasCa: false, hasCredential: false,
   }, "testing");
   await browser.connect(bookmark.id);

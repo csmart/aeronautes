@@ -3,7 +3,7 @@ import type { BookmarkDTO } from "./api";
 import { endpointOf, groupBookmarks, hoverText, matchesBookmark } from "./bookmarkRail";
 
 function bookmark(id: string, displayName: string, authUrl: string, username = "acct:user", tlsMode = "system"): BookmarkDTO {
-  return { id, displayName, authUrl, username, storageUrlOverride: "", tlsMode, caPem: "", hasCa: false, hasCredential: true };
+  return { id, displayName, authUrl, username, storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "", tlsMode, caPem: "", hasCa: false, hasCredential: true };
 }
 
 describe("endpointOf", () => {

@@ -92,7 +92,7 @@ async function show(api: Api, rows: JobDTO[] = [job("first")]) {
   api.job = vi.fn(async (id) => rows.find((j) => j.id === id) ?? null);
   const browser = new BrowserState(api);
   api.listBookmarks = async () => [{ id: "a", displayName: "Account A", authUrl: "http://mock/auth/v1.0", username: "test:tester",
-    storageUrlOverride: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }];
+    storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }];
   await browser.loadBookmarks();
   drawer = mount(JobsDrawer, { target: document.body, props: { browser } });
   flushSync();

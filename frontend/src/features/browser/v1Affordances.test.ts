@@ -35,7 +35,7 @@ async function connectedScreen(enabled: string[] = [], unrecognised: string[] = 
     api.info = async () => ({ ...(await info()), enabledCapabilities: enabled, unrecognisedCapabilities: unrecognised });
   }
   await api.saveBookmark({ id: "", displayName: "V1 fixture", authUrl: "https://example.test/auth",
-    username: "fixture:user", storageUrlOverride: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "test-only");
+    username: "fixture:user", storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "test-only");
   const root = document.createElement("div"); document.body.append(root);
   component = mount(BrowserScreen, { target: root });
   flushSync(); await settle();

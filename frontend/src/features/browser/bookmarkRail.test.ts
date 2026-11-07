@@ -28,7 +28,7 @@ async function settle() {
 }
 
 function bookmark(id: string, displayName: string, host: string, username = "acct:user"): BookmarkDTO {
-  return { id, displayName, authUrl: `https://${host}/auth/v1.0`, username, storageUrlOverride: "",
+  return { id, displayName, authUrl: `https://${host}/auth/v1.0`, username, storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "",
     tlsMode: "system", caPem: "", hasCa: false, hasCredential: true };
 }
 

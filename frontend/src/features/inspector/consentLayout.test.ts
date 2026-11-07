@@ -53,7 +53,7 @@ async function dialog(segments = true) {
   v1Offers.manifestDelete = true; v1Offers.bulkDelete = true;
   const api = newFakeApi();
   const browser = new BrowserState(api);
-  const bookmark = await browser.saveBookmark({ id: "", displayName: "Mock", authUrl: "http://mock/auth/v1.0", username: "test:tester", storageUrlOverride: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "testing");
+  const bookmark = await browser.saveBookmark({ id: "", displayName: "Mock", authUrl: "http://mock/auth/v1.0", username: "test:tester", storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "testing");
   await browser.connect(bookmark.id); await browser.openContainer("fixtures");
   browser.select(browser.entries.findIndex((row) => row.name === "external-dlo"));
   await settle();

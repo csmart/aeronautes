@@ -44,7 +44,7 @@ async function prepare(enabled: string[] = [], unrecognised: string[] = []) {
   const info = { ...(await api.info()), enabledCapabilities: enabled, unrecognisedCapabilities: unrecognised };
   api.info = async () => info;
   await api.saveBookmark({ id: "", displayName: "Reviewer fixture", authUrl: "https://example.test/auth",
-    username: "fixture:user", storageUrlOverride: "", tlsMode: "system", caPem: "", hasCa: false,
+    username: "fixture:user", storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "", tlsMode: "system", caPem: "", hasCa: false,
     hasCredential: false }, "test-only");
   return info;
 }

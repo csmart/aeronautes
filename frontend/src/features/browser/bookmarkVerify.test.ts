@@ -98,7 +98,7 @@ describe("verify before save", () => {
 
   it("verifies an existing bookmark with its stored key when the key field is left empty", async () => {
     const f = show({ id: "bm-1", displayName: "Saved", authUrl: "https://mock.example/auth/v1.0", username: "test:tester",
-      storageUrlOverride: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: true });
+      storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: true });
     button("Verify").click();
     await settle();
     expect(f.verify).toHaveBeenCalledWith(expect.objectContaining({ id: "bm-1" }), "");

@@ -72,6 +72,11 @@ func (s *BookmarkService) Save(ctx context.Context, dto BookmarkDTO, secret stri
 	b.AuthURL = dto.AuthURL
 	b.Username = dto.Username
 	b.StorageURLOverride = dto.StorageURLOverride
+	b.AuthVersion = dto.AuthVersion
+	b.UserDomain = dto.UserDomain
+	b.ProjectName = dto.ProjectName
+	b.ProjectDomain = dto.ProjectDomain
+	b.Region = dto.Region
 	b.TLSMode = swiftcontrol.TLSMode(dto.TLSMode)
 	if b.TLSMode != swiftcontrol.TLSModeCustomCA {
 		b.TLSCAID = ""
@@ -168,6 +173,11 @@ func (s *BookmarkService) verifyConfig(ctx context.Context, dto BookmarkDTO, sec
 		AuthURL:            dto.AuthURL,
 		Username:           dto.Username,
 		StorageURLOverride: dto.StorageURLOverride,
+		AuthVersion:        dto.AuthVersion,
+		UserDomain:         dto.UserDomain,
+		ProjectName:        dto.ProjectName,
+		ProjectDomain:      dto.ProjectDomain,
+		Region:             dto.Region,
 		TLSMode:            swiftcontrol.TLSMode(dto.TLSMode),
 	}
 	// An omitted mode is system trust, as Save stores it (ADR 0015), so a
@@ -175,6 +185,10 @@ func (s *BookmarkService) verifyConfig(ctx context.Context, dto BookmarkDTO, sec
 	if typed.TLSMode == "" {
 		typed.TLSMode = swiftcontrol.TLSModeSystem
 	}
+	// Match Save's auth normalisation so a v3 draft authenticates with the
+	// same domains a saved bookmark would, and so the binding check below
+	// compares the stored and drafted auth fields like with like (ADR 0100).
+	bookmarks.NormalizeAuth(&typed)
 	var caPEM []byte
 	if dto.CAPem != "" {
 		caPEM = []byte(dto.CAPem)
@@ -208,7 +222,10 @@ func (s *BookmarkService) verifyConfig(ctx context.Context, dto BookmarkDTO, sec
 	sameTrust := storedMode == typed.TLSMode &&
 		(typed.TLSMode != swiftcontrol.TLSModeCustomCA || caPEM == nil || bytes.Equal(caPEM, stored.TLS.CACertPEM))
 	if stored.AuthURL != dto.AuthURL || stored.Username != dto.Username ||
-		stored.StorageURLOverride != dto.StorageURLOverride || !sameTrust {
+		stored.StorageURLOverride != dto.StorageURLOverride || !sameTrust ||
+		stored.AuthVersion != typed.AuthVersion || stored.UserDomain != typed.UserDomain ||
+		stored.ProjectName != typed.ProjectName || stored.ProjectDomain != typed.ProjectDomain ||
+		stored.Region != typed.Region {
 		return swiftcontrol.Config{}, nil, errVerifyKeyReentry
 	}
 	current := func(ctx context.Context) error {
@@ -280,6 +297,11 @@ func toBookmarkDTO(b bookmarks.Bookmark) BookmarkDTO {
 		AuthURL:            b.AuthURL,
 		Username:           b.Username,
 		StorageURLOverride: b.StorageURLOverride,
+		AuthVersion:        b.AuthVersion,
+		UserDomain:         b.UserDomain,
+		ProjectName:        b.ProjectName,
+		ProjectDomain:      b.ProjectDomain,
+		Region:             b.Region,
 		TLSMode:            string(b.TLSMode),
 		HasCA:              b.TLSCAID != "",
 		HasCredential:      b.HasCredential,

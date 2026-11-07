@@ -25,7 +25,7 @@ function bookmark(): BookmarkDTO {
     displayName: "Mock",
     authUrl: "http://mock/auth/v1.0",
     username: "test:tester",
-    storageUrlOverride: "",
+    storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "",
     tlsMode: "system",
     caPem: "",
     hasCa: false,

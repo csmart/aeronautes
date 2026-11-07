@@ -12,7 +12,7 @@ const REFUSAL = "the connected account changed; nothing was written";
 async function fixture() {
   const api = newFakeApi();
   const state = new BrowserState(api);
-  const bookmark = await state.saveBookmark({ id: "", displayName: "Mock", authUrl: "http://mock/auth/v1.0", username: "test:tester", storageUrlOverride: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "testing");
+  const bookmark = await state.saveBookmark({ id: "", displayName: "Mock", authUrl: "http://mock/auth/v1.0", username: "test:tester", storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "testing");
   await state.connect(bookmark.id);
   await state.openContainer("fixtures");
   expect(state.portrait).toEqual({ bookmarkId: bookmark.id, generation: 1 });
