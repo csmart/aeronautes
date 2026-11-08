@@ -841,45 +841,11 @@ func (e *Executor) nativeCopy(ctx context.Context, item plan.Item) (result execu
 		if headErr != nil && !swiftcontrol.IsNotFound(headErr) {
 			return failed(EffectNotAttempted, StageCommit, CodeUnknown, "native-rehead", headErr)
 		}
-		if headErr == nil {
-			// Live at the fixed point. Only a fresh reading that still matches
-			// what the operator was shown may be replaced; a reading that differs
-			// or identifies nothing refuses with both identities kept and the
-			// live object untouched.
-			found, identifiable := shownFrom(dstDetail)
-			if !identifiable {
-				return e.overwriteRefused(item.Name, EffectNotAttempted, "the destination could not be identified before replacing it: its HEAD stated no entity tag or no length")
-			}
-			if found != shown {
-				e.recordRefused(item.Name, shown, found)
-				return e.overwriteRefused(item.Name, EffectNotAttempted, fmt.Sprintf(
-					"the destination no longer holds what was acknowledged: it was a %s of %d bytes with entity tag %s, and it is now a %s of %d bytes with entity tag %s",
-					shown.Class, shown.Length, shown.ETag, found.Class, found.Length, found.ETag))
-			}
-			// Record what is about to be replaced before the PUT destroys the
-			// ability to read it, then publish unconditionally: the create
-			// conditional would reject the very name the operator asked to
-			// replace. Decision 6 retains the predecessor's segments (they sit on
-			// the destination account the operator was not shown), so there is
-			// nothing to reclaim here.
-			if recErr := e.replacing(item.Name, observedFrom(dstDetail)); recErr != nil {
-				e.stop(recErr)
-				return failed(EffectNotAttempted, StageRecording, CodeUnknown, "native-replace-record", recErr)
-			}
-			overwrite = true
-		} else {
-			// IsNotFound: the destination the operator acknowledged is gone by
-			// the fixed point. It publishes create-only below (the name is free,
-			// and a racer that takes it first is a conflict, not a clobber), but
-			// its observed absence is recorded first, as ADR 0085 keeps the
-			// observed predecessor including the absence this contract's race
-			// admits, rather than leaving a silent first write. A recording
-			// failure stops it.
-			if recErr := e.replacing(item.Name, ObservedPredecessor{Present: false}); recErr != nil {
-				e.stop(recErr)
-				return failed(EffectNotAttempted, StageRecording, CodeUnknown, "native-absent-record", recErr)
-			}
+		replaces, stop := e.replaceAtFixedPoint(item.Name, shown, dstDetail, headErr == nil, EffectNotAttempted, "native")
+		if stop != nil {
+			return *stop
 		}
+		overwrite = replaces
 	}
 	// No fingerprint. The stamp asserts that the destination holds the source's
 	// content, and this route publishes at the live name in ONE request, so a
@@ -1062,60 +1028,25 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 	if err != nil && !swiftcontrol.IsNotFound(err) {
 		return failed(EffectUnresolved, StageCommit, CodeUnknown, "commit-rehead", err)
 	}
-	overwrite := false
-	if err == nil {
-		// The destination is live at the fixed point, the one ADR 0085 keeps the
-		// comparison at: after all preparation and immediately before the
-		// publishing request. A replacement may land here only when the operator
-		// acknowledged this name AND a fresh reading still matches what they were
-		// shown. Everything else is a destination that appeared, or changed,
-		// since planning and conflicts rather than clobbers.
-		shown, acknowledged, ackErr := e.acknowledged(item.Name)
-		if ackErr != nil {
-			return e.withStageCleanup(ctx, stagedName, failed(EffectUnresolved, StageCommit, CodeUnknown, "commit-ack", ackErr))
-		}
-		if !acknowledged {
-			return e.withStageCleanup(ctx, stagedName, conflict(EffectUnresolved, nil, "destination appeared since planning"))
-		}
-		// The fresh read answers the same completeness rule as the capture: a
-		// HEAD stating no entity tag or no length identifies nothing, and a zero
-		// compared against a genuine empty object's baseline would otherwise let
-		// a replacement proceed against an identity nobody established.
-		found, identifiable := shownFrom(dstDetail)
-		if !identifiable {
-			return e.withStageCleanup(ctx, stagedName, e.overwriteRefused(item.Name, EffectUnresolved, "the destination could not be identified before replacing it: its HEAD stated no entity tag or no length"))
-		}
-		if found != shown {
-			e.recordRefused(item.Name, shown, found)
-			return e.withStageCleanup(ctx, stagedName, e.overwriteRefused(item.Name, EffectUnresolved, fmt.Sprintf(
-				"the destination no longer holds what was acknowledged: it was a %s of %d bytes with entity tag %s, and it is now a %s of %d bytes with entity tag %s",
-				shown.Class, shown.Length, shown.ETag, found.Class, found.Length, found.ETag)))
-		}
-		// The reading still matches what was acknowledged. Record what is about
-		// to be replaced before the publication destroys the ability to read it,
-		// then publish unconditionally: the create conditional would reject the
-		// very name the operator asked to replace. Decision 6 retains the
-		// predecessor's segments, which sit on the destination account the
-		// operator was not shown, so there is nothing to reclaim here.
-		if recErr := e.replacing(item.Name, observedFrom(dstDetail)); recErr != nil {
-			e.stop(recErr)
-			return e.withStageCleanup(ctx, stagedName, failed(EffectUnresolved, StageRecording, CodeUnknown, "commit-replace-record", recErr))
-		}
-		overwrite = true
-	} else if _, acknowledged, ackErr := e.acknowledged(item.Name); ackErr != nil {
-		// err is IsNotFound here: the destination is gone. A failure to even
-		// ask whether this name was acknowledged stops rather than guesses.
+	// The destination is read at the fixed point, the one ADR 0085 keeps the
+	// comparison at: after all preparation and immediately before the
+	// publishing request. A live name the operator did not acknowledge
+	// appeared since planning and conflicts rather than clobbers; an
+	// acknowledged one is compared against what they were shown.
+	shown, acknowledged, ackErr := e.acknowledged(item.Name)
+	if ackErr != nil {
 		return e.withStageCleanup(ctx, stagedName, failed(EffectUnresolved, StageCommit, CodeUnknown, "commit-ack", ackErr))
-	} else if acknowledged {
-		// The destination the operator acknowledged is gone by the fixed point.
-		// It is a free name again and publishes create-only (decision 7), but
-		// its observed absence is recorded first: ADR 0085 keeps the observed
-		// predecessor including the absence this contract's race admits, stated
-		// rather than left as a silent create. A recording failure stops it.
-		if recErr := e.replacing(item.Name, ObservedPredecessor{Present: false}); recErr != nil {
-			e.stop(recErr)
-			return e.withStageCleanup(ctx, stagedName, failed(EffectUnresolved, StageRecording, CodeUnknown, "commit-absent-record", recErr))
+	}
+	overwrite := false
+	switch {
+	case err == nil && !acknowledged:
+		return e.withStageCleanup(ctx, stagedName, conflict(EffectUnresolved, nil, "destination appeared since planning"))
+	case acknowledged:
+		replaces, stop := e.replaceAtFixedPoint(item.Name, shown, dstDetail, err == nil, EffectUnresolved, "commit")
+		if stop != nil {
+			return e.withStageCleanup(ctx, stagedName, *stop)
 		}
+		overwrite = replaces
 	}
 
 	headers := metadataHeaders(src, "X-Object-Meta-")
