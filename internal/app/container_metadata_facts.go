@@ -1,8 +1,6 @@
 package app
 
 import (
-	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 
@@ -17,19 +15,8 @@ var (
 	errMarkerCreateResidue      = errors.New("marker creation residue: the marker may exist and the outcome could not be recorded")
 )
 
-func (s *MutateService) recordContainerOutcome(ctx context.Context, identity, bookmarkID, resource string, outcome mutationfacts.Outcome, result audit.Result, summary string, transIDs []string) error {
-	return s.recordMutationOutcome(ctx, identity, bookmarkID, "container.update", resource, outcome, result, summary, transIDs)
-}
-
-// recordMutationOutcome commits the attempt's outcome and its audit event
-// in one transaction, the required record of ADR 0058, 0062 and 0077.
-func (s *MutateService) recordMutationOutcome(ctx context.Context, identity, bookmarkID, operation, resource string, outcome mutationfacts.Outcome, result audit.Result, summary string, transIDs []string) error {
-	return s.facts.RecordOutcome(ctx, identity, outcome, summary, transIDs, func(tx *sql.Tx) error {
-		return s.audit.AppendTx(ctx, tx, audit.Event{
-			BookmarkID: bookmarkID, Operation: operation, Resource: resource,
-			Summary: summary, Result: result, TransIDs: transIDs,
-		})
-	})
+func containerMetadataPosted(result *swiftcontrol.ContainerUpdateResult, err error) bool {
+	return errors.Is(err, swiftcontrol.ErrUnverifiedContainerWrite) || (result != nil && result.Outcome.Posted())
 }
 
 // containerCreateFact classifies a creation attempt (ADR 0077): a received
