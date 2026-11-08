@@ -995,9 +995,7 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 	if isSymlink(src) {
 		// The source is a Swift symlink in either HEAD representation: faithful
 		// §17.1 semantics copy the LINK, never the followed target's bytes.
-		result = e.copySymlink(ctx, item.Name, srcName, dstName, EffectUnresolved)
-		result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
-		return result
+		return e.withStageCleanup(ctx, stagedName, e.copySymlink(ctx, item.Name, srcName, dstName, EffectUnresolved))
 	}
 	staged, err := e.cfg.Dest.ObjectDetail(ctx, e.cfg.DstContainer, stagedName)
 	if err != nil {
@@ -1007,9 +1005,7 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 		return failed(EffectUnresolved, StageStaging, CodeUnknown, "stage-verify", fmt.Errorf("staged object missing: %w", err))
 	}
 	if err := verifyCopied(src, staged); err != nil {
-		result = failed(EffectUnresolved, StageStaging, CodeUnverified, "stage-verify", err)
-		result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
-		return result
+		return e.withStageCleanup(ctx, stagedName, failed(EffectUnresolved, StageStaging, CodeUnverified, "stage-verify", err))
 	}
 
 	if staged.Class == swiftcontrol.ClassDLO {
@@ -1076,14 +1072,10 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 		// since planning and conflicts rather than clobbers.
 		shown, acknowledged, ackErr := e.acknowledged(item.Name)
 		if ackErr != nil {
-			result = failed(EffectUnresolved, StageCommit, CodeUnknown, "commit-ack", ackErr)
-			result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
-			return result
+			return e.withStageCleanup(ctx, stagedName, failed(EffectUnresolved, StageCommit, CodeUnknown, "commit-ack", ackErr))
 		}
 		if !acknowledged {
-			result = conflict(EffectUnresolved, nil, "destination appeared since planning")
-			result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
-			return result
+			return e.withStageCleanup(ctx, stagedName, conflict(EffectUnresolved, nil, "destination appeared since planning"))
 		}
 		// The fresh read answers the same completeness rule as the capture: a
 		// HEAD stating no entity tag or no length identifies nothing, and a zero
@@ -1091,17 +1083,13 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 		// a replacement proceed against an identity nobody established.
 		found, identifiable := shownFrom(dstDetail)
 		if !identifiable {
-			result = e.overwriteRefused(item.Name, EffectUnresolved, "the destination could not be identified before replacing it: its HEAD stated no entity tag or no length")
-			result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
-			return result
+			return e.withStageCleanup(ctx, stagedName, e.overwriteRefused(item.Name, EffectUnresolved, "the destination could not be identified before replacing it: its HEAD stated no entity tag or no length"))
 		}
 		if found != shown {
 			e.recordRefused(item.Name, shown, found)
-			result = e.overwriteRefused(item.Name, EffectUnresolved, fmt.Sprintf(
+			return e.withStageCleanup(ctx, stagedName, e.overwriteRefused(item.Name, EffectUnresolved, fmt.Sprintf(
 				"the destination no longer holds what was acknowledged: it was a %s of %d bytes with entity tag %s, and it is now a %s of %d bytes with entity tag %s",
-				shown.Class, shown.Length, shown.ETag, found.Class, found.Length, found.ETag))
-			result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
-			return result
+				shown.Class, shown.Length, shown.ETag, found.Class, found.Length, found.ETag)))
 		}
 		// The reading still matches what was acknowledged. Record what is about
 		// to be replaced before the publication destroys the ability to read it,
@@ -1111,17 +1099,13 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 		// operator was not shown, so there is nothing to reclaim here.
 		if recErr := e.replacing(item.Name, observedFrom(dstDetail)); recErr != nil {
 			e.stop(recErr)
-			result = failed(EffectUnresolved, StageRecording, CodeUnknown, "commit-replace-record", recErr)
-			result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
-			return result
+			return e.withStageCleanup(ctx, stagedName, failed(EffectUnresolved, StageRecording, CodeUnknown, "commit-replace-record", recErr))
 		}
 		overwrite = true
 	} else if _, acknowledged, ackErr := e.acknowledged(item.Name); ackErr != nil {
 		// err is IsNotFound here: the destination is gone. A failure to even
 		// ask whether this name was acknowledged stops rather than guesses.
-		result = failed(EffectUnresolved, StageCommit, CodeUnknown, "commit-ack", ackErr)
-		result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
-		return result
+		return e.withStageCleanup(ctx, stagedName, failed(EffectUnresolved, StageCommit, CodeUnknown, "commit-ack", ackErr))
 	} else if acknowledged {
 		// The destination the operator acknowledged is gone by the fixed point.
 		// It is a free name again and publishes create-only (decision 7), but
@@ -1130,9 +1114,7 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 		// rather than left as a silent create. A recording failure stops it.
 		if recErr := e.replacing(item.Name, ObservedPredecessor{Present: false}); recErr != nil {
 			e.stop(recErr)
-			result = failed(EffectUnresolved, StageRecording, CodeUnknown, "commit-absent-record", recErr)
-			result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
-			return result
+			return e.withStageCleanup(ctx, stagedName, failed(EffectUnresolved, StageRecording, CodeUnknown, "commit-absent-record", recErr))
 		}
 	}
 
@@ -1175,9 +1157,7 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 		headers["X-Object-Manifest"] = staged.Manifest
 		if _, err := e.cfg.Dest.PutObject(ctx, e.cfg.DstContainer, dstName, strings.NewReader(""), src.ContentType, headers); err != nil {
 			if swiftcontrol.IsPreconditionFailed(err) {
-				result = conflict(EffectUnresolved, err, "destination appeared at commit time")
-				result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
-				return result
+				return e.withStageCleanup(ctx, stagedName, conflict(EffectUnresolved, err, "destination appeared at commit time"))
 			}
 			return failed(EffectUnresolved, StageCommit, CodeUnknown, "commit-manifest", err)
 		}
@@ -1199,16 +1179,10 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 		// The reader was opened before the comparison above, so nothing reads
 		// the store between that comparison and this PUT; its deferred close
 		// was registered where it was opened.
-		putHeaders := map[string]string{}
-		for k, v := range headers {
-			putHeaders[k] = v
-		}
-		_, putErr := e.cfg.Dest.PutObject(ctx, e.cfg.DstContainer, dstName, stagedBody, staged.ContentType, putHeaders)
+		_, putErr := e.cfg.Dest.PutObject(ctx, e.cfg.DstContainer, dstName, stagedBody, staged.ContentType, headers)
 		if putErr != nil {
 			if swiftcontrol.IsPreconditionFailed(putErr) {
-				result = conflict(EffectUnresolved, putErr, "destination appeared at commit time")
-				result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
-				return result
+				return e.withStageCleanup(ctx, stagedName, conflict(EffectUnresolved, putErr, "destination appeared at commit time"))
 			}
 			return failed(EffectUnresolved, StageCommit, CodeUnknown, "commit-put", putErr)
 		}
@@ -1250,6 +1224,16 @@ func (e *Executor) markCommitted(manifest string) error {
 		}
 	}
 	return e.recoveryBroken
+}
+
+// withStageCleanup removes the one staged object the commit was given and
+// joins a failure to remove it to the result's problems, for a result that
+// stops short of publishing from the stage or published a link in its place.
+// The removal is an attempt: a staged object the store will not delete is
+// reported, not retried.
+func (e *Executor) withStageCleanup(ctx context.Context, stagedName string, result executionResult) executionResult {
+	result.addProblem(StageCleanup, e.cleanStaged(ctx, stagedName))
+	return result
 }
 
 func (e *Executor) cleanStaged(ctx context.Context, stagedName string) error {
