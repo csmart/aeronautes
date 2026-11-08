@@ -31,10 +31,10 @@ describe("selected audit query", () => {
     const api = newFakeApi();
     api.auditSearch = vi.fn(async () => []);
     const browser = new BrowserState(api);
-    expect(browser.auditLoaded).toBe(false);
-    expect(browser.auditLoading).toBe(false);
-    expect(browser.auditError).toBeNull();
-    await browser.searchAudit(true);
+    expect(browser.audit.loaded).toBe(false);
+    expect(browser.audit.loading).toBe(false);
+    expect(browser.audit.error).toBeNull();
+    await browser.audit.search(true);
     expect(api.auditSearch).not.toHaveBeenCalled();
   });
 
@@ -43,24 +43,24 @@ describe("selected audit query", () => {
     const pending = deferred<AuditEventDTO[]>();
     api.auditSearch = vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValueOnce([]);
     const browser = new BrowserState(api);
-    const first = browser.searchAudit();
-    expect(browser.auditLoading).toBe(true);
-    expect(browser.auditLoaded).toBe(false);
-    expect(browser.auditExhausted).toBe(false);
+    const first = browser.audit.search();
+    expect(browser.audit.loading).toBe(true);
+    expect(browser.audit.loaded).toBe(false);
+    expect(browser.audit.exhausted).toBe(false);
     pending.reject(new Error("secret SQLite details"));
     await expect(first).resolves.toBeUndefined();
-    expect(browser.auditLoading).toBe(false);
-    expect(browser.auditLoaded).toBe(false);
-    expect(browser.auditError).toBe(queryError);
-    expect(browser.auditExhausted).toBe(false);
-    await browser.searchAudit(true);
+    expect(browser.audit.loading).toBe(false);
+    expect(browser.audit.loaded).toBe(false);
+    expect(browser.audit.error).toBe(queryError);
+    expect(browser.audit.exhausted).toBe(false);
+    await browser.audit.search(true);
     expect(api.auditSearch).toHaveBeenCalledTimes(1);
-    await browser.searchAudit();
-    expect(browser.auditEvents).toEqual([]);
-    expect(browser.auditLoaded).toBe(true);
-    expect(browser.auditExhausted).toBe(true);
-    expect(browser.auditError).toBeNull();
-    await browser.searchAudit(true);
+    await browser.audit.search();
+    expect(browser.audit.events).toEqual([]);
+    expect(browser.audit.loaded).toBe(true);
+    expect(browser.audit.exhausted).toBe(true);
+    expect(browser.audit.error).toBeNull();
+    await browser.audit.search(true);
     expect(api.auditSearch).toHaveBeenCalledTimes(2);
   });
 
@@ -68,14 +68,14 @@ describe("selected audit query", () => {
     const api = newFakeApi();
     api.auditSearch = vi.fn(async () => []);
     const browser = new BrowserState(api);
-    browser.auditFilterOp = " delete.λ ";
-    browser.auditFilterResult = "failed";
+    browser.audit.filterOp = " delete.λ ";
+    browser.audit.filterResult = "failed";
     browser.jobsFilter = "account-b";
-    await browser.searchAudit();
+    await browser.audit.search();
     expect(api.auditSearch).toHaveBeenCalledExactlyOnceWith({
       operationPrefix: " delete.λ ", result: "failed", bookmarkId: "", beforeId: 0, limit: 50,
     });
-    expect(browser.auditLoaded).toBe(true);
+    expect(browser.audit.loaded).toBe(true);
   });
 
   it.each([{ initial: [] }, { initial: [audit(22)] }])("retains same-query rows through a failed refresh: $initial", async ({ initial }) => {
@@ -84,20 +84,20 @@ describe("selected audit query", () => {
     api.auditSearch = vi.fn().mockResolvedValueOnce(initial)
       .mockReturnValueOnce(pending.promise).mockResolvedValueOnce([audit(33)]);
     const browser = new BrowserState(api);
-    await browser.searchAudit();
-    const refresh = browser.searchAudit();
-    expect(browser.auditEvents).toEqual(initial);
-    expect(browser.auditLoaded).toBe(true);
-    expect(browser.auditLoading).toBe(true);
+    await browser.audit.search();
+    const refresh = browser.audit.search();
+    expect(browser.audit.events).toEqual(initial);
+    expect(browser.audit.loaded).toBe(true);
+    expect(browser.audit.loading).toBe(true);
     pending.reject(new Error("refresh unavailable"));
     await refresh;
-    expect(browser.auditEvents).toEqual(initial);
-    expect(browser.auditLoaded).toBe(true);
-    expect(browser.auditError).toBe(queryError);
-    expect(browser.auditCanMore).toBe(false);
-    await browser.searchAudit();
-    expect(ids(browser.auditEvents)).toEqual([33]);
-    expect(browser.auditError).toBeNull();
+    expect(browser.audit.events).toEqual(initial);
+    expect(browser.audit.loaded).toBe(true);
+    expect(browser.audit.error).toBe(queryError);
+    expect(browser.audit.canMore).toBe(false);
+    await browser.audit.search();
+    expect(ids(browser.audit.events)).toEqual([33]);
+    expect(browser.audit.error).toBeNull();
   });
 
   it.each(["success", "failure"])("ignores an older %s and finally during a newer same-query refresh", async (outcome) => {
@@ -107,20 +107,20 @@ describe("selected audit query", () => {
     api.auditSearch = vi.fn().mockResolvedValueOnce(page())
       .mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
     const browser = new BrowserState(api);
-    await browser.searchAudit();
-    const first = browser.searchAudit();
-    const second = browser.searchAudit();
+    await browser.audit.search();
+    const first = browser.audit.search();
+    const second = browser.audit.search();
     if (outcome === "success") older.resolve([]);
     else older.reject(new Error("obsolete private error"));
     await first;
-    expect(browser.auditLoading).toBe(true);
-    expect(browser.auditError).toBeNull();
-    expect(browser.auditExhausted).toBe(false);
-    expect(browser.auditEvents).toEqual(page());
+    expect(browser.audit.loading).toBe(true);
+    expect(browser.audit.error).toBeNull();
+    expect(browser.audit.exhausted).toBe(false);
+    expect(browser.audit.events).toEqual(page());
     newer.resolve([audit(101)]);
     await second;
-    expect(ids(browser.auditEvents)).toEqual([101]);
-    expect(browser.auditLoading).toBe(false);
+    expect(ids(browser.audit.events)).toEqual([101]);
+    expect(browser.audit.loading).toBe(false);
   });
 
   it.each(["success", "failure"])("ignores an older %s after the newer query has finished", async (outcome) => {
@@ -128,53 +128,53 @@ describe("selected audit query", () => {
     const older = deferred<AuditEventDTO[]>();
     api.auditSearch = vi.fn().mockReturnValueOnce(older.promise).mockResolvedValueOnce([audit(22)]);
     const browser = new BrowserState(api);
-    const first = browser.searchAudit();
-    await browser.searchAudit();
+    const first = browser.audit.search();
+    await browser.audit.search();
     if (outcome === "success") older.resolve([audit(11)]);
     else older.reject(new Error("obsolete private error"));
     await first;
-    expect(ids(browser.auditEvents)).toEqual([22]);
-    expect(browser.auditError).toBeNull();
-    expect(browser.auditLoading).toBe(false);
+    expect(ids(browser.audit.events)).toEqual([22]);
+    expect(browser.audit.error).toBeNull();
+    expect(browser.audit.loading).toBe(false);
   });
 
   it.each([
-    ["auditFilterOp", "copy.", "delete."],
-    ["auditFilterResult", "applied", "failed"],
+    ["filterOp", "copy.", "delete."],
+    ["filterResult", "applied", "failed"],
   ] as const)("retires old rows synchronously when %s changes", async (field, previous, next) => {
     const api = newFakeApi();
     api.auditSearch = vi.fn(async () => page());
     const browser = new BrowserState(api);
-    browser[field] = previous;
-    await browser.searchAudit();
-    browser[field] = next;
-    expect(browser.auditEvents).toEqual([]);
-    expect(browser.auditLoaded).toBe(false);
-    expect(browser.auditError).toBeNull();
-    expect(browser.auditExhausted).toBe(false);
-    await browser.searchAudit(true);
+    browser.audit[field] = previous;
+    await browser.audit.search();
+    browser.audit[field] = next;
+    expect(browser.audit.events).toEqual([]);
+    expect(browser.audit.loaded).toBe(false);
+    expect(browser.audit.error).toBeNull();
+    expect(browser.audit.exhausted).toBe(false);
+    await browser.audit.search(true);
     expect(api.auditSearch).toHaveBeenCalledTimes(1);
   });
 
   it.each([
-    ["auditFilterOp", "copy.", "delete."],
-    ["auditFilterResult", "applied", "failed"],
+    ["filterOp", "copy.", "delete."],
+    ["filterResult", "applied", "failed"],
   ] as const)("retires pending replies when %s changes away and back without another search", async (field, previous, next) => {
     const api = newFakeApi();
     const pending = deferred<AuditEventDTO[]>();
     api.auditSearch = vi.fn(() => pending.promise);
     const browser = new BrowserState(api);
-    browser[field] = previous;
-    const first = browser.searchAudit();
-    browser[field] = next;
-    browser[field] = previous;
+    browser.audit[field] = previous;
+    const first = browser.audit.search();
+    browser.audit[field] = next;
+    browser.audit[field] = previous;
     pending.resolve([audit(11)]);
     await first;
     expect(api.auditSearch).toHaveBeenCalledTimes(1);
-    expect(browser.auditEvents).toEqual([]);
-    expect(browser.auditLoaded).toBe(false);
-    expect(browser.auditLoading).toBe(false);
-    expect(browser.auditError).toBeNull();
+    expect(browser.audit.events).toEqual([]);
+    expect(browser.audit.loaded).toBe(false);
+    expect(browser.audit.loading).toBe(false);
+    expect(browser.audit.error).toBeNull();
   });
 
   it("ignores failure after a filter edit that has not dispatched a replacement read", async () => {
@@ -182,13 +182,13 @@ describe("selected audit query", () => {
     const pending = deferred<AuditEventDTO[]>();
     api.auditSearch = vi.fn(() => pending.promise);
     const browser = new BrowserState(api);
-    const first = browser.searchAudit();
-    browser.auditFilterResult = "failed";
+    const first = browser.audit.search();
+    browser.audit.filterResult = "failed";
     pending.reject(new Error("old scope"));
     await first;
-    expect(browser.auditLoaded).toBe(false);
-    expect(browser.auditLoading).toBe(false);
-    expect(browser.auditError).toBeNull();
+    expect(browser.audit.loaded).toBe(false);
+    expect(browser.audit.loading).toBe(false);
+    expect(browser.audit.error).toBeNull();
     expect(api.auditSearch).toHaveBeenCalledTimes(1);
   });
 });
@@ -200,21 +200,21 @@ describe("audit paging", () => {
     const initial = page();
     api.auditSearch = vi.fn().mockResolvedValueOnce(initial).mockReturnValue(pending.promise);
     const browser = new BrowserState(api);
-    await browser.searchAudit();
-    expect(ids(browser.auditEvents)).toEqual(ids(initial));
-    expect(browser.auditExhausted).toBe(false);
-    const first = browser.searchAudit(true);
-    const second = browser.searchAudit(true);
-    expect(browser.auditMoreLoading).toBe(true);
-    expect(browser.auditCanMore).toBe(false);
+    await browser.audit.search();
+    expect(ids(browser.audit.events)).toEqual(ids(initial));
+    expect(browser.audit.exhausted).toBe(false);
+    const first = browser.audit.search(true);
+    const second = browser.audit.search(true);
+    expect(browser.audit.moreLoading).toBe(true);
+    expect(browser.audit.canMore).toBe(false);
     pending.resolve([audit(50), audit(49)]);
     await Promise.all([first, second]);
     expect.soft(api.auditSearch).toHaveBeenCalledTimes(2);
     expect.soft(api.auditSearch).toHaveBeenNthCalledWith(2, {
       operationPrefix: "", result: "", bookmarkId: "", beforeId: 51, limit: 50,
     });
-    expect(ids(browser.auditEvents)).toEqual([...ids(initial), 50, 49]);
-    expect(browser.auditMoreLoading).toBe(false);
+    expect(ids(browser.audit.events)).toEqual([...ids(initial), 50, 49]);
+    expect(browser.audit.moreLoading).toBe(false);
   });
 
   it("retries a failed page with its original cursor and accepts empty exhaustion", async () => {
@@ -223,21 +223,21 @@ describe("audit paging", () => {
       .mockRejectedValueOnce(new Error("private page details"))
       .mockResolvedValueOnce(page(50)).mockResolvedValueOnce([]);
     const browser = new BrowserState(api);
-    await browser.searchAudit();
-    await browser.searchAudit(true);
-    expect(browser.auditEvents).toEqual(page());
-    expect(browser.auditMoreError).toBe(pageError);
-    expect(browser.auditError).toBeNull();
-    expect(browser.auditExhausted).toBe(false);
-    expect(browser.auditCanMore).toBe(true);
-    await browser.searchAudit(true);
-    expect(browser.auditEvents).toEqual([...page(), ...page(50)]);
-    expect(browser.auditMoreError).toBeNull();
+    await browser.audit.search();
+    await browser.audit.search(true);
+    expect(browser.audit.events).toEqual(page());
+    expect(browser.audit.moreError).toBe(pageError);
+    expect(browser.audit.error).toBeNull();
+    expect(browser.audit.exhausted).toBe(false);
+    expect(browser.audit.canMore).toBe(true);
+    await browser.audit.search(true);
+    expect(browser.audit.events).toEqual([...page(), ...page(50)]);
+    expect(browser.audit.moreError).toBeNull();
     expect(vi.mocked(api.auditSearch).mock.calls[1]).toEqual(vi.mocked(api.auditSearch).mock.calls[2]);
-    await browser.searchAudit(true);
-    expect(browser.auditEvents).toEqual([...page(), ...page(50)]);
-    expect(browser.auditExhausted).toBe(true);
-    expect(browser.auditCanMore).toBe(false);
+    await browser.audit.search(true);
+    expect(browser.audit.events).toEqual([...page(), ...page(50)]);
+    expect(browser.audit.exhausted).toBe(true);
+    expect(browser.audit.canMore).toBe(false);
   });
 
   it.each([
@@ -250,21 +250,21 @@ describe("audit paging", () => {
     api.auditSearch = vi.fn().mockResolvedValueOnce(page())
       .mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
     const browser = new BrowserState(api);
-    await browser.searchAudit();
-    const first = browser.searchAudit(true);
-    if (replacement === "filter") browser.auditFilterResult = "failed";
-    const second = browser.searchAudit();
+    await browser.audit.search();
+    const first = browser.audit.search(true);
+    if (replacement === "filter") browser.audit.filterResult = "failed";
+    const second = browser.audit.search();
     if (outcome === "success") older.resolve([audit(50)]);
     else older.reject(new Error("old page failure"));
     await first;
-    expect(browser.auditLoading).toBe(true);
-    expect(browser.auditError).toBeNull();
-    expect(browser.auditMoreError).toBeNull();
-    expect(browser.auditEvents).toEqual(replacement === "filter" ? [] : page());
+    expect(browser.audit.loading).toBe(true);
+    expect(browser.audit.error).toBeNull();
+    expect(browser.audit.moreError).toBeNull();
+    expect(browser.audit.events).toEqual(replacement === "filter" ? [] : page());
     newer.resolve([audit(222)]);
     await second;
-    expect(ids(browser.auditEvents)).toEqual([222]);
-    expect(browser.auditMoreLoading).toBe(false);
+    expect(ids(browser.audit.events)).toEqual([222]);
+    expect(browser.audit.moreLoading).toBe(false);
   });
 
   it.each([
@@ -282,13 +282,13 @@ describe("audit paging", () => {
     api.auditSearch = vi.fn().mockResolvedValueOnce(page(200))
       .mockResolvedValueOnce(invalid).mockResolvedValueOnce([audit(150)]);
     const browser = new BrowserState(api);
-    await browser.searchAudit();
-    await browser.searchAudit(true);
-    expect(browser.auditEvents).toEqual(page(200));
-    expect(browser.auditMoreError).toBe(pageError);
-    expect(browser.auditExhausted).toBe(false);
-    await browser.searchAudit(true);
-    expect(browser.auditEvents).toEqual([...page(200), audit(150)]);
+    await browser.audit.search();
+    await browser.audit.search(true);
+    expect(browser.audit.events).toEqual(page(200));
+    expect(browser.audit.moreError).toBe(pageError);
+    expect(browser.audit.exhausted).toBe(false);
+    await browser.audit.search(true);
+    expect(browser.audit.events).toEqual([...page(200), audit(150)]);
     expect(vi.mocked(api.auditSearch).mock.calls[1]).toEqual(vi.mocked(api.auditSearch).mock.calls[2]);
   });
 
@@ -299,11 +299,11 @@ describe("audit paging", () => {
     const api = newFakeApi();
     api.auditSearch = vi.fn(async () => invalid);
     const browser = new BrowserState(api);
-    await browser.searchAudit();
-    expect(browser.auditEvents).toEqual([]);
-    expect(browser.auditLoaded).toBe(false);
-    expect(browser.auditError).toBe(queryError);
-    expect(browser.auditExhausted).toBe(false);
+    await browser.audit.search();
+    expect(browser.audit.events).toEqual([]);
+    expect(browser.audit.loaded).toBe(false);
+    expect(browser.audit.error).toBe(queryError);
+    expect(browser.audit.exhausted).toBe(false);
   });
 });
 
@@ -312,9 +312,9 @@ describe("independent Recent audit cache", () => {
     const api = newFakeApi();
     await expect(api.auditRecent(50, "")).rejects.toThrow(/name the bookmark the read is for/);
     const browser = new BrowserState(api);
-    await browser.loadAudit();
-    expect(browser.recentAuditError).toBe(true);
-    expect(browser.recentAuditLoaded).toBe(false);
+    await browser.audit.loadRecent();
+    expect(browser.audit.recentError).toBe(true);
+    expect(browser.audit.recentLoaded).toBe(false);
   });
 
   it.each([{ initial: [] }, { initial: [audit(30)] }])("labels a failed Recent refresh unavailable while retaining $initial", async ({ initial }) => {
@@ -324,22 +324,22 @@ describe("independent Recent audit cache", () => {
       .mockReturnValueOnce(pending.promise).mockResolvedValueOnce([audit(40)]);
     const browser = new BrowserState(api);
     browser.connectedBookmarkId = "source";
-    expect(browser.recentAuditLoaded).toBe(false);
-    await browser.loadAudit();
-    expect(browser.recentAuditLoaded).toBe(true);
-    const refresh = browser.loadAudit();
-    expect(browser.recentAuditLoading).toBe(true);
-    expect(browser.recentAuditEvents).toEqual(initial);
+    expect(browser.audit.recentLoaded).toBe(false);
+    await browser.audit.loadRecent();
+    expect(browser.audit.recentLoaded).toBe(true);
+    const refresh = browser.audit.loadRecent();
+    expect(browser.audit.recentLoading).toBe(true);
+    expect(browser.audit.recentEvents).toEqual(initial);
     pending.reject(new Error("secret audit details"));
     await expect(refresh).resolves.toBeUndefined();
-    expect(browser.recentAuditEvents).toEqual(initial);
-    expect(browser.recentAuditError).toBe(true);
-    expect(browser.recentAuditLoading).toBe(false);
-    expect(browser.auditLoaded).toBe(false);
-    expect(browser.auditEvents).toEqual([]);
-    await browser.loadAudit();
-    expect(ids(browser.recentAuditEvents)).toEqual([40]);
-    expect(browser.recentAuditError).toBe(false);
+    expect(browser.audit.recentEvents).toEqual(initial);
+    expect(browser.audit.recentError).toBe(true);
+    expect(browser.audit.recentLoading).toBe(false);
+    expect(browser.audit.loaded).toBe(false);
+    expect(browser.audit.events).toEqual([]);
+    await browser.audit.loadRecent();
+    expect(ids(browser.audit.recentEvents)).toEqual([40]);
+    expect(browser.audit.recentError).toBe(false);
     expect(api.auditRecent).toHaveBeenLastCalledWith(50, "source");
   });
 
@@ -351,19 +351,19 @@ describe("independent Recent audit cache", () => {
       .mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
     const browser = new BrowserState(api);
     browser.connectedBookmarkId = "source";
-    await browser.loadAudit();
-    const first = browser.loadAudit();
-    const second = browser.loadAudit();
+    await browser.audit.loadRecent();
+    const first = browser.audit.loadRecent();
+    const second = browser.audit.loadRecent();
     if (outcome === "success") older.resolve([]);
     else older.reject(new Error("older Recent error"));
     await first;
-    expect(browser.recentAuditLoading).toBe(true);
-    expect(browser.recentAuditError).toBe(false);
-    expect(ids(browser.recentAuditEvents)).toEqual([30]);
+    expect(browser.audit.recentLoading).toBe(true);
+    expect(browser.audit.recentError).toBe(false);
+    expect(ids(browser.audit.recentEvents)).toEqual([30]);
     newer.resolve([audit(40)]);
     await second;
-    expect(ids(browser.recentAuditEvents)).toEqual([40]);
-    expect(browser.recentAuditLoading).toBe(false);
+    expect(ids(browser.audit.recentEvents)).toEqual([40]);
+    expect(browser.audit.recentLoading).toBe(false);
   });
 
   it("does not let an older Recent zero replace a newer unavailable read", async () => {
@@ -373,12 +373,12 @@ describe("independent Recent audit cache", () => {
       .mockRejectedValueOnce(new Error("current Recent error"));
     const browser = new BrowserState(api);
     browser.connectedBookmarkId = "source";
-    const first = browser.loadAudit();
-    await browser.loadAudit();
+    const first = browser.audit.loadRecent();
+    await browser.audit.loadRecent();
     older.resolve([]);
     await first;
-    expect(browser.recentAuditLoaded).toBe(false);
-    expect(browser.recentAuditError).toBe(true);
+    expect(browser.audit.recentLoaded).toBe(false);
+    expect(browser.audit.recentError).toBe(true);
   });
 
   it.each([
@@ -395,11 +395,11 @@ describe("independent Recent audit cache", () => {
       .mockReturnValueOnce(search.promise);
     const browser = new BrowserState(api);
     browser.connectedBookmarkId = "source";
-    browser.auditFilterOp = "delete.";
-    await browser.loadAudit();
-    await browser.searchAudit();
-    const refresh = browser.loadAudit();
-    const query = browser.searchAudit();
+    browser.audit.filterOp = "delete.";
+    await browser.audit.loadRecent();
+    await browser.audit.search();
+    const refresh = browser.audit.loadRecent();
+    const query = browser.audit.search();
     const finishRecent = async () => {
       if (recentOutcome === "success") recent.resolve([audit(40)]);
       else recent.reject(new Error("Recent private error"));
@@ -412,21 +412,21 @@ describe("independent Recent audit cache", () => {
     };
     if (order === "recent-first") {
       await finishRecent();
-      expect(browser.auditLoading).toBe(true);
-      expect(ids(browser.auditEvents)).toEqual([22]);
+      expect(browser.audit.loading).toBe(true);
+      expect(ids(browser.audit.events)).toEqual([22]);
       await finishSearch();
     } else {
       await finishSearch();
-      expect(browser.recentAuditLoading).toBe(true);
-      expect(ids(browser.recentAuditEvents)).toEqual([30]);
+      expect(browser.audit.recentLoading).toBe(true);
+      expect(ids(browser.audit.recentEvents)).toEqual([30]);
       await finishRecent();
     }
-    expect(ids(browser.auditEvents)).toEqual([searchOutcome === "success" ? 23 : 22]);
-    expect(ids(browser.recentAuditEvents)).toEqual([recentOutcome === "success" ? 40 : 30]);
-    expect(browser.auditError).toBe(searchOutcome === "success" ? null : queryError);
-    expect(browser.recentAuditError).toBe(recentOutcome === "failure");
-    expect(browser.auditLoading).toBe(false);
-    expect(browser.recentAuditLoading).toBe(false);
+    expect(ids(browser.audit.events)).toEqual([searchOutcome === "success" ? 23 : 22]);
+    expect(ids(browser.audit.recentEvents)).toEqual([recentOutcome === "success" ? 40 : 30]);
+    expect(browser.audit.error).toBe(searchOutcome === "success" ? null : queryError);
+    expect(browser.audit.recentError).toBe(recentOutcome === "failure");
+    expect(browser.audit.loading).toBe(false);
+    expect(browser.audit.recentLoading).toBe(false);
   });
 
   it("refuses an oversized Recent reply without silently truncating the last loaded cache", async () => {
@@ -435,10 +435,10 @@ describe("independent Recent audit cache", () => {
       .mockResolvedValueOnce(Array.from({ length: 51 }, (_, index) => audit(100 - index)));
     const browser = new BrowserState(api);
     browser.connectedBookmarkId = "source";
-    await browser.loadAudit();
-    await browser.loadAudit();
-    expect(ids(browser.recentAuditEvents)).toEqual([30]);
-    expect(browser.recentAuditError).toBe(true);
+    await browser.audit.loadRecent();
+    await browser.audit.loadRecent();
+    expect(ids(browser.audit.recentEvents)).toEqual([30]);
+    expect(browser.audit.recentError).toBe(true);
   });
 });
 
@@ -526,17 +526,17 @@ describe("audit reads after mutations", () => {
     const originalResult = await effect.mock.results[0].value;
     if (scenario.returnsResult) expect(result).toBe(originalResult);
     else expect(result).toBeUndefined();
-    expect(browser.recentAuditError).toBe(true);
-    expect(browser.recentAuditLoaded).toBe(true);
-    expect(browser.recentAuditEvents).toEqual([]);
+    expect(browser.audit.recentError).toBe(true);
+    expect(browser.audit.recentLoaded).toBe(true);
+    expect(browser.audit.recentEvents).toEqual([]);
     const recorded = await readTrail(50, browser.connectedBookmarkId!);
     expect(recorded).toHaveLength(1);
     expect(recorded[0]).toMatchObject({ operation: scenario.operation, result: "applied" });
-    await browser.loadAudit();
+    await browser.audit.loadRecent();
     expect(api.auditRecent).toHaveBeenCalledTimes(2);
     expect(effect).toHaveBeenCalledTimes(1);
-    expect(browser.recentAuditEvents).toEqual(recorded);
-    expect(browser.recentAuditError).toBe(false);
+    expect(browser.audit.recentEvents).toEqual(recorded);
+    expect(browser.audit.recentError).toBe(false);
     expect(await readTrail(50, browser.connectedBookmarkId!)).toEqual(recorded);
   });
 
@@ -552,6 +552,6 @@ describe("audit reads after mutations", () => {
     expect(effect).toHaveBeenCalledTimes(1);
     expect(api.auditRecent).not.toHaveBeenCalled();
     expect(await readTrail(50, browser.connectedBookmarkId!)).toEqual([]);
-    expect(browser.recentAuditError).toBe(false);
+    expect(browser.audit.recentError).toBe(false);
   });
 });
