@@ -301,6 +301,17 @@ func TestObjectMetadataFactClassifiesNilUnverified(t *testing.T) {
 	if failed != mutationfacts.OutcomeFailed || failedRes != audit.ResultFailed {
 		t.Fatalf("nil+other = %s %s", failed, failedRes)
 	}
+	// A refused POST returns its trail beside the error: still a failure,
+	// not a posted write, and the ids are kept for the record.
+	refused := &swiftcontrol.ObjectUpdateResult{}
+	refused.TransIDs = []string{"tx-preflight", "tx-refusal"}
+	outcome, result, _, transIDs := objectMetadataFact(refused, errors.New("403 forbidden"), edit)
+	if outcome != mutationfacts.OutcomeFailed || result != audit.ResultFailed || len(transIDs) != 2 {
+		t.Fatalf("refused+other = %s %s %v", outcome, result, transIDs)
+	}
+	if objectMetadataPosted(refused, errors.New("403 forbidden")) {
+		t.Fatal("a refused POST is not a posted write")
+	}
 }
 
 func TestObjectMetadataFactsSurviveAuditRetention(t *testing.T) {
