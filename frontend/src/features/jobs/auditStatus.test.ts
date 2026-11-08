@@ -117,7 +117,7 @@ it("keeps filter values literal and clears previous-filter rows before the next 
   api.auditSearch = vi.fn().mockResolvedValueOnce([audit(22)])
     .mockReturnValueOnce(pending.promise).mockResolvedValueOnce([]);
   const browser = new BrowserState(api);
-  browser.jobsFilter = "another-account";
+  browser.jobs.bookmarkFilter = "another-account";
   show(browser);
   await vi.waitFor(() => expect(browser.audit.loaded).toBe(true));
   flushSync();
@@ -235,7 +235,7 @@ it("counts only the independent Recent slice while Search is filtered and paged"
   browser.connectedBookmarkId = "source";
   const refresh = browser.audit.loadRecent();
   browser.audit.filterOp = "copy.";
-  browser.jobsFilter = "other-account";
+  browser.jobs.bookmarkFilter = "other-account";
   show(browser);
   await vi.waitFor(() => expect(browser.audit.loaded).toBe(true));
   recent.resolve([audit(300), audit(299)]);

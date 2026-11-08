@@ -76,7 +76,7 @@ it("offers and retains an unavailable historical bookmark without requiring a co
     .mockReturnValueOnce(pending).mockResolvedValueOnce([]);
   const browser = new BrowserState(api);
   browser.bookmarks = [bookmark("alpha")];
-  browser.jobsFilter = "jobs-bookmark";
+  browser.jobs.bookmarkFilter = "jobs-bookmark";
   await show(browser);
   expect(browser.connectedBookmarkId).toBeNull();
   expect(document.querySelector('label[for$="-audit-bookmark"]')?.textContent).toBe("Bookmark");
@@ -98,7 +98,7 @@ it("offers and retains an unavailable historical bookmark without requiring a co
   expect(selector().value).toBe("gone");
   expect(document.querySelector(".audit-scope")?.textContent).toContain("gone");
   expect(document.querySelector(".audit-scope")?.textContent).not.toContain("All accounts");
-  expect(browser.jobsFilter).toBe("jobs-bookmark");
+  expect(browser.jobs.bookmarkFilter).toBe("jobs-bookmark");
   selector().value = "";
   selector().dispatchEvent(new Event("change", { bubbles: true }));
   await vi.waitFor(() => expect(browser.audit.loading).toBe(false));

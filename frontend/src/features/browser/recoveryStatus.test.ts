@@ -19,15 +19,15 @@ describe("recovery record status", () => {
     api.recoveryStatus = vi.fn().mockResolvedValueOnce(retained)
       .mockRejectedValueOnce(new Error("private database details")).mockResolvedValueOnce(empty);
     const state = new BrowserState(api);
-    await state.loadRecoveryStatus();
-    expect(state.recoveryStatus).toEqual(retained);
-    await state.loadRecoveryStatus();
-    expect(state.recoveryStatus).toBeNull();
-    expect(state.recoveryStatusError).toBe(true);
-    expect(state.recoveryStatusLoading).toBe(false);
-    await state.loadRecoveryStatus();
-    expect(state.recoveryStatus).toEqual(empty);
-    expect(state.recoveryStatusError).toBe(false);
+    await state.jobs.loadRecoveryStatus();
+    expect(state.jobs.recoveryStatus).toEqual(retained);
+    await state.jobs.loadRecoveryStatus();
+    expect(state.jobs.recoveryStatus).toBeNull();
+    expect(state.jobs.recoveryError).toBe(true);
+    expect(state.jobs.recoveryLoading).toBe(false);
+    await state.jobs.loadRecoveryStatus();
+    expect(state.jobs.recoveryStatus).toEqual(empty);
+    expect(state.jobs.recoveryError).toBe(false);
   });
 
   it.each(["success", "failure"])("ignores an older %s after a newer read", async (outcome) => {
@@ -35,14 +35,14 @@ describe("recovery record status", () => {
     const old = deferred<RecoveryStatusDTO>();
     api.recoveryStatus = vi.fn().mockReturnValueOnce(old.promise).mockResolvedValueOnce(retained);
     const state = new BrowserState(api);
-    const first = state.loadRecoveryStatus();
-    await state.loadRecoveryStatus();
+    const first = state.jobs.loadRecoveryStatus();
+    await state.jobs.loadRecoveryStatus();
     if (outcome === "success") old.resolve(empty);
     else old.reject(new Error("old read failed"));
     await first;
-    expect(state.recoveryStatus).toEqual(retained);
-    expect(state.recoveryStatusError).toBe(false);
-    expect(state.recoveryStatusLoading).toBe(false);
+    expect(state.jobs.recoveryStatus).toEqual(retained);
+    expect(state.jobs.recoveryError).toBe(false);
+    expect(state.jobs.recoveryLoading).toBe(false);
   });
 
   it("does not let an older zero replace a newer unavailable result", async () => {
@@ -51,12 +51,12 @@ describe("recovery record status", () => {
     api.recoveryStatus = vi.fn().mockReturnValueOnce(old.promise)
       .mockRejectedValueOnce(new Error("database unavailable"));
     const state = new BrowserState(api);
-    const first = state.loadRecoveryStatus();
-    await state.loadRecoveryStatus();
+    const first = state.jobs.loadRecoveryStatus();
+    await state.jobs.loadRecoveryStatus();
     old.resolve(empty);
     await first;
-    expect(state.recoveryStatus).toBeNull();
-    expect(state.recoveryStatusError).toBe(true);
+    expect(state.jobs.recoveryStatus).toBeNull();
+    expect(state.jobs.recoveryError).toBe(true);
   });
 
   it("keeps the last successful counts during a refresh without clearing a newer pending read", async () => {
@@ -66,17 +66,17 @@ describe("recovery record status", () => {
     api.recoveryStatus = vi.fn().mockResolvedValueOnce(retained)
       .mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
     const state = new BrowserState(api);
-    await state.loadRecoveryStatus();
-    const older = state.loadRecoveryStatus();
-    const latest = state.loadRecoveryStatus();
+    await state.jobs.loadRecoveryStatus();
+    const older = state.jobs.loadRecoveryStatus();
+    const latest = state.jobs.loadRecoveryStatus();
     first.resolve(empty);
     await older;
-    expect(state.recoveryStatus).toEqual(retained);
-    expect(state.recoveryStatusLoading).toBe(true);
+    expect(state.jobs.recoveryStatus).toEqual(retained);
+    expect(state.jobs.recoveryLoading).toBe(true);
     second.resolve(empty);
     await latest;
-    expect(state.recoveryStatusLoading).toBe(false);
-    expect(state.recoveryStatus).toEqual(empty);
+    expect(state.jobs.recoveryLoading).toBe(false);
+    expect(state.jobs.recoveryStatus).toEqual(empty);
   });
 
   it("keeps global counts independent of the recent-job request and account filter", async () => {
@@ -84,11 +84,11 @@ describe("recovery record status", () => {
     api.jobs = vi.fn().mockRejectedValue(new Error("recent jobs unavailable"));
     api.recoveryStatus = vi.fn().mockResolvedValue(retained);
     const state = new BrowserState(api);
-    state.jobsFilter = "different-account";
-    await Promise.all([state.loadJobs(), state.loadRecoveryStatus()]);
+    state.jobs.bookmarkFilter = "different-account";
+    await Promise.all([state.jobs.load(), state.jobs.loadRecoveryStatus()]);
     expect(api.jobs).toHaveBeenCalledWith("different-account", false, 50);
     expect(api.recoveryStatus).toHaveBeenCalledWith();
-    expect(state.jobsError).not.toBeNull();
-    expect(state.recoveryStatus).toEqual(retained);
+    expect(state.jobs.error).not.toBeNull();
+    expect(state.jobs.recoveryStatus).toEqual(retained);
   });
 });

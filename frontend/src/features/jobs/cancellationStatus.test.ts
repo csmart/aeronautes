@@ -88,13 +88,13 @@ it.each(["cancelled", "partial", "complete", "failed"])(
     cancelButton().click();
     await vi.waitFor(() => expect(document.querySelector(".badge")?.textContent).toBe(terminal));
     expect(api.cancelJob).toHaveBeenCalledExactlyOnceWith("job-a");
-    expect(browser.jobs[0].counters).toEqual(current.counters);
+    expect(browser.jobs.list[0].counters).toEqual(current.counters);
     expect(document.querySelector(".cancel")).toBeNull();
     await expectRequested();
     button("Dismiss cancellation notice for job job-a").click();
     flushSync();
     expect(notice()).toBeUndefined();
-    expect(browser.jobs[0].state).toBe(terminal);
+    expect(browser.jobs.list[0].state).toBe(terminal);
     expect(api.cancelJob).toHaveBeenCalledTimes(1);
   },
 );
@@ -137,12 +137,12 @@ it.each([false, true])("acknowledges a request without inventing a terminal resu
   await show(browser);
   cancelButton().click();
   await expectRequested();
-  expect(browser.jobs[0].state).toBe("running");
-  expect(browser.jobs[0].counters.objectsCopied).toBe(0);
-  expect(browser.jobs[0].counters.objectsVerified).toBe(0);
+  expect(browser.jobs.list[0].state).toBe("running");
+  expect(browser.jobs.list[0].counters.objectsCopied).toBe(0);
+  expect(browser.jobs.list[0].counters.objectsVerified).toBe(0);
   expect(notice()?.textContent).toContain("The job's reported state determines its outcome");
   expect(notice()?.textContent).not.toContain("cancelled");
-  expect(Boolean(browser.jobsError)).toBe(readFails);
+  expect(Boolean(browser.jobs.error)).toBe(readFails);
   expect(api.cancelJob).toHaveBeenCalledExactlyOnceWith("job-a");
   if (!readFails) expect(cancelButton().disabled).toBe(true);
 });
@@ -175,11 +175,11 @@ it.each([false, true])("retains rejected cancellation feedback through a status 
   await vi.waitFor(() => expect(api.jobs).toHaveBeenCalledTimes(2));
   await expectUnconfirmed();
   expect(api.cancelJob).toHaveBeenCalledExactlyOnceWith("job-a");
-  expect(browser.jobs[0].state).toBe("running");
+  expect(browser.jobs.list[0].state).toBe("running");
   expect(notice()?.textContent).toContain("The job may still be running");
   expect(document.body.textContent).not.toContain("private-cancellation-detail");
-  expect(Boolean(browser.jobsError)).toBe(readFails);
-  await browser.loadJobs();
+  expect(Boolean(browser.jobs.error)).toBe(readFails);
+  await browser.jobs.load();
   flushSync();
   expect(notice()?.querySelector('[role="alert"]')?.textContent).toContain("Cancellation could not be confirmed");
   expect(api.cancelJob).toHaveBeenCalledTimes(1);
@@ -228,8 +228,8 @@ it("retains attribution across account filters, tabs, collapsed views and a miss
   const browser = new BrowserState(api);
   await show(browser);
   cancelButton().click();
-  browser.jobsFilter = "another-account";
-  await browser.loadJobs();
+  browser.jobs.bookmarkFilter = "another-account";
+  await browser.jobs.load();
   flushSync();
   expect(document.body.textContent).toContain("No jobs in this view");
   expect(notice()).toBeDefined();
@@ -260,7 +260,7 @@ it("uses the admitted literal job ID when a pending row is replaced", async () =
   const browser = new BrowserState(api);
   await show(browser);
   cancelButton(literalId).click();
-  browser.jobs[0].id = "replacement-job";
+  browser.jobs.list[0].id = "replacement-job";
   current = job("replacement-job");
   flushSync();
   pending.resolve();
@@ -285,7 +285,7 @@ it.each(["requested", "unconfirmed"])("bounds %s notices without silent eviction
   else await expectUnconfirmed("job-49");
   expect(document.querySelectorAll(".cancellation-notice")).toHaveLength(50);
   current = [job("job-0"), job("new-job")];
-  await browser.loadJobs();
+  await browser.jobs.load();
   flushSync();
   expect(cancelButton("new-job").disabled).toBe(true);
   expect(document.body.textContent).toContain("Cancellation notice limit reached");
@@ -305,7 +305,7 @@ it.each(["requested", "unconfirmed"])("bounds %s notices without silent eviction
   if (state === "requested") await expectRequested("new-job");
   else await expectUnconfirmed("new-job");
   expect(document.querySelectorAll(".cancellation-notice")).toHaveLength(50);
-  expect(browser.jobs.every((item) => item.state === "running")).toBe(true);
+  expect(browser.jobs.list.every((item) => item.state === "running")).toBe(true);
   expect(vi.mocked(api.cancelJob).mock.calls.filter(([id]) => id === "new-job")).toEqual([["new-job"]]);
 });
 
@@ -319,7 +319,7 @@ it("does not dismiss pending notices or admit a new job when every slot is pendi
   await show(browser);
   for (const item of current) cancelButton(item.id).click();
   current = [job("new-job")];
-  await browser.loadJobs();
+  await browser.jobs.load();
   flushSync();
   expect(document.querySelectorAll(".cancellation-notice")).toHaveLength(50);
   expect(document.querySelector(".dismiss-cancellation")).toBeNull();

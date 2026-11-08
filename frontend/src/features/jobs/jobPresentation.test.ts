@@ -246,9 +246,9 @@ it("marks a settings record whose value cannot be displayed as not recorded", as
 
 it.each(["running", "complete"])("keeps unknown rate and later rate/ETA qualification for %s Copy", async (state) => {
   const { browser, row } = await show(job("copy", state));
-  expect(browser.jobRates["presentation-job"]).toBeUndefined();
+  expect(browser.jobs.rates["presentation-job"]).toBeUndefined();
   expect(text(row, ".when")).not.toMatch(/NaN|Infinity|~|\/s/);
-  browser.jobRates = { "presentation-job": 8 };
+  browser.jobs.rates = { "presentation-job": 8 };
   flushSync();
   if (state === "running") {
     expect(text(row, ".when")).toBe("8 B/s · ~7s");

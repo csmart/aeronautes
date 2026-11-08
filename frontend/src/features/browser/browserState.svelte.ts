@@ -4,6 +4,7 @@
 // fixture-backed fake; loading and error state live per pane.
 
 import { isLiteralPlainObject } from "../../lib/objectKind";
+import { messageOf } from "../../lib/messageOf";
 import type {
   AccountDTO,
   AccountEditDTO,
@@ -25,8 +26,6 @@ import type {
   BookmarkDTO,
   CredentialStatusDTO,
   VerifyResultDTO,
-  RecoveryStatusDTO,
-  InterruptedDisclosuresDTO,
   CapabilitiesDTO,
   ContainerCreateDTO,
   ContainerDetailDTO,
@@ -47,6 +46,7 @@ import type {
 } from "../../lib/api";
 import { AuditState } from "./auditState.svelte";
 import { SettingsState } from "./settingsState.svelte";
+import { JobsState } from "./jobsState.svelte";
 import { parentPrefix } from "../../lib/listing";
 
 export type ContainerMode = "logical" | "all" | "backstage";
@@ -188,6 +188,7 @@ export class BrowserState {
     this.audit = new AuditState(api, () => this.#connectingBookmarkId ?? this.connectedBookmarkId ?? "");
     // A restore may add bookmarks, so the rail reloads when one finishes.
     this.settings = new SettingsState(api, () => void this.loadBookmarks());
+    this.jobs = new JobsState(api);
   }
 
   // Shell environment.
@@ -237,24 +238,10 @@ export class BrowserState {
   readonly audit: AuditState;
   /** The settings document (§38/§40), the rail width it persists, and its backup and restore (ADR 0098). */
   readonly settings: SettingsState;
+  /** The jobs drawer's data (§46/§47): the filtered list, the recovery status and the interrupted-job notice. */
+  readonly jobs: JobsState;
 
   // Jobs drawer (§46/§47).
-  jobs: JobDTO[] = $state([]);
-  /** Bookmark filter for the drawer; "" = all accounts (§47 owner input). */
-  jobsFilter = $state("");
-  jobsError: string | null = $state(null);
-  recoveryStatus = $state<RecoveryStatusDTO | null>(null);
-  recoveryStatusLoading = $state(false);
-  recoveryStatusError = $state(false);
-  #recoveryStatusSeq = 0;
-  // ADR 0088: the interrupted-job notice. Null while unknown; a page with
-  // total 0 means there is nothing to disclose. The dismiss error is kept
-  // apart from the read error because a failed dismissal (decision 7) must
-  // say so without claiming the read itself is unavailable.
-  interruptedDisclosures = $state<InterruptedDisclosuresDTO | null>(null);
-  interruptedDisclosuresError = $state(false);
-  interruptedDismissError = $state(false);
-  #interruptedDisclosuresSeq = 0;
 
   // Transfer dialog (§27.1 Copy / §27.2 Mirror preview).
   transferOpen = $state(false);
@@ -276,10 +263,6 @@ export class BrowserState {
    * renders it and never the live inspector detail. */
   objectDelete: ObjectDeleteOperation | null = $state(null);
   selectedDelete: SelectedDeleteOperation | null = $state(null);
-  // Application settings (§38/§40).
-  // Per-job throughput (bytes/s) computed from successive poll deltas.
-  jobRates: Record<string, number> = $state({});
-  #lastPoll: Record<string, { bytes: number; at: number }> = {};
 
   // Find in container (§16): explicit scan, never per-keystroke.
   #findOpen = $state(false);
@@ -1236,58 +1219,6 @@ export class BrowserState {
   // over MutateService. Outcome handling — conflict banners, overwrite
   // choices — belongs to the editors; state here only stays coherent.
 
-  async loadRecoveryStatus(): Promise<void> {
-    const seq = ++this.#recoveryStatusSeq;
-    this.recoveryStatusLoading = true;
-    try {
-      const status = await this.#api.recoveryStatus();
-      if (seq === this.#recoveryStatusSeq) {
-        this.recoveryStatus = status;
-        this.recoveryStatusError = false;
-      }
-    } catch {
-      if (seq === this.#recoveryStatusSeq) {
-        this.recoveryStatus = null;
-        this.recoveryStatusError = true;
-      }
-    } finally {
-      if (seq === this.#recoveryStatusSeq) {
-        this.recoveryStatusLoading = false;
-      }
-    }
-  }
-
-  // The ADR 0088 notice read. An unavailable read is recorded as an error,
-  // never as an empty page, so the banner shows the status as unknown rather
-  // than silently saying there was nothing to disclose.
-  async loadInterruptedDisclosures(): Promise<void> {
-    const seq = ++this.#interruptedDisclosuresSeq;
-    try {
-      const page = await this.#api.interruptedDisclosures(0);
-      if (seq === this.#interruptedDisclosuresSeq) {
-        this.interruptedDisclosures = page;
-        this.interruptedDisclosuresError = false;
-      }
-    } catch {
-      if (seq === this.#interruptedDisclosuresSeq) {
-        this.interruptedDisclosures = null;
-        this.interruptedDisclosuresError = true;
-      }
-    }
-  }
-
-  // Dismissal records only that the operator was told (ADR 0088 decision 3);
-  // a failed write leaves the notice standing and says so (decision 7).
-  async dismissInterrupted(jobIds: string[]): Promise<void> {
-    this.interruptedDismissError = false;
-    try {
-      await this.#api.dismissInterrupted(jobIds);
-    } catch {
-      this.interruptedDismissError = true;
-      return;
-    }
-    await this.loadInterruptedDisclosures();
-  }
 
   /** Jobs this client started whose end should refresh the view they
    * wrote to, by id, with the account and container they changed. */
@@ -1330,73 +1261,20 @@ export class BrowserState {
     setTimeout(() => void tick(), jobPollMs);
   }
 
-  #jobsSeq = 0;
-  #jobsLoadedFilter: string | null = null;
-
-  async loadJobs() {
-    const seq = ++this.#jobsSeq;
-    const filter = this.jobsFilter;
-    if (filter !== this.#jobsLoadedFilter) {
-      this.jobs = [];
-      this.jobRates = {};
-      this.jobsError = null;
-      this.#jobsLoadedFilter = filter;
-    }
-    try {
-      const jobs = await this.#api.jobs(filter, false, 50);
-      if (seq !== this.#jobsSeq || filter !== this.jobsFilter) return;
-      const now = Date.now();
-      const rates: Record<string, number> = {};
-      for (const job of jobs) {
-        const moved = job.counters.bytesCopied;
-        const last = this.#lastPoll[job.id];
-        if (last && now > last.at && moved >= last.bytes) {
-          rates[job.id] = ((moved - last.bytes) * 1000) / (now - last.at);
-        }
-        this.#lastPoll[job.id] = { bytes: moved, at: now };
-      }
-      this.jobs = jobs;
-      this.jobRates = rates;
-      this.jobsError = null;
-    } catch (error) {
-      if (seq === this.#jobsSeq && filter === this.jobsFilter) this.jobsError = messageOf(error);
-    }
-  }
-
-  jobHistory(bookmarkId: string, cursor: string, limit: number) {
-    return this.#api.jobHistory(bookmarkId, cursor, limit);
-  }
-
-  async job(jobId: string, bookmarkId: string) {
-    const job = await this.#api.job(jobId, bookmarkId);
-    if (job && (job.id !== jobId || !bookmarkId
-      || (job.sourceBookmarkId !== bookmarkId && job.destBookmarkId !== bookmarkId))) {
-      throw new Error("job does not match the requested account and identity");
-    }
-    return job;
-  }
-
-  jobItems(jobId: string, cursor: string, limit: number, bookmarkId: string) {
-    return this.#api.jobItems(jobId, cursor, limit, bookmarkId);
-  }
-
-  jobItemTotals(jobId: string, bookmarkId: string) {
-    return this.#api.jobItemTotals(jobId, bookmarkId);
-  }
 
   async startBenchmark(confirm: string): Promise<string> {
     const id = await this.#api.startBenchmark({
       bookmarkId: this.connectedBookmarkId ?? "",
       confirm,
     });
-    await this.loadJobs();
+    await this.jobs.load();
     return id;
   }
 
 
   /** Active (non-terminal) jobs — the drawer badge. */
   get activeJobs(): JobDTO[] {
-    return this.jobs.filter((j) => !terminalJobStates.includes(j.state));
+    return this.jobs.list.filter((j) => !terminalJobStates.includes(j.state));
   }
 
   async planCopy(req: CopyRequestDTO): Promise<CopyPlanDTO> {
@@ -1406,24 +1284,24 @@ export class BrowserState {
   async startCopy(req: CopyRequestDTO): Promise<string> {
     const id = await this.#api.startCopy(req);
     this.#watchJob(id, { bookmarkId: req.destBookmarkId, container: req.destContainer });
-    await this.loadJobs();
+    await this.jobs.load();
     return id;
   }
 
   async startMirror(req: MirrorRequestDTO): Promise<string> {
     const id = await this.#api.startMirror(req);
-    await this.loadJobs();
+    await this.jobs.load();
     return id;
   }
 
   async cancelJob(jobId: string) {
     await this.#api.cancelJob(jobId);
-    await this.loadJobs();
+    await this.jobs.load();
   }
 
   async rerunJob(jobId: string): Promise<string> {
     const id = await this.#api.rerunJob(jobId);
-    await this.loadJobs();
+    await this.jobs.load();
     return id;
   }
 
@@ -1442,7 +1320,7 @@ export class BrowserState {
   async startUpload(req: UploadRequestDTO): Promise<string> {
     const id = await this.#api.startUpload(req);
     this.#watchJob(id, { bookmarkId: req.bookmarkId, container: req.container });
-    await this.loadJobs();
+    await this.jobs.load();
     return id;
   }
 
@@ -1452,7 +1330,7 @@ export class BrowserState {
 
   async startDownload(req: DownloadRequestDTO): Promise<string> {
     const id = await this.#api.startDownload(req);
-    await this.loadJobs();
+    await this.jobs.load();
     return id;
   }
 
@@ -1656,7 +1534,7 @@ export class BrowserState {
   async startDelete(req: DeleteRequestDTO): Promise<string> {
     const id = await this.#api.startDelete(req);
     this.#watchJob(id, { bookmarkId: req.bookmarkId, container: req.container });
-    await this.loadJobs();
+    await this.jobs.load();
     return id;
   }
 
@@ -1671,7 +1549,7 @@ export class BrowserState {
   async deleteManifestWithSegments(req: SegmentsDeleteRequestDTO): Promise<string> {
     const id = await this.#api.deleteManifestWithSegments(req);
     this.#watchJob(id, { bookmarkId: req.bookmarkId, container: req.container });
-    await this.loadJobs();
+    await this.jobs.load();
     await this.audit.loadRecent();
     return id;
   }
@@ -2210,7 +2088,7 @@ export class BrowserState {
   async startSelectedDelete(req: SelectedDeleteRequestDTO): Promise<string> {
     const id = await this.#api.startSelectedDelete(req);
     this.#watchJob(id, { bookmarkId: req.scope.bookmarkId, container: req.container });
-    await this.loadJobs();
+    await this.jobs.load();
     return id;
   }
 
@@ -2258,11 +2136,4 @@ export class BrowserState {
     if (ownsView() && this.#currentView(scope, selection)) await this.goTo(parent);
     return result;
   }
-}
-
-function messageOf(err: unknown): string {
-  if (err instanceof Error) {
-    return err.message;
-  }
-  return String(err);
 }

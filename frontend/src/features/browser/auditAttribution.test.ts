@@ -44,7 +44,7 @@ describe("audit bookmark queries through the live bridge", () => {
     const rows = [event(3, "beta"), event(2), event(1, "")];
     bridge.search.mockResolvedValue(rows);
     const browser = state();
-    browser.jobsFilter = "alpha";
+    browser.jobs.bookmarkFilter = "alpha";
     browser.connectedBookmarkId = "beta";
     await browser.audit.search();
     expect(bridge.search).toHaveBeenCalledExactlyOnceWith({
