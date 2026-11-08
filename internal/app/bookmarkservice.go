@@ -69,15 +69,7 @@ func (s *BookmarkService) Save(ctx context.Context, dto BookmarkDTO, secret stri
 		b = existing
 	}
 	b.DisplayName = dto.DisplayName
-	b.AuthURL = dto.AuthURL
-	b.Username = dto.Username
-	b.StorageURLOverride = dto.StorageURLOverride
-	b.AuthVersion = dto.AuthVersion
-	b.UserDomain = dto.UserDomain
-	b.ProjectName = dto.ProjectName
-	b.ProjectDomain = dto.ProjectDomain
-	b.Region = dto.Region
-	b.TLSMode = swiftcontrol.TLSMode(dto.TLSMode)
+	connectionFields(&b, dto)
 	if b.TLSMode != swiftcontrol.TLSModeCustomCA {
 		b.TLSCAID = ""
 	} else if b.TLSCAID == "" && dto.CAPem == "" {
@@ -169,17 +161,8 @@ var (
 // the session then makes is admitted under that generation, as a saved
 // bookmark's requests are.
 func (s *BookmarkService) verifyConfig(ctx context.Context, dto BookmarkDTO, secret string) (swiftcontrol.Config, func(context.Context) error, error) {
-	typed := bookmarks.Bookmark{
-		AuthURL:            dto.AuthURL,
-		Username:           dto.Username,
-		StorageURLOverride: dto.StorageURLOverride,
-		AuthVersion:        dto.AuthVersion,
-		UserDomain:         dto.UserDomain,
-		ProjectName:        dto.ProjectName,
-		ProjectDomain:      dto.ProjectDomain,
-		Region:             dto.Region,
-		TLSMode:            swiftcontrol.TLSMode(dto.TLSMode),
-	}
+	var typed bookmarks.Bookmark
+	connectionFields(&typed, dto)
 	// An omitted mode is system trust, as Save stores it (ADR 0015), so a
 	// draft without one names the same binding as the saved bookmark.
 	if typed.TLSMode == "" {
@@ -215,17 +198,10 @@ func (s *BookmarkService) verifyConfig(ctx context.Context, dto BookmarkDTO, sec
 	case err != nil:
 		return swiftcontrol.Config{}, nil, err
 	}
-	storedMode := stored.TLS.Mode
-	if storedMode == "" {
-		storedMode = swiftcontrol.TLSModeSystem
-	}
-	sameTrust := storedMode == typed.TLSMode &&
-		(typed.TLSMode != swiftcontrol.TLSModeCustomCA || caPEM == nil || bytes.Equal(caPEM, stored.TLS.CACertPEM))
-	if stored.AuthURL != dto.AuthURL || stored.Username != dto.Username ||
-		stored.StorageURLOverride != dto.StorageURLOverride || !sameTrust ||
-		stored.AuthVersion != typed.AuthVersion || stored.UserDomain != typed.UserDomain ||
-		stored.ProjectName != typed.ProjectName || stored.ProjectDomain != typed.ProjectDomain ||
-		stored.Region != typed.Region {
+	// The store's own rule for the binding a saved key serves; the CA bytes
+	// are compared here because this side holds them as PEM.
+	sameCA := typed.TLSMode != swiftcontrol.TLSModeCustomCA || caPEM == nil || bytes.Equal(caPEM, stored.TLS.CACertPEM)
+	if !bookmarks.SameBinding(stored, typed.SwiftConfig(nil, nil)) || !sameCA {
 		return swiftcontrol.Config{}, nil, errVerifyKeyReentry
 	}
 	current := func(ctx context.Context) error {
@@ -288,6 +264,21 @@ func (s *BookmarkService) cleanupCredentials(ctx context.Context) {
 	if _, err := s.store.Cleanup(context.WithoutCancel(ctx), ""); err != nil {
 		applog.Warnf("credential cleanup: %v", err)
 	}
+}
+
+// connectionFields sets the fields of a bookmark that name its endpoint and
+// identity, the ones the editor supplies and the store binds a credential
+// to; everything else the bookmark holds survives the edit untouched.
+func connectionFields(b *bookmarks.Bookmark, dto BookmarkDTO) {
+	b.AuthURL = dto.AuthURL
+	b.Username = dto.Username
+	b.StorageURLOverride = dto.StorageURLOverride
+	b.AuthVersion = dto.AuthVersion
+	b.UserDomain = dto.UserDomain
+	b.ProjectName = dto.ProjectName
+	b.ProjectDomain = dto.ProjectDomain
+	b.Region = dto.Region
+	b.TLSMode = swiftcontrol.TLSMode(dto.TLSMode)
 }
 
 func toBookmarkDTO(b bookmarks.Bookmark) BookmarkDTO {
