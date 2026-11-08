@@ -320,8 +320,8 @@ describe("the selected-set dialog", () => {
   it("states the operator's selection ceiling, the download object ceiling setting", async () => {
     const f = await state();
     applyEnabledCapabilities(["Object deletion"]);
-    await f.browser.loadAppSettings();
-    await f.browser.saveAppSettings({ ...f.browser.appSettings!, downloadObjectCeiling: 1000, browserRetentionCeiling: 2000 });
+    await f.browser.settings.load();
+    await f.browser.settings.save({ ...f.browser.settings.document!, downloadObjectCeiling: 1000, browserRetentionCeiling: 2000 });
     f.browser.select(f.index("empty-object"));
     f.browser.toggleRow(f.index("external-slo"));
     await settle();

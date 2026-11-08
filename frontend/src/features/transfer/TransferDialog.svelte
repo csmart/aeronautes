@@ -16,7 +16,7 @@
   let destBookmarkId = $state(browser.connectedBookmarkId ?? "");
   // §40 performance profile, seeded from the application default.
   // svelte-ignore state_referenced_locally
-  let profile = $state(browser.appSettings?.defaultProfile ?? "auto");
+  let profile = $state(browser.settings.document?.defaultProfile ?? "auto");
   let destContainer = $state("");
   let destPrefix = $state("");
   // Per-job §44.1 overrides; empty/zero = defaults.

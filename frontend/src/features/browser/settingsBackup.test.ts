@@ -147,19 +147,19 @@ it("refreshes cached settings after a restore so a later change keeps them", asy
     return s;
   });
   const browser = new BrowserState(api);
-  browser.appSettings = stale;
-  browser.appSettingsStatus = "current";
+  browser.settings.document = stale;
+  browser.settings.status = "current";
   mountRail(browser);
 
   button("Restore settings…").click();
-  await vi.waitFor(() => expect(browser.settingsRestoring).toBe(false));
+  await vi.waitFor(() => expect(browser.settings.restoring).toBe(false));
 
   // The cached document now holds the restored values, not the stale ones.
-  expect(browser.appSettings?.maxActiveJobs).toBe(4);
+  expect(browser.settings.document?.maxActiveJobs).toBe(4);
 
   // A later rail resize therefore persists the restored document, so it cannot
   // silently undo the restore.
-  await browser.saveRailWidth(220);
+  await browser.settings.saveRailWidth(220);
   const last = saved.at(-1)!;
   expect(last.maxActiveJobs).toBe(4);
   expect(last.railWidthPx).toBe(220);
@@ -234,17 +234,17 @@ it("reconciles cached settings when a restore could not confirm them", async () 
     return s;
   });
   const browser = new BrowserState(api);
-  browser.appSettings = stale;
-  browser.appSettingsStatus = "current";
+  browser.settings.document = stale;
+  browser.settings.status = "current";
   mountRail(browser);
 
   button("Restore settings…").click();
-  await vi.waitFor(() => expect(browser.settingsRestoring).toBe(false));
+  await vi.waitFor(() => expect(browser.settings.restoring).toBe(false));
   expect(document.body.textContent).toContain("could not be confirmed");
 
   // The cache was reconciled to the durable value, so a later rail resize
   // persists it rather than writing the stale document back.
-  expect(browser.appSettings?.maxActiveJobs).toBe(4);
-  await browser.saveRailWidth(240);
+  expect(browser.settings.document?.maxActiveJobs).toBe(4);
+  await browser.settings.saveRailWidth(240);
   expect(saved.at(-1)!.maxActiveJobs).toBe(4);
 });

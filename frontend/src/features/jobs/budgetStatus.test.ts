@@ -77,12 +77,12 @@ it("preserves the whole document and choices while awaiting acknowledgement", as
   choose("4");
   flushSync();
   expect(select()?.disabled).toBe(true);
-  expect(browser.appSettings).toEqual(original);
+  expect(browser.settings.document).toEqual(original);
   expect(api.saveAppSettings).toHaveBeenCalledExactlyOnceWith({ ...original, maxActiveJobs: 4 });
   reply.resolve({ ...original, maxActiveJobs: 4 });
   await vi.waitFor(() => expect(select()?.disabled).toBe(false));
   expect(select()?.value).toBe("4");
-  expect(browser.appSettings).toEqual({ ...original, maxActiveJobs: 4 });
+  expect(browser.settings.document).toEqual({ ...original, maxActiveJobs: 4 });
   expect([...select()!.options].map((option) => option.value)).toEqual(["1", "2", "4", "8"]);
 });
 
@@ -94,7 +94,7 @@ it("shows a cold pending read then unavailable feedback and a read-only retry", 
   expect(feedback(), "BUDGET-LOADING").toContain("Loading settings");
   expect(api.saveAppSettings).not.toHaveBeenCalled();
   reply.reject(new Error("private cold Get failure"));
-  await vi.waitFor(() => expect(browser.appSettingsOperation).toBeNull());
+  await vi.waitFor(() => expect(browser.settings.operation).toBeNull());
   flushSync();
   expect(feedback()).toContain("Settings are unavailable");
   expect(document.body.textContent).not.toContain("private cold Get");
@@ -121,7 +121,7 @@ it("qualifies a cached failed read and blocks writes until a successful refresh"
   await vi.waitFor(() => expect(select()?.value).toBe("2"));
   api.appSettings = vi.fn().mockRejectedValueOnce(new Error("private refresh failure"))
     .mockResolvedValueOnce({ ...original, maxActiveJobs: 8 });
-  await browser.loadAppSettings();
+  await browser.settings.load();
   flushSync();
   expect(select()?.value).toBe("2");
   expect(select()?.disabled, "BUDGET-STALE-EDIT").toBe(true);
@@ -152,15 +152,15 @@ it.each([false, true])("retains an uncertain save and observes recovery without 
   flushSync();
   expect.soft(feedback(), "BUDGET-SET-UNCONFIRMED").toContain("Budget change to 4 is unconfirmed");
   expect.soft(select()?.disabled, "BUDGET-UNCERTAIN-EDIT").toBe(true);
-  expect(browser.appSettings).toEqual(original);
+  expect(browser.settings.document).toEqual(original);
   expect(feedback()).toContain("Last observed budget: 2");
   expect(document.body.textContent).not.toMatch(/owned (?:applied|Set)/);
   button("Refresh settings").click();
-  await vi.waitFor(() => expect(browser.appSettingsOperation).toBeNull());
+  await vi.waitFor(() => expect(browser.settings.operation).toBeNull());
   flushSync();
   expect(select()?.value, "BUDGET-SAME-VALUE-READBACK").toBe(String(provider.maxActiveJobs));
   expect(select()?.disabled).toBe(false);
-  expect(browser.appSettings).toEqual(provider);
+  expect(browser.settings.document).toEqual(provider);
   expect(feedback(), "BUDGET-READBACK-NOT-ACK").toContain("Budget change to 4 is unconfirmed");
   expect(feedback()).not.toContain("Budget change acknowledged");
   expect(api.appSettings).toHaveBeenCalledTimes(2);
@@ -173,10 +173,10 @@ it("does not replace uncertainty with a failed read or an automatic remount read
   await vi.waitFor(() => expect(select()?.value).toBe("2"));
   api.saveAppSettings = vi.fn(async () => { throw new Error("owned uncertain reply"); });
   choose("4");
-  await vi.waitFor(() => expect(browser.appSettingsAttempt?.state).toBe("unconfirmed"));
+  await vi.waitFor(() => expect(browser.settings.attempt?.state).toBe("unconfirmed"));
   api.appSettings = vi.fn(async () => { throw new Error("private recovery Get failure"); });
   button("Refresh settings").click();
-  await vi.waitFor(() => expect(browser.appSettingsOperation).toBeNull());
+  await vi.waitFor(() => expect(browser.settings.operation).toBeNull());
   flushSync();
   expect(feedback(), "BUDGET-RECOVERY-GET-FAILURE").toContain("Settings could not be refreshed");
   expect(feedback()).toContain("stale");
@@ -186,7 +186,7 @@ it("does not replace uncertainty with a failed read or an automatic remount read
   expect(api.appSettings, "BUDGET-EXPLICIT-READ").toHaveBeenCalledTimes(1);
   expect(feedback()).toContain("Budget change to 4 is unconfirmed");
   expect(select()?.disabled).toBe(true);
-  expect(browser.appSettings).toEqual(original);
+  expect(browser.settings.document).toEqual(original);
   expect(api.saveAppSettings).toHaveBeenCalledTimes(1);
 });
 

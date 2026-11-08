@@ -7,8 +7,6 @@ import { isLiteralPlainObject } from "../../lib/objectKind";
 import type {
   AccountDTO,
   AccountEditDTO,
-  AppSettingsDTO,
-  RestoreResultDTO,
   CopyPlanDTO,
   CopyRequestDTO,
   DeletePreviewDTO,
@@ -48,6 +46,7 @@ import type {
   ListingScope,
 } from "../../lib/api";
 import { AuditState } from "./auditState.svelte";
+import { SettingsState } from "./settingsState.svelte";
 import { parentPrefix } from "../../lib/listing";
 
 export type ContainerMode = "logical" | "all" | "backstage";
@@ -187,6 +186,8 @@ export class BrowserState {
     // A recent-changes read names the account being connected, else the one
     // connected, else none, as the drawer's recent slice follows the account.
     this.audit = new AuditState(api, () => this.#connectingBookmarkId ?? this.connectedBookmarkId ?? "");
+    // A restore may add bookmarks, so the rail reloads when one finishes.
+    this.settings = new SettingsState(api, () => void this.loadBookmarks());
   }
 
   // Shell environment.
@@ -234,6 +235,8 @@ export class BrowserState {
   capabilities: CapabilitiesDTO | null = $state(null);
   /** The §50 audit trail as the drawer shows it: search, export, recent slice. */
   readonly audit: AuditState;
+  /** The settings document (§38/§40), the rail width it persists, and its backup and restore (ADR 0098). */
+  readonly settings: SettingsState;
 
   // Jobs drawer (§46/§47).
   jobs: JobDTO[] = $state([]);
@@ -274,14 +277,6 @@ export class BrowserState {
   objectDelete: ObjectDeleteOperation | null = $state(null);
   selectedDelete: SelectedDeleteOperation | null = $state(null);
   // Application settings (§38/§40).
-  appSettings: AppSettingsDTO | null = $state(null);
-  appSettingsStatus = $state<"unavailable" | "current" | "stale" | "unconfirmed">("unavailable");
-  appSettingsOperation = $state<"get" | "set" | null>(null);
-  appSettingsReadError = $state(false);
-  appSettingsAttempt = $state<{ value: number; state: "pending" | "acknowledged" | "unconfirmed" } | null>(null);
-  get canSaveAppSettings(): boolean {
-    return this.appSettingsOperation === null && this.appSettingsStatus === "current" && this.appSettings !== null;
-  }
   // Per-job throughput (bytes/s) computed from successive poll deltas.
   jobRates: Record<string, number> = $state({});
   #lastPoll: Record<string, { bytes: number; at: number }> = {};
@@ -784,11 +779,11 @@ export class BrowserState {
   /** The most members one selected-set deletion admits: the download
    * object ceiling setting, which ADR 0093 decision 2 reuses. */
   get selectionCeiling(): number {
-    return this.appSettings?.downloadObjectCeiling ?? defaultDownloadObjectCeiling;
+    return this.settings.document?.downloadObjectCeiling ?? defaultDownloadObjectCeiling;
   }
 
   get retentionCeiling(): number {
-    return this.appSettings?.browserRetentionCeiling ?? defaultBrowserRetentionCeiling;
+    return this.settings.document?.browserRetentionCeiling ?? defaultBrowserRetentionCeiling;
   }
 
   get containersAtCeiling(): boolean {
@@ -803,7 +798,7 @@ export class BrowserState {
    * shown reads them, so the stop reflects the operator's ceiling rather
    * than the default. */
   #readCeilingWhenReached(rows: number) {
-    if (this.appSettings === null && rows >= this.retentionCeiling) void this.loadAppSettings();
+    if (this.settings.document === null && rows >= this.retentionCeiling) void this.settings.load();
   }
 
   async loadMoreContainers() {
@@ -1398,82 +1393,6 @@ export class BrowserState {
     return id;
   }
 
-  async loadAppSettings() {
-    // A late read must never replace a newer acknowledged settings write.
-    if (this.appSettingsOperation !== null) return;
-    this.appSettingsOperation = "get";
-    this.appSettingsReadError = false;
-    try {
-      this.appSettings = await this.#api.appSettings();
-      this.appSettingsStatus = "current";
-    } catch {
-      this.appSettingsReadError = true;
-      if (this.appSettingsStatus !== "unconfirmed") {
-        this.appSettingsStatus = this.appSettings ? "stale" : "unavailable";
-      }
-    } finally {
-      this.#endSettingsOperation();
-    }
-  }
-
-  async saveAppSettings(settings: AppSettingsDTO) {
-    if (!this.canSaveAppSettings) {
-      throw new Error("Refresh settings before making another change.");
-    }
-    const request = { ...settings };
-    this.appSettingsOperation = "set";
-    this.appSettingsAttempt = { value: request.maxActiveJobs, state: "pending" };
-    try {
-      this.appSettings = await this.#api.saveAppSettings(request);
-      this.appSettingsStatus = "current";
-      this.appSettingsAttempt = { value: request.maxActiveJobs, state: "acknowledged" };
-    } catch (error) {
-      this.appSettingsStatus = "unconfirmed";
-      this.appSettingsAttempt = { value: request.maxActiveJobs, state: "unconfirmed" };
-      throw error;
-    } finally {
-      this.#endSettingsOperation();
-    }
-  }
-
-  /** The latest rail width asked for while a settings read or write was in
-   * flight; written against the document that operation leaves behind. */
-  #pendingRailWidth: number | null = null;
-
-  /** The bookmark rail's width persists in the settings document but is
-   * chrome rather than a budget: it takes the one write path without the
-   * drawer's attempt tracking, which names the active-job budget, and a
-   * failure costs nothing but persistence, since the width already applies
-   * to this window and the next drag writes again. A width asked for while
-   * another settings operation is running waits for it, so the last width
-   * the operator chose is the one stored. */
-  async saveRailWidth(px: number) {
-    if (this.appSettingsOperation !== null) {
-      this.#pendingRailWidth = px;
-      return;
-    }
-    if (this.appSettingsStatus !== "current" || !this.appSettings) return;
-    this.appSettingsOperation = "set";
-    try {
-      this.appSettings = await this.#api.saveAppSettings({ ...this.appSettings, railWidthPx: px });
-      this.appSettingsStatus = "current";
-    } catch {
-      // Not persisted; the window keeps the width it shows.
-    } finally {
-      this.#endSettingsOperation();
-    }
-  }
-
-  /** Every settings operation ends here so a rail width that waited for it
-   * is written against the document it left behind. */
-  #endSettingsOperation() {
-    this.appSettingsOperation = null;
-    if (this.#pendingRailWidth !== null) {
-      const px = this.#pendingRailWidth;
-      this.#pendingRailWidth = null;
-      void this.saveRailWidth(px);
-    }
-  }
 
   /** Active (non-terminal) jobs — the drawer badge. */
   get activeJobs(): JobDTO[] {
@@ -1763,117 +1682,6 @@ export class BrowserState {
     return !this.connecting && scope === this.#scopeRevision && selection === this.detailIdentity;
   }
 
-  settingsBackingUp = $state(false);
-  settingsBackupMessage = $state<string | null>(null);
-  settingsBackupError = $state<string | null>(null);
-
-  // Write the operator's configuration — settings and bookmarks, no
-  // credentials — to a file they choose (ADR 0098). A cancelled dialog
-  // writes nothing; passwords are re-entered after a restore.
-  async exportSettings() {
-    if (this.settingsBackingUp) return;
-    this.settingsBackingUp = true;
-    this.settingsBackupError = null;
-    this.settingsBackupMessage = null;
-    try {
-      const result = await this.#api.exportSettings();
-      if (result === null) {
-        this.settingsBackupMessage = "Backup cancelled; nothing was written.";
-      } else {
-        const marks = result.bookmarkCount === 1 ? "bookmark" : "bookmarks";
-        this.settingsBackupMessage = `Backed up settings and ${result.bookmarkCount} ${marks} to ${result.directory}/${result.fileName}. Passwords are not included; re-enter them after a restore.`;
-      }
-    } catch {
-      this.settingsBackupError = "Your settings could not be backed up.";
-    } finally {
-      this.settingsBackingUp = false;
-    }
-  }
-
-  settingsRestoring = $state(false);
-  settingsRestoreMessage = $state<string | null>(null);
-  settingsRestoreError = $state<string | null>(null);
-
-  // Restore the operator's configuration from a backup file they choose
-  // (ADR 0098): replace the settings and add any bookmarks not already
-  // present, leaving existing ones untouched. Credentials are never
-  // restored, so each account's password is re-entered the next time it is
-  // used. A cancelled dialog changes nothing.
-  async importSettings() {
-    if (this.settingsRestoring) return;
-    // A settings write in flight (a rail resize sends the whole document)
-    // would otherwise race the restore and could persist a stale document
-    // over it. Hold the settings operation for the whole restore so such a
-    // write waits, then refresh the cached settings before releasing it so
-    // the waiting write applies against the restored document, not the old
-    // one (ADR 0098; review db:991 finding 1).
-    if (this.appSettingsOperation !== null) {
-      this.settingsRestoreError = "Settings are busy; try the restore again in a moment.";
-      return;
-    }
-    this.settingsRestoring = true;
-    this.settingsRestoreError = null;
-    this.settingsRestoreMessage = null;
-    this.appSettingsOperation = "set";
-    try {
-      const result = await this.#api.importSettings();
-      if (result === null) {
-        this.settingsRestoreMessage = "Restore cancelled; nothing was changed.";
-        return;
-      }
-      // Settings were replaced on the backend; read them back so a later
-      // whole-document write cannot undo the restore.
-      try {
-        this.appSettings = await this.#api.appSettings();
-        this.appSettingsStatus = "current";
-      } catch {
-        this.appSettingsStatus = this.appSettings ? "stale" : "unavailable";
-      }
-      this.settingsRestoreMessage = this.#restoreMessage(result);
-    } catch (error) {
-      this.settingsRestoreError =
-        error instanceof Error && error.message ? error.message : "Your settings could not be restored.";
-    } finally {
-      // Releasing here flushes any rail width asked for during the restore,
-      // written against the refreshed document.
-      this.#endSettingsOperation();
-      this.settingsRestoring = false;
-      // Show any newly added bookmarks in the rail.
-      void this.loadBookmarks();
-    }
-  }
-
-  // #restoreMessage turns a restore result into one honest line: what landed,
-  // what remains when it did not finish, and that passwords are re-entered on
-  // use (ADR 0098; review db:991 finding 3).
-  #restoreMessage(result: RestoreResultDTO): string {
-    // Settings replace first; if they could not be confirmed the restore
-    // stopped there, so report that and nothing else.
-    if (!result.settingsApplied) {
-      return result.detail ? `${result.detail}.` : "The restore could not be applied; nothing changed.";
-    }
-    const added = `${result.bookmarksCreated} ${result.bookmarksCreated === 1 ? "bookmark" : "bookmarks"}`;
-    const skipped =
-      result.bookmarksSkipped > 0
-        ? ` ${result.bookmarksSkipped} already present ${result.bookmarksSkipped === 1 ? "was" : "were"} left unchanged.`
-        : "";
-    let message = `Restored your settings and added ${added}.${skipped}`;
-    // Entries whose commit could not be confirmed are not counted as failed:
-    // the row may be durable, so they are reported separately with reload
-    // guidance, while only entries known not to be restored invite a re-run.
-    const notRestored =
-      result.bookmarksTotal - result.bookmarksCreated - result.bookmarksSkipped - result.bookmarksUnresolved;
-    if (notRestored > 0) {
-      message += ` ${notRestored} of ${result.bookmarksTotal} not yet restored`;
-      message += result.detail
-        ? ` (${result.detail}); re-run the restore to finish.`
-        : "; re-run the restore to finish.";
-    }
-    if (result.bookmarksUnresolved > 0) {
-      message += ` ${result.bookmarksUnresolved} could not be confirmed; reload when local state is available.`;
-    }
-    return `${message} Re-enter each account's password the next time you use it.`;
-  }
 
   /** Save an object metadata working copy. force skips the fingerprint
    * check — the deliberate "apply mine anyway" after a shown conflict. */
