@@ -24,7 +24,6 @@ import type {
   UploadPreflight,
   UploadRequestDTO,
   Api,
-  AuditEventDTO,
   BookmarkDTO,
   CredentialStatusDTO,
   VerifyResultDTO,
@@ -48,6 +47,7 @@ import type {
   SelectionScopeDTO,
   ListingScope,
 } from "../../lib/api";
+import { AuditState } from "./auditState.svelte";
 import { parentPrefix } from "../../lib/listing";
 
 export type ContainerMode = "logical" | "all" | "backstage";
@@ -184,6 +184,9 @@ export class BrowserState {
 
   constructor(api: Api) {
     this.#api = api;
+    // A recent-changes read names the account being connected, else the one
+    // connected, else none, as the drawer's recent slice follows the account.
+    this.audit = new AuditState(api, () => this.#connectingBookmarkId ?? this.connectedBookmarkId ?? "");
   }
 
   // Shell environment.
@@ -229,8 +232,8 @@ export class BrowserState {
   accountError: string | null = $state(null);
   /** Connect-time §10 capability snapshot; null until connected. */
   capabilities: CapabilitiesDTO | null = $state(null);
-  /** Selected §50 query results; background Recent reads stay separate. */
-  auditEvents: AuditEventDTO[] = $state([]);
+  /** The §50 audit trail as the drawer shows it: search, export, recent slice. */
+  readonly audit: AuditState;
 
   // Jobs drawer (§46/§47).
   jobs: JobDTO[] = $state([]);
@@ -691,7 +694,7 @@ export class BrowserState {
           return { rows: [], nextMarker: "", effectiveLimit: pageLimit, scope: { bookmarkId, generation } };
         });
       if (!current()) return false;
-      await this.loadAudit();
+      await this.audit.loadRecent();
       if (!current()) return false;
       this.account = account;
       this.capabilities = capabilities;
@@ -1750,7 +1753,7 @@ export class BrowserState {
     const id = await this.#api.deleteManifestWithSegments(req);
     this.#watchJob(id, { bookmarkId: req.bookmarkId, container: req.container });
     await this.loadJobs();
-    await this.loadAudit();
+    await this.audit.loadRecent();
     return id;
   }
 
@@ -1758,133 +1761,6 @@ export class BrowserState {
   // their lifetime check before follow-up navigation.
   #currentView(scope: number, selection: typeof this.detailIdentity): boolean {
     return !this.connecting && scope === this.#scopeRevision && selection === this.detailIdentity;
-  }
-
-  // §50 viewer filters + paging over the drawer's Changes tab.
-  #auditFilterBookmark = $state("");
-  get auditFilterBookmark(): string { return this.#auditFilterBookmark; }
-  set auditFilterBookmark(value: string) {
-    if (value !== this.#auditFilterBookmark) this.#clearAuditQuery();
-    this.#auditFilterBookmark = value;
-  }
-  #auditFilterOp = $state("");
-  get auditFilterOp(): string { return this.#auditFilterOp; }
-  set auditFilterOp(value: string) {
-    if (value !== this.#auditFilterOp) this.#clearAuditQuery();
-    this.#auditFilterOp = value;
-  }
-  #auditFilterResult = $state("");
-  get auditFilterResult(): string { return this.#auditFilterResult; }
-  set auditFilterResult(value: string) {
-    if (value !== this.#auditFilterResult) this.#clearAuditQuery();
-    this.#auditFilterResult = value;
-  }
-  #auditSeq = 0;
-  auditLoaded = $state(false);
-  auditLoading = $state(false);
-  auditMoreLoading = $state(false);
-  auditError: string | null = $state(null);
-  auditMoreError: string | null = $state(null);
-  auditExhausted = $state(false);
-
-  get auditCanMore(): boolean {
-    const last = this.auditEvents.at(-1)?.id ?? 0;
-    return this.auditLoaded && !this.auditLoading && !this.auditMoreLoading
-      && this.auditError === null && !this.auditExhausted
-      && Number.isSafeInteger(last) && last > 0;
-  }
-
-  #clearAuditQuery() {
-    // Filter edits must retire replies even when values change back before
-    // another search or a Svelte update can observe the intermediate value.
-    this.#auditSeq++;
-    this.auditEvents = [];
-    this.auditLoaded = false;
-    this.auditLoading = false;
-    this.auditMoreLoading = false;
-    this.auditError = null;
-    this.auditMoreError = null;
-    this.auditExhausted = false;
-  }
-
-  #requireAuditPage(page: AuditEventDTO[], beforeId = 0, bookmarkId = "") {
-    if (page.length > 50) throw new Error("audit page exceeds its limit");
-    let previous = beforeId || Infinity;
-    for (const event of page) {
-      if (bookmarkId !== "" && event.bookmarkId !== bookmarkId) {
-        throw new Error("audit page names another bookmark");
-      }
-      if (!Number.isSafeInteger(event.id) || event.id <= 0 || event.id >= previous) {
-        throw new Error("audit page IDs do not advance");
-      }
-      previous = event.id;
-    }
-  }
-
-  async searchAudit(more = false) {
-    if (more && !this.auditCanMore) return;
-    const seq = ++this.#auditSeq;
-    const bookmarkId = this.auditFilterBookmark;
-    const operationPrefix = this.auditFilterOp;
-    const result = this.auditFilterResult;
-    const beforeId = more ? this.auditEvents[this.auditEvents.length - 1].id : 0;
-    const ownsQuery = () => seq === this.#auditSeq
-      && bookmarkId === this.auditFilterBookmark
-      && operationPrefix === this.auditFilterOp && result === this.auditFilterResult;
-    this.auditLoading = !more;
-    this.auditMoreLoading = more;
-    this.auditError = null;
-    this.auditMoreError = null;
-    try {
-      const page = await this.#api.auditSearch({ operationPrefix, result, bookmarkId, beforeId, limit: 50 });
-      if (!ownsQuery()) return;
-      this.#requireAuditPage(page, beforeId, bookmarkId);
-      this.auditEvents = more ? [...this.auditEvents, ...page] : page;
-      this.auditLoaded = true;
-      this.auditExhausted = page.length < 50;
-    } catch {
-      if (!ownsQuery()) return;
-      if (more) this.auditMoreError = "More audit events are unavailable. Previously loaded results are shown.";
-      else this.auditError = "Audit events are unavailable. Retry this search.";
-    } finally {
-      if (ownsQuery()) {
-        this.auditLoading = false;
-        this.auditMoreLoading = false;
-      }
-    }
-  }
-
-  auditExporting = $state(false);
-  auditExportMessage = $state<string | null>(null);
-  auditExportError = $state<string | null>(null);
-
-  // Archive the trail under the viewer's current filters to a file the
-  // operator chooses (§51). A cancelled dialog writes nothing; the whole
-  // matching trail is written regardless of which page is on screen.
-  async exportAudit() {
-    if (this.auditExporting) return;
-    this.auditExporting = true;
-    this.auditExportError = null;
-    this.auditExportMessage = null;
-    try {
-      const result = await this.#api.exportAudit({
-        operationPrefix: this.auditFilterOp,
-        result: this.auditFilterResult,
-        bookmarkId: this.auditFilterBookmark,
-        beforeId: 0,
-        limit: 0,
-      });
-      if (result === null) {
-        this.auditExportMessage = "Export cancelled; nothing was written.";
-      } else {
-        const events = result.count === 1 ? "event" : "events";
-        this.auditExportMessage = `Exported ${result.count} ${events} to ${result.directory}/${result.fileName}.`;
-      }
-    } catch {
-      this.auditExportError = "The audit log could not be exported.";
-    } finally {
-      this.auditExporting = false;
-    }
   }
 
   settingsBackingUp = $state(false);
@@ -1999,32 +1875,6 @@ export class BrowserState {
     return `${message} Re-enter each account's password the next time you use it.`;
   }
 
-  recentAuditEvents: AuditEventDTO[] = $state([]);
-  recentAuditLoaded = $state(false);
-  recentAuditLoading = $state(false);
-  recentAuditError = $state(false);
-  #recentAuditSeq = 0;
-
-  async loadAudit() {
-    const seq = ++this.#recentAuditSeq;
-    const bookmarkId = this.#connectingBookmarkId ?? this.connectedBookmarkId ?? "";
-    this.recentAuditLoading = true;
-    this.recentAuditError = false;
-    try {
-      const page = await this.#api.auditRecent(50, bookmarkId);
-      if (seq !== this.#recentAuditSeq) return;
-      this.#requireAuditPage(page);
-      this.recentAuditEvents = page;
-      this.recentAuditLoaded = true;
-    } catch {
-      // Mutations await this observation after their effects; a read failure
-      // must not reject the already returned mutation or bypass its view guard.
-      if (seq === this.#recentAuditSeq) this.recentAuditError = true;
-    } finally {
-      if (seq === this.#recentAuditSeq) this.recentAuditLoading = false;
-    }
-  }
-
   /** Save an object metadata working copy. force skips the fingerprint
    * check — the deliberate "apply mine anyway" after a shown conflict. */
   async saveObjectMetadata(edit: ObjectMetadataEditDTO, force = false): Promise<MutationResultDTO> {
@@ -2051,7 +1901,7 @@ export class BrowserState {
     if (this.#currentDetail(request) && result.limitation) {
       this.mutationNotice = result.limitation;
     }
-    await this.loadAudit();
+    await this.audit.loadRecent();
     return result;
   }
 
@@ -2086,7 +1936,7 @@ export class BrowserState {
       this.account = result.accountAfter;
       this.accountError = null;
     }
-    await this.loadAudit();
+    await this.audit.loadRecent();
     return result;
   }
 
@@ -2140,7 +1990,7 @@ export class BrowserState {
       this.containerDetail = result.containerAfter;
       if (this.#factCurrent(result.containerAfter)) this.#applySettings(name, result.containerAfter.settings);
     }
-    await this.loadAudit();
+    await this.audit.loadRecent();
     return result;
   }
 
@@ -2269,7 +2119,7 @@ export class BrowserState {
     const selection = this.detailIdentity;
     if (!portrait) throw new Error("The connection changed since the dialog opened. Reconnect and try again.");
     await this.#api.createContainer(portrait, create);
-    await this.loadAudit();
+    await this.audit.loadRecent();
     if (!ownsView() || !this.#currentView(scope, selection)) return;
     await this.loadContainers();
     if (!ownsView() || !this.#currentView(scope, selection)) return;
@@ -2290,7 +2140,7 @@ export class BrowserState {
     this.detailError = null;
     const detail = await this.#api.createMarker(this.prefixDetail.scope, container, prefix);
     if (this.#currentDetail(request) && detail.prefix === prefix) this.prefixDetail = detail;
-    await this.loadAudit();
+    await this.audit.loadRecent();
   }
 
   /** Jump backstage to a manifest's segment location (§23.1): browse
@@ -2333,7 +2183,7 @@ export class BrowserState {
     const prefix = this.prefix;
     const displayed = container === selection?.container && name === selection.name;
     const result = await this.#api.deleteManifest(detail.scope, container, name, detail.contentFingerprint);
-    await this.loadAudit();
+    await this.audit.loadRecent();
     if (displayed && ownsView() && this.#currentView(scope, selection)) await this.goTo(prefix);
     return result;
   }
@@ -2354,7 +2204,7 @@ export class BrowserState {
     const prefix = this.prefix;
     const displayed = container === selection?.container && name === selection.name;
     const result = await this.#api.deleteObject(detail.scope, container, name, detail.contentFingerprint);
-    await this.loadAudit();
+    await this.audit.loadRecent();
     if (displayed && ownsView() && this.#currentView(scope, selection)) await this.goTo(prefix);
     return result;
   }
@@ -2596,7 +2446,7 @@ export class BrowserState {
     const selection = this.detailIdentity;
     const parent = this.prefix;
     const result = await this.#api.deleteMarker(detail.scope, container, prefix, detail.selfObject.contentFingerprint);
-    await this.loadAudit();
+    await this.audit.loadRecent();
     if (ownsView() && this.#currentView(scope, selection)) await this.goTo(parent);
     return result;
   }

@@ -35,7 +35,7 @@ it("archives the audit log and reports the file written", async () => {
     count: 3, directory: "/home/operator/exports", fileName: "aeronautes-audit-x.jsonl",
   }));
   const browser = new BrowserState(api);
-  browser.auditFilterOp = "transfer.";
+  browser.audit.filterOp = "transfer.";
   openAuditTab(browser);
 
   button("Export log…").click();

@@ -41,7 +41,7 @@ async function show(browser: BrowserState) {
     .find((button) => button.textContent?.trim() === "Recent changes");
   expect(changes).toBeDefined();
   changes!.click();
-  await vi.waitFor(() => expect(browser.auditLoaded).toBe(true));
+  await vi.waitFor(() => expect(browser.audit.loaded).toBe(true));
   flushSync();
 }
 
@@ -93,7 +93,7 @@ it("offers and retains an unavailable historical bookmark without requiring a co
   expect(selector().value).toBe("gone");
   expect([...selector().options].some((option) => option.value === "gone")).toBe(true);
   resolve([]);
-  await vi.waitFor(() => expect(browser.auditLoaded).toBe(true));
+  await vi.waitFor(() => expect(browser.audit.loaded).toBe(true));
   flushSync();
   expect(selector().value).toBe("gone");
   expect(document.querySelector(".audit-scope")?.textContent).toContain("gone");
@@ -101,7 +101,7 @@ it("offers and retains an unavailable historical bookmark without requiring a co
   expect(browser.jobsFilter).toBe("jobs-bookmark");
   selector().value = "";
   selector().dispatchEvent(new Event("change", { bubbles: true }));
-  await vi.waitFor(() => expect(browser.auditLoading).toBe(false));
+  await vi.waitFor(() => expect(browser.audit.loading).toBe(false));
   flushSync();
   expect(api.auditSearch).toHaveBeenLastCalledWith({ bookmarkId: "", operationPrefix: "", result: "", beforeId: 0, limit: 50 });
   expect(document.querySelector(".audit-scope")?.textContent).toContain("All accounts");
@@ -116,9 +116,9 @@ it("shows a rejected named page as unavailable without leaking the other bookmar
   await show(browser);
   selector().value = "alpha";
   selector().dispatchEvent(new Event("change", { bubbles: true }));
-  await vi.waitFor(() => expect(browser.auditLoading).toBe(false));
+  await vi.waitFor(() => expect(browser.audit.loading).toBe(false));
   flushSync();
-  expect(browser.auditLoaded).toBe(false);
+  expect(browser.audit.loaded).toBe(false);
   expect(document.querySelector('.audit-status [role="alert"]')?.textContent).toBe("Audit events are unavailable. Retry this search.");
   expect(document.body.textContent).not.toContain("other-account-private-resource");
   expect(document.body.textContent).not.toContain("No matching audit events");

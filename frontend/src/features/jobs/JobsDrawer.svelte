@@ -340,10 +340,10 @@
 
   const auditBookmarks = $derived.by(() => {
     const ids = new Set(browser.bookmarks.map((b) => b.id));
-    for (const event of browser.auditEvents) {
+    for (const event of browser.audit.events) {
       if (event.bookmarkId) ids.add(event.bookmarkId);
     }
-    if (browser.auditFilterBookmark) ids.add(browser.auditFilterBookmark);
+    if (browser.audit.filterBookmark) ids.add(browser.audit.filterBookmark);
     return [...ids].filter((id) => id !== "");
   });
 
@@ -365,14 +365,14 @@
       {:else}
         No active transfers
       {/if}
-      {#if browser.recentAuditError}
+      {#if browser.audit.recentError}
         · Recent changes unavailable
-        {#if browser.recentAuditLoaded}({browser.recentAuditEvents.length} last loaded; stale){/if}
-      {:else if browser.recentAuditLoading}
+        {#if browser.audit.recentLoaded}({browser.audit.recentEvents.length} last loaded; stale){/if}
+      {:else if browser.audit.recentLoading}
         · Loading recent changes
-        {#if browser.recentAuditLoaded}({browser.recentAuditEvents.length} last loaded){/if}
-      {:else if browser.recentAuditLoaded}
-        · {browser.recentAuditEvents.length} last loaded recent changes
+        {#if browser.audit.recentLoaded}({browser.audit.recentEvents.length} last loaded){/if}
+      {:else if browser.audit.recentLoaded}
+        · {browser.audit.recentEvents.length} last loaded recent changes
       {:else}
         · Recent changes not loaded
       {/if}
@@ -488,7 +488,7 @@
           aria-selected={tab === "changes"}
           onclick={() => {
             tab = "changes";
-            void browser.searchAudit();
+            void browser.audit.search();
           }}>Recent changes</button
         >
         {#if tab === "jobs"}
@@ -828,35 +828,35 @@
         <JobHistory {browser} />
       {:else}
         <div class="audit-recent">
-          <p role={browser.recentAuditError ? "alert" : "status"}>
-            {#if browser.recentAuditError}
+          <p role={browser.audit.recentError ? "alert" : "status"}>
+            {#if browser.audit.recentError}
               Recent changes are unavailable.
-              {#if browser.recentAuditLoaded}
-                The last loaded slice of {browser.recentAuditEvents.length} events may be stale.
+              {#if browser.audit.recentLoaded}
+                The last loaded slice of {browser.audit.recentEvents.length} events may be stale.
               {/if}
-            {:else if browser.recentAuditLoading}
+            {:else if browser.audit.recentLoading}
               Loading recent changes.
-              {#if browser.recentAuditLoaded}
-                Previously loaded slice: {browser.recentAuditEvents.length} events.
+              {#if browser.audit.recentLoaded}
+                Previously loaded slice: {browser.audit.recentEvents.length} events.
               {/if}
-            {:else if browser.recentAuditLoaded}
-              Last loaded recent slice: {browser.recentAuditEvents.length} events, up to 50 for the connected account.
+            {:else if browser.audit.recentLoaded}
+              Last loaded recent slice: {browser.audit.recentEvents.length} events, up to 50 for the connected account.
             {:else}
               Recent changes have not been loaded.
             {/if}
           </p>
-          <button disabled={browser.recentAuditLoading} onclick={() => browser.loadAudit()}>
-            {browser.recentAuditError ? "Retry recent changes" : browser.recentAuditLoaded ? "Refresh recent changes" : "Load recent changes"}
+          <button disabled={browser.audit.recentLoading} onclick={() => browser.audit.loadRecent()}>
+            {browser.audit.recentError ? "Retry recent changes" : browser.audit.recentLoaded ? "Refresh recent changes" : "Load recent changes"}
           </button>
         </div>
         <div class="audit-filters num">
           <label for={`${id}-audit-bookmark`}>Bookmark</label>
           <select
             id={`${id}-audit-bookmark`}
-            value={browser.auditFilterBookmark}
+            value={browser.audit.filterBookmark}
             onchange={(e) => {
-              browser.auditFilterBookmark = e.currentTarget.value;
-              void browser.searchAudit();
+              browser.audit.filterBookmark = e.currentTarget.value;
+              void browser.audit.search();
             }}
           >
             <option value="">All accounts</option>
@@ -869,19 +869,19 @@
             id={`${id}-audit-operation`}
             class="type-mono"
             placeholder="operation prefix (transfer., delete.…)"
-            value={browser.auditFilterOp}
+            value={browser.audit.filterOp}
             onchange={(e) => {
-              browser.auditFilterOp = e.currentTarget.value;
-              void browser.searchAudit();
+              browser.audit.filterOp = e.currentTarget.value;
+              void browser.audit.search();
             }}
           />
           <label for={`${id}-audit-result`}>Result</label>
           <select
             id={`${id}-audit-result`}
-            value={browser.auditFilterResult}
+            value={browser.audit.filterResult}
             onchange={(e) => {
-              browser.auditFilterResult = e.currentTarget.value;
-              void browser.searchAudit();
+              browser.audit.filterResult = e.currentTarget.value;
+              void browser.audit.search();
             }}
           >
             <option value="">any result</option>
@@ -892,44 +892,44 @@
           </select>
         </div>
         <p class="audit-scope">
-          {browser.auditFilterBookmark === "" ? "All accounts" : `Bookmark: ${auditBookmarkLabel(browser.auditFilterBookmark)}`}
+          {browser.audit.filterBookmark === "" ? "All accounts" : `Bookmark: ${auditBookmarkLabel(browser.audit.filterBookmark)}`}
           · Operation prefix:
-          <span class="type-mono">{browser.auditFilterOp === "" ? "any" : JSON.stringify(browser.auditFilterOp)}</span>
-          · Result: <span class="type-mono">{browser.auditFilterResult === "" ? "any" : JSON.stringify(browser.auditFilterResult)}</span>
+          <span class="type-mono">{browser.audit.filterOp === "" ? "any" : JSON.stringify(browser.audit.filterOp)}</span>
+          · Result: <span class="type-mono">{browser.audit.filterResult === "" ? "any" : JSON.stringify(browser.audit.filterResult)}</span>
           · Names come from current bookmarks.
         </p>
         <div class="audit-status" role="status">
-          {#if browser.auditError}
-            <p role="alert">{browser.auditError}</p>
-            {#if browser.auditLoaded}<p>Previously loaded results may be stale.</p>{/if}
-          {:else if browser.auditLoading}
-            <p>{browser.auditLoaded ? "Refreshing audit events. Previously loaded results are shown." : "Loading audit events."}</p>
-          {:else if browser.auditMoreLoading}
+          {#if browser.audit.error}
+            <p role="alert">{browser.audit.error}</p>
+            {#if browser.audit.loaded}<p>Previously loaded results may be stale.</p>{/if}
+          {:else if browser.audit.loading}
+            <p>{browser.audit.loaded ? "Refreshing audit events. Previously loaded results are shown." : "Loading audit events."}</p>
+          {:else if browser.audit.moreLoading}
             <p>Loading more audit events. Previously loaded results are shown.</p>
-          {:else if browser.auditMoreError}
-            <p role="alert">{browser.auditMoreError}</p>
-          {:else if !browser.auditLoaded}
+          {:else if browser.audit.moreError}
+            <p role="alert">{browser.audit.moreError}</p>
+          {:else if !browser.audit.loaded}
             <p>Audit events have not been loaded for these filters.</p>
           {:else}
             <p>Last loaded results for these filters.</p>
           {/if}
-          <button disabled={browser.auditLoading} onclick={() => browser.searchAudit()}>
-            {browser.auditError ? "Retry audit search" : browser.auditLoaded ? "Refresh audit search" : "Load audit events"}
+          <button disabled={browser.audit.loading} onclick={() => browser.audit.search()}>
+            {browser.audit.error ? "Retry audit search" : browser.audit.loaded ? "Refresh audit search" : "Load audit events"}
           </button>
-          <button class="export" disabled={browser.auditExporting} onclick={() => browser.exportAudit()}>
-            {browser.auditExporting ? "Exporting…" : "Export log…"}
+          <button class="export" disabled={browser.audit.exporting} onclick={() => browser.audit.exportTrail()}>
+            {browser.audit.exporting ? "Exporting…" : "Export log…"}
           </button>
-          {#if browser.auditExportError}
-            <p role="alert">{browser.auditExportError}</p>
-          {:else if browser.auditExportMessage}
-            <p class="export-result">{browser.auditExportMessage}</p>
+          {#if browser.audit.exportError}
+            <p role="alert">{browser.audit.exportError}</p>
+          {:else if browser.audit.exportMessage}
+            <p class="export-result">{browser.audit.exportMessage}</p>
           {/if}
         </div>
         <div class="rows">
-          {#if browser.auditLoaded && !browser.auditLoading && !browser.auditError && browser.auditEvents.length === 0}
+          {#if browser.audit.loaded && !browser.audit.loading && !browser.audit.error && browser.audit.events.length === 0}
             <p class="empty">No matching audit events.</p>
           {:else}
-            {#each browser.auditEvents as event (event.id)}
+            {#each browser.audit.events as event (event.id)}
               <div class="event">
                 <span class="badge {event.result}">{event.result}</span>
                 <span class="op type-mono">{event.operation}</span>
@@ -942,9 +942,9 @@
                 {/if}
               </div>
             {/each}
-            {#if browser.auditLoaded && browser.auditEvents.length > 0 && !browser.auditExhausted && !browser.auditError}
-              <button class="more" disabled={!browser.auditCanMore} onclick={() => browser.searchAudit(true)}>
-                {browser.auditMoreError ? "Retry audit page" : "Load more…"}
+            {#if browser.audit.loaded && browser.audit.events.length > 0 && !browser.audit.exhausted && !browser.audit.error}
+              <button class="more" disabled={!browser.audit.canMore} onclick={() => browser.audit.search(true)}>
+                {browser.audit.moreError ? "Retry audit page" : "Load more…"}
               </button>
             {/if}
           {/if}
