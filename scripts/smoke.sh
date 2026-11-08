@@ -238,7 +238,10 @@ for attempt in 1 2 3; do
   # The dialog's focus trap puts focus on the Display-name field at
   # mount — type straight in, no pixel-hunting for the field.
   X type --delay 15 "Smoke"
-  X key Tab; X type --delay 10 "http://127.0.0.1:8899/auth/v1.0"
+  # The first Tab reaches the auth-type selector, which defaults to TempAuth
+  # v1; a second Tab steps past it to the auth URL, so this still fills a v1
+  # bookmark (the selector was added with the Keystone v3 auth type).
+  X key Tab; X key Tab; X type --delay 10 "http://127.0.0.1:8899/auth/v1.0"
   X key Tab; X type --delay 15 "test:tester"
   X key Tab; X type --delay 15 "testing"
   X key Return
