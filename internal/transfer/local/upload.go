@@ -110,15 +110,8 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 			} else {
 				result = nativeUpload(ctx, dst, container, item, file, present, u.confirmUnchanged())
 			}
-			if err := u.observe(item, result); err != nil {
+			if err := u.settle(ctx, dst, item, result, progress); err != nil {
 				return report, err
-			}
-			if err := u.reclaim(ctx, dst, item, result); err != nil {
-				return report, err
-			}
-			progress()
-			if u.stopped != nil {
-				return report, u.stopped
 			}
 			continue
 		}
@@ -169,15 +162,8 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 				return report, err
 			}
 			outcome := commitStagedUpload(ctx, dst, container, stagePrefix+filepath.Base(item.Path), item, present, u.confirmUnchanged(), recovery)
-			if err := u.observe(item, outcome); err != nil {
+			if err := u.settle(ctx, dst, item, outcome, progress); err != nil {
 				return report, err
-			}
-			if err := u.reclaim(ctx, dst, item, outcome); err != nil {
-				return report, err
-			}
-			progress()
-			if u.stopped != nil {
-				return report, u.stopped
 			}
 		}
 	}

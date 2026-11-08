@@ -395,6 +395,20 @@ func (u *uploadRun) replacing(item UploadItem, observed ObservedPredecessor) err
 	return u.stop(u.recorder.Replacing(item, observed))
 }
 
+// settle finishes one item the same way on either route: its outcome is
+// observed and recorded, any reclaim it earned is made, progress is
+// reported, and a run the recorder has stopped ends here.
+func (u *uploadRun) settle(ctx context.Context, dst *swiftcontrol.Session, item UploadItem, result uploadResult, progress func()) error {
+	if err := u.observe(item, result); err != nil {
+		return err
+	}
+	if err := u.reclaim(ctx, dst, item, result); err != nil {
+		return err
+	}
+	progress()
+	return u.stopped
+}
+
 func (u *uploadRun) observe(item UploadItem, result uploadResult) error {
 	if result.Result == transfercopy.ResultCopied {
 		u.report.Done++
