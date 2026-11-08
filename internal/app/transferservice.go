@@ -569,13 +569,23 @@ func copyOverwriteQuestion(srcLabel, srcAccount, dstLabel, dstAccount,
 	}, nil
 }
 
+// joinNotes joins the notes that have something to say with "; ", so a
+// message or an audit summary built from optional parts carries no
+// separator bookkeeping at each part.
+func joinNotes(notes ...string) string {
+	kept := make([]string, 0, len(notes))
+	for _, note := range notes {
+		if note != "" {
+			kept = append(kept, note)
+		}
+	}
+	return strings.Join(kept, "; ")
+}
+
 func (s *TransferService) finishCopy(ctx context.Context, jobID string, req CopyRequestDTO, counters jobs.Counters, state jobs.State, message string) {
 	totals, totalsErr := s.jobs.ReadItemTotals(ctx, jobID)
 	if totalsErr != nil {
-		if message != "" {
-			message += "; "
-		}
-		message += totalsErr.Error()
+		message = joinNotes(message, totalsErr.Error())
 		if state == jobs.StateComplete {
 			state = jobs.StatePartial
 		}
@@ -591,11 +601,7 @@ func (s *TransferService) finishCopy(ctx context.Context, jobID string, req Copy
 			count = "1 overwrite refused"
 		}
 		refusal := count + ": overwriting existing destinations is unavailable while concurrent changes cannot be protected"
-		if message == "" {
-			message = refusal
-		} else {
-			message = refusal + "; " + message
-		}
+		message = joinNotes(refusal, message)
 		auditSummary += " · " + count
 	}
 	// A completed body cannot accept cancellation even when its final
@@ -627,17 +633,13 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 	src, dst *swiftcontrol.Session, engine transfercopy.Engine, acknowledged map[string]jobs.ItemBaseline) {
 
 	background := context.WithoutCancel(ctx) // store/reconcile writes survive cancel
-	var overwritesRefused int64
 	counters := jobs.Counters{}
 	var countersMu sync.Mutex
 	var executor *transfercopy.Executor
 	finish := func(state jobs.State, message string) {
 		if executor != nil {
 			if err := executor.Close(); err != nil {
-				if message != "" {
-					message += "; "
-				}
-				message += "refusal record closure: " + err.Error()
+				message = joinNotes(message, "refusal record closure: "+err.Error())
 				if state == jobs.StateComplete {
 					state = jobs.StatePartial
 				}
@@ -799,7 +801,6 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 	executor.Stop(planErr)
 	report, finishErr := executor.Finish(ctx)
 	planErr = finishErr
-	overwritesRefused = report.OverwritesRefused
 
 	countersMu.Lock()
 	counters.ObjectsCopied = report.Copied
@@ -829,7 +830,7 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 			finish(jobs.StatePartial, planErr.Error())
 		} else if errors.Is(planErr, context.Canceled) {
 			message := ""
-			if overwritesRefused > 0 {
+			if report.OverwritesRefused > 0 {
 				message = planErr.Error()
 			}
 			finish(jobs.StateCancelled, message)

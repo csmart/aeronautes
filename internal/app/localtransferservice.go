@@ -1094,6 +1094,85 @@ func (s *TransferService) startLocalAudit(ctx context.Context, job jobs.Job, boo
 	return nil
 }
 
+// disclosure is one fact a finished local transfer states beside its own
+// message, for the operator and for the audit trail; the two differ only in
+// how much of a first error the operator's line quotes.
+type disclosure struct {
+	message, audit string
+}
+
+// localDisclosures is what the report obliges a finished job to say: the
+// stage cleanup's outcome, a destination the picked spelling no longer
+// names, and directories an unfinished job left behind. The first two turn
+// a complete job partial, because the operator must look before trusting
+// the records; the third is a fact about the disk and never changes the
+// state.
+func localDisclosures(report *local.Report, state jobs.State) ([]disclosure, jobs.State) {
+	if report == nil {
+		return nil, state
+	}
+	var out []disclosure
+	if d, ok := stageDisclosure(report.StageCleanup); ok {
+		out = append(out, d)
+		if state == jobs.StateComplete {
+			state = jobs.StatePartial
+		}
+	}
+	// Effects went into the directory picked, but the recorded paths keep
+	// the picked spelling, which no longer names it.
+	if report.RootDisplacement != "" {
+		out = append(out, disclosure{message: report.RootDisplacement, audit: report.RootDisplacement})
+		if state == jobs.StateComplete {
+			state = jobs.StatePartial
+		}
+	}
+	// A job that did not finish leaves these behind, and they are the
+	// operator's own directory (ADR 0043). On a complete job the same
+	// directories are the intended outcome and the item records already
+	// carry them, so this says nothing there.
+	if report.CreatedDirectories > 0 && state != jobs.StateComplete {
+		created := fmt.Sprintf("created %d directories inside the selected directory that were not there before", report.CreatedDirectories)
+		if len(report.CreatedDirectorySamples) > 0 {
+			created += " (" + strings.Join(report.CreatedDirectorySamples, ", ")
+			if int64(len(report.CreatedDirectorySamples)) < report.CreatedDirectories {
+				created += ", …"
+			}
+			created += ")"
+		}
+		out = append(out, disclosure{message: created, audit: created})
+	}
+	return out, state
+}
+
+// stageDisclosure states one of three outcomes, and never asserts the other
+// two: cleanup did not run, or it ran and left residue, or it ran and left
+// none (ADR 0048). Selecting on Retained alone once claimed a recording
+// failure whenever cleanup ran and deliberately left files behind.
+func stageDisclosure(cleanup *local.StageCleanupResult) (disclosure, bool) {
+	if cleanup == nil || (cleanup.Issues == 0 && !cleanup.Retained) {
+		return disclosure{}, false
+	}
+	switch {
+	case !cleanup.Attempted:
+		audit := "download stage retained after required item recording failed; cleanup was not attempted"
+		return disclosure{message: audit, audit: audit}, true
+	case cleanup.Retained && cleanup.Issues == 0 && cleanup.Refused > 0:
+		// Cleanup ran cleanly and kept only the entries whose bytes were
+		// refused verification, for the operator (ADR 0070).
+		audit := fmt.Sprintf("download stage retained: %d entries refused verification and kept for inspection", cleanup.Refused)
+		return disclosure{message: audit, audit: audit}, true
+	case cleanup.Retained:
+		audit := fmt.Sprintf("download stage retained after cleanup: %d issues", cleanup.Issues)
+		if cleanup.Refused > 0 {
+			audit += fmt.Sprintf(", %d entries refused verification", cleanup.Refused)
+		}
+		return disclosure{message: fmt.Sprintf("%s (first: %s)", audit, cleanup.FirstError), audit: audit}, true
+	default:
+		audit := fmt.Sprintf("download stage cleanup: %d issues", cleanup.Issues)
+		return disclosure{message: fmt.Sprintf("%s (first: %s)", audit, cleanup.FirstError), audit: audit}, true
+	}
+}
+
 func (s *TransferService) finishLocal(ctx context.Context, jobID, bookmarkID string, version int, counters jobs.Counters, state jobs.State, message, auditSummary string) {
 	// A completed body must no longer accept cancellation, even when
 	// persistence fails and the shared store reports unavailability.
@@ -1145,84 +1224,16 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 
 	background := context.WithoutCancel(ctx)
 	counters := base
-	var stageCleanup *local.StageCleanupResult
-	rootDisplacement := ""
-	createdDirectories := int64(0)
-	var createdSamples []string
+	var report *local.Report
 	finish := func(state jobs.State, message string) {
-		auditSummary := ""
-		if stageCleanup != nil && (stageCleanup.Issues > 0 || stageCleanup.Retained) {
-			if state == jobs.StateComplete {
-				state = jobs.StatePartial
-			}
-			if message != "" {
-				message += "; "
-			}
-			// One of three outcomes, and never an assertion of the other
-			// two: cleanup did not run, or it ran and left residue, or it
-			// ran and left none (ADR 0048). Selecting on Retained alone
-			// claimed a recording failure whenever cleanup ran and
-			// deliberately left files behind.
-			switch {
-			case !stageCleanup.Attempted:
-				auditSummary = "download stage retained after required item recording failed; cleanup was not attempted"
-				message += auditSummary
-			case stageCleanup.Retained && stageCleanup.Issues == 0 && stageCleanup.Refused > 0:
-				// Cleanup ran cleanly and kept only the entries whose bytes
-				// were refused verification, for the operator (ADR 0070).
-				auditSummary = fmt.Sprintf("download stage retained: %d entries refused verification and kept for inspection", stageCleanup.Refused)
-				message += auditSummary
-			case stageCleanup.Retained:
-				auditSummary = fmt.Sprintf("download stage retained after cleanup: %d issues", stageCleanup.Issues)
-				if stageCleanup.Refused > 0 {
-					auditSummary += fmt.Sprintf(", %d entries refused verification", stageCleanup.Refused)
-				}
-				message += fmt.Sprintf("%s (first: %s)", auditSummary, stageCleanup.FirstError)
-			default:
-				auditSummary = fmt.Sprintf("download stage cleanup: %d issues", stageCleanup.Issues)
-				message += fmt.Sprintf("%s (first: %s)", auditSummary, stageCleanup.FirstError)
-			}
+		var disclosures []disclosure
+		disclosures, state = localDisclosures(report, state)
+		messages, audits := []string{message}, make([]string, 0, len(disclosures))
+		for _, d := range disclosures {
+			messages = append(messages, d.message)
+			audits = append(audits, d.audit)
 		}
-		// Effects went into the directory picked, but the recorded paths
-		// keep the picked spelling, which no longer names it. The outcome
-		// is partial so the operator looks before trusting the records.
-		if rootDisplacement != "" {
-			if state == jobs.StateComplete {
-				state = jobs.StatePartial
-			}
-			if message != "" {
-				message += "; "
-			}
-			message += rootDisplacement
-			if auditSummary != "" {
-				auditSummary += "; "
-			}
-			auditSummary += rootDisplacement
-		}
-		// A job that did not finish leaves these behind, and they are the
-		// operator's own directory (ADR 0043). On a complete job the same
-		// directories are the intended outcome and the item records
-		// already carry them, so this says nothing there. It is a fact
-		// about the disk and never changes the state.
-		if createdDirectories > 0 && state != jobs.StateComplete {
-			created := fmt.Sprintf("created %d directories inside the selected directory that were not there before", createdDirectories)
-			if len(createdSamples) > 0 {
-				created += " (" + strings.Join(createdSamples, ", ")
-				if int64(len(createdSamples)) < createdDirectories {
-					created += ", …"
-				}
-				created += ")"
-			}
-			if message != "" {
-				message += "; "
-			}
-			message += created
-			if auditSummary != "" {
-				auditSummary += "; "
-			}
-			auditSummary += created
-		}
-		s.finishLocal(background, jobID, bookmarkID, version, counters, state, message, auditSummary)
+		s.finishLocal(background, jobID, bookmarkID, version, counters, state, joinNotes(messages...), joinNotes(audits...))
 	}
 	for _, state := range []jobs.State{jobs.StatePlanning, jobs.StateRunning} {
 		if err := s.jobs.Available(); err != nil {
@@ -1235,7 +1246,8 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 		}
 	}
 
-	report, err := run(ctx, func(done, total, bytes int64) {
+	var err error
+	report, err = run(ctx, func(done, total, bytes int64) {
 		// Progress flushes are best-effort; the terminal flush is exact.
 		// Bytes stream live so the drawer's rate and ETA work for local
 		// transfers too (§65.8 item 5).
@@ -1247,10 +1259,6 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 		err = errors.New("local transfer returned no outcome")
 	}
 	if report != nil {
-		stageCleanup = report.StageCleanup
-		rootDisplacement = report.RootDisplacement
-		createdDirectories = report.CreatedDirectories
-		createdSamples = report.CreatedDirectorySamples
 		counters.ObjectsCopied = report.Done
 		counters.ObjectsVerified = report.Verified
 		counters.BytesCopied = report.Bytes
