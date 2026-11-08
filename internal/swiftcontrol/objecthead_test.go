@@ -146,6 +146,18 @@ func TestObjectDetailFailureCarriesTransID(t *testing.T) {
 	}
 }
 
+// A reply carrying both manifest markers is an SLO whatever order the
+// headers arrive in: the store stamps that marker itself.
+func TestBuildObjectDetailClassIsDeterministic(t *testing.T) {
+	d := buildObjectDetail(canonicalHeaders(map[string]string{
+		"X-Object-Manifest":     "media_segments/big-video/",
+		"X-Static-Large-Object": "True",
+	}), time.Now())
+	if d.Class != ClassSLO {
+		t.Errorf("Class = %q, want slo", d.Class)
+	}
+}
+
 func TestObjectDetailNotFound(t *testing.T) {
 	s := newObjectHeadServer(t)
 	_, err := s.ObjectDetail(context.Background(), "media", "missing.txt")

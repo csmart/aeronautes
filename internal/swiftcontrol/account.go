@@ -85,10 +85,8 @@ func buildAccountPortrait(headers map[string]string, now time.Time) *AccountPort
 			addPolicyUsage(p.PolicyUsage, rest, v)
 			continue
 		}
-		if k == "X-Trans-Id" || (p.TransID == "" && k == "X-Openstack-Request-Id") {
-			p.TransID = v
-		}
 	}
+	p.TransID = transIDOfHeaders(headers)
 	sort.Strings(p.TempURLKeySlots)
 	p.EditableFingerprint = editableFingerprint(editable)
 	return p
