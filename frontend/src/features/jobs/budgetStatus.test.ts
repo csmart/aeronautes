@@ -58,7 +58,7 @@ async function show(browser: BrowserState) {
   flushSync();
   document.querySelector<HTMLButtonElement>(".bar")!.click();
   flushSync();
-  await vi.waitFor(() => expect(browser.recoveryStatus).not.toBeNull());
+  await vi.waitFor(() => expect(browser.jobs.recoveryStatus).not.toBeNull());
 }
 
 function choose(value: string) {
@@ -226,7 +226,7 @@ it("keeps one settings owner through tabs, collapse, polling and remount", async
   document.querySelector<HTMLButtonElement>(".bar")!.click();
   flushSync();
   document.querySelector<HTMLButtonElement>(".bar")!.click();
-  await browser.loadJobs();
+  await browser.jobs.load();
   await unmount(drawer!);
   drawer = null;
   await show(browser);

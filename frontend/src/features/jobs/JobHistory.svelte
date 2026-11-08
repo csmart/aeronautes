@@ -20,25 +20,25 @@
 
   async function load(cursor: string, number: number) {
     const seq = ++request;
-    const filter = browser.jobsFilter;
+    const filter = browser.jobs.bookmarkFilter;
     expanded = null;
     page = null;
     error = false;
     loading = true;
     pageNumber = number;
     try {
-      const result = await browser.jobHistory(filter, cursor, 50);
+      const result = await browser.jobs.history(filter, cursor, 50);
       if (!result.jobs) throw new Error("history rows unavailable");
-      if (seq === request && filter === browser.jobsFilter) page = { ...result, jobs: result.jobs };
+      if (seq === request && filter === browser.jobs.bookmarkFilter) page = { ...result, jobs: result.jobs };
     } catch {
-      if (seq === request && filter === browser.jobsFilter) error = true;
+      if (seq === request && filter === browser.jobs.bookmarkFilter) error = true;
     } finally {
-      if (seq === request && filter === browser.jobsFilter) loading = false;
+      if (seq === request && filter === browser.jobs.bookmarkFilter) loading = false;
     }
   }
 
   $effect(() => {
-    browser.jobsFilter;
+    browser.jobs.bookmarkFilter;
     untrack(() => void load("", 1));
     return () => { ++request; };
   });

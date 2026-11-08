@@ -193,7 +193,7 @@ it("reaches every item through older history while bounding both displayed pages
     expect(document.body.textContent).toContain(`History page ${page}`);
     if (page < 4) click("Next history page");
   }
-  await browser.loadJobs();
+  await browser.jobs.load();
   expect(document.body.textContent).toContain("History page 4");
   expect(document.querySelectorAll(".history-job")).toHaveLength(3);
   document.querySelectorAll<HTMLButtonElement>(".history-details")[2].click();
@@ -398,7 +398,7 @@ it.each([
   flushSync();
   expect(api.jobs).toHaveBeenCalledOnce();
   expect(api.job).toHaveBeenCalledExactlyOnceWith("download", "a");
-  expect(browser.jobs[0].counters.bytesCopied).toBe(fresh ? 17 : 0);
+  expect(browser.jobs.list[0].counters.bytesCopied).toBe(fresh ? 17 : 0);
   expect(document.body.textContent).toContain("Item page 2");
   expect(api.jobItems).not.toHaveBeenCalled();
   expect(api.jobItemTotals).not.toHaveBeenCalled();
@@ -683,13 +683,13 @@ it.each([false, true])("ignores an older recent-job response after changing acco
   const old = deferred<JobDTO[]>();
   api.jobs = vi.fn(async (account) => account === "old" ? old.promise : [job("new")]);
   const browser = new BrowserState(api);
-  browser.jobsFilter = "old";
-  const pending = browser.loadJobs();
-  browser.jobsFilter = "new";
-  await browser.loadJobs();
+  browser.jobs.bookmarkFilter = "old";
+  const pending = browser.jobs.load();
+  browser.jobs.bookmarkFilter = "new";
+  await browser.jobs.load();
   if (failure) old.reject(new Error("stale failure"));
   else old.resolve([job("old")]);
   await pending;
-  expect(browser.jobs.map((j) => j.id)).toEqual(["new"]);
-  expect(browser.jobsError).toBeNull();
+  expect(browser.jobs.list.map((j) => j.id)).toEqual(["new"]);
+  expect(browser.jobs.error).toBeNull();
 });

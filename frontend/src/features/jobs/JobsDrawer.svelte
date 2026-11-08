@@ -39,7 +39,7 @@
   const TERMINAL = ["complete", "partial", "cancelled", "failed"];
 
   $effect(() => {
-    browser.jobsFilter;
+    browser.jobs.bookmarkFilter;
     expanded = null;
   });
 
@@ -138,7 +138,7 @@
   }
 
   function canCancel(jobId: string): boolean {
-    if (disposed || browser.jobsError || !browser.jobs.some((job) => job.id === jobId && isActive(job))) {
+    if (disposed || browser.jobs.error || !browser.jobs.list.some((job) => job.id === jobId && isActive(job))) {
       return false;
     }
     const state = cancellationState(jobId);
@@ -164,7 +164,7 @@
     } catch {
       if (disposed) return;
       updateCancellation(jobId, "unconfirmed");
-      await owner.loadJobs();
+      await owner.jobs.load();
     }
   }
 
@@ -177,7 +177,7 @@
     if (disposed || cancellationRefreshing) return;
     cancellationRefreshing = true;
     try {
-      await browser.loadJobs();
+      await browser.jobs.load();
     } finally {
       if (!disposed) cancellationRefreshing = false;
     }
@@ -196,8 +196,8 @@
 
   onMount(() => {
     const refresh = () => {
-      void browser.loadJobs();
-      void browser.loadRecoveryStatus();
+      void browser.jobs.load();
+      void browser.jobs.loadRecoveryStatus();
     };
     refresh();
     // Reopening the drawer is not the explicit recovery read after a lost reply.
@@ -211,7 +211,7 @@
 
   // ETA from the live rate and the remaining planned bytes.
   function etaOf(job: JobDTO): string {
-    const rate = browser.jobRates[job.id] ?? 0;
+    const rate = browser.jobs.rates[job.id] ?? 0;
     const remaining = job.counters.bytesPlanned - job.counters.bytesCopied;
     if (!isActive(job) || rate <= 0 || remaining <= 0) {
       return "";
@@ -357,7 +357,7 @@
 <div class="drawer num">
   <button class="bar" onclick={() => (open = !open)} aria-expanded={open}>
     <span aria-live="polite">
-      {#if browser.jobsError}
+      {#if browser.jobs.error}
         Job status unavailable
       {:else if browser.activeJobs.length > 0}
         {browser.activeJobs.length} active
@@ -379,10 +379,10 @@
       {#if cancellationNotices.length > 0}
         · {cancellationNotices.length} cancellation {cancellationNotices.length === 1 ? "notice" : "notices"}
       {/if}
-      {#if browser.recoveryStatusError}
+      {#if browser.jobs.recoveryError}
         · Recovery status unavailable
-      {:else if browser.recoveryStatus && browser.recoveryStatus.records > 0}
-        · {browser.recoveryStatus.records} recovery {browser.recoveryStatus.records === 1 ? "record" : "records"} retained
+      {:else if browser.jobs.recoveryStatus && browser.jobs.recoveryStatus.records > 0}
+        · {browser.jobs.recoveryStatus.records} recovery {browser.jobs.recoveryStatus.records === 1 ? "record" : "records"} retained
       {/if}
     </span>
     <span class="hint">{open ? "▾ hide" : "▸ jobs & changes"}</span>
@@ -390,19 +390,19 @@
 
   {#if open}
     <div class="body">
-      {#if browser.interruptedDisclosuresError}
+      {#if browser.jobs.interruptedError}
         <section class="interrupted" role="status">
           <p>Interrupted-job status is unavailable; whether an earlier run left jobs unfinished is unknown.</p>
         </section>
-      {:else if browser.interruptedDisclosures && browser.interruptedDisclosures.total > 0}
+      {:else if browser.jobs.interrupted && browser.jobs.interrupted.total > 0}
         <section class="interrupted" aria-label="Interrupted jobs from a previous run">
           <p class="interrupted-head">An earlier run was interrupted. Its data and records are kept; nothing was cleaned up.</p>
           <ul class="interrupted-list">
-            {#each browser.interruptedDisclosures.entries ?? [] as entry (entry.jobId)}
+            {#each browser.jobs.interrupted.entries ?? [] as entry (entry.jobId)}
               <li>
                 <span class="operation-state">
                   <span class="operation">{operationLabel(entry.type)}</span>
-                  <button class="dismiss-interruption" onclick={() => void browser.dismissInterrupted([entry.jobId])}>Dismiss</button>
+                  <button class="dismiss-interruption" onclick={() => void browser.jobs.dismissInterrupted([entry.jobId])}>Dismiss</button>
                 </span>
                 <span class="route type-mono" title="{entry.source} → {entry.destination}">{entry.source} → {entry.destination}</span>
                 <span class="interrupted-fact">{interruptionAdmission(entry)}</span>
@@ -420,10 +420,10 @@
               </li>
             {/each}
           </ul>
-          {#if browser.interruptedDisclosures.total > (browser.interruptedDisclosures.entries ?? []).length}
-            <p class="interrupted-more">{browser.interruptedDisclosures.total - (browser.interruptedDisclosures.entries ?? []).length} more not shown.</p>
+          {#if browser.jobs.interrupted.total > (browser.jobs.interrupted.entries ?? []).length}
+            <p class="interrupted-more">{browser.jobs.interrupted.total - (browser.jobs.interrupted.entries ?? []).length} more not shown.</p>
           {/if}
-          {#if browser.interruptedDismissError}
+          {#if browser.jobs.dismissError}
             <p class="bad" role="alert">The dismissal did not happen; the notice remains.</p>
           {/if}
         </section>
@@ -628,10 +628,10 @@
           <label class="filter">
             <span>Account</span>
             <select
-              value={browser.jobsFilter}
+              value={browser.jobs.bookmarkFilter}
               onchange={(e) => {
-                browser.jobsFilter = e.currentTarget.value;
-                void browser.loadJobs();
+                browser.jobs.bookmarkFilter = e.currentTarget.value;
+                void browser.jobs.load();
               }}
             >
               <option value="">All accounts</option>
@@ -669,13 +669,13 @@
           {/if}
           <button disabled={browser.settings.operation !== null} onclick={() => void browser.settings.load()}>Refresh settings</button>
         </div>
-        <div class="recovery" role="status" aria-busy={browser.recoveryStatusLoading}>
-          {#if browser.recoveryStatusError}
+        <div class="recovery" role="status" aria-busy={browser.jobs.recoveryLoading}>
+          {#if browser.jobs.recoveryError}
             <p>Recovery status is unavailable. Retained counts are unknown.</p>
-          {:else if browser.recoveryStatus}
+          {:else if browser.jobs.recoveryStatus}
             <p>
-              {browser.recoveryStatus.records} recovery {browser.recoveryStatus.records === 1 ? "record" : "records"} retained across
-              {browser.recoveryStatus.jobs} finished {browser.recoveryStatus.jobs === 1 ? "job" : "jobs"} in all accounts.
+              {browser.jobs.recoveryStatus.records} recovery {browser.jobs.recoveryStatus.records === 1 ? "record" : "records"} retained across
+              {browser.jobs.recoveryStatus.jobs} finished {browser.jobs.recoveryStatus.jobs === 1 ? "job" : "jobs"} in all accounts.
             </p>
           {:else}
             <p>Checking recovery status…</p>
@@ -718,13 +718,13 @@
         {#if rerunError}
           <p class="empty bad" role="alert">{rerunError}</p>
         {/if}
-        {#if browser.jobsError}
-          <p class="empty">jobs unavailable: {browser.jobsError}</p>
-        {:else if browser.jobs.length === 0}
+        {#if browser.jobs.error}
+          <p class="empty">jobs unavailable: {browser.jobs.error}</p>
+        {:else if browser.jobs.list.length === 0}
           <p class="empty">No jobs in this view.</p>
         {:else}
           <div class="rows">
-            {#each browser.jobs as job (job.id)}
+            {#each browser.jobs.list as job (job.id)}
               <div class="job">
                 <span class="operation-state">
                   <span class="operation">{operationLabel(job.type)}</span>
@@ -759,8 +759,8 @@
                   {/if}
                 </span>
                 <span class="when">
-                  {#if browser.jobRates[job.id] > 0 && isActive(job)}
-                    {formatBytes(browser.jobRates[job.id])}/s
+                  {#if browser.jobs.rates[job.id] > 0 && isActive(job)}
+                    {formatBytes(browser.jobs.rates[job.id])}/s
                     {#if etaOf(job)}· {etaOf(job)}{/if}
                   {:else}
                     {timeOf(job.finishedAt) || timeOf(job.startedAt)}

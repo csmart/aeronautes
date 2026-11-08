@@ -46,12 +46,12 @@
   // ADR 0088: the interrupted-job notice. The banner announces it and offers a
   // one-click dismissal of the entries read (decision 3); the jobs panel shows
   // each one's detail and its own dismiss.
-  const interruptions = $derived(browser.interruptedDisclosures);
+  const interruptions = $derived(browser.jobs.interrupted);
   const interruptionsShown = $derived(interruptions?.entries?.length ?? 0);
   const interruptionsBeyond = $derived(interruptions ? interruptions.total - interruptionsShown : 0);
   function dismissShownInterruptions() {
     const ids = (interruptions?.entries ?? []).map((e) => e.jobId);
-    if (ids.length > 0) void browser.dismissInterrupted(ids);
+    if (ids.length > 0) void browser.jobs.dismissInterrupted(ids);
   }
 
   let cleanupLabel = $derived.by(() => {
@@ -140,7 +140,7 @@
   onMount(async () => {
     void browser.loadCredentialStatus();
     void browser.settings.load();
-    void browser.loadInterruptedDisclosures();
+    void browser.jobs.loadInterrupted();
     try {
       const info = await liveApi.info();
       shellInfo = `shell ${info.version} · Wails ${info.wails} · secrets: ${info.secretBackend}`;
@@ -226,7 +226,7 @@
     {/if}
   </div>
 {/if}
-{#if browser.interruptedDisclosuresError}
+{#if browser.jobs.interruptedError}
   <div class="interrupted-banner" role="alert">
     <span>
       <strong>Interruption status is unknown.</strong>
@@ -250,7 +250,7 @@
         <span class="interrupted-more">{interruptionsBeyond} more not shown</span>
       {/if}
     </span>
-    {#if browser.interruptedDismissError}
+    {#if browser.jobs.dismissError}
       <span class="interrupted-error">The dismissal did not happen; the notice remains.</span>
     {/if}
   </div>

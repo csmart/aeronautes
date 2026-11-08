@@ -66,7 +66,7 @@ it.each([false, true])("shows unavailable status over a stale active count (%s)"
   api.jobs = async () => { throw new Error("final result could not be saved; inspect retained data before retrying"); };
   const browser = new BrowserState(api);
   if (stale) {
-    browser.jobs = [{ id: "stale", state: "running", type: "upload", source: "local", destination: "dest/",
+    browser.jobs.list = [{ id: "stale", state: "running", type: "upload", source: "local", destination: "dest/",
       sourceBookmarkId: "", destBookmarkId: "b", createdAt: "", startedAt: "", finishedAt: "",
       engine: "rclone+native", settings: "", error: "", recoveryRecords: 1,
       counters: { objectsPlanned: 1, objectsCopied: 0, objectsVerified: 0, objectsFailed: 0,
@@ -165,7 +165,7 @@ it("keeps the global notice when no recent jobs carry retained records", async (
   api.jobs = async () => [];
   api.recoveryStatus = async () => ({ jobs: 1, records: 2 });
   const browser = new BrowserState(api);
-  browser.jobsFilter = "another-account";
+  browser.jobs.bookmarkFilter = "another-account";
   show(browser);
   await vi.waitFor(() => expect(document.querySelector(".recovery")?.textContent)
     .toMatch(/2 recovery records retained across\s+1 finished job in all accounts/));
@@ -194,7 +194,7 @@ it("shows interrupted-job detail and dismisses one through the drawer", async ()
     .mockResolvedValue({ entries: [], total: 0 });
   api.dismissInterrupted = vi.fn().mockResolvedValue({ dismissed: 1 });
   const browser = new BrowserState(api);
-  await browser.loadInterruptedDisclosures();
+  await browser.jobs.loadInterrupted();
   show(browser);
 
   const section = document.querySelector(".interrupted")!;
@@ -226,7 +226,7 @@ it("does not claim no request was made for a queued bulk-delete interruption", a
   };
   api.interruptedDisclosures = vi.fn().mockResolvedValue({ entries: [entry], total: 1 });
   const browser = new BrowserState(api);
-  await browser.loadInterruptedDisclosures();
+  await browser.jobs.loadInterrupted();
   show(browser);
   const section = document.querySelector(".interrupted")!;
   // A sweep makes listing and container requests that are not member steps, so

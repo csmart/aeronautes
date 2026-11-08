@@ -91,7 +91,7 @@
     pageNumber = number;
     try {
       const [items, counts] = await Promise.all([
-        browser.jobItems(id, cursor, 100, account), browser.jobItemTotals(id, account),
+        browser.jobs.items(id, cursor, 100, account), browser.jobs.itemTotals(id, account),
       ]);
       if (disposed || seq !== request || id !== job.id || account !== bookmarkId) return;
       if (!items.items || items.status !== counts.status || !["available", "not_captured"].includes(items.status)) {
@@ -112,7 +112,7 @@
     const id = job.id;
     const account = bookmarkId;
     try {
-      const current = await browser.job(id, account);
+      const current = await browser.jobs.get(id, account);
       if (disposed || seq !== pollRequest || id !== job.id || account !== bookmarkId) return;
       if (!current) throw new Error("job unavailable");
       polledState = current.state;

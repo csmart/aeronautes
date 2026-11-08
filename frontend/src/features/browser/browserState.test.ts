@@ -286,8 +286,8 @@ describe("large-object read semantics (§65.3)", () => {
 describe("jobs drawer state", () => {
   it("loads jobs, tracks active ones, and honours the bookmark filter", async () => {
     const s = new BrowserState(newFakeApi());
-    await s.loadJobs();
-    expect(s.jobs).toEqual([]);
+    await s.jobs.load();
+    expect(s.jobs.list).toEqual([]);
     expect(s.activeJobs).toEqual([]);
 
     const id = await s.startCopy({
@@ -301,23 +301,23 @@ describe("jobs drawer state", () => {
       acknowledgeOverwrite: false,
       settings: { chunkSize: "", transfers: 0, checkers: 0, tpsLimit: 0, bwLimit: "" , bufferSize: ""},
     });
-    expect(s.jobs.length).toBe(1);
+    expect(s.jobs.list.length).toBe(1);
     expect(s.activeJobs.length).toBe(1);
-    expect(s.jobs[0].id).toBe(id);
+    expect(s.jobs.list[0].id).toBe(id);
 
     // Filtered to an uninvolved bookmark the job disappears; to either
     // end it stays (§47).
-    s.jobsFilter = "bm-3";
-    await s.loadJobs();
-    expect(s.jobs).toEqual([]);
-    s.jobsFilter = "bm-2";
-    await s.loadJobs();
-    expect(s.jobs.length).toBe(1);
+    s.jobs.bookmarkFilter = "bm-3";
+    await s.jobs.load();
+    expect(s.jobs.list).toEqual([]);
+    s.jobs.bookmarkFilter = "bm-2";
+    await s.jobs.load();
+    expect(s.jobs.list.length).toBe(1);
 
     await s.cancelJob(id);
     expect(s.activeJobs).toEqual([]);
-    expect(s.jobs[0].state).toBe("partial");
-    expect(s.jobs[0].counters.overwritesRefused).toBe(1);
+    expect(s.jobs.list[0].state).toBe("partial");
+    expect(s.jobs.list[0].counters.overwritesRefused).toBe(1);
   });
 
   it("previews a copy plan with disclosures", async () => {

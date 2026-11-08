@@ -70,7 +70,7 @@ describe("selected audit query", () => {
     const browser = new BrowserState(api);
     browser.audit.filterOp = " delete.λ ";
     browser.audit.filterResult = "failed";
-    browser.jobsFilter = "account-b";
+    browser.jobs.bookmarkFilter = "account-b";
     await browser.audit.search();
     expect(api.auditSearch).toHaveBeenCalledExactlyOnceWith({
       operationPrefix: " delete.λ ", result: "failed", bookmarkId: "", beforeId: 0, limit: 50,

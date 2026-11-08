@@ -30,15 +30,15 @@ describe("interrupted-job notice state", () => {
     api.interruptedDisclosures = vi.fn().mockResolvedValueOnce(notice)
       .mockRejectedValueOnce(new Error("private db detail")).mockResolvedValueOnce(page(0));
     const state = new BrowserState(api);
-    await state.loadInterruptedDisclosures();
-    expect(state.interruptedDisclosures).toEqual(notice);
-    expect(state.interruptedDisclosuresError).toBe(false);
-    await state.loadInterruptedDisclosures();
-    expect(state.interruptedDisclosures).toBeNull();
-    expect(state.interruptedDisclosuresError).toBe(true);
-    await state.loadInterruptedDisclosures();
-    expect(state.interruptedDisclosures).toEqual(page(0));
-    expect(state.interruptedDisclosuresError).toBe(false);
+    await state.jobs.loadInterrupted();
+    expect(state.jobs.interrupted).toEqual(notice);
+    expect(state.jobs.interruptedError).toBe(false);
+    await state.jobs.loadInterrupted();
+    expect(state.jobs.interrupted).toBeNull();
+    expect(state.jobs.interruptedError).toBe(true);
+    await state.jobs.loadInterrupted();
+    expect(state.jobs.interrupted).toEqual(page(0));
+    expect(state.jobs.interruptedError).toBe(false);
   });
 
   it("dismisses the named notices and reloads so the banner updates", async () => {
@@ -46,10 +46,10 @@ describe("interrupted-job notice state", () => {
     api.dismissInterrupted = vi.fn().mockResolvedValue({ dismissed: 1 });
     api.interruptedDisclosures = vi.fn().mockResolvedValue(page(1, ["b"]));
     const state = new BrowserState(api);
-    await state.dismissInterrupted(["a"]);
+    await state.jobs.dismissInterrupted(["a"]);
     expect(api.dismissInterrupted).toHaveBeenCalledWith(["a"]);
-    expect(state.interruptedDismissError).toBe(false);
-    expect(state.interruptedDisclosures).toEqual(page(1, ["b"]));
+    expect(state.jobs.dismissError).toBe(false);
+    expect(state.jobs.interrupted).toEqual(page(1, ["b"]));
   });
 
   it("keeps the notice standing when a dismissal fails (decision 7)", async () => {
@@ -57,8 +57,8 @@ describe("interrupted-job notice state", () => {
     api.dismissInterrupted = vi.fn().mockRejectedValue(new Error("write unavailable"));
     api.interruptedDisclosures = vi.fn();
     const state = new BrowserState(api);
-    await state.dismissInterrupted(["a"]);
-    expect(state.interruptedDismissError).toBe(true);
+    await state.jobs.dismissInterrupted(["a"]);
+    expect(state.jobs.dismissError).toBe(true);
     expect(api.interruptedDisclosures).not.toHaveBeenCalled();
   });
 
@@ -68,13 +68,13 @@ describe("interrupted-job notice state", () => {
     const latest = page(3, ["x", "y", "z"]);
     api.interruptedDisclosures = vi.fn().mockReturnValueOnce(old.promise).mockResolvedValueOnce(latest);
     const state = new BrowserState(api);
-    const first = state.loadInterruptedDisclosures();
-    await state.loadInterruptedDisclosures();
-    expect(state.interruptedDisclosures).toEqual(latest);
+    const first = state.jobs.loadInterrupted();
+    await state.jobs.loadInterrupted();
+    expect(state.jobs.interrupted).toEqual(latest);
     if (outcome === "success") old.resolve(page(1, ["old"]));
     else old.reject(new Error("late"));
     await first;
-    expect(state.interruptedDisclosures).toEqual(latest);
-    expect(state.interruptedDisclosuresError).toBe(false);
+    expect(state.jobs.interrupted).toEqual(latest);
+    expect(state.jobs.interruptedError).toBe(false);
   });
 });
