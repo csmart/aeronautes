@@ -102,7 +102,8 @@ func TestQueuedCancelWake(t *testing.T) {
 					<-cancelLookedUp
 				}
 				bodyRan, cleaned := false, false
-				owner.launch(job.ID, bookmark, func() { unpin(); cleaned = true }, func(ctx context.Context) {
+				owner.hold(func() { unpin(); cleaned = true })
+				owner.launch(job.ID, bookmark, func(ctx context.Context) {
 					bodyRan = true
 					h.transfer.runLocal(ctx, job.ID, bookmark, 1, job.Counters,
 						func(context.Context, func(int64, int64, int64)) (*local.Report, error) {

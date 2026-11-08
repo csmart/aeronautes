@@ -169,11 +169,7 @@ func (s *DeleteService) StartDelete(ctx context.Context, req DeleteRequestDTO) (
 	if err != nil {
 		return "", err
 	}
-	defer func() {
-		if releasePins != nil {
-			releasePins()
-		}
-	}()
+	owner.hold(releasePins)
 	// A destructive job's startup I/O: confirm the session still has
 	// authority to reach the store before any job row exists, so a bookmark
 	// whose generation moved is refused here and shutdown can cancel this
@@ -198,13 +194,12 @@ func (s *DeleteService) StartDelete(ctx context.Context, req DeleteRequestDTO) (
 	s.runner.register(job.ID, owner.cancel)
 	s.runner.record(ctx, req.BookmarkID, "delete."+string(req.Mode)+".start",
 		req.Container+"/"+req.Prefix, "job "+job.ID, audit.ResultApplied)
-	owner.launch(job.ID, req.BookmarkID, releasePins, func(runCtx context.Context) {
+	owner.launch(job.ID, req.BookmarkID, func(runCtx context.Context) {
 		s.runSweepJob(runCtx, job.ID, req, session)
 	}, func(background context.Context) {
 		// Cancelled before it ran: nothing was listed, admitted or issued.
 		s.finishSweep(background, job.ID, req, jobs.StateCancelled, "", 0)
 	})
-	releasePins = nil
 	return job.ID, nil
 }
 

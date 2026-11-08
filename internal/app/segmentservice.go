@@ -433,11 +433,7 @@ func (s *DeleteService) DeleteManifestWithSegments(ctx context.Context, req Segm
 	if err != nil {
 		return "", err
 	}
-	defer func() {
-		if releasePins != nil {
-			releasePins()
-		}
-	}()
+	owner.hold(releasePins)
 	// The reviewed identity and scope are part of the job's own durable record,
 	// written with the row that admits the job, so the authority that bounds
 	// this deletion exists before any effect (ADR 0095 decision 8). Recording
@@ -457,10 +453,9 @@ func (s *DeleteService) DeleteManifestWithSegments(ctx context.Context, req Segm
 	job.session = session
 	s.runner.register(created.ID, owner.cancel)
 	s.runner.record(ctx, req.BookmarkID, "segments.delete.start", resource, "job "+created.ID, audit.ResultApplied)
-	owner.launch(created.ID, req.BookmarkID, releasePins, job.run, func(background context.Context) {
+	owner.launch(created.ID, req.BookmarkID, job.run, func(background context.Context) {
 		job.finish(background, jobs.StateCancelled, "", 0)
 	})
-	releasePins = nil
 	return created.ID, nil
 }
 
