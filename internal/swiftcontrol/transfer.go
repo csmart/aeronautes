@@ -49,23 +49,6 @@ func (s *Session) PutObject(ctx context.Context, container, name string, body io
 	return etagValue(respHeaders["Etag"]), nil
 }
 
-// CopyObject is the server-side COPY commit for plain objects
-// (§28.6(a)): same account, no client hairpin, metadata carried and the
-// given headers applied on top.
-func (s *Session) CopyObject(ctx context.Context, srcContainer, srcName, dstContainer, dstName string, headers map[string]string) error {
-	_, err := s.conn.ObjectCopy(ctx, srcContainer, srcName, dstContainer, dstName, swift.Headers(headers))
-	return Normalize(err)
-}
-
-// PostObjectHeaders sends a raw object POST with exactly the given
-// headers. Swift object POST is REPLACE-ALL for user metadata, the DLO
-// manifest, and expiry — the caller must send the complete intended set
-// (the §17.1 trap the executor's finalize handles by re-sending the
-// destination's own X-Object-Manifest).
-func (s *Session) PostObjectHeaders(ctx context.Context, container, name string, headers map[string]string) error {
-	return Normalize(s.conn.ObjectUpdate(ctx, container, name, swift.Headers(headers)))
-}
-
 // DeleteObject removes exactly the named object — for a DLO/SLO
 // manifest, the manifest alone. Used for Aeronautes' own staging litter
 // and captured-orphan sweeps; job flows never call it on names they did

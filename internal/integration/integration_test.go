@@ -1987,12 +1987,13 @@ func TestTokenRefreshAcrossSpawnsRealSwift(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := func(spawnCtx context.Context) ([]rclone.Remote, error) {
-		if err := session.RefreshIfStale(spawnCtx, 2*time.Minute); err != nil {
+		credentials, err := session.Credentials(spawnCtx, 2*time.Minute)
+		if err != nil {
 			return nil, err
 		}
 		return []rclone.Remote{
-			{Name: "aeronautes_src", StorageURL: session.StorageURL(), Token: session.AuthToken()},
-			{Name: "aeronautes_dst", StorageURL: session.StorageURL(), Token: session.AuthToken()},
+			{Name: "aeronautes_src", StorageURL: credentials.StorageURL, Token: credentials.Token},
+			{Name: "aeronautes_dst", StorageURL: credentials.StorageURL, Token: credentials.Token},
 		}, nil
 	}
 	executor, err := transfercopy.New(transfercopy.Config{

@@ -83,7 +83,7 @@ type Session struct {
 
 	// refreshMu single-flights explicit refreshes; authedAt is the last
 	// EXPLICIT authentication (the wire library's own 401-driven re-auth
-	// does not update it, which only makes RefreshIfStale conservative).
+	// does not update it, which only makes refreshIfStale conservative).
 	refreshMu sync.Mutex
 	authedAt  time.Time
 }
@@ -207,18 +207,12 @@ func (s *Session) Authenticate(ctx context.Context) error {
 	return nil
 }
 
-// RefreshIfStale re-authenticates when the token is close to expiry
-// (§26.2/ADR 0009): within margin of a KNOWN expiry, or — when the
-// backend does not advertise one — past a conservative age. Long jobs
-// call this before every engine spawn so no child starts on a token
-// about to die; the child itself cannot re-authenticate (its
+// refreshIfStale re-authenticates, under refreshMu, when the token is
+// close to expiry (§26.2/ADR 0009): within margin of a KNOWN expiry, or —
+// when the backend does not advertise one — past a conservative age.
+// Credentials runs it before every engine spawn so no child starts on a
+// token about to die; the child itself cannot re-authenticate (its
 // environment carries a token, never credentials).
-func (s *Session) RefreshIfStale(ctx context.Context, margin time.Duration) error {
-	s.refreshMu.Lock()
-	defer s.refreshMu.Unlock()
-	return s.refreshIfStale(ctx, margin)
-}
-
 func (s *Session) refreshIfStale(ctx context.Context, margin time.Duration) error {
 	expires := s.auth.snapshot().expires
 	// ForceReauth clears authedAt even when the rejected token claims
@@ -296,8 +290,8 @@ func (s *Session) AuthToken() string {
 	return s.auth.snapshot().token
 }
 
-// ForceReauth invalidates the current token so the NEXT RefreshIfStale
-// (every engine spawn does one) performs a real authentication — the
+// ForceReauth invalidates the current token so the next Credentials call
+// (every engine spawn takes one) performs a real authentication — the
 // retry after an observed 401 must never replay the rejected token
 // (review F-06).
 func (s *Session) ForceReauth() {

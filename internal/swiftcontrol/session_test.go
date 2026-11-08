@@ -243,7 +243,7 @@ func TestTLSModes(t *testing.T) {
 	})
 }
 
-func TestRefreshIfStale(t *testing.T) {
+func TestCredentialsRefreshWhenStale(t *testing.T) {
 	var authCount int64
 	mux := http.NewServeMux()
 	mux.HandleFunc("/auth/v1.0", func(w http.ResponseWriter, r *http.Request) {
@@ -267,19 +267,21 @@ func TestRefreshIfStale(t *testing.T) {
 	}
 	first := session.AuthToken()
 
-	// Inside the margin of a known expiry: refresh happens, token turns.
-	if err := session.RefreshIfStale(ctx, 2*time.Minute); err != nil {
+	// Inside the margin of a known expiry: refresh happens, token turns,
+	// and the tuple handed out is the fresh one.
+	credentials, err := session.Credentials(ctx, 2*time.Minute)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if session.AuthToken() == first {
-		t.Fatal("stale token not refreshed")
+	if session.AuthToken() == first || credentials.Token != session.AuthToken() {
+		t.Fatalf("stale token not refreshed: first %q, now %q, handed out %q", first, session.AuthToken(), credentials.Token)
 	}
 	if atomic.LoadInt64(&authCount) != 2 {
 		t.Fatalf("auths = %d", authCount)
 	}
 
 	// Comfortably before expiry (tiny margin): no refresh.
-	if err := session.RefreshIfStale(ctx, time.Second); err != nil {
+	if _, err := session.Credentials(ctx, time.Second); err != nil {
 		t.Fatal(err)
 	}
 	if atomic.LoadInt64(&authCount) != 2 {
