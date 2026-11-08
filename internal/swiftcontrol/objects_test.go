@@ -2,184 +2,36 @@ package swiftcontrol
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/http/httptest"
-	"net/url"
-	"slices"
 	"sort"
-	"strconv"
 	"strings"
-	"sync"
 	"testing"
+
+	"github.com/csmart/aeronautes/internal/swifttest"
 )
 
-// fakeObject is one stored object in the mock cluster.
-type fakeObject struct {
-	bytes       int64
-	contentType string
-	etag        string
-	sloEtag     string
-}
-
-// fakeSwift is a raw-handler mock cluster (no ServeMux: mux would
-// clean/redirect paths like foo//bar, which is exactly what the encoding
-// suite must prove survives). It implements v1 auth, JSON object listings
-// with limit/marker/prefix/delimiter semantics, and object HEAD with
-// byte-exact names recovered from the escaped path.
-type fakeSwift struct {
-	auth      *fakeAuth
-	container string
-
-	mu       sync.Mutex
-	objects  map[string]fakeObject
-	requests int
-}
-
-func newFakeSwift(t *testing.T, container string) (*fakeSwift, *Session) {
+// newListingServer serves one swifttest-backed session for the listing
+// suite; the mock answers raw paths (no ServeMux), which is what the
+// encoding cases must prove survives.
+func newListingServer(t *testing.T) (*swifttest.Server, *Session) {
 	t.Helper()
-	f := &fakeSwift{
-		auth:      &fakeAuth{user: "acct:user", key: "sekrit", storagePath: "/v1/AUTH_acct"},
-		container: container,
-		objects:   map[string]fakeObject{},
-	}
-	srv := httptest.NewServer(http.HandlerFunc(f.handle))
+	mock := swifttest.New("test:tester", "testing")
+	srv := httptest.NewServer(mock)
 	t.Cleanup(srv.Close)
-	f.auth.serverURL = srv.URL
-
-	s, err := New(Config{AuthURL: srv.URL + "/auth/v1.0", Username: "acct:user", APIKey: "sekrit"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return f, s
+	return mock, mustSession(t, srv.URL)
 }
 
-func (f *fakeSwift) put(name string, o fakeObject) {
-	if o.contentType == "" {
-		o.contentType = "application/octet-stream"
-	}
-	if o.etag == "" {
-		o.etag = "d41d8cd98f00b204e9800998ecf8427e"
-	}
-	f.mu.Lock()
-	f.objects[name] = o
-	f.mu.Unlock()
-}
-
-func (f *fakeSwift) handle(w http.ResponseWriter, r *http.Request) {
-	ep := r.URL.EscapedPath()
-	containerPath := "/v1/AUTH_acct/" + f.container
-	switch {
-	case ep == "/auth/v1.0":
-		f.auth.handle(w, r)
-	case ep == containerPath:
-		f.mu.Lock()
-		f.requests++
-		f.mu.Unlock()
-		f.handleListing(w, r)
-	case strings.HasPrefix(ep, containerPath+"/"):
-		name, err := url.PathUnescape(strings.TrimPrefix(ep, containerPath+"/"))
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			return
+// listingRequests counts the container listings the mock served, so a
+// pagination case can say how many pages were fetched.
+func listingRequests(mock *swifttest.Server, container string) int {
+	n := 0
+	for _, line := range mock.RequestLog() {
+		if strings.HasPrefix(line, "GET /v1/AUTH_test/"+container+"?") {
+			n++
 		}
-		f.handleObject(w, r, name)
-	default:
-		w.WriteHeader(http.StatusNotFound)
 	}
-}
-
-func (f *fakeSwift) handleObject(w http.ResponseWriter, r *http.Request, name string) {
-	f.mu.Lock()
-	o, ok := f.objects[name]
-	f.mu.Unlock()
-	if !ok {
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-	w.Header().Set("Content-Type", o.contentType)
-	w.Header().Set("Etag", o.etag)
-	w.Header().Set("Content-Length", strconv.FormatInt(o.bytes, 10))
-	w.Header().Set("Last-Modified", "Fri, 28 Aug 2026 10:00:00 GMT")
-	w.WriteHeader(http.StatusOK)
-}
-
-type listingRow struct {
-	Name         string `json:"name,omitempty"`
-	Bytes        int64  `json:"bytes,omitempty"`
-	Hash         string `json:"hash,omitempty"`
-	ContentType  string `json:"content_type,omitempty"`
-	LastModified string `json:"last_modified,omitempty"`
-	SLOEtag      string `json:"slo_etag,omitempty"`
-	SubDir       string `json:"subdir,omitempty"`
-}
-
-// handleListing emulates real Swift's delimiter grouping (verified via
-// §57.3): every name below a child prefix — an object named exactly at
-// the boundary included — folds into one subdir row, and a marker naming
-// a subdir group skips the whole group.
-func (f *fakeSwift) handleListing(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	limit, _ := strconv.Atoi(q.Get("limit"))
-	if limit <= 0 {
-		limit = 10000
-	}
-	marker := q.Get("marker")
-	prefix := q.Get("prefix")
-	delimiter := q.Get("delimiter")
-
-	f.mu.Lock()
-	names := make([]string, 0, len(f.objects))
-	for name := range f.objects {
-		names = append(names, name)
-	}
-	f.mu.Unlock()
-	sort.Strings(names)
-
-	rows := make([]listingRow, 0)
-	emittedSubdir := map[string]bool{}
-	for _, name := range names {
-		if len(rows) == limit {
-			break
-		}
-		if name <= marker || !strings.HasPrefix(name, prefix) {
-			continue
-		}
-		if delimiter != "" {
-			rest := name[len(prefix):]
-			if idx := strings.Index(rest, delimiter); idx >= 0 {
-				subdir := prefix + rest[:idx+len(delimiter)]
-				// The query's own marker is not a completed child group.
-				if subdir == marker {
-					continue
-				}
-				if !emittedSubdir[subdir] {
-					emittedSubdir[subdir] = true
-					rows = append(rows, listingRow{SubDir: subdir})
-				}
-				continue
-			}
-		}
-		f.mu.Lock()
-		o := f.objects[name]
-		f.mu.Unlock()
-		rows = append(rows, objectRow(name, o))
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(rows)
-}
-
-func objectRow(name string, o fakeObject) listingRow {
-	return listingRow{
-		Name:         name,
-		Bytes:        o.bytes,
-		Hash:         o.etag,
-		ContentType:  o.contentType,
-		LastModified: "2026-08-28T10:00:00.000000",
-		SLOEtag:      o.sloEtag,
-	}
+	return n
 }
 
 func collectEntries(t *testing.T, s *Session, container string, opts ObjectListOptions) []ListingEntry {
@@ -194,68 +46,16 @@ func collectEntries(t *testing.T, s *Session, container string, opts ObjectListO
 	return out
 }
 
-func TestDelimiterMarkerFixture(t *testing.T) {
-	fake, _ := newFakeSwift(t, "markers")
-	for _, name := range []string{"scope/", "scope/a/", "scope/a/one", "scope/a/two", "scope/b", "scope/b/three", "scope/z", "outside", "repeated//", "repeated//a/child", "repeated//z", " 雪%2F/", " 雪%2F/a/child", " 雪%2F/z"} {
-		fake.put(name, fakeObject{bytes: int64(len(name))})
-	}
-	cases := []struct {
-		label, prefix, marker, delimiter string
-		want                             []string
-	}{
-		{"initial own object", "scope/", "", "/", []string{"object:scope/", "prefix:scope/a/", "object:scope/b", "prefix:scope/b/", "object:scope/z"}},
-		{"after own marker", "scope/", "scope/", "/", []string{"prefix:scope/a/", "object:scope/b", "prefix:scope/b/", "object:scope/z"}},
-		{"after child group", "scope/", "scope/a/", "/", []string{"object:scope/b", "prefix:scope/b/", "object:scope/z"}},
-		{"inside child group", "scope/", "scope/a/o", "/", []string{"prefix:scope/a/", "object:scope/b", "prefix:scope/b/", "object:scope/z"}},
-		{"inside nested group", "scope/", "scope/a/one/", "/", []string{"prefix:scope/a/", "object:scope/b", "prefix:scope/b/", "object:scope/z"}},
-		{"marker before partial filter", "scope/b", "scope/", "/", []string{"object:scope/b", "prefix:scope/b/"}},
-		{"root after partial group", "", "scope", "/", []string{"prefix:scope/"}},
-		{"root after group interior", "", "scope/a", "/", []string{"prefix:scope/"}},
-		{"deep ignores groups", "scope/", "scope/a/", "", []string{"object:scope/a/one", "object:scope/a/two", "object:scope/b", "object:scope/b/three", "object:scope/z"}},
-		{"repeated separator own marker", "repeated//", "repeated//", "/", []string{"prefix:repeated//a/", "object:repeated//z"}},
-		{"literal unicode own marker", " 雪%2F/", " 雪%2F/", "/", []string{"prefix: 雪%2F/a/", "object: 雪%2F/z"}},
-	}
-	for _, tc := range cases {
-		t.Run(tc.label, func(t *testing.T) {
-			query := url.Values{"format": {"json"}, "prefix": {tc.prefix}, "marker": {tc.marker}, "delimiter": {tc.delimiter}, "limit": {"100"}}
-			request := httptest.NewRequest(http.MethodGet, "/v1/AUTH_acct/markers?"+query.Encode(), nil)
-			response := httptest.NewRecorder()
-			fake.handle(response, request)
-			if response.Code != http.StatusOK {
-				t.Fatalf("listing HTTP status = %d", response.Code)
-			}
-			var rows []listingRow
-			if err := json.Unmarshal(response.Body.Bytes(), &rows); err != nil {
-				t.Fatal(err)
-			}
-			var got []string
-			for _, row := range rows {
-				if (row.Name == "") == (row.SubDir == "") {
-					t.Fatalf("ambiguous listing row: %+v", row)
-				}
-				if row.Name != "" {
-					got = append(got, "object:"+row.Name)
-				} else {
-					got = append(got, "prefix:"+row.SubDir)
-				}
-			}
-			if !slices.Equal(got, tc.want) {
-				t.Fatalf("prefix %q marker %q: got %q, want %q", tc.prefix, tc.marker, got, tc.want)
-			}
-		})
-	}
-}
-
 func TestObjectsDelimiterListing(t *testing.T) {
-	f, s := newFakeSwift(t, "browse")
-	f.put("hello.txt", fakeObject{bytes: 5, contentType: "text/plain"})
-	f.put("implied/child.txt", fakeObject{bytes: 2, contentType: "text/plain"})
-	f.put("folder-marker/", fakeObject{bytes: 0, contentType: "application/directory"})
-	f.put("both/", fakeObject{bytes: 0, contentType: "application/directory"})
-	f.put("both/child.txt", fakeObject{bytes: 3, contentType: "text/plain"})
-	f.put("weird/", fakeObject{bytes: 7, contentType: "text/plain"})
-	f.put("weird/x", fakeObject{bytes: 1, contentType: "text/plain"})
-	f.put("video.mp4", fakeObject{bytes: 1 << 20, contentType: "video/mp4", sloEtag: "abc"})
+	f, s := newListingServer(t)
+	f.PutObject("browse", "hello.txt", swifttest.Object{Bytes: 5, ContentType: "text/plain"})
+	f.PutObject("browse", "implied/child.txt", swifttest.Object{Bytes: 2, ContentType: "text/plain"})
+	f.PutObject("browse", "folder-marker/", swifttest.Object{Bytes: 0, ContentType: "application/directory"})
+	f.PutObject("browse", "both/", swifttest.Object{Bytes: 0, ContentType: "application/directory"})
+	f.PutObject("browse", "both/child.txt", swifttest.Object{Bytes: 3, ContentType: "text/plain"})
+	f.PutObject("browse", "weird/", swifttest.Object{Bytes: 7, ContentType: "text/plain"})
+	f.PutObject("browse", "weird/x", swifttest.Object{Bytes: 1, ContentType: "text/plain"})
+	f.PutObject("browse", "video.mp4", swifttest.Object{Bytes: 1 << 20, ContentType: "video/mp4", SLOEtag: "abc"})
 
 	entries := collectEntries(t, s, "browse", ObjectListOptions{})
 
@@ -299,11 +99,11 @@ func TestObjectsDelimiterListing(t *testing.T) {
 // listing cannot answer (§14.1/§14.2): marker-backed vs implied vs a
 // folder-ish real object hiding behind the group row.
 func TestPrefixDetail(t *testing.T) {
-	f, s := newFakeSwift(t, "browse")
-	f.put("folder-marker/", fakeObject{bytes: 0, contentType: "application/directory"})
-	f.put("implied/child.txt", fakeObject{bytes: 2, contentType: "text/plain"})
-	f.put("weird/", fakeObject{bytes: 7, contentType: "text/plain"})
-	f.put("weird/x", fakeObject{bytes: 1, contentType: "text/plain"})
+	f, s := newListingServer(t)
+	f.PutObject("browse", "folder-marker/", swifttest.Object{Bytes: 0, ContentType: "application/directory"})
+	f.PutObject("browse", "implied/child.txt", swifttest.Object{Bytes: 2, ContentType: "text/plain"})
+	f.PutObject("browse", "weird/", swifttest.Object{Bytes: 7, ContentType: "text/plain"})
+	f.PutObject("browse", "weird/x", swifttest.Object{Bytes: 1, ContentType: "text/plain"})
 	ctx := context.Background()
 
 	marker, err := s.PrefixDetail(ctx, "browse", "folder-marker/")
@@ -338,9 +138,9 @@ func TestPrefixDetail(t *testing.T) {
 // the object at the prefix's own name is not a child row (it belongs to
 // PrefixDetail), while Deep mode reports it verbatim for jobs.
 func TestObjectsSelfRowSkipped(t *testing.T) {
-	f, s := newFakeSwift(t, "browse")
-	f.put("photos/", fakeObject{bytes: 0, contentType: "application/directory"})
-	f.put("photos/a.jpg", fakeObject{bytes: 1, contentType: "image/jpeg"})
+	f, s := newListingServer(t)
+	f.PutObject("browse", "photos/", swifttest.Object{Bytes: 0, ContentType: "application/directory"})
+	f.PutObject("browse", "photos/a.jpg", swifttest.Object{Bytes: 1, ContentType: "image/jpeg"})
 
 	entries := collectEntries(t, s, "browse", ObjectListOptions{Prefix: "photos/"})
 	if len(entries) != 1 {
@@ -357,11 +157,11 @@ func TestObjectsSelfRowSkipped(t *testing.T) {
 }
 
 func TestObjectsPrefixNavigation(t *testing.T) {
-	f, s := newFakeSwift(t, "browse")
-	f.put("photos/2026/a.jpg", fakeObject{bytes: 1, contentType: "image/jpeg"})
-	f.put("photos/2026/b.jpg", fakeObject{bytes: 2, contentType: "image/jpeg"})
-	f.put("photos/2025/c.jpg", fakeObject{bytes: 3, contentType: "image/jpeg"})
-	f.put("photos/readme.txt", fakeObject{bytes: 4, contentType: "text/plain"})
+	f, s := newListingServer(t)
+	f.PutObject("browse", "photos/2026/a.jpg", swifttest.Object{Bytes: 1, ContentType: "image/jpeg"})
+	f.PutObject("browse", "photos/2026/b.jpg", swifttest.Object{Bytes: 2, ContentType: "image/jpeg"})
+	f.PutObject("browse", "photos/2025/c.jpg", swifttest.Object{Bytes: 3, ContentType: "image/jpeg"})
+	f.PutObject("browse", "photos/readme.txt", swifttest.Object{Bytes: 4, ContentType: "text/plain"})
 
 	entries := collectEntries(t, s, "browse", ObjectListOptions{Prefix: "photos/"})
 	var prefixes, objects []string
@@ -382,20 +182,20 @@ func TestObjectsPrefixNavigation(t *testing.T) {
 }
 
 func TestObjectsPaginationAndEarlyBreak(t *testing.T) {
-	f, s := newFakeSwift(t, "browse")
+	f, s := newListingServer(t)
 	for i := range 7 {
-		f.put(fmt.Sprintf("o%02d", i), fakeObject{bytes: int64(i), contentType: "text/plain"})
+		f.PutObject("browse", fmt.Sprintf("o%02d", i), swifttest.Object{Bytes: int64(i), ContentType: "text/plain"})
 	}
 
 	entries := collectEntries(t, s, "browse", ObjectListOptions{PageSize: 3})
 	if len(entries) != 7 {
 		t.Fatalf("streamed %d entries, want 7", len(entries))
 	}
-	if f.requests != 4 {
-		t.Errorf("server saw %d listing requests, want 4 (3+3+1+0)", f.requests)
+	if got := listingRequests(f, "browse"); got != 4 {
+		t.Errorf("server saw %d listing requests, want 4 (3+3+1+0)", got)
 	}
 
-	f.requests = 0
+	before := listingRequests(f, "browse")
 	for entry, err := range s.Objects(context.Background(), "browse", ObjectListOptions{PageSize: 3}) {
 		if err != nil {
 			t.Fatal(err)
@@ -404,15 +204,15 @@ func TestObjectsPaginationAndEarlyBreak(t *testing.T) {
 			break
 		}
 	}
-	if f.requests != 1 {
-		t.Errorf("server saw %d requests after early break, want 1", f.requests)
+	if got := listingRequests(f, "browse") - before; got != 1 {
+		t.Errorf("server saw %d requests after early break, want 1", got)
 	}
 }
 
 func TestObjectsDeepListingKeepsMarkers(t *testing.T) {
-	f, s := newFakeSwift(t, "browse")
-	f.put("folder-marker/", fakeObject{bytes: 0, contentType: "application/directory"})
-	f.put("implied/child.txt", fakeObject{bytes: 2, contentType: "text/plain"})
+	f, s := newListingServer(t)
+	f.PutObject("browse", "folder-marker/", swifttest.Object{Bytes: 0, ContentType: "application/directory"})
+	f.PutObject("browse", "implied/child.txt", swifttest.Object{Bytes: 2, ContentType: "text/plain"})
 
 	entries := collectEntries(t, s, "browse", ObjectListOptions{Deep: true})
 	if len(entries) != 2 {
@@ -451,9 +251,9 @@ func TestObjectNameEncodingRoundTrip(t *testing.T) {
 		"trailing space ",
 	}
 
-	f, s := newFakeSwift(t, "enc")
+	f, s := newListingServer(t)
 	for i, name := range names {
-		f.put(name, fakeObject{bytes: int64(i + 1), contentType: "application/octet-stream"})
+		f.PutObject("enc", name, swifttest.Object{Bytes: int64(i + 1), ContentType: "application/octet-stream"})
 	}
 
 	// Small pages force pagination markers through the hostile names too.
