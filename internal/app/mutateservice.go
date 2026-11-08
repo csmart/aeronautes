@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/csmart/aeronautes/internal/applog"
 	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/evidence"
 	"github.com/csmart/aeronautes/internal/mutationfacts"
@@ -373,18 +372,10 @@ func (s *MutateService) record(ctx context.Context, operation, resource, summary
 // recordFor appends the audit event attributed to the account the caller
 // captured when it admitted the operation.
 func (s *MutateService) recordFor(ctx context.Context, bookmarkID, operation, resource, summary string, result audit.Result, transIDs []string) error {
-	err := s.audit.Append(ctx, audit.Event{
-		BookmarkID: bookmarkID,
-		Operation:  operation,
-		Resource:   resource,
-		Summary:    summary,
-		Result:     result,
-		TransIDs:   transIDs,
+	return appendAudit(ctx, s.audit, audit.Event{
+		BookmarkID: bookmarkID, Operation: operation, Resource: resource,
+		Summary: summary, Result: result, TransIDs: transIDs,
 	})
-	if err != nil {
-		applog.Errorf("AUDIT WRITE FAILED for %s %s: %v", operation, resource, err)
-	}
-	return err
 }
 
 func (s *MutateService) recordObjectOutcome(ctx context.Context, identity, bookmarkID, resource string, outcome mutationfacts.Outcome, result audit.Result, summary string, transIDs []string) error {

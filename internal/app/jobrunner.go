@@ -335,13 +335,18 @@ func (r *jobRunner) releaseSlot() {
 }
 
 func (r *jobRunner) record(ctx context.Context, bookmarkID, operation, resource, summary string, result audit.Result) {
-	if err := r.audit.Append(ctx, audit.Event{
-		BookmarkID: bookmarkID,
-		Operation:  operation,
-		Resource:   resource,
-		Summary:    summary,
-		Result:     result,
-	}); err != nil {
-		applog.Errorf("AUDIT WRITE FAILED for %s %s: %v", operation, resource, err)
+	_ = appendAudit(ctx, r.audit, audit.Event{
+		BookmarkID: bookmarkID, Operation: operation, Resource: resource, Summary: summary, Result: result,
+	})
+}
+
+// appendAudit writes one trail event and names a refused write in the log,
+// because the operation it describes has already happened; a caller that
+// must act on the refusal keeps the error.
+func appendAudit(ctx context.Context, store *audit.Store, event audit.Event) error {
+	err := store.Append(ctx, event)
+	if err != nil {
+		applog.Errorf("AUDIT WRITE FAILED for %s %s: %v", event.Operation, event.Resource, err)
 	}
+	return err
 }
