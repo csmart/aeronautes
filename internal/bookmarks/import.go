@@ -33,6 +33,11 @@ const (
 // configuration, and a lost commit reply is reconciled through the same
 // publication path Save uses rather than reported as a plain failure.
 func (st *Store) ImportBookmark(ctx context.Context, b Bookmark, caPEM []byte) (ImportOutcome, error) {
+	// Normalised first, as Save does, so a legacy backup with no version
+	// imports as v1, a v3 backup with blank domains imports with Default,
+	// validate judges the stored form, and the identity below matches a
+	// saved bookmark's (ADR 0100).
+	NormalizeAuth(&b)
 	if err := validate(b); err != nil {
 		return ImportSkipped, err
 	}
@@ -60,10 +65,6 @@ func (st *Store) ImportBookmark(ctx context.Context, b Bookmark, caPEM []byte) (
 	if b.TLSMode == "" {
 		b.TLSMode = swiftcontrol.TLSModeSystem
 	}
-	// Apply the same auth normalisation Save does, so a legacy backup with no
-	// version imports as v1 and a v3 backup with blank domains imports with
-	// Default, and so the identity below matches a saved bookmark's (ADR 0100).
-	NormalizeAuth(&b)
 	want := identityOf(b, caPEM)
 
 	var proposed record
@@ -175,7 +176,10 @@ func identityOf(b Bookmark, caPEM []byte) identity {
 }
 
 // Validate reports whether a bookmark's fields are acceptable, so a restore
-// can check an entire backup before it applies any of it.
+// can check an entire backup before it applies any of it. It judges the
+// normalised form, as the store does, so a backup that omits the version
+// validates as the v1 bookmark a restore would store.
 func Validate(b Bookmark) error {
+	NormalizeAuth(&b)
 	return validate(b)
 }

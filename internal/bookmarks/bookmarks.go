@@ -142,6 +142,12 @@ func (st *Store) Save(ctx context.Context, b Bookmark, secret []byte) (Bookmark,
 // SaveWithCA publishes trust, configuration and the selected key together.
 // External writes use a durably prepared, unpublished reference.
 func (st *Store) SaveWithCA(ctx context.Context, b Bookmark, secret, caPEM []byte) (Bookmark, error) {
+	// Normalised first, so validate judges the auth version a bookmark is
+	// stored with, and so the retention check below compares the stored and
+	// proposed bookmarks like for like: editing a v1 bookmark saved as
+	// version 1 from an older frontend that sends 0 must not look like a
+	// binding change and demand the key.
+	NormalizeAuth(&b)
 	if err := validate(b); err != nil {
 		return Bookmark{}, err
 	}
@@ -172,12 +178,6 @@ func (st *Store) SaveWithCA(ctx context.Context, b Bookmark, secret, caPEM []byt
 	if b.TLSMode == "" {
 		b.TLSMode = swiftcontrol.TLSModeSystem
 	}
-	// Normalise before the retention check below compares the stored and
-	// proposed bookmarks: both sides must carry the effective auth fields,
-	// or editing a v1 bookmark saved as version 1 from an older frontend
-	// that sends 0 would look like a binding change and demand the key.
-	NormalizeAuth(&b)
-
 	var previous, proposed record
 	proposed.Bookmark = b
 	proposed.generation, proposed.revision = 1, 1
@@ -460,11 +460,11 @@ func validate(b Bookmark) error {
 	default:
 		return fmt.Errorf("unknown segment placement %q", b.SegmentPlacement)
 	}
-	// Auth version runs before NormalizeAuth, so 0 is still read as v1 here;
+	// The version is normalised before this runs, so an unset one is 1 here;
 	// the v3 requirements that New enforces at connect time are checked at
 	// this save boundary too, so an unusable v3 bookmark cannot be stored.
 	switch b.AuthVersion {
-	case 0, 1:
+	case 1:
 	case 3:
 		if b.Region == "" {
 			return errors.New("Keystone v3 bookmark needs a region")
