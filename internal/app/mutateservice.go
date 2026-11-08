@@ -108,7 +108,7 @@ func (s *MutateService) UpdateObjectMetadata(ctx context.Context, scope ListingS
 
 	result, err := entry.session.UpdateObjectMetadata(ctx, container, name, baseFingerprint, adapterEdit)
 	outcome, auditRes, summary, transIDs := objectMetadataFact(result, err, edit)
-	if recErr := s.recordObjectOutcome(ctx, identity, bookmarkID, resource, outcome, auditRes, summary, transIDs); recErr != nil {
+	if recErr := s.recordMutationOutcome(ctx, identity, bookmarkID, "object.metadata.update", resource, outcome, auditRes, summary, transIDs); recErr != nil {
 		if objectMetadataPosted(result, err) {
 			return MutationResultDTO{}, fmt.Errorf("%w: identity %s: %v", errMetadataResidue, identity, recErr)
 		}
@@ -231,8 +231,8 @@ func (s *MutateService) UpdateContainer(ctx context.Context, scope ListingScopeD
 
 	result, err := entry.session.UpdateContainer(ctx, name, baseFingerprint, adapterEdit)
 	outcome, auditRes, summary, transIDs := containerMetadataFact(result, err, adapterEdit)
-	if recErr := s.recordContainerOutcome(ctx, identity, bookmarkID, name, outcome, auditRes, summary, transIDs); recErr != nil {
-		if outcome == mutationfacts.OutcomeApplied || outcome == mutationfacts.OutcomeVerifyMismatch || outcome == mutationfacts.OutcomeUnverified {
+	if recErr := s.recordMutationOutcome(ctx, identity, bookmarkID, "container.update", name, outcome, auditRes, summary, transIDs); recErr != nil {
+		if containerMetadataPosted(result, err) {
 			return MutationResultDTO{}, fmt.Errorf("%w: identity %s: %w", errContainerMetadataResidue, identity, recErr)
 		}
 		return MutationResultDTO{}, recErr
@@ -378,31 +378,22 @@ func (s *MutateService) recordFor(ctx context.Context, bookmarkID, operation, re
 	})
 }
 
-func (s *MutateService) recordObjectOutcome(ctx context.Context, identity, bookmarkID, resource string, outcome mutationfacts.Outcome, result audit.Result, summary string, transIDs []string) error {
+// recordMutationOutcome commits the attempt's outcome and its audit event
+// in one transaction, the required record of ADR 0058, 0062 and 0077.
+func (s *MutateService) recordMutationOutcome(ctx context.Context, identity, bookmarkID, operation, resource string, outcome mutationfacts.Outcome, result audit.Result, summary string, transIDs []string) error {
 	return s.facts.RecordOutcome(ctx, identity, outcome, summary, transIDs, func(tx *sql.Tx) error {
 		return s.audit.AppendTx(ctx, tx, audit.Event{
-			BookmarkID: bookmarkID,
-			Operation:  "object.metadata.update",
-			Resource:   resource,
-			Summary:    summary,
-			Result:     result,
-			TransIDs:   transIDs,
+			BookmarkID: bookmarkID, Operation: operation, Resource: resource,
+			Summary: summary, Result: result, TransIDs: transIDs,
 		})
 	})
 }
 
+// objectMetadataPosted says whether the write may have reached the store,
+// which is what turns a recording failure into residue.
 func objectMetadataPosted(result *swiftcontrol.ObjectUpdateResult, err error) bool {
-	if errors.Is(err, swiftcontrol.ErrUnverifiedWrite) {
-		return true
-	}
-	if result == nil {
-		return false
-	}
-	switch result.Outcome {
-	case swiftcontrol.UpdateApplied, swiftcontrol.UpdateVerifyMismatch, swiftcontrol.UpdateUnverified:
-		return true
-	}
-	return result.Limitation != ""
+	return errors.Is(err, swiftcontrol.ErrUnverifiedWrite) ||
+		(result != nil && (result.Outcome.Posted() || result.Limitation != ""))
 }
 
 func objectMetadataFact(result *swiftcontrol.ObjectUpdateResult, err error, edit ObjectMetadataEditDTO) (mutationfacts.Outcome, audit.Result, string, []string) {
@@ -587,7 +578,7 @@ func (s *MutateService) UpdateAccountMetadata(ctx context.Context, scope Listing
 
 	result, err := entry.session.UpdateAccount(ctx, baseFingerprint, adapterEdit)
 	outcome, auditRes, summary, transIDs := accountMetadataFact(result, err, edit)
-	if recErr := s.recordAccountOutcome(ctx, identity, bookmarkID, outcome, auditRes, summary, transIDs); recErr != nil {
+	if recErr := s.recordMutationOutcome(ctx, identity, bookmarkID, "account.metadata.update", "account", outcome, auditRes, summary, transIDs); recErr != nil {
 		if accountMetadataPosted(result, err) {
 			return MutationResultDTO{}, fmt.Errorf("%w: identity %s: %v", errAccountMetadataResidue, identity, recErr)
 		}
@@ -611,31 +602,8 @@ func (s *MutateService) UpdateAccountMetadata(ctx context.Context, scope Listing
 	return dto, nil
 }
 
-func (s *MutateService) recordAccountOutcome(ctx context.Context, identity, bookmarkID string, outcome mutationfacts.Outcome, result audit.Result, summary string, transIDs []string) error {
-	return s.facts.RecordOutcome(ctx, identity, outcome, summary, transIDs, func(tx *sql.Tx) error {
-		return s.audit.AppendTx(ctx, tx, audit.Event{
-			BookmarkID: bookmarkID,
-			Operation:  "account.metadata.update",
-			Resource:   "account",
-			Summary:    summary,
-			Result:     result,
-			TransIDs:   transIDs,
-		})
-	})
-}
-
 func accountMetadataPosted(result *swiftcontrol.AccountUpdateResult, err error) bool {
-	if errors.Is(err, swiftcontrol.ErrUnverifiedAccountWrite) {
-		return true
-	}
-	if result == nil {
-		return false
-	}
-	switch result.Outcome {
-	case swiftcontrol.UpdateApplied, swiftcontrol.UpdateVerifyMismatch, swiftcontrol.UpdateUnverified:
-		return true
-	}
-	return false
+	return errors.Is(err, swiftcontrol.ErrUnverifiedAccountWrite) || (result != nil && result.Outcome.Posted())
 }
 
 func accountMetadataFact(result *swiftcontrol.AccountUpdateResult, err error, edit AccountEditDTO) (mutationfacts.Outcome, audit.Result, string, []string) {

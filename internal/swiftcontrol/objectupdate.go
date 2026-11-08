@@ -57,6 +57,19 @@ const (
 	UpdateUnverified UpdateOutcome = "unverified"
 )
 
+// Posted reports whether the write may have taken effect at the store:
+// applied, applied but not as intended, or completed without a verifying
+// read. A conflict wrote nothing, and the zero outcome is an attempt that
+// did not get that far, whether the store refused the write or the read
+// before it failed.
+func (o UpdateOutcome) Posted() bool {
+	switch o {
+	case UpdateApplied, UpdateVerifyMismatch, UpdateUnverified:
+		return true
+	}
+	return false
+}
+
 // transIDTrail is the record every update result keeps of the transaction
 // ids the store reported: preflight, write, verify, and the id a failed
 // verb's error carried. A blank id is not a transaction, so it is skipped.
