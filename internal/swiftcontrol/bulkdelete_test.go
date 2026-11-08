@@ -2,6 +2,7 @@ package swiftcontrol
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -215,5 +216,38 @@ func TestCredentialSnapshotRaceFree(t *testing.T) {
 	wg.Wait()
 	if session.AuthToken() == "" {
 		t.Fatal("token empty after reauth storm")
+	}
+}
+
+func TestBulkDeleteClassifiesTheReply(t *testing.T) {
+	// A store answer is classified as every other verb classifies it: a token
+	// refused again after the one re-auth and retry is unauthorized, a client
+	// refusal is not a server error, and only a 5xx is.
+	ctx := context.Background()
+	serve := func(status int) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasPrefix(r.URL.Path, "/auth/") {
+				w.Header().Set("X-Storage-Url", "http://"+r.Host+"/v1/AUTH_test")
+				w.Header().Set("X-Auth-Token", "tok")
+				return
+			}
+			w.WriteHeader(status)
+		}))
+	}
+	for _, c := range []struct {
+		status   int
+		wantKind ErrorKind
+	}{
+		{http.StatusUnauthorized, KindUnauthorized},
+		{http.StatusBadRequest, KindUnknown},
+		{http.StatusServiceUnavailable, KindServer},
+	} {
+		srv := serve(c.status)
+		_, err := mustSession(t, srv.URL).BulkDelete(ctx, "c", []string{"a"})
+		srv.Close()
+		var se *SwiftError
+		if !errors.As(err, &se) || se.Kind != c.wantKind || se.HTTPStatus != c.status {
+			t.Fatalf("HTTP %d: err = %v, want kind %s carrying that status", c.status, err, c.wantKind)
+		}
 	}
 }

@@ -178,7 +178,11 @@ func (s *Session) BulkDelete(ctx context.Context, container string, names []stri
 		return nil, Normalize(err)
 	}
 	if resp.StatusCode >= 300 {
-		return nil, &SwiftError{Kind: KindServer, HTTPStatus: resp.StatusCode,
+		// A store answer is classified as every other verb classifies it, so
+		// a refused token is unauthorized and a client refusal is not a
+		// server error.
+		kind, retryable := classifyStatus(resp.StatusCode)
+		return nil, &SwiftError{Kind: kind, HTTPStatus: resp.StatusCode, Retryable: retryable,
 			Message: fmt.Sprintf("bulk-delete: %s", strings.TrimSpace(string(payload)))}
 	}
 
