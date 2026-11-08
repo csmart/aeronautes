@@ -57,6 +57,27 @@ const (
 	UpdateUnverified UpdateOutcome = "unverified"
 )
 
+// transIDTrail is the record every update result keeps of the transaction
+// ids the store reported: preflight, write, verify, and the id a failed
+// verb's error carried. A blank id is not a transaction, so it is skipped.
+type transIDTrail struct {
+	// TransIDs: preflight, write, verify.
+	TransIDs []string
+}
+
+func (t *transIDTrail) observeTransID(id string) {
+	if id != "" {
+		t.TransIDs = append(t.TransIDs, id)
+	}
+}
+
+func (t *transIDTrail) observeError(err error) {
+	var se *SwiftError
+	if errors.As(err, &se) {
+		t.observeTransID(se.TransID)
+	}
+}
+
 // ErrUnverifiedWrite is returned with a result when a metadata POST
 // succeeded and the verify read failed.
 var ErrUnverifiedWrite = errors.New("object metadata write unverified")
@@ -80,8 +101,7 @@ type ObjectUpdateResult struct {
 	// on, and the entity tag a condition would carry is the content
 	// digest, which a metadata POST does not change.
 	Limitation string
-	// TransIDs are the Swift transaction ids: preflight, write, verify.
-	TransIDs []string
+	transIDTrail
 }
 
 // UpdateObjectMetadata applies edit to one object. baseFingerprint is
@@ -105,7 +125,8 @@ func (s *Session) UpdateObjectMetadata(ctx context.Context, container, name, bas
 		// (§65.10); edit the target object directly.
 		return nil, fmt.Errorf("%s/%s is a symlink: editing through it would write the TARGET's metadata onto the LINK (Swift POSTs to the link, then redirects) — open and edit the target object instead", container, name)
 	}
-	result := &ObjectUpdateResult{Before: before, TransIDs: []string{before.TransID}}
+	result := &ObjectUpdateResult{Before: before}
+	result.observeTransID(before.TransID)
 
 	if baseFingerprint != "" && before.EditableFingerprint != baseFingerprint {
 		result.Outcome = UpdateConflict
@@ -114,6 +135,7 @@ func (s *Session) UpdateObjectMetadata(ctx context.Context, container, name, bas
 
 	headers := buildObjectPostHeaders(before, edit)
 	writeTransID, err := s.post(ctx, container, name, headers)
+	result.observeTransID(writeTransID)
 	if err != nil {
 		if postUnproven(err) {
 			// The request left and no store status came back, so the
@@ -124,7 +146,6 @@ func (s *Session) UpdateObjectMetadata(ctx context.Context, container, name, bas
 		}
 		return nil, err
 	}
-	result.TransIDs = append(result.TransIDs, writeTransID)
 	// The write has happened; from here every outcome is a completed save
 	// and carries the same limit, including a verify mismatch.
 	result.Limitation = ConcurrentEditLimitation
@@ -133,11 +154,12 @@ func (s *Session) UpdateObjectMetadata(ctx context.Context, container, name, bas
 	if err != nil {
 		// The POST completed; ADR 0046's limitation applies. The verify
 		// HEAD did not, so this is unverified rather than failed (ADR 0058).
+		result.observeError(err)
 		result.Outcome = UpdateUnverified
 		return result, fmt.Errorf("%w: update written (trans %s) but verify read failed: %v", ErrUnverifiedWrite, writeTransID, err)
 	}
 	result.After = after
-	result.TransIDs = append(result.TransIDs, after.TransID)
+	result.observeTransID(after.TransID)
 
 	if mismatch := verifyObjectOutcome(before, edit, after); mismatch != "" {
 		result.Outcome = UpdateVerifyMismatch

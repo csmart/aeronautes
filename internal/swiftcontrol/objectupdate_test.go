@@ -233,8 +233,12 @@ func TestUpdateObjectMetadataVerifyReadIsUnverified(t *testing.T) {
 	if result == nil || result.Outcome != UpdateUnverified {
 		t.Fatalf("result = %+v", result)
 	}
-	if result.Limitation == "" || len(result.TransIDs) < 2 {
-		t.Fatalf("completed POST must keep limitation and write trans id: %+v", result)
+	if result.Limitation == "" {
+		t.Fatalf("completed POST must keep its limitation: %+v", result)
+	}
+	// Preflight, write, and the failed verify's own id, in that order.
+	if got := strings.Join(result.TransIDs, ","); got != "txswifttest-object,txswifttest-object-post,txswifttest-object-head-fault" {
+		t.Fatalf("TransIDs = %v, want preflight, write and the failed verify", result.TransIDs)
 	}
 }
 

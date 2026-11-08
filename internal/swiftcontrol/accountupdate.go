@@ -35,8 +35,7 @@ type AccountUpdateResult struct {
 	After   *AccountPortrait
 	// Mismatch says what verify found different, for UpdateVerifyMismatch.
 	Mismatch string
-	// TransIDs: preflight, write, verify.
-	TransIDs []string
+	transIDTrail
 }
 
 // UpdateAccount applies edit to the connected account. baseFingerprint is
@@ -104,19 +103,6 @@ func (s *Session) UpdateAccount(ctx context.Context, baseFingerprint string, edi
 	}
 	result.Outcome = UpdateApplied
 	return result, nil
-}
-
-func (r *AccountUpdateResult) observeTransID(id string) {
-	if id != "" {
-		r.TransIDs = append(r.TransIDs, id)
-	}
-}
-
-func (r *AccountUpdateResult) observeError(err error) {
-	var se *SwiftError
-	if errors.As(err, &se) {
-		r.observeTransID(se.TransID)
-	}
 }
 
 // buildAccountPostHeaders computes the additive delta from the portrait to
