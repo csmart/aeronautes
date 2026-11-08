@@ -42,6 +42,63 @@ func Download(ctx context.Context, src *swiftcontrol.Session, engine Engine, src
 	return DownloadInto(ctx, src, engine, srcSpec, container, prefix, destination, stageID, preflight, onProgress, recorders...)
 }
 
+// checkDownloadRequest refuses a download whose plan, names or destination
+// are not what a download may act on: a missing or rejected preflight, a
+// stage id or prefix that is not a single clean component, names that would
+// collide or alias under the destination's own rules, a destination that is
+// gone, and planned paths that no longer pass inspection through the held
+// destination. The first refusal is the answer; nothing is written before
+// every check passes.
+func checkDownloadRequest(prefix, stageID string, destination *DestinationRoot, preflight *DownloadPreflight) error {
+	if preflight == nil {
+		return errors.New("download needs a preflight plan")
+	}
+	if preflight.Rejected() {
+		return errors.New("preflight rejected the download; nothing was written")
+	}
+	if stageID == "" || !utf8.ValidString(stageID) || strings.ContainsAny(stageID, "/\\\x00") || stageID == "." || stageID == ".." {
+		return errors.New("download needs a single-component stage id (the job id)")
+	}
+	if !utf8.ValidString(prefix) || prefix != "" && !strings.HasSuffix(prefix, "/") {
+		return errors.New("download needs an unchanged UTF-8 prefix ending in '/'")
+	}
+	seen := make(map[string]bool, len(preflight.Items))
+	// Both relations, exactly as the preflight applies them: files are
+	// twin candidates, directories are aliases the target may merge.
+	filesByLower := make(map[string]bool, len(preflight.Items))
+	filesByCaseless := make(map[string]bool, len(preflight.Items))
+	for _, item := range preflight.Items {
+		if !validDownloadItem(prefix, item) || seen[item.Name] {
+			return errors.New("download item does not preserve its unique selected name and relative path")
+		}
+		seen[item.Name] = true
+		if item.Dir {
+			continue
+		}
+		relative := strings.TrimPrefix(item.Name, prefix)
+		lower, caseless := lowercaseIdentity(relative), caselessIdentity(relative)
+		if filesByLower[lower] || filesByCaseless[caseless] {
+			return errors.New("download selection contains names that collide on case or Unicode normalization form")
+		}
+		filesByLower[lower], filesByCaseless[caseless] = true, true
+	}
+	for _, item := range preflight.Items {
+		relative := strings.TrimPrefix(item.Name, prefix)
+		for separator := strings.LastIndexByte(relative, '/'); separator >= 0; separator = strings.LastIndexByte(relative, '/') {
+			relative = relative[:separator]
+			if filesByLower[lowercaseIdentity(relative)] || filesByCaseless[caselessIdentity(relative)] {
+				return errors.New("download selection needs the same path as a file and a directory")
+			}
+		}
+	}
+	if removed, err := destination.Removed(); err != nil {
+		return fmt.Errorf("cannot inspect the selected destination directory: %w", err)
+	} else if removed {
+		return errors.New("the selected destination directory was deleted after it was picked; pick a directory again")
+	}
+	return checkDownloadDestination(destination.root, preflight.Items)
+}
+
 // DownloadInto keeps final placement behind checked identity and
 // observations, with every local effect resolved through the held
 // destination rather than its pathname. Omitted recording preserves
@@ -55,53 +112,7 @@ func DownloadInto(ctx context.Context, src *swiftcontrol.Session, engine Engine,
 	if err != nil {
 		return nil, err
 	}
-	if preflight == nil {
-		return nil, errors.New("download needs a preflight plan")
-	}
-	if preflight.Rejected() {
-		return nil, errors.New("preflight rejected the download; nothing was written")
-	}
-	if stageID == "" || !utf8.ValidString(stageID) || strings.ContainsAny(stageID, "/\\\x00") || stageID == "." || stageID == ".." {
-		return nil, errors.New("download needs a single-component stage id (the job id)")
-	}
-	if !utf8.ValidString(prefix) || prefix != "" && !strings.HasSuffix(prefix, "/") {
-		return nil, errors.New("download needs an unchanged UTF-8 prefix ending in '/'")
-	}
-	seen := make(map[string]bool, len(preflight.Items))
-	// Both relations, exactly as the preflight applies them: files are
-	// twin candidates, directories are aliases the target may merge.
-	filesByLower := make(map[string]bool, len(preflight.Items))
-	filesByCaseless := make(map[string]bool, len(preflight.Items))
-	for _, item := range preflight.Items {
-		if !validDownloadItem(prefix, item) || seen[item.Name] {
-			return nil, errors.New("download item does not preserve its unique selected name and relative path")
-		}
-		seen[item.Name] = true
-		if item.Dir {
-			continue
-		}
-		relative := strings.TrimPrefix(item.Name, prefix)
-		lower, caseless := lowercaseIdentity(relative), caselessIdentity(relative)
-		if filesByLower[lower] || filesByCaseless[caseless] {
-			return nil, errors.New("download selection contains names that collide on case or Unicode normalization form")
-		}
-		filesByLower[lower], filesByCaseless[caseless] = true, true
-	}
-	for _, item := range preflight.Items {
-		relative := strings.TrimPrefix(item.Name, prefix)
-		for separator := strings.LastIndexByte(relative, '/'); separator >= 0; separator = strings.LastIndexByte(relative, '/') {
-			relative = relative[:separator]
-			if filesByLower[lowercaseIdentity(relative)] || filesByCaseless[caselessIdentity(relative)] {
-				return nil, errors.New("download selection needs the same path as a file and a directory")
-			}
-		}
-	}
-	if removed, err := destination.Removed(); err != nil {
-		return nil, fmt.Errorf("cannot inspect the selected destination directory: %w", err)
-	} else if removed {
-		return nil, errors.New("the selected destination directory was deleted after it was picked; pick a directory again")
-	}
-	if err := checkDownloadDestination(destination.root, preflight.Items); err != nil {
+	if err := checkDownloadRequest(prefix, stageID, destination, preflight); err != nil {
 		return nil, err
 	}
 	d := &downloadRun{recorder: recorder, report: &Report{}, retained: map[string]bool{}}
