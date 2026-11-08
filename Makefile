@@ -13,7 +13,7 @@ WAILS3_VERSION := v3.0.0-beta.27
 
 .PHONY: all tools build run dev test test-go test-frontend test-integration \
 	verify-swift-source test-swift-core test-secret-service \
-	rpm deb package spike rclone-matrix clean
+	rpm deb package spike rclone-matrix clean oracle
 
 all: build
 
@@ -89,3 +89,8 @@ spike:
 
 clean:
 	rm -rf bin frontend/dist
+
+## oracle: real-cloud Keystone v3 oracle against genuine OpenStack; needs creds (docs/CI.md)
+# make oracle CLOUDS=~/code/clouds.yaml [CLOUD=ceph|swift]   (or set OS_CLIENT_CONFIG_FILE)
+oracle:
+	ORACLE_CLOUDS="$(CLOUDS)" ORACLE_CLOUD="$(CLOUD)" go test -tags realcloud -run TestKeystoneV3Oracle -count=1 -v ./internal/swiftcontrol/
