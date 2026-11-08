@@ -130,7 +130,7 @@ func TestForceReauthChangesTheToken(t *testing.T) {
 			session := mustSession(t, srv.URL)
 			first := session.AuthToken()
 			ctx := context.Background()
-			if err := session.RefreshIfStale(ctx, time.Minute); err != nil {
+			if _, err := session.Credentials(ctx, time.Minute); err != nil {
 				t.Fatal(err)
 			}
 			if session.AuthToken() != first {
@@ -138,11 +138,11 @@ func TestForceReauthChangesTheToken(t *testing.T) {
 			}
 			session.ForceReauth()
 			fail.Store(true)
-			if err := session.RefreshIfStale(ctx, time.Minute); err == nil {
+			if _, err := session.Credentials(ctx, time.Minute); err == nil {
 				t.Fatal("rejected token survived forced refresh")
 			}
 			fail.Store(false)
-			if err := session.RefreshIfStale(ctx, time.Minute); err != nil {
+			if _, err := session.Credentials(ctx, time.Minute); err != nil {
 				t.Fatal(err)
 			}
 			if session.AuthToken() == first || session.AuthToken() == "" {
@@ -210,7 +210,7 @@ func TestCredentialSnapshotRaceFree(t *testing.T) {
 	}
 	for i := 0; i < 50; i++ {
 		session.ForceReauth()
-		_ = session.RefreshIfStale(context.Background(), time.Hour)
+		_, _ = session.Credentials(context.Background(), time.Hour)
 	}
 	close(stop)
 	wg.Wait()
