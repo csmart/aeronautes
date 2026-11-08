@@ -196,18 +196,9 @@ func DeletePrefix(ctx context.Context, session *swiftcontrol.Session, capabiliti
 	}
 
 	result = &Result{Strategy: StrategyParallel}
-	bulkSize := 0
-	if !opts.ForceParallel && capabilities != nil {
-		if max := capabilities.BulkDeleteMaxDeletes(); max > 0 {
-			bulkSize = opts.BulkSize
-			if bulkSize <= 0 || bulkSize > 1000 {
-				bulkSize = 1000
-			}
-			if bulkSize > max {
-				bulkSize = max
-			}
-			result.Strategy = StrategyBulk
-		}
+	bulkSize := bulkBatch(capabilities, opts)
+	if bulkSize > 0 {
+		result.Strategy = StrategyBulk
 	}
 	result.VerifyPolicy = fmt.Sprintf("prefix limit=1 empty after ≤%d passes", passes)
 	admissionCtx, stopAdmission := context.WithCancel(ctx)
@@ -415,6 +406,25 @@ func (c ContainerConfig) Diff(after ContainerConfig) string {
 	return strings.Join(diffs, "; ")
 }
 
+// bulkBatch is how many names one bulk-delete request may carry, or zero
+// when the sweep deletes names one at a time: the operator forced the
+// parallel strategy, or the cluster advertises no bulk delete. The requested
+// batch is capped at 1000 and at what the cluster accepts.
+func bulkBatch(capabilities *swiftcontrol.Capabilities, opts Options) int {
+	if opts.ForceParallel || capabilities == nil {
+		return 0
+	}
+	limit := capabilities.BulkDeleteMaxDeletes()
+	if limit <= 0 {
+		return 0
+	}
+	batch := opts.BulkSize
+	if batch <= 0 || batch > 1000 {
+		batch = 1000
+	}
+	return min(batch, limit)
+}
+
 // DeleteNames removes an explicit, already-decided name list (the
 // Mirror delete half, §27.2): same native executors, manifest-only by
 // construction, no listing pass — the caller's plan IS the scope.
@@ -431,18 +441,9 @@ func DeleteNames(ctx context.Context, session *swiftcontrol.Session, capabilitie
 		workers = 64
 	}
 	result = &Result{Strategy: StrategyParallel, VerifyPolicy: "sampled HEAD=404 (≤10 names)"}
-	bulkSize := 0
-	if !opts.ForceParallel && capabilities != nil {
-		if max := capabilities.BulkDeleteMaxDeletes(); max > 0 {
-			bulkSize = opts.BulkSize
-			if bulkSize <= 0 || bulkSize > 1000 {
-				bulkSize = 1000
-			}
-			if bulkSize > max {
-				bulkSize = max
-			}
-			result.Strategy = StrategyBulk
-		}
+	bulkSize := bulkBatch(capabilities, opts)
+	if bulkSize > 0 {
+		result.Strategy = StrategyBulk
 	}
 	admissionCtx, stopAdmission := context.WithCancel(ctx)
 	defer stopAdmission()
