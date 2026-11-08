@@ -44,8 +44,21 @@
   let username = $state(existing?.username ?? "");
   let apiKey = $state("");
   /* svelte-ignore state_referenced_locally */
+  let authVersion = $state(existing?.authVersion ?? 1);
+  /* svelte-ignore state_referenced_locally */
+  let userDomain = $state(existing?.userDomain ?? "");
+  /* svelte-ignore state_referenced_locally */
+  let projectName = $state(existing?.projectName ?? "");
+  /* svelte-ignore state_referenced_locally */
+  let projectDomain = $state(existing?.projectDomain ?? "");
+  /* svelte-ignore state_referenced_locally */
+  let region = $state(existing?.region ?? "");
+  /* svelte-ignore state_referenced_locally */
   let tlsMode = $state(existing?.tlsMode ?? "system");
   let caPem = $state("");
+  // Keystone v3 and TempAuth v1 are the two auth types; the v3 identity
+  // fields show only for v3 (ADR 0100).
+  const keystone = $derived(authVersion === 3);
   let action = $state<"save" | "connect" | "delete" | "verify" | null>(null);
   const saving = $derived(action !== null);
   let error: string | null = $state(null);
@@ -58,12 +71,12 @@
       displayName,
       authUrl,
       username,
-      storageUrlOverride: bookmark?.storageUrlOverride ?? "",
-      authVersion: bookmark?.authVersion ?? 1,
-      userDomain: bookmark?.userDomain ?? "",
-      projectName: bookmark?.projectName ?? "",
-      projectDomain: bookmark?.projectDomain ?? "",
-      region: bookmark?.region ?? "",
+      storageUrlOverride: keystone ? "" : (bookmark?.storageUrlOverride ?? ""),
+      authVersion,
+      userDomain: keystone ? userDomain : "",
+      projectName: keystone ? projectName : "",
+      projectDomain: keystone ? projectDomain : "",
+      region: keystone ? region : "",
       tlsMode,
       caPem,
       hasCa: bookmark?.hasCa ?? false,
@@ -159,12 +172,19 @@
         <input bind:value={displayName} autofocus required placeholder="Prod AU" />
       </label>
       <label class="field">
-        <span>Auth URL <span class="hint">(TempAuth v1)</span></span>
+        <span>Auth type</span>
+        <select bind:value={authVersion}>
+          <option value={1}>TempAuth v1</option>
+          <option value={3}>Keystone v3</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>{keystone ? "Identity URL" : "Auth URL"} <span class="hint">({keystone ? "Keystone v3" : "TempAuth v1"})</span></span>
         <input
           class="type-mono"
           bind:value={authUrl}
           required
-          placeholder="https://swift.example/auth/v1.0"
+          placeholder={keystone ? "https://keystone.example/v3" : "https://swift.example/auth/v1.0"}
         />
       </label>
       <label class="field">
@@ -172,7 +192,7 @@
         <input class="type-mono" bind:value={username} required placeholder="account:user" />
       </label>
       <label class="field">
-        <span>API key</span>
+        <span>{keystone ? "Password" : "API key"}</span>
         <input
           class="type-mono"
           type="password"
@@ -182,12 +202,32 @@
         />
         {#if bookmark?.hasCredential}
           <span class="hint">
-            Leave blank to keep the stored key when the auth URL, username and TLS trust
-            stay the same. Re-enter the key when changing them or the storage override.
+            Leave blank to keep the stored {keystone ? "password" : "key"} when the connection
+            identity and TLS trust stay the same. Re-enter it when changing the auth URL,
+            username{keystone ? ", domain, project or region" : " or storage override"}.
             Old keys may remain in credential storage after replacement or deletion.
           </span>
         {/if}
       </label>
+      {#if keystone}
+        <label class="field">
+          <span>Project</span>
+          <input class="type-mono" bind:value={projectName} required placeholder="my-project" />
+        </label>
+        <label class="field">
+          <span>Region</span>
+          <input class="type-mono" bind:value={region} required placeholder="RegionOne" />
+        </label>
+        <label class="field">
+          <span>User domain <span class="hint">(default: Default)</span></span>
+          <input class="type-mono" bind:value={userDomain} placeholder="Default" />
+        </label>
+        <label class="field">
+          <span>Project domain <span class="hint">(default: Default)</span></span>
+          <input class="type-mono" bind:value={projectDomain} placeholder="Default" />
+        </label>
+      {/if}
+
       <label class="field">
         <span>TLS</span>
         <select bind:value={tlsMode}>
@@ -269,6 +309,13 @@
     margin: 0;
     padding: 0;
     min-width: 0;
+    /* The dialog is capped to the viewport; the fields are the part that
+       scrolls so the title and the actions stay in view and reachable at
+       the app's 600 px minimum window height, however many v3 fields show.
+       min-height:0 lets this flex child shrink below its content. */
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
@@ -285,6 +332,7 @@
 
   .editor {
     width: min(26rem, calc(100vw - 2 * var(--space-5)));
+    max-height: calc(100dvh - 2 * var(--space-4));
     padding: var(--space-4);
     display: flex;
     flex-direction: column;
