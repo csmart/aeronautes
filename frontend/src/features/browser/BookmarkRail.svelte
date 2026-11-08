@@ -133,18 +133,18 @@
       <button
         class="rail-backup"
         title="Back up settings and bookmarks to a file (passwords are not included)"
-        onclick={() => browser.exportSettings()}
-        disabled={browser.settingsBackingUp}
+        onclick={() => browser.settings.backUp()}
+        disabled={browser.settings.backingUp}
       >
-        {browser.settingsBackingUp ? "Backing up…" : "Back up settings…"}
+        {browser.settings.backingUp ? "Backing up…" : "Back up settings…"}
       </button>
       <button
         class="rail-backup"
         title="Restore settings and bookmarks from a backup file (passwords are re-entered on use)"
-        onclick={() => browser.importSettings()}
-        disabled={browser.settingsRestoring}
+        onclick={() => browser.settings.restore()}
+        disabled={browser.settings.restoring}
       >
-        {browser.settingsRestoring ? "Restoring…" : "Restore settings…"}
+        {browser.settings.restoring ? "Restoring…" : "Restore settings…"}
       </button>
     </div>
     <button class="foot-btn" title="Theme: {theme}" onclick={cycleTheme} aria-label="Cycle theme ({theme})">
@@ -154,17 +154,17 @@
       </svg>
     </button>
   </div>
-  {#if browser.settingsBackupMessage}
-    <p class="backup-msg" role="status">{browser.settingsBackupMessage}</p>
+  {#if browser.settings.backupMessage}
+    <p class="backup-msg" role="status">{browser.settings.backupMessage}</p>
   {/if}
-  {#if browser.settingsBackupError}
-    <p class="backup-msg error" role="alert">{browser.settingsBackupError}</p>
+  {#if browser.settings.backupError}
+    <p class="backup-msg error" role="alert">{browser.settings.backupError}</p>
   {/if}
-  {#if browser.settingsRestoreMessage}
-    <p class="backup-msg" role="status">{browser.settingsRestoreMessage}</p>
+  {#if browser.settings.restoreMessage}
+    <p class="backup-msg" role="status">{browser.settings.restoreMessage}</p>
   {/if}
-  {#if browser.settingsRestoreError}
-    <p class="backup-msg error" role="alert">{browser.settingsRestoreError}</p>
+  {#if browser.settings.restoreError}
+    <p class="backup-msg error" role="alert">{browser.settings.restoreError}</p>
   {/if}
 </nav>
 

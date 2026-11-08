@@ -75,7 +75,7 @@
   let screenEl: HTMLDivElement | undefined = $state();
   let railDrag: number | null = $state(null);
   let railSession: number | null = $state(null);
-  const railWidthPx = $derived(railDrag ?? railSession ?? browser.appSettings?.railWidthPx ?? 0);
+  const railWidthPx = $derived(railDrag ?? railSession ?? browser.settings.document?.railWidthPx ?? 0);
   // The width the rail actually renders, from layout, so the splitter can
   // report its position at the layout's default too; zero until measured
   // (and in environments without layout), when the chosen or minimum width
@@ -103,7 +103,7 @@
   function commitRail(px: number) {
     const width = px === 0 ? 0 : clampRail(px);
     railSession = width;
-    void browser.saveRailWidth(width);
+    void browser.settings.saveRailWidth(width);
   }
 
   function startRailResize(event: PointerEvent) {
@@ -139,7 +139,7 @@
 
   onMount(async () => {
     void browser.loadCredentialStatus();
-    void browser.loadAppSettings();
+    void browser.settings.load();
     void browser.loadInterruptedDisclosures();
     try {
       const info = await liveApi.info();

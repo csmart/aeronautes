@@ -31,7 +31,7 @@
   // The ceiling sentence needs the settings document; a dialog opened
   // before the drawer ever loaded it asks once (ADR 0072 decision 4).
   untrack(() => {
-    if (mode === "download" && !browser.appSettings) void browser.loadAppSettings();
+    if (mode === "download" && !browser.settings.document) void browser.settings.load();
   });
 
   let checking = $state(false);
@@ -227,9 +227,9 @@
           ? "Choose files; every collision is reported before anything is written."
           : "Choose a destination directory; the whole scope is checked for collisions first."}
       </p>
-      {#if mode === "download" && browser.appSettings}
+      {#if mode === "download" && browser.settings.document}
         <p class="hint ceiling">
-          Selections above {browser.appSettings.downloadObjectCeiling.toLocaleString("en-US")} objects are refused rather than cut short; the ceiling is set in the jobs drawer.
+          Selections above {browser.settings.document.downloadObjectCeiling.toLocaleString("en-US")} objects are refused rather than cut short; the ceiling is set in the jobs drawer.
           {#if browser.prefixCount?.done && !browser.prefixCount.error}
             This prefix counted {formatCount(browser.prefixCount.scanned)} objects.
           {/if}

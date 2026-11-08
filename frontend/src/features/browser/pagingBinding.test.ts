@@ -259,7 +259,7 @@ describe.each(['containers', 'objects'] as Kind[])('%s retention ceiling', (kind
   it('stops at the ceiling, keeps every row and says so until the ceiling is raised', async () => {
     const f = await fixture(kind); install(f);
     const settings = await f.api.appSettings(); const names = f.names();
-    f.state.appSettings = { ...settings, browserRetentionCeiling: names.length }; f.state.appSettingsStatus = 'current';
+    f.state.settings.document = { ...settings, browserRetentionCeiling: names.length }; f.state.settings.status = 'current';
     await f.more();
     expect(f.call()).not.toHaveBeenCalled(); expect(f.names()).toEqual(names); expect(f.marker()).toBe('page2');
     const root = document.createElement('div'); document.body.append(root);
@@ -271,7 +271,7 @@ describe.each(['containers', 'objects'] as Kind[])('%s retention ceiling', (kind
     const noun = kind === 'containers' ? 'containers' : 'rows';
     expect(root.querySelector('.retention-notice')?.textContent).toContain(`${names.length} ${noun} loaded, the retention ceiling`);
     expect(root.querySelector(selector)).toBeNull();
-    f.state.appSettings = { ...settings, browserRetentionCeiling: names.length + 1 }; flushSync();
+    f.state.settings.document = { ...settings, browserRetentionCeiling: names.length + 1 }; flushSync();
     expect(root.querySelector('.retention-notice')).toBeNull(); expect(root.querySelector(selector)).not.toBeNull();
     await f.more(); await settle();
     expect(f.call()).toHaveBeenCalledOnce(); expect(f.names()).toEqual([...names, 'z-next']); expect(f.marker()).toBe('page2+');
@@ -283,7 +283,7 @@ describe.each(['containers', 'objects'] as Kind[])('%s retention ceiling', (kind
     const f = await fixture(kind); install(f);
     const settings = await f.api.appSettings();
     f.api.appSettings = vi.fn(async () => ({ ...settings, browserRetentionCeiling: 5_000_000 }));
-    expect(f.state.appSettings).toBeNull(); fillToDefault(f);
+    expect(f.state.settings.document).toBeNull(); fillToDefault(f);
     await f.more();
     expect(f.names()).toHaveLength(100_000); expect(f.marker()).toBe('page2+');
     expect(f.api.appSettings).toHaveBeenCalledOnce(); await settle();
@@ -297,7 +297,7 @@ describe.each(['containers', 'objects'] as Kind[])('%s retention ceiling', (kind
     f.api.appSettings = vi.fn(async () => { throw new Error('private settings read failure'); });
     fillToDefault(f);
     await f.more(); await settle();
-    expect(f.api.appSettings).toHaveBeenCalledOnce(); expect(f.state.appSettings).toBeNull();
+    expect(f.api.appSettings).toHaveBeenCalledOnce(); expect(f.state.settings.document).toBeNull();
     expect(f.state.retentionCeiling).toBe(100_000); expect(atCeiling(f)).toBe(true);
     await f.more();
     expect(f.call()).toHaveBeenCalledOnce(); expect(f.names()).toHaveLength(100_000);

@@ -19,9 +19,9 @@
   let tab: "jobs" | "history" | "changes" = $state("jobs");
   let expanded: string | null = $state(null);
   const budgetValue = $derived(String(
-    browser.appSettingsOperation === "set" || browser.appSettingsStatus === "unconfirmed"
-      ? browser.appSettingsAttempt?.value ?? ""
-      : browser.appSettings?.maxActiveJobs ?? "",
+    browser.settings.operation === "set" || browser.settings.status === "unconfirmed"
+      ? browser.settings.attempt?.value ?? ""
+      : browser.settings.document?.maxActiveJobs ?? "",
   ));
   type CancellationNotice = {
     jobId: string;
@@ -201,7 +201,7 @@
     };
     refresh();
     // Reopening the drawer is not the explicit recovery read after a lost reply.
-    if (browser.appSettingsAttempt?.state !== "unconfirmed") void browser.loadAppSettings();
+    if (browser.settings.attempt?.state !== "unconfirmed") void browser.settings.load();
     const tick = setInterval(refresh, 1500);
     return () => {
       disposed = true;
@@ -224,9 +224,9 @@
   }
 
   async function saveBudget(value: number) {
-    if (disposed || !browser.canSaveAppSettings || !browser.appSettings) return;
+    if (disposed || !browser.settings.canSave || !browser.settings.document) return;
     try {
-      await browser.saveAppSettings({ ...browser.appSettings, maxActiveJobs: value });
+      await browser.settings.save({ ...browser.settings.document, maxActiveJobs: value });
     } catch {
       // BrowserState retains the unconfirmed attempt even if this drawer unmounts.
     }
@@ -235,13 +235,13 @@
   // The download selection ceiling (ADR 0072): refused by the backend
   // outside 1,000..5,000,000 rather than clamped, so the control shows the
   // last observed value until a save is acknowledged.
-  const ceilingValue = $derived(String(browser.appSettings?.downloadObjectCeiling ?? ""));
+  const ceilingValue = $derived(String(browser.settings.document?.downloadObjectCeiling ?? ""));
   let ceilingError: string | null = $state(null);
   async function saveCeiling(value: number) {
-    if (disposed || !browser.canSaveAppSettings || !browser.appSettings) return;
+    if (disposed || !browser.settings.canSave || !browser.settings.document) return;
     ceilingError = null;
     try {
-      await browser.saveAppSettings({ ...browser.appSettings, downloadObjectCeiling: value });
+      await browser.settings.save({ ...browser.settings.document, downloadObjectCeiling: value });
     } catch (err) {
       ceilingError = err instanceof Error ? err.message : String(err);
     }
@@ -250,26 +250,26 @@
   // The browser retention ceiling and the queue depth (ADR 0074 decisions
   // 1 and 2) take the ceiling's treatment: the backend refuses a value
   // outside the range rather than clamping it.
-  const retentionValue = $derived(String(browser.appSettings?.browserRetentionCeiling ?? ""));
+  const retentionValue = $derived(String(browser.settings.document?.browserRetentionCeiling ?? ""));
   let retentionError: string | null = $state(null);
-  const queueDepthValue = $derived(String(browser.appSettings?.maxQueuedJobs ?? ""));
+  const queueDepthValue = $derived(String(browser.settings.document?.maxQueuedJobs ?? ""));
   let queueDepthError: string | null = $state(null);
   // The native client's per-host connection cap (ADR 0074 decision 4)
   // applies to sessions opened after the save.
-  const connectionCapValue = $derived(String(browser.appSettings?.maxConnsPerHost ?? ""));
+  const connectionCapValue = $derived(String(browser.settings.document?.maxConnsPerHost ?? ""));
   let connectionCapError: string | null = $state(null);
   // Whether an acknowledged overwrite of a large object removes the segment
   // objects its manifest named once the replacement verifies (ADR 0081
   // decision 5). Defaults to removing them, which is what rclone's own
   // replacement does; the control is for the operator who shares segments
   // between manifests and cannot accept it.
-  const reclaimChecked = $derived(browser.appSettings?.reclaimReplacedFragments ?? true);
+  const reclaimChecked = $derived(browser.settings.document?.reclaimReplacedFragments ?? true);
   let reclaimError: string | null = $state(null);
   async function saveBound(patch: Partial<AppSettingsDTO>, report: (message: string | null) => void) {
-    if (disposed || !browser.canSaveAppSettings || !browser.appSettings) return;
+    if (disposed || !browser.settings.canSave || !browser.settings.document) return;
     report(null);
     try {
-      await browser.saveAppSettings({ ...browser.appSettings, ...patch });
+      await browser.settings.save({ ...browser.settings.document, ...patch });
     } catch (err) {
       report(err instanceof Error ? err.message : String(err));
     }
@@ -492,12 +492,12 @@
           }}>Recent changes</button
         >
         {#if tab === "jobs"}
-          {#if browser.appSettings}
+          {#if browser.settings.document}
             <label class="filter" title="whole-application active-job ceiling">
               <span>Active-job budget</span>
               <select
                 value={budgetValue}
-                disabled={!browser.canSaveAppSettings}
+                disabled={!browser.settings.canSave}
                 aria-describedby={`${id}-budget-status`}
                 onchange={(e) => {
                   const value = Number(e.currentTarget.value);
@@ -519,7 +519,7 @@
                 max="5000000"
                 step="1000"
                 value={ceilingValue}
-                disabled={!browser.canSaveAppSettings}
+                disabled={!browser.settings.canSave}
                 aria-describedby={`${id}-ceiling-status`}
                 onchange={(e) => {
                   const value = Number(e.currentTarget.value);
@@ -529,7 +529,7 @@
               />
             </label>
             <span class="ceiling-status" id={`${id}-ceiling-status`} role="status">
-              {#if ceilingError}{ceilingError}{:else if browser.appSettings}ceiling {browser.appSettings.downloadObjectCeiling.toLocaleString("en-US")} objects{/if}
+              {#if ceilingError}{ceilingError}{:else if browser.settings.document}ceiling {browser.settings.document.downloadObjectCeiling.toLocaleString("en-US")} objects{/if}
             </span>
             <label class="filter" title="the most rows a browser column keeps loaded; at the ceiling the column keeps what it shows and loads no further page (1,000 to 5,000,000)">
               <span>Browser retention</span>
@@ -540,7 +540,7 @@
                 max="5000000"
                 step="1000"
                 value={retentionValue}
-                disabled={!browser.canSaveAppSettings}
+                disabled={!browser.settings.canSave}
                 aria-describedby={`${id}-retention-status`}
                 onchange={(e) => {
                   const value = Number(e.currentTarget.value);
@@ -550,7 +550,7 @@
               />
             </label>
             <span class="ceiling-status" id={`${id}-retention-status`} role="status">
-              {#if retentionError}{retentionError}{:else if browser.appSettings}keeps {browser.appSettings.browserRetentionCeiling.toLocaleString("en-US")} rows{/if}
+              {#if retentionError}{retentionError}{:else if browser.settings.document}keeps {browser.settings.document.browserRetentionCeiling.toLocaleString("en-US")} rows{/if}
             </span>
             <label class="filter" title="the most jobs that may wait behind the active slots; a further start is refused with the count named (1 to 1,000)">
               <span>Queue depth</span>
@@ -561,7 +561,7 @@
                 max="1000"
                 step="1"
                 value={queueDepthValue}
-                disabled={!browser.canSaveAppSettings}
+                disabled={!browser.settings.canSave}
                 aria-describedby={`${id}-queue-depth-status`}
                 onchange={(e) => {
                   const value = Number(e.currentTarget.value);
@@ -571,7 +571,7 @@
               />
             </label>
             <span class="ceiling-status" id={`${id}-queue-depth-status`} role="status">
-              {#if queueDepthError}{queueDepthError}{:else if browser.appSettings}{browser.appSettings.maxQueuedJobs.toLocaleString("en-US")} waiting at most{/if}
+              {#if queueDepthError}{queueDepthError}{:else if browser.settings.document}{browser.settings.document.maxQueuedJobs.toLocaleString("en-US")} waiting at most{/if}
             </span>
             <label class="filter" title="the most connections one session opens to a host; a burst of reads waits for a connection rather than opening one without bound; applies to sessions opened after the save (1 to 256)">
               <span>Connection cap</span>
@@ -582,7 +582,7 @@
                 max="256"
                 step="1"
                 value={connectionCapValue}
-                disabled={!browser.canSaveAppSettings}
+                disabled={!browser.settings.canSave}
                 aria-describedby={`${id}-connection-cap-status`}
                 onchange={(e) => {
                   const value = Number(e.currentTarget.value);
@@ -592,7 +592,7 @@
               />
             </label>
             <span class="ceiling-status" id={`${id}-connection-cap-status`} role="status">
-              {#if connectionCapError}{connectionCapError}{:else if browser.appSettings}{browser.appSettings.maxConnsPerHost.toLocaleString("en-US")} connections per host on the next connect{/if}
+              {#if connectionCapError}{connectionCapError}{:else if browser.settings.document}{browser.settings.document.maxConnsPerHost.toLocaleString("en-US")} connections per host on the next connect{/if}
             </span>
             <label class="filter" title="when an acknowledged overwrite replaces a large object, remove the segment objects its manifest named once the replacement verifies; off keeps them, and a container that keeps versions keeps them either way">
               <span>Reclaim replaced segments</span>
@@ -600,7 +600,7 @@
                 class="reclaim-fragments"
                 type="checkbox"
                 checked={reclaimChecked}
-                disabled={!browser.canSaveAppSettings}
+                disabled={!browser.settings.canSave}
                 aria-describedby={`${id}-reclaim-status`}
                 onchange={(e) => {
                   const value = e.currentTarget.checked;
@@ -610,7 +610,7 @@
               />
             </label>
             <span class="ceiling-status" id={`${id}-reclaim-status`} role="status">
-              {#if reclaimError}{reclaimError}{:else if browser.appSettings}{browser.appSettings.reclaimReplacedFragments ? "a replaced large object's segments are removed once the replacement verifies" : "a replaced large object's segments are kept"}{/if}
+              {#if reclaimError}{reclaimError}{:else if browser.settings.document}{browser.settings.document.reclaimReplacedFragments ? "a replaced large object's segments are removed once the replacement verifies" : "a replaced large object's segments are kept"}{/if}
             </span>
           {/if}
           {#if v1Offers.benchmark}
@@ -644,30 +644,30 @@
       </div>
 
       {#if tab === "jobs"}
-        <div class="budget-status" id={`${id}-budget-status`} role="status" aria-busy={browser.appSettingsOperation !== null}>
-          {#if browser.appSettingsOperation === "get"}
+        <div class="budget-status" id={`${id}-budget-status`} role="status" aria-busy={browser.settings.operation !== null}>
+          {#if browser.settings.operation === "get"}
             <span>Loading settings…</span>
-          {:else if browser.appSettingsStatus === "unavailable"}
+          {:else if browser.settings.status === "unavailable"}
             <span>Settings are unavailable.</span>
-          {:else if browser.appSettingsStatus === "stale" || browser.appSettingsReadError}
+          {:else if browser.settings.status === "stale" || browser.settings.readError}
             <span>Settings could not be refreshed; the last observation is stale.</span>
           {/if}
-          {#if browser.appSettingsAttempt?.state === "pending"}
-            <span>Saving budget {browser.appSettingsAttempt.value}…</span>
-          {:else if browser.appSettingsAttempt?.state === "unconfirmed"}
-            <span>Budget change to {browser.appSettingsAttempt.value} is unconfirmed.</span>
-          {:else if browser.appSettingsAttempt?.state === "acknowledged"}
+          {#if browser.settings.attempt?.state === "pending"}
+            <span>Saving budget {browser.settings.attempt.value}…</span>
+          {:else if browser.settings.attempt?.state === "unconfirmed"}
+            <span>Budget change to {browser.settings.attempt.value} is unconfirmed.</span>
+          {:else if browser.settings.attempt?.state === "acknowledged"}
             <span>Budget change acknowledged.</span>
           {/if}
-          {#if browser.appSettings}
-            <span>Last observed budget: {browser.appSettings.maxActiveJobs}.</span>
+          {#if browser.settings.document}
+            <span>Last observed budget: {browser.settings.document.maxActiveJobs}.</span>
           {/if}
-          {#if browser.appSettingsStatus === "unconfirmed"}
+          {#if browser.settings.status === "unconfirmed"}
             <span>Refresh settings before another change.</span>
-          {:else if browser.appSettingsStatus === "current" && browser.appSettingsAttempt?.state === "unconfirmed"}
+          {:else if browser.settings.status === "current" && browser.settings.attempt?.state === "unconfirmed"}
             <span>Current settings were read; the earlier save was not acknowledged.</span>
           {/if}
-          <button disabled={browser.appSettingsOperation !== null} onclick={() => void browser.loadAppSettings()}>Refresh settings</button>
+          <button disabled={browser.settings.operation !== null} onclick={() => void browser.settings.load()}>Refresh settings</button>
         </div>
         <div class="recovery" role="status" aria-busy={browser.recoveryStatusLoading}>
           {#if browser.recoveryStatusError}
