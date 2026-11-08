@@ -325,77 +325,7 @@ func (s *TransferService) uploadItemRecorder(ctx context.Context, jobID string, 
 			})
 		},
 		Reclaiming: func(item local.UploadItem) (local.ReclaimPlan, error) {
-			// What may be reclaimed is decided here, not in the route,
-			// because it depends on the operator's setting, on what the
-			// container says about versions AT THIS MOMENT, and on the
-			// record taken before the publication (ADR 0081 decision 5).
-			// The answer first, because it is the only input that cannot be
-			// re-read: the operator is not here to be asked again.
-			if !answered.Removal {
-				declined := "the confirmation that was answered did not say these segments would be removed"
-				if answered.Said != "" {
-					declined += "; it said: " + answered.Said
-				}
-				return local.ReclaimPlan{Declined: declined}, nil
-			}
-			reclaiming, err := s.reclamationSetting(ctx)
-			if err != nil {
-				return local.ReclaimPlan{Declined: "the reclamation setting could not be read, so nothing was removed"}, nil
-			}
-			if !reclaiming {
-				return local.ReclaimPlan{Declined: "reclaiming replaced fragments is turned off"}, nil
-			}
-			// Read again rather than reusing what the confirmation said: the
-			// question stated what was true when the operator was asked, and
-			// what matters now is what is true now. A mode this build cannot
-			// describe declines rather than proceeding.
-			versioning, versioningErr := s.observedVersioning(ctx, req.BookmarkID, req.Container)
-			if versioningErr != nil {
-				return local.ReclaimPlan{Declined: "the container's versioning could not be read, so nothing was removed"}, nil
-			}
-			if keepsVersions(versioning) {
-				return local.ReclaimPlan{Declined: "the container keeps versions, so those segments belong to a retained version"}, nil
-			}
-			// The identities recorded BEFORE the publication, read back from
-			// the durable record. Nothing is derived from a prefix at the
-			// time of deletion, which is the whole of rule three.
-			record, ok, err := s.jobs.ReadPredecessor(ctx, jobID, item.Name)
-			if err != nil {
-				return local.ReclaimPlan{}, err
-			}
-			if !ok {
-				return local.ReclaimPlan{Declined: "no record of what was there, so nothing was removed"}, nil
-			}
-			if record.Unread != "" {
-				return local.ReclaimPlan{Declined: "the predecessor's fragments were never inventoried, so nothing was removed"}, nil
-			}
-			var plan local.ReclaimPlan
-			plan.Retained = retainedShapes(record)
-			// A listed prefix's inventory holds a prefix of what it read
-			// (local.MaxListedFragments), so what it does not name is left
-			// behind and the trail has to say so rather than reporting a
-			// partial removal as a whole one. The prefix stays listable, so
-			// what was left can still be found.
-			if record.Counted > record.Named {
-				plan.LeftBehind = fmt.Sprintf("the predecessor named %d segments and this build recorded %d of them, so the rest were left where they are",
-					record.Counted, record.Named)
-			}
-			for _, fragment := range record.Fragments {
-				// Only a private whole object. A ranged entry references a
-				// containing object and a nested entry names another
-				// manifest, so neither is this operation's to remove.
-				if fragment.Shape != jobs.FragmentWhole {
-					continue
-				}
-				plan.Fragments = append(plan.Fragments, local.Fragment{
-					Container: fragment.Container, Name: fragment.Object, Shape: local.FragmentWhole})
-			}
-			if len(plan.Fragments) == 0 {
-				// Nothing this operation may remove, which is a decision
-				// taken and not a removal of none (db:756 finding 4).
-				plan.Declined = "nothing the predecessor's record named is a private whole object"
-			}
-			return plan, nil
+			return s.reclaimPlan(ctx, req, jobID, item, answered)
 		},
 		Reclaimed: func(item local.UploadItem, outcome local.ReclaimOutcome) error {
 			return s.runner.audit.Append(ctx, audit.Event{
@@ -414,4 +344,79 @@ func (s *TransferService) uploadItemRecorder(ctx context.Context, jobID string, 
 			return s.jobs.RecordComparison(ctx, jobID, identity, copyItemObservation(observation))
 		},
 	}
+}
+
+// reclaimPlan decides what the upload may remove of a replaced predecessor's
+// fragments, and says why when it removes nothing. It is decided here, not
+// in the route, because it depends on the operator's setting, on what the
+// container says about versions at this moment, and on the record taken
+// before the publication (ADR 0081 decision 5).
+func (s *TransferService) reclaimPlan(ctx context.Context, req UploadRequestDTO, jobID string, item local.UploadItem, answered answeredFragments) (local.ReclaimPlan, error) {
+	// The answer first, because it is the only input that cannot be
+	// re-read: the operator is not here to be asked again.
+	if !answered.Removal {
+		declined := "the confirmation that was answered did not say these segments would be removed"
+		if answered.Said != "" {
+			declined += "; it said: " + answered.Said
+		}
+		return local.ReclaimPlan{Declined: declined}, nil
+	}
+	reclaiming, err := s.reclamationSetting(ctx)
+	if err != nil {
+		return local.ReclaimPlan{Declined: "the reclamation setting could not be read, so nothing was removed"}, nil
+	}
+	if !reclaiming {
+		return local.ReclaimPlan{Declined: "reclaiming replaced fragments is turned off"}, nil
+	}
+	// Read again rather than reusing what the confirmation said: the
+	// question stated what was true when the operator was asked, and
+	// what matters now is what is true now. A mode this build cannot
+	// describe declines rather than proceeding.
+	versioning, versioningErr := s.observedVersioning(ctx, req.BookmarkID, req.Container)
+	if versioningErr != nil {
+		return local.ReclaimPlan{Declined: "the container's versioning could not be read, so nothing was removed"}, nil
+	}
+	if keepsVersions(versioning) {
+		return local.ReclaimPlan{Declined: "the container keeps versions, so those segments belong to a retained version"}, nil
+	}
+	// The identities recorded BEFORE the publication, read back from
+	// the durable record. Nothing is derived from a prefix at the
+	// time of deletion, which is the whole of rule three.
+	record, ok, err := s.jobs.ReadPredecessor(ctx, jobID, item.Name)
+	if err != nil {
+		return local.ReclaimPlan{}, err
+	}
+	if !ok {
+		return local.ReclaimPlan{Declined: "no record of what was there, so nothing was removed"}, nil
+	}
+	if record.Unread != "" {
+		return local.ReclaimPlan{Declined: "the predecessor's fragments were never inventoried, so nothing was removed"}, nil
+	}
+	var plan local.ReclaimPlan
+	plan.Retained = retainedShapes(record)
+	// A listed prefix's inventory holds a prefix of what it read
+	// (local.MaxListedFragments), so what it does not name is left
+	// behind and the trail has to say so rather than reporting a
+	// partial removal as a whole one. The prefix stays listable, so
+	// what was left can still be found.
+	if record.Counted > record.Named {
+		plan.LeftBehind = fmt.Sprintf("the predecessor named %d segments and this build recorded %d of them, so the rest were left where they are",
+			record.Counted, record.Named)
+	}
+	for _, fragment := range record.Fragments {
+		// Only a private whole object. A ranged entry references a
+		// containing object and a nested entry names another
+		// manifest, so neither is this operation's to remove.
+		if fragment.Shape != jobs.FragmentWhole {
+			continue
+		}
+		plan.Fragments = append(plan.Fragments, local.Fragment{
+			Container: fragment.Container, Name: fragment.Object, Shape: local.FragmentWhole})
+	}
+	if len(plan.Fragments) == 0 {
+		// Nothing this operation may remove, which is a decision
+		// taken and not a removal of none (db:756 finding 4).
+		plan.Declined = "nothing the predecessor's record named is a private whole object"
+	}
+	return plan, nil
 }
