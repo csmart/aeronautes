@@ -33,6 +33,21 @@ It exposes the binary through the same PATH and `AERONAUTES_OFFICIAL_RCLONE_DIR`
 Fetching sidecars in the later packaging jobs cannot supply this earlier, separate test job.
 Manual release dispatch builds unsigned artifacts for all six targets; it does not create a tag or publish a GitHub release.
 
+## Non-blocking checks
+
+`Real-cloud oracle (non-blocking)` runs the Keystone v3 real-cloud oracle against genuine OpenStack backends on each pull request.
+It drives `go test -tags realcloud -run TestKeystoneV3Oracle ./internal/swiftcontrol/`, which authenticates through the product's own v3 path and does a full create, upload, read and delete round-trip on each configured cloud.
+Run it locally from the repo root with `make oracle CLOUDS=/path/to/clouds.yaml`, or set `OS_CLIENT_CONFIG_FILE` and run `make oracle`; `make oracle CLOUD=ceph` runs a single backend.
+A selected path that does not exist is an error rather than a fallback, so a typo cannot direct the run at another account's clouds.yaml.
+It is deliberately not a required check and is not pinned in the ruleset, so `master-ruleset.json` is unchanged.
+The real Keystone endpoints are an external dependency, so an outage or an expired credential must never block a merge.
+It reports its own status and skips green when its secret is absent, so fork pull requests, which receive no secrets, and a repository without the secret configured both pass it without contacting any cloud.
+The job reads a `clouds.yaml` from the `ORACLE_CLOUDS_YAML` repository secret, writes it to a temporary file for the run, and removes it with the runner.
+Populate the secret with `gh secret set ORACLE_CLOUDS_YAML --repo <owner>/<repo> < ci-clouds.yaml` from a `clouds.yaml` holding the backend-named `aeronautes-ceph` and `aeronautes-swift` entries.
+The test keeps passwords, tokens and account identifiers (username, project) out of its output, failure diagnostics included; only the auth endpoint, region and storage host appear in the log.
+Rotate the credential by re-running `gh secret set`.
+
+
 ## Merge procedure
 
 1. Finish the implementation, relevant local verification and independent local review.

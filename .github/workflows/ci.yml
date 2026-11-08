@@ -418,6 +418,28 @@ jobs:
           path: smoke-artifacts/
           retention-days: 7
 
+  realcloud_oracle:
+    name: Real-cloud oracle (non-blocking)
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'pull_request' }}
+    # Outside the required gate (the `required` job's needs and ci-gate.sh) on
+    # purpose: the real Keystone backends are an external dependency, so a cloud
+    # outage or an expired credential must never block a merge. It reports its
+    # own status and skips green when the ORACLE_CLOUDS_YAML secret is absent
+    # (fork PRs receive no secrets), and the test skips each cloud not in the file.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: stable
+      - name: Real-cloud Keystone v3 oracle
+        env:
+          ORACLE_CLOUDS_YAML: ${{ secrets.ORACLE_CLOUDS_YAML }}
+        run: |
+          trap 'rm -f "$RUNNER_TEMP/clouds.yaml"' EXIT
+          printf '%s' "$ORACLE_CLOUDS_YAML" > "$RUNNER_TEMP/clouds.yaml"
+          make oracle CLOUDS="$RUNNER_TEMP/clouds.yaml"
+
   required:
     name: CI — all required jobs passed
     if: ${{ always() }}
