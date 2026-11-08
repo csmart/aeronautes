@@ -126,6 +126,51 @@ func (e *Executor) overwriteRefused(name string, effect Effect, detail string) e
 	return result
 }
 
+// replaceAtFixedPoint is the comparison ADR 0085 keeps immediately before a
+// publishing request, for a name the operator acknowledged replacing, given
+// the fresh reading of its destination. Live and still what was shown: what
+// is about to be replaced is recorded first, because the publication
+// destroys the ability to read it, and the publication then replaces
+// unconditionally, since a create condition would reject the very name the
+// operator asked to replace. Live and different, or unidentifiable: refused
+// with both identities kept and the live object untouched. Gone: the name is
+// free again and publishes create-only, but its observed absence is recorded
+// first, as the predecessor this contract's race admits (decision 7). It
+// reports whether the publication replaces, or the result that stops it; a
+// route adds its own cleanup to that result.
+func (e *Executor) replaceAtFixedPoint(name string, shown ShownObject, dst *swiftcontrol.ObjectDetail, live bool, effect Effect, route string) (replaces bool, stop *executionResult) {
+	if !live {
+		if recErr := e.replacing(name, ObservedPredecessor{Present: false}); recErr != nil {
+			e.stop(recErr)
+			result := failed(effect, StageRecording, CodeUnknown, route+"-absent-record", recErr)
+			return false, &result
+		}
+		return false, nil
+	}
+	// The fresh read answers the same completeness rule as the capture: a
+	// HEAD stating no entity tag or no length identifies nothing, and a zero
+	// compared against a genuine empty object's baseline would otherwise let
+	// a replacement proceed against an identity nobody established.
+	found, identifiable := shownFrom(dst)
+	if !identifiable {
+		result := e.overwriteRefused(name, effect, "the destination could not be identified before replacing it: its HEAD stated no entity tag or no length")
+		return false, &result
+	}
+	if found != shown {
+		e.recordRefused(name, shown, found)
+		result := e.overwriteRefused(name, effect, fmt.Sprintf(
+			"the destination no longer holds what was acknowledged: it was a %s of %d bytes with entity tag %s, and it is now a %s of %d bytes with entity tag %s",
+			shown.Class, shown.Length, shown.ETag, found.Class, found.Length, found.ETag))
+		return false, &result
+	}
+	if recErr := e.replacing(name, observedFrom(dst)); recErr != nil {
+		e.stop(recErr)
+		result := failed(effect, StageRecording, CodeUnknown, route+"-replace-record", recErr)
+		return false, &result
+	}
+	return true, nil
+}
+
 // routeOverwrite dispatches an item whose live destination the operator
 // acknowledged replacing. Both the staged and the native route now carry the
 // fixed-point comparison, each immediately before its own publishing request,
