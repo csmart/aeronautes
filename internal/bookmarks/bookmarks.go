@@ -283,21 +283,33 @@ func (st *Store) SaveWithCA(ctx context.Context, b Bookmark, secret, caPEM []byt
 
 var errKeyReentry = errors.New("re-enter the key when changing the auth URL, username, storage override, auth version, Keystone domain, project or region, or TLS trust")
 
+// SameBinding reports whether two connection configurations name the same
+// credential binding (ADR 0015): the endpoint, the user, the storage
+// override, the auth version with its Keystone identity, and the TLS trust
+// mode, where an unset mode is system trust. A custom CA bundle is part of
+// the binding too, but its bytes live where each caller holds them, so the
+// caller compares those.
+func SameBinding(current, proposed swiftcontrol.Config) bool {
+	mode := func(m swiftcontrol.TLSMode) swiftcontrol.TLSMode {
+		if m == "" {
+			return swiftcontrol.TLSModeSystem
+		}
+		return m
+	}
+	return current.AuthURL == proposed.AuthURL && current.Username == proposed.Username &&
+		current.StorageURLOverride == proposed.StorageURLOverride &&
+		current.AuthVersion == proposed.AuthVersion && current.UserDomain == proposed.UserDomain &&
+		current.ProjectName == proposed.ProjectName && current.ProjectDomain == proposed.ProjectDomain &&
+		current.Region == proposed.Region && mode(current.TLS.Mode) == mode(proposed.TLS.Mode)
+}
+
 // Retention is checked against the row inside the update transaction;
 // a prior service read could become stale before this edit is published.
 func retainCredentialBinding(ctx context.Context, tx *sql.Tx, current, proposed Bookmark, caPEM []byte) error {
-	mode := current.TLSMode
-	if mode == "" {
-		mode = swiftcontrol.TLSModeSystem
-	}
-	if current.AuthURL != proposed.AuthURL || current.Username != proposed.Username ||
-		current.StorageURLOverride != proposed.StorageURLOverride || mode != proposed.TLSMode ||
-		current.AuthVersion != proposed.AuthVersion || current.UserDomain != proposed.UserDomain ||
-		current.ProjectName != proposed.ProjectName || current.ProjectDomain != proposed.ProjectDomain ||
-		current.Region != proposed.Region {
+	if !SameBinding(current.SwiftConfig(nil, nil), proposed.SwiftConfig(nil, nil)) {
 		return errKeyReentry
 	}
-	if mode != swiftcontrol.TLSModeCustomCA {
+	if proposed.TLSMode != swiftcontrol.TLSModeCustomCA {
 		return nil
 	}
 	var currentCA string
