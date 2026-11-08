@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/csmart/aeronautes/internal/swifttest"
 )
 
 // newObjectHeadServer serves HEADs for a handful of canned objects under
@@ -124,6 +126,23 @@ func TestObjectDetailSLO(t *testing.T) {
 	}
 	if d.Manifest != "" {
 		t.Errorf("Manifest = %q, must be empty for SLO", d.Manifest)
+	}
+}
+
+// A failed HEAD keeps the transaction id the store stamped on its reply,
+// as the account and container reads already do, so a caller recording
+// the failure can quote it.
+func TestObjectDetailFailureCarriesTransID(t *testing.T) {
+	mock := swifttest.New("test:tester", "testing")
+	srv := httptest.NewServer(mock)
+	t.Cleanup(srv.Close)
+	s := mustSession(t, srv.URL)
+	mock.PutObject("media", "plain.txt", swifttest.Object{Bytes: 5, ContentType: "text/plain"})
+	mock.FailNextObjectHEADs(1)
+	_, err := s.ObjectDetail(context.Background(), "media", "plain.txt")
+	var se *SwiftError
+	if !errors.As(err, &se) || se.TransID != "txswifttest-object-head-fault" {
+		t.Fatalf("err = %v, want a SwiftError carrying the failed HEAD's trans id", err)
 	}
 }
 
