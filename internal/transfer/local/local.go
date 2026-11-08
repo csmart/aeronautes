@@ -627,13 +627,30 @@ func PreflightDownloadIntoBounded(ctx context.Context, src *swiftcontrol.Session
 		nativeSource[object.Name] = source
 	}
 
-	// Directory aliases: a planned directory identity with more than one
-	// spelling, from markers or from the ancestors of files. The pinned
-	// engine keys directory entries by their NFC form everywhere and by
-	// their lowercase form on case-insensitive hosts and ignores the
-	// second spelling as a duplicate while exiting successfully, so files
-	// beneath an aliased directory go natively on every platform; the
-	// target filesystem then decides, as it does for rsync and scp.
+	routeAliasedDirectoriesNatively(prefix, names, candidates)
+	report.Problems = append(report.Problems, fileVersusPrefixProblems(prefix, names)...)
+	report.Problems = append(report.Problems, collisionProblems(prefix, byLower, byCaseless)...)
+	for _, item := range candidates {
+		if refusal := inspectDownloadPath(destination.root, item); refusal != nil {
+			report.Problems = append(report.Problems, *refusal)
+			continue
+		}
+		report.Items = append(report.Items, item)
+		report.Objects++
+		report.TotalBytes += item.Size
+	}
+	report.nativeSource = nativeSource
+	return report, nil
+}
+
+// routeAliasedDirectoriesNatively sends every file beneath a directory that
+// the selection spells more than one way down the native route. The pinned
+// engine keys directory entries by their NFC form everywhere and by their
+// lowercase form on case-insensitive hosts, and ignores the second spelling
+// as a duplicate while exiting successfully; natively, the target filesystem
+// decides, as it does for rsync and scp. Directory spellings come from
+// markers and from the ancestors of files alike.
+func routeAliasedDirectoriesNatively(prefix string, names []string, candidates []DownloadItem) {
 	spellingsByLower, spellingsByCaseless := map[string]map[string]bool{}, map[string]map[string]bool{}
 	for _, name := range names {
 		for _, dir := range plannedDirectories(name) {
@@ -652,10 +669,14 @@ func PreflightDownloadIntoBounded(ctx context.Context, src *swiftcontrol.Session
 			}
 		}
 	}
+}
 
-	// File-vs-prefix conflicts: a real ancestor lookup, not sorted
-	// adjacency — "foo", "foo.txt", "foo/child" sorts foo.txt between
-	// the conflicting pair and adjacency misses it (follow-up review).
+// fileVersusPrefixProblems refuses a selection in which one object must be
+// both a file and the directory holding another, found by a real ancestor
+// lookup rather than sorted adjacency: "foo", "foo.txt", "foo/child" sorts
+// foo.txt between the conflicting pair and adjacency misses it.
+func fileVersusPrefixProblems(prefix string, names []string) []Problem {
+	var problems []Problem
 	filesByLower, filesByCaseless := map[string]string{}, map[string]string{}
 	for _, name := range names {
 		if name != "" && !strings.HasSuffix(name, "/") {
@@ -682,7 +703,7 @@ func PreflightDownloadIntoBounded(ctx context.Context, src *swiftcontrol.Session
 			// both relations is reported once.
 			if exists && !flagged[file] {
 				flagged[file] = true
-				report.Problems = append(report.Problems, Problem{
+				problems = append(problems, Problem{
 					Name: prefix + file, Kind: "file-vs-prefix",
 					Detail: fmt.Sprintf("object %q needs to be both a file and the directory holding %q", file, name),
 					Reject: true,
@@ -690,11 +711,17 @@ func PreflightDownloadIntoBounded(ctx context.Context, src *swiftcontrol.Session
 			}
 		}
 	}
-	// Rejected, not warned: the same operator moves this data to
-	// macOS/Windows next — one namespace policy per target set. The
-	// lowercase groups are emitted first so an existing case collision
-	// keeps its exact kind and wording; a group the second relation finds
-	// on its own is reported as a name-form collision.
+	return problems
+}
+
+// collisionProblems refuses file names that collide on case or on Unicode
+// normalization form. Rejected, not warned: the same operator moves this
+// data to macOS or Windows next, so one namespace policy covers every
+// target. The lowercase groups are emitted first so an existing case
+// collision keeps its exact kind and wording; a group the second relation
+// finds on its own is reported as a name-form collision.
+func collisionProblems(prefix string, byLower, byCaseless map[string][]string) []Problem {
+	var problems []Problem
 	reported := map[string]bool{}
 	emit := func(twins []string, kind, detail string) {
 		if len(twins) < 2 {
@@ -705,7 +732,7 @@ func PreflightDownloadIntoBounded(ctx context.Context, src *swiftcontrol.Session
 			return
 		}
 		reported[key] = true
-		report.Problems = append(report.Problems, Problem{
+		problems = append(problems, Problem{
 			Name: prefix + twins[0], Kind: kind, Detail: detail, Reject: true,
 		})
 	}
@@ -715,17 +742,7 @@ func PreflightDownloadIntoBounded(ctx context.Context, src *swiftcontrol.Session
 	for _, twins := range byCaseless {
 		emit(twins, "name-form", collisionDetail("name-form", twins))
 	}
-	for _, item := range candidates {
-		if refusal := inspectDownloadPath(destination.root, item); refusal != nil {
-			report.Problems = append(report.Problems, *refusal)
-			continue
-		}
-		report.Items = append(report.Items, item)
-		report.Objects++
-		report.TotalBytes += item.Size
-	}
-	report.nativeSource = nativeSource
-	return report, nil
+	return problems
 }
 
 // plannedDirectories lists every directory a relative name plans, the
