@@ -293,8 +293,12 @@ func TestUpdateObjectMetadataStoreRefusalIsFailed(t *testing.T) {
 	if err == nil || errors.Is(err, ErrUnverifiedWrite) {
 		t.Fatalf("err = %v, want store refusal", err)
 	}
-	if result != nil {
-		t.Fatalf("store refusal must not keep a write result: %+v", result)
+	// The refusal keeps its evidence without claiming a write.
+	if result == nil || result.Outcome != "" || result.Limitation != "" || result.After != nil {
+		t.Fatalf("store refusal must keep a trail and claim no write: %+v", result)
+	}
+	if len(result.TransIDs) == 0 || result.TransIDs[0] != "txswifttest-object" {
+		t.Fatalf("TransIDs = %v, want the preflight id kept", result.TransIDs)
 	}
 }
 

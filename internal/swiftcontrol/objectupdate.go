@@ -144,7 +144,11 @@ func (s *Session) UpdateObjectMetadata(ctx context.Context, container, name, bas
 			result.Limitation = ConcurrentEditLimitation
 			return result, fmt.Errorf("%w: %v", ErrUnverifiedWrite, err)
 		}
-		return nil, err
+		// A definite refusal is a failed write with a trail: the result
+		// keeps the preflight's and the refusal's transaction ids, as the
+		// account and container updates do, and claims no write (no
+		// outcome, no limitation).
+		return result, err
 	}
 	// The write has happened; from here every outcome is a completed save
 	// and carries the same limit, including a verify mismatch.
