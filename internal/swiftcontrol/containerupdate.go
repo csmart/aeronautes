@@ -202,19 +202,12 @@ func verifyContainerOutcome(edit ContainerEdit, after *ContainerDetail) string {
 	if after.Versioning != edit.Versioning && !(edit.Versioning.Mode == "" && after.Versioning.Mode == VersioningOff) {
 		problems = append(problems, fmt.Sprintf("versioning %+v, want %+v", after.Versioning, edit.Versioning))
 	}
-	if after.QuotaBytes != max64(edit.QuotaBytes, 0) || after.QuotaCount != max64(edit.QuotaCount, 0) {
+	if after.QuotaBytes != max(edit.QuotaBytes, 0) || after.QuotaCount != max(edit.QuotaCount, 0) {
 		problems = append(problems, fmt.Sprintf("quotas %d/%d, want %d/%d",
 			after.QuotaBytes, after.QuotaCount, edit.QuotaBytes, edit.QuotaCount))
 	}
 	sort.Strings(problems)
 	return strings.Join(problems, "; ")
-}
-
-func max64(v, floor int64) int64 {
-	if v < floor {
-		return floor
-	}
-	return v
 }
 
 // post POSTs headers at container level (object "") or object level and
