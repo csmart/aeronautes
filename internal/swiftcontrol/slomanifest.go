@@ -151,14 +151,7 @@ func (s *Session) sloManifestWith(ctx context.Context, credentials StorageCreden
 	// other bytes is refused rather than credited as the manifest (ADR 0081
 	// decision 5), because a short or padded read credited as the exact graph
 	// would authorise deleting against a membership the server never sent.
-	complete := resp.StatusCode == http.StatusOK
-	for key := range resp.Header {
-		// Header.Get cannot distinguish an absent field from an empty one.
-		if strings.EqualFold(key, "Content-Range") {
-			complete = false
-		}
-	}
-	if !complete {
+	if !completeManifestResponse(resp) {
 		return nil, fmt.Errorf("read SLO manifest for %s/%s requires a complete HTTP 200 without Content-Range (received HTTP %d)", container, name, resp.StatusCode)
 	}
 	entries, err := parseSLOManifestEntries(resp.Body, maxEntries, maxBytes, container+"/"+name)
@@ -166,6 +159,21 @@ func (s *Session) sloManifestWith(ctx context.Context, credentials StorageCreden
 		return nil, err
 	}
 	return &SLOManifest{Entries: entries}, nil
+}
+
+// completeManifestResponse reports whether resp carries the whole manifest:
+// HTTP 200 with no Content-Range. Header.Get cannot distinguish an absent
+// field from an empty one, so the keys are scanned.
+func completeManifestResponse(resp *http.Response) bool {
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+	for key := range resp.Header {
+		if strings.EqualFold(key, "Content-Range") {
+			return false
+		}
+	}
+	return true
 }
 
 // parseSLOManifest decodes the ?multipart-manifest=get body into the exact
@@ -317,14 +325,7 @@ func readSLOManifest[T any](ctx context.Context, s *Session, container, name str
 	}
 	defer func() { err = errors.Join(err, resp.Body.Close()) }()
 
-	complete := resp.StatusCode == http.StatusOK
-	for key := range resp.Header {
-		// Header.Get cannot distinguish an absent field from an empty one.
-		if strings.EqualFold(key, "Content-Range") {
-			complete = false
-		}
-	}
-	if !complete {
+	if !completeManifestResponse(resp) {
 		return zero, fmt.Errorf("SLO manifest for %s/%s requires HTTP 200 without Content-Range (received HTTP %d)",
 			container, name, resp.StatusCode)
 	}
@@ -388,84 +389,51 @@ func parseSLOManifestEntries(body io.Reader, maxEntries int, maxBytes int64, whe
 	return entries, nil
 }
 
-// parseSLOManifestDigests is the bounded parse, separated from the
-// request so its consumption can be measured exactly.
+// parseSLOManifestDigests is the bounded, complete-list parse reduced to the
+// length and MD5 each entry contributes. It is the pure reduction of
+// parseSLOManifestEntries, so the budget, the entry limit and the clean-end
+// rules live in exactly one place.
 func parseSLOManifestDigests(body io.Reader, maxEntries int, maxBytes int64, where string) ([]SLOSegmentDigest, error) {
-	var digests []SLOSegmentDigest
-	bounded := &budgetReader{inner: body, budget: maxBytes}
-	fail := func(format string, args ...any) ([]SLOSegmentDigest, error) {
-		return nil, fmt.Errorf(format, args...)
-	}
-	decoder := json.NewDecoder(bounded)
-	decoder.UseNumber()
-	opening, err := decoder.Token()
+	entries, err := parseSLOManifestEntries(body, maxEntries, maxBytes, where)
 	if err != nil {
-		if errors.Is(err, errManifestBudget) {
-			return fail("SLO manifest for %s exceeds %d bytes", where, maxBytes)
-		}
-		return fail("read SLO manifest for %s: %w", where, err)
+		return nil, err
 	}
-	if opening != json.Delim('[') {
-		return fail("SLO manifest for %s is not an entry list", where)
-	}
-	for decoder.More() {
-		if len(digests) == maxEntries {
-			return fail("SLO manifest for %s lists more than %d entries", where, maxEntries)
-		}
-		var fields map[string]any
-		if err := decoder.Decode(&fields); err != nil {
-			if errors.Is(err, errManifestBudget) {
-				return fail("SLO manifest for %s exceeds %d bytes", where, maxBytes)
-			}
-			return fail("parse SLO manifest entry %d of %s: %w", len(digests), where, err)
-		}
-		entry, err := parseSLOEntry(fields)
+	digests := make([]SLOSegmentDigest, 0, len(entries))
+	for i, entry := range entries {
+		digest, err := segmentDigest(entry)
 		if err != nil {
-			return fail("SLO manifest entry %d of %s: %w", len(digests), where, err)
+			return nil, fmt.Errorf("SLO manifest entry %d of %s %w", i, where, err)
 		}
-		if inline, ok := entry.(InlineDataSegment); ok {
-			// An inline entry carries its own bytes, so its length and MD5
-			// are read from them rather than recorded separately. Swift
-			// contributes the same MD5 to the object's entity tag.
-			sum := md5.Sum(inline.Data)
-			digests = append(digests, SLOSegmentDigest{Size: int64(len(inline.Data)), ETag: hex.EncodeToString(sum[:])})
-			continue
-		}
-		segment, ok := entry.(ObjectSegment)
-		switch {
-		case !ok:
-			return fail("SLO manifest entry %d of %s states no whole-segment content MD5", len(digests), where)
-		case segment.NestedSLO:
-			return fail("SLO manifest entry %d of %s is a nested manifest", len(digests), where)
-		case segment.Range != nil:
-			return fail("SLO manifest entry %d of %s is ranged, so its recorded tag is not the range's content MD5", len(digests), where)
-		case segment.ETag == nil:
-			return fail("SLO manifest entry %d of %s records no MD5", len(digests), where)
-		case segment.Size > math.MaxInt64:
-			return fail("SLO manifest entry %d of %s records an unusable length", len(digests), where)
-		}
-		digests = append(digests, SLOSegmentDigest{Size: int64(segment.Size), ETag: *segment.ETag})
-	}
-	if closing, err := decoder.Token(); err != nil || closing != json.Delim(']') {
-		if errors.Is(err, errManifestBudget) {
-			return fail("SLO manifest for %s exceeds %d bytes", where, maxBytes)
-		}
-		return fail("SLO manifest for %s is not a complete entry list", where)
-	}
-	// A clean end, not merely an end: errors.Is would also accept an EOF
-	// joined with a read failure, which is a body that did not finish and
-	// so is not evidence. Same rule as the staged-content comparison.
-	if _, err := decoder.Token(); err != io.EOF {
-		switch {
-		case errors.Is(err, errManifestBudget):
-			return fail("SLO manifest for %s exceeds %d bytes", where, maxBytes)
-		case err == nil:
-			return fail("SLO manifest for %s carries trailing content", where)
-		default:
-			return fail("SLO manifest for %s did not end cleanly: %w", where, err)
-		}
+		digests = append(digests, digest)
 	}
 	return digests, nil
+}
+
+// segmentDigest reduces one entry to the length and MD5 of the bytes it
+// contributes. An inline entry carries its own bytes, so its run is read from
+// them (Swift contributes the same MD5 to the object's entity tag). A ranged
+// entry records the containing segment's tag rather than the range's, and a
+// nested manifest records an aggregate rather than content, so neither can be
+// read this way.
+func segmentDigest(entry SLOEntry) (SLOSegmentDigest, error) {
+	if inline, ok := entry.(InlineDataSegment); ok {
+		sum := md5.Sum(inline.Data)
+		return SLOSegmentDigest{Size: int64(len(inline.Data)), ETag: hex.EncodeToString(sum[:])}, nil
+	}
+	segment, ok := entry.(ObjectSegment)
+	switch {
+	case !ok:
+		return SLOSegmentDigest{}, errors.New("states no whole-segment content MD5")
+	case segment.NestedSLO:
+		return SLOSegmentDigest{}, errors.New("is a nested manifest")
+	case segment.Range != nil:
+		return SLOSegmentDigest{}, errors.New("is ranged, so its recorded tag is not the range's content MD5")
+	case segment.ETag == nil:
+		return SLOSegmentDigest{}, errors.New("records no MD5")
+	case segment.Size > math.MaxInt64:
+		return SLOSegmentDigest{}, errors.New("records an unusable length")
+	}
+	return SLOSegmentDigest{Size: int64(segment.Size), ETag: *segment.ETag}, nil
 }
 
 // parseSLOEntry classifies one manifest entry. The internal manifest
@@ -491,6 +459,9 @@ func parseSLOEntry(fields map[string]any) (SLOEntry, error) {
 	slash := strings.Index(path, "/")
 	if slash <= 0 {
 		return nil, fmt.Errorf("segment path %q has no container/object split", name)
+	}
+	if slash == len(path)-1 {
+		return nil, fmt.Errorf("segment path %q names no object", name)
 	}
 	segment.Path = ObjectRef{Container: path[:slash], Object: path[slash+1:]}
 

@@ -91,6 +91,7 @@ func TestSLOManifestBadShapes(t *testing.T) {
 		"no container/object split": `[{"name": "/justonepart", "bytes": 1}]`,
 		"bad range":                 `[{"name": "/c/o", "range": "10-"}]`,
 		"bad inline base64":         `[{"data": "%%%"}]`,
+		"empty object name":         `[{"name": "/c/", "bytes": 1}]`,
 	}
 	for label, manifest := range cases {
 		s := newSLOManifestSession(t, manifest)
