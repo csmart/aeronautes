@@ -96,7 +96,7 @@ func (d *ObjectDetail) ContentFingerprint() string {
 func (s *Session) ObjectDetail(ctx context.Context, container, name string) (*ObjectDetail, error) {
 	obj, headers, err := s.conn.Object(ctx, container, name)
 	if err != nil {
-		return nil, Normalize(err)
+		return nil, WithTransID(Normalize(err), headers)
 	}
 	d := buildObjectDetail(canonicalHeaders(headers), time.Now().UTC())
 	d.Name = name

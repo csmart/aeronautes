@@ -1309,6 +1309,7 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request, container,
 		}
 		s.mu.Unlock()
 		if fail {
+			w.Header().Set("X-Trans-Id", "txswifttest-object-head-fault")
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
