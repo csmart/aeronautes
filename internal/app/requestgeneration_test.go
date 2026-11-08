@@ -47,8 +47,11 @@ func heldSessionRequest(t *testing.T, h *harness, session *swiftcontrol.Session,
 			_, err := session.PutObject(ctx, "media", "new", strings.NewReader("new data"), "text/plain", nil)
 			return err
 		}
-	case "post":
-		return func() error { return session.PostObjectHeaders(ctx, "media", "file", nil) }
+	case "update":
+		return func() error {
+			_, err := session.UpdateObjectMetadata(ctx, "media", "file", "", swiftcontrol.ObjectMetadataEdit{})
+			return err
+		}
 	case "delete":
 		return func() error { return session.DeleteObject(ctx, "media", "file") }
 	case "bulk-delete":
@@ -83,7 +86,7 @@ func heldSessionRequest(t *testing.T, h *harness, session *swiftcontrol.Session,
 }
 
 func TestHeldSessionRefusesNewRequestsAfterBookmarkChange(t *testing.T) {
-	operations := []string{"authentication", "capabilities", "account", "container", "object", "open", "put", "post", "delete", "bulk-delete", "symlink", "containers", "objects", "engine-credentials"}
+	operations := []string{"authentication", "capabilities", "account", "container", "object", "open", "put", "update", "delete", "bulk-delete", "symlink", "containers", "objects", "engine-credentials"}
 	for _, change := range []string{"replace", "delete", "unavailable", "cosmetic"} {
 		for _, operation := range operations {
 			t.Run(change+"/"+operation, func(t *testing.T) {
