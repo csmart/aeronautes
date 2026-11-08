@@ -143,9 +143,7 @@ func WithTransID(err error, headers swift.Headers) error {
 	if !errors.As(err, &se) {
 		return err
 	}
-	if id := headers["X-Trans-Id"]; id != "" {
-		se.TransID = id
-	} else if id := headers["X-Openstack-Request-Id"]; id != "" {
+	if id := transIDOfHeaders(headers); id != "" {
 		se.TransID = id
 	}
 	return err

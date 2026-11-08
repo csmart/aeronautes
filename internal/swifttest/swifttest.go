@@ -1025,6 +1025,7 @@ func (s *Server) postObject(w http.ResponseWriter, r *http.Request, container, n
 		o.ContentType = contentType
 	}
 	c.objects[name] = o
+	w.Header().Set("X-Trans-Id", "txswifttest-object-post")
 	w.WriteHeader(http.StatusAccepted)
 }
 
