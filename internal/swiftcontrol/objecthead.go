@@ -124,7 +124,6 @@ func buildObjectDetail(headers map[string]string, now time.Time) *ObjectDetail {
 		}
 		switch k {
 		case "X-Object-Manifest":
-			d.Class = ClassDLO
 			d.Manifest = v
 		case "Content-Location":
 			d.FollowedSymlink = true
@@ -132,10 +131,6 @@ func buildObjectDetail(headers map[string]string, now time.Time) *ObjectDetail {
 			d.SymlinkTarget = strings.TrimPrefix(v, "/")
 		case "X-Symlink-Target-Account":
 			d.SymlinkTargetAccount = v
-		case "X-Static-Large-Object":
-			if isTrue(v) {
-				d.Class = ClassSLO
-			}
 		case "X-Delete-At":
 			if epoch, err := strconv.ParseInt(v, 10, 64); err == nil {
 				d.DeleteAt = time.Unix(epoch, 0).UTC()
@@ -147,14 +142,20 @@ func buildObjectDetail(headers map[string]string, now time.Time) *ObjectDetail {
 			d.ContentEncoding = v
 		case "Content-Disposition":
 			d.ContentDisposition = v
-		case "X-Trans-Id":
-			d.TransID = v
-		case "X-Openstack-Request-Id":
-			if d.TransID == "" {
-				d.TransID = v
-			}
 		}
 	}
+	// The class is decided after the walk, in a fixed order, so map order
+	// never is. No store sends both manifest markers; if a reply somehow
+	// does, SLO wins: the store stamps X-Static-Large-Object itself, and an
+	// SLO route the store disagrees with is refused, whereas a DLO route
+	// taken wrongly would sweep a segment prefix.
+	switch {
+	case isTrue(headers["X-Static-Large-Object"]):
+		d.Class = ClassSLO
+	case d.Manifest != "":
+		d.Class = ClassDLO
+	}
+	d.TransID = transIDOfHeaders(headers)
 	d.EditableFingerprint = editableFingerprint(editable)
 	return d
 }

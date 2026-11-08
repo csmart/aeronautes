@@ -129,32 +129,24 @@ func buildContainerDetail(headers map[string]string, now time.Time) *ContainerDe
 		case "X-Container-Write":
 			d.WriteACL = v
 			editable[k] = v
-		case "X-Versions-Location":
-			// Swift rejects setting both headers; if a response ever carries
-			// both anyway, prefer History deterministically (map order must
-			// not decide).
-			if d.Versioning.Mode == VersioningOff {
-				d.Versioning = ContainerVersioning{Mode: VersioningVersionsLocation, Archive: v}
-			}
+		case "X-Versions-Location", "X-History-Location", "X-Versions-Enabled":
 			editable[k] = v
-		case "X-History-Location":
-			d.Versioning = ContainerVersioning{Mode: VersioningHistoryLocation, Archive: v}
-			editable[k] = v
-		case "X-Versions-Enabled":
-			// Modern object versioning (§21 display-only): deletes and
-			// overwrites here accumulate versions in-container.
-			editable[k] = v
-			if isTrue(v) {
-				d.Versioning = ContainerVersioning{Mode: VersioningEnabled}
-			}
-		case "X-Trans-Id":
-			d.TransID = v
-		case "X-Openstack-Request-Id":
-			if d.TransID == "" {
-				d.TransID = v
-			}
 		}
 	}
+	// Versioning is decided after the walk, in a fixed order, so map order
+	// never is. Swift refuses to set more than one of these; if a reply
+	// carries several anyway, modern versioning (§21 display-only: deletes
+	// and overwrites accumulate versions in-container) outranks a history
+	// location, which outranks a versions location.
+	switch {
+	case isTrue(headers["X-Versions-Enabled"]):
+		d.Versioning = ContainerVersioning{Mode: VersioningEnabled}
+	case headers["X-History-Location"] != "":
+		d.Versioning = ContainerVersioning{Mode: VersioningHistoryLocation, Archive: headers["X-History-Location"]}
+	case headers["X-Versions-Location"] != "":
+		d.Versioning = ContainerVersioning{Mode: VersioningVersionsLocation, Archive: headers["X-Versions-Location"]}
+	}
+	d.TransID = transIDOfHeaders(headers)
 	sort.Strings(d.TempURLKeySlots)
 	d.EditableFingerprint = editableFingerprint(editable)
 	return d
