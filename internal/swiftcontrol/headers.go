@@ -3,6 +3,7 @@ package swiftcontrol
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"net/http"
 	"net/textproto"
 	"sort"
 	"strings"
@@ -84,4 +85,13 @@ func editableFingerprint(editable map[string]string) string {
 		h.Write([]byte{0})
 	}
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// transIDOf is a raw response's transaction id as Swift reports it
+// (X-Trans-Id) or as Ceph RGW does (X-Openstack-Request-Id).
+func transIDOf(h http.Header) string {
+	if id := h.Get("X-Trans-Id"); id != "" {
+		return id
+	}
+	return h.Get("X-Openstack-Request-Id")
 }

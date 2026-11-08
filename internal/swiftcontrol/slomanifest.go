@@ -135,7 +135,7 @@ func (s *Session) sloManifestWith(ctx context.Context, credentials StorageCreden
 	// A graph that could not be read and closed cleanly is not evidence a
 	// DELETE may rest on, so the close error joins the result.
 	defer func() { err = errors.Join(err, resp.Body.Close()) }()
-	transID := resp.Header.Get("X-Trans-Id")
+	transID := transIDOf(resp.Header)
 	switch {
 	case resp.StatusCode == http.StatusUnauthorized:
 		s.ForceReauth()
