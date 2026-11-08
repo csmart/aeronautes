@@ -97,11 +97,7 @@ func (s *DeleteService) StartSelectedDelete(ctx context.Context, req SelectedDel
 	if err != nil {
 		return "", err
 	}
-	defer func() {
-		if releasePins != nil {
-			releasePins()
-		}
-	}()
+	owner.hold(releasePins)
 	job, err := s.jobs.Create(ctx, jobs.Job{
 		Type: jobs.TypeDeleteSelected, ItemRecordsVersion: 1,
 		Source: req.Container, Destination: "(deleted)", SourceBookmarkID: bookmarkID, Engine: "native",
@@ -131,7 +127,7 @@ func (s *DeleteService) StartSelectedDelete(ctx context.Context, req SelectedDel
 	s.runner.register(job.ID, owner.cancel)
 	s.runner.record(ctx, bookmarkID, "delete.selected.start", req.Container,
 		fmt.Sprintf("job %s · %d members", job.ID, len(req.Members)), audit.ResultApplied)
-	owner.launch(job.ID, bookmarkID, releasePins, func(runCtx context.Context) {
+	owner.launch(job.ID, bookmarkID, func(runCtx context.Context) {
 		s.runSelectedDelete(runCtx, job.ID, req, bookmarkID, entry.session)
 	}, func(background context.Context) {
 		// Cancelled before it ran: no member was issued, each is recorded as
@@ -139,7 +135,6 @@ func (s *DeleteService) StartSelectedDelete(ctx context.Context, req SelectedDel
 		s.recordNotAttempted(background, job.ID, req.Members)
 		s.finishSelected(background, job.ID, req, bookmarkID, jobs.StateCancelled, "")
 	})
-	releasePins = nil
 	return job.ID, nil
 }
 

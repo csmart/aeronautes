@@ -35,14 +35,15 @@ func TestJobShutdownWaitsForFinalCleanup(t *testing.T) {
 			gate, unblock := connectionGate(t)
 			reached, cleaned := make(chan struct{}), make(chan struct{})
 			bodyResult := make(chan error, 1)
-			owner.launch(job.ID, bookmark, func() {
+			owner.hold(func() {
 				if phase == "pin_cleanup" {
 					close(reached)
 					<-gate
 				}
 				unpin()
 				close(cleaned)
-			}, func(context.Context) {
+			})
+			owner.launch(job.ID, bookmark, func(context.Context) {
 				if phase == "running_body" {
 					close(reached)
 					<-gate

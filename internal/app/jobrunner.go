@@ -53,6 +53,10 @@ type jobOwner struct {
 	cancel      context.CancelFunc
 	cancelStart context.CancelFunc
 	handedOff   bool
+	// pins releases the bookmark generations the start pinned for its job
+	// (hold). A start that stops before launch releases them itself; a
+	// launched job releases them after its whole body has returned.
+	pins func()
 }
 
 // NewJobRunner is the exported constructor for the shell (main.go).
@@ -106,20 +110,35 @@ func (r *jobRunner) admit(ctx context.Context) (*jobOwner, context.Context, erro
 	return owner, startCtx, nil
 }
 
+// hold gives the owner what the start pinned for its job, so every path
+// out of the start releases it exactly once: finishStart when the start
+// stops short of launch, the job's own cleanup after launch. A later hold
+// replaces the earlier release, for a start that widens what it holds.
+func (o *jobOwner) hold(releasePins func()) {
+	o.pins = releasePins
+}
+
+func (o *jobOwner) releasePins() {
+	if o.pins != nil {
+		o.pins()
+	}
+}
+
 func (o *jobOwner) finishStart() {
 	o.cancelStart()
 	if !o.handedOff {
+		o.releasePins()
 		o.release()
 	}
 }
 
-func (o *jobOwner) launch(jobID, bookmarkID string, releasePins func(), body, queuedCancel func(context.Context)) {
+func (o *jobOwner) launch(jobID, bookmarkID string, body, queuedCancel func(context.Context)) {
 	o.handedOff = true
 	o.runner.launchWithQueuedOutcome(o.ctx, jobID, bookmarkID, func() {
 		// Slots and terminal records can disappear before handles and
 		// pins; only the end of this cleanup permits the owner to leave.
 		defer o.release()
-		releasePins()
+		o.releasePins()
 	}, body, queuedCancel)
 }
 

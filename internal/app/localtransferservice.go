@@ -883,11 +883,7 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 	if err != nil {
 		return "", err
 	}
-	defer func() {
-		if releasePins != nil {
-			releasePins()
-		}
-	}()
+	owner.hold(releasePins)
 	session, err := s.connections.SessionFor(ctx, req.BookmarkID)
 	if err != nil {
 		return "", err
@@ -960,7 +956,7 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 		return "", err
 	}
 
-	owner.launch(job.ID, req.BookmarkID, releasePins, func(runCtx context.Context) {
+	owner.launch(job.ID, req.BookmarkID, func(runCtx context.Context) {
 		s.runLocal(runCtx, job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, func(innerCtx context.Context, onProgress func(done, total, bytes int64)) (*local.Report, error) {
 			background := context.WithoutCancel(innerCtx)
 			report, err := local.Upload(innerCtx, session, engine, "aeronautes_dst:"+req.Container, req.Container, req.Prefix, job.ID,
@@ -975,7 +971,6 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 	}, func(cancelCtx context.Context) {
 		s.finishLocal(cancelCtx, job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, jobs.StateCancelled, "", "")
 	})
-	releasePins = nil
 	return job.ID, nil
 }
 
@@ -990,11 +985,7 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 	if err != nil {
 		return "", err
 	}
-	defer func() {
-		if releasePins != nil {
-			releasePins()
-		}
-	}()
+	owner.hold(releasePins)
 	session, err := s.connections.SessionFor(ctx, req.BookmarkID)
 	if err != nil {
 		return "", err
@@ -1044,12 +1035,11 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 	}
 	// The job owns this handle. It closes with the pins after the whole
 	// body has returned, on every path, and on any refusal below.
-	release := releasePins
-	releasePins = func() {
-		release()
+	owner.hold(func() {
+		releasePins()
 		s.destinations.release(reservation)
 		_ = destination.Close()
-	}
+	})
 	settings := req.Settings.withDefaults()
 	engine, err := s.localEngine(ctx, session, "aeronautes_src", settings)
 	if err != nil {
@@ -1081,7 +1071,7 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 		return "", err
 	}
 
-	owner.launch(job.ID, req.BookmarkID, releasePins, func(runCtx context.Context) {
+	owner.launch(job.ID, req.BookmarkID, func(runCtx context.Context) {
 		s.runLocal(runCtx, job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, func(innerCtx context.Context, onProgress func(done, total, bytes int64)) (*local.Report, error) {
 			return local.DownloadInto(innerCtx, session, engine, "aeronautes_src:"+req.Container, req.Container, req.Prefix, destination, job.ID, preflight,
 				s.downloadProgress(innerCtx, job.ID, onProgress), s.downloadItemRecorder(context.WithoutCancel(innerCtx), job.ID, req, destination.Path()))
@@ -1089,7 +1079,6 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 	}, func(cancelCtx context.Context) {
 		s.finishLocal(cancelCtx, job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, jobs.StateCancelled, "", "")
 	})
-	releasePins = nil
 	return job.ID, nil
 }
 

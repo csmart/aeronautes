@@ -372,11 +372,7 @@ func (s *TransferService) StartCopy(ctx context.Context, req CopyRequestDTO) (st
 	if err != nil {
 		return "", err
 	}
-	defer func() {
-		if releasePins != nil {
-			releasePins()
-		}
-	}()
+	owner.hold(releasePins)
 	src, dst, _, err := s.resolve(ctx, req)
 	if err != nil {
 		return "", err
@@ -422,12 +418,11 @@ func (s *TransferService) StartCopy(ctx context.Context, req CopyRequestDTO) (st
 		s.finishCopy(context.WithoutCancel(ctx), job.ID, req, job.Counters, jobs.StateFailed, "start audit unavailable before first write: "+err.Error())
 		return "", fmt.Errorf("start audit unavailable: %w", err)
 	}
-	owner.launch(job.ID, req.SourceBookmarkID, releasePins, func(runCtx context.Context) {
+	owner.launch(job.ID, req.SourceBookmarkID, func(runCtx context.Context) {
 		s.runCopy(runCtx, job.ID, req, src, dst, engine, acknowledged)
 	}, func(background context.Context) {
 		s.finishCopy(background, job.ID, req, job.Counters, jobs.StateCancelled, "")
 	})
-	releasePins = nil
 	return job.ID, nil
 }
 
