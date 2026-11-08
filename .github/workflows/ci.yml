@@ -166,12 +166,18 @@ jobs:
         lane: [main, heavy]
     runs-on: ubuntu-latest
     # The main lane compiles the race suite and runs the non-heavy internal
-    # packages before the long systemtest package; measured, systemtest did
-    # not start until about eleven minutes in, and that plus its 25-minute go
-    # test reached the old 35-minute job limit with no margin, so slower
-    # runners cancelled the lane mid-test (SAIO fixture setup itself is under a
-    # minute). 45 restores the headroom.
-    timeout-minutes: 45
+    # packages before the long systemtest package, which starts ten to
+    # eleven minutes into the job. Measured on 8 November 2026: the green
+    # master run's systemtest took 21.4 minutes of its then 25-minute
+    # package allowance; two attempts of the next PR hit that allowance
+    # after 290 and 289 of the same 295 systemtests had passed, with
+    # progress continuing and no assertion failure before the panic, while
+    # app, bookmarks and jobs also took 27-29% longer than on that master
+    # run. The cause was not isolated. The package limit is now 40 minutes,
+    # which still stops a hung package, and the job cap holds the lead-in
+    # plus that limit with eight to ten minutes to spare (SAIO fixture setup
+    # itself is under a minute).
+    timeout-minutes: 60
     env:
       SAIO_IMAGE: docker.io/openstackswift/saio@sha256:18ddf9feb9d1f419751a66eace8d956ecdaf5a085dedcc54ae51c210447ea1fa
     steps:
@@ -249,7 +255,7 @@ jobs:
             packages=(./internal/...)
           fi
           set +e
-          go test -json -v -race -count=1 -parallel=3 -timeout=25m \
+          go test -json -v -race -count=1 -parallel=3 -timeout=40m \
             -coverprofile=saio-results/cover.out -coverpkg=./internal/... \
             "${selection[@]}" "${packages[@]}" | tee saio-results/events.jsonl
           # Capture both exits before any command resets PIPESTATUS.
