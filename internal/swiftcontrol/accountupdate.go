@@ -157,8 +157,8 @@ func verifyAccountOutcome(edit AccountEdit, after *AccountPortrait) string {
 			problems = append(problems, fmt.Sprintf("unexpected metadata %q present after write", key))
 		}
 	}
-	if after.QuotaBytes != max64(edit.QuotaBytes, 0) {
-		problems = append(problems, fmt.Sprintf("quota %d, want %d", after.QuotaBytes, max64(edit.QuotaBytes, 0)))
+	if after.QuotaBytes != max(edit.QuotaBytes, 0) {
+		problems = append(problems, fmt.Sprintf("quota %d, want %d", after.QuotaBytes, max(edit.QuotaBytes, 0)))
 	}
 	sort.Strings(problems)
 	return strings.Join(problems, "; ")
