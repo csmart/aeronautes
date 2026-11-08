@@ -55,8 +55,7 @@ type ContainerUpdateResult struct {
 	After   *ContainerDetail
 	// Mismatch says what verify found different, for UpdateVerifyMismatch.
 	Mismatch string
-	// TransIDs: preflight, write, verify.
-	TransIDs []string
+	transIDTrail
 }
 
 // UpdateContainer applies edit to one container. baseFingerprint is the
@@ -110,19 +109,6 @@ func (s *Session) UpdateContainer(ctx context.Context, name, baseFingerprint str
 	}
 	result.Outcome = UpdateApplied
 	return result, nil
-}
-
-func (r *ContainerUpdateResult) observeTransID(id string) {
-	if id != "" {
-		r.TransIDs = append(r.TransIDs, id)
-	}
-}
-
-func (r *ContainerUpdateResult) observeError(err error) {
-	var se *SwiftError
-	if errors.As(err, &se) {
-		r.observeTransID(se.TransID)
-	}
 }
 
 // buildContainerPostHeaders computes the additive delta from the
@@ -249,9 +235,5 @@ func (s *Session) post(ctx context.Context, container, object string, headers sw
 	if resp != nil && resp.Body != nil {
 		resp.Body.Close()
 	}
-	transID := respHeaders["X-Trans-Id"]
-	if transID == "" {
-		transID = respHeaders["X-Openstack-Request-Id"]
-	}
-	return transID, WithTransID(Normalize(err), respHeaders)
+	return transIDOfHeaders(respHeaders), WithTransID(Normalize(err), respHeaders)
 }

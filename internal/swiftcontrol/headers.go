@@ -7,6 +7,8 @@ import (
 	"net/textproto"
 	"sort"
 	"strings"
+
+	"github.com/ncw/swift/v2"
 )
 
 // Header categorisation (§13.1, §53): Swift responses mix derived state,
@@ -94,4 +96,13 @@ func transIDOf(h http.Header) string {
 		return id
 	}
 	return h.Get("X-Openstack-Request-Id")
+}
+
+// transIDOfHeaders is transIDOf for the header map the swift client hands
+// back from a call.
+func transIDOfHeaders(h swift.Headers) string {
+	if id := h["X-Trans-Id"]; id != "" {
+		return id
+	}
+	return h["X-Openstack-Request-Id"]
 }
