@@ -84,7 +84,7 @@ CI does not commit these generated files or use `BADGE_DEPLOY_KEY` anymore.
 The existing coverage floors are advisory; the bounded covered-cell preservation check below is a hard regression gate, while full scenario coverage and release gates remain audit work package P34.
 Green CI is required evidence, and the wider safety and platform release gates still apply.
 
-The real-Swift integration lane gives each Go test package twenty-five minutes and bounds the whole job to thirty-five minutes, including setup and report upload.
+The real-Swift integration lane gives each Go test package twenty-five minutes and bounds the whole job to forty-five minutes, including setup and report upload.
 The job cap includes setup time and the compilation and other packages that run before the long system-test package, so inspect both limits and the measured start delay when diagnosing a timeout.
 The growing sequential fault suite exceeded Go's default ten-minute package limit during PR60 and the fifteen-minute limit during PR62, and the twenty-five-minute job cap cancelled a master run on 2026-09-10; the [diagnosis and validation](experiments/2026-09-08-integration-time-budget.md) distinguish those suite budgets from individual test, request and child-process deadlines.
 The change preserves every assertion, fixture, race/coverage option, producer-exit check, scenario reconciliation and aggregate refusal.
@@ -112,7 +112,7 @@ The workflow records the actual Python status in `saio-combined/join-exit.txt`, 
 The `scenario-coverage` upload runs on failure as well as success, retaining the combined root and `scenario-preservation.json` when comparison was reached.
 An earlier failure retains the available numeric exit and producer artifacts without inventing a preservation result; absent upload inputs remain an error.
 The [baseline record](experiments/2026-09-21-scenario-preservation-baseline.md#aggregate-activation-proof) distinguishes executed local failure-path controls from the hosted success-artifact and resulting-master evidence required for delivery.
-The fixture jobs retain their 35-minute limits; the artifact-only join has a separate ten-minute limit, and the five protected check names remain unchanged.
+The fixture jobs retain their 45-minute limits; the artifact-only join has a separate ten-minute limit, and the five protected check names remain unchanged.
 Its Integration check requires both producers, complete disjoint execution and compatible combined coverage before success; the contract requires independent review before workflow changes.
 
 ## September 2026 incident

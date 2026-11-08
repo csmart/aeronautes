@@ -165,7 +165,13 @@ jobs:
       matrix:
         lane: [main, heavy]
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    # The main lane compiles the race suite and runs the non-heavy internal
+    # packages before the long systemtest package; measured, systemtest did
+    # not start until about eleven minutes in, and that plus its 25-minute go
+    # test reached the old 35-minute job limit with no margin, so slower
+    # runners cancelled the lane mid-test (SAIO fixture setup itself is under a
+    # minute). 45 restores the headroom.
+    timeout-minutes: 45
     env:
       SAIO_IMAGE: docker.io/openstackswift/saio@sha256:18ddf9feb9d1f419751a66eace8d956ecdaf5a085dedcc54ae51c210447ea1fa
     steps:
