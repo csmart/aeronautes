@@ -132,6 +132,14 @@ func TestContainerDetailVersioningVariants(t *testing.T) {
 	if both.Versioning.Mode != VersioningHistoryLocation {
 		t.Errorf("both headers = %+v, want history to win", both.Versioning)
 	}
+	enabled := buildContainerDetail(canonicalHeaders(map[string]string{
+		"X-Versions-Enabled":  "True",
+		"X-History-Location":  "media-history",
+		"X-Versions-Location": "media-versions",
+	}), time.Now())
+	if enabled.Versioning.Mode != VersioningEnabled {
+		t.Errorf("all three = %+v, want enabled to win", enabled.Versioning)
+	}
 }
 
 func TestContainerDetailFingerprint(t *testing.T) {
