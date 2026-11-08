@@ -143,6 +143,21 @@ func shownRefusal(container, name, baseContent, reason string, before *ObjectDet
 	}
 }
 
+// linkRefusal is the one sentence both link refusals say; identity names how
+// the caller came by the identity, "shown" or "listed".
+func linkRefusal(container, name, identity string) string {
+	return fmt.Sprintf("%s/%s is a symlink: the identity %s is its target's and a delete at this name would remove the link instead; deleting a link is not offered here", container, name, identity)
+}
+
+// identityConflict is the refusal every identity comparison raises, carrying
+// the comparison HEAD's class, length and entity tag for the record.
+func identityConflict(container, name, expected, found, class string, before *ObjectDetail) *IdentityConflictError {
+	return &IdentityConflictError{
+		Container: container, Name: name, Expected: expected, Found: found,
+		FoundClass: class, FoundLength: before.ContentLength, FoundETag: etagValue(before.ETag),
+	}
+}
+
 // MemberRow is the listing row a selected-set deletion carries for one
 // member (ADR 0093 decision 2): the facts the baseline rule reads.
 type MemberRow struct {
@@ -187,7 +202,7 @@ func (s *Session) DeleteMember(ctx context.Context, container string, row Member
 			// refusal says a link was found, and the read's transaction id
 			// travels with it, so the member's record can say why.
 			return &ObjectDeleteResult{TransIDs: []string{head.TransID}}, shownRefusal(container, row.Name, "",
-				fmt.Sprintf("%s/%s is a symlink: the identity listed is its target's and a delete at this name would remove the link instead; deleting a link is not offered here", container, row.Name), head)
+				linkRefusal(container, row.Name, "listed"), head)
 		}
 		baseline = head
 		if head.Class != ClassPlain {
@@ -244,7 +259,7 @@ func (t deleteTarget) admit(container, name string, before *ObjectDetail) error 
 		// cross-account link arrives unfollowed with its target header. The
 		// identity shown is the target's, so a DELETE here would remove
 		// something the operator was not shown (ADR 0092 decision 2).
-		return fmt.Errorf("%s/%s is a symlink: the identity shown is its target's and a delete at this name would remove the link instead; deleting a link is not offered here", container, name)
+		return errors.New(linkRefusal(container, name, "shown"))
 	}
 	switch t {
 	case targetPlain:
@@ -330,11 +345,7 @@ func (s *Session) deleteShownBound(ctx context.Context, container, name, baseCon
 			// the comparison is a change since then: refused as a conflict with
 			// both identities, never compared by tuple, and never deleted (ADR
 			// 0093 decision 3). The shown-object paths keep their link refusal.
-			return &ObjectDeleteResult{Before: before, TransIDs: []string{before.TransID}}, &IdentityConflictError{
-				Container: container, Name: name,
-				Expected: baseContent, Found: before.ContentFingerprint(),
-				FoundClass: "symlink", FoundLength: before.ContentLength, FoundETag: etagValue(before.ETag),
-			}
+			return &ObjectDeleteResult{Before: before, TransIDs: []string{before.TransID}}, identityConflict(container, name, baseContent, before.ContentFingerprint(), "symlink", before)
 		}
 		if err := target.admit(container, name, before); err != nil {
 			// The comparison HEAD travels with the refusal, as with a conflict,
@@ -347,12 +358,7 @@ func (s *Session) deleteShownBound(ctx context.Context, container, name, baseCon
 			// The comparison HEAD travels with the refusal so the record can carry
 			// its transaction id beside both identities, as the manifest deletion's
 			// does; no outcome is set because nothing was issued.
-			return &ObjectDeleteResult{Before: before, TransIDs: []string{before.TransID}}, &IdentityConflictError{
-				Container: container, Name: name,
-				Expected: baseContent, Found: found,
-				FoundClass: string(before.Class), FoundLength: before.ContentLength,
-				FoundETag: etagValue(before.ETag),
-			}
+			return &ObjectDeleteResult{Before: before, TransIDs: []string{before.TransID}}, identityConflict(container, name, baseContent, found, string(before.Class), before)
 		}
 		if graph != nil {
 			if changed, expected, found := graph.differs(before, liveEntries, liveGraphWhole); changed {
@@ -360,10 +366,7 @@ func (s *Session) deleteShownBound(ctx context.Context, container, name, baseCon
 				// not: an equal-tag segment swap or a moved namespace. Refused
 				// as changed since reviewed, with nothing deleted and the
 				// manifest's current identity carried for the record.
-				return &ObjectDeleteResult{Before: before, TransIDs: []string{before.TransID}}, &IdentityConflictError{
-					Container: container, Name: name, Expected: expected, Found: found,
-					FoundClass: string(before.Class), FoundLength: before.ContentLength, FoundETag: etagValue(before.ETag),
-				}
+				return &ObjectDeleteResult{Before: before, TransIDs: []string{before.TransID}}, identityConflict(container, name, expected, found, string(before.Class), before)
 			}
 		}
 		if target == targetMarker && !markerShaped(before) {
@@ -527,9 +530,5 @@ func (s *Session) rawDelete(ctx context.Context, credentials StorageCredentials,
 		// repeats the DELETE.
 		s.ForceReauth()
 	}
-	transID := resp.Header.Get("X-Trans-Id")
-	if transID == "" {
-		transID = resp.Header.Get("X-Openstack-Request-Id")
-	}
-	return resp.StatusCode, transID, nil
+	return resp.StatusCode, transIDOf(resp.Header), nil
 }

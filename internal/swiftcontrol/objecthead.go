@@ -231,7 +231,7 @@ func (s *Session) rawHead(ctx context.Context, credentials StorageCredentials, c
 		return nil, nil, 0, Normalize(err)
 	}
 	defer resp.Body.Close()
-	transID := resp.Header.Get("X-Trans-Id")
+	transID := transIDOf(resp.Header)
 	switch {
 	case resp.StatusCode == http.StatusNotFound:
 		return nil, resp.Header, resp.StatusCode, &SwiftError{Kind: KindNotFound, HTTPStatus: resp.StatusCode, Message: what + ": not found", TransID: transID}
