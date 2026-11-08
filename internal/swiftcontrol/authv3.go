@@ -57,7 +57,10 @@ func (a *guardedAuth) Response(ctx context.Context, resp *http.Response) error {
 		return err
 	}
 	// The built-in selected the object-store endpoint from the catalog;
-	// gate that choice before Session hands the token to it.
+	// gate that choice before Session hands the token to it. The public
+	// interface is the one gated because it is the one used: Config never
+	// sets Connection.Internal, so StorageUrl(false) is the URL every
+	// request will carry.
 	storageURL := a.inner.StorageUrl(false)
 	if err := ValidateStorageURL(a.authURL, storageURL, a.tlsMode); err != nil {
 		return err
@@ -66,7 +69,10 @@ func (a *guardedAuth) Response(ctx context.Context, resp *http.Response) error {
 	// that selects a different one must not silently move operations (and
 	// a metadata write) to another region. The configured region pins the
 	// selection; this refuses any residual switch as defence in depth,
-	// before the new token is published.
+	// before the new token is published. A refusal leaves the session on
+	// its previous token and endpoint: requests may then fail as that
+	// token expires, but they fail in the namespace the operator chose
+	// rather than succeed in another (ADR 0100).
 	if bound := a.snapshot().storageURL; bound != "" && storageURL != bound {
 		return fmt.Errorf("Keystone re-authentication selected a different storage endpoint than the one in use; refusing to switch the account namespace mid-session")
 	}
