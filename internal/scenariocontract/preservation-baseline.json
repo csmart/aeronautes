@@ -2,12 +2,12 @@
   "schemaVersion": 1,
   "reportSchemaVersion": 3,
   "identity": {
-    "commit": "01d62c5f72fcead79d69f843c0ccf80e6e143b05",
+    "commit": "1645a7c66a2d5da8d575b932587409c83530c26b",
     "go_version": "go1.27.3",
-    "run_id": "42170704686",
+    "run_id": "42563896295",
     "run_attempt": "1"
   },
-  "contractHash": "0f98572feed32ab8",
+  "contractHash": "acfe7de61c274f2e",
   "actions": [
     {
       "action": "AppService.About",
@@ -398,6 +398,15 @@
     },
     {
       "action": "MutateService.UpdateObjectMetadata",
+      "kind": "mutate",
+      "required": [
+        "happy",
+        "refusal",
+        "conflict"
+      ]
+    },
+    {
+      "action": "MutateService.UpdateTempURLKey",
       "kind": "mutate",
       "required": [
         "happy",
@@ -813,6 +822,18 @@
       "scenario": "refusal"
     },
     {
+      "action": "MutateService.UpdateTempURLKey",
+      "scenario": "conflict"
+    },
+    {
+      "action": "MutateService.UpdateTempURLKey",
+      "scenario": "happy"
+    },
+    {
+      "action": "MutateService.UpdateTempURLKey",
+      "scenario": "refusal"
+    },
+    {
       "action": "TransferService.PlanCopy",
       "scenario": "happy"
     },
@@ -858,10 +879,10 @@
     }
   ],
   "evidence": {
-    "reference": "docs/experiments/2026-11-06-account-metadata-baseline.md",
-    "mainReportSHA256": "0bd9cee9117d4490147a026a443c9b8aa6236822a5fd1150e307a2f95f156673",
-    "mainReceiptSHA256": "e86c0a5a440b8ebfcd3f6ff20c5b326d3179689fd8aa35a85dfacd43bb9c51a4",
-    "heavyReportSHA256": "9992351b87651b5817c9de0342d1936a33fa0ff98e604f94e8b3a259507edb49",
-    "heavyReceiptSHA256": "30380b4af562f0eb56d3873d6316302488e8db1e2b1c183f51a2027b62762d3f"
+    "reference": "docs/experiments/2026-11-09-tempurl-key-baseline.md",
+    "mainReportSHA256": "cc989c2238d8db285c933642df4b6c1dd08f9b2a47f714ddf5a650592cb8a709",
+    "mainReceiptSHA256": "faa4b1a334c5f13363f92f2479aa60e0839ef8ec991da2618f7ed6bfa30df5ba",
+    "heavyReportSHA256": "29241eb54245a4fa4ede7f6b4791f85e77dccb30bba668ca6a6662a6636fedfe",
+    "heavyReceiptSHA256": "4ca5aaac396407f594585f23bf42403124748ecbeaa83dd82a506b9e821348dc"
   }
 }
