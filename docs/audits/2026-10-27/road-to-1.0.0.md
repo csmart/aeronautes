@@ -82,7 +82,7 @@ The three clauses the register reconciliation could not establish are resolved h
 ### 0.5.0 — account and container features
 
 Versioning (P26): the container editor already switches legacy versioning off or to a versions or history location with its archive container, and refuses an edit whose preflight is unestablished.
-Modern in-container versioning stays read-only under ADR 0054 until the legacy archive and modern display-only matrix has real-Swift evidence, and the hidden-version preservation L09 asks of the transfer and delete routes returns with those routes.
+[ADR 0102](../../adr/0102-versioning-matrix-fixed-point-and-archives.md) closed the item's remaining asks on 9 November 2026: the legacy matrix is measured on a genuine Swift through the product's own routes and renewable with the real-cloud oracle, the modern mode is measured on the fixture and stays display-only, an upload or copy replacement is committed only under the versioning observation it was authorised under, and the bulk delete preview names the containers that archive into the one being emptied.
 TempURL keys and CORS management, which the README tracks as v1.x work.
 Directory upload and account metadata (P27).
 Pause and resume (finish line decision 17), feasible since the batching of ADR 0074.
