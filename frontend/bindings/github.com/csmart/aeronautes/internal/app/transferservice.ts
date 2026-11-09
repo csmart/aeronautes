@@ -37,6 +37,18 @@ export function PickDownloadDir(scope: $models.SelectionScopeDTO): $CancellableP
 }
 
 /**
+ * PickUploadDirectory opens the OS directory chooser and walks the chosen
+ * folder into an upload selection (ADR 0103): each regular file under it is
+ * named by the folder and its relative path, links and other special entries
+ * are skipped and counted, and the selection is bound to the scope exactly
+ * as a file pick is. A folder with no regular file returns its summary with
+ * no token. Nil when cancelled.
+ */
+export function PickUploadDirectory(scope: $models.SelectionScopeDTO): $CancellablePromise<$models.PickedFilesDTO | null> {
+    return $Call.ByID(1866183773, scope);
+}
+
+/**
  * PickUploadFiles opens the OS multi-file picker and returns a token
  * plus display names — the paths stay in Go (ADR 0011: a compromised
  * page must not be able to name ~/.ssh/id_rsa). Nil token when

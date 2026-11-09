@@ -69,6 +69,15 @@ type SelectionScopeDTO struct {
 type PickedFilesDTO struct {
 	Token string   `json:"token"`
 	Files []string `json:"files"`
+	// Folder and the three counts are a folder pick's summary (ADR 0103
+	// decision 1): the chosen folder's own name, how many entries the walk
+	// skipped, the first of them named, and how many directories were
+	// empty. A file pick leaves them zero. A folder with no regular file
+	// returns the summary with no token and no names.
+	Folder           string   `json:"folder"`
+	Skipped          int      `json:"skipped"`
+	SkippedSample    []string `json:"skippedSample"`
+	EmptyDirectories int      `json:"emptyDirectories"`
 }
 
 // PickedDirDTO is the directory selection: a display path (shown to
@@ -167,11 +176,60 @@ func (s *TransferService) PickUploadFiles(ctx context.Context, scope SelectionSc
 	if err := s.endPick(ctx, observed, bound); err != nil {
 		return nil, err
 	}
+	// The file pick's rule: each file is named by its base name under the
+	// prefix.
 	names := make([]string, len(paths))
+	sources := make([]local.UploadSource, len(paths))
 	for i, p := range paths {
 		names[i] = filepath.Base(p)
+		sources[i] = local.UploadSource{Path: p, Name: names[i]}
 	}
-	return &PickedFilesDTO{Token: s.selections.putFiles(bound, paths), Files: names}, nil
+	return &PickedFilesDTO{Token: s.selections.putSources(bound, sources, nil), Files: names}, nil
+}
+
+// PickUploadDirectory opens the OS directory chooser and walks the chosen
+// folder into an upload selection (ADR 0103): each regular file under it is
+// named by the folder and its relative path, links and other special entries
+// are skipped and counted, and the selection is bound to the scope exactly
+// as a file pick is. A folder with no regular file returns its summary with
+// no token. Nil when cancelled.
+func (s *TransferService) PickUploadDirectory(ctx context.Context, scope SelectionScopeDTO) (*PickedFilesDTO, error) {
+	if err := refuseIfDeferred("TransferService.PickUploadDirectory"); err != nil {
+		return nil, err
+	}
+	if s.picker == nil {
+		return nil, errors.New("no file picker available (headless shell)")
+	}
+	observed, bound, err := s.beginPick(ctx, scope)
+	if err != nil {
+		return nil, err
+	}
+	dir, err := s.picker.PickDirectory(s.uploadFolderPickTitle(ctx, bound))
+	if err != nil || dir == "" {
+		return nil, err
+	}
+	if err := s.endPick(ctx, observed, bound); err != nil {
+		return nil, err
+	}
+	selection, err := local.WalkUploadDirectory(ctx, dir, local.MaxDirectoryFiles)
+	if err != nil {
+		return nil, err
+	}
+	// A walk that finished as the caller gave up issues nothing.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	picked := &PickedFilesDTO{Folder: selection.Folder, Skipped: selection.Skipped,
+		SkippedSample: selection.SkippedSample, EmptyDirectories: selection.EmptyDirectories}
+	if len(selection.Sources) == 0 {
+		return picked, nil
+	}
+	picked.Files = make([]string, len(selection.Sources))
+	for i, source := range selection.Sources {
+		picked.Files[i] = source.Name
+	}
+	picked.Token = s.selections.putSources(bound, selection.Sources, selection)
+	return picked, nil
 }
 
 // PickDownloadDir opens the OS directory picker. Nil when cancelled.
@@ -263,6 +321,12 @@ func (s *TransferService) pickTitle(ctx context.Context, bound selectionScope) s
 func (s *TransferService) uploadPickTitle(ctx context.Context, bound selectionScope) string {
 	label, account, target := s.pickBinding(ctx, bound)
 	return "Upload into " + bindingText(label, account, 80) + ", " + titleText(target, 120) + " — choose files…"
+}
+
+// uploadFolderPickTitle is the same statement for the folder chooser.
+func (s *TransferService) uploadFolderPickTitle(ctx context.Context, bound selectionScope) string {
+	label, account, target := s.pickBinding(ctx, bound)
+	return "Upload into " + bindingText(label, account, 80) + ", " + titleText(target, 120) + " — choose a folder…"
 }
 
 // pickBinding is what the backend resolved, as the label and the account
@@ -390,7 +454,7 @@ func (s *TransferService) uploadPreflight(ctx context.Context, req UploadRequest
 	if err != nil {
 		return nil, err
 	}
-	paths, err := s.selections.getFiles(req.SelectionToken, scope)
+	sources, walk, err := s.selections.getSources(req.SelectionToken, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -400,18 +464,44 @@ func (s *TransferService) uploadPreflight(ctx context.Context, req UploadRequest
 	}
 	var report *local.UploadPreflight
 	if req.AcknowledgeOverwrite {
-		report, err = local.PreflightUploadReplacing(ctx, session, req.Container, req.Prefix, paths)
+		report, err = local.PreflightUploadSourcesReplacing(ctx, session, req.Container, req.Prefix, sources)
 	} else {
-		report, err = local.PreflightUpload(ctx, session, req.Container, req.Prefix, paths)
+		report, err = local.PreflightUploadSources(ctx, session, req.Container, req.Prefix, sources)
 	}
 	if err != nil {
 		return nil, err
 	}
+	discloseWalk(report, walk)
 	// Name the destination large-object placement before Start, as the copy
 	// preview already does (§63.8): the engine uploads a file larger than the
 	// effective chunk size as a segmented DLO.
 	report.LargeObjectsAsDLO = uploadsLargeObject(report.Items, effective.ChunkSize)
 	return report, nil
+}
+
+// discloseWalk adds what a folder pick's walk left out to the preflight
+// report as warnings that reject nothing (ADR 0103 decision 3): the skipped
+// entries it named, one row for the count when it named fewer than it
+// skipped, and one row for the empty directories. A file pick has no walk.
+func discloseWalk(report *local.UploadPreflight, walk *local.DirectorySelection) {
+	if walk == nil {
+		return
+	}
+	for _, rel := range walk.SkippedSample {
+		report.Problems = append(report.Problems, local.Problem{
+			Name: walk.Folder + "/" + rel, Kind: "skipped",
+			Detail: "a link or other special entry, which a folder upload never follows; not uploaded"})
+	}
+	if walk.Skipped > len(walk.SkippedSample) {
+		report.Problems = append(report.Problems, local.Problem{
+			Name: walk.Folder, Kind: "skipped",
+			Detail: fmt.Sprintf("%d entries were skipped in all; the first %d are named above", walk.Skipped, len(walk.SkippedSample))})
+	}
+	if walk.EmptyDirectories > 0 {
+		report.Problems = append(report.Problems, local.Problem{
+			Name: walk.Folder, Kind: "empty-directories",
+			Detail: fmt.Sprintf("%d empty %s produce no object: the store has no directories", walk.EmptyDirectories, plural(walk.EmptyDirectories, "directory", "directories"))})
+	}
 }
 
 // uploadsLargeObject reports whether any selected file will be uploaded as a
@@ -987,7 +1077,7 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 	if err != nil {
 		return "", err
 	}
-	if _, err := s.selections.takeFiles(req.SelectionToken, scope); err != nil {
+	if _, err := s.selections.takeSources(req.SelectionToken, scope); err != nil {
 		return "", err
 	}
 	// What the answered question authorises for the predecessor's segments,

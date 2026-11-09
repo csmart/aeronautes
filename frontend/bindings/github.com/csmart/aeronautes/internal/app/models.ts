@@ -1265,6 +1265,18 @@ export interface PickedDirDTO {
 export interface PickedFilesDTO {
     "token": string;
     "files": string[] | null;
+
+    /**
+     * Folder and the three counts are a folder pick's summary (ADR 0103
+     * decision 1): the chosen folder's own name, how many entries the walk
+     * skipped, the first of them named, and how many directories were
+     * empty. A file pick leaves them zero. A folder with no regular file
+     * returns the summary with no token and no names.
+     */
+    "folder": string;
+    "skipped": number;
+    "skippedSample": string[] | null;
+    "emptyDirectories": number;
 }
 
 /**

@@ -153,13 +153,16 @@ var inventory = map[string]Action{
 	"TransferService.PreflightUpload":   {Kind: Read},
 	"TransferService.PreflightDownload": {Kind: Read},
 	"TransferService.PickUploadFiles":   {Kind: Session},
-	"TransferService.PickDownloadDir":   {Kind: Session},
-	"TransferService.StartCopy":         {Kind: Job},
-	"TransferService.StartMirror":       {Kind: Job},
-	"TransferService.StartUpload":       {Kind: Job},
-	"TransferService.StartDownload":     {Kind: Job},
-	"TransferService.RerunJob":          {Kind: Job},
-	"TransferService.CancelJob":         {Kind: Session},
+	// The folder pick of ADR 0103 is a session action like the file pick: it
+	// binds a selection to a scope and writes nothing.
+	"TransferService.PickUploadDirectory": {Kind: Session},
+	"TransferService.PickDownloadDir":     {Kind: Session},
+	"TransferService.StartCopy":           {Kind: Job},
+	"TransferService.StartMirror":         {Kind: Job},
+	"TransferService.StartUpload":         {Kind: Job},
+	"TransferService.StartDownload":       {Kind: Job},
+	"TransferService.RerunJob":            {Kind: Job},
+	"TransferService.CancelJob":           {Kind: Session},
 	// DeleteService
 	"DeleteService.PreviewDelete":         {Kind: Read},
 	"DeleteService.CheckSegmentOwnership": {Kind: Read},
