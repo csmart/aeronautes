@@ -75,15 +75,24 @@ type ContainerDetail struct {
 
 // ContainerDetail HEADs one container and builds its inspector model.
 func (s *Session) ContainerDetail(ctx context.Context, name string) (*ContainerDetail, error) {
+	d, _, err := s.containerHead(ctx, name)
+	return d, err
+}
+
+// containerHead is ContainerDetail with the canonical headers the detail
+// was built from, for the one caller that must compare a value the detail
+// withholds (UpdateTempURLKey).
+func (s *Session) containerHead(ctx context.Context, name string) (*ContainerDetail, map[string]string, error) {
 	info, headers, err := s.conn.Container(ctx, name)
 	if err != nil {
-		return nil, WithTransID(Normalize(err), headers)
+		return nil, nil, WithTransID(Normalize(err), headers)
 	}
-	d := buildContainerDetail(canonicalHeaders(headers), time.Now().UTC())
+	canonical := canonicalHeaders(headers)
+	d := buildContainerDetail(canonical, time.Now().UTC())
 	d.Name = name
 	d.ObjectCount = info.Count
 	d.BytesUsed = info.Bytes
-	return d, nil
+	return d, canonical, nil
 }
 
 func buildContainerDetail(headers map[string]string, now time.Time) *ContainerDetail {
