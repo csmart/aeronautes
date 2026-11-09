@@ -54,7 +54,7 @@ function show(mode: Mode) {
   const startButton = () => [...root.querySelectorAll<HTMLButtonElement>("footer button")].find((b) => b.textContent?.trim().startsWith("Start "));
   const choose = () => { pickButton().click(); flushSync(); };
   const resolvePicker = async (index = 0) => {
-    if (mode === "upload") files[index].resolve({ token: "files-" + index, files: ["a.txt"] });
+    if (mode === "upload") files[index].resolve({ token: "files-" + index, files: ["a.txt"], folder: "", skipped: 0, skippedSample: [], emptyDirectories: 0 });
     else dirs[index].resolve({ token: "dir-" + index, dir: "chosen directory " + index });
     await settle();
   };
@@ -309,7 +309,7 @@ describe.each(["upload", "download"] as const)("%s preflight binding", (mode) =>
 });
 
 it.each([
-  { token: "files", files: null }, { token: "files", files: [] }, { token: "", files: ["a.txt"] },
+  { token: "files", files: null, folder: "", skipped: 0, skippedSample: [], emptyDirectories: 0 }, { token: "files", files: [], folder: "", skipped: 0, skippedSample: [], emptyDirectories: 0 }, { token: "", files: ["a.txt"], folder: "", skipped: 0, skippedSample: [], emptyDirectories: 0 },
 ])("refuses an empty upload selection %j", async (selection) => {
   const f = show("upload"); f.choose(); f.files[0].resolve(selection); await settle();
   expect(f.api.preflightUpload).not.toHaveBeenCalled(); expectDisarmed(f);

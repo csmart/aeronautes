@@ -55,9 +55,13 @@ type selectionEntry struct {
 	op     selectionOp
 	scope  selectionScope
 	issued time.Time
-	files  []string
-	dir    string
-	root   *local.DestinationRoot
+	// sources are an upload selection's files with the names they take
+	// under the prefix; walk is the folder pick's own summary, nil for a
+	// file pick, so the preflight can disclose what the walk left out.
+	sources []local.UploadSource
+	walk    *local.DirectorySelection
+	dir     string
+	root    *local.DestinationRoot
 }
 
 const (
@@ -139,8 +143,8 @@ func (s *selectionStore) put(entry *selectionEntry) string {
 	return t
 }
 
-func (s *selectionStore) putFiles(scope selectionScope, paths []string) string {
-	return s.put(&selectionEntry{op: selectionUpload, scope: scope, files: paths})
+func (s *selectionStore) putSources(scope selectionScope, sources []local.UploadSource, walk *local.DirectorySelection) string {
+	return s.put(&selectionEntry{op: selectionUpload, scope: scope, sources: sources, walk: walk})
 }
 
 // putDir captures the picked directory behind a handle at the pick. The
@@ -180,30 +184,30 @@ func (s *selectionStore) resolve(token string, op selectionOp, want selectionSco
 	return entry, nil
 }
 
-// getFiles validates a file selection for a read-only report. Preflight
+// getSources validates an upload selection for a read-only report. Preflight
 // may repeat; only the start consumes.
-func (s *selectionStore) getFiles(token string, want selectionScope) ([]string, error) {
+func (s *selectionStore) getSources(token string, want selectionScope) ([]local.UploadSource, *local.DirectorySelection, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	entry, err := s.resolve(token, selectionUpload, want)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return entry.files, nil
+	return entry.sources, entry.walk, nil
 }
 
-// takeFiles validates and consumes a file selection for a start. It is
+// takeSources validates and consumes an upload selection for a start. It is
 // atomic under the lock, so two concurrent starts cannot both win.
-func (s *selectionStore) takeFiles(token string, want selectionScope) ([]string, error) {
+func (s *selectionStore) takeSources(token string, want selectionScope) ([]local.UploadSource, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	entry, err := s.resolve(token, selectionUpload, want)
 	if err != nil {
 		return nil, err
 	}
-	paths := entry.files
+	sources := entry.sources
 	s.drop(token)
-	return paths, nil
+	return sources, nil
 }
 
 // getDir returns the exact picker spelling for display and records.

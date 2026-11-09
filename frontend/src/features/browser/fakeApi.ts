@@ -850,7 +850,10 @@ export function newFakeApi(): Api {
       }
       job.finishedAt = "2026-08-29T10:05:00Z";
     },
-    pickUploadFiles: async () => ({ token: "fake-selection", files: ["fake-a.txt", "fake-b.txt"] }),
+    pickUploadFiles: async () => ({
+      token: "fake-selection", files: ["fake-a.txt", "fake-b.txt"],
+      folder: "", skipped: 0, skippedSample: [], emptyDirectories: 0,
+    }),
     pickDownloadDir: async () => ({ token: "fake-dir", dir: "/tmp/fake-dest" }),
     preflightUpload: async (req) => {
       if (req.selectionToken !== "fake-selection") {

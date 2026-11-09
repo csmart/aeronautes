@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/csmart/aeronautes/internal/transfer/local"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,7 +47,7 @@ func TestDirectorySelectionLifetime(t *testing.T) {
 	}
 	// Evicting the token closes the pick's handle, not the lease.
 	for range maxSelections {
-		store.putFiles(scope, []string{"filler"})
+		store.putSources(scope, []local.UploadSource{{Path: "filler", Name: "filler"}}, nil)
 	}
 	if _, err := store.getDir(token, scope); err == nil {
 		t.Fatal("evicted token still resolves")

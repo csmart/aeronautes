@@ -87,6 +87,9 @@ func TestEveryBridgeActionIsClassified(t *testing.T) {
 		// completed its path: its three actions are kept rather than deferred.
 		"TransferService.PickUploadFiles": true, "TransferService.PreflightUpload": true,
 		"TransferService.StartUpload": true,
+		// The folder pick (ADR 0103) is upload's second selection and is kept
+		// with it.
+		"TransferService.PickUploadDirectory": true,
 		// Object deletion was returned on 29 October 2026 (ADR 0052 decision
 		// 11): one object (ADR 0092) and the selected set (ADR 0093) are kept.
 		"MutateService.DeleteObject": true, "DeleteService.StartSelectedDelete": true,
@@ -158,6 +161,7 @@ func TestKeptActionsAreNotRefused(t *testing.T) {
 		// deferred table; these three are the behavioural half, which is
 		// what an operator would experience if it were.
 		"TransferService.PickUploadFiles",
+		"TransferService.PickUploadDirectory",
 		"TransferService.PreflightUpload",
 		"TransferService.StartUpload",
 		// Returned on 29 October 2026 (ADR 0052 decision 11); the behavioural
