@@ -44,6 +44,33 @@ func validateMetadata(meta map[string]string, allowEmptyValues bool) error {
 	return nil
 }
 
+// refuseReservedMetadata refuses a working copy that names a key the typed
+// surface owns. The portraits keep these keys out of Meta, so the additive
+// delta would SET a caller-supplied value the operator never saw: a TempURL
+// slot is a secret (§22, K-SEC-006) and a quota key belongs to its typed
+// field. Refusing before any I/O, rather than filtering, is what makes "the
+// editors cannot touch a slot" true of a working copy as well as of the
+// detail (ADR 0101). Keys are checked in sorted order so the refusal names
+// the same key every time.
+func refuseReservedMetadata(meta map[string]string, quotaKeys ...string) error {
+	keys := make([]string, 0, len(meta))
+	for key := range meta {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if isTempURLKey(key) {
+			return fmt.Errorf("metadata key %q is a TempURL secret slot and cannot be set through the metadata editor", key)
+		}
+		for _, quota := range quotaKeys {
+			if strings.EqualFold(key, quota) {
+				return fmt.Errorf("metadata key %q is a quota; set it through its own field rather than a metadata entry", key)
+			}
+		}
+	}
+	return nil
+}
+
 func metadataToken(key string) bool {
 	for i := 0; i < len(key); i++ {
 		b := key[i]

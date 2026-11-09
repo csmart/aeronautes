@@ -61,8 +61,16 @@ type ContainerUpdateResult struct {
 // UpdateContainer applies edit to one container. baseFingerprint is the
 // EditableFingerprint of the working copy the edit was built from; ""
 // skips conflict detection.
+//
+// The TempURL key slots and the quotas are not in the detail's Meta, so the
+// delta cannot remove a slot; a working copy that names a slot or a quota
+// key is refused before any I/O so the delta cannot set one either, as the
+// account edit has always done (K-SEC-006).
 func (s *Session) UpdateContainer(ctx context.Context, name, baseFingerprint string, edit ContainerEdit) (*ContainerUpdateResult, error) {
 	if err := validateMetadata(edit.Meta, false); err != nil {
+		return nil, err
+	}
+	if err := refuseReservedMetadata(edit.Meta, "Quota-Bytes", "Quota-Count"); err != nil {
 		return nil, err
 	}
 	result := &ContainerUpdateResult{}
