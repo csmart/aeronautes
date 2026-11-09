@@ -19,9 +19,9 @@ More in [`docs/assets/screenshots/`](docs/assets/screenshots/).*
 ## What it is
 
 - A **Swift-native** operator tool — containers, objects, prefixes, **segments**, DLO/SLO manifests,
-  storage policies, ACLs, versioning, quotas — not a file-manager metaphor. TempURL, CORS, and
-  staticweb are modeled read-only today (key slots and presence, never secret values); their
-  management surfaces are tracked v1.x work.
+  storage policies, ACLs, versioning, quotas — not a file-manager metaphor. TempURL key slots are
+  set and cleared from the inspector (key values are never shown), and CORS and staticweb are
+  edited as typed fields over their metadata rows.
 - **v1 scope**: browse, inspect, download, upload, object and container metadata read and write, container creation and prefix-marker creation.
   Copy, Mirror execution and bulk deletion are deferred and refused in this build under [ADR 0052](docs/adr/0052-v1-capability-gate.md); upload joined that scope on 16 October 2026 under its decision 9.
 - **Safety-first**: heuristics never authorize destruction; object-metadata edits never silently drop keys.

@@ -1218,6 +1218,8 @@ v1 priorities:
 
 Never expose existing secret values casually.
 
+Key slots are set and cleared from the inspector since [ADR 0101](adr/0101-tempurl-key-slots-and-cors-editing.md): the request carries the slot presence the inspector showed, the secret is sent once and recorded nowhere, and a generated key is shown once before it is sent.
+
 TempURL URL/signature generation may be a follow-up feature; key management belongs in the inspector.
 
 ---
@@ -2700,7 +2702,7 @@ Inspector sections are capability/resource driven.
 - objects;
 - bytes;
 - policy totals where available;
-- TempURL-key presence;
+- TempURL-key presence, with set and clear since [ADR 0101](adr/0101-tempurl-key-slots-and-cors-editing.md);
 - account metadata;
 - raw headers.
 
@@ -2714,9 +2716,9 @@ Inspector sections are capability/resource driven.
 - metadata;
 - versioning;
 - quota;
-- CORS;
+- CORS (the `Access-Control-*` keys are editable metadata with a typed section over them since [ADR 0101](adr/0101-tempurl-key-slots-and-cors-editing.md));
 - staticweb (the `Web-*` keys are editable metadata since [ADR 0090](adr/0090-container-presets.md));
-- TempURL keys;
+- TempURL keys, with set and clear since ADR 0101;
 - segment classification;
 - raw headers.
 
