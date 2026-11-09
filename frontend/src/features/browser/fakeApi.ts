@@ -527,6 +527,9 @@ export function newFakeApi(): Api {
         // connected scope, as the backend records it (ADR 0071).
         containerAfter: {
           ...containerDetailOf(name),
+          // The after-state names the scope the write was bound to, so a
+          // caller can edit again from it (ADR 0059).
+          scope: { ...scope },
           settings: connectedScope ? rememberSettings(name, connectedScope.bookmarkId) : deriveSettings(name, 0),
         },
         accountAfter: null,
