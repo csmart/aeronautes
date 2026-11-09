@@ -90,7 +90,7 @@ spike:
 clean:
 	rm -rf bin frontend/dist
 
-## oracle: real-cloud Keystone v3 oracle against genuine OpenStack; needs creds (docs/CI.md)
+## oracle: real-cloud oracles (Keystone v3, legacy versioning) against genuine OpenStack; needs creds (docs/CI.md)
 # make oracle CLOUDS=~/code/clouds.yaml [CLOUD=ceph|swift]   (or set OS_CLIENT_CONFIG_FILE)
 oracle:
-	ORACLE_CLOUDS="$(CLOUDS)" ORACLE_CLOUD="$(CLOUD)" go test -tags realcloud -run TestKeystoneV3Oracle -count=1 -v ./internal/swiftcontrol/
+	ORACLE_CLOUDS="$(CLOUDS)" ORACLE_CLOUD="$(CLOUD)" go test -tags realcloud -run 'TestKeystoneV3Oracle|TestLegacyVersioningOracle' -count=1 -v ./internal/swiftcontrol/

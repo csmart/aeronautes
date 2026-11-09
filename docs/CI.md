@@ -35,8 +35,10 @@ Manual release dispatch builds unsigned artifacts for all six targets; it does n
 
 ## Non-blocking checks
 
-The separate `realcloud-oracle.yml` workflow runs the Keystone v3 real-cloud oracle against genuine OpenStack backends on each pull request.
-It drives `go test -tags realcloud -run TestKeystoneV3Oracle ./internal/swiftcontrol/`, which authenticates through the product's own v3 path and does a full create, upload, read and delete round-trip on each configured cloud.
+The separate `realcloud-oracle.yml` workflow runs the real-cloud oracles against genuine OpenStack backends on each pull request.
+It drives `go test -tags realcloud -run 'TestKeystoneV3Oracle|TestLegacyVersioningOracle' ./internal/swiftcontrol/`.
+The first authenticates through the product's own v3 path and does a full create, upload, read and delete round-trip on each configured cloud.
+The second sets each legacy versioning mode on a fresh container through the container editor's route, overwrites and deletes an object through the product's delete protocol, and asserts that the name and the archive hold what the [27 October record](experiments/2026-10-27-delete-under-versioning.md) measured on the fixture; a backend whose `/info` does not allow a mode skips it.
 Run it locally from the repo root with `make oracle CLOUDS=/path/to/clouds.yaml`, or set `OS_CLIENT_CONFIG_FILE` and run `make oracle`; `make oracle CLOUD=ceph` runs a single backend.
 A selected path that does not exist is an error rather than a fallback, so a typo cannot direct the run at another account's clouds.yaml.
 It is deliberately its own workflow rather than a job in `ci.yml`, so the required workflow's job set, and every gate that counts those jobs, is unchanged.
