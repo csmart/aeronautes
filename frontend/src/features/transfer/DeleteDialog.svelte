@@ -8,7 +8,7 @@
   import type { BrowserState } from "../browser/browserState.svelte";
   import type { ContainerSettingsDTO, DeletePreviewDTO, DeleteRequestDTO } from "../../lib/api";
   import { formatBytes } from "../../lib/format";
-  import { versioningSentence } from "../inspector/versioningSentence";
+  import { archiveOwnersSentence, versioningSentence } from "../inspector/versioningSentence";
 
   let { browser, onClose }: { browser: BrowserState; onClose: () => void } = $props();
 
@@ -172,6 +172,7 @@
     {/if}
 
     {#if preview}
+      {@const archiveSentence = archiveOwnersSentence(preview)}
       <div class="preview num">
         <p class="summary">
           <strong>{preview.objects}</strong> objects · {formatBytes(preview.bytes)} ·
@@ -192,6 +193,9 @@
           requested once by this job; whatever is still listed after that is left for a fresh run.
         </p>
         <p class="keeps">{versioningSentence(facts)}</p>
+        {#if archiveSentence}
+          <p class="warn">{archiveSentence}</p>
+        {/if}
         {#if preview.possibleManifests > 0}
           <p class="warn">
             {preview.possibleManifests} possible manifest{preview.possibleManifests === 1

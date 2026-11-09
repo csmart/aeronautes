@@ -74,7 +74,18 @@ type DeletePreviewDTO struct {
 	RequestCost       int64 `json:"requestCost"`
 	// Strategy is what execution would select right now.
 	Strategy string `json:"strategy"`
+	// ArchiveOf names the containers whose versions or history location is
+	// this container, so the dialog can say whose earlier versions the
+	// deletion destroys (ADR 0102 decision 3). ArchiveUnestablished says why
+	// the scan could not answer for the whole account, empty when it did.
+	ArchiveOf            []string `json:"archiveOf"`
+	ArchiveUnestablished string   `json:"archiveUnestablished"`
 }
+
+// archiveScanBound caps the container HEADs a preview spends finding who
+// archives into the container (ADR 0102 decision 3): a stop against the
+// pathological, far above any account the product has been pointed at.
+const archiveScanBound = 1000
 
 func (s *DeleteService) validate(req DeleteRequestDTO) error {
 	if req.BookmarkID == "" || req.Container == "" {
@@ -125,6 +136,16 @@ func (s *DeleteService) PreviewDelete(ctx context.Context, req DeleteRequestDTO)
 	// member, and a baseline HEAD for each row that cannot say what it holds.
 	preview.LaterBaselineRows = preview.PossibleManifests
 	preview.RequestCost = 2*preview.Objects + preview.LaterBaselineRows
+	// Whose archive this is, which the operator cannot see from inside it.
+	// The owners are stored names on a sentence the operator reads before
+	// destroying, so they are sanitised and bounded here, as the archive
+	// name in the overwrite question is; the match itself used the raw
+	// names.
+	owners := session.ArchiveOwners(ctx, req.Container, archiveScanBound)
+	for _, owner := range owners.Owners {
+		preview.ArchiveOf = append(preview.ArchiveOf, titleText(owner, 80))
+	}
+	preview.ArchiveUnestablished = owners.Unestablished
 	return preview, nil
 }
 

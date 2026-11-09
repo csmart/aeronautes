@@ -23,6 +23,7 @@ const copyPlan: CopyPlanDTO = {
 };
 const deletePlan: DeletePreviewDTO = {
   objects: 1, bytes: 5, possibleManifests: 0, laterBaselineRows: 0, requestCost: 2, strategy: "current deletion",
+  archiveOf: [], archiveUnestablished: "",
 };
 
 const mounted = new Set<ReturnType<typeof mount>>();
@@ -422,11 +423,29 @@ it("the delete preview states the per-name request cost and the later-baseline r
   const f = show("delete");
   f.deletes.length = 0;
   f.preview();
-  f.deletes[0].resolve({ objects: 12, bytes: 1000, possibleManifests: 2, laterBaselineRows: 2, requestCost: 26, strategy: "per-name-verified" });
+  f.deletes[0].resolve({ ...deletePlan, objects: 12, bytes: 1000, possibleManifests: 2, laterBaselineRows: 2, requestCost: 26, strategy: "per-name-verified" });
   await settle();
   const cost = f.root.querySelector(".cost")!.textContent!;
   expect(cost).toContain("26 requests");
   expect(cost).toContain("2 of these rows take that extra read");
+});
+
+// ADR 0102 decision 3: the dialog says whose archive the container is, from the
+// preview's own scan, and says nothing when nobody archives into it.
+it("the delete preview names the containers that archive into this one", async () => {
+  const f = show("delete");
+  f.deletes.length = 0;
+  f.preview();
+  f.deletes[0].resolve({ ...deletePlan, archiveOf: ["photos"] });
+  await settle();
+  expect(f.root.textContent).toContain("This container is the versions archive of photos");
+
+  f.browser.prefix = "elsewhere/"; flushSync();
+  f.deletes.length = 0;
+  f.preview();
+  f.deletes[0].resolve({ ...deletePlan });
+  await settle();
+  expect(f.root.textContent).not.toContain("versions archive");
 });
 
 it("Delete waits for the versioning facts to settle before enabling or accepting Start", async () => {
