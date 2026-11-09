@@ -100,6 +100,7 @@ export type {
     SelectedDeleteRequestDTO,
     SelectionScopeDTO,
     StoragePolicyDTO,
+    TempURLKeyEditDTO,
     TransferSettingsDTO,
     UploadRequestDTO,
     VerifyResultDTO

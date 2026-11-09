@@ -243,6 +243,21 @@ type AccountEditDTO struct {
 	QuotaBytes int64             `json:"quotaBytes"`
 }
 
+// TempURLKeyEditDTO sets or clears one TempURL key slot of the connected
+// account (Container "") or of one container (§22, ADR 0101). BaseSlots is
+// the slot presence the inspector showed and the operation's conflict
+// basis: a preflight that lists a different presence is a conflict, and a
+// view that showed no slots sends none. Secret is sent once and recorded
+// nowhere; Clear is the only way to ask for a deletion, an empty Secret
+// without it is refused.
+type TempURLKeyEditDTO struct {
+	Container string   `json:"container"`
+	Slot      string   `json:"slot"`
+	BaseSlots []string `json:"baseSlots"`
+	Secret    string   `json:"secret"`
+	Clear     bool     `json:"clear"`
+}
+
 // ContainerEditDTO states the complete intended editable surface of a
 // container (§18, §19, §21).
 type ContainerEditDTO struct {

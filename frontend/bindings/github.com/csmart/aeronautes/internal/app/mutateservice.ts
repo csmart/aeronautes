@@ -93,3 +93,15 @@ export function UpdateContainer(scope: $models.ListingScopeDTO, name: string, ba
 export function UpdateObjectMetadata(scope: $models.ListingScopeDTO, container: string, name: string, baseFingerprint: string, edit: $models.ObjectMetadataEditDTO): $CancellablePromise<$models.MutationResultDTO> {
     return $Call.ByID(3652920316, scope, container, name, baseFingerprint, edit);
 }
+
+/**
+ * UpdateTempURLKey sets or clears one TempURL key slot of the connected
+ * account or of one container (§22, ADR 0101), the way the metadata
+ * editors write: a bound snapshot, a recorded intent, the verified adapter
+ * write and a recorded outcome with its audit event. The secret goes to the
+ * adapter and nowhere else; the intent, the outcome, the audit summary and
+ * the returned DTO carry the slot and the kind of change only.
+ */
+export function UpdateTempURLKey(scope: $models.ListingScopeDTO, edit: $models.TempURLKeyEditDTO): $CancellablePromise<$models.MutationResultDTO> {
+    return $Call.ByID(3314954912, scope, edit);
+}
