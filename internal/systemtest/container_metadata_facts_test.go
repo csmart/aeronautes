@@ -96,7 +96,7 @@ func testContainerMetadataFacts(t *testing.T, harness func(*testing.T) *Harness)
 				}
 			}
 			trace := installContainerFactProxy(t, h, container, tc.fault, barrier)
-			refuseContainerFact(t, h, tc.refuse)
+			refuseFactRecord(t, h, tc.refuse, "container.update")
 			type reply struct {
 				dto app.MutationResultDTO
 				err error
@@ -248,18 +248,21 @@ func testContainerMetadataFacts(t *testing.T, harness func(*testing.T) *Harness)
 	}
 }
 
-func refuseContainerFact(t *testing.T, h *Harness, phase string) {
+// refuseFactRecord makes the database refuse one phase of the durable record
+// for the named operation: the intent insert, the outcome update, or the
+// audit insert.
+func refuseFactRecord(t *testing.T, h *Harness, phase, operation string) {
 	t.Helper()
 	var statement string
 	switch phase {
 	case "":
 		return
 	case "intent":
-		statement = `CREATE TRIGGER refuse_container_fact BEFORE INSERT ON mutation_facts BEGIN SELECT RAISE(ABORT, 'refuse intent'); END`
+		statement = `CREATE TRIGGER refuse_fact BEFORE INSERT ON mutation_facts BEGIN SELECT RAISE(ABORT, 'refuse intent'); END`
 	case "outcome":
-		statement = `CREATE TRIGGER refuse_container_fact BEFORE UPDATE ON mutation_facts BEGIN SELECT RAISE(ABORT, 'refuse outcome'); END`
+		statement = `CREATE TRIGGER refuse_fact BEFORE UPDATE ON mutation_facts BEGIN SELECT RAISE(ABORT, 'refuse outcome'); END`
 	case "audit":
-		statement = `CREATE TRIGGER refuse_container_fact BEFORE INSERT ON audit_events WHEN NEW.operation='container.update' BEGIN SELECT RAISE(ABORT, 'refuse audit'); END`
+		statement = `CREATE TRIGGER refuse_fact BEFORE INSERT ON audit_events WHEN NEW.operation='` + operation + `' BEGIN SELECT RAISE(ABORT, 'refuse audit'); END`
 	default:
 		t.Fatalf("unknown fact refusal %q", phase)
 	}
