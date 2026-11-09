@@ -1310,6 +1310,10 @@ export class BrowserState {
     return await this.#api.pickUploadFiles(scope);
   }
 
+  async pickUploadDirectory(scope: SelectionScopeDTO): Promise<PickedFilesDTO | null> {
+    return await this.#api.pickUploadDirectory(scope);
+  }
+
   async pickDownloadDir(scope: SelectionScopeDTO): Promise<PickedDirDTO | null> {
     return await this.#api.pickDownloadDir(scope);
   }

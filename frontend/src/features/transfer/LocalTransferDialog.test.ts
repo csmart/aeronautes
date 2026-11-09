@@ -32,6 +32,8 @@ function show(mode: Mode) {
   const uploads: ReturnType<typeof deferred<UploadPreflight>>[] = [];
   const downloads: ReturnType<typeof deferred<DownloadPreflightView>>[] = [];
   api.pickUploadFiles = vi.fn(() => { const p = deferred<PickedFilesDTO | null>(); files.push(p); return p.promise; });
+  const folders: ReturnType<typeof deferred<PickedFilesDTO | null>>[] = [];
+  api.pickUploadDirectory = vi.fn(() => { const p = deferred<PickedFilesDTO | null>(); folders.push(p); return p.promise; });
   api.pickDownloadDir = vi.fn(() => { const p = deferred<PickedDirDTO | null>(); dirs.push(p); return p.promise; });
   api.preflightUpload = vi.fn(() => { const p = deferred<UploadPreflight>(); uploads.push(p); return p.promise; });
   api.preflightDownload = vi.fn(() => { const p = deferred<DownloadPreflightView>(); downloads.push(p); return p.promise; });
@@ -80,8 +82,10 @@ function show(mode: Mode) {
     if (stage !== "picker") await resolvePicker();
     if (stage === "ready") await resolvePreflight();
   };
-  return { api, browser, root, onClose, component, files, dirs, uploads, downloads, started, mode,
-    pickButton, startButton, choose, resolvePicker, resolvePreflight, rejectReply, reach };
+  const folderButton = () => [...root.querySelectorAll<HTMLButtonElement>("footer button")].find((b) => b.textContent?.trim() === "Choose folder…");
+  const chooseFolder = () => { folderButton()!.click(); flushSync(); };
+  return { api, browser, root, onClose, component, files, folders, dirs, uploads, downloads, started, mode,
+    pickButton, startButton, folderButton, choose, chooseFolder, resolvePicker, resolvePreflight, rejectReply, reach };
 }
 
 type Fixture = ReturnType<typeof show>;
@@ -573,5 +577,38 @@ describe("upload replacement", () => {
     await settle();
     expect(replaceButton(f)).toBeUndefined();
     expect(f.startButton()).toBeUndefined();
+  });
+});
+
+// ADR 0103: the folder pick runs the same preflight under its own token and
+// shows the folder's summary beside the report; a folder with nothing to upload
+// shows the summary alone and preflights nothing. Download has no folder button.
+describe("folder upload", () => {
+  it("preflights the folder's selection and shows its summary", async () => {
+    const f = show("upload");
+    f.chooseFolder();
+    expect(f.api.pickUploadDirectory).toHaveBeenCalledExactlyOnceWith({ bookmarkId: "source", container: "media", prefix: "selected/" });
+    f.folders[0].resolve({ token: "folder-0", files: ["photos/a.txt", "photos/b/c.txt"], folder: "photos", skipped: 2, skippedSample: ["x", "y"], emptyDirectories: 1 });
+    await settle();
+    expect(f.api.preflightUpload).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ selectionToken: "folder-0" }));
+    await f.resolvePreflight();
+    expect(f.root.textContent).toContain("Folder photos: 2 files to upload; 2 entries skipped");
+    expect(f.root.textContent).toContain("1 empty directory produces nothing");
+    expect(f.startButton()?.disabled).toBe(false);
+  });
+
+  it("shows a folder that holds nothing to upload and starts nothing", async () => {
+    const f = show("upload");
+    f.chooseFolder();
+    f.folders[0].resolve({ token: "", files: [], folder: "hollow", skipped: 1, skippedSample: ["link"], emptyDirectories: 1 });
+    await settle();
+    expect(f.api.preflightUpload).not.toHaveBeenCalled();
+    expect(f.root.textContent).toContain("Folder hollow holds no file to upload");
+    expect(f.startButton()).toBeUndefined();
+  });
+
+  it("offers no folder pick for a download", () => {
+    const f = show("download");
+    expect(f.folderButton()).toBeUndefined();
   });
 });
