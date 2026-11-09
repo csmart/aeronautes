@@ -186,6 +186,19 @@ describe("mutations (§65.2)", () => {
     expect(s.objectDetail?.meta?.Only).toBe("mine");
   });
 
+  it("edits a container again from the adopted after-state", async () => {
+    const s = await connected();
+    await s.openContainer("fixtures");
+    await vi.waitFor(() => expect(s.containerDetail).not.toBeNull());
+    const edit = { meta: { Team: "ops" }, readAcl: "", writeAcl: "", versioningMode: "off", versioningArchive: "", quotaBytes: 0, quotaCount: 0, ackPublic: false };
+    expect((await s.saveContainer(edit)).outcome).toBe("applied");
+    // The adopted after-state names the scope the write was bound to, so a
+    // second save from it is not refused as a scope change (ADR 0059).
+    expect(s.containerDetail?.scope).toEqual(s.account?.scope);
+    expect((await s.saveContainer({ ...edit, meta: { Team: "platform" } })).outcome).toBe("applied");
+    expect(s.containerDetail?.meta?.Team).toBe("platform");
+  });
+
   it("saves a container edit and rejects a gated versioning mode", async () => {
     const s = await connected();
     await s.openContainer("fixtures");
