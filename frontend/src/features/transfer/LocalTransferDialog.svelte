@@ -6,7 +6,8 @@
   import { onDestroy, untrack } from "svelte";
   import { trapFocus } from "../../lib/trapFocus";
   import type { BrowserState } from "../browser/browserState.svelte";
-  import type { DownloadRequestDTO, UploadRequestDTO } from "../../lib/api";
+  import type { DownloadRequestDTO, PickedFilesDTO, UploadRequestDTO } from "../../lib/api";
+  import { folderSummary } from "./folderSummary";
   import { formatBytes, formatCount } from "../../lib/format";
 
   // Upload still ships the complete item list; download is a bounded
@@ -59,6 +60,9 @@
     destination: string;
   } & ({ mode: "upload"; request: UploadRequestDTO } | { mode: "download"; request: DownloadRequestDTO });
   let prepared = $state.raw<Prepared | null>(null);
+  // The folder pick's own summary (ADR 0103): shown with the report, or alone
+  // when the folder holds nothing to upload. A file pick leaves it null.
+  let folder = $state.raw<PickedFilesDTO | null>(null);
   const report = $derived(prepared && isCurrent(prepared.intent) ? prepared.report : null);
   const destDir = $derived(report ? prepared?.destination ?? "" : "");
   const canChoose = $derived(!closed && !checking && !starting && !browser.connecting
@@ -108,6 +112,7 @@
   function invalidate() {
     generation++;
     prepared = null;
+    folder = null;
     checking = false;
     startedJobId = null;
     error = null;
@@ -127,7 +132,7 @@
   }
   onDestroy(() => { closed = true; invalidate(); });
 
-  async function pickAndPreflight() {
+  async function pickAndPreflight(kind: "files" | "folder" = "files") {
     if (!canChoose) return;
     invalidate();
     const capturedScope = scope();
@@ -139,9 +144,15 @@
     try {
       if (intent.mode === "upload") {
         // The pick is bound to this scope for its whole life (ADR 0041).
-        const picked = await browser.pickUploadFiles(
-          { bookmarkId: capturedScope.bookmarkId, container: capturedScope.container, prefix: capturedScope.prefix });
-        if (!isCurrent(intent) || !picked?.token || !picked.files?.length) return;
+        const pickScope = { bookmarkId: capturedScope.bookmarkId, container: capturedScope.container, prefix: capturedScope.prefix };
+        const picked = kind === "folder"
+          ? await browser.pickUploadDirectory(pickScope)
+          : await browser.pickUploadFiles(pickScope);
+        if (!isCurrent(intent) || !picked) return;
+        // A folder's summary stands even when the walk found nothing to
+        // upload; the pick then ends here with nothing to start.
+        if (kind === "folder") folder = picked;
+        if (!picked.token || !picked.files?.length) return;
         const req = Object.freeze({ ...capturedScope, selectionToken: picked.token, acknowledgeOverwrite: false });
         const result = await browser.preflightUpload(req);
         if (isCurrent(intent)) prepared = { intent, mode: "upload", request: req, report: result, destination: "" };
@@ -224,9 +235,12 @@
     {#if !report}
       <p class="hint">
         {mode === "upload"
-          ? "Choose files; every collision is reported before anything is written."
+          ? "Choose files or a folder; every collision is reported before anything is written."
           : "Choose a destination directory; the whole scope is checked for collisions first."}
       </p>
+      {#if folder}
+        <p class="hint folder">{folderSummary(folder)}</p>
+      {/if}
       {#if mode === "download" && browser.settings.document}
         <p class="hint ceiling">
           Selections above {browser.settings.document.downloadObjectCeiling.toLocaleString("en-US")} objects are refused rather than cut short; the ceiling is set in the jobs drawer.
@@ -254,6 +268,9 @@
             {mode === "upload" ? "files" : "objects"} · {formatBytes(report.totalBytes)}
             {mode === "download" ? ` → ${destDir}` : ""}
           </p>
+        {/if}
+        {#if folder}
+          <p class="note folder">{folderSummary(folder)}</p>
         {/if}
         {#if placesLargeObjectsAsDlo}
           <p class="note">
@@ -298,13 +315,16 @@
         <span class="started">Job {startedJobId} started — follow it in the drawer.</span>
         <button class="primary" onclick={close}>Close</button>
       {:else}
-        <button onclick={pickAndPreflight} disabled={!canChoose}>
+        <button onclick={() => pickAndPreflight("files")} disabled={!canChoose}>
           {checking || starting
             ? "Working…"
             : mode === "upload"
               ? "Choose files…"
               : "Choose directory…"}
         </button>
+        {#if mode === "upload"}
+          <button onclick={() => pickAndPreflight("folder")} disabled={!canChoose}>Choose folder…</button>
+        {/if}
         {#if collisionsOnly}
           <button class="primary" onclick={replace} disabled={checking || starting}>
             Replace {collisions.length} existing object{collisions.length === 1 ? "" : "s"}…

@@ -854,6 +854,10 @@ export function newFakeApi(): Api {
       token: "fake-selection", files: ["fake-a.txt", "fake-b.txt"],
       folder: "", skipped: 0, skippedSample: [], emptyDirectories: 0,
     }),
+    pickUploadDirectory: async () => ({
+      token: "fake-selection", files: ["fake-folder/fake-a.txt", "fake-folder/sub/fake-b.txt"],
+      folder: "fake-folder", skipped: 1, skippedSample: ["a-link"], emptyDirectories: 1,
+    }),
     pickDownloadDir: async () => ({ token: "fake-dir", dir: "/tmp/fake-dest" }),
     preflightUpload: async (req) => {
       if (req.selectionToken !== "fake-selection") {

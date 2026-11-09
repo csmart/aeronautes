@@ -257,6 +257,10 @@ export interface Api {
   interruptedDisclosures(limit: number): Promise<InterruptedDisclosuresDTO>;
   dismissInterrupted(jobIds: string[]): Promise<DismissInterruptedDTO>;
   pickUploadFiles(scope: SelectionScopeDTO): Promise<PickedFilesDTO | null>;
+  /** Pick one folder for upload (ADR 0103): its files arrive under the folder's
+   * own name, with the walk's counts beside the names; no token when it holds
+   * no regular file. */
+  pickUploadDirectory(scope: SelectionScopeDTO): Promise<PickedFilesDTO | null>;
   pickDownloadDir(scope: SelectionScopeDTO): Promise<PickedDirDTO | null>;
   preflightUpload(req: UploadRequestDTO): Promise<UploadPreflight>;
   startUpload(req: UploadRequestDTO): Promise<string>;
@@ -352,6 +356,7 @@ export const liveApi: Api = {
   jobItems: (jobId, cursor, limit, bookmarkId) => JobService.Items(bookmarkId, jobId, cursor, limit),
   jobItemTotals: (jobId, bookmarkId) => JobService.ItemTotals(bookmarkId, jobId),
   pickUploadFiles: (scope) => TransferService.PickUploadFiles(scope),
+  pickUploadDirectory: (scope) => TransferService.PickUploadDirectory(scope),
   pickDownloadDir: (scope) => TransferService.PickDownloadDir(scope),
   preflightUpload: async (req) => {
     const report = await TransferService.PreflightUpload(req);
