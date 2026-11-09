@@ -708,7 +708,7 @@ func TestPreflightUploadTreatsAStaleListingRowConservatively(t *testing.T) {
 			if _, err := s.ObjectDetail(t.Context(), "media", "docs/send-000"); !swiftcontrol.IsNotFound(err) {
 				t.Fatalf("the fixture's stale row names a live object: %v", err)
 			}
-			report, err := preflightUpload(t.Context(), s, "media", "docs/", paths, tc.replacing)
+			report, err := preflightUpload(t.Context(), s, "media", "docs/", sourcesByBaseName(paths), tc.replacing)
 			if err != nil {
 				t.Fatal(err)
 			}
