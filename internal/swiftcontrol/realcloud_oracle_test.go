@@ -24,7 +24,8 @@
 //
 // CLOUD=ceph (or swift) runs one backend. The config helpers and their
 // regressions live in realcloud_oracle_config_test.go and run in the default
-// build.
+// build; the legacy versioning oracle in realcloud_versioning_test.go shares
+// the backend loop below.
 package swiftcontrol_test
 
 import (
@@ -49,6 +50,14 @@ var oracleBackends = []struct{ name, cloud, backend string }{
 }
 
 func TestKeystoneV3Oracle(t *testing.T) {
+	runOnOracleBackends(t, runOracle)
+}
+
+// runOnOracleBackends runs one oracle body per configured backend under the
+// clouds.yaml selection and skip rules every real-cloud test shares, so a
+// second oracle cannot drift from the first in how it finds, validates or
+// declines a cloud.
+func runOnOracleBackends(t *testing.T, run func(t *testing.T, cloudName, backend string, c oracleCloud)) {
 	path, err := resolveCloudsPath()
 	if err != nil {
 		// An explicitly selected source that cannot be used is an error, never
@@ -84,7 +93,7 @@ func TestKeystoneV3Oracle(t *testing.T) {
 			case err != nil:
 				t.Fatalf("cloud %q misconfigured: %v", b.cloud, err)
 			}
-			runOracle(t, b.cloud, b.backend, cloud)
+			run(t, b.cloud, b.backend, cloud)
 		})
 	}
 }
