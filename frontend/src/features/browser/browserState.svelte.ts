@@ -8,6 +8,7 @@ import { messageOf } from "../../lib/messageOf";
 import type {
   AccountDTO,
   AccountEditDTO,
+  TempURLKeyEditDTO,
   CopyPlanDTO,
   CopyRequestDTO,
   DeletePreviewDTO,
@@ -1617,11 +1618,61 @@ export class BrowserState {
     const portrait = this.#portrait();
     const base = force ? "" : account.editableFingerprint;
     const result = await this.#api.updateAccountMetadata(account.scope, base, edit);
+    this.#adoptAccountAfter(result, scope, seq, bookmarkId, portrait);
+    await this.audit.loadRecent();
+    return result;
+  }
+
+  /** Adopt a verified account after-state while it still names this
+   * connection's generation and nothing newer has started since. */
+  #adoptAccountAfter(result: MutationResultDTO, scope: number, seq: number, bookmarkId: string, portrait: ListingScope | null) {
     if (this.#currentAccount(scope, seq) && result.outcome === "applied" && result.accountAfter
       && this.#readerScopeMatches(result.accountAfter.scope, bookmarkId, portrait)) {
       this.account = result.accountAfter;
       this.accountError = null;
     }
+  }
+
+  /** Adopt a verified container after-state while that container is still
+   * the open one and nothing newer has started since; its settings fact is
+   * folded into the loaded row when it belongs to this connection. */
+  #adoptContainerAfter(result: MutationResultDTO, scope: number, seq: number, name: string) {
+    if (this.#currentContainerDetail(scope, seq, name) && result.outcome === "applied" && result.containerAfter
+      && result.containerAfter.name === name) {
+      this.containerDetail = result.containerAfter;
+      if (this.#factCurrent(result.containerAfter)) this.#applySettings(name, result.containerAfter.settings);
+    }
+  }
+
+  /** Set or clear one TempURL key slot of the connected account (an empty
+   * container) or of the open container (§22, ADR 0101). The request carries
+   * the slot presence the view showed as its conflict basis, and the verified
+   * after-state is adopted the way the account and container saves adopt
+   * theirs. The secret passes through to the bridge and is kept nowhere. */
+  async updateTempUrlKey(edit: TempURLKeyEditDTO): Promise<MutationResultDTO> {
+    const bookmarkId = this.connectedBookmarkId;
+    if (!bookmarkId || this.connecting) {
+      throw new Error("no connected account — reconnect before changing a key");
+    }
+    const scope = this.#scopeRevision;
+    if (edit.container === "") {
+      const account = this.account;
+      if (!account) throw new Error("no connected account — reconnect before changing a key");
+      const seq = ++this.#accountSeq;
+      const portrait = this.#portrait();
+      const result = await this.#api.updateTempUrlKey(account.scope, edit);
+      this.#adoptAccountAfter(result, scope, seq, bookmarkId, portrait);
+      await this.audit.loadRecent();
+      return result;
+    }
+    const detail = this.containerDetail;
+    if (!detail || detail.name !== edit.container || this.containerName !== edit.container
+      || this.#containerDetailConnection !== this.#connectionRevision) {
+      throw new Error("no current container detail open — reload before changing a key");
+    }
+    const seq = ++this.#containerDetailSeq;
+    const result = await this.#api.updateTempUrlKey(detail.scope, edit);
+    this.#adoptContainerAfter(result, scope, seq, edit.container);
     await this.audit.loadRecent();
     return result;
   }
@@ -1671,11 +1722,7 @@ export class BrowserState {
     const seq = ++this.#containerDetailSeq;
     const base = force ? "" : detail.editableFingerprint;
     const result = await this.#api.updateContainer(detail.scope, name, base, edit);
-    if (this.#currentContainerDetail(scope, seq, name) && result.outcome === "applied" && result.containerAfter
-      && result.containerAfter.name === name) {
-      this.containerDetail = result.containerAfter;
-      if (this.#factCurrent(result.containerAfter)) this.#applySettings(name, result.containerAfter.settings);
-    }
+    this.#adoptContainerAfter(result, scope, seq, name);
     await this.audit.loadRecent();
     return result;
   }

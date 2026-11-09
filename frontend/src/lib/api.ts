@@ -25,6 +25,7 @@ import type {
 import type {
   AccountDTO,
   AccountEditDTO,
+  TempURLKeyEditDTO,
   AuditEventDTO,
   BookmarkDTO,
   CredentialStatusDTO,
@@ -64,6 +65,7 @@ import type {
 export type {
   AccountDTO,
   AccountEditDTO,
+  TempURLKeyEditDTO,
   PickedDirDTO,
   PickedFilesDTO,
   SelectionScopeDTO,
@@ -221,6 +223,9 @@ export interface Api {
     baseFingerprint: string,
     edit: AccountEditDTO,
   ): Promise<MutationResultDTO>;
+  /** Set or clear one TempURL key slot of the account (no container) or of
+   * a container; the secret crosses once and is recorded nowhere (ADR 0101). */
+  updateTempUrlKey(scope: ListingScope, edit: TempURLKeyEditDTO): Promise<MutationResultDTO>;
   createContainer(scope: ListingScope, create: ContainerCreateDTO): Promise<ContainerDetailDTO>;
   createMarker(scope: ListingScope, container: string, prefix: string): Promise<PrefixDetailDTO>;
   /** Deletes ONE directory marker the operator was shown, the prefix
@@ -317,6 +322,7 @@ export const liveApi: Api = {
     MutateService.UpdateContainer(scope, name, baseFingerprint, edit),
   updateAccountMetadata: (scope, baseFingerprint, edit) =>
     MutateService.UpdateAccountMetadata(scope, baseFingerprint, edit),
+  updateTempUrlKey: (scope, edit) => MutateService.UpdateTempURLKey(scope, edit),
   createContainer: (scope, create) => MutateService.CreateContainer(scope, create),
   createMarker: (scope, container, prefix) => MutateService.CreateMarker(scope, container, prefix),
   deleteMarker: (scope, container, prefix, contentFingerprint) =>

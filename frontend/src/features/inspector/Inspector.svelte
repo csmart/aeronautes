@@ -9,6 +9,7 @@ import { isLink } from "../browser/browserState.svelte";
   import ObjectEditPanel from "./ObjectEditPanel.svelte";
   import ContainerEditPanel from "./ContainerEditPanel.svelte";
   import AccountEditPanel from "./AccountEditPanel.svelte";
+  import TempUrlKeys from "./TempUrlKeys.svelte";
 
   let { browser }: { browser: BrowserState } = $props();
 
@@ -407,12 +408,11 @@ import { isLink } from "../browser/browserState.svelte";
         {/if}
         {@render kv("CORS", cd.cors ? "configured" : "—")}
         {@render kv("Static web", cd.staticWeb ? "configured" : "—")}
-        {@render kv(
-          "TempURL keys",
-          (cd.tempUrlKeySlots?.length ?? 0) > 0 ? `${cd.tempUrlKeySlots?.length} set` : "none",
-        )}
       {/if}
     </section>
+    {#if cd}
+      <TempUrlKeys {browser} container={cd.name} slots={cd.tempUrlKeySlots ?? []} />
+    {/if}
     <section class="card">
       <h3 class="card-title">Segment classification</h3>
       {#if (cd?.class ?? browser.container.class) === "confirmed"}
@@ -467,13 +467,8 @@ import { isLink } from "../browser/browserState.svelte";
       {#if browser.account.quotaBytes > 0}
         {@render kv("Quota", formatBytes(browser.account.quotaBytes))}
       {/if}
-      {@render kv(
-        "TempURL keys",
-        (browser.account.tempUrlKeySlots?.length ?? 0) > 0
-          ? `${browser.account.tempUrlKeySlots?.length} set`
-          : "none",
-      )}
     </section>
+    <TempUrlKeys {browser} slots={browser.account.tempUrlKeySlots ?? []} />
     {#if editingAccount}
       <AccountEditPanel {browser} account={browser.account} onDone={() => (editingAccount = false)} />
     {:else}

@@ -130,6 +130,8 @@ const softSurfaces: [file: string, selector: string, foreground?: string][] = [
   ["ContainerEditPanel.svelte", ".banner.mismatch"],
   ["AccountEditPanel.svelte", ".banner.conflict"],
   ["AccountEditPanel.svelte", ".banner.mismatch"],
+  ["TempUrlKeys.svelte", ".banner.conflict"],
+  ["TempUrlKeys.svelte", ".banner.mismatch"],
   ["Inspector.svelte", ".raw"],
   ["ManifestDeleteDialog.svelte", ".keeps.warn"],
   ["ManifestDeleteDialog.svelte", ".error"],
