@@ -108,7 +108,11 @@ func TestEveryBridgeActionIsClassified(t *testing.T) {
 		// writing in the v1 scope of metadata reading and writing: a
 		// bounded, verified, reversible edit, not a deferred capability.
 		"MutateService.UpdateAccountMetadata": true,
-		"SettingsService.Get":                 true, "SettingsService.Set": true,
+		// Setting or clearing a TempURL key slot is key management, which §22
+		// lists among the v1 priorities; it is kept with the metadata writes
+		// (ADR 0101).
+		"MutateService.UpdateTempURLKey": true,
+		"SettingsService.Get":            true, "SettingsService.Set": true,
 		"TransferService.CancelJob": true, "TransferService.PickDownloadDir": true,
 		"TransferService.PreflightDownload": true, "TransferService.StartDownload": true,
 	}
@@ -164,6 +168,7 @@ func TestKeptActionsAreNotRefused(t *testing.T) {
 		"MutateService.UpdateObjectMetadata",
 		"MutateService.UpdateContainer",
 		"MutateService.UpdateAccountMetadata",
+		"MutateService.UpdateTempURLKey",
 		"MutateService.CreateContainer",
 		"BrowseService.Containers",
 		"InspectorService.Object",

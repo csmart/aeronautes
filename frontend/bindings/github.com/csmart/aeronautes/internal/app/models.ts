@@ -1480,6 +1480,23 @@ export interface StoragePolicyDTO {
 }
 
 /**
+ * TempURLKeyEditDTO sets or clears one TempURL key slot of the connected
+ * account (Container "") or of one container (§22, ADR 0101). BaseSlots is
+ * the slot presence the inspector showed and the operation's conflict
+ * basis: a preflight that lists a different presence is a conflict, and a
+ * view that showed no slots sends none. Secret is sent once and recorded
+ * nowhere; Clear is the only way to ask for a deletion, an empty Secret
+ * without it is refused.
+ */
+export interface TempURLKeyEditDTO {
+    "container": string;
+    "slot": string;
+    "baseSlots": string[] | null;
+    "secret": string;
+    "clear": boolean;
+}
+
+/**
  * TransferSettingsDTO is the per-job override surface: exactly the
  * typed knobs §44.1 enumerates, nothing free-form. Zero values mean
  * "use the default" (rclone's own, or the pinned default noted in
