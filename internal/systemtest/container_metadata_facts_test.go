@@ -101,9 +101,10 @@ func testContainerMetadataFacts(t *testing.T, harness func(*testing.T) *Harness)
 				dto app.MutationResultDTO
 				err error
 			}
+			bound := h.ActiveScope(t.Context())
 			done := make(chan reply, 1)
 			go func() {
-				dto, err := h.Mutate.UpdateContainer(t.Context(), h.ActiveScope(t.Context()), container, fingerprint, edit)
+				dto, err := h.Mutate.UpdateContainer(t.Context(), bound, container, fingerprint, edit)
 				done <- reply{dto, err}
 			}()
 			if barrier != nil {
@@ -152,6 +153,12 @@ func testContainerMetadataFacts(t *testing.T, harness func(*testing.T) *Harness)
 			}
 			if got.err == nil && !reflect.DeepEqual(got.dto.TransIDs, observedIDs) {
 				t.Errorf("returned IDs = %v; observed %v", got.dto.TransIDs, observedIDs)
+			}
+			// The after-state carries the scope the write was bound to, even
+			// when the connection moved on while the POST was held, so a
+			// caller can edit again from the returned view (ADR 0059).
+			if got.dto.ContainerAfter != nil && got.dto.ContainerAfter.Scope != bound {
+				t.Errorf("after-state scope = %+v; want the bound scope %+v", got.dto.ContainerAfter.Scope, bound)
 			}
 			if posts != tc.posts {
 				t.Errorf("POST count = %d, want %d", posts, tc.posts)
