@@ -249,11 +249,7 @@ func (s *MutateService) UpdateContainer(ctx context.Context, scope ListingScopeD
 		TransIDs: result.TransIDs,
 	}
 	if result.After != nil {
-		after := s.containerDetailForBookmark(ctx, bookmarkID, result.After)
-		// The verified post-write state is a fresh observation of the
-		// container's settings under this connection (ADR 0071).
-		after.Settings = containerSettings(result.After, entry.generation, time.Now())
-		s.connections.settings.remember(bookmarkID, entry.generation, name, after.Settings)
+		after := s.containerAfterDTO(ctx, entry, bookmarkID, scope, result.After)
 		dto.ContainerAfter = &after
 	}
 	return dto, nil
@@ -359,6 +355,19 @@ func (s *MutateService) containerDetailForBookmark(ctx context.Context, bookmark
 		class = string(classes[d.Name])
 	}
 	return containerDetailDTO(d, class)
+}
+
+// containerAfterDTO is the verified post-write state of a container as a
+// caller may continue from it: classified for the captured account, carrying
+// the scope the write was bound to (ADR 0059), and with the fresh settings
+// fact remembered for the loaded row (ADR 0071). Without the scope, a caller
+// editing again from this view would be refused as a scope change.
+func (s *MutateService) containerAfterDTO(ctx context.Context, entry cachedSession, bookmarkID string, scope ListingScopeDTO, d *swiftcontrol.ContainerDetail) ContainerDetailDTO {
+	after := s.containerDetailForBookmark(ctx, bookmarkID, d)
+	after.Scope = scope
+	after.Settings = containerSettings(d, entry.generation, time.Now())
+	s.connections.settings.remember(bookmarkID, entry.generation, d.Name, after.Settings)
+	return after
 }
 
 // record appends the audit event under whichever connection is active
