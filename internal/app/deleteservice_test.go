@@ -41,6 +41,37 @@ func TestDeletePreviewCountsAndDisclosures(t *testing.T) {
 	if preview.Strategy != "per-name-verified" || preview.LaterBaselineRows != 1 || preview.RequestCost != 7 {
 		t.Errorf("strategy and cost = %+v", preview)
 	}
+	// ADR 0102 decision 3: nobody archives into this container, and the scan
+	// covered the account, so the dialog has nothing to add.
+	if len(preview.ArchiveOf) != 0 || preview.ArchiveUnestablished != "" {
+		t.Errorf("an unrelated container reads as an archive: %+v", preview)
+	}
+	// The container another container archives into is named as its owner's.
+	h.mock.AddContainer("owner", "standard")
+	h.mock.EnableVersionArchive("owner", "media", true)
+	archive, err := service.PreviewDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "media", Mode: ModeEmpty})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(archive.ArchiveOf) != 1 || archive.ArchiveOf[0] != "owner" || archive.ArchiveUnestablished != "" {
+		t.Errorf("the owner was not named: %+v", archive)
+	}
+	// An owner's name is stored data on a consent sentence: a line separator
+	// is replaced and a long name is cut, as the overwrite question does.
+	long := "owner-" + strings.Repeat("x", 120)
+	h.mock.AddContainer("own er", "standard")
+	h.mock.AddContainer(long, "standard")
+	h.mock.EnableVersionArchive("own er", "media", false)
+	h.mock.EnableVersionArchive(long, "media", false)
+	shown, err := service.PreviewDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "media", Mode: ModeEmpty})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Listing order: the separator's bytes sort after the ASCII names.
+	if len(shown.ArchiveOf) != 3 || shown.ArchiveOf[0] != "owner" || shown.ArchiveOf[1] != "owner-"+strings.Repeat("x", 74)+"…" ||
+		shown.ArchiveOf[2] != "own?er" {
+		t.Errorf("the owners were not sanitised and bounded for display: %q", shown.ArchiveOf)
+	}
 
 	// Wrong typed confirmation refuses before any job exists.
 	_, err = service.StartDelete(ctx, DeleteRequestDTO{

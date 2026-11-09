@@ -955,6 +955,8 @@ export function newFakeApi(): Api {
       laterBaselineRows: 2,
       requestCost: 86,
       strategy: "per-name-verified",
+      archiveOf: [],
+      archiveUnestablished: "",
     }),
     startDelete: async (req) => {
       if (req.confirm !== req.container) {

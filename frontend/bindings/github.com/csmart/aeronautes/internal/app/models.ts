@@ -624,6 +624,15 @@ export interface DeletePreviewDTO {
      * Strategy is what execution would select right now.
      */
     "strategy": string;
+
+    /**
+     * ArchiveOf names the containers whose versions or history location is
+     * this container, so the dialog can say whose earlier versions the
+     * deletion destroys (ADR 0102 decision 3). ArchiveUnestablished says why
+     * the scan could not answer for the whole account, empty when it did.
+     */
+    "archiveOf": string[] | null;
+    "archiveUnestablished": string;
 }
 
 /**
