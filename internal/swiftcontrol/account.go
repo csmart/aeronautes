@@ -45,15 +45,24 @@ type AccountPortrait struct {
 
 // AccountPortrait HEADs the account and builds its portrait.
 func (s *Session) AccountPortrait(ctx context.Context) (*AccountPortrait, error) {
+	p, _, err := s.accountHead(ctx)
+	return p, err
+}
+
+// accountHead is AccountPortrait with the canonical headers the portrait
+// was built from, for the one caller that must compare a value the
+// portrait withholds (UpdateTempURLKey).
+func (s *Session) accountHead(ctx context.Context) (*AccountPortrait, map[string]string, error) {
 	info, headers, err := s.conn.Account(ctx)
 	if err != nil {
-		return nil, WithTransID(Normalize(err), headers)
+		return nil, nil, WithTransID(Normalize(err), headers)
 	}
-	p := buildAccountPortrait(canonicalHeaders(headers), time.Now().UTC())
+	canonical := canonicalHeaders(headers)
+	p := buildAccountPortrait(canonical, time.Now().UTC())
 	p.Containers = info.Containers
 	p.Objects = info.Objects
 	p.BytesUsed = info.BytesUsed
-	return p, nil
+	return p, canonical, nil
 }
 
 const policyHeaderPrefix = "X-Account-Storage-Policy-"
