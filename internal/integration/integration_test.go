@@ -1818,18 +1818,20 @@ func TestFeatureSurfacesRealSwift(t *testing.T) {
 	if !d.CORS || !d.StaticWeb {
 		t.Fatalf("CORS=%v StaticWeb=%v, want both configured", d.CORS, d.StaticWeb)
 	}
-	// The special families never leak into plain user metadata, and no
-	// secret value ever appears anywhere in the detail (K-SEC-002). Static
-	// web keys are plain editable metadata since ADR 0090, so the one seeded
-	// here must be in the set the editor shows.
+	// The TempURL slots never leak into plain user metadata, and no secret
+	// value ever appears anywhere in the detail (K-SEC-002). Static web keys
+	// are plain editable metadata since ADR 0090 and the CORS keys since
+	// ADR 0101, so the ones seeded here must be in the set the editor shows.
 	for k := range d.Meta {
-		if strings.Contains(strings.ToLower(k), "temp-url") ||
-			strings.Contains(strings.ToLower(k), "access-control") {
+		if strings.Contains(strings.ToLower(k), "temp-url") {
 			t.Fatalf("special-family key %q leaked into plain metadata", k)
 		}
 	}
 	if d.Meta["Web-Index"] != "index.html" {
 		t.Fatalf("Meta[Web-Index] = %q, want the static web key in the editable set", d.Meta["Web-Index"])
+	}
+	if d.Meta["Access-Control-Allow-Origin"] != "https://ops.example" {
+		t.Fatalf("Meta[Access-Control-Allow-Origin] = %q, want the CORS key in the editable set", d.Meta["Access-Control-Allow-Origin"])
 	}
 	for _, raw := range d.RawHeaders {
 		if strings.Contains(raw, "smoke-secret") {

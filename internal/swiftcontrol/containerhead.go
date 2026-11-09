@@ -48,8 +48,10 @@ type ContainerDetail struct {
 	// QuotaBytes/QuotaCount are 0 when unset.
 	QuotaBytes int64
 	QuotaCount int64
-	// CORS reports configured-feature presence (§60 Phase 2); its values
-	// stay in the raw view.
+	// CORS reports that one of the three Access-Control-* keys the proxy
+	// reads is set. The keys themselves are ordinary editable metadata in
+	// Meta (ADR 0101); the flag feeds the row badge and the inspector's
+	// summary line, as StaticWeb does.
 	CORS bool
 	// StaticWeb reports that a Web-* key is set. The keys themselves are
 	// ordinary editable metadata in Meta (ADR 0090); the flag feeds the
@@ -59,7 +61,8 @@ type ContainerDetail struct {
 	// (§22, K-SEC-006).
 	TempURLKeySlots []string
 	// Meta is the user metadata minus the special families (quota,
-	// TempURL, CORS); the static web keys are part of it (ADR 0090).
+	// TempURL); the static web and CORS keys are part of it (ADR 0090,
+	// ADR 0101).
 	Meta map[string]string
 	// RawHeaders is the full header set with secret values redacted.
 	RawHeaders map[string]string
@@ -103,11 +106,6 @@ func buildContainerDetail(headers map[string]string, now time.Time) *ContainerDe
 			case strings.EqualFold(name, "Quota-Count"):
 				d.QuotaCount, _ = strconv.ParseInt(v, 10, 64)
 				editable[k] = v
-			case hasFoldedPrefix(name, "Access-Control-"):
-				// CORS configuration lives in container meta; presence is
-				// what Phase 2 shows, the values stay in the raw view.
-				d.CORS = true
-				editable[k] = v
 			case hasFoldedPrefix(name, "Web-"):
 				// Static web is configured by plain metadata keys an
 				// operator edits like any other (ADR 0090).
@@ -145,6 +143,13 @@ func buildContainerDetail(headers map[string]string, now time.Time) *ContainerDe
 		d.Versioning = ContainerVersioning{Mode: VersioningHistoryLocation, Archive: headers["X-History-Location"]}
 	case headers["X-Versions-Location"] != "":
 		d.Versioning = ContainerVersioning{Mode: VersioningVersionsLocation, Archive: headers["X-Versions-Location"]}
+	}
+	// CORS is configured when any of the three keys the proxy reads is set;
+	// another Access-Control-* key is a plain row the proxy ignores.
+	for _, key := range []string{"Access-Control-Allow-Origin", "Access-Control-Max-Age", "Access-Control-Expose-Headers"} {
+		if d.Meta[key] != "" {
+			d.CORS = true
+		}
 	}
 	d.TransID = transIDOfHeaders(headers)
 	sort.Strings(d.TempURLKeySlots)

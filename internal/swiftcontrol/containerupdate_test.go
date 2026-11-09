@@ -34,10 +34,13 @@ func TestUpdateContainerAppliesDelta(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A working copy built from the detail carries the static web key
-	// along (ADR 0090); this edit leaves it as it was.
+	// A working copy built from the detail carries the static web and CORS
+	// keys along (ADR 0090, ADR 0101); this edit leaves them as they were.
 	result, err := s.UpdateContainer(ctx, "media", before.EditableFingerprint, ContainerEdit{
-		Meta:       map[string]string{"Keep": "new", "Added": "yes", "Web-Index": "index.html"},
+		Meta: map[string]string{
+			"Keep": "new", "Added": "yes", "Web-Index": "index.html",
+			"Access-Control-Allow-Origin": "https://app.example",
+		},
 		WriteACL:   "acct:writer",
 		Versioning: ContainerVersioning{Mode: VersioningVersionsLocation, Archive: "media-versions"},
 		QuotaBytes: 1000,
@@ -65,9 +68,9 @@ func TestUpdateContainerAppliesDelta(t *testing.T) {
 	if after.QuotaBytes != 1000 {
 		t.Errorf("QuotaBytes = %d", after.QuotaBytes)
 	}
-	// The untouchable families survived the delta.
-	if !after.CORS {
-		t.Error("CORS configuration was destroyed by an unrelated edit")
+	// The carried CORS row and the untouchable slot survived the delta.
+	if !after.CORS || after.Meta["Access-Control-Allow-Origin"] != "https://app.example" {
+		t.Errorf("CORS after a copy that kept it: CORS=%v Meta=%v", after.CORS, after.Meta)
 	}
 	if len(after.TempURLKeySlots) != 1 {
 		t.Errorf("TempURL slots = %v, must be untouched", after.TempURLKeySlots)
@@ -85,7 +88,8 @@ func TestUpdateContainerAppliesDelta(t *testing.T) {
 	}
 
 	// Second edit: swap versioning mode, clear the quota, and drop the static
-	// web key from the working copy, which removes it like any other key.
+	// web and CORS keys from the working copy, which removes them like any
+	// other key; the hidden slot is still not the edit's to remove.
 	result2, err := s.UpdateContainer(ctx, "media", after.EditableFingerprint, ContainerEdit{
 		Meta:       map[string]string{"Keep": "new", "Added": "yes"},
 		WriteACL:   "acct:writer",
@@ -106,8 +110,11 @@ func TestUpdateContainerAppliesDelta(t *testing.T) {
 	if result2.After.StaticWeb {
 		t.Errorf("static web still configured after the working copy dropped it: %v", result2.After.Meta)
 	}
-	if !result2.After.CORS || len(result2.After.TempURLKeySlots) != 1 {
-		t.Error("CORS or TempURL configuration was destroyed by the second edit")
+	if result2.After.CORS || result2.After.Meta["Access-Control-Allow-Origin"] != "" {
+		t.Errorf("CORS still configured after the working copy dropped it: %v", result2.After.Meta)
+	}
+	if len(result2.After.TempURLKeySlots) != 1 {
+		t.Error("the TempURL slot was removed by an edit that cannot see it")
 	}
 }
 

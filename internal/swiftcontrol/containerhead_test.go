@@ -83,7 +83,12 @@ func TestContainerDetailFull(t *testing.T) {
 	if d.Meta["Web-Index"] != "index.html" {
 		t.Errorf("Meta[Web-Index] = %q, want the static web key in the editable set", d.Meta["Web-Index"])
 	}
-	for _, special := range []string{"Quota-Bytes", "Quota-Count", "Temp-Url-Key", "Access-Control-Allow-Origin"} {
+	// The CORS keys are editable metadata too (ADR 0101), for the same
+	// reason: the working copy must carry them or a save would erase them.
+	if d.Meta["Access-Control-Allow-Origin"] != "https://app.example" {
+		t.Errorf("Meta[Access-Control-Allow-Origin] = %q, want the CORS key in the editable set", d.Meta["Access-Control-Allow-Origin"])
+	}
+	for _, special := range []string{"Quota-Bytes", "Quota-Count", "Temp-Url-Key"} {
 		if _, leaked := d.Meta[special]; leaked {
 			t.Errorf("special key %s leaked into plain Meta", special)
 		}
