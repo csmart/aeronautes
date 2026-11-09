@@ -9,7 +9,17 @@
   let {
     base,
     rows = $bindable(),
-  }: { base: { [key: string]: string | undefined }; rows: MetaRow[] } = $props();
+    onRawEdit = undefined,
+  }: {
+    base: { [key: string]: string | undefined };
+    rows: MetaRow[];
+    /** Called with the row's index when the operator edits or removes that
+     * row here: after the binding has updated an edited row, and before a
+     * removed row goes. A parent with a structured surface over a row thus
+     * learns of a raw edit itself rather than inferring it from the value
+     * (ADR 0101 decision 7). */
+    onRawEdit?: (index: number) => void;
+  } = $props();
 
   const current = $derived(metaFromRows(rows));
   const diff = $derived(diffMeta(base, current.meta));
@@ -28,6 +38,7 @@
   }
 
   function removeRow(index: number) {
+    onRawEdit?.(index);
     rows = rows.filter((_, i) => i !== index);
   }
 </script>
@@ -35,8 +46,8 @@
 <div class="editor">
   {#each rows as row, i (i)}
     <div class="row">
-      <input class="key type-mono" bind:value={row.key} placeholder="key" aria-label="metadata key" />
-      <input class="val" bind:value={row.value} placeholder="value" aria-label="metadata value" />
+      <input class="key type-mono" bind:value={row.key} placeholder="key" aria-label="metadata key" oninput={() => onRawEdit?.(i)} />
+      <input class="val" bind:value={row.value} placeholder="value" aria-label="metadata value" oninput={() => onRawEdit?.(i)} />
       <button class="remove" title="Remove key" onclick={() => removeRow(i)}>×</button>
     </div>
   {/each}
