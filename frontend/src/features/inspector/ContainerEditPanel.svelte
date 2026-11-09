@@ -1,6 +1,7 @@
 <!-- Container configuration edit mode (§65.2 item 7): common settings as
-  tick boxes over the same values (ADR 0090), metadata working copy, ACL
-  editors, quotas, and versioning per the pin — the mode select is
+  tick boxes over the same values (ADR 0090), the CORS section over its
+  three metadata rows (ADR 0101), metadata working copy, ACL editors,
+  quotas, and versioning per the pin — the mode select is
   capability-gated: modes the cluster is KNOWN to reject are disabled; an
   unknown /info leaves everything enabled with a note. -->
 <script lang="ts">
@@ -18,6 +19,7 @@
     withWorldListing,
     withWorldRead,
   } from "../../lib/containerPresets";
+  import { corsFields, corsKeys, corsProblem, corsValue, normaliseCorsValue, withCorsValue, type CorsField } from "../../lib/corsRows";
 
   let {
     browser,
@@ -79,6 +81,25 @@
   const staticWeb = $derived(hasStaticWeb(rows));
   let publicAck = $state(false);
 
+  // A CORS field reads its row and writes only that row. The shape check at
+  // save covers a field only while this section owns its row: a structured
+  // edit takes ownership, and a raw edit of that row in the metadata editor,
+  // reported by the editor itself, hands it back. A row the operator never
+  // touched here, or edited raw afterwards, is submitted verbatim whatever
+  // it holds and never blocks an unrelated save, so the raw rows stay the
+  // escape path (ADR 0101 decision 7).
+  const corsOwned: Record<CorsField, boolean> = $state({ allowOrigin: false, maxAge: false, exposeHeaders: false });
+  function corsInput(field: CorsField, value: string) {
+    corsOwned[field] = true;
+    rows = withCorsValue(rows, field, value);
+  }
+  function rawEdit(index: number) {
+    const key = rows[index]?.key.toLowerCase();
+    for (const field of corsFields) {
+      if (corsKeys[field].toLowerCase() === key) corsOwned[field] = false;
+    }
+  }
+
   // Modern object_versioning has no safe editable representation in v1
   // (the header set differs from the legacy location modes); a
   // container using it is read-only here rather than silently rewritten
@@ -90,6 +111,16 @@
     if (modernVersioning) {
       error = "This container uses modern object versioning, which v1 cannot edit safely — manage it with swift/CLI for now.";
       return;
+    }
+    for (const field of corsFields) {
+      if (!corsOwned[field]) continue;
+      const value = normaliseCorsValue(corsValue(rows, field));
+      const problem = corsProblem(field, value);
+      if (problem !== null) {
+        error = problem;
+        return;
+      }
+      rows = withCorsValue(rows, field, value);
     }
     const { meta, duplicate } = metaFromRows(rows);
     if (duplicate !== null) {
@@ -165,10 +196,36 @@
         <p class="note">Browsers reach a website anonymously: it needs "Anyone can read objects" too.</p>
       {/if}
     </div>
+
+    <h4 class="sub">Cross-origin requests (CORS)</h4>
+    <div class="cors grid">
+      <label class="field">
+        <span>Allowed origins <span class="hint type-mono">{corsKeys.allowOrigin}</span></span>
+        <input
+          class="type-mono"
+          value={corsValue(rows, "allowOrigin")}
+          placeholder="* or https://app.example"
+          oninput={(e) => corsInput("allowOrigin", e.currentTarget.value)}
+        />
+      </label>
+      <label class="field">
+        <span>Preflight cache, seconds <span class="hint type-mono">{corsKeys.maxAge}</span></span>
+        <input class="type-mono" value={corsValue(rows, "maxAge")} placeholder="600" oninput={(e) => corsInput("maxAge", e.currentTarget.value)} />
+      </label>
+      <label class="field wide">
+        <span>Exposed response headers <span class="hint type-mono">{corsKeys.exposeHeaders}</span></span>
+        <input
+          class="type-mono"
+          value={corsValue(rows, "exposeHeaders")}
+          placeholder="Etag X-Timestamp"
+          oninput={(e) => corsInput("exposeHeaders", e.currentTarget.value)}
+        />
+      </label>
+    </div>
     <hr class="rule" />
 
     <h4 class="sub">User metadata</h4>
-    <MetadataEditor base={target.detail.meta ?? {}} bind:rows />
+    <MetadataEditor base={target.detail.meta ?? {}} bind:rows onRawEdit={rawEdit} />
 
     <AclEditor label="Read ACL" bind:value={readAcl} />
     <AclEditor label="Write ACL" bind:value={writeAcl} />
@@ -317,6 +374,10 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: var(--space-2);
+  }
+
+  .wide {
+    grid-column: 1 / -1;
   }
 
   .field {

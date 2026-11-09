@@ -26,6 +26,7 @@ import {
 } from "../../lib/fixtures";
 import { delimiterView, type FixtureObject } from "../../lib/listing";
 import { isStaticWebKey } from "../../lib/containerPresets";
+import { corsKeys } from "../../lib/corsRows";
 
 interface ContainerState {
   meta: Record<string, string>;
@@ -263,9 +264,9 @@ export function newFakeApi(): Api {
       versioningArchive: s.versioningArchive,
       quotaBytes: s.quotaBytes,
       quotaCount: s.quotaCount,
-      cors: false,
+      cors: Object.values(corsKeys).some((key) => (s.meta[key] ?? "") !== ""),
       staticWeb: Object.keys(s.meta).some(isStaticWebKey),
-      tempUrlKeySlots: [],
+      tempUrlKeySlots: [...slotsOf(name).keys()].sort(),
       meta: { ...s.meta },
       rawHeaders: { "X-Trans-Id": "txfake" },
       transId: "txfake",

@@ -65,8 +65,81 @@ async function show(readAcl = "", meta: Record<string, string> = { Keep: "untouc
     if (!request) throw new Error("No container save request");
     return request;
   };
-  return { root, save, ticks, readAclInput, rows, payload };
+  // The three CORS fields, in the order the panel shows them: origins,
+  // preflight cache, exposed headers.
+  const corsInputs = () => [...root.querySelectorAll<HTMLInputElement>(".cors input")];
+  return { root, save, ticks, readAclInput, rows, payload, corsInputs };
 }
+
+describe("CORS section (ADR 0101)", () => {
+  it("typing an origin adds its row, and the save carries the row normalised", async () => {
+    const f = await show();
+    edit(f.corsInputs()[0], "  https://app.example   * ");
+    expect(f.rows()).toContainEqual({ key: "Access-Control-Allow-Origin", value: "  https://app.example   * " });
+    button(f.root, "Save").click();
+    await settle();
+    expect(f.payload().meta).toEqual({ Keep: "untouched", "Access-Control-Allow-Origin": "https://app.example *" });
+  });
+
+  it("a malformed value in a changed field blocks the save and names the problem", async () => {
+    const f = await show();
+    edit(f.corsInputs()[1], "soon");
+    button(f.root, "Save").click();
+    await settle();
+    expect(f.save).not.toHaveBeenCalled();
+    expect(f.root.textContent).toContain("whole number of seconds");
+  });
+
+  it("an untouched row the section would refuse is shown and submitted verbatim", async () => {
+    const f = await show("", { Keep: "untouched", "Access-Control-Max-Age": "soon" });
+    expect(f.corsInputs()[1].value).toBe("soon");
+    edit(f.root.querySelector<HTMLInputElement>('input[type="number"]')!, "10");
+    button(f.root, "Save").click();
+    await settle();
+    expect(f.payload()).toMatchObject({ quotaBytes: 10, meta: { Keep: "untouched", "Access-Control-Max-Age": "soon" } });
+  });
+
+  it("a raw edit after a structured one supersedes it: no check, no normalisation", async () => {
+    const f = await show();
+    edit(f.corsInputs()[1], "700");
+    edit(f.corsInputs()[0], "https://app.example");
+    const rawRow = (key: string) =>
+      [...f.root.querySelectorAll<HTMLDivElement>(".editor .row")].find((row) => row.querySelector<HTMLInputElement>(".key")!.value === key)!;
+    edit(rawRow("Access-Control-Max-Age").querySelector<HTMLInputElement>(".val")!, "soon");
+    edit(rawRow("Access-Control-Allow-Origin").querySelector<HTMLInputElement>(".val")!, "https://a.example   https://b.example");
+    button(f.root, "Save").click();
+    await settle();
+    expect(f.payload().meta).toEqual({
+      Keep: "untouched",
+      "Access-Control-Max-Age": "soon",
+      "Access-Control-Allow-Origin": "https://a.example   https://b.example",
+    });
+  });
+
+  it("a raw edit hands the row back even when its value returns to what the field wrote", async () => {
+    const f = await show();
+    edit(f.corsInputs()[1], "soon");
+    const raw = () =>
+      [...f.root.querySelectorAll<HTMLDivElement>(".editor .row")]
+        .find((row) => row.querySelector<HTMLInputElement>(".key")!.value === "Access-Control-Max-Age")!
+        .querySelector<HTMLInputElement>(".val")!;
+    edit(raw(), "later");
+    edit(raw(), "soon");
+    button(f.root, "Save").click();
+    await settle();
+    expect(f.payload().meta).toEqual({ Keep: "untouched", "Access-Control-Max-Age": "soon" });
+  });
+
+  it("emptying a field removes its row", async () => {
+    const f = await show("", { Keep: "untouched", "Access-Control-Allow-Origin": "*" });
+    expect(f.corsInputs()[0].value).toBe("*");
+    edit(f.corsInputs()[0], "");
+    expect(f.rows()).toEqual([{ key: "Keep", value: "untouched" }]);
+    button(f.root, "Save").click();
+    await settle();
+    expect(f.payload().meta).toEqual({ Keep: "untouched" });
+  });
+});
 
 describe("container presets", () => {
   it("ticking world read writes the exact ACL entry and still requires the acknowledgement", async () => {
