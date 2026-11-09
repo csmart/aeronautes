@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"strings"
 	"sync"
@@ -23,6 +24,9 @@ type overwriteRecorder struct {
 	replaced  map[string]ObservedPredecessor
 	refused   map[string][2]ShownObject
 	executed  map[string]Observation
+	// versioning answers ADR 0102 decision 2's question; nil means the
+	// container still reports what the question was composed from.
+	versioning func(context.Context) (string, error)
 }
 
 func newOverwriteRecorder() *overwriteRecorder {
@@ -62,6 +66,12 @@ func (r *overwriteRecorder) recorder() *Recorder {
 		Refused: func(name string, acknowledged, found ShownObject) error {
 			r.refused[name] = [2]ShownObject{acknowledged, found}
 			return nil
+		},
+		VersioningUnchanged: func(ctx context.Context, _ string) (string, error) {
+			if r.versioning != nil {
+				return r.versioning(ctx)
+			}
+			return "", nil
 		},
 	}
 }
@@ -526,6 +536,127 @@ func TestAcknowledgedSymlinkOverwriteRefusesChanged(t *testing.T) {
 	}
 	if _, ok := rec.replaced[name]; ok {
 		t.Error("a refused symlink overwrite recorded a replacement")
+	}
+}
+
+// ADR 0102 decision 2: a destination container that no longer reports the
+// versioning statement the replacement was authorised under refuses the
+// replacement at the fixed point on every publishing route, with the live
+// object untouched and no replacement recorded. No identity refusal is
+// recorded either: the identities still match, and the two statements are the
+// app's hook to record.
+func TestAcknowledgedOverwriteRefusesAChangedVersioningStatement(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		route plan.Route
+		link  bool
+	}{{"staged", plan.RouteRclone, false}, {"native", plan.RouteNative, false}, {"symlink", plan.RouteNative, true}} {
+		t.Run(c.name, func(t *testing.T) {
+			w := newWorld(t)
+			name := "doc"
+			if c.name == "native" {
+				name = "line\nname" // an unsafe name is what routes a plain object natively
+			}
+			source := []byte("NEW SOURCE CONTENT")
+			if c.link {
+				seed(w.srcMock, "media", "target", []byte("target bytes"), nil)
+				w.srcMock.PutObject("media", name, swifttest.Object{
+					ContentType: "application/octet-stream", SymlinkTarget: "media/target",
+				})
+			} else {
+				seed(w.srcMock, "media", name, source, nil)
+			}
+			seed(w.dstMock, "backup", name, []byte("OLD"), nil)
+
+			rec := newOverwriteRecorder()
+			rec.acknowledge(t, w, name)
+			// The hook sees the context the run was given: the marker proves
+			// forwarding, not that a cancellation reaches the read, because
+			// context.WithoutCancel keeps values.
+			type liveKey struct{}
+			rec.versioning = func(ctx context.Context) (string, error) {
+				if ctx.Value(liveKey{}) == nil {
+					return "", errors.New("the hook was asked with a context that is not the run's")
+				}
+				return "the container now reports versions_location; the question said none", nil
+			}
+
+			e := recordingExecutor(t, w, &fakeEngine{w: w, interruptAfter: -1}, rec.recorder())
+			report, err := e.Run(context.WithValue(context.Background(), liveKey{}, true), []plan.Item{
+				{Name: name, Verdict: plan.VerdictChanged, Route: c.route, SourceBytes: int64(len(source))},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if report.OverwritesRefused != 1 || report.Copied != 0 || report.Overwrites != 0 || len(report.Failures) != 0 {
+				t.Fatalf("a changed versioning statement was not refused at the fixed point: %+v", report)
+			}
+			if d := headDst(t, w, name); d.ContentLength != 3 || d.ETag != etagOf([]byte("OLD")) {
+				t.Errorf("the refused replacement touched the live object: len=%d etag=%s", d.ContentLength, d.ETag)
+			}
+			if _, ok := rec.replaced[name]; ok {
+				t.Error("a refused replacement recorded a predecessor")
+			}
+			if _, ok := rec.refused[name]; ok {
+				t.Error("a statement refusal was recorded as an identity refusal")
+			}
+		})
+	}
+}
+
+// A refusal on versioning that could not be recorded still refuses the name,
+// and the run stops, as it does when an identity refusal has nowhere to go.
+func TestAcknowledgedOverwriteStopsWhenAVersioningRefusalIsUnrecorded(t *testing.T) {
+	w := newWorld(t)
+	source := []byte("NEW SOURCE CONTENT")
+	seed(w.srcMock, "media", "doc", source, nil)
+	seed(w.dstMock, "backup", "doc", []byte("OLD"), nil)
+
+	rec := newOverwriteRecorder()
+	rec.acknowledge(t, w, "doc")
+	rec.versioning = func(context.Context) (string, error) { return "", errors.New("the audit store is unavailable") }
+
+	e := recordingExecutor(t, w, &fakeEngine{w: w, interruptAfter: -1}, rec.recorder())
+	report, err := e.Run(context.Background(), []plan.Item{
+		{Name: "doc", Verdict: plan.VerdictChanged, Route: plan.RouteRclone, SourceBytes: int64(len(source))},
+	})
+	if err == nil || !strings.Contains(err.Error(), "could not be recorded") {
+		t.Fatalf("an unrecorded refusal did not stop the run: %v", err)
+	}
+	if report.OverwritesRefused != 1 || report.Copied != 0 {
+		t.Fatalf("the name was not refused: %+v", report)
+	}
+	if d := headDst(t, w, "doc"); d.ContentLength != 3 {
+		t.Errorf("the refused replacement touched the live object: len=%d", d.ContentLength)
+	}
+}
+
+// A run with nobody to ask whether the observation still holds refuses the
+// replacement rather than publishing under versioning nobody re-read, the
+// direction every other missing overwrite hook takes.
+func TestAcknowledgedOverwriteRefusesWithoutVersioningHook(t *testing.T) {
+	w := newWorld(t)
+	source := []byte("NEW SOURCE CONTENT")
+	seed(w.srcMock, "media", "doc", source, nil)
+	seed(w.dstMock, "backup", "doc", []byte("OLD"), nil)
+
+	rec := newOverwriteRecorder()
+	rec.acknowledge(t, w, "doc")
+	recorder := rec.recorder()
+	recorder.VersioningUnchanged = nil
+
+	e := recordingExecutor(t, w, &fakeEngine{w: w, interruptAfter: -1}, recorder)
+	report, err := e.Run(context.Background(), []plan.Item{
+		{Name: "doc", Verdict: plan.VerdictChanged, Route: plan.RouteRclone, SourceBytes: int64(len(source))},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.OverwritesRefused != 1 || report.Copied != 0 || len(report.Failures) != 0 {
+		t.Fatalf("a replacement with nobody to ask about versioning was not refused: %+v", report)
+	}
+	if d := headDst(t, w, "doc"); d.ContentLength != 3 {
+		t.Errorf("the refused replacement touched the live object: len=%d", d.ContentLength)
 	}
 }
 

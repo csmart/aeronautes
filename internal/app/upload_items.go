@@ -324,6 +324,12 @@ func (s *TransferService) uploadItemRecorder(ctx context.Context, jobID string, 
 				Result: audit.ResultConflict,
 			})
 		},
+		VersioningUnchanged: func(live context.Context, item local.UploadItem) (string, error) {
+			// The read on the route's live context, the record on this
+			// recorder's cancellation-free one, like every record here.
+			return s.versioningUnchanged(live, ctx, req.BookmarkID, req.Container, answered.Versioning,
+				"object.upload.refused", req.Container+"/"+item.Name)
+		},
 		Reclaiming: func(item local.UploadItem) (local.ReclaimPlan, error) {
 			return s.reclaimPlan(ctx, req, jobID, item, answered)
 		},

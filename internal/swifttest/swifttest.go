@@ -129,6 +129,10 @@ type Server struct {
 	// GET requests answer 500. Used to reproduce a verify-read failure
 	// after a metadata POST (ADR 0058).
 	objectHEADFailRemaining int
+	// containerHEADFailRemaining, when > 0, makes that many container HEAD
+	// requests answer 500: the fixture for a versioning re-read that fails
+	// at a replacement's fixed point (ADR 0102 decision 2).
+	containerHEADFailRemaining int
 	// objectHEADFailSkip is how many object HEADs still pass untouched
 	// before objectHEADFailRemaining starts to apply. A fixture that must
 	// let one read through and fail the next cannot say so with a plain
@@ -565,6 +569,12 @@ func (s *Server) handleContainer(w http.ResponseWriter, r *http.Request, name st
 	s.mu.Lock()
 	if r.Method == http.MethodGet && s.listingFailRemaining > 0 {
 		s.listingFailRemaining--
+		s.mu.Unlock()
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	if r.Method == http.MethodHead && s.containerHEADFailRemaining > 0 {
+		s.containerHEADFailRemaining--
 		s.mu.Unlock()
 		w.WriteHeader(http.StatusInternalServerError)
 		return
@@ -1219,6 +1229,15 @@ func (s *Server) writeObjectListing(w http.ResponseWriter, r *http.Request, cont
 func (s *Server) FailNextListings(n int) {
 	s.mu.Lock()
 	s.listingFailRemaining = n
+	s.mu.Unlock()
+}
+
+// FailNextContainerHEADs makes the next n container HEAD requests answer
+// 500, so a route's re-read of a container's versioning fails while every
+// other request proceeds.
+func (s *Server) FailNextContainerHEADs(n int) {
+	s.mu.Lock()
+	s.containerHEADFailRemaining = n
 	s.mu.Unlock()
 }
 

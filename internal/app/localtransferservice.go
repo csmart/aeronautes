@@ -483,7 +483,11 @@ func (s *TransferService) confirmOverwrite(ctx context.Context, req UploadReques
 	// The mode is read before the question is asked, so a container this
 	// build cannot reason about is refused without the operator being
 	// asked to authorise something it cannot describe.
-	versioning, err := s.observedVersioning(ctx, req.BookmarkID, req.Container)
+	observed, err := s.readVersioning(ctx, req.BookmarkID, req.Container)
+	if err != nil {
+		return answeredFragments{}, err
+	}
+	versioning, err := versioningStatement(observed)
 	if err != nil {
 		return answeredFragments{}, err
 	}
@@ -513,7 +517,66 @@ func (s *TransferService) confirmOverwrite(ctx context.Context, req UploadReques
 	if entry.generation != scope.generation {
 		return answeredFragments{}, errors.New("the account's credentials changed while you were answering; start again")
 	}
-	return answeredFragments{Removal: authorises, Said: question.Fragments, Shown: plan.Shown}, nil
+	return answeredFragments{Removal: authorises, Said: question.Fragments, Shown: plan.Shown, Versioning: observed}, nil
+}
+
+// versioningUnchanged is ADR 0102 decision 2's question at the fixed point:
+// does the destination container still report the versioning the question
+// was composed from? The answer is a fresh read, never the observation
+// remembered, and the two are compared as values: the mode and the archive
+// as read, never the sentence displayed, which bounds the archive name so two
+// archives can read alike. A different observation, or none, refuses the
+// replacement, and both observations go to the trail for the name, worded as
+// the question words them, because the run's own failure list keeps only its
+// first message.
+//
+// It returns the recorded refusal, or "" when the observation still holds;
+// an error means the refusal could not be recorded, which the route turns
+// into a stop. The read takes the route's live context so a cancelled job
+// stops it; the record takes the recorder's own context so a cancellation
+// cannot lose it.
+func (s *TransferService) versioningUnchanged(live, record context.Context, bookmarkID, container string,
+	authorised swiftcontrol.ContainerVersioning, operation, resource string) (string, error) {
+	now, err := s.readVersioning(live, bookmarkID, container)
+	if err == nil && now == authorised {
+		return "", nil
+	}
+	compose := func(withArchive bool) string {
+		found := "the container's versioning could not be read again before publishing"
+		if err == nil {
+			found = "the container now reports " + describeVersioning(now, withArchive)
+		}
+		return "replacement refused at the last observation: the question said " +
+			describeVersioning(authorised, withArchive) + ", and " + found
+	}
+	summary := compose(true)
+	if audit.SummaryRefusal(summary) != "" {
+		// A legitimate archive name can carry a word the audit store refuses;
+		// the record keeps both modes and withholds the names rather than
+		// losing the event to ordinary input.
+		summary = compose(false) + "; an archive name is withheld from this record"
+	}
+	if err := s.runner.audit.Append(record, audit.Event{
+		BookmarkID: bookmarkID, Operation: operation, Resource: resource,
+		Summary: summary, Result: audit.ResultConflict,
+	}); err != nil {
+		return "", fmt.Errorf("%s; the refusal could not be recorded: %w", summary, err)
+	}
+	return summary, nil
+}
+
+// describeVersioning words an observation for a record, including a mode the
+// question would have refused to describe; withArchive false keeps the
+// archive name out of it.
+func describeVersioning(observed swiftcontrol.ContainerVersioning, withArchive bool) string {
+	if !withArchive && observed.Archive != "" {
+		return "the container reports " + string(observed.Mode) + ", archiving into a container this record does not name"
+	}
+	statement, err := versioningStatement(observed)
+	if err != nil {
+		return "a mode this build does not manage (" + titleText(string(observed.Mode), 40) + ")"
+	}
+	return statement
 }
 
 // answeredFragments is what one answered confirmation said about the
@@ -530,6 +593,10 @@ type answeredFragments struct {
 	// absence a refusal to overwrite rather than a licence — a refusal the
 	// comparison slice applies, not this one.
 	Shown map[string]local.ShownObject
+	// Versioning is the observation the question was composed from, the mode
+	// and the archive as read, compared against a fresh read at the fixed
+	// point (ADR 0102 decision 2).
+	Versioning swiftcontrol.ContainerVersioning
 }
 
 // overwriteQuestion is the statement the operator is asked to authorise.
@@ -696,16 +763,35 @@ func plural(n int, one, many string) string {
 // container whose mode could not be read. Not knowing and knowing there is
 // none are different answers, and only one of them may carry a write.
 func (s *TransferService) observedVersioning(ctx context.Context, bookmarkID, container string) (string, error) {
+	observed, err := s.readVersioning(ctx, bookmarkID, container)
+	if err != nil {
+		return "", err
+	}
+	return versioningStatement(observed)
+}
+
+// readVersioning is the exact observation the question is composed from and
+// the fixed point compares against (ADR 0102 decision 2): the mode and the
+// archive as the container reports them, before any wording.
+func (s *TransferService) readVersioning(ctx context.Context, bookmarkID, container string) (swiftcontrol.ContainerVersioning, error) {
 	unreadable := errors.New("the destination container's versioning could not be read, so an overwrite is refused")
 	session, err := s.connections.SessionFor(ctx, bookmarkID)
 	if err != nil {
-		return "", unreadable
+		return swiftcontrol.ContainerVersioning{}, unreadable
 	}
 	detail, err := session.ContainerDetail(ctx, container)
 	if err != nil || detail == nil {
-		return "", unreadable
+		return swiftcontrol.ContainerVersioning{}, unreadable
 	}
-	switch detail.Versioning.Mode {
+	return detail.Versioning, nil
+}
+
+// versioningStatement words one observation for the operator. It is display
+// only: the archive name is bounded and sanitised here, so two archives can
+// read alike, which is why the fixed point compares observations and not
+// statements.
+func versioningStatement(observed swiftcontrol.ContainerVersioning) (string, error) {
+	switch observed.Mode {
 	case swiftcontrol.VersioningOff, "":
 		return "none: what is replaced is not kept", nil
 	case swiftcontrol.VersioningVersionsLocation, swiftcontrol.VersioningHistoryLocation:
@@ -714,15 +800,15 @@ func (s *TransferService) observedVersioning(ctx context.Context, bookmarkID, co
 		// destruction: it is sanitised and bounded HERE, where it is
 		// interpolated, so the fixed words after it cannot be cut away by a
 		// long one and cannot be displaced by a crafted one (db:837).
-		archive := titleText(detail.Versioning.Archive, 80)
+		archive := titleText(observed.Archive, 80)
 		if archive == "" {
 			archive = "an archive it did not name"
 		}
-		return "the container reports " + string(detail.Versioning.Mode) + ", archiving into " + archive +
+		return "the container reports " + string(observed.Mode) + ", archiving into " + archive +
 			"; no archived version has been read back by anything here", nil
 	default:
 		return "", fmt.Errorf("the destination container %s, so an overwrite is refused: %w",
-			detail.Versioning.Mode, swiftcontrol.ErrModernVersioning)
+			observed.Mode, swiftcontrol.ErrModernVersioning)
 	}
 }
 

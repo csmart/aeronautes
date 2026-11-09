@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/csmart/aeronautes/internal/audit"
@@ -791,19 +792,27 @@ func TestReclamationRecordsAnUnreadableReplyAsUnknown(t *testing.T) {
 // The restricting direction, which the answered ceiling allows and which the
 // two cases above no longer reach now that a question stating retention
 // declines before these guards run: the question authorised the removal, and
-// what is true at reclamation time is what stops it.
+// what is true at reclamation time is what stops it. The versioning case
+// changes the container at the live publishing request, after the fixed-point
+// read ADR 0102 decision 2 added, because a change inside the dialog is now
+// refused there (TestAcknowledgedUploadRefusesAVersioningChangeDuringTheDialog)
+// and this guard's own re-read is what must still catch a later one.
 func TestReclamationObeysWhatIsTrueWhenItRuns(t *testing.T) {
 	for _, fixture := range []struct {
-		name   string
-		change func(*overwriteFixture, *SettingsService)
-		reason string
+		name string
+		// change runs inside the dialog, or, when atPublication is set, at the
+		// first publishing request for the replaced name.
+		change        func(*overwriteFixture, *SettingsService)
+		atPublication bool
+		reason        string
 	}{
-		{name: "the container starts keeping versions",
+		{name: "the container starts keeping versions at the publishing request",
 			change: func(f *overwriteFixture, _ *SettingsService) {
 				f.h.mock.AddContainer("replaceable_archive", "standard")
 				f.h.mock.EnableVersionArchive("replaceable", "replaceable_archive", false)
 			},
-			reason: "the container keeps versions"},
+			atPublication: true,
+			reason:        "the container keeps versions"},
 		{name: "the option is turned off",
 			change: func(f *overwriteFixture, settings *SettingsService) {
 				current, err := settings.Get(context.Background())
@@ -827,7 +836,16 @@ func TestReclamationObeysWhatIsTrueWhenItRuns(t *testing.T) {
 			// it states that the segments WILL be removed and the answer
 			// authorises exactly that. The change lands inside the dialog.
 			confirmer := &recordingOverwriteConfirmer{yes: true}
-			confirmer.before = func() { fixture.change(f, settings) }
+			if fixture.atPublication {
+				var once sync.Once
+				f.h.mock.BeforeRequest = func(method, path string) {
+					if (method == "PUT" || method == "COPY") && strings.HasSuffix(path, "/replaceable/live/taken") {
+						once.Do(func() { fixture.change(f, settings) })
+					}
+				}
+			} else {
+				confirmer.before = func() { fixture.change(f, settings) }
+			}
 			f.h.transfer.setOverwriteConfirmer(confirmer)
 
 			id, err := f.h.transfer.StartUpload(t.Context(), f.request(true))

@@ -60,12 +60,19 @@ type serviceConfirmer struct {
 	mu    sync.Mutex
 	asked []app.OverwriteConfirmation
 	yes   bool
+	// before runs inside the dialog, after the question is composed and
+	// before it is answered, which is where the store can move under an
+	// answer.
+	before func()
 }
 
 func (c *serviceConfirmer) ConfirmOverwrite(_ context.Context, about app.OverwriteConfirmation) (bool, error) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.asked = append(c.asked, about)
+	c.mu.Unlock()
+	if c.before != nil {
+		c.before()
+	}
 	return c.yes, nil
 }
 
@@ -163,6 +170,74 @@ func TestOverwriteRealSwift(t *testing.T) { overwriteCases(t, New) }
 
 func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 	t.Helper()
+	// ADR 0102 decision 2: the container starts keeping versions while the
+	// operator is answering, so the statement the question made is no longer
+	// what the container reports at the fixed point. The replacement is refused
+	// with the live object untouched, nothing is archived, and the record
+	// carries both statements.
+	t.Run("refuses a replacement when the container's versioning changes during the dialog", func(t *testing.T) {
+		h := makeHarness(t)
+		container := h.Container(h.Primary, "overwrite-mode-change")
+		archive := h.Container(h.Primary, "overwrite-mode-archive")
+		h.Seed(h.Primary, container, "live/taken", []byte("the bytes already there"), nil)
+		priorTag := liveETag(t, h, container, "live/taken")
+
+		confirmer := &serviceConfirmer{yes: true, before: func() {
+			h.rawPut(h.Primary, "/"+container, nil, map[string]string{"X-Versions-Location": archive})
+		}}
+		app.WireOverwriteConfirmer(h.Transfer, confirmer)
+		if _, err := h.Browse.Connect(t.Context(), h.Primary.BookmarkID); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(t.TempDir(), "taken")
+		if err := os.WriteFile(path, []byte("the bytes this job sent"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		id, err := overwriteStart(t, h, container, "live/", []string{path}, true)
+		if err != nil {
+			t.Fatalf("a confirmed replacement was refused at the start: %v", err)
+		}
+		h.AwaitJob(id)
+		job, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if job.Counters.Overwrites != 0 || job.Counters.ObjectsCopied != 0 {
+			t.Fatalf("the replacement published under a changed statement: %s %+v", job.State, job.Counters)
+		}
+		if now := liveETag(t, h, container, "live/taken"); now != priorTag {
+			t.Fatal("the object was replaced")
+		}
+		if n := len(h.Snapshot(h.Primary, archive).Containers[archive].Objects); n != 0 {
+			t.Fatalf("the refused replacement archived %d objects", n)
+		}
+		asked := confirmer.questions()
+		if len(asked) != 1 || !strings.Contains(asked[0].Versioning, "none") {
+			t.Fatalf("the question did not state the versioning it was answered under: %+v", asked)
+		}
+		events, err := audit.NewStore(h.database).List(t.Context(), audit.Query{Limit: 100})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var record *audit.Event
+		for i, event := range events {
+			if event.Operation == "object.upload.refused" && event.Resource == container+"/live/taken" {
+				record = &events[i]
+			}
+		}
+		if record == nil {
+			t.Fatalf("the refusal left no record of the two statements: %+v", events)
+		}
+		if record.Result != audit.ResultConflict {
+			t.Errorf("the record is not a conflict: %+v", record)
+		}
+		for _, want := range []string{"none: what is replaced is not kept", "versions_location", archive} {
+			if !strings.Contains(record.Summary, want) {
+				t.Errorf("the record does not carry %q: %q", want, record.Summary)
+			}
+		}
+	})
+
 	t.Run("replaces a plain object and records what it saw", func(t *testing.T) {
 		h := makeHarness(t)
 		container := h.Container(h.Primary, "overwrite-plain")

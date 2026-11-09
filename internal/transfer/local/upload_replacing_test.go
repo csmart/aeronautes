@@ -799,7 +799,8 @@ func TestReplacementRecordsThePredecessorBeforePublishing(t *testing.T) {
 		// ADR 0085's comparison has something to compare against. This
 		// answers with what is live, which is what an acknowledgement taken
 		// at that moment would have captured.
-		Acknowledged: acknowledgedNow(t, s, "media", preflight.Items[0]),
+		Acknowledged:        acknowledgedNow(t, s, "media", preflight.Items[0]),
+		VersioningUnchanged: versioningHeld,
 	}
 	report, err := Upload(t.Context(), s, nil, "aeronautes_dst:media", "media", "docs/", "ordering", preflight, nil, nil, recorder)
 	if err != nil || report == nil || report.Done != 1 {

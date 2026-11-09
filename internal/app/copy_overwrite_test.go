@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/swifttest"
 )
@@ -194,6 +195,66 @@ func TestRefusedCopyOverwritePersistsFoundIdentityPastAuditPrune(t *testing.T) {
 	after, ok, err := h.transfer.jobs.ReadPredecessor(t.Context(), id, "doc")
 	if err != nil || !ok || !after.Present || after.Length != int64(len(racer)) {
 		t.Fatalf("found identity did not survive an audit prune: %+v ok=%t err=%v", after, ok, err)
+	}
+}
+
+// ADR 0102 decision 2 through the copy route: the destination container starts
+// keeping history while the operator is answering, so the statement the question
+// made is no longer what the container reports at the fixed point. The
+// replacement is refused with the destination untouched and both statements
+// recorded for the name.
+func TestAcknowledgedCopyRefusesAVersioningChangeDuringTheDialog(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+	source := h.transfer.connections.ActiveBookmarkID()
+	dest, mock := secondCluster(t, h)
+	h.mock.AddContainer("media", "standard")
+	mock.AddContainer("backup", "standard")
+	mock.AddContainer("backup_archive", "standard")
+	seedObject(h.mock, "media", "doc", "new source content", nil)
+	seedObject(mock, "backup", "doc", "old destination", nil)
+	h.installEngine(nil)
+
+	h.transfer.setOverwriteConfirmer(&recordingOverwriteConfirmer{yes: true, before: func() {
+		mock.EnableVersionArchive("backup", "backup_archive", true)
+	}})
+
+	id, err := h.transfer.StartCopy(t.Context(), CopyRequestDTO{
+		SourceBookmarkID: source, SourceContainer: "media",
+		DestBookmarkID: dest, DestContainer: "backup",
+		AcknowledgeOverwrite: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job := awaitTerminal(t, h, id); job.Counters.OverwritesRefused != 1 || job.Counters.Overwrites != 0 || job.Counters.ObjectsCopied != 0 {
+		t.Fatalf("a changed versioning statement was not refused at the fixed point: %+v", job.Counters)
+	}
+	witness := mirrorWitness(t, mock, "test2:tester2", "testing2")
+	snap := mirrorSnapshot(t, witness, "backup")
+	if obj := snap.Containers["backup"].Objects["doc"]; obj.Size != int64(len("old destination")) {
+		t.Fatalf("the refused replacement changed the destination: %+v", obj)
+	}
+	events, err := h.transfer.runner.audit.List(t.Context(), audit.Query{Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record *audit.Event
+	for i, event := range events {
+		if event.Operation == "transfer.copy.refused" && event.Resource == "backup/doc" {
+			record = &events[i]
+		}
+	}
+	if record == nil {
+		t.Fatalf("the refusal left no record of the two statements: %+v", events)
+	}
+	if record.Result != audit.ResultConflict {
+		t.Errorf("the record is not a conflict: %+v", record)
+	}
+	for _, want := range []string{"none: what is replaced is not kept", "history_location", "backup_archive"} {
+		if !strings.Contains(record.Summary, want) {
+			t.Errorf("the record does not carry %q: %q", want, record.Summary)
+		}
 	}
 }
 
